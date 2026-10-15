@@ -513,12 +513,12 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// and on a timer for the rest. See link/lifecycle_git.go.
 	proxy.SetLandGit(landGit{store: store, hub: gitHub})
 	proxy.SetHubBuild(runningCommit())
-	gitHub.Observed = func() { go proxy.RefreshAllGitSteps(ctx) }
+	gitHub.Observed = func() { go proxy.RefreshAllGitSteps(ctx, true) }
 	{
 		before := h.OnAttach
 		h.OnAttach = func(name, host, ver string) {
 			before(name, host, ver)
-			go proxy.RefreshAllGitSteps(ctx)
+			go proxy.RefreshAllGitSteps(ctx, false)
 		}
 	}
 	go proxy.RunGitSteps(ctx)
@@ -927,11 +927,18 @@ func (f landGit) repo() string {
 	return strings.TrimSpace(name)
 }
 
-func (f landGit) LandFacts(ctx context.Context, branch, sha, workID string) (gitsync.LandFacts, error) {
+func (f landGit) LandFacts(ctx context.Context, branch, sha, workID string, forge func() gitsync.ForgeMain) (gitsync.LandFacts, error) {
 	if name := f.repo(); name != "" {
-		return f.hub.Store().LandFacts(ctx, name, branch, sha, workID)
+		return f.hub.Store().LandFacts(ctx, name, branch, sha, workID, forge)
 	}
 	return gitsync.LandFacts{}, nil
+}
+
+func (f landGit) ForgeMain(ctx context.Context, force bool) gitsync.ForgeMain {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().ForgeMainTip(ctx, name, force)
+	}
+	return gitsync.ForgeMain{Why: "no repository is set for the merge flow"}
 }
 
 func (f landGit) Contains(ctx context.Context, build, sha string) (bool, bool, error) {

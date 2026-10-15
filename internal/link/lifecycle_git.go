@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/deployready"
@@ -137,6 +138,9 @@ func DeriveGit(in GitInput) []GitStep {
 	}
 	if in.Facts.Pushed {
 		pushed.State = hubstore.StepDone
+		if in.Facts.PushedSHA != "" {
+			pushed.SHA = in.Facts.PushedSHA
+		}
 	} else {
 		pushed.State = hubstore.StepActive
 		pushed.Reason = "origin's main does not hold it yet"
@@ -169,7 +173,9 @@ func shortSHA(s string) string {
 // LandGit is the hub's repository as the lifecycle reads landing, pushing and builds. Nil is no git: the steps stay
 // pending.
 type LandGit interface {
-	LandFacts(ctx context.Context, branch, sha, workID string) (gitsync.LandFacts, error)
+	LandFacts(ctx context.Context, branch, sha, workID string, forge func() gitsync.ForgeMain) (gitsync.LandFacts, error)
+	// ForgeMain asks the forge for its main, or answers the last answer unless force.
+	ForgeMain(ctx context.Context, force bool) gitsync.ForgeMain
 	Contains(ctx context.Context, build, sha string) (contains, known bool, err error)
 }
 
@@ -188,9 +194,19 @@ func (p *Proxy) SetHubBuild(commit string) {
 	p.hubBuild = strings.TrimSpace(commit)
 }
 
+// forgeOnce is one ask of the forge for a whole pass: made the first time an item wants it, and never when none does.
+func forgeOnce(ctx context.Context, g LandGit, force bool) func() gitsync.ForgeMain {
+	var once sync.Once
+	var fm gitsync.ForgeMain
+	return func() gitsync.ForgeMain {
+		once.Do(func() { fm = g.ForgeMain(ctx, force) })
+		return fm
+	}
+}
+
 // RefreshGitSteps derives the git steps of one item and stores them. An item with no branch has none to derive and is
 // left alone. It answers the rows it stored.
-func (p *Proxy) RefreshGitSteps(ctx context.Context, id string) ([]hubstore.WorkStepRow, error) {
+func (p *Proxy) RefreshGitSteps(ctx context.Context, id string, forge func() gitsync.ForgeMain) ([]hubstore.WorkStepRow, error) {
 	st := p.itemStore()
 	p.mu.Lock()
 	g, hubBuild := p.landGit, p.hubBuild
@@ -202,7 +218,7 @@ func (p *Proxy) RefreshGitSteps(ctx context.Context, id string) ([]hubstore.Work
 	if err != nil || w.Branch == "" {
 		return nil, err
 	}
-	facts, err := g.LandFacts(ctx, w.Branch, "", w.BacklogID)
+	facts, err := g.LandFacts(ctx, w.Branch, "", w.BacklogID, forge)
 	if err != nil {
 		return nil, fmt.Errorf("git could not be read for %s: %w", id, err)
 	}
@@ -249,22 +265,28 @@ func (p *Proxy) seen(ctx context.Context, g LandGit, name, commit, landed string
 	return b
 }
 
-// RefreshAllGitSteps derives every item that still has something to learn. It is what a collect, a mirror pass and a room
+// RefreshAllGitSteps derives every item that still has something to learn. force says to ask the forge again whatever it
+// last said, which a mirror pass and a collect do and a timer or a room attaching does not: the forge is asked ONCE per
+// pass, for every item together, and at most every five minutes otherwise. It is what a collect, a mirror pass and a room
 // dialing in call, and it never fails the caller: a read that cannot be made leaves the stored steps as they were.
-func (p *Proxy) RefreshAllGitSteps(ctx context.Context) {
+func (p *Proxy) RefreshAllGitSteps(ctx context.Context, force bool) {
 	st := p.itemStore()
-	if st == nil {
+	p.mu.Lock()
+	g := p.landGit
+	p.mu.Unlock()
+	if st == nil || g == nil {
 		return
 	}
 	ids, err := st.WorkIdsOpen()
 	if err != nil {
 		return
 	}
+	forge := forgeOnce(ctx, g, force)
 	for _, id := range ids {
 		if ctx.Err() != nil {
 			return
 		}
-		_, _ = p.RefreshGitSteps(ctx, id)
+		_, _ = p.RefreshGitSteps(ctx, id, forge)
 	}
 }
 
@@ -281,7 +303,18 @@ func (p *Proxy) RunGitSteps(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			p.RefreshAllGitSteps(ctx)
+			p.RefreshAllGitSteps(ctx, false)
 		}
 	}
+}
+
+// refreshOne is RefreshGitSteps for a reader that asked about one item: the forge's last answer is used when it is recent.
+func (p *Proxy) refreshOne(ctx context.Context, id string) ([]hubstore.WorkStepRow, error) {
+	p.mu.Lock()
+	g := p.landGit
+	p.mu.Unlock()
+	if g == nil {
+		return nil, nil
+	}
+	return p.RefreshGitSteps(ctx, id, forgeOnce(ctx, g, false))
 }

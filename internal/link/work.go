@@ -73,7 +73,7 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 		}
 		// THE GIT STEPS ARE READ FRESH, bounded, and the stored ones answer when the read cannot be made.
 		rctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-		steps, err := p.RefreshGitSteps(rctx, rest)
+		steps, err := p.refreshOne(rctx, rest)
 		cancel()
 		if steps == nil || err != nil {
 			if steps, err = st.WorkSteps(rest); err != nil {
@@ -129,7 +129,9 @@ func (p *Proxy) serveWorkSet(w http.ResponseWriter, r *http.Request, st *hubstor
 			return
 		}
 	}
-	go p.RefreshAllGitSteps(context.WithoutCancel(r.Context()))
+	rctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	_, _ = p.refreshOne(rctx, id)
 	crJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

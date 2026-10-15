@@ -5,12 +5,16 @@ see, `landed`, `deployed` and `pushed`.
 
 ## What changed
 
-- **Landed** is ancestry, not patch-equivalence: the item's build tip is an ancestor of `claude/main` on the hub's
-  mirror. Its sha is the first commit on `claude/main`'s first-parent line that holds the tip, which is the tip itself
-  for a fast-forward and the merge commit otherwise. `gitsync.Store.LandFacts` reads it.
-- **Pushed** asks the forge once (`ls-remote` for `main`) and checks the landed sha is an ancestor of that tip. A forge
-  that does not answer, or a tip the mirror has not fetched, falls back to the mirror's own `main`, and the step's
-  reason says so.
+- **Landed** is ancestry or patch: every commit of the item's branch is an ancestor of `claude/main` on the hub's
+  mirror, or has a commit there with the same patch id (`git patch-id --stable`, over the range each side has beyond
+  the fork point, newest 500). Nearly every item lands by cherry-pick, so the sha recorded is the commit on
+  `claude/main` that carries the branch's tip: the tip itself for a fast-forward, the merge commit for a merge, the
+  picked commit for a pick. `gitsync.Store.LandFacts` reads it.
+- **Pushed** asks the forge for its `main` (`ls-remote`) and matches the branch against that tip the same way, ancestor
+  or patch id, so a re-signed copy counts and its own sha is recorded (`pushed_sha`). The forge is asked ONCE per
+  refresh pass for all items, only when an item has landed, and its answer is kept five minutes unless a mirror pass or
+  a collect forces a fresh one. A forge that does not answer, or a tip the mirror has not fetched, falls back to the
+  mirror's own `main`, and the step's reason says so.
 - **Deployed** compares the landed sha with the build each process reports. The room already sends its build commit in
   its hello when it dials, so no room change was needed. The scope is `deployready.Needs` and `RoomSide`: hub-only
   code needs the hub, any other shipped code needs the hub and every attached room. A room whose build the mirror does

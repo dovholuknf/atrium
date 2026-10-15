@@ -21,21 +21,21 @@ func TestLandFactsFollowABranchFromPushedToLandedToPushed(t *testing.T) {
 	st.Protocols = "file"
 	st.Forge = func(Ref) string { return forge }
 
-	f, err := st.LandFacts(bg, hubRepo, "fix/x", "", "f-x")
+	f, err := st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st))
 	if err != nil || f.SHA != work || f.Landed || f.Pushed {
 		t.Fatalf("pushed to the hub only: %+v %v", f, err)
 	}
 	if len(f.Paths) != 1 || f.Paths[0] != "x.go" {
 		t.Fatalf("paths = %v", f.Paths)
 	}
-	if f, _ := st.LandFacts(bg, hubRepo, "fix/nowhere", "", "f-x"); f.SHA != "" {
+	if f, _ := st.LandFacts(bg, hubRepo, "fix/nowhere", "", "f-x", forgeAsk(st)); f.SHA != "" {
 		t.Fatalf("no branch: %+v", f)
 	}
 
 	// The merger fast-forwards claude/main onto the tip.
 	git(t, x.work, "switch", "-q", "-C", "cm", "fix/x")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
-	f, err = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x")
+	f, err = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st))
 	if err != nil || !f.Landed || f.LandedSHA != work || f.Pushed {
 		t.Fatalf("after the fast-forward: %+v %v", f, err)
 	}
@@ -46,14 +46,14 @@ func TestLandFactsFollowABranchFromPushedToLandedToPushed(t *testing.T) {
 	// A commit on top of it: the landed sha is still the tip it had.
 	git(t, x.work, "commit", "-q", "--allow-empty", "-m", "later")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
-	if f, _ = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x"); !f.Landed || f.LandedSHA != work {
+	if f, _ = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st)); !f.Landed || f.LandedSHA != work {
 		t.Fatalf("a later commit moved the landed sha: %+v", f)
 	}
 
 	// Clint pushes: the forge's main holds it.
 	git(t, x.work, "push", "-q", forge, "cm:refs/heads/main")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/main"))
-	f, err = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x")
+	f, err = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st))
 	if err != nil || !f.Pushed || f.PushedVia != "origin" {
 		t.Fatalf("after the push: %+v %v", f, err)
 	}
@@ -74,4 +74,82 @@ func strings40(c byte) string {
 		b[i] = c
 	}
 	return string(b)
+}
+
+// forgeAsk is how a pass asks the forge, forced, as a mirror pass would.
+func forgeAsk(st *Store) func() ForgeMain {
+	return func() ForgeMain { return st.ForgeMainTip(bg, hubRepo, true) }
+}
+
+// MOST ITEMS LAND BY CHERRY-PICK AND ARE RE-SIGNED ONTO ORIGIN'S MAIN: new shas, the same patches. Both are found, and the
+// sha recorded is the one on claude/main, and on main, that carries the work.
+func TestLandFactsSeeThroughACherryPickAndAResign(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	work := x.branch("fix/x", "x.go")
+	other := x.branch("fix/other", "o.go")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x", "fix/other:refs/heads/fix/other"))
+	st := x.h.Store()
+	forge := t.TempDir()
+	git(t, forge, "init", "-q", "--bare", "-b", "main")
+	st.Protocols = "file"
+	st.Forge = func(Ref) string { return forge }
+
+	// The merger cherry-picks it onto claude/main.
+	git(t, x.work, "switch", "-q", "-C", "cm", "main")
+	git(t, x.work, "cherry-pick", work)
+	picked := git(t, x.work, "rev-parse", "HEAD")
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	f, err := st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st))
+	if err != nil || !f.Landed || f.LandedSHA != picked || f.Pushed {
+		t.Fatalf("after the cherry-pick (picked %s): %+v %v", picked, f, err)
+	}
+	if o, _ := st.LandFacts(bg, hubRepo, "fix/other", "", "f-o", forgeAsk(st)); o.SHA != other || o.Landed {
+		t.Fatalf("an unrelated branch landed: %+v", o)
+	}
+
+	// Clint re-signs it onto origin's main: the same patch, a new sha, and the message differs.
+	git(t, x.work, "switch", "-q", "-C", "resigned", "main")
+	git(t, x.work, "cherry-pick", work)
+	git(t, x.work, "commit", "-q", "--amend", "-m", "re-signed", "--date", "2020-01-01T00:00:00Z")
+	resigned := git(t, x.work, "rev-parse", "HEAD")
+	if resigned == picked || resigned == work {
+		t.Fatal("the re-sign kept a sha")
+	}
+	git(t, x.work, "push", "-q", forge, "resigned:refs/heads/main")
+	x.must(x.push(operator, hubRepo, "resigned:refs/heads/main"))
+	f, err = st.LandFacts(bg, hubRepo, "fix/x", "", "f-x", forgeAsk(st))
+	if err != nil || !f.Pushed || f.PushedSHA != resigned || f.PushedVia != "origin" || f.LandedSHA != picked {
+		t.Fatalf("after the re-sign (resigned %s): %+v %v", resigned, f, err)
+	}
+}
+
+// THE FORGE IS ASKED ONCE, then remembered, unless something says to look again.
+func TestForgeMainTipIsRememberedUntilForced(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses")
+	}
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	st := x.h.Store()
+	forge := t.TempDir()
+	git(t, forge, "init", "-q", "--bare", "-b", "main")
+	st.Protocols = "file"
+	asked := 0
+	st.Forge = func(Ref) string { asked++; return forge }
+	if fm := st.ForgeMainTip(bg, hubRepo, false); fm.Tip != "" || fm.Why == "" {
+		t.Fatalf("a forge with no main: %+v", fm)
+	}
+	st.ForgeMainTip(bg, hubRepo, false)
+	st.ForgeMainTip(bg, hubRepo, false)
+	if asked != 1 {
+		t.Fatalf("asked %d times in a row", asked)
+	}
+	st.ForgeMainTip(bg, hubRepo, true)
+	if asked != 2 {
+		t.Fatalf("a forced ask was not made: %d", asked)
+	}
 }
