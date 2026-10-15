@@ -3,6 +3,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -101,5 +102,37 @@ func TestBuildIDCoversThePhonePage(t *testing.T) {
 	os.WriteFile(f, []byte("two"), 0o644)
 	if b := buildID(board(dir)); a == b {
 		t.Fatal("the build id did not change when web/m changed")
+	}
+}
+
+// The desktop board is installable: its manifest is served as a manifest, owns the whole origin, and asks for links.
+func TestDesktopManifest(t *testing.T) {
+	t.Parallel()
+	h := webHandler("")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil))
+	if rec.Code != 200 {
+		t.Fatalf("manifest answered %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/manifest+json" {
+		t.Errorf("manifest content type %q", ct)
+	}
+	var m struct {
+		StartURL      string `json:"start_url"`
+		HandleLinks   string `json:"handle_links"`
+		LaunchHandler struct {
+			ClientMode []string `json:"client_mode"`
+		} `json:"launch_handler"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.StartURL != "/" || m.HandleLinks != "preferred" || len(m.LaunchHandler.ClientMode) == 0 || m.LaunchHandler.ClientMode[0] != "focus-existing" {
+		t.Errorf("manifest is %s", rec.Body.String())
+	}
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(page.Body.String(), `rel="manifest" href="/manifest.webmanifest"`) {
+		t.Error("the board page does not link its manifest")
 	}
 }

@@ -530,6 +530,28 @@ function openAtriumLink(url) {
   return true;
 }
 
+// ── a link clicked outside the browser ───────────────────────────────────
+//
+// With the board installed as an app (manifest.webmanifest: `handle_links: preferred`, `launch_handler` focus-existing),
+// a `http://127.0.0.1:7778/#term=<id>` clicked in another program is handed to the running app window instead of a new
+// tab. The browser does not navigate that window, it delivers the URL through `launchQueue`. It goes through
+// `openAtriumLink`, the same route a link printed in a terminal takes, so there is one router. No `launchQueue` (any
+// other browser, or the board in a tab) and nothing here runs.
+function captureLaunchLinks() {
+  if (!window.launchQueue || typeof window.launchQueue.setConsumer !== "function") return;
+  let first = true;
+  window.launchQueue.setConsumer(p => {
+    const url = p && p.targetURL;
+    const fresh = first;
+    first = false;
+    if (!url) return;
+    // A cold launch on a link already loaded it: the page booted on that hash, and landing again would double it.
+    if (fresh && url === location.href) return;
+    openAtriumLink(url);
+  });
+}
+captureLaunchLinks();
+
 // The name of the window a link opens into. One per pull request for
 // github.com/<org>/<repo>/pull/<n> and anything under it, so a walk that clicks
 // a deep link per finding keeps one tab. Anything else is one per origin plus

@@ -1,0 +1,18 @@
+{
+  "name": "atrium",
+  "short_name": "atrium",
+  "description": "The board for the coding agents on this machine.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#0B1B2E",
+  "background_color": "#0B1B2E",
+  "launch_handler": { "client_mode": ["focus-existing", "auto"] },
+  "handle_links": "preferred",
+  "icons": [
+    { "src": "/m/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/m/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/m/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

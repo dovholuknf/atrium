@@ -23542,6 +23542,46 @@ async function hubGateSection(browser, base) {
   if (!bad) console.log("hubGate ok");
 }
 
+// A board link clicked outside the browser reaches an installed app window through launchQueue, and is routed by the same
+// openAtriumLink a link printed in a terminal uses. No launchQueue means nothing is registered.
+async function launchLinkSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e && e.message || e)));
+  try {
+    await p.addInitScript(() => {
+      window.__consumer = null;
+      Object.defineProperty(window, "launchQueue", { configurable: true, value: { setConsumer: fn => { window.__consumer = fn; } } });
+    });
+    await p.goto(base + "/", { waitUntil: "load" });
+    await p.waitForTimeout(1200);
+    if (!(await p.evaluate(() => typeof window.__consumer === "function"))) { fail("launchLink: the board registered no launchQueue consumer."); return; }
+    await p.evaluate(() => { window.__lands = []; window.landOnAlert = (...a) => { window.__lands.push(a); }; });
+    await p.evaluate(u => window.__consumer({ targetURL: u }), base + "/#term=s1");
+    await p.waitForTimeout(200);
+    let lands = await p.evaluate(() => window.__lands);
+    if (lands.length !== 1 || lands[0][0] !== "s1") fail("launchLink: a #term= link landed " + JSON.stringify(lands));
+    await p.evaluate(() => window.__consumer({ targetURL: "https://example.com/#term=s2" }));
+    await p.evaluate(() => window.__consumer({}));
+    lands = await p.evaluate(() => window.__lands);
+    if (lands.length !== 1) fail("launchLink: a foreign or empty launch landed " + JSON.stringify(lands));
+    const man = await p.evaluate(() => document.querySelector('link[rel="manifest"]') && document.querySelector('link[rel="manifest"]').getAttribute("href"));
+    if (man !== "/manifest.webmanifest") fail("launchLink: the board links manifest " + man);
+    // no launchQueue: boots clean and registers nothing
+    const ctx2 = await browser.newContext();
+    const q = await ctx2.newPage();
+    const e2 = [];
+    q.on("pageerror", e => e2.push(String(e && e.message || e)));
+    await q.goto(base + "/", { waitUntil: "load" });
+    await q.waitForTimeout(800);
+    if (e2.length) fail("launchLink: without launchQueue the board threw " + e2.join(" | "));
+    await ctx2.close();
+  } finally { await ctx.close(); }
+  if (errors.length) fail("launchLink: threw " + errors.join(" | "));
+  if (!bad) console.log("launchLink ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -30951,7 +30991,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, launchLink: launchLinkSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -32938,6 +32978,7 @@ async function main() {
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
     await unit("backForward", () => backForwardSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("launchLink", () => launchLinkSection(browser, base));
     await unit("hubGate", () => hubGateSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));

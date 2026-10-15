@@ -17,6 +17,10 @@
      the tag out entirely would work too, since the script can create one, but
      then nothing in the markup says the tab has a mark at all. -->
 <link rel="icon" id="favicon">
+<!-- Makes the board installable, so a board link clicked anywhere opens in the app window. See
+     `captureLaunchLinks` in js/terminal-links.js and docs/changes/pwa-link-capture.md. The phone board keeps its
+     own manifest, which is the nearer scope. -->
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/vendor/xterm.css">
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/xterm-addon-fit.js"></script>
