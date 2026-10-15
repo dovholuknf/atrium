@@ -1,8 +1,13 @@
 package link
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"os"
 	"testing"
+	"time"
 )
 
 func verifyHubCert(t *testing.T, k Keys, host string) error {
@@ -62,5 +67,53 @@ func TestHubCertOldPortSANIsRegeneratedAndMatchingIsKept(t *testing.T) {
 	}
 	if err := verifyHubCert(t, k, "192.168.1.68"); err != nil {
 		t.Errorf("new advertise address not covered: %v", err)
+	}
+}
+
+func TestHubCertNewCAReminsts(t *testing.T) {
+	k := Keys{Dir: t.TempDir()}
+	if err := k.EnsureCA(Hosts()); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"ca.crt", "ca.key"} {
+		if err := os.Remove(k.path(f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := k.EnsureCA(Hosts()); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyHubCert(t, k, "127.0.0.1"); err != nil {
+		t.Errorf("hub cert signed by the old CA was kept: %v", err)
+	}
+}
+
+func TestHubCertNearExpiryReminsts(t *testing.T) {
+	k := Keys{Dir: t.TempDir()}
+	if err := k.EnsureCA(Hosts()); err != nil {
+		t.Fatal(err)
+	}
+	ca, caKey, _ := k.CA()
+	old, _ := k.readCertFile("hub.crt")
+	ips, dns := splitSANs(Hosts())
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{
+		SerialNumber: serial(), Subject: old.Subject,
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(10 * 24 * time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: ips, DNSNames: dns,
+	}, ca, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := k.writeCert("hub.crt", der); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.ensureServer(Hosts()); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := k.readCertFile("hub.crt")
+	if time.Until(now.NotAfter) < 30*24*time.Hour {
+		t.Error("near-expiry certificate was kept")
 	}
 }

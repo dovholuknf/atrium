@@ -123,7 +123,7 @@ func (k Keys) ensureServer(hosts []string) error {
 	ips, dns := splitSANs(hosts)
 	// A certificate already there whose names still match is kept. One that does not (an old one that
 	// carried "ip:port" as a DNS name, or a changed host list) falls through and is minted again.
-	if old, err := k.readCertFile("hub.crt"); err == nil && sansMatch(old, ips, dns) {
+	if old, err := k.readCertFile("hub.crt"); err == nil && sansMatch(old, ips, dns) && certStillGood(old, ca) {
 		if _, err := os.Stat(k.path("hub.key")); err == nil {
 			return nil
 		}
@@ -176,6 +176,15 @@ func splitSANs(hosts []string) (ips []net.IP, dns []string) {
 		}
 	}
 	return ips, dns
+}
+
+// certStillGood says an existing server certificate may be kept: signed by the CA on disk now (a
+// freshly minted CA orphans the old one) and more than 30 days from expiry.
+func certStillGood(c, ca *x509.Certificate) bool {
+	if c.CheckSignatureFrom(ca) != nil {
+		return false
+	}
+	return time.Until(c.NotAfter) > 30*24*time.Hour
 }
 
 func sansMatch(c *x509.Certificate, ips []net.IP, dns []string) bool {
