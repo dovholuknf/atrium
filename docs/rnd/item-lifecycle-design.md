@@ -1,6 +1,6 @@
 # Item lifecycle: an item is the unit of work from backlog to pushed, with a step timeline, cards, SHAs, tokens and cost
 
-Status: proposed, not built.
+Status: approved by clint 2026-10-15 (section 11), L1 started. Efficacy (section 12) and stage L9 added the same day.
 
 Origin: backlog item `rd-item-lifecycle`. clint, 2026-10-15, on the first items tab (6a574d9d): "looks not sexy at all.
 it also seems to have no states, not designed, no working, no tested, no pushed ... i expect to see which card did
@@ -21,7 +21,8 @@ Mockups, rendered at 1400 and 2400 wide from the HTML beside them (`img/item-lif
 which reuses the board's own custom properties):
 - the list: `list-1400.png`, `list-2400.png`;
 - one item's detail: `detail-1400.png`, `detail-2400.png`;
-- a blocked item asking clint something: `blocked-1400.png`, `blocked-2400.png`.
+- a blocked item asking clint something: `blocked-1400.png`, `blocked-2400.png`;
+- the efficacy view (section 12): `efficacy-1400.png`, `efficacy-2400.png`.
 
 **Questions are held in section 11 for clint.**
 
@@ -402,28 +403,150 @@ One worker per stage. Each stage lands on its own and leaves the board working.
 | L6 | The board: the list, the progress bar, the stat strip, the detail timeline and the side column of `list`, `detail` and `blocked` in section 7, in the board's tokens and with no new colours | board | 3 days | the three mockups are reproducible from the three live views at 1400 and 2400, within a pixel of spacing. A skin change repaints the tab. `bootClean` passes. No raw colour appears in `items.css` |
 | L7 | Blocked and the phone: the question on the row and above the timeline, suggested answers as buttons, answer and cancel from the detail, the list and the detail in `m/`, notices from the existing paths | board | 2 days | an item blocked by a worker shows its question on the list and in the detail. A button answer is typed to the worker as `atrium`, and the step leaves `blocked` when the turn starts. The phone list shows the same rows in one column |
 | L8 | The brief and the retirement: the step lines and folder at the top of an attached card's brief, `atrium_change` removed in favour of `atrium_item show`, the change record's status set to "replaced by item-lifecycle-design" | room, docs | 1 day | a card launched on an item with a tested and reviewed branch answers "where are we" from its brief in one turn, with no git reads. `change-record-design.md` points here |
+| L9 | Efficacy: the `work_event` and `work_outcome` tables, the collectors of section 12 (send-backs, first-pass test, CI after landing, bugs and reverts within 7 days, waits, abandoned cost), the day and week roll-ups, and the efficacy view of section 12 | hub, board | 3 days | the efficacy mockups are reproducible from the live view at 1400 and 2400. A send-back recorded twice counts once. A revert of a landed sha shows on that item and in the week it happened. An item with no outcome yet shows a dash, not 0%. Every figure says observed or reported, and a week with fewer than 5 landed items says "too few to trend". Checked against the live hub API or a fresh test hub, never by restarting the running one (section 12.7) |
 
-Total about 18 days of worker time, which can run in four lanes after L1: (L2, L3 together), L4, L5, then L6 and L7 once
-L2 to L5 have landed (L6 can start against fixtures sooner, since the mockups are its spec).
+Total about 21 days of worker time, which can run in four lanes after L1: (L2, L3 together), L4, L5, then L6 and L7 once
+L2 to L5 have landed (L6 can start against fixtures sooner, since the mockups are its spec). L9 comes after L5, reads
+what L2 to L5 record, and can run beside L6 and L7.
 
-## 11. Questions for clint
+## 11. Questions for clint, and his answers
 
-**None of these block L1.** Each has a suggested answer, and the stage that would be changed by it is named.
+clint answered on 2026-10-15, about 15:25. His numbering follows the list below, except that his 5 also carries a
+standing rule that applies to every stage. Each answer is recorded as decided.
 
-1. **Is the approval a gate on every item?** A design waits for his click before building starts. **Suggested: yes for
-   every item that has a `designed` step, and an item filed "build directly" skips both steps.** The cost is one click
-   per design. The gain is that nothing is built from a design he never saw. (L2)
-2. **Does the headline cost include coordination?** The mockups show the steps' total with coordination beside it, so a
-   step never carries the orchestrator's thinking. **Suggested: show both, and let the headline mean the steps alone,
-   labelled "+ coordination" everywhere.** If he wants one number, it is the sum and the split stays in the detail. (L5, L6)
-3. **What happens to `item: true`?** Today it means "assignment tracked" and "isolated toolset". **Suggested: the
-   attachment becomes `--item <backlog id>` on every launch, and the isolation is a separate `--isolated` (with
-   `item: true` as an alias for a release).** The alternative is to isolate every worker, which would take `atrium_say`
-   from workers that use it today. (L1)
-4. **What does the dollar figure mean?** It is the list price of the tokens, an estimate and not a bill, since the work
-   may run on a subscription. **Suggested: yes, list price, with "estimated" on every total and the price table version
-   shown in the detail.** If he would rather see tokens only until the figures are billed ones, L5 ships tokens and
-   hides dollars behind a setting. (L5)
-5. **Do walked-through and signed fold into `reviewed`?** `change-lifecycle-design.md` has a hunk-by-hunk walkthrough and a
-   signature as gates before a push. **Suggested: model them as two sub-steps of `reviewed` once that design is built,
-   shown as two small ticks under the step, and not before.** Until then, `reviewed` means a reviewer's verdict at the tip. (L4)
+1. **Is the approval a gate on every item?** Decided 2026-10-15: **yes.** Every item with a `designed` step waits for his
+   click, and an item filed "build directly" skips both steps. (L2)
+2. **Does the headline cost include coordination?** Decided 2026-10-15: **yes, as suggested.** The headline means the
+   steps alone and is labelled "+ coordination" everywhere, with the sum in the detail. (L5, L6)
+3. **What happens to `item: true`?** Decided 2026-10-15: **"sure, don't quite know", so the suggestion is taken.** The
+   attachment becomes `--item <backlog id>` on every launch, and isolation is a separate `--isolated`, with `item: true`
+   as an alias for a release. (L1)
+4. **What does the dollar figure mean?** Decided 2026-10-15: **yes, list price, but with the actual tokens always kept.**
+   A dollar figure is an estimate (it says "estimated", with the price table version) and is always computed from the
+   real token counts per type (input, cache write, cache read, output), never stored on its own. That way the same data
+   serves a person who is not on a subscription, and a repricing is a recompute. Tokens are never hidden behind dollars.
+   (L5)
+5. **Do walked-through and signed fold into `reviewed`?** Decided 2026-10-15: **yes**, as two sub-steps once that
+   design is built. His answer adds a rule for every stage, recorded as section 12.7: **every stage reads live data
+   through the hub API, or runs on a fresh test room or hub, and never edits or restarts the running hub or rooms to
+   test.** (L4, and all)
+6. **The plan.** Decided 2026-10-15: **approved, and L1 starts now.** He also asked for efficacy tracking, which is
+   section 12 and stage L9.
+
+## 12. Efficacy: how well the process works
+
+Origin: clint, 2026-10-15: "i want to make sure we track efficacy too. how WELL does the process work".
+
+Sections 6 and 7 say what an item cost and where it is. They do not say whether the process was any good. An item that
+landed in 3 hours after two send-backs and a red CI is not the same as one that landed in 3 hours clean, and cost and
+time alone cannot tell them apart. Efficacy is the record of what the process **got right and wrong**, per item, rolled
+up per day and per week, so that "is it getting better" has an answer that is not a feeling.
+
+Mockups: `efficacy-1400.png` and `efficacy-2400.png` in `img/item-lifecycle/`, from `efficacy.html` and `mock.css`.
+
+Two rules carry over from the rest of this design:
+- **Observed beats reported.** Each measure below says which it is. A figure atrium derived from state it can see
+  (a sha on the mirror, a CI result, a recorded send-back) is `observed`. A figure that depends on someone saying so
+  (a worker's "tests passed", a filed bug being linked to an item by hand) is `reported` and carries the tag.
+- **A dash is not a zero.** An item that has not reached a step has no measure for it. The view shows a dash, and the
+  roll-ups count only items that reached the step, saying how many that was.
+
+### 12.1 The measures
+
+| # | measure | what counts | observed or reported | where it comes from |
+| --- | --- | --- | --- | --- |
+| 1 | design send-backs | times `approved` was sent back to `designed` with a note | observed | the send-back is a board action, recorded as a `work_event` with the note and the design sha |
+| 2 | review findings | findings in a review verdict at the tip, and verdicts that were `changes-requested` before one was `ok` | observed from the verdict trailer or `atrium_review`, reported when a card says so in prose | review facts of L4, one event per verdict and a finding count |
+| 3 | not accepted | times the orchestrator answered a finished card with "not accepted" and a reason | reported, until the accept verb records it | `docs/rnd/accept-verb.md` is the writer. Until it exists, the orchestrator's `atrium_say` to a card that names the item and starts with "not accepted" is matched, and tagged reported |
+| 4 | first-pass test | the first `test` fact at the build tip after the first builder finish: pass or fail | observed when the room stamped `at_sha` (L4), reported otherwise | the `test` facts of L4. Only the first one per build tip counts, so fixing and re-running never rewrites history |
+| 5 | CI red after landing | `claude/main` CI went red on a commit at or after the item's landed sha, with the item's sha in the failing range | observed | the hub's existing CI read (`atrium_ci`, `pr-ci-state-design.md`), per commit on the mirror |
+| 6 | bugs after landing | backlog items of kind `bug` that name the item (the `atrium:item:<id>` tag, or `fixes <id>` in the body) within 7 days of `landed`, and reverts of the landed sha | the revert is observed (git: a commit that reverts the sha). The bug link is reported until a bug is filed through `--item`, which makes it observed | hub backlog and the mirror |
+| 7 | time per step | the window of each step from section 3, as the median and the 90th percentile per step | observed | the step windows the engine already derives |
+| 8 | wait on clint | time with the human as the party: `approved` waiting, a blocked question unanswered. Shown apart from work time | observed | step windows where the party is the human, and `blocked` windows |
+| 9 | cost per landed item and coordination share | the item's step dollars and the coordination dollars, and coordination as a share of the sum. Estimated, from real tokens (section 6) | the tokens are observed (the room's own rows), the dollars estimated | `work_usage` and the deliveries of section 6.5 |
+| 10 | abandoned or dropped | items cancelled, closed without landing, or sitting `stale` or `blocked` for more than 7 days with no card running, with what they cost | observed | item state plus `work_usage`. The reason is the cancel note when there is one |
+
+A send-back is counted by the transition, not the note, so an item sent back twice counts two even when the second note
+repeats the first. The first-pass result is the one measure that is only ever recorded once.
+
+### 12.2 One item
+
+The detail of an item gets an "efficacy" strip beside its timeline, not a new page. It shows its own measures:
+send-backs per step as small red ticks on the step (so the timeline shows where it went wrong), the first-pass result,
+whether CI went red after landing and for how long, bugs filed against it and their ages, wait on clint against work
+time, and cost with the coordination share. An item that landed clean gets a plain "clean pass" mark, defined as no
+send-back at any step, a first-pass test pass, and no CI red or bug in 7 days. The mark is **not shown until the 7 days
+have passed**, since a bug can still come, and the item says "watching, 4 days left" until then.
+
+### 12.3 Roll-ups
+
+The unit is a **landed item**, counted on the day it landed, rolled up by day and by calendar week (Monday to Sunday,
+in the hub's timezone). Items still in flight count toward wait, time and spend, and not toward the rates.
+
+| roll-up | definition |
+| --- | --- |
+| clean-pass rate | landed items that earned the clean-pass mark, over landed items whose 7 days have ended |
+| first-pass test rate | landed items whose first test passed, over landed items that had a test |
+| send-backs per item | design, review and not-accepted send-backs, summed and divided by landed items, with each kind shown |
+| red-after-landing rate | landed items followed by a red CI that names them, over landed items |
+| escaped bugs per item | bugs within 7 days and reverts, divided by landed items |
+| median time to land | filed (or launched) to `landed`, median and p90, with the wait on clint shown as its own slice |
+| cost per landed item | median dollars of steps, and median coordination share |
+| waste | dollars on abandoned or dropped items in the period, and as a share of all spend |
+
+A rate whose denominator is under 5 shows the figure greyed, with the count ("2 of 3"), and is left out of the trend
+arrow, so one item cannot swing it.
+
+### 12.4 The trend
+
+Every roll-up shows this week against last week, as a number and an arrow. The arrow is **good or bad**, not up or
+down, because for some measures up is bad. It is teal when the week is better, orange when worse, and neutral when the
+difference is under the noise floor: a change of less than one landed item's worth in a rate, or less than 10 percent
+in a median. Beside the arrow is a small 8 week strip, one bar per week, so "better than last week" is visible next to
+"better than the last two months". The current week is partial, so it is drawn open and compared with last week
+**scaled to the same days** (Monday to Wednesday against Monday to Wednesday), not against a full week.
+
+### 12.5 Observed versus reported
+
+Every measure carries its tag, and so does every roll-up: a roll-up is `observed` only when all of its inputs are, and
+otherwise says "3 of 11 reported". Where a measure has both a reported and an observed way to arrive (first-pass test,
+bug links), the observed one wins whenever it exists and the reported one is the fallback, shown with the tag. The view
+has a filter, "observed only", which drops reported inputs from every figure, so the numbers are not flattered by a
+card's say-so.
+
+### 12.6 Where it is stored and how it is built
+
+Two tables on the hub, added at the end of the migration list like every other (section 9):
+- `work_event(id, work_id, kind, step, at, sha, note, source)` where `kind` is `send_back`, `review_verdict`,
+  `not_accepted`, `test_result`, `ci_red`, `ci_green`, `revert`, `bug_filed`, `abandoned`, and `source` is `observed` or
+  `reported`. The key is `(work_id, kind, at, sha)`, so a replayed collect inserts nothing.
+- `work_outcome(work_id, landed_at, clean_at, first_pass, escaped_bugs, reverted, ci_red_seconds, wait_human_seconds,
+  work_seconds, step_cost, coord_cost, watch_ends_at)`, **derived** from events and steps each tick, never edited by
+  hand, and recomputable from scratch. The roll-ups are queries over it, so a changed rule (the 7 days, the noise floor)
+  is a recompute and not a data fix. Dollars are never stored here as a fact: `step_cost` and `coord_cost` are
+  recomputed from the token rows, as section 11 answer 4 requires.
+
+The collectors reuse what L2 to L5 already read: the engine's facts, the mirror, the CI read, the usage pull. The only new
+source is the bug and revert scan, which looks for the item's tag and `fixes` in the backlog and for `This reverts
+commit <sha>` on the mirror. Routes: `GET /v1/items/efficacy?from=&to=&by=day|week` for the roll-ups, and the item's
+detail gains an `efficacy` object. Both are reads, and both answer from the hub's store.
+
+### 12.7 Testing it without touching what runs
+
+This is clint's rule for every stage, and it binds this one first because efficacy reads history:
+- **Live data through the API.** The efficacy view and its checks read the running hub's API (`/v1/items`, the usage
+  export, the CI read, the backlog). They only read.
+- **Or a fresh hub and room.** Anything that writes (a send-back, a replay, a migration) runs against a throwaway hub and
+  room started on other ports and a temp data directory, seeded from fixtures. A stage's acceptance is never "I
+  restarted the live hub and looked".
+- **Never edit or restart the running atrium to test.** Not the hub, not a room, not their stores.
+
+### 12.8 What it will not do
+
+- **It does not score people or models.** It scores the process: a send-back is a fact about a step, not a grade for the
+  card that did it. No per-card leaderboard.
+- **It does not turn a threshold into a gate.** A bad week changes a number and an arrow. It stops nothing.
+- **It does not guess.** A bug that nobody linked is not counted, and the view says that reported links are a floor, which
+  is why the observed-only filter exists.
+- **It does not need L9 to start.** L1 to L5 land first. L9 reads what they record, and until it lands the facts and
+  events are already being kept.
