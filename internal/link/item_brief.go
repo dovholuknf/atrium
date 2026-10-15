@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -32,8 +33,12 @@ type WorkDetail struct {
 	} `json:"lifecycle"`
 }
 
-// itemBriefWait bounds the read. The hub refreshes the git steps on this route, so it is slower than most.
-const itemBriefWait = 25 * time.Second
+// itemBriefWait bounds the read. The hub refreshes the git steps on this route, so it is slower than most, but the header
+// is optional and a launch waits on it, so the wait is short. A var so a test can shrink it.
+var itemBriefWait = 5 * time.Second
+
+// itemBriefLate is the one line a brief carries when the hub did not answer in time.
+const itemBriefLate = "_Item steps unavailable: the hub did not answer in time. `atrium_item show` prints them when it does._\n"
 
 // FetchWorkDetail reads one item from the hub.
 func FetchWorkDetail(ctx context.Context, call HubCall, id string) (WorkDetail, error) {
@@ -51,6 +56,9 @@ func ItemBrief(ctx context.Context, call HubCall, id string) string {
 		return ""
 	}
 	d, err := FetchWorkDetail(ctx, call, id)
+	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		return itemBriefLate
+	}
 	if err != nil || d.Work.BacklogID == "" {
 		return ""
 	}

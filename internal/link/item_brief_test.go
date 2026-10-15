@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -53,5 +54,29 @@ func TestItemBriefOnceAndNeverFailsALaunch(t *testing.T) {
 	}
 	if WithItemBrief("do it", "") != "do it" {
 		t.Error("an empty header leaves the brief alone")
+	}
+}
+
+func TestItemBriefGivesUpOnAHubThatNeverAnswers(t *testing.T) {
+	if itemBriefWait != 5*time.Second {
+		t.Fatalf("item brief wait is %v, want 5s", itemBriefWait)
+	}
+	old := itemBriefWait
+	itemBriefWait = 3 * time.Millisecond
+	defer func() { itemBriefWait = old }()
+	silent := func(ctx context.Context, method, path string, body, out any) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	start := time.Now()
+	got := ItemBrief(context.Background(), silent, "f-x")
+	if el := time.Since(start); el > 2*time.Second {
+		t.Fatalf("launch waited %v for a hub that never answers", el)
+	}
+	if !strings.Contains(got, "did not answer in time") || strings.Count(strings.TrimSpace(got), "\n") != 0 {
+		t.Fatalf("want a one line note, got %q", got)
+	}
+	if b := WithItemBrief("do it", got); !strings.HasSuffix(b, "do it") || !strings.Contains(b, "unavailable") {
+		t.Fatalf("brief %q", b)
 	}
 }
