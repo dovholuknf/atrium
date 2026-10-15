@@ -171,6 +171,9 @@ type Server struct {
 	// LetThrough is the operator's "let it through" on the held messages chip: clear the typed line, deliver what is
 	// waiting, type the line back. See internal/daemon/letthrough.go.
 	LetThrough http.HandlerFunc
+	// TypeAnyway is "type anyway" on the same chip, for a line atrium cannot read: type what is waiting now, past the
+	// gate, and leave the line alone. See internal/daemon/forcesay.go.
+	TypeAnyway http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -798,6 +801,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.LetThrough != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/let-through", s.LetThrough)
+	}
+	if s.TypeAnyway != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/type-anyway", s.TypeAnyway)
 	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)

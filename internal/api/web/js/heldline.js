@@ -30,7 +30,9 @@ function followHeldLine(list) {
   if (typeof phoneHeld === "function") phoneHeld(0);
   if (!show) { if (!el.hidden) { el.hidden = true; el.innerHTML = ""; } return; }
   const html = '<span class="hl-text">' + heldLineText(count) + "</span>" +
-    '<span class="hl-menu"><button type="button" class="hl-item" data-act="let-through">Let it through</button></span>';
+    '<span class="hl-menu"><button type="button" class="hl-item" data-act="let-through">Let it through</button>' +
+    '<button type="button" class="hl-item" data-act="type-anyway" data-tip="types what is waiting now, even though ' +
+    'atrium cannot tell what is on the line. use it after a restart, when Let it through refuses">Type anyway</button></span>';
   // Only the words move when the count does, so a menu the pointer is in is not rebuilt under it.
   const words = el.querySelector(".hl-text");
   if (!words) el.innerHTML = html;
@@ -76,12 +78,30 @@ async function letItThrough() {
   }
 }
 
+// "Type anyway": the line cannot be read (a room restart loses it), so Let it through refuses and the messages sit
+// held. This types them now, past the gate, and leaves the line alone. A dialog or a new-context cycle refuses it, and
+// the toast carries the room's reason. See internal/daemon/forcesay.go.
+async function typeAnyway() {
+  const t = typeof termTask !== "undefined" ? termTask : null;
+  if (!t || letThroughBusy) return;
+  letThroughBusy = true;
+  try {
+    await api("/v1/tasks/" + encodeURIComponent(t.id) + "/type-anyway", { method: "POST", body: "{}" });
+  } catch (e) {
+    toast("could not type it", (e && e.message) || String(e));
+  } finally {
+    letThroughBusy = false;
+  }
+}
+
 document.addEventListener("mousedown", e => {
   if (e.target && e.target.closest && e.target.closest("#t-heldline")) e.preventDefault();
 });
 document.addEventListener("click", e => {
   const b = e.target && e.target.closest && e.target.closest("#t-heldline [data-act=let-through]");
-  if (b) letItThrough();
+  if (b) { letItThrough(); return; }
+  const a = e.target && e.target.closest && e.target.closest("#t-heldline [data-act=type-anyway]");
+  if (a) typeAnyway();
 });
 
 // The menu opens by CSS on hover or focus, so it is fitted when either happens, once it is showing (js/popfit.js).

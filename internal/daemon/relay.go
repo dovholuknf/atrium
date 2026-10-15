@@ -202,6 +202,8 @@ type sayIn struct {
 	Wake bool `json:"wake"`
 	// Kind is `fyi` or `needs`. See fyi.go. Carried to another room too.
 	Kind string `json:"kind"`
+	// Force types now when the typing gate cannot say the line is clear. This room only. See forcesay.go.
+	Force bool `json:"force"`
 }
 
 // handleSay is `POST /v1/say`: a message to a card on this room or another,
@@ -227,6 +229,10 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if other := d.otherRoom(room); other != "" {
+		if in.Force {
+			writeJSONCode(w, http.StatusBadRequest, errBody("force types into a terminal on this room only, so it cannot go to "+in.To))
+			return
+		}
 		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake)
 		writeJSONCode(w, code, body)
 		return
@@ -243,7 +249,7 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	// THE SAME HANDLER, over the same body, so there is one way a local message
 	// is delivered. Its answer gains who it went to.
 	raw, _ := json.Marshal(map[string]any{"text": in.Text, "from": strings.TrimSpace(in.From), "when": in.When,
-		"reply": in.Reply, "wake": in.Wake, "kind": in.Kind})
+		"reply": in.Reply, "wake": in.Wake, "kind": in.Kind, "force": in.Force})
 	inner, err := http.NewRequestWithContext(withSayTrace(r.Context(), name, via), http.MethodPost,
 		"/v1/tasks/"+target.ID+"/message", bytes.NewReader(raw))
 	if err != nil {

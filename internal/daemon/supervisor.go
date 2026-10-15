@@ -1341,6 +1341,18 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 // The new-context cycle asks its quiet check here. A nil `ok` asks nothing more.
 // `ok` must not take injectMu or pasteMu.
 func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error) {
+	return r.inject(banner, body, ok, false)
+}
+
+// injectForced is injectPeer with the typing gate skipped: the operator or a peer said `force`, because the gate could
+// not tell it the line was clear (after a room restart it cannot) and holding the message was the worse answer. It
+// takes the same locks, so an operator key in flight is still never tangled into the paste. The caller has already
+// refused a dialog and a new-context cycle, which are not the gate's to override.
+func (r *runner) injectForced(banner, body string) (bool, error) {
+	return r.inject(banner, body, nil, true)
+}
+
+func (r *runner) inject(banner, body string, ok func() bool, force bool) (bool, error) {
 	r.injectMu.Lock()
 	defer r.injectMu.Unlock()
 	// The input lock, held across the whole paste. Taken before the gate is
@@ -1348,7 +1360,7 @@ func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error)
 	// and closes the gate below.
 	r.pasteMu.Lock()
 	defer r.pasteMu.Unlock()
-	if !r.peerGateOpen() {
+	if !force && !r.peerGateOpen() {
 		return false, nil
 	}
 	if ok != nil && !ok() {

@@ -8266,7 +8266,7 @@ async function heldLineSection(browser, base) {
       if (await menu() === "none") fail(tag + "hovering the chip did not open the menu");
       const item = await p.textContent("#t-heldline .hl-item");
       if (item.trim() !== "Let it through") fail(tag + "menu item reads " + JSON.stringify(item));
-      await p.click("#t-heldline .hl-item");
+      await p.click("#t-heldline .hl-item[data-act=let-through]");
       await p.waitForFunction(() => window.__clip.length > 0, null, { timeout: slow(5000) }).catch(() => {});
       const clip = await p.evaluate(() => window.__clip);
       if (clip.length !== 1 || clip[0] !== "fix the\nthing") fail(tag + "the line was not copied: " + JSON.stringify(clip));
@@ -8281,6 +8281,38 @@ async function heldLineSection(browser, base) {
       await ctx.close();
     }
     if (errors.length) fail("letThrough threw: " + errors.join(" | "));
+
+    // f-say-force: "Type anyway" sits beside "Let it through" and asks the room to type what is waiting, with no line
+    // and no clipboard. A refusal from the room (a dialog, a new-context cycle) is shown as it was worded.
+    for (const refuse of [false, true]) {
+      const tag = "typeAnyway" + (refuse ? " (refused)" : "") + ": ";
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.addInitScript(fakeSock);
+      const p = await open(ctx);
+      const calls = [];
+      await p.route("**/v1/tasks/land-live/type-anyway", r => {
+        calls.push(r.request().method());
+        if (refuse) r.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "a dialog is on that terminal" }) });
+        else r.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: 2 }) });
+      });
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      await p.hover("#t-heldline .hl-text");
+      const item = p.locator("#t-heldline .hl-item[data-act=type-anyway]");
+      if (await item.count() !== 1) fail(tag + "no Type anyway item on the chip");
+      if ((await item.textContent()).trim() !== "Type anyway") fail(tag + "item reads " + JSON.stringify(await item.textContent()));
+      if (await item.getAttribute("title") !== null) fail(tag + "the item carries a title attribute, use data-tip");
+      if (!(await item.getAttribute("data-tip"))) fail(tag + "the item has no data-tip");
+      await item.click();
+      for (let i = 0; i < 50 && !calls.length; i++) await p.waitForTimeout(100);
+      if (calls.length !== 1 || calls[0] !== "POST") fail(tag + "the room was not asked: " + JSON.stringify(calls));
+      if (refuse) {
+        await p.waitForFunction(() => /a dialog is on that terminal/.test(document.getElementById("toasts").textContent),
+          null, { timeout: slow(5000) }).catch(() => fail(tag + "the room's reason was not shown"));
+      }
+      await ctx.close();
+    }
+    if (errors.length) fail("typeAnyway threw: " + errors.join(" | "));
   } finally {
     tasksMode = was;
   }

@@ -422,6 +422,8 @@ type SayInput struct {
 	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. a launcher need not pass it for its own worker, parked or finished, unless kind is fyi. without it a say to a parked session is refused and nothing is queued. a card on another room, named as name@room or reached by a bare name on every room, is resumed there too. a room that is not attached refuses it, and nothing is held"`
 	// Kind is `fyi` or `needs`. See internal/daemon/fyi.go.
 	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices is typed at the end of its turn instead of mid-turn"`
+	// Force types now when the typing gate cannot read the line. See internal/daemon/forcesay.go.
+	Force bool `json:"force,omitempty" jsonschema:"true to type it NOW when the gate is holding it because it cannot tell what is on that session's line, as after a room restart. it is typed past a part written line, so use it when the message is worth that. refused, with the reason, while a dialog or a new-context cycle owns the terminal. this room only"`
 }
 
 type SayOutput struct {
@@ -461,6 +463,9 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 	}
 	if in.Wake {
 		body["wake"] = true
+	}
+	if in.Force {
+		body["force"] = true
 	}
 	if k := strings.TrimSpace(in.Kind); k != "" {
 		body["kind"] = k

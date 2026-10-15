@@ -526,6 +526,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		Wake bool `json:"wake"`
 		// Kind is `fyi` or `needs`. See fyi.go.
 		Kind string `json:"kind"`
+		// Force types now when the typing gate cannot say the line is clear. See forcesay.go.
+		Force bool `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -708,6 +710,17 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
 	// words still go. See roomhold.go.
 	holding := d.holdingFrom(taskID, from)
+	// FORCE: types now, past the typing gate and the turn rule. Only a dialog or a new-context cycle refuses it, and
+	// it says so rather than queueing, because the sender asked for now.
+	if body.Force && gate == sayOK && !woke {
+		var recp *store.Say
+		if from != "" && terr == nil {
+			recp = &rec
+		}
+		if d.forceSay(w, taskID, from, body.Text, promptKind(body.Kind, body.Reply), body.Kind, body.Reply, holding, waitTurn, recp, target) {
+			return
+		}
+	}
 	byHooks := d.carriedByHooks(taskID, from, waitTurn)
 	if _, waking := d.kept.Load(taskID); waking {
 		woke = true
