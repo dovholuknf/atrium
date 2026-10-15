@@ -26421,22 +26421,24 @@ async function itemsViewSection(browser, base) {
       lastTasks = [{ id: "c-it-blk", room: "sg4", title: "pick the signing key", display_title: "pick the signing key", wire_name: "sg4-keys", status: "working" }];
       return switchView("items");
     });
-    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 4, null, { timeout: slow(10000) });
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 6, null, { timeout: slow(10000) });
     const got = await p.evaluate(() => ({
       groups: [...document.querySelectorAll("#items-list .it-group")].map(g => g.dataset.state),
       rows: [...document.querySelectorAll("#items-list .it-row")].map(r => r.dataset.item),
-      finishedFolded: !document.querySelector('.it-group[data-state="finished"] .it-row'),
+      finishedOpen: document.querySelectorAll('.it-group[data-state="finished"] .it-row').length,
       finishedN: document.querySelector('.it-group[data-state="finished"] .it-n').textContent,
       first: document.querySelector(".it-row").textContent,
       ask: [...document.querySelectorAll(".it-q")].map(q => q.textContent),
       boxes: document.querySelectorAll(".it-answer-box").length
     }));
     if (got.groups.join() !== "blocked,running,queued,finished") fail("itemsView: group order is " + got.groups);
-    if (got.rows.join() !== "it-blk,it-blk2,it-run,it-q") fail("itemsView: row order is " + got.rows);
-    if (!got.finishedFolded || got.finishedN !== "2") fail("itemsView: finished is not folded shut with its count: " + JSON.stringify(got));
-    for (const w of ["pick the signing key", "blocked", "you", "sg4-keys@sg4", "12m", "it-blk"]) if (!got.first.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + got.first);
-    if (got.ask.join() !== "which key do I use?,not for you" || got.boxes !== 2) fail("itemsView: a blocked row lacks its question and answer box: " + JSON.stringify(got));
-    if (await p.locator("#items-list .it-row:not(.st-blocked) .it-answer-box").count()) fail("itemsView: a row that is not blocked has an answer box");
+    // The oldest question is first inside blocked, and finished is open by default.
+    if (got.rows.join() !== "it-blk2,it-blk,it-run,it-q,it-done,it-can") fail("itemsView: row order is " + got.rows);
+    if (got.finishedOpen !== 2 || got.finishedN !== "2") fail("itemsView: finished is not open with its count: " + JSON.stringify(got));
+    const blkText = await p.evaluate(() => document.querySelector('.it-row[data-item="it-blk"]').textContent);
+    for (const w of ["pick the signing key", "blocked", "sg4-keys", "12m", "it-blk"]) if (!blkText.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + blkText);
+    if (got.ask.join() !== "not for you,which key do I use?" || got.boxes !== 0) fail("itemsView: a blocked row lacks its question, or shows the box before answer is clicked: " + JSON.stringify(got));
+    if (await p.locator("#items-list .it-row:not(.st-blocked) [data-act=ask]").count()) fail("itemsView: a row that is not blocked offers an answer");
     if (await p.locator('.it-group[data-state="finished"]').count() !== 1) fail("itemsView: no finished group");
     if (process.env.ITEMS_SHOTS) {
       fs.mkdirSync(process.env.ITEMS_SHOTS, { recursive: true });
@@ -26447,8 +26449,10 @@ async function itemsViewSection(browser, base) {
     await p.click('.it-row[data-item="it-blk"] .it-main .it-card');
     if ((await p.evaluate(() => window.__attached)) !== "c-it-blk") fail("itemsView: the card link did not attach the card");
     await p.evaluate(() => switchView("items"));
-    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 4, null, { timeout: slow(10000) });
-    // ANSWER: an empty box sends nothing, a typed one sends unblock as the board, and it survives a repaint while typed.
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 6, null, { timeout: slow(10000) });
+    // ANSWER: the box opens on the answer button, an empty box sends nothing, a typed one sends unblock as the board, and it survives a repaint while typed.
+    await p.click('.it-row[data-item="it-blk"] [data-act=ask]');
+    await p.waitForSelector('.it-answer-box[data-id="it-blk"]');
     await p.click('.it-row[data-item="it-blk"] .it-send');
     if (posts.length) fail("itemsView: an empty answer was sent");
     await p.fill('.it-answer-box[data-id="it-blk"]', "use KEY-9");
@@ -26460,27 +26464,29 @@ async function itemsViewSection(browser, base) {
     if (!(posts[0].id === "it-blk" && posts[0].do === "unblock" && posts[0].by === "board" && posts[0].answer === "use KEY-9"))
       fail("itemsView: the answer posted " + JSON.stringify(posts[0]));
     // CANCEL: behind a confirm. Keeping it posts nothing, confirming posts cancel and the row moves to finished.
-    await p.click('.it-row[data-item="it-run"] .it-cancel');
+    await p.click('.it-row[data-item="it-run"] .it-title');
+    await p.waitForSelector('.it-detail[data-detail="it-run"] .it-cancel');
+    await p.click('.it-cancel');
     await p.waitForSelector("#ask[open]");
     await p.click('#ask button:has-text("keep it")');
     if (posts.length !== 1) fail("itemsView: cancel posted before it was confirmed");
-    if (await p.locator('.it-row[data-item="it-done"] .it-cancel').count()) fail("itemsView: a finished item offers cancel");
-    await p.click('.it-row[data-item="it-run"] .it-cancel');
+    await p.click('.it-cancel');
     await p.waitForSelector("#ask[open]");
     await p.click('#ask button:has-text("cancel the item")');
-    await p.waitForFunction(() => !document.querySelector('.it-row[data-item="it-run"]'), null, { timeout: slow(10000) });
+    await p.waitForFunction(() => itemsList.find(i => i.id === "it-run").state === "finished", null, { timeout: slow(10000) });
+    await p.click('[data-act=back]');
+    await p.waitForFunction(() => !document.querySelector('.it-detail') && document.querySelector('.it-row[data-item="it-run"] .it-state').textContent === "cancelled", null, { timeout: slow(10000) });
     if (posts[1].do !== "cancel" || posts[1].id !== "it-run" || posts[1].by !== "board") fail("itemsView: the cancel posted " + JSON.stringify(posts[1]));
-    // THE FOLD opens: finished shows the cancelled one by its word.
-    await p.click('.it-head[data-state="finished"]');
+    // THE FOLD: finished shows the cancelled ones by their word, and folds shut.
     const fin = await p.evaluate(() => [...document.querySelectorAll('.it-group[data-state="finished"] .it-row')].map(r => r.dataset.item + ":" + r.querySelector(".it-state").textContent).join());
     if (fin !== "it-run:cancelled,it-done:finished,it-can:cancelled") fail("itemsView: the finished group reads " + fin);
     // DETAIL: a click on the row opens it with the note and the timeline, a second click shuts it.
     await p.click('.it-row[data-item="it-done"] .it-title');
     await p.waitForFunction(() => document.querySelectorAll('.it-detail[data-detail="it-done"] .it-history li b').length === 2, null, { timeout: slow(10000) });
     const det = await p.evaluate(() => document.querySelector('.it-detail[data-detail="it-done"]').textContent);
-    if (!det.includes("done: abc123") || !det.includes("orch@sg4") || !det.includes("c-it-done@sg4")) fail("itemsView: the detail reads " + det);
-    await p.click('.it-row[data-item="it-done"] .it-title');
-    if (await p.locator(".it-detail").count()) fail("itemsView: a second click did not shut the detail");
+    if (!det.includes("done: abc123") || !det.includes("orch@sg4") || !det.includes("room sg4")) fail("itemsView: the detail reads " + det);
+    await p.click('[data-act=back]');
+    if (await p.locator(".it-detail").count()) fail("itemsView: back did not return to the list");
     // THE EVENT: a new blocked item shows up and the badge follows, without the tab being touched.
     items = [mk("it-new", "blocked", { note: "again?" }), ...items];
     await p.evaluate(() => onItemEvent());
@@ -26488,6 +26494,52 @@ async function itemsViewSection(browser, base) {
     if (errors.length) fail("itemsView: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); hubMode = wasHub; }
   if (!bad) console.log("itemsView ok");
+}
+
+// THE ITEMS TAB, on the fixtures (`?itemsmock=1`): list, detail and blocked draw from js/items-mock.js, an answer posts through the mock,
+// a skin change repaints the tab, and css/items.css holds no raw colour. Nothing here touches a hub.
+async function itemsMockSection(browser, base) {
+  const css = fs.readFileSync(path.join(WEB_ROOT, "css", "items.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const raw = (css.match(/#[0-9a-fA-F]{3,8}\b/g) || []).concat((css.match(/\b(?:rgba?|hsla?)\([^)]*\)/g) || []).filter(c => !/var\(/.test(c)));
+  if (raw.length) fail("itemsMock: items.css holds raw colour: " + raw.slice(0, 5).join(" "));
+  const wasHub = hubMode;
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/_hub\/items/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
+    await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    await p.evaluate(() => switchView("items"));
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
+    const list = await p.evaluate(() => ({ stats: document.querySelectorAll(".it-stat").length, segs: document.querySelector(".it-prog").children.length,
+      mock: !!document.getElementById("it-mockbar"), blocked: document.querySelectorAll(".it-row.st-blocked").length }));
+    if (list.stats !== 4 || list.segs !== 8 || !list.mock || list.blocked < 1) fail("itemsMock: the list is " + JSON.stringify(list));
+    // A SKIN CHANGE repaints the tab: the same elements read another colour.
+    const paint = () => p.evaluate(() => [".it-stat.hot .it-v", ".it-prog span.d"].map(q => { const e = document.querySelector(q); return e ? getComputedStyle(e).color + "|" + getComputedStyle(e).backgroundColor : "none"; }).join());
+    const before = await paint();
+    await p.evaluate(() => document.documentElement.setAttribute("data-skin", "paper"));
+    if (await paint() === before) fail("itemsMock: a skin change did not repaint the tab: " + before);
+    await p.evaluate(() => document.documentElement.removeAttribute("data-skin"));
+    // THE DETAIL: a timeline of eight steps and the side column.
+    await p.click(".it-row .it-title >> nth=0");
+    await p.waitForSelector(".it-detail .it-step");
+    const det = await p.evaluate(() => ({ steps: document.querySelectorAll(".it-detail .it-step").length, side: !!document.querySelector(".it-side .it-big"),
+      est: /estimated/.test(document.querySelector(".it-side").textContent) }));
+    if (det.steps !== 8 || !det.side || !det.est) fail("itemsMock: the detail is " + JSON.stringify(det));
+    await p.click("[data-act=back]");
+    // BLOCKED: the answer posts through the mock and the row stops being blocked.
+    const id = await p.evaluate(() => document.querySelector(".it-row.st-blocked").dataset.item);
+    await p.click('.it-row[data-item="' + id + '"] [data-act=ask]');
+    await p.fill('.it-answer-box[data-id="' + id + '"]', "go ahead");
+    await p.click('.it-row[data-item="' + id + '"] .it-send');
+    await p.waitForFunction(i => { const it = itemsList.find(x => x.id === i); return it && it.state !== "blocked"; }, id, { timeout: slow(10000) });
+    if (errors.length) fail("itemsMock: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); hubMode = wasHub; }
+  if (!bad) console.log("itemsMock ok");
 }
 
 async function hubReposSection(browser, base) {
@@ -33638,6 +33690,7 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("itemsView", () => itemsViewSection(browser, base));
+    await unit("itemsMock", () => itemsMockSection(browser, base));
     await unit("hubRepos", () => hubReposSection(browser, base));
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
