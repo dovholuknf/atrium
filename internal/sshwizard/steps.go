@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/sshcfg"
+	"github.com/dovholuknf/atrium/internal/sshkey"
 )
 
 // Status is what one step found. A Check only reads, so none of these says a thing was changed.
@@ -510,7 +513,18 @@ func (r *Run) wantedKeys(ctx context.Context) (keys []wantKey, ok bool) {
 		if p.Room == r.Joined.Room || !fromAllows(from, p.Room) {
 			continue
 		}
-		if b := keyBody(p.Key); b != "" && !hasWant(keys, b) {
+		// THE HUB'S SET IS NOT TRUSTED TO BE CLEAN. A key with options in front, another key type or a room name that
+		// is not a name never reaches authorized_keys, whatever the hub sent.
+		if err := sshcfg.ValidRoom(p.Room); err != nil {
+			log.Printf("[ssh] dropped a relayed key: %v", err)
+			continue
+		}
+		b, err := sshkey.Clean(p.Key)
+		if err != nil {
+			log.Printf("[ssh] dropped the key relayed for room %s: %v", p.Room, err)
+			continue
+		}
+		if !hasWant(keys, b) {
 			keys = append(keys, wantKey{b, p.Room})
 		}
 	}

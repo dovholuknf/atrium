@@ -1,12 +1,12 @@
 package hubstore
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/sshkey"
 )
 
 // A room's ssh login: the user other rooms log in as, and the public key this room logs in with. See migration 0019.
@@ -45,21 +45,7 @@ func CheckSSHUser(u string) error {
 }
 
 // CleanSSHKey reads a public key line and returns it as `ssh-ed25519 <base64>`, the comment dropped.
-func CleanSSHKey(line string) (string, error) {
-	line = strings.TrimSpace(line)
-	if strings.ContainsAny(line, "\r\n") {
-		return "", errors.New("an ssh key is one line")
-	}
-	f := strings.Fields(line)
-	if len(f) < 2 || f[0] != "ssh-ed25519" {
-		return "", errors.New("an ssh key here is `ssh-ed25519 <base64>`")
-	}
-	blob, err := base64.StdEncoding.DecodeString(f[1])
-	if err != nil || len(blob) == 0 || len(blob) > 256 {
-		return "", errors.New("that ssh key's body is not base64")
-	}
-	return f[0] + " " + f[1], nil
-}
+func CleanSSHKey(line string) (string, error) { return sshkey.Clean(line) }
 
 // PutRoomSSH stores what a room published, replacing the last.
 func (s *Store) PutRoomSSH(room, user, key string, port int, on bool) error {
