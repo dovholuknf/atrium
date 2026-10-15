@@ -167,7 +167,7 @@ func mintOwnRoom(store *hubstore.Store, side *hubSide, transport string, keys li
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
-	got, err := d.Enrol(ctx, defaultRoomName(), j.Secret)
+	got, err := d.Enrol(ctx, r.Name, j.Secret)
 	if err != nil {
 		return err
 	}

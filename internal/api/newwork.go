@@ -107,7 +107,8 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	// A WORKTREE THAT IS ALREADY THERE, with its live card, is the answer. Nothing starts a second one.
 	if wt.Existed {
 		if t := s.liveCardIn(wt.Path); t != nil {
-			ans.Card = t.ID
+			// the card's own spelling of the folder, which is what the first answer gave: git says it by its real path
+			ans.Card, ans.Worktree = t.ID, t.Worktree
 			writeJSON(w, http.StatusOK, ans)
 			return
 		}
@@ -182,8 +183,15 @@ func (s *Server) liveCardIn(dir string) *store.Task {
 	return nil
 }
 
+// dirKey is a folder as two spellings of it compare equal. git answers a worktree by its real path, while a card keeps
+// the path its runner was launched in, so /var and /private/var on macOS and a short and a long name on Windows are
+// the same folder. A folder that is not there is compared as written.
 func dirKey(p string) string {
-	return strings.ToLower(strings.TrimRight(filepath.ToSlash(filepath.Clean(filepath.FromSlash(p))), "/"))
+	p = filepath.Clean(filepath.FromSlash(p))
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		p = real
+	}
+	return strings.ToLower(strings.TrimRight(filepath.ToSlash(p), "/"))
 }
 
 // newWorkBase is the ref a branch called name that exists nowhere yet starts from. See the header.

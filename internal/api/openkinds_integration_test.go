@@ -233,7 +233,15 @@ func TestOpenAHeldLinkOnAPickedRoomLaunchesHereOrAnswersTheLiveCard(t *testing.T
 // THE LIVE CARD OF A LINK, as the hub asks for it: found by the link's tag whatever the key's case, and not once done.
 func TestOpenLiveAnswersTheLiveCardOfAKey(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
-	oh.checkout(t, "O", "R")
+	oh.checkout(t, "O", "R") // the folder the pasted URL names: a case-sensitive disk has no "o/r" for it
+	inner := oh.srv.Recognise
+	oh.srv.Recognise = func(url string) (*store.Resolved, error) {
+		got, err := inner(url)
+		if got != nil && strings.Contains(url, "/issues/") {
+			got.Vars = map[string]string{"host": "github.com", "org": "O", "repo": "R", "num": "3"}
+		}
+		return got, err
+	}
 	_, out := oh.open(t, "https://github.com/O/R/issues/3")
 	card, _ := out["card"].(string)
 	if card == "" {

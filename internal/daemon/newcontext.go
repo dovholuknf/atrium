@@ -908,6 +908,10 @@ func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 	if d.act.dialogOpen(taskID) {
 		return false
 	}
+	// The turn count is read BEFORE busy. A turn that begins between the two reads then shows as busy, or as a count
+	// that is still the old one. Read the other way round, the count includes that turn while busy does not, and the
+	// prompt just typed is taken as having been answered by it and typed again.
+	turns := d.act.turnsBegun(taskID)
 	busy := d.ncBusy(taskID)
 	if c.prompted == 0 {
 		return !busy || d.midTurnInputFor(taskID)
@@ -916,7 +920,7 @@ func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 	if since < d.hk.ncTiming.promptGap {
 		return false
 	}
-	switch turns := d.act.turnsBegun(taskID); {
+	switch {
 	case turns > c.promptTurn:
 		return !busy || d.midTurnInputFor(taskID)
 	case turns == c.promptTurn:

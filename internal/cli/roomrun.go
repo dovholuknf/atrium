@@ -542,11 +542,32 @@ func selectLive(name string, tasks []*store.Task) []string {
 
 // defaultRoomName is the machine's name, because that is what somebody would
 // have typed.
-func defaultRoomName() string {
-	if h := hostname(); h != "" {
-		return h
+//
+// A hostname is whatever the machine was told it is, and a macOS one can carry a space or an apostrophe ("Clint's Mac")
+// that a room name refuses, since the name goes into a certificate and a URL. Every character the hub's name check
+// would turn away becomes a hyphen, and the result is cut to the 64 it allows, so the first run on any machine can
+// make its room.
+func defaultRoomName() string { return roomNameOf(hostname()) }
+
+// roomNameOf is host as a room name. See defaultRoomName.
+func roomNameOf(host string) string {
+	var b strings.Builder
+	for _, c := range host {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == '.':
+			b.WriteRune(c)
+		default:
+			b.WriteByte('-')
+		}
 	}
-	return "room"
+	name := b.String()
+	if len(name) > 64 {
+		name = name[:64]
+	}
+	if strings.Trim(name, "-.") == "" {
+		return "room"
+	}
+	return name
 }
 
 func hostname() string {
