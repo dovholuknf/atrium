@@ -1353,6 +1353,8 @@ function repaintLists(signal, fromStore) {
   const render = {
     board: renderBoard, stack: renderStack, perms: renderPerms,
     runners: renderRunners, terms: renderTerms,
+    // The chat view's list is the terminals' list. The conversation beside it is the phone page, live by its own stream.
+    chat: () => renderTermList(),
     // HISTORY IS A VIEW LIKE THE REST and was missing from this table, so any
     // event arriving while it was open threw "render is not a function" and
     // took the repaint with it: the list stopped updating and the only sign was

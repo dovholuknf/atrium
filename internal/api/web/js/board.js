@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = cardWaiting;
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "chat", "history", "usage", "audit", "chatter", "pulls", "hubrepos", "backlog", "items"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -419,6 +419,8 @@ function switchView(name) {
   if (name !== "terms" && typeof lrLeave === "function") lrLeave("tab");
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
   VIEWS.forEach(v => document.getElementById(v).hidden = v !== name);
+  // The session list is lent to the chat view while it is open. See js/chat.js.
+  if (typeof chatView === "function") chatView(name === "chat");
   // The board's toolbar is a sibling of the board rather than a child, so that
   // redrawing the columns does not take the control you just clicked with it.
   document.getElementById("board-bar").hidden = name !== "board";

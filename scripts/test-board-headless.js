@@ -716,6 +716,12 @@ const server = http.createServer((req, res) => {
   }
   // The xterm bundle off disk, so a real terminal is built. Confined to
   // /vendor/ under the web root.
+  // The phone page itself, which the chat tab embeds (`chatTab`).
+  if (url === "/m/" || url === "/m") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(fs.readFileSync(path.join(WEB_ROOT, "m", "index.html")));
+    return;
+  }
   if ((url.startsWith("/vendor/") || url.startsWith("/m/")) && !url.includes("..")) {
     const file = path.join(WEB_ROOT, url);
     fs.readFile(file, (err, body) => {
@@ -9010,13 +9016,13 @@ async function tabsOrderSection(browser, base) {
     await p.click(row("usage") + ' button[aria-label^="move up"]');
     await p.click(row("usage") + ' button[aria-label^="move up"]');
     v = await view(p);
-    const want = ["stack", "board", "terms", "usage", "pulls", "history"];
-    if (v.order.slice(0, 6).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
+    const want = ["stack", "board", "terms", "chat", "usage", "pulls", "history"];
+    if (v.order.slice(0, 7).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
     if (!/"usage"/.test(v.saved || "")) fail("tabsOrder: the order is not saved: " + v.saved);
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     v = await view(p);
-    if (v.order.slice(0, 6).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
+    if (v.order.slice(0, 7).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
 
     // place: history hidden, rooms in the menu
     await arrange(p);
@@ -10436,6 +10442,117 @@ async function copySelectSection(browser, base) {
   if (errors.length) fail("the copy on select page threw: " + errors.join(" | "));
   landList = []; landPerms = [];
   tasksMode = was;
+}
+
+// ── the chat tab (f-chat-tab) ──────────────────────────────────────────────
+// A top-nav tab whose left side is the terminals' session list and whose right side is the phone's conversation view,
+// embedded. The tab opens, a row selects a card (and does not attach it), replies are bubbles on the left and the
+// operator's own on the right inside a capped column, the working line spins while the card works, a send goes to the
+// card, and the terminal button and the terminals tab's chat button switch back and forth. `CHAT_SHOTS=<dir>` writes the
+// before (terminals) and after (chat) pictures at 1400x900.
+async function chatTabSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("chat-a", { supervised: true, status: "running", display_title: "chat a", activity: { what: "thinking", seconds: 2 }, created_at: "2026-09-19T12:00:00Z" });
+  landCard("chat-b", { supervised: true, status: "running", display_title: "chat b", created_at: "2026-09-19T12:05:00Z" });
+  landList = [LAND["chat-a"], LAND["chat-b"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const sent = [];
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    source: "transcript", more: false, replies: [
+      { at: "2026-10-15T10:00:00Z", text: "Here is **the plan**:\n\n- one\n- two", truncated: false },
+      { at: "2026-10-15T10:05:00Z", text: "And a second reply.", truncated: false }] }) }));
+  await ctx.route("**/v1/tasks/*/message", route => {
+    sent.push({ url: route.request().url(), body: route.request().postData() || "" });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) });
+  });
+  const tag = "chatTab: ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const shot = async name => {
+      if (!process.env.CHAT_SHOTS) return;
+      fs.mkdirSync(process.env.CHAT_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHAT_SHOTS, name) });
+    };
+    // before: the terminals tab as it is
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector("#term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await p.waitForTimeout(500);
+    await shot("chat-before-terminals-1400x900.png");
+    // the tab opens, with the terminals' own list in it
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    if (await p.evaluate(() => !document.getElementById("terms").hidden)) fail(tag + "the terminals view is still showing");
+    // a row selects, it does not attach
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    if (await p.evaluate(() => !!(typeof termTask !== "undefined" && termTask))) fail(tag + "selecting a row attached a terminal");
+    if (!await p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"))) fail(tag + "the selected row is not marked");
+    const fr = p.frames().find(f => /\/m\/\?chat=1/.test(f.url()));
+    if (!fr) { fail(tag + "no phone page frame"); return; }
+    await fr.waitForSelector("#m-replies .reply", { timeout: slow(10000) });
+    await fr.waitForSelector("#m-compose textarea", { timeout: slow(10000) });
+    // the phone's own navigation is gone, the column is capped and centred
+    const lay = await fr.evaluate(() => {
+      const r = el => el.getBoundingClientRect();
+      const first = document.querySelector("#m-replies .reply");
+      return { barHidden: getComputedStyle(document.querySelector(".bar")).display === "none", homeHidden: getComputedStyle(document.getElementById("m-home")).display === "none",
+        topHidden: getComputedStyle(document.querySelector(".sheet-top")).display === "none", w: window.innerWidth, left: r(first).left, right: r(first).right,
+        compose: { left: r(document.getElementById("m-compose")).left, right: r(document.getElementById("m-compose")).right } };
+    });
+    if (!lay.barHidden || !lay.homeHidden || !lay.topHidden) fail(tag + "the phone's navigation shows: " + JSON.stringify(lay));
+    if (lay.right - lay.left > 700) fail(tag + "the column is not capped: " + JSON.stringify(lay));
+    if (Math.abs(lay.compose.left - (lay.w - lay.compose.right)) > 2) fail(tag + "the composer is not centred: " + JSON.stringify(lay));
+    // the working line spins while the card works
+    await fr.waitForFunction(() => { const w = document.getElementById("m-working"); return w && !w.hidden && /thinking/.test(w.textContent); }, null, { timeout: slow(8000) });
+    // send goes to the card, and the operator's words come back as a right bubble
+    await fr.fill("#m-compose textarea", "hello from the chat tab");
+    await fr.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+    await fr.click("#m-compose .mc-send");
+    await fr.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+    if (!sent.length || !/chat-a\/message$/.test(sent[sent.length - 1].url) || !/hello from the chat tab/.test(sent[sent.length - 1].body)) fail(tag + "the send did not reach the card: " + JSON.stringify(sent));
+    const sides = await fr.evaluate(() => {
+      const r = el => el.getBoundingClientRect();
+      const theirs = document.querySelector("#m-replies .reply:not(.mine)"), mine = document.querySelector("#m-replies .reply.mine");
+      return { theirsLeft: r(theirs).left, theirsRight: r(theirs).right, mineLeft: r(mine).left, mineRight: r(mine).right, w: window.innerWidth,
+        md: !!theirs.querySelector(".md strong") };
+    });
+    if (!sides.md) fail(tag + "a reply is not rendered as markdown");
+    if (!(sides.mineRight > sides.theirsRight - 1 && sides.mineLeft > sides.theirsLeft)) fail(tag + "own bubble is not to the right of the reply: " + JSON.stringify(sides));
+    await p.waitForTimeout(500);
+    await shot("chat-after-chat-1400x900.png");
+    // terminal switch, and back
+    await p.click("#chat-to-term");
+    await p.waitForFunction(() => !document.getElementById("terms").hidden && termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });
+    if (await p.evaluate(() => !document.getElementById("term-layout").contains(document.getElementById("term-list")))) fail(tag + "the list was not given back to the terminals view");
+    if (await p.evaluate(() => !!document.querySelector("#chat-frame"))) fail(tag + "the conversation frame outlived the chat view");
+    await p.click("#t-chat");
+    await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    // another row switches the conversation
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-b"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-b"]', { timeout: slow(5000) });
+    if (await p.evaluate(() => document.querySelectorAll("#chat-frame-host iframe").length) !== 1) fail(tag + "more than one conversation frame");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
 // ── clean copy: a selection of a reply is copied as written ───────────────
@@ -31499,7 +31616,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, chatTab: chatTabSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -33410,6 +33527,7 @@ async function main() {
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));
     await unit("cleanCopy", () => cleanCopySection(browser, base));
+    await unit("chatTab", () => chatTabSection(browser, base));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));
     await unit("crossedPane", () => crossedPaneSection(browser, base));

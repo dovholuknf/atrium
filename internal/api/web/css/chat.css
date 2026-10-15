@@ -1,0 +1,13 @@
+/* The chat tab. The list on the left is the terminals' `#term-list`, lent to this view by js/chat.js; the conversation on
+   the right is the phone page in an iframe (m/chat-embed.css). */
+main > #chat { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+#chat[hidden] { display: none; }
+.chat-layout { display: flex; gap: var(--sp-4); align-items: stretch; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.chat-pane { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--r-md); overflow: hidden; background: var(--shell-0); }
+.chat-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; min-width: 0; }
+.chat-bar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-frame { flex: 1 1 auto; min-height: 0; position: relative; }
+.chat-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; }
+.chat-empty { margin: 0; padding: 48px 24px; text-align: center; opacity: .7; }
+/* The row whose conversation is open. The terminals' own "on" look is the attached terminal's, which this view has none of. */
+#chat .term-list .card.on { box-shadow: inset 3px 0 0 var(--blue), 0 0 0 1px var(--blue); }
