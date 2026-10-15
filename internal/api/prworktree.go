@@ -250,7 +250,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 // forge read. A room that cannot say answers false, and the repo is found after the read as it always was.
 func (s *Server) haveCheckout(p *store.Provider, host, org, repo string) bool {
 	if p != nil {
-		if path := store.ProviderPath(p.Root, org, repo); path != "" && isCheckout(filepath.FromSlash(path)) {
+		if findProviderCheckout(p.Root, org, repo) != "" {
 			return true
 		}
 	}
@@ -263,9 +263,12 @@ func (s *Server) haveCheckout(p *store.Provider, host, org, repo string) bool {
 func (s *Server) repoCheckout(ctx context.Context, p *store.Provider, host, org, repo string) (repoPath, wtRoot string, cloned bool, status int, err error) {
 	if p != nil {
 		repoPath, wtRoot = store.ProviderPath(p.Root, org, repo), p.WorktreeRoot
-		// A pasted link's case is not the folder's: the lower-case folder is the same repo on a case-sensitive disk.
-		if lower := store.ProviderPath(p.Root, strings.ToLower(org), strings.ToLower(repo)); !isCheckout(filepath.FromSlash(repoPath)) && isCheckout(filepath.FromSlash(lower)) {
-			repoPath = lower
+		// A pasted link's case is not the folder's: the folder named the same ignoring case is the same repo on a
+		// case-sensitive disk, and the path keeps the folder's own spelling.
+		if !isCheckout(filepath.FromSlash(repoPath)) {
+			if found := findProviderCheckout(p.Root, org, repo); found != "" {
+				repoPath = found
+			}
 		}
 	}
 	if repoPath == "" || !isCheckout(filepath.FromSlash(repoPath)) {
