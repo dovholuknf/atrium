@@ -519,18 +519,22 @@ awaiting review (item 83). Such a worker is itself subject and parks on the same
 to park. So a director and its idle workers wind down together, workers first, and none is parked while a worker it is
 waiting on is still working.
 
-**The setting.** `idle_park_after`, in seconds, daemon-wide, in the gear beside keep-alive. Default 7200 (2 hours).
-`off` disables the whole section. A floor of 30 minutes, so a mistyped value cannot park a card between two of its
-own turns.
+**The setting.** `idle_park_after`, in seconds, daemon-wide, in the gear beside keep-alive. **Default off**, and so is an empty or unreadable value: a new room or a
+fresh store never parks a card. Amended 2026-10-14 (u-bug-idle-park-default-on): clint reads running cards as what he
+is working on, and a 2 hour default parked his own cards. A number turns it on, with a floor of 30 minutes so a
+mistyped value cannot park a card between two of its own turns. 7200 is only what the settings page suggests.
 
 ### Who is subject
 
+Only when the setting is on, and only these:
+
 - **Agent cards are subject.** `origin:agent` is on every card an agent launched, directors and subagents alike.
-- **clint's own cards are exempt unless he opts in.** A card with no `origin:agent` (the board's launch dialog, a
-  joined session, a fixture) is never parked on the clock. It opts in with the tag `atrium:park-idle`, set from the
-  card menu. The restart rule in section 4 still applies to it, as today.
-- **The orchestrator card is one of clint's.** `atrium-87300` has no `origin:agent` (its tags are `orchestrators`),
-  so it is exempt by this rule until clint tags it `atrium:park-idle`. That is the opt-in, and question 7 asks him.
+- **A card a human started is never subject.** The board's launch dialog, a joined session, a fixture, the
+  orchestrator when clint started it: none is parked on the clock, and no tag changes that. `atrium:park-idle` and
+  `atrium:orchestrator` used to opt a card in and no longer do. The restart rule in section 4 still applies to it,
+  as today.
+- **The orchestrator rule still holds for an agent-launched orchestrator.** Tagged `atrium:orchestrator` and
+  `origin:agent`, it parks only when no other card has a live runner.
 - **Pinned is not exempt by itself.** A pin is about where a card sits on the board, not about keeping a process up.
 - **Never:** a fixture, a shell, a card with a lent session in use, a throwaway card.
 

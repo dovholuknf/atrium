@@ -1685,8 +1685,9 @@ function fillIdlePark(s) {
   min.placeholder = Math.round(idlePark.def / 60);
   min.disabled = !on.checked;
   const hint = document.getElementById("s-idlepark-hint");
-  if (hint) hint.textContent = "Default " + Math.round(idlePark.def / 60) + " minutes, and the least it takes is " +
-    Math.round(idlePark.min / 60) + ". Off keeps an idle card running until you park it.";
+  if (hint) hint.textContent = "Off by default. Only a card an agent launched is ever parked, never one you started. " +
+    "Turned on, it suggests " + Math.round(idlePark.def / 60) + " minutes and the least it takes is " +
+    Math.round(idlePark.min / 60) + ".";
 }
 
 async function saveIdlePark() {

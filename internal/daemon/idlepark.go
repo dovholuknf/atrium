@@ -10,8 +10,9 @@ import (
 // This is the question only. The reaper tick that asks it, and the clock, are
 // the next stage.
 
-// ParkIdleTag opts one of the operator's own cards into idle parking. Agent cards
-// (`origin:agent`) are subject without it.
+// ParkIdleTag once opted one of the operator's own cards into idle parking. It no
+// longer does: only agent cards (`origin:agent`) are subject. It still asks for a
+// handoff, see takesHandoff.
 const ParkIdleTag = "atrium:park-idle"
 
 // OrchestratorTag marks the orchestrator card. It is its OWN rule and not the
@@ -37,16 +38,17 @@ func (d *Daemon) fixtureCards() map[string]bool {
 	return out
 }
 
-// idleParkSubject reports whether a card is one the idle clock may park:
-// an agent's card, or one of the operator's that opted in, or the orchestrator.
-// Never a fixture, a throwaway, or a card with a lent session in use. A shell is
-// not a card's runner (it lives in the supervisor's other map), so it never gets
-// here.
+// idleParkSubject reports whether a card is one the idle clock may park: a card an
+// agent launched, and only that. A card a human started is never parked on a
+// clock, whatever it is tagged, because the operator reads running cards as what
+// they are working on. Never a fixture, a throwaway, or a card with a lent session
+// in use. A shell is not a card's runner (it lives in the supervisor's other map),
+// so it never gets here.
 func (d *Daemon) idleParkSubject(t *store.Task) bool {
 	if t == nil || t.Throwaway || d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil {
 		return false
 	}
-	return hasTag(t.Tags, OriginAgentTag) || hasTag(t.Tags, ParkIdleTag) || hasTag(t.Tags, OrchestratorTag)
+	return hasTag(t.Tags, OriginAgentTag)
 }
 
 // othersLive reports whether any card other than `except` has a live runner.

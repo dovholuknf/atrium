@@ -18,6 +18,10 @@ func quickPark(t *testing.T, d *Daemon) {
 	t.Helper()
 	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
 	d.hk.idleGoneWait = 200 * time.Millisecond
+	// Parking is off until set, so a test that wants it says so, at the old two hours.
+	if err := d.st.SetSetting(store.SettingIdleParkAfter, "7200"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // idleAgent is an agent card with a runner, sitting at its prompt.
@@ -222,6 +226,17 @@ func TestIdleParkWorkersFirst(t *testing.T) {
 	}
 }
 
+// Nothing is parked on a clock until the operator sets one, agent card or not.
+func TestIdleParkDoesNothingUntilSet(t *testing.T) {
+	d := testDaemon(t)
+	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
+	card := idleAgent(t, d, "unset", store.StatusNeedsInput)
+	d.parkIdle(idleAfter(100 * time.Hour))
+	if parkedNow(t, d, card.ID) {
+		t.Fatal("an agent card was parked with the setting unset")
+	}
+}
+
 func TestIdleParkExemptsOperatorCards(t *testing.T) {
 	d := testDaemon(t)
 	quickPark(t, d)
@@ -237,13 +252,11 @@ func TestIdleParkExemptsOperatorCards(t *testing.T) {
 	if err := d.st.SetStatus(opted.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
 	}
-	// Opted in cards take a handoff first, so give this one nothing to write to.
-	d.idle.put(opted.ID, &handoffMark{written: true, end: time.Now().Add(time.Hour), base: opted.CreatedAt, file: "HANDOFF.x.md"})
 	liveRunner(d, opted.ID)
 
 	d.parkIdle(idleAfter(3 * time.Hour))
-	if !settles(t, d, opted.ID) {
-		t.Fatal("an opted-in card was not parked")
+	if parkedNow(t, d, opted.ID) {
+		t.Fatal("an operator card tagged park-idle was parked")
 	}
 	if parkedNow(t, d, plain.ID) {
 		t.Fatal("an operator card with no tag was parked")
@@ -255,8 +268,17 @@ func TestIdleParkSetting(t *testing.T) {
 		t.Skip("slow: real ptys, processes and timers")
 	}
 	d := testDaemon(t)
-	if got, on := d.st.IdleParkAfter(); !on || got != 2*time.Hour {
-		t.Fatalf("default is %v %v, want 2h on", got, on)
+	if got, on := d.st.IdleParkAfter(); on {
+		t.Fatalf("default is %v on, want off", got)
+	}
+	quickPark(t, d)
+	card := idleAgent(t, d, "offcard", store.StatusNeedsInput)
+	if err := d.st.SetSetting(store.SettingIdleParkAfter, ""); err != nil {
+		t.Fatal(err)
+	}
+	d.parkIdle(idleAfter(100 * time.Hour))
+	if settlesTo(t, d, card.ID, false) {
+		t.Fatal("the default parked a card")
 	}
 	if err := d.st.SetSetting(store.SettingIdleParkAfter, "60"); err != nil {
 		t.Fatal(err)
@@ -270,8 +292,6 @@ func TestIdleParkSetting(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingIdleParkAfter, "off"); err != nil {
 		t.Fatal(err)
 	}
-	quickPark(t, d)
-	card := idleAgent(t, d, "offcard", store.StatusNeedsInput)
 	d.parkIdle(idleAfter(100 * time.Hour))
 	if settlesTo(t, d, card.ID, false) {
 		t.Fatal("off parked a card")

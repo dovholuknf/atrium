@@ -8,12 +8,14 @@ import (
 )
 
 // SettingIdleParkAfter is how long a subject card sits idle before it is parked.
-// Whole seconds, or `off`. Empty means the default. See
-// docs/rnd/keepalive-policy-design.md section 7.
+// Whole seconds, or `off`. Empty means off: atrium never parks a card on its own
+// unless the operator turned this on. See docs/rnd/keepalive-policy-design.md
+// section 7.
 const SettingIdleParkAfter = "idle_park_after"
 
 const (
-	// DefaultIdleParkAfter is two hours.
+	// DefaultIdleParkAfter is not a default of the setting, which is off. It is the
+	// value the settings page offers when the operator switches parking on.
 	DefaultIdleParkAfter = 2 * time.Hour
 	// MinIdleParkAfter is the floor, so a mistyped value cannot park a card
 	// between two of its own turns.
@@ -21,20 +23,18 @@ const (
 )
 
 // ParseIdleParkAfter reads a stored value: the duration and whether idle parking
-// is on at all. Empty is the default, `off` is off, a number under the floor is
-// raised to it, and anything unreadable is the default rather than an error, since
-// the daemon must keep running on whatever is stored.
+// is on at all. Empty and `off` are off, a number under the floor is raised to it,
+// and anything unreadable is off rather than an error, since the daemon must keep
+// running on whatever is stored and parking is never the safe guess.
 func ParseIdleParkAfter(v string) (time.Duration, bool) {
 	v = strings.TrimSpace(strings.ToLower(v))
 	switch v {
-	case "":
-		return DefaultIdleParkAfter, true
-	case "off":
+	case "", "off":
 		return 0, false
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
-		return DefaultIdleParkAfter, true
+		return 0, false
 	}
 	d := time.Duration(n) * time.Second
 	if d < MinIdleParkAfter {
@@ -47,7 +47,7 @@ func ParseIdleParkAfter(v string) (time.Duration, bool) {
 func (s *Store) IdleParkAfter() (time.Duration, bool) {
 	v, err := s.Setting(SettingIdleParkAfter)
 	if err != nil {
-		return DefaultIdleParkAfter, true
+		return 0, false
 	}
 	return ParseIdleParkAfter(v)
 }

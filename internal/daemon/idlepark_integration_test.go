@@ -11,7 +11,7 @@ import (
 func orchestratorCard(t *testing.T, d *Daemon) *store.Task {
 	t.Helper()
 	card := peerCard(t, d, "orch")
-	if err := d.st.SetTags(card.ID, []string{OrchestratorTag}); err != nil {
+	if err := d.st.SetTags(card.ID, []string{OriginAgentTag, OrchestratorTag}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := d.st.Get(card.ID)
@@ -109,9 +109,8 @@ func TestOrchestratorIgnoresFixturesAndShells(t *testing.T) {
 func TestOrchestratorRuleIsNotTheOptInTag(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	// The opt-in tag on an operator card has no orchestrator condition, and the
-	// orchestrator tag alone makes a card subject. An untagged operator card is
-	// neither.
+	// A card a human started is never subject, whatever it is tagged: not plain,
+	// not park-idle, not orchestrator.
 	plain := peerCard(t, d, "plain")
 	if mayPark(t, d, plain.ID) {
 		t.Fatal("an untagged operator card is subject")
@@ -120,11 +119,18 @@ func TestOrchestratorRuleIsNotTheOptInTag(t *testing.T) {
 	if err := d.st.SetTags(opt.ID, []string{ParkIdleTag}); err != nil {
 		t.Fatal(err)
 	}
+	if mayPark(t, d, opt.ID) {
+		t.Fatal("an operator card tagged park-idle is subject")
+	}
+	humanOrch := peerCard(t, d, "humanorch")
+	if err := d.st.SetTags(humanOrch.ID, []string{OrchestratorTag}); err != nil {
+		t.Fatal(err)
+	}
+	if mayPark(t, d, humanOrch.ID) {
+		t.Fatal("an operator-started orchestrator is subject")
+	}
 	busy := peerCard(t, d, "busy2")
 	liveRunner(d, busy.ID)
-	if !mayPark(t, d, opt.ID) {
-		t.Fatal("an opted-in card is held by the orchestrator's rule")
-	}
 	orch := orchestratorCard(t, d)
 	liveRunner(d, orch.ID)
 	if mayPark(t, d, orch.ID) {
