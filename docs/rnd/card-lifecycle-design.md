@@ -305,6 +305,32 @@ GitHub PR paste on the hub's pulls tab work end to end.
 | 11 | `r-card-idle-cost` | idle reminder, disk and cost on the card | 5 |
 | 12 | `f-card-move-inventory` | moving a card with its inventory | room handoff |
 
+## 15. How a pasted link becomes an item
+
+Added 2026-10-15, after `docs/rnd/item-lifecycle-design.md` made the item the unit of work. Sections 3 to 14 predate it
+and still hold. This one says where the two meet.
+
+- **A link card is an item.** "Nothing runs without an item" holds for a paste too. The hub's open verb makes the item
+  in the same step as the claim, before it asks a room to materialise. The item id is derived from the claim key, so
+  the same link is the same item: `l-<slug of host/org/repo#N>` for a PR or issue, `l-zendesk-<N>`, `l-discourse-<N>`.
+  There is no backlog row behind it, and the item says `origin: link` with the URL, where a backlog item says its
+  backlog id. Nothing in the backlog list changes.
+- **One claim, one item, many cards.** The claim table keeps naming the card that holds the link. The item is what the
+  second paste and a re-paste attach to: a re-paste of a closed link (Q3) is a new generation of the same item, and the
+  earlier runs are the item's earlier generations, so the drawer's "from the earlier review" reads from them.
+- **Steps that apply.** A link item does not walk designed, approved and landed. A PR review has two: **reviewed**
+  (the walk finished, findings dispositioned) and **closed**. A support ticket has one: **closed**. The other steps are
+  shown as "not applicable", not as pending. Step states stay derived from evidence: reviewed comes from the review
+  row, closed from `freed_at` on every inventory row.
+- **Tokens and cost** are the item's. The card's cost line (section 13) is the item's cost for its generation, so
+  there is one number and not two.
+- **Launch.** The materialise step starts the card with `--item <id>`, but without the isolation that `item: true`
+  implies today. The item design (its section 8) pulls "has an assignment" apart from "cannot talk", and a link card
+  needs the first and not the second: it must say, ask and close. If that split has not landed when phase 2 is built,
+  phase 2 launches without `--item` and the hub records the item itself, joined later.
+- **Migration.** `origin` and `url` columns on the hub's item row (`ADD COLUMN`, which the runner tolerates), added at
+  the END of the hubstore slice. Section 6's `card_resources` is likewise added at the end of the room's slice.
+
 ## Interview
 
 Asked one at a time, on this card. Each answer is recorded here and overrules the body.
@@ -475,3 +501,29 @@ clint, 2026-10-07: "c but 'no budget' is the default and only applied if the use
 6. Answered (Interview, Q8). Elevation for tunnelers is Q9.
 7. Answered (Interview, Q10).
 8. Answered (Interview, Q11). The interview is complete.
+
+## Decisions
+
+The interview settled most choices and its answers overrule the body. These remained, each with the recommended
+answer. Nobody has been asked.
+
+1. **Item identity for a link.** Recommend a synthetic id derived from the claim key (section 15), `origin: link`, no
+   backlog row. Filing a backlog item per paste would clutter a backlog that is for planned work.
+2. **If the item/isolation split has not landed by phase 2.** Recommend phase 2 launches without `--item` and the hub
+   records the item itself, joined later, so the paste does not wait on `rd-item-lifecycle`.
+3. **Step names a link item shows.** Recommend `reviewed` and `closed` for a PR, `closed` for a ticket, the rest "not
+   applicable".
+4. **A link no recogniser matches.** Recommend the door says so and offers a plain card in a scratch folder, so a
+   paste is never a dead end.
+5. **Issues (GitHub, Bitbucket).** Recommend they ship in phase 8 with the support kinds, a worktree off the default
+   branch named `issue-<N>`, and no review row.
+6. **Ports.** Recommend the room allocates by a bind check (section 9) and records each as an inventory row, and the
+   hub never allocates. Rooms on different machines cannot collide, and two rooms on one machine split the range by
+   room name.
+7. **Untrusted text.** Recommend ticket and post text reaches the card only as a quoted file in the card's folder that
+   the seed prompt names, never inlined into the seed (section 11), and a support card holds no forge or overlay
+   credentials.
+8. **gwt.** `git-worktree.ps1` is not on this machine, so gwt's behaviour is taken from the earlier design and the
+   backlog text and was not re-read. Recommend the worker for `r-gwt-calls-atrium-open` reads it first.
+9. **Phase order.** Recommend keeping section 14. Phase 1 (`r-hub-recognisers`) fits one worker, leaves the board
+   working, and fixes `u-pulls-no-recogniser-on-hub` alone, so it can land first.
