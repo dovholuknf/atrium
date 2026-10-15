@@ -9,7 +9,8 @@ import (
 )
 
 // newPtyHost is `atrium ptyhost`: the process that owns the pseudo terminals so a daemon can restart without ending
-// them. Hidden, and started by nothing yet. ptyhost.Start launches it detached from a copy of the binary.
+// them. Hidden, and started by the room when the pty_host setting is on: ptyhost.Start launches it detached from a copy
+// of the binary.
 // See docs/terminal/ptyhost-protocol.md.
 func newPtyHost() *cobra.Command {
 	var stateDir, build string
