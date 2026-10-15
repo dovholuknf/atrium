@@ -31,7 +31,8 @@ function Compress-Text {
 # The -EncodedCommand argument for a Windows remote: the script gzipped inside a short loader.
 function New-EncodedCommand {
     param([string] $script)
-    $boot = "`$ErrorActionPreference='Continue';`$ProgressPreference='SilentlyContinue';" +
+    # No ErrorActionPreference here: a fresh powershell.exe is already at Continue, and the bytes are the room's to spare.
+    $boot = "`$ProgressPreference='SilentlyContinue';" +
         "iex (([IO.StreamReader]::new([IO.Compression.GZipStream]::new([IO.MemoryStream]::new(" +
         "[Convert]::FromBase64String('$(Compress-Text $script)')),[IO.Compression.CompressionMode]::Decompress))).ReadToEnd())"
     [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($boot))
@@ -240,16 +241,16 @@ function Read-Sha256File {
 
 # THE DISCOVERY, as remote text and tested here over fake directories. J joins any number of single path segments, because
 # Windows PowerShell 5.1 Join-Path takes two, and [IO.Path]::Combine does not look at drives. On a Unix disk (the tests) a backslash becomes a slash. With an explicit directory that is the answer, found or not. Otherwise the
-# first of C:\msys64, <prefix>\msys64 and the directory two above any mingw64\bin on the PATH record that has usr\bin\pacman.exe.
+# first of C:\msys64 (or $SysDir, which only a test sets, so what the host has at C:\msys64 cannot answer for it), <prefix>\msys64 and the directory two above any mingw64\bin on the PATH record that has usr\bin\pacman.exe.
 $script:CFind = @'
-function Msys2Cands($ex, $pre, $rec) {
+function Msys2Cands($ex, $pre, $rec, $sys) {
     if ($ex) { return @($ex) }
-    $c = @('C:\msys64', (J $pre 'msys64'))
+    $c = @($(if ($sys) { $sys } else { 'C:\msys64' }), (J $pre 'msys64'))
     foreach ($d in $rec) { if ($d -match '[\\/]mingw64[\\/]bin$') { $c += ($d -replace '[\\/]mingw64[\\/]bin$', '') } }
     @($c)
 }
-function Msys2Find($ex, $pre, $rec) {
-    foreach ($d in (Msys2Cands $ex $pre $rec)) { if (Test-Path -LiteralPath (J $d 'usr' 'bin' 'pacman.exe')) { return $d } }
+function Msys2Find($ex, $pre, $rec, $sys) {
+    foreach ($d in (Msys2Cands $ex $pre $rec $sys)) { if (Test-Path -LiteralPath (J $d 'usr' 'bin' 'pacman.exe')) { return $d } }
 }
 '@
 
@@ -476,7 +477,7 @@ $script:CActs = @{}
 
 # Probe MSYS2 and its tools. Writes nothing.
 $script:CActs['cmsys'] = @{ Vars = @('PathPre', 'Rec', 'Msys2Dir', 'Prefix'); Uses = @('Find'); Body = @'
-$R = @($Rec -split ';' | Where-Object { $_ }); $M = Msys2Find $Msys2Dir $Prefix $R
+$R = @($Rec -split ';' | Where-Object { $_ }); $M = Msys2Find $Msys2Dir $Prefix $R $SysDir
 $u = try { [Security.Principal.WindowsIdentity]::GetCurrent().Name } catch { "$env:USERDOMAIN\$env:USERNAME" }; "user=$u"; "home=$HOME"
 "msys2.dir=$(if ($M) { $M } elseif ($Msys2Dir) { $Msys2Dir } else { J $Prefix 'msys64' })"; "msys2.found=$([bool]$M)"
 if ($M) {

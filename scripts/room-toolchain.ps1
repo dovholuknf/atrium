@@ -318,8 +318,8 @@ function Raw($t, $exe) {
     $p = $env:Path; $env:Path = (@(Split-Path -Parent $exe) + (Dirs)) -join ';'
     try { $a = @{ go = 'version'; node = '--version'; git = '--version'; pwsh = '--version' }[$t]
         $o = & $exe $a 2>&1 | Out-String; $l = ($o -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
-        # MinGit is git without bash. A git with no bash beside it says so, and is judged not good enough.
-        if ($t -eq 'git') { $gr = Split-Path -Parent (Split-Path -Parent $exe); if (-not ((Test-Path -LiteralPath (Join-Path $gr 'bin\bash.exe')) -or (Test-Path -LiteralPath (Join-Path $gr 'usr\bin\bash.exe')))) { $l += ' [no bash]' } }
+        $g = Split-Path -Parent (Split-Path -Parent $exe)
+        if ($t -eq 'git' -and (@('bin', 'usr\bin') | ForEach-Object { Test-Path -LiteralPath "$g\$_\bash.exe" }) -notcontains $true) { $l += ' [no bash]' }
         $l }
     catch { "error: $($_.Exception.Message)" } finally { $env:Path = $p }
 }
@@ -366,8 +366,7 @@ function Tell { param($tools)
     $all = @(@($new) + @($old | Where-Object { $_ -notin $new }))
     $body = ($all -join "`r`n") + "`r`n"
     if (-not (Test-Path -LiteralPath $PF) -or (Get-Content -LiteralPath $PF -Raw) -ne $body) { [IO.File]::WriteAllText($PF, $body); 'pathfile=changed' } else { 'pathfile=same' }
-    $env1 = "# written by room-toolchain.ps1. Dot-source this before `atrium room --detach`: it puts what that script installed in FRONT of PATH,`r`n" +
-        "# which a user Path entry cannot do, because the machine Path comes first.`r`n" +
+    $env1 = "# written by room-toolchain.ps1. Dot-source before `atrium room --detach`: puts the installed tools in front of PATH.`r`n" +
         "`$f = Join-Path `$PSScriptRoot 'path.txt'`r`n" +
         "if (Test-Path -LiteralPath `$f) { `$d = @(Get-Content -LiteralPath `$f | Where-Object { `$_.Trim() }); if (`$d) { `$env:Path = (`$d -join ';') + ';' + `$env:Path } }`r`n"
     if (-not (Test-Path -LiteralPath $EF) -or (Get-Content -LiteralPath $EF -Raw) -ne $env1) { [IO.File]::WriteAllText($EF, $env1); 'hook=changed' } else { 'hook=same' }

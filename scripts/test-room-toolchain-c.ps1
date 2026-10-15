@@ -206,29 +206,45 @@ Check 'sha256 file: html is no hash' ([bool](Read-Sha256File '<html>404</html>' 
 # ── MSYS2: where it is, over fake directories ───────────────────────────────
 
 Invoke-Expression ($script:CCommon + "`n" + $script:CFind)
+# A program the payloads can run that says one line. A .exe cannot be a shell script on Windows, so there it is a copy of one
+# stub, built once with the .NET Framework's own csc.exe (every Windows has it), that prints the text beside it in <name>.say.
+$script:fakeStub = $null
+function New-FakeExe {
+    param([string] $path, [string] $say)
+    if ($unix) { Set-Content -LiteralPath $path -Value "#!/bin/sh`necho '$say'`n"; & chmod +x $path; return }
+    if (-not $script:fakeStub) {
+        $src = Join-Path $tmp 'fakestub.cs'; $script:fakeStub = Join-Path $tmp 'fakestub.exe'
+        Set-Content -LiteralPath $src -Value 'class P { static void Main() { var e = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName; System.Console.WriteLine(System.IO.File.ReadAllText(e + ".say").Trim()); } }'
+        $csc = Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+        & $csc /nologo /out:$script:fakeStub $src | Out-Null
+    }
+    Copy-Item -LiteralPath $script:fakeStub -Destination $path -Force
+    Set-Content -LiteralPath "$path.say" -Value $say
+}
 function New-FakeMsys {
     param([string] $dir, [string[]] $bins = @('gcc', 'g++', 'cmake', 'ninja', 'pkg-config'), [bool] $ssl = $true, [string] $tag = '9.9.9')
     foreach ($d in 'usr/bin', 'mingw64/bin', 'mingw64/lib', 'mingw64/include/openssl', 'var/lib/pacman/local') { New-Item -ItemType Directory -Force (Join-Path $dir $d) | Out-Null }
     Set-Content -LiteralPath (Join-Path $dir 'usr/bin/pacman.exe') -Value 'x'
     Set-Content -LiteralPath (Join-Path $dir 'var/lib/pacman/local/ALPM_DB_VERSION') -Value '9'
-    foreach ($b in $bins) {
-        $f = Join-Path $dir "mingw64/bin/$b.exe"
-        Set-Content -LiteralPath $f -Value "#!/bin/sh`necho '$b version $tag'`n"
-        if ($unix) { & chmod +x $f }
-    }
+    foreach ($b in $bins) { New-FakeExe (Join-Path $dir "mingw64/bin/$b.exe") "$b version $tag" }
     if ($ssl) { Set-Content -LiteralPath (Join-Path $dir 'mingw64/lib/libssl.a') -Value x; Set-Content -LiteralPath (Join-Path $dir 'mingw64/include/openssl/ssl.h') -Value x }
 }
 $fm1 = Join-Path $tmp 'a/msys64'; $fm2 = Join-Path $tmp 'prefix/msys64'; $fm3 = Join-Path $tmp 'elsewhere/msys64'
 New-FakeMsys $fm1; New-FakeMsys $fm2; New-FakeMsys $fm3
-Check 'find: an explicit dir is the answer' (Msys2Find $fm1 (Join-Path $tmp 'prefix') @()) $fm1
-Check 'find: an explicit dir that is not there is not replaced by another' ([bool](Msys2Find (Join-Path $tmp 'nope') (Join-Path $tmp 'prefix') @())) $false
+# The host's own C:\msys64 (a CI runner has one) must not answer for these, so every search that reaches it says where "C:\msys64"
+# is for this test: a folder that is not there. Msys2Cands is pure, so the default is still checked as it is.
+$sys0 = Join-Path $tmp 'no-system-msys64'
+Check 'find: an explicit dir is the answer' (Msys2Find $fm1 (Join-Path $tmp 'prefix') @() $sys0) $fm1
+Check 'find: an explicit dir that is not there is not replaced by another' ([bool](Msys2Find (Join-Path $tmp 'nope') (Join-Path $tmp 'prefix') @() $sys0)) $false
 Check 'find: candidates for an explicit dir are only it' (Msys2Cands 'D:\m' '/p' @('X:\y\mingw64\bin')) @('D:\m')
-Check 'find: without one, C:\msys64, then the prefix, then the record' (Msys2Cands '' '/p' @('X:\y\mingw64\bin', 'D:\go\bin')) @('C:\msys64', '/p/msys64', 'X:\y')
-Check 'find: the prefix one is found' (Msys2Find '' (Join-Path $tmp 'prefix') @()) $fm2
-Check 'find: one named by the record is found' (Msys2Find '' (Join-Path $tmp 'none') @((Join-Path $fm3 'mingw64/bin'))) $fm3
+Check 'find: without one, C:\msys64, then the prefix, then the record' (Msys2Cands '' '/p' @('X:\y\mingw64\bin', 'D:\go\bin')) @('C:\msys64', [IO.Path]::Combine('/p', 'msys64'), 'X:\y')
+Check 'find: C:\msys64 is the one searched first, unless a test says where it is' (Msys2Cands '' '/p' @() $sys0)[0] $sys0
+Check 'find: the system one is found before the prefix one' (Msys2Find '' (Join-Path $tmp 'prefix') @() $fm3) $fm3
+Check 'find: the prefix one is found' (Msys2Find '' (Join-Path $tmp 'prefix') @() $sys0) $fm2
+Check 'find: one named by the record is found' (Msys2Find '' (Join-Path $tmp 'none') @((Join-Path $fm3 'mingw64/bin')) $sys0) $fm3
 Check 'find: the record with a forward slash' (Msys2Cands '' '/p' @('X:/y/mingw64/bin'))[2] 'X:/y'
-Check 'find: a dir without pacman.exe is not MSYS2' ([bool](Msys2Find (Join-Path $tmp 'a') '' @())) $false
-Check 'find: nothing anywhere' ([bool](Msys2Find '' (Join-Path $tmp 'none') @())) $false
+Check 'find: a dir without pacman.exe is not MSYS2' ([bool](Msys2Find (Join-Path $tmp 'a') '' @() $sys0)) $false
+Check 'find: nothing anywhere' ([bool](Msys2Find '' (Join-Path $tmp 'none') @() $sys0)) $false
 
 # ── icacls ──────────────────────────────────────────────────────────────────
 
@@ -340,26 +356,26 @@ $sdk = Join-Path $tmp 'git/github/openziti/ziti-sdk-c'
 $vcp = Join-Path $tmp 'vcpkg'
 
 # cmsys: found, with all tools
-$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fm1; Prefix = (Join-Path $tmp 'prefix'); Accts = '' }
+$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fm1; Prefix = (Join-Path $tmp 'prefix'); Accts = ''; SysDir = $sys0 }
 Check 'act cmsys: found' @($r.Kv['msys2.found'], $r.Kv['msys2.dir']) @('True', $fm1)
-Check 'act cmsys: a tool is its path and its version' $r.Kv['bin.gcc'] "$fm1/mingw64/bin/gcc.exe|gcc version 9.9.9"
+Check 'act cmsys: a tool is its path and its version' $r.Kv['bin.gcc'] "$([IO.Path]::Combine($fm1, 'mingw64', 'bin', 'gcc.exe'))|gcc version 9.9.9"
 Check 'act cmsys: openssl is there' $r.Kv['ssl'] 'True'
 Check 'act cmsys: pkg-config is there' ($r.Kv['bin.pkg-config'] -like '*pkg-config.exe|pkg-config version 9.9.9') $true
 Check 'act cacls: writable' (Invoke-Act 'cacls' @{ Msys2Dir = $fm1; Accts = ''; StateDir = '' }).Kv['writable'] 'True'
-Check 'act cmsys: it wrote nothing' @(Get-ChildItem -LiteralPath $fm1 -Recurse -Force -File | Where-Object { $_.LastWriteTime -gt (Get-Date).AddSeconds(-600) -and $_.Name -notin 'pacman.exe', 'ALPM_DB_VERSION', 'libssl.a', 'ssl.h' -and $_.Extension -ne '.exe' }).Count 0
+Check 'act cmsys: it wrote nothing' @(Get-ChildItem -LiteralPath $fm1 -Recurse -Force -File | Where-Object { $_.LastWriteTime -gt (Get-Date).AddSeconds(-600) -and $_.Name -notin 'pacman.exe', 'ALPM_DB_VERSION', 'libssl.a', 'ssl.h' -and $_.Extension -notin '.exe', '.say' }).Count 0
 # partly there: gcc only
 $fmp = Join-Path $tmp 'partial/msys64'; New-FakeMsys $fmp @('gcc') $false
-$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fmp; Prefix = $tmp; Accts = '' }
+$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fmp; Prefix = $tmp; Accts = ''; SysDir = $sys0 }
 Check 'act cmsys: a partial MSYS2 reports MISSING (a bare |) for the rest' @($r.Kv['bin.cmake'], $r.Kv['bin.ninja'], $r.Kv['ssl']) @('|', '|', 'False')
 # not there
-$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = ''; Prefix = (Join-Path $tmp 'empty'); Accts = '' }
+$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = ''; Prefix = (Join-Path $tmp 'empty'); Accts = ''; SysDir = $sys0 }
 Check 'act cmsys: absent says where it would go' @($r.Kv['msys2.found'], $r.Kv['msys2.dir']) @('False', (Join-Path (Join-Path $tmp 'empty') 'msys64'))
 # found through the PATH record
-$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = "$fm3/mingw64/bin"; Msys2Dir = ''; Prefix = (Join-Path $tmp 'empty'); Accts = '' }
+$r = Invoke-Act 'cmsys' @{ PathPre = ''; Rec = "$fm3/mingw64/bin"; Msys2Dir = ''; Prefix = (Join-Path $tmp 'empty'); Accts = ''; SysDir = $sys0 }
 Check 'act cmsys: found through the record' @($r.Kv['msys2.found'], $r.Kv['msys2.dir']) @('True', $fm3)
 # the gaps, as the flow reads them
-Check 'gaps: none' @(Get-CGaps (Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fm1; Prefix = $tmp; Accts = '' }).Kv).Count 0
-Check 'gaps: the missing ones, by name' (Get-CGaps (Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fmp; Prefix = $tmp; Accts = '' }).Kv) @('g++', 'cmake', 'ninja', 'pkg-config', 'openssl')
+Check 'gaps: none' @(Get-CGaps (Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fm1; Prefix = $tmp; Accts = ''; SysDir = $sys0 }).Kv).Count 0
+Check 'gaps: the missing ones, by name' (Get-CGaps (Invoke-Act 'cmsys' @{ PathPre = ''; Rec = ''; Msys2Dir = $fmp; Prefix = $tmp; Accts = ''; SysDir = $sys0 }).Kv) @('g++', 'cmake', 'ninja', 'pkg-config', 'openssl')
 
 # cvcpkg and csdk, reporting only
 $r = Invoke-Act 'cvcpkg' @{ PathPre = ''; VcpkgDir = $vcp; Url = 'https://example.invalid/vcpkg'; Dry = '1' }
@@ -367,7 +383,7 @@ Check 'act cvcpkg dry: absent' @($r.Kv['vcpkg.dirhere'], $r.Kv['vcpkg.git'], $r.
 Check 'act cvcpkg dry: wrote nothing' (Test-Path $vcp) $false
 New-Item -ItemType Directory -Force (Join-Path $vcp '.git'), (Join-Path $vcp 'triplets/community') | Out-Null
 Set-Content -LiteralPath (Join-Path $vcp 'triplets/community/x64-mingw-static.cmake') -Value x
-Set-Content -LiteralPath (Join-Path $vcp 'vcpkg.exe') -Value "#!/bin/sh`necho 'vcpkg package management program version 2026-09-01'`n"; if ($unix) { & chmod +x (Join-Path $vcp 'vcpkg.exe') }
+New-FakeExe (Join-Path $vcp 'vcpkg.exe') 'vcpkg package management program version 2026-09-01'
 $r = Invoke-Act 'cvcpkg' @{ PathPre = ''; VcpkgDir = $vcp; Url = 'https://example.invalid/vcpkg'; Dry = '0' }
 Check 'act cvcpkg: a bootstrapped checkout is left alone and answers' @($r.Code, $r.Kv['vcpkg.triplet'], ($r.Kv['vcpkg.ver'] -like '*vcpkg.exe|vcpkg package management program version 2026-09-01'), $r.Kv['cloned'], $r.Kv['bootstrapped']) @(0, 'True', $true, $null, $null)
 $inway = Join-Path $tmp 'inway'; New-Item -ItemType Directory -Force $inway | Out-Null; Set-Content -LiteralPath (Join-Path $inway 'precious.txt') -Value keep
@@ -385,7 +401,7 @@ Check 'act csdk dry: absent, nothing written' @($r.Kv['sdk.dirhere'], (Test-Path
 if (Get-Command git -ErrorAction SilentlyContinue) {
     New-Item -ItemType Directory -Force $sdk | Out-Null
     & git -C $sdk init -q -b trunk 2>&1 | Out-Null
-    & git -C $sdk -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m first 2>&1 | Out-Null
+    & git -C $sdk -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false commit -q --allow-empty -m first 2>&1 | Out-Null
     Set-Content -LiteralPath (Join-Path $sdk '.gitignore') -Value "/build`n/CMakeUserPresets.json"
     $r = Invoke-Act 'csdk' @{ PathPre = ''; SdkDir = $sdk; Url = 'https://example.invalid/sdk'; Dry = '0' }
     Check 'act csdk: an existing checkout, its branch and dirty state, left alone' @($r.Code, $r.Kv['sdk.branch'], $r.Kv['sdk.dirty'], $r.Kv['sdk.ignored'], $r.Kv['cloned']) @(0, 'trunk', 'True', 'True', $null)
