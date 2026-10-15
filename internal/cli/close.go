@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,10 +50,18 @@ func newClose() *cobra.Command {
 			"With no answer it is stashed to the hub, or kept when the room cannot stash. The hub removes a stash " +
 			"after its retention (30 days by default). Say --keep (it stays on disk), --stash (pushed to the hub as stash/<card>/<branch>, then removed) " +
 			"or --delete (removed as it is), with the worktree's seq or path, or all.",
-		Args:          cobra.ExactArgs(1),
+		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch {
+			case o.cwd != "" && len(args) > 0:
+				return errors.New("say a card or --cwd, not both")
+			case o.cwd != "":
+				return closeByCwdCmd(o)
+			case len(args) == 0:
+				return errors.New("say which card, or --cwd <path>")
+			}
 			return closeCardCmd(strings.TrimSpace(args[0]), o)
 		},
 	}
