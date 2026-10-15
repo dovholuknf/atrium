@@ -34,16 +34,20 @@ type WorkDetail struct {
 }
 
 // itemBriefWait bounds the read. The hub refreshes the git steps on this route, so it is slower than most, but the header
-// is optional and a launch waits on it, so the wait is short. A var so a test can shrink it.
-var itemBriefWait = 5 * time.Second
+// is optional and a launch waits on it, so the wait is short.
+const itemBriefWait = 5 * time.Second
 
 // itemBriefLate is the one line a brief carries when the hub did not answer in time.
 const itemBriefLate = "_Item steps unavailable: the hub did not answer in time. `atrium_item show` prints them when it does._\n"
 
 // FetchWorkDetail reads one item from the hub.
 func FetchWorkDetail(ctx context.Context, call HubCall, id string) (WorkDetail, error) {
+	return fetchWorkDetail(ctx, call, id, itemBriefWait)
+}
+
+func fetchWorkDetail(ctx context.Context, call HubCall, id string, wait time.Duration) (WorkDetail, error) {
 	var d WorkDetail
-	ctx, cancel := context.WithTimeout(ctx, itemBriefWait)
+	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	err := call(ctx, "GET", "/_hub/work/"+url.PathEscape(strings.TrimSpace(id)), nil, &d)
 	return d, err
@@ -52,10 +56,14 @@ func FetchWorkDetail(ctx context.Context, call HubCall, id string) (WorkDetail, 
 // ItemBrief is the text to put above a brief for a card attached to id, or "" when the hub cannot say. It never fails a
 // launch: a launch is not refused for a hub being slow.
 func ItemBrief(ctx context.Context, call HubCall, id string) string {
+	return itemBriefWithin(ctx, call, id, itemBriefWait)
+}
+
+func itemBriefWithin(ctx context.Context, call HubCall, id string, wait time.Duration) string {
 	if strings.TrimSpace(id) == "" || call == nil {
 		return ""
 	}
-	d, err := FetchWorkDetail(ctx, call, id)
+	d, err := fetchWorkDetail(ctx, call, id, wait)
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 		return itemBriefLate
 	}
