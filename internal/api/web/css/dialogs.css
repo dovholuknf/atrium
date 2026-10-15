@@ -581,6 +581,9 @@
   }
   dialog .pvrepo:hover { border-color: var(--stroke); }
   dialog .pvrepo .nm { font-size: var(--fs-md); }
+  /* The launch dialog's repo list: the whole row is the pick. */
+  dialog .pvrepo.nw-pick { cursor: pointer; }
+  dialog .pvrepo.nw-pick.busy { opacity: .6; cursor: progress; }
   /* The directory browser: its folders on one panel, so the list reads as the thing being picked from. */
   #browse .dlg-body > .toolbar { margin-top: 12px; }
   #browse .dirlist {

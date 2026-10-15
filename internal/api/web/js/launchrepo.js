@@ -6,9 +6,16 @@
 //                           finished and history), each resolved to its repository and worktree by reading .git, newest
 //                           use first. Picking one fills the working directory.
 //   the hub's repos         GET /_hub/git/repos, the same data as the repos tab (js/hubrepos.js). One this room has a
-//                           checkout of is not listed twice: its checkout row says it is on the hub. One it has none of
-//                           offers `clone from hub`: POST /v1/checkouts/clone makes the clone on that room from the
-//                           hub's copy (never a forge), into <scm root>/<host>/<org>/<repo>, and fills the directory.
+//                           list, deduplicated by host/org/repo with the checkouts: ONE LIST, one row per repository,
+//                           the repo name and nothing else.
+//
+// PICKING A ROW FILLS THE DIRECTORY, whatever the row is (docs/changes/repo-picker-just-pick.md):
+//   a repo the room has        its checkout.
+//   a repo only the hub has    POST /v1/checkouts/clone makes the clone on that room from the hub's copy, never a forge,
+//                              into <scm root>/<host>/<org>/<repo>.
+//   a repo neither has         typed in the filter as host/org/repo or a URL. POST /_hub/git/init makes the hub clone it
+//                              from the forge first, then the room clones from the hub. Only the hub talks to a forge.
+// A failure of either clone is a line in the dialog.
 //
 // THE ROOM SELECT DECIDES WHICH ROOM. Both the list and a clone go to the room the dialog's room control names, in
 // `X-Atrium-Room`, and changing the control repaints the list.
@@ -47,63 +54,72 @@ function toggleNewWork() {
   return openNewWork();
 }
 
-// A hub repo and a checkout name the same repository when their host/org/repo agree.
-const launchRepoSlug = r => [r.host, r.owner, r.repo].join("/").toLowerCase();
+// One repository is one row. A hub repo and a checkout name the same one when their host/org/repo agree, and "github"
+// and "github.com" are the same host (the room writes the first, the hub's list the second in places).
+const launchRepoSlug = r => [r.host, r.owner, r.repo].join("/").toLowerCase().replace(/^github\.com\//, "github/");
+const launchRepoKey = s => (s || "").toLowerCase().replace(/^github\.com\//, "github/");
 
-// The rows to draw: checkouts first, newest use first, then the hub's repos this room has no checkout of.
+// The rows to draw, one per repository: a repo this room has a checkout of uses that checkout (the main one rather than
+// a linked worktree, else the newest), then the hub's repos this room has none of. A checkout with no forge name is its
+// own row, keyed by where it lives.
 function launchRepoRows(memo) {
-  const have = new Set((memo.checkouts || []).map(c => (c.slug || "").toLowerCase()).filter(Boolean));
-  const onHub = new Set((memo.hub || []).map(launchRepoSlug));
-  const rows = (memo.checkouts || []).map(c => ({ kind: "checkout", c, onHub: !!c.slug && onHub.has(c.slug.toLowerCase()) }));
+  const rows = [];
+  const at = new Map();
+  (memo.checkouts || []).forEach(c => {
+    const key = launchRepoKey(c.slug) || "path:" + (c.root || c.path);
+    const i = at.get(key);
+    if (i === undefined) { at.set(key, rows.length); rows.push({ key, name: c.repo, tip: c.slug || c.path, path: c.path, linked: !!c.linked }); return; }
+    if (rows[i].linked && !c.linked) Object.assign(rows[i], { path: c.path, linked: false });
+  });
   (memo.hub || []).forEach(r => {
-    if (!have.has(launchRepoSlug(r))) rows.push({ kind: "hub", slug: r.host + "/" + r.owner + "/" + r.repo, r });
+    const key = launchRepoSlug(r);
+    if (!at.has(key)) { at.set(key, rows.length); rows.push({ key, name: r.repo, tip: r.host + "/" + r.owner + "/" + r.repo, slug: r.host + "/" + r.owner + "/" + r.repo }); }
   });
   return rows;
 }
 
+// What the operator typed, read as a repository the hub may not have yet: host/org/repo or a URL. Null when it is
+// neither. The server checks it again, this only decides whether to offer the row.
+function launchRepoTyped(q) {
+  let s = (q || "").trim().replace(/^https?:\/\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+  const parts = s.split("/");
+  if (parts.length !== 3 || parts.some(p => !p || /\s/.test(p))) return null;
+  if (!parts[0].includes(".") && parts[0].toLowerCase() !== "github") return null;
+  const host = parts[0].toLowerCase() === "github" ? "github.com" : parts[0];
+  return { host, owner: parts[1], repo: parts[2], key: launchRepoKey(host + "/" + parts[1] + "/" + parts[2]),
+    url: "https://" + host + "/" + parts[1] + "/" + parts[2], slug: host + "/" + parts[1] + "/" + parts[2] };
+}
+
 function launchRepoMatches(row, q) {
-  const text = row.kind === "checkout"
-    ? [row.c.repo, row.c.slug, row.c.path, row.c.branch].join(" ")
-    : row.slug;
-  return text.toLowerCase().includes(q);
+  return [row.name, row.tip].join(" ").toLowerCase().includes(q);
 }
 
 function paintLaunchRepos() {
   const list = document.getElementById("l-nw-list");
   const memo = launchRepoMemo[launchRepoRoom()];
   if (!memo) { list.innerHTML = `<div class="empty">reading…</div>`; return; }
-  const q = (document.getElementById("l-nw-filter").value || "").trim().toLowerCase();
+  const raw = (document.getElementById("l-nw-filter").value || "").trim();
+  const q = raw.toLowerCase();
   const all = launchRepoRows(memo);
   const rows = q ? all.filter(r => launchRepoMatches(r, q)) : all;
+  // A repository nobody here has: the hub clones it from the forge first, then the room clones from the hub.
+  const typed = launchRepoTyped(raw);
+  if (typed && !all.some(r => r.key === typed.key)) rows.push({ key: typed.key, name: typed.slug, tip: typed.url, typed });
   if (!rows.length) {
-    list.innerHTML = `<div class="empty">${all.length ? "nothing matches that." :
-      "no repositories yet. <b>browse</b> still points a card at any directory."}</div>`;
+    list.innerHTML = `<div class="empty">${all.length ? "nothing matches that. type host/org/repo to fetch one the hub lacks." :
+      "no repositories yet. type host/org/repo, or <b>browse</b> to point a card at any directory."}</div>`;
   } else {
-    list.innerHTML = rows.map(row => {
-      if (row.kind === "hub") {
-        return `<div class="pvrepo">
-          <span class="nm">${esc(row.slug)}</span>
-          <span class="grow"></span>
-          <span class="chip">on the hub</span>
-          <button class="go nw-clone" data-repo="${esc(row.slug)}">clone from hub</button>
-        </div>`;
-      }
-      const c = row.c;
-      return `<div class="pvrepo">
-        <span class="nm">${esc(c.repo)}</span>
-        <code class="grow ell" data-tip="${esc(c.path)}">${esc(c.path)}</code>
-        ${c.branch ? `<span class="chip">${esc(c.branch)}</span>` : ""}
-        ${c.linked ? `<span class="chip">worktree</span>` : ""}
-        ${row.onHub ? `<span class="chip" data-tip="the hub has this repository">hub</span>` : ""}
-        <button class="go nw-use" data-path="${esc(c.path)}">use</button>
-      </div>`;
-    }).join("");
+    list.innerHTML = rows.map((row, i) => `<div class="pvrepo nw-pick" role="button" tabindex="0" data-i="${i}" data-tip="${esc(row.tip)}">
+        <span class="nm">${esc(row.name)}</span>
+      </div>`).join("");
+    list.querySelectorAll(".nw-pick").forEach(e => {
+      const go = () => pickLaunchRepo(rows[+e.dataset.i], e);
+      e.onclick = go;
+      e.onkeydown = ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } };
+    });
   }
-  list.querySelectorAll(".nw-use").forEach(b => b.onclick = () => useLaunchRepoPath(b.dataset.path));
-  list.querySelectorAll(".nw-clone").forEach(b => b.onclick = () => busyWhile(b, () => cloneFromHub(b.dataset.repo), "cloning…"));
   paintNewWorkRepos(memo);
 }
-
 // The `start new work` form's repository box: every repo with a forge name, as host/org/repo.
 function paintNewWorkRepos(memo) {
   const sel = document.getElementById("l-nw-repo");
@@ -127,9 +143,39 @@ function useLaunchRepoPath(path) {
   into.focus();
 }
 
-async function cloneFromHub(slug) {
+// Picking a row fills the directory. A repo the room has is its checkout. One it lacks is cloned from the hub first, and
+// one the hub lacks is cloned onto the hub from the forge before that: only the hub talks to a forge. A failure is a
+// line in the dialog, which stays as it was.
+async function pickLaunchRepo(row, el) {
+  if (!row) return;
+  if (row.path) { useLaunchRepoPath(row.path); return; }
+  if (el.classList.contains("busy")) return;
+  el.classList.add("busy");
+  const nm = el.querySelector(".nm");
+  const was = nm.textContent;
+  nm.textContent = was + " …";
+  try {
+    await cloneFromHub(row.typed ? row.typed : row.slug, !!row.typed);
+  } finally {
+    el.classList.remove("busy");
+    nm.textContent = was;
+  }
+}
+async function cloneFromHub(slug, hubLacks) {
   newWorkSay("");
   const room = launchRepoRoom();
+  const say = (what, e) => newWorkSay("could not " + what + ": " + e.message, true);
+  if (hubLacks) {
+    const t = slug;
+    newWorkSay("the hub is fetching " + t.slug + "…");
+    try {
+      await api("/_hub/git/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: t.url }) });
+    } catch (e) {
+      say("fetch " + t.slug + " onto the hub", e);
+      return;
+    }
+    slug = t.host + "/" + t.owner + "/" + t.repo;
+  }
   let out;
   try {
     out = await api("/v1/checkouts/clone", {
@@ -138,14 +184,14 @@ async function cloneFromHub(slug) {
     });
   } catch (e) {
     // In the dialog, where the list is. The dialog stays as it was.
-    newWorkSay("could not clone " + slug + ": " + e.message, true);
+    say("clone " + slug, e);
     return;
   }
+  newWorkSay("");
   delete launchRepoMemo[room];
   toast(out.state === "existing" ? "already there" : "cloned from the hub", out.path);
   useLaunchRepoPath(out.path);
 }
-
 // Reads both lists for one room. Either may fail on its own: a board with no hub has no hub list, a room built before
 // the list existed has no checkouts, and the other still draws.
 async function loadLaunchRepos(room) {
