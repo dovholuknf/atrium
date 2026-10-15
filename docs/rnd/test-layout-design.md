@@ -253,25 +253,28 @@ B2 to B5 are one worker each and can run one after another or two at a time once
 - It does not turn integration tests into unit tests. The 20 ms unit budget in `scripts/test.sh` is untouched.
 - It does not touch a single assertion. A bucket move that needs one is a separate change.
 
-## Open questions for clint
+## Decisions
 
-1. The claude/ci-board-time worker has not reported yet (its ref on the hub is still at d7413077). Its finding on why
-   CI takes 26 to 30 min (browser start per unit? the serial run? Windows?) could change where the win is. Wait for
-   it before stage C1, or go ahead?
-2. Is the headless run on all three operating systems worth it? Playwright on macOS and Windows runs the same board
-   assertions as on Linux. If the board only runs on ubuntu, that alone saves two thirds of the board minutes and
-   the shard count can stay small.
-3. Shard Go only on ubuntu, and keep one full run on macOS and Windows? The platform bugs are Go bugs, so I
-   recommend it, but it means a Windows only board bug is found by nobody.
-4. Are the bucket cuts right where the page is not obvious? `restart*` (board restart menu, so `rooms` or
-   `terminals`), `compose*` and `replies*` (terminal composer, so `terminals`, though the phone has its own),
-   `deployReady` (`cards`, or its own `deploy`), `land` (`docs-files` is a weak home), and `launch*` and
-   `newWorkDialog` (a `launch` bucket of its own?). The backlog page has no unit at all. Do you want one written?
-5. Stage order: Go first (G1, G2) or board first (B1 to B5)? The board is the bigger bill (about 25 min against
-   about 10 for the slowest Go package), and the Go work is cheaper. I would run B1 and G1 together.
-6. Bucket file as JSON in `scripts/`, or a `// bucket:` header in each test file, as the node scripts already use
-   `// subject:`? JSON is one place to look and lint. Headers keep a test and its bucket in the same diff.
-7. Should the touched-file run include a bucket's full set, or stay capped at 150 s? A change to `terminals` is 528 s
-   of units and would always be cut.
-8. Is a nightly full run an acceptable safety net for a stale `sources` entry, or must every pull request run the full
-   suite?
+The orchestrator decided these on 2026-10-15, about 17:30. clint approves the design as a whole before any stage is
+built. Each names the stage it binds.
+
+1. **The ci-board-time finding.** Go ahead. That fix (CI running the board sharded) lands on its own as a bug fix, and
+   stage C1 starts from whatever it left. C1 reads its report first. (C1)
+2. **The board on three operating systems.** The full headless suite runs on ubuntu only. macOS and Windows run the
+   `boot` bucket, so a board that does not load on them is still caught. The board runs against mocks in Chromium,
+   so the operating system changes nothing it asserts. (C1)
+3. **Go sharding.** Shard on ubuntu. macOS and Windows keep one full Go run each, since that is where the ConPTY and
+   path bugs are found. (G2, C1)
+4. **The unclear cuts.** `restart*` goes to `rooms`, since it is the board's restart menu. `compose*` and `replies*` go
+   to `terminals`, and the phone's own composer units stay in `m-compose`. `deployReady` and `land` get their own
+   `deploy` bucket. `launch*` and `newWorkDialog` get their own `launch` bucket. The backlog page gets units, written
+   in B2, since a page with no unit is the gap this design exists to close. (0, B2)
+5. **Stage order.** One stage at a time: 0, G1, B1, B2, B3, B4, B5, G2, C1, C2, then the page doc. G1 goes before B1
+   because it is cheap and its per-bucket Go times inform G2.
+6. **The bucket file.** JSON in `scripts/test-buckets.json`. One place to read and lint, and the lint is what keeps a
+   new file from escaping a bucket. (0)
+7. **The touched-file run.** It runs each selected bucket in full, sharded locally across the machine's cores, and the
+   150 s budget becomes a warning, not a cut. `terminals` at 528 s is about 90 s on six shards, and a run that skips
+   the tests of the page that changed defeats the point. (C2)
+8. **The safety net.** Pushes to `claude/main` and `main` run the full suite, and a nightly full run covers the rest.
+   A pull request runs its selected buckets plus `boot`. (C1)
