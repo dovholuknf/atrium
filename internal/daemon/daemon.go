@@ -465,6 +465,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.ForgeFailed, d.ap.ForgeWorked = d.ForgeAccessFrom, d.ForgeWorked
 	d.ap.SCMClone = d.prWorktreeClone
 	d.ap.SCMHas = d.prWorktreeHas
+	d.ap.ScopeHub = d.scopeHubRemote
 	d.ap.Stash = d.StashTo
 	d.ap.HubDelete = d.HubDeleteBranch
 	d.ap.RunAction = d.handleRunAction

@@ -87,6 +87,9 @@ type Server struct {
 	// SCMHas is whether the scm folder already holds a clone of the repo at a url. Nil reads as no. It lets a PR
 	// worktree find the clone while the forge is read. See prWorktree.
 	SCMHas func(url string) bool
+	// ScopeHub points a new worktree's remote.hub.url at this room's own forwarder. Nil does nothing. Every path
+	// that runs `git worktree add` calls it, so the gate never sees a worktree aimed at another room's forwarder.
+	ScopeHub func(dir string)
 	// ForgeFailed is told of a forge error so the daemon can raise the board alert, and ForgeWorked of a forge that
 	// answered so it can clear it. Both are nil-safe seams the daemon fills.
 	ForgeFailed func(kind string, err error) bool

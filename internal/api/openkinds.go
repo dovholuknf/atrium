@@ -347,6 +347,7 @@ func (s *Server) branchWorktree(ctx context.Context, p *store.Provider, host, or
 		return prWorktreeResult{}, http.StatusBadRequest, errors.New(
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
 	}
+	s.scopeHub(filepath.FromSlash(dest))
 	res.Path, res.Branch = dest, branch
 	return res, http.StatusOK, nil
 }

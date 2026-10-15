@@ -400,6 +400,7 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 			"git could not make that worktree: "+strings.TrimSpace(tailLines(string(out)))))
 		return
 	}
+	s.scopeHub(filepath.FromSlash(dest))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"path": dest, "existed": false, "branch": branch, "created_branch": made,
 	})
@@ -448,4 +449,11 @@ func tailLines(s string) string {
 		lines = lines[len(lines)-6:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// scopeHub stamps this room's forwarder on a worktree just made. See Server.ScopeHub.
+func (s *Server) scopeHub(dir string) {
+	if s.ScopeHub != nil {
+		s.ScopeHub(dir)
+	}
 }
