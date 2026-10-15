@@ -125,8 +125,7 @@ const SHOTS = {
   harness: async () => { await renderRunners(); await renderFixtures(); await editHarness("claude"); },
   fixture: async () => { await renderRunners(); await renderFixtures(); await editFixture("fx1"); },
   launch: () => openLaunch(),
-  pickrepo: () => openPickRepo("l-cwd"),
-  pickwhere: async () => { await openPickRepo("l-cwd"); await openWhere("dovholuknf", "atrium", "D:/git/github/dovholuknf/atrium"); },
+  pickrepo: async () => { await openLaunch(); await openNewWork(); },
   browse: () => openBrowse(),
   dispatch: () => openDispatch("lab"),
   // The gear paints the mocked settings, which name harbour, so the skin being shot is put back after.
@@ -145,7 +144,7 @@ const SHOTS = {
   action: () => editAction("a1"),
   source: () => editSource(""),
   recogniser: () => editRecogniser(""),
-  provider: async () => { await openPickRepo("l-cwd"); document.getElementById("pickrepo").close(); editProvider("github"); },
+  provider: () => editProvider("github"),
   ask: () => { askUser({ title: "this is holding 1 request",
     body: "<b>sa56 every dialog sleek</b> has an agent waiting on it. Moving it to <b>paused</b> answers it with block.",
     rememberKey: "shots", buttons: [{ label: "cancel", value: null }, { label: "move it to paused", value: true, style: "go" }] }); },

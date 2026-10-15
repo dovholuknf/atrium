@@ -416,6 +416,12 @@ type Server struct {
 	// The browse roots the settings answer last showed. See `browseRootsShown`.
 	rootsMu sync.Mutex
 	rootsShown
+
+	// CloneFromHub clones a repository from the hub's copy into the scm folder, for the launch dialog's repo list. Nil
+	// or an error is a room with no hub to clone from, and it never reads a forge. See checkouts.go.
+	CloneFromHub func(ctx context.Context, url string) (gitsync.SCMResult, error)
+	// checkouts is the launch dialog's list of this room's checkouts, kept so opening it reads no disk.
+	checkouts checkoutCache
 }
 
 // forever turns a one-off decision into a standing rule, so the same command
@@ -647,6 +653,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/new", s.newWork)
 	mux.HandleFunc("GET /v1/open/live", s.openLive)
 	mux.HandleFunc("GET /v1/scm/has", s.scmHas)
+	// The launch dialog's repo list: this room's checkouts, and cloning one from the hub. See checkouts.go.
+	mux.HandleFunc("GET /v1/checkouts", s.listCheckouts)
+	mux.HandleFunc("POST /v1/checkouts/clone", s.cloneCheckout)
 	// A card's inventory, and its disk. See resources.go.
 	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
 	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)

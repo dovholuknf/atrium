@@ -118,6 +118,15 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
+// cloneFromHub is the launch dialog's "clone from hub": the scm clone, refused when this room has no hub, because
+// without one the clone would read the forge and a room never does.
+func (d *Daemon) cloneFromHub(ctx context.Context, url string) (gitsync.SCMResult, error) {
+	if d.HubForge() == nil {
+		return gitsync.SCMResult{}, errors.New("this room has no hub to clone from, and a room never reads a forge")
+	}
+	return d.prWorktreeClone(ctx, url)
+}
+
 // prWorktreeHas is whether the scm folder already holds the clone a PR worktree would hang off. It makes nothing.
 func (d *Daemon) prWorktreeHas(url string) bool {
 	ref, err := gitsync.ParseURL(url)

@@ -1446,7 +1446,7 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
     return;
   }
   const picking = !id;
-  // New work starts closed and empty each time the dialog opens (js/providers.js).
+  // New work starts closed and empty each time the dialog opens (js/launchrepo.js).
   document.getElementById("l-nw").hidden = true;
   document.getElementById("l-nw-name").value = "";
   document.getElementById("l-nw-from").value = "";

@@ -603,7 +603,9 @@
      nothing is stacked over the dialog. */
   dialog .nw { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); display: grid; gap: var(--sp-2); }
   dialog .nw[hidden], dialog .nw [hidden] { display: none; }
-  dialog .nw .nw-empty { display: grid; gap: var(--sp-2); justify-items: start; }
+  /* The repo list is the first thing in the panel, and scrolls on its own so a long list does not push the form away. */
+  dialog .nw .nw-list { max-height: 260px; overflow-y: auto; margin: 0; }
+  dialog .nw .nw-list .empty { padding: var(--sp-2); }
   dialog .nw .picker select { flex: 1 1 0; min-width: 14ch; max-width: 100%; }
   dialog .nw .picker input { flex: 1 1 0; min-width: 0; }
   dialog .nw .hintline a { color: var(--blue); }

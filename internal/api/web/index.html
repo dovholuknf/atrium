@@ -2824,67 +2824,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   </div>
 </dialog>
 
-<!-- Picking a repository for the launch form, out of rows rather than a scan.
-     An org and a repo that name no row are allowed: typing them is how a
-     repository is added, and atrium does not clone, so a directory somebody is
-     about to make is a legitimate thing to point a card at. -->
-<dialog id="pickrepo" data-guard>
-  <div class="dlg-head">
-    <div class="grow"><div class="dlg-eyebrow">launch · repository</div><h2>pick a repository</h2></div>
-    <button onclick="document.getElementById('pickrepo').close()">close</button>
-  </div>
-  <div class="dlg-body">
-    <div class="dlg-grid">
-    <div class="field">
-      <label class="eyebrow" for="pk-provider">provider</label>
-      <div class="picker"><select id="pk-provider" onchange="loadPickRepos()"></select></div>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="pk-filter">filter</label>
-      <input type="text" id="pk-filter" spellcheck="false" placeholder="type to narrow"
-        oninput="paintPickList()">
-    </div>
-    </div>
-    <div id="pk-list" class="pvrepos"></div>
-    <div class="hintline" id="pk-note" role="status"></div>
-    <div class="field dlg-sec">
-      <label class="eyebrow">or name one that is not listed</label>
-      <div class="picker">
-        <input type="text" id="pk-org" spellcheck="false" placeholder="org" list="pk-orgs">
-        <input type="text" id="pk-repo" spellcheck="false" placeholder="repo">
-        <button onclick="busyWhile(this, addPickRepo)">add</button>
-      </div>
-      <datalist id="pk-orgs"></datalist>
-      <span class="hintline">Adds the row and works out the path. If the directory is not there
-        yet you can still point a card at it: atrium does not clone.</span>
-    </div>
-  </div>
-</dialog>
-
-<!-- Choosing between the checkout and its worktrees, once a repository is
-     picked. Its own step because a repository with six worktrees is six answers
-     to one question, and the make button lives here where the branch is. -->
-<dialog id="pickwhere" data-guard>
-  <div class="dlg-head">
-    <div class="grow"><div class="dlg-eyebrow">launch · checkout or worktree</div><h2 id="pw-heading">where</h2></div>
-    <button onclick="document.getElementById('pickwhere').close()">close</button>
-  </div>
-  <div class="dlg-body">
-    <div id="pw-list" class="pvrepos"></div>
-    <div class="field dlg-sec" id="pw-make-field" hidden>
-      <label class="eyebrow">make a worktree</label>
-      <div class="picker">
-        <input type="text" id="pw-branch" spellcheck="false" placeholder="branch name">
-        <button class="go" onclick="busyWhile(this, makeWorktree)">make</button>
-      </div>
-      <span class="hintline">Runs <code>git worktree add</code> and nothing else. A branch that
-        does not exist yet is created off the repository's own HEAD. It makes a directory and
-        <b>does not start a session</b>: press launch when you are ready.</span>
-      <div class="hintline" id="pw-said"></div>
-    </div>
-  </div>
-</dialog>
-
 <dialog id="fixture" data-guard>
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">agents · fixture</div><h2 id="f-heading">fixture</h2></div>
@@ -3241,42 +3180,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
-      <!-- `repo` first, because it is the control that answers this field. It
-           reads the rows a provider declared, so it knows which repositories
-           exist and which worktrees each already has, and it can make the one
-           that does not exist yet. `browse` is the escape hatch for a directory
-           that is not a repository at all.
-
-           It replaces a button called `projects`, which SCANNED for anything
-           holding a `.git` two levels down and shelled out to a command
-           template to make a worktree. That inferred a layout from whatever
-           directories happened to exist and ran a command atrium could not see
-           inside. A provider is told the layout once. See
-           docs/backlog/backlog-2026-09-13-001.md.
-
-           The six buttons that stood under this are gone. They listed the
-           directories that already HAVE cards, which reads as a recommendation
-           and is a report: a directory was on it because something was already
-           running there. Starting a second agent beside an existing one is
-           answered by `new agent here` on that card, which cannot pick the
-           wrong directory. See docs/backlog/backlog-2026-09-14-005.md. -->
+      <!-- `repo` first, because it is the control that answers this field. It lists the checkouts this room's own
+           cards have used, and the hub's repos with a clone button for one this room has none of, and picking
+           fills the box. `browse` is the escape hatch for a directory that is not a repository at all. No providers
+           are read: js/launchrepo.js. See docs/changes/launch-repo-picker.md. -->
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
         <button class="go" id="l-nw-btn" onclick="toggleNewWork()">repo</button>
         <button onclick="openBrowse()">browse</button>
       </div>
-      <!-- NEW WORK, INLINE. `repo` opens this and not a second dialog over this one: pick a repo, name the work, and
-           the room fetches origin, makes the worktree and starts the card in it (POST /v1/new, `gwt new`). With no
-           provider there is nothing to pick from, and that is said here, where the repo list would be, with a way to
-           the page that fixes it. Never a modal over this dialog. js/providers.js. -->
+      <!-- THE REPO LIST AND NEW WORK, INLINE. `repo` opens this and not a second dialog over this one. The list is the
+           room's checkouts and the hub's repos (js/launchrepo.js); the form under it is `gwt new` from the board: pick
+           a repo, name the work, and the room fetches origin, makes the worktree and starts the card in it
+           (POST /v1/new). -->
       <div class="nw" id="l-nw" hidden>
-        <div class="nw-empty" id="l-nw-empty" hidden>
-          <b>no providers yet</b>
-          <span class="hintline">Nothing describes where your repositories live, so there is no list to pick from.
-            Add one under runners, providers. Until then, <b>browse</b> still points a card at any directory.</span>
-          <div><button class="go" onclick="newWorkToProviders()">open providers</button></div>
-        </div>
-        <div id="l-nw-form" hidden>
+        <input type="text" id="l-nw-filter" spellcheck="false" placeholder="filter: a repo, a path or a branch"
+          aria-label="filter the repositories" oninput="paintLaunchRepos()">
+        <div id="l-nw-list" class="pvrepos nw-list"></div>
+        <div id="l-nw-form">
           <div class="picker">
             <select id="l-nw-repo" aria-label="repository"></select>
             <input type="text" id="l-nw-name" spellcheck="false" placeholder="name: the branch and the folder"
@@ -3287,10 +3208,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
               aria-label="fork from">
             <button class="go" id="l-nw-go" onclick="newWorkGo()">start new work</button>
           </div>
-          <span class="hintline">Fetches origin, then makes a worktree and branch with that name off origin's default
-            branch, off <b>from</b>, or off the remote's branch of that name when it has one. Your own clone is never
-            checked out or pulled. The card starts in the new worktree.
-            <a href="#" onclick="newWorkPickExisting();return false">pick an existing worktree instead</a></span>
+          <span class="hintline">Or start new work: fetches origin, then makes a worktree and branch with that name off
+            origin's default branch, off <b>from</b>, or off the remote's branch of that name when it has one. Your own
+            clone is never checked out or pulled. The card starts in the new worktree.</span>
         </div>
         <div class="hintline" id="l-nw-note" role="status"></div>
       </div>
@@ -3857,6 +3777,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/fixtures.js"></script>
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
+<script src="/js/launchrepo.js"></script>
 <script src="/js/tooltips.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>

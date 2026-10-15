@@ -22900,23 +22900,49 @@ async function launchThrowawaySection(browser, base) {
   if (!bad) console.log("launchThrowaway ok");
 }
 
-// NEW WORK, INLINE IN THE LAUNCH DIALOG. `repo` opens a panel inside the dialog and never a second modal: with no
-// providers the empty state is drawn where the repo list would be, with a button to runners, providers. With one,
-// the repo list, a name and an optional from are sent to POST /v1/new, and the card is opened in the new worktree.
-// A refusal is a line in the dialog with the form still filled in. The directory picker's own failure is a line in the
-// picker. NEWWORK_SHOTS=<dir> writes the dialog with no providers and with one.
+// THE LAUNCH DIALOG'S `repo` LIST (js/launchrepo.js, docs/changes/launch-repo-picker.md). `repo` opens a panel inside the
+// dialog and never a second modal. It lists the room's checkouts (GET /v1/checkouts) and the hub's repos
+// (GET /_hub/git/repos) and asks for NO providers. Pick fills the directory. A hub repo the room has no checkout of
+// offers `clone from hub`, which POSTs /v1/checkouts/clone to the room the dialog's room control names. The last answers
+// paint at once on the next open, whatever the network is doing. Under the list is `start new work` (POST /v1/new), which
+// keeps its refusal-in-the-dialog behaviour. NEWWORK_SHOTS=<dir> writes the dialog with the list open.
 async function newWorkDialogSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wasHub = hubMode;
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
   const asked = [];
+  const cloned = [];
+  const listed = [];
+  let providersAsked = 0;
   let refuse = "";
+  let cloneRefuse = "";
+  let holdList = 0;
   try {
     const p = await ctx.newPage();
     const errors = [];
     p.on("pageerror", e => errors.push(e.message));
-    let providers = [];
-    await p.route(/\/v1\/providers(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ providers }) }));
-    await p.route(/\/v1\/providers\/gh\/repos(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ orgs: ["o"], repos: [{ org: "o", repo: "r", present: true }, { org: "o", repo: "hid", hidden: true }] }) }));
+    await p.route(/\/v1\/providers(\/|\?|$)/, r => { providersAsked++; r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ providers: [] }) }); });
+    const checkoutsByRoom = {
+      "": [
+        { repo: "ziti", slug: "github/openziti/ziti", path: "/work/ziti-wt/fix-it", branch: "fix/it", linked: true, root: "/work/ziti", last: "2026-10-14T10:00:00Z" },
+        { repo: "ziti", slug: "github/openziti/ziti", path: "/work/ziti", branch: "main", linked: false, root: "/work/ziti", last: "2026-10-13T10:00:00Z" },
+        { repo: "scratch", slug: "", path: "/work/scratch", branch: "", linked: false, root: "/work/scratch", last: "2026-10-12T10:00:00Z" }],
+      w2: [{ repo: "other", slug: "github/o/r", path: "/work/w2/other", branch: "main", linked: false, root: "/work/w2/other", last: "2026-10-12T10:00:00Z" }]
+    };
+    await p.route(/\/v1\/checkouts(\?|$)/, async r => {
+      const room = r.request().headers()["x-atrium-room"] || "";
+      listed.push(room);
+      if (holdList) await new Promise(res => setTimeout(res, holdList));
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checkouts: checkoutsByRoom[room] || [] }) });
+    });
+    await p.route(/\/v1\/checkouts\/clone(\?|$)/, r => {
+      cloned.push({ room: r.request().headers()["x-atrium-room"] || "", body: JSON.parse(r.request().postData() || "{}") });
+      if (cloneRefuse) return r.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: cloneRefuse }) });
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ path: "/work/git/github/acme/widget", state: "cloned" }) });
+    });
+    await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: [
+      { host: "github", owner: "openziti", repo: "ziti", url: "u", path: "/p", main: { sha: "", at: null }, branches: [] },
+      { host: "github", owner: "acme", repo: "widget", url: "u", path: "/p", main: { sha: "", at: null }, branches: [] }] }) }));
     await p.route(/\/v1\/new(\?|$)/, r => {
       asked.push(JSON.parse(r.request().postData() || "{}"));
       if (refuse) return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: refuse }) });
@@ -22925,49 +22951,111 @@ async function newWorkDialogSection(browser, base) {
     await p.route(/\/v1\/tasks\/nw1(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "nw1", title: "some.work", status: "running", worktree: "/wt/o/r/some.work" }) }));
     await p.route(/\/v1\/browse(\?|$)/, r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "the disk said no" }) }));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof openLaunch === "function" && typeof newWorkGo === "function");
+    await p.waitForFunction(() => typeof openLaunch === "function" && typeof newWorkGo === "function" && hubIsHub, null, { timeout: slow(15000) });
     const seen = () => p.evaluate(() => {
       const shown = id => { const e = document.getElementById(id); return !!e && !e.hidden; };
       return { launch: document.getElementById("launch").open, ask: document.getElementById("ask").open,
-        pick: document.getElementById("pickrepo").open, panel: shown("l-nw"), empty: shown("l-nw-empty"), form: shown("l-nw-form"),
+        panel: shown("l-nw"), cwd: document.getElementById("l-cwd").value,
+        rows: [...document.querySelectorAll("#l-nw-list .pvrepo")].map(e => e.querySelector(".nm").textContent + "|" + (e.querySelector("button") || {}).textContent),
+        text: document.getElementById("l-nw-list").textContent,
         repos: [...document.getElementById("l-nw-repo").options].map(o => o.value),
         note: document.getElementById("l-nw-note").textContent, bnote: document.getElementById("b-note").textContent };
     });
     const shot = async name => {
       if (process.env.NEWWORK_SHOTS) await p.locator("dialog#launch").screenshot({ path: process.env.NEWWORK_SHOTS + "/" + name + ".png" });
     };
+    const openList = async () => {
+      await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+      await p.click("#l-nw-btn");
+      await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .pvrepo").length, null, { timeout: slow(5000) });
+    };
 
-    // no providers: said inline, never a modal over the dialog
-    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
-    await p.click("#l-nw-btn");
-    await p.waitForFunction(() => !document.getElementById("l-nw-empty").hidden, null, { timeout: slow(5000) }).catch(() => {});
+    // the list: this room's checkouts newest first, then the hub's repos it has no checkout of. No provider is asked.
+    await openList();
     let s = await seen();
-    if (!s.launch || s.ask || s.pick || !s.panel || !s.empty || s.form) fail("newWork: no providers should be drawn inline " + JSON.stringify(s));
-    if (!(await p.locator("#l-nw-empty").innerText()).includes("no providers yet")) fail("newWork: the empty state does not say so");
-    await shot("launch-no-providers");
-    // the old entry point says the same, inline
-    await p.evaluate(async () => { document.getElementById("l-nw").hidden = true; await openPickRepo("l-cwd"); });
+    if (!s.launch || s.ask || !s.panel) fail("repoList: the panel did not open inline " + JSON.stringify(s));
+    const want = ["ziti|use", "ziti|use", "scratch|use", "github/acme/widget|clone from hub"];
+    if (s.rows.join() !== want.join()) fail("repoList: the rows were " + JSON.stringify(s.rows));
+    if (!s.text.includes("/work/ziti-wt/fix-it") || !s.text.includes("fix/it") || !s.text.includes("worktree")) fail("repoList: a checkout's path, branch and worktree mark are not shown: " + s.text);
+    if (s.text.includes("github/openziti/ziti")) fail("repoList: a repo this room has a checkout of was listed again from the hub");
+    if (!(await p.locator("#l-nw-list .pvrepo").first().innerText()).includes("hub")) fail("repoList: the checkout of a hub repo does not say it is on the hub");
+    if (s.repos.join() !== "github.com/acme/widget,github.com/openziti/ziti") fail("repoList: the new-work repos were " + JSON.stringify(s.repos));
+    if (providersAsked) fail("repoList: opening the list asked for providers " + providersAsked + " times");
+    await shot("launch-repo-list");
+
+    // the filter narrows what is drawn and reads nothing
+    const before = listed.length;
+    await p.fill("#l-nw-filter", "scratch");
     s = await seen();
-    if (!s.launch || s.ask || s.pick || !s.panel || !s.empty) fail("newWork: openPickRepo with no providers stacked something " + JSON.stringify(s));
-    await p.click("#l-nw-empty button");
+    if (s.rows.join() !== "scratch|use" || listed.length !== before) fail("repoList: the filter " + JSON.stringify(s.rows) + " reads " + (listed.length - before));
+    await p.fill("#l-nw-filter", "acme");
     s = await seen();
-    if (s.launch || s.ask) fail("newWork: open providers left a dialog over the page " + JSON.stringify(s));
-    if (await p.evaluate(() => document.getElementById("runners").hidden)) fail("newWork: open providers did not go to runners");
+    if (s.rows.join() !== "github/acme/widget|clone from hub") fail("repoList: the filter did not find the hub repo " + JSON.stringify(s.rows));
+    await p.fill("#l-nw-filter", "zzz");
+    if (!(await seen()).text.includes("nothing matches")) fail("repoList: an empty filter does not say so");
+    await p.fill("#l-nw-filter", "");
+
+    // pick a checkout: the directory is filled, the panel closes
+    await p.locator("#l-nw-list .pvrepo").nth(1).locator("button").click();
+    s = await seen();
+    if (s.cwd !== "/work/ziti" || s.panel || !s.launch) fail("repoList: use did not fill the directory " + JSON.stringify({ cwd: s.cwd, panel: s.panel }));
+
+    // clone from hub, to the room the dialog names
+    await p.evaluate(() => {
+      document.getElementById("l-room-field").hidden = false;
+      document.getElementById("l-room").innerHTML = '<option value="">here</option><option value="w2">w2</option>';
+      document.getElementById("l-room").value = "";
+    });
+    await p.click("#l-nw-btn");
+    await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .nw-clone").length, null, { timeout: slow(5000) });
+    cloneRefuse = "this room has no hub to clone from";
+    await p.click("#l-nw-list .nw-clone");
+    await p.waitForFunction(() => document.getElementById("l-nw-note").textContent.includes("no hub"), null, { timeout: slow(5000) })
+      .catch(() => fail("repoList: a refused clone was not said in the dialog"));
+    s = await seen();
+    if (!s.launch || !s.panel || s.ask) fail("repoList: a refused clone closed something " + JSON.stringify(s));
+    cloneRefuse = "";
+    await p.click("#l-nw-list .nw-clone");
+    await p.waitForFunction(() => document.getElementById("l-cwd").value === "/work/git/github/acme/widget", null, { timeout: slow(5000) })
+      .catch(() => fail("repoList: clone from hub did not fill the directory"));
+    if (cloned.length !== 2 || cloned[1].body.repo !== "github/acme/widget" || cloned[1].room !== "") fail("repoList: the clone calls were " + JSON.stringify(cloned));
+    if ((await seen()).panel) fail("repoList: the panel stayed open after a clone");
+
+    // the room control decides the list and where a clone lands
+    await p.evaluate(() => { document.getElementById("l-room").value = "w2"; });
+    await p.click("#l-nw-btn");
+    await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "other"), null, { timeout: slow(5000) })
+      .catch(() => fail("repoList: the room control did not change the list"));
+    if (!listed.includes("w2")) fail("repoList: w2's checkouts were never asked for: " + JSON.stringify(listed));
+    await p.evaluate(() => { document.getElementById("l-room").value = ""; document.getElementById("l-room").dispatchEvent(new Event("change", { bubbles: true })); });
+    await p.waitForFunction(() => [...document.querySelectorAll("#l-nw-list .pvrepo .nm")].some(e => e.textContent === "scratch"), null, { timeout: slow(5000) })
+      .catch(() => fail("repoList: changing the room control did not repaint an open list"));
+    await p.evaluate(() => { document.getElementById("l-room").value = "w2"; document.getElementById("l-room").dispatchEvent(new Event("change", { bubbles: true })); });
+    await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .nw-clone").length, null, { timeout: slow(5000) });
+    await p.click("#l-nw-list .nw-clone");
+    await p.waitForFunction(() => document.getElementById("l-cwd").value === "/work/git/github/acme/widget" && document.getElementById("l-nw").hidden, null, { timeout: slow(5000) });
+    if (cloned[2].room !== "w2") fail("repoList: the clone did not go to the room the dialog names " + JSON.stringify(cloned[2]));
+    await p.evaluate(() => { document.getElementById("l-room").value = ""; document.getElementById("l-room-field").hidden = true; });
+
+    // the last answer paints on the next open before the network has answered
+    holdList = 1500;
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    const t0 = Date.now();
+    await p.click("#l-nw-btn");
+    await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .pvrepo").length >= 3, null, { timeout: slow(1200) })
+      .catch(() => fail("repoList: a second open waited on the network instead of painting what it had"));
+    if (Date.now() - t0 > slow(400)) fail("repoList: a second open took " + (Date.now() - t0) + "ms to paint");
+    holdList = 0;
 
     // the directory picker's failure is a line in the picker
     await p.evaluate(async () => { await openLaunch(null, "", "", null, null); await openBrowse(); });
     s = await seen();
-    if (s.ask || !s.bnote.includes("cannot browse")) fail("newWork: a browse failure was not inline " + JSON.stringify(s));
+    if (s.ask || !s.bnote.includes("cannot browse")) fail("repoList: a browse failure was not inline " + JSON.stringify(s));
     await p.evaluate(() => document.getElementById("browse").close());
 
-    // one provider: the repo list, a name, and the call
-    providers = [{ name: "gh", host: "github.com", enabled: true, worktrees: true }];
-    await p.evaluate(async () => { await loadProviders(); await openLaunch(null, "", "/work/here", null, null); });
-    await p.click("#l-nw-btn");
-    await p.waitForFunction(() => document.getElementById("l-nw-repo").options.length && document.getElementById("l-nw-repo").value);
-    s = await seen();
-    if (!s.panel || s.empty || !s.form || s.ask || s.pick || s.repos.join() !== "github.com/o/r") fail("newWork: the repo list " + JSON.stringify(s));
-    await shot("launch-one-provider");
+    // start new work: a refusal is a line in the dialog with the form still filled in, then the call
+    await openList();
+    await p.selectOption("#l-nw-repo", "github.com/openziti/ziti");
     await p.fill("#l-nw-name", "some.work");
     await p.fill("#l-nw-from", "release");
     refuse = "no such ref: release";
@@ -22980,9 +23068,11 @@ async function newWorkDialogSection(browser, base) {
     await p.click("#l-nw-go");
     await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("newWork: the dialog stayed open"));
     const b = asked[asked.length - 1] || {};
-    if (asked.length !== 2 || b.repo !== "github.com/o/r" || b.name !== "some.work" || b.from !== "release") fail("newWork: the call was " + JSON.stringify(asked));
-    if (errors.length) fail("newWork: page errors " + errors.join(" | "));
+    if (asked.length !== 2 || b.repo !== "github.com/openziti/ziti" || b.name !== "some.work" || b.from !== "release") fail("newWork: the call was " + JSON.stringify(asked));
+    if (providersAsked) fail("repoList: providers were asked for " + providersAsked + " times over the whole dialog");
+    if (errors.length) fail("repoList: page errors " + errors.join(" | "));
   } finally {
+    hubMode = wasHub;
     await ctx.close();
   }
   if (!bad) console.log("newWorkDialog ok");
