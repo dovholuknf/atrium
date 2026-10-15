@@ -825,6 +825,10 @@ function termDrawerFit() {
   for (let n = foot.parentElement; n && n !== document.body; n = n.parentElement) {
     if (getComputedStyle(n).overflowY !== "visible") { top = Math.max(top, n.getBoundingClientRect().top); break; }
   }
+  // The filter strip is above the pane and over this drawer (its z-index), so the room starts under it, or its search
+  // box would take the clicks meant for the drawer's top rows.
+  const strip = document.getElementById("fd-terms");
+  if (strip && strip.offsetParent) top = Math.max(top, strip.getBoundingClientRect().bottom);
   const room = Math.max(120, Math.floor(foot.getBoundingClientRect().top - top - 8 - 8));
   drawer.style.setProperty("--drawer-room", room + "px");
   drawer.classList.remove("wide");

@@ -103,9 +103,9 @@ const TABS = {
   },
   board: {
     view: "board", host: "board-bar", q: "board-q", rows: "#board .card[data-id]",
-    chip: { v: "finished", count: byStatus("done", "dead").length },
+    chip: { v: "done", count: byStatus("done", "dead", "paused").length },
     sort: { id: "board-sort", to: "name" },
-    wantDefault: ["backlog", "needs-permission", "needs-input", "running", "finished", "paused"]
+    wantDefault: ["backlog", "needs-you", "working", "done"]
   },
   terms: {
     view: "terms", host: "fd-terms", q: "term-q", rows: "#term-list .card.tab",
@@ -158,6 +158,13 @@ async function open(browser, width, mobile) {
   page.on("pageerror", e => check(false, "page error: " + e.message));
   await page.goto("http://127.0.0.1:" + server.address().port + "/");
   await page.waitForFunction(() => typeof switchView === "function" && document.querySelectorAll(".card, .stackrow").length > 0, null, { timeout: 15000 });
+  // The terminals drawer is an accordion by default (FD_TERMS_PUSH, its own headless unit termsDrawerPush). These steps are
+  // the overlay path: the terminal's box must not move, so flip the switch the way the unit does.
+  await page.evaluate(() => {
+    FD_TERMS_PUSH = false;
+    const h = document.getElementById("fd-terms");
+    if (h) h.classList.add("foverlay");
+  });
   return { ctx, page };
 }
 
@@ -389,7 +396,7 @@ async function keeps(browser, width, mobile) {
   await press("stack", '#stack-seg button[data-v="finished"]');
   await press("stack", '#stack-group button[data-group="off"]');
   await press("board", '#board-sort button[data-sort="manual"]');
-  await press("board", '#board-seg button[data-v="paused"]');
+  await press("board", '#board-seg button[data-v="done"]');
   await press("board", '#board-group button[data-group="tag"]');
   await press("terms", '#term-sort button:nth-child(3)');
   await press("terms", '#term-show button[data-v="dead"]');
@@ -405,14 +412,14 @@ async function keeps(browser, width, mobile) {
   });
   const want = {
     stack: "name / needs-input|finished / off",
-    board: "manual / backlog|needs-permission|needs-input|running|finished / tag",
+    board: "manual / backlog|needs-you|working / tag",
     terms: "started / dead / recency"
   };
   const got = await read();
   check(got.stack.startsWith("name / ") && got.stack.endsWith(" / off") && got.stack.includes("finished") && got.stack.includes("needs-input"),
     `${tag} 7: stack kept name, ready+finished, off (${got.stack})`);
-  check(got.board.startsWith("manual / ") && got.board.endsWith(" / tag") && !got.board.includes("paused"),
-    `${tag} 7: board kept manual, no paused column, by tag (${got.board})`);
+  check(got.board.startsWith("manual / ") && got.board.endsWith(" / tag") && !got.board.includes("done"),
+    `${tag} 7: board kept manual, no done column, by tag (${got.board})`);
   check(got.terms === want.terms, `${tag} 7: terminals kept started, dead, by age (${got.terms})`);
   // Away and back, then a reload.
   await goto(page, "board"); await goto(page, "stack"); await goto(page, "terms");
@@ -677,7 +684,7 @@ async function attachedStays(browser) {
   check(r.n > 0, `stack attached: and through a search (${r.n})`);
 
   await goto(page, "board");
-  await page.evaluate(() => { toggleBoardShow("finished"); });
+  await page.evaluate(() => { toggleBoardShow("done"); });
   await sleep(300);
   r = await drawn("board", "d1", null, "");
   check(r.n === 0, `board attached: a finished card is not drawn with the finished column off (${r.n})`);
@@ -689,15 +696,15 @@ async function attachedStays(browser) {
   check(r.n === 0, `board attached: a subagent is rolled up into its parent's card (${r.n})`);
   r = await drawn("board", "c1", "c1", "");
   check(r.n > 0 && /(^|\|)1 subagent($|\|)/.test(r.badge), `board attached: the attached subagent is a card, and the parent counts one less (${r.n}, ${r.badge})`);
-  await page.evaluate(() => { toggleBoardShow("finished"); });
+  await page.evaluate(() => { toggleBoardShow("done"); });
 
   await goto(page, "terms");
   r = await drawn("terms", "c1", null, "");
   check(r.n === 0, `terminals attached: a subagent under a folded parent is not a row (${r.n})`);
   r = await drawn("terms", "c1", "c1", "");
-  check(r.n > 0, `terminals attached: the attached subagent shows under its folded parent (${r.n})`);
+  check(r.n === 0, `terminals attached: a fold hides every child, the attached one too (${r.n})`);
   r = await drawn("terms", "c1", "c1", "run");
-  check(r.n > 0, `terminals attached: and through a search that matches its parent only (${r.n})`);
+  check(r.n === 0, `terminals attached: and through a search that matches its parent only (${r.n})`);
   r = await drawn("terms", "c1", "c1", "alpha");
   check(r.n > 0, `terminals attached: and through a search that matches neither (${r.n})`);
   r = await drawn("terms", "r2", "r2", "alpha");

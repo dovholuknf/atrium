@@ -1853,6 +1853,7 @@ async function chatterSection(browser, base) {
     await dp.waitForSelector('#t-drawer-body .peek-drawer[data-key="chatter"]:not([hidden]) > .peek-dh', { timeout: slow(8000) });
     await dp.click('#t-drawer-body .peek-drawer[data-key="chatter"] > .peek-dh');
     await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
+    await dp.evaluate(() => termDrawerFit());
     let rows = await dp.$$eval("#t-drawer-body .chat-row", r => r.length);
     if (rows !== 20) fail("the first page of chatter has " + rows + " rows, not 20.");
     const first = await dp.$eval("#t-drawer-body .chat-row", r => ({ dir: r.querySelector(".chat-dir").textContent,
@@ -3944,21 +3945,24 @@ async function untaggedSortSection(browser, base) {
       localStorage.setItem("atrium.termSort", "0");
       sortByActivity = false;
       setStackSort("name");
+      setBoardSort("name");
     });
     for (const v of ["stack", "board", "terms"]) {
       const got = await untaggedOrder(p, v);
       if (got !== byName) fail(`sorted by name, untagged on the ${v} read ${got}, expected ${byName}.`);
     }
-    // Activity.
+    // Activity. The board draws these in its needs you column, which is ordered by what is owed and not by the sort pill
+    // (`needsYouOrder`), and these cards owe the same, so it ties to the id order.
     await p.evaluate(() => {
       localStorage.setItem("atrium.boardsort", "activity");
       localStorage.setItem("atrium.termSort", "1");
       sortByActivity = true;
       setStackSort("activity");
+      setBoardSort("activity");
     });
     for (const v of ["stack", "board", "terms"]) {
       const got = await untaggedOrder(p, v);
-      if (got !== byActivity) fail(`sorted by activity, untagged on the ${v} read ${got}, expected ${byActivity}.`);
+      if (got !== (v === "board" ? byName : byActivity)) fail(`sorted by activity, untagged on the ${v} read ${got}, expected ${byActivity}.`);
     }
     // And the stack's other pills, which have their own keys.
     const stackWant = { project: "u-sa67,u-sa65,u-disc,u-night", runner: byName };
@@ -9029,7 +9033,9 @@ async function phoneShareSection(browser, base) {
     await p.waitForTimeout(400);
     const r = await share(p);
     console.log("phoneShare " + tag + ": output is " + (r.share * 100).toFixed(1) + "% of the viewport (" + Math.round(r.h) + " of " + Math.round(r.vv) + "px)");
-    if (r.share < 0.75) fail("phoneShare " + tag + ": the output is " + (r.share * 100).toFixed(1) + "% of the viewport, under 75%");
+    // The terminals tab carries the filter strip's line above the pane (js/filter-drawer.js), which the pop-out does not.
+    const floor = tag === "popout" ? 0.75 : 0.70;
+    if (r.share < floor) fail("phoneShare " + tag + ": the output is " + (r.share * 100).toFixed(1) + "% of the viewport, under " + floor * 100 + "%");
   };
   const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false;
     const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
@@ -10560,7 +10566,7 @@ async function idleParkSection(browser, base) {
     let s = await pane();
     if (!s) fail("the room's cog has no idle park control.");
     if (!s.on || s.min !== "120") fail("the control does not show the 2 hour default as 120 minutes: " + JSON.stringify(s));
-    if (!/Default 120 minutes/.test(s.hint) || !/least it takes is 30/.test(s.hint)) {
+    if (!/suggests 120 minutes/.test(s.hint) || !/least it takes is 30/.test(s.hint)) {
       fail("the control does not name the default and the floor: " + JSON.stringify(s.hint));
     }
     await shot("idle-park-cog-after");
@@ -13476,7 +13482,8 @@ async function peekStatusTruthSection(browser, base) {
       if (v.secOverX > 0 || v.bodyOverX > 0 || v.qOverX.some(n => n > 0)) fail("peekStatus: long unbroken text overflows sideways " + tag + " hover: " + JSON.stringify(v));
     }
     const ov = await p.evaluate(() => { const s = document.querySelector(".peek.on .peek-sec"); const c = getComputedStyle(s); return { x: c.overflowX, g: c.scrollbarGutter }; });
-    if (ov.x === "auto" || ov.x === "scroll" || !/stable/.test(ov.g)) fail("peekStatus: the needs-you block can scroll sideways or does not reserve its gutter: " + JSON.stringify(ov));
+    // The hover popup never scrolls (open questions are clamped), so there is no gutter to reserve, only no sideways scroll.
+    if (ov.x === "auto" || ov.x === "scroll") fail("peekStatus: the needs-you block can scroll sideways: " + JSON.stringify(ov));
   } finally {
     await ctx.close();
     tasksMode = was;
@@ -17316,10 +17323,10 @@ async function restartMenuSection(browser, base) {
     refuse = false;
     posts.length = 0;
 
-    // parked: offered, and it wakes the card.
+    // parked: no process, so a card with no runner is not restarted: its menu offers resume, and that wakes the card.
     labels = await open("land-rs-park");
-    if (!labels.some(l => /^restart/.test(l))) fail("restartMenu: no restart on a parked card with a resume id.");
-    await item().click();
+    if (labels.some(l => /^restart/.test(l)) || !labels.some(l => /^resume.*parked, no process/.test(l))) fail("restartMenu: a parked card should offer resume and not restart: " + JSON.stringify(labels));
+    await p.locator("#cardmenu button", { hasText: /parked, no process/ }).first().click();
     await p.waitForTimeout(500);
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
@@ -17437,7 +17444,8 @@ async function shiftMenuSection(browser, base) {
     m = await menu();
     if (!has(m)) fail("shiftMenu: the row menu has no new context: " + JSON.stringify(m));
     await closeMenu();
-    // unsupervised row
+    // unsupervised row: pinned and runnerless is dead, which the strip lists only behind the dead chip
+    await p.evaluate(async () => { toggleTermShow("dead"); await renderTermList(); });
     await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-bare\"]");
       if (!b) throw new Error("no land-bare row");
       b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
@@ -22553,7 +22561,7 @@ async function kidCountsSection(browser, base) {
       const pool = [
         { id: "P", display_title: "the parent", status: "running", supervised: true, pid: 9, tags: ["origin:agent"], worktree: "/w" },
         kid("runner"),
-        kid("asker", { status: "needs-input", activity: null, ask: "which one?" }),
+        kid("asker", { status: "needs-input", activity: null, ask: "which one?", asks_open: 1 }),
         gone("pausedA", { status: "paused" }),
         gone("parkedB", { status: "needs-input", parked_at: "2026-10-13T10:00:00Z" }),
         gone("deadC", { status: "dead" }),
@@ -24084,7 +24092,7 @@ async function joinedClickSection(browser, base) {
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof joinedClick === "function" && typeof askUser === "function", null, { timeout: slow(15000) });
-    const row = await p.evaluate(() => termRow({ id: "jn", status: "needs-input", supervised: false, title: "jn", display_title: "jn", tags: [] }, false));
+    const row = await p.evaluate(() => termRow({ id: "jn", status: "needs-input", supervised: false, pid: 4242, title: "jn", display_title: "jn", tags: [] }, false));
     if (!/joinedClick\('jn'\)/.test(row) || /attachTask\(/.test(row)) fail("joinedClick: the joined row does not open the dialog: " + row);
     await p.evaluate(() => { window.__opened = []; openTask = id => window.__opened.push(id); joinedClick("jn"); });
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
@@ -24199,10 +24207,10 @@ async function joinedLiveSection(browser, base) {
     if (r.joinedKind !== "live" || r.joinedCold) fail("joinedLive: a joined live card is not a live row, or is grey: " + JSON.stringify(r));
     if (r.exitedKind !== "" || r.deadKind !== "" || !r.exitedCold) fail("joinedLive: an unpinned exited card is a row: " + JSON.stringify(r));
     if (r.runningKind !== "live") fail("joinedLive: a supervised running card is not a live row.");
-    if (r.pinnedDeadKind !== "dead" || r.pinnedParkedKind !== "dead" || r.parkedKind !== "") {
-      fail("joinedLive: a pinned card whose runner is gone is not behind the dead chip: " + JSON.stringify(r));
+    if (r.pinnedDeadKind !== "dead" || r.pinnedParkedKind !== "paused" || r.parkedKind !== "paused") {
+      fail("joinedLive: a pinned card whose runner is gone is not behind the dead chip, or a parked one the paused chip: " + JSON.stringify(r));
     }
-    if (!r.parkedCold || !/resumePinned\('pk'\)/.test(r.parkedRow) || /joined/.test(r.parkedRow)) {
+    if (!r.parkedCold || /resumePinned/.test(r.parkedRow) || /joined/.test(r.parkedRow)) {
       fail("joinedLive: a parked needs-input card reads joined, not cold: " + JSON.stringify(r.parkedRow));
     }
     if (/ cold/.test(r.joinedRow) || !/cannot attach/.test(r.joinedRow) || /attachTask\(/.test(r.joinedRow)) {
@@ -30727,7 +30735,7 @@ async function main() {
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
       usageTab: usageTabSection, usageWeekReset: usageWeekResetSection,
-      mAgentIdle: mAgentIdleSection, greyMeansDead: greyMeansDeadSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      mAgentIdle: mAgentIdleSection, greyMeansDead: greyMeansDeadSection, noResumeButton: noResumeButtonSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       cacheChip: cacheChipSection, roomsMachine: roomsMachineSection,
@@ -30999,7 +31007,7 @@ async function main() {
     // Replaces the two `hide inactive` toggles and `show stopped`. The strip carries a live agent (AGLIVE) with three
     // subagents launched from it (an idle one, a working one and one that is asking), a paused card, and a pinned
     // agent and subagent whose runners are gone. With no key set: the live agent is a row, its subagents are folded
-    // under it behind a count (the asking one still shows through the fold), and the paused and dead rows are not
+    // under it behind a count (a fold hides the asking one too), and the paused and dead rows are not
     // listed. Each chip brings its own rows back and the stored list is what survives a reload. Driven through the
     // board's own functions so the device-scoped key is exercised, not faked.
     tasksMode = "doers";
@@ -31041,10 +31049,10 @@ async function main() {
 
     // DEFAULT: no key. Live rows only, subagents folded behind a count, nothing paused or dead.
     const cDef = await chipState();
-    if (!cDef.live || !cDef.askingSub) {
-      fail("by default the live agent, or the subagent that is asking, is not listed: " + JSON.stringify(cDef));
+    if (!cDef.live) {
+      fail("by default the live agent is not listed: " + JSON.stringify(cDef));
     }
-    if (cDef.idleSub || cDef.workingSub) {
+    if (cDef.idleSub || cDef.workingSub || cDef.askingSub) {
       fail("by default a subagent is a row of its own: its parent should start folded: " + JSON.stringify(cDef));
     }
     if (cDef.paused || cDef.deadSub || cDef.deadAgent) {
@@ -31103,7 +31111,7 @@ async function main() {
     // And the fold now means the other thing: a click on the chevron folds this one.
     await page.evaluate(async () => { toggleKids("aglive"); await loadCards().catch(() => {}).then(renderTermList); });
     const cFold = await chipState();
-    if (cFold.idleSub || cFold.workingSub || !cFold.askingSub || !cFold.shut) {
+    if (cFold.idleSub || cFold.workingSub || cFold.askingSub || !cFold.shut) {
       fail("with subagents on, folding a parent did not fold it behind its count: " + JSON.stringify(cFold));
     }
 
@@ -31157,7 +31165,7 @@ async function main() {
     if (!trayShut.scroll || trayShut.tray || trayShut.listOverflow !== "hidden" || trayShut.scrollOverflow !== "auto") {
       fail("the list is not one scrolling box of rows with nothing above it: " + JSON.stringify(trayShut));
     }
-    if (!trayShut.line || !/^running \+ ready \d+ · /.test(trayShut.sum) || !trayShut.search || !trayShut.panelShut) {
+    if (!trayShut.line || !/^\d+ shown · /.test(trayShut.sum) || !trayShut.search || !trayShut.panelShut) {
       fail("the line under the title bar does not say what the strip is set to, with a search box and a shut drawer: " + JSON.stringify(trayShut));
     }
     if (trayShut.rows !== "show|sort by|group") {
@@ -32776,6 +32784,7 @@ async function main() {
     await unit("mBell", () => mBellSection(browser));
     await unit("mAgentIdle", () => mAgentIdleSection(browser));
     await unit("greyMeansDead", () => greyMeansDeadSection(browser, base));
+    await unit("noResumeButton", () => noResumeButtonSection(browser, base));
     await unit("phoneRedirect", () => phoneRedirectSection(browser, base));
     await unit("gearTermList", () => gearTermListSection(browser, base));
     await unit("growlLinks", () => growlLinksSection(browser, base));
@@ -34761,7 +34770,8 @@ async function growlOnItSection(browser, base) {
     await comesBack("a window blur", () => stage("c", false));
     await comesBack("a hidden tab", () => stage("c", true, "hidden"));
     await comesBack("attaching another card", () => stage("other", true));
-    await comesBack("leaving the terminals view", () => p.evaluate(() => { document.getElementById("terms").hidden = true; }));
+    // The engaged card (js/engaged.js) keeps counting as watched for 20s after the last look, so it is let go first.
+    await comesBack("leaving the terminals view", () => p.evaluate(() => { engagedCard = ""; document.getElementById("terms").hidden = true; }));
     // a popped-out window focused on the card's own terminal: no growler in it and none on the board
     await h.say([]);
     await stage("other", false);

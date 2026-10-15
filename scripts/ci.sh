@@ -153,7 +153,8 @@ write_summary() {
       echo
       echo "| seconds | package | test |"
       echo "|---|---|---|"
-      tail -n +2 "$artefacts/timings.tsv" | sort -t$'\t' -k1,1 -rn | head -n 10 \
+      tail -n +2 "$artefacts/timings.tsv" | sort -t$'\t' -k1,1 -rn > "$artefacts/timings.sorted.tsv"
+      head -n 10 "$artefacts/timings.sorted.tsv" \
         | awk -F'\t' '{printf "| %s | %s | %s |\n", $1, $2, $3}'
     fi
     echo
