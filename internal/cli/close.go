@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -32,12 +34,14 @@ type closeOpts struct {
 	boardURL              string
 	yes, asJSON           bool
 	keep, stash, deleteIt []string
+	cwd, work             string
+	noWait                bool
 }
 
 func newClose() *cobra.Command {
 	var o closeOpts
 	c := &cobra.Command{
-		Use:   "close <card>",
+		Use:   "close <card> | --cwd <path>",
 		Short: "Close a card: stop it, and free the worktree, branch, refs and review its inventory lists.",
 		Long: "Shows what closing the card frees and keeps, and with --yes closes it.\n\n" +
 			"The session is stopped, the review is archived (its findings and walk stay, the copy of the code " +
@@ -47,10 +51,18 @@ func newClose() *cobra.Command {
 			"With no answer it is stashed to the hub, or kept when the room cannot stash. The hub removes a stash " +
 			"after its retention (30 days by default). Say --keep (it stays on disk), --stash (pushed to the hub as stash/<card>/<branch>, then removed) " +
 			"or --delete (removed as it is), with the worktree's seq or path, or all.",
-		Args:          cobra.ExactArgs(1),
+		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch {
+			case o.cwd != "" && len(args) > 0:
+				return errors.New("say a card or --cwd, not both")
+			case o.cwd != "":
+				return closeByCwdCmd(o)
+			case len(args) == 0:
+				return errors.New("say which card, or --cwd <path>")
+			}
 			return closeCardCmd(strings.TrimSpace(args[0]), o)
 		},
 	}
@@ -58,6 +70,9 @@ func newClose() *cobra.Command {
 	c.Flags().StringSliceVar(&o.keep, "keep", nil, "keep this worktree on disk (seq, path or all)")
 	c.Flags().StringSliceVar(&o.stash, "stash", nil, "push this worktree's work to the hub, then remove it (seq, path or all)")
 	c.Flags().StringSliceVar(&o.deleteIt, "delete", nil, "remove this worktree with its work (seq, path or all)")
+	c.Flags().StringVar(&o.cwd, "cwd", "", "close every card whose folder is this worktree (needs --yes)")
+	c.Flags().StringVar(&o.work, "work", "", "with --cwd: what a worktree holding unsaved work gets, keep, stash or delete")
+	c.Flags().BoolVar(&o.noWait, "no-wait", false, "with --cwd: answer at once and let the closes finish behind it")
 	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -216,6 +231,50 @@ func closeCardCmd(card string, o closeOpts) error {
 				}
 				fmt.Println(line)
 			}
+		}
+	}
+	return nil
+}
+
+// closeByCwdCmd closes every card at a worktree through POST /v1/cards/archive.
+func closeByCwdCmd(o closeOpts) error {
+	cwd := strings.TrimSpace(o.cwd)
+	// `--cwd .` has to name the folder, not match nothing and read like an answer. A path that already looks absolute,
+	// in either OS's form, is sent as typed: the hub matches slashes, a trailing separator and case itself.
+	if !filepath.IsAbs(cwd) && !strings.HasPrefix(cwd, "/") && !strings.HasPrefix(cwd, `\`) && !(len(cwd) > 1 && cwd[1] == ':') {
+		abs, err := filepath.Abs(cwd)
+		if err != nil {
+			return err
+		}
+		cwd = abs
+	}
+	if !o.yes {
+		fmt.Printf("would close every card whose folder is %s. nothing was changed. run again with --yes\n", cwd)
+		return nil
+	}
+	var res struct {
+		Cards  []string          `json:"cards"`
+		Failed map[string]string `json:"failed"`
+		Closed []closeResultOut  `json:"closed"`
+	}
+	body := map[string]any{"cwd": cwd, "wait": !o.noWait, "work": o.work}
+	if _, err := closeAsk(boardAddress(o.boardURL), http.MethodPost, "/v1/cards/archive", body, &res); err != nil {
+		return err
+	}
+	if o.asJSON {
+		return printJSON(res)
+	}
+	if len(res.Cards) == 0 {
+		fmt.Printf("no card is at %s\n", cwd)
+		return nil
+	}
+	for _, id := range res.Cards {
+		if why := res.Failed[id]; why != "" {
+			fmt.Printf("%s: not closed: %s\n", id, why)
+		} else if o.noWait {
+			fmt.Printf("closing %s\n", id)
+		} else {
+			fmt.Printf("closed %s\n", id)
 		}
 	}
 	return nil

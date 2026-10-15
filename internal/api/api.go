@@ -653,6 +653,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/close", s.getClose)
 	mux.HandleFunc("POST /v1/tasks/{id}/close", s.postClose)
 	mux.HandleFunc("POST /v1/tasks/{id}/cleanup-offer", s.postCleanupOffer)
+	// Closing every card in a worktree, the call gwt makes before it removes one. See cardsarchive.go.
+	mux.HandleFunc("POST /v1/cards/archive", s.postCardsArchive)
 	// What no live card holds any more. See sweep.go.
 	mux.HandleFunc("GET /v1/sweep", s.getSweep)
 	mux.HandleFunc("POST /v1/sweep", s.postSweep)
