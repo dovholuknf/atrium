@@ -25,6 +25,21 @@ func isItem(t *store.Task) bool { return t != nil && hasTag(t.Tags, ItemTag) }
 // changes the generation and never the attachment. See docs/rnd/item-lifecycle-design.md, section 8.
 const WorkTagPrefix = "atrium:item:"
 
+// StepTagPrefix starts the tag that says which step of its item a card is for, `atrium:step:<step>`: designed, approved,
+// building and so on. It rides the card's first push to the hub, which files it on the attachment. A card with none is a
+// builder. The same prefix as link.StepTagPrefix.
+const StepTagPrefix = "atrium:step:"
+
+// stepOfTags is the step a card's tags name, or "". The hub ignores one it does not know.
+func stepOfTags(tags []string) string {
+	for _, t := range tags {
+		if s, ok := strings.CutPrefix(strings.TrimSpace(t), StepTagPrefix); ok && workIDRe.MatchString(s) {
+			return s
+		}
+	}
+	return ""
+}
+
 // workIDRe is a backlog id, as the hub files them.
 var workIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,79}$`)
 

@@ -20,6 +20,26 @@ import (
 // whole-string and means isolated. The same prefix as daemon.WorkTagPrefix.
 const WorkTagPrefix = "atrium:item:"
 
+// StepTagPrefix starts the tag that says which step of its item a card is for, `atrium:step:<step>`. The same prefix as
+// daemon.StepTagPrefix. The room carries it on the card's first push and the hub files it on the attachment.
+const StepTagPrefix = "atrium:step:"
+
+// WithStepTag puts the step tag on a launch's tags, replacing one that is there. A step that is not one of the eight is
+// refused, naming them, before a card exists.
+func WithStepTag(tags []string, step string) ([]string, error) {
+	step = strings.ToLower(strings.TrimSpace(step))
+	if !hubstore.ValidStep(step) {
+		return nil, &refusedError{fmt.Sprintf("--step %q is not a step: %s", step, strings.Join(hubstore.Steps, ", "))}
+	}
+	out := make([]string, 0, len(tags)+1)
+	for _, t := range tags {
+		if !strings.HasPrefix(strings.TrimSpace(t), StepTagPrefix) {
+			out = append(out, t)
+		}
+	}
+	return append(out, StepTagPrefix+step), nil
+}
+
 // NewItemPrefix is how a launch files the backlog item it runs on: `new:a title`.
 const NewItemPrefix = "new:"
 

@@ -71,12 +71,22 @@ func ensureWork(t *sql.Tx, id, now string) error {
 }
 
 // attachWork puts a card on an item, once. The same card again changes nothing.
-func attachWork(t *sql.Tx, id, room, card, now string) error {
+func attachWork(t *sql.Tx, id, room, card, step, now string) error {
 	if err := ensureWork(t, id, now); err != nil {
 		return err
 	}
-	_, err := t.Exec(`INSERT OR IGNORE INTO work_card (backlog_id, room, card, role, step, attached_at) VALUES (?, ?, ?, '', '', ?)`,
-		id, fold(room), card, now)
+	_, err := t.Exec(`INSERT OR IGNORE INTO work_card (backlog_id, room, card, role, step, attached_at) VALUES (?, ?, ?, '', ?, ?)`,
+		id, fold(room), card, step, now)
+	return err
+}
+
+// setCardStep names the step of a card that was attached without one, once. A step a card already has never changes.
+func setCardStep(t *sql.Tx, id, room, card, step string) error {
+	if step == "" {
+		return nil
+	}
+	_, err := t.Exec(`UPDATE work_card SET step = ? WHERE backlog_id = ? AND room = ? AND card = ? AND step = ''`,
+		step, id, fold(room), card)
 	return err
 }
 

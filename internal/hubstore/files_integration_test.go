@@ -32,7 +32,7 @@ func TestFilesMigrationToleratesBeingThere(t *testing.T) {
 		if m.name != "0017_hub_files" {
 			continue
 		}
-		if i < len(migrations)-8 {
+		if i < len(migrations)-9 {
 			t.Fatalf("0017_hub_files is at %d of %d, a migration goes at the end", i, len(migrations))
 		}
 		for _, st := range m.stmts {
@@ -289,7 +289,7 @@ func TestFilesTTLBounds(t *testing.T) {
 func TestFilesListByCardAndNoteCut(t *testing.T) {
 	s := open(t)
 	in := FileInput{Name: "a", Data: []byte("a"), Origin: "card", Card: "sg4~1", Room: "sg4",
-		Note: string(bytes.Repeat([]byte("é"), 600))}
+		Note: string(bytes.Repeat([]byte("Ã©"), 600))}
 	r := mustFile(t, s, in)
 	if n := len([]rune(r.Note)); n != fileNoteMax {
 		t.Fatalf("note is %d runes", n)

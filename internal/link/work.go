@@ -1,6 +1,7 @@
 package link
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,14 +15,23 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// WORK, ON THE HUB: the item as the unit of work, one per backlog id, with every card attached. READ ONLY. The rows are
-// written when a room pushes an assignment that names its backlog id (POST /_hub/items/sync), so there is nothing to
-// post here. See internal/hubstore/work.go and docs/changes/item-lifecycle-l1.md.
+// WORK, ON THE HUB: the item as the unit of work, one per backlog id, with every card attached. The rows are written when a
+// room pushes an assignment that names its backlog id (POST /_hub/items/sync), so there is nothing to post to make one.
+// See internal/hubstore/work.go and docs/changes/item-lifecycle-l1.md. Since L2 an item also has its steps, derived by the
+// engine (lifecycle.go), and the human's three actions on them (lifecycle_engine.go). L3 reads the git ones (lifecycle_git.go).
 //
-//	GET /_hub/work           the items, newest change first
-//	GET /_hub/work/<id>      one: `work`, its `cards`, its `assignments` (the rows of /_hub/items that belong to it) and
-//	                         its `steps`, the git ones (landed, deployed, pushed) read fresh
-//	POST /_hub/work/<id>     {"branch","kind"}: name the build branch, and say whether it is code, doc or mixed
+//	GET  /_hub/work           the items, newest change first, each with its `steps`, `state` and `current`
+//	GET  /_hub/work/<id>      one: `work`, its `cards`, its `assignments`, its `facts`, its `steps` (all eight) and its
+//	                          `lifecycle`. The git steps (landed, deployed, pushed) are read fresh
+//	POST /_hub/work/<id>      {do: approve|send_back|build_directly, by, sha?, note?}: the human acts on the design, or
+//	                          {"branch","kind"}: name the build branch, and say whether it is code, doc or mixed. Only from
+//	                          the machine the hub runs on
+
+// workView is one row of the list: the item, and what the engine says of it.
+type workView struct {
+	hubstore.Work
+	Lifecycle
+}
 
 func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 	st := p.itemStore()
@@ -31,11 +41,29 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 	rest := strings.Trim(strings.TrimPrefix(sub, "work"), "/")
 	if r.Method == http.MethodPost && rest != "" && !strings.Contains(rest, "/") {
-		p.serveWorkSet(w, r, st, rest)
+		switch {
+		case docsCrossOrigin.Check(r) != nil:
+			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
+		case !edge.LocalOperator(r):
+			crFail(w, http.StatusForbidden, "items are written only from the machine the hub runs on"+edge.ProxyNote(r))
+		default:
+			// ONE ROUTE, TWO BODIES: a human's act on the design names `do`, and L3's names the branch or the kind.
+			raw, _ := io.ReadAll(io.LimitReader(r.Body, 8<<10))
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+			var peek struct {
+				Do string `json:"do"`
+			}
+			_ = json.Unmarshal(raw, &peek)
+			if peek.Do != "" {
+				p.workAction(w, r, st, rest)
+			} else {
+				p.serveWorkSet(w, r, st, rest)
+			}
+		}
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		crFail(w, http.StatusMethodNotAllowed, "items are written by pushing an assignment, so this is a GET")
+		crFail(w, http.StatusMethodNotAllowed, "items are made by pushing an assignment, so this is a GET, or a POST of an action on one")
 		return
 	}
 	switch {
@@ -45,46 +73,18 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 			wfail(w, err)
 			return
 		}
-		if list == nil {
-			list = []hubstore.Work{}
+		out := make([]workView, 0, len(list))
+		cached, err := st.AllWorkSteps()
+		if err != nil {
+			wfail(w, err)
+			return
 		}
-		crJSON(w, http.StatusOK, map[string]any{"work": list})
+		for _, wk := range list {
+			out = append(out, p.listedWork(r, st, wk, cached[wk.BacklogID]))
+		}
+		crJSON(w, http.StatusOK, map[string]any{"work": out})
 	case !strings.Contains(rest, "/"):
-		wk, err := st.WorkByID(rest)
-		if err != nil {
-			wfail(w, err)
-			return
-		}
-		cards, err := st.WorkCards(rest)
-		if err != nil {
-			wfail(w, err)
-			return
-		}
-		as, err := st.WorkAssignments(rest)
-		if err != nil {
-			wfail(w, err)
-			return
-		}
-		if cards == nil {
-			cards = []hubstore.WorkCard{}
-		}
-		if as == nil {
-			as = []hubstore.Item{}
-		}
-		// THE GIT STEPS ARE READ FRESH, bounded, and the stored ones answer when the read cannot be made.
-		rctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-		steps, err := p.refreshOne(rctx, rest)
-		cancel()
-		if steps == nil || err != nil {
-			if steps, err = st.WorkSteps(rest); err != nil {
-				wfail(w, err)
-				return
-			}
-		}
-		if steps == nil {
-			steps = []hubstore.WorkStepRow{}
-		}
-		crJSON(w, http.StatusOK, map[string]any{"work": wk, "cards": cards, "assignments": as, "steps": steps})
+		p.writeWorkDetail(w, r, st, rest)
 	default:
 		http.NotFound(w, r)
 	}
@@ -133,6 +133,65 @@ func (p *Proxy) serveWorkSet(w http.ResponseWriter, r *http.Request, st *hubstor
 	defer cancel()
 	_, _ = p.refreshOne(rctx, id)
 	crJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// listedWork is one item of the list. The steps come from the cache, and the engine runs when it has not written its own yet
+// (an item from before this stage), or when the item holds an approval, whose staleness is a fact about git and so changes
+// without a push.
+func (p *Proxy) listedWork(r *http.Request, st *hubstore.Store, wk hubstore.Work, cached []hubstore.WorkStepRow) workView {
+	if !engineStepsWritten(cached) || approvalHeld(cached) {
+		if got, err := p.refreshWork(r.Context(), st, wk.BacklogID, approvalHeld(cached)); err == nil {
+			return workView{Work: wk, Lifecycle: got.Lifecycle}
+		}
+	}
+	as, _ := st.WorkAssignments(wk.BacklogID)
+	l := completeSteps(cached)
+	l.State, l.Waiting = itemState(l, as)
+	return workView{Work: wk, Lifecycle: l}
+}
+
+// engineStepsWritten is whether the engine's own steps (designed to reviewed) are all stored. L3 writes the other three.
+func engineStepsWritten(steps []hubstore.WorkStepRow) bool {
+	n := 0
+	for _, s := range steps {
+		if engineStep(s.Step) {
+			n++
+		}
+	}
+	return n == len(engineSteps)
+}
+
+// approvalHeld is whether an approval stands, which git can take away.
+func approvalHeld(steps []hubstore.WorkStepRow) bool {
+	for _, s := range steps {
+		if s.Step == hubstore.StepApproved && (s.State == hubstore.StepDone || s.State == hubstore.StepStale) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Proxy) writeWorkDetail(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string) {
+	// THE GIT STEPS ARE READ FRESH, bounded, and what is stored answers when the read cannot be made.
+	rctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	_, _ = p.refreshOne(rctx, id)
+	cancel()
+	got, err := p.refreshWork(r.Context(), st, id, true)
+	if err != nil {
+		wfail(w, err)
+		return
+	}
+	if got.Cards == nil {
+		got.Cards = []hubstore.WorkCard{}
+	}
+	if got.Assignments == nil {
+		got.Assignments = []hubstore.Item{}
+	}
+	if got.Facts == nil {
+		got.Facts = []hubstore.WorkFact{}
+	}
+	crJSON(w, http.StatusOK, map[string]any{"work": got.Work, "cards": got.Cards, "assignments": got.Assignments,
+		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle})
 }
 
 func wfail(w http.ResponseWriter, err error) {

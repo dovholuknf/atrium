@@ -761,6 +761,28 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L2: THE STEP ENGINE'S EVIDENCE, and who a step waits on. `work_fact` is append-only, and the unique
+		// index is what makes a replayed approval, or a design noticed twice, a no-op. `work_step` is L3's table, which
+		// CREATE IF NOT EXISTS would not give a column, so `party` is added to it here (the runner tolerates it being there).
+		name: "0025_work_fact_party",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work_fact (
+				seq        INTEGER PRIMARY KEY,
+				backlog_id TEXT NOT NULL,
+				kind       TEXT NOT NULL,
+				source     TEXT NOT NULL DEFAULT 'seen' CHECK (source IN ('seen','reported')),
+				card       TEXT NOT NULL DEFAULT '',
+				ref        TEXT NOT NULL DEFAULT '',
+				at_sha     TEXT NOT NULL DEFAULT '',
+				dirty      INTEGER NOT NULL DEFAULT 0,
+				at         TEXT NOT NULL,
+				payload    TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS work_fact_once ON work_fact (backlog_id, kind, ref, at_sha)`,
+			`ALTER TABLE work_step ADD COLUMN party TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

@@ -56,7 +56,10 @@ type Item struct {
 	Note string `json:"note,omitempty"`
 	// WorkID is the backlog id of the item this assignment belongs to, `adhoc-<item_id>` for work no backlog item named.
 	// A push may leave it empty, and the hub then files the assignment as adhoc. See work.go.
-	WorkID    string `json:"work_id,omitempty"`
+	WorkID string `json:"work_id,omitempty"`
+	// Step is the step the card was launched for, `atrium:step:<step>` on its tags. It rides the first push, and is not a
+	// column of this table: the attachment holds it (work_card.step).
+	Step      string `json:"step,omitempty"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -143,6 +146,10 @@ func scanAtItem(sc scanner) (Item, error) {
 // key already applied is a no-op, and so is a push older than the row.
 func (s *Store) PutItem(it Item) (Item, bool, error) {
 	it.Room = fold(it.Room)
+	// A step this hub does not know is a newer room's, and is ignored: refusing the push would have the room retry it forever.
+	if !ValidStep(it.Step) {
+		it.Step = ""
+	}
 	if err := checkItem(it); err != nil {
 		return Item{}, false, err
 	}
@@ -200,9 +207,9 @@ func (s *Store) PutItem(it Item) (Item, bool, error) {
 			return err
 		}
 		if have > 0 {
-			return nil
+			return setCardStep(t, out.WorkID, out.Room, out.Card, it.Step)
 		}
-		return attachWork(t, out.WorkID, out.Room, out.Card, now)
+		return attachWork(t, out.WorkID, out.Room, out.Card, it.Step, now)
 	})
 	return out, applied, err
 }

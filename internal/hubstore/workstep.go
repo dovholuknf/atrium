@@ -27,6 +27,8 @@ type WorkStepRow struct {
 	BacklogID string `json:"backlog_id"`
 	Step      string `json:"step"`
 	State     string `json:"state"`
+	// Party is who the step waits on while it is active: the human, or the cards on it. Only the step engine (L2) says.
+	Party     string `json:"party,omitempty"`
 	StartedAt string `json:"started_at,omitempty"`
 	EndedAt   string `json:"ended_at,omitempty"`
 	SHA       string `json:"sha,omitempty"`
@@ -43,13 +45,13 @@ func (s *Store) PutWorkStep(r WorkStepRow) error {
 		r.Cards = "[]"
 	}
 	return s.guard(func() error {
-		_, err := s.db.Exec(`INSERT INTO work_step (backlog_id, step, state, started_at, ended_at, sha, cards, reason)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (backlog_id, step) DO UPDATE SET state = excluded.state,
+		_, err := s.db.Exec(`INSERT INTO work_step (backlog_id, step, state, party, started_at, ended_at, sha, cards, reason)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (backlog_id, step) DO UPDATE SET state = excluded.state, party = excluded.party,
 				started_at = CASE WHEN work_step.started_at = '' THEN excluded.started_at ELSE work_step.started_at END,
 				ended_at = CASE WHEN excluded.state IN ('done','skipped') AND work_step.state = excluded.state
 					AND work_step.ended_at <> '' THEN work_step.ended_at ELSE excluded.ended_at END, sha = excluded.sha, cards = excluded.cards, reason = excluded.reason`,
-			r.BacklogID, r.Step, r.State, r.StartedAt, r.EndedAt, r.SHA, r.Cards, r.Reason)
+			r.BacklogID, r.Step, r.State, r.Party, r.StartedAt, r.EndedAt, r.SHA, r.Cards, r.Reason)
 		return err
 	})
 }
@@ -59,7 +61,7 @@ func (s *Store) WorkSteps(id string) ([]WorkStepRow, error) {
 	var out []WorkStepRow
 	err := s.guard(func() error {
 		out = nil
-		rows, err := s.db.Query(`SELECT backlog_id, step, state, started_at, ended_at, sha, cards, reason FROM work_step
+		rows, err := s.db.Query(`SELECT backlog_id, step, state, party, started_at, ended_at, sha, cards, reason FROM work_step
 			WHERE backlog_id = ? ORDER BY rowid`, strings.TrimSpace(id))
 		if err != nil {
 			return err
@@ -67,7 +69,7 @@ func (s *Store) WorkSteps(id string) ([]WorkStepRow, error) {
 		defer rows.Close()
 		for rows.Next() {
 			var r WorkStepRow
-			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason); err != nil {
+			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.Party, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason); err != nil {
 				return err
 			}
 			out = append(out, r)
@@ -161,4 +163,35 @@ func (s *Store) WorkPaths(id string) ([]string, error) {
 	}
 	_ = json.Unmarshal([]byte(raw), &out)
 	return out, nil
+}
+
+// CardsJSON is a list of cards as the `cards` column holds it.
+func CardsJSON(cards []string) string {
+	if len(cards) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(cards)
+	return string(b)
+}
+
+// AllWorkSteps is the stored steps of every item, by backlog id, so a list is one query.
+func (s *Store) AllWorkSteps() (map[string][]WorkStepRow, error) {
+	out := map[string][]WorkStepRow{}
+	err := s.guard(func() error {
+		out = map[string][]WorkStepRow{}
+		rows, err := s.db.Query(`SELECT backlog_id, step, state, party, started_at, ended_at, sha, cards, reason FROM work_step ORDER BY rowid`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r WorkStepRow
+			if err := rows.Scan(&r.BacklogID, &r.Step, &r.State, &r.Party, &r.StartedAt, &r.EndedAt, &r.SHA, &r.Cards, &r.Reason); err != nil {
+				return err
+			}
+			out[r.BacklogID] = append(out[r.BacklogID], r)
+		}
+		return rows.Err()
+	})
+	return out, err
 }

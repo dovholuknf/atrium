@@ -203,6 +203,8 @@ func (p *Proxy) itemSync(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	}
 	if applied {
 		p.backlogEvent("item", map[string]string{"id": got.ID, "state": got.State, "owner_kind": got.OwnerKind})
+		// THE ITEM'S STEPS FOLLOW ITS ASSIGNMENTS. Off this request's path: reading git may take seconds, and the room waits.
+		p.refreshWorkSoon(st, got.WorkID)
 	}
 	crJSON(w, http.StatusOK, map[string]any{"ok": true, "applied": applied, "item": got})
 }

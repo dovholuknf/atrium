@@ -157,6 +157,8 @@ type Proxy struct {
 	// items is where the hub owns items. Nil answers 404. itemRoomCall replaces the call to a room in a test. See items.go.
 	items        *hubstore.Store
 	itemRoomCall itemRoomCallFunc
+	// designGit replaces the hub's git store as what the design steps read, in a test. See lifecycle_engine.go.
+	designGit designGit
 	flowGit      FlowGit
 	landGit      LandGit
 	hubBuild     string

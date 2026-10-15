@@ -92,7 +92,7 @@ func (d *Daemon) createItem(task *store.Task, ownerSpec string) (*store.ItemRow,
 		OwnerKind: kind, Owner: owner, CreatedBy: task.SpawnedBy,
 		// THE ATTACHMENT, from the card's own tag. It rides the push through the outbox, so a room that was down when the
 		// card was attached says so when it is back, and the hub treats a replay as nothing.
-		WorkID: workOfTags(task.Tags),
+		WorkID: workOfTags(task.Tags), Step: stepOfTags(task.Tags),
 	})
 	if err != nil {
 		return nil, err
@@ -203,7 +203,13 @@ func (d *Daemon) itemEnded(task *store.Task, in FinishRequest) *itemEnding {
 		}
 		return &itemEnding{item: it}
 	}
-	moved, changed := d.moveItem(it.ID, target, "")
+	// A FINISHED ITEM CARRIES THE COMMIT IT NAMED, as its note: the hub reads the sha from there, which is how a designer's
+	// finishing becomes a design it can look at. A blocked one has no note, as before.
+	note := ""
+	if target == store.ItemFinished {
+		note = strings.TrimSpace(in.SHA)
+	}
+	moved, changed := d.moveItem(it.ID, target, note)
 	if !isolated {
 		// AN ATTACHED CARD THAT IS NOT ISOLATED keeps the report it always had, to its launcher, in its own words. Its
 		// assignment moves, and nothing else about its ending does.
@@ -449,7 +455,43 @@ func (d *Daemon) itemCancel(id, by string) (map[string]any, int, error) {
 	return map[string]any{"ok": true, "item_id": id, "state": moved.State}, http.StatusOK, nil
 }
 
-// handleItemAct is `POST /v1/items/{id}/{unblock|cancel}` with `{answer, by}`, which the hub calls for an owner.
+// itemSentBackPrefix leads the note typed to a worker whose finished work was sent back.
+const itemSentBackPrefix = "your work was sent back. what to change: "
+
+// itemSendBack is the human sending a finished item back with a note: the item runs again, and the note is typed to its card
+// as atrium, the way an unblock answer is. THE ITEM RUNS AT ONCE, not when the turn starts, because a sent-back design is
+// work the designer owes from the moment it is said, and the hub needs the next finish to read. The text never names who sent
+// it back. A card that is gone is a 410 and the item is left finished.
+func (d *Daemon) itemSendBack(id, note, by string) (map[string]any, int, error) {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return nil, http.StatusBadRequest, errors.New("a send back carries the note")
+	}
+	it, code, err := d.itemOf(id)
+	if err != nil {
+		return nil, code, err
+	}
+	if it.State != store.ItemFinished {
+		return nil, http.StatusConflict, errors.New("item " + id + " is " + it.State + ", not finished, so there is nothing to send back")
+	}
+	target, err := d.st.Get(it.TaskID)
+	if it.TaskID == "" || err != nil {
+		return nil, http.StatusGone, errors.New("the card that ran item " + id + " is gone")
+	}
+	text := itemSentBackPrefix + note
+	typed, _, err := d.deliverPeerCaused(target, store.ReservedHandle, text, "", "", d.waitsForTurn(target.ID, WhenImmediate))
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	moved, _ := d.moveItem(id, store.ItemRunning, "sent back")
+	if moved == nil {
+		return nil, http.StatusInternalServerError, errors.New("could not send item " + id + " back")
+	}
+	log.Printf("[atrium] item %s sent back by %s: the note is %s", id, by, map[bool]string{true: "typed", false: "queued"}[typed])
+	return map[string]any{"ok": true, "item_id": id, "state": moved.State, "typed": typed}, http.StatusOK, nil
+}
+
+// handleItemAct is `POST /v1/items/{id}/{unblock|cancel|sendback}` with `{answer, by}`, which the hub calls for an owner.
 func (d *Daemon) handleItemAct(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Answer string `json:"answer"`
@@ -467,8 +509,10 @@ func (d *Daemon) handleItemAct(w http.ResponseWriter, r *http.Request) {
 		out, code, err = d.itemUnblock(r.PathValue("id"), in.Answer, in.By)
 	case "cancel":
 		out, code, err = d.itemCancel(r.PathValue("id"), in.By)
+	case "sendback":
+		out, code, err = d.itemSendBack(r.PathValue("id"), in.Answer, in.By)
 	default:
-		writeJSONErr(w, http.StatusNotFound, errors.New("an item is unblocked or cancelled"))
+		writeJSONErr(w, http.StatusNotFound, errors.New("an item is unblocked, cancelled or sent back"))
 		return
 	}
 	if err != nil {

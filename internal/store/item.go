@@ -69,7 +69,10 @@ type ItemRow struct {
 	Brief string
 	// WorkID is the backlog id of the item this assignment is attached to, empty for one no backlog item named. The hub
 	// files an empty one as `adhoc-<item_id>`.
-	WorkID    string
+	WorkID string
+	// Step is the step the card was launched for (trium:step:<step>). It is carried by the FIRST push only and is not a
+	// column: the hub files it on the attachment, and a later push without one changes nothing.
+	Step      string
 	CreatedAt string
 	UpdatedAt string
 }
@@ -114,7 +117,7 @@ func (it *ItemRow) pushBody() string {
 	b, _ := json.Marshal(map[string]any{
 		"item_id": it.ID, "card": it.TaskID, "generation": it.Generation, "state": it.State, "revision": it.Revision,
 		"owner_kind": it.OwnerKind, "owner": it.Owner, "created_by": it.CreatedBy, "note": it.Note,
-		"work_id": it.WorkID,
+		"work_id": it.WorkID, "step": it.Step,
 	})
 	return string(b)
 }

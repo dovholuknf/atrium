@@ -48,6 +48,8 @@ type launchOpts struct {
 	isolated bool
 	// itemOwner is who owns the item: empty, human, or a single-holder role. See daemon.ItemOwnerTag.
 	itemOwner string
+	// step is the step of its item the card is for: designed, approved, building and so on. See link.StepTagPrefix.
+	step string
 }
 
 func newLaunch() *cobra.Command {
@@ -116,6 +118,9 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.item, "item", "",
 		"REQUIRED for a new session: the backlog item this works on, by id (f-new-thing), or new:\"a title\" to file one "+
 			"under the dept: tag in --tags. not needed with --resume or --onto, whose card already exists")
+	c.Flags().StringVar(&o.step, "step", "",
+		"with --item: the step of the item this card is for (designed, building, tested, reviewed, landed). a card with none "+
+			"is a builder. a designer is --step designed, and its finishing makes the design wait for the human to approve it")
 	c.Flags().BoolVar(&o.isolated, "isolated", false,
 		"start the card isolated: its ending never mentions a launcher, its opening prompt comes from atrium, "+
 			"it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it")
@@ -218,6 +223,17 @@ func launchBody(o launchOpts, cwd string) error {
 			fmt.Printf("filed backlog item %s\n", id)
 		}
 		fields["tags"] = link.WithWorkTag(o.tags, id)
+	}
+	if s := strings.TrimSpace(o.step); s != "" {
+		tags, _ := fields["tags"].([]string)
+		if tags == nil {
+			tags = o.tags
+		}
+		withStep, err := link.WithStepTag(tags, s)
+		if err != nil {
+			return err
+		}
+		fields["tags"] = withStep
 	}
 	// ONLY WHEN ASKED FOR, so a launch without the flag posts what it always did.
 	if o.isolated {
