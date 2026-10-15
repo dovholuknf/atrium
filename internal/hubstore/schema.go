@@ -693,7 +693,8 @@ func (s *Store) migrate() error {
 			}
 		}
 		if _, err := tx.Exec(
-			`INSERT INTO schema_migration (name, applied_at) VALUES (?, ?)`,
+			// OR IGNORE: another hub opening this file at the same moment may have recorded it.
+			`INSERT OR IGNORE INTO schema_migration (name, applied_at) VALUES (?, ?)`,
 			m.name, ts(s.now())); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("record %s: %w", m.name, err)
