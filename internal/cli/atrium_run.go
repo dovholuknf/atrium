@@ -509,6 +509,19 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		attachedBefore(name, host, ver)
 		gitHub.Attached(ctx, name)
 	}
+	// WHAT GIT AND THE BUILDS SAY of an item, read again whenever a mirror pass moved, a collect ran or a room attached,
+	// and on a timer for the rest. See link/lifecycle_git.go.
+	proxy.SetLandGit(landGit{store: store, hub: gitHub})
+	proxy.SetHubBuild(runningCommit())
+	gitHub.Observed = func() { go proxy.RefreshAllGitSteps(ctx) }
+	{
+		before := h.OnAttach
+		h.OnAttach = func(name, host, ver string) {
+			before(name, host, ver)
+			go proxy.RefreshAllGitSteps(ctx)
+		}
+	}
+	go proxy.RunGitSteps(ctx)
 	gitHub.Start(ctx, 10*time.Second)
 
 	// WORK THAT WAITS ON OTHER WORK, checked against the integration branch and this
@@ -901,6 +914,31 @@ func (f flowGit) ItemFacts(ctx context.Context, branch, sha string) (gitsync.Ite
 		return f.hub.Store().ItemFacts(ctx, name, branch, sha)
 	}
 	return gitsync.ItemFacts{}, nil
+}
+
+// landGit is the lifecycle's reach into the same repository, named the same way.
+type landGit struct {
+	store *hubstore.Store
+	hub   *gitsync.Hub
+}
+
+func (f landGit) repo() string {
+	name, _ := f.store.HubSetting(hubstore.SettingFlowRepo)
+	return strings.TrimSpace(name)
+}
+
+func (f landGit) LandFacts(ctx context.Context, branch, sha, workID string) (gitsync.LandFacts, error) {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().LandFacts(ctx, name, branch, sha, workID)
+	}
+	return gitsync.LandFacts{}, nil
+}
+
+func (f landGit) Contains(ctx context.Context, build, sha string) (bool, bool, error) {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().Contains(ctx, name, build, sha)
+	}
+	return false, false, nil
 }
 
 func (f flowGit) CoveredBy(ctx context.Context, base, sha string) (bool, error) {

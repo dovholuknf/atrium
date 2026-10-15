@@ -731,6 +731,36 @@ var migrations = []struct {
 			`UPDATE item SET work_id = 'adhoc-' || item_id WHERE work_id = ''`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L3: THE DERIVED STEP ROWS, a cache of what the hub reads from git and the room builds (landed,
+		// deployed, pushed). Nothing in it is the only copy of anything: a re-run of the derivation rewrites it. Another
+		// stage creates the same table, so it is IF NOT EXISTS and the columns are the design's.
+		name: "0023_work_step",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work_step (
+				backlog_id TEXT NOT NULL,
+				step       TEXT NOT NULL,
+				state      TEXT NOT NULL CHECK (state IN ('pending','active','blocked','done','stale','skipped')),
+				started_at TEXT NOT NULL DEFAULT '',
+				ended_at   TEXT NOT NULL DEFAULT '',
+				sha        TEXT NOT NULL DEFAULT '',
+				cards      TEXT NOT NULL DEFAULT '[]',
+				reason     TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (backlog_id, step)
+			)`,
+		},
+	},
+	{
+		// THE FILES AN ITEM CHANGED, remembered when they are first read: once the branch is on origin's main its own range
+		// is empty, and `deployed` still has to know where the item's code runs. A cache, rewritten by the derivation.
+		name: "0024_work_paths",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work_paths (
+				backlog_id TEXT PRIMARY KEY,
+				paths      TEXT NOT NULL DEFAULT '[]'
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

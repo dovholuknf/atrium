@@ -158,6 +158,8 @@ type Proxy struct {
 	items        *hubstore.Store
 	itemRoomCall itemRoomCallFunc
 	flowGit      FlowGit
+	landGit      LandGit
+	hubBuild     string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.
