@@ -20,14 +20,7 @@ import (
 //
 // The child gets the system environment and not ours. The pty host needs none of ours: a spawn carries its own env.
 func startOutsideJob(exe string, args []string, out *os.File) (*os.Process, error) {
-	script := `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:ATRIUM_DETACH_CMD}; ` +
-		`if ($r.ReturnValue -ne 0) { exit 3 }; ` +
-		`$p = $r.ProcessId; ` +
-		`for ($i = 0; $i -lt 50; $i++) { ` +
-		`$k = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.ProcessId)" | Select-Object -First 1; ` +
-		`if ($k) { $p = $k.ProcessId; break }; [Threading.Thread]::Sleep(100) ` +
-		`}; [Console]::Out.Write($p)`
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", outsideJobScript())
 	cmd.Env = append(os.Environ(), "ATRIUM_DETACH_CMD="+outsideJobCommandLine(exe, args, outName(out)))
 	got, err := cmd.Output()
 	if err != nil {
@@ -59,4 +52,16 @@ func outsideJobCommandLine(exe string, args []string, log string) string {
 		return `cmd.exe /c "` + line + ` >NUL 2>&1"`
 	}
 	return `cmd.exe /c "` + line + ` >> "` + log + `" 2>&1"`
+}
+
+// outsideJobScript creates the process through WMI and answers the pid to probe. cmd's first child can be conhost.exe,
+// the console host, which is not the process wanted, so children are matched by image name and conhost is skipped.
+func outsideJobScript() string {
+	return `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:ATRIUM_DETACH_CMD}; ` +
+		`if ($r.ReturnValue -ne 0) { exit 3 }; ` +
+		`$p = $r.ProcessId; ` +
+		`for ($i = 0; $i -lt 50; $i++) { ` +
+		`$k = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.ProcessId)" | Where-Object { $_.Name -ne 'conhost.exe' } | Select-Object -First 1; ` +
+		`if ($k) { $p = $k.ProcessId; break }; [Threading.Thread]::Sleep(100) ` +
+		`}; [Console]::Out.Write($p)`
 }
