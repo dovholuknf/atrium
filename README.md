@@ -54,7 +54,7 @@ mkdir -p ~/.atrium/bin && cp build.claude/atrium ~/.atrium/bin/   # atrium.exe o
 ~/.atrium/bin/atrium run
 ```
 
-Open <http://localhost:7778>. `atrium run` serves the board and, the first time, makes this machine's room and starts
+Open <http://127.0.0.1:7778>. `atrium run` serves the board and, the first time, makes this machine's room and starts
 it in the background. Stopping `atrium run` never stops the room or its agents.
 
 Run it from the installed copy, not from `build.claude/`. Hooks, the logon task and the self-restart all name the
@@ -66,6 +66,9 @@ board, and every tool call it makes asks the gate. **perms** then **import rules
 deny lists you already have into standing rules, so the gate starts out knowing what you trust.
 
 To start an agent under atrium instead, use the board's launch dialog or `atrium launch`.
+
+Want someone else's agent to do all of this for you? [`docs/try-atrium.md`](docs/try-atrium.md) is a prompt to hand
+to your agent: it installs, wires and verifies atrium end to end.
 
 ### Another machine
 
