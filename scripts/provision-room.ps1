@@ -68,6 +68,11 @@
 # ~\.local\git with its cmd folder on the user Path. macOS and Linux print the install command instead. See
 # scripts/room-git.ps1 and scripts/room-mingit.ps1.
 #
+# THE TOOLCHAIN. Before the join and the start (so the room's PATH has it, and the status line finds bash), `toolchain` runs room-toolchain.ps1 -Tools git,pwsh,go,node: go at the go.mod
+# version, Git for Windows (PortableGit, with bash; MinGit has none, so it counts as missing), pwsh and node, in the
+# remote user's home with no admin. The room reads PATH once at start, so a room already up needs `atrium stop` and a
+# start to see them. A failure is `toolchain warn` plus the rerun line. `-NoToolchain` skips it.
+#
 # A SMOKE THAT DOES NOT REPORT prints the card's own last screen lines under the fail line, and names the fix it knows. The
 # usual one on a machine whose provision stopped early is that claude has no atrium-control tools, because the `mcp` step
 # never ran: rerun without -SmokeOnly.
@@ -293,6 +298,8 @@ param(
     [string] $GitVersion,
     # Skip the Defender step on a Windows room: no exclusions, and GOTMPDIR left alone. See room-defender.ps1.
     [switch] $NoDefender,
+    # Skip the toolchain step (go, Git for Windows with bash, pwsh, node). See room-toolchain.ps1.
+    [switch] $NoToolchain,
     # The folders atrium may launch in on the room, absolute paths on the remote. Default for a new provision: the clone,
     # its -worktrees folder and WORKTREE_ROOT. A rerun changes nothing unless this is given. See "allowed folders".
     [string[]] $AllowedFolders = @(),
@@ -682,6 +689,8 @@ if (-not $HubDir) { $HubDir = $hub.Dir }
 if (-not $HubAddr) { $HubAddr = if ($hub.Addr) { $hub.Addr } else { '127.0.0.1:7778' } }
 if (-not $HubExe) { Fail 'hub' 1 'no running hub and no atrium on PATH. pass -HubExe' }
 $transport = if ($hub.Transport) { $hub.Transport } else { 'direct' }
+# A hub may serve several (`--transport direct,ziti`). A room joins over one: direct when the hub has it, else the first.
+if ($transport -match ',') { $tl = @($transport -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }); $transport = if ('direct' -in $tl) { 'direct' } else { $tl[0] } }
 $zitiService = if ($hub.Service) { $hub.Service } else { 'atrium-hub' }
 if (-not $Link) { $Link = if ($hub.Link) { $hub.Link } else { '127.0.0.1:7779' } }
 if (-not $LinkAdvertise) { $LinkAdvertise = $hub.Advertise }
@@ -2104,6 +2113,16 @@ chmod +x "$Bin.new" && mv -f "$Bin.new" "$Bin" && "$Bin" version
     Step 'binary' 'done' "$where, $((($r.Out | Select-Object -First 1) -replace '\s+', ' ').Trim())"
 }
 
+# THE TOOLCHAIN: go (the version in go.mod), Git for Windows with its bash, pwsh and node, into the remote user's home,
+# so a worker there can build atrium and run the tests. room-toolchain.ps1 treats MinGit (no bash) as missing. The room
+# reads PATH once at start, so it runs BEFORE the join and the start, and a room that was already up needs `atrium stop` and a start to see what this installed.
+if ($NoToolchain) {
+    Step 'toolchain' 'skip' '-NoToolchain'
+} else {
+    & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-toolchain.ps1') $Target -Tools git,pwsh,go,node -Ssh $Ssh @(if ($GitVersion) { '-GitVersion'; $GitVersion }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) { Step 'toolchain' 'warn' "room-toolchain exited $LASTEXITCODE. rerun: room-toolchain.ps1 $Target -Tools git,pwsh,go,node" }
+}
+
 # ── 6. join this hub ────────────────────────────────────────────────────────
 
 if ($state.joinedroom -eq $Name -and $joinedId -eq $hubId) {
@@ -2838,7 +2857,7 @@ $b = Get-Command bash.exe -All -ErrorAction SilentlyContinue | Where-Object { $_
 $bp = $null
 if ($b) { $bp = $b.Source -replace '\\', '/'; "bash=$bp" }
 else {
-    foreach ($c in 'C:/Program Files/Git/bin/bash.exe', 'C:/work/tools/cygwin/bin/bash.exe', 'C:/cygwin64/bin/bash.exe', 'C:/msys64/usr/bin/bash.exe') {
+    foreach ($c in ((Join-Path $HOME '.local\share\atrium-tools\git\bin\bash.exe') -replace '\\', '/'), 'C:/Program Files/Git/bin/bash.exe', 'C:/work/tools/cygwin/bin/bash.exe', 'C:/cygwin64/bin/bash.exe', 'C:/msys64/usr/bin/bash.exe') {
         if (Test-Path -LiteralPath $c) { "bash=$c"; $bp = $c; break }
     }
 }

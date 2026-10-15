@@ -317,7 +317,10 @@ function Bp { foreach ($n in '.bash_profile', '.bash_login', '.profile') { $p = 
 function Raw($t, $exe) {
     $p = $env:Path; $env:Path = (@(Split-Path -Parent $exe) + (Dirs)) -join ';'
     try { $a = @{ go = 'version'; node = '--version'; git = '--version'; pwsh = '--version' }[$t]
-        $o = & $exe $a 2>&1 | Out-String; ($o -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1).Trim() }
+        $o = & $exe $a 2>&1 | Out-String; $l = ($o -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+        # MinGit is git without bash. A git with no bash beside it says so, and is judged not good enough.
+        if ($t -eq 'git') { $gr = Split-Path -Parent (Split-Path -Parent $exe); if (-not ((Test-Path -LiteralPath (Join-Path $gr 'bin\bash.exe')) -or (Test-Path -LiteralPath (Join-Path $gr 'usr\bin\bash.exe')))) { $l += ' [no bash]' } }
+        $l }
     catch { "error: $($_.Exception.Message)" } finally { $env:Path = $p }
 }
 function Tell { param($tools)
@@ -660,6 +663,9 @@ function Test-Tool {
     }
     if ($tool -eq 'git' -and $raw -notmatch '\.windows\.') {
         return [pscustomobject]@{ Good = $false; Ver = $ver; Why = "$path is not Git for Windows ($raw), so its git and bash are not the ones the tests need" }
+    }
+    if ($tool -eq 'git' -and $raw -match '\[no bash\]') {
+        return [pscustomobject]@{ Good = $false; Ver = $ver; Why = "$path has no bash beside it (MinGit), and the tests and the status line need Git Bash" }
     }
     [pscustomobject]@{ Good = $true; Ver = $ver; Why = '' }
 }

@@ -807,6 +807,13 @@ package manager), because those need sudo. `-Remove` leaves MinGit, since a git 
 The clone `init` makes carries `atrium.clone=made` in its config, so the room's git sync knows atrium made it and does
 not ask the operator about guarding `origin` (the clone has no origin: it is filled by push).
 
+**Toolchain.** Before the join and the start, provision runs `room-toolchain.ps1 -Tools git,pwsh,go,node` on the remote: go at the
+go.mod version, Git for Windows (PortableGit, with bash), pwsh 7 and node, in the remote user's home with no admin, so a
+worker there can build atrium and run `test-touched` and `ci.sh`. MinGit has no bash, so `room-toolchain` counts it as
+missing and installs PortableGit beside it (`~\.local\share\atrium-tools\git`, first on the room's PATH record). The room
+reads PATH once at start: a room that was already up needs `atrium stop` and a start to see them. A failure is
+`toolchain warn` with the rerun line; `-NoToolchain` skips the step.
+
 **Allowed folders.** A room has a list of folders atrium may launch in (its `browse_roots` setting), and claude's folder
 trust is written for each, so a launch never sits at "do you trust this folder" with nobody to answer. The `folders`
 step runs `atrium room folders allow <dir>...` on the remote (sh on macOS and Linux, PowerShell on Windows) after the

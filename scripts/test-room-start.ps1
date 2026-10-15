@@ -187,6 +187,12 @@ Check 'room-git: init notices a git with no http-backend and installs PortableGi
 Check 'room-git: init -Check fails a git with no http-backend, with the fix' ($rg -match 'has no http-backend \(it is MinGit\)[^\n]*without -Check to install PortableGit') $true
 Check 'install: it refuses an archive with no git-http-backend' ((Get-MinGitInstallScript '.local\x.7z.exe' $h64) -match 'no git-http-backend.exe') $true
 Check 'room-git: marks the clone it makes' ($rg -match 'atrium\.clone made') $true
+$rt = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'room-toolchain.ps1') -Raw
+Check 'provision: runs room-toolchain for git,pwsh,go,node, skippable' (($prov -match "room-toolchain\.ps1'\) \`$Target -Tools git,pwsh,go,node") -and ($prov -match "Step 'toolchain' 'skip'")) $true
+Check 'room-toolchain: a git with no bash (MinGit) is not good enough' (($rt -match "\[no bash\]'") -and ($rt -match "\`$raw -match '\\\[no bash\\\]'")) $true
+$e = $null
+[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'room-toolchain.ps1'), [ref] $null, [ref] $e) | Out-Null
+Check 'parse: room-toolchain.ps1' @($e).Count 0
 
 if ($script:failed) { Write-Host "$script:failed of $script:ran checks FAILED"; exit 1 }
 Write-Host "all $script:ran checks pass"
