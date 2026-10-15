@@ -63,6 +63,9 @@ type Target struct {
 	// wrong colour and offering `claude --resume` for an id claude has never
 	// heard of.
 	Named bool `json:"-"`
+	// NeedsPowerShell stands in for the Git Bash probe, so a test can fake
+	// either answer. Nil means ask the machine. See shell.go.
+	NeedsPowerShell func() bool `json:"-"`
 }
 
 // Claude Code, in ~/.claude/settings.json.

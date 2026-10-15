@@ -318,7 +318,8 @@ func InspectTarget(t Target, exe string) (*HookReport, error) {
 			}
 			st.Installed = true
 			st.Found = cmd
-			st.Stale = !sameBinary(cmd, exe) || !saysWhichRunner(t, cmd)
+			st.Stale = !sameBinary(cmd, exe) || !saysWhichRunner(t, cmd) ||
+				shellWrongFor(t, doc, w.Hook, cmd)
 			st.TimeoutShort = w.Timeout > 0 && timeoutOf(doc, w.Hook, cmd) < float64(w.Timeout)
 			if isDotfilesGate(cmd) {
 				st.Other = dotfilesGateNote
@@ -518,13 +519,16 @@ func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string, t
 				short := timeout > 0 && timeoutIn(hm) < float64(timeout)
 				// Already exactly right, timeout included. Rewriting it would
 				// produce another backup of a file nothing changed in.
-				if s == want && !short {
+				if s == want && !short && !shellWrong(t, hm) {
 					if kind, _ := hm["type"].(string); kind == "command" {
 						return false, nil
 					}
 				}
 				hm["command"] = want
 				hm["type"] = "command"
+				if needsPowerShell(t) {
+					hm["shell"] = powershellShell
+				}
 				if short {
 					hm["timeout"] = timeout
 				}
@@ -547,21 +551,25 @@ func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string, t
 			continue
 		}
 		list, _ := m["hooks"].([]any)
-		m["hooks"] = append(list, newCommand(want, timeout))
+		m["hooks"] = append(list, newCommand(t, want, timeout))
 		all[hook] = entries
 		return true, store(doc, all)
 	}
 
 	all[hook] = append(entries, map[string]any{
 		"matcher": "",
-		"hooks":   []any{newCommand(want, timeout)},
+		"hooks":   []any{newCommand(t, want, timeout)},
 	})
 	return true, store(doc, all)
 }
 
-// newCommand is one hook entry as written, with a timeout only when one is wanted.
-func newCommand(command string, timeout int) map[string]any {
+// newCommand is one hook entry as written, with a timeout only when one is
+// wanted and a shell only where there is no Git Bash.
+func newCommand(t Target, command string, timeout int) map[string]any {
 	h := map[string]any{"type": "command", "command": command}
+	if needsPowerShell(t) {
+		h["shell"] = powershellShell
+	}
 	if timeout > 0 {
 		h["timeout"] = timeout
 	}
@@ -801,7 +809,44 @@ func program(t Target, exe string) string {
 	if t.ProgramUnquoted {
 		return filepath.ToSlash(exe)
 	}
-	return quoted(exe)
+	q := quoted(exe)
+	// PowerShell reads a leading quoted string as a string, not a program, so
+	// the call operator is what makes it run. An unquoted path needs none.
+	if q != filepath.ToSlash(exe) && needsPowerShell(t) {
+		return "& " + q
+	}
+	return q
+}
+
+// shellWrong is true when this target needs `"shell": "powershell"` and the
+// registered entry does not say it. Such an entry is stale: Claude Code would
+// block on it where there is no Git Bash.
+func shellWrong(t Target, hm map[string]any) bool {
+	if !needsPowerShell(t) {
+		return false
+	}
+	s, _ := hm["shell"].(string)
+	return s != powershellShell
+}
+
+// shellWrongFor looks up one registered command under a hook name and applies
+// shellWrong to it.
+func shellWrongFor(t Target, doc map[string]json.RawMessage, hook, command string) bool {
+	for _, entry := range hooksSection(doc)[hook] {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		list, _ := m["hooks"].([]any)
+		for _, h := range list {
+			if hm, ok := h.(map[string]any); ok {
+				if s, _ := hm["command"].(string); s == command {
+					return shellWrong(t, hm)
+				}
+			}
+		}
+	}
+	return false
 }
 
 // quoted is the executable's path, quoted when it needs to be. A path with a

@@ -69,6 +69,21 @@ try {
     Check 'old only: the gate keeps its day timeout' ((Get-Pre $dir)[0].hooks[0].timeout) 86400
 } finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
 
+# ── a room whose hooks run under PowerShell: `& "path" hook ...` with "shell": "powershell" ─
+
+$psExe = '& "C:/Program Files/atrium/atrium.exe"'
+$dir = New-Claude @(@{ matcher = ''; hooks = @(@{ type = 'command'; shell = 'powershell'; command = $legacyCmd }, @{ type = 'command'; shell = 'powershell'; command = "$psExe hook --event tool-start" }) })
+try {
+    & pwsh -NoProfile -File $gate t -Local $dir *> $null
+    Check 'powershell form: exit 0' $LASTEXITCODE 0
+    $g = @(Get-Pre $dir | ForEach-Object { @($_.hooks) } | Where-Object { $_.command -match 'hook\s+--event\s+permission\b' })
+    Check 'powershell form: one gate' $g.Count 1
+    Check 'powershell form: gate keeps the call operator' $g[0].command "$psExe hook --event permission"
+    Check 'powershell form: gate carries the shell key' $g[0].shell 'powershell'
+    & pwsh -NoProfile -File $gate t -Local $dir *> $null
+    Check 'powershell form: a second run adds no second gate' (@(Get-PreCommands $dir | Where-Object { $_ -match 'hook --event permission' }).Count) 1
+} finally { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }
+
 # ── -Check writes nothing ───────────────────────────────────────────────────
 
 $dir = New-Claude @(@{ matcher = ''; hooks = @(@{ type = 'command'; command = $legacyCmd }, @{ type = 'command'; command = $ownCmd }) })

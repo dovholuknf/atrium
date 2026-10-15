@@ -156,17 +156,22 @@ function Update-Gates {
     $have = @($kept | ForEach-Object { @($_.hooks) } | Where-Object { "$($_.command)" -match $ownRe })
     if (-not $have.Count) {
         # The atrium path comes from the room's own other atrium hook commands.
-        $exe = $null
+        # $exe keeps a leading `& ` when the room's hooks run under PowerShell, and the new entry copies their `shell` key.
+        $exe = $null; $shell = $null
         foreach ($ev in @($s.hooks.PSObject.Properties)) {
             foreach ($g in @($ev.Value)) {
                 foreach ($h in @($g.hooks)) {
                     $c = "$($h.command)"
-                    if (-not $exe -and $c -match 'atrium' -and $c -notmatch $legacyRe -and $c -match '^(.+?)\s+(hook|session|turn)\s+--event\s') { $exe = $Matches[1] }
+                    if (-not $exe -and $c -match 'atrium' -and $c -notmatch $legacyRe -and $c -match '^(.+?)\s+(hook|session|turn)\s+--event\s') {
+                        $exe = $Matches[1]
+                        if ($h.PSObject.Properties['shell']) { $shell = "$($h.shell)" }
+                    }
                 }
             }
         }
         if ($exe) {
             $entry = [pscustomobject]@{ type = 'command'; command = "$exe hook --event permission"; timeout = 86400 }
+            if ($shell) { $entry | Add-Member -NotePropertyName shell -NotePropertyValue $shell }
             $idx = -1
             for ($i = 0; $i -lt $kept.Count; $i++) { if ("$($kept[$i].matcher)" -eq '') { $idx = $i; break } }
             if ($idx -ge 0) { $kept[$idx].hooks = @($entry) + @($kept[$idx].hooks) }
