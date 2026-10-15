@@ -521,7 +521,17 @@ async function deleteNow(id, t) {
 
 // Draws a context menu at the pointer. Shared, so the board and the terminal
 // list cannot drift apart in how their menus look or behave.
-function showMenu(e, items) {
+//
+// Entries marked `more` sit behind a "more..." row until it is pressed, which redraws the menu with them in place and
+// keeps it open. They are the ones nobody has been seen using, kept until u-measure-board-usage has data.
+function showMenu(e, items, opened) {
+  const hidden = opened ? [] : items.filter(it => it && it.more);
+  if (hidden.length) {
+    const all = items;
+    const at = items.indexOf(hidden[0]);
+    items = items.filter(it => !(it && it.more));
+    items.splice(at, 0, { label: "more...", expand: true, act: () => showMenu(e, all, true) });
+  }
   // Dropping entries leaves separators with nothing between them, or one
   // stranded at an end.
   items = items.filter(Boolean).filter((it, i, all) =>
@@ -570,7 +580,7 @@ function showMenu(e, items) {
         // those two sentences describes now and which describes the click.
         it.on === undefined ? "" : `<span class="lamp">${it.on ? "on" : "off"}</span>`}${
         it.sub ? `<span class="more">&#9656;</span>` : ""}${
-        it.note ? `<span class="note">${esc(it.note)}</span>` : ""}${
+        ""}${
         // A flyout, drawn inside the row that owns it so hovering across the
         // gap between the two does not close it. Two destinations for one
         // intention: attaching here, or attaching in its own window.
@@ -598,6 +608,8 @@ function showMenu(e, items) {
     // A row that only opens a flyout does nothing when pressed. Closing the
     // menu on it would take the choice away at the moment it was offered.
     if (it.sub) return;
+    // "more..." redraws the menu in place, so it stays open.
+    if (it.expand) { it.act(); return; }
     closeCardMenu();
     it.act();
   });

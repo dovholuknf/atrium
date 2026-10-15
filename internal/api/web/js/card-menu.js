@@ -476,7 +476,6 @@ function resumePausedItem(id, t) {
   const why = cannotResume(t);
   return {
     label: "resume",
-    note: why ? "cannot resume" : "",
     limited: !!why,
     tip: why
       ? "The card comes back and stops refusing its requests, but " +
@@ -574,8 +573,8 @@ function isShellRunner(h) {
 // unfiling means removing it. The write is the same shape as any other tag
 // edit, which is why the toggle reads from `t.tags` and patches the whole
 // set.
-// `terms` is the terminals tab menu, which says "add to group" and "remove from group". The board's own menu keeps its
-// wording until its interview.
+// Both menus say "add to group". `terms` also gets "create group...", and the board's menu names the group it takes
+// the card out of when there is only one.
 function groupItem(id, t, terms) {
   if (typeof groupingPrefs !== "function") return null;
   const p = groupingPrefs();
@@ -597,7 +596,7 @@ function groupItem(id, t, terms) {
   // the card, so typing one twice never makes a duplicate. Esc, or cancel, makes nothing.
   if (terms) sub.push({ label: "create group...", act: () => createGroupFor(id, t) });
   return {
-    label: terms ? "add to group" : "into group",
+    label: "add to group",
     help: "Files this card into one of your named buckets. It is the same as " +
       "putting the group's tag on the card.",
     sub
@@ -621,9 +620,9 @@ async function createGroupFor(id, t) {
   refresh();
 }
 
-// Take this card OUT of a group, said as its own entry. `into group` already
+// Take this card OUT of a group, said as its own entry. `add to group` already
 // unfiles by pressing a ticked group a second time, and nobody reads a tick in
-// a flyout called "into" as the way out, so the way out had no name. One group
+// a flyout called "add to" as the way out, so the way out had no name. One group
 // is one entry. Several open a flyout of just the ones the card is in.
 function outOfGroupItem(id, t, terms) {
   if (typeof groupingPrefs !== "function") return null;
@@ -640,8 +639,8 @@ function outOfGroupItem(id, t, terms) {
       ? { label: "remove from group", help, act: out(inside[0]) }
       : { label: "remove from group", help, sub: subOf(inside) };
   }
-  if (inside.length === 1) return { label: "out of " + inside[0], help, act: out(inside[0]) };
-  return { label: "out of group", help, sub: subOf(inside) };
+  if (inside.length === 1) return { label: "remove from " + inside[0], help, act: out(inside[0]) };
+  return { label: "remove from group", help, sub: subOf(inside) };
 }
 
 async function cardMenu(e, id) {
@@ -750,6 +749,7 @@ async function cardMenu(e, id) {
     // intention with a different destination, so they are one row that says
     // where rather than two rows that both say attach.
     t.supervised ? {
+      more: true,
       label: "attach terminal",
       sub: openIn(where => where === "window" ? popOutTask(id) : attachTask(id))
     } : null,
@@ -759,6 +759,7 @@ async function cardMenu(e, id) {
     // promises, and offering "open" for something already open is how you end
     // up believing you have two.
     t.supervised ? {
+      more: true,
       label: t.shell ? "go to its shell" : "open a shell here",
       act: () => openShellFor(id)
     } : null,
@@ -786,6 +787,7 @@ async function cardMenu(e, id) {
     // them. That is occasionally what you want and never what you want by
     // accident, so the label says NEW and the tip says the rest.
     t.worktree ? {
+      more: true,
       label: "new agent here",
       help: t.supervised
         ? "One is already running here. This starts a SECOND runner in the same " +
@@ -814,7 +816,7 @@ async function cardMenu(e, id) {
     // `choose...` is the same modal as before, unchanged, for when the common
     // case is wrong.
     t.worktree && canResume(t) && !cannotResume(t) ? {
-      label: "resume", note: isLeanCard(t) ? "lean" : "",
+      label: "resume",
       help: "Starts a runner in this card's directory and picks the " +
         "conversation back up where it stopped. It opens where this card was " +
         "last open, so there is nothing to answer.",
@@ -825,8 +827,7 @@ async function cardMenu(e, id) {
     // the operator can keep the work before cleanup.
     t.throwaway ? {
       label: t.promote_to ? "keep it somewhere else…" : "keep this work…",
-      note: t.promote_to ? "moving to " + t.promote_to : "",
-      help: "This directory is temporary and goes when the session ends. " +
+      help: (t.promote_to ? "Moving to " + t.promote_to + ". " : "") + "This directory is temporary and goes when the session ends. " +
         "Promoting it moves the directory somewhere you choose and the card " +
         "stops being temporary. While a session is running the move happens " +
         "as it ends, because a directory cannot be moved out from under it.",
@@ -856,7 +857,6 @@ async function cardMenu(e, id) {
     // is the part a board read over a share gets wrong.
     t.worktree && termCmd ? {
       label: "open in a terminal window",
-      note: "on atrium's machine",
       help: "Runs " + termCmd + " with this card's directory. The window opens " +
         "on the machine atrium is on, which is the machine holding these files, " +
         "not the one showing this board. atrium does not watch it.",
@@ -865,7 +865,6 @@ async function cardMenu(e, id) {
     // This worktree's own copy of the board, in a new tab, when the hub serves one.
     view ? {
       label: "open its board view",
-      note: view.name,
       help: "The board as this card's worktree has it, at " + view.url + ". Same " +
         "cards and data as this board; only the page differs, and it reloads when " +
         "a file in that worktree changes.",
@@ -896,7 +895,7 @@ async function cardMenu(e, id) {
     // and does nothing when pressed is worse than one that says why it cannot,
     // so it says why.
     over ? null : globalAuto ? {
-      label: "auto mode", on: true, note: "board-wide", limited: true,
+      label: "auto mode", on: true, limited: true,
       help: "The board-wide switch is approving everything, including this " +
         "card, so this card's own switch has nothing to decide. Turn the " +
         "board-wide one off in the header first.",
@@ -921,9 +920,10 @@ async function cardMenu(e, id) {
     t.status === "paused" ? resumePausedItem(id, t)
       : over ? null
         : t.supervised
-          ? { label: "pause", note: "stops its runner",
+          ? { label: "pause",
+              help: "Stops its runner.",
               act: () => oneAtATime("pause:" + id, () => patchTask(id, { status: "paused" }).then(refresh)) }
-          : { label: "pause", note: "atrium does not own this process",
+          : { label: "pause",
               limited: true,
               tip: "Pausing stops the runner, and atrium can only stop one it " +
                 "started. This session is running somewhere else.",
@@ -950,7 +950,7 @@ async function cardMenu(e, id) {
     } : null,
     // A parked card has no process. Resume starts it on the conversation it had.
     t.parked_at ? {
-      label: "resume", note: "parked, no process",
+      label: "resume",
       help: "This card was parked after sitting idle, so nothing is running. " +
         "Starting it again resumes the same conversation, and its prompt cache " +
         "is probably cold, so the first turn runs on a full context.",
@@ -961,11 +961,11 @@ async function cardMenu(e, id) {
     // Left out where atrium cannot do it: a session it does not own has no terminal to type into, and a
     // parked card restarts as a resume, which needs the conversation id.
     !over && cardState(t) !== "off" && (t.supervised || (t.parked_at && t.resume_id)) ? {
-      label: "restart", note: isLeanCard(t) ? "comes back lean" : "stop the session and start it again, same conversation",
-      help: "Types the runner's exit keys (claude: ctrl-d twice), waits for it to leave, then starts it again " +
+      label: "restart",
+      help: (isLeanCard(t) ? "Comes back lean. " : "") + "Types the runner's exit keys (claude: ctrl-d twice), waits for it to leave, then starts it again " +
         "on this card, resuming the same conversation with the same model, effort, arguments and settings. " +
         "A runner that will not leave is left running and the card says so. For a fresh conversation use " +
-        "new context.",
+        "handoff / clear context.",
       act: () => restartCard(id)
     } : null,
     // Cycle the context: the room has it write HANDOFF.<name>.md, clears it, and tells
@@ -974,8 +974,8 @@ async function cardMenu(e, id) {
     // for AltGr. Only where atrium owns the terminal, since the room types the
     // steps.
     t.supervised && !over ? {
-      label: "new context", note: "commit, hand off, clear",
-      help: "Asks the session to commit or stash and write everything relevant to " +
+      label: "handoff / clear context",
+      help: "Commits or stashes, hands off, then clears. Asks the session to commit or stash and write everything relevant to " +
         "its own HANDOFF.<name>.md (the alias, else the start of the card id), " +
         "waits for that turn to end, clears the context, and then " +
         "tells it to read the file and continue. The room types each step. A " +
@@ -988,7 +988,7 @@ async function cardMenu(e, id) {
     typeof keepaliveMenuItem === "function" ? keepaliveMenuItem(t, refresh) : null,
     // A PR's walker can be moved, with the review, to another room. See prMove in js/pulls.js.
     typeof walkPrOf === "function" && walkPrOf(id) && prMoveOffered() ? {
-      label: "move to another room", note: "the review and a new card",
+      label: "move to another room",
       help: "Moves this PR's review to another room and starts a new card there on the PR's worktree, set as " +
         "its walker. This card is left where it is.",
       act: () => prMoveAsk(e, walkPrOf(id), t)
@@ -1006,8 +1006,7 @@ async function cardMenu(e, id) {
     // set, every later turn-end on that card announced itself as a question.
     (t.asks_open || 0) ? {
       label: t.asks_open === 1 ? "dismiss the question" : `dismiss ${t.asks_open} questions`,
-      note: "says nothing to it",
-      help: "Takes the outstanding questions off this card without sending it " +
+      help: "Says nothing to the session. Takes the outstanding questions off this card without sending it " +
         "anything. For the ones you already answered by typing in its terminal, " +
         "which atrium cannot see.",
       act: () => dismissAsks(id)
@@ -1021,7 +1020,7 @@ async function cardMenu(e, id) {
     // The work on its link is over: frees the worktree, branch, refs and review it holds. See closeCardAsk in
     // js/sharing.js.
     typeof isLinkCard === "function" && (isLinkCard(t) || t.disk_bytes) ? {
-      label: "close…", note: "frees its worktree and review",
+      label: "close…",
       help: "Stops the session, archives the review (its findings and walk stay) and removes the worktree, its " +
         "branch and the fetched PR ref. A worktree with work nowhere else is asked about first: keep, stash or " +
         "delete. The card goes to done.",

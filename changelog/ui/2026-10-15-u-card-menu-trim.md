@@ -1,0 +1,1 @@
+The board's right-click menu loses the grey line under every entry. Attach terminal, open a shell here and new agent here move behind a "more..." entry that opens them in place. "into group" is now "add to group", "out of active" is "remove from active", and "new context" is "handoff / clear context". (u-card-menu-trim)

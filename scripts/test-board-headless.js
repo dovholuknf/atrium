@@ -17732,11 +17732,28 @@ async function restartMenuSection(browser, base) {
     const item = () => p.locator("#cardmenu button", { hasText: /^restart/ }).first();
     const dialogUp = () => p.locator("dialog[open] button", { hasText: "restart it" });
 
-    // idle: offered, with its sub-text, and one click posts with no question.
+    // idle: offered, with no grey line under it, and one click posts with no question.
     let labels = await open("land-rs-idle");
-    if (!labels.some(l => /^restart/.test(l) && /start it again, same conversation/.test(l))) {
-      fail("restartMenu: no restart entry with its sub-text on a supervised card: " + JSON.stringify(labels));
+    if (!labels.some(l => l === "restart")) {
+      fail("restartMenu: no restart entry on a supervised card: " + JSON.stringify(labels));
     }
+    if (await p.locator("#cardmenu .note").count()) fail("restartMenu: an entry still has a grey line under it.");
+    if (!labels.some(l => /^handoff \/ clear context/.test(l)) || labels.some(l => /^new context/.test(l))) {
+      fail("restartMenu: new context is not called handoff / clear context: " + JSON.stringify(labels));
+    }
+    // The never-used entries sit behind "more...", which opens them in place and keeps the menu open.
+    if (labels.some(l => /^(attach terminal|open a shell here)/.test(l)) || !labels.some(l => /^more\.\.\./.test(l))) {
+      fail("restartMenu: attach and shell are not behind more...: " + JSON.stringify(labels));
+    }
+    await p.locator("#cardmenu button", { hasText: /^more\.\.\./ }).click();
+    const opened = await p.evaluate(() => ({ on: document.getElementById("cardmenu").classList.contains("on"),
+      labels: [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent) }));
+    if (!opened.on || opened.labels.some(l => /^more\.\.\./.test(l)) ||
+        !opened.labels.some(l => /^attach terminal/.test(l)) || !opened.labels.some(l => /^open a shell here/.test(l))) {
+      fail("restartMenu: more... did not open the hidden entries in place: " + JSON.stringify(opened));
+    }
+    await p.keyboard.press("Escape");
+    labels = await open("land-rs-idle");
     if (process.env.RESTART_SHOT) await p.screenshot({ path: process.env.RESTART_SHOT });
     await item().click();
     await p.waitForTimeout(500);
@@ -17771,8 +17788,8 @@ async function restartMenuSection(browser, base) {
 
     // parked: no process, so a card with no runner is not restarted: its menu offers resume, and that wakes the card.
     labels = await open("land-rs-park");
-    if (labels.some(l => /^restart/.test(l)) || !labels.some(l => /^resume.*parked, no process/.test(l))) fail("restartMenu: a parked card should offer resume and not restart: " + JSON.stringify(labels));
-    await p.locator("#cardmenu button", { hasText: /parked, no process/ }).first().click();
+    if (labels.some(l => /^restart/.test(l)) || !labels.some(l => l === "resume")) fail("restartMenu: a parked card should offer resume and not restart: " + JSON.stringify(labels));
+    await p.locator("#cardmenu button", { hasText: /^resume$/ }).first().click();
     await p.waitForTimeout(500);
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
