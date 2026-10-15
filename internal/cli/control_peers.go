@@ -761,6 +761,8 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	// because it looks like the file was empty.
 	prompt := strings.TrimSpace(in.Prompt)
 	if brief := strings.TrimSpace(in.Brief); brief != "" {
+		// THE ITEM'S STEP LINES AND FOLDER GO FIRST (item lifecycle L8). A hub that cannot answer costs the header only.
+		brief = link.WithItemBrief(brief, link.ItemBrief(ctx, roomHubCall(strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))), workID))
 		path, err := writeBrief(in.Cwd, brief)
 		if err != nil {
 			return nil, out, err

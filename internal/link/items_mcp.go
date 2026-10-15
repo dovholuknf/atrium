@@ -32,7 +32,7 @@ const itemToolDesc = "Items you own: work you started with `item` on a launch, o
 	"terminal."
 
 type itemInput struct {
-	Action string `json:"action" jsonschema:"list, get, unblock, cancel or submit"`
+	Action string `json:"action" jsonschema:"list, get, show, unblock, cancel or submit"`
 	Pool   string `json:"pool,omitempty" jsonschema:"for submit: the pool's name"`
 	Brief  string `json:"brief,omitempty" jsonschema:"for submit: the task, typed to whichever card takes it"`
 	Owner  string `json:"owner,omitempty" jsonschema:"for submit: human, orchestrator, merger or director. empty is you"`
@@ -47,6 +47,9 @@ type itemOutput struct {
 	Items []hubstore.Item `json:"items,omitempty"`
 	Item  *hubstore.Item  `json:"item,omitempty"`
 	Note  string          `json:"note,omitempty"`
+	// Lines and Folder are `show`: one line per step, and where the item's logs live.
+	Lines  []string `json:"lines,omitempty"`
+	Folder string   `json:"folder,omitempty"`
 }
 
 // ownerItemTools is atrium_item over one way to reach the hub's endpoints, as backlogTools is.
@@ -107,6 +110,17 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		out.Item = &it
 		return nil, out, nil
+	case "show":
+		if id == "" {
+			return nil, out, &refusedError{"show needs id: the backlog id, as at the top of your brief"}
+		}
+		d, err := FetchWorkDetail(ctx, t.call, id)
+		if err != nil {
+			return nil, out, err
+		}
+		out.Lines, out.Folder = StepLines(d), ItemFolder(d.Work.BacklogID)
+		out.Note = d.Work.Title + " (" + d.Life.State + ")"
+		return nil, out, nil
 	case "unblock":
 		if id == "" || strings.TrimSpace(in.Answer) == "" {
 			return nil, out, &refusedError{"unblock needs id and answer"}
@@ -132,7 +146,7 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		return t.act(ctx, req, id, "cancel", "", "cancel asked of the worker's room")
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, unblock, cancel, submit", in.Action)}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, show, unblock, cancel, submit", in.Action)}
 }
 
 func (t ownerItemTools) act(ctx context.Context, req *mcp.CallToolRequest, id, do, answer, note string) (

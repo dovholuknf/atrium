@@ -1,6 +1,6 @@
 # Change record: atrium keeps "where are we" for every branch and PR, so no session starts from scratch
 
-Status: proposed, not built.
+Status: replaced by item-lifecycle-design (`docs/rnd/item-lifecycle-design.md`, section 5 says where each part went). Never built: its `change` tables and `atrium_change` do not exist, and `atrium_item show` answers "where are we". Kept for the writer rules, the staleness rule and the history.
 
 Origin: design by @rnd, 2026-10-02. Nothing built. Asked by clint through the orchestrator, 2026-10-02 afternoon.
 He had asked a session whether a change was tested, ready to push and reviewed, and the session had to rebuild the
@@ -40,7 +40,7 @@ Read for this design, 2026-10-02:
     one tool, `atrium_record`.
 
   A reported fact names its card and is shown as "reported". Only seen facts make a change "ready".
-- **"Where are we" is a read, not a re-derivation.** The answer is `atrium change <branch|PR>`, the `atrium_change`
+- **"Where are we" is a read, not a re-derivation.** The answer is `atrium change <branch|PR>`, the `atrium_change` (now `atrium_item show`, see item-lifecycle-design section 5)
   MCP read, or the card's drawer. Each gives the same four lines, which answer clint's question as asked:
 
   ```

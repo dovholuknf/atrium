@@ -1815,6 +1815,11 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		tags = slices.DeleteFunc(tags, func(t string) bool { return strings.TrimSpace(t) == SubagentTag })
 		tags = append(tags, InterviewTag)
 	}
+	if wid := WorkOfTags(tags); wid != "" && brief != "" && !isInterview(in.Kind) {
+		brief = WithItemBrief(brief, ItemBrief(ctx, func(ctx context.Context, method, path string, body, out any) error {
+			return c.ask(ctx, method, path, "", body, out)
+		}, wid))
+	}
 	reqBody := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": prompt, "scratch": in.Scratch,

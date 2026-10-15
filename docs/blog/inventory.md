@@ -262,7 +262,7 @@ here name a design that was later built, and the line says so: the design doc is
 
 ### Review and change lifecycle
 
-- Change record — one record per branch or PR with every fact pinned to the commit it was about, so "where are we" is a read (`atrium change`, `atrium_change`, `atrium_record`) and a new PR's session is handed related records — `docs/rnd/change-record-design.md` — designed, held; 3 questions
+- Change record — one record per branch or PR with every fact pinned to the commit it was about, so "where are we" is a read (`atrium_item show`, `atrium_record`; was `atrium_change`) and a new PR's session is handed related records — `docs/rnd/change-record-design.md` — replaced by `docs/rnd/item-lifecycle-design.md`
 - Change lifecycle — eight stages computed from evidence (work, tested, reviewed, walked through, signed, finished, PR open, merged), with walls against an early push and clint as the only signer — `docs/rnd/change-lifecycle-design.md` — designed, @review OK after HOLD 44dd83df; stages L1 to L7 held; 4 questions
 - Review on atrium — one call (`atrium_review`) runs the reviewer panel as quiet child cards and wakes the caller once with one merged report; amended to standing personas with stable handles and a per-repo knowledge base — `docs/rnd/review-on-atrium-design.md` — designed, held; 7 questions
 - Pulls view — PR review that atrium runs itself: one checkout, one prime session that every reviewer forks, JSON findings merged by code, a walk on the board; target under 10 minutes and under $2 (PR 378 took about 1h49m and $7) — `docs/rnd/pulls-view-design.md`, `docs/review/pulls-api.md` — partly built: P1a to P1c and P2 landed; P3 (doors, second opinion) parked on HOLD c0bccc01; the end-to-end acceptance not run

@@ -8908,7 +8908,7 @@ async function topNavSection(browser, base) {
   });
   try {
     fs.mkdirSync(shots, { recursive: true });
-    for (const w of [1760, 1440, 1280, 1024]) {
+    for (const w of [1760, 1440, 1400, 1280, 1024]) {
       const ctx = await browser.newContext({ viewport: { width: w, height: 700 } });
       await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
       const p = await ctx.newPage();
@@ -8924,6 +8924,8 @@ async function topNavSection(browser, base) {
         return { nav: r(document.querySelector("header nav")), more: r(document.getElementById("tabmore")), grow: r(document.querySelector("header .grow")),
           tabs: [...document.querySelectorAll("header .tab")].map(t => t.dataset.view + (t.classList.contains("ovf") ? "!" : "") + (t.hidden ? "-" : "") + ":" + t.offsetWidth) };
       })));
+      // A tab that does not fit is in the overflow menu and still in the DOM: usage and rooms are never dropped.
+      for (const v of ["usage", "runners"]) if (!(await p.$(`.tab[data-view="${v}"]`))) fail(tag + "the " + v + " tab is gone from the DOM");
       const clipped = m.inMenu.filter(x => x.startsWith("clipped:"));
       if (clipped.length) fail(tag + "tabs clip: " + clipped.join(","));
       const listed = m.inMenu.filter(x => x.startsWith("menu:")).map(x => x.slice(5)).sort().join(",");
