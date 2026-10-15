@@ -1348,9 +1348,37 @@ func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error)
 // not tell it the line was clear (after a room restart it cannot) and holding the message was the worse answer. It
 // takes the same locks, so an operator key in flight is still never tangled into the paste. The caller has already
 // refused a dialog and a new-context cycle, which are not the gate's to override.
-func (r *runner) injectForced(banner, body string) (bool, error) {
-	return r.inject(banner, body, nil, true)
+func (r *runner) injectForced(banner, body string, ok func() bool) (bool, error) {
+	return r.inject(banner, body, ok, true)
 }
+
+// forceRefusal is why a PEER's force may not type now, or "" when it may. A peer is not the human at the keyboard, so
+// force lets it past one thing only: a line the gate cannot read (after a reattach). A part written line atrium KNOWS
+// of, a paste gone wrong, and a keystroke inside peerGateIdle all still hold, because the Enter would submit the
+// operator's half typed words with the message glued on. The caller holds typeMu.
+func (r *runner) forceRefusalLocked() string {
+	open, why := r.gateLocked()
+	if open {
+		return ""
+	}
+	if r.line.unsure == "" || r.wedgedLocked() != "" {
+		return why
+	}
+	if !r.lastTyped.IsZero() && time.Since(r.lastTyped) < peerGateIdle {
+		return fmt.Sprintf("a key was pressed in the last %s", peerGateIdle)
+	}
+	return ""
+}
+
+func (r *runner) forceRefusal() string {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	return r.forceRefusalLocked()
+}
+
+// peerForceOK is forceRefusal as the `ok` check of injectForced, so it is judged under the input lock at the moment of
+// writing.
+func (r *runner) peerForceOK() bool { return r.forceRefusal() == "" }
 
 func (r *runner) inject(banner, body string, ok func() bool, force bool) (bool, error) {
 	r.injectMu.Lock()

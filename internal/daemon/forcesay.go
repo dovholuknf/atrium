@@ -15,8 +15,14 @@ import (
 // only retype a line it can read exactly. Both are right to be careful, and both leave a session nobody can reach
 // without a hand written websocket client. `force: true` is the way out, said on purpose by whoever sends.
 //
-// WHAT IT OVERRIDES: the typing gate (an unsure or part written line, a recent keystroke) and the turn rule (immediate
-// types mid-turn anyway, `when: done` and a runner that only queues mid-turn included).
+// WHO MAY. The operator (no `from`, and the board's Type anyway) skips the whole typing gate and the turn rule. A peer
+// is not that human: only the target's launcher may force, and only past a line the gate cannot READ. A part written
+// line atrium knows of, or a key pressed in the last peerGateIdle, refuses it with the reason and nothing is queued or
+// typed, because the Enter would submit the operator's half typed words with the message glued on. Any other peer is
+// refused.
+//
+// WHAT IT OVERRIDES: the typing gate and the turn rule (immediate types mid-turn anyway, `when: done` and a runner that
+// only queues mid-turn included).
 //
 // WHAT IT NEVER OVERRIDES, and refuses with the reason rather than queueing, because the sender asked for now:
 //   - a dialog on the runner's screen, whose answer the Enter would be;
@@ -60,7 +66,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	}
 	delivered := 0
 	for _, e := range entries {
-		wrote, err := run.injectForced(e.banner, e.body)
+		wrote, err := run.injectForced(e.banner, e.body, nil)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
@@ -98,20 +104,31 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 		return true
 	}
 	banner := ""
+	var ok func() bool
 	if from != "" {
-		banner = peerBanner(from)
+		// A PEER is not that human. Only the target's launcher may force, and only past a line atrium cannot read.
+		if !d.isLauncherOf(from, target) {
+			writeJSONCode(w, http.StatusForbidden, errBody("force refused: only the operator or the launcher of that session may force a say"))
+			return true
+		}
+		if why := run.forceRefusal(); why != "" {
+			writeJSONCode(w, http.StatusConflict, errBody("force refused: "+why+". force only types past a line atrium cannot read"))
+			return true
+		}
+		banner, ok = peerBanner(from), run.peerForceOK
 	}
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
 		payload = bracketedPaste(text)
 	}
-	wrote, err := run.injectForced(banner, payload)
+	wrote, err := run.injectForced(banner, payload, ok)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return true
 	}
 	if !wrote {
-		return false
+		writeJSONCode(w, http.StatusConflict, errBody("force refused: the line changed under it, so nothing was typed"))
+		return true
 	}
 	ev := map[string]any{"text": text, "via": "terminal", "how": forcedHow, "forced": true}
 	if from != "" {

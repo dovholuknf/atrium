@@ -137,3 +137,75 @@ func TestTypeAnywayTypesWhatIsHeld(t *testing.T) {
 		t.Fatal("the messages are still held")
 	}
 }
+
+func forcePeers(t *testing.T, d *Daemon) (id string, r *runner, f *fakePTY, boss, other string) {
+	t.Helper()
+	target, r, f := peerPair(t, d)
+	b := cardFor(t, d, "boss")
+	o := cardFor(t, d, "bystander")
+	if err := d.st.SetLauncher(target.ID, b.WireName, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	return target.ID, r, f, b.WireName, o.WireName
+}
+
+// A peer's force never types past a line atrium KNOWS is part written, and nothing is typed or queued.
+func TestPeerForceIsRefusedPastAKnownLine(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	id, r, f, boss, _ := forcePeers(t, d)
+	r.noteOperatorTyped([]byte("half a thou"))
+	quietSince(r)
+
+	code, out := forceSayVia(t, d, id, `{"from":"`+boss+`","text":"FORCEWORDS","force":true}`)
+	if code != http.StatusConflict {
+		t.Fatalf("answered %d %v", code, out)
+	}
+	if strings.Contains(f.written(), "FORCEWORDS") || heldCount(d.pending, id) != 0 {
+		t.Fatalf("typed or queued past a known line: %q", f.written())
+	}
+}
+
+// Nor past a keystroke just made, even on an unreadable line.
+func TestPeerForceIsRefusedAfterARecentKey(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	id, r, f, boss, _ := forcePeers(t, d)
+	loseTheLine(r)
+	r.noteOperatorTyped([]byte("x"))
+	r.typeMu.Lock()
+	r.line.unsure = reattachLineKey
+	r.typeMu.Unlock()
+
+	code, _ := forceSayVia(t, d, id, `{"from":"`+boss+`","text":"FORCEWORDS","force":true}`)
+	if code != http.StatusConflict || strings.Contains(f.written(), "FORCEWORDS") {
+		t.Fatalf("answered %d, wrote %q", code, f.written())
+	}
+}
+
+// A peer that is not the launcher is refused whatever the line.
+func TestForceFromANonLauncherPeerIsRefused(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	id, r, f, _, other := forcePeers(t, d)
+	loseTheLine(r)
+
+	code, _ := forceSayVia(t, d, id, `{"from":"`+other+`","text":"FORCEWORDS","force":true}`)
+	if code != http.StatusForbidden || strings.Contains(f.written(), "FORCEWORDS") {
+		t.Fatalf("answered %d, wrote %q", code, f.written())
+	}
+}
+
+// The launcher's force types past a line atrium cannot read.
+func TestLauncherForceTypesPastAnUnreadableLine(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	id, r, f, boss, _ := forcePeers(t, d)
+	loseTheLine(r)
+	quietSince(r)
+
+	code, out := forceSayVia(t, d, id, `{"from":"`+boss+`","text":"FORCEWORDS","force":true}`)
+	if code != http.StatusOK || out["forced"] != true || !strings.Contains(f.written(), "FORCEWORDS") {
+		t.Fatalf("answered %d %v, wrote %q", code, out, f.written())
+	}
+}
