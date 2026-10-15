@@ -26633,6 +26633,37 @@ async function oneTooltipSection(browser, base) {
 
 // The attached row stays inside the list column and bridges into the pane by default, at the narrowest list and a wide one, and the width
 // buttons are a grip in the list's lower left corner. ROWBLEED_SHOTS=<dir> writes a screenshot per width.
+// github and github.com are one host: two cards whose worktrees say each land under one heading, in the label, the tree and
+// the project rule, and a self-hosted forge is left alone.
+async function hostLabelGroupSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForTimeout(600);
+    const got = await p.evaluate(() => {
+      const a = { id: "h1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
+      const b = { id: "h2", worktree: "D:/git/worktrees/github.com/openziti/ziti-sdk-c/y", repo: "ziti-sdk-c", branch: "y" };
+      const c = { id: "h3", worktree: "D:/git/git.example.com/o/r/z", repo: "r", branch: "z" };
+      const tree = termTree([a, b, c]);
+      return { la: terminalLabel(a), lb: terminalLabel(b), lc: terminalLabel(c),
+        heads: [...tree.kids.keys()].sort().join(","), pa: cardProjectOf(a), pb: cardProjectOf(b),
+        up: forgeHostLabel("GitHub.com"), keep: forgeHostLabel("github") };
+    });
+    if (got.la !== "github/openziti/ziti-sdk-c:x") fail("hostLabelGroup: the short form changed: " + got.la);
+    if (got.lb !== "github/openziti/ziti-sdk-c:y") fail("hostLabelGroup: github.com did not become github: " + got.lb);
+    if (got.heads !== "git.example.com,github") fail("hostLabelGroup: the tree has the wrong top headings: " + got.heads);
+    if (got.lc !== "git.example.com/o/r:z") fail("hostLabelGroup: a self-hosted forge was rewritten: " + got.lc);
+    if (got.pa !== got.pb) fail("hostLabelGroup: the project rule split them: " + got.pa + " / " + got.pb);
+    if (got.up !== "github" || got.keep !== "github") fail("hostLabelGroup: forgeHostLabel is wrong: " + JSON.stringify(got));
+    if (errors.length) fail("hostLabelGroup: page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+  console.log("hostLabelGroup ok");
+}
 async function termRowBleedSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
@@ -32993,6 +33024,7 @@ async function main() {
     await unit("coverSteps", () => coverStepsSection(browser, base));
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
+    await unit("hostLabelGroup", () => hostLabelGroupSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
     await unit("termLag", () => termLagSection(browser, base));

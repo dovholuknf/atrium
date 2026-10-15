@@ -16,6 +16,16 @@ const parts = path.split("/").filter(Boolean);
 if (parts.length >= 2) return parts.slice(-2).join("/");
 return parts[0] || "";`;
 
+// A FORGE'S SHORT LABEL AND ITS HOST NAME ARE ONE HOST, and the short label is the canonical form (the hub's git paths and
+// hubrepos.js already say `github`). A checkout kept under `.../github.com/org/repo` and one under `.../github/org/repo` are the
+// same forge, so they group, filter and colour as one. Twin of store.ForgeLabel in Go: the two lists have to agree.
+// Only the heading changes. A URL to the forge still says github.com.
+const FORGE_HOST_LABELS = { "github.com": "github", "bitbucket.org": "bitbucket", "gitlab.com": "gitlab" };
+function forgeHostLabel(h) {
+  const s = String(h == null ? "" : h);
+  return FORGE_HOST_LABELS[s.toLowerCase()] || s;
+}
+
 const DEFAULT_GROUP_ORDER = `// Sort two group names. Return <0, 0, or >0.
 // Alphabetical, with anything ungrouped last.
 if (!a) return 1;

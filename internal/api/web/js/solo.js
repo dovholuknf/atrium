@@ -113,6 +113,13 @@ function terminalLabel(task) {
     where = tail.slice(Math.max(1, tail.length - 3)).join("/");
   }
 
+  // `github.com` and `github` are one host: the heading, the filters and the repo colours all read this label.
+  if (where) {
+    const w = where.split("/");
+    w[0] = forgeHostLabel(w[0]);
+    where = w.join("/");
+  }
+
   if (where && branch) return where + ":" + branch;
   if (where) return where;
   return task.display_title || "";

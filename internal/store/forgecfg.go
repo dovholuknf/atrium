@@ -2,6 +2,7 @@ package store
 
 import (
 	"regexp"
+	"strings"
 )
 
 // The forge CLIs atrium knows. A room keeps no forge configuration: a room with a hub never runs one, and a room with
@@ -43,6 +44,23 @@ func ForgeDefaultHost(key string) string {
 		}
 	}
 	return ""
+}
+
+// forgeLabels maps a forge's full host name onto the short label the hub uses for it (git/hub/github/<org>/<repo>).
+// The same list is FORGE_HOST_LABELS in the board's js/cardrules.js.
+var forgeLabels = map[string]string{
+	"github.com":    "github",
+	"bitbucket.org": "bitbucket",
+	"gitlab.com":    "gitlab",
+}
+
+// ForgeLabel is the one name for a host: github.com and github are both `github`. Anything it does not know, a
+// self-hosted forge included, comes back as it was given. Only a label changes. A URL to the forge keeps its host.
+func ForgeLabel(host string) string {
+	if l, ok := forgeLabels[strings.ToLower(host)]; ok {
+		return l
+	}
+	return host
 }
 
 // ValidForgeHost says whether h is a host name fit to be an argument of a status command.
