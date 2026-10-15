@@ -1518,21 +1518,48 @@ function cleanCopyFrom(sel, replies, edges) {
   return null;
 }
 
-// null when there is nothing to improve on. Bounded by CC_WAIT and never rejects.
+// EVERYTHING STILL ON THE SCROLLBACK. The last ten replies answer most selections in one small read. A selection in an
+// older reply, or in a conversation from before a /clear, misses them, and then `?all=1` is asked for: every reply the
+// card's transcripts still hold, bounded on the room. That answer is kept per card and used again until the card's
+// newest reply changes, which the small read already says, so a second selection costs one small read at most.
+const ccAll = new Map(); // task id -> { key, replies }
+
+// One read of the replies endpoint, as a transcript's replies or null. `signal` carries the shared deadline.
+async function ccFetch(url, signal) {
+  const res = await Promise.race([
+    fetch(url, signal ? { signal } : {}),
+    new Promise((_, no) => setTimeout(no, CC_WAIT)),
+  ]);
+  if (!res.ok) return null;
+  const v = await Promise.race([res.json(), new Promise((_, no) => setTimeout(no, CC_WAIT))]);
+  // A card read off the screen answers with the render itself, which is the thing being undone.
+  if (!v || v.source !== "transcript" || !Array.isArray(v.replies)) return null;
+  return v.replies;
+}
+
+// null when there is nothing to improve on. The WHOLE lookup, both reads, is bounded by CC_WAIT and never rejects.
 async function cleanCopy(sel, taskId, edges) {
   if (!taskId || ccNorm(sel).t.length < CC_MIN) return null;
   const ctl = typeof AbortController === "function" ? new AbortController() : null;
   const timer = setTimeout(() => { if (ctl) ctl.abort(); }, CC_WAIT);
+  const sig = ctl ? ctl.signal : null;
+  const base = `/v1/tasks/${encodeURIComponent(taskId)}/replies`;
   try {
-    const res = await Promise.race([
-      fetch(`/v1/tasks/${encodeURIComponent(taskId)}/replies?n=10`, ctl ? { signal: ctl.signal } : {}),
-      new Promise((_, no) => setTimeout(no, CC_WAIT)),
-    ]);
-    if (!res.ok) return null;
-    const v = await Promise.race([res.json(), new Promise((_, no) => setTimeout(no, CC_WAIT))]);
-    // A card read off the screen answers with the render itself, which is the thing being undone.
-    if (!v || v.source !== "transcript" || !Array.isArray(v.replies)) return null;
-    return cleanCopyFrom(sel, v.replies, edges);
+    const recent = await ccFetch(`${base}?n=10`, sig);
+    if (!recent) return null;
+    const hit = cleanCopyFrom(sel, recent, edges);
+    if (hit != null) return hit;
+    const last = recent.length ? recent[recent.length - 1] : null;
+    const key = last ? `${last.at}|${recent.length}|${(last.text || "").length}` : "";
+    let all = ccAll.get(taskId);
+    if (!all || all.key !== key) {
+      const replies = await ccFetch(`${base}?all=1`, sig);
+      if (!replies) return null;
+      all = { key, replies };
+      if (ccAll.size > 50) ccAll.clear();
+      ccAll.set(taskId, all);
+    }
+    return cleanCopyFrom(sel, all.replies, edges);
   } catch (e) {
     return null;
   } finally {

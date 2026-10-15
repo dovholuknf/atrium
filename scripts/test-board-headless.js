@@ -10625,9 +10625,17 @@ async function cleanCopySection(browser, base) {
     contentType: "application/json", body: JSON.stringify({ paths: ["/work/.atrium/pasted-1.png"] }) }));
   await ctx.route("**/v1/tasks/*/replies*", route => {
     if (mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"x"}' });
+    const all = /[?&]all=1/.test(route.request().url());
+    if (all) allReads++;
+    // `?all=1` also holds an old reply and one from a conversation before a /clear, which the last ten do not.
+    const older = all ? [
+      { at: "2026-10-14T09:00:00Z", text: "From before the clear:\n\n> The prior transcript holds this sentence about caching.", truncated: false },
+      { at: "2026-10-15T08:00:00Z", text: "An older reply, past the tenth:\n\n> Nothing in the recent ten has this line about retries.", truncated: false },
+    ] : [];
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({
-      source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) });
+      source: "transcript", more: false, replies: older.concat([{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }]) }) });
   });
+  let allReads = 0;
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -10703,6 +10711,20 @@ async function cleanCopySection(browser, base) {
     const c = await select(shown, [2, 3]);
     if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopy: a failed endpoint copied " + JSON.stringify(c.clip) + ", not " + JSON.stringify(c.sel));
     if (c.btn) fail("cleanCopy: a button offered with the replies endpoint down");
+
+    // 4b. A reply older than the last ten, and one from a prior transcript, both offer the button, and the second
+    // selection in the same card reuses the one `?all=1` read.
+    mode = "ok";
+    const o1 = await select("  ▎ Nothing in the recent ten has this line\r\n  ▎ about retries.\r\n", [0, 1]);
+    if (!o1.btn) fail("cleanCopy: no button for a selection in a reply older than the last ten");
+    await shot("copy-clean-older-after.png");
+    const o2 = await select("  ▎ The prior transcript holds this sentence\r\n  ▎ about caching.\r\n", [0, 1]);
+    if (!o2.btn) fail("cleanCopy: no button for a selection in a prior transcript");
+    await p.click("#cc-btn");
+    await p.waitForTimeout(100);
+    const oc = await p.evaluate(() => window.__clip.slice());
+    if (oc[oc.length - 1] !== "> The prior transcript holds this sentence about caching.") fail("cleanCopy: the prior-transcript button copied " + JSON.stringify(oc));
+    if (allReads !== 1) fail("cleanCopy: the all-replies read ran " + allReads + " times for one card, not once");
 
     // 5. An image pasted into the terminal says nothing about where it landed: the path is already typed.
     await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));

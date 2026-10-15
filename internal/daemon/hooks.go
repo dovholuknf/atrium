@@ -78,6 +78,8 @@ type hooks struct {
 	repliesWindow int64
 	repliesReach  int64
 	repliesCap    int64
+	// repliesAllBudget is the bytes `replies?all=1` reads across a card's transcripts.
+	repliesAllBudget int64
 }
 
 // defaultHooks is what production runs with. The package level values it copies are never assigned.
@@ -131,6 +133,7 @@ func defaultHooks() hooks {
 		repliesWindow:         repliesWindow,
 		repliesReach:          repliesReach,
 		repliesCap:            repliesCap,
+		repliesAllBudget:      repliesAllBudget,
 	}
 	platformHooks(&hk)
 	return hk

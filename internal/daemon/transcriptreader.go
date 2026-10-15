@@ -34,20 +34,27 @@ func (d *Daemon) transcriptReaders() []transcriptReader {
 // original read, unchanged.
 type claudeReader struct{ d *Daemon }
 
-func (r claudeReader) page(t *store.Task, n int, before time.Time) (replyPage, bool, error) {
+// path is the file of the conversation the runner last started, false when the card has none to read.
+func (r claudeReader) path(t *store.Task) (string, bool) {
 	d := r.d
 	if d.usage == nil || !d.usage.isClaude(t.Runner) {
-		return replyPage{}, false, nil
+		return "", false
 	}
 	session := strings.TrimSpace(t.ResumeID)
 	if d.ctx != nil {
 		session = d.ctx.sessionOf(t)
 	}
 	if session == "" {
-		return replyPage{}, false, nil
+		return "", false
 	}
 	path := d.usage.transcript(t.Worktree, session)
-	if path == "" {
+	return path, path != ""
+}
+
+func (r claudeReader) page(t *store.Task, n int, before time.Time) (replyPage, bool, error) {
+	d := r.d
+	path, ok := r.path(t)
+	if !ok {
 		return replyPage{}, false, nil
 	}
 	var (

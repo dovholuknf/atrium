@@ -310,6 +310,9 @@ type Server struct {
 	// page (r-024), or the n older than before when it is not zero. Owned by the
 	// daemon, which reads the transcript. See internal/daemon/replies.go.
 	Replies func(taskID string, n int, before time.Time) (any, error)
+	// RepliesAll answers `replies?all=1`: every reply the card's transcripts still hold, bounded, for the copy
+	// clean button. See internal/daemon/repliesall.go.
+	RepliesAll func(taskID string) (any, error)
 	// Changes is what a card's worktree has changed, or what one turn's edit calls
 	// changed when turn is not zero. Owned by the daemon, which runs git. A refusal
 	// is a *ChangesError. See internal/daemon/changes.go.

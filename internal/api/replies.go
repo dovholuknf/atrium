@@ -33,7 +33,13 @@ func (s *Server) cardReplies(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	v, err := s.Replies(id, n, before)
+	var v any
+	var err error
+	if r.URL.Query().Get("all") == "1" && s.RepliesAll != nil {
+		v, err = s.RepliesAll(id)
+	} else {
+		v, err = s.Replies(id, n, before)
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, NotOnRoom(id, s.Room))

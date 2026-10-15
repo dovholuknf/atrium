@@ -709,6 +709,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Replies = func(id string, n int, before time.Time) (any, error) {
 		return d.repliesPage(id, n, before)
 	}
+	d.ap.RepliesAll = func(id string) (any, error) { return d.repliesAll(id) }
 	d.ap.Changes = d.changesFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
