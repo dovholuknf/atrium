@@ -78,7 +78,6 @@ func newGitFixture(t *testing.T, hubSaysGit, roomSaysGit bool, roomHandler http.
 		run(t, bare, "init", "-q", "--bare")
 		run(t, work, "push", "-q", bare, "claude/main:refs/heads/claude/main")
 	})
-	work := filepath.Join(root, "work")
 	bare := filepath.Join(root, "git", "github", "o", "r.git")
 
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1})

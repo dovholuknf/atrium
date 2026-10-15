@@ -162,11 +162,18 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 
 // permRetryFor and permRetryEvery bound the retry of a permission request that got no decision. A room restart
 // takes a few seconds and the daemon upserts the request row by its dedup key before it waits, so asking again with
-// the same key is answered once by the new daemon. Variables so a test can shorten them.
-var (
-	permRetryFor   = 30 * time.Second
-	permRetryEvery = time.Second
-)
+// the same key is answered once by the new daemon. ATRIUM_PERM_RETRY_FOR and ATRIUM_PERM_RETRY_EVERY (durations)
+// shorten them, which is how a test does it without assigning a package variable.
+func permRetryFor() time.Duration { return envDuration("ATRIUM_PERM_RETRY_FOR", 30*time.Second) }
+
+func permRetryEvery() time.Duration { return envDuration("ATRIUM_PERM_RETRY_EVERY", time.Second) }
+
+func envDuration(name string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(os.Getenv(name))); err == nil && d > 0 {
+		return d
+	}
+	return def
+}
 
 type permissionAnswer struct {
 	Decision string `json:"decision"`
@@ -180,15 +187,16 @@ type permissionAnswer struct {
 // open, recording an allow nowhere.
 func postPermission(base string, body []byte) (permissionAnswer, bool) {
 	client := &http.Client{Timeout: permPostTimeout()}
-	deadline := time.Now().Add(permRetryFor)
+	every := permRetryEvery()
+	deadline := time.Now().Add(permRetryFor())
 	for {
 		if ans, ok := postPermissionOnce(client, base, body); ok {
 			return ans, true
 		}
-		if !time.Now().Add(permRetryEvery).Before(deadline) {
+		if !time.Now().Add(every).Before(deadline) {
 			return permissionAnswer{}, false
 		}
-		time.Sleep(permRetryEvery)
+		time.Sleep(every)
 	}
 }
 

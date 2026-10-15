@@ -22,10 +22,10 @@ const (
 )
 
 // gatePoll is how often the short gate looks again, and gateGiveUp how long it waits before it says who holds it
-// and stops anyway. Variables so a test can shorten them.
-var (
-	gatePoll   = 250 * time.Millisecond
-	gateGiveUp = 2 * time.Minute
+// and stops anyway. The Daemon's own fields of the same names shorten them for a test.
+const (
+	defaultGatePoll   = 250 * time.Millisecond
+	defaultGateGiveUp = 2 * time.Minute
 )
 
 // leavesRunnersUp reports whether this stop ends fewer runners than the room holds, which is when the gate and the
@@ -54,7 +54,14 @@ func (d *Daemon) shortGate() {
 	if d.stopRunners.Load() || !d.leavesRunnersUp(false) {
 		return
 	}
-	deadline := time.Now().Add(gateGiveUp)
+	poll, giveUp := d.gatePoll, d.gateGiveUp
+	if poll <= 0 {
+		poll = defaultGatePoll
+	}
+	if giveUp <= 0 {
+		giveUp = defaultGateGiveUp
+	}
+	deadline := time.Now().Add(giveUp)
 	var last string
 	for {
 		why := d.gateBusy()
@@ -67,10 +74,10 @@ func (d *Daemon) shortGate() {
 		}
 		if time.Now().After(deadline) {
 			log.Printf("[atrium] gave up waiting after %s for %s, stopping anyway. no runner is ended by this",
-				gateGiveUp, why)
+				giveUp, why)
 			return
 		}
-		time.Sleep(gatePoll)
+		time.Sleep(poll)
 	}
 }
 

@@ -382,9 +382,8 @@ func TestPermissionHookFailsOpenOnADeadAddress(t *testing.T) {
 // shortPermRetry makes the retry bound a test's own, and puts it back.
 func shortPermRetry(t *testing.T, bound time.Duration) {
 	t.Helper()
-	oldFor, oldEvery := permRetryFor, permRetryEvery
-	permRetryFor, permRetryEvery = bound, 50*time.Millisecond
-	t.Cleanup(func() { permRetryFor, permRetryEvery = oldFor, oldEvery })
+	t.Setenv("ATRIUM_PERM_RETRY_FOR", bound.String())
+	t.Setenv("ATRIUM_PERM_RETRY_EVERY", "50ms")
 }
 
 // A restart resets the long poll a couple of times and then the new room decides: the hook gets that decision, with

@@ -213,9 +213,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 	dir, _ := hostFixture(t)
 	d := daemonAt(t, dir)
 	task, _ := hostRunnerCard(t, d, "gate-nctx")
-	oldPoll := gatePoll
-	gatePoll = 10 * time.Millisecond
-	defer func() { gatePoll = oldPoll }()
+	d.gatePoll = 10 * time.Millisecond
 
 	d.nctx.begin(task.ID, "HANDOFF.x.md", "")
 	done := make(chan struct{})
@@ -233,9 +231,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 	}
 
 	// A gate nobody releases gives up and lets the stop go, ending nothing.
-	oldGive := gateGiveUp
-	gateGiveUp = 200 * time.Millisecond
-	defer func() { gateGiveUp = oldGive }()
+	d.gateGiveUp = 200 * time.Millisecond
 	d.nctx.begin(task.ID, "HANDOFF.y.md", "")
 	start := time.Now()
 	d.shortGate()
