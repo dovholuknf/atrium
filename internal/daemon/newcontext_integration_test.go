@@ -26,6 +26,8 @@ func fastNewContext(t *testing.T, d *Daemon) {
 		captureBegin:  400 * time.Millisecond,
 		captureEnd:    2 * time.Second,
 		clearTypeWait: 2 * time.Second,
+		ackQuiet:      time.Hour,
+		noteAfter:     30 * time.Millisecond,
 		logEvery:      50 * time.Millisecond,
 		turnSettle:    40 * time.Millisecond,
 		clearWait:     400 * time.Millisecond,

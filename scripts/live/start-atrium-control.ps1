@@ -45,6 +45,14 @@ Invoke-Step "start sg4-control: $CtlExe $shown" {
   Get-ChildItem env: | Where-Object { $_.Name -like 'CLAUDE_CODE_*' -or $_.Name -like 'CLAUDECODE*' } |
     ForEach-Object { Remove-Item "Env:$($_.Name)" }
   New-Item -ItemType Directory -Force $CtlDir | Out-Null
+  # The redirect below overwrites room.err, and the lines from before a restart are what explain a stuck card. Keep
+  # them as room.err.<timestamp>, as the batch deploy does for claude-sg4, and prune to the newest 20.
+  $oldErr = Join-Path $CtlDir 'room.err'
+  if (Test-Path $oldErr) {
+    Copy-Item $oldErr (Join-Path $CtlDir "room.err.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+    Get-ChildItem $CtlDir -Filter 'room.err.*' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
+      ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+  }
   # Outside any job object, through cmd for the redirects.
   $q = $argv | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }
   $null = Start-Breakaway "cmd.exe /c `"`"$CtlExe`" $($q -join ' ') > $CtlDir\room.out 2> $CtlDir\room.err`""

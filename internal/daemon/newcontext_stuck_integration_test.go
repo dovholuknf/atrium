@@ -63,3 +63,46 @@ func TestClearThatCannotBeTypedFailsWithWhatBlockedIt(t *testing.T) {
 		t.Fatalf("typed /clear into a turn: %q", f.written())
 	}
 }
+
+// r-new-context-never-clears: the Stop hook never landed (lost, or not installed) and a background shell of the session
+// keeps the screen redrawing, so the settled screen never reads idle. The card posts no activity after `atrium ready`,
+// and /clear is typed once it has been quiet for ackQuiet, within seconds and not after clearTypeWait.
+func TestClearIsTypedWhenTheStopWasLostAndTheCardWentQuiet(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.ackQuiet = 300 * time.Millisecond
+	d.hk.ncTiming.clearTypeWait = time.Minute
+	task, f, _ := ncCard(t, d)
+	id := task.ID
+
+	if err := d.StartNewContext(id); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	d.act.set(id, ActivityTool, "Bash")
+	ncAck(t, d, task)
+	d.act.set(id, ActivityThinking, "")
+
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+}
+
+// While /clear waits, the card says what it waits on, rather than sitting on step 2 in silence.
+func TestClearWaitSaysWhyOnTheCard(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	d.hk.ncTiming.clearTypeWait = time.Minute
+	task, f, _ := ncCard(t, d)
+	id := task.ID
+
+	if err := d.StartNewContext(id); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	d.act.set(id, ActivityTool, "Bash")
+	ncAck(t, d, task)
+
+	until(t, "the chip to say what it waits on", func() bool {
+		c := d.nctx.get(id)
+		return c != nil && c.step == NewContextClear && strings.Contains(c.reason, "a turn is in progress")
+	})
+}

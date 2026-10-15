@@ -204,6 +204,8 @@ type activityTracker struct {
 	// it made in the last callWindow. Both for the long-turn escalation (a2a.go),
 	// and in memory like the rest: a restart is a new turn anyway.
 	turnAt map[string]time.Time
+	// lastEv is when each card last posted any activity event or prompt, for `quietFor`.
+	lastEv map[string]time.Time
 	calls  map[string][]time.Time
 	// sessions is each card whose runner's own session hook has spoken since it
 	// was last forgotten. See heard.
@@ -288,6 +290,7 @@ func newActivityTracker() *activityTracker {
 		busyAt:     map[string]time.Time{},
 		looksIdle:  map[string]idleMark{},
 		turnAt:     map[string]time.Time{},
+		lastEv:     map[string]time.Time{},
 		calls:      map[string][]time.Time{},
 	}
 }
@@ -454,6 +457,7 @@ func (a *activityTracker) clearHeld(taskID string) {
 func (a *activityTracker) set(taskID, what, tool string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.lastEv[taskID] = a.now()
 	cur := a.by[taskID]
 	if cur == nil {
 		cur = &Activity{}
@@ -597,6 +601,20 @@ func (a *activityTracker) promptSeen(taskID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.busyAt[taskID] = a.now()
+	a.lastEv[taskID] = a.now()
+}
+
+// quietFor is how long since this card last posted any activity event or prompt, or a very long time when it never
+// has. A runner mid-turn posts one with every tool call, so a long silence after the turn's last call is the turn
+// being over with its Stop hook lost or never installed.
+func (a *activityTracker) quietFor(taskID string) time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	at, ok := a.lastEv[taskID]
+	if !ok {
+		return 1 << 62
+	}
+	return a.now().Sub(at)
 }
 
 // sinceBusy is how long since a turn last began or a prompt last arrived for this
@@ -701,6 +719,7 @@ func (a *activityTracker) forget(taskID string) {
 	delete(a.looksIdle, taskID)
 	delete(a.bgWork, taskID)
 	delete(a.turnAt, taskID)
+	delete(a.lastEv, taskID)
 	delete(a.calls, taskID)
 	delete(a.sessions, taskID)
 }

@@ -989,7 +989,8 @@ function newContextChip(t) {
   const q = Number(n.queued) || 0;
   const queued = q ? `<span class="chip" data-tip="typed into the card when the new context ends"
     >${q} message${q === 1 ? "" : "s"} queued</span>` : "";
-  return `<span class="chip" data-tip="${esc("context cycle, step " + n.n + " of " + n.of + ": " + n.label)}"
+  return `<span class="chip" data-tip="${esc("context cycle, step " + n.n + " of " + n.of + ": " + n.label +
+    (n.reason ? " (" + n.reason + ")" : ""))}"
     >context ${n.n}/${n.of}: ${esc(word)}</span>${queued}`;
 }
 const NEW_CONTEXT_WORDS = { limit: "waiting for ack", clear: "clearing", wake: "waking", capture: "handoff" };

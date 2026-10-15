@@ -53,6 +53,19 @@ func (n *newContexts) typingHeld(taskID string) bool {
 	return cur != nil && cur.typing && cur.step != NewContextFailed && !cur.capOnly
 }
 
+// setWaiting puts what a step waits on on the card's chip, or takes it off with "". It reports whether the text
+// changed, so the caller publishes only then. Never on a failed chip, whose reason is its own.
+func (n *newContexts) setWaiting(taskID string, gen uint64, why string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	if cur == nil || cur.gen != gen || cur.step == NewContextFailed || cur.reason == why {
+		return false
+	}
+	cur.reason = why
+	return true
+}
+
 // setTyping marks atrium's own write to the terminal as under way or over, for
 // gen's run only. It reports whether the run is still the card's.
 func (n *newContexts) setTyping(taskID string, gen uint64, on bool) bool {
