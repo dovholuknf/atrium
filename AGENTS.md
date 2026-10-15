@@ -5,12 +5,13 @@ in-repo bring-up, `docs/agents.md`. This file holds the rules that sit beside th
 
 ## What runs
 
-Atrium is one binary with two long-running commands.
+Atrium is one binary with two long-running commands, and a third process a room may start.
 
 | Command | What it is | Listens on |
 | --- | --- | --- |
 | `atrium run` | the hub: serves the board, holds no work, keeps rooms, the backlog, reports and a git mirror | board 127.0.0.1:7778, room link 127.0.0.1:7779 |
 | `atrium room` | a room, one per machine: the database, the terminals, the agents | agents 127.0.0.1:7777, its own board 127.0.0.1:7781 |
+| `atrium ptyhost` | the pty host: hidden, started by the room when the `pty_host` setting is on, holds the terminals so they outlive a room restart | no port: a named pipe on Windows, a 0600 unix socket elsewhere |
 
 ```
   browser                  HUB  atrium run                     ROOM  atrium room          (one per machine)
@@ -19,13 +20,22 @@ Atrium is one binary with two long-running commands.
   └──────────┘          │ passes /v1/* to a room   │ :7779 mTLS │ ptys and the agents in them│
                         │ control MCP at /_hub/mcp │            │ :7777 agent listener       │
   claude sessions ────► │ its own store: rooms,    │            │ :7781 its own board        │
-   (MCP over HTTP)      │ backlog, reports, git    │            └────────────────────────────┘
-                        └──────────────────────────┘
+   (MCP over HTTP)      │ backlog, reports, git    │            └─────────────┬──────────────┘
+                        └──────────────────────────┘          pipe or socket  │  only with pty_host
+                                                              ┌──────────────┴─────────────┐
+                                                              │ PTY HOST  atrium ptyhost   │
+                                                              │ the ptys, outlives the room│
+                                                              └────────────────────────────┘
 ```
 
 Rooms dial the hub over mutual TLS, never the reverse. `atrium run` starts this machine's room when none answers. The
 defaults are in `internal/cli/atrium_defaults.go`. `atrium daemon` still runs the older single process (board :7778,
 agents :7777, no hub). `docs/fabric/hub-and-rooms.md` has the details.
+
+The pty host is the same binary again, `atrium ptyhost`, hidden from `--help`. With the `pty_host` setting on, the room
+starts it detached (from a copy, `atrium.ptyhost`, beside the binary) and asks it for every terminal, so a runner lives
+in the host and not in the room. It listens on no port. `docs/terminal/ptyhost-protocol.md` has the channel, the
+frames and the lifetime.
 
 A room keeps two listeners on purpose. When the store halts the agent listener closes and stays closed, so runners park
 on connection-refused and burn nothing, while the board stays up to say what broke.

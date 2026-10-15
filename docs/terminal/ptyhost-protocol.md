@@ -9,7 +9,8 @@ Protocol version `Proto = 1`. The frame shapes are in `internal/ptyhost/proto.go
   and nothing else, remote clients rejected. go-winio makes an instance only while an `Accept` is pending, and a
   client that arrives in the gap waits (it does not connect to a dead instance), so the host re-issues `Accept` at
   once.
-- Elsewhere: a unix socket `<state dir>/ptyhost-<hash>.sock` at mode 0600. Mind `sun_path`.
+- Elsewhere: a unix socket `<state dir>/ptyhost-<hash>.sock` at mode 0600. Mind `sun_path`: when that path is over 103
+  bytes the socket goes to `/tmp/atrium-<uid>/`, a directory made at mode 0700 and refused unless this user owns it.
 - `<hash>` is the first 8 bytes of sha256 over the state dir's absolute path (lowercased on Windows), a NUL, and the
   user's SID (uid off Windows). `ptyhost.Address(stateDir)` computes it.
 
