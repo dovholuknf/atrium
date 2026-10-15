@@ -505,7 +505,7 @@ clint, 2026-10-07: "c but 'no budget' is the default and only applied if the use
 ## Decisions
 
 The interview settled most choices and its answers overrule the body. These remained, each with the recommended
-answer. Nobody has been asked.
+answer. Decided 2026-10-15 by the orchestrator: every recommendation below, as written.
 
 1. **Item identity for a link.** Recommend a synthetic id derived from the claim key (section 15), `origin: link`, no
    backlog row. Filing a backlog item per paste would clutter a backlog that is for planned work.
