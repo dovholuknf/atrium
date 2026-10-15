@@ -35,7 +35,7 @@ func newName() *cobra.Command {
 				// terminal and running it are talking about one board.
 				path = daemon.DefaultDBPath()
 			}
-			st, err := store.Open(path)
+			st, err := store.OpenShared(path)
 			if err != nil {
 				return err
 			}

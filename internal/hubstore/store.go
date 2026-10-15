@@ -43,6 +43,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/dblock"
 	"log"
 	"os"
 	"path/filepath"
@@ -99,6 +100,9 @@ type Store struct {
 	// mode, read back once at Open. Only such a database keeps free pages the
 	// hub can hand back to disk, so VacuumLoop is a no-op otherwise.
 	incrementalVacuum bool
+
+	// lock is the hold on the file, nil for a shared open. Released by Close.
+	lock *dblock.Lock
 }
 
 // Fresh reports whether Open made the database rather than found one.
@@ -113,7 +117,18 @@ func (s *Store) Fresh() bool { return s.fresh }
 //
 // A FAILURE HERE MEANS THE HUB DOES NOT START. Not a warning and not a degraded
 // mode: see the package comment.
-func Open(path string) (*Store, error) {
+//
+// It also takes the hold on the file (see dblock): a second Open of a file that is
+// open elsewhere is refused with dblock.ErrHeld. A command that has to look at a
+// live hub's database uses OpenShared.
+func Open(path string) (*Store, error) { return openStore(path, true) }
+
+// OpenShared is Open without the hold, for a short lived command run beside the
+// hub that owns the file, such as adding a room. It never refuses on account of
+// the hub, and so must not be used to run one.
+func OpenShared(path string) (*Store, error) { return openStore(path, false) }
+
+func openStore(path string, hold bool) (st *Store, err error) {
 	// Checked before opening, because opening creates the file.
 	fresh := false
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -133,6 +148,17 @@ func Open(path string) (*Store, error) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("could not make %s: %w", dir, err)
 		}
+	}
+	var lock *dblock.Lock
+	if hold {
+		if lock, err = dblock.Acquire(path); err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err != nil {
+				lock.Release()
+			}
+		}()
 	}
 
 	db, err := sql.Open("sqlite", path)
@@ -206,7 +232,7 @@ func Open(path string) (*Store, error) {
 	if !fresh && !incremental {
 		log.Printf("[hub] %s is not in incremental auto_vacuum mode; freed pages will not shrink the file", path)
 	}
-	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental, docsDir: filepath.Join(filepath.Dir(path), "docs"),
+	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental, lock: lock, docsDir: filepath.Join(filepath.Dir(path), "docs"),
 		filesDir: filepath.Join(filepath.Dir(path), "files")}
 	// Another hub opening this file at the same moment may create a table between
 	// our check and our CREATE, which SQLite reports as "already exists" even with
@@ -262,7 +288,11 @@ func integrity(db *sql.DB) error {
 }
 
 // Close releases the database.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	err := s.db.Close()
+	s.lock.Release()
+	return err
+}
 
 // Halted reports whether the store has halted, and why.
 func (s *Store) Halted() (bool, error) {

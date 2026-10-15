@@ -61,7 +61,7 @@ func usageBackfillCmd() *cobra.Command {
 			if db == "" {
 				db = defaultRoomDB()
 			}
-			st, err := store.Open(db)
+			st, err := store.OpenShared(db)
 			if err != nil {
 				return fmt.Errorf("open %s: %w", db, err)
 			}

@@ -283,7 +283,7 @@ func Restore(dbPath, from string) (aside string, err error) {
 	}
 	// READABLE AS A DATABASE BEFORE ANYTHING IS MOVED. Restoring a damaged file
 	// over a working one would turn a bad afternoon into a lost hub.
-	probe, err := Open(from)
+	probe, err := OpenShared(from)
 	if err != nil {
 		return "", fmt.Errorf("that backup cannot be opened, so it is not being restored: %w", err)
 	}
@@ -343,7 +343,7 @@ func Restore(dbPath, from string) (aside string, err error) {
 // passive gives up when a reader is mid-page and reports success, which is the
 // one outcome that would be worse than an error here.
 func checkpoint(path string) error {
-	s, err := Open(path)
+	s, err := OpenShared(path)
 	if err != nil {
 		return err
 	}

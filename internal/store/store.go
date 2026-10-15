@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/dblock"
 	"io"
 	"log"
 	"os"
@@ -641,6 +642,9 @@ type Store struct {
 	// mode, read back once at Open. Only such a database keeps free pages this
 	// store can hand back to disk, so IncrementalVacuum is a no-op otherwise.
 	incrementalVacuum bool
+
+	// lock is the hold on the file, nil for a shared open. Released by Close.
+	lock *dblock.Lock
 }
 
 // Fresh reports whether Open created the database rather than found one.
@@ -653,7 +657,29 @@ func (s *Store) Fresh() bool { return s.fresh }
 
 // Open opens the database and applies migrations. A failure here is tier one:
 // the caller is expected to refuse to start rather than continue degraded.
-func Open(path string) (*Store, error) {
+//
+// It also takes the hold on the file (see dblock): a second Open of a file that is
+// open elsewhere is refused with dblock.ErrHeld. A command that has to look at a
+// live room's database uses OpenShared.
+func Open(path string) (*Store, error) { return openStore(path, true) }
+
+// OpenShared is Open without the hold, for a short lived command run beside the
+// room that owns the file, such as backfilling usage or naming this atrium. It
+// never refuses on account of the room, and so must not be used to run one.
+func OpenShared(path string) (*Store, error) { return openStore(path, false) }
+
+func openStore(path string, hold bool) (st *Store, err error) {
+	var lock *dblock.Lock
+	if hold {
+		if lock, err = dblock.Acquire(path); err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err != nil {
+				lock.Release()
+			}
+		}()
+	}
 	// Checked before opening, since opening creates the file. See Store.Fresh.
 	fresh := false
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -733,7 +759,7 @@ func Open(path string) (*Store, error) {
 	if !fresh && !incremental {
 		log.Printf("store: %s is not in incremental auto_vacuum mode; freed pages will not shrink the file", path)
 	}
-	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental}
+	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental, lock: lock}
 	// The default hot sink is the event table, so a store is usable before the
 	// setting is read. configureSinks below may add cold sinks; it never
 	// replaces this with anything that fails Recent.
@@ -792,7 +818,9 @@ func (s *Store) Close() error {
 			}
 		}
 	}
-	return s.db.Close()
+	err := s.db.Close()
+	s.lock.Release()
+	return err
 }
 
 // Halted reports whether the store has halted, and why.

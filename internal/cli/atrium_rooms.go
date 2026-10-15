@@ -206,7 +206,7 @@ func (f *hubStoreFlags) nudge() {
 func (f *hubStoreFlags) keys() link.Keys { return link.Keys{Dir: orDefault(f.dir, hubDir())} }
 
 func (f *hubStoreFlags) open() (*hubstore.Store, error) {
-	return hubstore.Open(f.path())
+	return hubstore.OpenShared(f.path())
 }
 
 func (f *hubStoreFlags) path() string {
