@@ -167,8 +167,14 @@ func TestPRWorktreeAdoptsAnOperatorsCloneWithoutAsking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the clone was not adopted: %v", err)
 	}
-	if res.State != "existing" || res.Path != filepath.ToSlash(clone) {
-		t.Fatalf("result = %+v", res)
+	// The scm folder is checked after symlinks are resolved, so the path comes back as the real one: /private/var for
+	// a /var temp folder on a Mac, the long name for an 8.3 short one on Windows.
+	real, err := filepath.EvalSymlinks(clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.State != "existing" || res.Path != filepath.ToSlash(real) {
+		t.Fatalf("result = %+v, want the path %s", res, filepath.ToSlash(real))
 	}
 	if got := git("config", "atrium.adopted"); got != "yes" {
 		t.Fatalf("atrium.adopted = %q", got)

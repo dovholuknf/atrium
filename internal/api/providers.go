@@ -625,7 +625,7 @@ func parseWorktreeList(out, repo string) []projectWorktree {
 	var found []projectWorktree
 	var cur projectWorktree
 	flush := func() {
-		if cur.Path != "" && !eqPath(filepath.FromSlash(cur.Path), filepath.FromSlash(repo)) {
+		if cur.Path != "" && !sameRealDir(filepath.FromSlash(cur.Path), filepath.FromSlash(repo)) {
 			if cur.Branch == "" {
 				// A detached worktree has no branch, so it is labelled by its
 				// directory. Nameless rows are unpickable.

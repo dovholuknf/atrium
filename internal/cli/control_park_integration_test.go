@@ -22,7 +22,7 @@ func boardWith(t *testing.T, cards ...map[string]any) string {
 // and a `done` card never moves back to `needs-input` on its own, so counting
 // it as busy meant a restart could never proceed.
 func TestASessionThatSaidItIsDoneIsNotBusy(t *testing.T) {
-	for _, status := range []string{"done", "dead", "shelved"} {
+	for _, status := range []string{"done", "dead", "paused"} {
 		board := boardWith(t, map[string]any{
 			"id": "a", "display_title": "finished one", "status": status,
 			"supervised": true, "idle_seconds": 3,

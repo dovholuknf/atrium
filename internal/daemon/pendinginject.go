@@ -94,10 +94,15 @@ type pendingInjector struct {
 	d  *Daemon
 	mu sync.Mutex
 	by map[string]*heldTell
+	// running is the cards with an attempt in flight, and whether something asked for another meanwhile. See attempt.
+	running map[string]*attemptRun
 }
 
+// attemptRun is one card's attempt in flight. again is set by a retry that fired while it ran.
+type attemptRun struct{ again bool }
+
 func newPendingInjector(d *Daemon) *pendingInjector {
-	return &pendingInjector{d: d, by: map[string]*heldTell{}}
+	return &pendingInjector{d: d, by: map[string]*heldTell{}, running: map[string]*attemptRun{}}
 }
 
 // deferPeerInjection hands a just-queued peer message to the injector to retry
@@ -283,7 +288,34 @@ func (pi *pendingInjector) reconcile(taskID string) {
 
 // attempt is one retry: reconcile against the store, try to drain what is still
 // waiting into an open gate, and either finish or warn and reschedule.
+//
+// ONE ATTEMPT PER CARD AT A TIME. Draining waits sayThenEnter after every message, and a turn ending, a key, a
+// released cycle or a message all re-arm the timer, so a second attempt could start while the first was still typing
+// and take the messages it had not yet marked delivered for undelivered, typing each one twice. A retry that fires
+// meanwhile only leaves a note, and the attempt in flight re-arms the timer to the front when it is done.
 func (pi *pendingInjector) attempt(taskID string) {
+	pi.mu.Lock()
+	if cur := pi.running[taskID]; cur != nil {
+		cur.again = true
+		pi.mu.Unlock()
+		return
+	}
+	mine := &attemptRun{}
+	pi.running[taskID] = mine
+	pi.mu.Unlock()
+	defer func() {
+		pi.mu.Lock()
+		delete(pi.running, taskID)
+		if ht := pi.by[taskID]; mine.again && ht != nil && ht.timer != nil {
+			ht.timer.Reset(pi.d.hk.backoffSteps[0])
+		}
+		pi.mu.Unlock()
+	}()
+	pi.try(taskID)
+}
+
+// try is the body of an attempt.
+func (pi *pendingInjector) try(taskID string) {
 	run := pi.d.sup.get(taskID)
 	if run == nil {
 		// The terminal went away. The hooks still deliver from the queue, so the

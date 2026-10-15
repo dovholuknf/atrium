@@ -117,7 +117,9 @@ func (s *streamRig) addRoom(name string, access time.Duration) *streamRoom {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { _ = room.Run(ctx) }()
-	s.t.Cleanup(cancel)
+	// The stream handlers write to RemoteDir after their stream ends, and the TempDir is removed right after this
+	// runs, so the room is stopped and every handler waited for first.
+	s.t.Cleanup(func() { cancel(); room.endStreams() })
 	waitFor(s.t, 10*time.Second, func() bool { _, ok := s.rig.attachedAs(name); return ok })
 	sr := &streamRoom{room: room, dir: room.RemoteDir, seen: seen}
 	s.rooms[name] = sr

@@ -28,5 +28,6 @@ internal/api.TestBoardScriptParses 13 a real parse of the whole board script, CP
 internal/api.TestCloseStopsAndDeletesTheCardsOverlay 10 waits out a 5s taskkill retry on a locked-down box
 internal/api.TestOverlayDownStopsOnlyThatOne 10 waits out a 5s taskkill retry on a locked-down box
 internal/api.TestCloseStopsAProcessTheCardOwns 10 waits out a 5s taskkill retry on a locked-down box
+internal/hubstore.* 24 each opens stores that write thousands of small files. 31.5s on a hosted Windows runner (run 38722254104), under 1s on a developer box
 internal/hubstore.TestOldSnapshotsThinOutRatherThanPilingUp 16 writes 8640 small files
 internal/cli.TestRunnerPIDFindsOpencode 9 real child processes

@@ -493,6 +493,8 @@ func readAccess(dir string) RemoteAccess {
 
 // serveSSH is (B) and (C): the hub asking this room for its own sshd.
 func (r *Room) serveSSH(w http.ResponseWriter, req *http.Request) {
+	r.serving.Add(1)
+	defer r.serving.Done()
 	id := req.Header.Get("X-Atrium-Stream")
 	caller := req.Header.Get("X-Atrium-Caller")
 	if req.Method != http.MethodGet || !strings.EqualFold(req.Header.Get("Upgrade"), StreamUpgrade) ||
@@ -601,6 +603,21 @@ func (r *Room) OpenStreams() int {
 	r.smu.Lock()
 	defer r.smu.Unlock()
 	return len(r.streams)
+}
+
+// endStreams ends every stream this room carries and waits for each handler to finish, its close line written. A
+// stream's handler logs after the stream is over, so a caller that removes RemoteDir must wait here first.
+func (r *Room) endStreams() {
+	r.smu.Lock()
+	var all []*openStream
+	for _, o := range r.streams {
+		all = append(all, o)
+	}
+	r.smu.Unlock()
+	for _, o := range all {
+		o.end()
+	}
+	r.serving.Wait()
 }
 
 func (r *Room) pokeAccess() {

@@ -69,8 +69,10 @@ type Room struct {
 
 	// smu guards streams, the ssh streams this room is carrying, and accessPoke wakes the switch watcher when one
 	// opens or closes. wmu serialises writes on the control connection, which the beat and the watcher share.
-	smu        sync.Mutex
-	streams    map[string]*openStream
+	smu     sync.Mutex
+	streams map[string]*openStream
+	// serving counts the serveSSH handlers still running, which write to RemoteDir after their stream ends.
+	serving    sync.WaitGroup
 	accessPoke chan struct{}
 	wmu        sync.Mutex
 

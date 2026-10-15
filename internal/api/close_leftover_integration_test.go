@@ -40,7 +40,9 @@ func TestCloseRemovesAnIgnoredDeepTreeAndCountsItsBytes(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(exclude, []byte("node_modules/\n"), 0o644); err != nil {
+	// Added to what is there: the open already excluded .atrium/, and a rewrite would make its PR.md a dirty file.
+	have, _ := os.ReadFile(exclude)
+	if err := os.WriteFile(exclude, append(have, []byte("\nnode_modules/\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	size := deepTree(t, filepath.FromSlash(wt))

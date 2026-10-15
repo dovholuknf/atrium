@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -119,6 +120,37 @@ func TestARetryIntoAnOpenGateLandsAndClears(t *testing.T) {
 	}
 	if a := d.act.get(target.ID); a != nil && a.HeldPeer != "" {
 		t.Fatalf("the board signal still says a message is held: %+v", a)
+	}
+}
+
+// A retry that fires while another is still typing must not type the same messages again. Typing takes
+// sayThenEnter per message and marks each delivered after, so two attempts at once both found them pending.
+func TestTwoRetriesAtOnceTypeEachMessageOnce(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("ls\r"))
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.typeMu.Unlock()
+
+	words := []string{"ONEONE", "TWOTWO", "THREETHREE"}
+	for _, w := range words {
+		m, _ := d.st.QueueFromPeer(target.ID, w, "ci-green")
+		d.deferPeerInjection(target.ID, m.ID, "ci-green", w, "", false)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); d.pending.attempt(target.ID) }()
+		time.Sleep(sayThenEnter / 2)
+	}
+	wg.Wait()
+	got := f.written()
+	for _, w := range words {
+		if n := strings.Count(got, w); n != 1 {
+			t.Fatalf("%s was typed %d times: %q", w, n, got)
+		}
 	}
 }
 
