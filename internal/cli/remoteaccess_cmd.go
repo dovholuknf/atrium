@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/user"
@@ -80,6 +81,9 @@ func roomRemoteAccessCmd() *cobra.Command {
 			if addr != "" && !remoteaccess.ValidAddr(addr) {
 				return errors.New("--addr must be an IP address or a host name")
 			}
+			if addr == "" {
+				addr = pickSSHDAddr(cmd.OutOrStdout(), port)
+			}
 			if addr == remoteaccess.DefaultAddr {
 				addr = ""
 			}
@@ -142,6 +146,32 @@ func roomRemoteAccessCmd() *cobra.Command {
 
 	c.AddCommand(on, off, logc)
 	return c
+}
+
+// pickSSHDAddr is the address to dial when --addr was not given. Loopback stays the answer when it is this machine's own
+// sshd. When it is not (wslrelay holds 127.0.0.1:22 on a Windows machine with WSL), the door would open onto WSL, so
+// this says so and picks the address that is this machine's. "" means keep the default and say nothing more.
+func pickSSHDAddr(out io.Writer, port int) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	f := sshwizard.Which(ctx, sshwizard.OSEnv{}, port)
+	if len(f.Local) == 0 {
+		return ""
+	}
+	if f.Chosen == remoteaccess.DefaultAddr {
+		return ""
+	}
+	for _, n := range f.Notes {
+		if strings.Contains(n, "127.0.0.1:") && !strings.Contains(n, "is this machine's sshd") && !strings.Contains(n, "refused") {
+			fmt.Fprintln(out, n)
+		}
+	}
+	if f.Chosen != "" {
+		fmt.Fprintln(out, "so the door dials "+f.Chosen+", which is this machine's own sshd. override with --addr")
+		return f.Chosen
+	}
+	fmt.Fprintln(out, "no address of this machine answers as its own sshd. run: atrium ssh setup --check")
+	return ""
 }
 
 // formatStreamLine is one record as a person reads it.

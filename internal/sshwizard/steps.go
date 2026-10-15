@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -400,17 +399,17 @@ func checkPublish(ctx context.Context, r *Run) Result {
 func AuthorizedFile(ctx context.Context, m Machine, user string) (path string, admin bool) {
 	home := m.Home()
 	if m.GOOS() != "windows" {
-		return filepath.Join(home, ".ssh", "authorized_keys"), false
+		return joinFor(m.GOOS(), home, ".ssh", "authorized_keys"), false
 	}
 	if !isWindowsAdmin(ctx, m, user) {
-		return filepath.Join(home, ".ssh", "authorized_keys"), false
+		return joinFor(m.GOOS(), home, ".ssh", "authorized_keys"), false
 	}
 	pd := m.Getenv("ProgramData")
 	if pd == "" {
 		pd = `C:\ProgramData`
 	}
-	conf, err := m.ReadFile(filepath.Join(pd, "ssh", "sshd_config"))
-	file := filepath.Join(pd, "ssh", "administrators_authorized_keys")
+	conf, err := m.ReadFile(joinFor(m.GOOS(), pd, "ssh", "sshd_config"))
+	file := joinFor(m.GOOS(), pd, "ssh", "administrators_authorized_keys")
 	if err != nil {
 		return file, true
 	}

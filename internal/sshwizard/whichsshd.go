@@ -181,7 +181,7 @@ func HostKeyGlobs(env Env) []string {
 		if pd == "" {
 			pd = `C:\ProgramData`
 		}
-		return []string{filepath.Join(pd, "ssh", "ssh_host_*_key.pub")}
+		return []string{joinFor("windows", pd, "ssh", "ssh_host_*_key.pub")}
 	}
 	return []string{"/etc/ssh/ssh_host_*_key.pub"}
 }
@@ -369,4 +369,14 @@ func Describe(ctx context.Context, env Env, addr string, port int) string {
 		return s + ", NOT this machine's sshd. run: atrium room ssh setup --check"
 	}
 	return s + ", host keys on this machine could not be read to compare"
+}
+
+// joinFor joins path parts the way goos does, not the way the machine running this does. The wizard reads another
+// OS's layout in tests, and filepath.Join on Linux would turn `C:\ProgramData` and `ssh` into a path no Windows
+// machine has.
+func joinFor(goos string, parts ...string) string {
+	if goos != "windows" {
+		return filepath.Join(parts...)
+	}
+	return strings.Join(parts, `\`)
 }
