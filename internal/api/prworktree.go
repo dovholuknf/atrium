@@ -41,6 +41,9 @@ type prWorktreeResult struct {
 	Repo          string `json:"-"`
 	// Cloned is whether Repo was cloned for this worktree, so the card that gets it owns the clone too.
 	Cloned bool `json:"-"`
+	// Base is the ref a branch this call made forked from, and FetchError why updating origin failed, for new work.
+	Base       string `json:"-"`
+	FetchError string `json:"-"`
 	// PR is what the forge said about the pull request, for the card's brief.
 	PR *forge.PR `json:"-"`
 	// BriefFile is whether the description and discussion were written into the worktree.

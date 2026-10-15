@@ -360,13 +360,13 @@ async function openPickRepo(fieldID) {
   });
   const usable = allProviders.filter(p => p.enabled);
   if (!usable.length) {
-    tellUser("no providers yet",
-      "Nothing describes where your repositories live. Open runners, providers, and add one. " +
-      "Until then, browse still points a card at any directory.");
+    // Said inline in the launch dialog, where the repo list would be. A modal here would stack over it.
+    await openNewWork();
     return;
   }
   sel.innerHTML = pickProviderOptions();
   document.getElementById("pk-filter").value = "";
+  pkSay("");
   pickDlg.showModal();
   await loadPickRepos();
 }
@@ -420,13 +420,14 @@ async function addPickRepo() {
   const name = document.getElementById("pk-provider").value;
   const org = document.getElementById("pk-org").value.trim();
   const repo = document.getElementById("pk-repo").value.trim();
-  if (!repo) { tellUser("no repository", "type a repository name"); return; }
+  if (!repo) { pkSay("type a repository name", true); return; }
   let saved;
   try {
     saved = await api("/v1/providers/" + encodeURIComponent(name) + "/repos", {
       method: "PUT", body: JSON.stringify({ org: org, repo: repo })
     });
-  } catch (e) { tellUser("could not add it", e.message); return; }
+  } catch (e) { pkSay("could not add it: " + e.message, true); return; }
+  pkSay("");
   document.getElementById("pk-org").value = "";
   document.getElementById("pk-repo").value = "";
   await loadPickRepos();
@@ -482,8 +483,9 @@ function paintWhere(worktrees) {
 async function makeWorktree() {
   if (!pickWhere) return;
   const branch = document.getElementById("pw-branch").value.trim();
-  if (!branch) { tellUser("no branch", "type a branch name first"); return; }
   const said = document.getElementById("pw-said");
+  said.classList.remove("warn");
+  if (!branch) { said.classList.add("warn"); said.textContent = "type a branch name first"; return; }
   said.textContent = "making…";
   let made;
   try {
@@ -492,8 +494,8 @@ async function makeWorktree() {
       body: JSON.stringify({ org: pickWhere.org, repo: pickWhere.repo, branch: branch })
     });
   } catch (e) {
-    said.textContent = "";
-    tellUser("no worktree", e.message);
+    said.classList.add("warn");
+    said.textContent = "no worktree: " + e.message;
     return;
   }
   said.textContent = "";
@@ -510,4 +512,123 @@ function useRepoPath(path) {
   if (into) into.value = path;
   if (whereDlg.open) whereDlg.close();
   if (pickDlg.open) pickDlg.close();
+}
+
+// A line in the repo picker, where a modal would stack over the launch dialog.
+function pkSay(text, warn) {
+  const n = document.getElementById("pk-note");
+  n.classList.toggle("warn", !!warn);
+  n.textContent = text || "";
+}
+
+// ── new work, inline in the launch dialog ───────────────
+//
+// `gwt new some.new.work` from the board: pick a repo, name the work, and the room fetches origin, makes the worktree
+// and starts the card in it (POST /v1/new, internal/api/newwork.go). It lives IN the launch dialog and not in a second
+// dialog over it, so with no providers the empty state is drawn here, where the repo list would be, with a button to
+// the page that fixes it.
+
+function newWorkSay(text, warn) {
+  const n = document.getElementById("l-nw-note");
+  n.classList.toggle("warn", !!warn);
+  n.textContent = text || "";
+}
+
+function toggleNewWork() {
+  const box = document.getElementById("l-nw");
+  if (!box.hidden) { box.hidden = true; return; }
+  return openNewWork();
+}
+
+async function openNewWork() {
+  const box = document.getElementById("l-nw");
+  const form = document.getElementById("l-nw-form");
+  const empty = document.getElementById("l-nw-empty");
+  box.hidden = false;
+  newWorkSay("");
+  if (!allProviders.length) await loadProviders();
+  const usable = allProviders.filter(p => p.enabled);
+  empty.hidden = usable.length > 0;
+  form.hidden = usable.length === 0;
+  if (!usable.length) return;
+
+  // Every repo every enabled provider knows, as host/org/repo. A hidden row is a durable no, so it is not offered.
+  const sel = document.getElementById("l-nw-repo");
+  const want = sel.value;
+  sel.innerHTML = `<option value="">reading…</option>`;
+  const opts = [];
+  await Promise.all(usable.map(async p => {
+    try {
+      const out = await api("/v1/providers/" + encodeURIComponent(p.name) + "/repos");
+      const host = (p.host || "github.com").toLowerCase();
+      for (const r of out.repos || []) {
+        if (r.hidden || !r.org || !r.repo) continue;
+        opts.push(host + "/" + r.org + "/" + r.repo);
+      }
+    } catch (e) { newWorkSay("could not read " + p.name + ": " + e.message, true); }
+  }));
+  opts.sort();
+  sel.innerHTML = opts.length
+    ? [...new Set(opts)].map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("")
+    : `<option value="">no repositories yet</option>`;
+  if (want && opts.includes(want)) sel.value = want;
+  document.getElementById("l-nw-name").focus();
+}
+
+// Leaves the launch dialog for the page that fixes the empty state. The dialog is closed first: a page behind an open
+// modal cannot be touched.
+function newWorkToProviders() {
+  const dlg = document.getElementById("launch");
+  if (dlg.open) dlg.close();
+  goRunners("providers");
+}
+
+function newWorkPickExisting() {
+  return openPickRepo("l-cwd");
+}
+
+async function newWorkGo() {
+  const btn = document.getElementById("l-nw-go");
+  const repo = document.getElementById("l-nw-repo").value;
+  const name = document.getElementById("l-nw-name").value.trim();
+  if (!repo) { newWorkSay("pick a repository first", true); return; }
+  if (!name) { newWorkSay("name the work: it is the branch and the folder", true); return; }
+  return busyWhile(btn, async () => {
+    newWorkSay("");
+    const headers = { "Content-Type": "application/json" };
+    const roomField = document.getElementById("l-room-field");
+    const room = roomField && !roomField.hidden ? document.getElementById("l-room").value : "";
+    if (room) headers["X-Atrium-Room"] = room;
+    const picker = document.getElementById("l-harness");
+    let out;
+    try {
+      out = await api("/v1/new", {
+        method: "POST", headers, body: JSON.stringify({
+          repo, name,
+          from: document.getElementById("l-nw-from").value.trim(),
+          prompt: document.getElementById("l-prompt").value.trim(),
+          title: document.getElementById("l-title").value.trim(),
+          why: document.getElementById("l-why").value.trim(),
+          harness: document.getElementById("l-pick-field").hidden ? (launchTarget && launchTarget.harness) : picker.value,
+          model: document.getElementById("l-model").value.trim(),
+          effort: document.getElementById("l-effort").value.trim()
+        })
+      });
+    } catch (e) {
+      // In the dialog, with the form still filled in.
+      newWorkSay(e.message, true);
+      return;
+    }
+    document.getElementById("launch").close();
+    if (typeof rememberLaunchRoom === "function") rememberLaunchRoom(room, out.card);
+    const warn = [out.fetch_error && "fetching origin failed, so the base is what was last fetched",
+      out.hook_error && "the setup hook failed: " + out.hook_error].filter(Boolean).join(". ");
+    toast(out.existed && out.card && !out.created ? "already there" : "new work", warn || out.worktree);
+    const card = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
+    if (typeof refresh === "function") refresh();
+    if (!card || !card.supervised) { switchView("board"); return; }
+    if (launchWhere === "window") { popOutTask(card.id); return; }
+    switchView("terms");
+    openTerm(card);
+  }, "starting…");
 }

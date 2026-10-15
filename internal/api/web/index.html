@@ -2835,6 +2835,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     </div>
     </div>
     <div id="pk-list" class="pvrepos"></div>
+    <div class="hintline" id="pk-note" role="status"></div>
     <div class="field dlg-sec">
       <label class="eyebrow">or name one that is not listed</label>
       <div class="picker">
@@ -3250,8 +3251,37 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
            wrong directory. See docs/backlog/backlog-2026-09-14-005.md. -->
       <div class="picker">
         <input type="text" id="l-cwd" spellcheck="false" placeholder="path to the repo or worktree">
-        <button class="go" onclick="openPickRepo('l-cwd')">repo</button>
+        <button class="go" id="l-nw-btn" onclick="toggleNewWork()">repo</button>
         <button onclick="openBrowse()">browse</button>
+      </div>
+      <!-- NEW WORK, INLINE. `repo` opens this and not a second dialog over this one: pick a repo, name the work, and
+           the room fetches origin, makes the worktree and starts the card in it (POST /v1/new, `gwt new`). With no
+           provider there is nothing to pick from, and that is said here, where the repo list would be, with a way to
+           the page that fixes it. Never a modal over this dialog. js/providers.js. -->
+      <div class="nw" id="l-nw" hidden>
+        <div class="nw-empty" id="l-nw-empty" hidden>
+          <b>no providers yet</b>
+          <span class="hintline">Nothing describes where your repositories live, so there is no list to pick from.
+            Add one under runners, providers. Until then, <b>browse</b> still points a card at any directory.</span>
+          <div><button class="go" onclick="newWorkToProviders()">open providers</button></div>
+        </div>
+        <div id="l-nw-form" hidden>
+          <div class="picker">
+            <select id="l-nw-repo" aria-label="repository"></select>
+            <input type="text" id="l-nw-name" spellcheck="false" placeholder="name: the branch and the folder"
+              aria-label="name of the new work" onkeydown="if(event.key==='Enter'){event.preventDefault();newWorkGo();}">
+          </div>
+          <div class="picker">
+            <input type="text" id="l-nw-from" spellcheck="false" placeholder="from (optional): a branch, tag or commit"
+              aria-label="fork from">
+            <button class="go" id="l-nw-go" onclick="newWorkGo()">start new work</button>
+          </div>
+          <span class="hintline">Fetches origin, then makes a worktree and branch with that name off origin's default
+            branch, off <b>from</b>, or off the remote's branch of that name when it has one. Your own clone is never
+            checked out or pulled. The card starts in the new worktree.
+            <a href="#" onclick="newWorkPickExisting();return false">pick an existing worktree instead</a></span>
+        </div>
+        <div class="hintline" id="l-nw-note" role="status"></div>
       </div>
     </div>
     <!-- WITH THE DIRECTORY, because it is an answer to the directory question: ticking it says "I am not going to pick
@@ -3450,6 +3480,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <button id="b-up" onclick="browseUp()">&#8593;&#8202;up a folder</button>
       <button class="go" id="b-use" onclick="useBrowsed()">use this folder</button>
     </div>
+    <div class="hintline" id="b-note" role="status"></div>
     <div class="dirlist" id="b-list"></div>
     <!-- Explain folder icons and the separate select and open actions. -->
     <div class="dirlegend">

@@ -22706,6 +22706,94 @@ async function launchThrowawaySection(browser, base) {
   if (!bad) console.log("launchThrowaway ok");
 }
 
+// NEW WORK, INLINE IN THE LAUNCH DIALOG. `repo` opens a panel inside the dialog and never a second modal: with no
+// providers the empty state is drawn where the repo list would be, with a button to runners, providers. With one,
+// the repo list, a name and an optional from are sent to POST /v1/new, and the card is opened in the new worktree.
+// A refusal is a line in the dialog with the form still filled in. The directory picker's own failure is a line in the
+// picker. NEWWORK_SHOTS=<dir> writes the dialog with no providers and with one.
+async function newWorkDialogSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const asked = [];
+  let refuse = "";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    let providers = [];
+    await p.route(/\/v1\/providers(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ providers }) }));
+    await p.route(/\/v1\/providers\/gh\/repos(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ orgs: ["o"], repos: [{ org: "o", repo: "r", present: true }, { org: "o", repo: "hid", hidden: true }] }) }));
+    await p.route(/\/v1\/new(\?|$)/, r => {
+      asked.push(JSON.parse(r.request().postData() || "{}"));
+      if (refuse) return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: refuse }) });
+      return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ card: "nw1", worktree: "/wt/o/r/some.work", repo: "github.com/o/r", created: true }) });
+    });
+    await p.route(/\/v1\/tasks\/nw1(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "nw1", title: "some.work", status: "running", worktree: "/wt/o/r/some.work" }) }));
+    await p.route(/\/v1\/browse(\?|$)/, r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "the disk said no" }) }));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openLaunch === "function" && typeof newWorkGo === "function");
+    const seen = () => p.evaluate(() => {
+      const shown = id => { const e = document.getElementById(id); return !!e && !e.hidden; };
+      return { launch: document.getElementById("launch").open, ask: document.getElementById("ask").open,
+        pick: document.getElementById("pickrepo").open, panel: shown("l-nw"), empty: shown("l-nw-empty"), form: shown("l-nw-form"),
+        repos: [...document.getElementById("l-nw-repo").options].map(o => o.value),
+        note: document.getElementById("l-nw-note").textContent, bnote: document.getElementById("b-note").textContent };
+    });
+    const shot = async name => {
+      if (process.env.NEWWORK_SHOTS) await p.locator("dialog#launch").screenshot({ path: process.env.NEWWORK_SHOTS + "/" + name + ".png" });
+    };
+
+    // no providers: said inline, never a modal over the dialog
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    await p.click("#l-nw-btn");
+    await p.waitForFunction(() => !document.getElementById("l-nw-empty").hidden, null, { timeout: slow(5000) }).catch(() => {});
+    let s = await seen();
+    if (!s.launch || s.ask || s.pick || !s.panel || !s.empty || s.form) fail("newWork: no providers should be drawn inline " + JSON.stringify(s));
+    if (!(await p.locator("#l-nw-empty").innerText()).includes("no providers yet")) fail("newWork: the empty state does not say so");
+    await shot("launch-no-providers");
+    // the old entry point says the same, inline
+    await p.evaluate(async () => { document.getElementById("l-nw").hidden = true; await openPickRepo("l-cwd"); });
+    s = await seen();
+    if (!s.launch || s.ask || s.pick || !s.panel || !s.empty) fail("newWork: openPickRepo with no providers stacked something " + JSON.stringify(s));
+    await p.click("#l-nw-empty button");
+    s = await seen();
+    if (s.launch || s.ask) fail("newWork: open providers left a dialog over the page " + JSON.stringify(s));
+    if (await p.evaluate(() => document.getElementById("runners").hidden)) fail("newWork: open providers did not go to runners");
+
+    // the directory picker's failure is a line in the picker
+    await p.evaluate(async () => { await openLaunch(null, "", "", null, null); await openBrowse(); });
+    s = await seen();
+    if (s.ask || !s.bnote.includes("cannot browse")) fail("newWork: a browse failure was not inline " + JSON.stringify(s));
+    await p.evaluate(() => document.getElementById("browse").close());
+
+    // one provider: the repo list, a name, and the call
+    providers = [{ name: "gh", host: "github.com", enabled: true, worktrees: true }];
+    await p.evaluate(async () => { await loadProviders(); await openLaunch(null, "", "/work/here", null, null); });
+    await p.click("#l-nw-btn");
+    await p.waitForFunction(() => document.getElementById("l-nw-repo").options.length && document.getElementById("l-nw-repo").value);
+    s = await seen();
+    if (!s.panel || s.empty || !s.form || s.ask || s.pick || s.repos.join() !== "github.com/o/r") fail("newWork: the repo list " + JSON.stringify(s));
+    await shot("launch-one-provider");
+    await p.fill("#l-nw-name", "some.work");
+    await p.fill("#l-nw-from", "release");
+    refuse = "no such ref: release";
+    await p.click("#l-nw-go");
+    await p.waitForFunction(() => document.getElementById("l-nw-note").textContent.includes("no such ref"), null, { timeout: slow(5000) })
+      .catch(() => fail("newWork: a refusal was not said in the dialog"));
+    s = await seen();
+    if (!s.launch || s.ask || await p.inputValue("#l-nw-name") !== "some.work") fail("newWork: a refusal closed the dialog or lost the form " + JSON.stringify(s));
+    refuse = "";
+    await p.click("#l-nw-go");
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("newWork: the dialog stayed open"));
+    const b = asked[asked.length - 1] || {};
+    if (asked.length !== 2 || b.repo !== "github.com/o/r" || b.name !== "some.work" || b.from !== "release") fail("newWork: the call was " + JSON.stringify(asked));
+    if (errors.length) fail("newWork: page errors " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("newWorkDialog ok");
+}
+
 // u-dropdowns-instant: the launch dialog opens WITH its room and runner options in place, whatever the network is doing.
 // Every API answer is held for 500ms. The board has read the runners and rooms at start, so the open is one frame: the
 // dialog is showing, both selects hold their options, and nothing is rebuilt in the next half second.
@@ -30758,7 +30846,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection, groupBridge: groupBridgeSection, revealFolds: revealFoldsSection,
       pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -32746,6 +32834,7 @@ async function main() {
     await unit("dropdownsInstant", () => dropdownsInstantSection(browser, base));
     await unit("heldLink", () => heldLinkSection(browser, base));
     await unit("launchThrowaway", () => launchThrowawaySection(browser, base));
+    await unit("newWorkDialog", () => newWorkDialogSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
     await unit("mReconnect", () => mReconnectSection(browser));

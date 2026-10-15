@@ -52,9 +52,16 @@ async function browseTo(path) {
     // A path that no longer exists, or one the daemon cannot read. Fall back to
     // the roots rather than leaving an empty dialog.
     if (path) { await browseTo(""); return; }
-    tellUser("cannot browse", e.message);
+    // Said in the picker itself: a modal here would stack over the launch dialog.
+    const note = document.getElementById("b-note");
+    note.classList.add("warn");
+    note.textContent = "cannot browse: " + e.message;
+    browseEntries = [];
+    browseList();
     return;
   }
+  document.getElementById("b-note").textContent = "";
+  document.getElementById("b-note").classList.remove("warn");
   browseAt = { path: data.path || "", parent: data.parent || "" };
   browseSel = "";
   browseEntries = data.entries || [];

@@ -291,6 +291,21 @@ func (s *Server) openOtherLaunchBody(in openRequest, got *store.Resolved, cwd, k
 //   - not fresh (a branch link): a branch the clone has only as a remote-tracking one is made from it. One it does not
 //     have at all is refused with a sentence, since a branch link names work that exists.
 func (s *Server) branchWorktree(ctx context.Context, p *store.Provider, host, org, repo, branch string, fresh bool) (prWorktreeResult, int, error) {
+	return s.branchWorktreeFrom(ctx, p, host, org, repo, branch, fresh, branchOpts{})
+}
+
+// branchOpts is what new work asks of branchWorktree beyond a link's needs.
+type branchOpts struct {
+	// fetch updates origin first, so the base is what the remote has now. A failed fetch is not fatal: it is kept on the
+	// result, and the base is whatever was last fetched.
+	fetch bool
+	// from is the ref to fork a branch that exists nowhere yet from, instead of origin/<name> or the default branch.
+	from string
+}
+
+// branchWorktreeFrom is branchWorktree with opts. With fetch, a branch the remote has and the clone does not is made
+// from it (tracked), else a fresh one forks from opts.from, else the remote's default branch.
+func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host, org, repo, branch string, fresh bool, opts branchOpts) (prWorktreeResult, int, error) {
 	var res prWorktreeResult
 	if p != nil && !p.Worktrees {
 		return res, http.StatusBadRequest, errors.New(
@@ -307,6 +322,14 @@ func (s *Server) branchWorktree(ctx context.Context, p *store.Provider, host, or
 		return res, status, err
 	}
 	res.Repo, res.Cloned = repoPath, cloned
+	if opts.fetch {
+		// The room talking to its own origin over git, not a forge API. Only the remote-tracking refs move: the
+		// operator's checked-out branch is never touched.
+		if out, err := gitIn(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
+			res.FetchError = strings.TrimSpace(tailLines(out + " " + err.Error()))
+			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", repoPath, res.FetchError)
+		}
+	}
 	for _, wt := range worktreesOf(repoPath) {
 		if strings.EqualFold(wt.Branch, branch) {
 			res.Path, res.Existed, res.Branch = wt.Path, true, wt.Branch
@@ -326,7 +349,15 @@ func (s *Server) branchWorktree(ctx context.Context, p *store.Provider, host, or
 	case branchExists(ctx, repoPath, branch):
 		args = []string{"worktree", "add", filepath.FromSlash(dest), branch}
 	case fresh:
-		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), defaultBase(ctx, repoPath)}
+		base := defaultBase(ctx, repoPath)
+		if opts.fetch || opts.from != "" {
+			var err error
+			if base, err = newWorkBase(ctx, repoPath, branch, opts.from); err != nil {
+				return res, http.StatusBadRequest, err
+			}
+		}
+		res.Base = base
+		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), base}
 		res.CreatedBranch = true
 	default:
 		from := remoteBranch(ctx, repoPath, branch)

@@ -1446,6 +1446,10 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
     return;
   }
   const picking = !id;
+  // New work starts closed and empty each time the dialog opens (js/providers.js).
+  document.getElementById("l-nw").hidden = true;
+  document.getElementById("l-nw-name").value = "";
+  document.getElementById("l-nw-from").value = "";
 
   // The room the card starts on is settled before the runner list is drawn,
   // because in aggregate mode the runners a fresh pick can offer are the

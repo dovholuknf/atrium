@@ -599,6 +599,15 @@
   /* Help under a field is read once. Dimmer and smaller than what it explains, and held to a readable
      measure rather than run the width of a wide dialog. */
   dialog .hintline { font-size: var(--fs-xs); line-height: 1.55; max-width: 76ch; }
+  /* New work, inline under the launch dialog's directory box. An empty state and a form share the one frame, so
+     nothing is stacked over the dialog. */
+  dialog .nw { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--stroke-dim); border-radius: var(--r-md); display: grid; gap: var(--sp-2); }
+  dialog .nw[hidden], dialog .nw [hidden] { display: none; }
+  dialog .nw .nw-empty { display: grid; gap: var(--sp-2); justify-items: start; }
+  dialog .nw .picker select { flex: 1 1 0; min-width: 14ch; max-width: 100%; }
+  dialog .nw .picker input { flex: 1 1 0; min-width: 0; }
+  dialog .nw .hintline a { color: var(--blue); }
+  dialog .hintline.warn { color: var(--danger-text); }
   dialog .toolbar { gap: var(--sp-2); }
   /* Buttons in a dialog are a step smaller than the board's, so a row of five reads as one set. */
   /* `:where` keeps these at the weight of a bare `button`, so every smaller button with its own class (a
