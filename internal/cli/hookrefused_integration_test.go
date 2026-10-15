@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 // A REFUSED HOOK IS AN UNREACHABLE HOOK, stage 1 of docs/rnd/security-design.md.
@@ -29,6 +30,9 @@ func TestARefusedHookIsAnUnreachableHook(t *testing.T) {
 		{http.StatusOK, `not json {`},
 		{http.StatusOK, `{"decision":"approve"`},
 	}
+	// Each of these is retried for as long as the permission hook is allowed, which is thirty seconds a case unless the
+	// bound is made the test's own.
+	shortPermRetry(t, 300*time.Millisecond)
 	for _, a := range answers {
 		var mu sync.Mutex
 		var browserish []string
