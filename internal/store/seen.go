@@ -54,6 +54,8 @@ type Seen struct {
 	QuestionsAt *time.Time
 	AnsweredAt  *time.Time
 	AnsweredVia string
+	// OwnTurn is a latest turn that Claude Code started itself and that left no Open Questions.
+	OwnTurn bool
 }
 
 // Unseen reports whether the latest turn has ended and not been seen since.
@@ -95,6 +97,9 @@ type SeenView struct {
 	// Answered is absent when no turn ever asked anything, because false there
 	// would read as a question still owed.
 	Answered *bool `json:"answered,omitempty"`
+	// OwnTurn is a latest turn Claude Code started itself, a finished background shell or a monitor event. Nobody
+	// asked for it, so it rings nobody unless it asked something.
+	OwnTurn bool `json:"own_turn,omitempty"`
 }
 
 // View shapes a row for a reader. Nil in, nil out.
@@ -105,7 +110,7 @@ func (s *Seen) View() *SeenView {
 	v := &SeenView{
 		TurnEndedAt: s.TurnEndedAt, SeenAt: s.SeenAt, SeenVia: s.SeenVia,
 		Unseen: s.Unseen(), QuestionsAt: s.QuestionsAt,
-		AnsweredAt: s.AnsweredAt, AnsweredVia: s.AnsweredVia,
+		AnsweredAt: s.AnsweredAt, AnsweredVia: s.AnsweredVia, OwnTurn: s.OwnTurn,
 	}
 	if s.Asked() {
 		answered := s.Answered()
@@ -138,22 +143,26 @@ type TurnQuestions struct {
 	// Block is whether the message had an Open Questions heading.
 	Block bool
 	List  []string
+	// Own is whether the turn's prompt was only Claude Code's own, a task notification. Such a turn that left no
+	// block is recorded as an own turn, which the notifier skips.
+	Own bool
 }
 
 const seenColumns = `task_id, turn_ended_at, seen_at, seen_via, questions, questions_unparsed,
-	questions_at, answered_at, answered_via`
+	questions_at, answered_at, answered_via, turn_own`
 
 func scanSeen(sc interface{ Scan(...any) error }) (*Seen, error) {
 	var (
 		s                         Seen
 		ended, seen, qs, qat, ans string
-		unparsed                  int
+		unparsed, own             int
 	)
 	if err := sc.Scan(&s.TaskID, &ended, &seen, &s.SeenVia, &qs, &unparsed,
-		&qat, &ans, &s.AnsweredVia); err != nil {
+		&qat, &ans, &s.AnsweredVia, &own); err != nil {
 		return nil, err
 	}
 	s.Unparsed = unparsed != 0
+	s.OwnTurn = own != 0
 	for _, f := range []struct {
 		raw string
 		dst **time.Time
@@ -228,8 +237,12 @@ func (s *Store) NoteTurnEnded(taskID string, q TurnQuestions) error {
 		if err := s.ensureSeen(taskID); err != nil {
 			return err
 		}
-		if _, err := s.db.Exec(`UPDATE turn_seen SET turn_ended_at = ? WHERE task_id = ?`,
-			at, taskID); err != nil {
+		own := 0
+		if q.Own && !(q.Known && q.Block) {
+			own = 1
+		}
+		if _, err := s.db.Exec(`UPDATE turn_seen SET turn_ended_at = ?, turn_own = ? WHERE task_id = ?`,
+			at, own, taskID); err != nil {
 			return err
 		}
 		if !q.Known || !q.Block {

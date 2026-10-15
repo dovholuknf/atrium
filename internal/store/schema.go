@@ -2299,6 +2299,14 @@ var migrations = []struct {
 			`ALTER TABLE item_mirror ADD COLUMN work_id TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// A turn Claude Code started itself (a finished background shell, a monitor event) rings nobody. See
+		// TurnQuestions.Own and docs/changes/u-no-ready-on-task-notification.md.
+		name: "0104_turn_seen_own",
+		stmts: []string{
+			`ALTER TABLE turn_seen ADD COLUMN turn_own INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

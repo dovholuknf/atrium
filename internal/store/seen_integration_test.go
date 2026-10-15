@@ -233,3 +233,25 @@ func TestTurnSeenMigrationReruns(t *testing.T) {
 		t.Fatalf("re-running 0057 failed: %v", err)
 	}
 }
+
+// A turn Claude Code started itself is recorded as such, unless it asked something, and the next turn replaces it.
+func TestNoteTurnEndedRecordsAnOwnTurn(t *testing.T) {
+	s := open(t)
+	task := askCard(t, s, "orchestrator")
+	own := func() bool {
+		got, err := s.GetSeen(task.ID)
+		if err != nil || got == nil {
+			t.Fatalf("seen: %v %v", got, err)
+		}
+		return got.OwnTurn && got.View().OwnTurn
+	}
+	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true, Own: true}); err != nil || !own() {
+		t.Fatalf("an own turn was not recorded: %v", err)
+	}
+	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true}); err != nil || own() {
+		t.Fatalf("a human's turn kept the flag: %v", err)
+	}
+	if err := s.NoteTurnEnded(task.ID, TurnQuestions{Known: true, Block: true, List: []string{"q"}, Own: true}); err != nil || own() {
+		t.Fatalf("an own turn that asked was recorded as quiet: %v", err)
+	}
+}

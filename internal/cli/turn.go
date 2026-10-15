@@ -243,6 +243,8 @@ func turnEnded(hubURL, event, name, runner string) string {
 		"questions":       questions,
 		"questions_block": block,
 		"questions_known": known,
+		// A turn Claude Code started itself, which rings nobody. See ownTurn.
+		"own_turn": ownTurn(in.TranscriptPath),
 		// Sent so the room hears this turn end, and knows not to answer it
 		// with a block. What it answers is ignored anyway. See below.
 		"stop_hook_active": in.StopHookActive,

@@ -231,6 +231,8 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		Questions      []string `json:"questions,omitempty"`
 		QuestionsBlock bool     `json:"questions_block,omitempty"`
 		QuestionsKnown bool     `json:"questions_known,omitempty"`
+		// The turn's prompt was only Claude Code's own. See store.TurnQuestions.Own.
+		OwnTurn bool `json:"own_turn,omitempty"`
 		// Set on the Stop that ends a turn a Stop hook continued. That turn
 		// is over for good: the hook will not block on it whatever this says,
 		// so nothing is taken off the queue for it. False from a hook older
@@ -395,7 +397,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		d.silentStop(task.ID)
 		// And it is a turn the operator has not seen. See seen.go.
 		d.noteTurnForSeen(task.ID, store.TurnQuestions{
-			Known: in.QuestionsKnown, Block: in.QuestionsBlock, List: in.Questions,
+			Known: in.QuestionsKnown, Block: in.QuestionsBlock, List: in.Questions, Own: in.OwnTurn,
 		}, d.launcherSeen(task.ID))
 		nothing()
 		return

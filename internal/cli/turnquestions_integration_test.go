@@ -189,3 +189,48 @@ func TestTheStopHookSaysUnknownWithNoText(t *testing.T) {
 		t.Fatalf("posted %v", body)
 	}
 }
+
+// A turn started by Claude Code, a finished background shell, is its own and rings nobody. A human's prompt, a
+// peer's say, a slash command, and a transcript that cannot be read are not.
+func TestOwnTurnReadsTheLastRealPrompt(t *testing.T) {
+	dir := t.TempDir()
+	entry := func(role string, content any) string {
+		raw, _ := json.Marshal(map[string]any{"type": role, "message": map[string]any{"role": role, "content": content}})
+		return string(raw)
+	}
+	text := func(s string) []map[string]any { return []map[string]any{{"type": "text", "text": s}} }
+	toolResult := []map[string]any{{"type": "tool_result", "content": "ok"}}
+	cases := []struct {
+		name  string
+		lines []string
+		want  bool
+	}{
+		{"task notification", []string{entry("user", "do it"), entry("assistant", text("waiting")),
+			entry("user", "<task-notification>shell exited 0</task-notification>"), entry("assistant", text("done"))}, true},
+		{"task notification in a block", []string{entry("user", text("<task-notification>x</task-notification>")),
+			entry("assistant", text("done"))}, true},
+		{"tool results inside the own turn do not hide it", []string{entry("user", "<task-notification>x</task-notification>"),
+			entry("assistant", []map[string]any{{"type": "tool_use", "name": "Bash"}}), entry("user", toolResult),
+			entry("assistant", text("done"))}, true},
+		{"human prompt", []string{entry("user", "<task-notification>x</task-notification>"), entry("assistant", text("a")),
+			entry("user", "now fix the test"), entry("assistant", text("done"))}, false},
+		{"human prompt with a reminder beside it", []string{entry("user", []map[string]any{
+			{"type": "text", "text": "<system-reminder>x</system-reminder>"}, {"type": "text", "text": "fix it"}}),
+			entry("assistant", text("done"))}, false},
+		{"peer say", []string{entry("user", "[atrium] sg4/doer: ready"), entry("assistant", text("done"))}, false},
+		{"slash command", []string{entry("user", "<command-name>/clear</command-name>"), entry("assistant", text("done"))}, false},
+		{"no prompt at all", []string{entry("assistant", text("done"))}, false},
+	}
+	for _, c := range cases {
+		path := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "-")+".jsonl")
+		if err := os.WriteFile(path, []byte(strings.Join(c.lines, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ownTurn(path); got != c.want {
+			t.Errorf("%s: ownTurn = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if ownTurn(filepath.Join(dir, "missing.jsonl")) || ownTurn("") {
+		t.Error("an unreadable transcript was taken for an own turn")
+	}
+}

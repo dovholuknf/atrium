@@ -160,7 +160,9 @@ type notifySeen struct {
 	OpenQuestions     []string `json:"open_questions"`
 	QuestionsUnparsed bool     `json:"questions_unparsed"`
 	TurnEndedAt       string   `json:"turn_ended_at"`
-	Unseen            bool     `json:"unseen"`
+	// OwnTurn is a turn Claude Code started itself, a background shell finishing. It rings nobody.
+	OwnTurn bool `json:"own_turn"`
+	Unseen  bool `json:"unseen"`
 }
 
 // NotifyIdentity works out why a card wants a human right now, from the opaque
@@ -301,6 +303,11 @@ func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 	// What marks a card as just started is its age at the wait, and `started`.
 	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "" &&
 		p.WaitingReason != "asked" && (p.WaitingReason == "started" || youngAt(p.CreatedAt, waited)):
+		return notifyCard{}, false
+	// A TURN CLAUDE CODE STARTED ITSELF IS NOBODY'S NEWS. A session waits on a background shell, the shell exits, and
+	// Claude Code runs a turn for the `<task-notification>`. That wait already rang once. Questions, a report and a
+	// permission above still do, and a human's prompt makes the next turn an ordinary one.
+	case p.Seen.OwnTurn && report == "" && p.WaitingReason != "asked" && (p.Status == "needs-input" || p.Seen.Unseen):
 		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited

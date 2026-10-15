@@ -209,6 +209,17 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 			`"open_questions":["q"]}}`, "question", "a|question|T3"},
 		{"input over finished", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T4",` +
 			`"unseen":true}}`, "input", "a|input|T2"},
+		// A turn Claude Code started itself, a task notification, rings nobody, and a human's turn still does.
+		{"own turn at rest", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1","own_turn":true}}`, "", ""},
+		{"own turn finished", `{"status":"done","seen":{"turn_ended_at":"T4","unseen":true,"own_turn":true}}`, "", ""},
+		{"human turn at rest", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1","own_turn":false}}`,
+			"input", "a|input|T2"},
+		{"own turn that asked", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1","own_turn":true,` +
+			`"questions_at":"T3","open_questions":["q"]}}`, "question", "a|question|T3"},
+		{"own turn that reported", `{"status":"needs-input","waiting_since":"T2","waiting_reason":"blocked",` +
+			`"seen":{"turn_ended_at":"T1","own_turn":true}}`, "input", "a|input|T2"},
+		{"own turn that is blocked on a permission", `{"status":"needs-permission","waiting_since":"T1","seen":{"own_turn":true}}`,
+			"permission", "a|permission|T1"},
 		// The item 44 rule.
 		{"origin agent", `{"status":"needs-permission","waiting_since":"T1","tags":["dept:x","origin:agent"]}`, "", ""},
 	}
