@@ -120,6 +120,14 @@ func (k Keys) ensureServer(hosts []string) error {
 	if err != nil {
 		return err
 	}
+	ips, dns := splitSANs(hosts)
+	// A certificate already there whose names still match is kept. One that does not (an old one that
+	// carried "ip:port" as a DNS name, or a changed host list) falls through and is minted again.
+	if old, err := k.readCertFile("hub.crt"); err == nil && sansMatch(old, ips, dns) {
+		if _, err := os.Stat(k.path("hub.key")); err == nil {
+			return nil
+		}
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -131,13 +139,8 @@ func (k Keys) ensureServer(hosts []string) error {
 		NotAfter:     time.Now().Add(caLife),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-	}
-	for _, h := range hosts {
-		if ip := net.ParseIP(h); ip != nil {
-			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
-		} else if h != "" {
-			tmpl.DNSNames = append(tmpl.DNSNames, h)
-		}
+		IPAddresses:  ips,
+		DNSNames:     dns,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caKey)
 	if err != nil {
@@ -147,6 +150,65 @@ func (k Keys) ensureServer(hosts []string) error {
 		return err
 	}
 	return k.writeKey("hub.key", key)
+}
+
+// splitSANs turns a host list into IP and DNS names. An entry may be host:port (the form
+// --link-advertise takes) or a bare host, and the port is never part of a name.
+func splitSANs(hosts []string) (ips []net.IP, dns []string) {
+	seenIP, seenDNS := map[string]bool{}, map[string]bool{}
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if sh, _, err := net.SplitHostPort(h); err == nil {
+			h = sh
+		}
+		h = strings.Trim(h, "[]")
+		if h == "" {
+			continue
+		}
+		if ip := net.ParseIP(h); ip != nil {
+			if !seenIP[ip.String()] {
+				seenIP[ip.String()] = true
+				ips = append(ips, ip)
+			}
+		} else if !seenDNS[h] {
+			seenDNS[h] = true
+			dns = append(dns, h)
+		}
+	}
+	return ips, dns
+}
+
+func sansMatch(c *x509.Certificate, ips []net.IP, dns []string) bool {
+	if len(c.IPAddresses) != len(ips) || len(c.DNSNames) != len(dns) {
+		return false
+	}
+	have := map[string]bool{}
+	for _, ip := range c.IPAddresses {
+		have[ip.String()] = true
+	}
+	for _, ip := range ips {
+		if !have[ip.String()] {
+			return false
+		}
+	}
+	haveD := map[string]bool{}
+	for _, d := range c.DNSNames {
+		haveD[d] = true
+	}
+	for _, d := range dns {
+		if !haveD[d] {
+			return false
+		}
+	}
+	return true
+}
+
+func (k Keys) readCertFile(name string) (*x509.Certificate, error) {
+	raw, err := os.ReadFile(k.path(name))
+	if err != nil {
+		return nil, err
+	}
+	return parseCert(raw)
 }
 
 // CA reads the authority back.
