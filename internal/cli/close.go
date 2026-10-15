@@ -32,12 +32,14 @@ type closeOpts struct {
 	boardURL              string
 	yes, asJSON           bool
 	keep, stash, deleteIt []string
+	cwd, work             string
+	noWait                bool
 }
 
 func newClose() *cobra.Command {
 	var o closeOpts
 	c := &cobra.Command{
-		Use:   "close <card>",
+		Use:   "close <card> | --cwd <path>",
 		Short: "Close a card: stop it, and free the worktree, branch, refs and review its inventory lists.",
 		Long: "Shows what closing the card frees and keeps, and with --yes closes it.\n\n" +
 			"The session is stopped, the review is archived (its findings and walk stay, the copy of the code " +
@@ -58,6 +60,9 @@ func newClose() *cobra.Command {
 	c.Flags().StringSliceVar(&o.keep, "keep", nil, "keep this worktree on disk (seq, path or all)")
 	c.Flags().StringSliceVar(&o.stash, "stash", nil, "push this worktree's work to the hub, then remove it (seq, path or all)")
 	c.Flags().StringSliceVar(&o.deleteIt, "delete", nil, "remove this worktree with its work (seq, path or all)")
+	c.Flags().StringVar(&o.cwd, "cwd", "", "close every card whose folder is this worktree (needs --yes)")
+	c.Flags().StringVar(&o.work, "work", "", "with --cwd: what a worktree holding unsaved work gets, keep, stash or delete")
+	c.Flags().BoolVar(&o.noWait, "no-wait", false, "with --cwd: answer at once and let the closes finish behind it")
 	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -216,6 +221,41 @@ func closeCardCmd(card string, o closeOpts) error {
 				}
 				fmt.Println(line)
 			}
+		}
+	}
+	return nil
+}
+
+// closeByCwdCmd closes every card at a worktree through POST /v1/cards/archive.
+func closeByCwdCmd(o closeOpts) error {
+	cwd := strings.TrimSpace(o.cwd)
+	if !o.yes {
+		fmt.Printf("would close every card whose folder is %s. nothing was changed. run again with --yes\n", cwd)
+		return nil
+	}
+	var res struct {
+		Cards  []string          `json:"cards"`
+		Failed map[string]string `json:"failed"`
+		Closed []closeResultOut  `json:"closed"`
+	}
+	body := map[string]any{"cwd": cwd, "wait": !o.noWait, "work": o.work}
+	if _, err := closeAsk(boardAddress(o.boardURL), http.MethodPost, "/v1/cards/archive", body, &res); err != nil {
+		return err
+	}
+	if o.asJSON {
+		return printJSON(res)
+	}
+	if len(res.Cards) == 0 {
+		fmt.Printf("no card is at %s\n", cwd)
+		return nil
+	}
+	for _, id := range res.Cards {
+		if why := res.Failed[id]; why != "" {
+			fmt.Printf("%s: not closed: %s\n", id, why)
+		} else if o.noWait {
+			fmt.Printf("closing %s\n", id)
+		} else {
+			fmt.Printf("closed %s\n", id)
 		}
 	}
 	return nil
