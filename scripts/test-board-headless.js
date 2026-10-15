@@ -10537,6 +10537,40 @@ async function chatTabSection(browser, base) {
     if (!(sides.mineRight > sides.theirsRight - 1 && sides.mineLeft > sides.theirsLeft)) fail(tag + "own bubble is not to the right of the reply: " + JSON.stringify(sides));
     await p.waitForTimeout(500);
     await shot("chat-after-chat-1400x900.png");
+    // wide: the column follows the pane, the list is as wide as the terminals' list
+    await p.setViewportSize({ width: 2400, height: 1200 });
+    await p.waitForTimeout(500);
+    await shot("chat-" + (process.env.CHAT_SHOT_TAG || "after") + "-chat-2400x1200.png");
+    const widths = async () => ({
+      pane: await p.evaluate(() => document.getElementById("chat-frame-host").getBoundingClientRect().width),
+      list: await p.evaluate(() => document.getElementById("term-list").getBoundingClientRect().width),
+      col: await fr.evaluate(() => { const r = el => el.getBoundingClientRect(); const c = document.getElementById("m-compose"); return { w: r(c).width, vw: window.innerWidth }; }),
+    });
+    const wide = await widths();
+    if (wide.col.w < wide.pane * 0.85) fail(tag + "at 2400 the column does not fill the pane: " + JSON.stringify(wide));
+    await p.setViewportSize({ width: 1400, height: 900 });
+    await p.waitForTimeout(300);
+    const narrow = await widths();
+    if (narrow.col.w < narrow.pane * 0.85 || narrow.col.w > narrow.pane) fail(tag + "at 1400 the column does not track the pane: " + JSON.stringify(narrow));
+    // the list is the terminals' width, dragged by the terminals' own grip, and it moves both tabs
+    if (await p.evaluate(() => !document.getElementById("chat-layout").contains(document.getElementById("term-grip")))) fail(tag + "the divider is not in the chat view");
+    const g = await p.locator("#term-grip").boundingBox();
+    const before = narrow.list;
+    await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(g.x + g.width / 2 + 80, g.y + g.height / 2, { steps: 4 });
+    await p.mouse.up();
+    const after = (await widths()).list;
+    if (Math.abs(after - before - 80) > 2) fail(tag + "dragging the divider moved the list from " + before + " to " + after);
+    await p.click("#chat-to-term");
+    await p.waitForFunction(() => !document.getElementById("terms").hidden, null, { timeout: slow(10000) });
+    const onTerms = await p.evaluate(() => document.getElementById("term-list").getBoundingClientRect().width);
+    if (Math.abs(onTerms - after) > 2) fail(tag + "the terminals tab shows the list at " + onTerms + ", the chat tab at " + after);
+    await p.click("#t-chat");
+    await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    // a card in the chat list is as wide as on the terminals tab
+    const cardW = await p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').getBoundingClientRect().width);
+    if (Math.abs(cardW - onTerms) > 20) fail(tag + "a card is " + cardW + " wide in a list " + onTerms + " wide");
     // terminal switch, and back
     await p.click("#chat-to-term");
     await p.waitForFunction(() => !document.getElementById("terms").hidden && termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });

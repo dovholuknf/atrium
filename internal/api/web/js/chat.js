@@ -60,13 +60,18 @@ function chatView(on) {
   if (!list || !layout || on === chatLent) return;
   chatLent = on;
   if (on) {
-    layout.prepend(list);
+    // The terminals' grip comes along, so the list is dragged here with the same handle and the same stored width.
+    const grip = document.getElementById("term-grip");
+    layout.prepend(list, grip);
+    layout.style.setProperty("--termw", clampTermW(termListW) + "px");
     list.classList.add("in-chat");
     chatSelect(chatId);
     renderTermList();
   } else {
     list.classList.remove("in-chat");
-    document.getElementById("term-layout").insertBefore(list, document.getElementById("term-grip"));
+    const grip = document.getElementById("term-grip");
+    document.getElementById("term-rail").after(list);
+    list.after(grip);
     const f = document.getElementById("chat-frame");
     if (f) f.remove();
     // Rows were marked for the chat; the terminals tab draws its own.

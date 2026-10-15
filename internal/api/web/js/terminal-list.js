@@ -368,6 +368,8 @@ function applyTermList() {
   lay.classList.toggle("tl-mini", !narrow && termListMode === "mini");
   lay.classList.toggle("tl-off", !narrow && termListMode === "off");
   lay.style.setProperty("--termw", clampTermW(termListW) + "px");
+  const cl = document.getElementById("chat-layout");
+  if (cl) cl.style.setProperty("--termw", clampTermW(termListW) + "px");
 }
 
 // Puts the bridge across the gutter, level with the attached card.
@@ -623,6 +625,9 @@ function setTermW(px) {
   termListW = clampTermW(px);
   const lay = document.getElementById("term-layout");
   if (lay) lay.style.setProperty("--termw", termListW + "px");
+  // The chat tab borrows the list and the grip, so it carries the same width.
+  const cl = document.getElementById("chat-layout");
+  if (cl) cl.style.setProperty("--termw", termListW + "px");
   // Live, so the terminal reflows under the handle rather than jumping when
   // it is let go. xterm's fit is cheap next to the repaint it triggers, and
   // this only runs while a pointer is down.

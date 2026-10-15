@@ -1,9 +1,9 @@
 /* The phone's conversation view as the desktop board's chat tab: the same page in an iframe (`/m/?chat=1#term=<id>`), with
    everything that is navigation hidden, because the board's own list and toolbar do that job. Nothing here applies to the
    phone itself: every rule is under `body.chat-embed`, which only the `?chat=1` address sets (see m/index.html). The
-   conversation column is capped at a readable width and centred, and the thread is drawn as chat bubbles: the card's
+   conversation column fills the pane minus a gutter, and the thread is drawn as chat bubbles: the card's
    replies on the left, the operator's own words on the right. Each rule carries `#m-card` to outrank m/working.css. */
-body.m.chat-embed { --col: 820px; background: transparent; }
+body.m.chat-embed { --gut: 16px; background: transparent; }
 body.m.chat-embed .app { max-width: none; min-height: 0; }
 body.m.chat-embed > .app > .bar,
 body.m.chat-embed #m-home,
@@ -13,12 +13,12 @@ body.m.chat-embed #m-card-menu,
 body.m.chat-embed #m-card-menu-back { display: none; }
 body.m.chat-embed .sheet { transform: none; transition: none; max-width: none; background: transparent; z-index: 1; }
 body.m.chat-embed #m-card { --m-fs: 15px; }
-body.m.chat-embed #m-card .sheet-scroll { padding: 16px max(16px, calc((100% - var(--col)) / 2)) 12px; }
+body.m.chat-embed #m-card .sheet-scroll { padding: 16px var(--gut) 12px; }
 body.m.chat-embed #m-card .conv { margin-top: 12px; }
 body.m.chat-embed #m-card .replies { gap: 10px; }
-body.m.chat-embed #m-card .reply { align-self: flex-start; max-width: min(82%, 680px); padding: 8px 14px 9px; border-radius: 18px 18px 18px 6px; box-shadow: 0 2px 8px rgba(var(--shadow-rgb), .15); }
-body.m.chat-embed #m-card .reply.mine { align-self: flex-end; max-width: min(82%, 680px); border-radius: 18px 18px 6px 18px; }
+body.m.chat-embed #m-card .reply { align-self: flex-start; max-width: 85%; padding: 8px 14px 9px; border-radius: 18px 18px 18px 6px; box-shadow: 0 2px 8px rgba(var(--shadow-rgb), .15); }
+body.m.chat-embed #m-card .reply.mine { align-self: flex-end; max-width: 85%; border-radius: 18px 18px 6px 18px; }
 body.m.chat-embed #m-card .reply.prompt.command { align-self: flex-end; }
 body.m.chat-embed #m-compose,
 body.m.chat-embed #m-working,
-body.m.chat-embed #m-recap { width: 100%; max-width: var(--col); margin-inline: auto; box-sizing: border-box; }
+body.m.chat-embed #m-recap { width: calc(100% - 2 * var(--gut)); max-width: none; margin-inline: auto; box-sizing: border-box; }
