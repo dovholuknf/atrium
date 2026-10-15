@@ -751,10 +751,11 @@ function growlSay(g, kind) {
   const perm = g.reason === "permission";
   const card = typeof cardRows !== "undefined" ? cardRows.get(growlCard(g)) : null;
   // The tone is the growler's own, so it goes with the growler. A permission still rings through the ordinary path.
-  if (growlOn()) alerting.play(perm ? "permission" : "waiting", card ? soundForAlert(card) : "");
+  const cat = { permission: "permission", question: "question", blocked: "blocker" }[g.reason] || "system";
+  if (growlOn()) alerting.play(perm ? "permission" : "waiting", card ? soundForAlert(card) : "", cat);
   alerting.notify(g.title, growlFirstLine(g.body), perm ? "perms" : "", "", "growl:" + g.id,
     growlCard(g), card ? card.icon || "" : "", "", {
-      growl: { id: g.id, key: perm ? growlPermID(g) : "", onShown: n => growlNotes.set(g.id, n) }
+      alert: cat, growl: { id: g.id, key: perm ? growlPermID(g) : "", onShown: n => growlNotes.set(g.id, n) }
     });
 }
 

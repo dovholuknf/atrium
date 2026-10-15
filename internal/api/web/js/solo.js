@@ -820,7 +820,7 @@ function soloSpeak(kind, item) {
   // about it, not even a toast, and it is not logged. With none focused on it this window
   // rings, since it owns the card.
   if (kind === "ready" && readySilenced(soloID)) return;
-  alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound);
+  alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound, kind === "perm" ? "permission" : "ready");
   // THIS WINDOW NO LONGER DECIDES THE FORM ON ITS OWN, and that is the fix.
   //
   // It used to ask `onScreen`, visible without focused, chosen because
@@ -845,7 +845,7 @@ function soloSpeak(kind, item) {
   // picture belongs to, which is the same id by a different road.
   alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "",
     item && item.id ? item.id : soloID, "", iconForAlert(soloTask), soloID,
-    { pending: true, ready: kind === "ready" });
+    { pending: true, ready: kind === "ready", alert: kind === "perm" ? "permission" : "ready" });
 }
 
 // Back to the view you were on, and to the terminal you were reading.

@@ -132,6 +132,7 @@ function paintSettingsPrefs() {
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-stuck").value = p.stuck || "alert";
   document.getElementById("s-quietdoers").checked = p.quietDoers !== false;
+  paintAlertKinds(p);
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
@@ -145,6 +146,27 @@ function paintSettingsPrefs() {
   document.getElementById("s-inputlag").checked = lagOn;
   document.getElementById("s-typing").checked = typingOn;
 }
+// The per-kind table in the gear: one row per ALERT_KINDS entry with a notification box and a sound box. Written back as
+// `alerts[kind][which]` in the one prefs object, so another window of this browser follows through `prefLive`.
+function paintAlertKinds(p) {
+  const t = document.getElementById("s-alerts");
+  if (!t) return;
+  t.innerHTML = `<thead><tr><th></th><th>notification</th><th>sound</th></tr></thead><tbody>` +
+    ALERT_KINDS.map(k => `<tr><td><b>${esc(k.label)}</b><span class="hintline">${esc(k.note)}</span></td>` +
+      ["os", "sound"].map(w => `<td><input type="checkbox" data-kind="${k.id}" data-which="${w}"` +
+        ` aria-label="${esc(k.label)}: ${w === "os" ? "notification" : "sound"}"` +
+        `${alertWants(p, k.id, w) ? " checked" : ""}></td>`).join("") + `</tr>`).join("") + `</tbody>`;
+}
+document.getElementById("s-alerts").addEventListener("change", e => {
+  const el = e.target;
+  if (!el.dataset || !el.dataset.kind) return;
+  const alerts = Object.assign({}, alerting.get().alerts);
+  alerts[el.dataset.kind] = Object.assign({}, alerts[el.dataset.kind], { [el.dataset.which]: el.checked });
+  alerting.set({ alerts });
+  // A box just ticked on is heard once, so the row says what it will do.
+  if (el.checked && el.dataset.which === "sound") alerting.preview(el.dataset.kind === "permission" ? alerting.get().perm : alerting.get().input);
+});
+
 prefLive(["atrium.sound", "atrium.termKeep*"], () => paintSettingsPrefs());
 
 function paintSettings() {
@@ -2096,7 +2118,7 @@ function connect() {
     if (d.cleared || !d.message) return;
     const title = d.tool + " access is missing on " + d.room;
     const held = notifyHeld("runners");
-    if (!held) alerting.play("permission");
+    if (!held) alerting.play("permission", "", "system");
     alerting.notify(title, d.message, "runners", "", "forge:" + d.key, "", "");
     if (!held) toast(title, d.message, "runners");
   });
@@ -2128,7 +2150,7 @@ function connect() {
     // permission kind and the toast skips `notify`, so both are gated here, and
     // the `notify` between them records the one drawer entry.
     const held = notifyHeld("runners");
-    if (!held) alerting.play("permission");
+    if (!held) alerting.play("permission", "", "system");
     alerting.notify(title, body, "runners", "", "fixtures", "", "");
     if (!held) toast(title, body + ". the rooms tab says why", "runners");
   });

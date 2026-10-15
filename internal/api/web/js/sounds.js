@@ -36,6 +36,30 @@ const DEFAULT_PREFS = {
   quietDoers: true
 };
 
+// ONE ROW PER KIND OF ALERT, each with two switches: an operating system notification and a sound. The tray records
+// every kind whatever these say, and the bell's "turn off" and the speaker stay the master switches over all of them.
+// A kind absent from `prefs.alerts` takes the default here, so nothing needs migrating. Only a finished turn starts
+// without a notification: the sound says it is done, and a question or a permission is the thing worth a banner.
+const ALERT_KINDS = [
+  { id: "permission", label: "needs permission", note: "an agent is held at a permission request" },
+  { id: "blocker", label: "blocked", note: "a launched agent is held at a prompt" },
+  { id: "question", label: "asked a question", note: "an agent asked you something and waits for the answer" },
+  { id: "ready", label: "finished its turn", note: "an agent is ready for its next instruction", os: false },
+  { id: "looksidle", label: "looks idle", note: "the screen went quiet and no turn end arrived" },
+  { id: "stuck", label: "stuck or long turn", note: "a launched agent stopped, or one turn has run a long time" },
+  { id: "arrived", label: "arrived on the board", note: "a new card appeared" },
+  { id: "pulls", label: "review waiting", note: "a pull request is waiting on you" },
+  { id: "system", label: "atrium itself", note: "a halt, a stopped share, a fixture or forge problem" }
+];
+
+// Whether one kind does one thing (`which` is "os" or "sound"), from a prefs object.
+function alertWants(p, cat, which) {
+  const k = ALERT_KINDS.find(x => x.id === cat);
+  const mine = ((p && p.alerts) || {})[cat] || {};
+  if (typeof mine[which] === "boolean") return mine[which];
+  return !(k && k[which] === false);
+}
+
 function loadPrefs() {
   try {
     return Object.assign({}, DEFAULT_PREFS, JSON.parse(localStorage.getItem("atrium.sound") || "{}"));

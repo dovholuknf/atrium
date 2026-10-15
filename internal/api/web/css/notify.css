@@ -370,3 +370,10 @@
   /* The way back to the phone page, for a phone that chose the desktop board. See the head script of index.html. */
   #toastlog-phone { display: none; }
   html[data-opted-out] #toastlog-phone { display: inline-flex; }
+
+/* The per-kind alert table in the gear. */
+.alerts-table { border-collapse: collapse; width: 100%; max-width: 76ch; }
+.alerts-table th { font-size: var(--fs-xs); font-weight: 500; opacity: .7; text-align: center; padding: 0 8px 4px; }
+.alerts-table td { padding: 5px 8px; border-top: 1px solid var(--hairline); text-align: center; vertical-align: top; }
+.alerts-table td:first-child { text-align: left; }
+.alerts-table .hintline { display: block; }

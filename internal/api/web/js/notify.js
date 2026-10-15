@@ -558,6 +558,20 @@ const alerting = (() => {
     return !isNaN(t) && t < loadedAt;
   }
 
+  // WHICH KIND OF ALERT THIS IS, for the per-kind switches in the gear. Decided in `play` and `notifyOne` and nowhere
+  // else, so a caller names its kind and never checks the switch. `check` kinds map onto the gear's rows, and an alert
+  // that names none is read off where it goes.
+  const ALERT_OF = { waiting: "ready", perm: "permission" };
+  function alertCat(kind) {
+    kind = ALERT_OF[kind] || kind;
+    return ALERT_KINDS.some(k => k.id === kind) ? kind : "system";
+  }
+  function catOf(goTo, opts) {
+    if (opts && opts.alert) return alertCat(opts.alert);
+    if (opts && opts.kind === "blocker") return "blocker";
+    return goTo === "perms" ? "permission" : goTo === "pulls" ? "pulls" : "system";
+  }
+
   // A pop-out mutes its own card and leaves the board's sound alone.
   const muted = () => inPopout() ? popoutSoundMuted() : !!prefs.muted;
 
@@ -711,8 +725,9 @@ const alerting = (() => {
   // both kinds of alert. Losing the ability to tell a permission from a ready
   // by ear is the trade, and it is the right way round: which agent is the
   // fact you cannot get any other way while your back is turned.
-  function play(kind, sound) {
+  function play(kind, sound, cat) {
     if (muted()) return;
+    if (!alertWants(prefs, alertCat(cat || kind), "sound")) return;
     // A blocker holds an agent at the door like a permission, so it rings the
     // permission tone.
     const perm = kind === "permission" || kind === "blocker";
@@ -746,6 +761,7 @@ const alerting = (() => {
   }
   function notifyOne(title, body, goTo, permId, subject, taskFor, mark, artFor, opts) {
     opts = opts || {};
+    const cat = catOf(goTo, opts);
     // A card whose terminal is popped out is spoken for by that window, which
     // is the only document that can be looked at instead of this one. Decides
     // WHO RAISES the alert. Where it lands is the rest of this function.
@@ -756,7 +772,7 @@ const alerting = (() => {
     // growler's own, written once by js/growl.js, so this path records nothing. See the header above.
     if (opts.growl) {
       if (notifyHeld(goTo) || focusIsHere() || focusIsElsewhere()) return;
-      if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
+      if (!prefs.muted && prefs.desktop !== false && alertWants(prefs, cat, "os") && desktopAllowed()) {
         showNotification(title, body, goTo, permId, subject, mark, taskFor || artFor || null, opts.growl.key || "", {
           tag: "atrium-growl:" + opts.growl.id, sticky: true, retire: "growl:" + opts.growl.id,
           onShown: opts.growl.onShown
@@ -812,7 +828,7 @@ const alerting = (() => {
     // symptom this fixes. Cases 1, 2 and 4 all land on a `toast`, here or in a
     // sibling window sharing this origin's localStorage, and the wrapper in
     // toast-log.js records those. Only this branch has to say so itself.
-    if (!muted() && prefs.desktop !== false && desktopAllowed()) {
+    if (!muted() && prefs.desktop !== false && alertWants(prefs, cat, "os") && desktopAllowed()) {
       logNotification(title, body, goTo, key, landOn);
       showNotification(title, body, goTo, permId, subject, mark, landOn, key);
       return;
@@ -1265,7 +1281,7 @@ const alerting = (() => {
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
       fresh.length === 1 ? iconForAlert(fresh[0]) : "", "",
       { pending: kind === "permission" || kind === "waiting" || kind === "blocker",
-        kind: kind === "blocker" ? "blocker" : "",
+        kind: kind === "blocker" ? "blocker" : "", alert: kind,
         ready: kind === "waiting" || kind === "looksidle" });
   }
 })();

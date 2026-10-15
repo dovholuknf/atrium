@@ -30966,7 +30966,7 @@ async function main() {
   if (ONLY) {    const only = { closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, chatter: chatterSection, chatterTab: chatterTabSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
@@ -32797,6 +32797,7 @@ async function main() {
     await unit("popoutTagFlip", () => popoutTagFlipSection(browser, base));
     // ── a per-browser setting reaches every open window, popped-out terminals and /m included ─
     await unit("prefsEverywhere", () => prefsEverywhereSection(browser, base));
+    await unit("alertKinds", () => alertKindsSection(browser, base));
     await unit("mPrefsEverywhere", () => mPrefsEverywhereSection(browser));
     // ── an idle board stays idle, and a silent room cannot fill the fetch cap ─
     await unit("idleRate", () => idleRateSection(browser, base));
@@ -33727,6 +33728,75 @@ async function mAgentIdleSection(browser) {
 // A PER-BROWSER SETTING REACHES EVERY OPEN WINDOW with no reload. Two documents on one context share a localStorage, as
 // two windows of one browser do. The board changes each setting through its own control function and the other
 // document, a popped-out terminal, must show the change. See js/prefs-live.js.
+// ── each kind of alert has its own notification and sound switches ──────────
+// A finished turn defaults to sound only, a question still pops, and a box ticked in the gear is the one place the
+// choice is made: `play` and `notifyOne` read it, so no caller does.
+async function alertKindsSection(browser, base) {
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.addInitScript(() => {
+    window.__osc = 0;
+    window.AudioContext = class {
+      constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+      resume() {}
+      createGain() {
+        return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+          connect(x) { return x; } };
+      }
+      createOscillator() { window.__osc++; return { type: "", frequency: { setValueAtTime() {} }, connect(x) { return x; }, start() {}, stop() {} }; }
+    };
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof alerting !== "undefined" && typeof windowIsOff === "function", null,
+      { timeout: slow(15000) });
+    await p.evaluate(() => document.dispatchEvent(new Event("pointerdown")));
+    // Says one alert the way `announce` and the growler do, with nobody looking, and returns what came out.
+    const say = (kind, goTo, alert) => p.evaluate(([k, g, a]) => {
+      window.focusIsHere = () => false;
+      window.focusIsElsewhere = () => "";
+      window.desktopAllowed = () => true;
+      window.__notified = 0;
+      window.showNotification = () => { window.__notified++; return null; };
+      window.__osc = 0;
+      alerting.set({ muted: false, desktop: true });
+      alerting.play(k, "", a);
+      alerting.notify("x " + a, "body", g, "", "s-" + a, "", "", "", { alert: a });
+      return { notified: window.__notified, sound: window.__osc > 0 };
+    }, [kind, goTo, alert]);
+
+    await p.evaluate(() => { localStorage.removeItem("atrium.sound"); alerting.set({ alerts: undefined }); });
+    const ready = await say("waiting", "stack", "ready");
+    if (ready.notified !== 0 || !ready.sound) {
+      fail("alertKinds: a finished turn by default should play its sound and show no notification, got " + JSON.stringify(ready));
+    }
+    const ask = await say("waiting", "", "question");
+    if (ask.notified !== 1 || !ask.sound) fail("alertKinds: a question should notify and sound, got " + JSON.stringify(ask));
+    const perm = await say("permission", "perms", "permission");
+    if (perm.notified !== 1 || !perm.sound) fail("alertKinds: a permission should notify and sound, got " + JSON.stringify(perm));
+
+    // The gear lists every kind, and a ticked box is stored and obeyed.
+    await p.evaluate(() => paintSettingsPrefs());
+    const rows = await p.evaluate(() => [...document.querySelectorAll("#s-alerts tbody tr")].map(r => ({
+      os: r.querySelector('[data-which="os"]').checked, sound: r.querySelector('[data-which="sound"]').checked,
+      kind: r.querySelector("input").dataset.kind })));
+    if (rows.length !== 9) fail("alertKinds: the gear lists " + rows.length + " kinds");
+    const rr = rows.find(r => r.kind === "ready");
+    if (!rr || rr.os || !rr.sound) fail("alertKinds: the ready row should start sound only: " + JSON.stringify(rr));
+    await p.evaluate(() => { const b = document.querySelector('#s-alerts [data-kind="question"][data-which="os"]'); b.click(); });
+    const stored = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.sound")).alerts);
+    if (!stored || !stored.question || stored.question.os !== false) fail("alertKinds: unticking was not stored: " + JSON.stringify(stored));
+    const ask2 = await say("waiting", "", "question");
+    if (ask2.notified !== 0 || !ask2.sound) fail("alertKinds: a question with its notification off still notified, got " + JSON.stringify(ask2));
+    await p.evaluate(() => document.querySelector('#s-alerts [data-kind="question"][data-which="sound"]').click());
+    const ask3 = await say("waiting", "", "question");
+    if (ask3.sound) fail("alertKinds: a question with its sound off still played");
+    if (errors.length) fail("alertKinds: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  console.log("alertKinds ok");
+}
 async function prefsEverywhereSection(browser, base) {
   soloMode = "ok";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
