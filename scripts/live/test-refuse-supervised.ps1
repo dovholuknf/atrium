@@ -66,7 +66,7 @@ function Run([string]$Script, [string[]]$More, [string]$Ancestors, [string]$Job 
   [pscustomobject]@{ Code = $LASTEXITCODE; Out = $out }
 }
 $scripts = @{
-  'atrium-deploy.ps1' = @('-NoBuild', '-Rooms', 'hub'); 'deploy-batch.ps1' = @(); 'stop-atrium.ps1' = @()
+  'atrium-deploy.ps1' = @('-NoBuild', '-Rooms', 'claude-sg4'); 'deploy-batch.ps1' = @(); 'stop-atrium.ps1' = @()
   'start-atrium.ps1' = @(); 'start-atrium-hub.ps1' = @(); 'start-atrium-room.ps1' = @(); 'start-atrium-control.ps1' = @()
 }
 foreach ($s in $scripts.Keys | Sort-Object) {
@@ -75,11 +75,20 @@ foreach ($s in $scripts.Keys | Sort-Object) {
   Check "$s says what to do" ($r.Out -match 'wt\.exe')
 }
 $roomShell = ConvertTo-Json -InputObject @($fakeRoom) -Compress
-foreach ($rooms in 'claude-sg4', 'hub', 'local', 'all', 'm1mini,hub') {
+# $fakeRoom is claude-sg4 (--dir ...\room): restarting claude-sg4 refuses by name, anything else runs.
+foreach ($rooms in 'claude-sg4', 'local', 'all') {
   $r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', $rooms) $roomShell
-  Check "atrium-deploy -Rooms $rooms refuses under a room" ($r.Code -eq 1 -and $r.Out -match 'not under atrium')
+  Check "atrium-deploy -Rooms $rooms refuses under claude-sg4" ($r.Code -eq 1 -and $r.Out -match 'runs under claude-sg4')
 }
-foreach ($rooms in 'm1mini', 'sg3', 'sgg', 'sg3,m1mini') {
+$ctlShell = ConvertTo-Json -InputObject @('"C:\x\atrium.exe" room --dir C:\Users\claude\.atrium2\ctl') -Compress
+foreach ($rooms in 'hub', 'claude-sg4', 'local', 'hub,claude-sg4,sg3') {
+  $r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', $rooms) $ctlShell
+  Check "atrium-deploy -Rooms $rooms runs under sg4-control" ($r.Out -notmatch 'refusing')
+}
+$unknownShell = ConvertTo-Json -InputObject @('"C:\x\atrium.exe" room --dir D:\elsewhere') -Compress
+$r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', 'claude-sg4') $unknownShell
+Check 'atrium-deploy under a room it cannot name refuses a room deploy' ($r.Code -eq 1 -and $r.Out -match 'not under atrium')
+foreach ($rooms in 'hub', 'm1mini', 'sg3', 'sgg', 'sg3,m1mini', 'm1mini,hub') {
   $r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', $rooms) $roomShell
   Check "atrium-deploy -Rooms $rooms runs under a room, nothing local to stop" ($r.Out -notmatch 'not under atrium')
 }

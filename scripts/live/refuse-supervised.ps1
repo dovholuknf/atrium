@@ -88,8 +88,32 @@ function Get-CurrentJobPids {
   return @(0..($cnt - 1) | ForEach-Object { [int][BitConverter]::ToUInt64($b, 8 + 8 * $_) })
 }
 
-# Assert-NotSupervised ends the script with exit 1 and a plain message when it runs under a room.
-function Assert-NotSupervised {
+# Get-SupervisorName names the room a room command line is, from its --dir: sg4-control's is ...\ctl, claude-sg4's is
+# ...\room. Anything else is $null, which Assert-NotSupervised treats as every room.
+function Get-SupervisorName([string]$CommandLine) {
+  if ($CommandLine -notmatch '(?i)--dir\s+"?([^"\s]+)') { return $null }
+  switch -Regex ($Matches[1].TrimEnd('\', '/')) {
+    '(?i)[\\/]ctl$' { return 'sg4-control' }
+    '(?i)[\\/]room$' { return 'claude-sg4' }
+  }
+  return $null
+}
+
+# Assert-NotSupervised ends the script with exit 1 and a plain message when it runs under a room. With -Targets, the
+# rooms this run stops, it refuses only when the room it runs under is one of them: a shell in sg4-control may
+# restart the hub, but not sg4-control. A room it cannot name counts as a target.
+function Assert-NotSupervised([string[]]$Targets) {
+  $room = Find-SupervisingRoom
+  if (-not $room) { $room = Find-RoomJob }
+  if ($room -and $PSBoundParameters.ContainsKey('Targets')) {
+    $name = Get-SupervisorName $room.CommandLine
+    if ($name -and $Targets -notcontains $name) { return }
+    if ($name) {
+      Write-Host "refusing: this shell runs under $name, and this run restarts $name, which would kill this shell halfway."
+      Write-Host "leave $name out, or run it from a terminal that is not under atrium: wt.exe pwsh -NoProfile"
+      exit 1
+    }
+  }
   $room = Find-SupervisingRoom
   if ($room) {
     Write-Host ("refusing: this shell is not under atrium's control, and this script stops or starts atrium. It is " +

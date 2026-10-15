@@ -1,0 +1,1 @@
+- A deploy refuses only when it would restart the room its own shell runs under. A hub-only deploy runs from any shell.
