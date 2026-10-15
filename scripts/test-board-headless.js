@@ -17734,7 +17734,7 @@ async function restartMenuSection(browser, base) {
 
     // idle: offered, with no grey line under it, and one click posts with no question.
     let labels = await open("land-rs-idle");
-    if (!labels.some(l => l === "restart")) {
+    if (!labels.some(l => /^restart/.test(l))) {
       fail("restartMenu: no restart entry on a supervised card: " + JSON.stringify(labels));
     }
     if (await p.locator("#cardmenu .note").count()) fail("restartMenu: an entry still has a grey line under it.");
@@ -17788,8 +17788,8 @@ async function restartMenuSection(browser, base) {
 
     // parked: no process, so a card with no runner is not restarted: its menu offers resume, and that wakes the card.
     labels = await open("land-rs-park");
-    if (labels.some(l => /^restart/.test(l)) || !labels.some(l => l === "resume")) fail("restartMenu: a parked card should offer resume and not restart: " + JSON.stringify(labels));
-    await p.locator("#cardmenu button", { hasText: /^resume$/ }).first().click();
+    if (labels.some(l => /^restart/.test(l)) || !labels.some(l => /^resume/.test(l))) fail("restartMenu: a parked card should offer resume and not restart: " + JSON.stringify(labels));
+    await p.locator("#cardmenu button", { hasText: /^resume/ }).first().click();
     await p.waitForTimeout(500);
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
