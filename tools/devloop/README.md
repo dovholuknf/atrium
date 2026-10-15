@@ -18,9 +18,9 @@ Each step prints one line. Any failure exits non-zero.
 devloop land claude/devloop --item t-devloop
 ```
 
-In the main checkout (`--repo`, default the current directory, which must be on `claude/main`): refuses a dirty tree,
-runs `git fetch hub`, fast-forwards `claude/main` to `hub/<branch>` or cherry-picks what it has that `claude/main`
-lacks, prints the new SHA, runs `atrium-deploy.ps1 -Rooms hub` (`--deploy`, default
+In the main checkout (`--repo`, default the current directory, which must be on `claude/main`): refuses a dirty tree (untracked files do not count),
+runs `git fetch hub`, fast-forwards `claude/main` to the local `<branch>` when one exists, else `hub/<branch>`, or cherry-picks what it has that `claude/main`
+lacks, prints the new SHA, runs `atrium-deploy.ps1 -Rooms hub` under `pwsh` on every OS (`--deploy`, default
 `C:\Users\claude\.atrium2\scripts\atrium-deploy.ps1`, `--no-deploy` to skip), then marks the backlog item done
 (`POST /_hub/backlog/<id>`). A conflict aborts and resets `claude/main` to where it was.
 

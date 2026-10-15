@@ -18,10 +18,10 @@ func TestSplitArgsAllowsBranchBeforeOrAfterFlags(t *testing.T) {
 }
 
 func TestLandPlanFastForwardOrCherryPick(t *testing.T) {
-	if got := landPlan("x", true); !reflect.DeepEqual(got, [][]string{{"merge", "--ff-only", "hub/x"}}) {
+	if got := landPlan("hub/x", true); !reflect.DeepEqual(got, [][]string{{"merge", "--ff-only", "hub/x"}}) {
 		t.Fatal(got)
 	}
-	if got := landPlan("x", false); !reflect.DeepEqual(got, [][]string{{"cherry-pick", "claude/main..hub/x"}}) {
+	if got := landPlan("hub/x", false); !reflect.DeepEqual(got, [][]string{{"cherry-pick", "claude/main..hub/x"}}) {
 		t.Fatal(got)
 	}
 	rb := landRollback("abc", false)
@@ -35,6 +35,7 @@ func TestLandPlanFastForwardOrCherryPick(t *testing.T) {
 
 type fakeGit struct {
 	status, branch string
+	noLocal        bool
 	failOn         string
 	calls          []string
 }
@@ -48,6 +49,11 @@ func (f *fakeGit) run(_ string, args ...string) (string, error) {
 	switch {
 	case strings.HasPrefix(c, "status"):
 		return f.status, nil
+	case strings.HasPrefix(c, "rev-parse --verify"):
+		if f.noLocal {
+			return "", errFake
+		}
+		return "0123456789abcdef", nil
 	case strings.HasPrefix(c, "rev-parse --abbrev-ref"):
 		return f.branch, nil
 	case strings.HasPrefix(c, "rev-parse"):
@@ -169,5 +175,35 @@ func TestWriteCSVQuotes(t *testing.T) {
 	p := t.TempDir() + "/x.csv"
 	if err := writeCSV(p, []string{"a", "b"}, [][]string{{"x,y", "z"}}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLandDirtyCheckIgnoresUntrackedFiles(t *testing.T) {
+	g := &fakeGit{branch: "claude/main"}
+	_ = cmdLand([]string{"b", "--no-deploy"}, &bytes.Buffer{}, g)
+	if g.calls[0] != "status --porcelain --untracked-files=no" {
+		t.Fatalf("the dirty check must ignore untracked files: %v", g.calls)
+	}
+}
+
+func TestLandRefIsTheLocalBranchElseTheHubs(t *testing.T) {
+	if got := landRef(&fakeGit{}, ".", "claude/land-x"); got != "claude/land-x" {
+		t.Fatalf("a local branch should win: %s", got)
+	}
+	if got := landRef(&fakeGit{noLocal: true}, ".", "claude/x"); got != "hub/claude/x" {
+		t.Fatalf("no local branch should fall back to the hub: %s", got)
+	}
+	g := &fakeGit{branch: "claude/main"}
+	if err := cmdLand([]string{"claude/land-x", "--no-deploy"}, &bytes.Buffer{}, g); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(g.calls, "\n"), "merge --ff-only claude/land-x") {
+		t.Fatalf("land should use the local branch: %v", g.calls)
+	}
+}
+
+func TestDeployRunsUnderPwshOnEveryOS(t *testing.T) {
+	if deployShell != "pwsh" {
+		t.Fatal(deployShell)
 	}
 }
