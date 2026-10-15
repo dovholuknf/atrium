@@ -894,6 +894,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/usage", s.roomUsage)
 	mux.HandleFunc("GET /v1/usage/export", s.usageExport)
+	mux.HandleFunc("GET /v1/deliveries/export", s.deliveryExport)
 	mux.HandleFunc("GET /v1/usage/limits", s.roomLimits)
 	mux.HandleFunc("GET /v1/usage/items", s.roomUsageItems)
 	mux.HandleFunc("GET /v1/usage/turns", s.roomTurnCost)

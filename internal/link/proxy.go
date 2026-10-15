@@ -157,6 +157,8 @@ type Proxy struct {
 	// items is where the hub owns items. Nil answers 404. itemRoomCall replaces the call to a room in a test. See items.go.
 	items        *hubstore.Store
 	itemRoomCall itemRoomCallFunc
+	// roomLines replaces reading a room's ndjson routes in a test. See workusage.go.
+	roomLines roomLinesFunc
 	// designGit replaces the hub's git store as what the design steps read, in a test. See lifecycle_engine.go.
 	designGit designGit
 	flowGit      FlowGit
@@ -1643,6 +1645,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "work" || strings.HasPrefix(sub, "work/") {
 		p.serveWork(w, r, sub)
+		return
+	}
+	if sub == "prices" {
+		p.servePrices(w, r)
 		return
 	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {

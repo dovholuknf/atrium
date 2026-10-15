@@ -783,6 +783,56 @@ var migrations = []struct {
 			`ALTER TABLE work_step ADD COLUMN party TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L5: WHAT TOKENS COST. `price` is the list price per million tokens of each model, a row per model
+		// and the time it took effect, so a repricing is a new row and a recompute, never a data fix. `work_usage` is the
+		// rooms' usage rows (and the deliveries the orchestrator spent on an item) as the hub ingested them. THE KEY
+		// INCLUDES THE ITEM because one row of a card on two items, or one orchestrator turn about three, is a row for each.
+		// A replay of a pull hits the key and adds nothing. No dollar column anywhere: a cost is worked out from the tokens
+		// when it is read.
+		name: "0026_price_work_usage",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS price (
+				model          TEXT NOT NULL,
+				valid_from     TEXT NOT NULL,
+				input          REAL NOT NULL,
+				cache_write_5m REAL NOT NULL,
+				cache_write_1h REAL NOT NULL,
+				cache_read     REAL NOT NULL,
+				output         REAL NOT NULL,
+				PRIMARY KEY (model, valid_from)
+			)`,
+			`INSERT OR IGNORE INTO price (model, valid_from, input, cache_write_5m, cache_write_1h, cache_read, output) VALUES
+				('claude-haiku-4-5',  '2026-09-28T00:00:00Z', 1,  1.25,  2,  0.10, 5),
+				('claude-sonnet-5',   '2026-09-28T00:00:00Z', 2,  2.5,   4,  0.20, 10),
+				('claude-sonnet-5-5', '2026-09-28T00:00:00Z', 2,  2.5,   4,  0.20, 10),
+				('claude-opus-5-5',   '2026-09-28T00:00:00Z', 4,  5,     8,  0.20, 20),
+				('claude-fable-5-1',  '2026-09-28T00:00:00Z', 10, 12.5,  20, 0.25, 50)`,
+			`CREATE TABLE IF NOT EXISTS work_usage (
+				room           TEXT NOT NULL,
+				usage_id       TEXT NOT NULL,
+				backlog_id     TEXT NOT NULL,
+				card           TEXT NOT NULL,
+				class          TEXT NOT NULL DEFAULT 'step' CHECK (class IN ('step','coord')),
+				source         TEXT NOT NULL DEFAULT 'usage' CHECK (source IN ('usage','delivery')),
+				model          TEXT NOT NULL DEFAULT '',
+				started_at     TEXT NOT NULL,
+				ended_at       TEXT NOT NULL,
+				input          INTEGER NOT NULL DEFAULT 0,
+				cache_write_5m INTEGER NOT NULL DEFAULT 0,
+				cache_write_1h INTEGER NOT NULL DEFAULT 0,
+				cache_read     INTEGER NOT NULL DEFAULT 0,
+				output         INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY (room, usage_id, backlog_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS work_usage_item ON work_usage (backlog_id, ended_at)`,
+			`CREATE TABLE IF NOT EXISTS work_usage_cursor (
+				room      TEXT PRIMARY KEY,
+				since     TEXT NOT NULL,
+				pulled_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

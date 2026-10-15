@@ -23,6 +23,10 @@ import (
 //	GET  /_hub/work           the items, newest change first, each with its `steps`, `state` and `current`
 //	GET  /_hub/work/<id>      one: `work`, its `cards`, its `assignments`, its `facts`, its `steps` (all eight) and its
 //	                          `lifecycle`. The git steps (landed, deployed, pushed) are read fresh
+//	GET  /_hub/work/<id>/cost what it cost, estimated at list price: per step, the headline (the steps alone, "+
+//	                          coordination"), the coordination, the sum, and the tokens behind every figure
+//	GET  /_hub/work/cost      the same for every item, newest change first, a line each
+//	GET  /_hub/prices         the price table the dollars are worked out on, and its version
 //	POST /_hub/work/<id>      {do: approve|send_back|build_directly, by, sha?, note?}: the human acts on the design, or
 //	                          {"branch","kind"}: name the build branch, and say whether it is code, doc or mixed. Only from
 //	                          the machine the hub runs on
@@ -83,6 +87,10 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 			out = append(out, p.listedWork(r, st, wk, cached[wk.BacklogID]))
 		}
 		crJSON(w, http.StatusOK, map[string]any{"work": out})
+	case rest == "cost":
+		p.writeWorkCosts(w, st)
+	case strings.HasSuffix(rest, "/cost") && !strings.Contains(strings.TrimSuffix(rest, "/cost"), "/"):
+		p.writeWorkCost(w, st, strings.TrimSuffix(rest, "/cost"))
 	case !strings.Contains(rest, "/"):
 		p.writeWorkDetail(w, r, st, rest)
 	default:
@@ -191,7 +199,7 @@ func (p *Proxy) writeWorkDetail(w http.ResponseWriter, r *http.Request, st *hubs
 		got.Facts = []hubstore.WorkFact{}
 	}
 	crJSON(w, http.StatusOK, map[string]any{"work": got.Work, "cards": got.Cards, "assignments": got.Assignments,
-		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle})
+		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle, "cost": p.costOf(st, got.Work.BacklogID, got.Cards, got.Lifecycle.Steps)})
 }
 
 func wfail(w http.ResponseWriter, err error) {

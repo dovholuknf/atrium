@@ -63,11 +63,11 @@ const usagePricesVersion = "usageprices-2026-09-28b"
 // https://platform.claude.com/docs/en/about-claude/pricing, fetched 2026-09-28.
 // A 5m write is 1.25 times input, a read 0.1 times, on both.
 var usageOnlyPrices = map[string]keepalivePrice{
-	"claude-haiku-4-5": {In: 1, Cw1h: 2, Cr: 0.10, Out: 5},
-	"claude-sonnet-5":  {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
+	"claude-haiku-4-5": {In: 1, Cw5m: 1.25, Cw1h: 2, Cr: 0.10, Out: 5},
+	"claude-sonnet-5":  {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
 	// Sonnet 5.5 costs what Sonnet 5 does, and is its own key because the
 	// matcher below does not take one model's price for the other's.
-	"claude-sonnet-5-5": {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
+	"claude-sonnet-5-5": {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
 }
 
 // usagePriceFor prices a reply for a usage row: keep-alive's models, then the
@@ -635,10 +635,9 @@ func (s *replySet) row(t *store.Task) *store.SessionUsage {
 	return row
 }
 
-// usageCost prices a row. A 5m write is 1.25 times input, the 1h rate is in
-// the table.
+// usageCost prices a row. Both write rates are in the table.
 func usageCost(u *store.SessionUsage, p keepalivePrice) float64 {
-	return (float64(u.Input)*p.In + float64(u.CacheWrite5m)*p.In*1.25 + float64(u.CacheWrite1h)*p.Cw1h +
+	return (float64(u.Input)*p.In + float64(u.CacheWrite5m)*p.Cw5m + float64(u.CacheWrite1h)*p.Cw1h +
 		float64(u.CacheRead)*p.Cr + float64(u.Output)*p.Out) / 1e6
 }
 

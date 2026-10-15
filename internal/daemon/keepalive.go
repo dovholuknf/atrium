@@ -97,17 +97,18 @@ const keepaliveHookSettings = `{
 // ledger row so a stale table shows.
 const keepalivePricesVersion = "usageprices-2026-09-27"
 
-// keepalivePrice is per million tokens: the 1h write and the cache read, plus
-// plain input and output for the fork's own few tokens.
-type keepalivePrice struct{ In, Cw1h, Cr, Out float64 }
+// keepalivePrice is per million tokens: the 5m and 1h writes and the cache read, plus
+// plain input and output for the fork's own few tokens. Cw5m is 1.25 times input,
+// Anthropic's list rule, and is written out so a row's price is read and not derived.
+type keepalivePrice struct{ In, Cw5m, Cw1h, Cr, Out float64 }
 
 // keepalivePrices mirrors `$UsagePrices` in dotfiles/claude/usage/UsageCommon.ps1
 // for the models a card may be refreshed on. Only models whose effort level is
 // not part of the cache key are here, because atrium cannot know a card's
 // current effort, and a fork at another effort would write the whole context.
 var keepalivePrices = map[string]keepalivePrice{
-	"claude-opus-5-5":  {In: 4, Cw1h: 8, Cr: 0.20, Out: 20},
-	"claude-fable-5-1": {In: 10, Cw1h: 20, Cr: 0.25, Out: 50},
+	"claude-opus-5-5":  {In: 4, Cw5m: 5, Cw1h: 8, Cr: 0.20, Out: 20},
+	"claude-fable-5-1": {In: 10, Cw5m: 12.5, Cw1h: 20, Cr: 0.25, Out: 50},
 }
 
 // keepalivePriceFor looks a model up with any `[1m]` style suffix and date
