@@ -122,48 +122,49 @@ The recommendation is E, staged so C lands first, because C fixes the lie everyw
 
 ## 4. Decisions
 
-Nothing here is decided. Each answer is recommended, not yet decided. "All as written" answers every one.
+Decided 2026-10-15 by the orchestrator: every recommendation below, as written, with the D4 note.
 
-1. **Recommended, not yet decided: the sender hears `typed-queued`, never `terminal`, for a line typed into a claude
+1. **the sender hears `typed-queued`, never `terminal`, for a line typed into a claude
    runner that is mid-turn.** `delivered` is reserved for a line the model demonstrably read, or typed into an idle runner
    (its prompt submit is the read). The answer gains `read: false` and `state`. The old strings stay valid for every
    other path, so `launcher_told` and the CLI keep working (S-1 updates both).
-2. **Recommended, not yet decided: C first.** A claude runner atrium owns is not typed into mid-turn by anyone's say but the
+2. **C first.** A claude runner atrium owns is not typed into mid-turn by anyone's say but the
    operator's keystrokes, the operator's channel (`from == ""`) included, unless the sender passes `force`. Hook carry
    applies to every sender, and a runner whose hooks were written by atrium counts as hook-capable without waiting to be
    heard. The retry backoff and the escalation use the same rule.
-3. **Recommended, not yet decided: read proof comes from three signals, in this order.** (a) a hook handing the message to
+3. **read proof comes from three signals, in this order.** (a) a hook handing the message to
    the model (`takeMessages`: already marks it delivered, channel `hook` or `stop`), (b) the `queued_command` transcript
    attachment whose prompt text matches a typed message, already parsed by `queuedPromptOf`, and (c) a UserPromptSubmit
    whose text matches. A matching message moves `typed` to `delivered` and publishes the card. Matching is by the clean
    text, which the pending record already holds, never by position. A typed message with no proof after
    `typed_unread_after` (default 5 minutes, a setting like `escalate_held_after`) is shown as stuck on the card chip and in
    `atrium_peers`, not re-typed.
-4. **Recommended, not yet decided: the force chord is the escalation and the meaning of `force: true`, gated three ways.**
+4. **the force chord is the escalation and the meaning of `force: true`, gated three ways.**
    Only for a claude runner whose version S-0 proved good, only after the text is typed and the proof signals have not
    come within a bound (default 20 s), or at once for `force: true`, and only with the line empty and no dialog open
    under the same lock as the paste. Without a proven version `force` is refused with the reason rather than sent blind.
    `force` is allowed to a session's launcher for its own worker and to the operator, not to a peer, matching the
    exit-force rule in `control_mcp.go` that a force on a card that is not yours is recorded and refused for a director.
-5. **Recommended, not yet decided: a worker inside one long tool call is reported as such instead of waited on.** Say answers
+   D4 note (orchestrator, 2026-10-15): `f-say-force` ships first with the gate meaning only, type past an UNREADABLE line. It is allowed to the operator and to the target's launcher, refused for any other peer, and never goes past a known part-written line or a recent keystroke. S-3 later adds the chord to that same flag under D4's version gate.
+5. **a worker inside one long tool call is reported as such instead of waited on.** Say answers
    gain `blocked_in_tool: <seconds since last hook>` from the activity tracker, so a launcher sees that nothing carries
    its text until the tool returns and can choose `force`, wait, or kill the tool itself. No automatic interrupt. Esc is
    not sent by atrium.
-6. **Recommended, not yet decided: gate on a runner profile field, not the string `claude`.** `carriedByHooks` compares
+6. **gate on a runner profile field, not the string `claude`.** `carriedByHooks` compares
    `t.Runner` to `"claude"` today. Add `QueuesMidTurn` to `runnerprofile` (claude true, codex false because it steers) and
    a per-row override like `mid_turn_input`, so a second runner that queues is a data change.
-7. **Recommended, not yet decided: the Claude Code version is recorded per card and the chord table is data.** The version
+7. **the Claude Code version is recorded per card and the chord table is data.** The version
    comes from the first hook payload or `claude --version` at launch, stored on the card, with a table of
    `version range -> has chord` in the runner profile. An unknown version means no chord. This is the answer to "which
    versions have it" staying current without a code change per release.
-8. **Recommended, not yet decided: the escalation of an aged `done` message stops typing mid-turn for claude.** It is
+8. **the escalation of an aged `done` message stops typing mid-turn for claude.** It is
    carried by the hook with its `waited N minutes` line (already done on the hook path in `takeMessages`), and the typed
    escalation survives only for runners where typing is read (codex). If the chord is proven (D4), the escalated typing
    may add it.
-9. **Recommended, not yet decided: the say tool text and `docs/runtime/agent-messaging.md` are rewritten in the same stage
+9. **the say tool text and `docs/runtime/agent-messaging.md` are rewritten in the same stage
    as the answer change.** "Neither is a reply" stays. The new text says an immediate say to a busy claude is carried at the
    next tool call, that a long tool delays it, and that `typed-queued` means in the box, not read.
-10. **Recommended, not yet decided: ship S-0 and S-1 together as one worker and hold S-3 until S-0's table exists.**
+10. **ship S-0 and S-1 together as one worker and hold S-3 until S-0's table exists.**
 
 ## 5. The staged plan
 
