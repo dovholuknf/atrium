@@ -43,13 +43,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/dblock"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/dblock"
 
 	"github.com/google/uuid"
 	"modernc.org/sqlite"

@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/dblock"
 	"io"
 	"log"
 	"os"
@@ -29,6 +28,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/dblock"
 
 	"github.com/google/uuid"
 	"modernc.org/sqlite"
