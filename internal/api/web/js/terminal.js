@@ -1379,12 +1379,117 @@ function openTerm(task) {
   swMark("openTerm-end");
 }
 
+// Every copy of a terminal selection comes through here: ctrl-c, ctrl-insert and copy on select.
+//
+// CLEAN COPY. What a terminal selection holds is Claude Code's render of a reply: an indent, a `│`/`▎` bar on a quote,
+// hard line breaks where the TUI wrapped. The raw text is in the transcript, so `cleanCopy` looks for the selection in
+// the card's recent replies and, on a match, the clipboard gets the source substring instead. No match, a slow or failed
+// endpoint, a copy that was superseded: exactly `getSelection()`, which is what this did before. A copy is never lost.
 function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
   const text = term.getSelection();
-  navigator.clipboard.writeText(text)
-    .then(() => { if (!quiet) toastUnlogged("copied", `${text.length} characters`); })
+  const mine = term, task = termTask;
+  const edges = selectionEdges(mine);
+  const put = (out, written) => navigator.clipboard.writeText(out)
+    .then(() => {
+      if (written) toastUnlogged("copied as written", "the reply's own text, not the terminal's render");
+      else if (!quiet) toastUnlogged("copied", `${out.length} characters`);
+    })
     .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
+  cleanCopy(text, task && task.id, edges).then(
+    raw => put(raw == null ? text : raw, raw != null),
+    () => put(text, false));
+}
+
+// Whether the selection covers its first and last rendered rows from their text to their edge. Only then may a match
+// that starts or ends inside a source line take that line's markers (`> `, `- `, `## `, a closing `**`) with it.
+function selectionEdges(t) {
+  const none = { start: false, end: false };
+  try {
+    const p = t.getSelectionPosition();
+    if (!p) return none;
+    const buf = t.buffer.active;
+    const row = y => { const l = buf.getLine(y); return l ? l.translateToString(true) : ""; };
+    return {
+      start: /^[\s│▎┃●⎿]*$/.test(row(p.start.y).slice(0, p.start.x)),
+      end: row(p.end.y).slice(p.end.x).trim() === "",
+    };
+  } catch (e) { return none; }
+}
+
+// What a terminal draws that the source does not have, and what the source has that the terminal does not draw: the
+// bars and gutters, and the markdown markers the TUI turns into styling. Dropped from BOTH sides before comparing.
+const CC_SKIP = /[│▎┃║▏▍●⎿*`#|_>~]/;
+const CC_MIN = 10;       // a shorter selection is a word, and a word is in every reply
+const CC_WAIT = 800;     // ms. The copy waits no longer than this for the endpoint
+
+// Text with every run of whitespace as one space and the skipped characters gone, and for each kept character the
+// index it had in `s`, so a match in the normalized text maps back onto the original.
+function ccNorm(s) {
+  let t = "";
+  const at = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (/\s/.test(c)) {
+      if (t && t[t.length - 1] !== " ") { t += " "; at.push(i); }
+    } else if (!CC_SKIP.test(c)) { t += c; at.push(i); }
+  }
+  if (t.endsWith(" ")) { t = t.slice(0, -1); at.pop(); }
+  return { t, at };
+}
+
+// The source substring a selection was drawn from, or null. The newest reply that holds the selection wins. A
+// selection found twice in one reply is ambiguous and is not guessed at.
+//
+// THE EDGE RULE. The match runs from its first to its last real character. When the selection began at the start of
+// its first rendered row, the source line's leading markers are taken too, but only when nothing else stands before
+// the match on that line (a rendered row that starts mid-paragraph is not the start of the source line). Likewise the
+// end, with the trailing markers. Otherwise the copy is exactly what was selected.
+function cleanCopyFrom(sel, replies, edges) {
+  const s = ccNorm(sel);
+  if (s.t.length < CC_MIN) return null;
+  for (let r = replies.length - 1; r >= 0; r--) {
+    const raw = replies[r] && replies[r].text;
+    if (typeof raw !== "string") continue;
+    const n = ccNorm(raw);
+    const i = n.t.indexOf(s.t);
+    if (i < 0) continue;
+    if (n.t.indexOf(s.t, i + 1) >= 0) return null;
+    let a = n.at[i], b = n.at[i + s.t.length - 1] + 1;
+    if (edges && edges.start) {
+      const ls = raw.lastIndexOf("\n", a - 1) + 1;
+      if (/^[\s>*#_`|~]*([-+]|\d+[.)])?[\s>*#_`|~]*$/.test(raw.slice(ls, a))) a = ls;
+    }
+    if (edges && edges.end) {
+      let le = raw.indexOf("\n", b);
+      if (le < 0) le = raw.length;
+      if (/^[\s*_`|~#>]*$/.test(raw.slice(b, le))) b = le;
+    }
+    return raw.slice(a, b).trimEnd();
+  }
+  return null;
+}
+
+// null when there is nothing to improve on. Bounded by CC_WAIT and never rejects.
+async function cleanCopy(sel, taskId, edges) {
+  if (!taskId || ccNorm(sel).t.length < CC_MIN) return null;
+  const ctl = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctl) ctl.abort(); }, CC_WAIT);
+  try {
+    const res = await Promise.race([
+      fetch(`/v1/tasks/${encodeURIComponent(taskId)}/replies?n=10`, ctl ? { signal: ctl.signal } : {}),
+      new Promise((_, no) => setTimeout(no, CC_WAIT)),
+    ]);
+    if (!res.ok) return null;
+    const v = await Promise.race([res.json(), new Promise((_, no) => setTimeout(no, CC_WAIT))]);
+    // A card read off the screen answers with the render itself, which is the thing being undone.
+    if (!v || v.source !== "transcript" || !Array.isArray(v.replies)) return null;
+    return cleanCopyFrom(sel, v.replies, edges);
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // The browser's own paste event, which is where the clipboard actually is.

@@ -10433,6 +10433,95 @@ async function copySelectSection(browser, base) {
   tasksMode = was;
 }
 
+// ── clean copy: a selection of a reply is copied as written ───────────────
+// A quoted block drawn with an indent, a bar and hard wraps is selected. The clipboard gets the reply's own
+// substring from the transcript, markdown kept, and a toast says so. A selection matching nothing, and a replies
+// endpoint that fails, copy exactly what getSelection() holds.
+async function cleanCopySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__clip = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: t => { window.__clip.push(t); return Promise.resolve(); },
+      readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+  });
+  const reply = "Here is the draft:\n\n> Please review the plan and tell me what is missing from it.\n\n"
+    + "```go\nfunc main() {}\n```\n\nThanks.";
+  let mode = "ok";
+  await ctx.route("**/v1/tasks/*/replies*", route => {
+    if (mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"x"}' });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+      source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: reply, truncated: false }] }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const copy = async (out, lines) => {
+      await p.evaluate(([out, lines]) => {
+        window.__clip = [];
+        term.reset();
+        termSock.onmessage({ data: out });
+        term.selectLines(lines[0], lines[1]);
+      }, [out, lines]);
+      await p.waitForTimeout(100);
+      const sel = await p.evaluate(() => { const s = term.getSelection(); copySelection(true); return s; });
+      await p.waitForTimeout(400);
+      return { sel, clip: await p.evaluate(() => window.__clip.slice()) };
+    };
+    const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
+
+    // 1. A rendered quote: indent, bar, hard wrap.
+    const a = await copy(shown, [2, 3]);
+    if (!/▎/.test(a.sel)) fail("cleanCopy: the terminal selection holds no bar, so this proves nothing: " + JSON.stringify(a.sel));
+    const want = "> Please review the plan and tell me what is missing from it.";
+    if (a.clip.length !== 1 || a.clip[0] !== want) fail("cleanCopy: the clipboard holds " + JSON.stringify(a.clip) + ", not " + JSON.stringify(want));
+    const toastText = await p.evaluate(() => document.getElementById("toasts").textContent);
+    if (!/copied as written/.test(toastText)) fail("cleanCopy: no 'copied as written' toast: " + toastText);
+    if (process.env.SHOTS_DIR) {
+      fs.mkdirSync(process.env.SHOTS_DIR, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.SHOTS_DIR, "clean-copy-toast.png") });
+    }
+
+    // 2. A selection of something no reply holds: exactly what was selected, and no such toast.
+    await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+    const b = await copy("$ ls -la\r\ntotal 48 files in this directory\r\n", [0, 1]);
+    if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail("cleanCopy: a selection matching nothing copied " + JSON.stringify(b.clip) + ", not " + JSON.stringify(b.sel));
+    if (/copied as written/.test(await p.evaluate(() => document.getElementById("toasts").textContent))) fail("cleanCopy: a fallback said 'copied as written'");
+
+    // 3. The endpoint fails: the render, unchanged.
+    mode = "fail";
+    const c = await copy(shown, [2, 3]);
+    if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopy: a failed endpoint copied " + JSON.stringify(c.clip) + ", not " + JSON.stringify(c.sel));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("cleanCopy: the page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── a second press fires nothing (backlog-2 item 19) ─────────────────────
 // Every request-firing button goes through `busyWhile` or `oneAtATime` in
 // js/core.js. Each case presses twice (or calls twice) while the first request
@@ -31074,7 +31163,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -32988,6 +33077,7 @@ async function main() {
     await unit("askAgain", () => askAgainSection(browser, base));
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));
+    await unit("cleanCopy", () => cleanCopySection(browser, base));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));
     await unit("crossedPane", () => crossedPaneSection(browser, base));
