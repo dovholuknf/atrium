@@ -685,19 +685,38 @@ func Open(path string) (*Store, error) {
 	// to incremental needs a full VACUUM, which needs exclusive access a live
 	// room cannot give without taking its terminals down. It keeps whatever mode
 	// it was created with, and IncrementalVacuum below is a no-op on it.
+	//
+	// busy_timeout comes FIRST, ahead of every statement that takes a lock: two
+	// openers of one file started at the same moment would otherwise meet
+	// "database is locked" here with no patience at all.
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("PRAGMA busy_timeout = 5000: %w", err)
+	}
 	if fresh {
-		if _, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL"); err != nil {
+		_, err := db.Exec("PRAGMA auto_vacuum = INCREMENTAL")
+		for try := 0; try < 20 && err != nil && raceLost(err); try++ {
+			time.Sleep(25 * time.Millisecond)
+			_, err = db.Exec("PRAGMA auto_vacuum = INCREMENTAL")
+		}
+		if err != nil {
 			db.Close()
 			return nil, fmt.Errorf("PRAGMA auto_vacuum = INCREMENTAL: %w", err)
 		}
 	}
 	for _, pragma := range []string{
 		"PRAGMA journal_mode = WAL",
-		"PRAGMA busy_timeout = 5000",
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA synchronous = NORMAL",
 	} {
-		if _, err := db.Exec(pragma); err != nil {
+		// Switching to WAL while another opener holds the file answers SQLITE_BUSY
+		// without waiting, busy_timeout or not, so a lost race is asked again.
+		_, err := db.Exec(pragma)
+		for try := 0; try < 20 && err != nil && raceLost(err); try++ {
+			time.Sleep(25 * time.Millisecond)
+			_, err = db.Exec(pragma)
+		}
+		if err != nil {
 			db.Close()
 			return nil, fmt.Errorf("%s: %w", pragma, err)
 		}
@@ -719,7 +738,16 @@ func Open(path string) (*Store, error) {
 	// setting is read. configureSinks below may add cold sinks; it never
 	// replaces this with anything that fails Recent.
 	s.hot = newDBSink(db)
-	if err := s.migrate(); err != nil {
+	// Another opener of this file at the same moment may create a table between
+	// our check and our CREATE, which SQLite reports as "already exists" even
+	// with IF NOT EXISTS. Every migration tolerates being there, so running
+	// again sees the winner's work and carries on.
+	err = s.migrate()
+	for try := 0; try < 5 && err != nil && raceLost(err); try++ {
+		time.Sleep(time.Duration(try+1) * 20 * time.Millisecond)
+		err = s.migrate()
+	}
+	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
@@ -743,6 +771,14 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	return s, nil
+}
+
+// raceLost is whether an open failed only because another opener of the same
+// file got there first.
+func raceLost(err error) bool {
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "already exists") || strings.Contains(m, "database is locked") ||
+		strings.Contains(m, "database schema has changed")
 }
 
 // Close releases the database, after flushing and closing any cold sinks so a
