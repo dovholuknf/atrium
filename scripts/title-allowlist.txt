@@ -12,3 +12,5 @@ js/settings.js:<option value= # native option tooltip
 read.html:class="zoom" # read page has no styled tooltips
 # Third-party markdown renderer, emitting the title of a link a user wrote.
 vendor/marked.js:title # not our markup
+# The phone board loads no styled tooltips, so data-tip would show nothing there.
+m/js/files.js:goes within a day # phone page has no styled tooltips
