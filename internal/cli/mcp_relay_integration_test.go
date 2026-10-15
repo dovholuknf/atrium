@@ -5,8 +5,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -66,6 +68,31 @@ func TestMCPRelayGivesUpWithAnError(t *testing.T) {
 	}
 	_ = r.run(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`+"\n"))
 	if !strings.Contains(out.String(), `"id":7`) || !strings.Contains(out.String(), "unreachable") {
+		t.Fatalf("out = %q", out.String())
+	}
+}
+
+// A hub that reads the request and drops the connection may have run it. The relay
+// must not send it again: exactly one POST, and the caller gets an error.
+func TestMCPRelayDoesNotResendAReadRequest(t *testing.T) {
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		_, _ = io.ReadAll(q.Body)
+		posts.Add(1)
+		c, _, _ := w.(http.Hijacker).Hijack()
+		c.Close()
+	}))
+	defer srv.Close()
+	var out bytes.Buffer
+	r := &mcpRelay{
+		url: srv.URL, client: &http.Client{}, retryFor: 2 * time.Second,
+		backoff: 10 * time.Millisecond, cap: 10 * time.Millisecond, out: &out,
+	}
+	_ = r.run(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call"}`+"\n"))
+	if n := posts.Load(); n != 1 {
+		t.Fatalf("posts = %d, want 1", n)
+	}
+	if !strings.Contains(out.String(), `"id":3`) || !strings.Contains(out.String(), "error") {
 		t.Fatalf("out = %q", out.String())
 	}
 }

@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -185,7 +187,10 @@ func (r *mcpRelay) once(ctx context.Context, msg []byte) (retry bool, err error)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return true, err
+		// Only a request that never reached the hub is sent again. One the hub read and then died on may
+		// have run (atrium_launch, atrium_say), so it comes back as the error.
+		var op *net.OpError
+		return errors.As(err, &op) && op.Op == "dial", err
 	}
 	defer resp.Body.Close()
 	if id := resp.Header.Get("Mcp-Session-Id"); id != "" {
@@ -202,8 +207,7 @@ func (r *mcpRelay) once(ctx context.Context, msg []byte) (retry bool, err error)
 		}
 		r.smu.Unlock()
 		return true, fmt.Errorf("hub forgot the session")
-	case resp.StatusCode == http.StatusBadGateway, resp.StatusCode == http.StatusServiceUnavailable,
-		resp.StatusCode == http.StatusGatewayTimeout:
+	case resp.StatusCode == http.StatusServiceUnavailable:
 		return true, fmt.Errorf("hub answered %s", resp.Status)
 	case resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusNoContent:
 		return false, nil
