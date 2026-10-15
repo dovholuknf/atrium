@@ -65,6 +65,9 @@ const harness = new Function(`
   function trackWaits() {}
   function rememberRung() {}
   function rungHas() { return false; }
+  // Whether a wait began before the page loaded is proved by the headless notify section. The cards here carry no
+  // time, which is a card that is new.
+  function beganBeforeLoad() { return false; }
   function holdWaits(fresh, describe) { announce("waiting", fresh, describe); }
   function deliver(kind, fresh, describe) { announce(kind, fresh, describe); }
   ${checkSrc}
