@@ -35,7 +35,7 @@ fi
 
 # Every `body[data-skin="x"] { ... }` block, flattened to `skin var` pairs.
 awk '
-  /^  :root\[data-skin=/ {
+  /^  :root\[data-skin="[^"]+"\] \{[ ]*$/ {
     match($0, /"[^"]+"/)
     skin = substr($0, RSTART + 1, RLENGTH - 2)
     inblock = 1
@@ -79,7 +79,7 @@ fi
 # and a `5` that was a full-width one. Both parse as text and neither is a
 # colour.
 awk '
-  /^  :root\[data-skin=/ { inblock = 1 }
+  /^  :root\[data-skin="[^"]+"\] \{[ ]*$/ { inblock = 1 }
   inblock && /^  }/ { inblock = 0 }
   inblock {
     n = split($0, parts, ";")
@@ -115,9 +115,9 @@ fail=0
 for skin in $skins; do
   grep "^$skin " "$work/pairs" | cut -d' ' -f2 | sort > "$work/this"
   missing=$(comm -23 "$work/reference" "$work/this")
-  # --on-danger is the one variable a skin may set or leave: tokens.css gives it
-  # a default for dark skins and the light skins override it to white.
-  extra=$(comm -13 "$work/reference" "$work/this" | grep -vx -e '--on-danger' || true)
+  # --on-danger and --wait-rgb are the variables a skin may set or leave: tokens.css gives each a default for dark
+  # skins and the light skins override it (--on-danger to white, --wait-rgb to an orange dark enough for paper).
+  extra=$(comm -13 "$work/reference" "$work/this" | grep -vx -e '--on-danger' -e '--wait-rgb' || true)
   if [ -n "$missing" ]; then
     echo "  $skin is MISSING: $(echo "$missing" | tr '\n' ' ')" >&2
     fail=1
