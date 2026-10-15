@@ -49,3 +49,47 @@ is no worse than plain atrium.exe, and neither is allowed on an arbitrary port.
 
 Not determined: whether the live hub's port 7779 has a port-based allow rule (rules could not be read without
 elevation), so this does not settle whether the hub needs a per-path rule.
+
+## macOS (m1mini)
+
+Deployed binary: /Users/claude/.local/bin/atrium (a regular file, 69849106 bytes), run by the live room. Not touched.
+Copy in /tmp/pn-spike-mac, hard link `atrium-hub` (same inode as the copy), symlink `atrium-room -> atrium`. SHA256 of
+deployed, copy, hard link and symlink target are all
+e69303309cc190a3f83c07a5b2c69ca161441afd235e813a8bf547be8ab8ef74.
+
+Run with HOME pointed into the scratch folder so nothing under ~/.atrium was read or written. Ports 17777-17791 were
+free (lsof). Hubs: `run --no-room --addr 127.0.0.1:177x8 --link 127.0.0.1:177x9` with scratch `--atrium-dir` and
+`--atrium-db`. Rooms: `rooms add` against the spike hub (with `--atrium-board-addr` on the spike port, never the
+default 7778), then `room join <string> --mtls 127.0.0.1:17779 --isolated` with scratch `--dir`, `--db`, `--http` and
+`--agent`. Both rooms joined and listened.
+
+| Run | `ps -o comm` | `ps -o ucomm` (kernel name) | args argv[0] | name seen |
+| --- | --- | --- | --- | --- |
+| hub via hard link | ./atrium-hub | atrium-hub | ./atrium-hub | atrium-hub (`sample` header: `Process: atrium-hub`) |
+| hub, plain | ./atrium | atrium | ./atrium | atrium |
+| room via symlink | ./atrium-room | atrium | ./atrium-room | atrium (`sample`: `Process: atrium`, path .../atrium) |
+| room, plain | ./atrium | atrium | ./atrium | atrium |
+| live room (deployed) | /Users/claude/.local/bin/atrium (cut to 16 chars in the default column) | atrium | full path | atrium |
+| live pty host | /Users/claude/.local/bin/atrium.ptyhost | atrium.ptyhost | full path | atrium.ptyhost (`sample` agrees) |
+
+Findings:
+
+- A hard link gets its own name on macOS: the kernel name follows the file name it was exec'd by. A symlink does NOT.
+  The kernel resolves it, so the process is named after the target ("atrium") and only `comm` and argv[0] keep the
+  link's name, as invoked. Activity Monitor takes the process name from the kernel, so a symlink role would show as
+  plain "atrium". Option A needs hard links, or copies, on macOS, never symlinks.
+- `ps -o comm` on macOS is the path as exec'd, not a basename, so it shows the link name for both. `ucomm` is the one to
+  trust, and the one to use in any macOS check.
+- I could NOT observe the Activity Monitor GUI. `lsappinfo` lists no atrium (they are not apps). `sample` reads the
+  same kernel name that Activity Monitor uses, which is why it is cited above.
+
+Open question 5: the live room's process list has `atrium.ptyhost` as its own process name (pid 76813, a separate
+file, parent pid 1), next to the `atrium room` process. So on this machine `pty_host` is on, and the ptyhost already
+has its own name. This does not say what the three identical Windows rows were.
+
+Application firewall: `socketfilterfw --getglobalstate` says "Firewall is disabled. (State = 0)". Not changed. Listeners
+here were loopback, so no inbound prompt could have appeared in any case, and macOS keys its allow list by path or
+signature, which was not exercised.
+
+Cleanup: every process I started was stopped (the two rooms needed a second kill), no listener left on 177xx, sample
+files and /tmp/pn-spike-mac deleted. The live room and ptyhost were still running afterward.
