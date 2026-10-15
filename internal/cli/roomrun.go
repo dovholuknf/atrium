@@ -433,7 +433,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 			return api.PRClaimReply{}, err
 		}
 		return api.PRClaimReply{Owner: ans.Owner, Mine: strings.EqualFold(ans.Owner, room.Name),
-			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward, Live: ans.Live}, nil
+			Forwarded: ans.Forwarded, ForwardStatus: ans.ForwardStatus, Forward: ans.Forward, Live: ans.Live, Holder: ans.Holder}, nil
 	})
 	d.SetRelay(linkRelay{room: room})
 	// THE LINK'S OWN STATE on this room's board, which is the only place a room that cannot dial its hub can say so.

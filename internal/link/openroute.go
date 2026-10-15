@@ -127,7 +127,9 @@ func (p *Proxy) openTargetOf(link, pickedRepo string) (key, repo string) {
 // retagOpen puts the room on an open's answer, and on its card and review ids, in the merged view. A scoped board
 // asked one room and wants that room's own ids.
 func (p *Proxy) retagOpen(res *http.Response, room string) error {
-	if res.Request == nil || res.StatusCode >= 300 {
+	// A refusal because another room holds the link names that room's card, which only means something tagged.
+	held := res.StatusCode == http.StatusConflict
+	if res.Request == nil || (res.StatusCode >= 300 && !held) {
 		return nil
 	}
 	if room == "" {
@@ -151,6 +153,27 @@ func (p *Proxy) retagOpen(res *http.Response, room string) error {
 		if owner, _ := obj["held_by"].(string); owner != "" {
 			room = owner
 		}
+	}
+	if held {
+		if code, _ := obj["code"].(string); code != "held" {
+			res.Body = io.NopCloser(bytes.NewReader(raw))
+			return nil
+		}
+		if owner, _ := obj["held_by"].(string); owner != "" {
+			room = owner
+		}
+		if id, ok := obj["card"].(string); ok && id != "" {
+			obj["card"] = tagFor(room, id)
+		}
+		out, err := json.Marshal(obj)
+		if err != nil {
+			res.Body = io.NopCloser(bytes.NewReader(raw))
+			return nil
+		}
+		res.Body = io.NopCloser(bytes.NewReader(out))
+		res.ContentLength = int64(len(out))
+		res.Header.Set("Content-Length", fmt.Sprint(len(out)))
+		return nil
 	}
 	obj["room"] = room
 	for _, field := range []string{"card", "pr"} {

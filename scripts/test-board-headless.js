@@ -26301,6 +26301,20 @@ async function quickPasteSection(browser, base) {
       .catch(() => fail("quickPaste: a failed open did not stay as a card with the reason"));
     if (await p.evaluate(open("launch"))) fail("quickPaste: a failed open showed the launch dialog");
     await shot(p, "failed-card");
+    // an ordinary failure offers no go-to, and a refusal that names the holding card makes it the first button
+    if (await p.evaluate(() => !!document.querySelector('.card.linkopen.failed [data-op-act="goto"]')))
+      fail("quickPaste: a failure that names no card offered go to card");
+    const goto_ = await p.evaluate(() => {
+      linkOpeningBegin("op-held", "https://github.com/o/r/issues/5", "issue o/r#5");
+      linkOpeningFail("op-held", "that link is held by beta. open it there", "beta~c7");
+      const el = document.querySelector('.card.linkopen[data-linkopen="op-held"]');
+      const first = el && el.querySelector(".linkopen-acts button");
+      const out = { first: first ? first.dataset.opAct : "", card: (linkOpenings.get("op-held") || {}).card };
+      linkOpeningEnd("op-held");
+      return out;
+    });
+    if (goto_.first !== "goto" || goto_.card !== "beta~c7")
+      fail("quickPaste: a held link did not offer go to card first: " + JSON.stringify(goto_));
     // its edit is the dialog, filled in
     await p.evaluate(() => document.querySelector('.card.linkopen.failed [data-op-act="edit"]').click());
     await p.waitForFunction(() => document.getElementById("launch").open &&

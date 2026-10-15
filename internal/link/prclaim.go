@@ -266,6 +266,9 @@ type PRClaimAnswer struct {
 	// Live is the card the owner has live for the key, the id on the owner's room, when a Take found one. The claim did
 	// not move, and nothing is to be launched.
 	Live string `json:"live,omitempty"`
+	// Holder is the owner's live card for the key when the owner is another room and nothing moved, so a refusal can
+	// say where to go. Live is the Take's answer, which launches nothing. Holder only decorates a refusal.
+	Holder string `json:"holder,omitempty"`
 }
 
 // roomLive is the live card a room has for a claim key, or "". A room on a build with no such question reads as having
@@ -327,6 +330,8 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 				ans.Owner = asker
 			}
 			p.RecordAudit(asker, "link-claim-taken", ask.Key+" from "+c.Room)
+		} else if keyOf(c.Room) != keyOf(asker) {
+			ans.Holder = p.roomLive(ctx, c.Room, ask.Key)
 		}
 		return ans, nil
 	} else if !errors.Is(err, hubstore.ErrNoPRClaim) {

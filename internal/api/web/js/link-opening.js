@@ -38,10 +38,12 @@ function linkOpeningStep(id, step) {
   linkOpeningPaint();
 }
 
-function linkOpeningFail(id, why) {
+function linkOpeningFail(id, why, heldCard) {
   const o = linkOpenings.get(id);
   if (!o) return;
   o.error = why || "the open failed";
+  // A link another card holds says which: `go to card` is then the first button, the default.
+  o.card = heldCard || "";
   linkOpeningPaint();
 }
 
@@ -56,6 +58,7 @@ function linkOpeningHTML(id, o) {
   const line = o.error
     ? `<div class="linkopen-say warn">${esc(o.error)}</div>
        <div class="linkopen-acts">
+         ${o.card ? `<button type="button" class="primary" data-op-act="goto">go to card</button>` : ""}
          <button type="button" data-op-act="edit">edit</button>
          <button type="button" data-op-act="again">again</button>
          <button type="button" data-op-act="dismiss">dismiss</button>
@@ -92,4 +95,15 @@ document.addEventListener("click", e => {
   linkOpeningEnd(id);
   if (act === "edit") quickPasteGo(o.url, true);
   else if (act === "again") quickPasteGo(o.url, false);
+  else if (act === "goto") linkOpeningGoto(o.card);
 });
+
+// The link is held by a live card, and the person almost always wanted that card: bring it up, in its own window when
+// it is popped out. The same landing as the answer of a link the holder has live (see launchGo in fixtures.js).
+async function linkOpeningGoto(cardId) {
+  const card = cardId ? await api("/v1/tasks/" + encodeURIComponent(cardId)).catch(() => null) : null;
+  if (!card) { switchView("board"); return; }
+  if (poppedOut(card.id)) { popOutTask(card.id); return; }
+  switchView("terms");
+  openTerm(card);
+}

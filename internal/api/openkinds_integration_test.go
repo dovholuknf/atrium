@@ -223,6 +223,15 @@ func TestOpenAHeldLinkOnAPickedRoomLaunchesHereOrAnswersTheLiveCard(t *testing.T
 	if len(asked) != 1 || asked[0].Take {
 		t.Errorf("an open with no pick asked to take the claim: %+v", asked)
 	}
+	// A refusal names the holder's live card, so the board and the CLI can go there.
+	oh, _, code, out = run(PRClaimReply{Owner: "beta", Holder: "c7"}, false)
+	if code != 409 || out["code"] != "held" || out["card"] != "c7" || out["held_by"] != "beta" || len(oh.launched) != 0 {
+		t.Errorf("a held link with a live holder: %d %v, launched %d", code, out, len(oh.launched))
+	}
+	oh, _, code, out = run(PRClaimReply{Owner: "beta"}, false)
+	if _, has := out["card"]; code != 409 || has {
+		t.Errorf("a held link with no live holder named a card: %d %v", code, out)
+	}
 	oh, _, code, out = run(PRClaimReply{Owner: "beta", Live: "c9"}, true)
 	if code != 200 || out["live"] != true || out["held_by"] != "beta" || out["card"] != "c9" || out["created"] != false ||
 		len(oh.launched) != 0 {

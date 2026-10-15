@@ -338,6 +338,7 @@ func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (
 		Created bool            `json:"created"`
 		HeldBy  string          `json:"held_by"`
 		Live    string          `json:"live_card"`
+		Holder  string          `json:"holder_card"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
@@ -347,8 +348,12 @@ func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (
 		return nil, false, http.StatusOK, map[string]any{"code": "live", "held_by": out.HeldBy, "live_card": out.Live}
 	case out.HeldBy != "":
 		// Another room claimed the link between the hub's placement and here. Its card is there.
-		return nil, false, http.StatusConflict, map[string]any{"code": "held", "held_by": out.HeldBy,
+		fail := map[string]any{"code": "held", "held_by": out.HeldBy,
 			"error": "that pull request is held by " + out.HeldBy + ". open it there"}
+		if out.Holder != "" {
+			fail["card"] = out.Holder
+		}
+		return nil, false, http.StatusConflict, fail
 	case rec.Code >= 300 || out.PR == nil:
 		code := rec.Code
 		if code < 300 {

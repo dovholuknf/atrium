@@ -118,7 +118,12 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 				writeJSON(w, http.StatusOK, liveAnswer(ans, rep.Owner, rep.Live))
 				return
 			}
-			openFail(w, http.StatusConflict, "claim", "held", "that link is held by "+rep.Owner+". open it there")
+			// `card` is the holder's live card, on the holder's room, so the board and `atrium open --attach` can go to it.
+			extra := map[string]any{"step": "claim", "held_by": rep.Owner}
+			if rep.Holder != "" {
+				extra["card"] = rep.Holder
+			}
+			prError(w, http.StatusConflict, "held", "that link is held by "+rep.Owner+". open it there", extra)
 			return
 		}
 	}

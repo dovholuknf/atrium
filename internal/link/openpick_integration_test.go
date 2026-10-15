@@ -52,6 +52,13 @@ func TestAPickedRoomTakesAHeldLinkUnlessTheHolderHasALiveCard(t *testing.T) {
 
 	// a pick with a live card at the holder: that card, and the claim stays
 	x.rooms["alpha"].live = map[string]string{issueKey: "c9"}
+	// without a pick the answer still names that card as the Holder, for the refusal to carry. Nothing launches on it.
+	if ans := ask("beta", false); ans.Owner != "alpha" || ans.Live != "" || ans.Holder != "c9" {
+		t.Fatalf("an ask with no pick against a live card = %+v", ans)
+	}
+	if ans := ask("alpha", false); ans.Holder != "" {
+		t.Fatalf("the holder was told its own card: %+v", ans)
+	}
 	if ans := ask("beta", true); ans.Owner != "alpha" || ans.Live != "c9" {
 		t.Fatalf("a pick against a live card = %+v", ans)
 	}

@@ -1871,7 +1871,8 @@ async function launchNow(opening) {
       });
     } catch (e) {
       if (!(e.body && e.body.code === "not_openable")) {
-        linkOpeningFail(id, (e && e.message) || String(e));
+        const held = e && e.body && e.body.code === "held" ? e.body.card : "";
+        linkOpeningFail(id, (e && e.message) || String(e), held);
         return;
       }
     } finally {

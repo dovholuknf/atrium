@@ -172,9 +172,14 @@ func openLink(link string, o openOpts) error {
 			Error string `json:"error"`
 			Code  string `json:"code"`
 			Step  string `json:"step"`
+			Card  string `json:"card"`
 		}
 		_ = json.Unmarshal(raw, &e)
 		switch {
+		case e.Code == "held" && e.Card != "":
+			// The link is held by a live card. That card is what the person wanted: say where it is, and with
+			// --attach go there instead of failing.
+			return goToHeld(board, e.Card, e.Error, o)
 		case e.Code == "not_openable" || e.Code == "not_a_pr":
 			// Not opened as a card: shown as before, and --start launches it from the resolution. not_a_pr is an
 			// older room's.
@@ -202,6 +207,25 @@ func openLink(link string, o openOpts) error {
 	}
 	if o.attach && got.Card != "" {
 		return attachTerminal(board, got.Card)
+	}
+	return nil
+}
+
+// goToHeld answers a refusal that names the card holding the link: its address, and --attach attaches to it. Without
+// --attach it still exits 0 after printing, since the card is the answer. --json prints the refusal's card as an answer.
+func goToHeld(board, card, why string, o openOpts) error {
+	if o.asJSON {
+		out, _ := json.Marshal(map[string]any{"held": true, "card": card, "error": why})
+		fmt.Println(string(out))
+	} else {
+		fmt.Printf("%s\n", why)
+		fmt.Printf("  card   %s\n  board  %s\n", card, strings.TrimRight(board, "/")+"/#term="+url.QueryEscape(card))
+		if !o.attach {
+			fmt.Println("  --attach goes to it from here")
+		}
+	}
+	if o.attach {
+		return attachTerminal(board, card)
 	}
 	return nil
 }
