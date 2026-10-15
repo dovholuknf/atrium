@@ -673,6 +673,64 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L1: THE ITEM IS THE UNIT OF WORK. `work` is one row per backlog id, and `work_card` is every card
+		// attached to it, so two cards launched on one id are one item with two cards. The old `item` table keeps its job as
+		// one card's run (an assignment). See work.go and docs/rnd/item-lifecycle-design.md.
+		name: "0020_work",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work (
+				backlog_id TEXT PRIMARY KEY,
+				title      TEXT NOT NULL DEFAULT '',
+				body       TEXT NOT NULL DEFAULT '',
+				dept       TEXT NOT NULL DEFAULT '',
+				priority   TEXT NOT NULL DEFAULT '',
+				kind       TEXT NOT NULL DEFAULT 'code' CHECK (kind IN ('code','doc','mixed')),
+				owner_kind TEXT NOT NULL DEFAULT '',
+				owner      TEXT NOT NULL DEFAULT '',
+				branch     TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS work_card (
+				backlog_id  TEXT NOT NULL,
+				room        TEXT NOT NULL,
+				card        TEXT NOT NULL,
+				role        TEXT NOT NULL DEFAULT '',
+				step        TEXT NOT NULL DEFAULT '',
+				attached_at TEXT NOT NULL,
+				PRIMARY KEY (backlog_id, room, card)
+			)`,
+			`CREATE INDEX IF NOT EXISTS work_card_card ON work_card (room, card)`,
+		},
+	},
+	{
+		// WHICH ITEM AN ASSIGNMENT BELONGS TO. Its own migration: nothing here changes a CHECK or a UNIQUE, so no rebuild.
+		name: "0021_item_work_id",
+		stmts: []string{
+			`ALTER TABLE item ADD COLUMN work_id TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS item_work ON item (work_id)`,
+		},
+	},
+	{
+		// THE BACKFILL: every assignment from before this has no backlog id, so it becomes an `adhoc-<item_id>` item, titled
+		// with its card's title as the room last cached it (the item id when the cache has none), with its one card
+		// attached. OR IGNORE and the `work_id = ''` guard make a second run do nothing.
+		name: "0022_work_backfill",
+		stmts: []string{
+			`INSERT OR IGNORE INTO work (backlog_id, title, kind, created_at, updated_at)
+				SELECT 'adhoc-' || i.item_id,
+					COALESCE(NULLIF(CASE WHEN json_valid(rc.payload) THEN json_extract(rc.payload, '$.display_title') END, ''), i.item_id),
+					'code', i.created_at, i.updated_at
+				FROM item i
+				LEFT JOIN room r ON r.name_key = i.room
+				LEFT JOIN room_card rc ON rc.room_id = r.id AND rc.card_id = i.card
+				WHERE i.work_id = ''`,
+			`INSERT OR IGNORE INTO work_card (backlog_id, room, card, role, step, attached_at)
+				SELECT 'adhoc-' || item_id, room, card, '', 'building', created_at FROM item WHERE work_id = ''`,
+			`UPDATE item SET work_id = 'adhoc-' || item_id WHERE work_id = ''`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

@@ -55,7 +55,7 @@ func TestHubLaunchStampsTheLaunchersDept(t *testing.T) {
 		want bool
 	}{{"director", nil, true}, {"nodept", nil, false}, {"director", []string{"dept:runtime"}, false}} {
 		if _, _, err := c.launchHandler(context.Background(), ctlReq(k.who, "beta"),
-			launchInput{Cwd: "/work/dir", Tags: k.in}); err != nil {
+			launchInput{Item: "f-test", Cwd: "/work/dir", Tags: k.in}); err != nil {
 			t.Fatal(err)
 		}
 		tags, _ := got["tags"].([]any)

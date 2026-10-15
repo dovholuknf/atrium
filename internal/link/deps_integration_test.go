@@ -319,7 +319,7 @@ func TestALaunchForAGatedItemIsRefused(t *testing.T) {
 		t.Fatal("a title with no item was refused")
 	}
 	// Through the tool, before anything reaches a room.
-	_, _, err := f.x.proxy.ctl.launchHandler(ctx, nil, launchInput{Cwd: "C:/w", Title: "r-039: the third"})
+	_, _, err := f.x.proxy.ctl.launchHandler(ctx, nil, launchInput{Item: "f-test", Cwd: "C:/w", Title: "r-039: the third"})
 	var re *refusedError
 	if !errors.As(err, &re) || !strings.Contains(re.msg, "r-039 waits on") {
 		t.Fatalf("tool = %v", err)

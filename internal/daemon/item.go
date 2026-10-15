@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -14,8 +15,28 @@ import (
 // stores nothing new: the tag is the whole mark. An ordinary launch is unchanged in every way.
 const ItemTag = "atrium:item"
 
-// isItem is whether a card was launched as an item.
+// isItem is whether a card was launched ISOLATED: the toolset and the endings above. Since item lifecycle L1 this is no
+// longer what makes a card an item. The attachment is, and it is the tag below.
 func isItem(t *store.Task) bool { return t != nil && hasTag(t.Tags, ItemTag) }
+
+// WorkTagPrefix starts the tag that attaches a card to an item, `atrium:item:<backlog id>`. It is NOT ItemTag: that is
+// whole-string and means isolated, and this one only ever has an id after it. The same prefix as link.WorkTagPrefix.
+// The room tells the hub on launch and on every restart of the card, because the tag is on the card and a restart
+// changes the generation and never the attachment. See docs/rnd/item-lifecycle-design.md, section 8.
+const WorkTagPrefix = "atrium:item:"
+
+// workIDRe is a backlog id, as the hub files them.
+var workIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,79}$`)
+
+// workOfTags is the backlog id a card's tags attach it to, or "".
+func workOfTags(tags []string) string {
+	for _, t := range tags {
+		if id, ok := strings.CutPrefix(strings.TrimSpace(t), WorkTagPrefix); ok && workIDRe.MatchString(id) {
+			return id
+		}
+	}
+	return ""
+}
 
 // ItemEndingLine is how an item worker is told to end. LaunchEndingLine without a launcher in it: an item worker is
 // not told who asked for the work, because it has nobody to talk to but the tool that ends it. Kept equal to

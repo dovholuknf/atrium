@@ -510,6 +510,12 @@ type boardError struct {
 
 func (e *boardError) Error() string { return e.msg }
 
+// HTTPStatus is what the board answered, for a caller that reads a 404 as "no such thing".
+func (e *boardError) HTTPStatus() int { return e.code }
+
+// Bare is whether the answer carried no sentence, which is a route that is not there rather than a thing that is not.
+func (e *boardError) Bare() bool { return e.bare }
+
 // agentOf and roomOf read the per-request identity headers the go-sdk hands a
 // tool on `Extra`. Absent when the caller is not one of atrium's sessions,
 // which is an ordinary way to use these tools and not an error.
@@ -1571,9 +1577,11 @@ type launchInput struct {
 	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise"`
 	// Scratch lets the launch start outside a git checkout.
 	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
-	// Item starts the worker as an item. See ItemTag.
-	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with item: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
-	Item      bool   `json:"item,omitempty" jsonschema:"start the worker as an ITEM: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. it ends with atrium_done or atrium_blocked and nothing else. leave it out for an ordinary worker, which is unchanged"`
+	// Item is the backlog item the worker is on, REQUIRED. See WorkTagPrefix and work_launch.go.
+	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker is on, by its id (find it with atrium_backlog list), or new:<a title> to file one as you launch, under your own department. every card launched on one id is attached to the same item. a launch with no item is refused"`
+	// Isolated starts the worker with the isolated toolset. See ItemTag.
+	Isolated  bool   `json:"isolated,omitempty" jsonschema:"start the worker ISOLATED: its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. it ends with atrium_done or atrium_blocked and nothing else. leave it out for an ordinary worker, which is unchanged. this is no longer what makes a card an item: item is"`
+	ItemOwner string `json:"item_owner,omitempty" jsonschema:"who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`, atrium_launch leaves it empty.
 	Lifetime string `json:"-"`
 }
@@ -1711,6 +1719,29 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		return out, err
 	}
 
+	// EVERY LAUNCH NAMES AN ITEM, before a slot is reserved or anything is posted. The argument is the one the caller gave,
+	// and a launch relayed from a room's stdio server has already resolved it into the tag. An interviewer is not a
+	// worker: it talks to the human, and no work is attached to it. See work_launch.go.
+	launcherTags := c.launcherTags(ctx, callerRoom, spawnedBy)
+	workID, filedNote := "", ""
+	if !isInterview(in.Kind) {
+		spec := strings.TrimSpace(in.Item)
+		if spec == "" {
+			spec = WorkOfTags(in.Tags)
+		}
+		hubCall := func(ctx context.Context, method, path string, body, out any) error {
+			return c.ask(ctx, method, path, "", body, out)
+		}
+		id, filed, err := ResolveItem(ctx, hubCall, spec, DeptOfTags(launcherTags), spawnedBy, callerRoom)
+		if err != nil {
+			return out, err
+		}
+		workID = id
+		if filed {
+			filedNote = "filed backlog item " + id + " for --item new. "
+		}
+	}
+
 	// AN ITEM THAT WAITS ON OTHER WORK does not start, before any slot is reserved. A
 	// worker's title starts with its item id, so a director cannot start blocked work by
 	// accident. There is no override: a human clears the gate on the board first.
@@ -1755,7 +1786,8 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if in.Resident {
 		callerTags = append(append([]string{}, in.Tags...), ResidentTag)
 	}
-	tags := WithLauncherDept(AgentLaunchTags(callerTags), c.launcherTags(ctx, callerRoom, spawnedBy))
+	tags := WithLauncherDept(AgentLaunchTags(callerTags), launcherTags)
+	tags = WithWorkTag(tags, workID)
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/runtime/a2a-reliability-design.md.
@@ -1764,12 +1796,12 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
 	// those steps, and the worker stops without a word.
 	prompt := WithReportLine(in.Prompt, hasTag(tags, ResidentTag) || hasTag(tags, DirectorTag))
-	if in.Item {
-		// AN ITEM: tagged, and told to end without a launcher in the words. See ItemTag.
+	if o := strings.TrimSpace(in.ItemOwner); o != "" && in.Isolated {
+		tags = append(tags, ItemOwnerTag+o)
+	}
+	if in.Isolated {
+		// ISOLATED: tagged, and told to end without a launcher in the words. See ItemTag.
 		tags = append(tags, ItemTag)
-		if o := strings.TrimSpace(in.ItemOwner); o != "" {
-			tags = append(tags, ItemOwnerTag+o)
-		}
 		prompt = WithItemReportLine(in.Prompt)
 	}
 	brief := strings.TrimSpace(in.Brief)
@@ -1792,7 +1824,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"args": in.Args, "env": in.Env, "lifetime": in.Lifetime,
 	}
-	if in.Item {
+	if in.Isolated {
 		reqBody["item"] = true
 	}
 	if spawnedByID != "" {
@@ -1845,7 +1877,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	missed := LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
 	missed = append(missed, LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
-	out.Note = itemNote + LaunchDroppedWarning(missed) + out.Note
+	out.Note = filedNote + itemNote + LaunchDroppedWarning(missed) + out.Note
 	return out, nil
 }
 

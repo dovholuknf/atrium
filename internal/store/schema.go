@@ -2291,6 +2291,14 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS item_mirror_pool ON item_mirror (pool, state)`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L1: the backlog id an assignment is attached to, so every revision's push says it and a push that
+		// lands out of order still attaches. Empty is an assignment no backlog item named, which the hub files as adhoc.
+		name: "0103_item_work_id",
+		stmts: []string{
+			`ALTER TABLE item_mirror ADD COLUMN work_id TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

@@ -68,7 +68,7 @@ func TestLaunchSaysWhoLaunchedItAndAsksForAReport(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("orchestrator", "beta"),
-		launchInput{Cwd: "/work/dir", Prompt: "do one, two, three"}); err != nil {
+		launchInput{Item: "f-test", Cwd: "/work/dir", Prompt: "do one, two, three"}); err != nil {
 		t.Fatal(err)
 	}
 	if board.launch["spawned_by"] != "orchestrator" {
@@ -88,7 +88,7 @@ func TestLaunchWithNoPromptGetsNoReportLine(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("orchestrator", "beta"),
-		launchInput{Cwd: "/work/dir"}); err != nil {
+		launchInput{Item: "f-test", Cwd: "/work/dir"}); err != nil {
 		t.Fatal(err)
 	}
 	if board.launch["prompt"] != "" {

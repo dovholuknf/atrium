@@ -157,7 +157,7 @@ func TestLaunchForwardsBriefToTheRoom(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir", Brief: "read this"})
+		launchInput{Item: "f-test", Cwd: "/work/dir", Brief: "read this"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestLaunchForwardsThemeToTheRoom(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir", Theme: "tangent"})
+		launchInput{Item: "f-test", Cwd: "/work/dir", Theme: "tangent"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -216,10 +216,10 @@ func TestLaunchIsLeanByDefaultAndForwardsTheMCPList(t *testing.T) {
 		in   launchInput
 		want sent
 	}{
-		{"default claude", launchInput{Cwd: "/w"}, sent{Lean: true}},
-		{"extra server", launchInput{Cwd: "/w", MCP: []string{"ziti"}}, sent{Lean: true, MCP: []string{"ziti"}}},
-		{"turned off", launchInput{Cwd: "/w", Lean: &off}, sent{}},
-		{"other runner", launchInput{Cwd: "/w", Runner: "codex"}, sent{}},
+		{"default claude", launchInput{Item: "f-test", Cwd: "/w"}, sent{Lean: true}},
+		{"extra server", launchInput{Item: "f-test", Cwd: "/w", MCP: []string{"ziti"}}, sent{Lean: true, MCP: []string{"ziti"}}},
+		{"turned off", launchInput{Item: "f-test", Cwd: "/w", Lean: &off}, sent{}},
+		{"other runner", launchInput{Item: "f-test", Cwd: "/w", Runner: "codex"}, sent{}},
 	} {
 		if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"), tc.in); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
@@ -256,7 +256,7 @@ func TestLaunchForwardsItsOptionsAndWarnsWhenARoomDropsThem(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
-	in := launchInput{Cwd: "/w", Model: "claude-haiku-4-5-20251001", Effort: "low",
+	in := launchInput{Item: "f-test", Cwd: "/w", Model: "claude-haiku-4-5-20251001", Effort: "low",
 		Args: []string{"--x"}, Env: map[string]string{"K": "v"}}
 
 	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"), in)
@@ -324,7 +324,7 @@ func TestLaunchRefusesAtTheCap(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err == nil {
 		t.Fatal("at the cap, launch should be refused")
 	}
@@ -352,7 +352,7 @@ func TestLaunchProceedsUnderTheCap(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, out, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err != nil {
 		t.Fatalf("under the cap, launch should proceed: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestLaunchCapCountsOnlyAgentSessions(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err != nil {
 		t.Fatalf("unmarked human sessions must not consume the agent cap: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestLaunchCapCountsOnlyRunningSubagents(t *testing.T) {
 		t.Fatalf("runningForCap = %d, %v; want only the %d running subagents", n, err, DefaultLaunchCap-1)
 	}
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"}); err != nil {
+		launchInput{Item: "f-test", Cwd: "/work/dir"}); err != nil {
 		t.Fatalf("untagged and finished cards must not consume the cap: %v", err)
 	}
 	if !board.launched {
@@ -444,7 +444,7 @@ func TestLaunchStampsTheOriginTag(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir", Tags: []string{"ticket-42"}})
+		launchInput{Item: "f-test", Cwd: "/work/dir", Tags: []string{"ticket-42"}})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -484,14 +484,14 @@ func TestLaunchTagsAWorkerUnlessADirectorIsAsked(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"}); err != nil {
+		launchInput{Item: "f-test", Cwd: "/work/dir"}); err != nil {
 		t.Fatal(err)
 	}
 	if !hasTag(gotTags, SubagentTag) || hasTag(gotTags, DirectorTag) {
 		t.Errorf("plain launch tags = %v, want the subagent tag", gotTags)
 	}
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir", Tags: []string{DirectorTag}}); err != nil {
+		launchInput{Item: "f-test", Cwd: "/work/dir", Tags: []string{DirectorTag}}); err != nil {
 		t.Fatal(err)
 	}
 	if hasTag(gotTags, SubagentTag) || !hasTag(gotTags, DirectorTag) {
@@ -510,7 +510,7 @@ func TestLaunchCapEnvOverride(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err == nil {
 		t.Fatal("with the cap overridden to 1 and one session live, launch should refuse")
 	}
@@ -536,12 +536,12 @@ func TestLaunchReservationStopsTwoLaunchesOvershooting(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err1 := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err1 != nil {
 		t.Fatalf("first launch should fill the last slot: %v", err1)
 	}
 	_, _, err2 := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err2 == nil {
 		t.Fatal("second launch should be refused by the reservation the first took")
 	}
@@ -565,7 +565,7 @@ func TestLaunchReservationLapsesAfterTTL(t *testing.T) {
 	c.reservations = []reservation{{id: "stale", at: time.Now().Add(-2 * reservationTTL)}}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err != nil {
 		t.Fatalf("a lapsed reservation must not hold the slot: %v", err)
 	}
@@ -598,7 +598,7 @@ func TestLaunchAllowsWhenCountLookupFails(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/work/dir"})
+		launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err != nil {
 		t.Fatalf("a failed count lookup should not block the launch: %v", err)
 	}

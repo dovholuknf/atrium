@@ -24,7 +24,7 @@ func TestLaunchReportToFlagReachesTheEndpoint(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"c1","display_title":"x"}`))
 	}))
 	defer srv.Close()
-	err := launchAgent(launchOpts{boardURL: srv.URL, harness: "claude", cwd: t.TempDir(), reportTo: "review", quiet: true})
+	err := launchAgent(launchOpts{boardURL: srv.URL, harness: "claude", cwd: t.TempDir(), reportTo: "review", item: "f-test", quiet: true})
 	if err != nil {
 		t.Fatal(err)
 	}

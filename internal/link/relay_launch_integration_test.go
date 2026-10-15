@@ -15,7 +15,7 @@ import (
 
 func launchSpec() *RelayLaunchSpec {
 	return &RelayLaunchSpec{Cwd: "/srv/atrium", Title: "review", Why: "check it", Prompt: "do the review",
-		Brief: "the whole brief", Tags: []string{"mine"}, Model: "opus", Env: map[string]string{"A": "b"}}
+		Brief: "the whole brief", Tags: []string{"mine", "atrium:item:f-test"}, Model: "opus", Env: map[string]string{"A": "b"}}
 }
 
 // copyOf is a room's last launch body, copied out from under its lock.

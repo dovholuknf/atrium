@@ -64,7 +64,7 @@ func resolveItemOwner(spec, creator string) (kind, owner string, err error) {
 
 // checkItemLaunch refuses an item launch whose owner cannot be, BEFORE a card exists. Nothing else is its business.
 func checkItemLaunch(req LaunchRequest) error {
-	if !req.Item && !hasTag(req.Tags, ItemTag) {
+	if !req.Item && !hasTag(req.Tags, ItemTag) && workOfTags(req.Tags) == "" {
 		return nil
 	}
 	_, _, err := resolveItemOwner(itemOwnerSpec(req.Tags), req.SpawnedBy)
@@ -90,6 +90,9 @@ func (d *Daemon) createItem(task *store.Task, ownerSpec string) (*store.ItemRow,
 	it, err := d.st.ItemCreate(store.ItemRow{
 		ID: newItemID(), TaskID: task.ID, Generation: gen, State: store.ItemRunning,
 		OwnerKind: kind, Owner: owner, CreatedBy: task.SpawnedBy,
+		// THE ATTACHMENT, from the card's own tag. It rides the push through the outbox, so a room that was down when the
+		// card was attached says so when it is back, and the hub treats a replay as nothing.
+		WorkID: workOfTags(task.Tags),
 	})
 	if err != nil {
 		return nil, err
@@ -179,7 +182,8 @@ type itemEnding struct {
 // here, which keeps the stage-1 behaviour. FINISHED IS TERMINAL, and the same state again is no change, so a replay is
 // one revision and one notice.
 func (d *Daemon) itemEnded(task *store.Task, in FinishRequest) *itemEnding {
-	if !in.Ended || (!isItem(task) && poolOf(task) == "") {
+	isolated := isItem(task) || poolOf(task) != ""
+	if !in.Ended || (!isolated && workOfTags(task.Tags) == "") {
 		return nil
 	}
 	it, err := d.st.ItemOfTask(task.ID)
@@ -194,9 +198,17 @@ func (d *Daemon) itemEnded(task *store.Task, in FinishRequest) *itemEnding {
 		target = store.ItemBlocked
 	}
 	if target == "" || it.State == store.ItemFinished {
+		if !isolated {
+			return nil
+		}
 		return &itemEnding{item: it}
 	}
 	moved, changed := d.moveItem(it.ID, target, "")
+	if !isolated {
+		// AN ATTACHED CARD THAT IS NOT ISOLATED keeps the report it always had, to its launcher, in its own words. Its
+		// assignment moves, and nothing else about its ending does.
+		return nil
+	}
 	if moved == nil {
 		return &itemEnding{item: it}
 	}

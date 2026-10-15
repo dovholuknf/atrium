@@ -82,7 +82,7 @@ func TestAuditedToolsWriteOneLineEach(t *testing.T) {
 	}{
 		{"launch", "ctl-launch", "by orch@beta (claimed): launch claude as new1, ok", func(c *controlMCP) error {
 			_, _, err := audited(c, "ctl-launch", describeLaunch, c.launchHandler)(ctx, ctlReq("orch", "beta"),
-				launchInput{Cwd: "/work/dir"})
+				launchInput{Item: "f-test", Cwd: "/work/dir"})
 			return err
 		}},
 		{"exit", "ctl-exit", "by orch@beta (claimed): exit w1, ok", func(c *controlMCP) error {
@@ -187,7 +187,7 @@ func TestAuditedCapRefusalWritesARefusalLine(t *testing.T) {
 	}
 	c, lines := ctlAuditHarness(t, tasks)
 	_, _, err := audited(c, "ctl-launch", describeLaunch, c.launchHandler)(context.Background(),
-		ctlReq("orch", "beta"), launchInput{Cwd: "/work/dir"})
+		ctlReq("orch", "beta"), launchInput{Item: "f-test", Cwd: "/work/dir"})
 	if err == nil {
 		t.Fatal("at the cap, launch should be refused")
 	}
@@ -232,7 +232,7 @@ func TestAuditedCrossRoomLaunchWritesOnTheTarget(t *testing.T) {
 	c, lines := ctlAuditHarness(t, ctlAuditTasks)
 	c.hub = nil
 	_, _, err := audited(c, "ctl-launch", describeLaunch, c.launchHandler)(context.Background(),
-		ctlReq("orch", "beta"), launchInput{Cwd: "/work/dir", Room: "gamma"})
+		ctlReq("orch", "beta"), launchInput{Item: "f-test", Cwd: "/work/dir", Room: "gamma"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestAuditedNoLineCarriesThePayload(t *testing.T) {
 	ctx := context.Background()
 	c, lines := ctlAuditHarness(t, ctlAuditTasks)
 	req := ctlReq("orch", "beta")
-	_, _, _ = audited(c, "ctl-launch", describeLaunch, c.launchHandler)(ctx, req, launchInput{
+	_, _, _ = audited(c, "ctl-launch", describeLaunch, c.launchHandler)(ctx, req, launchInput{Item: "f-test",
 		Cwd: "/work/dir", Prompt: "SECRET-PROMPT", Brief: "SECRET-BRIEF", Why: "SECRET-WHY", Title: "SECRET-TITLE",
 		Args: []string{"SECRET-ARG"}, Env: map[string]string{"K": "SECRET-ENV"},
 	})
@@ -317,11 +317,13 @@ func TestAuditDetailBoundsAndStripsCallerText(t *testing.T) {
 	req := ctlReq("orch", "beta")
 	for pname, v := range payloads {
 		cases := map[string]func() (string, string, bool){
-			"alias":  func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: v}, aliasOutput{}) },
-			"cull":   func() (string, string, bool) { return describeCull(req, cullInput{Card: "w1", Into: v}, cullOutput{}) },
-			"launch": func() (string, string, bool) { return describeLaunch(req, launchInput{Runner: v}, launchOutput{}) },
-			"say":    func() (string, string, bool) { return describeSay(req, sayInput{To: v, Wake: true}, sayOutput{}) },
-			"exit":   func() (string, string, bool) { return describeExit(req, exitInput{Card: v}, exitOutput{}) },
+			"alias": func() (string, string, bool) { return describeAlias(req, aliasInput{Alias: v}, aliasOutput{}) },
+			"cull":  func() (string, string, bool) { return describeCull(req, cullInput{Card: "w1", Into: v}, cullOutput{}) },
+			"launch": func() (string, string, bool) {
+				return describeLaunch(req, launchInput{Item: "f-test", Runner: v}, launchOutput{})
+			},
+			"say":  func() (string, string, bool) { return describeSay(req, sayInput{To: v, Wake: true}, sayOutput{}) },
+			"exit": func() (string, string, bool) { return describeExit(req, exitInput{Card: v}, exitOutput{}) },
 		}
 		for name, describe := range cases {
 			who := name + "/" + pname

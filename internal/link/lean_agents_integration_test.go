@@ -17,7 +17,7 @@ func TestLeanAgentsDroppedNamesARoomThatIgnoredThem(t *testing.T) {
 }
 
 func TestLeanLaunchIsOnForLeanAgentsOnAnyRunner(t *testing.T) {
-	if !leanLaunch(launchInput{LeanAgents: []string{"a"}}, "codex") {
+	if !leanLaunch(launchInput{Item: "f-test", LeanAgents: []string{"a"}}, "codex") {
 		t.Fatal("lean_agents implies lean, so the room can refuse the runner by name")
 	}
 	if leanLaunch(launchInput{}, "codex") || !leanLaunch(launchInput{}, "claude") {

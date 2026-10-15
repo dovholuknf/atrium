@@ -58,7 +58,7 @@ func hasTagIn(tags []string, want string) bool {
 }
 
 func TestAStdioLaunchRecordsItsLauncherAndIsAWorker(t *testing.T) {
-	body := stdioLaunchBody(t, "fabric-director", LaunchInput{Cwd: "/w", Prompt: "do the thing", Tags: []string{"mine"}})
+	body := stdioLaunchBody(t, "fabric-director", LaunchInput{Item: "f-test", Cwd: "/w", Prompt: "do the thing", Tags: []string{"mine"}})
 	if body["spawned_by"] != "fabric-director" {
 		t.Fatalf("spawned_by = %v", body["spawned_by"])
 	}
@@ -76,7 +76,7 @@ func TestAStdioLaunchRecordsItsLauncherAndIsAWorker(t *testing.T) {
 
 func TestAStdioLaunchOfADirectorIsNotMarkedASubagent(t *testing.T) {
 	for _, tag := range []string{link.DirectorTag, link.SubagentTag} {
-		tags := tagsOf(stdioLaunchBody(t, "boss", LaunchInput{Cwd: "/w", Tags: []string{tag}}))
+		tags := tagsOf(stdioLaunchBody(t, "boss", LaunchInput{Item: "f-test", Cwd: "/w", Tags: []string{tag}}))
 		n := 0
 		for _, x := range tags {
 			if x == link.SubagentTag {
@@ -94,7 +94,7 @@ func TestAStdioLaunchOfADirectorIsNotMarkedASubagent(t *testing.T) {
 
 func TestAHandRunStdioLaunchIsNotAttributedToABlankName(t *testing.T) {
 	for _, name := range []string{"", "   "} {
-		body := stdioLaunchBody(t, name, LaunchInput{Cwd: "/w"})
+		body := stdioLaunchBody(t, name, LaunchInput{Item: "f-test", Cwd: "/w"})
 		if v, present := body["spawned_by"]; present {
 			t.Fatalf("a nameless session was attributed: %q", v)
 		}
@@ -106,7 +106,7 @@ func TestAHandRunStdioLaunchIsNotAttributedToABlankName(t *testing.T) {
 
 func TestAStdioLaunchWithABriefStillEndsWithTheReportLine(t *testing.T) {
 	dir := t.TempDir()
-	body := stdioLaunchBody(t, "boss", LaunchInput{Cwd: dir, Brief: "the whole task"})
+	body := stdioLaunchBody(t, "boss", LaunchInput{Item: "f-test", Cwd: dir, Brief: "the whole task"})
 	if p, _ := body["prompt"].(string); !strings.Contains(p, briefFile) || !strings.HasSuffix(p, link.ReportLine) ||
 		!strings.Contains(p, "Then: do as BRIEF.md describes.") {
 		t.Fatalf("prompt = %q", p)
@@ -180,7 +180,7 @@ func TestStdioLaunchStampsTheLaunchersDept(t *testing.T) {
 		want bool
 	}{{"boss", nil, true}, {"plain", nil, false}, {"boss", []string{"dept:runtime"}, false}, {"", nil, false}} {
 		t.Setenv("ATRIUM_AGENT_NAME", k.me)
-		if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Cwd: "/w", Tags: k.in}); err != nil {
+		if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w", Tags: k.in}); err != nil {
 			t.Fatal(err)
 		}
 		if has := hasTagIn(tagsOf(got), "dept:ui"); has != k.want {

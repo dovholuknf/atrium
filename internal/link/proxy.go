@@ -1637,6 +1637,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveItems(w, r, sub)
 		return
 	}
+	if sub == "work" || strings.HasPrefix(sub, "work/") {
+		p.serveWork(w, r, sub)
+		return
+	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {
 		p.serveFlow(w, r, sub)
 		return

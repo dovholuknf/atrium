@@ -199,8 +199,15 @@ type LaunchRequest struct {
 	// merges. Empty leaves a relaunched card's own value and gives a new card none. Anything but `work` is refused.
 	Lifetime string `json:"lifetime,omitempty"`
 	// Item starts the card as an item: the ItemTag, an ending that names no launcher, atrium as the opening prompt's
-	// sender, and no say. See item.go.
+	// sender, and no say. See item.go. Since item lifecycle L1 this is what `isolated` says, and it stays an alias of it
+	// for one release: what makes a card an item is the attachment, WorkItem.
 	Item bool `json:"item,omitempty"`
+	// Isolated is Item, said plainly: the isolated toolset and endings, and nothing about which item the card is on.
+	Isolated bool `json:"isolated,omitempty"`
+	// WorkItem is the backlog id of the item this card is attached to. It becomes the tag `atrium:item:<id>`, which
+	// travels with the card, and the assignment pushed to the hub names it. Launchers resolve `new:` before they post, so
+	// this is always an id. A launch from a script that sends none is attached to nothing and unchanged.
+	WorkItem string `json:"work_item,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -742,6 +749,19 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}
 	if lt := strings.TrimSpace(req.Lifetime); lt != "" && lt != store.LifetimeWork {
 		return nil, fmt.Errorf("lifetime %q is not one atrium knows. the only one is %q", lt, store.LifetimeWork)
+	}
+	// THE ATTACHMENT, as the tag the rest reads. A request that names an id and already carries the tag is left alone.
+	if w := strings.TrimSpace(req.WorkItem); w != "" {
+		if !workIDRe.MatchString(w) {
+			return nil, fmt.Errorf("item %q is not a backlog id: lower case letters, digits, dot, dash and underscore, like f-new-thing", w)
+		}
+		if workOfTags(req.Tags) == "" {
+			req.Tags = append(append([]string{}, req.Tags...), WorkTagPrefix+w)
+		}
+	}
+	// ISOLATED IS ITEM: the same switch, under the name that says what it does.
+	if req.Isolated {
+		req.Item = true
 	}
 	// AN ITEM CARRIES ITS TAG, wherever the request came from: the tag is what the rest reads. See item.go.
 	if req.Item && !hasTag(req.Tags, ItemTag) {
@@ -1449,7 +1469,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 	}
 	// AN ITEM, for a fresh item launch: its mirror row, its owner and the push the hub is owed. See item_hub.go.
-	if req.Resume == "" && (req.Item || hasTag(req.Tags, ItemTag)) {
+	if req.Resume == "" && (req.Item || hasTag(req.Tags, ItemTag) || workOfTags(req.Tags) != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.createItem(t, itemOwnerSpec(req.Tags)); err != nil {
 				return nil, err

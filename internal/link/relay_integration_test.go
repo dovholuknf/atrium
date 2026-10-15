@@ -534,7 +534,7 @@ func TestALaunchOntoAnotherRoomRecordsTheLauncherAcross(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, out, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Cwd: "/w", Room: "sg4"})
+	_, out, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Item: "f-test", Cwd: "/w", Room: "sg4"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -688,7 +688,7 @@ func TestACardLaunchedOnAnotherRoomCanBeReadAndExited(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	_, launched, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Cwd: "/w", Room: "sg4"})
+	_, launched, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Item: "f-test", Cwd: "/w", Room: "sg4"})
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}

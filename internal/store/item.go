@@ -65,8 +65,11 @@ type ItemRow struct {
 	MissedWorker bool
 	// Pool and Brief are an item submitted to a pool: the pool's name, and the words typed to whichever resident card
 	// takes it. An item that was queued has no card (TaskID is empty) until one does. See item_pool.go.
-	Pool      string
-	Brief     string
+	Pool  string
+	Brief string
+	// WorkID is the backlog id of the item this assignment is attached to, empty for one no backlog item named. The hub
+	// files an empty one as `adhoc-<item_id>`.
+	WorkID    string
 	CreatedAt string
 	UpdatedAt string
 }
@@ -84,14 +87,14 @@ type ItemOwed struct {
 
 const itemRowCols = `item_id, task_id, generation, state, revision, owner_kind, owner, created_by, note, unblock_msg,
 	unblock_delivered, unblock_text, unblock_at, retyped_at, stuck_alerted, missed_owner, missed_worker, pool, brief,
-	created_at, updated_at`
+	work_id, created_at, updated_at`
 
 func scanItemRow(sc interface{ Scan(...any) error }) (*ItemRow, error) {
 	var it ItemRow
 	var del, mo, mw int
 	if err := sc.Scan(&it.ID, &it.TaskID, &it.Generation, &it.State, &it.Revision, &it.OwnerKind, &it.Owner, &it.CreatedBy,
 		&it.Note, &it.UnblockMsg, &del, &it.UnblockText, &it.UnblockAt, &it.RetypedAt, &it.StuckAlerted, &mo, &mw,
-		&it.Pool, &it.Brief, &it.CreatedAt, &it.UpdatedAt); err != nil {
+		&it.Pool, &it.Brief, &it.WorkID, &it.CreatedAt, &it.UpdatedAt); err != nil {
 		return nil, err
 	}
 	it.UnblockDelivered, it.MissedOwner, it.MissedWorker = del != 0, mo != 0, mw != 0
@@ -111,6 +114,7 @@ func (it *ItemRow) pushBody() string {
 	b, _ := json.Marshal(map[string]any{
 		"item_id": it.ID, "card": it.TaskID, "generation": it.Generation, "state": it.State, "revision": it.Revision,
 		"owner_kind": it.OwnerKind, "owner": it.Owner, "created_by": it.CreatedBy, "note": it.Note,
+		"work_id": it.WorkID,
 	})
 	return string(b)
 }
@@ -146,9 +150,9 @@ func (s *Store) ItemCreate(it ItemRow) (*ItemRow, error) {
 	var out *ItemRow
 	err := s.inTx(func(tx *Tx) error {
 		now := ts(s.now())
-		res, err := tx.Exec(`INSERT INTO item_mirror (`+itemRowCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,0,'','','','',0,0,?,?,?,?)
+		res, err := tx.Exec(`INSERT INTO item_mirror (`+itemRowCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,0,'','','','',0,0,?,?,?,?,?)
 			ON CONFLICT (item_id) DO NOTHING`, it.ID, it.TaskID, it.Generation, it.State, it.Revision, it.OwnerKind,
-			it.Owner, it.CreatedBy, it.Note, "", it.Pool, it.Brief, now, now)
+			it.Owner, it.CreatedBy, it.Note, "", it.Pool, it.Brief, strings.TrimSpace(it.WorkID), now, now)
 		if err != nil {
 			return err
 		}

@@ -88,7 +88,7 @@ func tagsOf(body map[string]any) []string {
 
 func TestAnItemLaunchIsTaggedAndEndsWithoutALauncher(t *testing.T) {
 	h := newClassHarness(t, classTasks)
-	body := itemLaunchBody(t, h, map[string]any{"cwd": "/work/dir", "prompt": "do the thing", "item": true})
+	body := itemLaunchBody(t, h, map[string]any{"cwd": "/work/dir", "prompt": "do the thing", "item": "f-test", "isolated": true})
 	if !hasTag(tagsOf(body), ItemTag) {
 		t.Errorf("tags = %v, want %s", tagsOf(body), ItemTag)
 	}
@@ -100,7 +100,7 @@ func TestAnItemLaunchIsTaggedAndEndsWithoutALauncher(t *testing.T) {
 // A launch without the flag is unchanged: no item tag, the same ending, no item key on the request.
 func TestANonItemLaunchIsUnchanged(t *testing.T) {
 	h := newClassHarness(t, classTasks)
-	body := itemLaunchBody(t, h, map[string]any{"cwd": "/work/dir", "prompt": "do the thing"})
+	body := itemLaunchBody(t, h, map[string]any{"cwd": "/work/dir", "prompt": "do the thing", "item": "f-test"})
 	if hasTag(tagsOf(body), ItemTag) {
 		t.Errorf("tags = %v carry the item tag", tagsOf(body))
 	}

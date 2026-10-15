@@ -36,7 +36,7 @@ func launchAcrossRoom(ctx context.Context, in LaunchInput, harness, room string)
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
 	}
-	if in.Item {
+	if in.Isolated {
 		req["item"] = true
 	}
 	var res struct {

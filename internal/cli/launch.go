@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,8 +42,10 @@ type launchOpts struct {
 	onto  string
 	tags  []string
 	quiet bool
-	// item starts the card as an item. See daemon.ItemTag.
-	item bool
+	// item is the backlog item the launch works on: an id, or new:<title>. See link.ResolveItem.
+	item string
+	// isolated starts the card as an isolated item. See daemon.ItemTag.
+	isolated bool
 	// itemOwner is who owns the item: empty, human, or a single-holder role. See daemon.ItemOwnerTag.
 	itemOwner string
 }
@@ -109,9 +112,12 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.onto, "onto", "",
 		"start the runner on this existing card, named by its handle, alias, name@room or id. "+
 			"without --cwd it runs in the card's own directory")
-	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --item: who owns it. empty is the creating session, human, or orchestrator, merger or director")
-	c.Flags().BoolVar(&o.item, "item", false,
-		"start the card as an item: its ending never mentions a launcher, its opening prompt comes from atrium, "+
+	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --isolated: who owns it. empty is the creating session, human, or orchestrator, merger or director")
+	c.Flags().StringVar(&o.item, "item", "",
+		"REQUIRED for a new session: the backlog item this works on, by id (f-new-thing), or new:\"a title\" to file one "+
+			"under the dept: tag in --tags. not needed with --resume or --onto, whose card already exists")
+	c.Flags().BoolVar(&o.isolated, "isolated", false,
+		"start the card isolated: its ending never mentions a launcher, its opening prompt comes from atrium, "+
 			"it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it")
 	c.Flags().BoolVar(&o.quiet, "quiet", false, "print only the card id")
 	c.Flags().StringVar(&o.boardURL, "url", "",
@@ -200,11 +206,24 @@ func launchBody(o launchOpts, cwd string) error {
 		"if_running":  o.ifRunning,
 		"report_to":   o.reportTo,
 	}
+	// EVERY NEW LAUNCH NAMES AN ITEM, refused before anything is posted. A resume or a launch onto a card that exists
+	// is the same work continuing, so it names none.
+	if o.resume == "" && strings.TrimSpace(o.onto) == "" || strings.TrimSpace(o.item) != "" {
+		id, filed, err := link.ResolveItem(context.Background(), boardHubCall(o.boardURL), o.item,
+			link.DeptOfTags(o.tags), "", "")
+		if err != nil {
+			return err
+		}
+		if filed && !o.quiet {
+			fmt.Printf("filed backlog item %s\n", id)
+		}
+		fields["tags"] = link.WithWorkTag(o.tags, id)
+	}
 	// ONLY WHEN ASKED FOR, so a launch without the flag posts what it always did.
-	if o.item {
+	if o.isolated {
 		fields["item"] = true
 		if so := strings.TrimSpace(o.itemOwner); so != "" {
-			fields["tags"] = append(append([]string{}, o.tags...), link.ItemOwnerTag+so)
+			fields["tags"] = append(append([]string{}, fields["tags"].([]string)...), link.ItemOwnerTag+so)
 		}
 		fields["prompt"] = link.WithItemReportLine(o.prompt)
 	}

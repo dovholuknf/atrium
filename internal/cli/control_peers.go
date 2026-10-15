@@ -254,6 +254,12 @@ type peerToolErr struct {
 
 func (e *peerToolErr) Error() string { return e.msg }
 
+// HTTPStatus is what the room answered, for a caller that reads a 404 as "no such thing".
+func (e *peerToolErr) HTTPStatus() int { return e.code }
+
+// Bare is whether the answer carried no sentence: a route that is not there rather than a thing that is not.
+func (e *peerToolErr) Bare() bool { return e.bare }
+
 // olderRoom is whether an error is the room not having the endpoint at all.
 func olderRoom(err error) bool {
 	var pe *peerToolErr
@@ -636,9 +642,11 @@ type LaunchInput struct {
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
 	// Resident marks a long-lived card. See link.ResidentTag.
 	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
-	// Item starts the worker as an item. See link.ItemTag.
-	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with item: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
-	Item      bool   `json:"item,omitempty" jsonschema:"start the worker as an ITEM: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. leave it out for an ordinary worker, which is unchanged"`
+	// Item names the backlog item the worker works on. See link.WorkTagPrefix.
+	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker works on, by id (like f-new-thing), or new:<title> to file one under your department as you launch. work is named in the backlog, so find the id with atrium_backlog list. a launch with no item is refused"`
+	// Isolated starts the worker as an isolated item. See link.ItemTag.
+	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with isolated: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
+	Isolated  bool   `json:"isolated,omitempty" jsonschema:"start the worker ISOLATED: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. leave it out for an ordinary worker, which is unchanged"`
 	// The launch options, as the hub's atrium_launch takes them. See
 	// docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, in the shape its runner row declares. not checked against any list. empty is the runner's default"`
@@ -731,6 +739,13 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	if harness == "" {
 		harness = "claude"
 	}
+	// EVERY LAUNCH NAMES AN ITEM, refused before a briefing is written or anything is posted. The attachment is the tag
+	// `atrium:item:<id>`, which the room and the hub both read, so the cross-room road needs no new field.
+	workID, filedNote, err := resolveLaunchItem(ctx, in.Item, in.Tags)
+	if err != nil {
+		return nil, out, err
+	}
+	in.Tags = link.WithWorkTag(in.Tags, workID)
 	// ANOTHER ROOM goes through this room's hub and touches nothing on this disk: no
 	// briefing written here and no directory looked at. This room's own name is the
 	// path below, untouched.
@@ -750,7 +765,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		if err != nil {
 			return nil, out, err
 		}
-		if in.Item {
+		if in.Isolated {
 			prompt = daemon.ItemBriefPrompt(briefFile, prompt)
 		} else if in.Resident {
 			prompt = daemon.ResidentBriefPrompt(briefFile, prompt)
@@ -768,7 +783,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	if in.Resident {
 		callerTags = append(append([]string{}, in.Tags...), link.ResidentTag)
 	}
-	tags := link.WithLauncherDept(link.AgentLaunchTags(callerTags), myTags(ctx, me))
+	tags := link.WithWorkTag(link.WithLauncherDept(link.AgentLaunchTags(callerTags), myTags(ctx, me)), workID)
 	req := map[string]any{
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": link.WithReportLine(prompt, in.Resident),
@@ -776,7 +791,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
 	}
-	if in.Item {
+	if in.Isolated {
 		req["tags"] = append(tags, link.ItemTag)
 		if o := strings.TrimSpace(in.ItemOwner); o != "" {
 			req["tags"] = append(req["tags"].([]string), link.ItemOwnerTag+o)
@@ -806,7 +821,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	missed := link.LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
 	missed = append(missed, link.LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
-	out.Note = link.LaunchDroppedWarning(missed) + out.Note
+	out.Note = filedNote + link.LaunchDroppedWarning(missed) + out.Note
 	return nil, out, nil
 }
 

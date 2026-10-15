@@ -53,7 +53,10 @@ type Item struct {
 	Owner     string `json:"owner,omitempty"`
 	CreatedBy string `json:"created_by,omitempty"`
 	// Note is the words of the last change: the blocked reason, or the result line.
-	Note      string `json:"note,omitempty"`
+	Note string `json:"note,omitempty"`
+	// WorkID is the backlog id of the item this assignment belongs to, `adhoc-<item_id>` for work no backlog item named.
+	// A push may leave it empty, and the hub then files the assignment as adhoc. See work.go.
+	WorkID    string `json:"work_id,omitempty"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -121,16 +124,18 @@ func checkItem(it Item) error {
 		return refuse(errors.New("a session owner has a handle"))
 	case len(it.Note) > ItemNoteMax:
 		return refuse(errors.New("that note is too long"))
+	case len(it.WorkID) > 80 || strings.ContainsAny(it.WorkID, " \t\r\n/"):
+		return refuse(errors.New("an item's work id is a backlog id"))
 	}
 	return nil
 }
 
-const atItemCols = `item_id, room, card, generation, state, revision, owner_kind, owner, created_by, note, created_at, updated_at`
+const atItemCols = `item_id, room, card, generation, state, revision, owner_kind, owner, created_by, note, created_at, updated_at, work_id`
 
 func scanAtItem(sc scanner) (Item, error) {
 	var it Item
 	err := sc.Scan(&it.ID, &it.Room, &it.Card, &it.Generation, &it.State, &it.Revision, &it.OwnerKind, &it.Owner,
-		&it.CreatedBy, &it.Note, &it.CreatedAt, &it.UpdatedAt)
+		&it.CreatedBy, &it.Note, &it.CreatedAt, &it.UpdatedAt, &it.WorkID)
 	return it, err
 }
 
@@ -155,9 +160,12 @@ func (s *Store) PutItem(it Item) (Item, bool, error) {
 			cur, err := scanAtItem(t.QueryRow(`SELECT `+atItemCols+` FROM item WHERE item_id = ?`, it.ID))
 			switch {
 			case errors.Is(err, sql.ErrNoRows):
-				_, err = t.Exec(`INSERT INTO item (`+atItemCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+				if it.WorkID == "" {
+					it.WorkID = AdhocWorkID(it.ID)
+				}
+				_, err = t.Exec(`INSERT INTO item (`+atItemCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 					it.ID, it.Room, it.Card, it.Generation, it.State, it.Revision, it.OwnerKind, it.Owner, it.CreatedBy,
-					it.Note, now, now)
+					it.Note, now, now, it.WorkID)
 				applied = err == nil
 			case err != nil:
 				return err
@@ -172,7 +180,29 @@ func (s *Store) PutItem(it Item) (Item, bool, error) {
 			}
 		}
 		out, err = scanAtItem(t.QueryRow(`SELECT `+atItemCols+` FROM item WHERE item_id = ?`, it.ID))
-		return err
+		if err != nil {
+			return err
+		}
+		// THE ATTACH, once per card. An assignment held from before this stage and pushed again is attached the same way,
+		// and a work id the row has not got is set from a push that names one and never changed once it has one.
+		if out.WorkID == "" && it.WorkID != "" {
+			if _, err = t.Exec(`UPDATE item SET work_id = ? WHERE item_id = ? AND work_id = ''`, it.WorkID, it.ID); err != nil {
+				return err
+			}
+			out.WorkID = it.WorkID
+		}
+		if out.WorkID == "" {
+			return nil
+		}
+		var have int
+		if err = t.QueryRow(`SELECT COUNT(*) FROM work_card WHERE backlog_id = ? AND room = ? AND card = ?`,
+			out.WorkID, out.Room, out.Card).Scan(&have); err != nil {
+			return err
+		}
+		if have > 0 {
+			return nil
+		}
+		return attachWork(t, out.WorkID, out.Room, out.Card, now)
 	})
 	return out, applied, err
 }

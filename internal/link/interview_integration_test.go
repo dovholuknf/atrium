@@ -45,7 +45,7 @@ func launchSeen(t *testing.T, in launchInput) (launchBody, error) {
 }
 
 func TestAnInterviewLaunchWritesTheRulesAheadOfTheTopic(t *testing.T) {
-	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Kind: "interview", Brief: "Topic: the new board"})
+	got, err := launchSeen(t, launchInput{Item: "f-test", Cwd: "/work/dir", Kind: "interview", Brief: "Topic: the new board"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestAnInterviewLaunchWritesTheRulesAheadOfTheTopic(t *testing.T) {
 }
 
 func TestAnInterviewLaunchIsNeverAWorker(t *testing.T) {
-	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Kind: "interview", Brief: "Topic: x"})
+	got, err := launchSeen(t, launchInput{Item: "f-test", Cwd: "/work/dir", Kind: "interview", Brief: "Topic: x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestAnInterviewLaunchIsNeverAWorker(t *testing.T) {
 }
 
 func TestAnOrdinaryLaunchIsNotAnInterview(t *testing.T) {
-	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Brief: "do it", Prompt: "go"})
+	got, err := launchSeen(t, launchInput{Item: "f-test", Cwd: "/work/dir", Brief: "do it", Prompt: "go"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +86,14 @@ func TestAnOrdinaryLaunchIsNotAnInterview(t *testing.T) {
 }
 
 func TestAnUnknownKindIsRefused(t *testing.T) {
-	if _, err := launchSeen(t, launchInput{Cwd: "/work/dir", Kind: "poem"}); err == nil ||
+	if _, err := launchSeen(t, launchInput{Item: "f-test", Cwd: "/work/dir", Kind: "poem"}); err == nil ||
 		!strings.Contains(err.Error(), "interview") {
 		t.Fatalf("err = %v, want a refusal naming the kind there is", err)
 	}
 }
 
 func TestScratchIsPassedToTheRoom(t *testing.T) {
-	got, err := launchSeen(t, launchInput{Cwd: "/work/dir", Scratch: true})
+	got, err := launchSeen(t, launchInput{Item: "f-test", Cwd: "/work/dir", Scratch: true})
 	if err != nil || !got.Scratch {
 		t.Fatalf("scratch = %v, err = %v", got.Scratch, err)
 	}

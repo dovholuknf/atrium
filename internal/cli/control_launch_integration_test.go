@@ -42,7 +42,7 @@ func TestStdioLaunchWarnsWhenARoomDropsItsOptions(t *testing.T) {
 	}
 	t.Setenv("ATRIUM_LOCATION", loc)
 	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
-	in := LaunchInput{Cwd: "/w", Model: "claude-haiku-4-5-20251001", Effort: "low",
+	in := LaunchInput{Item: "f-test", Cwd: "/w", Model: "claude-haiku-4-5-20251001", Effort: "low",
 		Args: []string{"--x"}, Env: map[string]string{"K": "v"}}
 
 	_, out, err := launchHandler(context.Background(), nil, in)
@@ -89,7 +89,7 @@ func TestStdioLaunchSendsLeanAgentsAndWarnsWhenARoomDropsThem(t *testing.T) {
 	}
 	t.Setenv("ATRIUM_LOCATION", loc)
 	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
-	in := LaunchInput{Cwd: "/w", LeanAgents: []string{"codebase-steward"}}
+	in := LaunchInput{Item: "f-test", Cwd: "/w", LeanAgents: []string{"codebase-steward"}}
 
 	_, out, err := launchHandler(context.Background(), nil, in)
 	if err != nil {

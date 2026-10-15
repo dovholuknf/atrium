@@ -81,11 +81,11 @@ func TestTheLaunchCapIsPerRoom(t *testing.T) {
 		capFor: capsOf(nil, map[string]int{"beta": 10, "SG3": 5})}
 
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/w"}); err != nil {
+		launchInput{Item: "f-test", Cwd: "/w"}); err != nil {
 		t.Fatalf("7 of 10 on beta, with sg3 full, refused a launch onto beta: %v", err)
 	}
 	_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-		launchInput{Cwd: "/w", Room: "sg3"})
+		launchInput{Item: "f-test", Cwd: "/w", Room: "sg3"})
 	if err == nil {
 		t.Fatal("a launch onto sg3 with 5 of 5 running went through")
 	}
@@ -123,7 +123,7 @@ func TestAReservationHoldsItsOwnRoomOnly(t *testing.T) {
 
 	launch := func(room string) error {
 		_, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
-			launchInput{Cwd: "/w", Room: room})
+			launchInput{Item: "f-test", Cwd: "/w", Room: room})
 		return err
 	}
 	if err := launch("delta"); err != nil {
