@@ -114,7 +114,7 @@ func newRoot() *cobra.Command {
 	}
 	root.AddCommand(newDaemon(),
 		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
-		newName(), newFinish(), newReady(), newPeers(), newTell(), newControl(), newVersion(), newAsk(),
+		newName(), newFinish(), newReady(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newArchiveWorkers(),
 		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd())
 	// The atrium and its rooms, which were `atrium2` until the two binaries

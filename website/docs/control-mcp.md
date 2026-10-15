@@ -39,6 +39,23 @@ The seeded claude runner starts sessions with `--strict-mcp-config --mcp-config 
 launched session gets exactly the servers listed in that file, and never stops on a prompt from a server it was not
 going to use. Put the entry above in that file.
 
+### Surviving a hub restart
+
+Claude Code connects an HTTP MCP server once and never redials it. If the hub goes down, every live session loses its
+atrium tools until it is restarted. To avoid that, register a stdio relay instead of the URL:
+
+```json
+{
+  "mcpServers": {
+    "atrium-control": { "type": "stdio", "command": "/path/to/atrium", "args": ["mcp-relay"] }
+  }
+}
+```
+
+`atrium mcp-relay` keeps the stdio side open and redials the hub, with backoff, for each request, for up to ten
+minutes (`--retry-for`). It sends `X-Atrium-Agent` and `X-Atrium-Room` from `ATRIUM_AGENT_NAME` and `ATRIUM_ROOM`.
+The hub address is `--url`, then `ATRIUM_HUB_MCP`, then `http://127.0.0.1:7778/_hub/mcp`.
+
 ## The tools
 
 | Tool | What it does |
