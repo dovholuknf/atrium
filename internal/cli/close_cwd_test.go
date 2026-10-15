@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -44,6 +45,26 @@ func TestCloseCommandTakesACardOrCwdNotBoth(t *testing.T) {
 	c.SetArgs([]string{"--url", "127.0.0.1:1"})
 	if err := c.Execute(); err == nil || !strings.Contains(err.Error(), "--cwd") {
 		t.Fatalf("neither was refused: %v", err)
+	}
+}
+
+// A relative --cwd is made absolute before it is sent, so `--cwd .` names this folder.
+func TestCloseCwdMakesARelativePathAbsolute(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"cards":[]}`))
+	}))
+	defer srv.Close()
+	want, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := closeByCwdCmd(closeOpts{boardURL: srv.URL, cwd: ".", yes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got["cwd"] != want {
+		t.Fatalf("sent %v, want %s", got["cwd"], want)
 	}
 }
 

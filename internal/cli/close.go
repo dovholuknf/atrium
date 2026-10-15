@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -238,6 +239,15 @@ func closeCardCmd(card string, o closeOpts) error {
 // closeByCwdCmd closes every card at a worktree through POST /v1/cards/archive.
 func closeByCwdCmd(o closeOpts) error {
 	cwd := strings.TrimSpace(o.cwd)
+	// `--cwd .` has to name the folder, not match nothing and read like an answer. A path that already looks absolute,
+	// in either OS's form, is sent as typed: the hub matches slashes, a trailing separator and case itself.
+	if !filepath.IsAbs(cwd) && !strings.HasPrefix(cwd, "/") && !strings.HasPrefix(cwd, `\`) && !(len(cwd) > 1 && cwd[1] == ':') {
+		abs, err := filepath.Abs(cwd)
+		if err != nil {
+			return err
+		}
+		cwd = abs
+	}
 	if !o.yes {
 		fmt.Printf("would close every card whose folder is %s. nothing was changed. run again with --yes\n", cwd)
 		return nil
