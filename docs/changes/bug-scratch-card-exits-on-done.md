@@ -19,6 +19,8 @@ The change:
 3. Test: a card launched with `Scratch` carries `atrium:keep-open` and `exitsOnReport` is false for its done report,
    and a launch without scratch (a claude/* worktree launch) still does not carry it and still exits.
 
+`atrium:keep-open` also exempts the card from reclaim (reclaim.go), so a scratch card stays until someone closes it.
+
 Files: launch.go, exitonreport.go, one unit test, this note, the changelog line.
 
 ## Test plan
