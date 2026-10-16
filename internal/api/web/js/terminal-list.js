@@ -1847,6 +1847,7 @@ async function renderTermList() {
   // you were watching a terminal is announced whenever you next look at the
   // board, or not at all.
   lastTasks = all;
+  if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   if (typeof cacheRefresh === "function") cacheRefresh(all);
   newCardNote(all);
   // The bar's alias, when it changed under the open terminal. See js/alias.js.

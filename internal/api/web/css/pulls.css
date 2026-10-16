@@ -1,5 +1,5 @@
-/* The pulls view (js/pulls.js, docs/rnd/pulls-view-design.md section 4). Every colour is an existing token or a
-   variable with a default, so every skin wears it with no edit. */
+/* The pulls view (js/pulls.js, docs/rnd/pulls-redesign.md). Every colour is an existing token, tints use the -rgb
+   triples so a skin follows, and the one new variable is --pull-bar, the colour of a card's left edge. */
   :root {
     --pull-ready: var(--teal);
     --pull-failed: var(--danger);
@@ -9,46 +9,176 @@
   #pulls[hidden] { display: none; }
   #pulls > * { flex: 0 0 auto; }
   #pulls > #pulls-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; }
-  #pulls-url { flex: 1 1 260px; min-width: 160px; }
-  #pulls-why { flex: 1 1 200px; min-width: 120px; }
   .pulls-note {
     margin: 0 0 10px; padding: var(--vs-2) var(--sp-3); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
     background: var(--warn-bg); color: var(--head); font-size: var(--fs-xs);
   }
   .pulls-note[hidden] { display: none; }
 
-  .pull {
-    display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: var(--vs-2) var(--sp-3);
-    border-bottom: 1px solid var(--stroke-dim);
+  /* The header: title, Open / All, repo, and on the right the one green button and the menu. */
+  .pulls-head { position: relative; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin: 0 0 12px; }
+  .pulls-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--head); }
+  .pulls-sp { flex: 1 1 0; }
+  .pulls-seg { display: flex; border: 1px solid var(--stroke-dim); border-radius: var(--r-md); overflow: hidden; }
+  .pulls-seg button {
+    background: none; border: 0; border-radius: 0; padding: 4px 11px; font: inherit; font-size: var(--fs-xs);
+    color: var(--label); cursor: pointer;
   }
-  .pull-main { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .pull-who { display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; }
-  .pull-repo { color: var(--head); font-weight: 600; }
-  .pull-head7, .pull-author { color: var(--dim); font-size: var(--fs-xs); }
-  .pull-title { color: var(--body); overflow-wrap: anywhere; }
-  .pull-why, .pull-second, .pull-stage { color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
-  .pull-counts { color: var(--label); font-size: var(--fs-xs); }
-  .pull-side { flex: 0 1 280px; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
-  .pull-state { color: var(--head); overflow-wrap: anywhere; }
-  .pull[data-state="ready"] .pull-state { color: var(--pull-ready); }
-  .pull[data-state="failed"] .pull-state { color: var(--pull-failed); }
-  .pull[data-state="running"] .pull-state, .pull[data-state="fetching"] .pull-state { color: var(--pull-live); }
-  .pull[data-state="aborted"] .pull-state, .pull[data-state="queued"] .pull-state { color: var(--dim); }
-  .pull-meta { color: var(--dim); font-size: var(--fs-xs); }
-  .pull-acts { display: flex; gap: var(--sp-3); flex-wrap: wrap; justify-content: flex-end; }
+  .pulls-seg button.on { background: var(--chip); color: var(--head); }
+  .pulls-seg b { color: var(--dim); font-weight: 500; margin-left: 5px; }
+  .pulls-dots { width: 30px; padding: 4px 0; text-align: center; }
+  .pulls-pop {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(380px, 100%); display: flex; flex-direction: column;
+    gap: var(--sp-3); padding: var(--sp-3); background: var(--bg-2); border: 1px solid var(--stroke); border-radius: var(--r-md);
+    box-shadow: 0 12px 30px rgba(var(--shadow-rgb), .5);
+  }
+  .pulls-pop[hidden] { display: none; }
+  .pulls-pop-row { display: flex; justify-content: flex-end; gap: var(--sp-3); }
+
+  /* The attention strip: four counters, each a filter. */
+  .pulls-attn { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 6px; }
+  .pulls-attn button {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: var(--r-md); border: 1px solid var(--stroke-dim);
+    background: var(--card-0); color: var(--body); font: inherit; font-size: var(--fs-xs); cursor: pointer;
+  }
+  .pulls-attn button:hover { border-color: var(--stroke); }
+  .pulls-attn button.on { background: var(--chip); border-color: var(--stroke); color: var(--head); }
+  .pulls-attn i { font-style: normal; font-weight: 700; font-size: 15px; min-width: 1ch; text-align: right; }
+  .pulls-attn .needs i { color: var(--wait); }
+  .pulls-attn .ready i { color: var(--teal); }
+  .pulls-attn .progress i { color: var(--blue); }
+  .pulls-attn .failed i { color: var(--danger); }
+
+  .pull-group-head {
+    display: flex; gap: 8px; margin: 16px 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+  }
+  .pull-group-head em { font-style: normal; color: var(--label); }
+
+  /* One card. The bar on the left edge says the verdict before a word is read. */
+  .pull {
+    --pull-bar: var(--dim);
+    position: relative; display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 0 16px; margin: 0 0 8px;
+    padding: 12px 14px 12px 0; background: var(--card-0); border: 1px solid var(--stroke-dim); border-radius: var(--r-lg); overflow: hidden;
+  }
+  .pull:hover { border-color: var(--stroke); }
+  .pull-bar { grid-row: 1; margin: -12px 0; background: var(--pull-bar); }
+  .pull[data-v="approve"] { --pull-bar: var(--teal); }
+  .pull[data-v="changes"] { --pull-bar: var(--warn); }
+  .pull[data-v="blocked"] { --pull-bar: var(--danger); }
+  .pull[data-v="working"] { --pull-bar: var(--blue); }
+  .pull[data-v="waiting"] { --pull-bar: var(--wait); }
+  .pull[data-v="failed"] { --pull-bar: rgba(var(--danger-rgb), .6); }
+  .pull[data-v="closed"] { --pull-bar: var(--stroke-dim); opacity: .55; }
+  .pull-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .pull-who { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+  .pull-repo { font-family: var(--mono); font-size: var(--fs-xs); color: var(--label); }
+  .pull-num { color: var(--head); font-weight: 600; }
+  .pull-title { color: var(--head); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+  .pull-author { color: var(--dim); font-size: var(--fs-xs); }
+  .pull-l2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
+  .pull-why, .pull-second, .pull-progress, .pull-stage { color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+  .pull-stage { color: var(--label); margin-top: 3px; }
+  .pull-stage.q { color: var(--wait); }
+  .pull-stage.e { color: var(--danger); }
+
+  /* The verdict pill: uppercase and tinted, never a solid fill, so only the primary button is solid. */
+  .pull-state {
+    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 5px;
+    background: var(--chip); color: var(--label); border: 1px solid transparent;
+  }
+  .pull-state.approve { background: rgba(var(--teal-rgb), .14); color: var(--teal); }
+  .pull-state.changes { background: rgba(var(--warn-rgb), .14); color: var(--warn); }
+  .pull-state.blocked, .pull-state.failed { background: rgba(var(--danger-rgb), .16); color: var(--danger); }
+  .pull-state.working { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+  .pull-state.waiting { background: rgba(var(--wait-rgb), .16); color: var(--wait); }
+  /* The board's guess before the panel writes a verdict: the same pill with a dashed outline. */
+  .pull-state.guess { background: none; border: 1px dashed currentColor; }
+  .pull-counts { display: flex; gap: 6px; flex-wrap: wrap; font-size: var(--fs-xs); }
+  .pull-counts span { padding: 1px 7px; border-radius: 5px; background: rgba(var(--stroke-rgb), .18); color: var(--body); }
+  .pull-counts .h { color: var(--danger); }
+  .pull-counts .m { color: var(--warn); }
+  .pull-counts .t.ok { color: var(--teal); }
+  .pull-counts .t.bad { color: var(--danger); }
+
+  /* The stage strip: four dots joined by lines. Filled teal done, blue with a halo running, red failed, hollow not reached. */
+  .pull-strip { display: flex; align-items: center; gap: 5px; margin-top: 9px; flex-wrap: wrap; }
+  .pull-strip .d { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
+  .pull-strip .d::before {
+    content: ""; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; border: 1px solid var(--stroke-dim);
+  }
+  .pull-strip .d.x { color: var(--label); }
+  .pull-strip .d.x::before { background: var(--teal); border-color: var(--teal); }
+  .pull-strip .d.r { color: var(--blue); }
+  .pull-strip .d.r::before { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent); }
+  .pull-strip .d.f { color: var(--danger); }
+  .pull-strip .d.f::before { background: var(--danger); border-color: var(--danger); }
+  .pull-strip .ln { width: 16px; height: 1px; background: var(--stroke-dim); }
+
+  /* The right column: meta on top, the one primary bottom right, then the menu. */
+  .pull-side { grid-column: 3; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; text-align: right; }
+  .pull-meta { color: var(--dim); font-size: 11px; }
+  .pull-meta b { color: var(--label); font-weight: 500; }
+  .pull-acts { display: flex; gap: 6px; align-items: center; }
   .pull-btn {
     background: var(--chip); color: var(--head); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
     padding: 2px var(--sp-3); font: inherit; font-size: var(--fs-xs); cursor: pointer;
   }
   .pull-btn:hover { background: var(--btn-hover); }
-  .pull-btn.on { border-color: var(--teal); color: var(--teal); }
+  .pull-btn.pri { background: var(--teal); border-color: var(--teal); color: var(--bg-2); font-weight: 700; padding: 6px 14px; }
+  .pull-btn.pri:hover { filter: brightness(1.08); background: var(--teal); }
+  .pull-btn.pri.blue { background: var(--blue); border-color: var(--blue); }
+  .pull-btn.pri.ask { background: var(--wait); border-color: var(--wait); }
+  .pull-btn.pri.mute { background: var(--chip); border-color: var(--stroke-dim); color: var(--head); font-weight: 600; }
+  .pull-btn.more { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; font-size: 14px; color: var(--label); }
+
+  /* Nothing under review: a dashed panel, never a blank page. */
+  .pulls-empty { text-align: center; padding: 56px 20px; border: 1px dashed var(--stroke-dim); border-radius: var(--r-lg); margin-top: 16px; }
+  .pulls-empty .ico { width: 46px; height: 46px; border-radius: var(--r-lg); background: var(--chip); margin: 0 auto; display: grid; place-items: center; color: var(--teal); font-size: 22px; }
+  .pulls-empty h2 { margin: 10px 0 4px; font-size: 16px; color: var(--head); }
+  .pulls-empty p { margin: 0 auto 16px; max-width: 420px; color: var(--label); }
+
+  /* Three skeleton cards the height of a real one, so nothing jumps when rows land. */
+  .pull-skel {
+    height: 92px; margin: 0 0 8px; border-radius: var(--r-lg); border: 1px solid var(--stroke-dim);
+    background: linear-gradient(90deg, var(--card-0), var(--chip), var(--card-0)); background-size: 200% 100%; animation: pull-shimmer 1.4s linear infinite;
+  }
+  @keyframes pull-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) { .pull-skel { animation: none; } }
+
   /* The sweep's leftovers, above the rows (pullsSweep). */
   #pulls > #pulls-left { max-height: 40vh; overflow-y: auto; margin: 0 0 10px; border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); }
   #pulls-left[hidden] { display: none; }
+  #pulls-left .pull { display: flex; flex-wrap: wrap; padding: var(--vs-2) var(--sp-3); border: 0; border-bottom: 1px solid var(--stroke-dim); border-radius: 0; margin: 0; }
   .left-head { display: flex; gap: var(--sp-3); align-items: baseline; padding: var(--vs-2) var(--sp-3); color: var(--label); font-size: var(--fs-xs); }
   .left-head .pull-btn { margin-left: auto; }
   .left-rows { margin: 0; padding-left: 1.2em; color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
   .pull-log {
-    flex: 1 1 100%; margin: 0; padding: var(--vs-2) var(--sp-3); max-height: 220px; overflow: auto;
+    grid-column: 1 / -1; margin: 10px 14px 0; padding: var(--vs-2) var(--sp-3); max-height: 220px; overflow: auto;
     background: var(--bg-2); color: var(--body); font-size: var(--fs-xs); white-space: pre-wrap;
   }
+
+  /* Phone: one column. The bar stays, the meta sits bottom left, the primary and the menu bottom right at a touch size. */
+  @media (max-width: 640px) {
+    #pulls > #pulls-list { padding-right: 0; }
+    .pulls-head h2 { width: 100%; }
+    .pulls-attn { display: grid; grid-template-columns: 1fr 1fr; }
+    .pull { grid-template-columns: 4px minmax(0, 1fr); padding-right: 12px; }
+    .pull-bar { grid-row: 1 / 3; }
+    .pull-side { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; margin-top: 10px; text-align: left; }
+    .pull-btn.pri { padding: 10px 16px; min-height: 40px; }
+    .pull-btn.more { width: 40px; height: 40px; }
+    /* The menu is a sheet at the foot of the screen (pullsSheet places it), since a popover on 390px lands under the thumb. */
+    #cardmenu.pull-sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; padding-bottom: 14px; }
+    #cardmenu.pull-sheet button { padding: 12px 16px; }
+  }
+
+  /* The one green button of the page: the header's and the empty page's. */
+  .pulls-head button.go, .pulls-empty button.go {
+    background: var(--teal); border-color: var(--teal); color: var(--bg-2); font-weight: 700; font-size: var(--fs-xs); padding: 6px 14px;
+  }
+  .pulls-pop button.go { font-size: var(--fs-xs); padding: 5px 14px; }
+  .pulls-head select {
+    background: var(--card-0); color: var(--label); border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    padding: 5px 10px; font: inherit; font-size: var(--fs-xs);
+  }
+  .pulls-empty p { font-size: var(--fs-md); }

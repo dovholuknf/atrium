@@ -797,14 +797,27 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
        docs/fabric/audit-design.md. -->
   <!-- The PRs atrium is reviewing, newest first, drawn by js/pulls.js. See docs/rnd/pulls-view-design.md. -->
   <div id="pulls" hidden>
-    <div class="col-head" style="margin:0 0 10px"><span>pull requests under review</span></div>
-    <div class="filters">
-      <select id="pulls-state"><option value="open">open (not archived)</option><option value="all">all</option></select>
-      <select id="pulls-repo"></select>
-      <input id="pulls-url" type="text" placeholder="https://github.com/org/repo/pull/123" aria-label="pull request URL">
-      <input id="pulls-why" type="text" placeholder="why (optional)" aria-label="why">
-      <button id="pulls-paste" type="button" class="go">+ paste a PR</button>
-      <button id="pulls-sweep" type="button" data-tip="what no live card holds any more: worktrees, branches, refs, reviews">leftovers</button>
+    <div class="pulls-head">
+      <h2>Pull requests</h2>
+      <div id="pulls-seg" class="pulls-seg" role="group" aria-label="which reviews">
+        <button type="button" data-state="open" class="on">Open<b id="pulls-n-open"></b></button>
+        <button type="button" data-state="all">All<b id="pulls-n-all"></b></button>
+      </div>
+      <select id="pulls-repo" aria-label="repo"></select>
+      <span class="pulls-sp"></span>
+      <button id="pulls-paste" type="button" class="go">+ Paste a PR</button>
+      <button id="pulls-more" type="button" class="pulls-dots" aria-label="more" data-tip="more">&#8943;</button>
+      <div id="pulls-pop" class="pulls-pop" hidden>
+        <input id="pulls-pop-url" type="text" placeholder="https://github.com/org/repo/pull/123" aria-label="pull request URL">
+        <input id="pulls-pop-why" type="text" placeholder="why (optional)" aria-label="why">
+        <div class="pulls-pop-row"><button id="pulls-pop-cancel" type="button">cancel</button><button id="pulls-pop-go" type="button" class="go">Open</button></div>
+      </div>
+    </div>
+    <div id="pulls-attn" class="pulls-attn" role="group" aria-label="what needs doing">
+      <button type="button" data-group="needs" class="needs"><i>&hellip;</i>need you</button>
+      <button type="button" data-group="ready" class="ready"><i>&hellip;</i>ready to post</button>
+      <button type="button" data-group="progress" class="progress"><i>&hellip;</i>reviewing</button>
+      <button type="button" data-group="failed" class="failed"><i>&hellip;</i>failed</button>
     </div>
     <div id="pulls-note" class="pulls-note" role="status" hidden></div>
     <div id="pulls-left" hidden></div>

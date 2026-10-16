@@ -230,6 +230,7 @@ async function renderStack(signal) {
   allStack = everything.filter(t => !t.offline);
   offlineStack = everything.filter(t => t.offline);
   lastTasks = everything;
+  if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   if (typeof ulOnCards === "function") ulOnCards();
   newCardNote(everything);
   paintWorking(allStack);

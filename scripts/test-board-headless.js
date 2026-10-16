@@ -25575,6 +25575,20 @@ async function childFoldSection(browser, base) {
 
 // ── the pulls view ───────────────────────────────────────
 // /v1/prs is mocked in the page (nothing real behind it), the event stream is the harness's real one.
+// One card's menu, read or pressed: the `...` opens #cardmenu, whose rows are sentences.
+// Scrolled into view and settled first: a scroll after the press closes the menu, as it should.
+const pullMenuOpen = async (p, id) => {
+  const sel = '#pulls-list .pull[data-id="' + id + '"] button[data-act="menu"]';
+  await p.evaluate(s => { const b = document.querySelector(s); if (b) b.scrollIntoView({ block: "center" }); return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }, sel);
+  // A scroll the press itself caused can close the menu again, so a second press is allowed.
+  for (let i = 0; ; i++) {
+    await p.click(sel);
+    try { await p.waitForSelector("#cardmenu.on button", { timeout: slow(2500) }); return; } catch (e) { if (i >= 2) throw e; }
+  }
+};
+const pullMenuItems = async (p, id) => { await pullMenuOpen(p, id); const t = await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].map(b => b.textContent.trim())); await p.evaluate(() => closeCardMenu()); return t; };
+const pullMenuPress = async (p, id, re) => { await pullMenuOpen(p, id); await p.evaluate(src => [...document.querySelectorAll("#cardmenu button")].find(b => new RegExp(src).test(b.textContent)).click(), re.source); };
+const pullPaste = async (p, url, why) => { if (await p.isHidden("#pulls-pop")) await p.click("#pulls-paste"); await p.fill("#pulls-pop-url", url); await p.fill("#pulls-pop-why", why || ""); await p.click("#pulls-pop-go"); };
 async function pullsSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -25721,9 +25735,37 @@ async function pullsSection(browser, base) {
     const p = await open();
     // newest first
     let v = await ids(p);
-    if (v !== "pr_b,pr_a,pr_c,pr_d,pr_e,pr_f") fail("pulls: not newest first: " + v);
+    if (v !== "pr_a,pr_b,pr_d,pr_f,pr_c,pr_e") fail("pulls: not grouped by need, newest first inside a group: " + v);
+    const groups = await p.evaluate(() => [...document.querySelectorAll("#pulls-list .pull-group")].map(g => g.dataset.group + ":" + g.querySelector(".pull-group-head em").textContent).join());
+    if (groups !== "ready:1,progress:3,failed:2") fail("pulls: the groups are " + groups);
+    if (await p.evaluate(() => document.querySelector("#pulls-url, #pulls-why"))) fail("pulls: the link and why inputs are still on the tab");
+    const attn = () => p.evaluate(() => [...document.querySelectorAll("#pulls-attn button")].map(b => b.dataset.group + "=" + b.querySelector("i").textContent).join());
+    if (await attn() !== "needs=0,ready=1,progress=3,failed=2") fail("pulls: the attention strip says " + await attn());
+    // each counter is a filter: one click shows only that group, a second clears it
+    for (const [g, want] of [["ready", "pr_a"], ["progress", "pr_b,pr_d,pr_f"], ["failed", "pr_c,pr_e"]]) {
+      await p.click('#pulls-attn button[data-group="' + g + '"]');
+      if (await ids(p) !== want) fail("pulls: the " + g + " counter shows " + await ids(p));
+      if (await p.getAttribute('#pulls-attn button[data-group="' + g + '"]', "aria-pressed") !== "true") fail("pulls: the " + g + " counter is not pressed");
+      await p.click('#pulls-attn button[data-group="' + g + '"]');
+      if (await ids(p) !== "pr_a,pr_b,pr_d,pr_f,pr_c,pr_e") fail("pulls: the " + g + " counter did not clear: " + await ids(p));
+    }
+    await p.click('#pulls-attn button[data-group="needs"]');
+    if (!/Nothing in that group/.test(await p.textContent("#pulls-list"))) fail("pulls: an empty group says nothing about it");
+    await p.click('#pulls-attn button[data-group="needs"]');
+    if (await p.textContent("#pulls-n-open") !== "6") fail("pulls: the Open count is " + await p.textContent("#pulls-n-open"));
+    // the verdict is a pill, the board's guess dashed, and the primary is one button per state
+    const pill = await p.evaluate(() => { const e = document.querySelector('#pulls-list .pull[data-id="pr_a"] .pull-state'); return e.textContent + "|" + e.classList.contains("guess"); });
+    if (pill !== "changes|true") fail("pulls: a ready row's verdict pill is " + pill);
+    const prim = id => p.evaluate(id => [...document.querySelectorAll('#pulls-list .pull[data-id="' + id + '"] .pull-btn.pri')].map(b => b.dataset.act + ":" + b.textContent).join(), id);
+    const primWant = { pr_a: "walk:Post review", pr_b: "", pr_c: "retry:Retry", pr_d: "start:Start review", pr_e: "retry:Retry", pr_f: "" };
+    for (const k of Object.keys(primWant)) if (await prim(k) !== primWant[k]) fail("pulls: the primary of " + k + " is " + JSON.stringify(await prim(k)));
+    // the strip: a failed fetch is the worktree dot
+    const dots = id => p.evaluate(id => [...document.querySelectorAll('#pulls-list .pull[data-id="' + id + '"] .pull-strip .d')].map(d => d.className.replace("d", "").trim() || "-").join(), id);
+    if (await dots("pr_c") !== "f,-,-,-") fail("pulls: a failed fetch draws " + await dots("pr_c"));
+    if (await dots("pr_a") !== "x,x,x,x") fail("pulls: a ready row draws " + await dots("pr_a"));
+    if (await dots("pr_d") !== "-,-,-,-") fail("pulls: a queued row draws " + await dots("pr_d"));
     // every state draws its words
-    const words = { pr_a: "ready to walk", pr_b: "reviewing verify", pr_c: "failed: fetch: gh said no", pr_d: "queued", pr_e: "aborted", pr_f: "fetching" };
+    const words = { pr_a: "changes", pr_b: "reviewing", pr_c: "failed at worktree", pr_d: "queued", pr_e: "aborted", pr_f: "fetching" };
     for (const k of Object.keys(words)) {
       const w = await text(p, k, ".pull-state");
       if (w !== words[k]) fail("pulls: " + k + " says " + JSON.stringify(w) + " not " + JSON.stringify(words[k]));
@@ -25731,14 +25773,20 @@ async function pullsSection(browser, base) {
     // running: the step and the cost, never N of M
     const meta = await text(p, "pr_b", ".pull-meta");
     if (!/\$0\.71 so far/.test(meta || "")) fail("pulls: a running row has no cost so far: " + meta);
-    if (/\d+ of \d+/.test((await text(p, "pr_b", ".pull-state")) || "")) fail("pulls: a running row says N of M");
+    if (/\d+ of \d+/.test((await text(p, "pr_b", ".pull-stage")) || "")) fail("pulls: a running row says N of M");
+    if ((await text(p, "pr_b", ".pull-stage")) !== "verify") fail("pulls: a running row does not say its step: " + await text(p, "pr_b", ".pull-stage"));
+    if ((await text(p, "pr_c", ".pull-stage")) !== "gh said no") fail("pulls: a failed row's note is " + await text(p, "pr_c", ".pull-stage"));
     // a ready row: counts and the second opinion
-    if ((await text(p, "pr_a", ".pull-counts")) !== "6 med · 7 low · 4 nit · 1 leak") fail("pulls: counts: " + await text(p, "pr_a", ".pull-counts"));
+    const chipsOf = await p.evaluate(() => [...document.querySelectorAll('#pulls-list .pull[data-id="pr_a"] .pull-counts span')].map(e => e.textContent).join(" | "));
+    if (chipsOf !== "6 med | 7 low | 4 nit | 1 leak") fail("pulls: counts: " + chipsOf);
     if ((await text(p, "pr_a", ".pull-second")) !== "2nd: codex: 2 disputed, settled") fail("pulls: second: " + await text(p, "pr_a", ".pull-second"));
     // buttons per state
     const btns = id => p.evaluate(id => [...document.querySelectorAll('#pulls-list .pull[data-id="' + id + '"] .pull-acts button')].map(b => b.dataset.act).join(), id);
-    const want = { pr_a: "walk", pr_b: "abort", pr_c: "retry,log", pr_d: "start,abort", pr_e: "retry", pr_f: "abort" };
+    const want = { pr_a: "walk,menu", pr_b: "menu", pr_c: "retry,menu", pr_d: "start,menu", pr_e: "retry,menu", pr_f: "menu" };
     for (const k of Object.keys(want)) { const b = await btns(k); if (b !== want[k]) fail("pulls: buttons of " + k + ": " + b); }
+    // the rest is in the menu, and its labels are sentences
+    const menus = { pr_b: "Abort the run|Open on GitHub|Copy PR link", pr_c: "Show the run log|Open on GitHub|Copy PR link", pr_d: "Abort the run|Open on GitHub|Copy PR link" };
+    for (const k of Object.keys(menus)) { const m = (await pullMenuItems(p, k)).join("|"); if (m !== menus[k]) fail("pulls: the menu of " + k + " is " + m); }
     // nav count from the load: one ready, one failed
     if (await nav(p) !== "2") fail("pulls: nav count at load: " + await nav(p));
     // an SSE event updates a row without a refetch
@@ -25750,7 +25798,7 @@ async function pullsSection(browser, base) {
     });
     const b2 = st.rows.find(r => r.id === "pr_b");
     emit(Object.assign({}, b2, { run_state: "critics", cost_usd: 1.2 }));
-    await p.waitForFunction(() => /critics/.test(document.querySelector('#pulls-list .pull[data-id="pr_b"] .pull-state').textContent), null, { timeout: slow(5000) })
+    await p.waitForFunction(() => /critics/.test(document.querySelector('#pulls-list .pull[data-id="pr_b"] .pull-stage').textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: an event did not move the step"));
     if (!/\$1\.20/.test((await text(p, "pr_b", ".pull-meta")) || "")) fail("pulls: an event did not move the cost");
     if (!/700 MB/.test((await text(p, "pr_a", ".pull-meta")) || "")) fail("pulls: the walker card's disk is not on the row: " + await text(p, "pr_a", ".pull-meta"));
@@ -25761,7 +25809,7 @@ async function pullsSection(browser, base) {
     emit(row("pr_g", { number: 21, state: "failed", run_error: "panel: budget", created_at: "2026-10-01T11:00:00Z" }));
     await waitNav(p, "4", "after a new row arrived failed");
     v = await ids(p);
-    if (v.split(",")[0] !== "pr_g") fail("pulls: a new row from an event is not on top: " + v);
+    if (v.split(",").indexOf("pr_g") !== v.split(",").indexOf("pr_c") - 1) fail("pulls: a new failed row is not first in its group: " + v);
     const alerts = await p.evaluate(() => window.__pullAlerts);
     if (!alerts.length || !alerts[alerts.length - 1].some(i => i.indexOf("pr_g#failed") === 0)) fail("pulls: the failed row did not reach the alerting path: " + JSON.stringify(alerts));
     if (!(await p.title()).startsWith("(")) fail("pulls: the window title does not carry the count: " + await p.title());
@@ -25771,13 +25819,13 @@ async function pullsSection(browser, base) {
     if ((await text(p, "pr_g", ".pull-state")) !== "queued") fail("pulls: retry did not update the row");
     if (!st.posts.some(x => x.startsWith("POST /v1/prs/pr_g/retry"))) fail("pulls: retry did not post");
     // abort posts and updates
-    await p.click('#pulls-list .pull[data-id="pr_f"] button[data-act="abort"]');
+    await pullMenuPress(p, "pr_f", /Abort the run/);
     await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_f"] .pull-state').textContent === "aborted", null, { timeout: slow(5000) })
       .catch(() => fail("pulls: abort did not update the row"));
     // a refused abort says why
     await p.evaluate(() => { pulls.rows.find(r => r.id === "pr_a").state = "running"; pullsPaint(); });
     st.rows.find(r => r.id === "pr_a").state = "ready";
-    await p.click('#pulls-list .pull[data-id="pr_a"] button[data-act="abort"]');
+    await pullMenuPress(p, "pr_a", /Abort the run/);
     await p.waitForFunction(() => /only a queued/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a 409 on abort was not shown"));
     // review on a queued row
@@ -25785,32 +25833,26 @@ async function pullsSection(browser, base) {
     await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_d"] .pull-state').textContent === "fetching", null, { timeout: slow(5000) })
       .catch(() => fail("pulls: review did not start the row"));
     // paste a PR: created, existing, and the 422 word
-    await p.fill("#pulls-url", "https://github.com/openziti/r/pull/99");
-    await p.fill("#pulls-why", "security look");
-    await p.click("#pulls-paste");
+    await pullPaste(p, "https://github.com/openziti/r/pull/99", "security look");
     await p.waitForFunction(() => !!document.querySelector('#pulls-list .pull[data-id="pr_new"]'), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a pasted PR did not appear"));
     if (!st.posts.some(x => x.startsWith("POST /v1/open ") && x.indexOf("security look") >= 0)) fail("pulls: the paste did not open the url with its why");
-    if (await p.inputValue("#pulls-url") !== "") fail("pulls: the box was not cleared");
-    await p.fill("#pulls-url", "https://github.com/dup/r/pull/1");
-    await p.click("#pulls-paste");
+    if (await p.inputValue("#pulls-pop-url") !== "" || !(await p.isHidden("#pulls-pop"))) fail("pulls: the popover was not cleared and closed");
+    await pullPaste(p, "https://github.com/dup/r/pull/1");
     await p.waitForFunction(() => /already/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a 200 existing answer was not said"));
-    await p.fill("#pulls-url", "https://nowhere.example/x");
-    await p.click("#pulls-paste");
+    await pullPaste(p, "https://nowhere.example/x");
     await p.waitForFunction(() => /no recogniser matches this/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the 422 word was not shown"));
     // an issue opens a card and no row: the note says so and the card is attached
     await p.evaluate(() => { window.__attached = []; const was = attachTask; attachTask = id => { window.__attached.push(id); return was(id); }; });
-    await p.fill("#pulls-url", "https://github.com/openziti/r/issues/7");
-    await p.click("#pulls-paste");
+    await pullPaste(p, "https://github.com/openziti/r/issues/7");
     await p.waitForFunction(() => /issue-7 as a card.*not a pull request/.test(document.getElementById("pulls-note").textContent),
       null, { timeout: slow(5000) }).catch(() => fail("pulls: a pasted issue was not said as a card with no row"));
     if ((await p.evaluate(() => window.__attached)).join() !== "t-walker") fail("pulls: a pasted issue's card was not attached");
     // halted
     st.halted = true;
-    await p.fill("#pulls-url", "https://github.com/openziti/r/pull/5");
-    await p.click("#pulls-paste");
+    await pullPaste(p, "https://github.com/openziti/r/pull/5");
     await p.waitForFunction(() => /halted/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a halted 503 did not show the halted word"));
     st.halted = false;
@@ -25821,9 +25863,8 @@ async function pullsSection(browser, base) {
     if (!st.posts.some(x => x === 'POST /v1/prs/pr_b/walker {"action":"launch"}')) fail("pulls: the walk button did not post a launch");
     if (await p.evaluate(() => document.querySelector("#pulls-list .pull-finding"))) fail("pulls: findings are still drawn inline");
     // close on a row with a walker: the dirty worktree is asked about with no default, then the close is confirmed
-    await p.waitForSelector('#pulls-list .pull[data-id="pr_b"] button[data-act="close"]', { timeout: slow(5000) })
-      .catch(() => fail("pulls: a row with a walker has no close button"));
-    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="close"]');
+    if (!(await pullMenuItems(p, "pr_b")).some(t => /^Close card and free its worktree, branch and review$/.test(t))) fail("pulls: a row with a walker has no close in its menu");
+    await pullMenuPress(p, "pr_b", /^Close card/);
     await p.waitForFunction(() => document.getElementById("ask").open && /^close /.test(document.getElementById("ask-title").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: close did not open its dialog"));
     // ONE dialog: the dirty worktree is a row in it with its choice, stash preselected
@@ -25839,7 +25880,8 @@ async function pullsSection(browser, base) {
     await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the close dialog did not close itself when done"));
     // leftovers: grouped by owner with one close each, and a worktree nobody owns listed with none
-    await p.click("#pulls-sweep");
+    await p.click("#pulls-more");
+    await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /Find unclaimed worktrees/.test(b.textContent)).click());
     await p.waitForFunction(() => document.querySelectorAll('#pulls-left button[data-act="left-close"]').length === 2, null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the leftovers did not draw two groups with a close each"));
     const leftText = await p.evaluate(() => document.getElementById("pulls-left").textContent);
@@ -25851,7 +25893,7 @@ async function pullsSection(browser, base) {
     for (let i = 0; i < 50 && !st.posts.some(x => x.indexOf('"confirm":true') >= 0 && x.startsWith("POST /v1/sweep/close ")); i++) await p.waitForTimeout(100);
     if (!st.posts.some(x => /^POST \/v1\/sweep\/close \{"owner":"pending:x","confirm":true,"answers":\{\},"progress":"close-[a-z0-9]+"\}$/.test(x))) fail("pulls: the owner's close did not post: " + st.posts.filter(x => x.indexOf("sweep") >= 0).join(" | "));
     // the log of a failed row
-    await p.click('#pulls-list .pull[data-id="pr_c"] button[data-act="log"]');
+    await pullMenuPress(p, "pr_c", /Show the run log/);
     await p.waitForFunction(() => /fetch FAILED/.test((document.querySelector('#pulls-list .pull[data-id="pr_c"] .pull-log') || {}).textContent || ""), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the log did not open"));
     // a client that reconnects refetches
@@ -25871,7 +25913,7 @@ async function pullsSection(browser, base) {
     await q.goto(base + "/", { waitUntil: "domcontentloaded" });
     await q.waitForFunction(() => typeof pullsPaint === "function", null, { timeout: slow(15000) });
     await q.evaluate(() => switchView("pulls"));
-    await q.waitForFunction(() => /No reviews yet/.test(document.getElementById("pulls-list").textContent), null, { timeout: slow(10000) })
+    await q.waitForFunction(() => /Nothing under review/.test(document.getElementById("pulls-list").textContent), null, { timeout: slow(10000) })
       .catch(() => fail("pulls: an empty index drew no empty state"));
     if (await nav(q) !== "") fail("pulls: nav count shows on an empty index: " + await nav(q));
     if (errors.length) fail("pulls: page errors: " + errors.join(" | "));
@@ -25924,10 +25966,10 @@ async function pullsPanelStageSection(browser, base) {
       const e = document.querySelector('#pulls-list .pull[data-id="' + id + '"] ' + sel); return e ? e.textContent : null;
     }, [id, sel]);
     for (const [id, state, note] of [
-      ["pr_skip", "ready to walk", "panel skipped: no reviewer applies"],
-      ["pr_miss", "ready to walk", "panel: missing agent files review-panel, go-reviewer"],
-      ["pr_plain", "ready to walk", null],
-      ["pr_dead", "failed: fetch: gh said no", null]
+      ["pr_skip", "changes", "panel skipped: no reviewer applies"],
+      ["pr_miss", "changes", "panel: missing agent files review-panel, go-reviewer"],
+      ["pr_plain", "changes", null],
+      ["pr_dead", "failed at worktree", "gh said no"]
     ]) {
       if (await q(id, ".pull-state") !== state) fail("pullsPanelStage: " + id + " says " + JSON.stringify(await q(id, ".pull-state")));
       if (await q(id, ".pull-stage") !== note) fail("pullsPanelStage: " + id + " stage line is " + JSON.stringify(await q(id, ".pull-stage")));
@@ -25942,6 +25984,215 @@ async function pullsPanelStageSection(browser, base) {
     if (errors.length) fail("pullsPanelStage: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("pullsPanelStage ok");
+}
+
+// ── the pulls page: verdict, groups, one primary, phone ───────────────
+// The redesign of docs/rnd/pulls-redesign.md over rows shaped like the live /v1/prs. The walker's card is stood in for by
+// replacing pullCard in the page, so a task poll cannot move it. PGSHOT=/dir writes the pictures
+// (loaded, empty, loading and menu, at 1280 and 390).
+async function pullsPageSection(browser, base) {
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const ago = m => new Date(Date.now() - m * 60000).toISOString();
+  const row = (id, extra) => Object.assign({
+    id, url: "https://github.com/openziti/x/pull/1", host: "github.com", org: "openziti", repo: "x", org_repo: "openziti/x",
+    number: 1, title: "", why: "", head: "", head7: "abc1234", state: "queued", run_state: "", run_error: "", cost_usd: 0,
+    started_at: "", ready_at: "", created_at: ago(5), archived_at: "", run_dir: "",
+    second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 0, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 0 }, walker_task: ""
+  }, extra);
+  const ready = (id, extra) => row(id, Object.assign({ state: "ready", ready_at: ago(30), walker_task: "" }, extra));
+  const live = [
+    row("pr_wait", { org_repo: "openziti/zrok", number: 11, title: "Add reconnect backoff to the agent", state: "running", run_state: "review", cost_usd: 1.04, created_at: ago(31), walker_task: "t-wait" }),
+    ready("pr_block", { org_repo: "openziti/tlsuv", number: 378, title: "Rework the tls handshake", verdict: "blocked", cost_usd: 2.4, created_at: ago(60), ready_at: ago(60),
+      findings: { high: 2, med: 6, low: 7, nit: 0, leak: 0 }, tests: { ran: 38, passed: 36, failed: 2, skipped: 0 } }),
+    ready("pr_chg", { org_repo: "openziti/zrok", number: 14, title: "Expose a --headless flag on enable", author: "mike-ziti", verdict: "changes", cost_usd: 1.58, created_at: ago(120), ready_at: ago(120),
+      findings: { high: 0, med: 3, low: 5, nit: 0, leak: 0 }, tests: { ran: 12, passed: 12, failed: 0, skipped: 0 } }),
+    ready("pr_ok", { org_repo: "openziti/sdk-golang", number: 991, title: "Fix a data race in the xgress reader", verdict: "approve", cost_usd: 1.92, created_at: ago(40), ready_at: ago(40),
+      findings: { high: 0, med: 0, low: 3, nit: 0, leak: 0 }, tests: { ran: 41, passed: 41, failed: 0, skipped: 0 } }),
+    row("pr_run", { org_repo: "openziti/ziti", number: 7402, title: "Router: drop dead links before rerouting", author: "plorenz", state: "running", run_state: "panel", cost_usd: 0.71, created_at: ago(12) }),
+    row("pr_q", { org_repo: "openziti/edge-api", number: 55, title: "Regenerate clients", author: "mike-ziti", created_at: ago(2) }),
+    row("pr_fail", { org_repo: "openziti/zrok", number: 13, title: "Bump deps", author: "dependabot", state: "failed", run_error: "deps: npm install exited 1", created_at: ago(9) })
+  ];
+  const closedRows = [
+    row("pr_c1", { org_repo: "openziti/zrok", number: 9, title: "Typo in the README", state: "ready", archived_at: ago(60 * 26), created_at: ago(60 * 30) }),
+    row("pr_c2", { org_repo: "openziti/ziti", number: 7390, title: "Bump go to 1.26", state: "ready", archived_at: ago(60 * 50), created_at: ago(60 * 52) })
+  ];
+  const shot = process.env.PGSHOT || "";
+  // The pictures are the board's own palette (harbour, the one in :root), whatever skin the mock daemon names.
+  const skinned = (p, name) => p.evaluate(n => { if (n) document.documentElement.setAttribute("data-skin", n); else document.documentElement.removeAttribute("data-skin"); }, name || "").then(() => p.waitForTimeout(500));
+  const st = { rows: live, gate: null, posts: [] };
+  const open = async (ctx, view) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    return p;
+  };
+  const wire = async ctx => {
+    await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
+      const req = route.request();
+      const u = new URL(req.url());
+      if (req.method() === "GET" && u.pathname === "/v1/prs") {
+        if (st.gate) await st.gate;
+        const all = u.searchParams.get("archived") === "1";
+        const rows = (all ? st.rows.concat(closedRows) : st.rows).slice();
+        return json(route, 200, { prs: rows, counts: {}, nav_count: 0 });
+      }
+      st.posts.push(req.method() + " " + u.pathname);
+      return json(route, 404, { error: "no route" });
+    });
+  };
+  const standIn = p => p.evaluate(() => {
+    pullCard = r => (r.walker_task === "t-wait"
+      ? { id: "t-wait", status: "needs-input", seen: { answered: false, open_questions: ["keep the retry cap at 5?"] } } : null);
+    pulls.cardSig = undefined;
+    pullsTasksMoved();
+  });
+  const ids = p => p.evaluate(() => [...document.querySelectorAll("#pulls-list .pull")].map(e => e.dataset.id).join());
+  const show = async p => {
+    await p.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) });
+    await p.evaluate(() => switchView("pulls"));
+    await p.waitForFunction(() => document.querySelectorAll("#pulls-list .pull").length > 0, null, { timeout: slow(10000) });
+  };
+  try {
+    // ── desktop ──
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+    await wire(ctx);
+    const p = await open(ctx);
+    await show(p);
+    await standIn(p);
+    const order = await ids(p);
+    if (order !== "pr_wait,pr_ok,pr_block,pr_chg,pr_q,pr_run,pr_fail") fail("pullsPage: the order is " + order);
+    const groups = await p.evaluate(() => [...document.querySelectorAll("#pulls-list .pull-group")].map(g => g.dataset.group + ":" + g.querySelector(".pull-group-head em").textContent).join());
+    if (groups !== "needs:1,ready:3,progress:2,failed:1") fail("pullsPage: the groups are " + groups);
+    const attn = await p.evaluate(() => [...document.querySelectorAll("#pulls-attn button")].map(b => b.dataset.group + "=" + b.querySelector("i").textContent).join());
+    if (attn !== "needs=1,ready=3,progress=2,failed=1") fail("pullsPage: the strip says " + attn);
+    // the card: pill, chips, stage note, strip, one primary
+    const card = id => p.evaluate(id => {
+      const c = document.querySelector('#pulls-list .pull[data-id="' + id + '"]');
+      const q = s => { const e = c.querySelector(s); return e ? e.textContent : null; };
+      return { pill: q(".pull-state"), guess: !!c.querySelector(".pull-state.guess"), chips: [...c.querySelectorAll(".pull-counts span")].map(e => e.textContent + (e.classList.contains("bad") ? "!" : "")).join(" | "),
+        note: q(".pull-stage"), noteCls: (c.querySelector(".pull-stage") || {}).className || "", dots: [...c.querySelectorAll(".pull-strip .d")].map(d => d.className.replace("d", "").trim() || "-").join(),
+        prim: [...c.querySelectorAll(".pull-btn.pri")].map(b => b.dataset.act + ":" + b.textContent + ":" + b.className.replace(/pull-btn|pri/g, "").trim()).join(), title: q(".pull-title"), meta: q(".pull-meta") };
+    }, id);
+    const w = await card("pr_wait");
+    if (w.pill !== "waiting on you" || w.note !== 'the card asks: "keep the retry cap at 5?"' || !/ q$/.test(w.noteCls) || w.dots !== "x,x,x,r" || w.prim !== "open:Answer:ask") fail("pullsPage: the waiting card is " + JSON.stringify(w));
+    const b = await card("pr_block");
+    if (b.pill !== "blocked" || b.guess || b.chips !== "2 blockers | 6 med | 7 low | tests 38 ran, 2 failed!" || b.prim !== "walk:Post review:" || b.dots !== "x,x,x,x") fail("pullsPage: the blocked card is " + JSON.stringify(b));
+    const a = await card("pr_ok");
+    if (a.pill !== "approve" || a.chips !== "3 low | tests 41 ran, 41 passed") fail("pullsPage: the approve card is " + JSON.stringify(a));
+    const r = await card("pr_run");
+    if (r.pill !== "reviewing" || r.dots !== "x,x,r,-" || r.prim !== "" || !/\$0\.71 so far/.test(r.meta)) fail("pullsPage: the running card is " + JSON.stringify(r));
+    const q = await card("pr_q");
+    if (q.pill !== "queued" || q.prim !== "start:Start review:mute" || q.dots !== "-,-,-,-") fail("pullsPage: the queued card is " + JSON.stringify(q));
+    const f = await card("pr_fail");
+    if (f.pill !== "failed at deps" || f.note !== "npm install exited 1" || !/ e$/.test(f.noteCls) || f.dots !== "x,f,-,-" || f.prim !== "retry:Retry:mute") fail("pullsPage: the failed card is " + JSON.stringify(f));
+    // the colour bar says the verdict: red, teal and orange are three different colours, and none is the idle one
+    const bar = id => p.evaluate(id => getComputedStyle(document.querySelector('#pulls-list .pull[data-id="' + id + '"] .pull-bar')).backgroundColor, id);
+    const bars = [await bar("pr_block"), await bar("pr_ok"), await bar("pr_wait"), await bar("pr_chg"), await bar("pr_q")];
+    if (new Set(bars).size !== 5) fail("pullsPage: the bars are not five colours: " + bars.join(" "));
+    // Answer attaches the card
+    await p.evaluate(() => { window.__att = []; attachTask = id => { window.__att.push(id); return Promise.resolve(); }; });
+    await p.click('#pulls-list .pull[data-id="pr_wait"] button[data-act="open"]');
+    if ((await p.evaluate(() => window.__att)).join() !== "t-wait") fail("pullsPage: Answer did not attach the card");
+    // a walked review: continue while some are posted, open the card once all are
+    const prim = async mut => p.evaluate(m => { const r = pulls.rows.find(x => x.id === "pr_chg"); Object.assign(r, JSON.parse(m)); pullsPaint(); return [...document.querySelectorAll('#pulls-list .pull[data-id="pr_chg"] .pull-btn.pri')].map(b => b.textContent).join(); }, JSON.stringify(mut));
+    if (await prim({ walk: { accepted: 0, done: 2, skipped: 0, deferred: 0, open: 6 } }) !== "Continue review") fail("pullsPage: a half posted review does not offer Continue review");
+    if (await prim({ walk: { accepted: 0, done: 6, skipped: 2, deferred: 0, open: 0 }, walker_task: "t-done" }) !== "Open card") fail("pullsPage: a fully posted review does not offer Open card");
+    await p.evaluate(() => loadPulls());
+    await p.waitForFunction(() => pulls.rows.find(x => x.id === "pr_chg").walk.done === 0, null, { timeout: slow(5000) });
+    // the header: the segmented control reads All with the closed ones, in their own group, dimmed and with nothing to press
+    await p.click('#pulls-seg button[data-state="all"]');
+    await p.waitForFunction(() => document.querySelector('#pulls-list .pull-group[data-group="closed"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsPage: All shows no closed group"));
+    if (await p.locator('#pulls-list .pull[data-state="closed"] button').count() !== 0) fail("pullsPage: a closed card offers buttons");
+    if (await p.textContent("#pulls-n-all") !== "9") fail("pullsPage: the All count is " + await p.textContent("#pulls-n-all"));
+    await p.click('#pulls-seg button[data-state="open"]');
+    await p.waitForFunction(() => !document.querySelector('#pulls-list .pull-group[data-group="closed"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsPage: Open still shows the closed group"));
+    // the paste button is one popover, and the header menu holds the leftovers
+    await p.click("#pulls-paste");
+    if (await p.isHidden("#pulls-pop")) fail("pullsPage: Paste a PR did not open its popover");
+    await p.keyboard.press("Escape");
+    if (!(await p.isHidden("#pulls-pop"))) fail("pullsPage: Escape did not close the popover");
+    if (shot) {
+      await p.evaluate(() => { window.scrollTo(0, 0); });
+      await skinned(p);
+      await p.screenshot({ path: shot + "/loaded-desktop.png" });
+      await skinned(p, "paper");
+      await p.screenshot({ path: shot + "/loaded-desktop-paper.png" });
+      await skinned(p);
+      await pullMenuOpen(p, "pr_block");
+      await p.screenshot({ path: shot + "/menu-desktop.png" });
+      await p.evaluate(() => closeCardMenu());
+    }
+    if (errors.length) fail("pullsPage: page errors: " + errors.join(" | "));
+    await p.close();
+
+    // ── loading, then empty with the last closed ones under it, at both widths ──
+    for (const [vw, vh, tag] of [[1280, 1000, "desktop"], [390, 844, "phone"]]) {
+      const sc = await browser.newContext({ viewport: { width: vw, height: vh }, hasTouch: vw < 640 });
+      await wire(sc);
+      let release;
+      st.gate = new Promise(res => { release = res; });
+      const l = await open(sc);
+      await l.evaluate(() => switchView("pulls"));
+      await l.waitForFunction(() => document.querySelectorAll("#pulls-list .pull-skel").length === 3, null, { timeout: slow(10000) })
+        .catch(() => fail("pullsPage: loading drew no three skeletons at " + tag));
+      if (await l.textContent("#pulls-n-open") !== "…") fail("pullsPage: the header count while loading is " + await l.textContent("#pulls-n-open"));
+      if (shot) await skinned(l), await l.screenshot({ path: shot + "/loading-" + tag + ".png" });
+      st.gate = null; release();
+      await l.close();
+      st.rows = [];
+      const e = await open(sc);
+      await e.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) });
+      await e.evaluate(() => switchView("pulls"));
+      await e.waitForFunction(() => /Nothing under review/.test(document.getElementById("pulls-list").textContent) && document.querySelectorAll("#pulls-list .pull").length === 2, null, { timeout: slow(10000) })
+        .catch(() => fail("pullsPage: the empty page is not the panel with two closed cards under it at " + tag));
+      await e.click('#pulls-list button[data-act="paste"]');
+      if (await e.isHidden("#pulls-pop")) fail("pullsPage: the empty page's paste button did not open the popover");
+      await e.keyboard.press("Escape");
+      if (shot) await skinned(e), await e.screenshot({ path: shot + "/empty-" + tag + ".png" });
+      await e.close();
+      st.rows = live;
+      await sc.close();
+    }
+    await ctx.close();
+
+    // ── phone ──
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    await wire(pctx);
+    const ph = await open(pctx);
+    await show(ph);
+    await standIn(ph);
+    const m = await ph.evaluate(() => {
+      const list = document.getElementById("pulls-list");
+      const btn = document.querySelector('#pulls-list .pull[data-id="pr_block"] .pull-btn.pri').getBoundingClientRect();
+      const more = document.querySelector('#pulls-list .pull[data-id="pr_block"] .pull-btn.more').getBoundingClientRect();
+      const cols = getComputedStyle(document.getElementById("pulls-attn")).gridTemplateColumns.split(" ").length;
+      const ask = document.querySelector("#pulls-list .pull-btn.pri.ask");
+      const btnFs = getComputedStyle(document.querySelector('#pulls-list .pull[data-id="pr_block"] .pull-btn.pri')).fontSize;
+      return { over: list.scrollWidth - list.clientWidth, page: document.documentElement.scrollWidth - window.innerWidth, btnH: btn.height, moreH: more.height, cols, askH: ask ? ask.getBoundingClientRect().height : null, askFs: ask ? getComputedStyle(ask).fontSize : null, btnFs };
+    });
+    if (m.askH === null || m.askH !== m.btnH || m.askFs !== m.btnFs) fail("pullsPage: the phone Answer button is not the size of Post review: " + JSON.stringify(m));
+    if (m.over > 0 || m.page > 0) fail("pullsPage: the phone page scrolls sideways: " + JSON.stringify(m));
+    if (m.btnH < 36 || m.moreH < 36) fail("pullsPage: the phone buttons are not a touch size: " + JSON.stringify(m));
+    if (m.cols !== 2) fail("pullsPage: the phone strip is not two columns: " + JSON.stringify(m));
+    if (shot) {
+      await skinned(ph);
+      await ph.screenshot({ path: shot + "/loaded-phone.png" });
+    }
+    // the menu is a sheet on the foot of the screen
+    await pullMenuOpen(ph, "pr_block");
+    const sheet = await ph.evaluate(() => { const r = document.getElementById("cardmenu").getBoundingClientRect(); return { left: r.left, right: r.right, bottom: r.bottom, vw: window.innerWidth, vh: window.innerHeight }; });
+    if (sheet.left !== 0 || sheet.right !== sheet.vw || Math.abs(sheet.bottom - sheet.vh) > 1) fail("pullsPage: the phone menu is not a bottom sheet: " + JSON.stringify(sheet));
+    if (shot) await ph.screenshot({ path: shot + "/menu-phone.png" });
+    await ph.evaluate(() => closeCardMenu());
+    if (errors.length) fail("pullsPage: page errors: " + errors.join(" | "));
+    await pctx.close();
+  } finally { /* contexts close with the browser */ }
+  if (!bad) console.log("pullsPage ok");
 }
 
 // ── moving a review to another room ──────────────────────
@@ -25987,7 +26238,7 @@ async function prMoveSection(browser, base) {
     await p.evaluate(() => { switchView("pulls"); pullsPaint(); });
     return p;
   };
-  const moves = p => p.evaluate(() => document.querySelectorAll('#pulls-list .pull[data-id="pr_m"] button[data-act="move"]').length);
+  const moves = async p => (await pullMenuItems(p, "pr_m")).filter(t => /^Move review and card to another room$/.test(t)).length;
   try {
     // one room: no move action
     const one = await open(["alpha"]);
@@ -26000,7 +26251,7 @@ async function prMoveSection(browser, base) {
     // a refusal stops everything after the hub call
     st.refuse = "beta is offline, so the review cannot go there. bring it back or pick another room";
     st.calls = [];
-    await p.click('#pulls-list .pull[data-id="pr_m"] button[data-act="move"]');
+    await pullMenuPress(p, "pr_m", /^Move review/);
     const items = await p.waitForSelector("#cardmenu button, .cardmenu button", { timeout: slow(5000) }).catch(() => null);
     if (!items) fail("prMove: the room picker did not open");
     if (process.env.PMSHOT) await p.screenshot({ path: process.env.PMSHOT + "/after-picker.png" });
@@ -26015,7 +26266,7 @@ async function prMoveSection(browser, base) {
     // a success runs the four calls in order
     st.refuse = "";
     st.calls = [];
-    await p.click('#pulls-list .pull[data-id="pr_m"] button[data-act="move"]');
+    await pullMenuPress(p, "pr_m", /^Move review/);
     await p.waitForSelector("#cardmenu button", { timeout: slow(5000) });
     await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /beta/.test(b.textContent)).click());
     await p.waitForFunction(() => /moved to beta/.test(document.getElementById("toasts").textContent), null, { timeout: slow(8000) })
@@ -27574,7 +27825,7 @@ async function pullsDrawerSection(browser, base) {
     await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.accepted"), null, { timeout: slow(5000) })
       .catch(() => fail("pullsDrawer: y did not accept the finding"));
     if (await walkOf() !== JSON.stringify({ accepted: 1, done: 0, skipped: 1, deferred: 0, open: 0 })) fail("pullsDrawer: the row counts after an accept: " + await walkOf());
-    const midway = await p.evaluate(() => pullStateWords(pulls.rows.find(r => r.id === "pr_w")));
+    const midway = await p.evaluate(() => pullProgress(pulls.rows.find(r => r.id === "pr_w")));
     if (midway !== "1 of 2: 1 accepted, 0 posted, 1 dismissed") fail("pullsDrawer: an accepted finding is not reviewed yet: " + JSON.stringify(midway));
 
     await p.focus("#walk-drawer");
@@ -27588,7 +27839,7 @@ async function pullsDrawerSection(browser, base) {
       .catch(() => fail("pullsDrawer: u did not put the finding back to open"));
     if (await walkOf() !== JSON.stringify({ accepted: 0, done: 0, skipped: 1, deferred: 0, open: 1 })) fail("pullsDrawer: the row counts after an undo: " + await walkOf());
     await p.evaluate(() => switchView("pulls"));
-    const said = await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_w"] .pull-state').textContent);
+    const said = await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_w"] .pull-progress').textContent);
     if (said !== "1 of 2: 0 accepted, 0 posted, 1 dismissed") fail("pullsDrawer: the pulls row says " + JSON.stringify(said));
 
     // the walk button launches a walker when there is none, attaches it and opens the drawer
@@ -32078,7 +32329,7 @@ async function main() {
       noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection,
-      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -34153,6 +34404,7 @@ async function main() {
     await unit("boardUsage", () => boardUsageSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsPanelStage", () => pullsPanelStageSection(browser, base));
+    await unit("pullsPage", () => pullsPageSection(browser, base));
     await unit("pullsAbsent",() => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
     await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));

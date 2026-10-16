@@ -10,7 +10,7 @@ const ctx = vm.createContext({
   document: { getElementById: () => null, querySelector: () => null, addEventListener: () => {} }, Date, JSON, Math, Set, Array, Number, isNaN, Object, String,
 });
 vm.runInContext(src + "\nthis.pulls = pulls; this.pullRowHTML = pullRowHTML; this.pullsShown = pullsShown;" +
-  "this.pullStateWords = pullStateWords;", ctx);
+  "this.pullPill = pullPill;", ctx);
 
 let failed = 0;
 const fail = m => { failed++; console.error("FAIL: " + m); };
@@ -21,14 +21,14 @@ const closed = Object.assign({}, open, { id: "b", number: 967, archived_at: ago1
 ctx.pulls.rows = [open, closed];
 
 const html = ctx.pullRowHTML(closed);
-if (ctx.pullStateWords(closed) !== "closed") fail("state words: " + ctx.pullStateWords(closed));
+if (ctx.pullPill(closed).text !== "closed") fail("pill: " + ctx.pullPill(closed).text);
 if (/failed|panel/.test(html)) fail("a closed row still says failed: " + html);
 if (!/closed 10m ago/.test(html)) fail("a closed row does not say when: " + html);
-for (const act of ["retry", "log", "move", "close", "walk", "abort"]) {
+for (const act of ["retry", "log", "move", "close", "walk", "abort", "start", "open", "menu"]) {
   if (new RegExp('data-act="' + act + '"').test(html)) fail("a closed row still offers " + act);
 }
 const openHtml = ctx.pullRowHTML(open);
-if (!/failed: panel: x/.test(openHtml) || !/data-act="retry"/.test(openHtml)) fail("an open failed row changed: " + openHtml);
+if (!/failed at panel/.test(openHtml) || !/data-act="retry"/.test(openHtml)) fail("an open failed row changed: " + openHtml);
 
 ctx.pulls.filterState = "open";
 const ids = ctx.pullsShown().map(r => r.id).join();
