@@ -93,7 +93,7 @@ cancel, because a repo's own `.claude/settings.json` hooks and MCP servers run o
 opens "start new work" filled in so you can change the branch name first.
 
 What the repo box reads today (`launchRepoTyped`, `js/launchrepo.js:83`): `host/org/repo` or an `https://` URL with an
-optional `.git`, typed or pasted into the filter above the list. A row for it appears and clicking it fetches and starts.
+optional `.git`, typed or pasted into the filter. A row for it appears and clicking it fetches and starts.
 An ssh form such as `git@github.com:org/repo` is not read, and neither is a URL that goes deeper than the repo. Pasting
 more kinds of git URL into that box is being built and may not be in the person's build. Say it is coming and do not
 promise it. Compare `atrium version` with `git log` before saying what their build reads.
