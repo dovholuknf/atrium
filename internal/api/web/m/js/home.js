@@ -275,7 +275,10 @@
   function render() {
     if (!els.list) return;
     const net = window.mNet, store = window.mStore;
-    const cards = store.cards(), perms = store.perms(), now = Date.now();
+    const perms = store.perms(), now = Date.now();
+    // A resting minion is left out of the list and its counts (`cardHidden`). One with a permission waiting is not: the
+    // phone knows a permission by its card id, which `cardHidden` cannot see.
+    const cards = store.cards().filter(c => !cardHidden(c) || permsFor(c, perms).length);
     const many = net.manyRooms();
     const needs = needsList(cards, perms, now);
     const all = cards.filter(c => !c.archived_at).length;

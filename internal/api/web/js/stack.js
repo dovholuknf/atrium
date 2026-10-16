@@ -273,13 +273,16 @@ function paintStack() {
   const wanted = new Set();
   COLUMNS.forEach(c => { if (show.has(c.id)) c.statuses.forEach(s => wanted.add(s)); });
 
+  // A resting minion is not drawn or counted (`cardHidden`). `allStack` keeps it for the working count and the tag list.
+  const pool = shownCards(allStack), offPool = shownCards(offlineStack);
+
   // SUBAGENTS ROLL UP INTO THEIR PARENT unless the chip is on. Worked out over everything, before the search and the
   // columns, so a parent's badge does not change with what you typed.
-  const roll = subagentRollup(allStack, stackSubsOn());
+  const roll = subagentRollup(pool, stackSubsOn());
   stackSubBadge = roll.badge;
   const matchesText = t => cardMatchesText(t, q);
 
-  const list = allStack.filter(t => {
+  const list = pool.filter(t => {
     if (roll.rolled.has(t.id)) return false;
     // The attached card stays whatever the chips and the search say (`fdAttached`).
     if (fdAttached(t)) return true;
@@ -292,7 +295,7 @@ function paintStack() {
 
   // What each pill would ADD, counted against the same search text. A count
   // that described the current list would be the same number on every pill.
-  const searched = allStack.filter(t => !roll.rolled.has(t.id) && matchesText(t));
+  const searched = pool.filter(t => !roll.rolled.has(t.id) && matchesText(t));
   const counts = { "": searched.length, subagents: roll.rollable };
   COLUMNS.forEach(c => {
     counts[c.id] = searched.filter(t => c.statuses.includes(t.status)).length;
@@ -302,7 +305,7 @@ function paintStack() {
   // name or runner would be the same total written four more times.
   pillCounts("stack-sort", { waited: searched.filter(isWaiting).length });
 
-  const visible = allStack.length - roll.rolled.size;
+  const visible = pool.length - roll.rolled.size;
   fdStatus("stack", {
     summary: stackSummary(show, list.length),
     changed: stackChanged(show),
@@ -326,10 +329,10 @@ function paintStack() {
     // a machine that is not answering would otherwise say "no agents yet",
     // which is the one thing it must not say about work that exists.
     setHTML(document.getElementById("stack-list"),
-      `<div class="panel"><div class="empty">${allStack.length
+      `<div class="panel"><div class="empty">${pool.length
         ? "nothing matches that filter"
-        : offlineStack.length ? "nothing is running right now" : "no agents yet"}</div></div>` +
-      stackOfflineHTML(offlineStack));
+        : offPool.length ? "nothing is running right now" : "no agents yet"}</div></div>` +
+      stackOfflineHTML(offPool));
     return;
   }
 
@@ -344,7 +347,7 @@ function paintStack() {
   const live = list.length
     ? (g ? stackGroupsHTML(list, g) : `<div class="panel">` + stackRows(list) + `</div>`)
     : "";
-  setHTML(document.getElementById("stack-list"), live + stackOfflineHTML(offlineStack));
+  setHTML(document.getElementById("stack-list"), live + stackOfflineHTML(offPool));
 
   if (groupingFault) {
     toast("grouping code", groupingFault);

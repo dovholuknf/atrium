@@ -1826,7 +1826,10 @@ async function renderBoard(signal) {
   // carries its own count.
   const everything = tasks || [];
   disambiguateTitles(everything);
-  const live = everything.filter(t => !t.offline);
+  // A resting minion is left out of every list drawn below and every count taken from them (`cardHidden`). The working
+  // indicator, `lastTasks` and the new card note still see it: hiding is a view filter, never a loss.
+  const shown = shownCards(everything);
+  const live = shown.filter(t => !t.offline);
   lastTasks = everything;
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   // THE DRAWER'S FILTERS: the search text, and the subagents that roll up into their parent's card (`N subagents`).
@@ -1837,23 +1840,23 @@ async function renderBoard(signal) {
   boardSubBadge = roll.badge;
   const keepCard = t => !roll.rolled.has(t.id) && (fdAttached(t) || cardMatchesText(t, q));
   const all = live.filter(keepCard);
-  const offline = everything.filter(t => t.offline && cardMatchesText(t, q));
+  const offline = shown.filter(t => t.offline && cardMatchesText(t, q));
   // A column holding the attached card is drawn whatever its chip says (`fdAttached`).
   const showCols = boardShow();
   const heldCol = BOARD_COLUMNS.find(c => live.some(t => fdAttached(t) && boardColumnOf(t) === c.id));
   const drawCols = new Set(showCols);
   if (heldCol) drawCols.add(heldCol.id);
   paintBoardCounts(live.filter(t => !roll.rolled.has(t.id) && cardMatchesText(t, q)), roll.rollable);
-  paintBoardCount(everything.filter(t => !roll.rolled.has(t.id)));
+  paintBoardCount(shown.filter(t => !roll.rolled.has(t.id)));
   fdStatus("board", {
     summary: boardSummary(showCols),
     changed: boardChanged(showCols),
-    match: all.length === live.length - roll.rolled.size && offline.length === everything.filter(t => t.offline).length
+    match: all.length === live.length - roll.rolled.size && offline.length === shown.filter(t => t.offline).length
       ? "" : `${all.length} of ${live.length - roll.rolled.size}`
   });
   if (typeof ulOnCards === "function") ulOnCards();
   newCardNote(everything);
-  paintWorking(live);
+  paintWorking(everything.filter(t => !t.offline));
   const g = grouper("board");
 
   const html = BOARD_COLUMNS.filter(col => {

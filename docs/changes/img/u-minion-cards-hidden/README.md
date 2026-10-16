@@ -3,3 +3,6 @@
 - `minion-terms-asking.png`: one minion has a question, so it is listed with the `minion` chip.
 - `item-minion-chip-before.png`: an item's building step with its two cards drawn as plain chips (the old behaviour).
 - `item-minion-chip-after.png`: the same step with its minions as chips that say `running` and `ended`.
+- `minion-board-before.png`: the board's working column with four item minions drawn among the two real sessions (the old behaviour).
+- `minion-board-after.png`: the same cards, only the real sessions drawn and counted.
+- `minion-phone-after.png`: the phone's home at 400px, `all 2`, the four minions left out.

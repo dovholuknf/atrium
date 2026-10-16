@@ -21931,6 +21931,135 @@ async function termMinionHiddenSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// The cards the phase 3 units share: two real sessions and four item minions, one of which asks. Evaluated in the page.
+const MINION_VIEW_CARDS = `(setup) => {
+  const mk = (id, name, tags, extra) => Object.assign({ id, tags, status: "running", supervised: true, pid: 1, display_title: name,
+    wire_name: id, worktree: "/g/github/o/atrium", rank: 1, activity: { what: "Edit" } }, extra || {});
+  const rows = [mk("s1", "orchestrator", ["atrium:director"]), mk("s2", "my own session", [])];
+  for (let i = 1; i <= 4; i++) rows.push(mk("m" + i, "minion for item " + i, ["atrium:director", "atrium:minion", "atrium:item:i" + i]));
+  if (setup === "asking") { rows[5].status = "needs-input"; rows[5].asks_open = 1; }
+  return rows;
+}`;
+
+async function boardMinionHiddenSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+  const errors = [];
+  const imgs = docImgDir("docs", "changes", "img", "u-minion-cards-hidden");
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderBoard === "function" && typeof shownCards === "function", null, { timeout: slow(15000) });
+    const paint = (setup) => p.evaluate(async ([setup, mkSrc]) => {
+      const rows = eval(mkSrc)(setup);
+      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null; loadCards = async () => {};
+      setMinionShown(setup === "before" ? () => true : null);
+      switchView("board");
+      await renderBoard();
+      return {
+        ids: Array.from(document.querySelectorAll("#board .card[data-id]")).map(e => e.getAttribute("data-id")),
+        count: document.getElementById("board-count").textContent.replace(/\s+/g, " ").trim(),
+        kept: lastTasks.filter(t => t.id[0] === "m").length,
+      };
+    }, [setup, MINION_VIEW_CARDS]);
+    const shot = (name) => p.locator("#board").screenshot({ path: path.join(imgs, name) });
+    await paint("before"); await p.waitForTimeout(500);
+    const before = await paint("before"); await shot("minion-board-before.png");
+    const after = await paint("after"); await shot("minion-board-after.png");
+    const asking = await paint("asking");
+    const attached = await p.evaluate(async () => {
+      termTask = { id: "m1" }; await renderBoard();
+      const ids = Array.from(document.querySelectorAll("#board .card[data-id]")).map(e => e.getAttribute("data-id")); termTask = null; return ids;
+    });
+    if (before.ids.filter(i => i[0] === "m").length !== 4 || !/6 running/.test(before.count)) fail("boardMinionHidden: the toggle did not show the minions: " + JSON.stringify(before));
+    if (after.ids.some(i => i[0] === "m") || !after.ids.includes("s1") || !after.ids.includes("s2")) fail("boardMinionHidden: wrong cards drawn: " + after.ids);
+    if (!/2 running/.test(after.count)) fail("boardMinionHidden: the count still includes the minions: " + after.count);
+    if (after.kept !== 4) fail("boardMinionHidden: lastTasks lost a minion: " + after.kept);
+    if (!asking.ids.includes("m4") || asking.ids.filter(i => i[0] === "m").length !== 1) fail("boardMinionHidden: only the asking minion should be drawn: " + asking.ids);
+    if (!attached.includes("m1")) fail("boardMinionHidden: the attached minion was pulled out: " + attached);
+    await p.evaluate(() => setMinionShown(null));
+    if (errors.length) fail("boardMinionHidden: page errors: " + errors.join("; "));
+    else console.log("boardMinionHidden ok");
+  } finally { await ctx.close(); }
+}
+
+async function stackMinionHiddenSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderStack === "function" && typeof shownCards === "function", null, { timeout: slow(15000) });
+    const paint = (setup) => p.evaluate(async ([setup, mkSrc]) => {
+      const rows = eval(mkSrc)(setup);
+      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null; loadCards = async () => {};
+      setMinionShown(setup === "before" ? () => true : null);
+      switchView("stack");
+      setStackShow(new Set());
+      await renderStack();
+      return {
+        ids: Array.from(document.querySelectorAll("#stack-list [data-id]")).map(e => e.getAttribute("data-id")),
+        pill: document.querySelector('#stack-seg button[data-v=""] .pillcount').textContent,
+        kept: lastTasks.filter(t => t.id[0] === "m").length,
+      };
+    }, [setup, MINION_VIEW_CARDS]);
+    const before = await paint("before");
+    const after = await paint("after");
+    const asking = await paint("asking");
+    if (before.ids.filter(i => i[0] === "m").length !== 4 || before.pill !== "6") fail("stackMinionHidden: the toggle did not show the minions: " + JSON.stringify(before));
+    if (after.ids.some(i => i[0] === "m") || !after.ids.includes("s1") || !after.ids.includes("s2")) fail("stackMinionHidden: wrong cards drawn: " + after.ids);
+    if (after.pill !== "2") fail("stackMinionHidden: the all pill still counts the minions: " + after.pill);
+    if (after.kept !== 4) fail("stackMinionHidden: lastTasks lost a minion: " + after.kept);
+    if (!asking.ids.includes("m4") || asking.ids.filter(i => i[0] === "m").length !== 1 || asking.pill !== "3") fail("stackMinionHidden: only the asking minion should be drawn: " + JSON.stringify(asking));
+    await p.evaluate(() => setMinionShown(null));
+    if (errors.length) fail("stackMinionHidden: page errors: " + errors.join("; "));
+    else console.log("stackMinionHidden ok");
+  } finally { await ctx.close(); }
+}
+
+async function phoneMinionHiddenSection(browser) {
+  const st = mServer({});
+  await st.open();
+  const imgs = docImgDir("docs", "changes", "img", "u-minion-cards-hidden");
+  const cards = (asking) => {
+    const m = (i, over) => mCard("m" + i, Object.assign({ alias: "minion " + i, tags: ["atrium:director", "atrium:minion", "atrium:item:i" + i] }, over || {}));
+    return [
+      mCard("s1", { alias: "my own session", worktree: "/g/github/o/atrium" }),
+      mCard("s2", { alias: "orchestrator", tags: ["atrium:director"], worktree: "/g/github/o/atrium" }),
+      m(1), m(2), m(3),
+      asking ? m(4, { status: "needs-input", waiting_since: mIso(3 * M_MIN), asks_open: 1 }) : m(4),
+    ];
+  };
+  const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    st.tasks = cards(false); st.perms = [];
+    const { ctx, p, errors } = await mPage(browser, st, { width: 400, height: 760 }, "");
+    try {
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const all = await names(p);
+      const seg = await p.$eval("#m-seg-all", e => e.textContent.replace(/\s+/g, " ").trim());
+      if (all.some(n => /^minion/.test(n)) || all.length !== 2) fail("phoneMinionHidden: a quiet minion is listed: " + all);
+      if (seg !== "all 2") fail("phoneMinionHidden: the all count includes the minions: " + seg);
+      await p.waitForTimeout(400);
+      await p.screenshot({ path: path.join(imgs, "minion-phone-after.png") });
+      // a minion that asks comes back
+      st.tasks = cards(true);
+      await p.evaluate(() => window.mNet.refresh());
+      await p.waitForFunction(() => /minion 4/.test(document.getElementById("m-list").textContent), null, { timeout: slow(10000) });
+      const asking = await names(p);
+      if (asking.filter(n => /^minion/.test(n)).join() !== "minion 4") fail("phoneMinionHidden: only the asking minion should list: " + asking);
+      if (await mNoSideways(p)) fail("phoneMinionHidden: the home scrolls sideways");
+    } finally { await ctx.close(); }
+    if (errors.length) fail("phoneMinionHidden: page errors: " + errors.join("; "));
+    else console.log("phoneMinionHidden ok");
+  } finally { await st.close(); }
+}
+
 async function interviewTopSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
   const errors = [];
@@ -31606,7 +31735,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, itemMinionChip: itemMinionChipSection, itemOpenHiddenCard: itemOpenHiddenCardSection, launchLink: launchLinkSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, itemMinionChip: itemMinionChipSection, itemOpenHiddenCard: itemOpenHiddenCardSection, launchLink: launchLinkSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -33609,6 +33738,8 @@ async function main() {
     await unit("minionNeedsYou", () => minionNeedsYouSection(browser, base));
     await unit("minionReadyQuiet", () => minionReadyQuietSection(browser, base));
     await unit("termMinionHidden", () => termMinionHiddenSection(browser, base));
+    await unit("boardMinionHidden", () => boardMinionHiddenSection(browser, base));
+    await unit("stackMinionHidden", () => stackMinionHiddenSection(browser, base));
     await unit("itemMinionChip", () => itemMinionChipSection(browser, base));
     await unit("itemOpenHiddenCard", () => itemOpenHiddenCardSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
@@ -33636,6 +33767,7 @@ async function main() {
     await unit("mBubbles", () => mBubblesSection(browser));
     await unit("mRecapSheet", () => mRecapSheetSection(browser));
     await unit("mHomeOrder", () => mHomeOrderSection(browser));
+    await unit("phoneMinionHidden", () => phoneMinionHiddenSection(browser));
     await unit("cardUrlWayOut", () => cardUrlWayOutSection(browser, base));
     await unit("phoneBoot", () => phoneBootSection(browser, base));
     await unit("sayEnter", () => sayEnterSection(browser));
