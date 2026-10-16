@@ -15,8 +15,11 @@ import (
 
 // Say states. See the design for what each means.
 const (
-	SayQueued      = "queued"
-	SayDelivered   = "delivered"
+	SayQueued    = "queued"
+	SayDelivered = "delivered"
+	// SayTyped is a line typed into a runner's own queued-message box mid-turn. It is in the box and not read. It
+	// becomes delivered when the runner's transcript shows the box drained it. See SayProved.
+	SayTyped       = "typed"
 	SayHeld        = "held"
 	SayHanded      = "handed"
 	SayUnconfirmed = "unconfirmed"
@@ -153,6 +156,69 @@ func (s *Store) SayDeliveredAs(id, channel string) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE say SET state = ?, channel = ?, delivered_at = ? WHERE id = ?`,
 			SayDelivered, channel, ts(s.now()), id)
+		return err
+	})
+}
+
+// SayTypedRows lists a card's says that were typed into its queued box and are not yet proven read, oldest first.
+func (s *Store) SayTypedRows(toTask string) ([]Say, error) {
+	var out []Say
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT `+sayCols+` FROM say WHERE state = ? AND to_task = ? ORDER BY sent_at, id`,
+			SayTyped, toTask)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			v, err := scanSay(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, v)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// SayTypedTasks lists the cards that have a say typed and not yet proven read.
+func (s *Store) SayTypedTasks() ([]string, error) {
+	var out []string
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT DISTINCT to_task FROM say WHERE state = ? AND to_task != ''`, SayTyped)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			out = append(out, id)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// SayProved moves a typed row to delivered: the runner's transcript shows it read the line. Only a typed row moves,
+// so a row a hook already delivered is left as it was.
+func (s *Store) SayProved(id string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE say SET state = ?, channel = ?, delivered_at = ? WHERE id = ? AND state = ?`,
+			SayDelivered, SayViaTerminal, ts(s.now()), id, SayTyped)
+		return err
+	})
+}
+
+// SayNoted sets a row's note.
+func (s *Store) SayNoted(id, note string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE say SET note = ? WHERE id = ?`, cutRunes(note, sayNoteLen), id)
 		return err
 	})
 }

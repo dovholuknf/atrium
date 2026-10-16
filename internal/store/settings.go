@@ -50,6 +50,10 @@ const (
 	// the turn to end before the next tool call carries it. Empty means fifteen. See
 	// daemon/escalate.go.
 	SettingEscalateHeldAfter = "escalate_held_after"
+
+	// SettingTypedUnreadAfter is how many minutes a say typed into a runner's queued box may go unread before its row
+	// is noted as stuck. Empty means five.
+	SettingTypedUnreadAfter = "typed_unread_after"
 )
 
 // SettingReplayMode picks how a card's history is turned back into a terminal.
