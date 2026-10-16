@@ -16306,7 +16306,15 @@ async function termMinionsChipSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof toggleTermShow === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
-    const state = () => p.evaluate(() => {
+    // Cards, chip and read-back in ONE evaluate, so a refresh between calls cannot replace the cards.
+    const run = (toggles) => p.evaluate(async ([mkSrc, toggles]) => {
+      const rows = eval(mkSrc)("before");
+      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null; loadCards = async () => {};
+      localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
+      switchView("terms");
+      for (let k = 0; k < toggles; k++) toggleTermShow("minions");
+      paintTermShow();
+      await renderTermList();
       const b = document.querySelector('#term-show button[data-v="minions"]');
       return {
         ids: Array.from(document.querySelectorAll("#term-list [data-id]")).map(e => e.getAttribute("data-id")),
@@ -16314,21 +16322,12 @@ async function termMinionsChipSection(browser, base) {
         count: b ? b.querySelector(".pillcount").textContent : null,
         stored: localStorage.getItem(termDeviceKey(TERM_SHOW_KEY)),
       };
-    });
-    await p.evaluate(async mkSrc => {
-      const rows = eval(mkSrc)("before");
-      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null; loadCards = async () => {};
-      localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
-      switchView("terms");
-      paintTermShow();
-      await renderTermList();
-    }, MINION_VIEW_CARDS);
+    }, [MINION_VIEW_CARDS, toggles]);
     const shot = (name) => p.locator("#term-list").screenshot({ path: path.join(imgs, name) });
-    const off = await state(); await shot("minion-chip-off.png");
-    await p.evaluate(async () => { toggleTermShow("minions"); await renderTermList(); });
-    const on = await state(); await shot("minion-chip-on.png");
-    await p.evaluate(async () => { toggleTermShow("minions"); await renderTermList(); });
-    const back = await state();
+    await run(0); await p.waitForTimeout(500);
+    const off = await run(0); await shot("minion-chip-off.png");
+    const on = await run(1); await shot("minion-chip-on.png");
+    const back = await run(2);
     if (off.ids.some(i => i[0] === "m") || off.on || off.stored !== null) fail("termMinionsChip: not off by default: " + JSON.stringify(off));
     if (off.count !== "4") fail("termMinionsChip: the count is " + off.count + ", want 4");
     if (on.ids.filter(i => i[0] === "m").length !== 4 || !on.on || on.count !== "4") fail("termMinionsChip: the chip did not list them: " + JSON.stringify(on));
