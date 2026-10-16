@@ -17,14 +17,16 @@ type bsFix struct {
 	t    *testing.T
 	work string
 	st   *Store
+	tick int // git calls so far: each gets its own committer second, so a cherry-pick never equals its source
 }
 
 func (x *bsFix) git(args ...string) string {
+	x.tick++
 	x.t.Helper()
 	c := exec.Command("git", append([]string{"-c", "commit.gpgsign=false"}, args...)...)
 	c.Dir = x.work
 	c.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t",
-		"GIT_COMMITTER_EMAIL=t@t", "GIT_COMMITTER_DATE="+time.Now().Add(time.Hour).Format(time.RFC3339))
+		"GIT_COMMITTER_EMAIL=t@t", "GIT_COMMITTER_DATE="+time.Now().Add(time.Hour+time.Duration(x.tick)*time.Second).Format(time.RFC3339))
 	out, err := c.CombinedOutput()
 	if err != nil {
 		x.t.Fatalf("git %v: %v\n%s", args, err, out)

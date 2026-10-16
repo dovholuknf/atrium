@@ -15,8 +15,8 @@ internal/daemon 830 about 1600 tests with real processes, ptys and git. 553s mea
 internal/link 575 every test starts a hub, a forwarder and real git. 383s measured, being made parallel
 internal/gitsync 380 a bare hub, clones and pushes with real git. 254s measured, being made parallel
 internal/store 150 about 440 tests each migrating a database. 40s on a quiet box, 98s measured on a busy one
-internal/hubstore 90 a hubstore test writes thousands of small files. 129s on a hosted Windows runner, 60s on a developer box
-internal/api 105 git subprocess rigs. 57 to 74s measured, and 16s of that is taskkill retries on a locked-down box
+internal/hubstore 150 a hubstore test writes thousands of small files. 101s on a hosted Windows runner (run 38944460093), 60s on a developer box
+internal/api 165 git subprocess rigs. 112s on a hosted Windows runner (run 38944460093), 57 to 74s on a busy box, and 16s of that is taskkill retries on a locked-down box
 
 # Tests over 5s, by package. Pkg.* is for packages whose tests are all git subprocess rigs.
 internal/daemon.* 18 real processes, ptys and git. The slowest, TestScreenAgainstXterm, was 11.7s
@@ -32,3 +32,4 @@ internal/api.TestCloseStopsAProcessTheCardOwns 10 waits out a 5s taskkill retry 
 internal/hubstore.* 24 each opens stores that write thousands of small files. 31.5s on a hosted Windows runner (run 38722254104), under 1s on a developer box
 internal/hubstore.TestOldSnapshotsThinOutRatherThanPilingUp 16 writes 8640 small files
 internal/cli.TestRunnerPIDFindsOpencode 9 real child processes
+internal/detach.TestStartOutsideJobAnswersTheProgramNotCmd 9 real child processes. 5.9s on a hosted Windows runner (run 38944460093)

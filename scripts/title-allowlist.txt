@@ -14,3 +14,8 @@ read.html:class="zoom" # read page has no styled tooltips
 vendor/marked.js:title # not our markup
 # The phone board loads no styled tooltips, so data-tip would show nothing there.
 m/js/files.js:goes within a day # phone page has no styled tooltips
+# A property of a plain data object (the work row's title), not an element's tooltip.
+js/items-data.js:out\.title = wk\.title # data, not a tooltip
+# The phone board loads no styled tooltips, so data-tip would show nothing there.
+m/js/items.js:i\.title = s\.name # phone page has no styled tooltips
+m/js/items.js:this card has ended and was removed # phone page has no styled tooltips

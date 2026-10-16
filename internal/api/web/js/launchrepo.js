@@ -161,7 +161,7 @@ function syncNewWorkGo() {
   const go = document.getElementById("l-nw-go");
   const off = !!typed && launchRepoKey(sel.value) !== typed.key;
   go.disabled = off;
-  go.title = off ? "the repository box is not " + typed.slug : "";
+  if (off) go.setAttribute("data-tip", "the repository box is not " + typed.slug); else go.removeAttribute("data-tip");
 }
 document.getElementById("l-nw-repo").addEventListener("change", syncNewWorkGo);
 
