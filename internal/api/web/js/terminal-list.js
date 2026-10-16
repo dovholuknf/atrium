@@ -255,6 +255,7 @@ function termKept(t, show) {
 
 // Whether the list holds this card at all, given the chips. Live rows always, the rest by their chip.
 function termListed(t, show) {
+  if (cardHidden(t)) return false;
   const k = termRowKind(t);
   return k === "live" || (k !== "" && (termKept(t, show) || (k === "paused" && show.has("paused")) ||
     (k === "dead" && show.has("dead"))));
@@ -1274,7 +1275,8 @@ function termRowChips(t, lead) {
     : termJoined(t) ? `<span class="chip">joined</span>` : "";
   // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
   const lim = t.new_context ? "" : ctxWarnMark(t);
-  const inner = (lead || "") + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
+  const minion = isMinion(t) ? `<span class="chip" data-tip="a throwaway session an item launched. it is listed because it needs you">minion</span>` : "";
+  const inner = (lead || "") + minion + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

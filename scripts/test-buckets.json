@@ -70,7 +70,7 @@
     "cards": {
       "page": "the card list: groups, lanes, tabs, tooltips, the top nav and the filter drawer",
       "units": [
-        "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "laneFold",
+        "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "minion*", "laneFold",
         "nest*", "untaggedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors",
         "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "topNav", "trayHead",
         "termsDrawerPush", "linkBoard", "linkReuse", "arrivedOnce", "controlsCompact", "closeOneDialog"

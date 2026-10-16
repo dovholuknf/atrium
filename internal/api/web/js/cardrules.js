@@ -125,6 +125,29 @@ function isInterview(t) {
   return !!(t && Array.isArray(t.tags) &&
     t.tags.some(x => String(x).trim().toLowerCase() === INTERVIEW_TAG));
 }
+// A MINION IS THE THROWAWAY SESSION AN ITEM GETS, tagged `atrium:minion` by the orchestrator's launch (no Go stamps it). It wins
+// over `atrium:director`, which its launch also carries, and an item worker without this tag is not one. Matched exactly.
+const MINION_TAG = "atrium:minion";
+function isMinion(t) {
+  return !!(t && Array.isArray(t.tags) &&
+    t.tags.some(x => String(x).trim().toLowerCase() === MINION_TAG));
+}
+// The debug toggle that shows hidden minions. Nothing registers one yet, so they are hidden.
+let minionShownFn = null;
+function setMinionShown(fn) { minionShownFn = typeof fn === "function" ? fn : null; }
+function minionShown() { return !!(minionShownFn && minionShownFn()); }
+// A card HAS SOMETHING FOR THE HUMAN: waiting on them, an open question, a permission, or stuck. Not one whose room is silent.
+function cardNeedsYou(t) {
+  if (!t || t.offline) return false;
+  return cardWaiting(t) || cardHasOpenQuestion(t) || t.status === "needs-permission" ||
+    (typeof isStuck === "function" && isStuck(t));
+}
+// ONE ANSWER TO "IS THIS CARD LEFT OUT OF EVERY LIST RIGHT NOW". A view filter only: the card list still holds it, so counts
+// and alerts see it. A minion that needs you, or is the attached one, is not hidden.
+function cardHidden(t) {
+  if (!isMinion(t) || minionShown() || cardNeedsYou(t)) return false;
+  return !(typeof termTask !== "undefined" && termTask && termTask.id === t.id);
+}
 function nestsUnderLauncher(t) { return isSubagent(t) && !isInterview(t); }
 
 // THE CARD THAT LAUNCHED `t`, from `cards`, or null. Every list that nests a child under its launcher asks this one

@@ -45,6 +45,8 @@ function loadCards(signal) {
 function cardList() {
   return Array.from(cardRows.values(), t => Object.assign({}, t));
 }
+// What the views DRAW: every card but a hidden minion. `cardList` keeps all of them, for the waiting list and the alerts.
+function shownCards(list) { return (list || cardList()).filter(t => !cardHidden(t)); }
 
 // A `task` event that carries the WHOLE `/v1/tasks` row, which the daemon says
 // by setting `row: 1` on it. Every decoration on a row is omitempty, so the
@@ -80,7 +82,7 @@ function waitingRow(t) {
 // (a worker that finished, issue-20674@claude-sg4, 2026-10-13, is news to the board). Whether a card with a running child is
 // done is the caller's (`hasRunningChild`).
 function cardsReady(list) {
-  return (list || cardList()).filter(waitingRow)
+  return (list || cardList()).filter(t => waitingRow(t) && (!isMinion(t) || cardHasOpenQuestion(t)))
     .sort((a, b) => String(a.waiting_since || "").localeCompare(String(b.waiting_since || "")));
 }
 // A card that launched another still running is not waiting on the human, whatever its own status says. The ready

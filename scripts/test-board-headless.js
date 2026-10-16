@@ -22726,6 +22726,137 @@ async function popupFitSection(browser, base) {
 
 // An interview card is a top-level row in its group: it never nests under the card that launched it (terminals, stack
 // and board all use one rule, `nestsUnderLauncher`), and a launcher whose children are not drawn still wears a chevron.
+// ITEM MINION CARDS STAY OFF THE TERMINALS TAB (docs/ui/minion-cards-hidden-design.md, phases 1 and 2).
+async function minionPredicateSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof cardHidden === "function" && typeof shownCards === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, tags, extra) => Object.assign({ id, tags, status: "running", supervised: true, display_title: id }, extra || {});
+      cardRows = new Map(); termTask = null;
+      return {
+        exact: isMinion(mk("a", ["atrium:minion"])), spaced: isMinion(mk("b", [" Atrium:Minion "])),
+        other: isMinion(mk("c", ["atrium:minions", "atrium:item:x"])), none: isMinion({ id: "d" }), nul: isMinion(null),
+        director: isMinion(mk("e", ["atrium:director"])),
+        both: isMinion(mk("f", ["atrium:director", "atrium:minion"])),
+        worker: cardHidden(mk("g", ["atrium:item", "atrium:item:x"])),
+        hiddenBoth: cardHidden(mk("f", ["atrium:director", "atrium:minion"])),
+        shown: shownCards([mk("m", ["atrium:minion"]), mk("n", [])]).map(t => t.id)
+      };
+    });
+    if (!got.exact || !got.spaced) fail("minionPredicate: the tag is not matched trimmed and lower-cased");
+    if (got.other || got.none || got.nul) fail("minionPredicate: a card that is not tagged is a minion: " + JSON.stringify(got));
+    if (got.director) fail("minionPredicate: a director alone is a minion");
+    if (!got.both || !got.hiddenBoth) fail("minionPredicate: the minion tag does not win over the director tag");
+    if (got.worker) fail("minionPredicate: an item worker without the minion tag is hidden");
+    if (got.shown.join() !== "n") fail("minionPredicate: shownCards kept " + got.shown);
+    if (errors.length) fail("minionPredicate: page errors: " + errors.join("; "));
+    else console.log("minionPredicate ok");
+  } finally { await ctx.close(); }
+}
+
+async function minionNeedsYouSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof cardHidden === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, extra) => Object.assign({ id, tags: ["atrium:minion"], status: "running", supervised: true, display_title: id }, extra || {});
+      termTask = null;
+      const r = {
+        quiet: cardHidden(mk("q")),
+        input: cardHidden(mk("i", { status: "needs-input" })),
+        perm: cardHidden(mk("p", { status: "needs-permission" })),
+        ask: cardHidden(mk("a", { asks_open: 1 })),
+        question: cardHidden(mk("s", { seen: { answered: false, open_questions: ["which?"] } })),
+        offline: cardHidden(mk("o", { status: "needs-input", offline: true }))
+      };
+      termTask = { id: "q" }; r.attached = cardHidden(mk("q")); termTask = null;
+      setMinionShown(() => true); r.toggled = cardHidden(mk("q")); setMinionShown(null);
+      return r;
+    });
+    if (!got.quiet) fail("minionNeedsYou: a quiet minion is not hidden");
+    for (const k of ["input", "perm", "ask", "question"]) if (got[k]) fail("minionNeedsYou: a minion with " + k + " stayed hidden");
+    if (!got.offline) fail("minionNeedsYou: a card on a silent room was un-hidden");
+    if (got.attached) fail("minionNeedsYou: the attached minion was hidden");
+    if (got.toggled) fail("minionNeedsYou: the debug toggle did not show a minion");
+    if (errors.length) fail("minionNeedsYou: page errors: " + errors.join("; "));
+    else console.log("minionNeedsYou ok");
+  } finally { await ctx.close(); }
+}
+
+async function minionReadyQuietSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof cardsReady === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const mk = (id, tags, extra) => Object.assign({ id, tags, status: "needs-input", supervised: true, wire_name: id, display_title: id }, extra || {});
+      return cardsReady([
+        mk("m1", ["atrium:minion"]), mk("m2", ["atrium:minion"], { asks_open: 1 }), mk("r1", [])
+      ]).map(t => t.id);
+    });
+    if (got.includes("m1")) fail("minionReadyQuiet: a resting minion rang the ready alert");
+    if (!got.includes("m2")) fail("minionReadyQuiet: a minion with an open question did not ring");
+    if (!got.includes("r1")) fail("minionReadyQuiet: an ordinary resting card stopped ringing");
+    if (errors.length) fail("minionReadyQuiet: page errors: " + errors.join("; "));
+    else console.log("minionReadyQuiet ok");
+  } finally { await ctx.close(); }
+}
+
+async function termMinionHiddenSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 520 } });
+  const errors = [];
+  const imgs = docImgDir("docs", "changes", "img", "u-minion-cards-hidden");
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termListed === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    const paint = (setup) => p.evaluate(async setup => {
+      const mk = (id, name, tags, extra) => Object.assign({ id, tags, status: "running", supervised: true, pid: 1, display_title: name,
+        wire_name: id, activity: { what: "Edit" } }, extra || {});
+      const rows = [mk("s1", "orchestrator", ["atrium:director"]), mk("s2", "my own session", [])];
+      for (let i = 1; i <= 4; i++) rows.push(mk("m" + i, "minion for item " + i, ["atrium:director", "atrium:minion", "atrium:item:i" + i]));
+      if (setup === "asking") { rows[5].status = "needs-input"; rows[5].asks_open = 1; }
+      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null;
+      setMinionShown(setup === "before" ? () => true : null);
+      switchView("terms");
+      await renderTermList();
+      return Array.from(document.querySelectorAll("#term-list [data-id]")).map(e => e.getAttribute("data-id"));
+    }, setup);
+    const shot = (name) => p.locator("#term-list").screenshot({ path: path.join(imgs, name) });
+    const before = await paint("before"); await shot("minion-terms-before.png");
+    const after = await paint("after"); await shot("minion-terms-after.png");
+    const asking = await paint("asking"); await shot("minion-terms-asking.png");
+    const chip = await p.evaluate(() => !!Array.from(document.querySelectorAll("#term-list [data-id='m4'] .chip")).find(c => c.textContent === "minion"));
+    const attached = await p.evaluate(async () => {
+      termTask = { id: "m1" }; await renderTermList();
+      const ids = Array.from(document.querySelectorAll("#term-list [data-id]")).map(e => e.getAttribute("data-id")); termTask = null; return ids;
+    });
+    if (before.filter(i => i[0] === "m").length !== 4) fail("termMinionHidden: the toggle did not show the minions: " + before);
+    if (after.some(i => i[0] === "m")) fail("termMinionHidden: a quiet minion is listed: " + after);
+    if (!after.includes("s1") || !after.includes("s2")) fail("termMinionHidden: a real session went missing: " + after);
+    if (!asking.includes("m4") || asking.filter(i => i[0] === "m").length !== 1) fail("termMinionHidden: only the asking minion should list: " + asking);
+    if (!chip) fail("termMinionHidden: the un-hidden minion has no minion chip");
+    if (!attached.includes("m1")) fail("termMinionHidden: the attached minion was pulled out: " + attached);
+    await p.evaluate(() => setMinionShown(null));
+    if (errors.length) fail("termMinionHidden: page errors: " + errors.join("; "));
+    else console.log("termMinionHidden ok");
+  } finally { await ctx.close(); }
+}
+
 async function interviewTopSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
   const errors = [];
@@ -32405,7 +32536,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, launchLink: launchLinkSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      roomsSetup: roomsSetupSection, discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, borderColourLag: borderColourLagSection, bootClean: bootCleanSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, launchLink: launchLinkSection, hubGate: hubGateSection, interviewTop: interviewTopSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, dropdownsInstant: dropdownsInstantSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -34404,6 +34535,10 @@ async function main() {
     await unit("launchLink", () => launchLinkSection(browser, base));
     await unit("hubGate", () => hubGateSection(browser, base));
     await unit("interviewTop", () => interviewTopSection(browser, base));
+    await unit("minionPredicate", () => minionPredicateSection(browser, base));
+    await unit("minionNeedsYou", () => minionNeedsYouSection(browser, base));
+    await unit("minionReadyQuiet", () => minionReadyQuietSection(browser, base));
+    await unit("termMinionHidden", () => termMinionHiddenSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
     await unit("noResumeButton", () => noResumeButtonSection(browser, base));
