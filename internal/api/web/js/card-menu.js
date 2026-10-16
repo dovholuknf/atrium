@@ -816,7 +816,8 @@ async function cardMenu(e, id) {
     // `choose...` is the same modal as before, unchanged, for when the common
     // case is wrong.
     t.worktree && canResume(t) && !cannotResume(t) ? {
-      label: "resume",
+      // A parked or paused card has a plain resume of its own further down, and no two rows in a menu share a label.
+      label: t.parked_at || t.status === "paused" ? "resume another conversation" : "resume",
       help: "Starts a runner in this card's directory and picks the " +
         "conversation back up where it stopped. It opens where this card was " +
         "last open, so there is nothing to answer.",
@@ -975,12 +976,8 @@ async function cardMenu(e, id) {
     // steps.
     t.supervised && !over ? {
       label: "handoff / clear context",
-      help: "Commits or stashes, hands off, then clears. Asks the session to commit or stash and write everything relevant to " +
-        "its own HANDOFF.<name>.md (the alias, else the start of the card id), " +
-        "waits for that turn to end, clears the context, and then " +
-        "tells it to read the file and continue. The room types each step. A " +
-        "step that times out stops there and says why on the card. Ctrl+Alt+N " +
-        "in its terminal does the same.",
+      help: "Has the session commit or stash and write a HANDOFF.<name>.md, clears its context and tells it to " +
+        "read the file and continue, the same as Ctrl+Alt+N in its terminal.",
       act: () => newContext(id)
     } : null,
     // The cache keep-alive for this card. Only on a Claude card, which is the

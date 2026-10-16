@@ -16,3 +16,9 @@ handoff / clear context. Restart's help bubble says handoff / clear context for 
 
 **Expected:** attach terminal, open a shell here (or go to its shell) and new agent here appear where "more..." was, the
 menu stays open, and "more..." is gone. Before the click none of the three was shown.
+
+### @LETTER@3. No repeated labels
+
+1. Right-click a parked card and a paused card, and read the menu.
+
+**Expected:** no two rows share a label. Next to the plain resume, the conversation picker reads resume another conversation.

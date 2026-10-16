@@ -580,7 +580,6 @@ function showMenu(e, items, opened) {
         // those two sentences describes now and which describes the click.
         it.on === undefined ? "" : `<span class="lamp">${it.on ? "on" : "off"}</span>`}${
         it.sub ? `<span class="more">&#9656;</span>` : ""}${
-        ""}${
         // A flyout, drawn inside the row that owns it so hovering across the
         // gap between the two does not close it. Two destinations for one
         // intention: attaching here, or attaching in its own window.

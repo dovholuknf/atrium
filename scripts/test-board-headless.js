@@ -5063,7 +5063,7 @@ async function toastsTopSection(browser, base) {
 
     // 4. And back off it: bottom right again, still not re-animated.
     const before = (await where(p)).starts;
-    await p.evaluate(() => switchView("stack"));
+    await p.evaluate(() => switchView("board"));
     await p.waitForTimeout(400);
     w = await where(p);
     if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
@@ -11479,7 +11479,7 @@ async function cacheChipSection(browser, base) {
     // since a busy machine can spend the two seconds on the way here.
     kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
     landList = [LAND["cc-flip"]];
-    await p.evaluate(() => switchView("stack"));
+    await p.evaluate(() => switchView("board"));
     const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
     await fetched;
@@ -11619,7 +11619,7 @@ async function cacheChipSection(browser, base) {
         await r.evaluate(() => switchView("board"));
         await r.waitForFunction(() => document.querySelectorAll("#board .chip.cache").length >= 6, null, { timeout: slow(10000) });
         await r.screenshot({ path: path.join(sh, (process.env.CACHE_SHOT_PREFIX || "after") + "-board-1400x900.png") });
-        await r.evaluate(() => switchView("stack"));
+        await r.evaluate(() => switchView("board"));
         await r.waitForSelector("#stack-list .stackrow", { timeout: slow(10000) });
         await r.screenshot({ path: path.join(sh, (process.env.CACHE_SHOT_PREFIX || "after") + "-stack-1400x900.png") });
       }
@@ -17704,7 +17704,8 @@ async function restartMenuSection(browser, base) {
   landCard("land-rs-park", { supervised: false, parked_at: "2026-10-09T11:00:00Z", resume_id: "abc-123",
     created_at: "2026-10-09T12:02:00Z" });
   landCard("land-rs-bare", { supervised: false, pinned: true, created_at: "2026-10-09T12:03:00Z" });
-  landList = [LAND["land-rs-idle"], LAND["land-rs-work"], LAND["land-rs-park"], LAND["land-rs-bare"]];
+  landCard("land-rs-paused", { supervised: false, status: "paused", resume_id: "def-456", worktree: "/tmp/paused", created_at: "2026-10-09T12:04:00Z" });
+  landList = [LAND["land-rs-idle"], LAND["land-rs-work"], LAND["land-rs-park"], LAND["land-rs-bare"], LAND["land-rs-paused"]];
   landPerms = [];
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -17727,6 +17728,14 @@ async function restartMenuSection(browser, base) {
     const open = async (id) => {
       await p.click(`#stack-list .stackrow[data-id="${id}"]`, { button: "right" });
       await p.waitForSelector("#cardmenu button", { state: "visible", timeout: slow(5000) });
+      // No two rows of one menu may share a label: the row's own text, without its help mark, arrow or flyout.
+      const own = await p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")]
+        .map(b => b.firstChild.textContent.trim()));
+      const twice = own.filter((l, i) => own.indexOf(l) !== i);
+      if (twice.length) fail("restartMenu: the menu of " + id + " has two rows called " + JSON.stringify(twice) + ": " + JSON.stringify(own));
+      if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/" + id + ".png" });
+      if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/" + id + ".png" });
+      if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/" + id + ".png" });
       return p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].map(b => b.textContent));
     };
     const item = () => p.locator("#cardmenu button", { hasText: /^restart/ }).first();
@@ -17746,6 +17755,7 @@ async function restartMenuSection(browser, base) {
       fail("restartMenu: attach and shell are not behind more...: " + JSON.stringify(labels));
     }
     await p.locator("#cardmenu button", { hasText: /^more\.\.\./ }).click();
+    if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/more.png" });
     const opened = await p.evaluate(() => ({ on: document.getElementById("cardmenu").classList.contains("on"),
       labels: [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent) }));
     if (!opened.on || opened.labels.some(l => /^more\.\.\./.test(l)) ||
@@ -17795,6 +17805,17 @@ async function restartMenuSection(browser, base) {
     await p.waitForTimeout(500);
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
+    // paused: open() already refused a repeated label.
+    // A paused card has no row on the stack (it sits behind the dead filter), so its board menu is asked for directly.
+    await p.keyboard.press("Escape");
+    await p.evaluate(() => cardMenu({ target: document.querySelector("#stack-list .stackrow"), clientX: 640, clientY: 120,
+      preventDefault() {}, stopPropagation() {} }, "land-rs-paused"));
+    await p.waitForSelector("#cardmenu button", { state: "visible", timeout: slow(5000) });
+    const pausedOwn = await p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.firstChild.textContent.trim()));
+    if (!pausedOwn.includes("resume")) fail("restartMenu: a paused card lost resume: " + JSON.stringify(pausedOwn));
+    if (pausedOwn.some((l, i) => pausedOwn.indexOf(l) !== i)) fail("restartMenu: the paused card's menu has a repeated label: " + JSON.stringify(pausedOwn));
+    if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/land-rs-paused.png" });
+    await p.keyboard.press("Escape");
     // a card atrium cannot restart: left out.
     labels = await open("land-rs-bare");
     if (labels.some(l => /^restart/.test(l))) fail("restartMenu: restart is offered on a card atrium cannot restart.");
