@@ -113,7 +113,7 @@
   // The device's view of the list: order, grouping and filters, remembered in localStorage. Sorting, grouping and the
   // subagent test are the board's own rules from js/cardrules.js.
   const OPTS_KEY = "atrium.m.homeopts";
-  const OPT_DEFAULTS = { order: "newest", orderNeeds: "oldest", group: "none", needsMe: false, hideDone: false, hideSubs: false };
+  const OPT_DEFAULTS = { order: "newest", orderNeeds: "oldest", group: "none", needsMe: false, hideDone: false, hideSubs: false, showMinions: false };
   function loadOpts() {
     try {
       const o = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
@@ -122,10 +122,13 @@
         orderNeeds: o.orderNeeds === "newest" ? "newest" : "oldest",
         group: o.group === "room" || o.group === "project" ? o.group : "none",
         needsMe: o.needsMe === true, hideDone: o.hideDone === true, hideSubs: o.hideSubs === true,
+        showMinions: o.showMinions === true,
       };
     } catch (e) { return Object.assign({}, OPT_DEFAULTS); }
   }
   let opts = loadOpts();
+  // The debug toggle that lists hidden minions (`cardHidden`, js/cardrules.js). The phone keeps it with the rest of its view.
+  setMinionShown(() => opts.showMinions);
   function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch (e) {} }
 
   // Newest or oldest by last activity, with the board's tie break. Oldest is the whole newest order reversed.
@@ -331,7 +334,7 @@
   function paintOpts() {
     if (!els.opts) return;
     els.optsBtn.setAttribute("aria-expanded", String(!els.opts.hidden));
-    const on = (opts.order !== "newest" ? 1 : 0) + (opts.orderNeeds !== "oldest" ? 1 : 0) + (opts.group !== "none" ? 1 : 0) + (opts.needsMe ? 1 : 0) + (opts.hideDone ? 1 : 0) + (opts.hideSubs ? 1 : 0);
+    const on = (opts.order !== "newest" ? 1 : 0) + (opts.orderNeeds !== "oldest" ? 1 : 0) + (opts.group !== "none" ? 1 : 0) + (opts.needsMe ? 1 : 0) + (opts.hideDone ? 1 : 0) + (opts.hideSubs ? 1 : 0) + (opts.showMinions ? 1 : 0);
     els.optsBtn.dataset.on = String(on);
     els.opts.querySelectorAll("[data-opt]").forEach(b => {
       const v = b.dataset.val;
