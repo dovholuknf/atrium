@@ -21,6 +21,8 @@ import (
 // The exit is the one `POST /v1/tasks/{id}/exit` runs, so the card stays `done` and keeps its report. It runs
 // after the report is recorded, and the notice to the launcher is queued in that same transaction, so the
 // launcher's copy is durable before the runner is asked to go.
+//
+// A scratch launch is not exited: Launch tags it `atrium:keep-open` (keepScratchOpen), so its card stays open to read.
 
 // exitOnReportDelay is how long the worker is left running after its report is recorded, so the launcher's
 // delivery is under way before the worker's terminal goes. A variable so a test does not wait.
@@ -69,6 +71,15 @@ const (
 	KeepOpenTag      = "atrium:keep-open"
 	InvestigationTag = "atrium:investigation"
 )
+
+// keepScratchOpen tags a scratch launch `atrium:keep-open`. Exit-on-done is for work whose product is in git, which
+// the launcher lands. A scratch launch has no branch to land, so its transcript and files are the product and the
+// card stays open to be read. A tag rather than a hidden rule, so it shows and the operator can take it off.
+func keepScratchOpen(req *LaunchRequest) {
+	if req.Scratch && !hasTag(req.Tags, KeepOpenTag) {
+		req.Tags = append(append([]string{}, req.Tags...), KeepOpenTag)
+	}
+}
 
 // staysOpen says whether a card is tagged to stay open or is an investigation.
 func staysOpen(t *store.Task) bool {
