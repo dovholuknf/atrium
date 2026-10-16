@@ -34,11 +34,64 @@ function pastedRepoKind(resolved) {
   if (!host || !org || !repo || Number(v.num) > 0) return null;
   const branch = String(r.branch || "").trim();
   if (branch !== "" && !branch.includes("{")) return null;
-  let path;
-  try { path = new URL(String(r.url || "")).pathname; } catch (e) { return null; }
-  const segs = path.split("/").filter(Boolean);
-  if (segs.length !== 2) return null;
+  const link = parseRepoText(r.url, true);
+  if (!link || link.rest) return null;
   return { host, org, repo, slug: host + "/" + org + "/" + repo };
+}
+
+// THE ONE PARSER for text that names a repository, shared by the repo filter and the working directory box
+// (js/launchrepo.js) and by `pastedRepoKind` above. Everything a person copies reduces to host/org/repo:
+//   https://host/org/repo, with or without `.git` or a trailing slash, and with a page under it (`/tree/<branch>/<path>`,
+//   `/blob/...`, `/pull/N`, `/issues`, gitlab's `/-/...`, bitbucket's `/src/<branch>`)
+//   git@host:org/repo(.git)   ssh://git@host(:port)/org/repo(.git)   git://host/org/repo
+//   host/org/repo             only when `strict` is off, and only when the host has a dot (or is "github")
+// Null when the text is none of those. `strict` demands a scheme or `git@`, which the directory box needs so a path is
+// never read as a repo. { host, owner, org, repo, slug, key, url, branch, rest }: `branch` is the one a `/tree/<branch>`
+// link names, `rest` is true when the link went on to a page under the repo. A gitlab subgroup is part of `owner`, told
+// apart from a page by the `/-/` gitlab puts before one, or by `.git` ending the path.
+const REPO_PAGE_WORDS = ["tree", "blob", "src", "raw", "commit", "commits", "pull", "pulls", "pull-requests", "merge_requests",
+  "issues", "branches", "tags", "releases", "compare", "actions", "wiki", "pipelines", "blame", "history", "-"];
+const REPO_BRANCH_WORDS = ["tree", "blob", "src", "raw", "commits", "blame", "history"];
+
+function parseRepoText(text, strict) {
+  const s = String(text || "").trim();
+  if (!s || /\s/.test(s)) return null;
+  let host, path, m;
+  if ((m = s.match(/^(?:https?|ssh|git|git\+ssh):\/\/(?:[^@\/]*@)?([^\/:?#]+)(?::\d+)?\/(.*)$/i))) {
+    host = m[1]; path = m[2];
+  } else if ((m = s.match(/^[\w.-]+@([^\/:\s]+):\/?(.*)$/))) {
+    host = m[1]; path = m[2];
+  } else if (!strict && s.includes("/")) {
+    host = s.slice(0, s.indexOf("/")); path = s.slice(s.indexOf("/") + 1);
+    if (!host.includes(".") && host.toLowerCase() !== "github") return null;
+  } else {
+    return null;
+  }
+  host = host.toLowerCase().replace(/^www\./, "");
+  if (host === "github") host = "github.com";
+  if (!/^[a-z0-9.-]+$/.test(host)) return null;
+  const segs = path.replace(/[?#].*$/, "").split("/").filter(Boolean);
+  const gitEnd = segs.length > 0 && /\.git$/i.test(segs[segs.length - 1]);
+  let at = segs.length;
+  if (!gitEnd) {
+    const dash = segs.indexOf("-");
+    const page = segs.findIndex((x, i) => i >= 2 && REPO_PAGE_WORDS.includes(x));
+    at = dash >= 2 ? dash : page >= 0 ? page : Math.min(segs.length, 2);
+  }
+  const named = segs.slice(0, at);
+  if (named.length < 2) return null;
+  named[named.length - 1] = named[named.length - 1].replace(/\.git$/i, "");
+  if (named.some(x => !/^[\w.~+-]+$/.test(x))) return null;
+  const owner = named.slice(0, -1).join("/");
+  const repo = named[named.length - 1];
+  let branch = "";
+  let tail = segs.slice(at);
+  if (tail[0] === "-") tail = tail.slice(1);
+  if (REPO_BRANCH_WORDS.includes(tail[0]) && tail[1]) {
+    try { branch = decodeURIComponent(tail[1]); } catch (e) { branch = tail[1]; }
+  }
+  const slug = host + "/" + owner + "/" + repo;
+  return { host, owner, org: owner, repo, slug, key: launchRepoKey(slug), url: "https://" + slug, branch, rest: tail.length > 0 };
 }
 
 // Whether the room and the hub already hold the repo. A question that fails answers "no", which asks for a confirm.
