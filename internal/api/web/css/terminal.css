@@ -42,6 +42,9 @@
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
     overflow-y: auto; overflow-x: hidden; padding: 0 3px 6px;
   }
+  /* A card that is a direct child here (the link opening card) is `overflow: hidden`, which lets a flex item shrink
+     to nothing. Keep its height and let the box scroll. */
+  .termscroll > .card { flex: none; }
 
   /* Every pill in the gear's terminal list section the same size: a grid of equal cells rather than pills as wide as their words. The
      sort and group rows are three cells, so the grouping's six modes are two even rows. */
