@@ -45,18 +45,18 @@ func backups(t *testing.T, h string) []string {
 
 func TestBlockIsTheWindowsQuotedFormOnWindowsAndPlainElsewhere(t *testing.T) {
 	win := Block("sg3", exeWin, "windows")
-	want := "Host sg3\n  ProxyCommand \"" + exeWin + "\" ssh-proxy %h\n  HostKeyAlias sg3.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n"
+	want := "Host sg3\n  ProxyCommand \"" + exeWin + "\" ssh-proxy %n\n  HostKeyAlias sg3.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n"
 	if win != want {
 		t.Fatalf("windows block:\n%s", win)
 	}
 	for _, goos := range []string{"darwin", "linux"} {
 		got := Block("sg3", exeNix, goos)
-		if !strings.Contains(got, "  ProxyCommand "+exeNix+" ssh-proxy %h\n") || strings.Contains(got, `"`) {
+		if !strings.Contains(got, "  ProxyCommand "+exeNix+" ssh-proxy %n\n") || strings.Contains(got, `"`) {
 			t.Fatalf("%s block:\n%s", goos, got)
 		}
 	}
 	// A path with a space is quoted for the shell, never left to split.
-	if got := ProxyCommand("/Users/a b/atrium", "darwin"); got != "'/Users/a b/atrium' ssh-proxy %h" {
+	if got := ProxyCommand("/Users/a b/atrium", "darwin"); got != "'/Users/a b/atrium' ssh-proxy %n" {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -223,16 +223,16 @@ func TestABadRoomNameIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 }
 
 func TestBlockHubWritesHubIntoTheProxyCommand(t *testing.T) {
-	if got := ProxyCommandHub("/usr/bin/atrium", "linux", ""); got != "/usr/bin/atrium ssh-proxy %h" {
+	if got := ProxyCommandHub("/usr/bin/atrium", "linux", ""); got != "/usr/bin/atrium ssh-proxy %n" {
 		t.Fatalf("no hub: %q", got)
 	}
-	if got := ProxyCommandHub("/usr/bin/atrium", "linux", "http://127.0.0.1:7790"); got != "/usr/bin/atrium ssh-proxy --hub http://127.0.0.1:7790 %h" {
+	if got := ProxyCommandHub("/usr/bin/atrium", "linux", "http://127.0.0.1:7790"); got != "/usr/bin/atrium ssh-proxy --hub http://127.0.0.1:7790 %n" {
 		t.Fatalf("hub: %q", got)
 	}
-	if got := ProxyCommandHub(`C:\Program Files\atrium.exe`, "windows", "http://127.0.0.1:7790"); got != `"C:\Program Files\atrium.exe" ssh-proxy --hub http://127.0.0.1:7790 %h` {
+	if got := ProxyCommandHub(`C:\Program Files\atrium.exe`, "windows", "http://127.0.0.1:7790"); got != `"C:\Program Files\atrium.exe" ssh-proxy --hub http://127.0.0.1:7790 %n` {
 		t.Fatalf("windows: %q", got)
 	}
-	if !strings.Contains(BlockHub("sg3", "atrium", "linux", "http://h:1"), "ProxyCommand atrium ssh-proxy --hub http://h:1 %h\n") {
+	if !strings.Contains(BlockHub("sg3", "atrium", "linux", "http://h:1"), "ProxyCommand atrium ssh-proxy --hub http://h:1 %n\n") {
 		t.Fatal("block lacks --hub")
 	}
 }
@@ -262,5 +262,29 @@ func TestAddHubUsersWritesTheUserIntoTheBlock(t *testing.T) {
 	// A user that would add a line to the config is refused.
 	if _, err := AddHubUsers(h, exeNix, "linux", "", []string{"sg3"}, map[string]string{"sg3": "x\nProxyCommand evil"}); err == nil {
 		t.Fatal("an injected user was accepted")
+	}
+}
+
+func TestAddMigratesAnOldHostBlockToTheNameAsTyped(t *testing.T) {
+	home := t.TempDir()
+	dir, cfg, own := Paths(home)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A LAN entry for the same Host name sets HostName, which is what %h would expand to.
+	if err := os.WriteFile(cfg, []byte("Host sgg\n  HostName sgg.parkplace-via-dhcp\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := "# Written by `atrium ssh config`. Edit with that command, not by hand.\n\n# BEGIN atrium other\nHost other\n  ProxyCommand atrium ssh-proxy %h\n  HostKeyAlias other.atrium\n# END atrium other\n"
+	if err := os.WriteFile(own, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Add(home, "atrium", "linux", []string{"sgg"}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(own)
+	got := string(b)
+	if strings.Contains(got, "%h") || strings.Count(got, "ssh-proxy %n\n") != 2 {
+		t.Fatalf("every block must use %%n:\n%s", got)
 	}
 }

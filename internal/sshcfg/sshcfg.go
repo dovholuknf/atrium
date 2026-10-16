@@ -36,7 +36,7 @@ func ProxyCommandHub(exe, goos, hub string) string {
 	if hub != "" {
 		tail += " --hub " + shellWord(hub, goos)
 	}
-	tail += " %h"
+	tail += " %n"
 	if goos == "windows" {
 		return `"` + exe + `"` + tail
 	}
@@ -72,6 +72,19 @@ func BlockHubUser(room, exe, goos, hub, user string) string {
 		"  HostKeyAlias " + room + ".atrium\n" +
 		"  ServerAliveInterval 30\n" +
 		"  CheckHostIP no\n"
+}
+
+// migrateHostToName rewrites a ProxyCommand written with %h to %n. %h is the HostName ssh resolved, which a LAN entry
+// for the same Host changes into a name no room has, and %n is the name as typed.
+func migrateHostToName(text string) string {
+	lines := strings.SplitAfter(text, "\n")
+	for i, l := range lines {
+		t := strings.TrimRight(l, "\r\n")
+		if strings.HasPrefix(strings.TrimSpace(t), "ProxyCommand ") && strings.Contains(t, " ssh-proxy ") && strings.HasSuffix(t, " %h") {
+			lines[i] = t[:len(t)-2] + "%n" + l[len(t):]
+		}
+	}
+	return strings.Join(lines, "")
 }
 
 var roomRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
@@ -180,6 +193,9 @@ func AddHubUsers(home, exe, goos, hub string, rooms []string, users map[string]s
 		return res, err
 	}
 	next := append([]block(nil), have...)
+	for i := range next {
+		next[i].text = migrateHostToName(next[i].text)
+	}
 	for _, r := range rooms {
 		nb := block{room: r, text: BlockHubUser(r, exe, goos, hub, users[r])}
 		found := false

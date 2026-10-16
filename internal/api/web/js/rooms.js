@@ -564,7 +564,7 @@ function sshFact(r) {
 // is on that machine's PATH, and `atrium ssh-proxy --print-config <room>` prints the absolute-path form when it is not.
 function sshConfigBlock(room, platform) {
   const win = /^win/i.test(platform || "");
-  return `Host ${room}\n  ProxyCommand ${win ? '"atrium.exe"' : "atrium"} ssh-proxy %h\n` +
+  return `Host ${room}\n  ProxyCommand ${win ? '"atrium.exe"' : "atrium"} ssh-proxy %n\n` +
     `  HostKeyAlias ${room}.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n`;
 }
 

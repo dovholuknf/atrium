@@ -81,7 +81,7 @@ func newSSHProxy() *cobra.Command {
 		Short: "ssh's ProxyCommand: reach a room's sshd through the hub",
 		Long: "Carries ssh to <room>'s own sshd through the hub, over the links that room already holds.\n" +
 			"The room has to have remote access on (atrium room remote-access on, at that machine).\n\n" +
-			"Use it as: ssh -o ProxyCommand=\"atrium ssh-proxy %h\" user@<room>\n" +
+			"Use it as: ssh -o ProxyCommand=\"atrium ssh-proxy %n\" user@<room>\n" +
 			"or print a Host block to paste with --print-config, or write it with atrium ssh config add.\n\n" +
 			"Atrium carries bytes only. The login is sshd's.",
 		Args:          cobra.ExactArgs(1),
