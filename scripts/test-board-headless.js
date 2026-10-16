@@ -30481,6 +30481,55 @@ async function fileViewSection(browser, base) {
 // replay; a hidden terminal takes frames into its own screen and touches nothing of the pane showing (title, focus,
 // size, the ready/seen/scroll helpers); a hidden terminal never sends a resize; the least recently used unpinned ones
 // are let go past the setting and pinned ones stay; one let go attaches normally; a close in the background drops it.
+// ── pinning is immediate ──────────────────────────────────────────────────
+// bug-pin-slow-terminals-tab: the star and the pinned bucket change in the frame of the click, with the PATCH held for
+// two seconds, and a refused PATCH puts the star back.
+async function pinNowSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = mock.tasksMode;
+  const row = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false,
+    worktree: "/tmp/pn/" + id });
+  try {
+    mock.wornTasks = [row("pn-a"), row("pn-b")];
+    mock.tasksMode = "worn";
+    let mode = "slow", patches = 0;
+    await wp.route(/\/v1\/tasks\/pn-[ab]$/, async route => {
+      if (route.request().method() !== "PATCH") return route.continue();
+      patches++;
+      if (mode === "fail") { await new Promise(r => setTimeout(r, 400)); return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) }); }
+      await new Promise(r => setTimeout(r, 2000));
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row("pn-a")) });
+    });
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    const star = id => wp.evaluate(i => { const r = document.querySelector('#term-list .card.tab[data-id="' + i + '"]');
+      const s = r && r.querySelector(".pin"); return s ? s.classList.contains("on") : null; }, id);
+    if (await star("pn-a") !== false) fail("pinNow: the row did not start with an unpinned star (" + await star("pn-a") + ").");
+    // Click, then read the star after two animation frames, with the PATCH still held.
+    const t0 = Date.now();
+    await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-a"] .pin').click());
+    await wp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const took = Date.now() - t0;
+    if (await star("pn-a") !== true) fail("pinNow: the star did not turn on within a frame of the click.");
+    if (took > 1500) fail("pinNow: the repaint waited " + took + "ms, behind the PATCH.");
+    await wp.waitForTimeout(2300);
+    // Refused: the star goes on, then back.
+    mode = "fail";
+    await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-b"] .pin').click());
+    await wp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    if (await star("pn-b") !== true) fail("pinNow: a refused pin was not shown first.");
+    for (let i = 0; i < 30 && await star("pn-b") !== false; i++) await wp.waitForTimeout(100);
+    if (await star("pn-b") !== false) fail("pinNow: a refused PATCH did not put the star back.");
+    if (patches < 2) fail("pinNow: expected two PATCHes, saw " + patches + ".");
+    if (errors.length) fail("pinNow: page errors: " + errors.join("; "));
+  } finally { mock.tasksMode = was; await ctx.close(); }
+}
+
 async function keepAliveSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const wp = await ctx.newPage();
@@ -34006,6 +34055,7 @@ async function main() {
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("fileView", () => fileViewSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
+    await unit("pinNow", () => pinNowSection(browser, base));
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
     await unit("switchBackCost", () => switchBackCostSection(browser, base));
     await unit("keepMemory", () => keepMemorySection(browser, base));

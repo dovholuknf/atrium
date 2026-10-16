@@ -2272,12 +2272,19 @@ function wireTermDrag(host) {
     // Bare, because the ids go in the BODY and the hub only untags the path.
     // A tagged id matches no row in the room's store and the order is lost.
     const bare = ids.map(bareId);
+    // Painted from the held map at once, the two writes behind it. A refusal puts the pin back.
+    const wasPinned = !!(cardRows.get(id) || {}).pinned;
+    setPinLocal(id, true);
+    host.__paintedFrom = null;
     try {
       // Pinned FIRST, and only then ordered. A card that was dragged in from
       // below is not in the bucket as far as the daemon is concerned, so an
       // order written before the pin would be an order over a set it is not
       // in yet, and the next poll would drop it back out.
-      await patchTask(id, { pinned: true });
+      await api(`/v1/tasks/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned: true })
+      });
       await api("/v1/tasks/pin-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2285,6 +2292,7 @@ function wireTermDrag(host) {
       });
     } catch (err) {
       toast("that order did not stick", err.message);
+      setPinLocal(id, wasPinned);
     }
     host.__paintedFrom = null;
     refresh();

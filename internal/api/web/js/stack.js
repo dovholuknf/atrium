@@ -726,14 +726,36 @@ function stuckIcon() {
 // switcher whether or not it has a terminal right now. Some sessions are
 // permanent fixtures, and hunting for one in activity order is the wrong
 // shape for something you reach for every day.
+//
+// OPTIMISTIC. The card in the held map is flipped and every list repainted in the
+// frame of the click, and the PATCH goes after. It used to wait for the PATCH and
+// then a whole task fetch before the star moved, which over a remote room is two
+// round trips and half a megabyte. SSE brings the authoritative row. A refusal
+// puts the star back and says so. `patchTask` is not used because it swallows its
+// own failure, and a revert needs to hear it.
+function setPinLocal(id, on) {
+  const row = cardRows.get(id);
+  if (!row) return false;
+  row.pinned = on;
+  repaintLists(undefined, true);
+  return true;
+}
+
 async function togglePin(id, on) {
+  const row = cardRows.get(id);
+  const was = row ? !!row.pinned : !on;
+  const flipped = setPinLocal(id, on);
   try {
-    await patchTask(id, { pinned: on });
+    await api(`/v1/tasks/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: on })
+    });
   } catch (e) {
     toast("that did not stick", e.message);
+    if (flipped) setPinLocal(id, was); else refresh();
     return;
   }
-  refresh();
+  if (!flipped) refresh();
 }
 
 // The star on a card, wherever cards are drawn.
