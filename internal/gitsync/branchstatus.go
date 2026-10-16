@@ -2,7 +2,6 @@ package gitsync
 
 import (
 	"context"
-	"errors"
 	"log"
 	"path"
 	"sort"
@@ -55,8 +54,8 @@ const (
 )
 
 const (
-	// hashBatch is how many commits one `git log -p` is asked for, so the diff text held at once stays bounded.
-	hashBatch = 200
+	// hashBatchSize is how many commits one `git log -p` is asked for, so the diff text held at once stays bounded.
+	hashBatchSize = 200
 	// hashCap is the most diff text one batch may produce. A batch past it is split, and a single commit past it has no
 	// patch id, so only its subject and files can carry it.
 	hashCap = 32 << 20
@@ -215,7 +214,7 @@ func (s *Store) branchPass(ctx context.Context, name string, st *branchState) (R
 			seen[c] = true
 		}
 	}
-	got, err := s.readFacts(ctx, dir, need)
+	got, err := readFacts(ctx, s.h.runner(), dir, s.env(), need)
 	if err != nil {
 		return res, err
 	}
@@ -239,11 +238,11 @@ func (s *Store) branchPass(ctx context.Context, name string, st *branchState) (R
 			how = HowAncestry
 		}
 		for _, c := range own[h.name] {
-			switch carriedBy(facts[c], st) {
+			switch carriedBy(facts[c], st.mainPIDs, st.mainSubj) {
 			case "":
 				left = append(left, c)
 			default:
-				how = weaker(how, carriedBy(facts[c], st))
+				how = weaker(how, carriedBy(facts[c], st.mainPIDs, st.mainSubj))
 			}
 		}
 		if len(left) > 0 {
@@ -286,17 +285,6 @@ func (s *Store) branchPass(ctx context.Context, name string, st *branchState) (R
 
 func zeroCounts() map[string]int {
 	return map[string]int{BranchLanded: 0, BranchOpen: 0, BranchOrphaned: 0, BranchRoomOnly: 0}
-}
-
-// carriedBy is the rule that carries a commit on main, or empty when none does. Rule 3 is per branch and not here.
-func carriedBy(f commitFacts, st *branchState) string {
-	if f.pid != "" && st.mainPIDs[f.pid] {
-		return HowPatchID
-	}
-	if keys, ok := st.mainSubj[f.subject]; ok && keys[f.key] {
-		return HowSubject
-	}
-	return ""
 }
 
 // weaker is the weaker of two pieces of evidence, the empty one being no evidence yet.
@@ -346,7 +334,7 @@ func (s *Store) extendMain(ctx context.Context, dir, m string, st *branchState) 
 	if err != nil {
 		return err
 	}
-	got, err := s.readFacts(ctx, dir, strings.Fields(out))
+	got, err := readFacts(ctx, s.h.runner(), dir, s.env(), strings.Fields(out))
 	if err != nil {
 		return err
 	}
@@ -361,95 +349,6 @@ func (s *Store) extendMain(ctx context.Context, dir, m string, st *branchState) 
 	}
 	st.mainTip = m
 	return nil
-}
-
-// readFacts is the patch id, subject and files of each commit, in batches.
-func (s *Store) readFacts(ctx context.Context, dir string, shas []string) (map[string]commitFacts, error) {
-	out := make(map[string]commitFacts, len(shas))
-	for i := 0; i < len(shas); i += hashBatch {
-		batch := shas[i:min(i+hashBatch, len(shas))]
-		if err := s.readMeta(ctx, dir, batch, out); err != nil {
-			return nil, err
-		}
-		pids, err := s.hashBatch(ctx, dir, batch)
-		if err != nil {
-			return nil, err
-		}
-		for c, p := range pids {
-			f := out[c]
-			f.pid = p
-			out[c] = f
-		}
-	}
-	return out, nil
-}
-
-// readMeta fills in subject and files, which cost no diff.
-func (s *Store) readMeta(ctx context.Context, dir string, shas []string, into map[string]commitFacts) error {
-	out, err := s.h.runner().gitWith(ctx, dir, s.env(), []byte(strings.Join(shas, "\n")+"\n"), 0,
-		"-c", "core.quotepath=off", "log", "--no-walk=unsorted", "--stdin", "--no-merges", "--no-renames", "--name-only",
-		"--format=%x00%H%x00%s")
-	if err != nil {
-		return err
-	}
-	parts := strings.Split(out, "\x00")
-	for i := 1; i+1 < len(parts); i += 2 {
-		sha, rest := parts[i], parts[i+1]
-		subject, list, _ := strings.Cut(rest, "\n")
-		var files []string
-		for _, l := range strings.Split(list, "\n") {
-			if l = strings.TrimSpace(l); l != "" {
-				files = append(files, l)
-			}
-		}
-		sort.Strings(files)
-		into[sha] = commitFacts{subject: strings.TrimSpace(subject), files: files, key: strings.Join(files, "\x00")}
-	}
-	return nil
-}
-
-// hashBatch is the patch id of each commit that has one. A batch whose diff is past hashCap is halved, and a single
-// commit past it has none.
-func (s *Store) hashBatch(ctx context.Context, dir string, shas []string) (map[string]string, error) {
-	if len(shas) == 0 {
-		return nil, nil
-	}
-	diff, err := s.h.runner().gitWith(ctx, dir, s.env(), []byte(strings.Join(shas, "\n")+"\n"), hashCap,
-		"log", "--no-walk=unsorted", "--stdin", "-p", "--no-merges", "--no-renames", "--format=commit %H")
-	if err != nil {
-		if !errors.Is(err, ErrOutputCap) {
-			return nil, err
-		}
-		if len(shas) == 1 {
-			return nil, nil
-		}
-		a, err := s.hashBatch(ctx, dir, shas[:len(shas)/2])
-		if err != nil {
-			return nil, err
-		}
-		b, err := s.hashBatch(ctx, dir, shas[len(shas)/2:])
-		if err != nil {
-			return nil, err
-		}
-		for c, p := range b {
-			a[c] = p
-		}
-		return a, nil
-	}
-	if strings.TrimSpace(diff) == "" {
-		return nil, nil
-	}
-	ids, err := s.h.runner().GitInput(ctx, dir, []byte(diff), "patch-id", "--stable")
-	if err != nil {
-		return nil, err
-	}
-	res := map[string]string{}
-	for _, l := range strings.Split(ids, "\n") {
-		if f := strings.Fields(l); len(f) == 2 {
-			res[f[1]] = f[0]
-		}
-	}
-	return res, nil
 }
 
 // changelogOnMain is every changelog entry path main holds.
