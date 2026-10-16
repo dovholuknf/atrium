@@ -13,6 +13,7 @@
 #   - the headless board units read off the code for each changed internal/api/web file, plus bootClean, run through
 #     scripts/test-board-sharded.js --local --units (which sets HEADLESS_UNITS per shard). A web file that maps to no
 #     unit gets bootClean only, and a warning
+#   - gofmt -l over the changed .go files, failing and naming any it lists
 #   - the node scripts/test-*.js whose subject changed, a syntax check of changed scripts
 #
 # THE WHOLE SUITE IS NOT THIS SCRIPT'S JOB. It runs after landing, by whoever lands, with FULL_SUITE=1. A red there is
@@ -100,6 +101,16 @@ if [ -n "$units" ] || [ ${#nodes[@]} -gt 0 ]; then
   fi
 fi
 
+# gofmt over the changed Go files: CI's gofmt check goes red on what go test does not mind
+gofmt_changed() {
+  local listed
+  listed="$(printf '%s\n' "$files" | grep '\.go$' | while read -r f; do [ -f "$f" ] && echo "$f"; done | xargs gofmt -l 2>&1)"
+  if [ -n "$listed" ]; then
+    echo "gofmt: these changed files are not formatted (run gofmt -w on them):"; echo "$listed"; return 1
+  fi
+  return 0
+}
+if printf '%s\n' "$files" | grep -q '\.go$'; then step "gofmt -l (changed Go files)" gofmt_changed; fi
 for f in ${jschecks[@]+"${jschecks[@]}"}; do step "node --check $f" node --check "$f"; done
 for f in ${shchecks[@]+"${shchecks[@]}"}; do step "bash -n $f" bash -n "$f"; done
 [ "$gobuild" = 1 ] && step "go build ./..." go build -o /dev/null ./...
