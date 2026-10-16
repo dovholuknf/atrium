@@ -9,13 +9,16 @@ on another room has to be held by the hub, and `atrium_git_url` answered "not fo
 
 ## Fix
 
-Push anyway. The shortcut stops being a skip: the push runs as for any other hub remote, and when the launcher shares
-the repository the report gains a note, "<launcher> sees this commit already on disk", so the caller still learns it.
-No new parameter: a push that lands is harmless for a launcher-only branch, while a skipped one breaks every other
-reader, and a flag the caller must remember is how this bug happened.
+Push anyway, to THIS room's forwarder. Removing the skip alone would turn success into a refusal, because
+`hubPushTarget` refuses a hub remote that is not this room's forwarder, and it stays strict for everyone. So when
+`PointsAtOtherForwarder` is true, `GitPush` calls the new `gitsync.PushToHubByURL`, which pushes by URL to this room's
+forwarder for `HubNameOf(dir)`, the path a clone with no hub remote already takes. The shared `.git/config` is never
+written. If `HubNameOf` answers "" the push fails with that reason, it is not skipped. When the launcher shares the
+repository the report gains the note "<launcher> sees this commit already on disk".
 
 ## Test plan
 
-Integration test `TestGitPushIsASuccessWhenTheHubRemoteIsAnotherRoomsAndTheLauncherSharesTheRepo` now expects the push
-to be attempted rather than skipped: the report no longer says "nothing to push" and the branch is recorded for the
-hub (`atrium_git_url` finds it).
+Integration test `TestGitPushReachesThisRoomsForwarderWhenTheHubRemoteIsAnotherRoomsAndTheLauncherSharesTheRepo` runs
+git's http-backend as this room's forwarder over a bare repository. It asserts the branch lands there, the hub branch
+is recorded, the report carries the note and not "nothing to push", and `remote.hub.url` in the shared config is
+unchanged.

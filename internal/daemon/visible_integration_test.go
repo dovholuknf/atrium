@@ -3,7 +3,9 @@
 package daemon
 
 import (
-	"net"
+	"net/http/cgi"
+	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -77,11 +79,30 @@ func TestTheLaunchTextSaysCommitsAreVisibleToALauncherOnTheSameRepository(t *tes
 	}
 }
 
-func TestGitPushIsASuccessWhenTheHubRemoteIsAnotherRoomsAndTheLauncherSharesTheRepo(t *testing.T) {
+func TestGitPushReachesThisRoomsForwarderWhenTheHubRemoteIsAnotherRoomsAndTheLauncherSharesTheRepo(t *testing.T) {
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	launcher, worker, _, dir := visibleFixture(t, d)
-	visGit(t, launcher.Worktree, "remote", "add", "hub", "http://127.0.0.1:8888/git/hub/github/o/r.git")
+	// this room's forwarder: git's own http-backend over a bare repository, the hub's copy of o/r
+	bare := filepath.Join(t.TempDir(), "hub", "github", "o", "r.git")
+	if err := os.MkdirAll(filepath.Dir(bare), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	visGit(t, filepath.Dir(bare), "init", "-q", "--bare", bare)
+	visGit(t, bare, "config", "http.receivepack", "true")
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	execPath, _ := exec.Command(gitPath, "--exec-path").Output()
+	backend := filepath.Join(strings.TrimSpace(string(execPath)), "git-http-backend")
+	root := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(bare))))
+	srv := httptest.NewServer(&cgi.Handler{Path: backend, Root: "/git/", Env: []string{
+		"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1", "GIT_HTTP_RECEIVE_PACK=true"}})
+	defer srv.Close()
+	d.setAgentAddr(srv.Listener.Addr())
+	visGit(t, launcher.Worktree, "remote", "add", "origin", "https://github.com/o/r.git")
+	const other = "http://127.0.0.1:8888/git/hub/github/o/r.git"
+	visGit(t, launcher.Worktree, "remote", "add", "hub", other)
 	if err := d.st.SetSetting(store.SettingGitPush, "hub"); err != nil {
 		t.Fatal(err)
 	}
@@ -105,10 +126,27 @@ func TestGitPushIsASuccessWhenTheHubRemoteIsAnotherRoomsAndTheLauncherSharesTheR
 	if err != nil {
 		t.Fatalf("refused: %v", err)
 	}
-	if rep, _ := got.(map[string]any)["report"].(string); rep != "nothing to push: boss sees this commit already" {
+	rep, _ := got.(map[string]any)["report"].(string)
+	if strings.Contains(rep, "nothing to push") || !strings.Contains(rep, "boss sees this commit already on disk") {
 		t.Fatalf("report %q", rep)
 	}
-	_ = dir
+	ref := exec.Command("git", "--git-dir", bare, "rev-parse", "--verify", "refs/heads/claude/x")
+	if out, err := ref.CombinedOutput(); err != nil {
+		t.Fatalf("the branch did not reach this room's forwarder: %v\n%s", err, out)
+	}
+	rows, _ := d.st.Resources(worker.ID)
+	found := false
+	for _, r := range rows {
+		found = found || r.Kind == store.ResHubBranch && r.Ref == "claude/x"
+	}
+	if !found {
+		t.Fatal("the hub branch was not recorded")
+	}
+	url := exec.Command("git", "config", "--get", "remote.hub.url")
+	url.Dir = dir
+	if out, _ := url.Output(); strings.TrimSpace(string(out)) != other {
+		t.Fatalf("the shared config changed: remote.hub.url = %q", out)
+	}
 }
 
 func TestALauncherOnAnotherRoomIsFoundByItsDirectory(t *testing.T) {
