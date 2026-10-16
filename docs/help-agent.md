@@ -91,11 +91,13 @@ room or the hub already holds the repo. If neither does, atrium clones it and th
 cancel, because a repo's own `.claude/settings.json` hooks and MCP servers run once a runner starts in it. Shift-Enter
 opens "start new work" filled in so you can change the branch name first.
 
-What the repo box reads today (`launchRepoTyped` in `js/launchrepo.js`): `host/org/repo` or an `https://` URL with an
-optional `.git`, typed or pasted into the filter. A row for it appears and clicking it fetches and starts.
-An ssh form such as `git@github.com:org/repo` is not read, and neither is a URL that goes deeper than the repo. Pasting
-more kinds of git URL into that box is being built and may not be in the person's build. Say it is coming and do not
-promise it. Compare `atrium version` with `git log` before saying what their build reads.
+What the repo box reads (`parseRepoText` in `js/repolink.js`, used by `launchRepoTyped`): `host/org/repo`, an `https://`
+URL with an optional `.git` or trailing slash, a page under the repo (`/tree/<branch>/...`, `/blob/...`, `/pull/N`,
+`/issues`), and the ssh forms `git@host:org/repo` and `ssh://git@host/org/repo`, for github, gitlab and bitbucket. A
+`/tree/<branch>` link fills **from** with that branch. The same link pasted into the working directory box moves to the
+repo panel. The repository box then selects the repo, or says it will be fetched, and start new work makes a branch name
+when none is typed. A build from before this change reads only `host/org/repo` and plain `https://` URLs, so compare
+`atrium version` with `git log` before saying what their build reads.
 
 ### What is the hub and what is a room?
 
