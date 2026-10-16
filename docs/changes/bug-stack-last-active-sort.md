@@ -10,9 +10,12 @@ Fix: pins still sit above the rest in either direction, but inside the pinned bl
 The board's pinned bucket and the terminals strip keep rank order, which is their own feature. The phone and the
 terminals tab are checked and reported separately.
 
-Open question for the review: this gives up hand order of pins on the stack tab, where the column shows a duration
-the pins are not ordered by. The alternative is to keep rank and stop showing the duration on pinned rows.
+Accepted by @rnd: pins follow the sort on the stack's flat list. The hand ordered group path in `stackGroupsHTML`
+stays on rank, as do the board's pinned bucket and the terminals strip.
 
+The phone (`m/js/home.js`, `m/js/card.js`) never pins: it sorts every card by `cardActivityCmp`, so it already agrees
+with the time it shows. The terminals strip orders its pinned bucket by rank on purpose, because dragging a row in it
+writes that rank, and following the sort would undo the drag. It is left as it is.
 ## Test plan
 
 ## @LETTER@. Stack last active sort orders pinned cards
