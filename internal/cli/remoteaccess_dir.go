@@ -39,7 +39,7 @@ func holdsRoomCert(dir string) bool {
 //
 // A --dir that holds no room certificate is REFUSED: the file is only read by a room that lives in that directory, so
 // writing it anywhere else answered "on" for a door nothing would ever open (sg3, 2026-10-14). Without --dir the
-// default is tried, then the directory the running room recorded, and an error says where it looked.
+// directory the running room recorded is taken first, then the default, and an error says where it looked.
 func pickRoomDir(flag string, running string) (dir, note string, err error) {
 	if running != "" {
 		note = "the running room on this machine uses " + running
@@ -55,11 +55,11 @@ func pickRoomDir(flag string, running string) (dir, note string, err error) {
 		return flag, note, nil
 	}
 	def := roomDir()
-	if holdsRoomCert(def) {
-		return def, note, nil
-	}
 	if holdsRoomCert(running) {
 		return running, note, nil
+	}
+	if holdsRoomCert(def) {
+		return def, note, nil
 	}
 	looked := def
 	if running != "" && !sameDir(running, def) {

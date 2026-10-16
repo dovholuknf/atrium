@@ -123,3 +123,28 @@ func TestRemoteAccessWithNoDirSaysWhereItLooked(t *testing.T) {
 		t.Fatalf("no room found: %v", err)
 	}
 }
+
+func TestRemoteAccessWithNoDirPrefersTheRunningRoomOverAStaleDefault(t *testing.T) {
+	t.Setenv("ATRIUM_TASK_ID", "")
+	t.Setenv("ATRIUM_AGENT_NAME", "")
+	t.Setenv(remoteaccess.EnvForce, "")
+	t.Setenv("WORKTREE_ROOT", t.TempDir())
+	if err := os.MkdirAll(roomDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRoomCert(t, roomDir())
+	live := t.TempDir()
+	writeRoomCert(t, live)
+	recordRoom(t, live)
+
+	out, err := runRA(t, "off")
+	if err != nil || !strings.Contains(out, "room directory: "+live) {
+		t.Fatalf("off with no dir: %q %v", out, err)
+	}
+	if _, err := os.Stat(filepath.Join(live, "remote_access.json")); err != nil {
+		t.Fatalf("nothing written in the running room's dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(roomDir(), "remote_access.json")); err == nil {
+		t.Fatal("wrote into the stale default")
+	}
+}
