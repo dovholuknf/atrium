@@ -42,7 +42,7 @@ not things to act on from a list. They stay on the item's detail page and on the
 
 | today | decision |
 | --- | --- |
-| four stat cards (needs you, in flight, spend today, landed this week) | one line of count chips: needs you, working, stalled, queued. Spend and landed are not shown until the hub sends data (section 7) |
+| four stat cards (needs you, in flight, spend today, landed this week) | one line of count chips: needs you, working, idle, queued. Spend and landed are not shown until the hub sends data (section 7) |
 | filter pills, a "sort: needs me first" pill that does nothing | the sort is fixed by the grouping, so the pill goes. The department pills stay in a small row only when there is more than one department |
 | tokens column, dollar column | detail only |
 | priority and dept tags on every row | the backlog id stays (mono, right of the title). Priority and dept move to the detail |
@@ -58,23 +58,41 @@ The hub changes nothing yet.
 For each backlog id:
 
 - **The driver** is the newest assignment whose card is live (the board holds the card and it is not offline). With no
-  live card it is the newest open assignment. The row's state, age and question come from the driver, and the "open
+  live card it is the newest card on an offline room, then the newest open assignment. The row's state, age and question come from the driver, and the "open
   terminal" button opens the driver's card.
 - **Item state**, in this order:
-  1. every assignment finished: **finished** (or cancelled, when a note says so)
-  2. a question for clint, or a design waiting on his approval: **needs you**
-  3. no live card on an unfinished item that has run before: **stalled**
-  4. every open assignment queued: **queued**
-  5. otherwise: **working**
+  1. **finished**: the current step is past `pushed` (all eight done or skipped), or the item was cancelled. A landed item
+     whose cards have all ended is NOT finished. Lifecycle 2.4 says the current step is the first that is not done, so an
+     item that landed and has not deployed or pushed is still at step 7 or 8, and the row says "step 7 of 8 · deploying"
+     or "step 8 of 8 · waiting to push" with the open steps on the bar
+  2. **needs you**: a question for clint, or a design waiting on his approval
+  3. **queued**: no assignment has ever started (every one is queued, and none has finished or run). A row that shows ended
+     cards is never queued
+  4. **idle**: the current step is a step a CARD does (designed, building, tested, reviewed, landed) and no live card holds it
+  5. otherwise **working**
+- **Which steps have a card.** Designed, building, tested, reviewed and landed are done by a card role (designer, builder,
+  tester, reviewer, merger). Approved is the human's. Deployed and pushed have no card at all (lifecycle section 3). So
+  only the first set can be idle. An item at deployed or pushed with every card ended is working, because atrium, not a
+  card, is what it waits on. The row says so ("No card is needed for this step").
+- **A card on an offline room is unknown, not idle.** The board holds the card flagged offline. The row stays in Working,
+  the card chip reads "room m1mini offline" in muted text, and there is no relaunch (a relaunch would start a second
+  worker next to one that may be fine). Whether it ever becomes idle is open question 7.
 - **The cards fold** under a `details` line reading "1 live, 3 ended". Opened, it lists the live card first with its age,
-  then ended cards muted and struck through ("ended, never reported"). A card nobody reported on is never a row.
-- **Stalled is new.** It is the honest word for the overnight cards: unfinished, and nothing alive on them. Its two buttons
+  then unknown cards ("room m1mini offline"), then ended cards muted and struck through ("ended, never reported"). An
+  assignment with no card yet adds nothing here. A card nobody reported on is never a row.
+- **Idle is new, and it is not "stale".** The lifecycle already uses `stale` for a STEP that was done and has had commits
+  since (section 2.4), drawn amber. Using amber for a stuck item too would give the colour two meanings, so the item state
+  is called **idle** and drawn muted: a hatched segment, a dashed row border and the word "idle", never amber. Both can sit
+  on one bar (an idle item can have a stale step behind it), so the legend carries both.
+  It is the honest word for the overnight cards: unfinished, and nothing alive on them. Its two buttons
   are "cancel item" and "relaunch". It stops those rows counting as work. It also makes the cleanup of dead assignments a
   human choice rather than a silent sweep (open question 2).
 
 The mockup shows each: `f-ptyhost-reconnect` with a real question, `rd-item-lifecycle` waiting on approval,
 `bug-lean-no-status-line` as one working row with one live card and three ended chips, `rd-test-layout` and
-`u-minion-cards-hidden` as stalled.
+`u-minion-cards-hidden` as idle, `u-items-tab` landed and deploying, `r-usage-export` waiting to push (both Working,
+neither Finished), `f-room-handoff` on an offline room, `u-chat-tab` with a stale step, `f-session-ask` blocked on the
+orchestrator with a live card, and `f-hub-forge-push` queued with no card.
 
 ## 4. An ask shows the question, or there is no ask
 
@@ -89,12 +107,13 @@ It is true when:
 It is false for everything else, in particular:
 
 - **A blocked assignment with no question.** There is nothing to answer. It is not an "ask". It is a blocked item whose
-  worker stopped and said nothing, so it is **stalled** (if no live card) or shown as "Blocked, waiting on <owner>" in
-  small text (if a live one). The string "(no reason given)" is deleted.
+  worker stopped and said nothing, so it is **idle** (if no live card holds a card step) or sits under Working as
+  "Blocked, waiting on <owner>" in small text (if a live one). The string "(no reason given)" is deleted.
 - **A blocked assignment owned by a session** (the orchestrator). The question is the orchestrator's to answer. Clint sees
   "Blocked, waiting on orch@sg4, not on you". Whether he may answer on the orchestrator's behalf is open question 1.
 
-The ask box shows the full question text (wrapped, never cut to one line), the worker's suggested options as buttons when
+The ask box opens with **who asked and how long ago**: "pty-builder asked, 41m ago" (the card's handle, lifecycle
+section 7.3). For a design it reads "lc-designer is waiting on your approval, 12m ago". Under that is the full question text (wrapped, never cut to one line), the worker's suggested options as buttons when
 there are any, then "answer" (opens the answer box) and "open terminal". A design waiting on approval keeps "approve" and
 "send back". The header chip `N needs you` is `items.filter(itemNeedsYou).length`, and the tab badge (`loadItemsBadge`)
 uses the same count.
@@ -102,23 +121,29 @@ uses the same count.
 ## 5. Name the step, and say what each bar is
 
 - Each row carries one line: **"step 3 of 8 · building"**, with the time in the step on the right. The wording is the
-  step's own verb (`ITEM_STEP_VERB`), or "asked a question at building", "waiting for your approval", "stalled at landed"
+  step's own verb (`ITEM_STEP_VERB`), or "asked a question at building", "waiting for your approval", "idle at landed"
   when the state says so. It names the step in words, never only a number.
-- A legend, once, under the count chips: **done**, **current step**, **waiting on you**, **stalled**, **not reached**, and
-  "hover a segment for its step name" (the hover tip is already there).
+- A legend, once, under the count chips: **done**, **current step**, **waiting on you**, **stale step (commits since)**,
+  **idle: nothing running**, **not reached**, and "hover a segment for its step name" (the hover tip is already there).
+- **Current must read apart from done in every skin.** In the default skin teal draws white, so done and current were
+  both white. The current segment gets a different hue (`--blue`, never `--teal`), is taller (9px against 7px) and has a
+  2px underline in `--head`. The same treatment, in `--wait`, marks the segment waiting on clint. A headless check
+  walks `SKINS` and asserts the computed background colour of the current segment differs from a done one (and that its
+  box shadow is set), so a skin that maps blue to teal fails.
 - A skipped step is drawn as done. It is not worth its own legend entry on a list (the detail still says
   "skipped: <reason>"). That retires the dashed segment.
-- A finished item has no current segment: its bar is full up to the last step it reached, with the word "landed" or
-  "cancelled" and "5h ago".
+- A finished item (past pushed) has no current segment: its bar is full, with the word "pushed" or "cancelled" and
+  "5h ago". An item that has landed but not deployed or pushed keeps its bar open, with the current segment on deployed
+  or pushed.
 - Colour carries state and the word carries the meaning. Orange is only for waiting on clint (the board's `--wait`),
-  amber for stalled, teal and blue for done and current. The same tokens as today, no new colours, so the skins repaint it.
+  amber only for a stale step, a muted hatch for idle, teal for done and blue for current. The same tokens as today, no new colours, so the skins repaint it.
   (The default skin draws teal as white, which is why done reads white in the shots.)
 
 ## 6. Layout: width and two columns
 
 - The content has a **maximum width** (`1840px` in the mockup, centred) so a row never spreads across a 4K screen.
-- Under 1700px it is one column in this order: needs you, stalled, working, queued, finished.
-- From 1700px it is **two columns**. Left: "Needs you" and "Stalled", the things that want clint. Right: "Working",
+- Under 1700px it is one column in this order: needs you, idle, working, queued, finished.
+- From 1700px it is **two columns**. Left: "Needs you" and "Idle", the things that want clint. Right: "Working",
   "Queued", "Finished". The left column is sticky, so the questions stay in view while he reads the rest. Each row is
   a compact card: title and id, bar, step line, then the question or the buttons. No empty middle.
 - Under 700px the buttons stack under the question. The phone has its own page (`m/`) that follows the same grouping
@@ -139,24 +164,31 @@ design they do not exist until the hub sends a number:
 
 Four phases, each landing on its own. Board only until phase 4. Files under `internal/api/web/`.
 
-**Phase 1: fold by item and one needs-you function.**
+**Phase 1: fold by item, the live-card test and one needs-you function.**
 - `js/items-data.js`: add `foldItems(assignments, work, tasks)` returning one row per backlog id with `driver`, `cards`,
-  `group` and `question`, and `itemNeedsYou`. `itemsStatsFrom` counts from folded rows. Keep the mock path (`items-mock.js`)
-  working by making it return folded rows too.
-- `js/items.js`: `itemListHtml` and `itemRow` draw a folded item. Open, answer, cancel and the detail keep taking the
-  driver's assignment id, so the POST routes do not change. `loadItemsBadge` uses `itemNeedsYou`.
+  `group` and `question`, and `itemNeedsYou`. The live-card test (`itemCard` plus the board's `lastTasks`, offline
+  flag included) is part of this phase, because the driver and the cards line need it. `itemsStatsFrom` counts from folded
+  rows. Keep the mock path (`items-mock.js`) working by making it return folded rows too.
+- Groups in this phase: needs you, working, queued, finished, by the rules in section 3. A blocked assignment with no
+  question sits under Working as "Blocked, waiting on <owner>". Nothing is idle yet.
+- `js/items.js`: `itemListHtml` and `itemRow` draw a folded item, with the "who asked" line. Open, answer, cancel and the
+  detail keep taking the driver's assignment id, so the POST routes do not change. `loadItemsBadge` uses `itemNeedsYou`.
 - Tests in `scripts/test-board-headless.js` (extend `itemsRealShapeSection`, same fixture shape as
   `docs/ui/img/items-tab-ux-pass/fixture.js`): four assignments for one backlog id make one row. A blocked assignment with
   an empty note makes no "asks you" box. The header number equals the count of rows in "Needs you", checked on a fixture
-  with a human question, an approval gate and a session-owned block. A poll that changed nothing repaints nothing (keep the
-  existing check).
+  with a human question, an approval gate and a session-owned block. A landed item with every card ended is under
+  Working, not Finished. An item with only queued assignments is Queued, one with an ended card is not. A poll that
+  changed nothing repaints nothing (keep the existing check).
 - A node unit test for `foldItems` and `itemNeedsYou` beside the other board unit tests in `scripts/`, since they are pure.
 
-**Phase 2: stalled, labels and legend.**
-- Live-card test (`itemCard` plus the board's `lastTasks`), the stalled group and its two actions. "cancel item" uses the
+**Phase 2: idle, labels and legend.**
+- The idle group (a card step with no live card and none on an offline room) and its two actions. "cancel item" uses the
   existing cancel POST. "relaunch" is open question 3 and ships disabled until answered.
-- `css/items.css`: the step line, the legend, the stalled colour. Headless: the legend is present, the step line names
-  the step, stalled rows never count in "needs you".
+- `css/items.css`: the step line, the legend, the hatched idle segment, the current-segment treatment. Headless: the
+  legend lists both stale and idle, the step line names the step, idle rows never count in "needs you", a card on an
+  offline room stays under Working with "room <name> offline" and no relaunch button, an item at deployed or pushed with
+  every card ended is never idle, and the computed colour of the current segment differs from a done one in every skin in
+  `SKINS`.
 
 **Phase 3: layout and hiding empty stats.**
 - `css/items.css`: a maximum width, the two-column grid from 1700px, the sticky left column, the compact row. The
@@ -167,7 +199,7 @@ Four phases, each landing on its own. Board only until phase 4. Files under `int
 
 **Phase 4 (hub, optional): close dead assignments.**
 - `internal/link`: close an assignment whose card has ended and never reported (state `finished` with a note
-  "ended without reporting"), so the board's stalled group is a backstop, not the main path. Needs clint's decision
+  "ended without reporting"), so the board's idle group is a backstop, not the main path. Needs clint's decision
   (open question 2). Tests in the hub package for the sweep and for an assignment whose card is still live.
 
 Notes for the builder: the board has a phone page and `items.js` is also read by `items-mock.js` (`?itemsmock=1`), so
@@ -180,10 +212,12 @@ change both. Add `changelog/ui/<date>-<item>.md` and `docs/changes/<item>.md` pe
    "waiting on orch@sg4, not on you" and has no answer button. Do you ever want to answer for the orchestrator from here?
    If yes it is an "answer for orch" link in the expanded card list, not a headline.
 2. **Dead assignments.** Should atrium close an assignment on its own when its card has ended (phase 4), or should
-   "stalled" stay a human choice for good? The design works either way. Closing is quieter, stalled is safer.
+   "idle" stay a human choice for good? The design works either way. Closing is quieter, idle is safer.
 3. **Relaunch.** What should it do: start a fresh worker on the same backlog id with the same brief
    (`atrium launch --item`)? That is a launch from the board, which nothing does today.
 4. **Finished.** Is five rows folded right, or should finished leave the tab after a day and live only on the efficacy page?
 5. **Priority.** Gone from the list in this design. Do you sort by it anywhere (high first inside needs-you)?
 6. **Phone.** The phone page gets the same grouping in a later change. Is that wanted, or does the phone only need
    "needs you"?
+7. **Offline rooms.** A card on an offline room stays Working as "unknown". Should it move to Idle after some time (an
+   hour? a day?), or stay unknown until the room is back?
