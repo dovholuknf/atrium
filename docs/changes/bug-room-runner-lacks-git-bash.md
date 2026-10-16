@@ -16,15 +16,16 @@ blocked. The card sat at needs-input looking alive. A launch that cannot run a t
   4. Known atrium installs: `<home>\.local\share\atrium-tools\git\bin\bash.exe` and
      `%LOCALAPPDATA%\atrium-tools\git\bin\bash.exe`.
   A bash.exe that only sits on PATH does not count (System32 has WSL's launcher).
-  `claudeconf.findGitBash` is exported as `FindGitBash` so steps 1 to 3 are one rule, not two.
+  The rule is rewritten over plain strings in `gitbash.go`, because `claudeconf` uses `filepath` and would
+  not test on a Mac.
 - **Found by 1 to 3.** Nothing changes. **Found only by 4.** `CLAUDE_CODE_GIT_BASH_PATH` is set to it in the
   runner's env, so the room needs no restart and no PATH edit.
-- **Not found.** The launch is refused before the card exists, and the error is returned to the caller (and so
-  to the launcher): `claude needs Git Bash on Windows and this room cannot find one: set
+- **Not found.** The launch is refused before anything is spawned: `launchFailed` marks the card dead with the reason, and
+  the error is returned to the caller (and so to the launcher): `claude needs Git Bash on Windows and this room cannot find one: set
   CLAUDE_CODE_GIT_BASH_PATH to a bash.exe, or put a full Git (not MinGit) on the room's PATH, then start the
-  room again`. When the card already exists (start onto) `launchFailed` records the same reason.
-- **Injected for tests.** `gitBashFor(goos string, env []string, home string, exists func(string) bool,
-  lookPath func(string, string) (string, error))` returns the env entry to add (or empty) and an error. No
+  room again`.
+- **Injected for tests.** `gitBashFor(goos, runnerID string, env []string, home string,
+  exists func(string) bool, lookPath func(name, path string) (string, error))` returns the env entry to add (or empty) and an error. No
   disk, no OS probing, runs on any OS. The caller passes the real ones.
 - **Not doing.** Reporting a card whose first tool call fails this way: the refusal makes it unreachable for
   this cause, and a hook-error detector is a separate item.
