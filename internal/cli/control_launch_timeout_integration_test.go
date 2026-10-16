@@ -22,12 +22,13 @@ type slowRoom struct {
 	cards []map[string]any
 	posts int
 	hang  time.Duration
+	cwd   string
 }
 
 func (s *slowRoom) add() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cards = append(s.cards, map[string]any{"id": "c9", "wire_name": "kid", "worktree": "/w/dir",
+	s.cards = append(s.cards, map[string]any{"id": "c9", "wire_name": "kid", "worktree": s.cwd,
 		"created_at": "1999-01-01T00:00:00Z"}) // a clock nowhere near the caller's
 }
 
@@ -62,22 +63,15 @@ func (s *slowRoom) serve(t *testing.T, started bool) {
 	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
 }
 
-func shortLaunchWait(t *testing.T) {
-	was := launchLocalWait
-	launchLocalWait = 100 * time.Millisecond
-	launchAttempts.Lock()
-	launchAttempts.known = map[string]map[string]bool{}
-	launchAttempts.Unlock()
-	t.Cleanup(func() { launchLocalWait = was })
-}
+func shortLaunchWait(t *testing.T) { t.Setenv("ATRIUM_LAUNCH_WAIT", "100ms") }
 
 // The room starts the card and answers after the caller's bound: the launch returns that card.
 func TestAStdioLaunchThatOutlastsItsBoundReturnsTheCardItStarted(t *testing.T) {
 	shortLaunchWait(t)
-	room := &slowRoom{hang: 400 * time.Millisecond}
+	room := &slowRoom{hang: 400 * time.Millisecond, cwd: "/w/dir0"}
 	room.serve(t, true)
 
-	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w/dir"})
+	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: room.cwd})
 	if err != nil {
 		t.Fatalf("a launch that started was reported as failed: %v", err)
 	}
@@ -93,15 +87,15 @@ func TestAStdioLaunchThatOutlastsItsBoundReturnsTheCardItStarted(t *testing.T) {
 // without posting again.
 func TestARetryAfterATimedOutLaunchReturnsTheCardThatAppearedLate(t *testing.T) {
 	shortLaunchWait(t)
-	room := &slowRoom{hang: 400 * time.Millisecond}
+	room := &slowRoom{hang: 400 * time.Millisecond, cwd: "/w/dir1"}
 	room.serve(t, false)
 
-	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w/dir"}); err == nil {
+	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: room.cwd}); err == nil {
 		t.Fatal("a launch with no card and no answer succeeded")
 	}
 	room.add() // the room finishes behind the caller
 
-	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w/dir"})
+	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: room.cwd})
 	if err != nil || out.Card != "c9" {
 		t.Fatalf("retry = %+v, %v", out, err)
 	}
@@ -113,11 +107,11 @@ func TestARetryAfterATimedOutLaunchReturnsTheCardThatAppearedLate(t *testing.T) 
 // A card that was already in the directory is not mistaken for the launch.
 func TestACardAlreadyThereIsNotTakenForTheLaunch(t *testing.T) {
 	shortLaunchWait(t)
-	room := &slowRoom{hang: 400 * time.Millisecond}
+	room := &slowRoom{hang: 400 * time.Millisecond, cwd: "/w/dir2"}
 	room.serve(t, false)
 	room.add()
 
-	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: "/w/dir"}); err == nil {
+	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: room.cwd}); err == nil {
 		t.Fatal("an old card in the directory was taken for a launch that never made one")
 	}
 }

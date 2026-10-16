@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +14,13 @@ import (
 
 // launchLocalWait bounds the post to /v1/launch. A room answers it after trusting the worktree and starting
 // the runner, which is routinely past the 8 s every other call here gets. Under launchAcrossWait, so the
-// hub's own sentence still reaches a caller that went through it. A variable so a test can shorten it.
-var launchLocalWait = 45 * time.Second
+// hub's own sentence still reaches a caller that went through it. ATRIUM_LAUNCH_WAIT is a Go duration, for a test.
+func launchLocalWait() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("ATRIUM_LAUNCH_WAIT")); err == nil && d > 0 {
+		return d
+	}
+	return 45 * time.Second
+}
 
 // launchAttempts is, per directory, the card ids that were on the room before a launch whose answer was lost
 // and whose card had not shown yet. The next launch for that directory looks outside them BEFORE it posts, so
@@ -84,7 +90,7 @@ func postLaunch(ctx context.Context, cwd string, req map[string]any, t *card) (r
 	}
 
 	known := link.IDSet(launchRowsOf(before))
-	err = askFor(ctx, launchLocalWait, http.MethodPost, "/v1/launch", req, t)
+	err = askFor(ctx, launchLocalWait(), http.MethodPost, "/v1/launch", req, t)
 	if err == nil {
 		clearLaunchAttempt(key)
 		return false, nil
