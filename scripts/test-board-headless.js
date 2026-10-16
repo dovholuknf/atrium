@@ -21801,8 +21801,8 @@ async function minionReadyQuietSection(browser, base) {
 }
 
 async function itemMinionChipSection(browser, base) {
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
   const errors = [];
   const imgs = docImgDir("docs", "changes", "img", "u-minion-cards-hidden");
@@ -21854,7 +21854,7 @@ async function itemMinionChipSection(browser, base) {
     if (got.gone.tag !== "SPAN" || !got.gone.cls.includes("gone")) fail("itemMinionChip: a missing card is not a disabled chip: " + JSON.stringify(got.gone));
     if (errors.length) fail("itemMinionChip: page errors: " + errors.join("; "));
     else console.log("itemMinionChip ok");
-  } finally { await ctx.close(); hubMode = wasHub; }
+  } finally { await ctx.close(); mock.hubMode = wasHub; }
 }
 
 async function itemOpenHiddenCardSection(browser, base) {
