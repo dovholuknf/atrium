@@ -17983,7 +17983,7 @@ async function mMarkdownSection(browser) {
         return {
           h: !!q("h3") && !!q("h4"), strong: !!q("strong"), em: !!q("em"), code: !!q("p code"), ul: !!q("ul li"), ol: !!q("ol li"),
           link: a ? [a.target, a.rel] : null, scroll: pre.scrollWidth - pre.clientWidth, copy: !!q(".code-copy"),
-          img: q(".md-img img") ? q(".md-img img").naturalWidth : 0, file: !!q(".md-file"), gone: q(".md-gone").textContent,
+          img: q(".md-img img") && /^blob:/.test(q(".md-img img").src) ? 1 : 0, file: !!q(".md-file"), gone: q(".md-gone").textContent,
           table: !!q(".tbl table"), page: document.documentElement.scrollWidth - window.innerWidth,
         };
       });
