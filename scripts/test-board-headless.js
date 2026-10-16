@@ -9095,13 +9095,13 @@ async function tabsOrderSection(browser, base) {
     await p.click(row("usage") + ' button[aria-label^="move up"]');
     await p.click(row("usage") + ' button[aria-label^="move up"]');
     v = await view(p);
-    const want = ["stack", "board", "terms", "chat", "usage", "pulls", "history"];
-    if (v.order.slice(0, 7).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
+    const want = ["stack", "board", "terms", "chat", "items", "usage", "pulls", "history"];
+    if (v.order.slice(0, 8).join(",") !== want.join(",")) fail("tabsOrder: usage did not move up two places: " + v.order);
     if (!/"usage"/.test(v.saved || "")) fail("tabsOrder: the order is not saved: " + v.saved);
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     v = await view(p);
-    if (v.order.slice(0, 7).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
+    if (v.order.slice(0, 8).join(",") !== want.join(",")) fail("tabsOrder: the order did not survive a reload: " + v.order);
 
     // place: history hidden, rooms in the menu
     await arrange(p);
