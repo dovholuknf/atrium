@@ -27214,7 +27214,7 @@ async function hubReposTimelineDotsSection(browser, base) {
 // choice to narrow it, a hostile branch name drawn as text, state that is this window's and never another's. With
 // HR_SHOTS=<dir> it also saves the view at 2000 and 390, paper and dark.
 async function hubReposBranchesSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "hubReposBranches";
   try {
     const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 1600, h: 1000 });
@@ -27309,7 +27309,7 @@ async function hubReposBranchesSection(browser, base) {
         } finally { await ctx.close(); }
       }
     }
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposBranches ok");
 }
 async function hubReposFeedSection(browser, base) {
