@@ -18,7 +18,7 @@ Docs: none, this change is the doc-debt rule itself and `docs/changes/README.md`
 
 **Expected:** it names the `docs` department and the six block lines.
 
-### @LETTER@3. Phase 3, the meter endpoint: below and past the threshold and past the threshold
+### @LETTER@3. Phase 3, the meter endpoint: below and past the threshold
 
 1. File seven `docs` items whose `feature:` has no work row, then `GET /_hub/doc-debt`.
 2. File an eighth.
