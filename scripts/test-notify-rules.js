@@ -32,6 +32,9 @@ const make = new Function(`
   let term = null, termTask = null;
   const NO_CONTACT_AFTER_SECONDS = 20 * 60, LIVE_STATUSES = ["running", "needs-input", "needs-permission"];
   const cardIdleAge = () => 0;
+  const MINION_TAG = "atrium:minion";
+  ${fn(rules, "isMinion")}
+  ${fn(rules, "cardHasOpenQuestion")}
   ${fn(rules, "runnerGone")}
   ${fn(rules, "cardWaiting")}
   ${fn(rules, "cardLive")}
