@@ -5056,6 +5056,36 @@ async function backtickPathLinksSection(browser, base) {
         fail("a link in " + JSON.stringify(cases[i][0]) + " took in the characters around the path: " + JSON.stringify(got));
       }
     }
+    // A card another room serves is respelled in place when the room set changes (`retagTermId`), and the link
+    // provider registered with the old spelling. The claude reply line, whole, must still link on both.
+    const reply = "● Ep1 is ready: live-stream/2026/10-16/stack/ep1-classifier/README.md. I ran every step";
+    const want = "live-stream/2026/10-16/stack/ep1-classifier/README.md";
+    await p.evaluate(r => { term.reset(); termSock.onmessage({ data: "\x1b[1m" + r + "\x1b[0m\r\n" }); }, reply);
+    await p.waitForTimeout(300);
+    for (const spelling of ["land-live", "sg4~land-live"]) {
+      await p.evaluate(s => { termTask.id = s; }, spelling);
+      const got = await p.evaluate(() => new Promise(res => {
+        provideFileLinks(term, "land-live", 1, links => {
+          const row = term.buffer.active.getLine(0).translateToString(false);
+          res((links || []).map(l => row.slice(l.range.start.x - 1, l.range.end.x)));
+        });
+      }));
+      if (!got.includes(want)) fail("the claude reply was not linked with the card spelled " + spelling + ": " + JSON.stringify(got));
+    }
+    // PATHLINK_SHOT=file.png hovers the path on the respelled card and saves the underline.
+    if (process.env.PATHLINK_SHOT) {
+      const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+      const cell = await p.evaluate(() => {
+        const d = term._core._renderService.dimensions.css.cell;
+        return { w: d.width, h: d.height };
+      });
+      await p.evaluate(() => term.refresh(0, term.rows - 1));
+      await p.waitForTimeout(300);
+      await p.mouse.move(box.x + cell.w * 40, box.y + cell.h * 5);
+      await p.mouse.move(box.x + cell.w * 30.5, box.y + cell.h * 0.5, { steps: 3 });
+      await p.waitForTimeout(800);
+      await p.screenshot({ path: process.env.PATHLINK_SHOT });
+    }
     if (errors.length) fail("the backtick path page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
