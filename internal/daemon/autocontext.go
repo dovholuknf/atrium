@@ -79,6 +79,15 @@ func (d *Daemon) cycleOnStatusline(taskID string) {
 	}
 }
 
+// cycleStartEvent is the payload of the start event: the size and the limit, and which layers made the limit,
+// so a cycle that fired early says why.
+func cycleStartEvent(tokens, limit int64, path string, l api.ContextLimit) map[string]any {
+	return map[string]any{
+		"by": cycleBy, "started": true, "tokens": tokens, "limit": limit, "path": path,
+		"limit_from": l.From, "own_k": l.OwnK, "ceiling_k": l.CeilingK, "wanted_k": l.WantedK, "wanted_from": l.WantedFrom,
+	}
+}
+
 // startCycle claims the card for an automatic cycle and runs it. The claim is the same one a button press
 // makes, so a tick and a press cannot both run.
 func (d *Daemon) startCycle(t *store.Task, tokens, limit int64) {
@@ -92,10 +101,10 @@ func (d *Daemon) startCycle(t *store.Task, tokens, limit int64) {
 	if !ok {
 		return
 	}
-	log.Printf("[atrium] context cycle started on %s at %dk (limit %dk)", t.DisplayTitle(), tokens/1000, limit/1000)
-	if err := d.st.AppendEvent(t.ID, store.EventNotified, map[string]any{
-		"by": cycleBy, "started": true, "tokens": tokens, "limit": limit, "path": path,
-	}); err != nil {
+	l := api.ContextLimitOf(d.st, t)
+	log.Printf("[atrium] context cycle started on %s at %dk (limit %dk from %s, own %dk, ceiling %dk, wanted %dk)",
+		t.DisplayTitle(), tokens/1000, limit/1000, l.From, l.OwnK, l.CeilingK, l.WantedK)
+	if err := d.st.AppendEvent(t.ID, store.EventNotified, cycleStartEvent(tokens, limit, path, l)); err != nil {
 		log.Printf("[atrium] could not record the context cycle start on %s: %v", t.ID, err)
 	}
 	d.publishTask(t.ID)
