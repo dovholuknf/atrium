@@ -820,7 +820,8 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		req["spawned_by"] = me
 	}
 	var t card
-	if err := ask(ctx, http.MethodPost, "/v1/launch", req, &t); err != nil {
+	recovered, err := postLaunch(ctx, in.Cwd, req, &t)
+	if err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
@@ -831,6 +832,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	}
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
 		"stop at the first gated command unless somebody is watching."
+	if recovered {
+		out.Note = link.LaunchRecoveredNote
+	}
 	out.Model, out.Effort = t.Model, t.Effort
 	// A room older than launch options drops the fields without a word.
 	missed := link.LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,

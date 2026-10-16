@@ -1664,31 +1664,39 @@ const launchTimeout = 30 * time.Second
 const LaunchRecoveredNote = "NOTE: the room's answer was slow, so the card was found by looking. it is running: do NOT launch it again. " +
 	LaunchStartedNote
 
-// findLaunched is the card a launch made in `cwd` since `since`, or nil. It is how a launch whose answer
-// was lost is told from one that never started.
-func (c *controlMCP) findLaunched(ctx context.Context, room, cwd string, since time.Time) *ctlCard {
+// listCards is the cards on a room, or false when it cannot be read.
+func (c *controlMCP) listCards(ctx context.Context, room string) ([]ctlCard, bool) {
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
 	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+		return nil, false
+	}
+	return body.Tasks, true
+}
+
+func launchRows(cards []ctlCard) []LaunchRow {
+	rows := make([]LaunchRow, len(cards))
+	for i, t := range cards {
+		rows[i] = LaunchRow{ID: t.ID, Worktree: t.Worktree, Created: t.Created}
+	}
+	return rows
+}
+
+// findLaunched is the card a launch made in `cwd` that was not in `known`, or nil. It is how a launch whose
+// answer was lost is told from one that never started.
+func (c *controlMCP) findLaunched(ctx context.Context, room, cwd string, known map[string]bool) *ctlCard {
+	cards, ok := c.listCards(ctx, room)
+	if !ok {
 		return nil
 	}
-	norm := func(p string) string {
-		return strings.ToLower(strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(p), "\\", "/"), "/"))
-	}
-	want := norm(cwd)
-	var best *ctlCard
-	for i := range body.Tasks {
-		t := &body.Tasks[i]
-		made, err := time.Parse(time.RFC3339Nano, t.Created)
-		if err != nil || made.Before(since.Add(-2*time.Second)) || norm(t.Worktree) != want {
-			continue
-		}
-		if best == nil || t.Created > best.Created {
-			best = t
+	id := PickLaunched(known, cwd, launchRows(cards))
+	for i := range cards {
+		if id != "" && cards[i].ID == id {
+			return &cards[i]
 		}
 	}
-	return best
+	return nil
 }
 
 // LifetimeWork is the lifetime atrium_launch_worker stamps. It is store.LifetimeWork, which this package does not
@@ -1877,7 +1885,10 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		reqBody["spawned_by_dir"] = spawnedByDir
 	}
 	var t ctlCard
-	started := time.Now()
+	// THE CARDS BEFORE THE POST, so a card that was not there is the launch's. Unreadable means no recovery
+	// is possible: nothing can be told apart from what was already running.
+	before, canTell := c.listCards(ctx, room)
+	known := IDSet(launchRows(before))
 	// A launch waits on the room trusting the worktree and starting the runner, which is longer
 	// than the 8 s every other call here is bounded by.
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: launchTimeout, Transport: c.client.Transport}}
@@ -1888,7 +1899,10 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		if !errors.As(err, &be) || be.code != http.StatusBadGateway {
 			return out, err
 		}
-		found := c.findLaunched(ctx, room, in.Cwd, started)
+		if !canTell {
+			return out, err
+		}
+		found := c.findLaunched(ctx, room, in.Cwd, known)
 		if found == nil {
 			return out, err
 		}
