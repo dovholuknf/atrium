@@ -1,3 +1,5 @@
 - `minion-terms-before.png`: the Terminals tab with four item minions listed among the real sessions (the old behaviour).
 - `minion-terms-after.png`: the same cards, only the real sessions listed.
 - `minion-terms-asking.png`: one minion has a question, so it is listed with the `minion` chip.
+- `item-minion-chip-before.png`: an item's building step with its two cards drawn as plain chips (the old behaviour).
+- `item-minion-chip-after.png`: the same step with its minions as chips that say `running` and `ended`.

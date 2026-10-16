@@ -59,6 +59,10 @@
     border: 0; cursor: default; }
   button.it-card { cursor: pointer; }
   button.it-card:hover { background: color-mix(in srgb, var(--blue) 18%, transparent); }
+  .it-card.minion .it-mst { font-style: normal; color: var(--dim); margin-left: 4px; }
+  .it-card.minion.hot { background: var(--warn-bg); color: var(--warn); }
+  .it-card.minion.hot .it-mst { color: var(--warn); font-weight: 600; }
+  .it-card.gone { color: var(--dim); background: var(--lift); text-decoration: line-through; opacity: .7; cursor: not-allowed; }
 
   .it-prog { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
   .it-prog span { height: 7px; border-radius: 4px; background: var(--grid); }

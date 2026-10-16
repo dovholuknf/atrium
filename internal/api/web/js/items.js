@@ -170,8 +170,28 @@ function itemOwnerText(it) {
   return it.owner || "";
 }
 
+// The card behind a chip, from the board's list. Null when the board holds no such card, undefined when it has no list yet.
+function itemChipCard(id) {
+  if (typeof lastTasks === "undefined" || !lastTasks.length) return undefined;
+  return lastTasks.find(x => x.id === id) || null;
+}
+
+// What a minion is doing, in a word: it needs you, it is not answering, it has ended, or it is running.
+function itemMinionState(t) {
+  if (cardNeedsYou(t)) return t.status === "needs-permission" ? "needs permission" : "needs you";
+  const st = cardState(t);
+  return st === "off" ? "ended" : st === "unreachable" ? "unreachable" : "running";
+}
+
 function itemChip(name, id) {
   if (!id) return '<span class="it-card">' + esc(name) + "</span>";
+  const t = itemChipCard(id);
+  if (t === null) return '<span class="it-card gone" data-tip="this card has ended and was removed">' + esc(name) + "</span>";
+  if (t && isMinion(t)) {
+    const st = itemMinionState(t);
+    return '<button type="button" class="it-card minion' + (st.indexOf("needs") === 0 ? " hot" : "") + '" data-act="card" data-card="' + esc(id) +
+      '" data-tip="open this minion\'s terminal">' + esc(name) + ' <i class="it-mst">' + esc(st) + "</i></button>";
+  }
   return '<button type="button" class="it-card" data-act="card" data-card="' + esc(id) + '" data-tip="open this card\'s terminal">' + esc(name) + "</button>";
 }
 

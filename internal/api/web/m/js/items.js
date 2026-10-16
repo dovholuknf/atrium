@@ -224,12 +224,26 @@
     return el("div", "im-nums", (n ? tok(n) + " tokens" : "no usage yet") + " · " + (it.usd == null && !n ? "–" : usd(it.usd)) + " · " + age);
   }
 
+  // A card's chip. A minion says what it is doing, in orange when it needs you, and a card the board no longer holds is struck through.
+  function chip(c) {
+    const all = window.mStore && window.mStore.cards ? window.mStore.cards() : [];
+    const t = all.length ? all.find(x => x.id === c.id) || null : undefined;
+    const name = c.name || c.id;
+    if (t === null) { const g = el("span", "im-card gone", name); g.title = "this card has ended and was removed"; return g; }
+    if (!t || typeof isMinion !== "function" || !isMinion(t)) return el("span", "im-card", name);
+    const need = cardNeedsYou(t), cs = cardState(t);
+    const word = need ? (t.status === "needs-permission" ? "needs permission" : "needs you") : cs === "off" ? "ended" : cs === "unreachable" ? "unreachable" : "running";
+    const e = el("span", "im-card minion" + (need ? " hot" : ""), name + " ");
+    e.appendChild(el("i", "im-mst", word));
+    return e;
+  }
+
   function chips(it) {
     const m = el("div", "im-meta");
     m.appendChild(el("span", "im-id", it.backlog));
     if (it.priority) m.appendChild(el("span", "im-tag" + (it.priority === "high" ? " hi" : ""), it.priority));
     if (it.dept) m.appendChild(el("span", "im-tag", it.dept));
-    for (const c of it.cards || []) m.appendChild(el("span", "im-card", c.name || c.id));
+    for (const c of it.cards || []) m.appendChild(chip(c));
     return m;
   }
 
