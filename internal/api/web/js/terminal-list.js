@@ -114,7 +114,10 @@ const termClosedGone = t => !t.supervised && (t.tags || []).includes(CLOSED_TAG)
 //
 // STORED per device (see `termDeviceKey`) as the list of chips that are ON, so no stored value is the default.
 const TERM_SHOW_KEY = "atrium.terms.show";
-const TERM_CHIPS = ["paused", "dead", "subagents"];
+//   - `minions`: off, the throwaway sessions an item launched are left out of every list (`cardHidden`). On, they are
+//     drawn like any session, with a `minion` chip. It is the debug toggle, and the board and stack read THIS key too,
+//     so there is one switch and not three (`minionShown`, js/cardrules.js).
+const TERM_CHIPS = ["paused", "dead", "subagents", "minions"];
 // The keys the old controls kept, cleared on load (both device variants) so a stale `hide inactive` does not outlive
 // the control that wrote it. `atrium.hidedoers` is older still.
 function clearLegacyHideKey() {
@@ -134,6 +137,16 @@ function termShow() {
   return new Set();
 }
 function termSubsOn() { return termShow().has("subagents"); }
+// The one switch for hidden minions, read by `cardHidden` through the getter cardrules.js keeps. Read at call time, so
+// a click in this window or a change in another one is the next render's answer.
+setMinionShown(() => termShow().has("minions"));
+// The board and stack draw from the same key, so a change repaints the one on screen. The lists in the terminal views
+// are repainted by `renderTermList` already.
+function repaintMinionViews() {
+  const tab = document.querySelector(".tab.on");
+  const view = tab && tab.dataset.view;
+  if (typeof repaintLists === "function" && view !== "terms" && view !== "chat") repaintLists();
+}
 
 function toggleTermShow(id) {
   if (!TERM_CHIPS.includes(id)) return;
@@ -150,6 +163,7 @@ function toggleTermShow(id) {
   } catch (e) {}
   paintTermShow();
   renderTermList();
+  if (id === "minions") repaintMinionViews();
 }
 
 // The chips, painted on change and once at load. The counts are written into them by `renderTermList`, so the button
@@ -164,9 +178,11 @@ function paintTermShow() {
     fdChip("dead", on.has("dead"), "toggleTermShow('dead')",
       "pinned rows whose session has exited, and the ended group. a click starts one again", "dead") +
     fdChip("subagents", on.has("subagents"), "toggleTermShow('subagents')",
-      "off: a parent's subagents are folded under it, with a count. a count and a ! chip say what needs you. on: parents start open", "subagents");
+      "off: a parent's subagents are folded under it, with a count. a count and a ! chip say what needs you. on: parents start open", "subagents") +
+    fdChip("minions", on.has("minions"), "toggleTermShow('minions')",
+      "off: the throwaway sessions an item launched are left out of every list, here, on the board and in the stack. one that needs you still shows. on: they are listed", "minions");
 }
-prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); });
+prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); repaintMinionViews(); });
 
 // WHICH KIND OF ROW A CARD IS, to the chips:
 //   `gone`    a closed card with no session. Nothing to resume, listed only while it is the attached one.
@@ -1966,7 +1982,8 @@ async function renderTermList() {
   const counts = {
     paused: pool.filter(t => termRowKind(t) === "paused").length,
     dead: deadCold.length + endedAll.length,
-    subagents: nestPool.nested.size
+    subagents: nestPool.nested.size,
+    minions: pool.filter(isMinion).length
   };
   pillCounts("term-show", counts);
   const listed = shown.length + ended.length;
