@@ -22,7 +22,7 @@ body.m.sheet-open { overscroll-behavior-y: none; }
 
 /* the bar */
 .bar {
-  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
+  position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0;
   padding: calc(env(safe-area-inset-top, 0px) + 6px) max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px));
   min-height: calc(52px + env(safe-area-inset-top, 0px));
   background: color-mix(in srgb, var(--bg-0) 82%, transparent);
@@ -34,6 +34,7 @@ body.m.sheet-open { overscroll-behavior-y: none; }
 .bar .live.on { background: var(--teal); box-shadow: 0 0 0 4px rgba(var(--teal-rgb), .16); }
 /* A new build is waiting for the page to be clear (js/build.js). Quiet: text only, no fill. */
 .bar .m-update { min-height: 44px; padding: 0 8px; background: none; border: 0; color: var(--teal); font: inherit; font-size: 13px; }
+.bar .docsbtn { flex: 0 0 auto; }
 .bar .board { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; color: var(--label); text-decoration: none; font-size: 14px; }
 
 /* the home */

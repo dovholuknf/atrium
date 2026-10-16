@@ -15061,6 +15061,55 @@ async function mSwitcherSection(browser) {
 }
 
 // Pull down at the very top of a card reloads the page. Not from mid-thread, the composer or the viewer.
+// bug-phone-page-scrolls-sideways: the phone page never scrolls sideways. With every header button shown, a card with
+// an unbroken path and long chips, the view drawer open, on both lists, light and dark, at two phone widths, nothing
+// is wider than the viewport.
+async function mNoSidewaysSection(browser) {
+  const tag = "mNoSideways: ";
+  const st = mServer({});
+  const long = "/home/clint/git/github/dovholuknf/atrium-worktrees/claude/bug-phone-page-scrolls-sideways/internal/api/web/m/js/home.js";
+  st.tasks = mNeedsCards().concat([mCard("wide-1", { alias: long, display_title: "x".repeat(90), worktree: long, status: "needs-input", waiting_since: mIso(3 * M_MIN), tags: ["a-very-long-unbroken-group-tag-name-that-keeps-going-and-going"] })]);
+  await st.open();
+  const shots = process.env.NOSIDEWAYS_SHOTS, shotTag = process.env.NOSIDEWAYS_TAG || "after";
+  try {
+    for (const vp of [{ width: 360, height: 780 }, { width: 412, height: 892 }]) {
+      for (const skin of ["", "daylight"]) {
+        const { ctx, p, errors } = await mPage(browser, st, vp, skin);
+        await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+        await p.evaluate(() => { for (const id of ["m-docs-btn", "m-req-btn", "m-items-btn", "m-files-btn"]) { const b = document.getElementById(id); if (b) b.hidden = false; } });
+        await p.tap("#m-opts-btn");
+        for (const tab of ["#m-seg-needs", "#m-seg-all"]) {
+          await p.tap(tab);
+          await p.waitForTimeout(300);
+          const r = await p.evaluate(() => {
+            const vw = window.innerWidth, bad = [];
+            for (const e of document.body.querySelectorAll("*")) {
+              const b = e.getBoundingClientRect();
+              if (!b.width || e.closest("[hidden]")) continue;
+              let clipped = false;
+              for (let n = e.parentElement; n && n !== document.body; n = n.parentElement) {
+                const o = getComputedStyle(n);
+                if (/(auto|scroll|hidden|clip)/.test(o.overflowX) && n.getBoundingClientRect().right <= vw + 0.5) { clipped = true; break; }
+              }
+              if (!clipped && (b.right > vw + 0.5 || b.left < -0.5)) bad.push((e.id || e.className || e.tagName) + " " + Math.round(b.left) + ".." + Math.round(b.right));
+            }
+            return { sw: document.scrollingElement.scrollWidth, vw, bad: bad.slice(0, 6) };
+          });
+          const where = tag + vp.width + " " + (skin || "default") + " " + tab + " ";
+          if (r.sw > r.vw) fail(where + "the page scrolls sideways " + JSON.stringify(r));
+          if (r.bad.length) fail(where + "an element passes the viewport " + JSON.stringify(r));
+          if (shots && vp.width === 412 && skin === "daylight" && tab === "#m-seg-needs") {
+            fs.mkdirSync(shots, { recursive: true });
+            await p.screenshot({ path: path.join(shots, shotTag + "-412x892.png") });
+          }
+        }
+        if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+        await ctx.close();
+      }
+    }
+  } finally { await st.close(); }
+}
+
 async function mPullSection(browser) {
   const st = mServer({});
   const mk = (id, over) => mCard(id, Object.assign({ alias: id, display_title: id, worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } }, over || {}));
@@ -22980,7 +23029,7 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
-      mPull: mPullSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
+      mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
@@ -25060,6 +25109,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mDocs", () => mDocsSection(browser));
     await unit("mSwitcher", () => mSwitcherSection(browser));
     await unit("mPull", () => mPullSection(browser));
+    await unit("mNoSideways", () => mNoSidewaysSection(browser));
     await unit("mPrompts", () => mPromptsSection(browser));
     await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
     await unit("popoutRaise", () => popoutRaiseSection(browser, base));
