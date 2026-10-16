@@ -733,6 +733,9 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	// than read off the body so nothing on the wire can claim it.
 	req.Interactive = true
 	req.SpawnedBy = launcherFor(req)
+	if err := d.launchWhileStopping(); err != nil {
+		return nil, err
+	}
 	if err := d.launchHeld(req); err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/edge"
@@ -24,12 +25,51 @@ import (
 type stopper struct {
 	once sync.Once
 	ch   chan struct{}
+	// coming is set when a stop begins, before request closes ch.
+	coming atomic.Bool
 	// reason is what asked for the stop, for the log line.
 	mu     sync.Mutex
 	reason string
 }
 
 func newStopper() *stopper { return &stopper{ch: make(chan struct{})} }
+
+// begin marks a stop as in flight, ahead of the wrap-up that precedes request. A wrap-up can wait for minutes, and a
+// runner launched in that window is ended or orphaned by the restart that follows.
+func (s *stopper) begin() {
+	if s != nil {
+		s.coming.Store(true)
+	}
+}
+
+// stopping says a stop is in flight: begun, or already requested.
+func (s *stopper) stopping() bool {
+	if s == nil {
+		return false
+	}
+	if s.coming.Load() {
+		return true
+	}
+	select {
+	case <-s.ch:
+		return true
+	default:
+		return false
+	}
+}
+
+// launchRefusedStopping is the answer to a launch that arrives while the room is stopping. It names the retry,
+// because the prompt a launch carries is not kept across the restart.
+const launchRefusedStopping = "this room is stopping: nothing was launched. retry the launch once it is back"
+
+// launchWhileStopping refuses a launch while a stop is in flight, so the launcher is told to retry instead of being
+// answered `running` for a runner the restart takes with its first prompt.
+func (d *Daemon) launchWhileStopping() error {
+	if d.stop.stopping() {
+		return errString(launchRefusedStopping)
+	}
+	return nil
+}
 
 func (s *stopper) request(reason string) {
 	s.once.Do(func() {
@@ -121,6 +161,7 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 			"wait for it to finish, then ask again.", http.StatusConflict)
 		return
 	}
+	d.stop.begin()
 	now := truthy(r.URL.Query().Get("now"))
 	wait := d.st.RestartWrapWait()
 	w.Header().Set("Content-Type", "application/json")
