@@ -4,6 +4,7 @@
 #   bash scripts/ci.sh                  every step
 #   bash scripts/ci.sh --only go-test   one step, or several: --only gofmt,go-vet
 #   bash scripts/ci.sh --list           the step names
+#   bash scripts/ci.sh --group board    one group of steps, as one workflow job runs it (--list-groups names them)
 #
 # THE WORKFLOW CONTAINS NO LOGIC. `.github/workflows/ci.yml` checks out the code, installs Go and node, and calls this.
 # That is the whole rule and the reason for it is ordinary: a check that only exists inside a YAML file can only be
@@ -28,14 +29,29 @@ cd "$here"
 
 all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard govulncheck board skins contrast opencode release parse powershell ps-tests clean-tree"
 
+# GROUPS. The workflow runs one job per group and platform, so the Go tests, the Go checks and the board run side by
+# side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
+# group ends with clean-tree, which only looks at what that job did.
+group_list="go-test go-checks board"
+group_steps() {
+  case "$1" in
+    go-test) echo "go-build,go-test,time-guard,clean-tree" ;;
+    go-checks) echo "gofmt,go-vet,go-race,govulncheck,clean-tree" ;;
+    board) echo "board,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
+    *) return 1 ;;
+  esac
+}
+
 only=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --only) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--only needs a step name. steps: $all_steps" >&2; exit 2; }; only="$2"; shift 2 ;;
     --only=*) only="${1#--only=}"; shift ;;
+    --group) [ $# -ge 2 ] && only="$(group_steps "$2")" || { echo "--group needs one of: $group_list" >&2; exit 2; }; shift 2 ;;
     --list) echo $all_steps | tr ' ' '\n'; exit 0 ;;
+    --list-groups) for g in $group_list; do echo "$g: $(group_steps "$g")"; done; exit 0 ;;
     -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
-    *) echo "usage: scripts/ci.sh [--only step[,step]] [--list]" >&2; exit 2 ;;
+    *) echo "usage: scripts/ci.sh [--only step[,step]] [--group name] [--list] [--list-groups]" >&2; exit 2 ;;
   esac
 done
 for o in $(echo "$only" | tr ',' ' '); do
