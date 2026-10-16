@@ -61,3 +61,24 @@ growl alerts fire as before.
 
 **Expected:** the chip is struck through, shows `this card has ended and was removed` on hover and cannot be clicked. The
 phone's item rows show the same words and colours.
+
+## @LETTER@. Item minion cards hidden, phase 5 (the `minions` toggle)
+
+### @LETTER@1. The chip lists the minions
+
+1. Open the Terminals tab and its filter drawer. Click `minions`.
+
+**Expected:** the chip is off by default and its count is the minions the board holds. Turning it on lists them as
+ordinary rows with the `minion` chip, and a second click hides them again.
+
+### @LETTER@2. One toggle for every view
+
+1. Turn `minions` on, then open the board and the stack.
+
+**Expected:** both draw the minions too, and turning it off in another window of the same browser hides them again.
+
+### @LETTER@3. The phone
+
+1. On the phone's home open the view panel and tap `show minions`.
+
+**Expected:** the minions are listed and counted, and the choice survives a reload.
