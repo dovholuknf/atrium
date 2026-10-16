@@ -67,11 +67,27 @@ func BlockHubUser(room, exe, goos, hub, user string) string {
 	if user != "" {
 		u = "  User " + user + "\n"
 	}
-	return "Host " + room + "\n" + u +
+	return "Host " + room + Suffix + "\n" + u +
 		"  ProxyCommand " + ProxyCommandHub(exe, goos, hub) + "\n" +
-		"  HostKeyAlias " + room + ".atrium\n" +
+		"  HostKeyAlias " + room + Suffix + "\n" +
 		"  ServerAliveInterval 30\n" +
 		"  CheckHostIP no\n"
+}
+
+// Suffix is what follows a room's name in its Host line and its HostKeyAlias, so `ssh sg3.atrium` reaches the room and
+// cannot be mistaken for a LAN host named sg3. ProxyCommand's %n carries it to `atrium ssh-proxy`, which drops it.
+const Suffix = ".atrium"
+
+// migrateHostName rewrites a bare `Host <room>` line, from before the suffix, to `Host <room>.atrium`.
+func migrateHostName(b block) string {
+	lines := strings.SplitAfter(b.text, "\n")
+	for i, l := range lines {
+		t := strings.TrimRight(l, "\r\n")
+		if t == "Host "+b.room {
+			lines[i] = t + Suffix + l[len(t):]
+		}
+	}
+	return strings.Join(lines, "")
 }
 
 // migrateHostToName rewrites a ProxyCommand written with %h to %n. %h is the HostName ssh resolved, which a LAN entry
@@ -194,7 +210,7 @@ func AddHubUsers(home, exe, goos, hub string, rooms []string, users map[string]s
 	}
 	next := append([]block(nil), have...)
 	for i := range next {
-		next[i].text = migrateHostToName(next[i].text)
+		next[i].text = migrateHostToName(migrateHostName(next[i]))
 	}
 	for _, r := range rooms {
 		nb := block{room: r, text: BlockHubUser(r, exe, goos, hub, users[r])}

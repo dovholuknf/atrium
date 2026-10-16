@@ -22,7 +22,7 @@ steps 5 to 7 (make a key, publish it, install the hub's set) were checks only.
   elevated prints the command instead of writing it. A room with its switch off only publishes.
 - **A room's own switch does not decide whether its key is trusted.** A room that only logs in to others has ssh off and
   still needs the others to trust it.
-- **`atrium ssh config add <room>` writes `User <login>`** into the Host block when the hub knows it, so `ssh sg3`
+- **`atrium ssh config add <room>` writes `User <login>`** into the Host block when the hub knows it, so `ssh sg3.atrium`
   needs no user.
 
 ## What is not done

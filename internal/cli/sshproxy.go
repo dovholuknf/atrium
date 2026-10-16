@@ -100,7 +100,7 @@ func newSSHProxy() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "--via is hub or room")
 				os.Exit(proxyExit)
 			}
-			o := proxyOpts{room: args[0], via: via, claim: callerClaim(), room2: hubAddress("")}
+			o := proxyOpts{room: strings.TrimSuffix(args[0], sshcfg.Suffix), via: via, claim: callerClaim(), room2: hubAddress("")}
 			o.hub, o.hubAlt = hubDoors(hub)
 			code := runProxy(os.Stdin, os.Stdout, cmd.ErrOrStderr(), o)
 			os.Exit(code)

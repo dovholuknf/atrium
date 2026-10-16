@@ -90,7 +90,7 @@ and leaves the Include line.
 
 ### @LETTER@5. ssh, scp and a forward from sg4 (Windows)
 
-1. `ssh sg3` (the Host block from step 4 is in use), then `hostname` and `exit`.
+1. `ssh sg3.atrium` (the Host block from step 4 is in use), then `hostname` and `exit`.
 2. `scp C:\Windows\System32\drivers\etc\hosts sg3:/tmp/hosts-from-sg4`
 3. `ssh -L 8080:127.0.0.1:7781 sg3`, then in a browser open `http://127.0.0.1:8080`.
 4. With step 3 still open, on sg4's board look at sg3's `ssh` badge. Then exit.
@@ -102,9 +102,9 @@ of open streams) while the forward is open and the audit has `ssh-open` with `hu
 
 ### @LETTER@6. From m1mini through its own room
 
-1. On m1mini: `atrium ssh config add sg3`, then `ssh sg3`. m1mini is not the hub, so the hub door is not there and
+1. On m1mini: `atrium ssh config add sg3`, then `ssh sg3.atrium`. m1mini is not the hub, so the hub door is not there and
    the stream goes through its room's agent listener.
-2. On sg3: `atrium room remote-access on --from hub` (m1mini no longer on the list), then on m1mini `ssh sg3` again.
+2. On sg3: `atrium room remote-access on --from hub` (m1mini no longer on the list), then on m1mini `ssh sg3.atrium` again.
 3. Put m1mini back with `--from hub,m1mini`.
 
 **Expected:** step 1 works, and the audit names the caller `m1mini -> sg3`. Step 2 fails with
@@ -114,7 +114,7 @@ list changing.
 ### @LETTER@7. From sg4-wsl (Linux, test only)
 
 1. `atrium ssh-proxy --print-config sg3` and `atrium ssh config add sg3`.
-2. `ssh sg3 hostname`.
+2. `ssh sg3.atrium hostname`.
 
 **Expected:** the plain path form, and sg3's hostname printed.
 
@@ -122,13 +122,13 @@ list changing.
 
 For each of sg4, m1mini and sg4-wsl in turn:
 
-1. Open `ssh sg3` and leave it at the prompt, running `while true; do date; sleep 1; done`.
+1. Open `ssh sg3.atrium` and leave it at the prompt, running `while true; do date; sleep 1; done`.
 2. On sg3: `atrium room remote-access off`.
 3. `atrium room remote-access log`.
 
 **Expected:** the session ends within ten seconds with `Connection closed`. sg3's log shows the close with
 `ended by remote access being turned off`, and the hub's audit has the matching `ssh-close` with the same stream id.
-The badge is gone from the Rooms tab. A new `ssh sg3` is refused in words. `ATRIUM_REMOTE_ACCESS=off` in sg3's
+The badge is gone from the Rooms tab. A new `ssh sg3.atrium` is refused in words. `ATRIUM_REMOTE_ACCESS=off` in sg3's
 environment keeps it off even after `on`, and the row says it is forced.
 
 ### @LETTER@9. What must not work

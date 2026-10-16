@@ -45,7 +45,7 @@ func backups(t *testing.T, h string) []string {
 
 func TestBlockIsTheWindowsQuotedFormOnWindowsAndPlainElsewhere(t *testing.T) {
 	win := Block("sg3", exeWin, "windows")
-	want := "Host sg3\n  ProxyCommand \"" + exeWin + "\" ssh-proxy %n\n  HostKeyAlias sg3.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n"
+	want := "Host sg3.atrium\n  ProxyCommand \"" + exeWin + "\" ssh-proxy %n\n  HostKeyAlias sg3.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n"
 	if win != want {
 		t.Fatalf("windows block:\n%s", win)
 	}
@@ -74,7 +74,7 @@ func TestAddCreatesAConfigWithJustTheIncludeLine(t *testing.T) {
 	if !res.Created || !res.Include || res.Backup != "" {
 		t.Fatalf("%+v", res)
 	}
-	if !strings.Contains(read(t, own), "Host sg3\n") {
+	if !strings.Contains(read(t, own), "Host sg3.atrium\n") {
 		t.Fatalf("no block: %s", read(t, own))
 	}
 	if len(backups(t, h)) != 0 {
@@ -145,7 +145,7 @@ func TestAddReplacesAChangedBlockInPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	own := read(t, filepath.Join(h, ".ssh", File))
-	if strings.Count(own, "Host sg3\n") != 1 || !strings.Contains(own, "/opt/atrium ssh-proxy") ||
+	if strings.Count(own, "Host sg3.atrium\n") != 1 || !strings.Contains(own, "/opt/atrium ssh-proxy") ||
 		!strings.Contains(own, exeNix+" ssh-proxy") {
 		t.Fatalf("%s", own)
 	}
@@ -166,7 +166,7 @@ func TestRemoveDropsBlocksAndNeverTheInclude(t *testing.T) {
 		t.Fatalf("%v %v", removed, missing)
 	}
 	own := read(t, filepath.Join(h, ".ssh", File))
-	if strings.Contains(own, "Host sg3") || !strings.Contains(own, "Host m1mini") {
+	if strings.Contains(own, "Host sg3.atrium") || !strings.Contains(own, "Host m1mini.atrium") {
 		t.Fatalf("%s", own)
 	}
 	if _, _, err := Remove(h, nil); err != nil {
@@ -205,7 +205,7 @@ func TestShowReadsAndChangesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, err = Show(h)
-	if err != nil || len(s.Rooms) != 2 || !s.Included || !s.ConfigExists || !strings.Contains(s.Text, "Host m1mini") {
+	if err != nil || len(s.Rooms) != 2 || !s.Included || !s.ConfigExists || !strings.Contains(s.Text, "Host m1mini.atrium") {
 		t.Fatalf("%+v %v", s, err)
 	}
 }
@@ -246,7 +246,7 @@ func TestAddHubUsersWritesTheUserIntoTheBlock(t *testing.T) {
 	}
 	_, _, own := Paths(h)
 	text := read(t, own)
-	for _, want := range []string{"Host sg3\n  User claude\n", "Host sgg\n  User localai\n", "Host sg4\n  ProxyCommand"} {
+	for _, want := range []string{"Host sg3.atrium\n  User claude\n", "Host sgg.atrium\n  User localai\n", "Host sg4.atrium\n  ProxyCommand"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in:\n%s", want, text)
 		}
@@ -256,7 +256,7 @@ func TestAddHubUsersWritesTheUserIntoTheBlock(t *testing.T) {
 		t.Fatal("the same input changed the file")
 	}
 	AddHubUsers(h, exeNix, "linux", "", []string{"sg3"}, map[string]string{"sg3": "other"})
-	if text = read(t, own); !strings.Contains(text, "Host sg3\n  User other\n") || strings.Contains(text, "User claude") {
+	if text = read(t, own); !strings.Contains(text, "Host sg3.atrium\n  User other\n") || strings.Contains(text, "User claude") {
 		t.Fatalf("not replaced:\n%s", text)
 	}
 	// A user that would add a line to the config is refused.
@@ -286,5 +286,18 @@ func TestAddMigratesAnOldHostBlockToTheNameAsTyped(t *testing.T) {
 	got := string(b)
 	if strings.Contains(got, "%h") || strings.Count(got, "ssh-proxy %n\n") != 2 {
 		t.Fatalf("every block must use %%n:\n%s", got)
+	}
+}
+
+// A BLOCK WRITTEN BEFORE THE SUFFIX IS RENAMED when the file is rewritten, and one already renamed is left alone.
+func TestBareHostLineGainsTheSuffix(t *testing.T) {
+	b := block{room: "sg3", text: "Host sg3\n  HostKeyAlias sg3.atrium\n"}
+	want := "Host sg3.atrium\n  HostKeyAlias sg3.atrium\n"
+	if got := migrateHostName(b); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	b.text = want
+	if got := migrateHostName(b); got != want {
+		t.Fatalf("second pass changed it: %q", got)
 	}
 }

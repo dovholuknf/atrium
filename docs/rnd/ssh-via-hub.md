@@ -261,7 +261,7 @@ machine itself) and the one clint asked for now.
     Windows OpenSSH runs `ProxyCommand` without a shell:
 
     ```
-    Host sg3
+    Host sg3.atrium
       ProxyCommand "C:\Users\claude\.atrium\bin\atrium.exe" ssh-proxy %h
       HostKeyAlias sg3.atrium
       ServerAliveInterval 30
@@ -272,7 +272,7 @@ machine itself) and the one clint asked for now.
     command picks the form from the OS it runs on, so the block is right for the machine that will use it:
 
     ```
-    Host sg3
+    Host sg3.atrium
       ProxyCommand /Users/claude/.atrium/bin/atrium ssh-proxy %h
       HostKeyAlias sg3.atrium
       ServerAliveInterval 30
