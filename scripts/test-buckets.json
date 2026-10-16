@@ -25,7 +25,7 @@
     "terminals": {
       "page": "the terminal view: xterm, attach, switching, paste, peek, popouts, the card's own composer",
       "units": [
-        "term*", "tallPty", "attachAtOnce", "switch*", "copySelect", "cleanCopy", "clear*", "paste*", "quickPaste", "walk*",
+        "term*", "tallPty", "attachAtOnce", "switch*", "copySelect", "cleanCopy", "clear*", "paste*", "quickPaste", "repoPaste", "walk*",
         "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepMemory",
         "idle*", "looksIdle", "joined*", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
         "bridge", "collapsedBridge", "groupBridge", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
@@ -37,6 +37,7 @@
         "internal/api/web/js/compose.js",
         "internal/api/web/js/clearline.js",
         "internal/api/web/js/quickpaste.js",
+        "internal/api/web/js/repolink.js",
         "internal/api/web/js/peek.js",
         "internal/api/web/js/peek-debug.js",
         "internal/api/web/js/walk.js",

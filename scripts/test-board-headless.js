@@ -25914,6 +25914,132 @@ async function prMoveSection(browser, base) {
 // The box opens on the key with the clipboard's link in it. Enter runs the pull request chain to a launched card,
 // shift-enter stops at the filled launch dialog, a link nothing knows comes back to the box with the reason, and text
 // that is not a link is refused in the box. QPSHOT=/dir writes the pictures.
+// A LINK TO A REPOSITORY STARTS NEW WORK (js/repolink.js, docs/changes/f-paste-repo-new-worktree.md). The switcher row says
+// "new worktree" with org/repo, whatever the trailing slash or `.git`, and a path under the repo is still just a link. Enter
+// on a repo the room holds starts at once: one /v1/new on a claude/work- branch, the card drawn from the keypress. A repo
+// neither the room nor the hub holds is fetched by the hub and cloned (prepare), and the card STOPS at start or cancel:
+// nothing is started until start. Shift-Enter opens "start new work" with the repo and a branch name in it.
+// REPOSHOT=dir writes the row's picture, REPOBEFORE=1 takes it as it was before (the kind switched off).
+async function repoPasteSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const st = { calls: [], has: true, hold: null };
+  await ctx.addInitScript(() => {
+    window.__clip = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
+  });
+  await ctx.route(/\/(v1\/(recognise|new|scm\/has|checkouts|tasks\/t-r)|_hub\/git\/(init|repos))(\/|\?|$)/, async route => {
+    const req = route.request();
+    const p = new URL(req.url()).pathname, m = req.method();
+    if (m === "GET" && p === "/v1/tasks/t-r") return json(route, 200, { id: "t-r", status: "running", title: "o/r" });
+    if (m === "GET" && p === "/v1/checkouts") return json(route, 200, { checkouts: [] });
+    if (m === "GET" && p === "/_hub/git/repos") return json(route, 200, { repos: [] });
+    if (m === "GET" && p === "/v1/scm/has") return json(route, 200, { has: st.has });
+    st.calls.push(m + " " + p + " " + (req.postData() || ""));
+    if (p === "/_hub/git/init") return json(route, 200, { ok: true });
+    if (p === "/v1/new") {
+      const body = JSON.parse(req.postData() || "{}");
+      if (body.prepare) return json(route, 200, { repo: body.repo, cloned: true, checkout: "/scm/" + body.repo });
+      if (st.hold) await st.hold;
+      return json(route, 201, { card: "t-r", worktree: "/wt/o/r/claude-work", repo: body.repo, created: true });
+    }
+    if (p === "/v1/recognise") {
+      const url = JSON.parse(req.postData() || "{}").url || "";
+      if (!/github\.com/.test(url)) return json(route, 404, { error: "no recogniser matches " + url });
+      const [, org, repo] = /github\.com\/([^/]+)\/([^/?#]+)/.exec(url);
+      return json(route, 200, { recogniser: "github-repo", label: "a repository", url, host: "github.com",
+        cwd: "/scm/github.com/" + org + "/" + repo, title: "", prompt: "", tags: [], vars: { org, repo, host: "github.com" } });
+    }
+    return json(route, 404, { error: "no route" });
+  });
+  const shot = async (pg, name) => { if (process.env.REPOSHOT) await pg.screenshot({ path: process.env.REPOSHOT + "/" + name + ".png" }); };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof repoNewGo === "function" && typeof openLaunch === "function", null, { timeout: slow(15000) });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) }).catch(() => {});
+    if (process.env.REPOBEFORE) await p.evaluate(() => { window.pastedRepoKind = () => null; });
+
+    const row = async url => {
+      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      await p.evaluate(u => { window.__clip = u; }, url);
+      await p.keyboard.press("Control+Alt+KeyR");
+      await p.waitForFunction(u => document.getElementById("sw-open") && document.getElementById("sw-open").dataset.link === u &&
+        document.getElementById("sw-open").classList.contains("seen"), url, { timeout: slow(5000) })
+        .catch(() => fail("repoPaste: the bar did not read " + url));
+      return p.textContent("#sw-open");
+    };
+    const urls = ["https://github.com/openziti-test-kitchen/ziti-tv/", "https://github.com/openziti-test-kitchen/ziti-tv.git",
+      "https://github.com/openziti-test-kitchen/ziti-tv"];
+    for (const u of urls) {
+      const t = await row(u);
+      if (u === urls[0]) await shot(p, process.env.REPOBEFORE ? "switcher-repo-before" : "switcher-repo-after");
+      if (process.env.REPOBEFORE) return;
+      if (!/new worktree/.test(t) || !/openziti-test-kitchen\/ziti-tv(?!\.)/.test(t)) fail("repoPaste: " + u + " read as: " + t);
+    }
+    if (/new worktree/.test(await row("https://github.com/openziti-test-kitchen/ziti-tv/tree/main")))
+      fail("repoPaste: a path under the repo read as a repository");
+
+    // ENTER ON A REPO THE ROOM HOLDS: the card at once, one /v1/new, a claude/work- branch, nothing prepared
+    st.has = true; st.calls = [];
+    let release; st.hold = new Promise(r => { release = r; });
+    await row(urls[0]);
+    await p.keyboard.press("Enter");
+    await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
+      .catch(() => fail("repoPaste: no card from the keypress"));
+    if (!/openziti-test-kitchen\/ziti-tv/.test(await p.textContent(".card.linkopen"))) fail("repoPaste: the card did not name the repo");
+    release(); st.hold = null;
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) })
+      .catch(() => fail("repoPaste: the card stayed after the open"));
+    const news = st.calls.filter(c => c.indexOf("POST /v1/new") === 0).map(c => JSON.parse(c.split(" ").slice(2).join(" ")));
+    if (news.length !== 1 || news[0].prepare || !/^claude\/work-\d{6}-\d{4}$/.test(news[0].name) ||
+        news[0].title !== "openziti-test-kitchen/ziti-tv" || news[0].repo !== "github.com/openziti-test-kitchen/ziti-tv" || !news[0].progress)
+      fail("repoPaste: a held repo opened as " + JSON.stringify(news));
+    if (st.calls.some(c => c.indexOf("_hub/git/init") >= 0)) fail("repoPaste: a held repo asked the hub to fetch it");
+
+    // A REPO NOBODY HOLDS: the hub fetches, the room clones, and the card stops for a confirm. Nothing starts until start.
+    st.has = false; st.calls = [];
+    await p.evaluate(() => { hubIsHub = true; });
+    await row(urls[0]);
+    await p.keyboard.press("Enter");
+    await p.waitForFunction(() => /start/.test((document.querySelector(".card.linkopen") || {}).textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("repoPaste: an unseen repo did not stop at a confirm"));
+    const txt = await p.textContent(".card.linkopen");
+    if (!/new repository from github\.com.*hooks will run/.test(txt)) fail("repoPaste: the confirm said: " + txt);
+    await shot(p, "repo-confirm");
+    const sent = st.calls.map(c => c.split(" ").slice(0, 2).join(" "));
+    if (sent.join(",") !== "POST /_hub/git/init,POST /v1/new" || !/"prepare":true/.test(st.calls[1]))
+      fail("repoPaste: an unseen repo went " + sent.join(" > "));
+    await p.click('.card.linkopen [data-op-act="cancel"]');
+    await p.waitForTimeout(300);
+    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("repoPaste: cancel left the card");
+    if (st.calls.filter(c => c.indexOf("POST /v1/new") === 0).length !== 1) fail("repoPaste: cancel still started the work");
+    // start finishes it
+    st.calls = [];
+    await row(urls[0]);
+    await p.keyboard.press("Enter");
+    await p.waitForSelector('.card.linkopen [data-op-act="start"]', { timeout: slow(5000) });
+    await p.click('.card.linkopen [data-op-act="start"]');
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) })
+      .catch(() => fail("repoPaste: start did not finish the card"));
+    const started = st.calls.filter(c => c.indexOf("POST /v1/new") === 0 && !/"prepare":true/.test(c));
+    if (started.length !== 1) fail("repoPaste: start made " + started.length + " starts");
+
+    // SHIFT-ENTER: the dialog with start new work open, the repo picked and a branch name in
+    await row(urls[0]);
+    await p.keyboard.press("Shift+Enter");
+    await p.waitForFunction(() => document.getElementById("launch").open && !document.getElementById("l-nw").hidden &&
+      /^claude\/work-\d{6}-\d{4}$/.test(document.getElementById("l-nw-name").value), null, { timeout: slow(5000) })
+      .catch(() => fail("repoPaste: shift-enter did not open start new work with a name"));
+    if (await p.inputValue("#l-nw-repo") !== "github.com/openziti-test-kitchen/ziti-tv") fail("repoPaste: shift-enter did not pick the repo");
+    if (errors.length) fail("repoPaste: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("repoPaste ok");
+}
+
 async function quickPasteSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -34061,6 +34187,7 @@ async function main() {
     await unit("keepMemory", () => keepMemorySection(browser, base));
     await unit("prMove", () => prMoveSection(browser, base));
     await unit("quickPaste", () => quickPasteSection(browser, base));
+    await unit("repoPaste", () => repoPasteSection(browser, base));
     await unit("recogniserRepo", () => recogniserRepoSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it

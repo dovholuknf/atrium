@@ -214,3 +214,25 @@ func TestNewWorkRefusesWhatIsNotARepoOrHasNoName(t *testing.T) {
 		}
 	}
 }
+
+// PREPARE FINDS THE CLONE AND MAKES NOTHING ELSE: no worktree, no card, no hook. A pasted repo nobody here has seen stops
+// after it for a confirm, and only the second call, with a name, starts anything.
+func TestNewWorkPrepareMakesNoWorktreeAndNoCard(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	before := len(nh.launched)
+	code, out := nh.newWork(t, map[string]any{"prepare": true})
+	if code != 200 || out["card"] != nil && out["card"] != "" || out["checkout"] != nh.checkout {
+		t.Fatalf("%d %v", code, out)
+	}
+	if got := len(nh.launched); got != before {
+		t.Errorf("prepare started %d launches", got-before)
+	}
+	if got := git(t, nh.checkout, "worktree", "list", "--porcelain"); strings.Count(got, "worktree ") != 1 {
+		t.Errorf("prepare made a worktree: %s", got)
+	}
+	// a claude/ name lands in a flat folder, as every claude/* name does
+	code, out = nh.newWork(t, map[string]any{"name": "claude/work-261016-1432", "title": "o/r"})
+	if code != 201 || !strings.HasSuffix(out["worktree"].(string), "/o/r/claude-work-261016-1432") {
+		t.Fatalf("%d %v", code, out)
+	}
+}

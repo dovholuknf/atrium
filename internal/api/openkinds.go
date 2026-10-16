@@ -322,12 +322,16 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 	if err := checkBranchName(ctx, branch); err != nil {
 		return res, http.StatusBadRequest, err
 	}
+	if opts.fetch && !s.haveCheckout(p, host, org, repo) {
+		stepsOf(ctx).begin("clone", "cloning "+host+"/"+org+"/"+repo)
+	}
 	repoPath, wtRoot, cloned, status, err := s.repoCheckout(ctx, p, host, org, repo)
 	if err != nil {
 		return res, status, err
 	}
 	res.Repo, res.Cloned = repoPath, cloned
 	if opts.fetch {
+		stepsOf(ctx).begin("fetch", "fetching origin")
 		// The room talking to its own origin over git, not a forge API. Only the remote-tracking refs move: the
 		// operator's checked-out branch is never touched.
 		if out, err := gitIn(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
@@ -348,6 +352,9 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 	if _, err := os.Stat(filepath.FromSlash(dest)); err == nil {
 		return res, http.StatusConflict, errors.New(
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
+	}
+	if opts.fetch {
+		stepsOf(ctx).begin("worktree", "making the worktree")
 	}
 	var args []string
 	switch {

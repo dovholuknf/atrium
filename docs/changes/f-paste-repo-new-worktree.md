@@ -1,8 +1,15 @@
-Docs: none, design note only until accepted
+Docs: none, the verb and endpoint fields are described in this note
 
 # A pasted repository link starts a new worktree
 
-Design note. Nothing is built yet.
+Built as designed. `/v1/new` gained `progress` and `prepare` (find or clone the repo, nothing else). The switcher row and
+the confirm card are in js/repolink.js and js/link-opening.js. The unit is `repoPaste`.
+
+## Pictures
+
+`docs/changes/img/f-paste-repo-new-worktree/`: `switcher-repo-before.png` (row read "open link"), `switcher-repo-after.png`
+(chip "new worktree", label org/repo) and `repo-confirm.png` (the card stopped at start or cancel for an unseen repo).
+Taken with `REPOSHOT=dir [REPOBEFORE=1] HEADLESS_UNITS=repoPaste node scripts/test-board-headless.js`.
 
 ## What happens today
 

@@ -69,6 +69,12 @@ function quickPasteRow(url) {
     return { kind: "link", seen: false, warn: false,
       html: `<span class="qpkind">open link</span><span class="qpdetail">${esc(url)}</span>` };
   }
+  const rk = pastedRepoKind(known);
+  if (rk) {
+    return { kind: "repo", seen: true, warn: false,
+      html: `<span class="qpkind">new worktree</span><span class="qplabel">${esc(rk.org + "/" + rk.repo)}</span>` +
+        `<span class="qpdetail">on a new branch</span>` };
+  }
   const kind = pastedOpenKind(known);
   const v = known.vars || {};
   const bits = [];
@@ -178,10 +184,13 @@ async function quickPasteGo(url, edit) {
   const known = quickPasteKnown && quickPasteKnown.url === url ? quickPasteKnown.got : null;
   if (edit) {
     if (!await openLaunch(null, "", "", null, { url })) return;
-    if (await recogniseLink(known || undefined) === "none") {
+    const read = await recogniseLink(known || undefined);
+    if (read === "none") {
       const launch = document.getElementById("launch");
       if (launch.open) launch.close();
       openQuickPaste(url, document.getElementById("l-link-note").textContent);
+    } else if (read && pastedRepoKind(read)) {
+      await repoNewEdit(pastedRepoKind(read));
     }
     return;
   }
@@ -197,6 +206,9 @@ async function quickPasteGo(url, edit) {
     openQuickPaste(url, note);
     return;
   }
+  // A link to a repository itself starts new work (js/repolink.js), the open verb having no card for it.
+  const rk = got && got !== "none" ? pastedRepoKind(got) : null;
+  if (rk) { await repoNewGo(id, rk, got); return; }
   if (got && got.title) linkOpeningName(id, got.title);
   // Not read, or a link with something left to fix: said on the card, never by throwing the dialog up.
   // A missing worktree is a problem the launch itself solves for every kind the open verb takes.

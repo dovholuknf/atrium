@@ -38,6 +38,14 @@ function linkOpeningStep(id, step) {
   linkOpeningPaint();
 }
 
+// The open has done what it can without somebody saying so, and waits on the card for start or cancel. `start` runs once.
+function linkOpeningConfirm(id, text, start) {
+  const o = linkOpenings.get(id);
+  if (!o) return;
+  o.confirm = { text, start };
+  linkOpeningPaint();
+}
+
 function linkOpeningFail(id, why, heldCard) {
   const o = linkOpenings.get(id);
   if (!o) return;
@@ -55,7 +63,13 @@ function linkOpeningEnd(id) {
 
 function linkOpeningHTML(id, o) {
   const name = o.name || o.url;
-  const line = o.error
+  const line = o.confirm
+    ? `<div class="linkopen-say warn">${esc(o.confirm.text)}</div>
+       <div class="linkopen-acts">
+         <button type="button" class="primary" data-op-act="start">start</button>
+         <button type="button" data-op-act="cancel">cancel</button>
+       </div>`
+    : o.error
     ? `<div class="linkopen-say warn">${esc(o.error)}</div>
        <div class="linkopen-acts">
          ${o.card ? `<button type="button" class="primary" data-op-act="goto">go to card</button>` : ""}
@@ -92,6 +106,14 @@ document.addEventListener("click", e => {
   if (!o) return;
   e.stopPropagation();
   const act = b.dataset.opAct;
+  if (act === "start") {
+    const go = o.confirm && o.confirm.start;
+    o.confirm = null;
+    o.step = "starting";
+    linkOpeningPaint();
+    if (go) go();
+    return;
+  }
   linkOpeningEnd(id);
   if (act === "edit") quickPasteGo(o.url, true);
   else if (act === "again") quickPasteGo(o.url, false);

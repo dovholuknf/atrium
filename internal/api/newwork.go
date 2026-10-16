@@ -54,12 +54,21 @@ type newWorkRequest struct {
 	Why     string `json:"why"`
 	Model   string `json:"model"`
 	Effort  string `json:"effort"`
+	// Progress is an id the board made up. Each step is broadcast as an `open-progress` event carrying it, the same as
+	// an open of a link, so the card the board drew for the paste can name the step.
+	Progress string `json:"progress"`
+	// Prepare finds or clones the repo and answers, with no worktree, no hook and no card. A pasted repo link that no
+	// hub or room here has seen stops after this for a confirm, since a worktree's own settings and hooks run once a
+	// runner starts in it. Name is not needed.
+	Prepare bool `json:"prepare"`
 }
 
 type newWorkAnswer struct {
 	Card       string `json:"card"`
 	Worktree   string `json:"worktree"`
 	Repo       string `json:"repo"`
+	Cloned     bool   `json:"cloned,omitempty"`
+	Checkout   string `json:"checkout,omitempty"`
 	Branch     string `json:"branch"`
 	Base       string `json:"base,omitempty"`
 	Created    bool   `json:"created"`
@@ -86,7 +95,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 			"repo is host/org/repo, like github.com/openziti/ziti")
 		return
 	}
-	if name == "" {
+	if name == "" && !in.Prepare {
 		openFail(w, http.StatusBadRequest, "request", "bad_request", "name is required: it is the branch and the folder")
 		return
 	}
@@ -95,6 +104,13 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), makeWorktreeDeadline)
 	defer cancel()
+	steps := s.newOpSteps(strings.TrimSpace(in.Progress), pick)
+	defer steps.end()
+	ctx = withOpSteps(ctx, steps)
+	if in.Prepare {
+		s.prepareRepo(ctx, w, host, org, repo, pick)
+		return
+	}
 	wt, status, err := s.branchWorktreeFrom(ctx, s.providerByHost(host), host, org, repo, name, true,
 		branchOpts{fetch: true, from: strings.TrimSpace(in.From)})
 	if err != nil {
@@ -104,6 +120,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	ans := newWorkAnswer{Worktree: wt.Path, Repo: pick, Branch: wt.Branch, Base: wt.Base, Existed: wt.Existed,
 		FetchError: wt.FetchError}
 
+	steps.begin("card", "starting the card")
 	// A WORKTREE THAT IS ALREADY THERE, with its live card, is the answer. Nothing starts a second one.
 	if wt.Existed {
 		if t := s.liveCardIn(wt.Path); t != nil {
@@ -163,6 +180,24 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	}
 	s.measureAfterOpen(task)
 	writeJSON(w, http.StatusCreated, ans)
+}
+
+// prepareRepo is the `prepare` of POST /v1/new: the checkout is found, or cloned the way a worktree would clone it, and
+// nothing else is made. It never makes a card, so a repo is only ever started after somebody said so.
+func (s *Server) prepareRepo(ctx context.Context, w http.ResponseWriter, host, org, repo, pick string) {
+	p := s.providerByHost(host)
+	if p != nil && p.Host != "" {
+		host = p.Host
+	}
+	if !s.haveCheckout(p, host, org, repo) {
+		stepsOf(ctx).begin("clone", "cloning "+pick)
+	}
+	path, _, cloned, status, err := s.repoCheckout(ctx, p, host, org, repo)
+	if err != nil {
+		worktreeFail(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newWorkAnswer{Repo: pick, Worktree: "", Cloned: cloned, Checkout: path})
 }
 
 // liveCardIn is a card that is not done or dead and runs in dir, or nil.
