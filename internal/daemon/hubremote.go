@@ -292,20 +292,30 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 	defer cancel()
 	dir := filepath.FromSlash(t.Worktree)
+	hubName := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
 	// A hub remote that is another room's forwarder on this machine, in a repository the launcher shares: the commit
-	// is on the launcher's disk already, which is a success and not a refusal.
-	if gitsync.PointsAtOtherForwarder(ctx, gitsync.Default, dir, base) {
+	// is on the launcher's disk, but the hub does not hold it, and a worker on another room fetches from the hub. So
+	// it is pushed by URL to THIS room's forwarder, the shared config untouched, and the launcher's view is a note.
+	note := ""
+	other := gitsync.PointsAtOtherForwarder(ctx, gitsync.Default, dir, base)
+	if other {
 		by := t.SpawnedBy
 		if by == "" {
 			by = d.st.ReportTo(t.ID)
 		}
 		if l := d.visibleLauncher(ctx, t, t.SpawnedByID, by, t.SpawnedByDir, dir); l != nil {
-			msg := "nothing to push: " + l.WireName + " sees this commit already"
-			return map[string]any{"card": t.ID, "branch": strings.TrimSpace(branch), "report": msg}, nil
+			note = l.WireName + " sees this commit already on disk"
+		}
+		if hubName == "" {
+			return nil, fmt.Errorf("this clone's hub remote is another room's forwarder, and atrium cannot tell which hub repository it is to push to this room's: it has no origin with a forge URL and is not at <scm folder>/<host>/<owner>/<repo>")
 		}
 	}
-	hubName := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
-	report, err := gitsync.PushToHub(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch), hubName)
+	var report string
+	if other {
+		report, err = gitsync.PushToHubByURL(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch), hubName)
+	} else {
+		report, err = gitsync.PushToHub(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch), hubName)
+	}
 	if err == nil {
 		d.recordHubBranch(t.ID, strings.TrimSpace(branch), hubName)
 	}
@@ -315,6 +325,9 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 			return nil, fmt.Errorf("the push did not land:\n%s", report)
 		}
 		return nil, err
+	}
+	if note != "" {
+		report = strings.TrimSpace(report + "\n" + note)
 	}
 	return map[string]any{"card": t.ID, "branch": strings.TrimSpace(branch), "report": report}, nil
 }

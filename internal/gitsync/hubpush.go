@@ -159,7 +159,18 @@ func sanitizeURL(u string) string {
 // which atrium does not touch without the operator's yes. "" refuses it as before. A clone whose hub remote points
 // somewhere else is refused whatever name says.
 func PushToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string) (string, error) {
-	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, false)
+	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, false, false)
+}
+
+// PushToHubByURL is PushToHub for a clone whose hub remote points at ANOTHER room's forwarder on this machine (a
+// repository shared with a launcher in another room). That remote is left alone and the shared config is not
+// written: the branch goes to THIS room's forwarder, at the URL built for `name`, as for a clone with no hub remote.
+// An empty name is refused, never skipped.
+func PushToHubByURL(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string) (string, error) {
+	if name == "" {
+		return "", errNoHubRemote
+	}
+	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, false, true)
 }
 
 // DeleteFromHub is PushToHub's twin for deleting a branch with a push: the refspec is `:refs/heads/<branch>`, under
@@ -169,15 +180,18 @@ func DeleteFromHub(ctx context.Context, r *Runner, dir, forwarderBase, token, br
 	if !strings.HasPrefix(branch, "claude/") || branch == "claude/main" {
 		return "", fmt.Errorf("only a claude/* branch other than claude/main is deleted from the hub, not %s", branch)
 	}
-	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, true)
+	return pushSpecToHub(ctx, r, dir, forwarderBase, token, branch, name, true, false)
 }
 
-func pushSpecToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string, del bool) (string, error) {
+func pushSpecToHub(ctx context.Context, r *Runner, dir, forwarderBase, token, branch, name string, del, forceURL bool) (string, error) {
 	if why := CheckPushBranch(branch); why != "" {
 		return "", fmt.Errorf("%s", why)
 	}
 	target, remote, err := hubPushTarget(ctx, r, dir, forwarderBase)
 	byURL := false
+	if forceURL {
+		err = errNoHubRemote
+	}
 	if errors.Is(err, errNoHubRemote) && name != "" {
 		ref, perr := ParseName(name)
 		if perr != nil {
