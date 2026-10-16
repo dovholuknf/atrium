@@ -190,8 +190,13 @@ func TestDataFollowsTheControlWhenTheHubAdvertisesAnotherAddress(t *testing.T) {
 	learn := func(ps []Path) {
 		ladder.Set(rungsFor(saved, RoomTransports{Hub: ps}))
 	}
+	// The room's path watcher dials every rung it is not standing on, the stale
+	// advertise included, so the board can show it as down. That is a probe and
+	// it is meant. What must never reach the stale address is a data dial, and
+	// those are the ones that come through Dial on the ladder.
+	spy := &dataSpy{Ladder: ladder, want: ln.Addr().String()}
 	room := &Room{
-		Name: "claude-sg4", Dial: ladder,
+		Name: "claude-sg4", Dial: spy,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }),
 		T:       Timings{Beat: 100 * time.Millisecond, Warm: 2, Backoff: 20 * time.Millisecond, DialWait: 200 * time.Millisecond},
 		OnPaths: learn,
@@ -205,14 +210,29 @@ func TestDataFollowsTheControlWhenTheHubAdvertisesAnotherAddress(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		c, err := hub.Dial(dctx, "claude-sg4")
 		if err != nil {
-			t.Fatalf("data connection %d never arrived: %v (the room dialled the advertise %d times)",
-				i, err, gone.n())
+			t.Fatalf("data connection %d never arrived: %v (data dials went to the advertise %d times)",
+				i, err, spy.off.Load())
 		}
 		c.Close()
 	}
-	if n := gone.n(); n != 0 {
-		t.Fatalf("the room dialled the hub's stale advertise %d times", n)
+	if n := spy.off.Load(); n != 0 {
+		t.Fatalf("the room sent %d data dials to an address other than the one it joined on", n)
 	}
+}
+
+// dataSpy is a ladder that counts the dials made on the rung it stands on that
+// are not to `want`. Probes of the other rungs do not come through Dial.
+type dataSpy struct {
+	*Ladder
+	want string
+	off  atomic.Int32
+}
+
+func (d *dataSpy) Dial(ctx context.Context) (net.Conn, error) {
+	if d.Ladder.Describe() != d.want {
+		d.off.Add(1)
+	}
+	return d.Ladder.Dial(ctx)
 }
 
 // A room whose control connection is up while every data dial fails is flagged
