@@ -730,6 +730,30 @@ func TestASilentStopWithAnOpenQuestionIsNotNudged(t *testing.T) {
 	}
 }
 
+// A turn that ended on a question for the human is "your move" on the board: no stuck flag, and a turn that ended with
+// no question and no report still is stuck.
+func TestATurnEndedOnAQuestionIsNotStuckOnTheBoard(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	_, asked := launchedPair(t, d)
+	if err := d.st.NoteTurnEnded(asked.ID, store.TurnQuestions{Known: true, Block: true,
+		List: []string{"ready to start the walk?"}}); err != nil {
+		t.Fatal(err)
+	}
+	stopSilently(t, d, "worker")
+	later := time.Now().Add(time.Hour)
+	if x := d.stuckNow(mustTask(t, d, asked.ID), later); x != nil {
+		t.Fatalf("a card waiting on a question for the human is stuck: %+v", x)
+	}
+
+	d2 := testDaemon(t)
+	_, silent := launchedPair(t, d2)
+	stopSilently(t, d2, "worker")
+	if x := d2.stuckNow(mustTask(t, d2, silent.ID), later); x == nil || x.Source != NoticeSilentStop {
+		t.Fatalf("a turn with no question and no report is not stuck: %+v", x)
+	}
+}
+
 // A card that already said done to its launcher since its prompt gets no nudge and no notice.
 func TestASilentStopAfterADoneSayIsNotNudged(t *testing.T) {
 	t.Parallel()

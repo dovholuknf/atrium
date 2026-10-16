@@ -514,6 +514,11 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if err != nil || ended == nil || ended.Before(*t.OwedAt) {
 		return time.Time{}, false
 	}
+	// A TURN THAT ENDED ON A QUESTION FOR THE HUMAN IS HIS MOVE, NOT STUCK. A walk or an interview that waits for the
+	// operator in its own terminal said what it wanted. The board reads "your move" and the launcher hears nothing.
+	if sn, err := d.st.GetSeen(t.ID); err == nil && sn.View().OpenCount() != 0 {
+		return time.Time{}, false
+	}
 	// A turn that ended on background work is waiting, not stopped. Each of
 	// those tasks wakes the session when it finishes, and the Stop after that is
 	// a new turn end that carries the clock forward. See BackgroundHoldMax.
