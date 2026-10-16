@@ -526,6 +526,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		}
 	}
 	go proxy.RunGitSteps(ctx)
+	go proxy.RunEfficacy(ctx)
 	// WHAT AN ITEM'S CARDS SPENT, read from each room's usage export. See link/workusage.go.
 	go proxy.RunWorkUsage(ctx)
 	gitHub.Start(ctx, 10*time.Second)
@@ -958,6 +959,16 @@ func (f landGit) ItemEvidence(ctx context.Context, branch string, shas []string)
 		return f.hub.Store().ItemEvidence(ctx, name, branch, shas)
 	}
 	return gitsync.Evidence{}, nil
+}
+
+// RepoName and RevertScan are the efficacy collectors' reach into the same repository.
+func (f landGit) RepoName() string { return f.repo() }
+
+func (f landGit) RevertScan(ctx context.Context) ([]gitsync.Revert, error) {
+	if name := f.repo(); name != "" {
+		return f.hub.Store().RevertScan(ctx, name)
+	}
+	return nil, nil
 }
 
 func (f landGit) ForgeMain(ctx context.Context, force bool) gitsync.ForgeMain {

@@ -56,13 +56,14 @@ const VIEWS = [
   { name: "list", at: "2026-10-15T13:30:00Z", open: null },
   { name: "detail", at: "2026-10-15T19:20:00Z", open: "u-items-tab" },
   { name: "blocked", at: "2026-10-15T13:30:00Z", open: "f-ptyhost-reconnect" },
+  { name: "efficacy", at: "2026-10-14T13:30:00Z", open: null, page: "efficacy" },
 ];
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
   const errors = [];
   for (const width of [1400, 2400]) {
     for (const v of VIEWS) {
@@ -74,14 +75,15 @@ const VIEWS = [
       await page.clock.install({ time: new Date(v.at) });
       await page.goto(base + "/?itemsmock=1");
       await page.waitForFunction(() => typeof itemsShow === "function" && typeof switchView === "function");
-      await page.evaluate(async open => {
+      await page.evaluate(async ({ open, pg }) => {
         hubIsHub = true; paintItemsTab();
         await switchView("items");
         await loadItems();
         if (open) { itemsShow(open); await loadItemDetail(open, false); }
-      }, v.open);
+        if (pg === "efficacy") { itemsPage = "efficacy"; await effLoad(); }
+      }, { open: v.open, pg: v.page });
       await page.addStyleTag({ content: ".it-mockbar { display: none !important; }" });
-      await page.waitForSelector(v.open ? ".it-detail" : ".it-row");
+      await page.waitForSelector(v.page ? ".ef-page .ef-rr" : v.open ? ".it-detail" : ".it-row");
       // The page is as tall as the tab: the board never scrolls as a whole, so size the window to the content.
       const h = await page.evaluate(() => {
         const l = document.getElementById("items-list");

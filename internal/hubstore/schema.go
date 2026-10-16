@@ -843,6 +843,50 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS work_fact_kind ON work_fact (backlog_id, kind)`,
 		},
 	},
+	{
+		// ITEM LIFECYCLE L9: EFFICACY, how well the process worked. `work_event` is what went right or wrong, one row per
+		// thing, and THE KEY (work_id, kind, at, sha) IS WHAT MAKES A REPLAYED COLLECT INSERT NOTHING: a send-back noticed
+		// twice is one row. `work_outcome` is DERIVED from the events, the steps and the token rows on every tick, never
+		// edited by hand and recomputable from scratch, so a changed rule (the 7 days, the noise floor) is a recompute and
+		// not a data fix. The cost columns are in 1e-10 dollar and are worked out from the tokens each tick, never kept.
+		name: "0028_work_efficacy",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work_event (
+				id      INTEGER PRIMARY KEY,
+				work_id TEXT NOT NULL,
+				kind    TEXT NOT NULL,
+				step    TEXT NOT NULL DEFAULT '',
+				at      TEXT NOT NULL,
+				sha     TEXT NOT NULL DEFAULT '',
+				note    TEXT NOT NULL DEFAULT '',
+				source  TEXT NOT NULL DEFAULT 'observed' CHECK (source IN ('observed','reported'))
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS work_event_once ON work_event (work_id, kind, at, sha)`,
+			`CREATE INDEX IF NOT EXISTS work_event_at ON work_event (at)`,
+			`CREATE TABLE IF NOT EXISTS work_outcome (
+				work_id            TEXT PRIMARY KEY,
+				landed_at          TEXT NOT NULL DEFAULT '',
+				clean_at           TEXT NOT NULL DEFAULT '',
+				watch_ends_at      TEXT NOT NULL DEFAULT '',
+				verdict            TEXT NOT NULL DEFAULT '',
+				first_pass         TEXT NOT NULL DEFAULT '',
+				first_pass_source  TEXT NOT NULL DEFAULT '',
+				escaped_bugs       INTEGER NOT NULL DEFAULT 0,
+				reverted           INTEGER NOT NULL DEFAULT 0,
+				ci_red_seconds     INTEGER NOT NULL DEFAULT 0,
+				wait_human_seconds INTEGER NOT NULL DEFAULT 0,
+				work_seconds       INTEGER NOT NULL DEFAULT 0,
+				step_cost          INTEGER NOT NULL DEFAULT 0,
+				coord_cost         INTEGER NOT NULL DEFAULT 0,
+				cost_known         INTEGER NOT NULL DEFAULT 0,
+				abandoned_at       TEXT NOT NULL DEFAULT '',
+				abandoned_cost     INTEGER NOT NULL DEFAULT 0,
+				detail             TEXT NOT NULL DEFAULT '{}',
+				computed_at        TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS work_outcome_landed ON work_outcome (landed_at)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

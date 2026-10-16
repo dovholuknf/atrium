@@ -21,6 +21,7 @@ let itemsList = [];
 let itemsStats = null;
 let itemsOpen = null;          // the id whose detail page is open
 let itemsDetail = null;        // what the detail answered for it
+let itemsPage = "";            // "" is the list, "efficacy" is the efficacy page (js/efficacy.js)
 let itemsFilter = "all";       // all, a department, or mine
 const itemsFolded = {};        // a group folded shut, by state
 const itemsAsking = {};        // a blocked row whose answer box is open, by id
@@ -85,6 +86,7 @@ async function loadItems() {
   } catch (e) {
     box.innerHTML = '<p class="pane-lead">The items are not answering right now.</p>';
   }
+  if (itemsPage === "efficacy") effLoad();
   if (itemsOpen) loadItemDetail(itemsOpen, true);
 }
 
@@ -289,7 +291,7 @@ function itemListHtml() {
   return '<div class="it-top"><h1>Items</h1><div class="it-sub">Every backlog item in flight, from designed to pushed. Spend is an estimate, priced from the room usage export.</div></div>' +
     '<div class="it-stats">' + itemStatCards(itemsStats || itemsStatsFrom(itemsList)) + "</div>" +
     '<div class="it-filters">' + pill("all", "all") + depts.map(d => pill(d, d)).join("") + pill("mine", "mine") +
-    '<span class="it-sp"></span><span class="it-pill it-sort">sort: needs me first</span></div>' +
+    '<button type="button" class="it-pill" data-act="efficacy">efficacy</button><span class="it-sp"></span><span class="it-pill it-sort">sort: needs me first</span></div>' +
     (groups || '<p class="pane-lead">Nothing matches.</p>');
 }
 
@@ -364,7 +366,7 @@ function itemSideHtml(it) {
     coord.map(c => kv(itemChip(c.name, known[c.name]) + ' <span class="it-dim">' + esc(c.note || "") + "</span>", itemUsd(c.usd))).join("") +
     (!Object.keys(cardRows).length && !coord.length ? '<div class="it-kv"><span class="it-dim">no cards yet</span></div>' : "") + "</div>" +
     "<div><h3>Prices used, per million tokens</h3>" + (it.prices || []).map(p => kv(esc(p.k), esc(p.v))).join("") +
-    (it.price_table ? kv("price table", esc(it.price_table + ", estimated")) : "") + "</div></div>";
+    (it.price_table ? kv("price table", esc(it.price_table + ", estimated")) : "") + "</div>" + itemEfficacyHtml(it) + "</div>";
 }
 
 function itemQuestionHtml(it) {
@@ -412,8 +414,8 @@ function itemsPaint(force) {
   const had = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("it-answer-box")
     ? { id: document.activeElement.dataset.id, at: document.activeElement.selectionStart } : null;
   for (const el of box.querySelectorAll(".it-answer-box")) itemsDraft[el.dataset.id] = el.value;
-  const open = itemsOpen && (itemsList.find(x => x.id === itemsOpen) || (itemsDetail && itemsDetail.id === itemsOpen ? itemsDetail : null));
-  const html = open ? itemDetailHtml(open) : itemsOpen ? '<p class="pane-lead">Loading ' + esc(itemsOpen) + "&hellip;</p>"
+  const open = !itemsOpen && itemsPage === "efficacy" ? null : itemsOpen && (itemsList.find(x => x.id === itemsOpen) || (itemsDetail && itemsDetail.id === itemsOpen ? itemsDetail : null));
+  const html = !itemsOpen && itemsPage === "efficacy" ? efficacyHtml() : open ? itemDetailHtml(open) : itemsOpen ? '<p class="pane-lead">Loading ' + esc(itemsOpen) + "&hellip;</p>"
     : !itemsList.length ? '<p class="pane-lead">No items.</p>' : itemListHtml();
   // A poll that found nothing new leaves the page alone: a repaint drops the hover, the focus and a text selection, and reads as a flicker.
   if (!force && html === itemsHtml && box.firstChild) return;
@@ -591,6 +593,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (act === "back") { ev.preventDefault(); itemsShow(null); }
     else if (act === "fold") { itemsFolded[b.dataset.state] = !itemsFolded[b.dataset.state]; itemsPaint(); }
     else if (act === "more") { itemsShowAll = true; itemsPaint(); }
+    else if (act === "efficacy") { itemsPage = "efficacy"; effLoad(); itemsPaint(true); }
+    else if (act === "eff-back") { ev.preventDefault(); itemsPage = ""; itemsPaint(true); }
+    else if (act === "eff-by") { effBy = b.dataset.by; effLoad(); }
+    else if (act === "eff-obs") { effObservedOnly = !effObservedOnly; effLoad(); }
+    else if (act === "eff-sort") { effSort = effSort === "worst" ? "newest" : effSort === "newest" ? "cost" : "worst"; itemsPaint(); }
     else if (act === "filter") { itemsFilter = b.dataset.filter; itemsPaint(); }
     else if (act === "ask") {
       itemsAsking[b.dataset.id] = !itemsAsking[b.dataset.id];

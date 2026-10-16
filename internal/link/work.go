@@ -61,6 +61,17 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 		p.serveWorkReview(w, r, st, id)
 		return
 	}
+	if r.Method == http.MethodPost && strings.HasSuffix(rest, "/event") && !strings.Contains(strings.TrimSuffix(rest, "/event"), "/") {
+		switch {
+		case docsCrossOrigin.Check(r) != nil:
+			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
+		case !edge.LocalOperator(r):
+			crFail(w, http.StatusForbidden, "items are written only from the machine the hub runs on"+edge.ProxyNote(r))
+		default:
+			p.serveWorkEvent(w, r, st, strings.TrimSuffix(rest, "/event"))
+		}
+		return
+	}
 	if r.Method == http.MethodPost && rest != "" && !strings.Contains(rest, "/") {
 		switch {
 		case docsCrossOrigin.Check(r) != nil:
@@ -104,6 +115,8 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 			out = append(out, p.listedWork(r, st, wk, cached[wk.BacklogID]))
 		}
 		crJSON(w, http.StatusOK, map[string]any{"work": out})
+	case rest == "efficacy":
+		p.serveWorkEfficacy(w, r, st)
 	case rest == "cost":
 		p.writeWorkCosts(w, st)
 	case strings.HasSuffix(rest, "/cost") && !strings.Contains(strings.TrimSuffix(rest, "/cost"), "/"):
@@ -216,7 +229,8 @@ func (p *Proxy) writeWorkDetail(w http.ResponseWriter, r *http.Request, st *hubs
 		got.Facts = []hubstore.WorkFact{}
 	}
 	crJSON(w, http.StatusOK, map[string]any{"work": got.Work, "cards": got.Cards, "assignments": got.Assignments,
-		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle, "cost": p.costOf(st, got.Work.BacklogID, got.Cards, got.Lifecycle.Steps)})
+		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle, "cost": p.costOf(st, got.Work.BacklogID, got.Cards, got.Lifecycle.Steps),
+		"efficacy": p.efficacyOf(st, got.Work.BacklogID)})
 }
 
 func wfail(w http.ResponseWriter, err error) {

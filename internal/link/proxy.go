@@ -163,6 +163,7 @@ type Proxy struct {
 	designGit designGit
 	flowGit   FlowGit
 	landGit   LandGit
+	ciRuns    func(context.Context) ([]CIPoint, error)
 	hubBuild  string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store

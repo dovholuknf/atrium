@@ -142,9 +142,57 @@
     in_flight: shown().filter(r => r.state === "running" || r.state === "blocked").length, working: 3,
     spend_today: 14.6, spend_coord: 1.4, landed_week: 9, landed_median: "7h 20m", landed_cost: 3.10 });
 
+  // The efficacy page's fixture: the efficacy-1400.png mockup as the hub's EffReport (internal/link/efficacy_report.go) would answer it.
+  // `observedOnly` drops the reported inputs, so the bugs row falls to a dash and the rest say observed.
+  function efficacy(q) {
+    const week = !q || q.by !== "day";
+    const obs = !!(q && q.observedOnly);
+    const series = {
+      clean_pass: [.4, .5, .45, .55, .5, .6, .57, .71], first_pass: [.6, .7, .65, .7, .8, .75, .77, .86], send_backs: [.9, .8, .85, .7, .75, .6, .65, .45],
+      red_after: [.1, .2, .1, .15, .1, .08, .08, .3], bugs: [.3, .3, .2, .35, .3, .3, .25, .3], time_to_land: [28, 25, 26, 23, 25, 21, 21, 18].map(h => h * 1000),
+      cost: [1.6, 1.8, 1.6, 1.9, 1.8, 1.6, 1.8, 3.1], waste: [.5, .4, .8, .3, .5, .3, .4, 1.9] };
+    const unit = { clean_pass: "pct", first_pass: "pct", send_backs: "per_item", red_after: "count", bugs: "per_item", time_to_land: "seconds", cost: "usd", waste: "usd" };
+    const cur = { clean_pass: [5, 7], first_pass: [6, 7], send_backs: [0, 7], red_after: [1, 9], bugs: [2, 7], time_to_land: [0, 9], cost: [0, 9], waste: [2, 0] };
+    const parts = { send_backs: { design: .3, review: .4, not_accepted: .2 }, bugs: { bugs: 2, reverts: 0 }, time_to_land: { wait: 7500 },
+      cost: { coord: .5, share: .16 }, waste: { share: .09 } };
+    const periods = series.clean_pass.map((_, i) => {
+      const last = i === 7;
+      const figures = {};
+      for (const key of Object.keys(series)) {
+        const reported = key === "bugs" && !obs;
+        const hide = key === "bugs" && obs;
+        const [num, den] = last ? cur[key] : [0, 6 + (i % 2)];
+        figures[key] = { key, unit: unit[key], value: hide ? null : series[key][i], num: last ? num : 0, den: last ? den : den, greyed: false,
+          source: reported ? "reported" : "observed", reported_n: reported && last ? 2 : 0, parts: last ? parts[key] : undefined };
+      }
+      return { key: "p" + i, start: ago((7 - i) * 10080), end: ago((6 - i) * 10080), partial: last, landed: last ? 9 : 6 + (i % 2), too_few: false, figures };
+    });
+    const trend = (verdict, dir, delta, was) => ({ verdict, dir, delta, text: "", was });
+    const trends = {
+      clean_pass: trend("better", "up", .14), first_pass: trend("better", "up", .09), send_backs: trend("better", "down", -.4),
+      red_after: trend("worse", "up", 1, { num: 0, den: 6 }), bugs: obs ? trend("none", "", null) : trend("same", "flat", 0),
+      time_to_land: trend("better", "down", -4200), cost: trend("same", "up", .12, { value: 2.98 }), waste: trend("worse", "up", 1.3, { value: .6 }) };
+    const row = (id, title, dept, tone, text, rank, sb, secs, usd, reported) => ({ id, title, dept, landed_at: ago(rank * 300), mark: { kind: tone, text, tone, rank },
+      send_backs: sb, total_seconds: secs, usd, reported: !!reported });
+    return {
+      by: week ? "week" : "day", observed_only: obs, now: ago(0), zone: "UTC", periods, compare: periods[6], trends,
+      wrong: { red: 1, bugs: obs ? 0 : 2, reverts: 0, total: obs ? 1 : 3, was: 0, reported: obs ? 0 : 2, source: obs ? "observed" : "reported" },
+      send_backs_by_step: { designed: 3, building: 2, tested: 0, reviewed: 4, landed: 0 },
+      time: { median: 26400, work: 14700, wait: 7500, ci: 4200, p90_step: "reviewed", p90: 13200, long_wait_step: "approved", long_wait: 19200, long_wait_item: "u-items-tab" },
+      abandoned: [{ id: "f-room-ssh-wizard", title: "", reason: "dropped", usd: 1.10 }, { id: "u-pulls-sort", title: "", reason: "dropped", usd: .80 }], abandoned_total: 1.90,
+      landed: [
+        row("u-items-tab", "Items tab on the hub board: grouped list, answer, cancel", "ui", "good", "clean pass", 1, "0 send-backs", 18600, 2.40),
+        row("f-link-restart", "Hub proxy: pass the room link through a restart", "fabric", "watch", "watching, 4 days left", 2, "1 review send-back", 34800, 4.90),
+        row("u-chat-tab", "Chat tab: conversation fills the pane", "ui", "bad", "CI red after landing, 22m", 3, "2 send-backs", 21900, 2.80),
+        row("u-backlog-owner", "Backlog filter by owner", "ui", "bad", "bug filed 2d after landing", 4, "first test failed", 12600, 1.20, true),
+        row("f-usage-cursor", "Usage export since cursor", "fabric", "good", "clean pass", 5, "0 send-backs", 15300, 1.70)].filter(r => !(obs && r.reported)),
+      estimated: true, notes: obs ? ["Reported inputs are left out."] : ["Reported inputs: bug links until a bug is filed through --item."] };
+  }
+
   const copy = r => JSON.parse(JSON.stringify(r));
 
   window.itemsMock = {
+    async efficacy(q) { return efficacy(q); },
     async list() { return { items: rows.filter(r => !r.detailOnly).map(copy), stats: stats() }; },
     async detail(id) {
       const r = rows.find(x => x.id === id);

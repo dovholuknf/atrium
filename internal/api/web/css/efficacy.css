@@ -1,0 +1,58 @@
+/* The efficacy page of the items tab (js/efficacy.js), as docs/rnd/img/item-lifecycle/efficacy-1400.png draws it. Existing tokens only.
+   An arrow's colour is better or worse, never up or down: teal better, --wait (the orange) worse, dim for noise. */
+  .ef-top { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+  .ef-title { flex: 1 1 320px; }
+  .ef-seg { display: flex; border: 1px solid var(--stroke-dim); border-radius: var(--r-pill); overflow: hidden; }
+  .ef-seg button { padding: 4px 14px; border: 0; background: transparent; color: var(--label); font: 600 calc(12px * var(--uiscale))/1.45 var(--sans); cursor: pointer; }
+  .ef-seg button.on { background: var(--teal-bg); color: var(--teal); }
+  .ef-obs.strict { border-color: var(--teal); }
+  .ef-toofew { margin-top: 14px; padding: 8px 14px; border-radius: var(--r-lg); background: var(--lift); color: var(--label); font-size: var(--fs-sm); }
+  .ef-tiles { margin-top: 18px; }
+  .ef-tile-tr { margin-top: 4px; font-size: var(--fs-xs); }
+
+  .ef-tr { font: 600 calc(11.5px * var(--uiscale)) var(--mono); white-space: nowrap; }
+  .ef-tr.g { color: var(--teal); } .ef-tr.b { color: var(--wait); } .ef-tr.n { color: var(--dim); }
+  .ef-dash { color: var(--dim); }
+
+  .ef-two { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); gap: 18px; margin-top: 6px; }
+  .ef-two > div:last-child > .ef-panel + .ef-panel { margin-top: 14px; }
+  .ef-panel { padding: 16px 20px; border-radius: var(--r-lg); background: linear-gradient(160deg, var(--card-0), var(--card-1)); border: 1px solid var(--stroke-dim); }
+  .ef-panel h3 { margin: 0 0 6px; font-size: var(--fs-xxs); text-transform: uppercase; letter-spacing: .12em; color: var(--label); }
+  .ef-landed { margin-top: 18px; }
+  .ef-note { font-size: var(--fs-xs); color: var(--dim); margin-top: 10px; }
+
+  .ef-rr { display: grid; grid-template-columns: minmax(0, 1.5fr) 92px 190px 96px 74px; gap: 16px; align-items: center; padding: 11px 0; border-top: 1px solid var(--stroke-dim); }
+  .ef-rr:first-of-type { border-top: 0; }
+  .ef-rr.grey .ef-rv { color: var(--dim); }
+  .ef-rn { color: var(--head); font-weight: 650; font-size: var(--fs-base); }
+  .ef-rs { color: var(--dim); font-size: var(--fs-xs); margin-top: 2px; }
+  .ef-rv { font: 700 calc(20px * var(--uiscale)) var(--mono); color: var(--head); text-align: right; }
+  .ef-strip { display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+  .ef-strip i { display: block; width: 9px; border-radius: 2px; background: var(--stroke); }
+  .ef-strip i.o { background: transparent; border: 1.5px dashed var(--teal); border-bottom: 0; }
+  .ef-strip i.none { background: var(--grid); height: 3px !important; }
+
+  .ef-sbar i.hot { background: var(--wait); }
+  .ef-split { display: flex; height: 14px; border-radius: 5px; overflow: hidden; margin: 8px 0 6px; }
+  .ef-split .ef-seg { display: block; border: 0; border-radius: 0; }
+  .ef-kv1 { margin-top: 8px; }
+
+  .ef-ir { display: grid; grid-template-columns: minmax(0, 1.6fr) 230px 140px 80px 70px; gap: 18px; align-items: center; padding: 10px 0; border-top: 1px solid var(--stroke-dim); }
+  .ef-ir:first-of-type { border-top: 0; }
+  .ef-ttl { font-size: var(--fs-base); color: var(--head); }
+  .ef-age { font: calc(12px * var(--uiscale)) var(--mono); color: var(--label); text-align: right; }
+  .ef-usd { font: 650 calc(13px * var(--uiscale)) var(--mono); color: var(--head); text-align: right; }
+  .ef-mk { font-size: var(--fs-xs); font-weight: 700; padding: 3px 11px; border-radius: var(--r-pill); white-space: nowrap; }
+  .ef-mk.clean, .ef-mk.good { background: var(--teal-bg); color: var(--teal); }
+  .ef-mk.bad { background: var(--wait-bg); color: var(--wait); }
+  .ef-mk.watch { background: var(--lift); color: var(--label); }
+
+  .ef-item { grid-column: 1 / -1; }
+  .ef-item h3 { margin: 0 0 6px; }
+  .ef-itemmark { margin: 4px 0 6px; }
+
+  @media (max-width: 900px) {
+    .ef-two { grid-template-columns: minmax(0, 1fr); }
+    .ef-rr, .ef-ir { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; }
+    .ef-rv, .ef-age, .ef-usd { text-align: left; }
+  }

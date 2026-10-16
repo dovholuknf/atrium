@@ -161,6 +161,11 @@ const itemsData = {
     const items = ((a && a.items) || []).map(itemFromAnswer).map(it => itemWithWork(it, work[it.backlog]));
     return { items, stats: itemsStatsFrom(items, a && a.stats) };
   },
+  // The efficacy page's one read (internal/link/efficacy_report.go): { by: "day"|"week", observedOnly }.
+  async efficacy(q) {
+    if (itemsMockOn()) return window.itemsMock.efficacy(q);
+    return itemsFetch("/_hub/work/efficacy?by=" + encodeURIComponent(q.by || "week") + (q.observedOnly ? "&observed_only=1" : ""));
+  },
   // The count of items blocked on the human, for the tab's badge, when the tab is not the one on screen.
   async blockedCount() {
     // A design waiting for approval is blocked on the human too, and only the step engine says so, so the count reads the list.

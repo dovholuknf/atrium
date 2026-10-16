@@ -26689,6 +26689,45 @@ async function itemsViewSection(browser, base) {
   if (!bad) console.log("itemsView ok");
 }
 
+// THE EFFICACY PAGE of the items tab, on the fixtures: a dash is not a 0%, a week with too few landed items says so, "observed only"
+// refetches and drops the reported inputs, a reported figure wears its tag, and css/efficacy.css holds no raw colour.
+async function itemsEfficacySection(browser, base) {
+  const css = fs.readFileSync(path.join(WEB_ROOT, "css", "efficacy.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const raw = (css.match(/#[0-9a-fA-F]{3,8}\b/g) || []).concat((css.match(/\b(?:rgba?|hsla?)\([^)]*\)/g) || []).filter(c => !/var\(/.test(c)));
+  if (raw.length) fail("itemsEfficacy: efficacy.css holds raw colour: " + raw.slice(0, 5).join(" "));
+  const wasHub = hubMode;
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/_hub\/(items|work)/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
+    await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("items"));
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
+    await p.click('#items-list [data-act="efficacy"]');
+    await p.waitForSelector("#items-list .ef-rr", { timeout: slow(10000) });
+    const on = await p.evaluate(() => ({ rows: document.querySelectorAll(".ef-rr").length, reported: document.querySelectorAll(".ef-rr .it-obs.r").length,
+      landed: document.querySelectorAll(".ef-ir").length, tooFew: !!document.querySelector('[data-role="too-few"]') }));
+    if (on.rows !== 8 || on.reported < 1 || on.landed !== 5 || on.tooFew) fail("itemsEfficacy: the page is " + JSON.stringify(on));
+    await p.click('#items-list [data-act="eff-obs"]');
+    await p.waitForFunction(() => document.querySelectorAll(".ef-rr .it-obs.r").length === 0, null, { timeout: slow(10000) });
+    const off = await p.evaluate(() => ({ dash: !!document.querySelector('.ef-rr[data-row="bugs"] .ef-rv .ef-dash'), zero: /^0%$/.test(document.querySelector('.ef-rr[data-row="bugs"] .ef-rv').textContent.trim()),
+      landed: document.querySelectorAll(".ef-ir").length }));
+    if (!off.dash || off.zero || off.landed !== 4) fail("itemsEfficacy: observed only left " + JSON.stringify(off));
+    const few = await p.evaluate(async () => {
+      effData.periods[effData.periods.length - 1].too_few = true; effData.periods[effData.periods.length - 1].landed = 3;
+      itemsPaint(true);
+      return (document.querySelector('[data-role="too-few"]') || {}).textContent || "";
+    });
+    if (!/Too few to trend/.test(few)) fail("itemsEfficacy: a thin week did not say so: " + few);
+    if (errors.length) fail("itemsEfficacy: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); hubMode = wasHub; }
+  if (!bad) console.log("itemsEfficacy ok");
+}
+
 // THE ITEMS TAB, on the fixtures (`?itemsmock=1`): list, detail and blocked draw from js/items-mock.js, an answer posts through the mock,
 // a skin change repaints the tab, and css/items.css holds no raw colour. Nothing here touches a hub.
 async function itemsMockSection(browser, base) {
@@ -33990,6 +34029,7 @@ async function main() {
     await unit("itemsRealShape", () => itemsRealShapeSection(browser, base));
     await unit("itemsView", () => itemsViewSection(browser, base));
     await unit("itemsMock", () => itemsMockSection(browser, base));
+    await unit("itemsEfficacy", () => itemsEfficacySection(browser, base));
     await unit("itemsPhone", () => itemsPhoneSection(browser, base));
     await unit("hubRepos", () => hubReposSection(browser, base));
     await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
