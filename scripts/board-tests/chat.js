@@ -1,0 +1,402 @@
+// chat: the chat tab and the chatter tab.
+//
+// Units: chatter, chatterTab, chatTab.
+// `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
+// Alone: `node scripts/board-tests/chat.js` runs just these units, the way the full run would.
+const path = require("path");
+const fs = require("fs");
+const { slow } = require("../lib/browser.js");
+const { mock, landCard } = require("../lib/mock.js");
+const { fail } = require("../lib/results.js");
+const { landContext } = require("../lib/helpers.js");
+
+// The details popover's chatter: the says to and from a card, newest first, 20 to a page. A row shows the other party,
+// when and the delivery state, links to the other party's card when the board has it, and opens to the full text. A
+// "more" pages back by the last id read. The endpoint is answered here, so the test needs no live says.
+// CHATTER_SHOTS names a directory for a picture.
+async function chatterSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  const asked = [];
+  const now = Date.now();
+  const all = [];
+  for (let i = 0; i < 25; i++) {
+    const out = i % 3 !== 0;
+    all.push({ id: "say" + String(100 - i), from_task: out ? "me-1" : (i === 3 ? "gone-9" : "other-2"), from: out ? "me" : "other",
+      to_task: out ? (i === 1 ? "gone-9" : "other-2") : "me-1", to: out ? (i === 1 ? "ghost" : "other") : "me", to_input: "other",
+      sent_at: new Date(now - i * 7 * 60000).toISOString(), state: i === 2 ? "queued" : "delivered", channel: i === 2 ? "" : "terminal",
+      preview: "say number " + i + " about the work", chars: i === 4 ? 20000 : 40,
+      text: i === 4 ? "x".repeat(16000) : "say number " + i + " about the work\nsecond line of " + i });
+  }
+  await ctx.route("**/v1/tasks/*/says*", route => {
+    const u = new URL(route.request().url());
+    asked.push(u.search);
+    const before = u.searchParams.get("before");
+    const at = before ? all.findIndex(s => s.id === before) + 1 : 0;
+    const page = all.slice(at, at + 20);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ says: page, more: at + 20 < all.length }) });
+  });
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    await dp.click('.tab[data-view="terms"]');
+    await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    await dp.evaluate(() => {
+      for (let n = document.getElementById("t-expando"); n; n = n.parentElement) n.hidden = false;
+      lastTasks = lastTasks.concat([{ id: "me-1", title: "me", wire_name: "me", status: "running" },
+        { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
+      document.getElementById("t-drawer").classList.add("open");
+      termDrawerOpen = true;
+      peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
+    });
+    // The chatter is a drawer, folded until it is opened (the same one the peek has).
+    await dp.waitForSelector('#t-drawer-body .peek-drawer[data-key="chatter"]:not([hidden]) > .peek-dh', { timeout: slow(8000) });
+    await dp.click('#t-drawer-body .peek-drawer[data-key="chatter"] > .peek-dh');
+    await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
+    await dp.evaluate(() => termDrawerFit());
+    let rows = await dp.$$eval("#t-drawer-body .chat-row", r => r.length);
+    if (rows !== 20) fail("the first page of chatter has " + rows + " rows, not 20.");
+    const first = await dp.$eval("#t-drawer-body .chat-row", r => ({ dir: r.querySelector(".chat-dir").textContent,
+      who: r.querySelector(".chat-who").textContent, meta: r.querySelector(".chat-meta").textContent, link: !!r.querySelector("button.chat-who") }));
+    if (first.dir !== "from" || first.who !== "other" || !first.link || !/ago, delivered by terminal/.test(first.meta)) {
+      fail("the newest chatter row reads wrong: " + JSON.stringify(first));
+    }
+    // A card the board does not know is a name and no link.
+    const nth = (i, f) => dp.evaluate(([i, f]) => (new Function("r", "return " + f))(document.querySelectorAll("#t-drawer-body .chat-row")[i]), [i, f]);
+    const unknown = await nth(1, "r.querySelector('.chat-who').tagName + ' ' + r.querySelector('.chat-who').textContent");
+    if (unknown !== "SPAN ghost") fail("an unknown card's name is drawn as " + unknown + ", not plain text.");
+    if (!(await nth(2, "/queued/.test(r.querySelector('.chat-meta').textContent)"))) fail("a queued say does not say queued.");
+    // The text is hidden until the row is opened.
+    if (!(await dp.$eval("#t-drawer-body .chat-text", e => e.hidden))) fail("a row's full text is showing before it is opened.");
+    await dp.click("#t-drawer-body .chat-row .chat-toggle");
+    const shown = await dp.$eval("#t-drawer-body .chat-text", e => !e.hidden && e.textContent);
+    if (!shown || !/second line of 0/.test(shown)) fail("opening a row did not show its full text: " + shown);
+    // The cut text says how much was kept.
+    const cut = await nth(4, "r.querySelector('.chat-text').textContent");
+    if (!/\[cut: the say was 20000 characters\]/.test(cut)) fail("a cut say does not say it was cut: " + cut.slice(-60));
+    // The count is in runes: astral characters are two UTF-16 units each and are not a cut.
+    const runes = await dp.evaluate(() => {
+      const note = s => peekChatterRow("me-1", Object.assign({ from_task: "me-1", sent_at: new Date().toISOString(), state: "queued" }, s))
+        .querySelector(".chat-text").textContent.includes("[cut:");
+      return { whole: note({ text: "😀😀😀", chars: 3 }), cut: note({ text: "😀😀", chars: 5 }), preview: note({ preview: "hi", chars: 9 }) };
+    });
+    if (runes.whole || !runes.cut || runes.preview) fail("the cut note counts the wrong thing: " + JSON.stringify(runes));
+    if (process.env.CHATTER_SHOTS) {
+      await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, "say-log-view-after.png") });
+      // What it looked like before: the same details with no chatter section.
+      await dp.evaluate(() => {
+        window.__chat = peekChatter; peekChatter = () => {};
+        peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
+      });
+      await dp.waitForTimeout(600);
+      await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, "say-log-view-before.png") });
+      await dp.evaluate(() => {
+        peekChatter = window.__chat;
+        peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
+      });
+      await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
+    }
+    // More pages back from the last id read, and goes once there is no more.
+    await dp.click("#t-drawer-body .chat-more");
+    await dp.waitForFunction(() => document.querySelectorAll("#t-drawer-body .chat-row").length === 25, null, { timeout: slow(8000) });
+    if (!asked.some(q => q === "?before=say81")) fail("more did not ask for the page before the last row: " + JSON.stringify(asked));
+    if (await dp.$("#t-drawer-body .chat-more")) fail("more is still offered after the last page.");
+    // A card with no says draws no section.
+    await ctx.unroute("**/v1/tasks/*/says*");
+    await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ status: 200, contentType: "application/json", body: '{"says":[],"more":false}' }));
+    await dp.evaluate(() => peekFill(document.getElementById("t-drawer-body"), "me-1", () => true));
+    await dp.waitForTimeout(600);
+    if (!(await dp.$eval("#t-drawer-body .peek-sec.chatter", e => e.hidden))) fail("an empty chatter section is showing.");
+    if (errors.length) fail("the chatter page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// The chatter tab: every say from every room, newest first, 20 to a page, read on open and on `more` and never polled.
+// A row shows when, room, from, to, state and a preview that opens to the full text, and both names link to their cards
+// when the board has them. The filters go to GET /v1/says as agent (or from or to), room and since. The endpoint is
+// answered here, merged the way the hub does it. CHATTER_SHOTS names a directory for the pictures.
+async function chatterTabSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+  const dp = await ctx.newPage();
+  const errors = [];
+  dp.on("pageerror", e => errors.push(String(e)));
+  const asked = [];
+  const now = Date.now();
+  const all = [];
+  for (let i = 0; i < 25; i++) {
+    const room = i % 2 ? "beta" : "alpha";
+    all.push({ id: room + "~say" + String(100 - i), room, from_task: room + "~me-1", from: i % 4 === 1 ? "other" : "me",
+      to_task: i === 2 ? room + "~gone-9" : room + "~other-2", to: i === 2 ? "ghost" : i % 4 === 1 ? "me" : "other", to_input: "other",
+      sent_at: new Date(now - i * 11 * 60000).toISOString(), state: i === 3 ? "queued" : "delivered", channel: i === 3 ? "" : "terminal",
+      preview: "say number " + i + " about the work", chars: i === 4 ? 20000 : 40,
+      text: i === 4 ? "x".repeat(16000) : "say number " + i + " about the work\nsecond line of " + i });
+  }
+  await ctx.route("**/v1/says*", route => {
+    const u = new URL(route.request().url());
+    asked.push(u.search);
+    const before = u.searchParams.get("before");
+    const at = before ? Number(before) : 0;
+    const page = all.slice(at, at + 20);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ says: page, more: at + 20 < all.length,
+      cursor: at + 20 < all.length ? String(at + 20) : "", missing: before ? [] : ["gamma"] }) });
+  });
+  await dp.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  const shot = async name => {
+    if (process.env.CHATTER_SHOTS) await dp.screenshot({ path: require("path").join(process.env.CHATTER_SHOTS, name) });
+  };
+  try {
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForTimeout(900);
+    // The tab starts in the ... menu whatever the width, and the arrange dialog can put it in the bar and back.
+    const tab = await dp.$eval('.tab[data-view="chatter"]', t => ({ text: t.textContent, menu: t.classList.contains("umenu") }));
+    if (tab.text !== "messages between agents" || !tab.menu) fail("the chatter tab is not in the menu by default: " + JSON.stringify(tab));
+    await dp.evaluate(() => window.openTabsArrange());
+    await dp.waitForSelector("#tabsdlg[open]");
+    const sel = '#tabsdlg-list .tabsdlg-row[data-view="chatter"] select';
+    if ((await dp.$eval(sel, s => s.value)) !== "menu") fail("the arrange dialog does not show chatter in the menu");
+    await dp.selectOption(sel, "bar");
+    if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter stays in the menu after being put in the bar");
+    await dp.reload({ waitUntil: "domcontentloaded" });
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await dp.waitForTimeout(1500);
+    if (await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu"))) fail("chatter is back in the menu after a reload");
+    await dp.evaluate(() => window.openTabsArrange());
+    await dp.waitForSelector("#tabsdlg[open]");
+    await dp.click("#tabsdlg-reset");
+    await dp.click("#tabsdlg-close");
+    if (!(await dp.$eval('.tab[data-view="chatter"]', t => t.classList.contains("umenu")))) fail("reset did not put chatter back in the menu");
+    if (process.env.CHATTER_SHOTS) {
+      // Before: the same menu with no chatter in it.
+      await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = true; });
+      await dp.waitForTimeout(300);
+      await dp.click("#tabmore");
+      await dp.waitForTimeout(300);
+      await shot("say-log-all-before.png");
+      await dp.keyboard.press("Escape");
+      await dp.evaluate(() => { document.querySelector('.tab[data-view="chatter"]').hidden = false; });
+      await dp.waitForTimeout(300);
+      await dp.click("#tabmore");
+      await dp.waitForTimeout(300);
+      await shot("say-log-all-menu.png");
+      await dp.keyboard.press("Escape");
+    }
+    if (asked.length) fail("the board asked for the chatter before the tab was opened: " + JSON.stringify(asked));
+    await dp.evaluate(() => {
+      lastTasks = lastTasks.concat([{ id: "alpha~me-1", title: "me", wire_name: "me", status: "running" },
+        { id: "beta~other-2", title: "other", wire_name: "other", status: "running" }]);
+      switchView("chatter");
+    });
+    await dp.waitForSelector("#chatter-list .chatter-row", { timeout: slow(8000) });
+    if (asked.length !== 1 || asked[0] !== "") fail("opening the tab made " + asked.length + " reads: " + JSON.stringify(asked));
+    const rows = await dp.$$eval("#chatter-list .chatter-row", r => r.length);
+    if (rows !== 20) fail("the first page of chatter has " + rows + " rows, not 20.");
+    const first = await dp.$eval("#chatter-list .chatter-row", r => ({ room: r.querySelector(".aud-room").textContent,
+      who: [...r.querySelectorAll(".chat-who")].map(e => e.tagName + " " + e.textContent), state: r.querySelector(".chatter-state").textContent }));
+    if (first.room !== "alpha" || first.who.join("|") !== "BUTTON me|BUTTON other" || first.state !== "delivered by terminal") {
+      fail("the newest row reads wrong: " + JSON.stringify(first));
+    }
+    const ghost = await dp.$eval("#chatter-list .chatter-row:nth-child(4)", r => r.querySelectorAll(".chat-who")[1].tagName + " " + r.querySelectorAll(".chat-who")[1].textContent);
+    if (ghost !== "SPAN ghost") fail("a card the board does not know is drawn as " + ghost + ", not plain text.");
+    if (!/gamma/.test(await dp.$eval("#chatter-list .chatter-missing", e => e.textContent))) fail("a room that did not answer is not named.");
+    if (!(await dp.$eval("#chatter-list .chat-text", e => e.hidden))) fail("a say's full text is showing before it is opened.");
+    await dp.click("#chatter-list .chatter-row .chat-toggle");
+    const shown = await dp.$eval("#chatter-list .chat-text", e => !e.hidden && e.textContent);
+    if (!shown || !/second line of 0/.test(shown)) fail("opening a row did not show its full text: " + shown);
+    const cut = await dp.$eval("#chatter-list .chatter-row:nth-child(6) .chat-text", e => e.textContent);
+    if (!/\[cut: the say was 20000 characters\]/.test(cut)) fail("a cut say does not say it was cut: " + cut.slice(-60));
+    await shot("say-log-all-after.png");
+    // More pages back by the cursor the hub gave, and goes with the last page.
+    await dp.click("#chatter-list .chat-more");
+    await dp.waitForFunction(() => document.querySelectorAll("#chatter-list .chatter-row").length === 25, null, { timeout: slow(8000) });
+    if (asked[1] !== "?before=20") fail("more did not ask with the hub's cursor: " + JSON.stringify(asked));
+    if (await dp.$("#chatter-list .chat-more")) fail("more is still offered after the last page.");
+    // A filter is a new read from the top: the agent, which side of it, the room and how far back.
+    await dp.fill("#chatter-agent", "me");
+    await dp.selectOption("#chatter-dir", "from");
+    await dp.waitForFunction(() => document.querySelectorAll("#chatter-list .chatter-row").length === 20, null, { timeout: slow(8000) });
+    const q = new URLSearchParams(asked[asked.length - 1]);
+    if (q.get("from") !== "me" || q.has("agent") || q.has("before")) fail("sent by an agent asked " + asked[asked.length - 1]);
+    await dp.selectOption("#chatter-dir", "");
+    await dp.waitForTimeout(300);
+    if (new URLSearchParams(asked[asked.length - 1]).get("agent") !== "me") fail("either side asked " + asked[asked.length - 1]);
+    await dp.selectOption("#chatter-since", "86400");
+    await dp.waitForTimeout(300);
+    const since = new URLSearchParams(asked[asked.length - 1]).get("since");
+    if (!since || Math.abs(Date.parse(since) - (Date.now() - 86400000)) > 60000) fail("the time window asked since " + since);
+    // The room filter lists the rooms the hub reports.
+    await dp.evaluate(() => { hubRooms = [{ name: "alpha" }, { name: "beta" }]; chatterDrawChoices(); });
+    await dp.selectOption("#chatter-room", "beta");
+    await dp.waitForTimeout(300);
+    if (new URLSearchParams(asked[asked.length - 1]).get("room") !== "beta") fail("the room filter asked " + asked[asked.length - 1]);
+    const before = asked.length;
+    await dp.waitForTimeout(1500);
+    if (asked.length !== before) fail("the chatter polled: " + (asked.length - before) + " reads with nothing touched.");
+    if (errors.length) fail("the chatter tab threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── the chat tab (f-chat-tab) ──────────────────────────────────────────────
+// A top-nav tab whose left side is the terminals' session list and whose right side is the phone's conversation view,
+// embedded. The tab opens, a row selects a card (and does not attach it), replies are bubbles on the left and the
+// operator's own on the right inside a capped column, the working line spins while the card works, a send goes to the
+// card, and the terminal button and the terminals tab's chat button switch back and forth. `CHAT_SHOTS=<dir>` writes the
+// before (terminals) and after (chat) pictures at 1400x900.
+async function chatTabSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("chat-a", { supervised: true, status: "running", display_title: "chat a", activity: { what: "thinking", seconds: 2 }, created_at: "2026-09-19T12:00:00Z" });
+  landCard("chat-b", { supervised: true, status: "running", display_title: "chat b", created_at: "2026-09-19T12:05:00Z" });
+  mock.landList = [mock.LAND["chat-a"], mock.LAND["chat-b"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const sent = [];
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    source: "transcript", more: false, replies: [
+      { at: "2026-10-15T10:00:00Z", text: "Here is **the plan**:\n\n- one\n- two", truncated: false },
+      { at: "2026-10-15T10:05:00Z", text: "And a second reply.", truncated: false }] }) }));
+  await ctx.route("**/v1/tasks/*/message", route => {
+    sent.push({ url: route.request().url(), body: route.request().postData() || "" });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) });
+  });
+  const tag = "chatTab: ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const shot = async name => {
+      if (!process.env.CHAT_SHOTS) return;
+      fs.mkdirSync(process.env.CHAT_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHAT_SHOTS, name) });
+    };
+    // before: the terminals tab as it is
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector("#term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await p.waitForTimeout(500);
+    await shot("chat-before-terminals-1400x900.png");
+    // the tab opens, with the terminals' own list in it
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    if (await p.evaluate(() => !document.getElementById("terms").hidden)) fail(tag + "the terminals view is still showing");
+    // a row selects, it does not attach
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    if (await p.evaluate(() => !!(typeof termTask !== "undefined" && termTask))) fail(tag + "selecting a row attached a terminal");
+    if (!await p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"))) fail(tag + "the selected row is not marked");
+    const fr = p.frames().find(f => /\/m\/\?chat=1/.test(f.url()));
+    if (!fr) { fail(tag + "no phone page frame"); return; }
+    await fr.waitForSelector("#m-replies .reply", { timeout: slow(10000) });
+    await fr.waitForSelector("#m-compose textarea", { timeout: slow(10000) });
+    // the phone's own navigation is gone, the column is capped and centred
+    const lay = await fr.evaluate(() => {
+      const r = el => el.getBoundingClientRect();
+      const first = document.querySelector("#m-replies .reply");
+      return { barHidden: getComputedStyle(document.querySelector(".bar")).display === "none", homeHidden: getComputedStyle(document.getElementById("m-home")).display === "none",
+        topHidden: getComputedStyle(document.querySelector(".sheet-top")).display === "none", w: window.innerWidth, left: r(first).left, right: r(first).right,
+        compose: { left: r(document.getElementById("m-compose")).left, right: r(document.getElementById("m-compose")).right } };
+    });
+    if (!lay.barHidden || !lay.homeHidden || !lay.topHidden) fail(tag + "the phone's navigation shows: " + JSON.stringify(lay));
+    if (lay.right - lay.left > 700) fail(tag + "the column is not capped: " + JSON.stringify(lay));
+    if (Math.abs(lay.compose.left - (lay.w - lay.compose.right)) > 2) fail(tag + "the composer is not centred: " + JSON.stringify(lay));
+    // the working line spins while the card works
+    await fr.waitForFunction(() => { const w = document.getElementById("m-working"); return w && !w.hidden && /thinking/.test(w.textContent); }, null, { timeout: slow(8000) });
+    // send goes to the card, and the operator's words come back as a right bubble
+    await fr.fill("#m-compose textarea", "hello from the chat tab");
+    await fr.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+    await fr.click("#m-compose .mc-send");
+    await fr.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+    if (!sent.length || !/chat-a\/message$/.test(sent[sent.length - 1].url) || !/hello from the chat tab/.test(sent[sent.length - 1].body)) fail(tag + "the send did not reach the card: " + JSON.stringify(sent));
+    const sides = await fr.evaluate(() => {
+      const r = el => el.getBoundingClientRect();
+      const theirs = document.querySelector("#m-replies .reply:not(.mine)"), mine = document.querySelector("#m-replies .reply.mine");
+      return { theirsLeft: r(theirs).left, theirsRight: r(theirs).right, mineLeft: r(mine).left, mineRight: r(mine).right, w: window.innerWidth,
+        md: !!theirs.querySelector(".md strong") };
+    });
+    if (!sides.md) fail(tag + "a reply is not rendered as markdown");
+    if (!(sides.mineRight > sides.theirsRight - 1 && sides.mineLeft > sides.theirsLeft)) fail(tag + "own bubble is not to the right of the reply: " + JSON.stringify(sides));
+    await p.waitForTimeout(500);
+    await shot("chat-after-chat-1400x900.png");
+    // wide: the column follows the pane, the list is as wide as the terminals' list
+    await p.setViewportSize({ width: 2400, height: 1200 });
+    await p.waitForTimeout(500);
+    await shot("chat-" + (process.env.CHAT_SHOT_TAG || "after") + "-chat-2400x1200.png");
+    const widths = async () => ({
+      pane: await p.evaluate(() => document.getElementById("chat-frame-host").getBoundingClientRect().width),
+      list: await p.evaluate(() => document.getElementById("term-list").getBoundingClientRect().width),
+      col: await fr.evaluate(() => { const r = el => el.getBoundingClientRect(); const c = document.getElementById("m-compose"); return { w: r(c).width, vw: window.innerWidth }; }),
+    });
+    const wide = await widths();
+    if (wide.col.w < wide.pane * 0.85) fail(tag + "at 2400 the column does not fill the pane: " + JSON.stringify(wide));
+    await p.setViewportSize({ width: 1400, height: 900 });
+    await p.waitForTimeout(300);
+    const narrow = await widths();
+    if (narrow.col.w < narrow.pane * 0.85 || narrow.col.w > narrow.pane) fail(tag + "at 1400 the column does not track the pane: " + JSON.stringify(narrow));
+    // the list is the terminals' width, dragged by the terminals' own grip, and it moves both tabs
+    if (await p.evaluate(() => !document.getElementById("chat-layout").contains(document.getElementById("term-grip")))) fail(tag + "the divider is not in the chat view");
+    const g = await p.locator("#term-grip").boundingBox();
+    const before = narrow.list;
+    await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(g.x + g.width / 2 + 80, g.y + g.height / 2, { steps: 4 });
+    await p.mouse.up();
+    const after = (await widths()).list;
+    if (Math.abs(after - before - 80) > 2) fail(tag + "dragging the divider moved the list from " + before + " to " + after);
+    await p.click("#chat-to-term");
+    await p.waitForFunction(() => !document.getElementById("terms").hidden, null, { timeout: slow(10000) });
+    const onTerms = await p.evaluate(() => document.getElementById("term-list").getBoundingClientRect().width);
+    if (Math.abs(onTerms - after) > 2) fail(tag + "the terminals tab shows the list at " + onTerms + ", the chat tab at " + after);
+    await p.click("#t-chat");
+    await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    // a card in the chat list is as wide as on the terminals tab
+    const cardW = await p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').getBoundingClientRect().width);
+    if (Math.abs(cardW - onTerms) > 20) fail(tag + "a card is " + cardW + " wide in a list " + onTerms + " wide");
+    // terminal switch, and back
+    await p.click("#chat-to-term");
+    await p.waitForFunction(() => !document.getElementById("terms").hidden && termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });
+    if (await p.evaluate(() => !document.getElementById("term-layout").contains(document.getElementById("term-list")))) fail(tag + "the list was not given back to the terminals view");
+    if (await p.evaluate(() => !!document.querySelector("#chat-frame"))) fail(tag + "the conversation frame outlived the chat view");
+    await p.click("#t-chat");
+    await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    // another row switches the conversation
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-b"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-b"]', { timeout: slow(5000) });
+    if (await p.evaluate(() => document.querySelectorAll("#chat-frame-host iframe").length) !== 1) fail(tag + "more than one conversation frame");
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
+const units = [
+  { name: "chatter", run: ({ browser, base }) => chatterSection(browser, base) },
+  { name: "chatterTab", run: ({ browser, base }) => chatterTabSection(browser, base) },
+  { name: "chatTab", run: ({ browser, base }) => chatTabSection(browser, base) },
+];
+const sections = { chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
+
+module.exports = { units, sections };
+if (require.main === module) require("../lib/alone.js")(units);

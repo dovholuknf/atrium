@@ -8,6 +8,7 @@
   },
   "board": {
     "boot": {
+      "file": "scripts/board-tests/boot.js",
       "page": "what every page needs: the board loads with no page error, the service worker, contrast",
       "units": ["bootClean"],
       "sources": [
@@ -102,6 +103,7 @@
       "needs": ["internal/api/web/js/core.js"]
     },
     "launch": {
+      "file": "scripts/board-tests/launch.js",
       "page": "starting work: the launch dropdowns, the new work dialog, throwaway runners",
       "units": ["launch*", "newWorkDialog"],
       "sources": [
@@ -112,6 +114,7 @@
       "checks": []
     },
     "chat": {
+      "file": "scripts/board-tests/chat.js",
       "page": "the chat tab and the chatter tab",
       "units": ["chatTab", "chatter", "chatterTab"],
       "sources": ["internal/api/web/js/chat.js", "internal/api/web/js/chatter.js", "internal/api/web/css/chat.css"],
@@ -119,6 +122,7 @@
       "checks": []
     },
     "items": {
+      "file": "scripts/board-tests/items.js",
       "page": "the items view: unified cards, interviews, ready cards",
       "units": [
         "items*", "unifiedCard", "interviewTop", "readyNoSeed", "readyOnce", "readyPopout", "readyTwoWindows",
@@ -134,13 +138,15 @@
       "checks": []
     },
     "backlog": {
-      "page": "the backlog page. No unit today, only bootClean covers it. A gap the design names",
-      "units": [],
+      "file": "scripts/board-tests/backlog.js",
+      "page": "the backlog page: rows, sort, priority chips, the priority select, open and department filters",
+      "units": ["backlog*"],
       "sources": ["internal/api/web/js/backlog.js"],
       "tests": [],
       "checks": []
     },
     "pulls": {
+      "file": "scripts/board-tests/pulls.js",
       "page": "pull requests: the page, the drawer, the panel, moving one",
       "units": ["pulls*", "prMove"],
       "sources": ["internal/api/web/js/pulls.js", "internal/api/web/css/pulls.css"],
@@ -148,6 +154,7 @@
       "checks": ["scripts/check-pulls-closed.js", "scripts/check-pr-paste.js"]
     },
     "hubrepos": {
+      "file": "scripts/board-tests/hubrepos.js",
       "page": "the hub's repositories page",
       "units": ["hubRepos*"],
       "sources": ["internal/api/web/js/hubrepos.js", "internal/api/web/css/hubrepos.css"],
@@ -179,6 +186,7 @@
       "checks": ["scripts/check-growl-ladder.js", "scripts/check-web-push.js"]
     },
     "usage": {
+      "file": "scripts/board-tests/usage.js",
       "page": "usage: the tab, burn charts, context, turn limits, cache",
       "units": [
         "usage*", "boardUsage", "burnChart", "burnReadout", "cacheChip", "contextCycle", "contextSize", "ctx*", "turnLimits", "clock"
@@ -208,6 +216,7 @@
       "checks": []
     },
     "deploy": {
+      "file": "scripts/board-tests/deploy.js",
       "page": "landing and deploying from the board. The deploy ready chip is gone, so only the land units remain",
       "units": ["land", "landThePlane"],
       "sources": [],
@@ -215,6 +224,7 @@
       "checks": []
     },
     "rooms": {
+      "file": "scripts/board-tests/rooms.js",
       "page": "rooms, the hub gate, the restart menu, transports, the down page",
       "units": [
         "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "zitiLogo", "loginNeeded"
@@ -235,6 +245,7 @@
       "checks": []
     },
     "settings": {
+      "file": "scripts/board-tests/settings.js",
       "page": "settings, themes and skins, providers, preferences",
       "units": [
         "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "dropdownsInstant", "prefsEverywhere", "alias"

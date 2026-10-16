@@ -39,7 +39,12 @@ const goSrc = ["internal/api", "internal/link"].flatMap(d =>
   fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith(".go") && !f.endsWith("_test.go")).map(f => d + "/" + f).sort());
 if (probe("--probe-file")) (probe("--probe-file").startsWith("internal/api/web/") ? web : goSrc).push(probe("--probe-file"));
 const harness = fs.readFileSync(path.join(ROOT, "scripts/test-board-headless.js"), "utf8");
-const unitNames = [...new Set([...harness.matchAll(/^\s*await unit\("(\w+)"/gm)].map(m => m[1]).concat(probe("--probe-unit") || []))].sort();
+// a unit is registered in the harness, and the ones that moved are defined in a file of scripts/board-tests/
+const BUCKET_DIR = "scripts/board-tests";
+const bucketFiles = fs.readdirSync(path.join(ROOT, BUCKET_DIR)).filter(f => f.endsWith(".js") && f !== "index.js").sort();
+const fileUnits = {};   // bucket file -> its unit names
+for (const f of bucketFiles) fileUnits[BUCKET_DIR + "/" + f] = [...fs.readFileSync(path.join(ROOT, BUCKET_DIR, f), "utf8").matchAll(/^\s*\{ name: "(\w+)", run:/gm)].map(m => m[1]);
+const unitNames = [...new Set([...harness.matchAll(/^\s*await unit\("(\w+)"/gm)].map(m => m[1]).concat(Object.values(fileUnits).flat(), probe("--probe-unit") || []))].sort();
 
 const boardOnly = { buckets: b.buckets.filter(x => x.kind === "board"), shared: b.shared };
 const goOnly = { buckets: b.buckets.filter(x => x.kind === "go"), shared: {} };
@@ -59,6 +64,18 @@ for (const u of unitNames) {
   if (o.length === 0) bad("headless unit " + u + " is in no bucket. add it to `units` of a board bucket in scripts/test-buckets.json");
   else if (o.length > 1) bad("headless unit " + u + " is in " + o.length + " buckets: " + o.map(x => x.bucket.name + " (" + x.via + ")").join(", "));
 }
+
+// a bucket file holds the units its bucket owns and nothing else, and every bucket file is some bucket's `file`
+const indexSrc = fs.readFileSync(path.join(ROOT, BUCKET_DIR, "index.js"), "utf8");
+for (const bk of boardOnly.buckets.filter(x => x.file)) {
+  if (!fileUnits[bk.file]) { bad("bucket " + bk.name + ": file " + bk.file + " does not exist"); continue; }
+  if (!indexSrc.includes('"' + bk.name + '"')) bad("bucket " + bk.name + " is not in the names of " + BUCKET_DIR + "/index.js, so the harness never loads it");
+  for (const u of fileUnits[bk.file]) {
+    const o = owners(boardOnly, "units", u);
+    if (o.length === 1 && o[0].bucket !== bk) bad("unit " + u + " is in " + bk.file + " but bucket " + o[0].bucket.name + " owns it");
+  }
+}
+for (const f of Object.keys(fileUnits)) if (!boardOnly.buckets.some(x => x.file === f)) bad(f + " is no bucket's `file` in scripts/test-buckets.json");
 
 // every Go test file is in one bucket of its package, or in its `rest`, and `rest` stays under its ceiling
 const goPkgs = [...new Set(goOnly.buckets.map(x => x.package.replace(/^\.\//, "")))].sort();
