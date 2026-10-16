@@ -22815,7 +22815,7 @@ async function minionReadyQuietSection(browser, base) {
 }
 
 async function termMinionHiddenSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 520, height: 520 } });
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 900 } });
   const errors = [];
   const imgs = docImgDir("docs", "changes", "img", "u-minion-cards-hidden");
   try {
@@ -22831,12 +22831,14 @@ async function termMinionHiddenSection(browser, base) {
       for (let i = 1; i <= 4; i++) rows.push(mk("m" + i, "minion for item " + i, ["atrium:director", "atrium:minion", "atrium:item:i" + i]));
       if (setup === "asking") { rows[5].status = "needs-input"; rows[5].asks_open = 1; }
       cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null;
-      setMinionShown(setup === "before" ? () => true : null);
+      loadCards = async () => {};
+      if (typeof setMinionShown === "function") setMinionShown(setup === "before" ? () => true : null);
       switchView("terms");
       await renderTermList();
       return Array.from(document.querySelectorAll("#term-list [data-id]")).map(e => e.getAttribute("data-id"));
     }, setup);
     const shot = (name) => p.locator("#term-list").screenshot({ path: path.join(imgs, name) });
+    await paint("before"); await p.waitForTimeout(500);
     const before = await paint("before"); await shot("minion-terms-before.png");
     const after = await paint("after"); await shot("minion-terms-after.png");
     const asking = await paint("asking"); await shot("minion-terms-asking.png");
