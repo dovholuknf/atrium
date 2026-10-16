@@ -62,7 +62,7 @@ func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.Rel
 		Launch: &link.RelayLaunchSpec{
 			Cwd: r.Cwd, Title: r.Title, Why: r.Why, Prompt: r.Prompt, Brief: r.Brief, Runner: r.Runner, Tags: r.Tags,
 			Model: r.Model, Effort: r.Effort, Args: r.Args, Env: r.Env, LeanAgents: r.LeanAgents,
-			LeanSkills: r.LeanSkills, Lifetime: r.Lifetime, Item: r.Item,
+			LeanSkills: r.LeanSkills, Superlean: r.Superlean, Lifetime: r.Lifetime, Item: r.Item,
 		}})
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)

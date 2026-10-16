@@ -33,6 +33,7 @@ type RelayLaunch struct {
 	Args                                   []string
 	Env                                    map[string]string
 	LeanAgents, LeanSkills                 []string
+	Superlean                              bool
 	Lifetime                               string
 	Item                                   bool
 }
@@ -55,6 +56,7 @@ type roomLaunchIn struct {
 	Env        map[string]string `json:"env"`
 	LeanAgents []string          `json:"lean_agents"`
 	LeanSkills []string          `json:"lean_skills"`
+	Superlean  bool              `json:"superlean"`
 	Lifetime   string            `json:"lifetime"`
 	Item       bool              `json:"item"`
 }
@@ -93,7 +95,7 @@ func (d *Daemon) handleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 	res, err := rl.Launch(cctx, RelayLaunch{
 		From: from, Room: other, Cwd: in.Cwd, Title: in.Title, Why: in.Why, Prompt: in.Prompt, Brief: in.Brief,
 		Runner: in.Runner, Tags: in.Tags, Model: in.Model, Effort: in.Effort, Args: in.Args, Env: in.Env,
-		LeanAgents: in.LeanAgents, LeanSkills: in.LeanSkills, Lifetime: in.Lifetime, Item: in.Item,
+		LeanAgents: in.LeanAgents, LeanSkills: in.LeanSkills, Superlean: in.Superlean, Lifetime: in.Lifetime, Item: in.Item,
 	})
 	code, body := launchAnswer(other, res, err)
 	if code >= 400 {

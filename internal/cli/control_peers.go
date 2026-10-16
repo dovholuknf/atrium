@@ -135,6 +135,8 @@ func addPeerTools(s *mcp.Server) {
 			"in ~/.claude/agents (no .md) and directories in ~/.claude/skills on the room. They are " +
 			"namespaced, so start `atrium:<name>`. A name with no file, or a runner that is not " +
 			"claude, refuses the launch. The card keeps the lists.\n\n" +
+			"`superlean: true` starts the worker below lean: only Read, Edit, Write, Grep, Glob, Bash and " +
+			"ToolSearch, no mercurius, and a one paragraph worker prompt. For a bounded change. Claude only.\n\n" +
 			"`room` launches on ANOTHER ROOM, through this room's hub: `cwd` is then a path on that " +
 			"room's machine, `brief` is written there and not here, and the worker's reports and " +
 			"notices still reach you. An unknown room is refused with the rooms the hub knows, and one " +
@@ -670,6 +672,8 @@ type LaunchInput struct {
 	// `lean` field, so this is the only way to a lean launch from here.
 	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these, namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
+	// Superlean, as the hub's atrium_launch takes it. Passed as the kit is.
+	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, no mercurius, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. claude only, never an interview. default false"`
 	// Room launches on another room, as the hub's atrium_launch does.
 	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. cwd is then a path on that room's machine and brief is written there. its reports and notices still reach you, as your-handle@your-room"`
 }
@@ -806,6 +810,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
 		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills, "lifetime": in.Lifetime,
 	}
+	if in.Superlean {
+		req["superlean"] = true
+	}
 	if in.Isolated {
 		req["tags"] = append(tags, link.ItemTag)
 		if o := strings.TrimSpace(in.ItemOwner); o != "" {
@@ -840,6 +847,9 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	missed := link.LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
 	missed = append(missed, link.LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
+	if link.SuperleanDropped(in.Superlean, t.Tags) {
+		missed = append(missed, "superlean")
+	}
 	out.Note = filedNote + link.LaunchDroppedWarning(missed) + out.Note
 	return nil, out, nil
 }

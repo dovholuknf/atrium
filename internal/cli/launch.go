@@ -50,6 +50,8 @@ type launchOpts struct {
 	itemOwner string
 	// step is the step of its item the card is for: designed, approved, building and so on. See link.StepTagPrefix.
 	step string
+	// lean and superlean start a claude runner without the operator's setup. See docs/runtime/superlean-design.md.
+	lean, superlean bool
 }
 
 func newLaunch() *cobra.Command {
@@ -124,6 +126,12 @@ func newLaunch() *cobra.Command {
 	c.Flags().BoolVar(&o.isolated, "isolated", false,
 		"start the card isolated: its ending never mentions a launcher, its opening prompt comes from atrium, "+
 			"it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it")
+	c.Flags().BoolVar(&o.lean, "lean", false,
+		"start a claude runner lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, "+
+			"atrium's hooks and the atrium-control and mercurius MCP servers. claude only")
+	c.Flags().BoolVar(&o.superlean, "superlean", false,
+		"start a claude runner superlean: lean, and only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, "+
+			"no mercurius, and a one paragraph worker prompt. for a bounded change. implies --lean. claude only")
 	c.Flags().BoolVar(&o.quiet, "quiet", false, "print only the card id")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -236,6 +244,12 @@ func launchBody(o launchOpts, cwd string) error {
 		fields["tags"] = withStep
 	}
 	// ONLY WHEN ASKED FOR, so a launch without the flag posts what it always did.
+	if o.lean || o.superlean {
+		fields["lean"] = true
+	}
+	if o.superlean {
+		fields["superlean"] = true
+	}
 	if o.isolated {
 		fields["item"] = true
 		if so := strings.TrimSpace(o.itemOwner); so != "" {
