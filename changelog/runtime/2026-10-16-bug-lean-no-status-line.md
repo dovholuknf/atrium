@@ -1,1 +1,1 @@
-A lean card's status line no longer disappears when the operator's `statusLine` command opens with a quoted program path that has no space, as on sg3. Atrium unquotes that program in the lean `--settings`. Item bug-lean-no-status-line.
+A lean card on Windows now runs a `bash <script>` status line as `bash -c '<script>'`, the form that draws where Claude Code drew nothing for the operator's own command (sg3). Item bug-lean-no-status-line.

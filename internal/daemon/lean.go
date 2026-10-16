@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -396,29 +397,41 @@ func leanServers(configs, extra []string, gateway string, readFile func(string) 
 	return string(b), err
 }
 
-// unquoteStatusLine drops the quotes around a status line command's program when the
-// path inside needs none. On sg3 a command that opens with a quoted program path
-// (`"V:/work/tools/git/bin/bash.exe" "C:/.../statusline-command.sh"`) draws nothing under
-// claude, and the same program unquoted draws. A path with a space keeps its quotes, and
-// anything this cannot read is returned as it came. See docs/runtime/statusline-telemetry.md.
-func unquoteStatusLine(raw json.RawMessage) json.RawMessage {
+// wrapStatusLine rewrites a status line command of the shape `<bash> <script>` to
+// `<bash> -c '<script>'`. On sg3 claude draws nothing when bash.exe is handed the script as
+// an argument, quoted or not, and draws the full line when bash runs it with -c, which
+// executes the script by its shebang. Measured there on Claude Code 2.1.301, see
+// docs/runtime/statusline-telemetry.md. Anything else is returned as it came: other
+// programs, a command that already has flags, a script path with a space or a shell
+// character, a command it cannot read.
+func wrapStatusLine(raw json.RawMessage) json.RawMessage {
 	var sl map[string]json.RawMessage
 	if json.Unmarshal(raw, &sl) != nil {
 		return raw
 	}
 	var cmd string
-	if json.Unmarshal(sl["command"], &cmd) != nil || !strings.HasPrefix(cmd, `"`) {
+	if json.Unmarshal(sl["command"], &cmd) != nil {
 		return raw
 	}
-	end := strings.Index(cmd[1:], `"`)
-	if end <= 0 {
+	prog, rest, ok := statusLineToken(strings.TrimSpace(cmd))
+	if !ok {
 		return raw
 	}
-	prog := cmd[1 : end+1]
-	if strings.ContainsAny(prog, " \t$`&|;<>()") {
+	script, rest, ok := statusLineToken(rest)
+	if !ok || strings.TrimSpace(rest) != "" || script == "" || strings.ContainsAny(script, " \t'\"$`&|;<>()\\") {
 		return raw
 	}
-	b, err := json.Marshal(prog + cmd[end+2:])
+	base := strings.ToLower(prog[strings.LastIndexAny(prog, `/\`)+1:])
+	if base != "bash" && base != "bash.exe" && base != "sh" && base != "sh.exe" {
+		return raw
+	}
+	if strings.ContainsAny(prog, "\t$`&|;<>()'\"") {
+		return raw
+	}
+	if strings.Contains(prog, " ") {
+		prog = `"` + prog + `"`
+	}
+	b, err := json.Marshal(prog + " -c '" + script + "'")
 	if err != nil {
 		return raw
 	}
@@ -428,6 +441,24 @@ func unquoteStatusLine(raw json.RawMessage) json.RawMessage {
 		return raw
 	}
 	return out
+}
+
+// statusLineToken takes the first word of s, bare or in double quotes, and the rest after it.
+func statusLineToken(s string) (tok, rest string, ok bool) {
+	if s == "" {
+		return "", "", false
+	}
+	if s[0] == '"' {
+		end := strings.Index(s[1:], `"`)
+		if end < 0 {
+			return "", "", false
+		}
+		return s[1 : end+1], strings.TrimSpace(s[end+2:]), true
+	}
+	if i := strings.IndexAny(s, " \t"); i >= 0 {
+		return s[:i], strings.TrimSpace(s[i:]), true
+	}
+	return s, "", true
 }
 
 // leanContextHooks are the hook events whose output lands in the context.
@@ -463,8 +494,8 @@ func leanSettings(user []byte, stopHook string, agents []string, hk *hooks) (str
 			out[k] = v
 		}
 	}
-	if raw, ok := out["statusLine"].(json.RawMessage); ok {
-		out["statusLine"] = unquoteStatusLine(raw)
+	if raw, ok := out["statusLine"].(json.RawMessage); ok && runtime.GOOS == "windows" {
+		out["statusLine"] = wrapStatusLine(raw)
 	}
 	hooks := map[string]any{}
 	if raw, ok := doc["hooks"]; ok {

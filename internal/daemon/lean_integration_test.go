@@ -5,6 +5,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ const leanTestMCP = `{"mcpServers":{
 const leanTestSettings = `{
 	"env":{"_ATRIUM_PERM_GATE":"on"},
 	"permissions":{"allow":["Bash(ls:*)"]},
-	"statusLine":{"type":"command","command":"bash status.sh"},
+	"statusLine":{"type":"command","command":"pwsh status.ps1"},
 	"attribution":{"commit":"Co-Authored-By: someone"},
 	"outputStyle":"explanatory",
 	"hooks":{
@@ -172,7 +173,7 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 		t.Fatalf("outputStyle should be dropped: %s", raw)
 	}
 	// The status line stays (r-001): it costs no tokens and posts context figures.
-	if got := string(doc["statusLine"]); got != `{"type":"command","command":"bash status.sh"}` {
+	if got := string(doc["statusLine"]); got != `{"type":"command","command":"pwsh status.ps1"}` {
 		t.Fatalf("statusLine should be kept as given, got %q in %s", got, raw)
 	}
 	for _, kept := range []string{`"_ATRIUM_PERM_GATE":"on"`, `"Bash(ls:*)"`, `"commit":""`,
@@ -188,9 +189,9 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 	}
 }
 
-func TestLeanSettingsStatusLineSurvivesAQuotedProgram(t *testing.T) {
+func TestLeanSettingsStatusLineRunsABashScriptWithDashC(t *testing.T) {
 	t.Parallel()
-	user := `{"statusLine":{"type":"command","command":"\"V:/bin/bash.exe\" \"s.sh\""}}`
+	user := `{"statusLine":{"type":"command","command":"\"bash.exe\" \"s.sh\""}}`
 	raw, err := leanSettings([]byte(user), "", nil, testHooks())
 	if err != nil {
 		t.Fatal(err)
@@ -201,8 +202,12 @@ func TestLeanSettingsStatusLineSurvivesAQuotedProgram(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.StatusLine.Type != "command" || doc.StatusLine.Command != `V:/bin/bash.exe "s.sh"` {
-		t.Fatalf("statusLine should be kept with its program unquoted, got %+v in %s", doc.StatusLine, raw)
+	want := `bash.exe -c 's.sh'`
+	if runtime.GOOS != "windows" {
+		want = `"bash.exe" "s.sh"`
+	}
+	if doc.StatusLine.Type != "command" || doc.StatusLine.Command != want {
+		t.Fatalf("statusLine should end %s, got %+v in %s", want, doc.StatusLine, raw)
 	}
 }
 
