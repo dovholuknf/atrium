@@ -56,6 +56,16 @@ type Profile struct {
 	// unmeasured, and ollama has no hooks, so it is never seen mid-turn.
 	MidTurnInput bool
 
+	// QueuesMidTurn says a line typed while the runner is mid-turn goes into the runner's own queued-message box
+	// and is not read until the next step boundary. A typed line is then not a delivered one: it is in the box. So
+	// atrium does not type into such a runner mid-turn at all and leaves the line to its hooks, which hand it to the
+	// model at the next tool call or the end of the turn. It seeds the harness row's `queues_mid_turn`.
+	//
+	// Claude Code does this, measured on 2.1.301 (docs/terminal/queued-box-findings.md): the box holds the line
+	// for the whole of a running tool call and absorbs it when the call returns. Codex steers typed input into the
+	// active turn, so it is read, and stays false.
+	QueuesMidTurn bool
+
 	// Unmeasured lists what this runner probably needs and nobody has
 	// confirmed against a live session, so the next person starts from it.
 	Unmeasured []string
@@ -63,7 +73,7 @@ type Profile struct {
 
 // Profiles are the runners atrium has a view on.
 var Profiles = []Profile{
-	{ID: "claude", Cmds: []string{"claude"}, Hooks: "claude", MidTurnInput: true},
+	{ID: "claude", Cmds: []string{"claude"}, Hooks: "claude", MidTurnInput: true, QueuesMidTurn: true},
 	{ID: "codex", Cmds: []string{"codex"}, Hooks: "codex", MidTurnInput: true,
 		// Three times the 90th percentile, and under half the 85ms a real
 		// cursor position typically holds for, so the prompt's cursor still

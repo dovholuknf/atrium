@@ -35,6 +35,7 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 		t.Skip("slow: real ptys, processes and timers")
 	}
 	d := testDaemon(t)
+	withoutQueueBox(t, d)
 	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID

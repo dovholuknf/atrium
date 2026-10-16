@@ -70,10 +70,11 @@ func newTell() *cobra.Command {
 		Use:   "tell <handle or @alias> <message>",
 		Short: "Say something to another session.",
 		Long: "Says something to another session. It is typed into that session's terminal as " +
-			"soon as its input line is empty and no dialog is open, even mid-turn, and otherwise " +
-			"queued: it then lands as soon as the line clears, or on that session's next tool " +
-			"call or at the end of its turn. This is not a conversation and there is no reply to " +
-			"wait for.\n\n" +
+			"soon as its input line is empty and no dialog is open, when it is idle. A session " +
+			"mid-turn whose runner queues a line typed then (Claude Code) is not typed into: the " +
+			"message is queued and lands on its next tool call or at the end of its turn, and a " +
+			"long tool call delays it. Otherwise it is queued until the line clears. This is not a " +
+			"conversation and there is no reply to wait for.\n\n" +
 			"`--when done` waits for that session's turn to end instead, for something that " +
 			"should not disturb it mid-thought.\n\n" +
 			"The message is labeled with who sent it, and the receiving session is told it " +
@@ -92,7 +93,7 @@ func newTell() *cobra.Command {
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
 	c.Flags().StringVar(&when, "when", "",
-		"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for the turn to end")
+		"immediate (the default): typed as soon as the line is empty, or carried by a hook mid-turn. done: wait for the turn to end")
 	c.Flags().BoolVar(&wake, "wake", false,
 		"resume the target if it is parked (idle, no process) and deliver this. a cold start, so use it on purpose")
 	return c

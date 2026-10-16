@@ -3120,6 +3120,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
           as soon as the input line is empty, even mid-turn. leave it off and every message to this
           runner waits for its turn to end.</span>
       </div>
+      <!-- Whether a line typed mid-turn only lands in the runner's own queued box. Seeded from the runner profile. -->
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="h-queuesmid">
+          <span>this runner queues a line typed mid-turn</span>
+        </label>
+        <span class="hintline">tick it for a runner that puts a line typed while it is working in its own
+          queued-message box and reads it later, which claude does. atrium then never types into it
+          mid-turn: the message waits for its next tool call or the end of its turn, and the sender is told
+          <code>queued</code>. leave it off for a runner that reads typed input as it arrives, like codex.</span>
+      </div>
     </section>
     <section class="dlg-sec dlg-grid">
       <div class="dlg-sec-h">where and with what</div>

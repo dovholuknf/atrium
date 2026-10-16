@@ -9,7 +9,8 @@ and two delivery paths. Read `docs/how-atrium-works.md` first for where the piec
 - **Every card has its own queue.** It is the `message` table, keyed by `task_id`. Nothing is ever dropped from
   it. A row stays until something marks it delivered.
 - **Delivery happens two ways.** Atrium types the text into the terminal when the terminal is free. Otherwise a
-  hook carries it in on the session's next tool call or at the end of its turn.
+  hook carries it in on the session's next tool call or at the end of its turn. A runner that queues a line typed
+  mid-turn (Claude Code) is never typed into mid-turn: its hooks carry the message.
 - **A batch arrives together.** When a hook fires, it takes everything waiting for that card, oldest first, and
   hands it over as one block.
 - **Typing is gated.** Peer text goes into a terminal only when the operator's line is empty and the keyboard
@@ -68,6 +69,36 @@ The typed text opens with a grey `[atrium] <sender> says:` banner that contains 
 banner itself can never submit anything. Where the runner supports bracketed paste, the body is wrapped in paste
 markers so a long message stays one block. The whole write, pause, and Enter happen under `pasteMu`, so an
 operator keystroke that arrives mid-paste waits for the paste to finish rather than tangling into it.
+
+### Not mid-turn, for a runner that queues a typed line
+
+Claude Code keeps a line typed while it is mid-turn in its own queued-message box and reads it at its next step
+boundary, which for a worker inside one long tool call is when that call returns
+(`docs/terminal/queued-box-findings.md`). Typed there, a say is in the box and not read, so atrium does not type it.
+The row is `queues_mid_turn` on the harness (seeded from `runnerprofile.Profile.QueuesMidTurn`: claude on, codex
+off, because codex steers typed input into the active turn).
+
+For such a runner that is mid-turn, `carriedByHooks` (`saywhen.go`) is true for **every sender**: a session, the
+operator's own channel, a script. Nothing is typed and the answer is `queued`. The permission hook carries the
+message at the next tool call and the Stop hook at the turn's end. Three paths used to type mid-turn and now do not:
+
+- the operator's channel (no `from`), which answered `terminal`;
+- the retry backoff, which wrote a held line the moment the line cleared, mid-turn included. It now waits for the
+  turn to end and the hooks carry the line meanwhile (`withoutHeldPeers` lets them);
+- the escalation of a `done` message aged past `escalate_held_after`. It is carried by the hook with its
+  `waited N minutes` line (`takeMessages`) and never typed into such a runner (`escalatesByTyping`).
+
+A runner with a hook target in its profile counts as hook-capable without having been heard yet. One with none counts
+once a tool or stop hook has been heard. An idle runner is unchanged: typed, answered `terminal`, its prompt submit is
+its read. Codex is unchanged.
+
+**A long tool call delays a hook-carried say** until the call returns, because no hook fires inside it. Nothing is
+interrupted, and a say is not a way to stop a tool.
+
+**`typed-queued`** is the answer for a line that was typed into such a runner mid-turn and is unread, in the box. Only
+a forced say (`force: true`) types mid-turn into one, so it is the only path that answers it: `delivered`
+`typed-queued`, `state` `typed-queued`, `read` `false`. The say ledger still records that row `delivered`/`terminal`
+until the read state of stage S-2 lands. `terminal` and `delivered` are for a line typed into an idle runner.
 
 A typed message never touches the queue. It is written to the card's timeline as a `prompted` event instead,
 so the traffic is still auditable. Writing it to both would deliver it twice.

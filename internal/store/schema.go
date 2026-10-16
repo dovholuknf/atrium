@@ -2307,6 +2307,16 @@ var migrations = []struct {
 			`ALTER TABLE turn_seen ADD COLUMN turn_own INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// A RUNNER THAT QUEUES A LINE TYPED MID-TURN is not typed into mid-turn. See docs/runtime/agent-messaging.md and
+		// the queued_box findings in docs/terminal/queued-box-findings.md. DefaultHarnesses only seeds new databases,
+		// so claude, the one runner measured to queue, is switched on here as well.
+		name: "0105_harness_queues_mid_turn",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN queues_mid_turn INTEGER NOT NULL DEFAULT 0`,
+			`UPDATE harness SET queues_mid_turn = 1 WHERE id = 'claude'`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

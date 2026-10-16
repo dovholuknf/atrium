@@ -61,12 +61,16 @@ func addPeerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_say",
 		Description: "Say something to another session on the board.\n\n" +
-			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal the text is typed in as soon " +
-			"as that session's input line is empty and no dialog is open, EVEN MID-TURN, and " +
-			"the answer says `terminal`. Where it does not, or the line is not clear yet, the " +
-			"message is QUEUED and the answer says `queued`: it reaches that session at its " +
-			"next tool call, at the end of its turn, or when the line clears. Neither is a " +
-			"reply: if you want one, ask for it and then look, or wait to be told.\n\n" +
+			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal and the session is idle, the text is " +
+			"typed in as soon as its input line is empty and no dialog is open, and the answer says " +
+			"`terminal`. A session in the MIDDLE OF A TURN is not typed into if its runner queues a " +
+			"line typed mid-turn (Claude Code does: it keeps the line in its own queued-message box " +
+			"and reads it later). The message is QUEUED and the answer says `queued`: its hook hands " +
+			"it to the model at the next tool call or at the end of its turn. A session inside ONE LONG " +
+			"TOOL CALL makes no tool call, so it reads nothing until that call returns. Nothing is " +
+			"interrupted, so a say is not how to stop a tool. `typed-queued` means a line was typed in " +
+			"but sits unread in the runner's queued box. None of these is a reply: if you want one, ask " +
+			"for it and then look, or wait to be told.\n\n" +
 			"`when: \"done\"` waits for that session's turn to end instead, for something that " +
 			"should not disturb it mid-thought.\n\n" +
 			"Write one or two sentences. The receiver is told who you are and already knows how to " +
@@ -415,7 +419,7 @@ type SayInput struct {
 	// Text is what to say, as one agent to another.
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
-	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
+	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, or carried by a hook at its next tool call when it is mid-turn. done: wait for that session's turn to end"`
 	// Reply marks the say as needing an answer, so it shows as owed on the receiving card.
 	Reply bool `json:"reply,omitempty" jsonschema:"true when you need an answer, not just a delivery. it shows as owed on that session until it says something back"`
 	// Wake resumes a parked card so this reaches it. Without it a say to a parked card is refused.
@@ -431,9 +435,10 @@ type SayOutput struct {
 	Say string `json:"say,omitempty"`
 	// Via is how the name resolved: handle, alias or card.
 	Via string `json:"via,omitempty"`
-	// Delivered is `terminal` or `queued`. Two different promises, and the
-	// caller has to know which one was made: typed has already landed, queued
-	// has not and will not until that session next reaches a hook.
+	// Delivered is `terminal`, `queued` or `typed-queued`. Different promises, and the
+	// caller has to know which one was made: typed into an idle runner has landed, queued
+	// has not and will not until that session next reaches a hook, and typed-queued is in
+	// the runner's own queued box and not read yet.
 	Delivered string `json:"delivered"`
 	To        string `json:"to"`
 	// ToCard is the RECIPIENT's card id, never yours. It was `card`. See the
@@ -549,9 +554,12 @@ func sayNote(out SayOutput) SayOutput {
 	case res.Delivered == "queued" && res.When == "done":
 		out.Note = "queued until that session's turn ends. it is typed in then, or carried by " +
 			"its Stop hook."
+	case res.Delivered == "typed-queued":
+		out.Note = "typed in, and not read yet: it is in that session's queued-message box. it reads the " +
+			"box at its next step, which for a long tool call is when the call returns."
 	case res.Delivered == "queued":
-		out.Note = "queued, not typed yet. it is typed in as soon as that session's line clears, " +
-			"or arrives at its next tool call or the end of its turn."
+		out.Note = "queued, not typed. it arrives at that session's next tool call or the end of its " +
+			"turn, or is typed in when it is idle and its line is clear. a long tool call delays it."
 	}
 	return out
 }

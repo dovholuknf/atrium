@@ -51,3 +51,15 @@ func TestTheSeedAgreesAboutMidTurnInput(t *testing.T) {
 		}
 	}
 }
+
+// Claude puts a mid-turn line in its own queued box, codex steers it into the turn, and the seed agrees.
+func TestTheSeedAgreesAboutQueuesMidTurn(t *testing.T) {
+	for _, h := range store.DefaultHarnesses() {
+		if p := For(&h); h.QueuesMidTurn != p.QueuesMidTurn {
+			t.Fatalf("%s: seeded queues_mid_turn %v, profile says %v", h.ID, h.QueuesMidTurn, p.QueuesMidTurn)
+		}
+	}
+	if !For(&store.Harness{ID: "claude"}).QueuesMidTurn || For(&store.Harness{ID: "codex"}).QueuesMidTurn {
+		t.Fatal("claude must queue a mid-turn line and codex must not")
+	}
+}

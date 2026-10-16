@@ -46,8 +46,13 @@ func (d *Daemon) heldAged(taskID string, at time.Time) bool {
 // escalatesByTyping is true when the typist may type an aged message mid-turn: the
 // runner takes input mid-turn, and the message has waited long enough. A runner that
 // does not keeps waiting for the turn, since a line typed into it is lost.
+//
+// NOT INTO A RUNNER THAT QUEUES A MID-TURN LINE. Typed there the message sits in the runner's queued box with the
+// sender hearing it was delivered, which is the lie this escalation was meant to end. Its hooks carry the aged
+// message with the same `waited N minutes` line, which is the one route that reaches the model. See takeMessages.
 func (d *Daemon) escalatesByTyping(taskID string, waitTurn bool, at time.Time) bool {
-	return waitTurn && d.act.midTurn(taskID) && d.midTurnInputFor(taskID) && d.heldAged(taskID, at)
+	return waitTurn && d.act.midTurn(taskID) && d.midTurnInputFor(taskID) && !d.queuesMidTurnFor(taskID) &&
+		d.heldAged(taskID, at)
 }
 
 // turnHoldsAged is turnHolds for a message with an age.

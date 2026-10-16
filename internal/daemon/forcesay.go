@@ -121,6 +121,8 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	if d.bracketedPasteFor(taskID, false) {
 		payload = bracketedPaste(text)
 	}
+	// Read before the write: whether it lands in a queued box depends on the state the line is typed into.
+	inBox := d.typedWouldQueue(taskID)
 	wrote, err := run.injectForced(banner, payload, ok)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
@@ -154,6 +156,11 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	}
 	d.publishTask(taskID)
 	out := map[string]any{"delivered": "terminal", "forced": true, "when": whenWord(waitTurn)}
+	if inBox {
+		// Typed past the turn rule into a runner that queues it: in its box, not read. See typedQueued.
+		out["delivered"], out["state"], out["read"] = TypedQueued, TypedQueued, false
+		out["note"] = typedQueuedNote
+	}
 	if rec != nil {
 		rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
 		if id := d.recordSay(*rec, text); id != "" {

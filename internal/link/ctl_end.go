@@ -80,7 +80,7 @@ const HeldNote = "held on your launcher's card, not delivered. it reads its noti
 	"so do not say it has been told."
 
 // QueuedNote is what a worker is told when its ending is in its launcher's queue and not yet typed.
-const QueuedNote = "queued for your launcher. it is typed when its turn ends. stop now."
+const QueuedNote = "queued for your launcher. it reads it at its next tool call or when its turn ends. stop now."
 
 // Told is the room's launcher_told: "queued" when the report is in the launcher's queue and will be typed at its turn
 // end, "relayed" when it went to another room's launcher, "held" when it was kept on the launcher's card for it to

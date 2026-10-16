@@ -437,6 +437,13 @@ func (pi *pendingInjector) try(taskID string) {
 			turnWait = true
 			break
 		}
+		// A runner that queues a mid-turn line is not typed into mid-turn, the retry included: the line would sit in its
+		// queued box and be called delivered. The hooks carry it (withoutHeldPeers lets them), and the turn ending
+		// re-arms this retry for whatever is still held. See saywhen.go.
+		if !e.waitTurn && pi.d.typedWouldQueue(taskID) {
+			turnWait = true
+			break
+		}
 		escalated := pi.d.escalatesByTyping(taskID, e.waitTurn, e.at)
 		body := e.body
 		if escalated {
@@ -566,8 +573,14 @@ func (pi *pendingInjector) withoutHeldPeers(taskID string, msgs []*store.Message
 	}
 	pi.mu.Unlock()
 	held := map[string]bool{}
+	queues := pi.d.queuesMidTurnFor(taskID)
+	wouldQueue := queues && pi.d.act.midTurn(taskID)
 	for _, e := range peers {
-		if e.waitTurn && !pi.d.midTurnInputFor(taskID) && pi.d.heldAged(taskID, e.at) {
+		if e.waitTurn && (!pi.d.midTurnInputFor(taskID) || queues) && pi.d.heldAged(taskID, e.at) {
+			continue
+		}
+		// Typing it now would only fill the runner's queued box, so the hook that is running is the route.
+		if !e.waitTurn && wouldQueue {
 			continue
 		}
 		held[e.msgID] = true

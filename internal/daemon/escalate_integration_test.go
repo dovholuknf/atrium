@@ -152,6 +152,7 @@ func TestAnAgedMessageWaitsForTheDeployWake(t *testing.T) {
 func TestTheTypistStopsHoldingAnAgedMessageMidTurn(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
+	withoutQueueBox(t, d)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
@@ -225,6 +226,7 @@ func TestARunnerWithoutMidTurnInputGetsAnAgedMessageByTheHookOnly(t *testing.T) 
 func TestAnEscalatedDoneMessageLeavesNothingQueued(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
+	withoutQueueBox(t, d)
 	target, _, _ := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")

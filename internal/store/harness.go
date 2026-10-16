@@ -116,6 +116,10 @@ type Harness struct {
 	// to end. Off means every message to it waits for the turn to end, as
 	// `when: "done"` asks for one. Seeded from `runnerprofile`.
 	MidTurnInput bool `json:"mid_turn_input"`
+	// QueuesMidTurn says a line typed into this runner mid-turn lands in its own queued-message box and is not
+	// read until its next step, so atrium leaves such a line to the runner's hooks and does not type it.
+	// Seeded from `runnerprofile`. See saywhen.go.
+	QueuesMidTurn bool `json:"queues_mid_turn"`
 	// Package is where this runner is installed from, so atrium can ask
 	// whether a newer one is published without running the runner to find out.
 	//
@@ -167,7 +171,7 @@ func DefaultHarnesses() []Harness {
 			ModelArgs:       []string{"--model", "{model}"},
 			EffortArgs:      []string{"--effort", "{effort}"},
 			AutocompactArgs: []string{"--autocompact", "{autocompact}"},
-			RulesSource:     "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true,
+			RulesSource:     "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true, QueuesMidTurn: true,
 			Package: "@anthropic-ai/claude-code",
 			Notes:   "resume needs a session id, which only a runner that reports one can supply",
 		},
@@ -229,17 +233,18 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		effort, autocompact                    string
 		created                                string
 		enabled                                int
-		bracketed, midTurn                     int
+		bracketed, midTurn, queuesMid          int
 	)
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
 		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn,
-		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK); err != nil {
+		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact, &h.ContextLimitK, &queuesMid); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
 	h.BracketedPaste = bracketed != 0
 	h.MidTurnInput = midTurn != 0
+	h.QueuesMidTurn = queuesMid != 0
 	if err := json.Unmarshal([]byte(orDefault(args, "[]")), &h.Args); err != nil {
 		return nil, err
 	}
@@ -281,7 +286,7 @@ func orDefault(s, def string) string {
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
 	model_args, bracketed_paste, package, bin_path, mid_turn_input,
-	effort_args, model_env, effort_env, autocompact_args, context_limit_k`
+	effort_args, model_env, effort_env, autocompact_args, context_limit_k, queues_mid_turn`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -400,8 +405,12 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 		if h.MidTurnInput {
 			midTurn = 1
 		}
+		queuesMid := 0
+		if h.QueuesMidTurn {
+			queuesMid = 1
+		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -416,13 +425,14 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				effort_args = excluded.effort_args, model_env = excluded.model_env,
 				effort_env = excluded.effort_env,
 				autocompact_args = excluded.autocompact_args,
-				context_limit_k = excluded.context_limit_k`,
+				context_limit_k = excluded.context_limit_k,
+				queues_mid_turn = excluded.queues_mid_turn`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
 			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn,
 			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv), string(autocompact),
-			h.ContextLimitK)
+			h.ContextLimitK, queuesMid)
 		return err
 	})
 	if err != nil {

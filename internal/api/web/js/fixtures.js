@@ -878,6 +878,7 @@ async function editHarness(id, room, seed) {
   document.getElementById("h-prepare").value = h.prepare || "";
   document.getElementById("h-bracket").checked = !!h.bracketed_paste;
   document.getElementById("h-midturn").checked = !!h.mid_turn_input;
+  document.getElementById("h-queuesmid").checked = !!h.queues_mid_turn;
   document.getElementById("h-cwd").value = h.cwd || "";
   document.getElementById("h-env").value =
     Object.entries(h.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
@@ -923,6 +924,8 @@ function harnessFromForm() {
     bracketed_paste: document.getElementById("h-bracket").checked,
     // The same: whether a message is typed in mid-turn. See saywhen.go.
     mid_turn_input: document.getElementById("h-midturn").checked,
+    // The same: whether a mid-turn line only lands in the runner's queued box. See saywhen.go.
+    queues_mid_turn: document.getElementById("h-queuesmid").checked,
     cwd: document.getElementById("h-cwd").value.trim(),
     env,
     launch_mode: document.querySelector("#h-mode button.on").dataset.v,

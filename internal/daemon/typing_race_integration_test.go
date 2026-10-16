@@ -20,6 +20,7 @@ import (
 func TestASayMidTurnIsTypedImmediatelyByDefault(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
+	withoutQueueBox(t, d)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")
@@ -41,6 +42,7 @@ func TestASayMidTurnIsTypedImmediatelyByDefault(t *testing.T) {
 func TestTheMessageEndpointTypesMidTurnWithNoWhen(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
+	withoutQueueBox(t, d)
 	target, _, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityThinking, "")
@@ -182,6 +184,7 @@ func TestARunnerThatTakesNoMidTurnInputFallsBackToDone(t *testing.T) {
 func TestAnImmediateSayWaitsForTheLineToEmpty(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
+	withoutQueueBox(t, d)
 	target, r, f := peerPair(t, d)
 	t.Cleanup(func() { d.pending.stopAll() })
 	d.act.set(target.ID, ActivityTool, "Bash")

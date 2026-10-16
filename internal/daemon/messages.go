@@ -723,7 +723,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	byHooks := d.carriedByHooks(taskID, from, waitTurn)
+	byHooks := d.carriedByHooks(taskID, waitTurn)
 	if _, waking := d.kept.Load(taskID); waking {
 		woke = true
 	}
@@ -831,6 +831,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if target, err := d.st.Get(taskID); err == nil {
 		d.peerSaid(from, target, body.Text, owedKind(body.Kind, body.Reply))
 		reach, why := d.reachability(target)
+		if byHooks && reach == ReachTyped {
+			// Not typed and not going to be: the hook that carries it is the route, so say that.
+			reach = ReachHook
+		}
 		out["delivered"] = deliveredWord(reach)
 		out["reachable"] = reach
 		if why != "" {

@@ -177,7 +177,7 @@ func reportFinished(out io.Writer, hubURL, name string, rep finishReport) error 
 	if answer.LauncherTold == link.ToldHeld {
 		fmt.Fprintln(out, "  held on your launcher's card, not delivered. it reads its notices when it asks.")
 	} else if answer.LauncherTold == link.ToldQueued {
-		fmt.Fprintln(out, "  queued for your launcher. it is typed when its turn ends.")
+		fmt.Fprintln(out, "  queued for your launcher. it reads it at its next tool call or when its turn ends.")
 	} else if answer.LauncherTold.Any() {
 		fmt.Fprintln(out, "  your launcher has been told.")
 	}

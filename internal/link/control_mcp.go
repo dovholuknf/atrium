@@ -188,17 +188,23 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	addTool(s, class, &mcp.Tool{
 		Name: "atrium_say",
 		Description: "Say something to another session on the board.\n\n" +
-			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal the text is typed in as soon " +
-			"as that session's input line is empty and no dialog is open, EVEN MID-TURN, and " +
-			"the answer says `terminal`. The session reads it at its next step, so this is how " +
-			"to tell a busy worker to stop. Where atrium does not own the terminal, or the line " +
-			"is not clear yet, the message is QUEUED and the answer says `queued`: it reaches " +
-			"that session at its next tool call, at the end of its turn, or when the line " +
-			"clears. Neither is a reply: if you want one, ask for it and then look, or wait to " +
-			"be told.\n\n" +
+			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal and the session is idle, the text is " +
+			"typed in as soon as its input line is empty and no dialog is open, and the answer says " +
+			"`terminal`. A session in the MIDDLE OF A TURN is not typed into if its runner queues a " +
+			"line typed mid-turn (Claude Code does: it keeps the line in its own queued-message box " +
+			"and reads it later). The message is QUEUED and the answer says `queued`: its hook hands " +
+			"it to the model at the next tool call or at the end of its turn. A session inside ONE LONG " +
+			"TOOL CALL makes no tool call, so it reads nothing until that call returns. Nothing is " +
+			"interrupted, so a say is not how to stop a tool. A runner that reads typed input as it " +
+			"arrives (codex) is still typed into mid-turn and answers `terminal`. `typed-queued` means " +
+			"a line was typed in but sits unread in the runner's queued box. Where atrium does not own " +
+			"the terminal, or the line is not clear yet, the answer is `queued` and it arrives when " +
+			"the line clears. None of these is a reply: if you want one, ask for it and then look, or " +
+			"wait to be told.\n\n" +
 			"`when: \"done\"` waits for that session's turn to end instead, for something that " +
 			"should not disturb it mid-thought. A runner set not to take input mid-turn always " +
-			"waits, and the answer's `when` says which one happened.\n\n" +
+			"waits, and the answer's `when` says which one happened. A message that waited more than " +
+			"15 minutes is carried by the next tool call with a line saying how long it waited.\n\n" +
 			"`undeliverable` means that session has no way to receive a queued message (its " +
 			"runner has no atrium hook and atrium does not own its terminal), and " +
 			"`queued-unconfirmed` means it has never shown one. The note says what to do instead.\n\n" +
@@ -872,7 +878,7 @@ type sayInput struct {
 	// Text is what to say, as one agent to another.
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
-	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
+	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, or carried by a hook at its next tool call when it is mid-turn. done: wait for that session's turn to end"`
 	// Wake resumes a parked card so this reaches it.
 	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. a launcher need not pass it for its own worker, parked or finished, unless kind is fyi. without it a say to a parked session is refused and nothing is queued. a card on another room, named as name@room or reached by a bare name on every room, is resumed there too. a room that is not attached refuses it, and nothing is held"`
 	// Force types now when the typing gate cannot read the line. See internal/daemon/forcesay.go.
@@ -972,9 +978,12 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	case res.Delivered == "queued" && res.When == "done":
 		out.Note = "queued until that session's turn ends. it is typed in then, or carried by " +
 			"its Stop hook."
+	case res.Delivered == "typed-queued":
+		out.Note = "typed in, and not read yet: it is in that session's queued-message box. it reads the " +
+			"box at its next step, which for a long tool call is when the call returns."
 	case res.Delivered == "queued":
-		out.Note = "queued, not typed yet. it is typed in as soon as that session's line clears, " +
-			"or arrives at its next tool call or the end of its turn."
+		out.Note = "queued, not typed. it arrives at that session's next tool call or the end of its " +
+			"turn, or is typed in when it is idle and its line is clear. a long tool call delays it."
 	}
 	return nil, out, nil
 }
