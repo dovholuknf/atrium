@@ -17729,9 +17729,7 @@ async function restartMenuSection(browser, base) {
       await p.waitForSelector("#cardmenu button", { state: "visible", timeout: slow(5000) });
       return p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].map(b => b.textContent));
     };
-    // Clicked at the left edge: with no grey line the menu is narrow and the middle of a short row is its (?) mark.
     const item = () => p.locator("#cardmenu button", { hasText: /^restart/ }).first();
-    const edge = { position: { x: 6, y: 6 } };
     const dialogUp = () => p.locator("dialog[open] button", { hasText: "restart it" });
 
     // idle: offered, with no grey line under it, and one click posts with no question.
@@ -17757,7 +17755,7 @@ async function restartMenuSection(browser, base) {
     await p.keyboard.press("Escape");
     labels = await open("land-rs-idle");
     if (process.env.RESTART_SHOT) await p.screenshot({ path: process.env.RESTART_SHOT });
-    await item().click(edge);
+    await item().click();
     await p.waitForTimeout(500);
     if (await dialogUp().count()) fail("restartMenu: an idle card asked before restarting.");
     if (posts.join() !== "/v1/tasks/land-rs-idle/restart POST") fail("restartMenu: idle restart did not POST once: " + JSON.stringify(posts));
@@ -17765,7 +17763,7 @@ async function restartMenuSection(browser, base) {
 
     // working: asks, cancel posts nothing, confirming posts.
     await open("land-rs-work");
-    await item().click(edge);
+    await item().click();
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
       .catch(() => fail("restartMenu: a working card did not ask before restarting."));
     if (!/working right now/.test(await p.locator("dialog[open]").first().textContent())) fail("restartMenu: the question does not say it is working.");
@@ -17773,7 +17771,7 @@ async function restartMenuSection(browser, base) {
     await p.waitForTimeout(300);
     if (posts.length) fail("restartMenu: cancelling still posted: " + JSON.stringify(posts));
     await open("land-rs-work");
-    await item().click(edge);
+    await item().click();
     await dialogUp().click();
     await p.waitForTimeout(500);
     if (posts.join() !== "/v1/tasks/land-rs-work/restart POST") fail("restartMenu: confirmed restart did not POST once: " + JSON.stringify(posts));
@@ -17782,7 +17780,7 @@ async function restartMenuSection(browser, base) {
     // a refusal is a toast.
     refuse = true;
     await open("land-rs-idle");
-    await item().click(edge);
+    await item().click();
     await p.waitForFunction(() => /could not restart/.test(document.body.textContent), null, { timeout: slow(5000) })
       .catch(() => fail("restartMenu: a refused restart did not toast."));
     refuse = false;
@@ -17791,7 +17789,9 @@ async function restartMenuSection(browser, base) {
     // parked: no process, so a card with no runner is not restarted: its menu offers resume, and that wakes the card.
     labels = await open("land-rs-park");
     if (labels.some(l => /^restart/.test(l)) || !labels.some(l => /^resume/.test(l))) fail("restartMenu: a parked card should offer resume and not restart: " + JSON.stringify(labels));
-    await p.locator("#cardmenu button", { hasText: /^resume/ }).first().click(edge);
+    // Two entries are called resume: the conversation picker (a submenu, marked with an arrow) and the parked
+    // card's own, which has none. The sub-text that told them apart is gone.
+    await p.locator("#cardmenu button", { hasText: /^resume/, hasNotText: /▸/ }).first().click();
     await p.waitForTimeout(500);
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
