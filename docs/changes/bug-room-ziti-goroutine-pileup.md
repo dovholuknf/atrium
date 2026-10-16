@@ -48,3 +48,17 @@ Unit, no disk or sockets, under 10ms. A fake context counts live instances, and 
 over `Proven`-shaped wrappers, and asserts live contexts never exceed 1 and `runtime.NumGoroutine` returns to its
 baseline. Further tests: `Ladder.Set` closes a dropped rung's dialer and keeps the one it stands on; `Reset` while a
 dial is stuck unblocks it.
+
+## Changes after review
+
+- **`link.Ziti` locking.** The mutex is held only to read or swap the context pointer, never across `ctx.Dial`. The
+  "Reset while a dial is stuck" test uses a fake Dial that blocks until Close and must finish within a deadline.
+- **learnHubPaths is the likely creator.** `OnPaths` fires on every attach, so a room redialling every minute runs
+  `learnHubPaths` every minute, and when the hub's list cannot be saved it rebuilds every time. `roomRungs` reuses a
+  dialer only where `reuse` matches by exact `==` on the address, while `Ladder` matches with the case-folded
+  `samePath`. A rung that differs only by case gets a new `*link.Ziti` and so a new context. The fix: `reuse` uses
+  `samePath`, and an unchanged rung keeps its existing dialer, so a refresh builds zero new contexts. Test: 100
+  `roomRungs` + `Set` rounds over the same path list build 1 context.
+- **Counted creation.** Every `ziti.NewContext` goes through one helper that logs its caller (`link`,
+  `capabilities`, `native`) and the running live count. The live count is added to the room's health output.
+- **ZitiCapabilities** caches only a success, for 30 seconds. A failed lookup is asked again on the next call.
