@@ -17,7 +17,7 @@ type fakeLandGit struct {
 	forged []bool
 }
 
-func (f *fakeLandGit) LandFacts(_ context.Context, branch, _, workID string, forge func() gitsync.ForgeMain) (gitsync.LandFacts, error) {
+func (f *fakeLandGit) LandFacts(_ context.Context, branch, sha, workID string, forge func() gitsync.ForgeMain) (gitsync.LandFacts, error) {
 	f.asked = append(f.asked, branch+" "+workID)
 	if f.facts.Landed && forge != nil {
 		forge()
@@ -76,6 +76,31 @@ func TestAnItemShowsLandedOnTheNextRefresh(t *testing.T) {
 	}
 	if code, _ := x.send("POST", "/_hub/work/f-thing", `{"kind":"weird"}`, loopAddr); code != http.StatusBadRequest {
 		t.Fatalf("a kind that is not one: %d", code)
+	}
+}
+
+// AN ITEM NOBODY NAMED A BRANCH FOR IS READ BY ITS BUILDER'S SHA, and shows landed and pushed with rows that carry its id.
+func TestAnItemWithNoBranchLandsByItsBuilderSha(t *testing.T) {
+	x := newItemRig(t)
+	x.send("POST", "/_hub/items/sync", js(map[string]any{"item_id": "it-1", "room": "sg4", "card": "c1",
+		"generation": 1, "state": "finished", "revision": 2, "owner_kind": "session", "owner": "orch", "created_by": "orch",
+		"note": landedSHA, "work_id": "f-nb"}), loopAddr)
+	g := &fakeLandGit{facts: gitsync.LandFacts{SHA: landedSHA, Landed: true, LandedSHA: "8888888888888888888888888888888888888888",
+		Paths: []string{"docs/a.md"}, Pushed: true, PushedSHA: "9999999999999999999999999999999999999999", PushedVia: "origin"}}
+	x.p.SetLandGit(g)
+	// The board's own list is what first writes the item's building step, which is what says it has been built.
+	x.send("GET", "/_hub/work", "", "203.0.113.9:4000")
+	x.p.RefreshAllGitSteps(context.Background(), true)
+	steps, _ := x.st.WorkSteps("f-nb")
+	got := map[string]string{}
+	for _, s := range steps {
+		if s.BacklogID != "f-nb" {
+			t.Fatalf("a step with no item: %+v", s)
+		}
+		got[s.Step] = s.State + " " + s.SHA
+	}
+	if got["landed"] != "done 8888888888888888888888888888888888888888" || got["pushed"] != "done 9999999999999999999999999999999999999999" {
+		t.Fatalf("steps = %v", got)
 	}
 }
 

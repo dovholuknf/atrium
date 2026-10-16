@@ -2,7 +2,11 @@
 
 package gitsync
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // A BRANCH FAST-FORWARDED ONTO claude/main IS LANDED AT ITS OWN TIP, and it is pushed only when the forge's main holds it.
 func TestLandFactsFollowABranchFromPushedToLandedToPushed(t *testing.T) {
@@ -151,5 +155,52 @@ func TestForgeMainTipIsRememberedUntilForced(t *testing.T) {
 	st.ForgeMainTip(bg, hubRepo, true)
 	if asked != 2 {
 		t.Fatalf("a forced ask was not made: %d", asked)
+	}
+}
+
+// A BUILDER'S COMMIT THE HUB NEVER HELD, OR ONE PICKED WITH A CONFLICT RESOLVED, STILL LANDS BY THE ITEM'S CHANGELOG ENTRY.
+func TestLandFactsFindALandingByTheItemsChangelogEntry(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	st := x.h.Store()
+	forge := t.TempDir()
+	git(t, forge, "init", "-q", "--bare", "-b", "main")
+	st.Protocols = "file"
+	st.Forge = func(Ref) string { return forge }
+
+	// Nothing on claude/main names the item yet, and the builder's sha is one the mirror never had.
+	f, err := st.LandFacts(bg, hubRepo, "", strings40('b'), "f-cl", forgeAsk(st))
+	if err != nil || f.Landed {
+		t.Fatalf("before: %+v %v", f, err)
+	}
+	git(t, x.work, "switch", "-q", "-C", "cm")
+	if err := os.MkdirAll(filepath.Join(x.work, "changelog", "board"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(x.work, "changelog", "board", "2026-10-15-f-cl.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, x.work, "add", "-A")
+	git(t, x.work, "commit", "-q", "-m", "land f-cl")
+	picked := git(t, x.work, "rev-parse", "HEAD")
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	f, err = st.LandFacts(bg, hubRepo, "", strings40('b'), "f-cl", forgeAsk(st))
+	if err != nil || !f.Landed || f.LandedSHA != picked || f.Pushed {
+		t.Fatalf("landed: %+v %v", f, err)
+	}
+	if len(f.Paths) == 0 {
+		t.Fatalf("no paths: %+v", f)
+	}
+	// The builder named no sha at all.
+	if f, _ = st.LandFacts(bg, hubRepo, "", "-", "f-cl", forgeAsk(st)); !f.Landed || f.LandedSHA != picked {
+		t.Fatalf("no sha: %+v", f)
+	}
+	git(t, x.work, "push", "-q", forge, "cm:refs/heads/main")
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/main"))
+	if f, _ = st.LandFacts(bg, hubRepo, "", "-", "f-cl", forgeAsk(st)); !f.Pushed || f.PushedSHA != picked {
+		t.Fatalf("pushed: %+v", f)
 	}
 }

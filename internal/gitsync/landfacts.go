@@ -63,17 +63,26 @@ func (s *Store) LandFacts(ctx context.Context, name, branch, sha, workID string,
 			sha = tip
 		}
 	}
-	if !ValidSHA(sha) {
-		return f, nil
+	known := false
+	if ValidSHA(sha) {
+		if known, err = s.commitKnown(ctx, dir, sha); err != nil {
+			return f, err
+		}
 	}
-	if known, err := s.commitKnown(ctx, dir, sha); err != nil || !known {
-		return f, err
+	if !known {
+		// The hub never fetched the builder's commit, which is the usual case for a cherry-picked item. Its changelog entry
+		// still names it on main.
+		return s.landedByItem(ctx, dir, f, workID, forge)
 	}
 	f.SHA = sha
 	f.Paths, _ = s.itemPaths(ctx, dir, sha, workID)
 	var carrier string
-	if f.Landed, carrier, err = s.carriedBy(ctx, dir, sha, ClaudeMainRef); err != nil || !f.Landed {
+	if f.Landed, carrier, err = s.carriedBy(ctx, dir, sha, ClaudeMainRef); err != nil {
 		return f, err
+	}
+	if !f.Landed {
+		// Picked with a conflict resolved, so no patch id matches: the item's own changelog entry says it landed.
+		return s.landedByItem(ctx, dir, f, workID, forge)
 	}
 	if f.LandedSHA = carrier; carrier == sha {
 		if f.LandedSHA, err = s.firstContaining(ctx, dir, sha, ClaudeMainRef); err != nil {
@@ -86,6 +95,93 @@ func (s *Store) LandFacts(ctx context.Context, name, branch, sha, workID string,
 	}
 	f.Pushed, f.PushedSHA, f.PushedVia, f.PushedNote = s.pushedToOrigin(ctx, dir, sha, fm)
 	return f, nil
+}
+
+// landedByItem reads landing off the item's changelog entry, `changelog/<dept>/<yyyy-mm-dd>-<workID>.md`, which every change
+// ships: the commit on claude/main that added it is the landing, whatever sha the builder had. f keeps what it already knew.
+// The same entry on origin's main (the forge's tip when it answered) says pushed.
+func (s *Store) landedByItem(ctx context.Context, dir string, f LandFacts, workID string, forge func() ForgeMain) (LandFacts, error) {
+	if workID == "" || strings.ContainsAny(workID, "*?[]\\ \n") || strings.HasPrefix(workID, "adhoc-") {
+		return f, nil
+	}
+	at, err := s.addedChangelog(ctx, dir, ClaudeMainRef, workID)
+	if err != nil || at == "" {
+		return f, err
+	}
+	f.Landed, f.LandedSHA = true, at
+	if len(f.Paths) == 0 {
+		f.Paths, _ = s.itemPaths(ctx, dir, "", workID)
+	}
+	ref, via, note := MainRef, "mirror", "the forge was not asked"
+	if forge != nil {
+		fm := forge()
+		known := false
+		if fm.Tip != "" {
+			known, _ = s.commitKnown(ctx, dir, fm.Tip)
+		}
+		switch {
+		case known:
+			ref, via, note = fm.Tip, "origin", ""
+		case fm.Tip != "":
+			note = "the mirror has not fetched the forge's main yet"
+		case fm.Why != "":
+			note = fm.Why
+		}
+	}
+	f.PushedVia, f.PushedNote = via, note
+	if p, err := s.addedChangelog(ctx, dir, ref, workID); err == nil && p != "" {
+		f.Pushed, f.PushedSHA = true, p
+	}
+	return f, nil
+}
+
+// addedChangelog is the first commit on ref's history that added the item's changelog entry, empty when there is none.
+func (s *Store) addedChangelog(ctx context.Context, dir, ref, workID string) (string, error) {
+	if _, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
+		if exitCode(err) == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	out, err := s.git(ctx, dir, "log", "--no-renames", "--diff-filter=A", "--name-only", "--format=commit %H", "--max-count=2000",
+		ref, "--", "changelog/*/*-"+workID+".md")
+	if err != nil {
+		return "", err
+	}
+	// Newest first, so the last match is the first to add it. `*-<id>.md` also matches `<date>-x-<id>.md`, which is another
+	// item's, so the name must be the date and then exactly the id.
+	var commit, found string
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimSpace(l)
+		if c, ok := strings.CutPrefix(l, "commit "); ok {
+			commit = c
+		} else if l != "" && changelogNamed(l, workID) {
+			found = commit
+		}
+	}
+	return found, nil
+}
+
+// changelogNamed is whether path is changelog/<dept>/<yyyy-mm-dd>-<workID>.md.
+func changelogNamed(path, workID string) bool {
+	parts := strings.Split(path, "/")
+	if len(parts) != 3 || parts[0] != "changelog" {
+		return false
+	}
+	rest, ok := strings.CutSuffix(parts[2], "-"+workID+".md")
+	if !ok || len(rest) != 10 {
+		return false
+	}
+	for i, c := range rest {
+		if i == 4 || i == 7 {
+			if c != '-' {
+				return false
+			}
+		} else if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ancestorOfRef is isAncestor against a ref the repository may not have, which holds nothing.

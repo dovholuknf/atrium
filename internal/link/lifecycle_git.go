@@ -215,10 +215,19 @@ func (p *Proxy) RefreshGitSteps(ctx context.Context, id string, forge func() git
 		return nil, nil
 	}
 	w, err := st.WorkByID(id)
-	if err != nil || w.Branch == "" {
+	if err != nil {
 		return nil, err
 	}
-	facts, err := g.LandFacts(ctx, w.Branch, "", w.BacklogID, forge)
+	// AN ITEM NOBODY NAMED A BRANCH FOR IS READ BY ITS BUILDER'S SHA, and by its id once that sha is not on main by name.
+	// Nearly every item is launched without a branch being set, and reading only the ones that have one left them all reading
+	// "designed" after they had landed and pushed.
+	sha := ""
+	if w.Branch == "" {
+		if sha = p.builtSHA(ctx, st, id); sha == "" {
+			return nil, nil
+		}
+	}
+	facts, err := g.LandFacts(ctx, w.Branch, sha, w.BacklogID, forge)
 	if err != nil {
 		return nil, fmt.Errorf("git could not be read for %s: %w", id, err)
 	}
@@ -252,6 +261,35 @@ func (p *Proxy) RefreshGitSteps(ctx context.Context, id string, forge func() git
 		out = append(out, row)
 	}
 	return out, nil
+}
+
+// builtSHA is the commit the item's builders finished at, from its stored building step, derived first when none is stored. A
+// finished build that named no commit answers the id's own marker, which LandFacts looks for by changelog entry: "-" stands
+// for it. Empty when nothing has been built.
+func (p *Proxy) builtSHA(ctx context.Context, st *hubstore.Store, id string) string {
+	building := func() (hubstore.WorkStepRow, bool) {
+		rows, _ := st.WorkSteps(id)
+		for _, s := range rows {
+			if s.Step == hubstore.StepBuilding {
+				return s, true
+			}
+		}
+		return hubstore.WorkStepRow{}, false
+	}
+	b, ok := building()
+	if !ok {
+		if _, err := p.refreshWork(ctx, st, id, false); err != nil {
+			return ""
+		}
+		b, _ = building()
+	}
+	switch {
+	case b.State != hubstore.StepDone:
+		return ""
+	case gitsync.ValidSHA(strings.ToLower(b.SHA)):
+		return strings.ToLower(b.SHA)
+	}
+	return "-"
 }
 
 // seen compares one process's build with the landed sha. A build that is not a full sha, or that the mirror cannot read,

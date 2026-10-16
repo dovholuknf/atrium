@@ -198,6 +198,36 @@ func TestTheItemStateComesFromTheSteps(t *testing.T) {
 	}
 }
 
+// A BUG BUILT WITH NO DESIGNER EVER ON IT NEVER SITS AT `designed`: it skips designed and approved once the build is done, and
+// an item a designer is on, or that is still being built, does not.
+func TestABuiltItemWithNoDesignSkipsDesignedAndApproved(t *testing.T) {
+	built := DeriveIn{Work: wk("f-x"), Cards: []hubstore.WorkCard{stepCard("c1", "building")},
+		Assignments: []hubstore.Item{asg("a1", "c1", "finished", shaD1, "t1")}}
+	l := Derive(built)
+	for _, s := range []string{"designed", "approved"} {
+		if st := derivedStep(l, s); st.State != hubstore.StepSkipped || st.Reason == "" {
+			t.Errorf("%s = %+v", s, st)
+		}
+	}
+	if l.Current != hubstore.StepTested {
+		t.Errorf("current = %q", l.Current)
+	}
+	building := built
+	building.Assignments = []hubstore.Item{asg("a1", "c1", "running", "", "t1")}
+	if st := derivedStep(Derive(building), "designed"); st.State == hubstore.StepSkipped {
+		t.Errorf("a build in progress skipped designed: %+v", st)
+	}
+	designed := built
+	designed.Cards = append([]hubstore.WorkCard{stepCard("d1", "designed")}, built.Cards...)
+	if st := derivedStep(Derive(designed), "designed"); st.State == hubstore.StepSkipped {
+		t.Errorf("an item with a designer skipped designed: %+v", st)
+	}
+	landed := DeriveIn{Work: wk("f-x"), Stored: []hubstore.WorkStepRow{{BacklogID: "f-x", Step: "landed", State: hubstore.StepDone, SHA: shaD2}}}
+	if l := Derive(landed); derivedStep(l, "designed").State != hubstore.StepSkipped || l.Current != hubstore.StepBuilding {
+		t.Errorf("a landed item with nothing recorded: %+v", l)
+	}
+}
+
 func TestABuilderBeforeTheApprovalSaysSo(t *testing.T) {
 	l := Derive(DeriveIn{Work: wk("f-x"), Cards: []hubstore.WorkCard{stepCard("c1", "building")},
 		Assignments: []hubstore.Item{asg("a1", "c1", "running", "", "t1")}})

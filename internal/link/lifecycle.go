@@ -189,6 +189,8 @@ func Derive(in DeriveIn) Lifecycle {
 		skipWhy = "filed to build directly"
 	case Adhoc(in.Work):
 		skipWhy = "no backlog item named this work, so there is no design to approve"
+	case noDesignNeeded(in):
+		skipWhy = "built with no design: a fix small enough not to need one"
 	}
 
 	byStep := map[string]hubstore.WorkStepRow{}
@@ -320,6 +322,24 @@ func Derive(in DeriveIn) Lifecycle {
 	out.State, out.Waiting = itemState(out, in.Assignments)
 	out.Ready, out.NotReady = readiness(tested, reviewed, dirtyTest)
 	return out
+}
+
+// noDesignNeeded is an item that was built (its builders all finished, or it landed) with no designer ever on it and no
+// design noticed. A bug or small fix is filed and built straight away, and waiting at `designed` forever after it has landed
+// is wrong. An item a designer has been on, or whose design was sent back, is never skipped by this.
+func noDesignNeeded(in DeriveIn) bool {
+	if has(in.Facts, hubstore.FactDesign) || has(in.Facts, hubstore.FactSendBack) || len(in.of(hubstore.StepDesigned).cards) > 0 {
+		return false
+	}
+	if in.of(hubstore.StepBuilding).all(hubstore.ItemStateFinished) {
+		return true
+	}
+	for _, s := range in.Stored {
+		if s.Step == hubstore.StepLanded && s.State == hubstore.StepDone {
+			return true
+		}
+	}
+	return false
 }
 
 // deriveTested is the `tested` step: the newest test at the branch tip, else the newest test there is, shown with how many
