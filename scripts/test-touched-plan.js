@@ -45,6 +45,7 @@ const buckets = require("./test-buckets.js");
 const ROOT = path.join(__dirname, "..");
 const WEB = "internal/api/web/";
 const HARNESS = "scripts/test-board-headless.js";
+const BUCKET_DIR = "scripts/board-tests";
 const DEFAULT_WEIGHT_MS = 8000;
 const DEFAULT_BUDGET_MS = 150000;
 // A name used by more than this share of the units says nothing about which one a change touches.
@@ -58,8 +59,8 @@ const tokens = s => new Set(s.match(/[A-Za-z_$][\w$-]*[\w$]/g) || []);
 const isIdent = t => t.length >= 6 || (t.length >= 4 && /[A-Z0-9_$-]/.test(t));
 
 // ── the harness ──────────────────────────────────────────────────────────────────────────────────────────────────
-function parseHarness(src) {
-  const lines = src.split("\n");
+// The top-level functions and variables of one file, with their lines.
+function scanTop(lines) {
   const sections = {};   // name -> { start, end } 1-based, inclusive
   const helpers = {};    // top-level function or const name -> { start, end }
   for (let i = 0; i < lines.length; i++) {
@@ -73,6 +74,21 @@ function parseHarness(src) {
     if (/Section$/.test(m[1]) && /function/.test(lines[i])) sections[m[1]] = r; else helpers[m[1]] = r;
     i = end;
   }
+  return { sections, helpers };
+}
+
+// `extra` is the source of the files under scripts/board-tests/, where a moved unit's section lives. Their text counts as
+// the unit's, so the inference below still reads it, but their lines are not the harness's.
+function parseHarness(src, extra) {
+  const lines = src.split("\n");
+  const { sections, helpers } = scanTop(lines);
+  const moved = {};      // section name -> its text, for a section that moved to a bucket file
+  const movedUnit = {};  // unit name -> its section, read from `{ name: "x", run: ... => fooSection(` in a bucket file
+  for (const x of extra || []) {
+    const xl = x.split("\n");
+    for (const [n, r] of Object.entries(scanTop(xl).sections)) moved[n] = xl.slice(r.start - 1, r.end).join("\n");
+    for (const m of x.matchAll(/\{ name: "(\w+)", run: [^\n]*?=> (\w+Section)\(/g)) movedUnit[m[1]] = m[2];
+  }
   const units = {};      // name -> { section, start, end }
   const at = [];
   for (let i = 0; i < lines.length; i++) {
@@ -81,7 +97,7 @@ function parseHarness(src) {
   }
   for (let k = 0; k < at.length; k++) {
     const u = at[k];
-    const s = /^(?:async\s*)?\(\)\s*=>\s*(\w+Section)\(/.exec(u.rest);
+    const s = /^(?:async\s*)?\(\)\s*=>\s*(\w+Section)\(/.exec(u.rest) || (/^bu\(/.test(u.rest) && movedUnit[u.name] ? [null, movedUnit[u.name]] : null);
     if (s) { units[u.name] = { section: s[1], start: u.line + 1, end: u.line + 1 }; continue; }
     // an inline block runs to the next unit, or to the end of main's try
     let end = k + 1 < at.length ? at[k + 1].line - 1 : u.line;
@@ -97,9 +113,9 @@ function parseHarness(src) {
     for (const m of slice(u).matchAll(/\b(\w+Section)\(/g)) queue.push(m[1]);
     while (queue.length) {
       const s = queue.shift();
-      if (seen.has(s) || !sections[s]) continue;
+      if (seen.has(s) || !(sections[s] || moved[s])) continue;
       seen.add(s);
-      const body = slice(sections[s]);
+      const body = sections[s] ? slice(sections[s]) : moved[s];
       parts.push(body);
       for (const m of body.matchAll(/\b(\w+Section)\(/g)) queue.push(m[1]);
     }
@@ -146,7 +162,9 @@ function nameMatches(unit, rel) {
 function buildIndex(root) {
   root = root || ROOT;
   const hsrc = read(HARNESS, root) || "";
-  const h = parseHarness(hsrc);
+  const bdir = path.join(root, BUCKET_DIR);
+  const extra = fs.existsSync(bdir) ? fs.readdirSync(bdir).filter(f => f.endsWith(".js") && f !== "index.js").map(f => read(BUCKET_DIR + "/" + f, root) || "") : [];
+  const h = parseHarness(hsrc, extra);
   const unitTok = {};
   for (const [n, t] of Object.entries(h.text)) unitTok[n] = tokens(t.text);
   const df = new Map();
@@ -384,7 +402,16 @@ function plan(files, opts) {
       for (const s of shared) p.warnings.push("the harness changed outside every unit (" + s + "), so bootClean stands in for it");
       continue;
     }
-    if (/^scripts\/lib\/(mock|browser)\.js$/.test(rel)) {
+    // a bucket file: its section is the test that changed, so the bucket's units run, however long they take
+    const bfile = ix.bk && ix.bk.buckets.find(b => b.kind === "board" && b.file === rel);
+    if (bfile) {
+      board = true;
+      p.jscheck.push(rel);
+      addBucket(bfile, rel);
+      wantUnits.unshift(bucketUnits(ix, bfile, rel, [], "bucket " + bfile.name + ": " + path.posix.basename(rel) + " changed").map(c => Object.assign(c, { own: true })));
+      continue;
+    }
+    if (/^scripts\/lib\/(mock|browser|results|helpers|alone)\.js$/.test(rel) || rel === BUCKET_DIR + "/index.js") {
       board = true;
       p.jscheck.push(rel);
       p.warnings.push(rel + " is the harness library every unit runs on, so bootClean stands in for it");
