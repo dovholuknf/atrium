@@ -105,6 +105,9 @@ func DeriveGit(in GitInput) []GitStep {
 	deployed := GitStep{Step: StepDeployed, State: hubstore.StepPending}
 	pushed := GitStep{Step: StepPushed, State: hubstore.StepPending}
 	if landed.State != hubstore.StepDone {
+		if in.Facts.Why != "" {
+			landed.Reason, deployed.Reason, pushed.Reason = in.Facts.Why, in.Facts.Why, in.Facts.Why
+		}
 		return []GitStep{landed, deployed, pushed}
 	}
 	deployed.SHA, pushed.SHA = landed.SHA, landed.SHA
@@ -231,7 +234,7 @@ func (p *Proxy) RefreshGitSteps(ctx context.Context, id string, forge func() git
 	if err != nil {
 		return nil, fmt.Errorf("git could not be read for %s: %w", id, err)
 	}
-	if w.Branch == "" && facts.SHA == "" && !facts.Landed {
+	if w.Branch == "" && facts.SHA == "" && !facts.Landed && facts.Why == "" {
 		// Nothing built and nothing landed: no row is written for an item that has nothing to say.
 		return nil, nil
 	}

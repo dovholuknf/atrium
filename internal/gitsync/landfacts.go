@@ -36,6 +36,8 @@ type LandFacts struct {
 	PushedNote string `json:"pushed_note,omitempty"`
 	// Paths are the files the item's own commits changed, which is what decides where it deploys.
 	Paths []string `json:"paths,omitempty"`
+	// Why is set when no repository could be read at all, and every pending step then says it.
+	Why string `json:"why,omitempty"`
 }
 
 // LandFacts reads the mirror of the repository `name` for the item's branch, or for sha when the branch is empty. workID is the item's backlog id, which finds its commits once the branch is on main. A

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -917,10 +918,7 @@ type flowGit struct {
 	hub   *gitsync.Hub
 }
 
-func (f flowGit) repo() string {
-	name, _ := f.store.HubSetting(hubstore.SettingFlowRepo)
-	return strings.TrimSpace(name)
-}
+func (f flowGit) repo() string { return landGit{store: f.store}.repo() }
 
 func (f flowGit) ItemFacts(ctx context.Context, branch, sha string) (gitsync.ItemFacts, error) {
 	if name := f.repo(); name != "" {
@@ -936,15 +934,43 @@ type landGit struct {
 }
 
 func (f landGit) repo() string {
-	name, _ := f.store.HubSetting(hubstore.SettingFlowRepo)
-	return strings.TrimSpace(name)
+	name, _ := f.chooseRepo()
+	return name
+}
+
+// chooseRepo is the repository the flow reads: the flow_repo setting, else the one repository the hub holds. With none
+// to choose it answers why, in words a step can carry.
+func (f landGit) chooseRepo() (name, why string) {
+	set, _ := f.store.HubSetting(hubstore.SettingFlowRepo)
+	repos, _ := f.store.GitRepos()
+	var held []string
+	for _, r := range repos {
+		held = append(held, r.Name)
+	}
+	return pickFlowRepo(set, held)
+}
+
+// pickFlowRepo is the choice itself, pure. A named repository wins, a hub holding exactly one stands in for an unset
+// name, and anything else is no repository and the reason.
+func pickFlowRepo(set string, held []string) (name, why string) {
+	if set = strings.TrimSpace(set); set != "" {
+		return set, ""
+	}
+	switch len(held) {
+	case 0:
+		return "", "flow_repo is unset and the hub holds no repository"
+	case 1:
+		return held[0], ""
+	}
+	return "", "flow_repo is unset and the hub holds " + strconv.Itoa(len(held)) + " repositories, so none can be chosen"
 }
 
 func (f landGit) LandFacts(ctx context.Context, branch, sha, workID string, forge func() gitsync.ForgeMain) (gitsync.LandFacts, error) {
 	if name := f.repo(); name != "" {
 		return f.hub.Store().LandFacts(ctx, name, branch, sha, workID, forge)
 	}
-	return gitsync.LandFacts{}, nil
+	_, why := f.chooseRepo()
+	return gitsync.LandFacts{Why: why}, nil
 }
 
 // evidenceChecker is deployready.Checker in gitsync's words.

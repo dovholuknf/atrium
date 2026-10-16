@@ -125,3 +125,12 @@ func TestPushedSaysWhereItLooked(t *testing.T) {
 		t.Fatalf("pushed = %+v", p)
 	}
 }
+
+func TestDeriveGitCarriesWhyNoRepoWasRead(t *testing.T) {
+	why := "flow_repo is unset and the hub holds no repository"
+	for _, s := range DeriveGit(GitInput{Facts: gitsync.LandFacts{Why: why}}) {
+		if s.State != hubstore.StepPending || s.Reason != why {
+			t.Errorf("%s: %s %q", s.Step, s.State, s.Reason)
+		}
+	}
+}
