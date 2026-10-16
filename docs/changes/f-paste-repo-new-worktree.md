@@ -61,14 +61,27 @@ Not looked up by a forge call. `newWorkBase` forks from `origin/<default>` after
 `refs/remotes/origin/HEAD`, else `hub/HEAD`, else HEAD (`defaultBase`). A fresh clone sets origin/HEAD. A clone made
 from the hub sets `hub/HEAD`. That is what `gwt new` does too.
 
-## Branch name (operator question)
+## Branch name (decided by rnd)
 
-`/v1/new` requires a name, and a bare repo link carries none. Recommendation: `work-<yymmdd>-<hhmm>`, for example
-`work-261016-1432`, which is a legal ref, flat on disk (the folder is the name), sorted by time and unlikely to
-collide. Pasting twice in a minute reuses the worktree and its live card, which `/v1/new` already answers as
-"already there". Alternatives: a random adjective-noun, or opening the dialog on Enter to ask. I do not recommend the
-last, since the brief wants Enter to start at once. The card's title is the repo, `org/repo`, so the board does not
-fill with `work-...` titles.
+`claude/work-<yymmdd>-<hhmm>`, for example `claude/work-261016-1432`. The `claude/` prefix is required because
+`agentCheckoutRefusal` refuses launches outside `claude/*`. `/v1/new` places the folder as for any `claude/*` name.
+The card's title is `org/repo`. Pasting twice in a minute reuses the worktree and its live card.
+
+## Trust: one keypress does not start a repo nobody here has seen
+
+`launchLocked` trusts the worktree, so its `.claude/settings.json` hooks and MCP servers would run. So:
+
+- Cases 1 and 2 (the hub or the room already holds the repo): Enter starts at once.
+- Cases 3 and 4 (the hub must fetch it from a forge, or the room clones straight from one): the fetch and clone steps
+  run on the card, then the card STOPS at a confirm step, "new repository from <host>: its project settings and hooks
+  will run. start / cancel". No worktree is made past the clone and no runner is started until start. Cancel drops the
+  card. The board holds the step, then calls `/v1/new` once the person confirms.
+
+## Progress
+
+`/v1/new` takes an optional `progress` id and reports through `opSteps`. The hub fetch is a board call to
+`/_hub/git/init`, so the board names that step on the card itself under the same id ("the hub is fetching
+host/org/repo") and the room's steps follow under it.
 
 ## Scope and out of scope
 
@@ -92,7 +105,7 @@ trailing slash and with `.git`. A `/pull/5` link still says PR.
 1. Press Enter on that row.
 
 **Expected:** a card is on the board from the keypress naming the step (fetching, cloning, worktree). It ends as a
-running card in a new worktree off the default branch on a new `work-` branch. Pasting it again attaches the same card.
+running card in a new worktree off the default branch on a new `claude/work-` branch. Pasting it again attaches the same card.
 
 ### @LETTER@3. A repo the hub lacks
 
@@ -100,6 +113,13 @@ running card in a new worktree off the default branch on a new `work-` branch. P
 
 **Expected:** the card says the hub is fetching it, then cloning, then the worktree. A repo that cannot be fetched
 fails on the card with the reason and `edit` opens start new work with the repo filled in.
+
+### @LETTER@3b. Confirm before an unseen repo runs
+
+1. Paste a repo the hub lacks and press Enter.
+
+**Expected:** the card names the hub fetch, then stops at "new repository from <host>: its project settings and hooks
+will run. start / cancel". No runner exists. Cancel removes the card and starts nothing. Start finishes the worktree.
 
 ### @LETTER@4. Shift-Enter
 
