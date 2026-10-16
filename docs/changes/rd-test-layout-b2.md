@@ -11,7 +11,7 @@ New: `scripts/board-tests/backlog.js` holds the first units for the backlog page
 The minion-hidden units (`boardMinionHidden`, `stackMinionHidden`, `phoneMinionHidden`) stay in the harness. The items
 units `itemMinionChip`, `itemDocsLanded` and `itemOpenHiddenCard` live in `items.js`.
 
-Pass counts, before and after: BEFORE_AFTER_COUNTS
+Pass counts, before and after: serial (test-board-headless.js, units that ran): 328 before, 334 after (333 in the full run, which lacked itemDocsLanded because the move had dropped its call; restored and run alone). Sharded (test-board-sharded.js --local): 331 units before, 337 after. New units, all in the backlog bucket: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogFilters. itemDocsLanded, boardMinionHidden, stackMinionHidden and phoneMinionHidden pass in both. Failing in both before and after: changeReq. Flaky and passing alone: phoneNudge, clearKeepsPage (loadCell), bridge, resumeSpinner. Each bucket passes alone.
 
 ## Test plan
 
