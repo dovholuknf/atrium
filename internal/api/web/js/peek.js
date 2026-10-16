@@ -305,6 +305,7 @@ function peekBody(t, v) {
       ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k, source: limitSource(t) }, telemetry: t && t.telemetry }))}
       <div class="peek-scale"><span class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b> ${state}</span>` +
         `<span>${landK !== Number(k) ? `warns at ${limitFrom(t)}, lands ${landK}k` : `warns and lands at ${limitFrom(t)}`}</span></div>
+      ${t && t.context_size && t.context_size.low ? `<div class="peek-scale"><span class="warn">${esc(t.context_size.low)}</span></div>` : ""}
     </div>`;
 }
 

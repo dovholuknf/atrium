@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -43,6 +44,17 @@ type ContextSize struct {
 	// ceiling cut it (Source is then "runner").
 	WantedK    int    `json:"wanted_k,omitempty"`
 	WantedFrom string `json:"wanted_from,omitempty"`
+	// Low says so when the limit is more than a quarter under the built-in default, and from where, so a card
+	// held to a small limit shows it from its first read and not only when the cycle fires. Empty otherwise.
+	Low string `json:"low,omitempty"`
+}
+
+// lowLimitNote is "limit 100k from card" when limitK is more than 25 percent under the built-in claude limit.
+func lowLimitNote(limitK int, from string) string {
+	if limitK <= 0 || limitK*4 >= store.DefaultContextLimits()["claude"]*3 {
+		return ""
+	}
+	return fmt.Sprintf("limit %dk from %s", limitK, from)
 }
 
 // contextSeen is one card's last read, and what the file looked like then, so
@@ -131,7 +143,7 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 	limit := int64(l.K) * 1000
 	return &ContextSize{Tokens: s.tokens, Warn: limit > 0 && s.tokens >= limit, ThresholdK: l.K, Source: l.From,
 		Cycle: limit > 0 && d.cycleSubject(t), OwnK: l.OwnK, CeilingK: l.CeilingK, WantedK: l.WantedK,
-		WantedFrom: l.WantedFrom}
+		WantedFrom: l.WantedFrom, Low: lowLimitNote(l.K, l.From)}
 }
 
 // transcriptOf finds the transcript to read a card's context from, however the card started.
