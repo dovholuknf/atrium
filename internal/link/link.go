@@ -96,6 +96,9 @@ type Timings struct {
 	// connection before answering 504. A room that is gone must not turn the
 	// board into a spinner.
 	DialWait time.Duration
+	// DataDeadline is how long a data dial may be pending before it counts as a failure. The dial cannot be cancelled
+	// and keeps its slot until it returns. See dials.go.
+	DataDeadline time.Duration
 	// Backoff is how long a room waits before redialling a hub that is not
 	// answering, and the ceiling it grows to.
 	Backoff    time.Duration
@@ -169,6 +172,9 @@ func (t Timings) fill() Timings {
 	}
 	if t.DialWait <= 0 {
 		t.DialWait = d.DialWait
+	}
+	if t.DataDeadline <= 0 {
+		t.DataDeadline = 30 * time.Second
 	}
 	if t.Backoff <= 0 {
 		t.Backoff = d.Backoff

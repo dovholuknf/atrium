@@ -1,0 +1,113 @@
+package link
+
+import (
+	"context"
+	"net"
+	"runtime"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// blockDialer never returns from Dial, like a ziti dial that ignores its context.
+type blockDialer struct {
+	release chan struct{}
+	started atomic.Int32
+	resets  atomic.Int32
+}
+
+func (d *blockDialer) Dial(context.Context) (net.Conn, error) {
+	d.started.Add(1)
+	<-d.release
+	return nil, net.ErrClosed
+}
+func (d *blockDialer) Describe() string { return "block" }
+func (d *blockDialer) Reset()           { d.resets.Add(1) }
+
+func newDialRoom(d Dialer, deadline time.Duration) (*Room, *atomic.Int32) {
+	r := &Room{Name: "r", Dial: d, T: Timings{DataDeadline: deadline}.fill()}
+	r.conns = make(chan net.Conn, 1)
+	var drops atomic.Int32
+	r.dropLink = func() { drops.Add(1) }
+	return r, &drops
+}
+
+func (r *Room) inflight() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.dials)
+}
+
+func TestOpenBoundsDialsAgainstABlockedDialer(t *testing.T) {
+	d := &blockDialer{release: make(chan struct{})}
+	defer close(d.release)
+	r, _ := newDialRoom(d, time.Hour)
+	before := runtime.NumGoroutine()
+	for i := 0; i < 1000; i++ {
+		r.open(context.Background(), 4, "s")
+	}
+	if got := r.inflight(); got != maxDataDials {
+		t.Fatalf("in flight = %d, want %d", got, maxDataDials)
+	}
+	if grew := runtime.NumGoroutine() - before; grew > maxDataDials+4 {
+		t.Fatalf("goroutines grew by %d after 1000 asks", grew)
+	}
+}
+
+func TestStuckDialsPastTheirDeadlineDropTheLink(t *testing.T) {
+	d := &blockDialer{release: make(chan struct{})}
+	defer close(d.release)
+	r, drops := newDialRoom(d, time.Millisecond)
+	r.open(context.Background(), dataRedialAfter, "s")
+	deadline := time.Now().Add(2 * time.Second)
+	for drops.Load() == 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if drops.Load() != 1 {
+		t.Fatalf("drops = %d, want 1", drops.Load())
+	}
+	if d.resets.Load() != 1 {
+		t.Fatalf("resets = %d, want 1", d.resets.Load())
+	}
+	if r.inflight() != dataRedialAfter {
+		t.Fatalf("stuck dials must keep their slots, in flight = %d", r.inflight())
+	}
+}
+
+func TestAFullCapOfLateDialsCountsEachAskAsAFailure(t *testing.T) {
+	d := &blockDialer{release: make(chan struct{})}
+	defer close(d.release)
+	r, drops := newDialRoom(d, time.Nanosecond)
+	r.open(context.Background(), maxDataDials, "s")
+	for i := 0; i < dataRedialAfter; i++ {
+		r.open(context.Background(), 1, "s")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for drops.Load() == 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if drops.Load() == 0 {
+		t.Fatal("asks against a full cap of late dials never dropped the link")
+	}
+}
+
+func TestReattachingNeverExceedsTheCap(t *testing.T) {
+	d := &blockDialer{release: make(chan struct{})}
+	defer close(d.release)
+	r, _ := newDialRoom(d, time.Hour)
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		r.open(ctx, 4, "s")
+		r.open(ctx, 4, "s")
+		cancel()
+		if got := r.inflight(); got > maxDataDials {
+			t.Fatalf("attachment %d: in flight %d exceeds %d", i, got, maxDataDials)
+		}
+	}
+	wg.Wait()
+	if int(d.started.Load()) > maxDataDials {
+		t.Fatalf("%d dials ever started against a blocked dialer, cap is %d", d.started.Load(), maxDataDials)
+	}
+}
