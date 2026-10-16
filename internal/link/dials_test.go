@@ -83,6 +83,10 @@ func TestAFullCapOfLateDialsCountsEachAskAsAFailure(t *testing.T) {
 	for i := 0; i < dataRedialAfter; i++ {
 		r.open(context.Background(), 1, "s")
 	}
+	deadline := time.Now().Add(2 * time.Second)
+	for drops.Load() == 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
 	if drops.Load() == 0 {
 		t.Fatal("asks against a full cap of late dials never dropped the link")
 	}
