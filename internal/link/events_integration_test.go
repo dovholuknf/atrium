@@ -103,7 +103,9 @@ func readSSE(res *http.Response) <-chan Event {
 
 func waitEvent(t *testing.T, ch <-chan Event, kind string) Event {
 	t.Helper()
-	deadline := time.After(5 * time.Second)
+	// An upper bound, not a wait: it returns the moment the event arrives. Some callers start a PowerShell script first,
+	// and on a loaded runner that alone takes longer than 5s.
+	deadline := time.After(30 * time.Second)
 	for {
 		select {
 		case e, ok := <-ch:
