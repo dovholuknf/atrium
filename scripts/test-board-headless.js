@@ -30524,6 +30524,7 @@ async function keepAliveSection(browser, base) {
 
     // Open a, then b: a is kept, its socket still open, its element hidden.
     await attach("ka-a");
+    for (let i = 0; i < 40 && !/hist-ka-a/.test(await text("term") || ""); i++) await idle(150);
     if (!/hist-ka-a/.test(await text("term") || "")) fail("keepAlive: the first attach did not replay into the terminal.");
     await wp.evaluate(async () => {
       window.__termA = term;
