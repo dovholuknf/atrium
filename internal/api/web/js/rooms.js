@@ -544,6 +544,8 @@ function pathBadges(paths) {
     unlistened: "the hub is not listening on it",
   };
   const label = { direct: "direct", ziti: "ziti", zrok: "zrok" };
+  // "mTLS" is claimed only for a rung that says it presents a client certificate (`mtls` on the path).
+  const shown = p => (p.kind === "direct" && p.mtls ? "mTLS" : label[p.kind]);
   const best = {};
   for (const p of paths) {
     if (!label[p.kind]) continue;
@@ -552,11 +554,11 @@ function pathBadges(paths) {
   const out = ["direct", "ziti", "zrok"].filter(k => best[k]).map(k => {
     const p = best[k];
     const state = rank[p.state] ? p.state : "none";
-    let tip = `${label[k]}: ${state}, ${why[state]}`;
+    let tip = `${shown(p)}: ${state}, ${why[state]}`;
     if (p.addr) tip += ` (${p.addr})`;
-    if (p.rtt_ms) tip += `, ${p.rtt_ms} ms`;
+    if (p.rtt_ms) tip += `, ${p.stale ? "last measured connect time" : "connect time"} ${p.rtt_ms} ms`;
     if (p.last_error) tip += `. ${p.last_error}`;
-    return `<span class="chip pth pth-${state}" data-tip="${esc(tip)}">${label[k]}</span>`;
+    return `<span class="chip pth pth-${state}" data-tip="${esc(tip)}">${shown(p)}</span>`;
   });
   return out.length ? `<span class="pths" role="group" aria-label="paths to the hub">${out.join("")}</span>` : "";
 }

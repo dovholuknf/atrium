@@ -38,6 +38,10 @@ type Ladder struct {
 	rungs []Rung
 	on    Rung
 	has   bool
+
+	pmu     sync.Mutex
+	probing map[string]bool
+	rtts    map[string]int64
 }
 
 // NewLadder makes a ladder over rungs, best first, standing on the top one.

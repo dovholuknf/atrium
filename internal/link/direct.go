@@ -428,3 +428,10 @@ func enrolOn(conn net.Conn, keys Keys, hub, self, secret string,
 	log.Printf("[join] enrolled as %s", describeCert(c))
 	return name, nil
 }
+
+// Mutual is whether this rung presents a client certificate, which is what makes the connection mutual TLS. An
+// unenrolled room dials TLS and pins the hub, and the hub refuses it control, so it is not called mTLS.
+func (d Direct) Mutual() bool {
+	_, err := tls.LoadX509KeyPair(d.Keys.path("room.crt"), d.Keys.path("room.key"))
+	return err == nil
+}

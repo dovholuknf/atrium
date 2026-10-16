@@ -1,0 +1,1 @@
+- `badges-before.png` and `badges-after.png`: demo room rows before (`direct`, `ziti`) and after (`mTLS` where the rung presents a client certificate, `ziti`, `zrok`). Written by `PATHS_SHOTS=<dir> HEADLESS_UNITS=pathBadges node scripts/test-board-headless.js`.

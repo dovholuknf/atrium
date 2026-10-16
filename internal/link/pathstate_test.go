@@ -26,8 +26,8 @@ func TestProbePathsSaysOnUpDownAndNone(t *testing.T) {
 			t.Fatalf("path %d is %s %s, want %s %s", i, got[i].Kind, got[i].State, w.kind, w.state)
 		}
 	}
-	if direct.n.Load() != 0 {
-		t.Fatal("the rung the control connection stands on was dialled again")
+	if got[0].RTTMs < 0 || got[0].Stale {
+		t.Fatalf("the on rung measures a connect time and is not stale: %+v", got[0])
 	}
 	if got[0].Addr != "h:1" || got[0].Source != "join" || got[1].Addr != "atrium-hub" {
 		t.Fatalf("addr and source should ride along: %+v", got)
@@ -138,5 +138,49 @@ func TestMergePathsTellsUnlistenedFromNone(t *testing.T) {
 	}
 	if got := MergePaths(paths, nil); got[1].State != PathDown {
 		t.Fatal("a hub that records no listeners says nothing it does not know")
+	}
+}
+
+func TestProbeOfTheOnRungKeepsItOnWhenTheExtraDialFails(t *testing.T) {
+	direct := &fakeDial{name: "direct"}
+	l := NewLadder([]Rung{{Path: Path{Transport: "direct", Addr: "h:1"}, Dial: direct}})
+	direct.fail.Store(true)
+	got := l.ProbePaths(context.Background(), time.Second)[0]
+	if got.State != PathOn || got.RTTMs != 0 {
+		t.Fatalf("a failed extra dial must leave the rung on with no rtt: %+v", got)
+	}
+}
+
+func TestProbeNeverHasTwoDialsInFlightForOneRung(t *testing.T) {
+	direct, ziti := &fakeDial{name: "direct", hang: true}, &fakeDial{name: "ziti", hang: true}
+	l := NewLadder([]Rung{
+		{Path: Path{Transport: "direct", Addr: "h:1"}, Dial: direct},
+		{Path: Path{Transport: "ziti", Service: "s"}, Dial: ziti},
+	})
+	var last []PathState
+	for i := 0; i < 10; i++ {
+		last = l.ProbePaths(context.Background(), time.Millisecond)
+	}
+	if direct.n.Load() > 1 || ziti.n.Load() > 1 {
+		t.Fatalf("dials in flight: direct %d ziti %d, want at most 1 each", direct.n.Load(), ziti.n.Load())
+	}
+	if !last[0].Stale || last[0].State != PathOn || !last[1].Stale || last[1].State != PathDown {
+		t.Fatalf("a rung still probing is stale, the on one stays on: %+v", last)
+	}
+}
+
+type mutualDial struct {
+	fakeDial
+	mtls bool
+}
+
+func (m *mutualDial) Mutual() bool { return m.mtls }
+
+func TestMutualIsReportedOnlyWhenTheRungSaysSo(t *testing.T) {
+	a, b := &mutualDial{mtls: true}, &mutualDial{}
+	l := NewLadder([]Rung{{Path: Path{Transport: "direct", Addr: "a:1"}, Dial: a}, {Path: Path{Transport: "direct", Addr: "b:1"}, Dial: b}})
+	got := l.ProbePaths(context.Background(), time.Second)
+	if !got[0].Mutual || got[1].Mutual {
+		t.Fatalf("mtls flags: %+v", got)
 	}
 }
