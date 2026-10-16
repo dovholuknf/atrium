@@ -139,7 +139,7 @@ func TestAnItemFiledWithNoIDTakesTheNextNumberOfItsPrefix(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ dept, want string }{
-		{"fabric", "f-030"}, {"fabric", "f-031"}, {"runtime", "r-038"}, {"ui", "u-005"}, {"rnd", "rnd-001"}, {"release", "m-001"},
+		{"fabric", "f-030"}, {"fabric", "f-031"}, {"runtime", "r-038"}, {"ui", "u-005"}, {"rnd", "rnd-001"}, {"release", "m-001"}, {"docs", "d-001"}, {"docs", "d-002"},
 	} {
 		n := newItem("", c.dept)
 		b, err := s.ItemFile(n)

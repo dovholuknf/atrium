@@ -27,6 +27,10 @@ const backlogToolDesc = "The backlog, kept on the hub, so a director on any room
 	"- `get {id}`: one item with its body.\n" +
 	"- `file {id?, dept, title, body?, priority?}`: file one. An id that is taken is refused, and the item that " +
 	"holds it is returned. Priority is `high`, `medium`, `low` or left out for unset: anything else is refused.\n" +
+	"  A feature that left reference pages wrong files ONE item in department `docs` (ids `d-<n>`), whose body is " +
+	"this block and nothing else: `feature:` the feature's item id, `changelog:` its fragment path, `shas:` the " +
+	"branch tip, `new:` one line per verb, flag, endpoint, setting or tab, `stale:` `<path>  <what it says " +
+	"wrong>` per page left wrong, `updated:` the pages the branch already fixed. No stale page, no item.\n" +
 	"- `status {id, status}`: change the status.\n" +
 	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`."
 

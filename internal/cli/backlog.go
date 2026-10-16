@@ -181,7 +181,7 @@ func backlogFileCmd(board *string) *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&dept, "dept", "", "the department that owns it, like fabric")
+	c.Flags().StringVar(&dept, "dept", "", "the department that owns it, like fabric (docs holds doc debt, ids d-<n>)")
 	c.Flags().StringVar(&title, "title", "", "one line")
 	c.Flags().StringVar(&body, "body", "", "the words, or - for stdin")
 	c.Flags().StringVar(&priority, "priority", "", "optional: high, medium or low")

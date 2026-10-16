@@ -15,6 +15,7 @@ import (
 // deptPrefix is the prefix of the ids a department's items carry. An item filed with no id takes `<prefix>-<n>`.
 var deptPrefix = map[string]string{
 	"fabric": "f", "runtime": "r", "ui": "u", "release": "m", "rnd": "rnd", "terminal": "t", "review": "review",
+	"docs": "d",
 }
 
 // DeptPrefix is a department's id prefix, and whether it has one.
@@ -30,7 +31,7 @@ func nextItemID(t *sql.Tx, dept string) (string, error) {
 	prefix, ok := DeptPrefix(dept)
 	if !ok {
 		return "", refuse(fmt.Errorf("an item with no id needs a department that has an id prefix (fabric, runtime, " +
-			"ui, release, rnd, terminal or review), or an id of your own"))
+			"ui, release, rnd, terminal, review or docs), or an id of your own"))
 	}
 	num := regexp.MustCompile(`^` + regexp.QuoteMeta(prefix) + `-([0-9]+)$`)
 	rows, err := t.Query(`SELECT id FROM backlog_item WHERE id LIKE ?`, prefix+"-%")
