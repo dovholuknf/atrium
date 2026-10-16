@@ -22961,7 +22961,7 @@ async function main() {
       
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -24930,6 +24930,7 @@ async function main() {
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
+    await unit("mGrowlStack", () => mGrowlStackSection(browser));
     await unit("itemsRealShape", bu("itemsRealShape"));
     await unit("itemsView", bu("itemsView"));
     await unit("itemsMock", bu("itemsMock"));
@@ -27558,6 +27559,47 @@ async function mGrowlQuestionSection(browser) {
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mGrowlQuestion ok");
+}
+
+// A HUB NOTICE AND EIGHT QUESTIONS ON THE PHONE: each growler is its own block, in flow, and none draws over another.
+// The strip is a flex column that scrolls past half the window, and a growler that may shrink is squeezed under its own
+// content, so its text overprints the next one. Stage `before`/`after` shoots the strip at 412x892 for the doc image.
+async function mGrowlStackSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("c", { display_title: "card c" })];
+  await st.open();
+  const tag = "mGrowlStack: ";
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 892 }, "");
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    const rows = [GR("hub", "halt", 0, { title: "The hub cannot use bb for bitbucket.org", body: "the hub has no way to reach bitbucket.org with bb" })];
+    for (let i = 1; i <= 8; i++) rows.push(GR("q" + i, "question", i, { title: "card-" + i + " asked a question", body: "which of the two layouts for card " + i + "?\n\nit matters because the other one is already half done and nobody remembers why." }));
+    st.send("growls", { growls: rows, perm_after_seconds: 120 });
+    await p.waitForSelector("#m-growl .gm-strip", { timeout: slow(4000) });
+    await p.tap('#m-growl button[data-do="expand"]');
+    await p.waitForFunction(() => document.querySelectorAll("#m-growl .gm-full").length === 9, null, { timeout: slow(4000) });
+    const r = await p.evaluate(() => {
+      const box = document.getElementById("m-growl");
+      const fulls = [...box.querySelectorAll(".gm-full")];
+      const rects = fulls.map(f => { const b = f.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; });
+      const overlaps = [];
+      for (let i = 1; i < rects.length; i++) if (rects[i].top < rects[i - 1].bottom - 0.5) overlaps.push(i);
+      // a block whose own content is taller than it is drawn is spilling onto its neighbour
+      const spill = fulls.map((f, i) => i).filter(i => fulls[i].scrollHeight > fulls[i].clientHeight + 1);
+      return { n: fulls.length, overlaps, spill, scrolls: box.scrollHeight > box.clientHeight + 1 };
+    });
+    if (r.overlaps.length || r.spill.length) fail(tag + "growlers draw over each other: " + JSON.stringify(r));
+    if (!r.scrolls) fail(tag + "nine growlers fit without scrolling, the case is not the one under test: " + JSON.stringify(r));
+    const shot = process.env.GROWL_STACK_SHOT || "";
+    if (shot) {
+      const imgs = docImgDir("docs", "changes", "img", "bug-phone-needs-you-card-overlap");
+      fs.mkdirSync(imgs, { recursive: true });
+      await p.screenshot({ path: path.join(imgs, "phone-" + shot + ".png") });
+    }
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mGrowlStack ok");
 }
 
 async function mGrowlSection(browser) {
