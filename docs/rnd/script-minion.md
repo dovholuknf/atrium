@@ -30,9 +30,12 @@ A script pays none of it. It waits in a Go process and spends tokens only when a
 
 The spike ran a lean sonnet minion (cards `minion-bug-room-auth-revoked-silent*@claude-sg4`). Finding 1: a lean launch's
 atrium-control has the worker tool set only. It has no `atrium_backlog`, `atrium_launch_worker`, `atrium_git_sync` or
-`atrium_git_collect`. So a lean minion cannot run the recipe through MCP at all. It would have to shell out to
-`atrium backlog`, `atrium launch` and `atrium rooms git collect`, and each of those is a model turn that pays context to
-run a command with no decision in it.
+`atrium_git_collect`. So a lean minion cannot run the recipe through MCP at all. It would have to shell out to `atrium
+backlog`, `atrium launch` and `atrium rooms git collect`, and each of those is a model turn that pays context to run a
+command with no decision in it.
+
+A second finding: the commit hook checks the session's cwd, so a minion launched with a scratch cwd cannot commit. A
+script has no such cwd problem, because it runs git in the worktree it names.
 
 That finding argues for the script, not against it. The commands exist as a CLI (`atrium launch --isolated --item
 --item-owner --onto --step`, `atrium rooms git sync|collect`, `atrium close`, `atrium backlog`). A script calls them
@@ -57,35 +60,33 @@ model (recommendation 11), and the wrong place to run a state machine.
 
 - **Choice:** `check`, `worktree`, `launch`, `wait`, `collect`, `stage`, `hold`, `land`, `close`. Every phase can be run
   twice and finds its own work already done (the worktree exists at the sha, the branch ref is already collected, the
-  land branch is already main plus the commits). This is what makes recommendation 5 safe.
+  shepherd branch is already main plus the commits). This is what makes recommendation 5 safe.
 - **Rejected:** a free-form plan the shepherd improvises. The recipe's "things that went wrong" list is the proof that
   the failures are known. A fixed list gets a fixed check.
 
 ### 3. Launch the worker as an item, owned by `human`, through `atrium launch`
 
-- **Choice:** `atrium launch --isolated --item <id> --item-owner human --runner claude --model sonnet --cwd <wt>
-  --tags atrium:item:<id> --prompt "Read BRIEF.md and do the task."`. Atrium item mode already does the routing: the
-  worker's `atrium_done` and `atrium_blocked` become one keyed notice per `(card, generation, result)` and an item state
+- **Choice:** `atrium launch --isolated --item <id> --item-owner human --runner claude --model sonnet --cwd <wt> --tags
+  atrium:item:<id> --prompt "Read BRIEF.md and do the task."`. Atrium item mode already does the routing: the worker's
+  `atrium_done` and `atrium_blocked` become one keyed notice per `(card, generation, result)` and an item state
   (`running`, `blocked`, `finished`) held on the hub, mirrored in the room with an outbox, so a hub outage loses nothing
   (`docs/changes/items-stage2a.md`, test 6). The worker cannot say, so it cannot wander off to chat.
-- The recipe says "do NOT pass `item: true`" because a recipe minion needed the worker to `atrium_say` and
-  `atrium_done` to it. That reason goes away. The shepherd is not a session, so it is not the owner, and it needs no
-  notice. It reads state.
+- The recipe says "do NOT pass `item: true`" because a recipe minion needed the worker to `atrium_say` and `atrium_done`
+  to it. That reason goes away. The shepherd is not a session, so it is not the owner, and it needs no notice. It reads
+  state.
 - **Rejected:** owner = the orchestrator session. A session owner gets notices by queued message, which wakes a model
-  for
-  every `blocked` and `finished`. That is the 720k turn this design exists to remove.
+  for every `blocked` and `finished`. That is the 720k turn this design exists to remove.
 - **Rejected:** a new owner kind `shepherd`. The owner is who gets paged. The human is the right page for the rare
   `blocked` and costs no schema change. The board already shows human-owned items under "items for you".
 
 ### 4. Wait by polling the hub item, not by being woken
 
 - **Choice:** the `wait` phase calls the hub's item read (`/_hub/items`, the same read `atrium_item get` makes) every
-  few
-  seconds with backoff to a minute. `finished` moves on to `collect`. `blocked` moves to a `held-blocked` hold with the
-  ask text. A card that goes `dead` with the item still `running` is a failure the shepherd reports, and 2b's "finished
-  for an item whose worker ended with no result" is the hook that will make that a state.
-- A poll is one small HTTP call and no model. The hub is the one source of truth, so a shepherd restarted mid-wait
-  loses nothing.
+  few seconds with backoff to a minute. `finished` moves on to `collect`. `blocked` moves to a `held-blocked` hold with
+  the ask text. A card that goes `dead` with the item still `running` is a failure the shepherd reports, and 2b's
+  "finished for an item whose worker ended with no result" is the hook that will make that a state.
+- A poll is one small HTTP call and no model. The hub is the one source of truth, so a shepherd restarted mid-wait loses
+  nothing.
 - **Rejected:** subscribing to the owner notice or the SSE stream. It couples the shepherd to delivery semantics that
   exist to wake a session. A poll cannot miss a message, a stream can.
 - **Rejected:** `atrium_say` from the worker to the shepherd. Item workers cannot say, by decision 4 of
@@ -94,7 +95,7 @@ model (recommendation 11), and the wrong place to run a state machine.
 ### 5. State is a hub row, written before each step
 
 - **Choice:** one row per shepherd in a hub table (a new migration at the end of the slice), holding the item id, the
-  phase, the room, the base sha, the worktree path, the land branch and the last error. It is written before a phase
+  phase, the room, the base sha, the worktree path, the shepherd branch and the last error. It is written before a phase
   runs, so a killed shepherd resumes at the phase it was in and the idempotent phase repeats safely. The first build
   keeps the process on the operator's machine. Moving it into `atrium run` later is a change of who calls the same
   function.
@@ -106,10 +107,11 @@ model (recommendation 11), and the wrong place to run a state machine.
 
 ### 6. The stage phase is the recipe's step 4, verbatim, with exit codes
 
-- **Choice:** `git switch -C claude/land-<id> claude/main`, `git cherry-pick claude/main..<ref>`, strip any byte-239 BOM
-  from changed `.md` files, `gofmt -l internal/ cmd/` must be empty, `go run scripts/check-test-globals.go` must exit 0,
-  then `scripts/test-touched.sh`. Each step's exit code and its last lines go in the packet (recommendation 11). The
-  known-failing tests are read from a data file in the repo, not from the prose of a brief.
+- **Choice:** `git worktree add -b claude/shepherd-<id> D:\worktrees\shepherd-<id> claude/main`, `git cherry-pick
+  claude/main..<ref>`, strip any byte-239 BOM from changed `.md` files, `gofmt -l internal/ cmd/` must be empty, `go run
+  scripts/check-test-globals.go` must exit 0, then `scripts/test-touched.sh`. Each step's exit code and its last lines
+  go in the packet (recommendation 11). The known-failing tests are read from a data file in the repo, not from the
+  prose of a brief.
 - A 20ms unit-budget miss on a disk test the branch did not touch gets one automatic rerun, recorded in the packet as a
   rerun. This is the rule the recipe already has for item `t-unit-budget-load-headroom`.
 - **Rejected:** trusting `atrium_done`'s sha and landing it. The recipe's own warning is that a worker has said "done"
@@ -120,10 +122,10 @@ model (recommendation 11), and the wrong place to run a state machine.
 ### 7. Nothing lands until a person or the orchestrator says `accept`
 
 - **Choice:** the `hold` phase writes the packet to the shepherd row and posts a human notice (the existing human notice
-  path), then waits. The only inputs that move it are `atrium shepherd accept <id>`, `reject <id> [reason]` and
-  `correct <id> <text>`. An orchestrator session reaches them through `atrium_item` verbs added with the build, so it
-  never needs a shell. The rule "nothing lands before accepted" is enforced by the state machine, because `land` is
-  unreachable from any phase but `held` and an accept stamped with who gave it.
+  path), then waits. The only inputs that move it are `atrium shepherd accept <id>`, `reject <id> [reason]` and `correct
+  <id> <text>`. An orchestrator session reaches them through `atrium_item` verbs added with the build, so it never needs
+  a shell. The rule "nothing lands before accepted" is enforced by the state machine, because `land` is unreachable from
+  any phase but `held` and an accept stamped with who gave it.
 - **Rejected:** auto-land when every check is green. Auto mode trades interruption for review (`AGENTS.md`), and landing
   on `claude/main` is the finish line the human asked to own. A green run is evidence, not an acceptance.
 - **Rejected:** accept by `atrium_say` text to the shepherd. A script parsing free text for "accepted" is the failure
@@ -131,10 +133,10 @@ model (recommendation 11), and the wrong place to run a state machine.
 
 ### 8. Land with `git merge --ff-only`, and nothing else touches the main checkout
 
-- **Choice:** after accept, rebase the land branch on `claude/main` if main moved (and re-run the stage checks when the
-  rebase changed anything), then from the main checkout run `git merge --ff-only claude/land-<id>`. A non-ff result is a
-  fatal for the shepherd, not a retry loop. It goes back to `held` with a note that main moved. Then park the staging
-  worktree on `claude/land-ci-green` and delete the land branch, as the recipe does.
+- **Choice:** after accept, rebase the shepherd branch on `claude/main` if main moved (and re-run the stage checks when
+  the rebase changed anything), then from the main checkout run `git merge --ff-only claude/shepherd-<id>`. A non-ff
+  result is a fatal for the shepherd, not a retry loop. It goes back to `held` with a note that main moved. The staging
+  worktree is the shepherd's own and is removed at close (recommendation 9), so there is nothing to park.
 - The commit author for a landing that is not a plain cherry-pick is Clint's, as the recipe says.
 - **Rejected:** `git push` or a merge commit. The bar is a fast-forward onto `claude/main`.
 
@@ -142,7 +144,8 @@ model (recommendation 11), and the wrong place to run a state machine.
 
 - **Choice:** after the land succeeds, in order: backlog status `done` (unless the item says its done bar is a live
   check, then leave it open and say so in the packet), `atrium close` of the worker card, `git worktree remove --force`
-  and `git branch -D` on the room, the `MINION-LOG.md` line, then mark the shepherd row `closed`. Each failure is logged
+  and `git branch -D` on the room, removal of the shepherd's own staging worktree `D:\worktrees\shepherd-<id>` and its
+  branch `claude/shepherd-<id>`, the `MINION-LOG.md` line, then mark the shepherd row `closed`. Each failure is logged
   on the row and does not undo the land. A landed item with a stale worktree is a chore. An unlanded item that was
   "cleaned up" is a loss.
 - **Rejected:** cleanup before accept. A rejected item needs its worktree for the correction.
@@ -161,12 +164,11 @@ model (recommendation 11), and the wrong place to run a state machine.
   - **Clint typing in the terminal** works already, and the board shows it: a typed turn starts the item's turn.
 - The correction is also appended to the packet history, so the next `hold` shows what changed since the last one.
 - **Rejected:** the shepherd relaying clint's words through a model. That puts a model between a human and the worker
-  for
-  a copy operation.
+  for a copy operation.
 - **Rejected:** giving the worker `atrium_say` back. Decision 4 removed it on purpose, so a worker cannot route around
   its owner.
-- **Needs a decision from clint:** whether `correct` on a worker whose runner has exited should resume it or start a new
-  one. This design picks resume, because the context is the value. The first build may only support the live-card case.
+- **Decided:** a correction for a worker whose runner has exited resumes the exited card, because the context is the
+  value. The first build supports live cards only.
 
 ### 11. What still needs a model, and why: reading, once, at the end
 
@@ -183,9 +185,8 @@ model (recommendation 11), and the wrong place to run a state machine.
 
 - **Choice:** on a cherry-pick conflict, a red test that is not in the known list, an empty range, or a diff the grep
   cannot match to the item, the shepherd launches ONE lean sonnet judge with the packet and the item body as its brief
-  and
-  `atrium_done` as its only exit. Its verdict, a paragraph, goes into the packet. A judge cannot edit the land branch.
-  A conflict it proposes a resolution for goes to the human as a diff to approve.
+  and `atrium_done` as its only exit. Its verdict, a paragraph, goes into the packet. A judge cannot edit the land
+  branch. A conflict it proposes a resolution for goes to the human as a diff to approve.
 - A lean launch costs about 14.8k at the first turn. That is paid once per exception, not once per wait. For the
   conflict case, a resolution is exactly the job a model is good at and a script is not.
 - **Rejected:** letting the script resolve a conflict by taking the worker's side. That can silently drop what main
@@ -222,17 +223,18 @@ model (recommendation 11), and the wrong place to run a state machine.
   recipe's room table is the source of its first version.
 - **Landing is the dangerous step.** Hence one verb, ff-only, an accept stamped with a handle, and no phase that can
   reach it by accident.
-- **The staging worktree is shared.** Two shepherds cannot use `D:\worktrees\minion-ssh-default` at once. The first
-  build
-  takes a lock row, and a second shepherd waits in `held-queued`. Parallel staging worktrees are a later change.
+- **Staging is per shepherd.** Each shepherd makes its own staging worktree, `D:\worktrees\shepherd-<id>` on branch
+  `claude/shepherd-<id>`, and removes it at close. Nothing is shared, so there is no lock, no queue and no parking
+  branch. The cost is a worktree of disk per live item, and a crashed shepherd leaves one behind. The row names the
+  path, so the close phase finds it.
 
 ## Build items filed
 
 | id | dept | covers |
 | --- | --- | --- |
-| `rnd-shepherd-core` | rnd | recommendations 1 to 6: the command, the phases, the state row, launch, wait, collect, stage |
-| `rnd-shepherd-accept-land` | rnd | recommendations 7 to 10: accept, reject, correct, the ff-only land, close and cleanup |
-| `rnd-shepherd-judge` | rnd | recommendations 11 to 13: the packet and the one-shot judge for exceptions |
-| `rnd-shepherd-board` | board | recommendation 14: the board block |
+| `rnd-shepherd-core` | rnd | recs 1 to 6: command, phases, state row, launch, wait, collect, stage |
+| `rnd-shepherd-accept-land` | rnd | recs 7 to 10: accept, reject, correct, ff-only land, close, cleanup |
+| `rnd-shepherd-judge` | rnd | recs 11 to 13: the packet and the one-shot judge for exceptions |
+| `rnd-shepherd-board` | board | rec 14: the board block |
 
 Order: core, then accept-land, then judge. The board block follows accept-land.
