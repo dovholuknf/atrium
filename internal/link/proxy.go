@@ -161,9 +161,9 @@ type Proxy struct {
 	roomLines roomLinesFunc
 	// designGit replaces the hub's git store as what the design steps read, in a test. See lifecycle_engine.go.
 	designGit designGit
-	flowGit      FlowGit
-	landGit      LandGit
-	hubBuild     string
+	flowGit   FlowGit
+	landGit   LandGit
+	hubBuild  string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.
