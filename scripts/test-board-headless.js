@@ -12253,7 +12253,7 @@ async function mGroupMenusSection(browser) {
 async function termMenuSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
-  landCard("land-tm-run", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-tm-run", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z", worktree: "/g/gwt-wt", branch: "feat/x" });
   landCard("land-tm-stop", { supervised: false, status: "paused", resume_id: "r-1", worktree: "/tmp/stopped",
     created_at: "2026-09-19T12:01:00Z" });
   // A closed card: done, no session, pinned (the case that kept it listed), carrying the mark a close writes.
@@ -12266,6 +12266,7 @@ async function termMenuSection(browser, base) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const patches = [], closes = [];
     let asks = [];
+    let freed = [{ seq: 1, kind: "worktree", ref: "/w/x", action: "free", bytes: 1 }];
     await ctx.route("**/v1/tasks/*", route => {
       const r = route.request();
       if (r.method() !== "PATCH") return route.fallback();
@@ -12276,7 +12277,7 @@ async function termMenuSection(browser, base) {
       const r = route.request();
       if (r.method() === "GET") {
         return route.fulfill({ status: 200, contentType: "application/json",
-          body: JSON.stringify({ items: [], asks, can_stash: true, warnings: [], kept: [] }) });
+          body: JSON.stringify({ items: freed, asks, can_stash: true, warnings: [], kept: [] }) });
       }
       closes.push(JSON.parse(r.postData() || "{}"));
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [] }) });
@@ -12353,6 +12354,32 @@ async function termMenuSection(browser, base) {
     if (await dialogUp().count()) fail("termMenu: clean up asked with nothing at risk.");
     if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: clean up did not close once: " + JSON.stringify(closes));
     closes.length = 0;
+
+    // A FOLDER ATRIUM DID NOT CREATE: the preview has no items, so the menu does not promise a removal. It says what
+    // stays, and stops the session only on "terminate". CLOSE_SHOT=<dir> writes the picture.
+    freed = [];
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) })
+      .catch(() => fail("termMenu: a clean up that frees nothing did not say so."));
+    const fw = await dialogUp().first().textContent();
+    if (!/Nothing here was created by atrium, so nothing is removed/.test(fw) || !/\/g\/gwt-wt/.test(fw) || !/feat\/x/.test(fw) || !/ stay\./.test(fw)) {
+      fail("termMenu: the foreign worktree wording is " + JSON.stringify(fw));
+    }
+    const fb = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent.trim()).join());
+    if (fb !== "cancel,terminate") fail("termMenu: the foreign worktree buttons are " + fb);
+    if (process.env.CLOSE_SHOT) await p.locator("dialog#ask").screenshot({ path: process.env.CLOSE_SHOT + "/board-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
+    await p.locator("dialog[open] button", { hasText: "cancel" }).click();
+    await p.waitForTimeout(300);
+    if (closes.length) fail("termMenu: cancelling the foreign worktree dialog still closed it: " + JSON.stringify(closes));
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
+    await p.locator("dialog[open] button", { hasText: "terminate" }).click();
+    await p.waitForTimeout(500);
+    if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
+    closes.length = 0;
+    freed = [{ seq: 1, kind: "worktree", ref: "/w/x", action: "free", bytes: 1 }];
 
     // work nowhere else: asks, with the tick. Cancel changes nothing.
     asks = [{ seq: 4, path: "/w/x", branch: "claude/x", dirty: 3, unpushed: 1 }];
@@ -23090,7 +23117,7 @@ async function main() {
       
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mGrowlStack: mGrowlStackSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -25060,6 +25087,7 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("mOpenQ", () => mOpenQSection(browser));
+    await unit("mCleanUpForeign", () => mCleanUpForeignSection(browser));
     await unit("mGrowlStack", () => mGrowlStackSection(browser));
     await unit("itemsRealShape", bu("itemsRealShape"));
     await unit("itemsView", bu("itemsView"));
@@ -27649,6 +27677,47 @@ async function mOpenQSection(browser) {
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mOpenQ ok");
+}
+
+// The phone's terminate and clean up on a card whose folder atrium did not create: the close preview has no items, so the
+// sheet says nothing is removed and what stays, and closes only on "terminate". CLOSE_SHOT=<dir> writes the picture.
+async function mCleanUpForeignSection(browser) {
+  const tag = "mCleanUpForeign: ";
+  const st = mServer({});
+  st.tasks = [mCard("gwt-1", { display_title: "gwt card", supervised: true, status: "running", worktree: "/g/gwt-wt", branch: "feat/x" })];
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 892 }, "");
+    const closes = [];
+    await ctx.route("**/v1/tasks/gwt-1/close", route => {
+      const r = route.request();
+      if (r.method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], asks: [], can_stash: true, warnings: [], kept: [] }) });
+      closes.push(JSON.parse(r.postData() || "{}"));
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [] }) });
+    });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    const menu = async () => {
+      await p.evaluate(() => window.mResume.open("gwt-1"));
+      await p.locator("#m-rmenu .rmenu-item", { hasText: "terminate and clean up" }).tap();
+      await p.waitForFunction(() => /Nothing here was created/.test((document.getElementById("m-rmenu") || {}).textContent || ""), null, { timeout: slow(5000) });
+    };
+    await menu();
+    const say = await p.$eval("#m-rmenu", e => ({ hidden: e.hidden, text: e.textContent, btns: [...e.querySelectorAll("button")].map(b => b.textContent.trim()).join() }));
+    if (say.hidden) fail(tag + "the question is not showing");
+    if (!/Nothing here was created by atrium, so nothing is removed/.test(say.text) || !/\/g\/gwt-wt and branch feat\/x stay\./.test(say.text)) fail(tag + "the wording is " + JSON.stringify(say.text));
+    if (say.btns !== "terminate,cancel") fail(tag + "the buttons are " + say.btns);
+    if (process.env.CLOSE_SHOT) await p.screenshot({ path: process.env.CLOSE_SHOT + "/phone-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
+    await p.tap("#m-rmenu .rmenu-x");
+    if (closes.length) fail(tag + "cancel still closed the card");
+    await menu();
+    await p.tap('#m-rmenu [data-ans="go"]');
+    for (let i = 0; i < 50 && !closes.length; i++) await p.waitForTimeout(100);
+    if (closes.length !== 1 || closes[0].confirm !== true) fail(tag + "terminate posted " + JSON.stringify(closes));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mCleanUpForeign ok");
 }
 
 async function mGrowlQuestionSection(browser) {

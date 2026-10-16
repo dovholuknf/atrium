@@ -947,6 +947,17 @@ async function cleanUpNow(id, t) {
   try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
   catch (e) { toast("could not read what cleaning up frees", e.message); return; }
   const title = (t && t.display_title) || id;
+  // A PREVIEW WITH NO ITEMS FREES NOTHING. Atrium removes only what its ledger says it made, so a folder it did not
+  // create (a gwt worktree) stays. Say so before stopping the session, rather than promising a clean up.
+  if (!(pv.items || []).length && !(pv.asks || []).length) {
+    const where = (t && t.worktree) ? `<b>${esc(t.worktree)}</b>` + (t.branch ? ` and branch <b>${esc(t.branch)}</b>` : "") + " stay." : "";
+    const ok = await askUser({
+      title: `terminate ${title}?`,
+      body: `Nothing here was created by atrium, so nothing is removed. ${where} The session is stopped.`,
+      buttons: [{ label: "cancel", value: null }, { label: "terminate", value: true, style: "go" }]
+    });
+    if (!ok) return;
+  }
   const answers = {};
   for (const a of pv.asks || []) {
     if (skippedConfirms()[CLEANUP_ASK_KEY]) { answers[String(a.seq)] = "delete"; continue; }
@@ -978,7 +989,7 @@ async function cleanUpNow(id, t) {
     (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
     if (out.left) said.push(out.left + " left on the card");
     (out.warnings || []).forEach(w => said.push(w));
-    toast("cleaned up " + title, said.join(". "));
+    toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
   } catch (e) {
     toast("could not clean up", e.message);
   }

@@ -777,8 +777,9 @@ function termMenuItems(id, t) {
     } : null,
     {
       label: "terminate and clean up", danger: true,
-      help: "Stops the agent and removes the folder and branch it was working in, here and on the hub. " +
-        "It asks only when that folder holds changes that exist nowhere else.",
+      help: "Stops the agent and removes the folder and branch it was working in, here and on the hub, when atrium " +
+        "created them. A folder it did not create stays, and it says so first. It asks about changes that exist " +
+        "nowhere else.",
       act: () => cleanUpCard(id, t)
     }
   ].filter(Boolean);

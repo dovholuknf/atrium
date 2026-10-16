@@ -112,7 +112,7 @@
       } : null,
       {
         label: "terminate and clean up", danger: true,
-        help: "Stops the agent and removes the folder and branch it was working in. It asks only when that folder holds changes that exist nowhere else.",
+        help: "Stops the agent and removes the folder and branch it was working in, when atrium created them. A folder it did not create stays, and it says so first. It asks about changes that exist nowhere else.",
         act: () => cleanUp(id, t)
       }
     ].filter(Boolean).filter((it, i, all) => !it.sep || (i > 0 && i < all.length - 1 && !all[i - 1].sep));
@@ -125,6 +125,7 @@
     catch (e) { openSheet(id, "could not read what cleaning up frees: " + e.message); return; }
     const answers = {};
     const asks = pv.asks || [];
+    if (!(pv.items || []).length && !asks.length) { showForeign(id, t); return; }
     if (asks.length && !skipped()[CLEANUP_KEY]) { showAsk(id, t, pv); return; }
     asks.forEach(a => { answers[String(a.seq)] = "delete"; });
     finishCleanUp(id, answers);
@@ -135,6 +136,26 @@
     catch (e) { openSheet(id, "could not clean up: " + e.message); return; }
     close();
     window.mNet.refresh();
+  }
+
+  // A preview with no items frees nothing: atrium removes only what it created, and this folder is not. Say so first.
+  function showForeign(id, t) {
+    const box = sheet.querySelector(".rmenu-box");
+    box.innerHTML = '<p class="rmenu-name"></p><p class="rmenu-ask"></p>' +
+      '<button type="button" class="rmenu-go rmenu-danger" data-ans="go">terminate</button>' +
+      '<button type="button" class="rmenu-x" data-close="1">cancel</button>';
+    box.querySelector(".rmenu-name").textContent = window.mUtil.cardName(t).main;
+    box.querySelector(".rmenu-ask").textContent = "Nothing here was created by atrium, so nothing is removed." +
+      (t.worktree ? " " + t.worktree + (t.branch ? " and branch " + t.branch : "") + " stay." : "") + " The session is stopped.";
+    box.querySelector("[data-ans]").onclick = () => finishCleanUp(id, {});
+    reveal(id);
+  }
+
+  // The menu closed itself when the item was tapped, so the question has to bring the sheet back up.
+  function reveal(id) {
+    openFor = id;
+    sheet.hidden = false;
+    document.body.classList.add("sheet-open");
   }
 
   function showAsk(id, t, pv) {
@@ -158,6 +179,7 @@
       pv.asks.forEach(a => { answers[String(a.seq)] = ans; });
       finishCleanUp(id, answers);
     });
+    reveal(id);
   }
 
   function build() {
