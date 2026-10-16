@@ -291,6 +291,9 @@ type Server struct {
 	// it again. A route of its own, and not a flag on cull, because a room that
 	// predates the hold would read `hold=true` as an ordinary cull and cull it.
 	HoldCull func(taskID, by string) error
+	// WorktreesAudit is POST /v1/worktrees/audit, atrium_worktrees: one line per worktree of a repository. Nil leaves the
+	// route off. See internal/daemon/worktrees.go.
+	WorktreesAudit func(w http.ResponseWriter, r *http.Request)
 	// Merged is the post-merge hook's request: mark the finished workers a merge
 	// into `into` covered, limited to `branches` when given. Human listener only,
 	// never the guest allowlist.
@@ -764,6 +767,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.HoldCull != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/cull/hold", s.holdCull)
+	}
+	if s.WorktreesAudit != nil {
+		mux.HandleFunc("POST /v1/worktrees/audit", s.WorktreesAudit)
 	}
 	if s.GitPush != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/git-push", s.gitPush)

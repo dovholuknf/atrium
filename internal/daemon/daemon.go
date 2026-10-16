@@ -526,6 +526,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.StopRunnerBy = d.StopRunnerBy
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
 	d.ap.HoldCull = d.HoldCull
+	d.ap.WorktreesAudit = d.handleWorktreesAudit
 	d.ap.GitPush = d.GitPush
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
 	d.ap.MergeProof = func(dir, ref, into string) (any, error) { return d.MergeProof(dir, ref, into) }

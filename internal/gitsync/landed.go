@@ -111,3 +111,123 @@ func hashBatch(ctx context.Context, r *Runner, dir string, env []string, shas []
 	}
 	return res, nil
 }
+
+// Landing is what the landed rule says of one tip.
+type Landing struct {
+	// How is the weakest evidence any commit needed (HowAncestry, HowPatchID, HowSubject), empty when Unlanded is not 0.
+	How string
+	// Unlanded is how many non-merge commits of the tip the ref does not carry, and Newest and Subject are the newest.
+	Unlanded int
+	Newest   string
+	Subject  string
+}
+
+// LandedBy runs the landed rule for each tip against ref, in one pass. The ref's commits are hashed once, since the
+// oldest fork point among the tips, and each tip's own commits once. The changelog rule is NOT applied: a squash can
+// drop a commit and keep its fragment, and a caller that deletes on this answer must not read that as landed.
+func LandedBy(ctx context.Context, r *Runner, dir string, env []string, ref string, tips []string) (map[string]Landing, error) {
+	res := make(map[string]Landing, len(tips))
+	own := map[string][]string{}
+	var forks []string
+	need := map[string]bool{}
+	var order []string
+	for _, t := range tips {
+		if _, done := own[t]; done {
+			continue
+		}
+		out, err := r.GitEnv(ctx, dir, env, "rev-list", "--no-merges", t, "^"+ref)
+		if err != nil {
+			return nil, err
+		}
+		shas := strings.Fields(out)
+		own[t] = shas
+		if len(shas) == 0 {
+			res[t] = Landing{How: HowAncestry}
+			continue
+		}
+		for _, c := range shas {
+			if !need[c] {
+				need[c] = true
+				order = append(order, c)
+			}
+		}
+		if mb, err := r.GitEnv(ctx, dir, env, "merge-base", ref, t); err == nil {
+			forks = append(forks, strings.TrimSpace(mb))
+		} else if exitCode(err) != 1 {
+			return nil, err
+		} else {
+			forks = append(forks, "")
+		}
+	}
+	if len(order) == 0 {
+		return res, nil
+	}
+	spec := []string{"rev-list", "--no-merges", ref}
+	if base := oldestFork(ctx, r, dir, env, forks); base != "" {
+		spec = append(spec, "^"+base)
+	}
+	out, err := r.GitEnv(ctx, dir, env, spec...)
+	if err != nil {
+		return nil, err
+	}
+	mainFacts, err := readFacts(ctx, r, dir, env, strings.Fields(out))
+	if err != nil {
+		return nil, err
+	}
+	mainPIDs, mainSubj := map[string]bool{}, map[string]map[string]bool{}
+	for _, f := range mainFacts {
+		if f.pid != "" {
+			mainPIDs[f.pid] = true
+		}
+		if mainSubj[f.subject] == nil {
+			mainSubj[f.subject] = map[string]bool{}
+		}
+		mainSubj[f.subject][f.key] = true
+	}
+	facts, err := readFacts(ctx, r, dir, env, order)
+	if err != nil {
+		return nil, err
+	}
+	for t, shas := range own {
+		if len(shas) == 0 {
+			continue
+		}
+		l := Landing{}
+		for _, c := range shas {
+			if how := carriedBy(facts[c], mainPIDs, mainSubj); how != "" {
+				l.How = weaker(l.How, how)
+				continue
+			}
+			if l.Unlanded == 0 {
+				l.Newest, l.Subject = c, facts[c].subject
+			}
+			l.Unlanded++
+		}
+		if l.Unlanded > 0 {
+			l.How = ""
+		}
+		res[t] = l
+	}
+	return res, nil
+}
+
+// oldestFork is the fork point every other one descends from, or empty when a tip shares no history with the ref and
+// all of the ref must be read.
+func oldestFork(ctx context.Context, r *Runner, dir string, env []string, forks []string) string {
+	for _, f := range forks {
+		if f == "" {
+			return ""
+		}
+	}
+	if len(forks) == 0 {
+		return ""
+	}
+	if len(forks) == 1 {
+		return forks[0]
+	}
+	out, err := r.GitEnv(ctx, dir, env, append([]string{"merge-base", "--octopus"}, forks...)...)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
