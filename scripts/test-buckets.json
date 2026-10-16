@@ -1,0 +1,368 @@
+{
+  "about": "One bucket per board page and per API surface. Read by scripts/test-touched-plan.js and linted by scripts/check-test-buckets.js. See docs/rnd/test-layout-design.md and docs/changes/test-layout-s0.md. A name written in full beats a glob. Every board source file, every internal/api and internal/link Go source file and every headless unit is in exactly one bucket, or the lint fails.",
+  "shared": {
+    "internal/api/web/js/core.js": "state and helpers every page reads",
+    "internal/api/web/js/boot.js": "starts the board",
+    "internal/api/web/js/cards.js": "the card list every page hangs off",
+    "internal/api/web/index.html": "the page every script is loaded by"
+  },
+  "board": {
+    "boot": {
+      "page": "what every page needs: the board loads with no page error, the service worker, contrast",
+      "units": ["bootClean"],
+      "sources": [
+        "internal/api/web/sw.js",
+        "internal/api/web/js/board.js",
+        "internal/api/web/js/audit.js",
+        "internal/api/web/js/browser-dialogs.js",
+        "internal/api/web/js/fixtures.js",
+        "internal/api/web/css/chrome.css",
+        "internal/api/web/css/dialogs.css"
+      ],
+      "tests": [],
+      "checks": ["scripts/check-contrast.js", "scripts/check-header-still.js"]
+    },
+    "terminals": {
+      "page": "the terminal view: xterm, attach, switching, paste, peek, popouts, the card's own composer",
+      "units": [
+        "term*", "tallPty", "attachAtOnce", "switch*", "copySelect", "cleanCopy", "clear*", "paste*", "quickPaste", "walk*",
+        "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "keepalive", "keepMemory",
+        "idle*", "looksIdle", "joined*", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
+        "bridge", "collapsedBridge", "groupBridge", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
+        "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks"
+      ],
+      "sources": [
+        "internal/api/web/js/term*.js",
+        "internal/api/web/js/tcompose.js",
+        "internal/api/web/js/compose.js",
+        "internal/api/web/js/clearline.js",
+        "internal/api/web/js/quickpaste.js",
+        "internal/api/web/js/peek.js",
+        "internal/api/web/js/peek-debug.js",
+        "internal/api/web/js/walk.js",
+        "internal/api/web/js/switcher.js",
+        "internal/api/web/js/resume-opening.js",
+        "internal/api/web/js/keepalive.js",
+        "internal/api/web/js/typing.js",
+        "internal/api/web/js/replies.js",
+        "internal/api/web/js/runners.js",
+        "internal/api/web/js/popfit.js",
+        "internal/api/web/js/dictate.js",
+        "internal/api/web/js/inputlag.js",
+        "internal/api/web/js/link-opening.js",
+        "internal/api/web/js/solo.js",
+        "internal/api/web/js/stack.js",
+        "internal/api/web/js/engaged.js",
+        "internal/api/web/css/terminal.css",
+        "internal/api/web/css/walk.css"
+      ],
+      "tests": [
+        "scripts/test-term-cursor.js", "scripts/test-term-nesting.js", "scripts/test-term-resize-settle.js",
+        "scripts/test-term-retag.js", "scripts/test-term-tabreturn.js", "scripts/test-term-trace.js", "scripts/test-morph.js",
+        "scripts/test-peek-answers.js"
+      ],
+      "checks": [
+        "scripts/check-terminal.js", "scripts/check-terminal-titles.js", "scripts/check-morph.js", "scripts/check-runner-panes.js",
+        "scripts/check-switcher.js", "scripts/check-path-tokens.js"
+      ],
+      "needs": ["internal/api/web/js/cards.js"]
+    },
+    "cards": {
+      "page": "the card list: groups, lanes, tabs, tooltips, the top nav and the filter drawer",
+      "units": [
+        "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "laneFold",
+        "nest*", "untaggedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors",
+        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "topNav", "trayHead",
+        "termsDrawerPush", "linkBoard", "linkReuse", "arrivedOnce", "controlsCompact", "closeOneDialog"
+      ],
+      "sources": [
+        "internal/api/web/js/card-menu.js",
+        "internal/api/web/js/cardrules.js",
+        "internal/api/web/js/cardurl.js",
+        "internal/api/web/js/seen.js",
+        "internal/api/web/js/lastread.js",
+        "internal/api/web/js/reveal.js",
+        "internal/api/web/js/filter-drawer.js",
+        "internal/api/web/js/topnav.js",
+        "internal/api/web/js/dragclick.js",
+        "internal/api/web/js/tooltips.js",
+        "internal/api/web/css/cards.css",
+        "internal/api/web/css/cardurl.css",
+        "internal/api/web/css/rows.css",
+        "internal/api/web/css/filterdrawer.css",
+        "internal/api/web/css/topnav.css",
+        "internal/api/web/css/expose2.css",
+        "internal/api/web/css/expose3.css",
+        "internal/api/web/js/expose2.js",
+        "internal/api/web/js/expose3.js"
+      ],
+      "tests": ["scripts/test-seen.js", "scripts/test-sort-order.js", "scripts/test-custom-groups.js", "scripts/test-refresh-storm.js"],
+      "checks": ["scripts/check-cards.js", "scripts/check-new-card-row.js", "scripts/check-board-drawer.js"],
+      "needs": ["internal/api/web/js/core.js"]
+    },
+    "launch": {
+      "page": "starting work: the launch dropdowns, the new work dialog, throwaway runners",
+      "units": ["launch*", "newWorkDialog"],
+      "sources": [
+        "internal/api/web/js/launchrepo.js",
+        "internal/api/web/js/newcard.js"
+      ],
+      "tests": [],
+      "checks": []
+    },
+    "chat": {
+      "page": "the chat tab and the chatter tab",
+      "units": ["chatTab", "chatter", "chatterTab"],
+      "sources": ["internal/api/web/js/chat.js", "internal/api/web/js/chatter.js", "internal/api/web/css/chat.css"],
+      "tests": [],
+      "checks": []
+    },
+    "items": {
+      "page": "the items view: unified cards, interviews, ready cards",
+      "units": [
+        "items*", "unifiedCard", "interviewTop", "readyNoSeed", "readyOnce", "readyPopout", "readyTwoWindows",
+        "noReadyChildren", "kidCounts"
+      ],
+      "sources": [
+        "internal/api/web/js/items.js",
+        "internal/api/web/js/items-data.js",
+        "internal/api/web/js/items-mock.js",
+        "internal/api/web/css/items.css"
+      ],
+      "tests": [],
+      "checks": []
+    },
+    "backlog": {
+      "page": "the backlog page. No unit today, only bootClean covers it. A gap the design names",
+      "units": [],
+      "sources": ["internal/api/web/js/backlog.js"],
+      "tests": [],
+      "checks": []
+    },
+    "pulls": {
+      "page": "pull requests: the page, the drawer, the panel, moving one",
+      "units": ["pulls*", "prMove"],
+      "sources": ["internal/api/web/js/pulls.js", "internal/api/web/css/pulls.css"],
+      "tests": [],
+      "checks": ["scripts/check-pulls-closed.js", "scripts/check-pr-paste.js"]
+    },
+    "hubrepos": {
+      "page": "the hub's repositories page",
+      "units": ["hubRepos*"],
+      "sources": ["internal/api/web/js/hubrepos.js", "internal/api/web/css/hubrepos.css"],
+      "tests": [],
+      "checks": []
+    },
+    "growls": {
+      "page": "growls, questions, notifications, toasts, held lines, auto permission",
+      "units": [
+        "growl*", "askAgain", "alertKinds", "questionsClick", "quietDoer", "popoutNotify", "notify*", "sayEnter", "sayWhen",
+        "toast*", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone"
+      ],
+      "sources": [
+        "internal/api/web/js/growl.js",
+        "internal/api/web/js/notify.js",
+        "internal/api/web/js/heldline.js",
+        "internal/api/web/js/toast-log.js",
+        "internal/api/web/js/toasts.js",
+        "internal/api/web/js/sounds.js",
+        "internal/api/web/js/peek-answers.js",
+        "internal/api/web/js/hubnotify.js",
+        "internal/api/web/js/hubpush.js",
+        "internal/api/web/css/growl.css",
+        "internal/api/web/css/notify.css",
+        "internal/api/web/css/hubnotify.css",
+        "internal/api/web/css/hubpush.css"
+      ],
+      "tests": ["scripts/test-notify-reseed.js", "scripts/test-notify-rules.js"],
+      "checks": ["scripts/check-growl-ladder.js", "scripts/check-web-push.js"]
+    },
+    "usage": {
+      "page": "usage: the tab, burn charts, context, turn limits, cache",
+      "units": [
+        "usage*", "boardUsage", "burnChart", "burnReadout", "cacheChip", "contextCycle", "contextSize", "ctx*", "turnLimits", "clock"
+      ],
+      "sources": [
+        "internal/api/web/js/usage*.js",
+        "internal/api/web/js/turn-limits.js",
+        "internal/api/web/js/efficacy.js",
+        "internal/api/web/css/efficacy.css"
+      ],
+      "tests": [],
+      "checks": []
+    },
+    "docs-files": {
+      "page": "docs, files, the reader, change requests",
+      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileOpenOutside", "changeReq", "coverPoll", "coverSteps"],
+      "sources": [
+        "internal/api/web/js/notes-files.js",
+        "internal/api/web/js/changereq*.js",
+        "internal/api/web/js/terminal-links.js",
+        "internal/api/web/read.js",
+        "internal/api/web/read.html",
+        "internal/api/web/css/files.css",
+        "internal/api/web/css/changereq.css"
+      ],
+      "tests": [],
+      "checks": []
+    },
+    "deploy": {
+      "page": "landing and deploying from the board. The deploy ready chip is gone, so only the land units remain",
+      "units": ["land", "landThePlane"],
+      "sources": [],
+      "tests": [],
+      "checks": []
+    },
+    "rooms": {
+      "page": "rooms, the hub gate, the restart menu, transports, the down page",
+      "units": [
+        "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "zitiLogo", "loginNeeded"
+      ],
+      "sources": [
+        "internal/api/web/js/rooms.js",
+        "internal/api/web/js/rooms-dash.js",
+        "internal/api/web/js/hubrestart.js",
+        "internal/api/web/js/hubhosts.js",
+        "internal/api/web/js/overlays.js",
+        "internal/api/web/js/sharing.js",
+        "internal/api/web/js/down.js",
+        "internal/api/web/down.html",
+        "internal/api/web/css/hubhosts.css",
+        "internal/api/web/css/sharing.css"
+      ],
+      "tests": ["scripts/test-hub-link-line.js"],
+      "checks": []
+    },
+    "settings": {
+      "page": "settings, themes and skins, providers, preferences",
+      "units": [
+        "theme*", "skin*", "websiteSkin", "readTabSize", "readWidthSkin", "settingsOnce", "dropdownsInstant", "prefsEverywhere", "alias"
+      ],
+      "sources": [
+        "internal/api/web/js/alias.js",
+        "internal/api/web/js/settings.js",
+        "internal/api/web/js/settings-spine.js",
+        "internal/api/web/js/themes.js",
+        "internal/api/web/js/theme-debug.js",
+        "internal/api/web/js/providers.js",
+        "internal/api/web/js/prefs-live.js",
+        "internal/api/web/js/logs-rules.js",
+        "internal/api/web/css/themes.css",
+        "internal/api/web/css/tokens.css"
+      ],
+      "tests": [],
+      "checks": ["scripts/check-settings-panes.js", "scripts/check-runner-setup.js"]
+    },
+    "m-home": {
+      "page": "the phone's home list, header, shell and the code every phone screen shares",
+      "units": [
+        "mHome*", "mPrefsEverywhere", "mWorking", "mReload", "mReconnect", "mServe", "mHidden", "mOlder", "mFollow", "mCompact",
+        "mPinch", "mPull", "mSwitcher", "mActivityRead", "mReadRetry", "mGroupMenus", "mAgentIdle", "phone*"
+      ],
+      "sources": [
+        "internal/api/web/m/index.html",
+        "internal/api/web/m/js/home.js",
+        "internal/api/web/m/js/store.js",
+        "internal/api/web/m/js/util.js",
+        "internal/api/web/m/js/build.js",
+        "internal/api/web/m/js/push.js",
+        "internal/api/web/m/js/items.js",
+        "internal/api/web/css/phone.css",
+        "internal/api/web/m/*.css"
+      ],
+      "tests": [],
+      "checks": ["scripts/check-phone.js", "scripts/audit-phone-u001.js"]
+    },
+    "m-card": {
+      "page": "the phone's card screen: output, messages, resume, uploads",
+      "units": [
+        "mCard", "mCardUrl", "mResume", "mOwnMessages", "mBubbles", "mRecapSheet", "mOutputAt", "mStickBottom", "mCardUpload", "mPrompts"
+      ],
+      "sources": ["internal/api/web/m/js/card.js", "internal/api/web/m/js/resume.js"],
+      "tests": [],
+      "checks": []
+    },
+    "m-compose": {
+      "page": "the phone's composer",
+      "units": ["mCompose", "mComposeImages", "mSendFree", "mTypeSteady"],
+      "sources": ["internal/api/web/m/js/compose.js"],
+      "tests": [],
+      "checks": []
+    },
+    "m-docs": {
+      "page": "the phone's docs, files and viewer",
+      "units": ["mDocs", "mViewer", "mMarkdown", "mTables", "mHostile", "mPictures"],
+      "sources": [
+        "internal/api/web/m/js/docs.js",
+        "internal/api/web/m/js/files.js",
+        "internal/api/web/m/js/viewer.js",
+        "internal/api/web/m/js/md.js"
+      ],
+      "tests": [],
+      "checks": []
+    },
+    "m-changes": {
+      "page": "the phone's change requests",
+      "units": ["mChangeReq", "mChanges", "mChangesReal"],
+      "sources": ["internal/api/web/m/js/changes.js", "internal/api/web/m/js/changereq.js"],
+      "tests": [],
+      "checks": []
+    },
+    "m-growl": {
+      "page": "the phone's growls and bell",
+      "units": ["mGrowl", "mGrowlQuestion", "mBell"],
+      "sources": ["internal/api/web/m/js/growl.js", "internal/api/web/m/js/bell.js", "internal/api/web/js/phone-bell.js"],
+      "tests": [],
+      "checks": []
+    },
+    "m-perms": {
+      "page": "the phone's permission screen and review",
+      "units": ["mPerms", "mReview"],
+      "sources": ["internal/api/web/m/js/perms.js"],
+      "tests": [],
+      "checks": []
+    }
+  },
+  "go": {
+    "api/cards": {"package": "./internal/api", "sources": ["internal/api/cardcolors.go", "internal/api/cardnames.go", "internal/api/cardoverlay.go", "internal/api/cardports.go", "internal/api/cardprocstart.go", "internal/api/cardsarchive.go", "internal/api/state.go", "internal/api/actions.go", "internal/api/replies.go", "internal/api/placement.go", "internal/api/sweep.go", "internal/api/fixtures.go", "internal/api/changes.go"]},
+    "api/sessions": {"package": "./internal/api", "sources": ["internal/api/sessions.go", "internal/api/sessionexport.go", "internal/api/export.go", "internal/api/deliveryexport.go", "internal/api/hooks.go", "internal/api/serverhooks.go", "internal/api/exitguard.go"]},
+    "api/settings": {"package": "./internal/api", "sources": ["internal/api/settings.go", "internal/api/limits.go", "internal/api/overlays.go", "internal/api/resources.go", "internal/api/auth.go", "internal/api/web.go", "internal/api/api.go", "internal/api/icon.go", "internal/api/discover.go", "internal/api/recognisers.go", "internal/api/keepalive.go", "internal/api/inputlag.go"]},
+    "api/files": {"package": "./internal/api", "sources": ["internal/api/files.go", "internal/api/filedrop.go", "internal/api/filelist.go", "internal/api/fileopen.go", "internal/api/fileprobe.go", "internal/api/filetext.go", "internal/api/fileview.go", "internal/api/filezip.go", "internal/api/browse.go", "internal/api/browseroots.go", "internal/api/longpath_other.go", "internal/api/longpath_windows.go", "internal/api/open.go", "internal/api/openkinds.go", "internal/api/openprogress.go"]},
+    "api/prs": {"package": "./internal/api", "sources": ["internal/api/prs.go", "internal/api/prsdrawer.go", "internal/api/prsfolder.go", "internal/api/prsmove.go", "internal/api/prbrief.go", "internal/api/prclaim.go", "internal/api/prworktree.go", "internal/api/worktreeleft.go", "internal/api/checkoutcase.go", "internal/api/checkouts.go"]},
+    "api/launch": {"package": "./internal/api", "sources": ["internal/api/launchcwd.go", "internal/api/newwork.go", "internal/api/throwaway.go", "internal/api/shell_other.go", "internal/api/shell_windows.go"]},
+    "api/close": {"package": "./internal/api", "sources": ["internal/api/close.go", "internal/api/closeclone.go", "internal/api/closehub.go", "internal/api/closeprogress.go"]},
+    "api/intake": {"package": "./internal/api", "sources": ["internal/api/intake.go"]},
+    "api/usage": {"package": "./internal/api", "sources": ["internal/api/usage.go", "internal/api/usageexport.go", "internal/api/usageitems.go", "internal/api/usageweek.go", "internal/api/boardusage.go", "internal/api/contextsize.go", "internal/api/turncost.go", "internal/api/turnlimits.go"]},
+    "api/skins": {"package": "./internal/api", "sources": ["internal/api/skins.go", "internal/api/termthemes.go"]},
+    "api/providers": {"package": "./internal/api", "sources": ["internal/api/providers.go", "internal/api/providerapi.go"]},
+    "api/runnersetup": {"package": "./internal/api", "sources": ["internal/api/runnersetup.go"]},
+    "api/termopen": {"package": "./internal/api", "sources": ["internal/api/termopen.go", "internal/api/termwidth.go", "internal/api/scrollback.go"]},
+    "hub/rooms": {"package": "./internal/link", "sources": ["internal/link/rooms.go", "internal/link/room.go", "internal/link/roomsevent.go", "internal/link/roomspec.go", "internal/link/roomssh.go", "internal/link/hosts.go", "internal/link/certs.go", "internal/link/address.go", "internal/link/announce.go", "internal/link/direct.go", "internal/link/link.go", "internal/link/protocol.go", "internal/link/proxy.go", "internal/link/relay.go", "internal/link/transports.go", "internal/link/ziti.go", "internal/link/zrok.go", "internal/link/overlaytls.go", "internal/link/setupwatch.go", "internal/link/upgrade.go", "internal/link/hub.go", "internal/link/fanout.go", "internal/link/everywhere.go", "internal/link/everywhere_http.go", "internal/link/stream.go", "internal/link/stream_door.go", "internal/link/events.go", "internal/link/cardroute.go", "internal/link/nowindow.go", "internal/link/detach_other.go", "internal/link/detach_windows.go", "internal/link/resolve.go", "internal/link/newcontexts.go", "internal/link/hubask.go"]},
+    "hub/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog.go"]},
+    "hub/items": {"package": "./internal/link", "sources": ["internal/link/items.go", "internal/link/item_brief.go", "internal/link/interview.go", "internal/link/lifecycle.go", "internal/link/lifecycle_engine.go", "internal/link/lifecycle_git.go", "internal/link/work.go", "internal/link/work_launch.go", "internal/link/work_record.go", "internal/link/workcost.go", "internal/link/workerpolicy.go", "internal/link/workusage.go", "internal/link/launchcaps.go", "internal/link/launchroute.go", "internal/link/ladder.go", "internal/link/pinorder.go", "internal/link/predates.go"]},
+    "hub/reports": {"package": "./internal/link", "sources": ["internal/link/audit.go", "internal/link/efficacy.go", "internal/link/efficacy_collect.go", "internal/link/efficacy_report.go", "internal/link/efficacy_rollup.go", "internal/link/contextlimits.go", "internal/link/mincolssetting.go", "internal/link/inputlag.go", "internal/link/inputlagsetting.go"]},
+    "hub/pulls": {"package": "./internal/link", "sources": ["internal/link/pulls.go", "internal/link/prclaim.go", "internal/link/prmove.go", "internal/link/prworktreeroute.go", "internal/link/forgeci.go", "internal/link/forgeroute.go", "internal/link/changerequest.go"]},
+    "hub/notify": {"package": "./internal/link", "sources": ["internal/link/notify.go", "internal/link/notifyapi.go", "internal/link/growl.go", "internal/link/push.go", "internal/link/pushapi.go", "internal/link/webpush.go", "internal/link/says.go"]},
+    "hub/git": {"package": "./internal/link", "sources": ["internal/link/git.go", "internal/link/git_door.go", "internal/link/git_hub.go", "internal/link/git_store.go", "internal/link/git_url.go", "internal/link/flow_git.go"]},
+    "hub/views": {"package": "./internal/link", "sources": ["internal/link/views.go", "internal/link/openroute.go", "internal/link/recogniseroute.go", "internal/link/recognisers.go"]},
+    "hub/deploy": {"package": "./internal/link", "sources": ["internal/link/deployqueue.go", "internal/link/deployready.go", "internal/link/restartgate.go", "internal/link/deps.go", "internal/link/flow.go", "internal/link/autoapprove.go", "internal/link/prune.go"]},
+    "hub/files": {"package": "./internal/link", "sources": ["internal/link/files_api.go", "internal/link/docs_api.go"]},
+    "mcp/control": {"package": "./internal/link", "sources": ["internal/link/control_mcp.go", "internal/link/control_alias.go", "internal/link/control_relay.go", "internal/link/control_relay_launch.go", "internal/link/ctl_end.go", "internal/link/ctlaudit.go", "internal/link/ctlclass.go", "internal/link/record_mcp.go"]},
+    "mcp/backlog": {"package": "./internal/link", "sources": ["internal/link/backlog_mcp.go"]},
+    "mcp/deploy": {"package": "./internal/link", "sources": ["internal/link/deploy_mcp.go"]},
+    "mcp/deps": {"package": "./internal/link", "sources": ["internal/link/deps_mcp.go"]},
+    "mcp/docs": {"package": "./internal/link", "sources": ["internal/link/docs_mcp.go"]},
+    "mcp/files": {"package": "./internal/link", "sources": ["internal/link/files_mcp.go"]},
+    "mcp/flow": {"package": "./internal/link", "sources": ["internal/link/flow_mcp.go"]},
+    "mcp/items": {"package": "./internal/link", "sources": ["internal/link/items_mcp.go"]},
+    "mcp/resources": {"package": "./internal/link", "sources": ["internal/link/resources_mcp.go"]},
+    "mcp/ci": {"package": "./internal/link", "sources": ["internal/link/ci_door.go"]},
+    "agent": {"package": "./internal/daemon", "sources": ["internal/daemon/*.go"]},
+    "store": {"package": "./internal/store", "sources": ["internal/store/*.go"]},
+    "hubstore": {"package": "./internal/hubstore", "sources": ["internal/hubstore/*.go"]},
+    "gitsync": {"package": "./internal/gitsync", "sources": ["internal/gitsync/*.go"]},
+    "claudeconf": {"package": "./internal/claudeconf", "sources": ["internal/claudeconf/*.go"]},
+    "ptyhost": {"package": "./internal/ptyhost", "sources": ["internal/ptyhost/*.go"]},
+    "cli": {"package": "./internal/cli", "sources": ["internal/cli/*.go"]}
+  }
+}

@@ -8,6 +8,8 @@
 #
 # THE DIFF is everything between the merge base and the working tree: commits, staged, unstaged, and untracked files.
 # THE PLAN comes from scripts/test-touched-plan.js, which says WHY it picked each item:
+#   - DECLARED FIRST: scripts/test-buckets.json says which bucket owns a changed file. The plan names the bucket, and a
+#     board bucket's units and node tests are the candidates. A file in no bucket falls back to the inference below
 #   - go test on each changed Go package, through scripts/test.sh, with -tags integration only when an integration
 #     file (*_integration_test.go, or one carrying that build tag) changed
 #   - the headless board units read off the code for each changed internal/api/web file, plus bootClean, run through
@@ -77,6 +79,7 @@ step() {
 gopkgs=(); mode=unit; units=""; gofiles=(); govet=(); nodes=(); jschecks=(); shchecks=(); gobuild=0
 while read -r kind rest; do
   case "$kind" in
+    BUCKET) ;;   # which bucket owns what changed: said in the plan, nothing to run
     GO) gopkgs+=("$rest") ;;
     TAGS) mode=all ;;
     GOFILES) gofiles+=("$rest") ;;

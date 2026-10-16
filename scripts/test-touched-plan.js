@@ -6,6 +6,7 @@
 // Reads changed paths, one per line, relative to the repository root. Prints the plan for a person on stderr and the
 // actions on stdout, one per line, for test-touched.sh to run:
 //
+//   BUCKET <name> <files>  a declared bucket the diff touched (nothing to run, it says why the rest was picked)
 //   GO <dir>            go test that package (./internal/store)
 //   TAGS integration    an integration file changed, so the Go run takes -tags integration
 //   GOFILES <a> <b>     a standalone Go file under scripts/ and its test, run as go test a b
@@ -16,7 +17,14 @@
 //   JSCHECK <file>      node --check
 //   SHCHECK <file>      bash -n
 //
-// THE BOARD MAP IS READ OFF THE CODE, NOT KEPT BY HAND. A unit of scripts/test-board-headless.js is the text of its
+// DECLARED FIRST. scripts/test-buckets.json says which bucket owns a file. A changed board file in a bucket's `sources`
+// selects that bucket: its units (the ones the inference below ranks first, then the rest cheapest first) and its node
+// `tests`, and the plan names the bucket. A shared file (core.js, boot.js, cards.js, index.html) selects `boot` and the
+// buckets whose `needs` name it, and keeps the inference below as well, since what reads it is wider than a list. A
+// Go file in a bucket's `sources` names the bucket on its package. Only a file in no bucket goes through the inference,
+// and the plan says "add it to test-buckets.json". scripts/check-test-buckets.js fails when a file is in no bucket.
+//
+// THE BOARD MAP BELOW IS THE FALLBACK, READ OFF THE CODE, NOT KEPT BY HAND. A unit of scripts/test-board-headless.js is the text of its
 // `await unit(...)` block plus the section function it calls (and the sections that one calls). A board file is the
 // names it declares: its top-level functions and variables, `window.x =`, the element ids and classes it writes, and,
 // for a stylesheet or a page, its selectors and ids. A unit is picked for a changed file when it names what the file
@@ -32,6 +40,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const buckets = require("./test-buckets.js");
 
 const ROOT = path.join(__dirname, "..");
 const WEB = "internal/api/web/";
@@ -145,11 +154,13 @@ function buildIndex(root) {
   const nUnits = Object.keys(unitTok).length || 1;
   const weights = (JSON.parse(read("scripts/board-suite-weights.json", root) || "{}").ms) || {};
   const nodeScripts = fs.readdirSync(path.join(root, "scripts"))
-    .filter(f => /^test-.*\.js$/.test(f) && f !== "test-board-headless.js" && f !== "test-board-sharded.js" && f !== "test-touched-plan.js")
+    .filter(f => /^test-.*\.js$/.test(f) && f !== "test-board-headless.js" && f !== "test-board-sharded.js" && f !== "test-touched-plan.js" && f !== "test-buckets.js")
     .map(f => "scripts/" + f);
   const scriptSrc = {};
   for (const s of nodeScripts) scriptSrc[s] = read(s, root) || "";
-  return { root, h, unitTok, df, nUnits, weights, nodeScripts, scriptSrc, declCache: {} };
+  let bk = null;
+  try { bk = buckets.load(root); } catch (e) { bk = null; }   // no bucket file (an older tree): the inference does it all
+  return { root, h, unitTok, df, nUnits, weights, nodeScripts, scriptSrc, declCache: {}, bk };
 }
 
 function declOf(ix, rel) {
@@ -258,6 +269,47 @@ function isIntegrationGo(rel, root) {
   return !!src && /^\/\/go:build[^\n]*\bintegration\b/m.test(src.split("\n").slice(0, 5).join("\n"));
 }
 
+// ── declared buckets ─────────────────────────────────────────────────────────────────────────────────────────────
+const boardBuckets = ix => ix.bk ? { buckets: ix.bk.buckets.filter(b => b.kind === "board"), shared: ix.bk.shared } : null;
+const goBuckets = ix => ix.bk ? { buckets: ix.bk.buckets.filter(b => b.kind === "go"), shared: {} } : null;
+const bucketByName = (ix, n) => ix.bk.buckets.find(b => b.name === n);
+
+// the buckets a board file selects: [{bucket, shared}], empty when it is in none
+function declaredBoard(ix, rel) {
+  const bb = boardBuckets(ix);
+  if (!bb) return [];
+  if (rel in bb.shared) {
+    const out = [{ bucket: bucketByName(ix, "boot"), shared: true }];
+    for (const b of bb.buckets) if ((b.needs || []).includes(rel) && !out.some(o => o.bucket === b)) out.push({ bucket: b, shared: true });
+    return out;
+  }
+  return buckets.owners(bb, "sources", rel).map(o => ({ bucket: o.bucket, shared: false }));
+}
+
+// a Go source file's bucket, or its test file's through the file it tests
+function declaredGo(ix, rel) {
+  const gb = goBuckets(ix);
+  if (!gb) return null;
+  const cand = [rel];
+  if (rel.endsWith("_test.go")) cand.push(rel.replace(/(_integration)?_test\.go$/, ".go"));
+  for (const c of cand) { const o = buckets.owners(gb, "sources", c); if (o.length === 1) return o[0].bucket; }
+  return null;
+}
+
+// a selected bucket's units for one changed file: what the inference ranks in the bucket first, then the rest cheapest first
+function bucketUnits(ix, b, rel, inferred, why) {
+  const bb = boardBuckets(ix);
+  const inB = new Set(Object.keys(ix.h.units).filter(u => { const o = buckets.owners(bb, "units", u); return o.length === 1 && o[0].bucket === b; }));
+  const w = u => ix.weights[u] > 0 ? ix.weights[u] : DEFAULT_WEIGHT_MS;
+  const ranked = inferred.filter(s => inB.has(s.unit));
+  const seen = new Set(ranked.map(s => s.unit));
+  const rest = [...inB].filter(u => !seen.has(u) && u !== "bootClean").sort((a, c) => w(a) - w(c) || a.localeCompare(c));
+  return [
+    ...ranked.map(s => ({ unit: s.unit, why: why + (s.hits.length ? ", uses " + s.hits.join(", ") : "") })),
+    ...rest.map(u => ({ unit: u, why: why })),
+  ];
+}
+
 // ── the plan ─────────────────────────────────────────────────────────────────────────────────────────────────────
 function plan(files, opts) {
   opts = opts || {};
@@ -265,7 +317,9 @@ function plan(files, opts) {
   const root = ix.root;
   const budget = opts.budget || DEFAULT_BUDGET_MS;
   const p = { go: new Map(), tags: [], gofiles: [], govet: [], gobuild: null, units: new Map(), node: new Map(),
-    jscheck: [], shcheck: [], warnings: [], skipped: [], dropped: [] };
+    jscheck: [], shcheck: [], warnings: [], skipped: [], dropped: [], buckets: new Map() };
+  const addBucket = (b, rel) => { if (!p.buckets.has(b.name)) p.buckets.set(b.name, []); if (!p.buckets.get(b.name).includes(rel)) p.buckets.get(b.name).push(rel); };
+  const lintNote = "a file the bucket lint covers changed";
   const addNode = (s, why) => { if (!p.node.has(s)) p.node.set(s, why); };
   const wantUnits = [];   // per source: [{unit, why}] best first
   let board = false;
@@ -285,7 +339,10 @@ function plan(files, opts) {
       }
       const dir = "./" + path.posix.dirname(rel);
       if (!fs.existsSync(path.join(root, path.posix.dirname(rel)))) { p.skipped.push([rel, "its package is gone"]); continue; }
-      if (!p.go.has(dir)) p.go.set(dir, rel + " changed");
+      const gbk = declaredGo(ix, rel);
+      if (gbk) addBucket(gbk, rel);
+      if (/^internal\/(api|link)\//.test(rel) && !rel.endsWith("_test.go")) addNode("scripts/check-test-buckets.js", lintNote);
+      if (!p.go.has(dir)) p.go.set(dir, rel + " changed" + (gbk ? ", bucket " + gbk.name : ", in no bucket"));
       if (isIntegrationGo(rel, root) && !p.tags.length) p.tags.push({ tag: "integration", why: rel + " is an integration test file" });
       continue;
     }
@@ -295,10 +352,26 @@ function plan(files, opts) {
       if (ext === ".md") { p.skipped.push([rel, "notes, not code"]); continue; }
       board = true;
       if (ext === ".js" && fs.existsSync(path.join(root, rel))) p.jscheck.push(rel);
-      const picked = [".js", ".css", ".html"].includes(ext) ? unitsForWebFile(ix, rel) : [];
+      const code = [".js", ".css", ".html"].includes(ext);
+      const picked = code ? unitsForWebFile(ix, rel) : [];
+      const inferredWhy = s => path.posix.relative(WEB, rel) + ": " +
+        (s.named ? "the unit is named for it" + (s.hits.length ? ", " : "") : "") + (s.hits.length ? "uses " + s.hits.join(", ") : "");
+      const decl = code ? declaredBoard(ix, rel) : [];
+      if (code) addNode("scripts/check-test-buckets.js", lintNote);
+      if (decl.length) {
+        const names = decl.map(d => d.bucket.name);
+        for (const d of decl) { addBucket(d.bucket, rel); for (const t of d.bucket.tests || []) addNode(t, "bucket " + d.bucket.name + " owns it, and " + path.posix.relative(WEB, rel) + " changed"); }
+        const list = [];
+        for (const d of decl) list.push(...bucketUnits(ix, d.bucket, rel, picked, "bucket " + d.bucket.name + ": " + path.posix.relative(WEB, rel)));
+        // a shared file is read by more than any list says, so what the inference found outside the buckets follows
+        if (decl[0].shared) list.push(...picked.filter(s => !list.some(c => c.unit === s.unit)).map(s => ({ unit: s.unit, why: inferredWhy(s) })));
+        if (!list.length) p.warnings.push(rel + " is in bucket " + names.join(", ") + ", which has no headless unit, so only bootClean covers it");
+        wantUnits.push(list);
+        continue;
+      }
+      if (code && ix.bk) p.warnings.push(rel + " is in no bucket, so the units are inferred. add it to scripts/test-buckets.json");
       if (!picked.length) p.warnings.push(rel + " maps to no headless unit, so only bootClean covers it");
-      wantUnits.push(picked.map(s => ({ unit: s.unit, why: path.posix.relative(WEB, rel) + ": " +
-        (s.named ? "the unit is named for it" + (s.hits.length ? ", " : "") : "") + (s.hits.length ? "uses " + s.hits.join(", ") : "") })));
+      wantUnits.push(picked.map(s => ({ unit: s.unit, why: inferredWhy(s) })));
       continue;
     }
     if (rel === HARNESS) {
@@ -309,6 +382,11 @@ function plan(files, opts) {
       const { hit, shared } = unitsForHarnessLines(ix, ranges);
       wantUnits.unshift([...hit].map(([u, why]) => ({ unit: u, why: "the harness changed in " + why, own: true })));
       for (const s of shared) p.warnings.push("the harness changed outside every unit (" + s + "), so bootClean stands in for it");
+      continue;
+    }
+    if (rel === buckets.FILE || rel === "scripts/test-buckets.js" || rel === "scripts/check-test-buckets.js") {
+      addNode("scripts/check-test-buckets.js", rel + " changed");
+      if (rel.endsWith(".js")) p.jscheck.push(rel);
       continue;
     }
     if (rel === "scripts/board-source.js") {
@@ -357,6 +435,7 @@ function describe(p) {
   for (const t of p.tags) row("tags", t.tag, t.why);
   for (const g of p.gofiles) row("gofiles", g.files.join(" "), g.why);
   for (const g of p.govet) row("govet", g.file, g.why);
+  for (const [n, fs_] of p.buckets) row("bucket", n, fs_.join(", "));
   for (const [u, x] of p.units) row("unit", u + " (" + (x.ms / 1000).toFixed(1) + "s)", x.why);
   if (p.units.size) row("", "", "units total " + (p.unitMs / 1000).toFixed(1) + "s of weight, run in parallel shards");
   if (p.dropped.length) row("budget", p.dropped.length + " more units left out", p.dropped.join(","));
@@ -370,6 +449,7 @@ function describe(p) {
 
 function actions(p) {
   const out = [];
+  for (const [n, fs_] of p.buckets) out.push("BUCKET " + n + " " + fs_.join(" "));
   if (p.gobuild) out.push("GOBUILD ./...");
   for (const d of p.go.keys()) out.push("GO " + d);
   for (const t of p.tags) out.push("TAGS " + t.tag);

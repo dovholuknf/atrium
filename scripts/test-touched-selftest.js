@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// subject: scripts/test-touched.sh, scripts/test-touched.ps1, scripts/test-touched-plan.js
+// subject: scripts/test-touched.sh, scripts/test-touched.ps1, scripts/test-touched-plan.js, scripts/test-buckets.js, scripts/test-buckets.json, scripts/check-test-buckets.js
 //
 // The diff-to-tests mapping of scripts/test-touched.sh, on fake changed-file lists. No browser, no go, no git: it builds
 // the planner's index from this checkout once and asks it about diffs that never happened. Under a second.
@@ -114,6 +114,62 @@ check("a shell script: bash -n", p.shcheck.includes("scripts/check-board.sh"), p
 // docs: nothing at all
 p = P(["docs/agents.md", "AGENTS.md"]);
 check("docs: nothing", !p.go.size && !p.units.size && !p.node.size && p.skipped.length === 2, p);
+
+// DECLARED FIRST: one fake diff per bucket, so the map cannot rot. A file the bucket owns names the bucket
+const buckets = require("./test-buckets.js");
+const bk = buckets.load();
+const ownedBy = (b, f) => { const o = buckets.ownersOfFile(bk, f); return o.length === 1 && o[0].bucket === b; };
+const walkFiles = d => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap(e =>
+  e.isDirectory() ? (e.name === "vendor" || e.name === "icons" ? [] : walkFiles(d + "/" + e.name)) : [d + "/" + e.name]);
+const allFiles = [...walkFiles("internal/api/web").filter(f => /\.(js|css|html)$/.test(f)),
+  ...["internal/api", "internal/link", "internal/daemon", "internal/store", "internal/hubstore", "internal/gitsync", "internal/claudeconf", "internal/ptyhost", "internal/cli"]
+    .flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith(".go") && !f.endsWith("_test.go")).map(f => d + "/" + f))];
+for (const b of bk.buckets) {
+  const f = allFiles.find(x => ownedBy(b, x));
+  if (!f) { check("bucket " + b.name + ": owns a file", b.kind === "board" && !(b.sources || []).length, b.name); continue; }
+  p = P([f]);
+  check("bucket " + b.name + ": " + f + " selects it", p.buckets.has(b.name), [...p.buckets.keys()]);
+  if (b.kind === "board") {
+    const own = Object.keys(ix.h.units).filter(u => { const o = buckets.owners(bk, "units", u); return o.length === 1 && o[0].bucket === b; });
+    check("bucket " + b.name + ": only its own units, and bootClean", units(p).every(u => u === "bootClean" || own.includes(u)), units(p));
+    check("bucket " + b.name + ": bootClean", units(p)[0] === "bootClean", units(p));
+  } else {
+    check("bucket " + b.name + ": its package", p.go.has("./" + path.posix.dirname(f)), [...p.go.keys()]);
+  }
+}
+// every unit name is in a bucket, so a unit run is always attributable
+check("every unit is in one bucket", Object.keys(ix.h.units).every(u => buckets.owners(bk, "units", u).length === 1),
+  Object.keys(ix.h.units).filter(u => buckets.owners(bk, "units", u).length !== 1));
+// a shared file selects boot and the buckets that need it
+p = P(["internal/api/web/js/cards.js"]);
+check("shared cards.js: boot and what needs it", p.buckets.has("boot") && p.buckets.has("terminals"), [...p.buckets.keys()]);
+p = P(["internal/api/web/js/core.js"]);
+check("shared core.js: boot", p.buckets.has("boot") && p.buckets.has("cards"), [...p.buckets.keys()]);
+// a bucket's node tests run with it
+p = P(["internal/api/web/js/termcursor.js"]);
+check("bucket tests: terminals runs test-term-trace.js", nodes(p).includes("scripts/test-term-trace.js"), nodes(p));
+// a web file in no bucket falls back to the inference and says to add it
+p = P(["internal/api/web/js/zzz-not-in-a-bucket.js"]);
+check("no bucket: inferred and said", p.warnings.some(w => /in no bucket/.test(w)) && !p.buckets.size, [p.warnings, [...p.buckets.keys()]]);
+// an api file and a link file name their bucket on the package
+p = P(["internal/api/prsmove.go"]);
+check("api/prs by file", p.buckets.has("api/prs") && p.go.has("./internal/api"), [...p.buckets.keys()]);
+p = P(["internal/link/items_mcp_integration_test.go"]);
+check("mcp/items by its test file", p.buckets.has("mcp/items"), [...p.buckets.keys()]);
+// the lint: a new file or unit outside a bucket fails, the tree as it is passes
+const { spawnSync } = require("child_process");
+const lint = a => spawnSync(process.execPath, [path.join(__dirname, "check-test-buckets.js")].concat(a), { encoding: "utf8" });
+check("lint: the tree is clean", lint([]).status === 0, lint([]).stderr);
+let r = lint(["--probe-file", "internal/api/web/js/zzz-new.js"]);
+check("lint: a new web file outside a bucket fails", r.status === 1 && /zzz-new\.js is in no bucket/.test(r.stderr), r.stderr);
+r = lint(["--probe-file", "internal/link/zzz_new.go"]);
+check("lint: a new link file outside a bucket fails", r.status === 1 && /zzz_new\.go is in no bucket/.test(r.stderr), r.stderr);
+r = lint(["--probe-file", "internal/api/zzz_new.go"]);
+check("lint: a new api file outside a bucket fails", r.status === 1 && /zzz_new\.go is in no bucket/.test(r.stderr), r.stderr);
+r = lint(["--probe-unit", "zzzNewUnit"]);
+check("lint: a new unit outside a bucket fails", r.status === 1 && /zzzNewUnit is in no bucket/.test(r.stderr), r.stderr);
+r = lint(["--probe-unit", "termZzz"]);
+check("lint: a unit matching one glob passes", r.status === 0, r.stderr);
 
 if (bad) { console.error("test-touched-selftest: " + bad + " of " + ran + " failed"); process.exit(1); }
 console.log("test-touched-selftest ok, " + ran + " checks");

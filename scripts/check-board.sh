@@ -34,6 +34,10 @@ if ! command -v node >/dev/null 2>&1; then
   exit 0
 fi
 
+# EVERY BOARD FILE AND EVERY UNIT IS IN A BUCKET. scripts/test-buckets.json says which page or surface owns each, and a new
+# file outside one fails here, before the suite, because the touched-file planner would otherwise have to guess about it.
+node "$here/scripts/check-test-buckets.js" || exit 1
+
 # THE WHOLE SUITE IS FOR AFTER LANDING. Its headless run is most of a quarter of an hour, and before handing back a
 # worker runs scripts/test-touched.sh, which runs only what the diff touched. Whoever lands runs this with FULL_SUITE=1.
 # HEADLESS_UNITS=a,b runs these checks with just those headless units, and SKIP_HEADLESS=1 with none, so both stay
