@@ -126,7 +126,7 @@ const allFiles = [...walkFiles("internal/api/web").filter(f => /\.(js|css|html)$
     .flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith(".go") && !f.endsWith("_test.go")).map(f => d + "/" + f))];
 for (const b of bk.buckets) {
   const f = allFiles.find(x => ownedBy(b, x));
-  if (!f) { check("bucket " + b.name + ": owns a file", b.kind === "board" && !(b.sources || []).length, b.name); continue; }
+  if (!f) { check("bucket " + b.name + ": owns a file", b.rest || (b.kind === "board" && !(b.sources || []).length), b.name); continue; }
   p = P([f]);
   check("bucket " + b.name + ": " + f + " selects it", p.buckets.has(b.name), [...p.buckets.keys()]);
   if (b.kind === "board") {
@@ -170,6 +170,14 @@ r = lint(["--probe-unit", "zzzNewUnit"]);
 check("lint: a new unit outside a bucket fails", r.status === 1 && /zzzNewUnit is in no bucket/.test(r.stderr), r.stderr);
 r = lint(["--probe-unit", "termZzz"]);
 check("lint: a unit matching one glob passes", r.status === 0, r.stderr);
+r = lint(["--probe-go-test", "internal/api/zzz_new_integration_test.go"]);
+check("lint: a new api test file in no bucket grows rest past its ceiling and fails", r.status === 1 && /api\/rest holds 30 test files, over its ceiling of 29/.test(r.stderr), r.stderr);
+r = lint(["--probe-go-test", "internal/link/zzz_new_integration_test.go"]);
+check("lint: a new link test file in no bucket fails", r.status === 1 && /hub\/rest holds 30 test files, over its ceiling/.test(r.stderr), r.stderr);
+r = lint(["--probe-go-test", "internal/api/prs_zzz_integration_test.go"]);
+check("lint: a new test file a bucket glob owns passes and leaves rest alone", r.status === 0, r.stderr);
+r = spawnSync(process.execPath, [path.join(__dirname, "test-buckets.js"), "--go-run", "hub/backlog"], { encoding: "utf8" });
+check("go bucket: --go-run prints the package and a -run regex of its tests", r.status === 0 && /^\.\/internal\/link\t\^\(Test\w+(\|Test\w+)*\)\$$/.test(r.stdout.trim()), r.stdout + r.stderr);
 
 if (bad) { console.error("test-touched-selftest: " + bad + " of " + ran + " failed"); process.exit(1); }
 console.log("test-touched-selftest ok, " + ran + " checks");

@@ -84,3 +84,47 @@ func TestTheCheckedInAllowlistParses(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOwnerOfNamesTheBucketAnExactNameBeatsAGlobAndRestTakesTheRest(t *testing.T) {
+	defs := map[string]bucketDef{
+		"hub/items": {Package: "./internal/link", Tests: []string{"internal/link/items_integration_test.go"}},
+		"mcp/items": {Package: "./internal/link", Tests: []string{"internal/link/items_mcp_*test.go", "internal/link/*_test.go"}},
+		"hub/rest":  {Package: "./internal/link", Rest: true},
+		"store":     {Package: "./internal/store", Tests: []string{"internal/store/*_test.go"}},
+	}
+	for file, want := range map[string]string{
+		"internal/link/items_integration_test.go":     "hub/items",
+		"internal/link/items_mcp_integration_test.go": "mcp/items",
+		"internal/link/zzz_test.go":                   "mcp/items",
+		"internal/store/a_test.go":                    "store",
+		"internal/other/a_test.go":                    "",
+	} {
+		if got := ownerOf(defs, file); got != want {
+			t.Errorf("%s: got %q want %q", file, got, want)
+		}
+	}
+	delete(defs, "mcp/items")
+	defs["mcp/items"] = bucketDef{Package: "./internal/link", Tests: []string{"internal/link/items_mcp_*test.go"}}
+	if got := ownerOf(defs, "internal/link/zzz_test.go"); got != "hub/rest" {
+		t.Errorf("a file no bucket owns: got %q want hub/rest", got)
+	}
+}
+
+func TestBucketOfATestAnswersForASubtestAsItsParentAndForAnImportPath(t *testing.T) {
+	ix := &bucketIndex{byTest: map[string]string{"internal/link TestBacklog": "hub/backlog"}}
+	for _, test := range []string{"TestBacklog", "TestBacklog/sub"} {
+		if got := ix.of("github.com/x/atrium/internal/link", test); got != "hub/backlog" {
+			t.Errorf("%s: got %q", test, got)
+		}
+	}
+	if got := ix.of("github.com/x/atrium/internal/api", "TestBacklog"); got != "" {
+		t.Errorf("another package: got %q", got)
+	}
+	stats := map[string]*bucketStat{}
+	ix.count(stats, "m/internal/link", "TestBacklog", 1.5, false)
+	ix.count(stats, "m/internal/link", "TestBacklog/sub", 1.5, true)
+	ix.count(stats, "m/internal/link", "TestBacklog", 0.5, true)
+	if s := stats["hub/backlog"]; s == nil || s.tests != 2 || s.failed != 1 || s.secs != 2 {
+		t.Errorf("stats %+v", s)
+	}
+}

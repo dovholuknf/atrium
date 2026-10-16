@@ -6,15 +6,15 @@
 // outside a bucket fails here, which is what keeps the planner from guessing about it.
 //
 //   node scripts/check-test-buckets.js
-//   node scripts/check-test-buckets.js --probe-file internal/api/web/js/new.js --probe-unit newUnit
+//   node scripts/check-test-buckets.js --probe-file internal/api/web/js/new.js --probe-unit newUnit --probe-go-test internal/api/new_test.go
 //
-// The probes pretend a file or a unit exists, so the self-test can prove a new one outside a bucket fails.
+// The probes pretend a file, a unit or a Go test file exists, so the self-test can prove a new one outside a bucket fails.
 //
 // Run by scripts/check-board.sh, and by scripts/test-touched.sh when a file it covers changed. No browser, no go.
 
 const fs = require("fs");
 const path = require("path");
-const { load, owners, ownersOfFile, globRe, isGlob, ROOT } = require("./test-buckets.js");
+const { load, owners, ownersOfFile, globRe, isGlob, goTestFiles, goTestOwners, ROOT } = require("./test-buckets.js");
 
 const b = load();
 const errs = [];
@@ -60,6 +60,24 @@ for (const u of unitNames) {
   else if (o.length > 1) bad("headless unit " + u + " is in " + o.length + " buckets: " + o.map(x => x.bucket.name + " (" + x.via + ")").join(", "));
 }
 
+// every Go test file is in one bucket of its package, or in its `rest`, and `rest` stays under its ceiling
+const goPkgs = [...new Set(goOnly.buckets.map(x => x.package.replace(/^\.\//, "")))].sort();
+const testFiles = goPkgs.flatMap(d => goTestFiles(d));
+if (probe("--probe-go-test")) testFiles.push(probe("--probe-go-test"));
+const restCount = new Map();
+for (const f of testFiles) {
+  const o = goTestOwners(b, f);
+  if (o.length === 0) bad(f + " is in no bucket and its package has no `rest` bucket. add it to `tests` of a go bucket in scripts/test-buckets.json");
+  else if (o.length > 1) bad(f + " is in " + o.length + " buckets: " + o.map(x => x.bucket.name + " (" + x.via + ")").join(", "));
+  else if (o[0].bucket.rest) restCount.set(o[0].bucket, (restCount.get(o[0].bucket) || 0) + 1);
+}
+for (const bk of goOnly.buckets.filter(x => x.rest)) {
+  const n = restCount.get(bk) || 0;
+  if (typeof bk.ceiling !== "number") bad("bucket " + bk.name + " is `rest` and has no numeric `ceiling`");
+  else if (n > bk.ceiling) bad("bucket " + bk.name + " holds " + n + " test files, over its ceiling of " + bk.ceiling + ". put the new file in a bucket's `tests` in scripts/test-buckets.json, do not raise the ceiling");
+  else if (n < bk.ceiling) bad("bucket " + bk.name + " holds " + n + " test files, under its ceiling of " + bk.ceiling + ". lower `ceiling` to " + n + " so it stays a ratchet");
+}
+
 // nothing points at nothing: a pattern that matches no file or unit is a rename the file missed
 const extra = new Map();   // the other Go packages a bucket owns whole: their files, read when a pattern asks
 const filesIn = d => { if (!extra.has(d)) extra.set(d, fs.existsSync(path.join(ROOT, d)) ? fs.readdirSync(path.join(ROOT, d)).map(f => d + "/" + f) : []); return extra.get(d); };
@@ -72,6 +90,9 @@ for (const bk of b.buckets) {
   for (const p of bk.units || []) {
     const hit = isGlob(p) ? unitNames.some(u => globRe(p).test(u)) : unitNames.includes(p);
     if (!hit) bad("bucket " + bk.name + ": unit " + p + " matches no headless unit");
+  }
+  if (bk.kind === "go") for (const p of bk.tests || []) {
+    if (!(isGlob(p) ? testFiles.some(f => globRe(p).test(f)) : testFiles.includes(p))) bad("bucket " + bk.name + ": test " + p + " matches no test file");
   }
   for (const s of [...(bk.tests || []), ...(bk.checks || [])]) {
     if (bk.kind === "board" && !fs.existsSync(path.join(ROOT, s))) bad("bucket " + bk.name + ": test script " + s + " does not exist");
@@ -97,4 +118,4 @@ if (errs.length) {
   console.error("check-test-buckets: " + errs.length + " problem(s) in scripts/test-buckets.json");
   process.exit(1);
 }
-console.log("check-test-buckets ok: " + web.length + " board files, " + goSrc.length + " go files, " + unitNames.length + " units, " + b.buckets.length + " buckets");
+console.log("check-test-buckets ok: " + web.length + " board files, " + goSrc.length + " go files, " + unitNames.length + " units, " + testFiles.length + " go test files (" + [...restCount].map(([k, v]) => v + " in " + k.name).join(", ") + "), " + b.buckets.length + " buckets");

@@ -18,6 +18,11 @@
 // whole output of each failed package, and timings.tsv with every test's
 // time. scripts/ci.sh also tees the raw stream there as go-test.json.
 //
+// BY BUCKET. scripts/test-buckets.json names a bucket per API surface (`hub/backlog`, `api/prs`), and the stream is
+// grouped by it, since go test reports a package and a package is internal/link's 819 tests. A failed test is printed
+// with its bucket, the end of the report says how many tests, how many failures and how many seconds each bucket took,
+// and the failures are listed by bucket. See bucketing below. A test no bucket owns, or no bucket file, is not grouped.
+//
 // Exit status 1 when anything failed, so the caller does not have to parse.
 //
 // With -guard-only it prints nothing of the above. It reads the same stream, and
@@ -33,6 +38,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,6 +82,7 @@ func main() {
 	pkgLimit := flag.Float64("pkg-limit", defaultPkgLimit, "seconds a package may take before it needs an allowlist line")
 	testLimit := flag.Float64("test-limit", defaultTestLimit, "seconds a test may take before it needs an allowlist line")
 	scale := flag.Float64("scale", 1, "multiplies every limit and ceiling: a shared runner is slower than the box the ceilings were measured on")
+	bucketsPath := flag.String("buckets", "scripts/test-buckets.json", "the bucket file, to group the report by bucket (missing is fine)")
 	flag.Parse()
 	*pkgLimit *= *scale
 	*testLimit *= *scale
@@ -107,6 +114,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "ci-report:", err)
 	}
 
+	bk := loadBuckets(*bucketsPath)
+	stats := map[string]*bucketStat{}
 	pkgs := map[string]*pkgState{}
 	tests := map[string][]string{} // pkg + " " + test: its output until it ends
 	var times []timing
@@ -171,6 +180,7 @@ func main() {
 				if e.Action == "pass" {
 					times = append(times, timing{e.Package, e.Test, e.Elapsed})
 				}
+				bk.count(stats, e.Package, e.Test, e.Elapsed, false)
 				delete(tests, key)
 				continue
 			}
@@ -188,7 +198,11 @@ func main() {
 			if e.Test != "" {
 				p.failed++
 				times = append(times, timing{e.Package, e.Test, e.Elapsed})
+				bk.count(stats, e.Package, e.Test, e.Elapsed, true)
 				name := fmt.Sprintf("%s %s (%.2fs)", e.Package, e.Test, e.Elapsed)
+				if b := bk.of(e.Package, e.Test); b != "" {
+					name = "[" + b + "] " + name
+				}
 				failures = append(failures, name)
 				fmt.Printf("\n--- FAIL: %s\n", name)
 				printCapped(tests[key], 0, p.path)
@@ -257,6 +271,7 @@ func main() {
 	for i := 0; i < len(times) && i < 15; i++ {
 		fmt.Printf("%8.2fs  %s %s\n", times[i].secs, times[i].pkg, times[i].test)
 	}
+	printBuckets(stats)
 	fmt.Println("=== slowest packages")
 	sort.Slice(pkgTimes, func(i, j int) bool { return pkgTimes[i].secs > pkgTimes[j].secs })
 	for i := 0; i < len(pkgTimes) && i < 8; i++ {
@@ -264,6 +279,7 @@ func main() {
 	}
 	if len(failures) > 0 {
 		fmt.Println("=== failed")
+		printFailedBuckets(stats)
 		sort.Strings(failures)
 		for _, f := range failures {
 			fmt.Println("  " + f)
@@ -418,4 +434,173 @@ func listedNote(listed bool) string {
 		return " (its allowlist ceiling)"
 	}
 	return ""
+}
+
+// BUCKETS. A Go bucket is a package and the test files `tests` globs name (see scripts/test-buckets.js, which lints the
+// same file and which this must agree with: `*` is any run but `/`, `**` crosses folders, a name in full beats a glob,
+// and a file no bucket of its package owns is in that package's `rest` bucket). go test -json names a test and a
+// package and never a file, so the file's top level test functions are read to find the bucket of a test.
+type bucketDef struct {
+	Package string   `json:"package"`
+	Rest    bool     `json:"rest"`
+	Tests   []string `json:"tests"`
+}
+
+type bucketIndex struct {
+	byTest map[string]string // package dir + " " + test name: the bucket
+}
+
+type bucketStat struct {
+	tests, failed int
+	secs          float64
+}
+
+func globToRe(p string) *regexp.Regexp {
+	s := regexp.QuoteMeta(p)
+	s = strings.ReplaceAll(s, `\*\*`, "\x00")
+	s = strings.ReplaceAll(s, `\*`, "[^/]*")
+	s = strings.ReplaceAll(s, "\x00", ".*")
+	return regexp.MustCompile("^" + s + "$")
+}
+
+// ownerOf is the bucket of a test file, "" when no bucket file covers it. dirRest is the rest bucket of each package dir.
+func ownerOf(defs map[string]bucketDef, file string) string {
+	var exact, globbed []string
+	dir := file[:max(0, strings.LastIndex(file, "/"))]
+	rest := ""
+	for name, d := range defs {
+		if d.Rest && strings.TrimPrefix(d.Package, "./") == dir {
+			rest = name
+		}
+		for _, p := range d.Tests {
+			if !strings.Contains(p, "*") {
+				if p == file {
+					exact = append(exact, name)
+				}
+			} else if globToRe(p).MatchString(file) {
+				globbed = append(globbed, name)
+			}
+		}
+	}
+	for _, c := range [][]string{exact, globbed} {
+		if len(c) > 0 {
+			sort.Strings(c)
+			return c[0]
+		}
+	}
+	return rest
+}
+
+var testFunc = regexp.MustCompile(`(?m)^func (Test\w+)\(\w+ \*testing\.T\)`)
+
+// loadBuckets reads the bucket file and every test file of the packages it names. Anything missing gives an index that
+// groups nothing, so a report outside the repo is the report it always was.
+func loadBuckets(path string) *bucketIndex {
+	ix := &bucketIndex{byTest: map[string]string{}}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ix
+	}
+	var f struct {
+		Go map[string]bucketDef `json:"go"`
+	}
+	if json.Unmarshal(raw, &f) != nil {
+		return ix
+	}
+	root := filepath.Dir(filepath.Dir(path))
+	dirs := map[string]bool{}
+	for _, d := range f.Go {
+		dirs[strings.TrimPrefix(d.Package, "./")] = true
+	}
+	for dir := range dirs {
+		files, _ := filepath.Glob(filepath.Join(root, dir, "*_test.go"))
+		for _, file := range files {
+			rel := dir + "/" + filepath.Base(file)
+			b := ownerOf(f.Go, rel)
+			src, err := os.ReadFile(file)
+			if b == "" || err != nil {
+				continue
+			}
+			for _, m := range testFunc.FindAllStringSubmatch(string(src), -1) {
+				ix.byTest[dir+" "+m[1]] = b
+			}
+		}
+	}
+	return ix
+}
+
+// of is the bucket of a test of a package (an import path), "" when it has none. A subtest answers as its parent.
+func (ix *bucketIndex) of(pkg, test string) string {
+	if i := strings.Index(test, "/"); i >= 0 {
+		test = test[:i]
+	}
+	for dir := pkg; dir != ""; {
+		if b, ok := ix.byTest[dir+" "+test]; ok {
+			return b
+		}
+		i := strings.Index(dir, "/")
+		if i < 0 {
+			break
+		}
+		dir = dir[i+1:]
+	}
+	return ""
+}
+
+// count adds one finished top level test to its bucket. A subtest is counted in its parent and not on its own.
+func (ix *bucketIndex) count(stats map[string]*bucketStat, pkg, test string, secs float64, failed bool) {
+	if strings.Contains(test, "/") {
+		return
+	}
+	b := ix.of(pkg, test)
+	if b == "" {
+		return
+	}
+	s := stats[b]
+	if s == nil {
+		s = &bucketStat{}
+		stats[b] = s
+	}
+	s.tests++
+	s.secs += secs
+	if failed {
+		s.failed++
+	}
+}
+
+// printBuckets prints each bucket's tests and the sum of their times, slowest first. The sum is the serial cost of the
+// bucket: tests that ran in parallel make it more than the wall clock, and it is what sharding has to divide.
+func printBuckets(stats map[string]*bucketStat) {
+	if len(stats) == 0 {
+		return
+	}
+	names := make([]string, 0, len(stats))
+	for n := range stats {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if stats[names[i]].secs != stats[names[j]].secs {
+			return stats[names[i]].secs > stats[names[j]].secs
+		}
+		return names[i] < names[j]
+	})
+	fmt.Println("=== buckets (tests, failed, summed test time)")
+	for _, n := range names {
+		s := stats[n]
+		fmt.Printf("%8.1fs  %5d tests  %3d failed  %s\n", s.secs, s.tests, s.failed, n)
+	}
+}
+
+// printFailedBuckets says which buckets have failures: `hub/backlog: 2 failed`.
+func printFailedBuckets(stats map[string]*bucketStat) {
+	var out []string
+	for n, s := range stats {
+		if s.failed > 0 {
+			out = append(out, fmt.Sprintf("  %s: %d failed", n, s.failed))
+		}
+	}
+	sort.Strings(out)
+	for _, l := range out {
+		fmt.Println(l)
+	}
 }
