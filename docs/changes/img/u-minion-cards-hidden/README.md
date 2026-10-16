@@ -6,3 +6,5 @@
 - `minion-board-before.png`: the board's working column with four item minions drawn among the two real sessions (the old behaviour).
 - `minion-board-after.png`: the same cards, only the real sessions drawn and counted.
 - `minion-phone-after.png`: the phone's home at 400px, `all 2`, the four minions left out.
+- `minion-chip-off.png`: the Terminals tab with the `minions` chip off, the four item minions left out (its count says 4).
+- `minion-chip-on.png`: the same cards with the chip on, the minions listed.
