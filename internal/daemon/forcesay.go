@@ -163,6 +163,10 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	}
 	if rec != nil {
 		rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
+		if inBox {
+			// In the box, not read: `typed` until the transcript shows it drained. See typedproof.go.
+			rec.State = store.SayTyped
+		}
 		if id := d.recordSay(*rec, text); id != "" {
 			out["say"] = id
 		}
