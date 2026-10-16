@@ -315,14 +315,15 @@ function paintStack() {
   const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
   // The tiebreak is applied here rather than written into each cmp, so every
   // axis gets it and a new one cannot be added without it.
-  list.sort((a, b) => s.cmp(a, b) || cardTieBreak(a, b));
+  // Two pins that tie on the sort fall back to their hand rank.
+  list.sort((a, b) => s.cmp(a, b) || (a.pinned && b.pinned ? byRank(a, b) : cardTieBreak(a, b)));
   if (stackDesc) list.reverse();
   // Pinned to the top, after the reverse so it stays there in either
-  // direction. Sorted is what the pills asked for; pinned is what you asked
-  // for once and meant permanently. Among the pins the order is the one set by
-  // hand, by rank, the same as the board's pinned bucket and the strip's.
-  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) ||
-    (a.pinned && b.pinned ? byRank(a, b) : 0));
+  // direction. The pass is stable, so the pins keep the order the sort gave
+  // them: the board's pinned bucket and the terminals strip are in hand rank,
+  // but this flat list shows a duration, and a column of times that does not
+  // run in order reads as a broken sort.
+  list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   if (!list.length) {
     // The offline group is still drawn under it. A board whose only work is on

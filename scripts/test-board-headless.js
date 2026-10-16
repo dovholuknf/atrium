@@ -23296,6 +23296,55 @@ async function groupingPerViewSection(browser, base) {
   if (!bad) console.log("groupingPerView ok");
 }
 
+// THE STACK'S PINNED GROUP FOLLOWS THE SORT. Pins sit above everything else in either direction, but under `last active` the
+// rows inside them run from least to most idle (and the other way reversed), the same as the time each row shows. They used to
+// be ordered by hand rank whatever the sort said, which read as shuffled.
+async function stackPinnedSortSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  const tag = "stackPinnedSort: ";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof lastTasks !== "undefined" && lastTasks.length >= 1 && typeof paintStack === "function", null, { timeout: slow(15000) });
+    // One evaluate, so a poll cannot replace the cards between painting and reading.
+    const order = await p.evaluate(() => {
+      const ago = s => new Date(Date.now() - s * 1000).toISOString();
+      const mk = (id, pinned, rank, secs) => ({ id, display_title: id, status: "needs-input", pinned, rank, last_activity_at: ago(secs), created_at: ago(9000 + rank) });
+      const cards = [mk("p-a", true, 1, 36000), mk("p-b", true, 2, 60), mk("p-c", true, 3, 5400), mk("p-d", true, 4, 20),
+        mk("u-a", false, 0, 10), mk("u-b", false, 0, 7200)];
+      // A poll would put the mock's cards back under the shot.
+      renderStack = async () => {};
+      switchView("stack");
+      setStackShow(new Set());
+      setGrouping({ on: false }, "stack");
+      allStack = cards; offlineStack = [];
+      const read = () => { paintStack(); return [...document.querySelectorAll("#stack-list [data-id]")].map(r => r.dataset.id).join(","); };
+      stackSort = "activity"; stackDesc = false;
+      const asc = read();
+      stackDesc = true;
+      const desc = read();
+      stackDesc = false;
+      return { asc, desc };
+    });
+    // For checking by eye: STACK_PINNED_SHOTS=<dir> writes the list at 1280 and at phone width, named by STACK_PINNED_WHEN.
+    if (process.env.STACK_PINNED_SHOTS) {
+      for (const w of [1280, 390]) {
+        await p.setViewportSize({ width: w, height: 700 });
+        await p.evaluate(() => { stackDesc = false; paintStack(); });
+        await p.locator("#stack-list").screenshot({ path: require("path").join(process.env.STACK_PINNED_SHOTS, "stack-" + w + "-" + (process.env.STACK_PINNED_WHEN || "after") + ".png") });
+      }
+    }
+    if (order.asc !== "p-d,p-b,p-c,p-a,u-a,u-b") fail(tag + "last active: " + order.asc);
+    if (order.desc !== "p-a,p-c,p-b,p-d,u-b,u-a") fail(tag + "last active reversed: " + order.desc);
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("stackPinnedSort ok");
+}
+
 async function repoColorsSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
@@ -33771,6 +33820,7 @@ async function main() {
     await unit("readWidthSkin", () => readWidthSkinSection(browser, base));
     await unit("discreteGroup", () => discreteGroupSection(browser, base));
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
+    await unit("stackPinnedSort", () => stackPinnedSortSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));
     await unit("themePicker", () => themePickerSection(browser, base));
     await unit("themePickerShots", () => themePickerShotsSection(browser, base));
