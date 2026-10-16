@@ -8913,8 +8913,6 @@ async function topNavSection(browser, base) {
     globalAuto = true; globalAutoLeft = 3 * 3600; globalAutoStale = false; globalAutoRead = true; paintAuto();
     const rt = show("rooms-t", "3/5 rooms"); rt.dataset.n = "3/5";
     document.getElementById("rooms").hidden = false;
-    const dp = show("deploy-pill", "not ready: 4 of 11 commits are reviewed and the installed build is behind the branch");
-    dp.dataset.state = "blocked"; dp.dataset.short = "not ready 4/11";
     const bell = document.querySelector("#toastlog-open .count"); bell.textContent = "99+";
     document.querySelectorAll('.tab[data-view="docs"], .tab[data-view="audit"]').forEach(t => t.hidden = false);
     const ct = document.getElementById("c-term"); ct.textContent = "14"; ct.classList.remove("zero");
@@ -8935,8 +8933,7 @@ async function topNavSection(browser, base) {
     const bar = document.querySelector("header .bar");
     const chips = [...bar.children].filter(c => c.getClientRects().length > 0 && !c.classList.contains("grow"));
     return { out, inMenu, moreOn, clippedChip: chips.filter(c => c.getBoundingClientRect().right > innerWidth + 1).map(c => c.id || c.className),
-      sideways: document.documentElement.scrollWidth > innerWidth, barRight: bar.scrollWidth - bar.clientWidth,
-      pill: document.getElementById("deploy-pill").textContent };
+      sideways: document.documentElement.scrollWidth > innerWidth, barRight: bar.scrollWidth - bar.clientWidth };
   });
   try {
     fs.mkdirSync(shots, { recursive: true });
@@ -8965,9 +8962,6 @@ async function topNavSection(browser, base) {
       if (m.out.length && !m.moreOn) fail(tag + "tabs are hidden and there is no more button");
       if (m.clippedChip.length) fail(tag + "a header item runs past the window: " + m.clippedChip.join(","));
       if (m.sideways) fail(tag + "the page scrolls sideways");
-      if (/…|\.\.\.$/.test(m.pill)) fail(tag + "the deploy pill is cut with an ellipsis");
-      const ell = await p.evaluate(() => { const e = document.getElementById("deploy-pill"); return getComputedStyle(e).textOverflow; });
-      if (ell !== "clip") fail(tag + "the deploy pill has text-overflow " + ell);
       await p.screenshot({ path: path.join(shots, "w" + w + ".png"), clip: { x: 0, y: 0, width: w, height: 90 } });
       if (w === 1024) {
         await p.click("#tabmore");
@@ -30395,181 +30389,6 @@ async function trayHeadSection(browser, base) {
   if (!bad) console.log("trayHead ok");
 }
 
-// ── deploy ready: the pill, the dialog and the Deploy button ─────────────
-// The hub's endpoints are mocked per page: ready, blocked (with a hostile commit subject), refused over a share (403), refused
-// because the tip moved (409), running, finished and a plain daemon (404). The pill is read at load and again on the hub's
-// `deploy-ready` event, and a deploy asks first and posts the full tip.
-async function deployReadySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
-  const TIP = "0123456789abcdef0123456789abcdef01234567";
-  const report = over => Object.assign({ state: "ready", ready: true, branch: "claude/main", tip: TIP, installed: "89abcdef0123", commits: 3, line: "ready: 3 commits reviewed, installed build is behind", checked_at: new Date().toISOString(), deploy: { state: "idle" } }, over || {});
-  try {
-    const open = async dm => {
-      const ctx = await landContext(browser);
-      const p = await ctx.newPage();
-      const errors = [];
-      p.on("pageerror", e => errors.push(String(e)));
-      dm.gets = 0;
-      dm.posts = [];
-      await p.route("**/_hub/deploy-ready", r => { dm.gets++; if (dm.abort) return r.abort(); const g = typeof dm.get === "function" ? dm.get() : dm.get; return r.fulfill({ status: g.status, contentType: "application/json", body: JSON.stringify(g.body) }); });
-      await p.route("**/_hub/deploy-ready/deploy", r => { dm.posts.push(JSON.parse(r.request().postData() || "{}")); const q = dm.post; if (q.status === 202) dm.get = { status: 200, body: report({ deploy: q.body.deploy }) }; return r.fulfill({ status: q.status, contentType: "application/json", body: JSON.stringify(q.body) }); });
-      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-      await p.waitForFunction(() => typeof loadDeployReady === "function" && typeof alerting !== "undefined", null, { timeout: slow(15000) });
-      return { ctx, p, errors };
-    };
-    const pill = p => p.evaluate(() => { const e = document.getElementById("deploy-pill"); return { shown: !e.hidden && e.getClientRects().length > 0, text: e.textContent, state: e.dataset.state }; });
-    const dlg = p => p.evaluate(() => { const d = document.getElementById("deployready"); const b = document.getElementById("dr-deploy"); return { open: d.open, text: document.getElementById("dr-body").textContent, disabled: b ? b.disabled : null, msg: (document.getElementById("dr-msg") || {}).textContent || "" }; });
-    const wait = (p, fn, arg) => p.waitForFunction(fn, arg, { timeout: slow(6000) }).catch(async e => { throw new Error(String(fn).slice(0, 110) + " :: " + JSON.stringify(await p.evaluate(() => ({ pill: document.getElementById("deploy-pill") && document.getElementById("deploy-pill").outerHTML.slice(0, 160), dlg: document.getElementById("deployready").open, ask: document.getElementById("ask").open })))); });
-
-    // ready, a confirm, the full tip posted, running, and the event that ends it
-    let dm = { get: { status: 200, body: report() }, post: { status: 202, body: { deploy: { state: "running", tip: TIP, started: new Date().toISOString() } } } };
-    let { ctx, p, errors } = await open(dm);
-    await wait(p, () => !document.getElementById("deploy-pill").hidden);
-    let v = await pill(p);
-    if (!v.shown || v.text !== report().line || v.state !== "ready") fail("deployReady: the ready pill is " + JSON.stringify(v));
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    v = await dlg(p);
-    if (v.disabled !== false) fail("deployReady: Deploy is not enabled when ready on loopback: " + JSON.stringify(v));
-    if (!/claude\/main at 01234567/.test(v.text) || !/installed 89abcdef/.test(v.text)) fail("deployReady: the facts are missing: " + v.text.slice(0, 160));
-    await p.click("#dr-deploy");
-    await wait(p, () => document.getElementById("ask").open);
-    if (!/Deploy 01234567\?/.test(await p.textContent("#ask-title")) || dm.posts.length) fail("deployReady: no confirm before the click, or it posted already");
-    await p.click('#ask-actions button:has-text("cancel")');
-    await p.waitForTimeout(150);
-    if (dm.posts.length) fail("deployReady: cancelling the confirm posted");
-    await p.click("#dr-deploy");
-    await wait(p, () => document.getElementById("ask").open);
-    await p.click('#ask-actions button:has-text("deploy")');
-    await wait(p, () => /deploying 01234567/.test(document.getElementById("deploy-pill").textContent));
-    if (dm.posts.length !== 1 || dm.posts[0].tip !== TIP) fail("deployReady: the post was " + JSON.stringify(dm.posts));
-    v = await dlg(p);
-    if (v.disabled !== true || !/deploy started|a deploy is already running/.test(v.msg)) fail("deployReady: Deploy is not off while running: " + JSON.stringify(v));
-    // the hub says it ended: read again on the event, with no timer
-    dm.get = { status: 200, body: report({ state: "current", ready: false, line: "up to date", deploy: { state: "finished", tip: TIP, exit: 0, ended: new Date().toISOString() } }) };
-    const before = dm.gets;
-    mockSay("deploy-ready", "{}");
-    await wait(p, () => document.getElementById("deploy-pill").dataset.state === "current");
-    if (dm.gets <= before) fail("deployReady: the event did not read the report again");
-    v = await dlg(p);
-    if (!/finished, exit 0/.test(v.text)) fail("deployReady: a finished deploy does not say its exit: " + v.text.slice(-120));
-    await ctx.close();
-
-    // blocked: the blockers as text, never HTML, detail on expand, the button greyed with the reason
-    dm = { get: { status: 200, body: report({ state: "blocked", ready: false, line: "blocked: 1 commit has no verdict",
-      blocking: [{ sha: TIP, short: "0123456", subject: "<img src=x onerror=\"window.__pwn=1\"> subject", why: "no verdict", detail: "no review covers this commit" }], notes: ["a verdict on a non-review file was ignored"] }) }, post: { status: 409, body: { error: "not ready" } } };
-    ({ ctx, p, errors } = await open(dm));
-    await wait(p, () => !document.getElementById("deploy-pill").hidden);
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    v = await dlg(p);
-    const hostile = await p.evaluate(() => ({ img: !!document.querySelector("#dr-body img"), pwn: window.__pwn === 1, sub: document.querySelector(".dr-subject").textContent, detailHidden: !document.querySelector(".dr-blocker").open }));
-    if (hostile.img || hostile.pwn || !/<img src=x onerror/.test(hostile.sub)) fail("deployReady: a commit subject was not shown as text: " + JSON.stringify(hostile));
-    if (!hostile.detailHidden) fail("deployReady: a blocker's detail is open before it is asked for");
-    if (!/0123456/.test(v.text) || !/no verdict/.test(v.text) || !/a verdict on a non-review file was ignored/.test(v.text)) fail("deployReady: blockers or notes are missing: " + v.text.slice(0, 200));
-    if (v.disabled !== true || !/not ready: blocked: 1 commit has no verdict/.test(v.msg)) fail("deployReady: Deploy is not greyed with the reason: " + JSON.stringify(v));
-    if ((await pill(p)).state !== "blocked") fail("deployReady: the blocked pill is " + (await pill(p)).state);
-    // The dialog repaints on a poll and a repaint closes the row again, so open it and read it in one step.
-    const detail = await p.evaluate(() => { const d = document.querySelector(".dr-blocker"); d.querySelector("summary").click(); return { open: d.open, text: d.textContent }; });
-    if (!detail.open || !/no review covers this commit/.test(detail.text)) fail("deployReady: the detail does not open");
-    await ctx.close();
-
-    // over a share: the hub says 403 and the button stays greyed with its words
-    dm = { get: { status: 200, body: report() }, post: { status: 403, body: { error: "a deploy is started only from the machine the hub runs on (this is a share)" } } };
-    ({ ctx, p, errors } = await open(dm));
-    await wait(p, () => !document.getElementById("deploy-pill").hidden);
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    await p.click("#dr-deploy");
-    await wait(p, () => document.getElementById("ask").open);
-    await p.click('#ask-actions button:has-text("deploy")');
-    await wait(p, () => /this is a share/.test((document.getElementById("dr-msg") || {}).textContent || ""));
-    v = await dlg(p);
-    if (v.disabled !== true || !/this is a share/.test(v.msg)) fail("deployReady: a 403 is not said: " + JSON.stringify(v));
-    await ctx.close();
-    // a board that is not on loopback greys it before any click
-    dm = { get: { status: 200, body: report() }, post: { status: 403, body: { error: "x" } } };
-    ({ ctx, p, errors } = await open(dm));
-    await wait(p, () => !document.getElementById("deploy-pill").hidden);
-    await p.evaluate(() => { window.drLoopback = () => false; });
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    v = await dlg(p);
-    if (v.disabled !== true || !/only from the machine the hub runs on/.test(v.msg)) fail("deployReady: a remote board's button is " + JSON.stringify(v));
-    await ctx.close();
-
-    // 409: the tip moved. The hub's report is the truth now, and it is said
-    const MOVED = "fedcba9876543210fedcba9876543210fedcba98";
-    dm = { get: { status: 200, body: report() }, post: { status: 409, body: { error: "claude/main has moved since that was shown: it is fedcba98 now, not 01234567", report: report({ tip: MOVED, state: "blocked", ready: false, line: "blocked: a new commit has no verdict" }) } } };
-    ({ ctx, p, errors } = await open(dm));
-    await wait(p, () => !document.getElementById("deploy-pill").hidden);
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    await p.click("#dr-deploy");
-    await wait(p, () => document.getElementById("ask").open);
-    // the hub's next read already says what the 409 reported
-    dm.get = { status: 200, body: dm.post.body.report };
-    await p.click('#ask-actions button:has-text("deploy")');
-    await wait(p, () => document.getElementById("deploy-pill").dataset.state === "blocked");
-    v = await dlg(p);
-    if (!/has moved since that was shown/.test(v.msg) || v.disabled !== true) fail("deployReady: a 409 is not said or the button stayed on: " + JSON.stringify(v));
-    await ctx.close();
-
-    // running at load, and a finished one with its exit
-    dm = { get: { status: 200, body: report({ deploy: { state: "running", tip: TIP, started: new Date().toISOString() } }) }, post: { status: 409, body: { error: "a deploy is already running" } } };
-    ({ ctx, p, errors } = await open(dm));
-    await wait(p, () => /deploying 01234567/.test(document.getElementById("deploy-pill").textContent));
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    v = await dlg(p);
-    if (v.disabled !== true || !/a deploy is already running/.test(v.msg)) fail("deployReady: a running deploy leaves the button on: " + JSON.stringify(v));
-    dm.get = { status: 200, body: report({ deploy: { state: "finished", tip: TIP, exit: 3, error: "the installed binary is not the tip", ended: new Date().toISOString() } }) };
-    mockSay("deploy-ready", "{}");
-    await wait(p, () => /exit 3/.test(document.getElementById("dr-body").textContent));
-    if (!/the installed binary is not the tip/.test(await p.textContent("#dr-body"))) fail("deployReady: a failed deploy does not say why");
-    await ctx.close();
-
-    // a read that fails with the dialog open: the old report is not kept, the reason is said, and Deploy is off
-    dm = { get: { status: 200, body: report() }, post: { status: 202, body: { deploy: { state: "running", tip: TIP } } } };
-    ({ ctx, p, errors } = await open(dm));
-    await wait(p, () => !document.getElementById("deploy-pill").hidden);
-    await p.click("#deploy-pill");
-    await wait(p, () => document.getElementById("deployready").open);
-    v = await dlg(p);
-    if (v.disabled !== false || !/3 commits reviewed/.test(v.text)) fail("deployReady: the report was not shown before the failure: " + JSON.stringify(v));
-    dm.get = { status: 500, body: { error: "git failed" } };
-    mockSay("deploy-ready", "{}");
-    await wait(p, () => /no report: git failed/.test(document.getElementById("dr-body").textContent));
-    v = await dlg(p);
-    if (v.disabled !== true || /3 commits reviewed|installed 89abcdef/.test(v.text)) fail("deployReady: the old report was kept after a failed read: " + JSON.stringify(v));
-    let pl = await pill(p);
-    if (pl.text !== "no report" || pl.state !== "unknown") fail("deployReady: the pill after a failed read is " + JSON.stringify(pl));
-    // the hub unreachable says so too, and a good read brings the report back
-    dm.abort = true;
-    mockSay("deploy-ready", "{}");
-    await wait(p, () => /no report: could not reach the hub/.test(document.getElementById("dr-body").textContent));
-    dm.abort = false;
-    dm.get = { status: 200, body: report() };
-    mockSay("deploy-ready", "{}");
-    await wait(p, () => /3 commits reviewed/.test(document.getElementById("dr-body").textContent) && !document.getElementById("dr-deploy").disabled);
-    pl = await pill(p);
-    if (pl.text !== report().line || pl.state !== "ready") fail("deployReady: the pill did not come back: " + JSON.stringify(pl));
-    await ctx.close();
-
-    // a daemon that is not a hub: nothing is drawn
-    dm = { get: { status: 404, body: { error: "not found" } }, post: { status: 404, body: {} } };
-    ({ ctx, p, errors } = await open(dm));
-    await p.waitForTimeout(800);
-    if ((await pill(p)).shown) fail("deployReady: the pill shows on a daemon that is not a hub");
-    if (errors.length) fail("deployReady: page errors: " + errors.join(" | "));
-    await ctx.close();
-  } finally { tasksMode = was; }
-  if (!bad) console.log("deployReady ok");
-}
-
 // ── units, and running the suite in shards ────────────────────────────────────────────────────────────────────────
 // The default run is a list of UNITS in a fixed order: every section, plus the inline blocks of main() that share one
 // page (core, core2) or one mock state (gauto, switches). A unit is the smallest thing that can move to another process.
@@ -32366,7 +32185,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, deployReady: deployReadySection, trayHead: trayHeadSection,
+      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, trayHead: trayHeadSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
@@ -34396,7 +34215,6 @@ async function main() {
     await unit("mChanges", () => mChangesSection(browser));
     await unit("mChangesReal", () => mChangesRealSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
-    await unit("deployReady", () => deployReadySection(browser, base));
     await unit("mHomeLive", () => mHomeLiveSection(browser));
     await unit("soundPhone", () => soundPhoneSection(browser, base));
     await unit("boardDocs", () => boardDocsSection(browser, base));

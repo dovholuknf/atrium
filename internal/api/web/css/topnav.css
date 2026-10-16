@@ -56,12 +56,6 @@
     .gauto.on::after { content: "AUTO"; }
     .gauto.unknown::after { content: "?"; }
   }
-  /* The pill's line is as long as the commits it counts, so on a desktop it is always the short form. The line is the
-     tooltip and the first thing in the dialog. */
-  @media (min-width: 901px) {
-    .deploypill[data-short] { font-size: 0; }
-    .deploypill[data-short]::after { content: attr(data-short); font: var(--fs-sm)/1 var(--mono); }
-  }
   /* Under 1900px the new agent button is a plus, and under 1500px the room chip drops its word. */
   @media (min-width: 901px) and (max-width: 1900px) {
     button.newagent { font-size: 0; padding: 10px 14px; }

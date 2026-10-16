@@ -69,7 +69,7 @@ async function crDetail(id, quiet) {
 }
 
 // The hub answers `pushed` from its last pass, null while the first one runs: ask once more shortly, one timer at a time,
-// the same as deployready.js does, once per request. It does nothing once the view is closed.
+// once per request. It does nothing once the view is closed.
 let crPushedTimer = 0;
 const crPushedAsked = {};
 function crPushedRetry(id) {
