@@ -5063,7 +5063,7 @@ async function toastsTopSection(browser, base) {
 
     // 4. And back off it: bottom right again, still not re-animated.
     const before = (await where(p)).starts;
-    await p.evaluate(() => switchView("board"));
+    await p.evaluate(() => switchView("stack"));
     await p.waitForTimeout(400);
     w = await where(p);
     if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
@@ -11479,7 +11479,7 @@ async function cacheChipSection(browser, base) {
     // since a busy machine can spend the two seconds on the way here.
     kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
     landList = [LAND["cc-flip"]];
-    await p.evaluate(() => switchView("board"));
+    await p.evaluate(() => switchView("stack"));
     const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
     await fetched;
@@ -11619,7 +11619,7 @@ async function cacheChipSection(browser, base) {
         await r.evaluate(() => switchView("board"));
         await r.waitForFunction(() => document.querySelectorAll("#board .chip.cache").length >= 6, null, { timeout: slow(10000) });
         await r.screenshot({ path: path.join(sh, (process.env.CACHE_SHOT_PREFIX || "after") + "-board-1400x900.png") });
-        await r.evaluate(() => switchView("board"));
+        await r.evaluate(() => switchView("stack"));
         await r.waitForSelector("#stack-list .stackrow", { timeout: slow(10000) });
         await r.screenshot({ path: path.join(sh, (process.env.CACHE_SHOT_PREFIX || "after") + "-stack-1400x900.png") });
       }
@@ -17733,8 +17733,6 @@ async function restartMenuSection(browser, base) {
         .map(b => b.firstChild.textContent.trim()));
       const twice = own.filter((l, i) => own.indexOf(l) !== i);
       if (twice.length) fail("restartMenu: the menu of " + id + " has two rows called " + JSON.stringify(twice) + ": " + JSON.stringify(own));
-      if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/" + id + ".png" });
-      if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/" + id + ".png" });
       if (process.env.RESTART_SHOT_DIR) await p.screenshot({ path: process.env.RESTART_SHOT_DIR + "/" + id + ".png" });
       return p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].map(b => b.textContent));
     };
