@@ -17915,16 +17915,17 @@ async function shiftMenuSection(browser, base) {
     // mid-cycle card
     await attach("land-busy");
     await fire({ shiftKey: true });
-    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.querySelector("#cardmenu.on button"), null, { timeout: slow(5000) });
     m = await menu();
-    if (has(m)) fail("shiftMenu: new context is offered mid-cycle: " + JSON.stringify(m));
+    if (has(m)) fail("shiftMenu: new context is offered mid-cycle:" + JSON.stringify(m));
     await closeMenu();
 
     // the row menu, on the list
     await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-live\"]");
       if (!b) throw new Error("no land-live row");
       b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
-    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    // A closed menu keeps its last buttons, so a wait on a button alone can pass before this one has opened.
+    await p.waitForFunction(() => document.querySelector("#cardmenu.on button"), null, { timeout: slow(5000) });
     m = await menu();
     if (!has(m)) fail("shiftMenu: the row menu has no new context: " + JSON.stringify(m));
     await closeMenu();
@@ -17933,7 +17934,7 @@ async function shiftMenuSection(browser, base) {
     await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-bare\"]");
       if (!b) throw new Error("no land-bare row");
       b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
-    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.querySelector("#cardmenu.on button"), null, { timeout: slow(5000) });
     m = await menu();
     if (has(m)) fail("shiftMenu: new context is offered on an unsupervised card: " + JSON.stringify(m));
     await ctx.close();
