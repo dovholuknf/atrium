@@ -58,7 +58,7 @@ func TestAnInterviewerGetsItsOwnSystemPrompt(t *testing.T) {
 	if got := get(leanKit{}); got != leanSystemPrompt {
 		t.Errorf("a worker's prompt changed: %q", got)
 	}
-	lean, _, kit := leanOptions(LaunchRequest{Tags: []string{InterviewTag}}, nil, "")
+	lean, _, kit, _ := leanOptions(LaunchRequest{Tags: []string{InterviewTag}}, nil, "")
 	if lean || !kit.Interview {
 		t.Errorf("leanOptions: lean %v kit %+v", lean, kit)
 	}

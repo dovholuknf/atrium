@@ -844,7 +844,7 @@ func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
 	}
 	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
 	// The memory section of the system prompt is in the cache key.
-	if lean, _, _ := leanOptions(LaunchRequest{}, t, ""); lean {
+	if lean, _, _, _ := leanOptions(LaunchRequest{}, t, ""); lean {
 		leanEnv(extra)
 	}
 	if _, set := env[keepaliveTTLVar]; !set {
@@ -900,7 +900,7 @@ func forkCardArgs(st *store.Store, h *store.Harness, t *store.Task, hk *hooks) (
 		return nil, err
 	}
 	gateway := st.LeanWorkerGateway()
-	if lean, mcp, kit := leanOptions(LaunchRequest{}, t, gateway); lean {
+	if lean, mcp, kit, _ := leanOptions(LaunchRequest{}, t, gateway); lean {
 		if args, err = leanArgs(args, hk.readUserSettings(), "", mcp, kit, gateway, os.ReadFile, hk); err != nil {
 			return nil, err
 		}

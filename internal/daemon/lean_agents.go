@@ -37,6 +37,8 @@ type leanKit struct {
 	Agents, Skills []string
 	// Interview swaps the worker's system prompt for the interviewer's. It is not a kit: empty() ignores it.
 	Interview bool
+	// Superlean cuts the tool list, mercurius and the worker prompt further. Not a kit: empty() ignores it.
+	Superlean bool
 }
 
 func (k leanKit) empty() bool { return len(k.Agents) == 0 && len(k.Skills) == 0 }

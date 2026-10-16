@@ -46,6 +46,10 @@ import (
 // again. A tag rather than a column, the way OriginAgentTag is.
 const LeanTag = "atrium:lean"
 
+// SuperleanTag marks a card launched superlean, beside LeanTag: superlean implies lean, so everything that reads
+// LeanTag keeps working. See docs/runtime/superlean-design.md.
+const SuperleanTag = "atrium:superlean"
+
 // leanMCPTagPrefix marks each extra MCP server a lean card asked for, as
 // `atrium:mcp:<name>`.
 const leanMCPTagPrefix = "atrium:mcp:"
@@ -169,6 +173,34 @@ const leanSystemPrompt = `You are a worker launched by another agent through atr
 - Ask with atrium_say rather than guessing on anything consequential.
 Report to your launcher, never to the operator, unless your launcher is the operator. Your commit is read from your worktree or any hub branch, so never ask where to push and never offer a push to origin. A launcher's "stop" is a valid end: answer it with atrium_done, or with nothing.`
 
+// superleanSystemPrompt is appended in place of leanSystemPrompt for a superlean worker.
+const superleanSystemPrompt = `You are a worker launched through atrium. BRIEF.md is your whole task. End with atrium_done (a sha or an artifact) when you finish, or atrium_blocked when something stops you: that is the one message your launcher gets. Ask with atrium_say. Commit on your own branch, never on claude/main or main, with a one-line subject and no trailer. Never restart atrium or deploy unless the brief says to. Run tests in one foreground call, scoped to what you touched.`
+
+// superlean tools: the built-ins a superlean worker keeps. ToolSearch stays, or every MCP tool loads its full schema.
+var superleanBase = []string{"Read", "Edit", "Write", "Grep", "Glob", "Bash", "ToolSearch"}
+
+// superleanTools is the `--tools` list: the base, plus Agent with lean_agents and Skill with lean_skills.
+func superleanTools(k leanKit) []string {
+	out := append([]string{}, superleanBase...)
+	if len(k.Agents) > 0 {
+		out = append(out, "Agent")
+	}
+	if len(k.Skills) > 0 {
+		out = append(out, "Skill")
+	}
+	return out
+}
+
+// hasToolsFlag says whether args already carries `--tools`, as two tokens or `--tools=...`.
+func hasToolsFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--tools" || strings.HasPrefix(a, "--tools=") {
+			return true
+		}
+	}
+	return false
+}
+
 // leanOptions says whether a launch is lean and which extra MCP servers it
 // keeps, from the request for a new launch and from the card's tags for a
 // reopen.
@@ -189,17 +221,20 @@ Report to your launcher, never to the operator, unless your launcher is the oper
 // gateway is the lean_worker_gateway setting. With it set, `mercurius` named in
 // the request or carried by a tag is the WIDE-server override and is kept, where
 // with it empty `mercurius` is a default server and is dropped as it always was.
-func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit) {
+func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
 	if req.Lean != nil && !*req.Lean {
-		return false, nil, leanKit{}
+		return false, nil, leanKit{}, false
 	}
 	lean = req.Lean != nil && *req.Lean
 	mcp = append(mcp, req.MCP...)
 	kit = leanKit{Agents: cleanKitNames(req.LeanAgents), Skills: cleanKitNames(req.LeanSkills)}
-	lean = lean || !kit.empty()
+	superlean = req.Superlean != nil && *req.Superlean
+	lean = lean || !kit.empty() || superlean
 	kit.Interview = hasTag(req.Tags, InterviewTag) || (task != nil && hasTag(task.Tags, InterviewTag))
 	if task != nil && hasTag(task.Tags, LeanTag) {
 		lean = true
+		// The request says `superlean: false` to bring a superlean card back lean. Absent leaves it to the card.
+		superlean = superlean || (req.Superlean == nil && hasTag(task.Tags, SuperleanTag))
 		var agents, skills []string
 		for _, t := range task.Tags {
 			t = strings.TrimSpace(t)
@@ -220,12 +255,17 @@ func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool
 			kit.Skills = cleanKitNames(skills)
 		}
 	}
-	return lean, cleanNames(mcp, gateway != ""), kit
+	// kit is what leanArgs reads, so it carries the flag too.
+	kit.Superlean = superlean
+	return lean, cleanNames(mcp, gateway != ""), kit, superlean
 }
 
 // leanTags are the tags that record a lean launch on its card.
 func leanTags(mcp []string, kit leanKit) []string {
 	out := []string{LeanTag}
+	if kit.Superlean {
+		out = append(out, SuperleanTag)
+	}
 	for _, m := range mcp {
 		out = append(out, leanMCPTagPrefix+m)
 	}
@@ -238,19 +278,30 @@ func leanTags(mcp []string, kit leanKit) []string {
 	return out
 }
 
-// withoutLeanTags is tags without LeanTag and the `atrium:mcp:` marks, for a
+// withoutLeanTags is tags without LeanTag, SuperleanTag and the `atrium:mcp:` marks, for a
 // launch that turned lean off. It says whether anything was taken out.
 func withoutLeanTags(tags []string) ([]string, bool) {
 	out := []string{}
 	for _, t := range tags {
 		c := strings.TrimSpace(t)
-		if c == LeanTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) ||
+		if c == LeanTag || c == SuperleanTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) ||
 			strings.HasPrefix(c, leanSkillTagPrefix) {
 			continue
 		}
 		out = append(out, t)
 	}
 	return out, len(out) != len(tags)
+}
+
+// withoutSuperleanTag is tags without SuperleanTag, for a launch that says `superlean: false` and keeps lean.
+func withoutSuperleanTag(tags []string) []string {
+	out := []string{}
+	for _, t := range tags {
+		if strings.TrimSpace(t) != SuperleanTag {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // mergeTags is base with add appended, dropping repeats and keeping order.
@@ -308,7 +359,7 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 			kept = append(kept, args[i])
 		}
 	}
-	servers, err := leanServers(configs, mcp, gateway, readFile)
+	servers, err := leanServers(configs, mcp, gateway, kit.Superlean, readFile)
 	if err != nil {
 		return nil, err
 	}
@@ -317,6 +368,9 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 		return nil, err
 	}
 	systemPrompt := leanSystemPrompt
+	if kit.Superlean {
+		systemPrompt = superleanSystemPrompt
+	}
 	if kit.Interview {
 		systemPrompt = interviewSystemPrompt
 	}
@@ -326,6 +380,10 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 		"--strict-mcp-config", "--mcp-config", servers,
 		"--disallowedTools", strings.Join(leanDisallowedFor(kit), ","),
 		"--append-system-prompt", systemPrompt,
+	}
+	// A caller's own --tools in args wins: two on one command line leave the answer to Claude Code's parser.
+	if kit.Superlean && !hasToolsFlag(kept) {
+		out = append(out, "--tools", strings.Join(superleanTools(kit), ","))
 	}
 	if kit.needsPlugin() {
 		dir, err := leanPluginDir(kit, hk)
@@ -348,13 +406,17 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 // `mercurius` for a launch that did not ask for the wide one. It is a NAME,
 // never a URL, so atrium never holds a header or a token. An unknown name is
 // refused with the names the config has.
-func leanServers(configs, extra []string, gateway string, readFile func(string) ([]byte, error)) (string, error) {
+func leanServers(configs, extra []string, gateway string, superlean bool, readFile func(string) ([]byte, error)) (string, error) {
 	all, err := leanConfigServers(configs, readFile)
 	if err != nil {
 		return "", err
 	}
 	keep := map[string]json.RawMessage{}
 	for _, name := range leanDefaultServers {
+		// Superlean keeps atrium-control and nothing else by default: no mercurius.
+		if superlean && name != "atrium-control" {
+			continue
+		}
 		if v, ok := all[name]; ok {
 			keep[name] = v
 		}
@@ -368,7 +430,8 @@ func leanServers(configs, extra []string, gateway string, readFile func(string) 
 		return fmt.Errorf("no MCP server named %s in this runner's config. it has: %s",
 			strings.Join(missing, ", "), strings.Join(have, ", "))
 	}
-	if gateway != "" {
+	// Superlean adds no gateway either: it keeps no wide or narrow mercurius unless `mcp` names it.
+	if gateway != "" && !superlean {
 		wide := false
 		for _, name := range extra {
 			wide = wide || name == store.LeanWideServer

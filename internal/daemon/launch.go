@@ -168,6 +168,11 @@ type LaunchRequest struct {
 	// it, so its next reopen is not lean either.
 	Lean *bool    `json:"lean,omitempty"`
 	MCP  []string `json:"mcp,omitempty"`
+	// Superlean starts a lean worker with a smaller tool list, no mercurius and a one paragraph prompt. A pointer like
+	// Lean: absent leaves it to the card, false brings a superlean card back lean. Implies lean, refused with `lean:
+	// false`, claude only, never an interview. Recorded as the tag atrium:superlean beside atrium:lean. See
+	// docs/runtime/superlean-design.md.
+	Superlean *bool `json:"superlean,omitempty"`
 	// LeanAgents keeps the Agent tool on a lean launch and makes just these
 	// agents (the operator's ~/.claude/agents/<name>.md) available to it, and
 	// LeanSkills the Skill tool and these skills (~/.claude/skills/<name>/). A
@@ -1093,7 +1098,22 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 	}
 	gateway := d.st.LeanWorkerGateway()
-	lean, leanMCP, kit := leanOptions(req, task, gateway)
+	lean, leanMCP, kit, superlean := leanOptions(req, task, gateway)
+	if req.Superlean != nil && *req.Superlean {
+		if req.Lean != nil && !*req.Lean {
+			return nil, fmt.Errorf("superlean is a lean launch, and this one says lean: false")
+		}
+	}
+	if superlean {
+		if !isClaude(h) {
+			return nil, fmt.Errorf("%s cannot start superlean. superlean is a claude launch option", h.Label)
+		}
+		if kit.Interview {
+			return nil, fmt.Errorf("an interview session cannot start superlean: it carries its own system prompt")
+		}
+	}
+	// A caller's own --tools in args wins over the superlean list, and the launched event says so.
+	superleanOwnTools := superlean && hasToolsFlag(args)
 	if lean && !isClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
 	}
@@ -1115,7 +1135,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// retag writes req.Tags even when it came out empty, which is a lean card
 	// whose only tag was the lean one.
 	retag := false
-	if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+	if req.Lean != nil || req.Superlean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 		base := req.Tags
 		if task != nil {
 			// The card's own tags stay under whatever the launch carried.
@@ -1545,7 +1565,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"source": source, "external_id": req.ExternalID, "window": req.Window,
 		// `cmd` is the command before the lean flags, which carry the whole
 		// settings copy. These two say what was added.
-		"lean": lean, "mcp": leanMCP, "lean_agents": kit.Agents, "lean_skills": kit.Skills,
+		"lean": lean, "superlean": superlean, "superlean_own_tools": superleanOwnTools, "mcp": leanMCP, "lean_agents": kit.Agents, "lean_skills": kit.Skills,
 		// `cmd` carries the effort and extra args already. The env is keys
 		// only, because its values never leave the room's database.
 		"effort": effort, "env_keys": sortedKeys(extraEnv),

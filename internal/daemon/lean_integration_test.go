@@ -242,21 +242,21 @@ func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 
 func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
 	t.Parallel()
-	if lean, _, _ := leanOptions(LaunchRequest{}, nil, ""); lean {
+	if lean, _, _, _ := leanOptions(LaunchRequest{}, nil, ""); lean {
 		t.Fatal("a plain launch is not lean")
 	}
 	on, off := true, false
-	lean, mcp, _ := leanOptions(LaunchRequest{Lean: &on, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil, "")
+	lean, mcp, _, _ := leanOptions(LaunchRequest{Lean: &on, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil, "")
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("got %v %q", lean, mcp)
 	}
 	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}, leanKit{}))}
-	lean, mcp, _ = leanOptions(LaunchRequest{}, card, "")
+	lean, mcp, _, _ = leanOptions(LaunchRequest{}, card, "")
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("a reopen of a lean card should start lean with its servers, got %v %q", lean, mcp)
 	}
 	// Backlog-2 item 64: false wins over the card.
-	if lean, mcp, _ = leanOptions(LaunchRequest{Lean: &off, MCP: []string{"ziti"}}, card, ""); lean || len(mcp) != 0 {
+	if lean, mcp, _, _ = leanOptions(LaunchRequest{Lean: &off, MCP: []string{"ziti"}}, card, ""); lean || len(mcp) != 0 {
 		t.Fatalf("lean: false on a lean card should start it with the full setup, got %v %q", lean, mcp)
 	}
 }
