@@ -1652,6 +1652,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveBacklog(w, r, sub)
 		return
 	}
+	if sub == "doc-debt" {
+		p.serveDocDebt(w, r)
+		return
+	}
 	if sub == "items" || strings.HasPrefix(sub, "items/") {
 		p.serveItems(w, r, sub)
 		return
