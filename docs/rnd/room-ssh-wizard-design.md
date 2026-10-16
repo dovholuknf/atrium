@@ -273,42 +273,47 @@ The point is to add a room from zero and turn ssh on as a script that runs and r
   (`f-005.md`), and the hub it points at is a throwaway (`atrium run --no-room` on spare ports, as the f-005 proof did),
   never the live hub.
 
-## Build plan
+## Phase plan
 
-Each step lands alone. Steps 1 to 4 come first and are what unblocks the sg4 to sg3 failure clint hit.
+Five phases, each one worker, one branch and one merge, each landing alone. Phase 1 is what unblocks the sg4 to sg3
+failure clint hit and touches no hub code, so it can be built and merged before anything else is decided.
 
-1. **`addr` in the switch, and dial it** (`internal/remoteaccess`, `internal/link/stream.go`, fabric). `State` gains `Addr`
-   (default `127.0.0.1`), `Load` validates a host that is an IP or a name, `stream.go:505` dials it,
-   `atrium room remote-access on --addr` and `status` print it plus the banner of what it reaches. Tests beside
-   `internal/link/stream_integration_test.go`: a listener on a second loopback address is dialled when `addr` names it.
-2. **Which sshd, as a package** (`internal/sshwizard/whichsshd.go`). `Probe(addr)` returns banner and host key (through
-   the machine's `ssh-keyscan`, through the `Env` style seam `internal/guard/env.go` uses so a test can answer it),
-   `HostKeys()` reads the `.pub` files, `Match` compares. Windows listener owner as supporting text. Tests with a fake
-   keyscan answer: matching key, an Ubuntu banner, no sshd.
-3. **The step engine** (`internal/sshwizard/steps.go`). The `Step` type and the eleven steps as listed, each with a
-   `Check` that reads only. Table tests: one per step per verdict, with the machine behind an interface. No writes yet.
-4. **`atrium room ssh setup --check`, and the room's `GET /v1/ssh/wizard`** (read only, runs the checks, bounded at ten
-   seconds). The board can show live state from this alone.
-5. **The hub's store and the kinds** (`internal/hubstore`, `internal/link`). A new table at the END of the migration slice,
-   `room_ssh` (room, user, port, public key, host key, enabled, updated), deleted with the room. The `ssh` kind on the
-   model of `roomspec.go`: `POST /_room/ssh`, `GET /_room/ssh-keys`, name from the certificate only, size bounded, a
-   room with no certificate refused. Tests: a room cannot read or post another's, removal deletes the key, the set omits
-   a room with `enabled: false`.
-6. **The fixes** (`internal/sshwizard/fix.go`). Key generation, the managed block writer (round trips, leaves outside
-   lines byte for byte, creates the file at 0600, writes through a temp file and a rename), the Windows
-   administrators file and its `needs-human` lines, `atrium_config` and `atrium_known_hosts` extensions in
-   `internal/sshcfg` (`User`, `IdentityFile`, `IdentitiesOnly`, `UserKnownHostsFile`). Tests in a temp home.
-7. **`atrium room ssh setup` and `arm`** (the interactive face, `--yes`, the token file at 0600 with a 15 minute life),
-   `remote-access off` removing the managed block and withdrawing the key.
-8. **The pull loop** (room): at attach, on the hub's nudge, every ten minutes. Writes only owned files. A test with a hub
-   and two rooms over loopback, as `internal/link`'s attach tests build them: add a room and see its key in the first
-   room's block, remove it and see it leave.
-9. **The board wizard** (`internal/api/web/js/rooms.js`, new `ssh-wizard.js`, headless unit, and screenshots in the change
-   note per the board's usual rule). Stepper, copy buttons, the arm link, `ssh: wrong sshd` and the Set up button.
-   The write routes are served only on the room's loopback board and require the arm token.
-10. **The harness** (`scripts/vm/`): checkpoint creation notes, the runner, the five scenarios and the Linux leg.
-11. **Docs**: `docs/fabric/hub-and-rooms.md` (a short section), `docs/changes/room-ssh-wizard.md` with its test plan, a
-    changelog entry, and a one line pointer from `ssh-across-rooms.md` that its "keys are out of scope" no longer holds.
+1. **Which sshd, the dial address, and the read only wizard.** One worker. Four pieces in this order:
+   - `addr` in the switch: `remoteaccess.State` gains `Addr` (default `127.0.0.1`), `Load` validates an IP or a name,
+     `internal/link/stream.go:505` dials it, `atrium room remote-access on --addr` and `status` print it plus the banner
+     and host key fingerprint of what it reaches. Test beside `internal/link/stream_integration_test.go`: a listener on a
+     second loopback address is dialled when `addr` names it.
+   - `internal/sshwizard/whichsshd.go`: `Probe(addr)` returns banner and host key through the machine's `ssh-keyscan`,
+     through an `Env` seam like `internal/guard/env.go` so a test can answer it. `HostKeys()` reads the `.pub` files,
+     `Match` compares. Tests with a fake keyscan: matching key, an Ubuntu banner, no sshd.
+   - `internal/sshwizard/steps.go`: the `Step` type and the eleven steps, each with a `Check` that reads only and a `Fix`
+     that returns `needs-human` with its text. No `Fix` writes in this phase. Table tests, one per step per verdict, with
+     the machine behind an interface.
+   - `atrium room ssh setup --check` and the room's read only `GET /v1/ssh/wizard`, bounded at ten seconds.
+
+   Done when: `go test ./internal/sshwizard/... ./internal/remoteaccess/... ./internal/link/...` passes, `--check` on a
+   machine with sshd prints all eleven steps, a stray listener on `127.0.0.1:22` is reported as the wrong sshd and
+   refused, and `docs/changes/room-ssh-wizard-phase1.md` carries the test plan.
+2. **The hub's key store and kinds.** `room_ssh` table at the END of the migration slice (room, user, port, public key,
+   host key, enabled, updated), deleted with the room. `POST /_room/ssh` and `GET /_room/ssh-keys` on the model of
+   `roomspec.go`: name from the certificate only, bounded, no certificate refused. Done when: a room cannot read or post
+   another's, `rooms rm` deletes the key, the set omits `enabled: false`.
+3. **The fixes and the terminal wizard.** `internal/sshwizard/fix.go` (key generation, the managed block writer that
+   leaves outside lines byte for byte, creates 0600, writes by temp file and rename, the Windows administrators file and
+   its `needs-human` lines), `internal/sshcfg` gains `User`, `IdentityFile`, `IdentitiesOnly`, `UserKnownHostsFile`.
+   `atrium room ssh setup` (interactive and `--yes`), `arm`, and `remote-access off` removing the block and withdrawing
+   the key. Done when: writer tests in a temp home pass and the round trip step proves login on the claudevm.
+4. **The pull loop.** At attach, on the hub's nudge, every ten minutes, writing only owned files. Done when: a test with
+   a hub and two rooms over loopback adds a room and sees its key in the first room's block, removes it and sees it
+   leave.
+5. **The board wizard and the harness.** `ssh-wizard.js` stepper, copy buttons, the arm link, `ssh: wrong sshd` and the
+   Set up button, write routes only on the room's loopback board and only with the arm token, headless unit and shots.
+   Then `scripts/vm/` with the checkpoint notes, the runner, the five scenarios and the Linux leg, then
+   `docs/fabric/hub-and-rooms.md`, the change note and a pointer from `ssh-across-rooms.md`. Done when: the runner
+   prints a green table from `ssh-zero` and `wslrelay` on claudevm.
+
+The harness can start earlier than phase 5 for the read only scenarios (`zero` and `wslrelay` need only phase 1), and
+should, since it is how phase 1 is proven.
 
 ## Risks
 
@@ -334,23 +339,40 @@ Each step lands alone. Steps 1 to 4 come first and are what unblocks the sg4 to 
   runner sets the clock and re-joins the room, so a checkpoint never holds a room's credentials (it is taken before
   `provision`).
 
-## Open questions for clint
+## Decided
 
-1. This puts public keys on the hub and writes a managed block in each room's `authorized_keys`, which
-   `ssh-across-rooms.md` and `ssh-via-hub.md` put out of scope on purpose. Is that now wanted, with the room still
-   deciding through `from`? The alternative is the wizard printing the one line to add by hand.
-2. One shared key per room, or a key per pair (option C)? This design recommends one per room with `from` filtering, and
-   revisits if a `*` default turns out common.
-3. May the harness restore claudevm checkpoints, and who runs it? `Restore-VMCheckpoint` needs rights on the Hyper-V host
-   (sg4), so is the script run as an administrator, or by an account in Hyper-V Administrators, which
-   `docs/room-accounts.md` treats as admin equivalent?
-4. May the Linux leg import and unregister a throwaway WSL distro on sg4, where wslrelay already owns `127.0.0.1:22`?5. Is a board that can run fixes after a local `arm` what you meant by a wizard, or must every write stay in the terminal
-   as `ssh-via-hub.md` decided? Without arm the board wizard is read only plus copy buttons.
+These were open and are closed. Recorded so nobody reopens them while building.
 
-## Decisions (orchestrator, 2026-10-14)
+- Keys go on the hub and a managed block goes in each room's `authorized_keys`, with the room filtering by its own
+  `from` list. Clint asked for exactly that. This reverses the out of scope line in `ssh-across-rooms.md`, which phase 5
+  amends.
+- One key per room, not one per pair. Revisit only if a `*` `from` turns out common.
+- The board runs fixes after a local `arm`. Without arm the board wizard is read only plus copy buttons. A request that
+  came through the hub never carries the token, so decision 12 of `ssh-via-hub.md` still holds.
+- The wizard never installs sshd itself: the room's account is a standard user, so that step is `needs-human`.
+- The generated key has no passphrase and is dedicated (`~/.ssh/atrium_ed25519`), never the user's own.
+- The self test includes this room's own key, with `--no-self-test` to leave it out.
+- The `from` default offered is the rooms the hub already has, ticked by name. Never `*` for a room that is not a
+  throwaway.
 
-- Yes to keys on the hub plus a managed authorized_keys block, with the room filtering by `from`. Clint asked for exactly that.
-- One key per room.
-- Yes to the arm-token board fixes.
-- Q3 (Hyper-V checkpoint rights) and Q4 (a WSL distro on sg4) wait on clint.
-- Nothing is built yet.
+## Open for clint
+
+Every question carries a recommended answer, and the recommendation is what gets built if nobody answers.
+
+1. May the harness restore claudevm checkpoints, and who runs it? `Restore-VMCheckpoint` needs rights on sg4. Recommended:
+   yes, run from an elevated shell by clint or by a scheduled task under an account in Hyper-V Administrators that is
+   used for nothing else, with the script refusing any VM that is not `claudevm`. The read only `--check` scenarios need
+   no rights at all.
+2. May the Linux leg import and unregister a throwaway WSL distro on sg4, where wslrelay already owns `127.0.0.1:22`?
+   Recommended: yes, a distro named `atrium-ssh-t1` only, deleted at the end of each run. It is also the one place the
+   real wslrelay can be tested instead of the fake listener. Until clint says yes, phase 5 ships the `wslrelay` fake
+   scenario only.
+3. Should phase 1 ship before the hub pieces? Recommended: yes. Phase 1 changes nothing on the hub, fixes the sg4 to sg3
+   dial by letting `addr` be set by hand, and gives the wizard's checks on their own.
+4. What does the room do when the hub's key set changes while ssh is off? Recommended: nothing. The loop never runs
+   when ssh is off, and turning ssh on pulls once at once.
+5. Does the wizard add the `Include atrium_config` line without asking on a later run? Recommended: no. It asks once and
+   records the consent in `remote_access.json`, after which the loop may keep the file current but never adds a second
+   `Include`.
+6. Where does the arm link open? Recommended: the room's loopback board only. Remote use goes through the terminal
+   wizard, because a link that opens elsewhere is a link the hub could be asked to hand out.
