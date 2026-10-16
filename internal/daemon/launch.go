@@ -1141,14 +1141,20 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			// The card's own tags stay under whatever the launch carried.
 			base = mergeTags(task.Tags, req.Tags)
 		}
-		if req.Lean == nil || *req.Lean {
+		if req.Lean != nil && !*req.Lean {
+			if kept, cut := withoutLeanTags(base); cut {
+				req.Tags, retag = kept, true
+			}
+		} else if lean {
 			// A new list replaces the card's, so the old marks come off first.
 			if len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 				base = withoutKitTags(base)
 			}
-			req.Tags = mergeTags(base, leanTags(leanMCP, kit))
-		} else if kept, cut := withoutLeanTags(base); cut {
-			req.Tags, retag = kept, true
+			// `superlean: false` takes the superlean mark off and leaves the card lean.
+			if !superlean {
+				base = withoutSuperleanTag(base)
+			}
+			req.Tags, retag = mergeTags(base, leanTags(leanMCP, kit)), true
 		}
 	}
 	prompt := wanted
@@ -1405,7 +1411,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		tags := req.Tags
 		if cur, err := d.st.Get(created.ID); err == nil {
 			kept := cur.Tags
-			if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+			if req.Lean != nil || req.Superlean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 				kept, _ = withoutLeanTags(kept)
 			}
 			tags = mergeTags(kept, req.Tags)

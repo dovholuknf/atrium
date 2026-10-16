@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -228,6 +230,64 @@ func TestSuperleanRefusals(t *testing.T) {
 		w := send(h, "POST", "/v1/launch", `{"harness":"`+c.harness+`","cwd":"`+cwd+`",`+c.extra+`}`)
 		if w.Code == http.StatusOK || !strings.Contains(w.Body.String(), c.says) {
 			t.Errorf("%s %s: answered %d: %s", c.harness, c.extra, w.Code, w.Body)
+		}
+	}
+}
+
+// A launch onto a superlean card goes through the retag block: `superlean: false` leaves the card lean and takes
+// only atrium:superlean off, `lean: false` takes both.
+func TestSuperleanFalseOnALaunchTakesOnlyTheSuperleanTagOff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	for _, c := range []struct {
+		extra string
+		want  []string
+	}{
+		{`,"superlean":false`, []string{LeanTag}},
+		{`,"lean":false`, nil},
+		{``, []string{LeanTag, SuperleanTag}},
+	} {
+		d := testDaemon(t)
+		dir := t.TempDir()
+		// A stand-in named claude, so the launch is a claude launch that starts something that waits.
+		exe, body := "claude", "#!/bin/sh\nsleep 60\n"
+		if runtime.GOOS == "windows" {
+			exe, body = "claude.cmd", "@echo off\r\nping -n 60 127.0.0.1 >nul\r\n"
+		}
+		if err := os.WriteFile(filepath.Join(dir, exe), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.st.SaveHarness(store.Harness{ID: "slx", Label: "slx", Enabled: true,
+			Cmd: filepath.ToSlash(filepath.Join(dir, exe)), ModelArgs: []string{"--model", "{model}"},
+			LaunchMode: store.LaunchPTY}); err != nil {
+			t.Fatal(err)
+		}
+		card, _, err := d.st.Register(store.Observed{WireName: "sl-card", Worktree: t.TempDir(), Runner: "slx"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := d.st.SetTags(card.ID, mergeTags([]string{"docs"}, leanTags(nil, leanKit{Superlean: true}))); err != nil {
+			t.Fatal(err)
+		}
+		w := send(d.BoardHandler(), "POST", "/v1/launch", `{"harness":"slx","cwd":"`+
+			strings.ReplaceAll(card.Worktree, `\`, `/`)+`","task_id":"`+card.ID+`"`+c.extra+`}`)
+		if w.Code != http.StatusOK {
+			t.Skipf("could not start onto the card, answered %d: %s", w.Code, w.Body)
+		}
+		got, err := d.st.Get(card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = d.StopRunner(card.ID)
+		want := append([]string{"docs"}, c.want...)
+		if len(got.Tags) != len(want) {
+			t.Fatalf("%q: tags are %q, want %q", c.extra, got.Tags, want)
+		}
+		for _, tag := range want {
+			if !hasTag(got.Tags, tag) {
+				t.Fatalf("%q: tags are %q, want %q", c.extra, got.Tags, want)
+			}
 		}
 	}
 }
