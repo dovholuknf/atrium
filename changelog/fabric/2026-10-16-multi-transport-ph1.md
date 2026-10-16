@@ -1,0 +1,1 @@
+A room now gives up on a hub that has been silent for 15 seconds and reattaches, instead of waiting minutes on a dead path. Direct control connections also turn on TCP keepalive. (f-multi-transport-rooms, phase 1)

@@ -331,9 +331,10 @@ func (r *Room) attach(ctx context.Context) error {
 		})
 	}
 
+	keepAlive(conn)
 	for {
 		var n note
-		if err := readJSON(br, &n); err != nil {
+		if err := readNote(conn, br, r.T.Silence, &n); err != nil {
 			if moving.Load() {
 				return errMovingUp
 			}
@@ -378,6 +379,46 @@ func (r *Room) attach(ctx context.Context) error {
 				defer r.restarting.finish()
 				r.OnRestart(ask)
 			}(*n.Restart)
+		}
+	}
+}
+
+// errHubSilent is the room giving up on a control connection that stopped carrying frames.
+var errHubSilent = errors.New("the hub has been silent too long")
+
+// readNote reads one frame, giving up after `silence` with nothing arriving.
+//
+// THE HUB ECHOES EVERY BEAT, so a live control connection delivers a frame every Beat and that is a free
+// liveness signal. Without a deadline the reader blocks for as long as the kernel keeps retransmitting into a
+// black-holed path, which is minutes, and nothing tells the ladder to run. The deadline is set again before every
+// frame, so any frame, echo or not, restarts it. A zero silence sets none. See
+// docs/fabric/multi-transport-design.md, "The five minutes".
+func readNote(conn net.Conn, br *bufio.Reader, silence time.Duration, n *note) error {
+	if silence > 0 {
+		_ = conn.SetReadDeadline(time.Now().Add(silence))
+	}
+	err := readJSON(br, n)
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return errHubSilent
+	}
+	return err
+}
+
+// keepAlive turns on TCP keepalive when the control connection is a TCP one, or a TLS one over TCP. A second
+// layer under readNote that costs nothing, and does nothing for an overlay circuit, which is not a kernel socket.
+func keepAlive(conn net.Conn) {
+	for i := 0; i < 4; i++ {
+		switch c := conn.(type) {
+		case *net.TCPConn:
+			_ = c.SetKeepAliveConfig(net.KeepAliveConfig{
+				Enable: true, Idle: 5 * time.Second, Interval: 5 * time.Second, Count: 3,
+			})
+			return
+		case interface{ NetConn() net.Conn }:
+			conn = c.NetConn()
+		default:
+			return
 		}
 	}
 }
