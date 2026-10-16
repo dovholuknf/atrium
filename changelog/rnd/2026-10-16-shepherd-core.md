@@ -1,0 +1,1 @@
+- `atrium shepherd run <item>` (hidden for now) takes a backlog item from launch to a held packet with no model beyond the worker's own: check, worktree, launch, wait, collect, stage, hold, with its state in a hub row so a killed shepherd resumes. Accept and land are not built yet. rnd-shepherd-core.

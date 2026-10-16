@@ -887,6 +887,29 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS work_outcome_landed ON work_outcome (landed_at)`,
 		},
 	},
+	{
+		// SHEPHERDS: one row per `atrium shepherd run <item>`, written before each phase so a killed shepherd resumes. The
+		// phase is text the shepherd package owns, so a new phase is not a migration. See shepherd.go.
+		name: "0029_shepherd",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS shepherd (
+				item_id    TEXT PRIMARY KEY,
+				phase      TEXT NOT NULL,
+				room       TEXT NOT NULL DEFAULT '',
+				base_sha   TEXT NOT NULL DEFAULT '',
+				worktree   TEXT NOT NULL DEFAULT '',
+				branch     TEXT NOT NULL DEFAULT '',
+				card       TEXT NOT NULL DEFAULT '',
+				work_item  TEXT NOT NULL DEFAULT '',
+				ref        TEXT NOT NULL DEFAULT '',
+				stage      TEXT NOT NULL DEFAULT '',
+				packet     TEXT NOT NULL DEFAULT '',
+				last_error TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {
