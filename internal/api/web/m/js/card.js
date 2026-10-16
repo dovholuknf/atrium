@@ -261,7 +261,7 @@
     const st = m.state || m.kind || "";
     const k = entryKey(m.at, m.text);
     return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '" data-k="' + U.esc(k) + '">' + headerHTML("you", m.at, OWN_TAG[st] || "", "", m.text, k) +
-      '<div class="own">' + U.esc(m.text) + "</div></article>";
+      '<div class="own">' + MD.own(m.text, mdCtx()) + "</div></article>";
   }
 
   function questionsHTML(t) {
@@ -286,7 +286,7 @@
     const cut = p.truncated ? '<p class="cut">cut</p>' : "";
     const text = String(p.text || "");
     const k = entryKey(p.at, p.text), dk = ' data-k="' + U.esc(k) + '"';
-    const body = t => '<div class="own">' + U.esc(t) + "</div>" + cut + "</article>";
+    const body = t => '<div class="own">' + MD.own(t, mdCtx()) + "</div>" + cut + "</article>";
     if (p.kind === "command") return '<article class="reply prompt command"' + dk + '>' + headerHTML("command", p.at, "", "", text, k) + body(text);
     if (p.kind === "peer") {
       const m = /^\[atrium\] (.+?) says:\s*/.exec(text);

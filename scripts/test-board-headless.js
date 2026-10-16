@@ -23117,7 +23117,7 @@ async function main() {
       
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mChatThumbs: mChatThumbsSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -25087,6 +25087,7 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("mOpenQ", () => mOpenQSection(browser));
+    await unit("mChatThumbs", () => mChatThumbsSection(browser));
     await unit("mCleanUpForeign", () => mCleanUpForeignSection(browser));
     await unit("mGrowlStack", () => mGrowlStackSection(browser));
     await unit("itemsRealShape", bu("itemsRealShape"));
@@ -27640,6 +27641,54 @@ async function growlStableSection(browser, base) {
 
 // A turn that ends on Open Questions shows them once, in the block under the thread and not in its own text. A turn whose
 // block is not drawn (answered, or text said after the questions) keeps every word.
+// A real picture, 320 by 180, so a thumbnail has a size to cap and the shot shows one.
+function mBigPng() {
+  const zlib = require("zlib"), w = 320, h = 180, raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (w * 3 + 1) + 1 + x * 3; raw[o] = x * 255 / w; raw[o + 1] = y * 255 / h; raw[o + 2] = 160; }
+  const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = b => { let c = 0xffffffff; for (const v of b) c = crcT[(c ^ v) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (t, d) => { const b = Buffer.concat([Buffer.from(t), d]), l = Buffer.alloc(4), c = Buffer.alloc(4); l.writeUInt32BE(d.length); c.writeUInt32BE(crc(b)); return Buffer.concat([l, b, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
+
+// An image path in a message is a thumbnail under its text, for the operator's own messages and for replies. Only a path
+// inside the card is asked for: an outside one stays text and is never fetched. M_SHOTS=<dir> writes the picture.
+async function mChatThumbsSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("th-1", { alias: "thumbs", display_title: "thumbs", worktree: "D:/git/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(3 * M_MIN) } })];
+  const big = mBigPng();
+  st.files = { "D:/git/card/.atrium/incoming/a-image.png": big, ".atrium/incoming/b-image.png": big };
+  const inA = "D:/git/card/.atrium/incoming/a-image.png", inB = ".atrium/incoming/b-image.png", out = "D:/elsewhere/secret.png";
+  st.replies["th-1"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "Got it, looking at " + inB + " now." }],
+    prompts: [{ at: mIso(2 * M_MIN), kind: "operator", text: "see " + inA + " and also " + out }] };
+  await st.open();
+  const tag = "mChatThumbs: ";
+  try {
+    const { ctx, p, errors } = await mReplyPage(browser, st, M_VIEWS[0], "th-1");
+    await p.waitForFunction(() => document.querySelectorAll("#m-replies .md-img img").length >= 2, null, { timeout: slow(8000) })
+      .catch(() => {});
+    const r = await p.evaluate(() => {
+      const own = document.querySelector("#m-replies .mine .own");
+      return { imgs: document.querySelectorAll("#m-replies .md-img img").length,
+        own: !!document.querySelector("#m-replies .mine .md-img img"),
+        text: own ? own.textContent : "",
+        outImg: [...document.querySelectorAll("#m-replies .md-img")].some(e => /secret/.test(e.dataset.path)) };
+    });
+    if (r.imgs !== 2) fail(tag + "thumbnails drawn: " + r.imgs + ", want 2");
+    if (!r.own) fail(tag + "the operator's message has no thumbnail");
+    if (!/secret\.png/.test(r.text) || !r.text.includes(inA)) fail(tag + "the path text was lost: " + r.text);
+    if (r.outImg) fail(tag + "a path outside the card got a thumbnail");
+    if ((st.fileHits || []).some(h => /secret/.test(h))) fail(tag + "the outside path was fetched: " + st.fileHits.join());
+    const wide = await p.evaluate(() => Math.max(...[...document.querySelectorAll("#m-replies .md-img img")].map(i => i.getBoundingClientRect().width)));
+    if (wide > 241 || wide < 100) fail(tag + "a thumbnail is " + wide + "px wide, want at most 240");
+    await mShot(p, "chat-thumbs");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mChatThumbs ok");
+}
+
 async function mOpenQSection(browser) {
   const st = mServer({});
   const Q = "File the thumbnail as a feature?";

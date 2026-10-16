@@ -58,6 +58,31 @@
 
   const base = p => String(p).replace(/\/+$/, "").split("/").pop();
 
+  // A path in running text that ends in an image extension, relative with a folder in it (REL) or absolute too (ANY). A
+  // match is only a candidate: `inside` decides, and a path outside the card is never asked for.
+  const REL = /(^|[\s(])((?![A-Za-z]:[\\/])[\w.@+~-]+\/[\w.@+~\/-]*\.(?:png|jpe?g|gif|webp))(?=$|[\s).,;:!?])/gi;
+  const ANY = /(^|[\s("'`])((?:\/|[A-Za-z]:[\\/]|[\w.@+~-]+\/)[\w.@+~\/\\-]*\.(?:png|jpe?g|gif|webp))(?=$|[\s)"'`,;:!?]|\.(?:$|\s))/gi;
+
+  // The operator's own message: the text as typed, escaped, each image path of the card a link, and the thumbnails under
+  // it. The path stays in the text. A path outside the card stays plain text.
+  function own(text, ctx) {
+    ctx = ctx || {};
+    const src = String(text), pics = [];
+    let out = "", at = 0;
+    src.replace(ANY, (m, lead, p, off) => {
+      const path = slashed(p);
+      out += esc(src.slice(at, off)) + esc(lead);
+      at = off + m.length;
+      if (inside(path, ctx)) {
+        out += fileNode(path, ctx, p, false);
+        if (pics.indexOf(path) < 0) pics.push(path);
+      } else out += esc(p);
+      return m;
+    });
+    out += esc(src.slice(at));
+    return out + (pics.length ? '<span class="own-pics">' + pics.map(p => fileNode(p, ctx, "", true)).join("") + "</span>" : "");
+  }
+
   // The node that stands for a card file. Hydrated by `hydrate`, which fetches an image and leaves a file for a tap.
   function fileNode(path, ctx, label, asImage) {
     path = slashed(path);
@@ -100,6 +125,8 @@
       if (!inside(p, ctx)) return m;
       return lead + stash(fileNode(p, ctx, p, true)) + esc(tail ? tail[0] : "");
     });
+    // A bare relative image path with a folder in it, like `.atrium/incoming/x.png`. The same rule: only one under the card.
+    s = s.replace(REL, (m, lead, p) => (inside(unesc(p), ctx) ? lead + stash(fileNode(unesc(p), ctx, unesc(p), true)) : m));
     s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^\w*])\*([^*\n]+)\*(?![\w*])/g, "$1<em>$2</em>")
       .replace(/(^|[^\w])_([^_\n]+)_(?![\w])/g, "$1<em>$2</em>")
@@ -280,6 +307,7 @@
         if (!v.url || !el.isConnected) { if (!v.url) unavailable(el); return; }
         const img = document.createElement("img");
         img.alt = el.getAttribute("aria-label") || "";
+        img.loading = "lazy";
         img.onerror = () => unavailable(el);
         img.onload = () => { el.dataset.state = "ready"; };
         img.src = v.url;
@@ -352,5 +380,5 @@
     });
   }
 
-  window.mMd = { render, safeURL, inline, hydrate, release, saveBlob: (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); } };
+  window.mMd = { render, safeURL, inline, own, hydrate, release, saveBlob: (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); } };
 })();

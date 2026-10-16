@@ -288,7 +288,7 @@
     "m-card": {
       "page": "the phone's card screen: output, messages, resume, uploads",
       "units": [
-        "mCard", "mCardUrl", "mResume", "mOwnMessages", "mBubbles", "mRecapSheet", "mOutputAt", "mStickBottom", "mCardUpload", "mOpenQ", "mCleanUpForeign", "mPrompts"
+        "mCard", "mCardUrl", "mResume", "mOwnMessages", "mBubbles", "mRecapSheet", "mOutputAt", "mStickBottom", "mCardUpload", "mOpenQ", "mChatThumbs", "mCleanUpForeign", "mPrompts"
       ],
       "sources": ["internal/api/web/m/js/card.js", "internal/api/web/m/js/resume.js"],
       "tests": [],
