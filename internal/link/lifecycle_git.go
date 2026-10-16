@@ -231,6 +231,10 @@ func (p *Proxy) RefreshGitSteps(ctx context.Context, id string, forge func() git
 	if err != nil {
 		return nil, fmt.Errorf("git could not be read for %s: %w", id, err)
 	}
+	if w.Branch == "" && facts.SHA == "" && !facts.Landed {
+		// Nothing built and nothing landed: no row is written for an item that has nothing to say.
+		return nil, nil
+	}
 	if len(facts.Paths) > 0 {
 		_ = st.PutWorkPaths(id, facts.Paths)
 	} else if facts.Landed {
@@ -265,7 +269,7 @@ func (p *Proxy) RefreshGitSteps(ctx context.Context, id string, forge func() git
 
 // builtSHA is the commit the item's builders finished at, from its stored building step, derived first when none is stored. A
 // finished build that named no commit answers the id's own marker, which LandFacts looks for by changelog entry: "-" stands
-// for it. Empty when nothing has been built.
+// for it, and so does an item not built at all, which may still have landed. Never empty.
 func (p *Proxy) builtSHA(ctx context.Context, st *hubstore.Store, id string) string {
 	building := func() (hubstore.WorkStepRow, bool) {
 		rows, _ := st.WorkSteps(id)
@@ -283,10 +287,9 @@ func (p *Proxy) builtSHA(ctx context.Context, st *hubstore.Store, id string) str
 		}
 		b, _ = building()
 	}
-	switch {
-	case b.State != hubstore.StepDone:
-		return ""
-	case gitsync.ValidSHA(strings.ToLower(b.SHA)):
+	// AN ITEM WHOSE BUILDING STEP IS NOT DONE, OR NAMES NO COMMIT, IS STILL READ BY ITS ID: the live hub's landed items had a
+	// building step that never reached done and a work row with no branch, and returning nothing here left them pending.
+	if b.State == hubstore.StepDone && gitsync.ValidSHA(strings.ToLower(b.SHA)) {
 		return strings.ToLower(b.SHA)
 	}
 	return "-"

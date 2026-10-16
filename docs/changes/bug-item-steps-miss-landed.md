@@ -18,3 +18,9 @@
 
 1. Find a bug whose builders finished and that no designer was ever on.
 2. Designed and approved read skipped with a reason, and the current step is never designed.
+
+### @LETTER@4. An item whose build never finished
+
+1. Open `/_hub/work/<id>` for an item with no branch and a building step that is not done, whose changelog entry is on
+   claude/main.
+2. Landed, deployed and pushed are read from that entry, not left pending.

@@ -133,15 +133,15 @@ func (s *Store) SetWorkKind(id, kind string) error {
 	return s.updateWork(`UPDATE work SET kind = ?, updated_at = ? WHERE backlog_id = ?`, kind, id)
 }
 
-// WorkIdsOpen is the items with a branch, or a finished build when no branch was ever named, whose `deployed` and
-// `pushed` steps are not both settled (done or skipped): the ones a collect has anything left to learn about.
+// WorkIdsOpen is the items, built or not and branch or not (a landing is read off the item's changelog entry, which a
+// build that never recorded a sha still ships), whose `deployed` and `pushed` steps are not both settled (done or
+// skipped): the ones a collect has anything left to learn about.
 func (s *Store) WorkIdsOpen() ([]string, error) {
 	var out []string
 	err := s.guard(func() error {
 		out = nil
 		rows, err := s.db.Query(`SELECT w.backlog_id FROM work w
-			WHERE (w.branch <> '' OR EXISTS (SELECT 1 FROM work_step b WHERE b.backlog_id = w.backlog_id
-					AND b.step = 'building' AND b.state = 'done')) AND (SELECT COUNT(*) FROM work_step s WHERE s.backlog_id = w.backlog_id
+			WHERE w.backlog_id NOT LIKE 'adhoc-%' AND (SELECT COUNT(*) FROM work_step s WHERE s.backlog_id = w.backlog_id
 				AND s.step IN ('deployed','pushed') AND s.state IN ('done','skipped')) < 2
 			ORDER BY w.updated_at DESC LIMIT 200`)
 		if err != nil {
