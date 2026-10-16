@@ -69,7 +69,34 @@
       ["m1mini", "c-105", "posture check for OS version"], ["sg4", "c-401", "overlay cost report for finops"],
       ["sg3", "c-202", "reuse agent shares"]
     ].map(([room, id, title]) => ({ id, room, title, display_title: title, status: "working" }));
-    return { repos, tasks };
+    // What GET /_hub/git/branches answers for the same hub (docs/fabric/branch-status-design.md section 7, as phase 1 builds it):
+    // orphaned first, code before docs, oldest first, then landed. Only landed and orphaned exist until the hub joins the live
+    // cards (phase 3) and the room refs (phase 4). The first orphan's name is hostile on purpose: it has to come out as text.
+    const row = (repo, name, status, o) => Object.assign({ repo, name, status, kind: "", hub_sha: sha(name), commits: 1, uncarried: 0, how: "", last_commit: at(DAY), files: [], owner: null }, o);
+    const gone = (room, card) => ({ room, card, pushed: at(DAY) });
+    const landed = (repo, name, how, age, who) => row(repo, name, "landed", { how, last_commit: at(age), commits: 3, owner: who || null });
+    const bz = "github/openziti/ziti", bk = "github/openziti/zrok", bt = "github/dovholuknf/atrium";
+    const rows = [
+      row(bz, "claude/wip-<img src=x onerror=window.__x=1>", "orphaned", { kind: "code", commits: 97, uncarried: 1, last_commit: at(21 * DAY), files: ["router/link.go"], owner: gone("sg4", "c-101") }),
+      row(bt, "claude/land-sh", "orphaned", { kind: "code", commits: 2, uncarried: 2, last_commit: at(5 * DAY), files: ["scripts/land.sh"], owner: gone("sg4", "c-103") }),
+      row(bz, "claude/wip-xgress-window", "orphaned", { kind: "code", commits: 41, uncarried: 1, last_commit: at(3 * DAY), owner: gone("m1mini", "c-107") }),
+      row(bt, "claude/interview-ci-scripts", "orphaned", { kind: "docs", commits: 11, uncarried: 11, last_commit: at(4 * DAY), files: ["INTERVIEW.md"], owner: gone("sg4", "c-104") }),
+      row(bk, "claude/report-drives-sync", "orphaned", { kind: "docs", commits: 3, uncarried: 3, last_commit: at(2 * DAY), owner: null }),
+      landed(bz, "claude/fix-router-link-flap", "patch-id", 6 * HOUR, gone("sg4", "c-101")),
+      landed(bz, "claude/edge-router-policies", "subject", 1 * DAY, gone("m1mini", "c-102")),
+      landed(bz, "claude/quickstart-refresh", "changelog", 2 * DAY, gone("sg3", "c-104")),
+      landed(bz, "claude/chore-go-bump", "ancestry", 9 * DAY),
+      landed(bk, "claude/agent-share-reuse", "patch-id", 16 * DAY, gone("sg3", "c-202")),
+      landed(bk, "claude/openapi-regen", "patch-id", 17 * DAY),
+      landed(bk, "claude/self-hosting-caddy", "subject", 18 * DAY),
+      landed(bt, "claude/branch-status-ph1", "patch-id", 1 * HOUR, gone("sg4", "c-401")),
+      landed(bt, "claude/overlay-cost-report", "changelog", 3 * DAY),
+      landed(bt, "claude/lint-config", "ancestry", 8 * DAY)
+    ];
+    const counts = {};
+    rows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+    const branches = { computed: at(4 * MIN), building: false, main: { sha: sha("claude/main"), ref: "claude/main" }, counts, branches: rows };
+    return { repos, tasks, branches };
   }
   if (typeof module !== "undefined" && module.exports) module.exports = make;
   else window.hubReposFixture = make;

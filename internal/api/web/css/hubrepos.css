@@ -281,3 +281,37 @@
     .hr-repo, .hr-ev, .hr-it, .hr-chipbtn, #hubrepos .hr-go, #hubrepos .hr-li { transition: none; }
     .hr-repo:hover, .hr-it:hover, .hr-ev:hover, #hubrepos .hr-chipbtn:hover { transform: none; }
   }
+
+  /* BRANCHES: which branches landed on main and which did not. Read-only, so nothing here is a call to act. The status colours
+     are existing tokens: danger for what is at risk, warn for the one copy, teal for owned, dim for landed. */
+  .hr-bhead { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin: 0 0 var(--vs-3); }
+  .hr-brepo, .hr-bl, .hr-bcomp { font-size: var(--fs-xs); color: var(--label); }
+  .hr-brepo select { margin-left: 6px; max-width: 320px; }
+  .hr-bchips, .hr-bkinds { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .hr-bcomp { margin-left: auto; }
+  .hr-bchip, .hr-bkindbtn { --c: var(--dim); display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; font: 650 var(--fs-xs)/1 var(--sans); color: var(--label); background: transparent;
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-pill); transform: none; }
+  .hr-bchip i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .hr-bchip b { font-family: var(--mono); }
+  .hr-bchip.on, .hr-bkindbtn.on { color: var(--head); background: color-mix(in srgb, var(--c) 16%, transparent); border-color: color-mix(in srgb, var(--c) 45%, transparent); }
+  .hr-bkindbtn { --c: var(--teal); padding: 4px 9px; }
+  .st-orphaned { --c: var(--danger); } .st-room-only { --c: var(--warn); } .st-open { --c: var(--teal); } .st-landed { --c: var(--dim); }
+  .hr-brtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .hr-brtable th { text-align: left; padding: 6px 10px; font: 700 var(--fs-xs)/1 var(--sans); text-transform: uppercase; letter-spacing: .1em; color: var(--label); border-bottom: 1px solid var(--stroke-dim); }
+  .hr-brtable td { padding: 8px 10px; border-bottom: 1px solid var(--stroke-dim); vertical-align: middle; }
+  .hr-brname { min-width: 0; max-width: 460px; }
+  .hr-brname .hr-who { display: block; }
+  .hr-brname .hr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hr-bstatus { display: inline-flex; align-items: center; gap: 6px; font: 700 var(--fs-xs)/1 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--c); }
+  .hr-bstatus i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .hr-bkind, .hr-bhow { margin-left: 8px; font: 650 var(--fs-xs)/1 var(--mono); padding: 2px 7px; border-radius: 6px; color: var(--label); background: var(--lift); }
+  .hr-bkind.kind-code { color: var(--danger-text); background: rgba(var(--danger-rgb), .16); }
+  .hr-brahead { font-family: var(--mono); white-space: nowrap; }
+  .hr-bfoot { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--vs-3); font-size: var(--fs-xs); color: var(--label); }
+  #hubrepos .hr-bfoot .hr-more { margin: 0; padding: 4px 0; color: var(--teal); }
+  @media (max-width: 700px) {
+    .hr-brtable thead { display: none; } .hr-bcomp { margin-left: 0; }
+    .hr-brtable, .hr-brtable tbody, .hr-brrow, .hr-brrow td { display: block; max-width: none; }
+    .hr-brrow { padding: 8px 0; border-bottom: 1px solid var(--stroke-dim); } .hr-brtable td { padding: 2px 4px; border: 0; }
+    .hr-brrow td:nth-child(3):before { content: "ahead "; color: var(--label); } .hr-brrow td:nth-child(4), .hr-brrow td:nth-child(5) { display: none; }
+  }

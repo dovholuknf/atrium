@@ -3,8 +3,9 @@
 // docs/fabric/hub-forge-design.md sections 2, 3.2 and 7 (u-new-hub-repos-list). A list, not a code browser: each repo
 // shows its `main`, the branches rooms pushed (room, card, when) and a clone URL to copy.
 //
-// THREE VIEWS OF ONE SET OF DATA, chosen with the switcher in the tab head and remembered per browser (a fourth, `requests`,
-// is not the repos at all but the change requests between rooms, drawn by js/changereq.js in the same area):
+// THREE VIEWS OF ONE SET OF DATA, chosen with the switcher in the tab head and remembered per browser (two more are not the
+// repos at all: `requests`, the change requests between rooms, drawn by js/changereq.js in the same area, and `branches`,
+// drawn from GET /_hub/git/branches in the BRANCHES section below):
 //   shelf   (the default)  a grid of repo cards: identicon tile, branch count, main sha, a heat strip of pushes
 //   ledger                 a repo list and the selected repo as a hero, with its branches on a vertical rail
 //   feed                   every push of every repo, newest first, with the repos as a rail of filters
@@ -22,12 +23,16 @@
 // Shelf. Which repo the ledger has open, the feed's filter, an ssh/http choice and an expanded card are this window's
 // and not remembered.
 
-const hubRepos = { repos: [], loaded: false, note: "", inflight: false, mem: "", sel: null, filter: "", mode: {}, open: {} };
+const hubRepos = { repos: [], loaded: false, note: "", inflight: false, mem: "", sel: null, filter: "", mode: {}, open: {},
+  // The branches view's own state, this window's and nobody else's. See BRANCHES below.
+  br: { data: null, loaded: false, inflight: false, note: "", repo: "", kind: "", show: { orphaned: true, "room-only": true, open: true, landed: false } } };
 
 const HR_VIEW_KEY = "atrium.reposView";
-const HR_VIEWS = ["shelf", "ledger", "feed", "requests"];
+const HR_VIEWS = ["shelf", "ledger", "feed", "requests", "branches"];
 
 function hubReposView() {
+  // `branches` is this window's alone: never written to localStorage, so no other tab is carried into it.
+  if (hubRepos.mem === "branches") return "branches";
   let v = "";
   try { v = localStorage.getItem(HR_VIEW_KEY) || ""; } catch (e) {}
   if (!HR_VIEWS.includes(v)) v = HR_VIEWS.includes(hubRepos.mem) ? hubRepos.mem : "shelf";
@@ -37,7 +42,8 @@ function hubReposView() {
 function setHubReposView(v) {
   if (!HR_VIEWS.includes(v)) v = "shelf";
   hubRepos.mem = v;
-  try { localStorage.setItem(HR_VIEW_KEY, v); } catch (e) {}
+  if (v !== "branches") try { localStorage.setItem(HR_VIEW_KEY, v); } catch (e) {}
+  if (v === "branches" && !hubRepos.br.loaded && !hubRepos.br.inflight) loadHubBranches();
   // Change requests are read when you go there (js/changereq.js), and the paint below shows "reading" until they arrive.
   if (v === "requests" && typeof cr !== "undefined" && !cr.loaded && !cr.inflight) crLoad();
   hubReposPaint();
@@ -445,6 +451,101 @@ function hubReposFeed(repos) {
   return rail + top + '<div class="hr-feedmain"><section class="hr-feedcol">' + hubReposGrouped(events, hubReposFeedItem) + '</section><aside class="hr-side">' + (filterRepo ? "" : clones) + rooms + "</aside></div>";
 }
 
+// ---- BRANCHES ------------------------------------------------------------------------------------------------------
+//
+// docs/fabric/branch-status-design.md section 9, phase 2. Which branches of the hub are landed on claude/main, by what they
+// change and not by ancestry, and which are not: the list where work gets lost. READ-ONLY, no button acts on a branch.
+// Only what phase 1 computes has rows, so `open` and `room-only` have no chip until the hub counts one.
+//
+// ONE READ, EVERY REPOSITORY. GET /_hub/git/branches with no repo answers every repo the hub holds, and the repo choice
+// only narrows what is drawn. Read on entry and on the refresh button, like the rest of the tab. `computed` is shown so a
+// stale snapshot is visible, and an answer still `building` is asked again.
+//
+// THIS WINDOW'S STATE ALONE. Which chips are on, the repo and the kind filter live in hubRepos.br and nowhere else: not
+// localStorage, not the storage event. The view itself is not remembered either (see hubReposView).
+//
+// LANDED IS FOLDED by default: it is the one status with no action. The chip counts are over every branch of the chosen
+// repo, whatever is folded or filtered, as the API's own counts are.
+
+const HR_BR_STATUSES = ["orphaned", "room-only", "open", "landed"];
+
+function hubReposBranchCount() {
+  const b = hubRepos.br;
+  return b.note || !b.loaded || !b.data ? "" : String((b.data.branches || []).length);
+}
+
+async function loadHubBranches() {
+  const b = hubRepos.br;
+  if (b.inflight) return;
+  b.inflight = true;
+  let building = false;
+  const refresh = document.getElementById("hubrepos-refresh");
+  if (refresh) refresh.disabled = true;
+  try {
+    const res = await fetch("/_hub/git/branches");
+    if (!res.ok) throw new Error(String(res.status));
+    b.data = await res.json();
+    b.note = "";
+    b.loaded = true;
+    building = !!(b.data && b.data.building);
+  } catch (e) {
+    b.note = "The hub's branch statuses are not answering right now. This hub may be too old to measure them.";
+  } finally {
+    b.inflight = false;
+    if (refresh) refresh.disabled = false;
+  }
+  hubReposPaint();
+  if (building && hubReposView() === "branches") setTimeout(loadHubBranches, 1500);
+}
+
+function hubReposBrChip(st, n, on) {
+  return '<button type="button" class="hr-bchip st-' + st + (on ? " on" : "") + '" data-act="brchip" data-mode="' + st + '" aria-pressed="' + on + '"><i></i>' + st + " <b>" + n + "</b></button>";
+}
+
+function hubReposBrRow(b, multi) {
+  const w = b.owner ? hubReposWho(b.owner) : null;
+  const evidence = b.status === "landed" ? '<span class="hr-bhow" data-tip="the weakest evidence that put it on main">' + esc(b.how || "") + "</span>"
+    : b.kind ? '<span class="hr-bkind kind-' + esc(b.kind) + '">' + esc(b.kind) + "</span>" : "";
+  return '<tr class="hr-brrow st-' + esc(b.status) + '"><td class="hr-brname"><span class="hr-name" data-tip="' + esc(b.name) + '">' + esc(b.name) + "</span>" +
+    (multi ? '<span class="hr-who">' + esc(b.repo) + "</span>" : "") + "</td>" +
+    '<td><span class="hr-bstatus st-' + esc(b.status) + '"><i></i>' + esc(b.status) + "</span>" + evidence + "</td>" +
+    '<td class="hr-brahead" data-tip="commits main does not carry, of all the branch\'s commits">' + (b.status === "landed" ? "–" : b.uncarried + "/" + b.commits) + "</td>" +
+    "<td>" + hubReposAge(b.last_commit, "hr-when") + "</td>" +
+    '<td class="hr-who">' + (w ? esc((w.room + (w.card ? " " + w.card : "")).trim()) + (w.title ? " · " + esc(w.title) : "") : "none") + "</td></tr>";
+}
+
+function hubReposBranches() {
+  const br = hubRepos.br;
+  if (br.note) return '<p class="pane-lead hr-note" role="alert">' + esc(br.note) + "</p>";
+  if (!br.loaded) return '<p class="hr-quiet">Reading the hub\'s branches.</p>';
+  const d = br.data || {}, all = d.branches || [];
+  if (!d.computed) return '<p class="hr-quiet">The hub has not measured its branches yet. It is working on it, and this page asks again.</p>';
+  const repos = [...new Set(all.map(b => b.repo))].sort();
+  const repo = repos.includes(br.repo) ? br.repo : "";
+  const mine = repo ? all.filter(b => b.repo === repo) : all;
+  const counts = {};
+  mine.forEach(b => { counts[b.status] = (counts[b.status] || 0) + 1; });
+  const chips = HR_BR_STATUSES.filter(s => s === "orphaned" || s === "landed" || counts[s]).map(s => hubReposBrChip(s, counts[s] || 0, !!br.show[s])).join("");
+  const kinds = ["", "code", "docs"].map(k => '<button type="button" class="hr-bkindbtn' + (br.kind === k ? " on" : "") + '" data-act="brkind" data-mode="' + k + '" aria-pressed="' + (br.kind === k) + '">' + (k || "all") + "</button>").join("");
+  const rows = mine.filter(b => br.show[b.status] && !(br.kind && b.status === "orphaned" && b.kind !== br.kind));
+  const landed = mine.filter(b => b.status === "landed");
+  const how = {};
+  landed.forEach(b => { const k = b.how || "?"; how[k] = (how[k] || 0) + 1; });
+  const howLine = Object.keys(how).sort((a, b) => how[b] - how[a]).map(k => esc(k) + " " + how[k]).join(", ");
+  const head = '<div class="hr-bhead"><label class="hr-brepo">repo <select id="hr-br-repo" aria-label="which repository">' +
+    '<option value="">every repository (' + repos.length + ")</option>" + repos.map(r => '<option value="' + esc(r) + '"' + (r === repo ? " selected" : "") + ">" + esc(r) + "</option>").join("") + "</select></label>" +
+    '<span class="hr-bchips" role="group" aria-label="show statuses">' + chips + "</span>" +
+    '<span class="hr-bkinds" role="group" aria-label="kind of orphan"><span class="hr-bl">orphan kind</span>' + kinds + "</span>" +
+    '<span class="hr-bcomp">computed ' + hubReposAge(d.computed, "hr-when") + (d.building ? " · measuring again" : "") + "</span></div>";
+  const table = rows.length
+    ? '<table class="hr-brtable"><thead><tr><th>branch</th><th>status</th><th>ahead</th><th>last commit</th><th>pushed by</th></tr></thead><tbody>' + rows.map(b => hubReposBrRow(b, !repo)).join("") + "</tbody></table>"
+    : '<p class="hr-quiet">' + (mine.length ? "Nothing is shown with these chips on." : "No branches on this repository.") + "</p>";
+  const fold = landed.length
+    ? '<div class="hr-bfoot"><button type="button" class="hr-more" data-act="brchip" data-mode="landed" aria-expanded="' + !!br.show.landed + '">' +
+      (br.show.landed ? "fold landed" : "show landed " + landed.length) + HR_SVG.chev + "</button><span>landed by: " + howLine + "</span></div>" : "";
+  return head + table + fold;
+}
+
 // ---- painting ------------------------------------------------------------------------------------------------------
 
 function hubReposSyncSwitch() {
@@ -464,13 +565,14 @@ function hubReposPaint() {
   const sortBox = document.getElementById("hubrepos-sort");
   if (sortBox) {
     sortBox.value = hubReposSort();
-    sortBox.hidden = hubReposView() === "requests";
+    sortBox.hidden = hubReposView() === "requests" || hubReposView() === "branches";
   }
   const count = document.getElementById("hubrepos-count");
   const view = hubReposView();
-  if (count) count.textContent = view === "requests" ? (cr.loaded ? String(crOpen().length) : "") : hubRepos.note || !hubRepos.loaded ? "" : String(hubRepos.repos.length);
+  if (count) count.textContent = view === "branches" ? hubReposBranchCount() : view === "requests" ? (cr.loaded ? String(crOpen().length) : "") : hubRepos.note || !hubRepos.loaded ? "" : String(hubRepos.repos.length);
   let html;
   if (view === "requests") html = crView();
+  else if (view === "branches") html = hubReposBranches();
   else if (hubRepos.note) html = '<p class="pane-lead hr-note" role="alert">' + esc(hubRepos.note) + "</p>";
   else if (!hubRepos.repos.length) html = hubReposHero(null);
   else {
@@ -510,6 +612,8 @@ async function loadHubRepos() {
     if (refresh) refresh.disabled = false;
   }
   hubReposPaint();
+  // The refresh button reads the branches too, when that is the view on screen.
+  if (hubReposView() === "branches") loadHubBranches();
   if (building) setTimeout(loadHubRepos, 1500);
   // The requests are read with the repos, so a branch row can say it has one. A failure here is the requests view's to show.
   if (typeof crLoad === "function") crLoad();
@@ -534,7 +638,9 @@ async function hubReposCopy(btn) {
 
 function hubReposAct(el) {
   const act = el.dataset.act, repo = el.dataset.repo;
-  if (act === "mode") hubRepos.mode[repo] = el.dataset.mode;
+  if (act === "brchip") hubRepos.br.show[el.dataset.mode] = !hubRepos.br.show[el.dataset.mode];
+  else if (act === "brkind") hubRepos.br.kind = el.dataset.mode;
+  else if (act === "mode") hubRepos.mode[repo] = el.dataset.mode;
   else if (act === "more") hubRepos.open[repo] = !hubRepos.open[repo];
   else if (act === "sel") hubRepos.sel = repo;
   else if (act === "filter") hubRepos.filter = repo;
@@ -565,6 +671,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (c) { hubReposCopy(c); return; }
     const a = e.target.closest("[data-act]");
     if (a) hubReposAct(a);
+  });
+  if (list) list.addEventListener("change", e => {
+    if (e.target.id !== "hr-br-repo") return;
+    hubRepos.br.repo = e.target.value;
+    hubReposPaint();
+    const again = document.getElementById("hr-br-repo");
+    if (again) again.focus({ preventScroll: true });
   });
   const sw = document.getElementById("hubrepos-views");
   if (sw) {

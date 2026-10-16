@@ -24,6 +24,26 @@ branches only (`claude/*`, not `claude/main`): a branch is `landed` or `orphaned
   not seen as new. A commit of a branch landed by patch id or subject still flips it back (decision 2).
 - Each pass logs one `[hub] branches` line with the counts, for the acceptance check against the live mirror.
 
+## Phase 2: the Branches view on the repos tab
+
+A fifth view beside Requests in the repos tab (`js/hubrepos.js`, `css/hubrepos.css`), fed by `GET /_hub/git/branches`.
+Read-only: no button acts on a branch. There is no room-only and no live set yet, so a chip for `open` or `room-only`
+appears only when the hub counts one (phases 3 and 4).
+
+- One read of every repository the hub holds, on entry and on the refresh button, asked again while the hub is still
+  `building`. A repo choice narrows what is drawn and asks nothing.
+- A chip per status with its count, over every branch of the chosen repo whatever is folded. Landed is off by default
+  and a "show landed N" line unfolds it, with how main carries them (patch-id, subject, changelog, ancestry).
+- Each row: the branch name as text, its repo, the status with its `kind` (orphans) or `how` (landed), `ahead` as
+  uncarried over commits, the last commit, who pushed it. The orphan kind filter narrows orphans only.
+- Per-tab state. The chips, repo and kind live in memory, and the view itself is never written to localStorage or
+  followed through the storage event, so another window never lands on Branches because this one did.
+- Headless unit `hubReposBranches` in the `hubrepos` bucket, on the demo data in `scripts/hubrepos-fixture.js`. The
+  switcher unit now counts five views.
+
+Pictures: `docs/changes/img/f-branch-status-view/` (`branches-before-2000-dark.png` is the tab's Shelf before,
+`branches-after-2000-dark.png` and `branches-after-390-paper.png` are the new view).
+
 ## Test plan
 
 ## @LETTER@. Branch statuses by content
@@ -46,3 +66,11 @@ and the hub log has one `[hub] branches` line with the same counts.
 1. Push a new commit to a landed branch, and call it after the next view rebuild.
 
 **Expected:** the branch is `orphaned` with `uncarried` 1.
+
+### @LETTER@4. The Branches view
+
+1. On a hub, open the repos tab and choose Branches.
+2. Turn the landed chip on, narrow to one repository, then open the board in a second window.
+
+**Expected:** orphaned rows show `code` or `docs`, landed is folded until asked and shows its `how`, and the second
+window stays on its own view.

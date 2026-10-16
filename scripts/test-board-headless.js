@@ -27369,7 +27369,7 @@ async function hubReposSection(browser, base) {
     await p.evaluate(() => { localStorage.removeItem("atrium.reposView"); hubReposPaint(); });
     let v = await viewNow();
     if (v.view !== "shelf" || v.checked.join() !== "shelf" || v.tabbable.join() !== "shelf") fail("hubRepos: nothing stored is not Shelf: " + JSON.stringify(v));
-    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 4 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a four-way radio group");
+    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 5 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a five-way radio group");
     await p.click('#hubrepos-views [data-hrview="ledger"]');
     v = await viewNow();
     if (v.view !== "ledger" || v.stored !== "ledger" || v.checked.join() !== "ledger") fail("hubRepos: clicking Ledger did not stick: " + JSON.stringify(v));
@@ -27381,9 +27381,11 @@ async function hubReposSection(browser, base) {
     await p.keyboard.press("ArrowRight");
     if ((await viewNow()).view !== "requests") fail("hubRepos: ArrowRight from Feed is not Requests");
     await p.keyboard.press("ArrowRight");
+    if ((await viewNow()).view !== "branches") fail("hubRepos: ArrowRight from Requests is not Branches");
+    await p.keyboard.press("ArrowRight");
     if ((await viewNow()).view !== "shelf") fail("hubRepos: the arrows do not wrap round to Shelf");
     await p.keyboard.press("End");
-    if ((await viewNow()).view !== "requests") fail("hubRepos: End is not the last view");
+    if ((await viewNow()).view !== "branches") fail("hubRepos: End is not the last view");
     await p.keyboard.press("Home");
     if ((await viewNow()).view !== "shelf") fail("hubRepos: Home is not the first view");
     await p.evaluate(() => { localStorage.setItem("atrium.reposView", "bogus"); window.dispatchEvent(new StorageEvent("storage", { key: "atrium.reposView" })); });
@@ -27452,6 +27454,7 @@ async function hubReposFixturePage(browser, base, o) {
   const p = await ctx.newPage();
   p.on("pageerror", e => errors.push(e.message));
   await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos }) }));
+  await p.route(/\/_hub\/git\/branches$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o.branches || fx.branches) }));
   await p.goto(base + "/", { waitUntil: "domcontentloaded" });
   await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
   await p.evaluate(({ tasks, view }) => {
@@ -27723,6 +27726,109 @@ async function hubReposTimelineDotsSection(browser, base) {
   if (!bad) console.log("hubReposTimelineDots ok");
 }
 
+// The repos tab's fifth view, Branches (docs/fabric/branch-status-design.md section 9, phase 2): the fixture's GET
+// /_hub/git/branches, chips with counts, landed folded until asked for, how and kind on the rows, every repository with a
+// choice to narrow it, a hostile branch name drawn as text, state that is this window's and never another's. With
+// HR_SHOTS=<dir> it also saves the view at 2000 and 390, paper and dark.
+async function hubReposBranchesSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "hubReposBranches";
+  try {
+    const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 1600, h: 1000 });
+    try {
+      await p.click('#hubrepos-views [data-hrview="branches"]');
+      await p.waitForFunction(() => document.querySelector("#hubrepos-list .hr-brtable"), null, { timeout: slow(8000) });
+      const read = () => p.evaluate(() => ({
+        view: document.getElementById("hubrepos-list").dataset.view, stored: localStorage.getItem("atrium.reposView"),
+        chips: [...document.querySelectorAll(".hr-bchip")].map(c => c.dataset.mode + ":" + c.querySelector("b").textContent + ":" + c.getAttribute("aria-pressed")).join(),
+        rows: [...document.querySelectorAll(".hr-brrow")].map(r => r.querySelector(".hr-bstatus").textContent + "/" + (r.querySelector(".hr-bkind, .hr-bhow") || { textContent: "" }).textContent).join(),
+        names: [...document.querySelectorAll(".hr-brrow .hr-name")].map(n => n.textContent),
+        foot: (document.querySelector(".hr-bfoot") || { textContent: "" }).textContent.replace(/\s+/g, " ").trim(),
+        count: document.getElementById("hubrepos-count").textContent, computed: !!document.querySelector(".hr-bcomp time[data-tip]"),
+        sort: document.getElementById("hubrepos-sort").hidden, img: document.querySelectorAll("#hubrepos-list img").length, x: window.__x || 0,
+        buttons: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.textContent.trim()).filter(Boolean) }));
+      let r = await read();
+      if (r.view !== "branches" || r.stored === "branches") fail(tag + ": the view is not this window's alone " + JSON.stringify({ view: r.view, stored: r.stored }));
+      if (r.chips !== "orphaned:5:true,landed:10:false") fail(tag + ": the chips are wrong " + r.chips);
+      if (r.rows !== "orphaned/code,orphaned/code,orphaned/code,orphaned/docs,orphaned/docs") fail(tag + ": landed is not folded, or kind is missing " + r.rows);
+      if (r.foot !== "show landed 10landed by: patch-id 4, subject 2, changelog 2, ancestry 2") fail(tag + ": the fold line is wrong " + r.foot);
+      if (r.img || r.x || !r.names[0].startsWith("claude/wip-<img")) fail(tag + ": a branch name became markup " + JSON.stringify(r.names));
+      if (r.count !== "15" || !r.computed || !r.sort) fail(tag + ": the head is wrong " + JSON.stringify({ count: r.count, computed: r.computed, sort: r.sort }));
+      if (r.buttons.some(b => /^(land|keep|delete|push|open diff|read)$/i.test(b))) fail(tag + ": the view offers an action " + r.buttons.join());
+      // Unfold landed: the how chip appears on each, and the button says how to fold it again.
+      await p.click('.hr-bfoot [data-act="brchip"]');
+      r = await read();
+      if (!/landed\/patch-id/.test(r.rows) || !/landed\/subject/.test(r.rows) || !/landed\/changelog/.test(r.rows) || !/landed\/ancestry/.test(r.rows) || r.rows.split(",").length !== 15) fail(tag + ": unfolded rows are wrong " + r.rows);
+      if (!/^fold landed/.test(r.foot) || r.chips !== "orphaned:5:true,landed:10:true") fail(tag + ": the fold control did not follow " + JSON.stringify({ foot: r.foot, chips: r.chips }));
+      // Narrow to one repository: counts follow the repository, not the chips, and the repo line goes.
+      await p.selectOption("#hr-br-repo", "github/openziti/zrok");
+      r = await read();
+      if (r.chips !== "orphaned:1:true,landed:3:true" || r.names.length !== 4) fail(tag + ": narrowing to zrok went wrong " + JSON.stringify(r));
+      if ((await p.evaluate(() => document.activeElement.id)) !== "hr-br-repo") fail(tag + ": the repo choice lost focus");
+      await p.selectOption("#hr-br-repo", "");
+      // Kind filter narrows the orphans only.
+      await p.click('[data-act="brkind"][data-mode="docs"]');
+      r = await read();
+      if (r.rows.split(",").filter(x => /^orphaned/.test(x)).length !== 2 || r.rows.split(",").length !== 12) fail(tag + ": kind docs is wrong " + r.rows);
+      await p.click('[data-act="brkind"][data-mode=""]');
+      // Turning the orphaned chip off hides its rows and leaves the count on the chip.
+      await p.click('.hr-bchip[data-mode="orphaned"]');
+      r = await read();
+      if (/orphaned\//.test(r.rows) || !/^orphaned:5:false/.test(r.chips)) fail(tag + ": the orphaned chip did not hide its rows " + JSON.stringify(r));
+      // Not shared: another window never follows this one into Branches, and its storage event does not move this one.
+      const other = await ctx.newPage();
+      await other.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await other.evaluate(() => localStorage.setItem("atrium.reposView", "ledger"));
+      await p.waitForTimeout(300);
+      if ((await read()).view !== "branches") fail(tag + ": another window's choice moved this one off Branches");
+      await other.close();
+      // Leaving and coming back keeps this window's chips, and the switcher walks off it by key.
+      await p.click('#hubrepos-views [data-hrview="feed"]');
+      await p.click('#hubrepos-views [data-hrview="branches"]');
+      if ((await read()).chips.split(",")[0] !== "orphaned:5:false") fail(tag + ": the chips were forgotten on the way out");
+      await p.focus('#hubrepos-views [data-hrview="branches"]');
+      await p.keyboard.press("ArrowRight");
+      r = await read();
+      if (r.view !== "shelf" || r.stored !== "shelf") fail(tag + ": ArrowRight from Branches is not Shelf " + JSON.stringify({ view: r.view, stored: r.stored }));
+      // A reload is back on the remembered view, and Branches was never it.
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+      await p.evaluate(() => switchView("hubrepos"));
+      await p.waitForFunction(() => hubRepos.loaded, null, { timeout: slow(10000) });
+      if ((await read()).view === "branches") fail(tag + ": a reload landed on Branches");
+      // The hub still measuring, then an old hub: both say so rather than draw an empty table.
+      for (const [body, status, want] of [[{ computed: "", building: true, counts: {}, branches: [] }, 200, "not measured its branches yet"], [{}, 404, "not answering"]]) {
+        await p.unroute(/\/_hub\/git\/branches$/);
+        await p.route(/\/_hub\/git\/branches$/, rt => rt.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }));
+        await p.evaluate(() => { hubRepos.br.loaded = false; hubRepos.br.data = null; });
+        await p.click('#hubrepos-views [data-hrview="branches"]');
+        await p.waitForFunction(w => document.getElementById("hubrepos-list").textContent.includes(w), want, { timeout: slow(8000) })
+          .catch(() => fail(tag + ": the " + status + " answer is not explained"));
+        await p.evaluate(() => { hubRepos.mem = ""; });
+      }
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+    const dir = process.env.HR_SHOTS;
+    if (dir) {
+      require("fs").mkdirSync(dir, { recursive: true });
+      for (const w of [2000, 390]) for (const skin of ["paper", "dark"]) {
+        const { ctx, p } = await hubReposFixturePage(browser, base, { w, h: 900 });
+        try {
+          await p.click('#hubrepos-views [data-hrview="branches"]');
+          await p.waitForFunction(() => document.querySelector("#hubrepos-list .hr-brtable"), null, { timeout: slow(8000) });
+          await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
+          await p.click('.hr-bfoot [data-act="brchip"]');
+          await p.waitForTimeout(250);
+          const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
+          await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
+          await p.waitForTimeout(200);
+          await p.screenshot({ path: require("path").join(dir, "branches-" + w + "-" + skin + ".png") });
+        } finally { await ctx.close(); }
+      }
+    }
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("hubReposBranches ok");
+}
 async function hubReposFeedSection(browser, base) {
   const wasHub = hubMode; hubMode = true;
   const tag = "hubReposFeed";
@@ -32316,7 +32422,7 @@ async function main() {
       noReadyChildren: noReadyChildrenSection, readyNoSeed: readyNoSeedSection, childUnderParent: childUnderParentSection, topNav: topNavSection, boardUsage: boardUsageSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection,
-      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
+      pulls: pullsSection, prMove: prMoveSection, quickPaste: quickPasteSection, recogniserRepo: recogniserRepoSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, hubReposBranches: hubReposBranchesSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, burnReadout: burnReadoutSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, pullsDrawer: pullsDrawerSection };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -34277,6 +34383,7 @@ async function main() {
     await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
     await unit("hubReposTimelineDots", () => hubReposTimelineDotsSection(browser, base));
     await unit("hubReposFeed", () => hubReposFeedSection(browser, base));
+    await unit("hubReposBranches", () => hubReposBranchesSection(browser, base));
     await unit("changeReq", () => changeReqSection(browser, base));
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
