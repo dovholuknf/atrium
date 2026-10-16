@@ -367,7 +367,9 @@ function navState() {
   return {
     atrium: true,
     view: VIEWS.find(isViewing) || "board",
-    card: termTask ? termTask.id : ""
+    card: termTask ? termTask.id : "",
+    // The item whose page is open on the items tab, so back closes the page rather than leaving the tab.
+    item: typeof itemsOpenId === "function" && isViewing("items") ? itemsOpenId() : ""
   };
 }
 
@@ -380,7 +382,7 @@ function navPush() {
   if (termOnly()) return;
   const now = navState();
   const was = history.state;
-  if (was && was.atrium && was.view === now.view && was.card === now.card) return;
+  if (was && was.atrium && was.view === now.view && was.card === now.card && (was.item || "") === now.item) return;
   // The FIRST entry is replaced rather than pushed, or the first press of back
   // leaves the board for whatever was open in this tab before it.
   if (was && was.atrium) history.pushState(now, "");
@@ -399,6 +401,7 @@ addEventListener("popstate", async (e) => {
   navApplying = true;
   try {
     switchView(s.view);
+    if (s.view === "items" && typeof itemsShow === "function" && (s.item || "") !== itemsOpenId()) itemsShow(s.item || null, true);
     if (s.view === "terms" && s.card && (!termTask || termTask.id !== s.card)) {
       await attachTask(s.card);
     }

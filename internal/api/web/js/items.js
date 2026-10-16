@@ -27,6 +27,8 @@ const itemsAsking = {};        // a blocked row whose answer box is open, by id
 let itemsShowAll = false;      // every finished row, not only the newest few
 const itemsDraft = {};         // an answer typed and not yet sent, by id, so a repaint does not eat it
 let itemsTimer = 0;
+let itemsListScroll = 0;       // where the list was scrolled when an item was opened
+let itemsHtml = "";            // what the box last drew, so a poll that changed nothing repaints nothing
 
 const ITEM_GROUPS = [
   { state: "blocked", label: "blocked" },
@@ -403,7 +405,7 @@ function itemDetailHtml(it) {
     "</div>" + itemSideHtml(d) + "</div></div>";
 }
 
-function itemsPaint() {
+function itemsPaint(force) {
   const box = document.getElementById("items-list");
   if (!box) return;
   // What is being typed survives the repaint: the answer box, with the caret where it was.
@@ -411,10 +413,14 @@ function itemsPaint() {
     ? { id: document.activeElement.dataset.id, at: document.activeElement.selectionStart } : null;
   for (const el of box.querySelectorAll(".it-answer-box")) itemsDraft[el.dataset.id] = el.value;
   const open = itemsOpen && (itemsList.find(x => x.id === itemsOpen) || (itemsDetail && itemsDetail.id === itemsOpen ? itemsDetail : null));
-  if (open) box.innerHTML = itemDetailHtml(open);
-  else if (itemsOpen) box.innerHTML = '<p class="pane-lead">Loading ' + esc(itemsOpen) + "&hellip;</p>";
-  else if (!itemsList.length) box.innerHTML = '<p class="pane-lead">No items.</p>';
-  else box.innerHTML = itemListHtml();
+  const html = open ? itemDetailHtml(open) : itemsOpen ? '<p class="pane-lead">Loading ' + esc(itemsOpen) + "&hellip;</p>"
+    : !itemsList.length ? '<p class="pane-lead">No items.</p>' : itemListHtml();
+  // A poll that found nothing new leaves the page alone: a repaint drops the hover, the focus and a text selection, and reads as a flicker.
+  if (!force && html === itemsHtml && box.firstChild) return;
+  itemsHtml = html;
+  const sv = scrollerOf(box), top = sv.scrollTop;
+  box.innerHTML = html;
+  sv.scrollTop = top;
   if (had) {
     const el = box.querySelector('.it-answer-box[data-id="' + CSS.escape(had.id) + '"]');
     if (el) { el.focus(); try { el.setSelectionRange(had.at, had.at); } catch (e) { /* not a text field */ } }
@@ -525,14 +531,36 @@ function itemsOpenBacklog(id) {
 // Opens the item's page, or goes back to the list when it is the one already open.
 function itemsToggle(id) { itemsShow(itemsOpen === id ? null : id); }
 
-function itemsShow(id) {
+// `fromHistory` is the back button undoing a move, which must not record one (board.js `navApplying`).
+function itemsShow(id, fromHistory) {
+  const sc = document.getElementById("items-list");
+  const leaving = itemsOpen;
+  // The list keeps its place: where it was scrolled is remembered going in and put back coming out, and the row that was opened has the focus.
+  if (id && !itemsOpen && sc) itemsListScroll = scrollerOf(sc).scrollTop;
   itemsOpen = id;
   itemsDetail = null;
-  itemsPaint();
-  const sc = document.getElementById("items-list");
-  if (sc) sc.scrollTop = 0;
+  itemsPaint(true);
+  const sv = sc && scrollerOf(sc);
+  if (sv) sv.scrollTop = id ? 0 : itemsListScroll;
+  if (!id && leaving && sc) {
+    const m = sc.querySelector('.it-main[data-id="' + CSS.escape(leaving) + '"]');
+    if (m) { try { m.focus({ preventScroll: true }); } catch (e) { /* no focus */ } }
+  }
+  if (!fromHistory && typeof navPush === "function") navPush();
   if (itemsOpen) loadItemDetail(itemsOpen, false);
 }
+
+// What scrolls: the list box itself when it has its own overflow, else the page's scrolling element.
+function scrollerOf(box) {
+  for (let el = box; el && el !== document.body; el = el.parentElement) {
+    const o = getComputedStyle(el).overflowY;
+    if ((o === "auto" || o === "scroll") && el.scrollHeight > el.clientHeight) return el;
+  }
+  return document.scrollingElement || box;
+}
+
+// The open item's id, for the board's history entry.
+function itemsOpenId() { return itemsOpen || ""; }
 
 // Called from switchView when the tab opens, and by the poll.
 function startItems() {

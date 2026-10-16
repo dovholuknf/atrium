@@ -26482,6 +26482,90 @@ async function pullsAbsentSection(browser, base) {
 // THE ITEMS TAB: grouped by state with blocked first and finished folded, the question and answer box on a blocked row,
 // cancel behind a confirm, a detail with the history, a count of what waits on the human, and a refresh on the `item`
 // event. The hub is a route here, so the POSTs it is sent can be read. See js/items.js.
+// The items tab on the shape the live hub answers: an assignment row names its backlog item by `work_id` and carries no title, and
+// the titles and steps are the work rows' (`/_hub/work`). Titles, steps, and moving between list, detail and back.
+async function itemsRealShapeSection(browser, base) {
+  const wasHub = hubMode;
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    const ago = m => new Date(Date.now() - m * 60000).toISOString();
+    const names = ["designed", "approved", "building", "tested", "reviewed", "landed", "deployed", "pushed"];
+    // Item n is at step n % 6: everything before it done, it active, the rest pending. The last few are finished.
+    const rows = [], work = [];
+    for (let n = 0; n < 30; n++) {
+      const at = n % 6, fin = n >= 26;
+      rows.push({ item_id: "5f0c8a1e-0000-4000-8000-0000000000" + String(n).padStart(2, "0"), work_id: "w-" + n, room: "sg4", card: "c-" + n, state: fin ? "finished" : "running",
+        revision: 2, generation: 1, owner_kind: "session", owner: "orch@sg4", created_at: ago(900), updated_at: ago(n + 1) });
+      work.push({ backlog_id: "w-" + n, title: "Backlog title " + n, state: fin ? "finished" : "running", steps: names.map((s, i) => ({ backlog_id: "w-" + n, step: s,
+        state: fin ? (i < 6 ? "done" : "pending") : i < at ? "done" : i === at ? "active" : "pending", cards: "[]", started_at: ago(800) })) });
+    }
+    await p.route(/\/_hub\/work(\/[^/?]+)?(\?.*)?$/, r => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[3] || "");
+      const w = work.find(x => x.backlog_id === id);
+      r.fulfill({ status: id && !w ? 404 : 200, contentType: "application/json", body: JSON.stringify(id ? { work: w, steps: w && w.steps } : { work }) });
+    });
+    await p.route(/\/_hub\/items(\/[^/?]+)?(\?.*)?$/, r => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[3] || "");
+      const it = rows.find(i => i.item_id === id);
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(id ? { ...it, item: it, history: [] } : { items: rows }) });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.click('.tab[data-view="items"]');
+    await p.waitForSelector(".it-row", { timeout: slow(10000) });
+    // TITLES: the backlog item's title, never the assignment's uuid.
+    const seen = await p.evaluate(() => [...document.querySelectorAll(".it-row")].map(r => ({ t: r.querySelector(".it-title").textContent,
+      b: r.querySelector(".it-cur b").textContent, id: r.querySelector(".it-id").textContent })));
+    if (seen.some(s => !/^Backlog title \d+$/.test(s.t))) fail("itemsRealShape: a row is titled " + JSON.stringify(seen.find(s => !/^Backlog title \d+$/.test(s.t))));
+    if (seen.some(s => !/^w-\d+$/.test(s.id))) fail("itemsRealShape: the id shown is " + JSON.stringify(seen.map(s => s.id)));
+    // STEPS: not every row reads building. Item 1 is at approved, item 5 at pushed's predecessor, a finished one reads its last step.
+    const by = {};
+    for (const s of seen) by[s.t] = s.b;
+    if (by["Backlog title 1"] !== "approved") fail("itemsRealShape: item 1 reads " + by["Backlog title 1"] + ", want approved");
+    if (by["Backlog title 0"] !== "designed") fail("itemsRealShape: item 0 reads " + by["Backlog title 0"] + ", want designed");
+    if (by["Backlog title 5"] !== "landed") fail("itemsRealShape: item 5 reads " + by["Backlog title 5"] + ", want landed");
+    if (new Set(Object.values(by)).size < 4) fail("itemsRealShape: the rows read " + JSON.stringify([...new Set(Object.values(by))]));
+    // A POLL THAT FOUND NOTHING NEW repaints nothing: the row node is the same one.
+    await p.evaluate(() => { document.querySelector(".it-row").dataset.mark = "1"; });
+    await p.evaluate(() => loadItems());
+    if (!await p.evaluate(() => !!document.querySelector('.it-row[data-mark="1"]'))) fail("itemsRealShape: a poll with no change repainted the list");
+    // NAVIGATION: scroll the list, open a row, back by the crumb and by the browser's back button, each ending where it began.
+    await p.evaluate(() => { const l = document.getElementById("items-list"); l.scrollTop = 0; document.scrollingElement.scrollTop = 0; });
+    const place = () => p.evaluate(() => { let top = 0, el = document.getElementById("items-list");
+      for (; el; el = el.parentElement) top = Math.max(top, el.scrollTop); return top; });
+    await p.evaluate(() => { const row = [...document.querySelectorAll(".it-row")][14]; row.scrollIntoView({ block: "center" }); });
+    const before = await place();
+    if (before <= 0) fail("itemsRealShape: the list did not scroll, so the scroll check proves nothing");
+    const target = await p.evaluate(() => { const r = [...document.querySelectorAll(".it-row")][14]; r.querySelector(".it-main").click(); return r.dataset.item; });
+    await p.waitForSelector(".it-detail", { timeout: slow(5000) });
+    if (await place() !== 0) fail("itemsRealShape: the detail opened scrolled to " + await place());
+    const heading = await p.textContent(".it-detail h1");
+    if (!/^Backlog title \d+$/.test(heading)) fail("itemsRealShape: the detail is titled " + heading);
+    await p.click('.it-detail [data-act="back"]');
+    await p.waitForSelector(".it-row");
+    if (Math.abs(await place() - before) > 2) fail("itemsRealShape: back by the crumb landed at " + await place() + ", was " + before);
+    if (!await p.evaluate(t => document.activeElement && document.activeElement.dataset.id === t, target)) fail("itemsRealShape: back did not return the focus to the row opened");
+    await p.evaluate(t => itemsShow(t), target);
+    await p.waitForSelector(".it-detail");
+    await p.goBack();
+    await p.waitForSelector(".it-row");
+    if (!await p.evaluate(() => isViewing("items"))) fail("itemsRealShape: the back button left the items tab instead of closing the page");
+    if (Math.abs(await place() - before) > 2) fail("itemsRealShape: back by the button landed at " + await place() + ", was " + before);
+    await p.goForward();
+    await p.waitForSelector(".it-detail");
+    if (!await p.evaluate(t => itemsOpenId() === t, target)) fail("itemsRealShape: forward did not reopen the item");
+  } finally {
+    hubMode = wasHub;
+    await ctx.close();
+  }
+  if (errors.length) fail("itemsRealShape: threw " + errors.join(" | "));
+  if (!bad) console.log("itemsRealShape ok");
+}
+
 async function itemsViewSection(browser, base) {
   const wasHub = hubMode;
   hubMode = true;
@@ -33903,6 +33987,7 @@ async function main() {
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
+    await unit("itemsRealShape", () => itemsRealShapeSection(browser, base));
     await unit("itemsView", () => itemsViewSection(browser, base));
     await unit("itemsMock", () => itemsMockSection(browser, base));
     await unit("itemsPhone", () => itemsPhoneSection(browser, base));

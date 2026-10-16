@@ -70,7 +70,7 @@ function itemFromHub(r) {
   const ask = r.state === "blocked" ? { who: r.owner_kind === "human" ? "" : (r.owner || ""), text: r.note || "(no reason given)",
     since: r.updated_at || null, options: [] } : null;
   return Object.assign({}, r, {
-    id: r.item_id, backlog: r.backlog_id || r.item_id, title: r.title || "", body: r.body || "", priority: r.priority || "", dept: r.dept || "",
+    id: r.item_id, backlog: r.backlog_id || r.work_id || r.item_id, title: r.title || "", body: r.body || "", priority: r.priority || "", dept: r.dept || "",
     cards: r.card ? [{ name: r.card, id: r.card, room: r.room || "" }] : [], steps, ask,
     tokens: null, usd: null, coord_usd: null, history: r.history || []
   });
@@ -80,7 +80,7 @@ function itemFromHub(r) {
 function itemFromAnswer(r) {
   if (!r) return null;
   if (Array.isArray(r.steps) && r.steps.length) {
-    return Object.assign({ id: r.id || r.item_id, backlog: r.backlog || r.backlog_id || r.id || r.item_id, title: "", body: "", priority: "",
+    return Object.assign({ id: r.id || r.item_id, backlog: r.backlog || r.backlog_id || r.work_id || r.id || r.item_id, title: "", body: "", priority: "",
       dept: "", cards: [], ask: null, tokens: null, usd: null, coord_usd: null, history: [] }, r);
   }
   return itemFromHub(r);
@@ -124,6 +124,12 @@ function itemWithWork(it, w) {
       reason: s.state === "skipped" ? s.reason || "" : "", note: s.state === "active" ? s.reason || "" : "" });
   });
   const out = Object.assign({}, it, { steps });
+  // The assignment row has no title of its own: the work row does, the backlog item's title.
+  const wk = w.work && typeof w.work === "object" ? w.work : w;
+  if (!out.title && wk.title) out.title = wk.title;
+  if (!out.body && wk.body) out.body = wk.body;
+  if (!out.priority && wk.priority) out.priority = wk.priority;
+  if (!out.dept && wk.dept) out.dept = wk.dept;
   const ap = by.approved;
   if (ap && (ap.state === "active" || ap.state === "stale") && ap.party === "human") {
     out.state = "blocked"; out.owner_kind = "human";
