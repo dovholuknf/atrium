@@ -44,7 +44,7 @@ platform: linux
 version: ${VERSION}
 section: utils
 priority: optional
-maintainer: Clint Dovholuk <clint.dovholuk@netfoundry.io>
+maintainer: dovholuknf <46322585+dovholuknf@users.noreply.github.com>
 description: |
   Organizes coding agents.
   A daemon holding durable state, a permission gate and a web board, with a

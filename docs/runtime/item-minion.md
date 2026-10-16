@@ -9,7 +9,7 @@ Rules that hold for every step:
 
 - Never edit the main checkout `D:\git\github\dovholuknf\atrium` except `git merge --ff-only`.
 - Never commit on `claude/main`. Nothing lands before the launcher says "accepted".
-- Commits are by Clint: `Clint Dovholuk <clint.dovholuk@netfoundry.io>`, one short subject line, no body, no trailers.
+- Commits are by Clint: `dovholuknf <46322585+dovholuknf@users.noreply.github.com>`, one short subject line, no body, no trailers.
 - Go builds go to `build.claude/` (`go build -o build.claude/...`). No restart of the live hub or a room, no deploy.
 
 ## Room paths
@@ -47,8 +47,8 @@ Staging worktree for landing (on claude-sg4): `D:\worktrees\minion-ssh-default`.
    Set-Location ../atrium-worktrees/<id>
    git config extensions.worktreeConfig true
    git config --worktree remote.hub.url http://127.0.0.1:7777/git/hub/github/dovholuknf/atrium.git
-   git config --worktree user.name "Clint Dovholuk"
-   git config --worktree user.email clint.dovholuk@netfoundry.io
+   git config --worktree user.name dovholuknf
+   git config --worktree user.email 46322585+dovholuknf@users.noreply.github.com
    git log --oneline -1
    Get-Location
    ```
@@ -159,7 +159,7 @@ After "accepted", in PowerShell:
 
    Never `git reset --hard` on `claude/land-ci-green`.
 4. A landing that is not a plain cherry-pick of Clint's commits (a doc written by the minion itself) is committed with
-   `git commit --author "Clint Dovholuk <clint.dovholuk@netfoundry.io>"` on `claude/land-<id>` before step 2.
+   `git commit --author "dovholuknf <46322585+dovholuknf@users.noreply.github.com>"` on `claude/land-<id>` before step 2.
 
 ## 6. Close and clean up
 

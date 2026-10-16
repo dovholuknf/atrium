@@ -3771,7 +3771,7 @@
       "answered_at": "2026-09-28T17:00:08.579Z",
       "answered_via": "prompt",
       "open_questions": [
-        "You asked for an enable token. `CREDENTIALS.md` row 2 already has one for `clint.dovholuk@netfoundry.io`, but I couldn't confirm that account still exists. Should I reuse row 2, or create a new account with `zrok2 admin create account`? If new, which email should it use? I recommend reusing row 2 after a read-only check of the `accounts` table.",
+        "You asked for an enable token. `CREDENTIALS.md` row 2 already has one for `you@example.com`, but I couldn't confirm that account still exists. Should I reuse row 2, or create a new account with `zrok2 admin create account`? If new, which email should it use? I recommend reusing row 2 after a read-only check of the `accounts` table.",
         "The repo docs are behind the host. Should I update them? That covers the 2.0.6 tags in `compose.yml`, the cert expiry in `CREDENTIALS.md` row 25 and `TODO.md`, and the README renewal steps, which should say to restart Caddy instead of running `caddy reload`. I recommend yes, as uncommitted edits for you to review."
       ],
       "questions_at": "2026-09-28T17:00:41.727Z",
