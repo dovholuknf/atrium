@@ -82,6 +82,11 @@ foreach ($f in $files) {
     $ci = [array]::IndexOf($lines, '## Changelog')
     $ti = [array]::IndexOf($lines, '## Test plan')
     if ($ti -lt 0) { Fail "$($f.Name): no '## Test plan' line" }
+    # A missing Docs line is a warning and never a failure: the fold goes on and its output is unchanged.
+    $head = if ($ti -gt 0) { @($lines[0..($ti - 1)]) } else { @() }
+    if (-not @($head | Where-Object { $_ -match '^Docs: (d-\d+|none, \S)' })) {
+        Write-Warning "$($f.Name): no 'Docs: d-<n>' or 'Docs: none, <reason>' line above '## Test plan' (docs/changes/README.md, Docs debt)"
+    }
     $cl = @()
     if ($ci -ge 0) {
         # A leftover section runs from its heading to the other one, or to the end of the file.

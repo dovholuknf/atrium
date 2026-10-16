@@ -59,3 +59,12 @@ touched it. `docs/cli.md` is not in `changed`. The item is still open and still 
 
 **Expected:** the hand-filed item has no `landed_sha` and no `changed`. With no mirror every item answers as before, with
 no `changed`, and the answer is a 200 and not an error.
+
+### @LETTER@8. Phase 2, the fold warning
+
+1. In a scratch change file with no `Docs:` line, run `pwsh scripts/fold-changes.ps1 -DryRun -Item <item>`.
+2. Add `Docs: d-12`, then `Docs: none, a reason`, and run it again each time.
+3. Run `pwsh -NoProfile -File scripts/test-fold-changes.ps1`.
+
+**Expected:** the first run prints a warning naming the file, the other two are quiet, all three exit 0 and print the
+same fold lines. The test script ends with `all 12 checks pass.`
