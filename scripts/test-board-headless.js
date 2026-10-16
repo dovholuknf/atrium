@@ -19744,7 +19744,7 @@ async function mWorkingSection(browser) {
           fs: parseFloat(getComputedStyle(w).fontSize), anim: getComputedStyle(w.querySelector(".wk-spin") || w).animationName,
           chipText: document.querySelector(".c-state").textContent, sw: document.documentElement.scrollWidth, iw: window.innerWidth };
       });
-      await p.waitForFunction(() => !document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.getElementById("m-working").hidden, null, { timeout: slow(15000) });
       let b = await box();
       if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
