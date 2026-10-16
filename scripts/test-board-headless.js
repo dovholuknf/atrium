@@ -24865,6 +24865,7 @@ async function main() {
     await unit("boardMinionHidden", () => boardMinionHiddenSection(browser, base));
     await unit("stackMinionHidden", () => stackMinionHiddenSection(browser, base));
     await unit("itemMinionChip", bu("itemMinionChip"));
+await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("itemOpenHiddenCard", bu("itemOpenHiddenCard"));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));
