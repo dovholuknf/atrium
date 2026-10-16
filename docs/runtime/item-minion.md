@@ -181,7 +181,9 @@ After "accepted", in PowerShell:
 4. Add one dated line to `D:\git\github\dovholuknf\atrium\.uncommitted\notes\MINION-LOG.md`
    (`Add-Content`): `2026-10-15 22:41 landed <id> <sha>`.
 5. Tell the launcher in one line: `atrium_say` kind `fyi`, `done: <id> landed <sha>, backlog done, worker closed`.
-6. The minion then exits (`atrium_done`).
+6. The minion then exits itself with `atrium_exit` and no card. Not `atrium_done`, which reports and leaves the
+   session running, and not a wait for the launcher: a minion is tagged `atrium:director`, and no agent can exit a
+   director but the director itself.
 
 ## Things that went wrong, so you check for them
 
