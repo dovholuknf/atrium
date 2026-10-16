@@ -62,3 +62,19 @@ dial is stuck unblocks it.
 - **Counted creation.** Every `ziti.NewContext` goes through one helper that logs its caller (`link`,
   `capabilities`, `native`) and the running live count. The live count is added to the room's health output.
 - **ZitiCapabilities** caches only a success, for 30 seconds. A failed lookup is asked again on the next call.
+
+## Test plan
+
+## @LETTER@. A room with an unreachable ziti hub stays small
+
+### @LETTER@1. Redial resets the context
+
+1. Join a room over a ziti service, then take the hub's service offline.
+2. Watch the room log for `[ziti] context built (link)` and `context closed (link)` lines.
+3. Expected: the live count in each line never goes above 1, and the room's `ziti_contexts` stat stays at 0 or 1.
+4. Bring the hub back. Expected: the room attaches on its next dial.
+
+### @LETTER@2. Capabilities answers again after a failure
+
+1. Open the overlay panel with the controller unreachable and press "what can I host?". Expected: the failure text.
+2. Restore the controller and press it again. Expected: the services list, not the earlier failure.

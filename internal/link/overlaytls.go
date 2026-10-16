@@ -187,6 +187,19 @@ type Proven struct {
 	Keys Keys
 }
 
+// Reset and Close pass through to the transport, which an embedded interface does not do on its own.
+func (p Proven) Reset() {
+	if r, ok := p.Dialer.(resetter); ok {
+		r.Reset()
+	}
+}
+
+func (p Proven) Close() {
+	if c, ok := p.Dialer.(closer); ok {
+		c.Close()
+	}
+}
+
 // Dial opens one connection on the overlay and runs the handshake on it.
 func (p Proven) Dial(ctx context.Context) (net.Conn, error) {
 	cfg, err := Direct{Keys: p.Keys}.clientTLS()

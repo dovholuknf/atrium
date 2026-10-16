@@ -8,7 +8,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
+	"github.com/openziti/sdk-golang/ziti/edge"
 )
 
 // The OpenZiti transport, which is the one that should have been first.
@@ -54,10 +56,23 @@ type Ziti struct {
 	// The context is expensive to build and holds the authenticated session,
 	// so it is made once and reused for every dial. Without this a room with
 	// four data connections would authenticate to the controller four times on
-	// every reconnect.
-	once sync.Once
-	ctx  ziti.Context
-	err  error
+	// every reconnect. At most ONE is live: Reset and Close end it, and the
+	// next dial builds another.
+	//
+	// mu guards the pointer and nothing else. It is never held across a dial,
+	// so a dial stuck inside the SDK cannot block Reset, which is the call
+	// that frees it.
+	mu  sync.Mutex
+	ctx zitiConn
+	// newCtx builds one. Nil means the SDK, through internal/zitictx.
+	newCtx func() (zitiConn, error)
+}
+
+// zitiConn is the part of a ziti context this package uses.
+type zitiConn interface {
+	Dial(service string) (edge.Conn, error)
+	Listen(service string) (edge.Listener, error)
+	Close()
 }
 
 // Describe is what to log. The service, which is the whole address.
@@ -68,32 +83,55 @@ func (z *Ziti) Describe() string {
 	return "ziti:" + z.Service
 }
 
-// context authenticates once.
-func (z *Ziti) context() (ziti.Context, error) {
-	z.once.Do(func() {
-		id := strings.TrimSpace(z.Identity)
-		if id == "" {
-			z.err = errors.New(
-				"no ziti identity. enroll one and pass --identity, or use --transport direct")
-			return
-		}
-		if strings.TrimSpace(z.Service) == "" {
-			z.err = errors.New("no ziti service named. --service is which service to use")
-			return
-		}
-		cfg, err := ziti.NewConfigFromFile(id)
-		if err != nil {
-			z.err = fmt.Errorf("could not load that identity: %w", err)
-			return
-		}
-		c, err := ziti.NewContext(cfg)
-		if err != nil {
-			z.err = fmt.Errorf("could not use that identity: %w", err)
-			return
-		}
-		z.ctx = c
-	})
-	return z.ctx, z.err
+func (z *Ziti) build() (zitiConn, error) {
+	if z.newCtx != nil {
+		return z.newCtx()
+	}
+	id := strings.TrimSpace(z.Identity)
+	if id == "" {
+		return nil, errors.New(
+			"no ziti identity. enroll one and pass --identity, or use --transport direct")
+	}
+	if strings.TrimSpace(z.Service) == "" {
+		return nil, errors.New("no ziti service named. --service is which service to use")
+	}
+	cfg, err := ziti.NewConfigFromFile(id)
+	if err != nil {
+		return nil, fmt.Errorf("could not load that identity: %w", err)
+	}
+	c, err := zitictx.New("link", cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not use that identity: %w", err)
+	}
+	return c, nil
+}
+
+// context returns the live context, building one when there is none.
+func (z *Ziti) context() (zitiConn, error) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if z.ctx != nil {
+		return z.ctx, nil
+	}
+	c, err := z.build()
+	if err != nil {
+		return nil, err
+	}
+	z.ctx = c
+	return c, nil
+}
+
+// Reset closes the live context, which aborts a dial stuck inside it, and the
+// next dial builds a fresh one. The link calls it after repeated data dial
+// failures, when the context's session is the likelier fault.
+func (z *Ziti) Reset() {
+	z.mu.Lock()
+	c := z.ctx
+	z.ctx = nil
+	z.mu.Unlock()
+	if c != nil {
+		c.Close()
+	}
 }
 
 // Listen binds the service, which is the hub's side.
@@ -122,7 +160,7 @@ func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
 	}
 	// The SDK's Dial takes no context. The caller's deadline still applies to
 	// everything above, and a dial that hangs is bounded by the controller's
-	// own timeouts rather than by this package.
+	// own timeouts, or by Reset closing the context under it.
 	conn, err := zc.Dial(z.Service)
 	if err != nil {
 		return nil, fmt.Errorf("could not dial the ziti service %q. "+
@@ -131,12 +169,8 @@ func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-// Close releases the authenticated session.
-func (z *Ziti) Close() {
-	if z.ctx != nil {
-		z.ctx.Close()
-	}
-}
+// Close releases the authenticated session. Safe to call twice.
+func (z *Ziti) Close() { z.Reset() }
 
 // ZitiAuthenticated is `Hub.Authenticated` for this transport.
 //

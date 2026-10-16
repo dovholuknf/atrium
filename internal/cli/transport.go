@@ -402,7 +402,7 @@ func roomRungs(keys link.Keys, saved link.Saved, tr link.RoomTransports, had []l
 func reuse(had []link.Rung, p link.Path) link.Dialer {
 	for _, r := range had {
 		q := r.Path
-		if q.Transport == p.Transport && q.Addr == p.Addr && q.Service == p.Service &&
+		if q.Transport == p.Transport && strings.EqualFold(q.Addr, p.Addr) && q.Service == p.Service &&
 			q.Share == p.Share && q.Identity == p.Identity {
 			return r.Dial
 		}
