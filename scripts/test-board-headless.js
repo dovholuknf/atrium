@@ -31201,7 +31201,7 @@ async function changeReqSection(browser, base) {
         panels: [...document.querySelectorAll(".cr-detail .cr-panel .hr-h")].map(x => x.textContent), why: (document.querySelector(".cr-why") || {}).textContent,
         pushedLine: (document.querySelector(".cr-line") || {}).textContent, tl: document.querySelectorAll(".cr-tl li").length,
         buttons: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.textContent.trim()).filter(Boolean) }));
-      if (r.radios !== "shelf:false,ledger:false,feed:false,requests:true") fail(tag + ": the switcher is wrong " + r.radios);
+      if (r.radios !== "shelf:false,ledger:false,feed:false,requests:true,branches:false") fail(tag + ": the switcher is wrong " + r.radios);
       if (r.count !== "3") fail(tag + ": the count is the open requests, want 3, got " + r.count);
       if (r.strip.join("|") !== "Fix the router link flap|Edge router policies v2") fail(tag + ": the strip is not the open requests into main " + JSON.stringify(r.strip));
       if (r.items.join() !== "cr_9,cr_8,cr_7" || r.groups.join() !== "into main,into release/1.x" || r.needs !== 2 || r.cur.join() !== "cr_9") fail(tag + ": the list is wrong " + JSON.stringify(r));
