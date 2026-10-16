@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchLink, launchThrowaway, newWorkDialog.
+// Units: launchRepoUrls, launchLink, launchThrowaway, newWorkDialog.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -355,12 +355,114 @@ async function launchLinkSection(browser, base) {
   if (!bad) console.log("launchLink ok");
 }
 
+// A REPO LINK IN THE LAUNCH DIALOG (docs/changes/bug-launch-repo-box-takes-urls.md). Every form a person copies reduces to
+// host/org/repo through the one parser (parseRepoText, js/repolink.js). Pasted into the working directory box it moves to
+// the repo panel; typed in the filter it selects the repo (or says it will be fetched), `start new work` waits until the
+// box matches, and an empty name is made. LAUNCHURL_SHOTS=<dir> writes the dialog after Ryan's URL, named by LAUNCHURL_TAG.
+async function launchRepoUrlsSection(browser, base) {
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const calls = [];
+  const ryan = "https://github.com/dovholuknf/dotfiles/tree/main/claude/skills/slop-review";
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/v1\/checkouts(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checkouts: [
+      { repo: "netfoundry", slug: "bitbucket.org/netfoundry/netfoundry", path: "/work/nf", branch: "main", linked: false, root: "/work/nf", last: "2026-10-14T10:00:00Z" }] }) }));
+    await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: [
+      { host: "github.com", owner: "acme", repo: "widget", url: "u", path: "/p", main: { sha: "", at: null }, branches: [] }] }) }));
+    await p.route(/\/_hub\/git\/init$/, r => { calls.push(["init", JSON.parse(r.request().postData() || "{}").url]); r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.route(/\/v1\/new(\?|$)/, r => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      calls.push([b.prepare ? "prepare" : "new", b.repo, b.name || "", b.from || ""]);
+      r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ card: "nw1", worktree: "/wt/x", created: true }) });
+    });
+    await p.route(/\/v1\/tasks\/nw1(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "nw1", title: "x", status: "running" }) }));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    // LAUNCHURL_TAG=before runs against the old scripts (no parser): only the picture is taken, of the same steps.
+    if (process.env.LAUNCHURL_TAG === "before") {
+      await p.waitForFunction(() => typeof openLaunch === "function" && hubIsHub, null, { timeout: slow(15000) });
+      await p.evaluate(async () => { await openLaunch(null, "", "", null, null); });
+      await p.fill("#l-cwd", ryan);
+      await p.click("#l-nw-btn");
+      await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .pvrepo").length, null, { timeout: slow(5000) });
+      await p.fill("#l-nw-filter", ryan);
+      await p.locator("dialog#launch").screenshot({ path: process.env.LAUNCHURL_SHOTS + "/launch-before.png" });
+      return;
+    }
+    await p.waitForFunction(() => typeof parseRepoText === "function" && typeof openLaunch === "function" && hubIsHub, null, { timeout: slow(15000) });
+
+    // one case per form: [text, strict, slug, branch]
+    const forms = [
+      ["https://github.com/o/r", true, "github.com/o/r", ""],
+      ["https://github.com/o/r.git", true, "github.com/o/r", ""],
+      ["https://github.com/o/r/", true, "github.com/o/r", ""],
+      [ryan, true, "github.com/dovholuknf/dotfiles", "main"],
+      ["https://github.com/o/r/blob/dev/a/b.go", true, "github.com/o/r", "dev"],
+      ["https://github.com/o/r/pull/12", true, "github.com/o/r", ""],
+      ["https://github.com/o/r/issues", true, "github.com/o/r", ""],
+      ["git@github.com:o/r.git", true, "github.com/o/r", ""],
+      ["git@github.com:o/r", true, "github.com/o/r", ""],
+      ["ssh://git@github.com/o/r.git", true, "github.com/o/r", ""],
+      ["ssh://git@bitbucket.org:7999/o/r.git", true, "bitbucket.org/o/r", ""],
+      ["https://bitbucket.org/o/r/src/feature/x/", true, "bitbucket.org/o/r", "feature"],
+      ["https://bitbucket.org/o/r/pull-requests/3", true, "bitbucket.org/o/r", ""],
+      ["https://gitlab.com/g/s/r/-/tree/dev/docs", true, "gitlab.com/g/s/r", "dev"],
+      ["https://gitlab.com/g/s/r.git", true, "gitlab.com/g/s/r", ""],
+      ["https://gitlab.com/g/r/-/merge_requests/4", true, "gitlab.com/g/r", ""],
+      ["github.com/o/r", false, "github.com/o/r", ""],
+      ["github/o/r", false, "github.com/o/r", ""],
+    ];
+    const got = await p.evaluate(fs => fs.map(f => { const t = parseRepoText(f[0], f[1]); return t ? [t.slug, t.branch] : null; }), forms);
+    forms.forEach((f, i) => { if (!got[i] || got[i][0] !== f[2] || got[i][1] !== f[3]) fail("launchRepoUrls: " + f[0] + " read as " + JSON.stringify(got[i])); });
+    const nots = await p.evaluate(() => ["/work/o/r", "C:\\work\\o\\r", "github.com/o", "o/r/x", "just text", ""].map(x => !!parseRepoText(x, true) || !!parseRepoText(x, false)));
+    if (nots.some(Boolean)) fail("launchRepoUrls: a path or plain text was read as a repo " + JSON.stringify(nots));
+
+    const seen = () => p.evaluate(() => ({ cwd: document.getElementById("l-cwd").value, panel: !document.getElementById("l-nw").hidden,
+      filter: document.getElementById("l-nw-filter").value, repo: document.getElementById("l-nw-repo").value,
+      repoText: document.getElementById("l-nw-repo").selectedOptions[0].textContent, from: document.getElementById("l-nw-from").value,
+      go: document.getElementById("l-nw-go").disabled, rows: [...document.querySelectorAll("#l-nw-list .nm")].map(e => e.textContent) }));
+    await p.evaluate(async () => { await openLaunch(null, "", "", null, null); });
+    // the URL pasted into the working directory box moves to the repo panel, which shows the repo it names
+    await p.fill("#l-cwd", ryan);
+    await p.waitForFunction(() => document.getElementById("l-nw-repo").selectedOptions[0] && document.getElementById("l-nw-repo").value === "github.com/dovholuknf/dotfiles", null, { timeout: slow(5000) })
+      .catch(() => fail("launchRepoUrls: the directory box paste did not select the repo"));
+    let s = await seen();
+    if (s.cwd !== "" || !s.panel || s.filter !== ryan || !s.repoText.includes("will be fetched") || s.from !== "main" || s.go) fail("launchRepoUrls: after the paste " + JSON.stringify(s));
+    if (process.env.LAUNCHURL_SHOTS) await p.locator("dialog#launch").screenshot({ path: process.env.LAUNCHURL_SHOTS + "/launch-" + (process.env.LAUNCHURL_TAG || "after") + ".png" });
+    // a repo already held is selected, not shown as a fetch, and a hand-changed box turns start off
+    await p.fill("#l-nw-filter", "git@bitbucket.org:netfoundry/netfoundry.git");
+    s = await seen();
+    if (s.repo !== "bitbucket.org/netfoundry/netfoundry" || s.repoText.includes("fetched") || s.go) fail("launchRepoUrls: a held repo was not selected " + JSON.stringify(s));
+    await p.selectOption("#l-nw-repo", "github.com/acme/widget");
+    if (!(await seen()).go) fail("launchRepoUrls: start new work stayed on with a box that is not what was typed");
+    await p.selectOption("#l-nw-repo", "bitbucket.org/netfoundry/netfoundry");
+    if ((await seen()).go) fail("launchRepoUrls: start new work stayed off with a box that matches");
+    // start, with no name typed: the hub fetches, the room prepares, then the work starts on the branch the link named
+    await p.fill("#l-nw-filter", ryan);
+    calls.length = 0;
+    await p.click("#l-nw-go");
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("launchRepoUrls: start did not finish " + JSON.stringify(calls)));
+    const want = ["init", "prepare", "new"];
+    if (calls.map(c => c[0]).join() !== want.join() || calls[0][1] !== "https://github.com/dovholuknf/dotfiles" || calls[2][1] !== "github.com/dovholuknf/dotfiles" ||
+        !/^claude\/work-\d{6}-\d{4}$/.test(calls[2][2]) || calls[2][3] !== "main") fail("launchRepoUrls: the calls were " + JSON.stringify(calls));
+    if (errors.length) fail("launchRepoUrls: page errors " + errors.join(" | "));
+  } finally {
+    mock.hubMode = wasHub;
+    await ctx.close();
+  }
+  if (!bad) console.log("launchRepoUrls ok");
+}
+
 const units = [
+  { name: "launchRepoUrls", run: ({ browser, base }) => launchRepoUrlsSection(browser, base) },
   { name: "launchLink", run: ({ browser, base }) => launchLinkSection(browser, base) },
   { name: "launchThrowaway", run: ({ browser, base }) => launchThrowawaySection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
 ];
-const sections = { launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection };
+const sections = { launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
