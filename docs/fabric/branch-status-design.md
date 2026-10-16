@@ -350,3 +350,19 @@ uncarried count. It is never offered on `room-only` or on a code orphan without 
    hub holds, or the flow repo only until a second repository has a rewritten main?
 9. **Dirty worktrees.** The audit found 42 with real edits and they are the loudest loss. Phase 4's optional count is a
    room-side `status --porcelain`. Is that in scope, or its own item?
+
+## 13. Decisions (orchestrator, 2026-10-16)
+
+These answer the open questions in section 12.
+
+1. **Cache.** The commit to patch-id cache lives in memory first. Persisting it is a later step.
+2. **Per-commit facts.** Carried is a fact about each commit, and the branch status derives from them. A branch that
+   gains a commit after landing flips back.
+3. **Keep.** Keep is a flag with a note. A kept branch leaves the orphaned count. A new commit on it clears the flag.
+4. **Subject rule.** A subject match counts only when the commit's file set also matches a main commit with that
+   subject. A false landed loses work and a false orphan only nags, so the rule errs toward orphaned.
+5. **Code versus docs.** Any uncarried commit that touches a path outside the docs list makes the orphan `code`.
+6. **Live staleness.** `live_stale_after` is 24 h. A card idle longer than that no longer makes its branch open.
+7. **Delete.** Delete is operator-only. It is never offered on a room-only branch. A code orphan needs a second click.
+8. **Scope.** The view covers every repository the hub holds.
+9. **Dirty worktrees.** They are their own item and not part of this one.
