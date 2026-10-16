@@ -23090,7 +23090,7 @@ async function main() {
       
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mGrowlStack: mGrowlStackSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mGrowlStack: mGrowlStackSection,
       discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -25059,6 +25059,7 @@ async function main() {
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
+    await unit("mOpenQ", () => mOpenQSection(browser));
     await unit("mGrowlStack", () => mGrowlStackSection(browser));
     await unit("itemsRealShape", bu("itemsRealShape"));
     await unit("itemsView", bu("itemsView"));
@@ -27607,6 +27608,47 @@ async function growlStableSection(browser, base) {
     } finally { await h.close(); }
   }
   if (!bad) console.log("growlStable ok");
+}
+
+// A turn that ends on Open Questions shows them once, in the block under the thread and not in its own text. A turn whose
+// block is not drawn (answered, or text said after the questions) keeps every word.
+async function mOpenQSection(browser) {
+  const st = mServer({});
+  const Q = "File the thumbnail as a feature?";
+  const ended = "Done with the change.\n\nOpen Questions:\n\n---\n\n1. " + Q + "\n";
+  const tail = "Open Questions:\n\n1. " + Q + "\n\nOne more thing: it lands tonight.";
+  st.tasks = [
+    mCard("oq-a", { display_title: "asks", status: "needs-input", waiting_since: mIso(M_MIN), seen: { turn_ended_at: mIso(M_MIN), answered: false, open_questions: [Q] } }),
+    mCard("oq-b", { display_title: "answered", status: "needs-input", waiting_since: mIso(M_MIN), seen: { turn_ended_at: mIso(M_MIN), answered: true, open_questions: [Q] } }),
+    mCard("oq-c", { display_title: "said more", status: "needs-input", waiting_since: mIso(M_MIN), seen: { turn_ended_at: mIso(M_MIN), answered: false, open_questions: [Q] } }) ];
+  st.replies["oq-a"] = { source: "transcript", replies: [{ at: mIso(2 * M_MIN), text: "Earlier.\n\nOpen Questions:\n\n1. Old one?\n" }, { at: mIso(M_MIN), text: ended }] };
+  st.replies["oq-b"] = { source: "transcript", replies: [{ at: mIso(M_MIN), text: ended }] };
+  st.replies["oq-c"] = { source: "transcript", replies: [{ at: mIso(M_MIN), text: tail }] };
+  await st.open();
+  const tag = "mOpenQ: ";
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 892 }, "");
+    const count = async id => {
+      await p.tap('#m-list .row[data-id="' + id + '"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      const t = await p.textContent("#m-card-scroll");
+      await mShot(p, "openq-" + id);
+      await p.tap("#m-card-back");
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      return { n: t.split(Q).length - 1, old: /Old one\?/.test(t) };
+    };
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    const a = await count("oq-a");
+    if (a.n !== 1) fail(tag + "a turn ending on Open Questions shows the question " + a.n + " times");
+    if (!a.old) fail(tag + "an earlier turn's questions were cut");
+    const b = await count("oq-b");
+    if (b.n !== 1) fail(tag + "an answered turn shows the question " + b.n + " times, want its own text once");
+    const c = await count("oq-c");
+    if (c.n !== 2) fail(tag + "a turn that says more after its questions was cut: " + c.n);
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mOpenQ ok");
 }
 
 async function mGrowlQuestionSection(browser) {

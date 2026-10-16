@@ -89,8 +89,27 @@
     const room = window.mNet.roomOf(t.id) || t.room || "";
     return nm.main + (room ? "@" + room : "");
   }
-  function replyHTML(r, screen, who) {
-    const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
+  // The block under the thread draws the last turn's Open Questions, so that turn's own text stops short of them. Only a
+  // trailing section is cut (the heading, as the store reads it, and then nothing but blanks, rules, numbered items and
+  // their indented lines to the end), so a message that says more after its questions keeps every word.
+  const OQ_HEAD = /^\s*(#{1,6}\s*)?(\*\*|__)?\s*open questions\s*:?\s*(\*\*|__)?\s*:?\s*$/i;
+  const OQ_TAIL = /^(\s*|\s*(-{3,}|\*{3,}|_{3,})\s*|\s{0,3}\d{1,2}[.)]\s+.*|\s+\S.*)$/;
+  function withoutOpenQuestions(text) {
+    const lines = String(text).split("\n").map(l => l.replace(/\r$/, ""));
+    let at = -1;
+    for (let i = lines.length - 1; i >= 0; i--) if (OQ_HEAD.test(lines[i])) { at = i; break; }
+    if (at < 0 || !lines.slice(at + 1).every(l => OQ_TAIL.test(l))) return text;
+    return lines.slice(0, at).join("\n").replace(/\s+$/, "").replace(/\n\s*(-{3,}|\*{3,}|_{3,})$/, "").replace(/\s+$/, "");
+  }
+  // Whether questionsHTML draws a list for this card: the same test, so a hidden section is always shown somewhere.
+  function questionsDrawn(t) {
+    const s = t.seen || {};
+    return s.answered === false && (s.open_questions || []).length > 0;
+  }
+
+  function replyHTML(r, screen, who, cut) {
+    const text = cut ? withoutOpenQuestions(r.text) : r.text;
+    const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(text, mdCtx()) + "</div>";
     const k = entryKey(r.at, r.text);
     return '<article class="reply' + (screen ? " from-screen" : "") + '" data-k="' + U.esc(k) + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "", r.text, k) + body +
       (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
@@ -334,7 +353,9 @@
       .concat(prompts.filter(p => U.ts(p.at) >= since).map(p => ({ p, at: U.ts(p.at) })))
       .sort((a, b) => a.at - b.at);
     if (!items.length) return '<div class="replies">' + row + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + row + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
+    // The newest reply is the turn the questions came from, and only when nothing was said after it.
+    const lastR = questionsDrawn(t) && !screen && items[items.length - 1] && items[items.length - 1].r ? items[items.length - 1].r : null;
+    return '<div class="replies">' + row + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who, i.r === lastR)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
