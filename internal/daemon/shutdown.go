@@ -104,7 +104,23 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, hostInJobRefusal, http.StatusConflict)
 		return
 	}
-	d.stopRunners.Store(runners)
+	// The first request's value is the one in force. A later request that differs is refused rather than changing what
+	// the stop in flight does to host runners, and one that agrees joins as before.
+	want := int32(stopAskedPlain)
+	if runners {
+		want = stopAskedRunners
+	}
+	if d.stopAsked.CompareAndSwap(stopAskedNone, want) {
+		d.stopRunners.Store(runners)
+	} else if have := d.stopAsked.Load(); have != want {
+		inForce := "plain (host runners are left up)"
+		if have == stopAskedRunners {
+			inForce = "--runners (every runner is ended)"
+		}
+		http.Error(w, "a shutdown is already in flight with "+inForce+", and this request asks for the other. "+
+			"wait for it to finish, then ask again.", http.StatusConflict)
+		return
+	}
 	now := truthy(r.URL.Query().Get("now"))
 	wait := d.st.RestartWrapWait()
 	w.Header().Set("Content-Type", "application/json")
@@ -139,6 +155,13 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 		d.stop.request(reason)
 	}()
 }
+
+// What the first shutdown request asked for, held in Daemon.stopAsked. Zero is nothing asked yet.
+const (
+	stopAskedNone    = 0
+	stopAskedPlain   = 1
+	stopAskedRunners = 2
+)
 
 // truthy reads a query flag: 1, true or yes.
 func truthy(v string) bool {

@@ -146,6 +146,9 @@ type Daemon struct {
 	// stopRunners is set by a stop that was asked to end every runner, host-held ones included (`atrium stop
 	// --runners`). Unset, a stop leaves the runners the pty host holds up. See stopSupervised.
 	stopRunners atomic.Bool
+	// stopAsked is what the first shutdown request asked for (stopAskedNone, Plain or Runners), claimed by
+	// compare-and-set so a later request cannot change stopRunners under a stop in flight. See handleShutdown.
+	stopAsked atomic.Int32
 	// gatePoll and gateGiveUp override the short gate's timings when set. Zero is the default, see stopkeep.go.
 	gatePoll, gateGiveUp time.Duration
 	// hostInJob and hostBuild are what the host's probe said when this daemon connected. A host inside the room
