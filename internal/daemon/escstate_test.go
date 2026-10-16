@@ -114,25 +114,27 @@ func TestHeldMarkIsForcedOutByBytes(t *testing.T) {
 
 // A stream that stops mid-sequence does not hold it either: the timer releases it.
 func TestHeldMarkIsForcedOutByTime(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow: real ptys, processes and timers")
-	}
 	t.Parallel()
 	r := newEscRunner()
+	var fire func()
+	var held time.Duration
+	r.afterFunc = func(d time.Duration, f func()) *time.Timer {
+		held, fire = d, f
+		return nil
+	}
 	r.deliverOutput([]byte("\x1b[3"))
 	r.markClear()
-	deadline := time.Now().Add(markHoldTime + 3*time.Second)
-	for time.Now().Before(deadline) {
-		r.mu.Lock()
-		pending := r.markPending
-		r.mu.Unlock()
-		if !pending {
-			if !strings.Contains(replayOf(r), clearMarkOSC) {
-				t.Fatal("released without the mark")
-			}
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
+	if fire == nil || held != markHoldTime {
+		t.Fatalf("the hold timer was not armed for markHoldTime: %v", held)
 	}
-	t.Fatal("the mark was never released")
+	if !r.markPending {
+		t.Fatal("the mark was not held")
+	}
+	fire()
+	if r.markPending {
+		t.Fatal("the mark was never released")
+	}
+	if !strings.Contains(replayOf(r), clearMarkOSC) {
+		t.Fatal("released without the mark")
+	}
 }
