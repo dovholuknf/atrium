@@ -1,11 +1,15 @@
 package api
 
 import (
+	"compress/gzip"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -49,5 +53,23 @@ func (s *Server) cardReplies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, v)
+	writeJSONGzip(w, r, http.StatusOK, v)
+}
+
+// writeJSONGzip is writeJSON, compressed when the caller accepts it. A page of replies is 60 KB of markdown that
+// shrinks to a tenth, and the phone reads one on open and again at every turn end, over whatever link reaches it.
+func writeJSONGzip(w http.ResponseWriter, r *http.Request, code int, v any) {
+	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		writeJSON(w, code, v)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Add("Vary", "Accept-Encoding")
+	w.WriteHeader(code)
+	zw := gzip.NewWriter(w)
+	if err := json.NewEncoder(zw).Encode(v); err != nil {
+		log.Printf("[atrium api] encode: %v", err)
+	}
+	_ = zw.Close()
 }

@@ -284,6 +284,23 @@ func turnsOf(path string) (*turnIndex, error) {
 // transcript's tool calls name absolute ones, and a relative one means whatever the
 // reader's directory is.
 func insideWorktree(worktree string, calls []editCall) (rels []string, outside int) {
+	return insideWorktreeVia(worktree, calls, resolveInside)
+}
+
+// resolveInside is one path resolved against the worktree's real root: its relative form and true when it is inside.
+func resolveInside(worktree, realRoot, p string) (string, bool) {
+	real, err := safepath.Contained(worktree, p)
+	if err != nil {
+		return "", false
+	}
+	rel, ok := under(realRoot, real)
+	if !ok || rel == "" {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
+func insideWorktreeVia(worktree string, calls []editCall, resolve func(worktree, realRoot, p string) (string, bool)) (rels []string, outside int) {
 	worktree = strings.TrimSpace(worktree)
 	if worktree == "" {
 		return nil, len(distinctPaths(calls))
@@ -298,17 +315,11 @@ func insideWorktree(worktree string, calls []editCall) (rels []string, outside i
 			outside++
 			continue
 		}
-		real, err := safepath.Contained(worktree, p)
-		if err != nil {
+		rel, ok := resolve(worktree, realRoot, p)
+		if !ok {
 			outside++
 			continue
 		}
-		rel, ok := under(realRoot, real)
-		if !ok || rel == "" {
-			outside++
-			continue
-		}
-		rel = filepath.ToSlash(rel)
 		if !seen[rel] {
 			seen[rel] = true
 			rels = append(rels, rel)
@@ -316,6 +327,46 @@ func insideWorktree(worktree string, calls []editCall) (rels []string, outside i
 	}
 	sort.Strings(rels)
 	return rels, outside
+}
+
+// A reply's "N files changed" chip is read on every /replies call, and a turn can name thousands of
+// files. Each is a safepath resolution, which is several syscalls, so a long turn cost a second per
+// call. The answer for one path is kept for insideTTL, which is as stale as a symlink swapped in
+// the meantime can make a count. The /changes view does not use it: it names the files.
+const (
+	insideTTL = 10 * time.Minute
+	insideMax = 50000
+)
+
+var insideMemo = struct {
+	mu sync.Mutex
+	m  map[insideKey]insideVal
+}{m: map[insideKey]insideVal{}}
+
+type insideKey struct{ worktree, path string }
+type insideVal struct {
+	rel string
+	ok  bool
+	at  time.Time
+}
+
+func resolveInsideMemo(worktree, realRoot, p string) (string, bool) {
+	k := insideKey{worktree, p}
+	now := time.Now()
+	insideMemo.mu.Lock()
+	v, hit := insideMemo.m[k]
+	insideMemo.mu.Unlock()
+	if hit && now.Sub(v.at) < insideTTL {
+		return v.rel, v.ok
+	}
+	rel, ok := resolveInside(worktree, realRoot, p)
+	insideMemo.mu.Lock()
+	if len(insideMemo.m) >= insideMax {
+		insideMemo.m = map[insideKey]insideVal{}
+	}
+	insideMemo.m[k] = insideVal{rel: rel, ok: ok, at: now}
+	insideMemo.mu.Unlock()
+	return rel, ok
 }
 
 func distinctPaths(calls []editCall) []string {
@@ -377,7 +428,7 @@ func fillEdited(t *store.Task, transcript string, replies []Reply) {
 		start, end := x.span(replies[i].At)
 		n, ok := byTurn[start]
 		if !ok {
-			rels, _ := insideWorktree(t.Worktree, x.editsIn(start, end))
+			rels, _ := insideWorktreeVia(t.Worktree, x.editsIn(start, end), resolveInsideMemo)
 			n = len(rels)
 			byTurn[start] = n
 		}
