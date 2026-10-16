@@ -42,3 +42,20 @@ from that step. An item with no work row says `from: filing`. A dropped feature'
 
 **Expected:** `threshold_items` and `threshold_days` follow. Three or more items with the oldest at the days threshold
 cross it, and two items however old do not.
+
+### @LETTER@6. Phase 4: a touched page shows the hint
+
+1. Land a feature, then file a `docs` item for it naming `README.md` and `docs/cli.md` under `stale:`.
+2. Commit a change to `README.md` on the hub mirror's claude/main, and let the mirror pass run.
+3. `GET /_hub/doc-debt`.
+
+**Expected:** the item carries `landed_sha` and `changed: [{path: README.md, sha, date}]` with the newest commit that
+touched it. `docs/cli.md` is not in `changed`. The item is still open and still counted.
+
+### @LETTER@7. Phase 4: no hint without a landed sha, a mirror or git
+
+1. Read the meter with an item whose `feature:` has no work row.
+2. Read it again with the repository not held by the hub (or `flow_repo` unset with several held).
+
+**Expected:** the hand-filed item has no `landed_sha` and no `changed`. With no mirror every item answers as before, with
+no `changed`, and the answer is a 200 and not an error.

@@ -1021,6 +1021,15 @@ func (f landGit) ForgeMain(ctx context.Context, force bool) gitsync.ForgeMain {
 	return gitsync.ForgeMain{Why: "no repository is set for the merge flow"}
 }
 
+// PageChangedSince is the page-changed hint's reach into the same repository. See link.PageChangeGit.
+func (f landGit) PageChangedSince(ctx context.Context, since, path string) (gitsync.PageChange, bool, error) {
+	name := f.repo()
+	if name == "" {
+		return gitsync.PageChange{}, false, nil
+	}
+	return f.hub.Store().PageChangedSince(ctx, name, since, path)
+}
+
 func (f landGit) Contains(ctx context.Context, build, sha string) (bool, bool, error) {
 	if name := f.repo(); name != "" {
 		return f.hub.Store().Contains(ctx, name, build, sha)

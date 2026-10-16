@@ -45,6 +45,32 @@ func landFeature(t *testing.T, s *Store, id string, at time.Time) {
 	}
 }
 
+// THE LANDED SHA is carried on a counted item whose feature landed, and absent from one counted from filing, which is what
+// keeps a hand-filed item out of the page-changed hint.
+func TestDocDebtCarriesTheLandedSHAOfAnItemItCountsFromLanded(t *testing.T) {
+	s, now := debtStore(t)
+	landFeature(t, s, "f-one", debtDay0)
+	fileDocItem(t, s, "d-1", "f-one", "README.md")
+	fileDocItem(t, s, "d-2", "f-by-hand", "README.md")
+	*now = debtDay0.Add(24 * time.Hour)
+	m, err := s.DocDebtMeter()
+	if err != nil || m.Items != 2 {
+		t.Fatalf("meter = %+v %v", m, err)
+	}
+	for _, c := range m.Counted {
+		switch c.ID {
+		case "d-1":
+			if c.LandedSHA != "abc" {
+				t.Fatalf("landed item: %+v", c)
+			}
+		case "d-2":
+			if c.LandedSHA != "" {
+				t.Fatalf("hand-filed item: %+v", c)
+			}
+		}
+	}
+}
+
 // ITEMS AND PAGES: only open docs items count, and a page two items name is one page.
 func TestDocDebtCountsOpenItemsAndDistinctPages(t *testing.T) {
 	s, now := debtStore(t)

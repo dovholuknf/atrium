@@ -78,6 +78,19 @@ type DocDebtCounted struct {
 	From  string   `json:"from"`
 	Days  int      `json:"days"`
 	Pages []string `json:"pages,omitempty"`
+	// LandedSHA is the commit the feature's `landed` step recorded, empty for an item counted from filing. It is where
+	// the page-changed hint counts from.
+	LandedSHA string `json:"landed_sha,omitempty"`
+	// Changed is the pages that changed in the hub's mirror since LandedSHA, one per page, in page order. The store never
+	// fills it: the hub does (internal/link/docdebt.go), and leaves a page out when it could not tell. Nothing closes.
+	Changed []DocDebtPageChange `json:"changed,omitempty"`
+}
+
+// DocDebtPageChange is the newest commit that touched one stale page since the feature landed.
+type DocDebtPageChange struct {
+	Path string `json:"path"`
+	SHA  string `json:"sha"`
+	Date string `json:"date"`
 }
 
 // DocDebtMeter is the answer to GET /_hub/doc-debt.
@@ -109,7 +122,9 @@ func (s *Store) DocDebtMeterAt(now time.Time) (DocDebtMeter, error) {
 		return m, err
 	}
 	var blocks []DocDebt
+	var landedSHA string
 	for _, it := range items {
+		landedSHA = ""
 		// A body that is not a block still counts, from filing: a doc item filed by hand is still owed.
 		blk, perr := ParseDocDebt(it.Body)
 		since, from := it.CreatedAt, DebtFromFiling
@@ -119,7 +134,7 @@ func (s *Store) DocDebtMeterAt(now time.Time) (DocDebtMeter, error) {
 				continue
 			}
 			if _, werr := s.WorkByID(blk.Feature); werr == nil {
-				landed, ok, serr := s.landedAt(blk.Feature)
+				landed, sha, ok, serr := s.landedAt(blk.Feature)
 				if serr != nil {
 					return m, serr
 				}
@@ -127,13 +142,13 @@ func (s *Store) DocDebtMeterAt(now time.Time) (DocDebtMeter, error) {
 					m.Pending++
 					continue
 				}
-				since, from = landed, DebtFromLanded
+				since, from, landedSHA = landed, DebtFromLanded, sha
 			} else if !errors.Is(werr, ErrNoWork) {
 				return m, werr
 			}
 			blocks = append(blocks, blk)
 		}
-		c := DocDebtCounted{ID: it.ID, Title: it.Title, Feature: blk.Feature, Since: since, From: from}
+		c := DocDebtCounted{ID: it.ID, Title: it.Title, Feature: blk.Feature, Since: since, From: from, LandedSHA: landedSHA}
 		if t, terr := time.Parse(TimeFormat, since); terr == nil && now.After(t) {
 			c.Days = int(now.Sub(t) / (24 * time.Hour))
 		}
@@ -151,21 +166,21 @@ func (s *Store) DocDebtMeterAt(now time.Time) (DocDebtMeter, error) {
 	return m, nil
 }
 
-// landedAt is when an item's `landed` step finished, and whether it has.
-func (s *Store) landedAt(id string) (string, bool, error) {
+// landedAt is when an item's `landed` step finished, the sha it recorded, and whether it has.
+func (s *Store) landedAt(id string) (at, sha string, ok bool, err error) {
 	steps, err := s.WorkSteps(id)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	for _, st := range steps {
 		if st.Step == StepLanded && st.State == StepDone {
 			if st.EndedAt != "" {
-				return st.EndedAt, true, nil
+				return st.EndedAt, st.SHA, true, nil
 			}
-			return st.StartedAt, st.StartedAt != "", nil
+			return st.StartedAt, st.SHA, st.StartedAt != "", nil
 		}
 	}
-	return "", false, nil
+	return "", "", false, nil
 }
 
 // DocDebtMeter is DocDebtMeterAt for now.
