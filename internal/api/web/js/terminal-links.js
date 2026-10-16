@@ -81,7 +81,12 @@ function useFileLinks(t, task) {
 async function provideFileLinks(t, id, y, done) {
   // The pane may have moved to another card while this was in flight, and a
   // link that opens a file from the previous card is worse than no link.
-  if (!termTask || termTask.id !== id) { done(undefined); return; }
+  //
+  // BY BARE ID, and then by the id the pane holds NOW. A room flip respells the card in place
+  // (`retagTermId`), and this provider was registered with the old spelling for the terminal's whole life, so
+  // comparing it whole left every path on a card that had flipped plain text for good.
+  if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
+  id = termTask.id;
   const line = logicalLine(t, y);
   if (!line) { done(undefined); return; }
 
@@ -98,7 +103,7 @@ async function provideFileLinks(t, id, y, done) {
     if (!probeFresh(known, c.token) && !ask.includes(c.token)) ask.push(c.token);
   }
   if (ask.length) await askProbe(id, ask);
-  if (!termTask || termTask.id !== id) { done(undefined); return; }
+  if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
 
   const links = [];
   for (const s of spans) {
