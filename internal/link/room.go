@@ -346,6 +346,11 @@ func (r *Room) attach(ctx context.Context) error {
 		switch {
 		case n.Bye != "":
 			return errors.New("the hub said: " + n.Bye)
+		case len(n.Paths) > 0:
+			// The hub's addresses changed while this room was attached. Heard as the welcome's list is.
+			if r.OnPaths != nil {
+				go r.OnPaths(n.Paths)
+			}
 		case n.Offer != nil:
 			// A hub saying what it is running. Considered, which usually means
 			// ignored. See `consider` in upgrade.go.

@@ -55,6 +55,9 @@ type hubSide struct {
 	release func()
 	// says is the line describing where rooms dial in.
 	says string
+	// set, when not nil, is every path this side offers right now, asked again at each welcome and on a
+	// timer. Direct has one: its addresses move with the machine. Nil means `path` alone.
+	set func() []link.Path
 }
 
 // openHub prepares one side of one transport.
@@ -88,6 +91,14 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			},
 			release: func() {},
 			says:    adv,
+			set: func() []link.Path {
+				addrs := advertiseSet(linkAddr, advertise, interfaceIPs)
+				out := make([]link.Path, len(addrs))
+				for i, a := range addrs {
+					out[i] = link.Path{Transport: "direct", Addr: a}
+				}
+				return out
+			},
 		}, nil
 
 	case "ziti":
@@ -238,6 +249,12 @@ func (s hubSet) paths(order []string) []link.Path {
 	for _, side := range s.sides {
 		if side.kind == "zrok" {
 			continue
+		}
+		if side.set != nil {
+			if ps := side.set(); len(ps) > 0 {
+				out = append(out, ps...)
+				continue
+			}
 		}
 		p := side.path
 		p.Share, p.Identity, p.From = "", "", ""

@@ -68,7 +68,8 @@ func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.port, "link", defaultLinkAddr(),
 		"where rooms dial in (may bind wide, e.g. 0.0.0.0:7779)")
 	c.Flags().StringVar(&f.advertise, "link-advertise", "",
-		"the host:port a room dials this hub at, minted into join strings (required when --link binds wide)")
+		"the host:port a room dials this hub at, minted into join strings (required when --link binds wide). "+
+			"a host name works and each room resolves it at every dial. a comma list names more than one, the first goes in join strings")
 	c.Flags().StringVar(&f.dir, prefix+"dir", "", "where this hub keeps its certificates")
 	c.Flags().StringVar(&f.db, prefix+"db", "",
 		"the hub's own store: which rooms exist and what they last said (default: under --"+prefix+"dir)")
@@ -568,6 +569,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		}
 	}
 
+	// THE ADDRESSES ROOMS ARE TOLD, recomputed on a timer. A change is pushed to every attached room, so one
+	// standing on another rung learns a hub that moved. See advertiseset.go.
+	go watchPaths(ctx, pathsEvery, func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }, h.PushPaths)
+
 	// HANDING FREED PAGES BACK TO DISK, a bounded batch at a time while
 	// the hub stays live. The room cache is rewritten wholesale on every
 	// announce, so its file grows and never shrinks on its own. A no-op
@@ -820,8 +825,9 @@ func orDefault(v, def string) string {
 //     the default flag ships with and the historical two-accounts case relies
 //     on it.
 func advertiseFor(bind, override string) (string, error) {
-	if o := strings.TrimSpace(override); o != "" {
-		return o, nil
+	// A comma list is a set of addresses. The join string carries the first.
+	if o, _, _ := strings.Cut(override, ","); strings.TrimSpace(o) != "" {
+		return strings.TrimSpace(o), nil
 	}
 	host, port, err := net.SplitHostPort(bind)
 	if err != nil {

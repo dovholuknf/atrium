@@ -842,6 +842,25 @@ func (h *Hub) AskRestart(room string, ask RestartAsk) error {
 	return nil
 }
 
+// PushPaths tells every attached room the hub's list of paths as it is now. Called when it changed, since
+// a welcome carries the list only to a room that attaches. Best effort: a room it cannot reach is gone, and
+// its next welcome carries the list anyway.
+func (h *Hub) PushPaths() {
+	ps := h.paths()
+	if len(ps) == 0 {
+		return
+	}
+	h.mu.Lock()
+	live := make([]*attached, 0, len(h.rooms))
+	for _, a := range h.rooms {
+		live = append(live, a)
+	}
+	h.mu.Unlock()
+	for _, a := range live {
+		_ = a.send(note{Paths: ps})
+	}
+}
+
 // request asks a room for more data connections.
 func (a *attached) request(n int) {
 	a.mu.Lock()

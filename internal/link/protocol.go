@@ -121,6 +121,9 @@ type note struct {
 	// Access is a room saying what its remote access switch says, at attach and on every change. Observed, and never
 	// trusted for granting: the room checks its own file again at every stream. See stream.go.
 	Access *RemoteAccess `json:"access,omitempty"`
+	// Paths is a hub saying its list of ways in changed, in the shape the welcome carries it. A room hears it
+	// exactly as it hears the welcome's list. Never a credential.
+	Paths []Path `json:"paths,omitempty"`
 }
 
 // RestartAsk is a hub asking a room to turn itself off and on again.
