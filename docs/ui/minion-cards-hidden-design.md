@@ -15,7 +15,7 @@ notices still hold every minion, so nothing that counts or rings is ever taken a
 
 - `atrium:item:<id>` is stamped by the launcher on an item worker (`WorkTagPrefix`, `internal/link/work_launch.go`).
   `ItemTag` (`atrium:item`), `ItemOwnerTag` and `DirectorTag` (`atrium:director`) are in `internal/link/control_mcp.go`.
-  Nothing writes `atrium:minion` yet. It is new.
+  The orchestrator's minion launches already carry `atrium:director`, `atrium:minion` and `atrium:item:<id>`.
 - The board holds every card in `cardRows`, read through `cardList()` and `boardCards()` (`js/cards.js`). `renderBoard`
   (`js/board.js`), `renderStack` (`js/stack.js`) and `renderTermList` (`js/terminal-list.js`) all start from
   `boardCards()`. The phone's home (`m/js/home.js`, `render()` and its `visible` test beside `opts.hideSubs`) starts
@@ -35,11 +35,10 @@ notices still hold every minion, so nothing that counts or rings is ever taken a
 **The tag is `atrium:minion`.** Not `atrium:item:<id>`: that one means "belongs to item X", is also on non-minion
 workers a human launched on purpose, and varies per item. A director keeps `atrium:director` and is never hidden.
 
-**Stamping.** Add `MinionTag = "atrium:minion"` beside `DirectorTag` in `internal/link/control_mcp.go`. The launch path
-that builds an item worker's tags (`internal/link/work_launch.go`, where `WorkTagPrefix` is applied) adds it when the
-launch is an item minion. Recommended rule: a launch carrying `atrium:item:<id>` and no `atrium:director` is a minion.
-The hub stamps it, not the recipe in `item-minion.md`, so a worker launched by an older recipe is hidden too. The tag
-is plain data. Nothing in the room treats it specially.
+**Stamping.** The orchestrator's minion launches already carry `atrium:director`, `atrium:minion` and
+`atrium:item:<id>`, so the hub stamps nothing and phase 1 has no Go change. `isMinion` wins over `atrium:director`: a
+minion is hidden even though it carries the director tag. Item workers (`atrium:item`, no `atrium:minion`) stay
+visible. The tag is plain data. Nothing in the room treats it specially.
 
 **The predicate.** `isMinion(t)` in `js/cardrules.js`, beside `isSubagent`, with `MINION_TAG = "atrium:minion"`. Then ONE
 function says whether a card is hidden right now:
@@ -156,17 +155,15 @@ ONE toggle, stored per device, in the same place the Terminals chips live.
   it, and the archive sweep (`internal/daemon/sweep.go`, `archiveworkers.go`) ages it out like any other finished
   worker. A still running orphan that needs the human un-hides through `cardNeedsYou` as always.
 - **Item done but a minion asks something.** Same, it un-hides. The ask is real.
-- **Archive.** `archiveworkers.go` already archives an `origin:agent` worker with no `atrium:director`. The minion tag
-  does not change that, so hidden cards do not pile up for ever.
+- **Archive.** `archiveworkers.go` skips `atrium:director` cards, and a minion carries that tag. A minion that cannot
+  self-exit therefore stays (hidden) until someone removes it. Phase 3 lists such cards under the `minions` chip.
 
 ## 6. Build plan
 
 Each phase lands alone. Board phases ship before and after PNGs under `docs/changes/img/u-minion-cards-hidden/` with a
 README line, headless units (`scripts/test-board-headless.js`) plus `bootClean`, and no one-off shooter scripts.
 
-**Phase 1. The tag and the predicate (Go and rules).**
-- `MinionTag` in `internal/link/control_mcp.go`, stamped in `internal/link/work_launch.go` for an item worker. Go unit
-  test in `internal/link` (no store, under the 10ms budget): an item launch carries `atrium:minion`, a director launch
+- No Go change: the tag is already stamped by the orchestrator's minion launches.
   does not.
 - `isMinion`, `cardNeedsYou`, `cardHidden`, `MINION_TAG` in `js/cardrules.js`, `shownCards` in `js/cards.js`.
 - Headless units: `minionPredicate` (tag matching: trim, case, a director never a minion), `minionNeedsYou`
@@ -204,9 +201,7 @@ Phases 2 to 5 depend on phase 1 only. Order them 2, 4, 3, 5 if the Terminals clu
 
 ## Open questions, each with a recommended answer
 
-1. **Who stamps `atrium:minion`, the hub or the recipe?** Recommended: the hub, in `work_launch.go`, whenever a launch
-   carries `atrium:item:<id>` and no `atrium:director`. An older recipe then needs no edit, and a hand launched worker
-   without an item tag is never hidden.
+1. **Who stamps `atrium:minion`?** Decided: the orchestrator's minion launches already do. See Decisions below.
 2. **What is the "stuck" field?** Recommended: confirm in phase 1 against `js/keepalive.js` and the long turn check-in.
    If the board has no per-card stuck flag, drop it from `cardNeedsYou` and rely on the item going `blocked` (the
    owner's notice) plus the existing keepalive growler, which is not filtered.
@@ -221,3 +216,11 @@ Phases 2 to 5 depend on phase 1 only. Order them 2, 4, 3, 5 if the Terminals clu
    the header tells the truth about load while the Terminals tab stays quiet.
 8. **Should an un-hide animate?** Recommended: no. It is a normal row appearing, with the usual new card note
    (`newCardNote`). The `minion` chip explains it.
+
+## Decisions (orchestrator, 2026-10-16)
+
+1. `atrium:minion` is already stamped by the orchestrator's minion launches (tags `atrium:director`, `atrium:minion`
+   and `atrium:item:<id>`), so the hub stamps nothing and phase 1 has no Go change. `isMinion` wins over
+   `atrium:director`: a minion is hidden even though it carries the director tag. Item workers (`atrium:item`, no
+   `atrium:minion`) stay visible.
+2. Open questions 2 to 8 are decided as recommended.
