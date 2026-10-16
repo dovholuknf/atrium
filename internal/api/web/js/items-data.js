@@ -67,10 +67,11 @@ function itemFromHub(r) {
   else if (r.state === "blocked") b.state = "blocked";
   else if (r.state === "running") b.state = "active";
   else steps[0].state = "active";
-  const ask = r.state === "blocked" ? { who: r.owner_kind === "human" ? "" : (r.owner || ""), text: r.note || "(no reason given)",
+  // No note is no question: the text stays empty and `itemNeedsYou` reads that as nothing to answer.
+  const ask = r.state === "blocked" ? { who: r.owner_kind === "human" ? "" : (r.owner || ""), text: r.note || "",
     since: r.updated_at || null, options: [] } : null;
   return Object.assign({}, r, {
-    id: r.item_id, backlog: r.backlog_id || r.work_id || r.item_id, title: r.title || "", body: r.body || "", priority: r.priority || "", dept: r.dept || "",
+    hasWork: false, id: r.item_id, backlog: r.backlog_id || r.work_id || r.item_id, title: r.title || "", body: r.body || "", priority: r.priority || "", dept: r.dept || "",
     cards: r.card ? [{ name: r.card, id: r.card, room: r.room || "" }] : [], steps, ask,
     tokens: null, usd: null, coord_usd: null, history: r.history || []
   });
@@ -81,18 +82,97 @@ function itemFromAnswer(r) {
   if (!r) return null;
   if (Array.isArray(r.steps) && r.steps.length) {
     return Object.assign({ id: r.id || r.item_id, backlog: r.backlog || r.backlog_id || r.work_id || r.id || r.item_id, title: "", body: "", priority: "",
-      dept: "", cards: [], ask: null, tokens: null, usd: null, coord_usd: null, history: [] }, r);
+      dept: "", cards: [], ask: null, tokens: null, usd: null, coord_usd: null, history: [], hasWork: true }, r);
   }
   return itemFromHub(r);
 }
 
+// The counts for the chips, from the folded rows. The hub's own `stats` is read for spend and landed only, which it alone knows.
 function itemsStatsFrom(list, given) {
-  if (given) return given;
-  const blockedMe = list.filter(it => it.state === "blocked" && it.owner_kind === "human").length;
-  const flying = list.filter(it => it.state === "running" || it.state === "blocked");
-  const working = flying.filter(it => { const i = itemCurrent(it); return i >= 2 && i <= 5; }).length;
-  return { needs_you: blockedMe, who: "you", in_flight: flying.length, working, spend_today: null, spend_coord: null,
-    landed_week: null, landed_median: "", landed_cost: null };
+  const n = g => list.filter(it => it.fold && it.fold.group === g).length;
+  const g = given || {};
+  return { needs_you: n("needs-you"), working: n("working"), idle: n("idle"), queued: n("queued"), who: g.who || "you",
+    spend_today: g.spend_today == null ? null : g.spend_today, spend_coord: g.spend_coord == null ? null : g.spend_coord,
+    landed_week: g.landed_week == null ? null : g.landed_week, landed_median: g.landed_median || "", landed_cost: g.landed_cost == null ? null : g.landed_cost };
+}
+
+// ---- one row per backlog id ----
+// `/_hub/items` answers one ASSIGNMENT per card. A row is a BACKLOG id, so the assignments are folded here
+// (docs/ui/items-tab-ux-pass.md). Everything in this section is pure, so scripts/test-items-fold.js runs it on stubs.
+
+// The steps a CARD does. Approved is the human's, deployed and pushed are atrium's: only a card step can be idle.
+const ITEM_CARD_STEPS = ["designed", "building", "tested", "reviewed", "landed"];
+
+function itemsDataMs(iso) {
+  const t = iso ? Date.parse(iso) : NaN;
+  return isNaN(t) ? 0 : t;
+}
+
+// What one assignment's card is: none (not started), live, offline (its room is not answering, so unknown and never idle) or ended.
+// `tasks` null is a board with no card list yet: a running assignment is then given the benefit of the doubt.
+function itemCardKind(a, tasks, stateOf) {
+  if (!a.card) return "none";
+  if (a.state === "finished") return "ended";
+  if (!tasks) return "live";
+  const t = tasks.find(x => x.id === a.card && (!x.room || !a.room || x.room === a.room));
+  if (!t) return "ended";
+  const st = stateOf ? stateOf(t) : t.offline ? "unreachable" : "live";
+  return st === "off" ? "ended" : st === "unreachable" ? "offline" : "live";
+}
+
+// The question an assignment holds for the person: its ask text, else its note. Empty is nothing to answer.
+function itemQuestionText(a) { return ((a.ask && a.ask.text) || a.note || "").trim(); }
+
+// THE ONE ANSWER to "does this item need clint". The header chip, the group and the tab's badge all read it. A design waiting on
+// the approval, or a block owned by the human that carries a question. A block with no text is nothing to answer, and a block owned
+// by a session is that session's to answer.
+function itemNeedsYou(it) {
+  if (!it) return false;
+  if (it.fold) return it.fold.group === "needs-you";
+  return itemAwaitsApproval(it) || (it.state === "blocked" && it.owner_kind === "human" && !!itemQuestionText(it));
+}
+
+// Fold assignments (each already an item, with the work steps laid over it) into one row per backlog id. A row is its driver's fields
+// plus `assignments` (all of them, newest first) and `fold`: { group, cards, live, offline, ended, waitingOn, noCard, cancelled, step }.
+// The driver is the newest assignment whose card is live, else one on an offline room, else the newest open one, else the newest.
+function foldItems(list, tasks, stateOf) {
+  const by = new Map();
+  for (const a of list) {
+    const k = a.backlog || a.id;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(a);
+  }
+  const rows = [];
+  for (const as of by.values()) {
+    as.sort((x, y) => itemsDataMs(y.updated_at) - itemsDataMs(x.updated_at));
+    const kinds = as.map(a => itemCardKind(a, tasks, stateOf));
+    const rank = i => kinds[i] === "live" ? 0 : kinds[i] === "offline" ? 1 : as[i].state !== "finished" ? 2 : 3;
+    let di = 0;
+    for (let i = 1; i < as.length; i++) if (rank(i) < rank(di)) di = i;
+    const d = as[di];
+    const cards = as.map((a, i) => ({ name: (a.cards && a.cards[0] && a.cards[0].name) || a.card || "", id: a.card || "", room: a.room || "", kind: kinds[i],
+      state: a.state, note: a.note || "", at: a.created_at || a.updated_at || null })).filter(c => c.id);
+    const live = kinds.filter(k => k === "live").length, offline = kinds.filter(k => k === "offline").length;
+    const approval = as.find(a => itemAwaitsApproval(a));
+    const row = Object.assign({}, d, { assignments: as });
+    if (approval) { row.ask = approval.ask; row.state = "blocked"; row.owner_kind = "human"; }
+    const steps = row.steps || [], cur = itemCurrent(row), step = steps[cur] || { name: "" };
+    const allDone = steps.length > 0 && steps.every(s => s.state === "done" || s.state === "skipped");
+    const everyEnded = as.every(a => a.state === "finished");
+    const cancelled = everyEnded && d.state === "finished" && /cancelled/i.test(d.note || "");
+    const humanAsks = !!approval || (d.state === "blocked" && d.owner_kind === "human" && !!itemQuestionText(d));
+    let group;
+    if (cancelled || (row.hasWork ? allDone : everyEnded)) group = "finished";
+    else if (humanAsks) group = "needs-you";
+    else if (as.every(a => a.state === "queued")) group = "queued";
+    else if (ITEM_CARD_STEPS.includes(step.name) && !live && !offline) group = "idle";
+    else group = "working";
+    const waitingOn = d.state === "blocked" && !humanAsks ? (d.owner_kind === "human" ? "you" : d.owner || "its owner") : "";
+    row.fold = { group, driverKind: kinds[di], cards, live, offline, ended: kinds.filter(k => k === "ended").length, waitingOn, cancelled, step: cur,
+      noCard: group === "working" && !live && !offline && step.name !== "approved" && !ITEM_CARD_STEPS.includes(step.name) };
+    rows.push(row);
+  }
+  return rows;
 }
 
 // The index of the step an item is at: the one active or blocked, else the first that is not done, else the last.
@@ -123,7 +203,7 @@ function itemWithWork(it, w) {
     return Object.assign(b, { state: s.state || "pending", from: s.started_at || null, to: s.ended_at || null, sha: s.sha || "", cards,
       reason: s.state === "skipped" ? s.reason || "" : "", note: s.state === "active" ? s.reason || "" : "" });
   });
-  const out = Object.assign({}, it, { steps });
+  const out = Object.assign({}, it, { steps, hasWork: true });
   // The landed check (hub internal/link/docdebt_landed.go): {not_said} for a feature, {offer: {id, title}} for a doc worker's item.
   if (w.docs && typeof w.docs === "object") out.docs = w.docs;
   // The assignment row has no title of its own: the work row does, the backlog item's title.
@@ -152,15 +232,23 @@ async function itemsWorkByBacklog() {
   } catch (e) { return {}; }
 }
 
+// The board's cards for the live test, or null while it has none (the phone page has no list at all, and a board still loading has an empty one).
+function itemsKnownCards() {
+  return !itemsMockOn() && typeof lastTasks !== "undefined" && lastTasks && lastTasks.length ? lastTasks : null;
+}
+
+// The board's own word for a card (live, working, waiting, unreachable, off), where there is one.
+function itemsStateOf() { return typeof cardState === "function" ? cardState : null; }
+
 const itemsData = {
   async list() {
     if (itemsMockOn()) {
       const a = await window.itemsMock.list();
-      const items = (a.items || []).map(itemFromAnswer);
+      const items = foldItems((a.items || []).map(itemFromAnswer), null);
       return { items, stats: itemsStatsFrom(items, a.stats) };
     }
     const [a, work] = await Promise.all([itemsFetch("/_hub/items"), itemsWorkByBacklog()]);
-    const items = ((a && a.items) || []).map(itemFromAnswer).map(it => itemWithWork(it, work[it.backlog]));
+    const items = foldItems(((a && a.items) || []).map(itemFromAnswer).map(it => itemWithWork(it, work[it.backlog])), itemsKnownCards(), itemsStateOf());
     return { items, stats: itemsStatsFrom(items, a && a.stats) };
   },
   // The efficacy page's one read (internal/link/efficacy_report.go): { by: "day"|"week", observedOnly }.
@@ -171,7 +259,7 @@ const itemsData = {
   // The count of items blocked on the human, for the tab's badge, when the tab is not the one on screen.
   async blockedCount() {
     // A design waiting for approval is blocked on the human too, and only the step engine says so, so the count reads the list.
-    return (await this.list()).items.filter(it => it.state === "blocked" && it.owner_kind === "human").length;
+    return (await this.list()).items.filter(itemNeedsYou).length;
   },
   async detail(id) {
     if (itemsMockOn()) return itemFromAnswer(await window.itemsMock.detail(id));

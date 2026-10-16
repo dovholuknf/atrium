@@ -1,6 +1,6 @@
 # Items tab UX pass
 
-Status: design only, nothing built. Backlog item `u-items-tab-ux-pass`. Written 2026-10-16 after clint looked at the tab on
+Status: built (phases 1 to 3, board only). Phase 4 waits on open question 2. Backlog item `u-items-tab-ux-pass`. Written 2026-10-16 after clint looked at the tab on
 a wide monitor and said "not sure what this is showing me".
 
 Read first: `docs/rnd/item-lifecycle-design.md` (the tab exists to serve that lifecycle: an item is a backlog id at work,
@@ -8,7 +8,7 @@ eight steps from designed to pushed, a card does each step). The code: `internal
 `css/items.css`.
 
 Images are in `docs/ui/img/items-tab-ux-pass/` (its README lists each). The before shots are the real tab, fed rows shaped
-like the live hub. The after shots are a mockup drawn over the same data by `prototype.js`.
+like the live hub. The after shots are the built tab over the same data.
 
 | | 2338 wide | 1280 wide |
 | --- | --- | --- |

@@ -1,7 +1,7 @@
-// node docs/ui/img/items-tab-ux-pass/shoot.js before|after OUTDIR
+// node docs/ui/img/items-tab-ux-pass/shoot.js after OUTDIR
 // Serves the real board with the headless suite's mock daemon, answers /_hub/items and /_hub/work from fixture.js, opens the Items tab
-// and shoots it at 2338 and 1280 wide. `after` loads prototype.css and prototype.js over the same fixture (a mockup, not shipped code).
-const path = require("path"), fs = require("fs");
+// and shoots it at 2338 and 1280 wide. Run it on the built tab for the after shots. The before shots were taken the same way on the old tab.
+const path = require("path");
 const root = path.join(__dirname, "..", "..", "..", "..");
 const { chromium, withClock } = require(path.join(root, "scripts/lib/browser.js"));
 const { mock, server } = require(path.join(root, "scripts/lib/mock.js"));
@@ -13,7 +13,7 @@ const fx = require("./fixture.js");
   const base = "http://127.0.0.1:" + server.address().port;
   const browser = withClock(await chromium.launch());
   try {
-    for (const [w, h] of [[2338, 1500], [1280, 1500]]) {
+    for (const [w, h] of [[2338, 1800], [1280, 1800]]) {
       const ctx = await browser.newContext({ viewport: { width: w, height: h } });
       const p = await ctx.newPage();
       p.on("pageerror", e => console.error("pageerror", e.message));
@@ -25,11 +25,6 @@ const fx = require("./fixture.js");
       await p.click('.tab[data-view="items"]');
       await p.waitForSelector(".it-row", { timeout: 10000 });
       await p.evaluate(t => { lastTasks = t; itemsHtml = ""; itemsPaint(); }, fx.tasks);
-      if (mode === "after") {
-        await p.addStyleTag({ content: fs.readFileSync(path.join(__dirname, "prototype.css"), "utf8") });
-        await p.evaluate(src => { window.__fx = src.fx; (0, eval)(src.js); }, { fx: { rows: fx.rows, work: fx.work }, js: fs.readFileSync(path.join(__dirname, "prototype.js"), "utf8") });
-        await p.waitForSelector(".x-row");
-      }
       await p.waitForTimeout(400);
       const name = mode + "-" + (w === 2338 ? "2338" : "1280") + ".png";
       await p.screenshot({ path: path.join(out, name) });

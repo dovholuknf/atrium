@@ -45,7 +45,9 @@
   const usd = v => (v == null ? "?" : "$" + v.toFixed(2));
   const cancelled = it => it.state === "finished" && /cancelled/i.test(it.note || "");
   const stateWord = it => (cancelled(it) ? "cancelled" : it.state);
-  const blockedOnMe = it => it.state === "blocked" && it.owner_kind === "human";
+  const blockedOnMe = it => itemNeedsYou(it);
+  // The phone keeps its four groups for now (docs/ui/items-tab-ux-pass.md section 6): the board's folded groups map onto them, and a row is an item.
+  const phoneGroup = it => { const g = it.fold ? it.fold.group : it.state; return g === "needs-you" ? "blocked" : g === "idle" || g === "working" ? "running" : g; };
   const byId = id => (st.detail && st.detail.id === id ? st.detail : st.list.find(x => x.id === id) || null);
   const title = it => it.title || it.card || it.id;
   const stack = t => {
@@ -249,7 +251,7 @@
 
   // The question, as the board draws it on a row: who is asking is implied, the words, then the answers as full width buttons.
   function questionRow(it) {
-    const ask = it.ask || { text: it.note || "(no reason given)", options: [] };
+    const ask = it.ask || { text: it.note || "", options: [] };
     const box = el("div", "im-ask");
     box.append(el("b", "", "asks you"), el("span", "im-q", ask.brief || ask.text));
     box.appendChild(answerControls(it, false));
@@ -292,7 +294,7 @@
     main.append(el("span", "im-ttl", title(it)), chips(it));
     main.addEventListener("click", () => openItem(it.id));
     r.append(main, progress(it), currentLine(it), numbersLine(it));
-    if (it.state === "blocked") r.appendChild(questionRow(it));
+    if (blockedOnMe(it)) r.appendChild(questionRow(it));
     return r;
   }
 
@@ -314,7 +316,7 @@
     if (!st.list.length) { root.appendChild(el("p", "im-quiet", "No items.")); return root; }
     if (st.stats) root.appendChild(drawStats(st.stats));
     for (const [state, label] of GROUPS) {
-      let rows = st.list.filter(it => it.state === state);
+      let rows = st.list.filter(it => phoneGroup(it) === state);
       if (!rows.length) continue;
       // The oldest question first, as on the board.
       if (state === "blocked") rows = rows.slice().sort((a, b) => (ms(a.ask && a.ask.since) || 0) - (ms(b.ask && b.ask.since) || 0));
@@ -371,8 +373,8 @@
     if (d.body) head.appendChild(el("p", "im-body-ex", d.body));
     if (d.note && d.state === "finished") head.appendChild(el("p", "im-body-ex", d.note));
     page.appendChild(head);
-    if (d.state === "blocked") {
-      const ask = d.ask || { text: d.note || "(no reason given)" };
+    if (d.state === "blocked" && (itemAwaitsApproval(d) || itemQuestionText(d))) {
+      const ask = d.ask || { text: d.note || "" };
       const q = el("div", "im-qbox");
       q.append(el("h3", "", "asks you" + (ask.who ? " · " + ask.who : "") + (ask.since ? " · blocked " + dur(ask.since) : "")), el("p", "im-q", ask.text), answerControls(d, true));
       page.appendChild(q);

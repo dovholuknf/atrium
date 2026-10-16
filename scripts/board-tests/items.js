@@ -1,6 +1,6 @@
 // items: the items view: unified cards, interviews, ready cards.
 //
-// Units: readyOnce, readyPopout, readyTwoWindows, itemsRealShape, itemsView, itemsMock, itemsEfficacy, itemsPhone, interviewTop, itemMinionChip, itemDocsLanded, itemOpenHiddenCard, kidCounts, unifiedCard, noReadyChildren, readyNoSeed.
+// Units: readyOnce, readyPopout, readyTwoWindows, itemsRealShape, itemsUx, itemsView, itemsMock, itemsEfficacy, itemsPhone, interviewTop, itemMinionChip, itemDocsLanded, itemOpenHiddenCard, kidCounts, unifiedCard, noReadyChildren, readyNoSeed.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -741,17 +741,17 @@ async function itemsRealShapeSection(browser, base) {
     await p.click('.tab[data-view="items"]');
     await p.waitForSelector(".it-row", { timeout: slow(10000) });
     // TITLES: the backlog item's title, never the assignment's uuid.
-    const seen = await p.evaluate(() => [...document.querySelectorAll(".it-row")].map(r => ({ t: r.querySelector(".it-title").textContent,
+    const seen = await p.evaluate(() => [...document.querySelectorAll(".it-row")].map(r => ({ t: r.querySelector(".it-t").textContent,
       b: r.querySelector(".it-cur b").textContent, id: r.querySelector(".it-id").textContent })));
     if (seen.some(s => !/^Backlog title \d+$/.test(s.t))) fail("itemsRealShape: a row is titled " + JSON.stringify(seen.find(s => !/^Backlog title \d+$/.test(s.t))));
     if (seen.some(s => !/^w-\d+$/.test(s.id))) fail("itemsRealShape: the id shown is " + JSON.stringify(seen.map(s => s.id)));
-    // STEPS: not every row reads building. Item 1 is at approved, item 5 at pushed's predecessor, a finished one reads its last step.
+    // STEPS: the line names the step in words. Item 1 is at approved, item 0 at designed, item 5 at landed.
     const by = {};
     for (const s of seen) by[s.t] = s.b;
-    if (by["Backlog title 1"] !== "approved") fail("itemsRealShape: item 1 reads " + by["Backlog title 1"] + ", want approved");
-    if (by["Backlog title 0"] !== "designed") fail("itemsRealShape: item 0 reads " + by["Backlog title 0"] + ", want designed");
-    if (by["Backlog title 5"] !== "landed") fail("itemsRealShape: item 5 reads " + by["Backlog title 5"] + ", want landed");
-    if (new Set(Object.values(by)).size < 4) fail("itemsRealShape: the rows read " + JSON.stringify([...new Set(Object.values(by))]));
+    if (!/^step 2 of 8 · /.test(by["Backlog title 1"])) fail("itemsRealShape: item 1 reads " + by["Backlog title 1"] + ", want step 2 of 8");
+    if (!/^step 1 of 8 · .*designed/.test(by["Backlog title 0"])) fail("itemsRealShape: item 0 reads " + by["Backlog title 0"] + ", want designed");
+    if (!/^step 6 of 8 · .*landed/.test(by["Backlog title 5"])) fail("itemsRealShape: item 5 reads " + by["Backlog title 5"] + ", want landed");
+    if (new Set(Object.values(by).map(v => v.replace(/ · .*/, ""))).size < 4) fail("itemsRealShape: the rows read " + JSON.stringify([...new Set(Object.values(by))]));
     // A POLL THAT FOUND NOTHING NEW repaints nothing: the row node is the same one.
     await p.evaluate(() => { document.querySelector(".it-row").dataset.mark = "1"; });
     await p.evaluate(() => loadItems());
@@ -834,7 +834,7 @@ async function itemsViewSection(browser, base) {
     // THE BADGE: only what is blocked on the human, before the tab is ever opened.
     await p.waitForFunction(() => document.getElementById("c-items").textContent === "1", null, { timeout: slow(10000) });
     await p.evaluate(() => {
-      lastTasks = [{ id: "c-it-blk", room: "sg4", title: "pick the signing key", display_title: "pick the signing key", wire_name: "sg4-keys", status: "working" }];
+      lastTasks = [{ id: "c-it-blk", room: "sg4", title: "pick the signing key", display_title: "pick the signing key", wire_name: "sg4-keys", status: "running" }];
       return switchView("items");
     });
     await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 6, null, { timeout: slow(10000) });
@@ -847,14 +847,14 @@ async function itemsViewSection(browser, base) {
       ask: [...document.querySelectorAll(".it-q")].map(q => q.textContent),
       boxes: document.querySelectorAll(".it-answer-box").length
     }));
-    if (got.groups.join() !== "blocked,running,queued,finished") fail("itemsView: group order is " + got.groups);
-    // The oldest question is first inside blocked, and finished is open by default.
-    if (got.rows.join() !== "it-blk2,it-blk,it-run,it-q,it-done,it-can") fail("itemsView: row order is " + got.rows);
+    if (got.groups.join() !== "needs-you,idle,queued,finished") fail("itemsView: group order is " + got.groups);
+    // One row per backlog id. A block owned by a session with no card alive is idle, and a card the board does not hold is an ended one.
+    if (got.rows.join() !== "it-blk,it-run,it-blk2,it-q,it-done,it-can") fail("itemsView: row order is " + got.rows);
     if (got.finishedOpen !== 2 || got.finishedN !== "2") fail("itemsView: finished is not open with its count: " + JSON.stringify(got));
     const blkText = await p.evaluate(() => document.querySelector('.it-row[data-item="it-blk"]').textContent);
-    for (const w of ["pick the signing key", "blocked", "sg4-keys", "12m", "it-blk"]) if (!blkText.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + blkText);
-    if (got.ask.join() !== "not for you,which key do I use?" || got.boxes !== 0) fail("itemsView: a blocked row lacks its question, or shows the box before answer is clicked: " + JSON.stringify(got));
-    if (await p.locator("#items-list .it-row:not(.st-blocked) [data-act=ask]").count()) fail("itemsView: a row that is not blocked offers an answer");
+    for (const w of ["pick the signing key", "asked", "sg4-keys", "12m", "it-blk"]) if (!blkText.includes(w)) fail("itemsView: the blocked row lacks " + w + ": " + blkText);
+    if (got.ask.join() !== "which key do I use?" || got.boxes !== 0) fail("itemsView: a blocked row lacks its question, or shows the box before answer is clicked: " + JSON.stringify(got));
+    if (await p.locator("#items-list .it-row:not(.st-needs-you) [data-act=ask]").count()) fail("itemsView: a row that is not blocked offers an answer");
     if (await p.locator('.it-group[data-state="finished"]').count() !== 1) fail("itemsView: no finished group");
     if (process.env.ITEMS_SHOTS) {
       fs.mkdirSync(process.env.ITEMS_SHOTS, { recursive: true });
@@ -862,7 +862,8 @@ async function itemsViewSection(browser, base) {
     }
     // THE CARD LINK opens that card's terminal.
     await p.evaluate(() => { window.__attached = null; window.attachTask = async id => { window.__attached = id; }; });
-    await p.click('.it-row[data-item="it-blk"] .it-main .it-card');
+    await p.click('.it-row[data-item="it-blk"] .it-cards summary');
+    await p.click('.it-row[data-item="it-blk"] .it-cards .it-card');
     if ((await p.evaluate(() => window.__attached)) !== "c-it-blk") fail("itemsView: the card link did not attach the card");
     await p.evaluate(() => switchView("items"));
     await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length === 6, null, { timeout: slow(10000) });
@@ -970,11 +971,11 @@ async function itemsMockSection(browser, base) {
     await p.waitForTimeout(1000);
     await p.evaluate(() => switchView("items"));
     await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
-    const list = await p.evaluate(() => ({ stats: document.querySelectorAll(".it-stat").length, segs: document.querySelector(".it-prog").children.length,
-      mock: !!document.getElementById("it-mockbar"), blocked: document.querySelectorAll(".it-row.st-blocked").length }));
-    if (list.stats !== 4 || list.segs !== 8 || !list.mock || list.blocked < 1) fail("itemsMock: the list is " + JSON.stringify(list));
+    const list = await p.evaluate(() => ({ stats: document.querySelectorAll(".it-chip").length, segs: document.querySelector(".it-prog").children.length,
+      mock: !!document.getElementById("it-mockbar"), blocked: document.querySelectorAll(".it-row.st-needs-you").length }));
+    if (list.stats < 4 || list.segs !== 8 || !list.mock || list.blocked < 1) fail("itemsMock: the list is " + JSON.stringify(list));
     // A SKIN CHANGE repaints the tab: the same elements read another colour.
-    const paint = () => p.evaluate(() => [".it-stat.hot .it-v", ".it-prog span.d"].map(q => { const e = document.querySelector(q); return e ? getComputedStyle(e).color + "|" + getComputedStyle(e).backgroundColor : "none"; }).join());
+    const paint = () => p.evaluate(() => [".it-chip.hot b", ".it-prog span.d"].map(q => { const e = document.querySelector(q); return e ? getComputedStyle(e).color + "|" + getComputedStyle(e).backgroundColor : "none"; }).join());
     const before = await paint();
     await p.evaluate(() => document.documentElement.setAttribute("data-skin", "paper"));
     if (await paint() === before) fail("itemsMock: a skin change did not repaint the tab: " + before);
@@ -987,18 +988,18 @@ async function itemsMockSection(browser, base) {
     if (det.steps !== 8 || !det.side || !det.est) fail("itemsMock: the detail is " + JSON.stringify(det));
     await p.click("[data-act=back]");
     // BLOCKED: the answer posts through the mock and the row stops being blocked.
-    const id = await p.evaluate(() => document.querySelector(".it-row.st-blocked").dataset.item);
+    const id = await p.evaluate(() => document.querySelector(".it-row.st-needs-you").dataset.item);
     await p.click('.it-row[data-item="' + id + '"] [data-act=ask]');
     await p.fill('.it-answer-box[data-id="' + id + '"]', "go ahead");
     await p.click('.it-row[data-item="' + id + '"] .it-send');
     await p.waitForFunction(i => { const it = itemsList.find(x => x.id === i); return it && it.state !== "blocked"; }, id, { timeout: slow(10000) });
     // THE QUESTION ON THE ROW: a worker's suggested answers are buttons on the row, the first one orange, and a click types that answer.
     await p.evaluate(() => loadItems());
-    const opts = await p.evaluate(() => ({ rows: document.querySelectorAll(".it-row.st-blocked").length,
-      btns: [...document.querySelectorAll(".it-row.st-blocked .it-opt")].map(b => b.textContent + (b.classList.contains("go") ? "*" : "")) }));
+    const opts = await p.evaluate(() => ({ rows: document.querySelectorAll(".it-row.st-needs-you").length,
+      btns: [...document.querySelectorAll(".it-row.st-needs-you .it-opt")].map(b => b.textContent + (b.classList.contains("go") ? "*" : "")) }));
     if (opts.rows !== 1 || opts.btns.length !== 0) fail("itemsMock: after the first answer the rows are " + JSON.stringify(opts));
     // APPROVE and SEND BACK go in the same box for a design waiting on the human, and are not an answer to a worker.
-    const dsn = await p.evaluate(() => { const r = document.querySelector(".it-row.st-blocked"); return { id: r.dataset.item, approve: !!r.querySelector("[data-act=approve]"),
+    const dsn = await p.evaluate(() => { const r = document.querySelector(".it-row.st-needs-you"); return { id: r.dataset.item, approve: !!r.querySelector("[data-act=approve]"),
       send: !!r.querySelector('[data-act=ask]'), opts: r.querySelectorAll(".it-opt").length }; });
     if (dsn.id !== "rd-item-lifecycle" || !dsn.approve || !dsn.send || dsn.opts) fail("itemsMock: the design's row is " + JSON.stringify(dsn));
     // A design is sent back with a note, so an empty box is refused with words, and nothing is sent.
@@ -1102,6 +1103,90 @@ async function itemsPhoneSection(browser, base) {
   if (!bad) console.log("itemsPhone ok");
 }
 
+// THE ITEMS TAB UX PASS (docs/ui/items-tab-ux-pass.md), on rows shaped like the live hub (docs/ui/img/items-tab-ux-pass/fixture.js): one row per backlog id,
+// no "(no reason given)", the header equal to the rows that need you, named steps and a legend, idle and offline cards, no empty spend, and the
+// layout at 2338 and 1280 wide. The current segment must read apart from a done one in every skin.
+async function itemsUxSection(browser, base) {
+  const fx = require("../../docs/ui/img/items-tab-ux-pass/fixture.js");
+  const { SKINS } = require("../lib/mock.js");
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  const errors = [];
+  const open = async w => {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 1400 } });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/_hub\/work(\/[^/?]+)?(\?.*)?$/, r => r.fulfill({ contentType: "application/json", body: JSON.stringify({ work: fx.work }) }));
+    await p.route(/\/_hub\/items(\/[^/?]+)?(\?.*)?$/, r => r.fulfill({ contentType: "application/json", body: JSON.stringify({ items: fx.rows }) }));
+    await p.route(/\/v1\/tasks(\?.*)?$/, r => r.fulfill({ contentType: "application/json", body: JSON.stringify(fx.tasks) }));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.click('.tab[data-view="items"]');
+    await p.waitForSelector(".it-row", { timeout: slow(10000) });
+    await p.evaluate(t => { lastTasks = t; itemsHtml = ""; itemsPaint(); }, fx.tasks);
+    return { ctx, p };
+  };
+  try {
+    const { ctx, p } = await open(2338);
+    const got = await p.evaluate(() => {
+      const rows = [...document.querySelectorAll(".it-row")];
+      const grp = g => [...document.querySelectorAll('.it-group[data-state="' + g + '"] .it-row')].map(r => r.dataset.item);
+      const item = b => itemsList.find(x => x.backlog === b);
+      const handoff = item("f-room-handoff");
+      return { n: rows.length, ids: new Set(rows.map(r => r.querySelector(".it-id").textContent)).size, text: document.getElementById("items-list").textContent,
+        needsRows: grp("needs-you").length, chip: document.querySelector('[data-stat="needs"] b').textContent,
+        stepLine: rows.map(r => r.querySelector(".it-cur b").textContent), legend: document.querySelector(".it-lgd").textContent,
+        g: Object.fromEntries(["bug-lean-no-status-line", "rd-test-layout", "u-items-tab", "r-usage-export", "f-room-handoff", "f-hub-forge-push", "f-session-ask", "d-readme-links"]
+          .map(b => [b, item(b).fold.group])),
+        offlineNote: document.querySelector('.it-row[data-item="' + handoff.id + '"] .it-note').textContent,
+        retired: document.querySelectorAll(".it-tok, .it-usd, .it-age, .it-stat, .it-sort").length,
+        cols: getComputedStyle(document.querySelector(".it-cols")).gridTemplateColumns.split(" ").length, scrollX: document.documentElement.scrollWidth > innerWidth,
+        wrap: document.querySelector(".it-wrap").getBoundingClientRect().width };
+    });
+    const backlogs = new Set(fx.rows.map(r => r.work_id)).size;
+    if (got.n !== backlogs || got.ids !== backlogs) fail("itemsUx: " + fx.rows.length + " assignments for " + backlogs + " backlog ids drew " + got.n + " rows");
+    const ph = got.text.match(/no reason given|no usage yet|none yet/);
+    if (ph) fail("itemsUx: the list still says a placeholder: " + ph[0]);
+    if (got.needsRows !== +got.chip || got.needsRows !== 2) fail("itemsUx: the header says " + got.chip + " and " + got.needsRows + " rows need you, want 2 and 2");
+    if (got.g["bug-lean-no-status-line"] !== "working" || got.g["rd-test-layout"] !== "idle") fail("itemsUx: groups " + JSON.stringify(got.g));
+    if (got.g["u-items-tab"] !== "working" || got.g["r-usage-export"] !== "working" || got.g["d-readme-links"] !== "finished") fail("itemsUx: a landed item is " + JSON.stringify(got.g));
+    if (got.g["f-hub-forge-push"] !== "queued" || got.g["f-room-handoff"] !== "working" || got.g["f-session-ask"] !== "working") fail("itemsUx: groups " + JSON.stringify(got.g));
+    if (!/room m1mini offline/.test(got.offlineNote)) fail("itemsUx: an offline card reads " + got.offlineNote);
+    if (!got.stepLine.some(l => /^step 3 of 8 · building/.test(l)) || !got.stepLine.some(l => /idle at /.test(l)) || !got.stepLine.some(l => /waiting for your approval/.test(l))) fail("itemsUx: step lines " + got.stepLine.join(" | "));
+    if (!/stale step/.test(got.legend) || !/idle: nothing running/.test(got.legend) || !/current step/.test(got.legend)) fail("itemsUx: the legend reads " + got.legend);
+    if (got.retired) fail("itemsUx: " + got.retired + " retired list elements are still drawn");
+    if (got.cols !== 2 || got.scrollX || got.wrap > 1840) fail("itemsUx: at 2338 the columns are " + got.cols + ", scrolls sideways " + got.scrollX + ", width " + got.wrap);
+    // An idle row offers cancel and a disabled relaunch, and an offline card has no relaunch.
+    const acts = await p.evaluate(() => ({
+      idle: [...document.querySelectorAll('.it-group[data-state="idle"] .it-row')].map(r => [...r.querySelectorAll(".it-btn")].map(b => b.textContent + (b.disabled ? "!" : "")).join()),
+      off: [...document.querySelectorAll(".it-row")].filter(r => r.querySelector(".it-note") && /offline/.test(r.querySelector(".it-note").textContent)).map(r => r.querySelectorAll(".it-btn").length) }));
+    if (acts.idle.some(a => a !== "cancel item,relaunch!") || acts.off.some(n => n)) fail("itemsUx: idle actions " + JSON.stringify(acts));
+    // THE CURRENT SEGMENT reads apart from a done one in every skin, and is underlined.
+    for (const skin of SKINS) {
+      await p.evaluate(s => document.documentElement.setAttribute("data-skin", s), skin);
+      const c = await p.evaluate(() => {
+        const g = e => getComputedStyle(e), cur = document.querySelector(".it-prog span.c:not(.w):not(.s):not(.i)"), d = document.querySelector(".it-prog span.d");
+        return { cur: g(cur).backgroundColor, done: g(d).backgroundColor, shadow: g(cur).boxShadow };
+      });
+      if (c.cur === c.done || !c.shadow || c.shadow === "none") fail("itemsUx: in " + skin + " the current segment is " + JSON.stringify(c));
+    }
+    await p.evaluate(() => document.documentElement.removeAttribute("data-skin"));
+    // A poll that changed nothing repaints nothing.
+    await p.evaluate(() => { document.querySelector(".it-row").dataset.mark = "1"; return loadItems(); });
+    if (!await p.evaluate(() => !!document.querySelector('.it-row[data-mark="1"]'))) fail("itemsUx: a poll with no change repainted the list");
+    await ctx.close();
+    const n = await open(1280);
+    const narrow = await n.p.evaluate(() => ({ cols: getComputedStyle(document.querySelector(".it-cols")).gridTemplateColumns, scrollX: document.documentElement.scrollWidth > innerWidth,
+      order: [...document.querySelectorAll(".it-group")].map(g => g.dataset.state).join() }));
+    if (narrow.cols.trim().split(" ").length > 1) fail("itemsUx: at 1280 there are columns: " + narrow.cols);
+    if (narrow.scrollX) fail("itemsUx: at 1280 the page scrolls sideways");
+    if (narrow.order !== "needs-you,idle,working,queued,finished") fail("itemsUx: the group order is " + narrow.order);
+    await n.ctx.close();
+    if (errors.length) fail("itemsUx: page errors: " + errors.join(" | "));
+  } finally { mock.hubMode = wasHub; }
+  if (!bad) console.log("itemsUx ok");
+}
+
 const units = [
   { name: "readyOnce", run: ({ browser, base }) => readyOnceSection(browser, base) },
   { name: "readyPopout", run: ({ browser, base }) => readyPopoutSection(browser, base) },
@@ -1110,6 +1195,7 @@ const units = [
   { name: "itemsView", run: ({ browser, base }) => itemsViewSection(browser, base) },
   { name: "itemsMock", run: ({ browser, base }) => itemsMockSection(browser, base) },
   { name: "itemsEfficacy", run: ({ browser, base }) => itemsEfficacySection(browser, base) },
+  { name: "itemsUx", run: ({ browser, base }) => itemsUxSection(browser, base) },
   { name: "itemsPhone", run: ({ browser, base }) => itemsPhoneSection(browser, base) },
   { name: "interviewTop", run: ({ browser, base }) => interviewTopSection(browser, base) },
   { name: "itemMinionChip", run: ({ browser, base }) => itemMinionChipSection(browser, base) },

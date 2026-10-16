@@ -56,8 +56,8 @@ const work = Object.entries(WORK).map(([id, w]) => ({ backlog_id: id, title: w.t
 
 // The cards the board holds. The overnight worker, minion and relay cards are gone (ended and removed), so their chips draw struck through.
 const live = ["c-bl-worker2", "c-pty-builder", "c-lc-designer", "c-chat-builder", "c-chat-reviewer", "c-sa-builder"];
-const tasks = live.map(id => ({ id, room: "sg4", wire_name: id.replace(/^c-/, ""), title: id, status: "working", tags: [], terminal: true }))
+const tasks = live.map(id => ({ id, room: "sg4", wire_name: id.replace(/^c-/, ""), title: id, status: "running", tags: [], terminal: true }))
   // A card on a room that is offline: the board still holds it, flagged offline. Its state is unknown, not dead.
-  .concat([{ id: "c-rh-builder", room: "m1mini", wire_name: "rh-builder", title: "c-rh-builder", status: "working", tags: [], offline: true }]);
+  .concat([{ id: "c-rh-builder", room: "m1mini", wire_name: "rh-builder", title: "c-rh-builder", status: "running", tags: [], offline: true }]);
 
 module.exports = { rows, work, tasks, NAMES, ago };

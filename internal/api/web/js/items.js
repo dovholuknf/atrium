@@ -6,9 +6,10 @@
 // step, git and cost routes land. Every number it shows is already an item field, and every dollar is an ESTIMATE from real token
 // counts, with the tokens always beside it.
 //
-// The LIST: a strip of four numbers, then groups in this order: blocked (waiting on a person, the oldest question first), running,
-// queued, finished. A row has the title and its ids, an eight-segment progress bar, the tokens and dollars and the age. A blocked
-// row carries its question, and `answer` opens the answer box on the row itself, so answering is no trip to the detail.
+// The LIST (docs/ui/items-tab-ux-pass.md): one row per BACKLOG id, its cards folded under it (items-data.js `foldItems`). A line of
+// count chips, a legend, then groups: needs you (the oldest question first), idle, working, queued, finished. A row has the title and
+// its backlog id, an eight-segment bar, and "step 3 of 8 · building". A row that needs you carries the real question, who asked and
+// how long ago, and `answer` opens the answer box on the row itself, so answering is no trip to the detail. Two columns from 1700px.
 // The DETAIL is a page: a click on a row opens it, the crumb or `back` returns. Its timeline is one card per step.
 //
 // The board acts as the human owner: it sends `by: board`, which the hub takes from its own machine only (internal/link/items.go,
@@ -31,12 +32,15 @@ let itemsTimer = 0;
 let itemsListScroll = 0;       // where the list was scrolled when an item was opened
 let itemsHtml = "";            // what the box last drew, so a poll that changed nothing repaints nothing
 
+// A row is a backlog id, and its group is `fold.group` (items-data.js `foldItems`). `left` groups are the ones that want the person.
 const ITEM_GROUPS = [
-  { state: "blocked", label: "blocked" },
-  { state: "running", label: "running" },
+  { state: "needs-you", label: "needs you", left: true },
+  { state: "idle", label: "idle", left: true, hint: "nothing is running on these" },
+  { state: "working", label: "working" },
   { state: "queued", label: "queued" },
   { state: "finished", label: "finished" },
 ];
+const itemsCardsOpen = {};     // a row's folded card list that is open, by id
 const ITEMS_FINISHED_SHOWN = 5;
 // What a step that has not been reached says it will do, until the hub has a fact to say instead.
 const ITEM_STEP_HINT = {
@@ -60,7 +64,6 @@ function itemsVisible() {
   return !!v && !v.hidden && !document.hidden;
 }
 
-function itemBlockedOnHuman(it) { return it.state === "blocked" && it.owner_kind === "human"; }
 
 function itemsBadge(n) {
   const el = document.getElementById("c-items");
@@ -81,7 +84,7 @@ async function loadItems() {
     const a = await itemsData.list();
     itemsList = a.items;
     itemsStats = a.stats;
-    itemsBadge(itemsList.filter(itemBlockedOnHuman).length);
+    itemsBadge(itemsList.filter(itemNeedsYou).length);
     itemsPaint();
   } catch (e) {
     box.innerHTML = '<p class="pane-lead">The items are not answering right now.</p>';
@@ -204,115 +207,152 @@ function itemStack(t, cls) {
 // ---- the list ----
 
 function itemsMatches(it) {
-  if (itemsFilter === "all") return true;
-  if (itemsFilter === "mine") return it.owner_kind === "human";
-  return it.dept === itemsFilter;
+  return itemsFilter === "all" || it.dept === itemsFilter;
 }
 
-function itemStatCards(s) {
-  const who = s.who || "you";
-  const spend = s.spend_today == null ? '<div class="it-v">&ndash;<small>no usage yet</small></div>'
-    : '<div class="it-v">' + itemUsd1(s.spend_today) + "<small>incl. " + itemUsd1(s.spend_coord || 0) + " coordination</small></div>";
-  const landed = s.landed_week == null ? '<div class="it-v">&ndash;<small>none yet</small></div>'
-    : '<div class="it-v">' + s.landed_week + "<small>median " + esc(s.landed_median || "&ndash;") + ", " + itemUsd(s.landed_cost) + "</small></div>";
-  return '<div class="it-stat' + (s.needs_you > 0 ? " hot" : "") + '" data-stat="needs"><div class="it-k">needs you</div><div class="it-v">' + s.needs_you +
-    "<small>blocked on " + esc(who) + "</small></div></div>" +
-    '<div class="it-stat" data-stat="flight"><div class="it-k">in flight</div><div class="it-v">' + s.in_flight + "<small>" + (s.working || 0) +
-    " building or landing</small></div></div>" +
-    '<div class="it-stat" data-stat="spend"><div class="it-k">spend today</div>' + spend + "</div>" +
-    '<div class="it-stat" data-stat="landed"><div class="it-k">landed this week</div>' + landed + "</div>";
+// What was drawn for the folded rows last: the card list is refolded against the board's cards at every paint, so a card that ended
+// moves its item to idle without waiting for the hub.
+function itemsRefold() {
+  if (!itemsList.length || !itemsList[0].assignments) return;
+  itemsList = foldItems(itemsList.flatMap(r => r.assignments), itemsKnownCards(), itemsStateOf());
+  itemsStats = itemsStatsFrom(itemsList, itemsStats);
 }
 
+// One line of counts, then spend and landed only when the hub has sent a number for them (an empty chip says nothing to act on).
+function itemCountChips(s) {
+  const chip = (stat, n, label, hot) => '<span class="it-chip' + (hot && n > 0 ? " hot" : "") + '" data-stat="' + stat + '"><b>' + n + "</b> " + label + "</span>";
+  return chip("needs", s.needs_you, "needs " + esc(s.who || "you"), true) + chip("working", s.working || 0, "working") + chip("idle", s.idle || 0, "idle") +
+    chip("queued", s.queued || 0, "queued") +
+    (s.spend_today == null ? "" : '<span class="it-chip" data-stat="spend"><b>' + itemUsd1(s.spend_today) + "</b> today</span>") +
+    (s.landed_week == null ? "" : '<span class="it-chip" data-stat="landed"><b>' + s.landed_week + "</b> landed this week</span>");
+}
+
+// What each kind of bar segment means, once. The swatches are drawn by the same rules as the bars (css/items.css).
+function itemLegendHtml() {
+  const k = (c, t) => '<span><i class="' + c + '"></i>' + t + "</span>";
+  return '<div class="it-lgd" aria-label="what the bars mean">' + k("d", "done") + k("c", "current step") + k("c w", "waiting on you") + k("c s", "stale step (commits since)") +
+    k("i", "idle: nothing running") + k("", "not reached") + "<em>hover a segment for its step name</em></div>";
+}
+
+// The eight segments. Done and skipped are one look (the detail says which). The current segment is its own colour, taller and underlined,
+// so it reads apart from done in every skin. A finished item has no current segment.
 function itemProgress(it) {
-  const blocked = it.state === "blocked";
-  const seg = { done: "d", active: "c", blocked: "c", stale: "s", skipped: "k", pending: "" };
-  return '<div class="it-prog' + (blocked ? " b" : "") + '">' + it.steps.map(s => '<span class="' + (seg[s.state] || "") + '" data-tip="' + esc(s.name) + '"></span>').join("") + "</div>";
+  const g = it.fold ? it.fold.group : "working", cur = it.fold ? it.fold.step : itemCurrent(it);
+  const cls = (s, i) => {
+    if (g === "finished") return "d";
+    if (i === cur) return "c" + (g === "needs-you" ? " w" : "") + (g === "idle" ? " i" : "") + (s.state === "stale" ? " s" : "");
+    return s.state === "done" || s.state === "skipped" ? "d" : s.state === "stale" ? "s" : "";
+  };
+  return '<div class="it-prog">' + it.steps.map((s, i) => '<span class="' + cls(s, i) + '" data-tip="' + esc(s.name) + '"></span>').join("") + "</div>";
 }
 
-// The line under the bar: the step by name, and how far along and how long.
+// The line under the bar: "step 3 of 8 · building" with the time in the step, in words rather than only a number.
 function itemCurrentLine(it) {
-  const i = itemCurrent(it), s = it.steps[i] || { name: "" }, of = it.steps.length;
-  if (it.state === "finished") {
-    const n = it.steps.filter(x => x.state === "done" || x.state === "skipped").length;
-    const last = [...it.steps].reverse().find(x => x.state === "done" || x.state === "skipped");
-    if (itemCancelled(it)) return { b: "cancelled", t: "", em: n + " of " + of + " steps" };
-    return { b: n === of ? s.name : (last ? last.name : "finished"), t: "", em: (n === of ? "all " + of : n + " of " + of) + " steps · " + (last ? last.name : "finished") };
+  const f = it.fold, i = f.step, s = it.steps[i] || { name: "" }, of = it.steps.length;
+  if (f.group === "finished") return { b: f.cancelled ? "cancelled" : s.name === "pushed" || !it.hasWork ? "pushed" : s.name, t: "", em: itemAge(it.updated_at) + " ago" };
+  const step = "step " + (i + 1) + " of " + of + " · ";
+  const since = s.from || it.created_at;
+  if (f.group === "needs-you") {
+    const ask = it.ask || {};
+    return itemAwaitsApproval(it) ? { b: step + "waiting for your approval", t: "w", em: itemDur(ask.since || since) }
+      : { b: step + "asked a question at " + s.name, t: "w", em: itemDur(ask.since || since) };
   }
-  const step = "step " + (i + 1) + " of " + of;
-  if (it.state === "blocked") {
-    const since = it.ask && it.ask.since ? it.ask.since : it.updated_at;
-    return { b: (it.owner_kind === "human" ? "waiting on you at " : "blocked at ") + s.name, t: "w", em: step + " · blocked " + itemDur(since) };
-  }
-  if (it.state === "queued") return { b: s.name, t: "t", em: step + " · queued " + itemDur(it.created_at) };
-  return { b: s.name, t: "t", em: step + " · " + (s.note || (ITEM_STEP_VERB[s.name] || s.name) + " " + itemDur(s.from)) };
+  if (f.group === "queued") return { b: step + "queued", t: "", em: itemDur(it.created_at) };
+  if (f.group === "idle") return { b: step + "idle at " + s.name, t: "", em: itemDur(it.updated_at) };
+  const verb = s.name === "pushed" ? "waiting to push" : ITEM_STEP_VERB[s.name] || s.name;
+  return { b: step + (s.note || verb), t: "t", em: itemDur(since) };
+}
+
+// Who asked: the worker's name when the ask carries one, else the card that is working on the item.
+function itemAsker(it) {
+  const a = it.ask || {};
+  if (a.who && a.who !== "approval") return a.who;
+  const c = it.fold.cards.find(x => x.kind === "live") || it.fold.cards[0];
+  if (!c) return "a worker";
+  const t = typeof lastTasks === "undefined" ? null : lastTasks.find(x => x.id === c.id && (!x.room || !c.room || x.room === c.room));
+  return (t && t.wire_name) || c.name || c.id;
+}
+
+// The cards of a row, folded under "1 live, 3 ended". Live first with its age, then the unknown, then the ended struck through.
+function itemCardsHtml(it) {
+  const f = it.fold;
+  if (!f.cards.length) return "";
+  const parts = [];
+  if (f.live) parts.push(f.live + " live");
+  if (f.offline) parts.push(f.offline + " unknown");
+  if (f.ended) parts.push(f.ended + " ended");
+  const order = { live: 0, offline: 1, ended: 2, none: 3 };
+  const rows = f.cards.slice().sort((a, b) => order[a.kind] - order[b.kind]).map(c => {
+    if (c.kind === "live") return '<div class="it-cd">' + itemChip(c.name, c.id) + '<span class="it-dim">' + esc(itemDur(c.at)) + "</span></div>";
+    if (c.kind === "offline") return '<div class="it-cd off"><span class="it-card">' + esc(c.name) + '</span><span class="it-dim">room ' + esc(c.room) + " offline</span></div>";
+    return '<div class="it-cd end"><span class="it-card gone">' + esc(c.name) + '</span><span class="it-dim">' + (c.state === "finished" ? "finished" + (c.note ? ": " + esc(c.note) : "") : "ended, never reported") + "</span></div>";
+  });
+  return '<details class="it-cards" data-id="' + esc(it.id) + '"' + (itemsCardsOpen[it.id] ? " open" : "") + "><summary>" + esc(parts.join(", ")) + "</summary>" + rows.join("") + "</details>";
+}
+
+// The question, with who asked and how long ago, and the answers. Or, for a design, the approval.
+function itemAskHtml(it) {
+  const id = esc(it.id), ask = it.ask || { text: "" }, approval = itemAwaitsApproval(it), who = itemAsker(it);
+  const since = itemDur(ask.since || it.updated_at);
+  const head = approval ? who + " is waiting on your approval" : who + " asked";
+  // The worker's own suggested answers are buttons on the row, so a click answers without opening anything. A design waiting on
+  // approval has the two acts instead, and `send back` needs its note, so it opens the box.
+  const opts = approval ? "" : (ask.options || []).slice(0, 3).map((o, n) => '<button type="button" class="it-btn it-opt' + (n === 0 ? " go" : "") + '" data-act="option" data-id="' + id +
+    '" data-i="' + n + '">' + esc(o) + "</button>").join("");
+  const term = it.card && it.fold.driverKind !== "ended" ? '<button type="button" class="it-btn" data-act="card" data-card="' + esc(it.card) + '">open terminal</button>' : "";
+  const open = !!itemsAsking[it.id];
+  return '<div class="it-ask"><b>' + esc(head) + ", " + esc(since) + " ago</b>" + (ask.text ? '<span class="it-q">' + esc(ask.text) + "</span>" : "") + '<div class="it-btns">' +
+    (approval ? '<button type="button" class="it-btn go" data-act="approve" data-id="' + id + '">approve</button>' +
+      '<button type="button" class="it-btn" data-act="ask" data-id="' + id + '" aria-expanded="' + open + '">send back</button>'
+      : opts + '<button type="button" class="it-btn' + (opts ? "" : " go") + '" data-act="ask" data-id="' + id + '" aria-expanded="' + open + '">' + (opts ? "other" : "answer") + "</button>") +
+    term + "</div></div>" +
+    (open ? '<div class="it-answer"><input type="text" class="it-answer-box" data-id="' + id + '" placeholder="' + (approval ? "what the designer should change" : "answer") + '" aria-label="' +
+      (approval ? "note for " : "answer for ") + id + '" value="' + esc(itemsDraft[it.id] || "") + '"><button type="button" class="it-btn' + (approval ? "" : " go") + ' it-send" data-act="' + (approval ? "sendback" : "answer") +
+      '" data-id="' + id + '">send</button></div>' : "");
 }
 
 function itemRow(it) {
-  const id = esc(it.id);
-  const blocked = it.state === "blocked";
+  const id = esc(it.id), f = it.fold, g = f.group;
   const line = itemCurrentLine(it);
-  const tokens = it.tokens;
-  const n = itemTokN(tokens);
-  const tokCell = n ? itemTok(n) + "<small>in " + itemTok(tokens.in) + " · cache " + itemTok(tokens.cw + tokens.cr) + " · out " + itemTok(tokens.out) + "</small>"
-    : (it.state === "queued" ? "0<small>not started</small>" : "&ndash;<small>no usage yet</small>");
-  const usdCell = it.usd == null && !n ? "&ndash;" : itemUsd(it.usd);
-  const coord = it.coord_usd != null && (n || it.usd) ? "<small>+ " + itemUsd(it.coord_usd) + " coordination</small>" : "<small></small>";
-  const age = it.state === "finished" ? "done " + itemAge(it.updated_at) : itemDur(it.created_at);
-  const prio = it.priority ? '<span class="it-tag' + (it.priority === "high" ? " hi" : "") + '">' + esc(it.priority) + "</span>" : "";
-  const dept = it.dept ? '<span class="it-tag">' + esc(it.dept) + "</span>" : "";
-  const open = itemsOpen === it.id;
-  let h = '<div class="it-row st-' + esc(itemStateWord(it)) + '" data-item="' + id + '">' +
-    '<div class="it-main" role="button" tabindex="0" aria-expanded="' + open + '" data-act="open" data-id="' + id + '">' +
-    '<div class="it-title">' + esc(itemTitle(it)) + "</div>" +
-    '<div class="it-meta"><span class="it-id">' + esc(it.backlog) + "</span>" + prio + dept +
-    itemCards(it).map(c => itemChip(c.name, c.id)).join("") + "</div></div>" +
+  let note = "";
+  if (f.waitingOn) note = f.waitingOn === "you" ? "Blocked, waiting on you" : "Blocked, waiting on " + f.waitingOn + ", not on you";
+  else if (g === "working" && f.offline && !f.live) note = "room " + (f.cards.find(c => c.kind === "offline") || {}).room + " offline";
+  else if (f.noCard) note = "No card is needed for this step";
+  else if (g === "idle") note = "Nothing is running on this item";
+  let h = '<div class="it-row st-' + esc(g) + '" data-item="' + id + '">' +
+    '<div class="it-main" role="button" tabindex="0" aria-expanded="' + (itemsOpen === it.id) + '" data-act="open" data-id="' + id + '">' +
+    '<div class="it-title"><span class="it-t">' + esc(itemTitle(it)) + '</span><span class="it-id">' + esc(it.backlog) + "</span></div></div>" +
     '<div class="it-pcol">' + itemProgress(it) + '<div class="it-cur"><b class="' + line.t + '">' + esc(line.b) + "</b><em>" + esc(line.em) + "</em></div>" +
-    '<span class="it-state">' + esc(itemStateWord(it)) + "</span></div>" +
-    '<div class="it-tok">' + tokCell + "</div>" +
-    '<div class="it-usd">' + usdCell + coord + "</div>" +
-    '<div class="it-age" data-tip="' + esc(it.updated_at || "") + '">' + esc(age) + "</div>";
-  if (blocked) {
-    const ask = it.ask || { text: it.note || "(no reason given)" };
-    const approval = itemAwaitsApproval(it);
-    // The worker's own suggested answers are buttons on the row, so a click answers without opening anything. A design waiting on
-    // approval has the two acts instead, and `send back` needs its note, so it opens the box.
-    const opts = approval ? "" : (ask.options || []).slice(0, 3).map((o, n) => '<button type="button" class="it-btn it-opt' + (n === 0 ? " go" : "") + '" data-act="option" data-id="' + id +
-      '" data-i="' + n + '">' + esc(o) + "</button>").join("");
-    h += '<div class="it-ask"><b>asks you</b><span class="it-q">' + esc(ask.brief || ask.text) + "</span>" +
-      (approval ? '<button type="button" class="it-btn go" data-act="approve" data-id="' + id + '">approve</button>' +
-        '<button type="button" class="it-btn" data-act="ask" data-id="' + id + '" aria-expanded="' + !!itemsAsking[it.id] + '">send back</button>'
-        : opts + '<button type="button" class="it-btn' + (opts ? "" : " go") + '" data-act="ask" data-id="' + id + '" aria-expanded="' + !!itemsAsking[it.id] + '">' + (opts ? "other" : "answer") + "</button>") + "</div>";
-    if (itemsAsking[it.id]) {
-      h += '<div class="it-answer"><input type="text" class="it-answer-box" data-id="' + id + '" placeholder="' + (approval ? "what the designer should change" : "answer") + '" aria-label="' +
-        (approval ? "note for " : "answer for ") + id + '" value="' + esc(itemsDraft[it.id] || "") + '"><button type="button" class="it-btn' + (approval ? "" : " go") + ' it-send" data-act="' + (approval ? "sendback" : "answer") +
-        '" data-id="' + id + '">send</button></div>';
-    }
-  }
-  return h + "</div>";
+    '<span class="it-state">' + esc(f.cancelled ? "cancelled" : g) + "</span></div>" + (note ? '<div class="it-note">' + esc(note) + "</div>" : "");
+  if (g === "needs-you") h += itemAskHtml(it);
+  else if (g === "idle") h += '<div class="it-btns it-acts"><button type="button" class="it-btn" data-act="cancel" data-id="' + id + '" aria-label="cancel item ' + id + '">cancel item</button>' +
+    '<button type="button" class="it-btn" disabled data-tip="relaunch is not wired to the board yet">relaunch</button></div>';
+  return h + itemCardsHtml(it) + "</div>";
 }
 
 function itemsGroupHtml(g) {
-  let rows = itemsList.filter(it => it.state === g.state && itemsMatches(it));
+  let rows = itemsList.filter(it => it.fold.group === g.state && itemsMatches(it));
   if (!rows.length) return "";
-  // Inside blocked the oldest question is first. The rest stay as the hub gave them, newest change first.
-  if (g.state === "blocked") rows = rows.slice().sort((a, b) => (itemsMs(a.ask && a.ask.since) || 0) - (itemsMs(b.ask && b.ask.since) || 0));
+  // Inside needs you the oldest question is first. The rest stay as the hub gave them, newest change first.
+  if (g.state === "needs-you") rows = rows.slice().sort((a, b) => (itemsMs(a.ask && a.ask.since) || 0) - (itemsMs(b.ask && b.ask.since) || 0));
   const folded = !!itemsFolded[g.state];
   const shown = g.state === "finished" && !itemsShowAll ? rows.slice(0, ITEMS_FINISHED_SHOWN) : rows;
   const more = rows.length - shown.length;
   return '<section class="it-group" data-state="' + g.state + '"><button type="button" class="it-head" data-act="fold" data-state="' + g.state +
-    '" aria-expanded="' + !folded + '"><span>' + g.label + '</span><span class="it-n">' + rows.length + "</span></button>" +
+    '" aria-expanded="' + !folded + '"><span>' + g.label + '</span><span class="it-n">' + rows.length + "</span>" + (g.hint ? '<span class="it-gh">' + g.hint + "</span>" : "") + "</button>" +
     (folded ? "" : shown.map(itemRow).join("") + (more > 0 ? '<button type="button" class="it-more" data-act="more">show ' + more + " more</button>" : "")) + "</section>";
 }
 
 function itemListHtml() {
   const depts = [...new Set(itemsList.map(it => it.dept).filter(Boolean))].sort();
   const pill = (f, label) => '<button type="button" class="it-pill' + (itemsFilter === f ? " on" : "") + '" data-act="filter" data-filter="' + esc(f) + '">' + esc(label) + "</button>";
-  const groups = ITEM_GROUPS.map(itemsGroupHtml).join("");
-  return '<div class="it-top"><h1>Items</h1><div class="it-sub">Every backlog item in flight, from designed to pushed. Spend is an estimate, priced from the room usage export.</div></div>' +
-    '<div class="it-stats">' + itemStatCards(itemsStats || itemsStatsFrom(itemsList)) + "</div>" +
-    '<div class="it-filters">' + pill("all", "all") + depts.map(d => pill(d, d)).join("") + pill("mine", "mine") +
-    '<button type="button" class="it-pill" data-act="efficacy">efficacy</button><span class="it-sp"></span><span class="it-pill it-sort">sort: needs me first</span></div>' +
-    (groups || '<p class="pane-lead">Nothing matches.</p>');
+  const left = ITEM_GROUPS.filter(g => g.left).map(itemsGroupHtml).join(""), right = ITEM_GROUPS.filter(g => !g.left).map(itemsGroupHtml).join("");
+  return '<div class="it-wrap"><div class="it-top"><h1>Items</h1><div class="it-sub">Every backlog item in flight, one row each, from designed to pushed.</div></div>' +
+    '<div class="it-chips">' + itemCountChips(itemsStats || itemsStatsFrom(itemsList)) + "</div>" + itemLegendHtml() +
+    '<div class="it-filters">' + (depts.length > 1 ? pill("all", "all") + depts.map(d => pill(d, d)).join("") : "") +
+    '<span class="it-sp"></span><button type="button" class="it-pill" data-act="efficacy">efficacy</button></div>' +
+    (left || right ? '<div class="it-cols' + (left && right ? "" : " one") + '"><div class="it-col it-col-l">' + left + '</div><div class="it-col">' + right + "</div></div>"
+      : '<p class="pane-lead">Nothing matches.</p>') + "</div>";
 }
 
 // ---- one item ----
@@ -390,8 +430,8 @@ function itemSideHtml(it) {
 }
 
 function itemQuestionHtml(it) {
-  if (it.state !== "blocked") return "";
-  const ask = it.ask || { text: it.note || "(no reason given)", options: [] };
+  if (it.state !== "blocked" || (!itemAwaitsApproval(it) && !itemQuestionText(it))) return "";
+  const ask = it.ask || { text: it.note || "", options: [] };
   const id = esc(it.id);
   const since = ask.since ? " · blocked " + itemDur(ask.since) : "";
   const opts = (ask.options || []).slice(0, 3);
@@ -454,7 +494,8 @@ function itemsPaint(force) {
   const had = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("it-answer-box")
     ? { id: document.activeElement.dataset.id, at: document.activeElement.selectionStart } : null;
   for (const el of box.querySelectorAll(".it-answer-box")) itemsDraft[el.dataset.id] = el.value;
-  const open = !itemsOpen && itemsPage === "efficacy" ? null : itemsOpen && (itemsList.find(x => x.id === itemsOpen) || (itemsDetail && itemsDetail.id === itemsOpen ? itemsDetail : null));
+  itemsRefold();
+  const open = !itemsOpen && itemsPage === "efficacy" ? null : itemsOpen && (itemsDetail && itemsDetail.id === itemsOpen ? itemsDetail : itemsFind(itemsOpen));
   const html = !itemsOpen && itemsPage === "efficacy" ? efficacyHtml() : open ? itemDetailHtml(open) : itemsOpen ? '<p class="pane-lead">Loading ' + esc(itemsOpen) + "&hellip;</p>"
     : !itemsList.length ? '<p class="pane-lead">No items.</p>' : itemListHtml();
   // A poll that found nothing new leaves the page alone: a repaint drops the hover, the focus and a text selection, and reads as a flicker.
@@ -483,8 +524,13 @@ function itemsNote(text) {
   if (n) n.textContent = text || "";
 }
 
+// A folded row by the id of its driver or of any assignment under it, so an open page survives the driver changing.
+function itemsFind(id) {
+  return itemsList.find(x => x.id === id) || itemsList.find(x => (x.assignments || []).some(a => a.id === id)) || null;
+}
+
 function itemById(id) {
-  return itemsDetail && itemsDetail.id === id ? itemsDetail : itemsList.find(x => x.id === id) || null;
+  return itemsDetail && itemsDetail.id === id ? itemsDetail : itemsFind(id);
 }
 
 async function itemsAct(id, body) {
@@ -626,7 +672,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!b) {
       // The rest of a row opens it too, but not the question under it.
       const row = ev.target.closest(".it-row");
-      if (row && !ev.target.closest(".it-ask, .it-answer")) itemsToggle(row.dataset.item);
+      if (row && !ev.target.closest(".it-ask, .it-answer, .it-cards, .it-acts")) itemsToggle(row.dataset.item);
       return;
     }
     const act = b.dataset.act;
@@ -649,7 +695,7 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (act === "approve") itemsApprove(b.dataset.id);
     else if (act === "sendback") itemsSendBack(b.dataset.id);
     else if (act === "option") {
-      const it = itemsDetail && itemsDetail.id === b.dataset.id ? itemsDetail : itemsList.find(x => x.id === b.dataset.id);
+      const it = itemById(b.dataset.id);
       const o = it && it.ask && it.ask.options ? it.ask.options[+b.dataset.i] : "";
       if (o) itemsAnswer(b.dataset.id, o);
     }
@@ -663,6 +709,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     else if (act === "open") itemsToggle(b.dataset.id);
   });
+  // A row's folded card list stays open across a repaint. `toggle` does not bubble, so it is caught on the way down.
+  box.addEventListener("toggle", ev => {
+    const d = ev.target;
+    if (d.classList && d.classList.contains("it-cards")) { if (d.open) itemsCardsOpen[d.dataset.id] = true; else delete itemsCardsOpen[d.dataset.id]; }
+  }, true);
   box.addEventListener("keydown", ev => {
     if (ev.target.classList.contains("it-answer-box") && ev.key === "Enter") { ev.preventDefault(); itemsSubmit(ev.target.dataset.id); }
     else if (ev.target.classList.contains("it-main") && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); itemsToggle(ev.target.dataset.id); }

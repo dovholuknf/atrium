@@ -134,7 +134,7 @@
         "internal/api/web/js/items-mock.js",
         "internal/api/web/css/items.css"
       ],
-      "tests": [],
+      "tests": ["scripts/test-items-fold.js"],
       "checks": []
     },
     "backlog": {
