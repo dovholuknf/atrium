@@ -37,6 +37,9 @@ func main() {
 	if id.Name == "" || id.Email == "" {
 		die("set git config user.name and user.email")
 	}
+	if err := land.CheckGitEmail(id.Email); err != nil {
+		die(err.Error())
+	}
 	oldTip := gitOut("rev-parse", "--verify", "--quiet", "refs/heads/"+*branch)
 	if oldTip == "" {
 		die("no local branch " + *branch)

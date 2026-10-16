@@ -145,7 +145,7 @@ func configureWorktree(ctx context.Context, e *Env, wt string) error {
 	}
 	for _, kv := range [][]string{
 		{"user.name", "Clint Dovholuk"},
-		{"user.email", "clint.dovholuk@netfoundry.io"},
+		{"user.email", "46322585+dovholuknf@users.noreply.github.com"},
 	} {
 		if _, err := git(ctx, e, wt, "config", "--worktree", kv[0], kv[1]); err != nil {
 			return err
