@@ -2,6 +2,8 @@ package link
 
 import (
 	"context"
+	"errors"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -39,7 +41,11 @@ type PathState struct {
 	Since     time.Time `json:"since,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
 	RTTMs     int64     `json:"rtt_ms,omitempty"`
-	Source    string    `json:"source,omitempty"`
+	// Stale is true when RTTMs is the last answer and the probe now due has not returned yet.
+	Stale bool `json:"stale,omitempty"`
+	// Mutual is true when the rung really does TLS with a client certificate, which is what "mTLS" claims.
+	Mutual bool   `json:"mtls,omitempty"`
+	Source string `json:"source,omitempty"`
 }
 
 // pather is a Dialer that can say what every rung is doing. `Ladder` is the one there is.
@@ -47,9 +53,13 @@ type pather interface {
 	ProbePaths(ctx context.Context, wait time.Duration) []PathState
 }
 
-// ProbePaths dials every rung it is not standing on, together, and says what each did. The rung it stands on is `on`
-// without a dial, since the control connection is the proof. A kind with no rung at all comes back `none`, last, in
-// PathKinds order. It closes what it opens and never moves the ladder.
+// ProbePaths dials every rung, together, and says what each did. The rung it stands on stays `on`: the control
+// connection is the proof, and its dial only measures a connect time. A kind with no rung at all comes back `none`,
+// last, in PathKinds order. It closes what it opens and never moves the ladder.
+//
+// A PROBE IS BOUNDED BY MORE THAN A TIMEOUT. A ziti Dial ignores its context, so a rung whose last probe has not
+// returned is skipped this round and reports its previous round trip marked stale. At most one probe dial is ever in
+// flight per rung. A probe is observation: it takes no data dial slot and never reaches dataFailed.
 func (l *Ladder) ProbePaths(ctx context.Context, wait time.Duration) []PathState {
 	rungs := l.Rungs()
 	r, _, has := l.current()
@@ -57,22 +67,36 @@ func (l *Ladder) ProbePaths(ctx context.Context, wait time.Duration) []PathState
 	var wg sync.WaitGroup
 	for i, rg := range rungs {
 		out[i] = PathState{Kind: rg.Path.Transport, Addr: pathAddr(rg.Path), Source: rg.Path.From}
-		if has && samePath(rg.Path, r.Path) {
+		if m, ok := rg.Dial.(interface{ Mutual() bool }); ok {
+			out[i].Mutual = m.Mutual()
+		}
+		on := has && samePath(rg.Path, r.Path)
+		if on {
 			out[i].State = PathOn
-			continue
 		}
 		wg.Add(1)
-		go func(i int, rg Rung) {
+		go func(i int, rg Rung, on bool) {
 			defer wg.Done()
-			t0 := time.Now()
-			c, err := dialWithin(ctx, rg.Dial, wait)
-			if err != nil {
-				out[i].State, out[i].LastError = PathDown, err.Error()
-				return
+			rtt, err, skipped := l.probeRung(ctx, rg, wait)
+			switch {
+			case skipped:
+				if on {
+					out[i].RTTMs, out[i].Stale = l.lastRTT(rg), true
+				} else {
+					out[i].State, out[i].RTTMs, out[i].Stale = PathDown, l.lastRTT(rg), true
+					out[i].LastError = "the last probe has not returned"
+				}
+			case err != nil:
+				if !on {
+					out[i].State, out[i].LastError = PathDown, err.Error()
+				}
+			default:
+				out[i].RTTMs = rtt
+				if !on {
+					out[i].State = PathUp
+				}
 			}
-			_ = c.Close()
-			out[i].State, out[i].RTTMs = PathUp, time.Since(t0).Milliseconds()
-		}(i, rg)
+		}(i, rg, on)
 	}
 	wg.Wait()
 	for _, k := range PathKinds {
@@ -85,6 +109,64 @@ func (l *Ladder) ProbePaths(ctx context.Context, wait time.Duration) []PathState
 		}
 	}
 	return out
+}
+
+func probeKey(rg Rung) string { return rg.Path.Transport + "|" + pathAddr(rg.Path) }
+
+func (l *Ladder) lastRTT(rg Rung) int64 {
+	l.pmu.Lock()
+	defer l.pmu.Unlock()
+	return l.rtts[probeKey(rg)]
+}
+
+// probeRung makes one bounded dial. skipped is true when the previous dial of this rung is still running.
+func (l *Ladder) probeRung(ctx context.Context, rg Rung, wait time.Duration) (rtt int64, err error, skipped bool) {
+	key := probeKey(rg)
+	l.pmu.Lock()
+	if l.probing[key] {
+		l.pmu.Unlock()
+		return 0, nil, true
+	}
+	if l.probing == nil {
+		l.probing, l.rtts = map[string]bool{}, map[string]int64{}
+	}
+	l.probing[key] = true
+	l.pmu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	type res struct {
+		c   net.Conn
+		err error
+	}
+	ch := make(chan res, 1)
+	t0 := time.Now()
+	go func() {
+		c, err := rg.Dial.Dial(ctx)
+		l.pmu.Lock()
+		delete(l.probing, key)
+		l.pmu.Unlock()
+		ch <- res{c, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			return 0, r.err, false
+		}
+		_ = r.c.Close()
+		rtt = time.Since(t0).Milliseconds()
+		l.pmu.Lock()
+		l.rtts[key] = rtt
+		l.pmu.Unlock()
+		return rtt, nil, false
+	case <-ctx.Done():
+		go func() {
+			if r := <-ch; r.c != nil {
+				_ = r.c.Close()
+			}
+		}()
+		return 0, errors.New("no answer within " + wait.String()), false
+	}
 }
 
 func pathAddr(p Path) string {

@@ -15311,6 +15311,15 @@ async function pathBadgesSection(browser, base) {
     if (!got.every[2].cls.includes("pth-unlistened") || !/not listening/.test(got.every[2].tip)) fail("unlistened: " + JSON.stringify(got.every[2]));
     if (new Set(got.every.map(c => c.bg + "|" + c.color)).size !== 3) fail("on, up and unlistened look alike: " + JSON.stringify(got.every));
     if (got.hostile.length !== 1 || !/onerror/.test(got.hostile[0].tip)) fail("a path error was not kept as inert text: " + JSON.stringify(got.hostile));
+    const mt = await p.evaluate(() => {
+      const draw = ps => { const h = document.createElement("div"); h.innerHTML = pathBadges(ps); return [...h.querySelectorAll(".chip.pth")].map(c => ({ text: c.textContent, tip: c.dataset.tip })); };
+      return { yes: draw([{ kind: "direct", state: "on", mtls: true, rtt_ms: 3 }, { kind: "ziti", state: "up", rtt_ms: 30, stale: true }]),
+        no: draw([{ kind: "direct", state: "up" }]), drift: latencyRow("k", { drift_p99_ms: 2.1, drift_series_ms: [] }) };
+    });
+    if (mt.yes[0].text !== "mTLS" || !/connect time 3 ms/.test(mt.yes[0].tip)) fail("a rung with a client cert should read mTLS with its connect time: " + JSON.stringify(mt.yes[0]));
+    if (mt.no[0].text !== "direct") fail("a direct rung without a client cert must not claim mTLS: " + JSON.stringify(mt.no));
+    if (!/last measured connect time 30 ms/.test(mt.yes[1].tip)) fail("a stale rtt should say so: " + JSON.stringify(mt.yes[1]));
+    if (!/timer drift/.test(mt.drift) || /<span>lag /.test(mt.drift) || !/Not network latency/.test(mt.drift)) fail("the lag tile should be timer drift and say it is not latency: " + mt.drift);
     const injected = await p.evaluate(() => !!document.querySelector("img[src=x]"));
     if (injected) fail("a path error from a room became markup");
 
