@@ -16295,6 +16295,87 @@ async function stackMinionHiddenSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// The `minions` chip, the real toggle with nothing overridden: off by default, its count is the minions held, a click lists them.
+async function termMinionsChipSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 520, height: 900 } });
+  const errors = [];
+  const imgs = docImgDir("docs", "changes", "img", "u-minion-cards-hidden");
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof toggleTermShow === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    const state = () => p.evaluate(() => {
+      const b = document.querySelector('#term-show button[data-v="minions"]');
+      return {
+        ids: Array.from(document.querySelectorAll("#term-list [data-id]")).map(e => e.getAttribute("data-id")),
+        on: !!b && b.classList.contains("on"),
+        count: b ? b.querySelector(".pillcount").textContent : null,
+        stored: localStorage.getItem(termDeviceKey(TERM_SHOW_KEY)),
+      };
+    });
+    await p.evaluate(async mkSrc => {
+      const rows = eval(mkSrc)("before");
+      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null; loadCards = async () => {};
+      localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
+      switchView("terms");
+      paintTermShow();
+      await renderTermList();
+    }, MINION_VIEW_CARDS);
+    const shot = (name) => p.locator("#term-list").screenshot({ path: path.join(imgs, name) });
+    const off = await state(); await shot("minion-chip-off.png");
+    await p.evaluate(async () => { toggleTermShow("minions"); await renderTermList(); });
+    const on = await state(); await shot("minion-chip-on.png");
+    await p.evaluate(async () => { toggleTermShow("minions"); await renderTermList(); });
+    const back = await state();
+    if (off.ids.some(i => i[0] === "m") || off.on || off.stored !== null) fail("termMinionsChip: not off by default: " + JSON.stringify(off));
+    if (off.count !== "4") fail("termMinionsChip: the count is " + off.count + ", want 4");
+    if (on.ids.filter(i => i[0] === "m").length !== 4 || !on.on || on.count !== "4") fail("termMinionsChip: the chip did not list them: " + JSON.stringify(on));
+    if (on.stored !== '["minions"]') fail("termMinionsChip: stored " + on.stored);
+    if (back.ids.some(i => i[0] === "m") || back.stored !== null) fail("termMinionsChip: a second click did not hide them: " + JSON.stringify(back));
+    if (errors.length) fail("termMinionsChip: page errors: " + errors.join("; "));
+    else console.log("termMinionsChip ok");
+  } finally { await ctx.close(); }
+}
+
+// One key, three views: setting what the Terminals chip stores shows the minions on the board and in the stack too.
+async function minionToggleSharedSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderBoard === "function" && typeof renderStack === "function" && typeof toggleTermShow === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(async mkSrc => {
+      const rows = eval(mkSrc)("after");
+      cardRows = new Map(rows.map(t => [t.id, t])); cardsLoaded = true; termTask = null; loadCards = async () => {};
+      localStorage.removeItem(termDeviceKey(TERM_SHOW_KEY));
+      setStackShow(new Set());
+      const minions = sel => Array.from(document.querySelectorAll(sel)).filter(e => e.getAttribute("data-id")[0] === "m").length;
+      const seen = async () => {
+        const r = {};
+        switchView("board"); await renderBoard(); r.board = minions("#board .card[data-id]");
+        switchView("stack"); await renderStack(); r.stack = minions("#stack-list [data-id]");
+        switchView("terms"); await renderTermList(); r.terms = minions("#term-list [data-id]");
+        return r;
+      };
+      const out = { off: await seen() };
+      toggleTermShow("minions");
+      out.on = await seen();
+      localStorage.setItem(termDeviceKey(TERM_SHOW_KEY), "[]");
+      out.cleared = await seen();
+      return out;
+    }, MINION_VIEW_CARDS);
+    if (got.off.board || got.off.stack || got.off.terms) fail("minionToggleShared: shown with the toggle off: " + JSON.stringify(got.off));
+    if (got.on.board !== 4 || got.on.stack !== 4 || got.on.terms !== 4) fail("minionToggleShared: one key did not move all three views: " + JSON.stringify(got.on));
+    if (got.cleared.board || got.cleared.stack || got.cleared.terms) fail("minionToggleShared: clearing the key left them shown: " + JSON.stringify(got.cleared));
+    if (errors.length) fail("minionToggleShared: page errors: " + errors.join("; "));
+    else console.log("minionToggleShared ok");
+  } finally { await ctx.close(); }
+}
+
 async function phoneMinionHiddenSection(browser) {
   const st = mServer({});
   await st.open();
@@ -24864,6 +24945,8 @@ async function main() {
     await unit("termMinionHidden", () => termMinionHiddenSection(browser, base));
     await unit("boardMinionHidden", () => boardMinionHiddenSection(browser, base));
     await unit("stackMinionHidden", () => stackMinionHiddenSection(browser, base));
+    await unit("termMinionsChip", () => termMinionsChipSection(browser, base));
+    await unit("minionToggleShared", () => minionToggleSharedSection(browser, base));
     await unit("itemMinionChip", bu("itemMinionChip"));
 await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("itemOpenHiddenCard", bu("itemOpenHiddenCard"));
