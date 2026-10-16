@@ -21,3 +21,34 @@ func TestRevokedLoginReadsTheLineClaudeDraws(t *testing.T) {
 		}
 	}
 }
+
+func TestRevokedLoginIgnoresQuotesOfTheLine(t *testing.T) {
+	t.Parallel()
+	for _, text := range []string{
+		"+\tOAuth token revoked · Please run /login\n",
+		"the card said: OAuth token revoked · Please run /login\n",
+		"> OAuth token revoked · Please run /login\n",
+		"OAuth token revoked\n",
+	} {
+		if got := revokedLogin(text); got != "" {
+			t.Errorf("%q matched as %q", text, got)
+		}
+	}
+	if revokedLogin("  ⎿  OAuth token revoked · Please run /login") == "" {
+		t.Error("the glyph-prefixed line did not match")
+	}
+}
+
+func TestLiftingTheFlagAcknowledgesTheCachedVerdicts(t *testing.T) {
+	t.Parallel()
+	var st loginState
+	st.on = true
+	st.verdicts = map[string]loginVerdict{
+		"a": {out: 1, line: "OAuth token revoked · Please run /login"},
+		"b": {out: 2},
+	}
+	st.ackVerdicts()
+	if !st.verdicts["a"].acked || st.verdicts["b"].acked {
+		t.Errorf("acked wrong: %+v", st.verdicts)
+	}
+}

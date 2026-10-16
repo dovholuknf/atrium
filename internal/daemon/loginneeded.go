@@ -7,6 +7,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+
+	"github.com/dovholuknf/atrium/internal/api"
 )
 
 // A room whose claude login is revoked. See docs/changes/bug-room-auth-revoked-silent.md.
@@ -38,13 +41,23 @@ const loginNeededSay = "claude needs a login on this machine. run /login in any 
 // the whole sentence on one line of a screen, which is why the match is the line and not a substring of the screen.
 func revokedLogin(text string) string {
 	for _, ln := range strings.Split(text, "\n") {
-		low := strings.ToLower(ln)
-		if strings.Contains(low, "oauth token revoked") ||
-			(strings.Contains(low, "please run /login") && (strings.Contains(low, "revoked") || strings.Contains(low, "expired"))) {
+		low := strings.ToLower(stripGlyphPrefix(strings.TrimSpace(ln)))
+		if !strings.Contains(low, "please run /login") {
+			continue
+		}
+		if strings.HasPrefix(low, "oauth token revoked") || strings.HasPrefix(low, "oauth token has expired") {
 			return strings.TrimSpace(ln)
 		}
 	}
 	return ""
+}
+
+// stripGlyphPrefix drops the bullets, box lines and spaces Claude Code draws before a message, so what is left
+// starts with the message itself. A diff line or quoted prose starts with its own marks and does not match.
+func stripGlyphPrefix(s string) string {
+	return strings.TrimLeftFunc(s, func(r rune) bool {
+		return r == ' ' || r == '\t' || (r > 0x7f && !unicode.IsLetter(r) && !unicode.IsDigit(r))
+	})
 }
 
 // loginState is the flag and what the scan remembers between ticks.
@@ -64,6 +77,9 @@ type loginState struct {
 type loginVerdict struct {
 	out  int64
 	line string
+	// acked: the operator lifted the flag while this verdict showed the line. It counts again only on a new
+	// output stamp that still shows it.
+	acked bool
 }
 
 // LoginNeeded is the flag as the board and the hub read it.
@@ -121,6 +137,11 @@ func (d *Daemon) watchLoginNeeded(now time.Time) {
 		if run.buf == nil {
 			continue
 		}
+		if t, err := d.st.Get(run.taskID); err != nil {
+			continue
+		} else if h, err := d.st.Harness(t.Runner); err != nil || !api.IsClaudeHarness(h) {
+			continue
+		}
 		live[run.taskID] = true
 		stamp := run.lastOut.Load()
 		d.login.mu.Lock()
@@ -135,7 +156,7 @@ func (d *Daemon) watchLoginNeeded(now time.Time) {
 			d.login.verdicts[run.taskID] = v
 			d.login.mu.Unlock()
 		}
-		if v.line != "" && hit == "" {
+		if v.line != "" && !v.acked && hit == "" {
 			hit, card = v.line, run.taskID
 		}
 	}
@@ -172,6 +193,7 @@ func (d *Daemon) watchLoginNeeded(now time.Time) {
 func (d *Daemon) clearLoginNeeded() bool {
 	d.login.mu.Lock()
 	was := d.login.on
+	d.login.ackVerdicts()
 	d.login.on = false
 	d.login.mu.Unlock()
 	if was {
@@ -197,4 +219,14 @@ func (d *Daemon) loginHealth() map[string]any {
 		return nil
 	}
 	return map[string]any{"reason": l.Reason, "line": l.Line, "card": l.Card, "since": l.Since}
+}
+
+// ackVerdicts marks every cached verdict that shows the line as seen by the operator. The caller holds mu.
+func (s *loginState) ackVerdicts() {
+	for id, v := range s.verdicts {
+		if v.line != "" {
+			v.acked = true
+			s.verdicts[id] = v
+		}
+	}
 }
