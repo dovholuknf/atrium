@@ -44,10 +44,15 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 	if strings.TrimSpace(task.SpawnedByID) == "" {
 		return false
 	}
-	for _, tag := range []string{ResidentTag, DirectorTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
+	for _, tag := range []string{ResidentTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
 		if hasTag(task.Tags, tag) {
 			return false
 		}
+	}
+	// A per-item minion is launched as a director so it can end itself, and it has nothing to do once it has
+	// landed: it exits on done like any worker. See docs/changes/bug-idle-minion-spins-a-core.md.
+	if hasTag(task.Tags, DirectorTag) && !hasTag(task.Tags, MinionTag) {
+		return false
 	}
 	if isLinkCard(task) || staysOpen(task) {
 		return false
@@ -58,6 +63,9 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 // ResidentTag marks a card that stays open between tasks: a done or a blocked reports a task and never ends it. The
 // same tag as link.ResidentTag.
 const ResidentTag = "atrium:resident"
+
+// MinionTag marks a per-item minion: a director that exits on its final done.
+const MinionTag = "atrium:minion"
 
 // isResident says whether a set of tags is a resident card's: the tag itself, or a director or the orchestrator.
 func isResident(t []string) bool {

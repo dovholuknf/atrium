@@ -122,3 +122,25 @@ measurement is what would change that.
 - `atrium:minion` + `atrium:resident` or the orchestrator tag does not.
 - A done carrying an ask still does not, minion or not.
 - On sg4: a minion that lands and calls done is gone after the delay, and idle CPU drops to about 0.
+
+## Outcome (ACCEPTED: fix B only, fix A dropped)
+
+Not reproduced. Measured on claude-sg4, 10 minutes idle:
+
+| arm | cpu_avg | cpu_max |
+| --- | --- | --- |
+| exact flag set | 0.7-0.8% | 2.6% |
+| no `--tools` | 0.7-0.8% | 2.6% |
+| no `--system-prompt` | 0.7-0.8% | 2.6% |
+| exact flag set again | 0.7-0.8% | 2.6% |
+| 7 old minions, hours idle, `--tools` | 0.8-1.0% | |
+
+Nothing was hot. The ring read was unreliable, so ring growth says nothing. The spin arm cards, being directors, could
+not be ended by `atrium_exit`. Fix A (stop passing `--tools`) is dropped. Fix B is built: `exitsOnReport` no longer
+skips a card tagged `atrium:minion` for being a director, so a finished minion exits and cannot sit idle for hours.
+The cause of the 100% spin stays unknown.
+
+## Test plan (as built)
+
+`TestMinionDirectorExitsOnDone` in `internal/daemon/exitonreport_test.go`: minion+director exits on done, plain director
+does not, minion+keep-open stays open, minion+resident or orchestrator stays, a done with an ask stays.
