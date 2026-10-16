@@ -22,16 +22,22 @@ hub do the recovery. So every plain launch from a minion's session still has the
 In `launchHandler`, for the `/v1/launch` post only:
 
 1. Bound it by `launchLocalWait`, 45 s, under the 55 s `launchAcrossWait` and over the room's normal start.
-2. When it fails with a timeout or a bad gateway, look for the card before reporting a failure: `GET /v1/tasks` and
-   take the newest card whose worktree equals `cwd` and that was created since the post began (the same rule as
-   `findLaunched`, which is moved to a shared helper in `internal/link` so both roads use one). Found: return it
-   with a note that says it is running and must not be launched again.
-3. Not found: remember `cwd` and the time of the attempt in the process. The next launch for the same `cwd` looks for
-   a card created since that attempt BEFORE it posts, and returns it if there is one. This is what makes the retry
-   idempotent when the card shows up late (the observed "a minute or more later").
+2. Take `GET /v1/tasks` just before the post and keep the set of card ids. A card is "launched" when its id is NOT in
+   that snapshot and its worktree equals `cwd`. No clock is compared: the hub proxies to rooms on other machines.
+   `findLaunched` in `internal/link/control_mcp.go` judges by time today, so it moves to the same snapshot rule and
+   both roads share one helper.
+3. When the post fails with a timeout or a bad gateway, look for a launched card before reporting a failure. Found:
+   return it with a note that it is running and must not be launched again.
+4. Not found: remember `cwd` and the id snapshot in the process. The next launch for the same `cwd` checks for a card
+   outside the remembered snapshot BEFORE it posts, and returns it if there is one. A launch that returned an answer
+   clears it. Nothing is stored on disk.
 
-A launch that returned an answer, success or refusal, clears the memory for its `cwd`. Nothing is stored on disk:
-the memory is for the life of the control process, which is the life of the retrying session.
+### Not done
+
+- A launch key (random, reused by the retry, the room returning the card filed under it). The room has no such field,
+  so it is a known gap, filed as its own bug. Step 4 narrows the retry window and does not close it.
+- Follow-up: the room answers `/v1/launch` after the card is filed with status `starting`, not after the runner
+  proves it started.
 
 ### Test
 
