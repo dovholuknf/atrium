@@ -108,6 +108,11 @@
   .it-pillstate::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .it-pillstate.b { background: var(--wait-bg); color: var(--wait); }
   .it-bodyex { margin-top: 10px; color: var(--body); max-width: 760px; }
+  .it-docs { margin-top: 14px; padding: 8px 14px; border-radius: 10px; font-size: var(--fs-sm); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--card-1); border: 1px solid var(--grid); color: var(--body); }
+  .it-docs.note { border-color: var(--wait-stroke); color: var(--wait); font-weight: 700; }
+  .it-docs.note .it-dim { font-weight: 400; color: var(--dim); }
+  .it-docs-btns { display: flex; gap: 8px; margin-left: auto; }
 
   .it-qbox { margin-top: 18px; padding: 18px 20px; border-radius: 14px; background: linear-gradient(160deg, rgba(var(--wait-rgb),.16), var(--card-1));
     border: 1px solid var(--wait-stroke); box-shadow: 0 8px 30px rgba(var(--wait-rgb),.10); }

@@ -1030,6 +1030,15 @@ func (f landGit) PageChangedSince(ctx context.Context, since, path string) (gits
 	return f.hub.Store().PageChangedSince(ctx, name, since, path)
 }
 
+// FileAt is the landed check's reach into the same repository. See link.DocsFileGit.
+func (f landGit) FileAt(ctx context.Context, sha, path string) (string, bool, error) {
+	name := f.repo()
+	if name == "" {
+		return "", false, nil
+	}
+	return f.hub.Store().FileAt(ctx, name, sha, path)
+}
+
 func (f landGit) Contains(ctx context.Context, build, sha string) (bool, bool, error) {
 	if name := f.repo(); name != "" {
 		return f.hub.Store().Contains(ctx, name, build, sha)

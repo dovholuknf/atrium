@@ -21857,6 +21857,52 @@ async function itemMinionChipSection(browser, base) {
   } finally { await ctx.close(); mock.hubMode = wasHub; }
 }
 
+// The landed check on an item's detail (docs/changes/m-doc-debt-p5.md): "docs: not said" for a landed feature, "close d-7?" once for a
+// landed doc worker's item, nothing for an item the hub said nothing of, and the offer stays dismissed.
+async function itemDocsLandedSection(browser, base) {
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const errors = [];
+  const imgs = docImgDir("docs", "changes", "img", "m-doc-debt-p5");
+  try {
+    fs.mkdirSync(imgs, { recursive: true });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route(/\/_hub\/items/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
+    await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    await p.evaluate(() => { localStorage.removeItem("atrium.items.docsOfferDismissed"); switchView("items"); });
+    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
+    // Paint the detail of one item with the hub's `docs` as given, and say what is drawn.
+    const paint = (docs) => p.evaluate(async docs => {
+      itemsShow("f-ptyhost-reconnect");
+      await new Promise(r => setTimeout(r, 300));
+      for (const it of [itemsDetail, itemsList.find(x => x.id === "f-ptyhost-reconnect")]) { if (it) { if (docs) it.docs = docs; else delete it.docs; } }
+      itemsPaint(true);
+      const q = (s) => document.querySelector(".it-detail " + s);
+      return { note: (q('[data-docs="not-said"]') || {}).textContent || "", offer: (q('[data-docs="offer"]') || {}).textContent || "", any: document.querySelectorAll(".it-detail .it-docs").length };
+    }, docs);
+    const none = await paint(null);
+    await p.waitForSelector(".it-detail");
+    await p.screenshot({ path: path.join(imgs, "item-detail-before.png"), clip: { x: 0, y: 0, width: 1200, height: 420 } });
+    const note = await paint({ not_said: true });
+    await p.screenshot({ path: path.join(imgs, "item-detail-not-said.png"), clip: { x: 0, y: 0, width: 1200, height: 420 } });
+    const offer = await paint({ offer: { id: "d-7", title: "docs behind f-ptyhost-reconnect" } });
+    await p.screenshot({ path: path.join(imgs, "item-detail-offer.png"), clip: { x: 0, y: 0, width: 1200, height: 420 } });
+    await p.click('.it-detail [data-act="docs-dismiss"]');
+    const dismissed = await p.evaluate(() => document.querySelectorAll(".it-detail .it-docs").length);
+    const again = await paint({ offer: { id: "d-7", title: "docs behind f-ptyhost-reconnect" } });
+    if (none.any) fail("itemDocsLanded: an item the hub said nothing of drew a docs line: " + JSON.stringify(none));
+    if (!/^docs: not said/.test(note.note) || note.offer) fail("itemDocsLanded: the note is " + JSON.stringify(note));
+    if (!/close d-7\?/.test(offer.offer) || offer.note) fail("itemDocsLanded: the offer is " + JSON.stringify(offer));
+    if (dismissed || again.any) fail("itemDocsLanded: a dismissed offer came back: " + dismissed + " " + JSON.stringify(again));
+    if (errors.length) fail("itemDocsLanded: page errors: " + errors.join("; "));
+    else console.log("itemDocsLanded ok");
+  } finally { await ctx.close(); mock.hubMode = wasHub; }
+}
+
 async function itemOpenHiddenCardSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
   const errors = [];
@@ -33741,6 +33787,7 @@ async function main() {
     await unit("boardMinionHidden", () => boardMinionHiddenSection(browser, base));
     await unit("stackMinionHidden", () => stackMinionHiddenSection(browser, base));
     await unit("itemMinionChip", () => itemMinionChipSection(browser, base));
+    await unit("itemDocsLanded", () => itemDocsLandedSection(browser, base));
     await unit("itemOpenHiddenCard", () => itemOpenHiddenCardSection(browser, base));
     await unit("nestCrossRoom", () => nestCrossRoomSection(browser, base));
     await unit("parkedStays", () => parkedStaysSection(browser, base));

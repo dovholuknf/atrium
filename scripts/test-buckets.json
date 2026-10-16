@@ -121,7 +121,7 @@
       "page": "the items view: unified cards, interviews, ready cards",
       "units": [
         "items*", "unifiedCard", "interviewTop", "readyNoSeed", "readyOnce", "readyPopout", "readyTwoWindows",
-        "noReadyChildren", "kidCounts", "itemMinionChip", "itemOpenHiddenCard"
+        "noReadyChildren", "kidCounts", "itemMinionChip", "itemDocsLanded", "itemOpenHiddenCard"
       ],
       "sources": [
         "internal/api/web/js/items.js",

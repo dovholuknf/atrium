@@ -407,6 +407,26 @@ function itemQuestionHtml(it) {
     '" data-id="' + id + '">' + (approval ? "send back" : "send") + "</button></div></div>";
 }
 
+// The landed check (docs/rnd/doc-debt-from-features.md 2.8). `docs.not_said` is a landed feature whose change note says nothing of its
+// docs, and `docs.offer` a landed doc worker's item whose doc item is still open. Neither acts: the offer opens the doc item, and a person
+// closes it. The board remembers a dismissed offer, since the hub does not.
+const ITEMS_DOCS_KEY = "atrium.items.docsOfferDismissed";
+function itemsDocsDismissed() {
+  try { return JSON.parse(localStorage.getItem(ITEMS_DOCS_KEY) || "[]"); } catch (e) { return []; }
+}
+function itemDocsHtml(d) {
+  const x = d.docs;
+  if (!x) return "";
+  if (x.not_said) return '<div class="it-docs note" data-docs="not-said">docs: not said <span class="it-dim">no <code>Docs: d-&lt;n&gt;</code> or <code>Docs: none, &lt;why&gt;</code> line in its change note</span></div>';
+  if (x.offer && !itemsDocsDismissed().includes(x.offer.id)) {
+    const id = esc(x.offer.id);
+    return '<div class="it-docs offer" data-docs="offer">close ' + id + "?" + (x.offer.title ? ' <span class="it-dim">' + esc(x.offer.title) + "</span>" : "") +
+      '<span class="it-docs-btns"><button type="button" class="it-btn go" data-act="backlog" data-backlog="' + id + '">open ' + id + '</button>' +
+      '<button type="button" class="it-btn" data-act="docs-dismiss" data-id="' + id + '">not now</button></span></div>';
+  }
+  return "";
+}
+
 function itemDetailHtml(it) {
   const d = itemsDetail && itemsDetail.id === it.id ? itemsDetail : it;
   const hist = d.history || [];
@@ -421,7 +441,7 @@ function itemDetailHtml(it) {
     (d.note && d.state === "finished" ? '<div class="it-bodyex">' + esc(d.note) + "</div>" : "") + "</div>" +
     '<div class="it-actions"><button type="button" class="it-btn" data-act="backlog" data-backlog="' + esc(d.backlog) + '">open backlog item</button>' +
     (d.state !== "finished" ? '<button type="button" class="it-btn it-cancel" data-act="cancel" data-id="' + esc(d.id) + '" aria-label="cancel item ' + esc(d.id) + '">cancel item</button>' : "") +
-    "</div></div>" + itemQuestionHtml(d) +
+    "</div></div>" + itemDocsHtml(d) + itemQuestionHtml(d) +
     '<div class="it-grid"><div class="it-tl">' + d.steps.map((s, i) => itemStepHtml(d, s, i)).join("") +
     (hist.length ? '<ol class="it-history">' + hist.map(e => "<li><b>" + esc(e.state) + "</b> r" + e.revision + ' <time data-tip="' + esc(e.at) + '">' + esc(itemAge(e.at)) + " ago</time></li>").join("") + "</ol>" : "") +
     "</div>" + itemSideHtml(d) + "</div></div>";
@@ -636,6 +656,11 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (act === "cancel") itemsCancel(b.dataset.id);
     else if (act === "card") itemsOpenCard(b.dataset.card);
     else if (act === "backlog") itemsOpenBacklog(b.dataset.backlog);
+    else if (act === "docs-dismiss") {
+      const seen = itemsDocsDismissed();
+      if (!seen.includes(b.dataset.id)) try { localStorage.setItem(ITEMS_DOCS_KEY, JSON.stringify(seen.concat(b.dataset.id).slice(-200))); } catch (e) { /* kept for this page only */ }
+      itemsPaint(true);
+    }
     else if (act === "open") itemsToggle(b.dataset.id);
   });
   box.addEventListener("keydown", ev => {

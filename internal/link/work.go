@@ -22,7 +22,8 @@ import (
 //
 //	GET  /_hub/work           the items, newest change first, each with its `steps`, `state` and `current`
 //	GET  /_hub/work/<id>      one: `work`, its `cards`, its `assignments`, its `facts`, its `steps` (all eight) and its
-//	                          `lifecycle`. The git steps (landed, deployed, pushed) are read fresh
+//	                          `lifecycle`. The git steps (landed, deployed, pushed) are read fresh. Once it has landed it may
+//	                          carry `docs`: {not_said} or {offer: {id}}, see docdebt_landed.go
 //	GET  /_hub/work/<id>/cost what it cost, estimated at list price: per step, the headline (the steps alone, "+
 //	                          coordination"), the coordination, the sum, and the tokens behind every figure
 //	GET  /_hub/work/cost      the same for every item, newest change first, a line each
@@ -230,7 +231,7 @@ func (p *Proxy) writeWorkDetail(w http.ResponseWriter, r *http.Request, st *hubs
 	}
 	crJSON(w, http.StatusOK, map[string]any{"work": got.Work, "cards": got.Cards, "assignments": got.Assignments,
 		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle, "cost": p.costOf(st, got.Work.BacklogID, got.Cards, got.Lifecycle.Steps),
-		"efficacy": p.efficacyOf(st, got.Work.BacklogID)})
+		"efficacy": p.efficacyOf(st, got.Work.BacklogID), "docs": p.docsOf(r.Context(), st, id)})
 }
 
 func wfail(w http.ResponseWriter, err error) {

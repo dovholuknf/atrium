@@ -124,6 +124,8 @@ function itemWithWork(it, w) {
       reason: s.state === "skipped" ? s.reason || "" : "", note: s.state === "active" ? s.reason || "" : "" });
   });
   const out = Object.assign({}, it, { steps });
+  // The landed check (hub internal/link/docdebt_landed.go): {not_said} for a feature, {offer: {id, title}} for a doc worker's item.
+  if (w.docs && typeof w.docs === "object") out.docs = w.docs;
   // The assignment row has no title of its own: the work row does, the backlog item's title.
   const wk = w.work && typeof w.work === "object" ? w.work : w;
   if (!out.title && wk.title) out.title = wk.title;

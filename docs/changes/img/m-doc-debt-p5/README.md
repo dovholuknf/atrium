@@ -1,0 +1,3 @@
+- `item-detail-before.png`: a landed item's detail with nothing said about its docs (the old behaviour).
+- `item-detail-not-said.png`: the same detail for a feature whose change note has no `Docs:` line, saying `docs: not said`.
+- `item-detail-offer.png`: a landed doc worker's item, offering `close d-7?` with `open d-7` and `not now`.
