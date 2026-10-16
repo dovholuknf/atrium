@@ -732,6 +732,8 @@ type runner struct {
 	markPending bool
 	markHeld    int
 	markTimer   *time.Timer
+	// afterFunc schedules the mark hold timer. Nil means time.AfterFunc, a test sets it to fire by hand.
+	afterFunc func(time.Duration, func()) *time.Timer
 	// dir is the directory the process was started in, for every launch. It is
 	// the one directory the process holds, so it is what the worktree-gone
 	// reaper asks about. Never the session's live cwd.
@@ -1932,7 +1934,11 @@ func (r *runner) markClear() {
 		return
 	}
 	r.markPending, r.markHeld = true, 0
-	r.markTimer = time.AfterFunc(markHoldTime, func() {
+	after := r.afterFunc
+	if after == nil {
+		after = time.AfterFunc
+	}
+	r.markTimer = after(markHoldTime, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.markPending {
