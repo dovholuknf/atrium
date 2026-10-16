@@ -80,6 +80,9 @@ $HubZitiIdentity = 'C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json'
 $HubZitiService  = 'atrium-hub'
 if (Test-Path $HubZitiIdentity) {
   $HubArgs += @('--transport', 'direct,ziti', '--atrium-identity', $HubZitiIdentity, '--atrium-service', $HubZitiService)
+  # The board on the same identity, as the ziti service atrium-board (intercept atrium.ziti:80), so clint's phone
+  # reaches it with Ziti Mobile Edge and no zrok. Dial policy: #atrium-board-clients. clint 2026-10-16.
+  $HubArgs += @('--board-transport', 'ziti', '--board-service', 'atrium-board')
 }
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
