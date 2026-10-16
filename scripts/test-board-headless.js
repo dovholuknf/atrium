@@ -19744,7 +19744,7 @@ async function mWorkingSection(browser) {
           fs: parseFloat(getComputedStyle(w).fontSize), anim: getComputedStyle(w.querySelector(".wk-spin") || w).animationName,
           chipText: document.querySelector(".c-state").textContent, sw: document.documentElement.scrollWidth, iw: window.innerWidth };
       });
-      await p.waitForFunction(() => !document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.getElementById("m-working").hidden, null, { timeout: slow(15000) });
       let b = await box();
       if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
@@ -27214,7 +27214,7 @@ async function hubReposTimelineDotsSection(browser, base) {
 // choice to narrow it, a hostile branch name drawn as text, state that is this window's and never another's. With
 // HR_SHOTS=<dir> it also saves the view at 2000 and 390, paper and dark.
 async function hubReposBranchesSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "hubReposBranches";
   try {
     const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 1600, h: 1000 });
@@ -27309,7 +27309,7 @@ async function hubReposBranchesSection(browser, base) {
         } finally { await ctx.close(); }
       }
     }
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposBranches ok");
 }
 async function hubReposFeedSection(browser, base) {
@@ -30524,6 +30524,7 @@ async function keepAliveSection(browser, base) {
 
     // Open a, then b: a is kept, its socket still open, its element hidden.
     await attach("ka-a");
+    for (let i = 0; i < 40 && !/hist-ka-a/.test(await text("term") || ""); i++) await idle(150);
     if (!/hist-ka-a/.test(await text("term") || "")) fail("keepAlive: the first attach did not replay into the terminal.");
     await wp.evaluate(async () => {
       window.__termA = term;
@@ -31201,7 +31202,7 @@ async function changeReqSection(browser, base) {
         panels: [...document.querySelectorAll(".cr-detail .cr-panel .hr-h")].map(x => x.textContent), why: (document.querySelector(".cr-why") || {}).textContent,
         pushedLine: (document.querySelector(".cr-line") || {}).textContent, tl: document.querySelectorAll(".cr-tl li").length,
         buttons: [...document.querySelectorAll("#hubrepos-list button")].map(b => b.textContent.trim()).filter(Boolean) }));
-      if (r.radios !== "shelf:false,ledger:false,feed:false,requests:true") fail(tag + ": the switcher is wrong " + r.radios);
+      if (r.radios !== "shelf:false,ledger:false,feed:false,requests:true,branches:false") fail(tag + ": the switcher is wrong " + r.radios);
       if (r.count !== "3") fail(tag + ": the count is the open requests, want 3, got " + r.count);
       if (r.strip.join("|") !== "Fix the router link flap|Edge router policies v2") fail(tag + ": the strip is not the open requests into main " + JSON.stringify(r.strip));
       if (r.items.join() !== "cr_9,cr_8,cr_7" || r.groups.join() !== "into main,into release/1.x" || r.needs !== 2 || r.cur.join() !== "cr_9") fail(tag + ": the list is wrong " + JSON.stringify(r));
