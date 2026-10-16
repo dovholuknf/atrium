@@ -24,3 +24,7 @@ writes that rank, and following the sort would undo the drag. It is left as it i
 
 1. On the Stack tab, show all, ungrouped, sort by last active.
 2. The pinned group's times run from least to most idle, and reversing the sort reverses them.
+
+Pictures: `img/bug-stack-last-active-sort/stack-1280-before.png` and `-after.png`, and the same at 390, from the
+`stackPinnedSort` unit (`STACK_PINNED_SHOTS=<dir> STACK_PINNED_WHEN=before|after`). Before, the pinned times read
+10h, 1m, 1h30m, 20s. After, they read 20s, 1m, 1h30m, 10h, and the unpinned rows stay below.
