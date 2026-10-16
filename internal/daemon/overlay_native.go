@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
@@ -292,15 +293,19 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	if err != nil {
 		return d.overlayFailed("ziti", fmt.Errorf("could not load that identity: %w", err))
 	}
-	ctx, err := ziti.NewContext(zcfg)
+	ctx, err := zitictx.New("native", zcfg)
 	if err != nil {
 		return d.overlayFailed("ziti", fmt.Errorf("could not use that identity: %w", err))
 	}
 	d.overlayStep("ziti", "bind", "binding the service "+service)
 	ln, err := ctx.Listen(service)
 	if err != nil {
+		// The context holds goroutines until it is closed, and nothing else owns it.
+		ctx.Close()
 		return d.overlayFailed("ziti", fmt.Errorf("could not bind %q: %w", service, err))
 	}
+	// The listener owns the context from here: closing one ends the other.
+	var served net.Listener = &ctxListener{Listener: ln, closeCtx: ctx.Close}
 
 	d.overlayStep("ziti", "done", "ziti service "+service)
 	log.Printf("[atrium] serving the board on the ziti service %q", service)
@@ -308,8 +313,22 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	// network, and the service name is the whole identifier.
 	// A ziti service is administered on the network and atrium never created
 	// it, so there is nothing here to release.
-	d.nat(OverlayZiti).serveOn(ln, zitiEdge(d.authGuard(d.ap.Handler()), service), "ziti service "+service, "")
+	d.nat(OverlayZiti).serveOn(served, zitiEdge(d.authGuard(d.ap.Handler()), service), "ziti service "+service, "")
 	return nil
+}
+
+// ctxListener closes the ziti context it was bound on when it is closed, so stopping the overlay does not leave the
+// context's refresh and posture goroutines running.
+type ctxListener struct {
+	net.Listener
+	closeCtx func()
+	once     sync.Once
+}
+
+func (l *ctxListener) Close() error {
+	err := l.Listener.Close()
+	l.once.Do(l.closeCtx)
+	return err
 }
 
 // zitiEdge is the browser edge for a ziti service. The name a browser uses is

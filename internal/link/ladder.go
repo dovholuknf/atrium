@@ -68,15 +68,82 @@ func (l *Ladder) index(p Path) int {
 // Set replaces the rungs, staying on the same rung. Where the new list still has
 // it, its new dialer is taken. Where it does not, the old one is kept until the
 // next climb.
+//
+// A dialer that is no longer in use is closed: a ziti dialer holds a context whose goroutines live until it is.
 func (l *Ladder) Set(rungs []Rung) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	old := l.rungs
 	l.rungs = rungs
 	if i := l.index(l.on.Path); i >= 0 {
 		l.on = rungs[i]
 	} else if !l.has && len(rungs) > 0 {
 		l.on, l.has = rungs[0], true
 	}
+	unused := l.unusedLocked(old)
+	l.mu.Unlock()
+	closeDialers(unused)
+}
+
+// unusedLocked is the dialers in old that neither the rungs nor the rung stood on still hold.
+func (l *Ladder) unusedLocked(old []Rung) []Dialer {
+	var out []Dialer
+	for _, o := range old {
+		if sameDialer(o.Dial, l.on.Dial) {
+			continue
+		}
+		kept := false
+		for _, r := range l.rungs {
+			if sameDialer(o.Dial, r.Dial) {
+				kept = true
+				break
+			}
+		}
+		if !kept {
+			out = append(out, o.Dial)
+		}
+	}
+	return out
+}
+
+// sameDialer is whether a and b are one dialer. Dialers are pointers or small values, and a value that cannot be
+// compared is never the same.
+func sameDialer(a, b Dialer) (same bool) {
+	defer func() {
+		if recover() != nil {
+			same = false
+		}
+	}()
+	return a != nil && b != nil && a == b
+}
+
+type closer interface{ Close() }
+
+// closeDialers closes each dialer that can be closed.
+func closeDialers(ds []Dialer) {
+	for _, d := range ds {
+		if c, ok := d.(closer); ok {
+			c.Close()
+		}
+	}
+}
+
+// Reset tells every rung's dialer to throw away what it holds, so the next dial starts afresh. The room calls it
+// through the resetter interface after repeated data dial failures.
+func (l *Ladder) Reset() {
+	for _, r := range l.Rungs() {
+		if rs, ok := r.Dial.(resetter); ok {
+			rs.Reset()
+		}
+	}
+}
+
+// Close closes every rung's dialer.
+func (l *Ladder) Close() {
+	var ds []Dialer
+	for _, r := range l.Rungs() {
+		ds = append(ds, r.Dial)
+	}
+	closeDialers(ds)
 }
 
 func (l *Ladder) current() (Rung, int, bool) {
@@ -137,13 +204,17 @@ func (l *Ladder) Climb(ctx context.Context, wait time.Duration) (net.Conn, error
 		c, err := dialWithin(ctx, r.Dial, wait)
 		if err == nil {
 			l.mu.Lock()
+			prev := l.on
 			// The rungs may have been Set while this dialled. Stand on the same
 			// rung in whatever the list is now, or on the one that answered.
 			l.on, l.has = r, true
 			if j := l.index(r.Path); j >= 0 {
 				l.on = l.rungs[j]
 			}
+			// Moving off a rung the list no longer has frees its dialer.
+			unused := l.unusedLocked([]Rung{prev})
 			l.mu.Unlock()
+			closeDialers(unused)
 			return c, nil
 		}
 		if ctx.Err() != nil {

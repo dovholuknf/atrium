@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/zitictx"
 )
 
 // Version is the event's `v`.
@@ -56,8 +57,10 @@ type Process struct {
 	RSSBytes   uint64  `json:"rss_bytes"`
 	HeapBytes  uint64  `json:"heap_bytes"`
 	Goroutines int     `json:"goroutines"`
-	StartedAt  string  `json:"started_at"`
-	StaleSince string  `json:"stale_since,omitempty"`
+	// ZitiContexts is how many OpenZiti contexts this process holds open. Each is a set of goroutines.
+	ZitiContexts int    `json:"ziti_contexts,omitempty"`
+	StartedAt    string `json:"started_at"`
+	StaleSince   string `json:"stale_since,omitempty"`
 }
 
 // Disk is the volume holding the room's worktree root.
@@ -325,6 +328,7 @@ func (s *Sampler) sampleProcess(now time.Time) {
 	}
 	s.lastCPU, s.lastAt = cpu, now
 	p.HeapBytes, p.Goroutines = memStats()
+	p.ZitiContexts = zitictx.Live()
 	s.snap.Process = p
 }
 

@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
 )
 
@@ -57,7 +60,36 @@ type ZitiCapability struct {
 // A fresh context each call rather than the one a running share holds. This is
 // a question asked while nothing is running, which is when it is worth asking,
 // and borrowing a live context would tie answering it to being already started.
+//
+// One at a time, and a SUCCESS is remembered for capsTTL, so a board asking repeatedly or from two tabs builds one
+// short-lived context rather than one each. A failure is not remembered: the next call asks again.
 func (d *Daemon) ZitiCapabilities() ZitiCapability {
+	caps.mu.Lock()
+	defer caps.mu.Unlock()
+	id := strings.TrimSpace(d.zitiConfig().Identity)
+	if caps.ok && caps.id == id && time.Since(caps.at) < capsTTL {
+		return caps.out
+	}
+	out := d.askZitiCapabilities()
+	if out.Err == "" {
+		caps.out, caps.id, caps.at, caps.ok = out, id, time.Now(), true
+	} else {
+		caps.ok = false
+	}
+	return out
+}
+
+const capsTTL = 30 * time.Second
+
+var caps struct {
+	mu  sync.Mutex
+	ok  bool
+	id  string
+	at  time.Time
+	out ZitiCapability
+}
+
+func (d *Daemon) askZitiCapabilities() ZitiCapability {
 	var out ZitiCapability
 
 	cfg := d.zitiConfig()
@@ -72,7 +104,7 @@ func (d *Daemon) ZitiCapabilities() ZitiCapability {
 		out.Err = fmt.Sprintf("that identity file could not be read: %v", err)
 		return out
 	}
-	ctx, err := ziti.NewContext(zcfg)
+	ctx, err := zitictx.New("capabilities", zcfg)
 	if err != nil {
 		out.Err = fmt.Sprintf("that identity could not be used: %v", err)
 		return out
