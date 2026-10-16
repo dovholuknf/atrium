@@ -9751,6 +9751,32 @@ async function cleanCopySection(browser, base) {
     if (await btn()) fail("cleanCopy: the button stayed after it was clicked");
     if (/copied|written/.test(await toasts())) fail("cleanCopy: the clean copy raised a toast: " + await toasts());
 
+    // 1b. A real mouse drag with copy on select OFF (the default) still offers the button, and writes no clipboard.
+    await p.evaluate(([out]) => {
+      copyOnSelect = false;
+      window.__clip = [];
+      term.clearSelection();
+      term.reset();
+      termSock.onmessage({ data: out });
+    }, [shown]);
+    await p.waitForTimeout(200);
+    const sbox = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const sc = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    await p.mouse.move(sbox.x + sc.w * 2.5, sbox.y + sc.h * 2.5);
+    await p.mouse.down();
+    await p.mouse.move(sbox.x + sc.w * 10, sbox.y + sc.h * 3.5, { steps: 5 });
+    await p.mouse.move(sbox.x + sc.w * 20, sbox.y + sc.h * 3.5, { steps: 5 });
+    await p.mouse.up();
+    await p.waitForTimeout(500);
+    const dragSel = await p.evaluate(() => ({ sel: term.getSelection(), clip: window.__clip.slice() }));
+    if (!dragSel.sel) fail("cleanCopy: the mouse drag selected nothing, so this proves nothing");
+    if (dragSel.clip.length) fail("cleanCopy: a drag copied with copy on select off: " + JSON.stringify(dragSel.clip));
+    if (!await btn()) fail("cleanCopy: no 'copy clean' button after a mouse drag with copy on select off");
+    await p.evaluate(() => { copyOnSelect = true; term.clearSelection(); });
+
     // 2. Gone when the selection clears, on scroll and on Escape.
     await select(shown, [2, 3]);
     await p.evaluate(() => term.clearSelection());

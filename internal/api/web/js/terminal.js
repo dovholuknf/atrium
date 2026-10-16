@@ -364,7 +364,8 @@ function wireCopyOnSelect(screen) {
   window.addEventListener("mouseup", () => {
     const press = copyPress;
     copyPress = null;
-    if (!press || !copyOnSelect) return;
+    // Not gated on copyOnSelect: the clean copy offer is for any settled selection, the clipboard write is the setting.
+    if (!press) return;
     // After xterm's own mouseup, which is where a drag's selection settles.
     setTimeout(() => {
       if (!term || !term.hasSelection()) return;
