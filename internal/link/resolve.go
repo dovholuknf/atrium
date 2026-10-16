@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Turning a name somebody typed into a card. See
@@ -208,4 +209,58 @@ func resolveAcross(lists map[string][]ctlCard, quiet []string, who string) (cand
 		e.choices = append(e.choices, c.choice())
 	}
 	return candidate{}, e
+}
+
+// ambiguousAlias refuses a name that more than one card answers to by alias.
+// matchCard picks the newest live one, which is right for a say and wrong for a
+// close, so a destructive verb asks this first. An id or a wire name is exact
+// and never ambiguous. A dead card no longer answers to its alias.
+func ambiguousAlias(cards []ctlCard, who string, now time.Time) error {
+	who = strings.TrimSpace(who)
+	for _, t := range cards {
+		if t.Wire == who || t.ID == who {
+			return nil
+		}
+	}
+	a := strings.ToLower(strings.TrimPrefix(who, "@"))
+	if a == "" {
+		return nil
+	}
+	var hits []ctlCard
+	for _, t := range cards {
+		if t.Alias == a && t.Status != "dead" {
+			hits = append(hits, t)
+		}
+	}
+	if len(hits) < 2 {
+		return nil
+	}
+	parts := make([]string, 0, len(hits))
+	for _, t := range hits {
+		room, _ := splitTag(t.ID)
+		if room == "" {
+			room = "this room"
+		}
+		parts = append(parts, fmt.Sprintf("%s (room %s, %s, %s old)", t.ID, room, t.Status, cardAge(t.Created, now)))
+	}
+	return fmt.Errorf("%q matches %d cards, so nothing was done. use the id of the one you mean: %s",
+		who, len(hits), strings.Join(parts, "; "))
+}
+
+// cardAge is how long ago a card was created, rounded for reading.
+func cardAge(created string, now time.Time) string {
+	t, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		return "unknown"
+	}
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "under a minute"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }

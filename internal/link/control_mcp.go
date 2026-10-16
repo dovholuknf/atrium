@@ -775,6 +775,13 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 // means a caller that pasted a handle never gets an obscure 404 from an endpoint
 // that wanted an id.
 func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, handle string, err error) {
+	return c.resolvePeerOpt(ctx, room, who, false)
+}
+
+// resolvePeerOpt is resolvePeer, and with strict a name that more than one card
+// answers to is refused with each candidate rather than resolved to the newest.
+// A close cannot be undone, so the destructive verbs ask for strict.
+func (c *controlMCP) resolvePeerOpt(ctx context.Context, room, who string, strict bool) (id, handle string, err error) {
 	who = strings.TrimSpace(who)
 	if who == "" {
 		return "", "", fmt.Errorf("say who to")
@@ -784,6 +791,11 @@ func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, han
 	}
 	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return "", "", err
+	}
+	if strict {
+		if err := ambiguousAlias(body.Tasks, who, time.Now()); err != nil {
+			return "", "", err
+		}
 	}
 	// The rule is matchCard's (resolve.go), shared with the hub's HTTP routing.
 	// A caller with no room reads the aggregate list, where two rooms can each
@@ -838,19 +850,29 @@ func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, han
 // A caller with no room is the aggregate view, where a bare name still means
 // the aggregate list and a named room is asked directly.
 func (c *controlMCP) resolveCard(ctx context.Context, room, who string) (scope, id, handle string, err error) {
+	return c.resolveCardOpt(ctx, room, who, false)
+}
+
+// resolveCardStrict is resolveCard for a verb that cannot be undone: a name two
+// cards answer to is refused, listing them. An id or a wire name always works.
+func (c *controlMCP) resolveCardStrict(ctx context.Context, room, who string) (scope, id, handle string, err error) {
+	return c.resolveCardOpt(ctx, room, who, true)
+}
+
+func (c *controlMCP) resolveCardOpt(ctx context.Context, room, who string, strict bool) (scope, id, handle string, err error) {
 	name, target, err := SplitAddress(who)
 	if err != nil {
 		return "", "", "", err
 	}
 	other := otherRoom(target, room)
 	if other == "" {
-		id, handle, err = c.resolvePeer(ctx, room, name)
+		id, handle, err = c.resolvePeerOpt(ctx, room, name, strict)
 		return room, id, handle, err
 	}
 	if ans, ok := c.reachable(ctx, other); !ok {
 		return "", "", "", errors.New(ans.Error)
 	}
-	if id, handle, err = c.resolvePeer(ctx, other, name); err != nil {
+	if id, handle, err = c.resolvePeerOpt(ctx, other, name, strict); err != nil {
 		return "", "", "", err
 	}
 	return other, id, handle, nil
@@ -1998,7 +2020,7 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		}
 		who = me
 	}
-	scope, id, handle, err := c.resolveCard(ctx, room, who)
+	scope, id, handle, err := c.resolveCardStrict(ctx, room, who)
 	if err != nil {
 		return nil, out, err
 	}
@@ -2120,7 +2142,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 	out := cullOutput{}
 	room := roomOf(req)
-	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
+	scope, id, handle, err := c.resolveCardStrict(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
@@ -2200,7 +2222,7 @@ func (c *controlMCP) closeHandler(ctx context.Context, req *mcp.CallToolRequest,
 
 	out := map[string]any{}
 	room := roomOf(req)
-	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
+	scope, id, handle, err := c.resolveCardStrict(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
