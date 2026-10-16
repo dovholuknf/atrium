@@ -121,6 +121,8 @@ func main() {
 	var times []timing
 	var pkgTimes []timing
 	var failures []string
+	var failTSV []string // step, name, first error: what ci.sh puts under Failing tests
+	ran, nfailed := 0, 0
 	bad := false
 
 	pkgOf := func(name string) *pkgState {
@@ -153,6 +155,8 @@ func main() {
 		case "build-fail":
 			fmt.Printf("FAIL\t%s [build failed]\n", e.ImportPath)
 			failures = append(failures, e.ImportPath+" [build failed]")
+			nfailed++
+			failTSV = append(failTSV, "go-test\t"+e.ImportPath+"\tbuild failed")
 			bad = true
 			continue
 		}
@@ -180,6 +184,7 @@ func main() {
 				if e.Action == "pass" {
 					times = append(times, timing{e.Package, e.Test, e.Elapsed})
 				}
+				ran++
 				bk.count(stats, e.Package, e.Test, e.Elapsed, false)
 				delete(tests, key)
 				continue
@@ -198,6 +203,9 @@ func main() {
 			if e.Test != "" {
 				p.failed++
 				times = append(times, timing{e.Package, e.Test, e.Elapsed})
+				ran++
+				nfailed++
+				failTSV = append(failTSV, "go-test\t"+e.Package+" "+e.Test+"\t"+firstError(tests[key]))
 				bk.count(stats, e.Package, e.Test, e.Elapsed, true)
 				name := fmt.Sprintf("%s %s (%.2fs)", e.Package, e.Test, e.Elapsed)
 				if b := bk.of(e.Package, e.Test); b != "" {
@@ -221,6 +229,8 @@ func main() {
 				// the end of what it printed, and the tests still running are
 				// whatever has output and no end.
 				failures = append(failures, e.Package+" [the package failed with no failing test: see its output above]")
+				nfailed++
+				failTSV = append(failTSV, "go-test\t"+e.Package+"\t"+firstError(p.loose))
 				fmt.Printf("\n--- %s failed with no failing test. the end of its output:\n", e.Package)
 				printCapped(p.loose, p.dropped, p.path)
 				for k, out := range tests {
@@ -265,6 +275,7 @@ func main() {
 	}
 
 	writeTimings(filepath.Join(*dir, "timings.tsv"), times)
+	writeCounts(*dir, ran, nfailed, failTSV)
 	fmt.Println()
 	fmt.Println("=== slowest tests")
 	sort.Slice(times, func(i, j int) bool { return times[i].secs > times[j].secs })
@@ -603,4 +614,43 @@ func printFailedBuckets(stats map[string]*bucketStat) {
 	for _, l := range out {
 		fmt.Println(l)
 	}
+}
+
+// firstError is the first line of a failed test's output that says why: one that names a file and line, else the first
+// that is not go test's own bookkeeping. Cut short, and with no tab, since it goes into a tsv.
+func firstError(out []string) string {
+	first := ""
+	for _, o := range out {
+		for _, l := range strings.Split(o, "\n") {
+			l = strings.TrimSpace(l)
+			if l == "" || strings.HasPrefix(l, "=== ") || strings.HasPrefix(l, "--- ") || l == "FAIL" {
+				continue
+			}
+			if strings.Contains(l, ".go:") || strings.HasPrefix(l, "panic:") {
+				return cutLine(l)
+			}
+			if first == "" {
+				first = l
+			}
+		}
+	}
+	if first == "" {
+		return "(no output)"
+	}
+	return cutLine(first)
+}
+
+func cutLine(l string) string {
+	l = strings.ReplaceAll(l, "\t", " ")
+	if len(l) > 300 {
+		l = l[:300]
+	}
+	return l
+}
+
+// writeCounts leaves go-test.counts (tests run, tests failed) and go-test.failing.tsv for ci.sh's summary.
+func writeCounts(dir string, ran, failed int, failTSV []string) {
+	_ = os.WriteFile(filepath.Join(dir, "go-test.counts"), []byte(fmt.Sprintf("%d\t%d\n", ran, failed)), 0o644)
+	sort.Strings(failTSV)
+	_ = os.WriteFile(filepath.Join(dir, "go-test.failing.tsv"), []byte(strings.Join(failTSV, "\n")+"\n"), 0o644)
 }

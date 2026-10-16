@@ -75,13 +75,19 @@ steps_tsv="$artefacts/steps.tsv"
 export CI_DIAG_DIR="$here/$artefacts/goroutines"
 
 # The steps: name, seconds, result. A step is closed by the next one starting, or by the end.
-cur=""; cur_start=0; cur_fail=0
+cur=""; cur_start=0; cur_fail=0; cur_ran="-"; cur_failed="-"
+failing_tsv="$artefacts/failing.tsv"
+: > "$failing_tsv"
+# What a step counts, for the Steps table: tests run and tests failed. A step that runs no tests leaves both as "-".
+# Each failed test also goes to failing.tsv as step, name, first error line, which the summary lists under its own heading.
+note_counts() { cur_ran="$1"; cur_failed="$2"; }
+note_failing() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$failing_tsv"; }
 close_step() {
   [ -z "$cur" ] && return
   local res=ok
   [ "$nfail" != "$cur_fail" ] && res=FAILED
-  printf '%s\t%s\t%s\n' "$cur" "$(( $(date +%s) - cur_start ))" "$res" >> "$steps_tsv"
-  cur=""
+  printf '%s\t%s\t%s\t%s\t%s\n' "$cur" "$(( $(date +%s) - cur_start ))" "$res" "$cur_ran" "$cur_failed" >> "$steps_tsv"
+  cur=""; cur_ran="-"; cur_failed="-"
 }
 # step <name> <title>: returns 1 when --only leaves this step out, and then the caller skips its body.
 step() {
@@ -130,9 +136,17 @@ write_summary() {
     echo
     echo "## Steps"
     echo
-    echo "| step | seconds | result |"
-    echo "|---|---|---|"
-    awk -F'\t' '{printf "| %s | %s | %s |\n", $1, $2, $3}' "$steps_tsv"
+    echo "| step | seconds | result | tests run | tests failed |"
+    echo "|---|---|---|---|---|"
+    awk -F'\t' '{printf "| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5}' "$steps_tsv"
+    if [ -s "$failing_tsv" ]; then
+      echo
+      echo "## Failing tests"
+      echo
+      echo "| step | test | first error |"
+      echo "|---|---|---|"
+      awk -F'\t' '{gsub(/\|/, "\\|", $3); printf "| %s | %s | %s |\n", $1, $2, $3}' "$failing_tsv"
+    fi
     local failed_steps
     failed_steps="$(awk -F'\t' '$3=="FAILED" {printf "%s%s", sep, $1; sep=","}' "$steps_tsv")"
     # A failed package's whole output is in <package>.txt, and the tail of each is here.
@@ -274,6 +288,11 @@ if step go-test "go test"; then
     echo "FAILED: go test (go test exit ${codes[0]}, report exit ${codes[2]})" >&2
     mark_fail
   fi
+  if [ -f "$artefacts/go-test.counts" ]; then
+    read -r n_ran n_failed < "$artefacts/go-test.counts"
+    note_counts "$n_ran" "$n_failed"
+    while IFS=$'\t' read -r _ name err; do [ -n "$name" ] && note_failing go-test "$name" "$err"; done < "$artefacts/go-test.failing.tsv"
+  fi
   dumps="$(ls "$artefacts/goroutines" 2>/dev/null | wc -l | tr -d ' ')"
   if [ "$dumps" != "0" ]; then
     echo "$dumps goroutine dump(s) in $artefacts/goroutines, uploaded with the run"
@@ -286,7 +305,21 @@ if step go-race "go test -race (unit tests)"; then
   if [ "$os" = windows ]; then
     echo "skipped: -race needs cgo, which the windows job does not set up."
   else
-    check "go test -race" go test -race -count=1 -p "$cpus" -timeout 20m ./...
+    # Through the same reporter as go-test, into its own folder so its files do not mix with that step's.
+    race_dir="$artefacts/race"; mkdir -p "$race_dir"
+    go test -race -json -count=1 -p "$cpus" -timeout 20m ./... 2>&1 | go run scripts/ci-report.go -dir "$race_dir"
+    codes=("${PIPESTATUS[@]}")
+    if [ "${codes[0]}" = "0" ] && [ "${codes[1]}" = "0" ]; then
+      echo "ok: go test -race"
+    else
+      echo "FAILED: go test -race (go test exit ${codes[0]}, report exit ${codes[1]})" >&2
+      mark_fail
+    fi
+    if [ -f "$race_dir/go-test.counts" ]; then
+      read -r n_ran n_failed < "$race_dir/go-test.counts"
+      note_counts "$n_ran" "$n_failed"
+      while IFS=$'\t' read -r _ name err; do [ -n "$name" ] && note_failing go-race "$name" "$err"; done < "$race_dir/go-test.failing.tsv"
+    fi
   fi
 fi
 
@@ -321,7 +354,25 @@ if step board "the board"; then
   cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
   [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
   shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
-  check "board" env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" bash scripts/check-board.sh
+  board_log="$artefacts/board.log"
+  board_run() {
+    env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" bash scripts/check-board.sh 2>&1 | tee "$board_log"
+    return "${PIPESTATUS[0]}"
+  }
+  check "board" board_run
+  # The merged report: one row per unit (unit, time, result), then FAILED sections each unit with its first error line
+  # indented under it. A unit that passed only on retry fails the run too, so it is counted as failed. A flaky one that
+  # is reported and not failing is not.
+  n_units="$(awk '$3 ~ /^(PASS|FAIL|NOT|LOAD|FLAKY)$/' "$board_log" | wc -l | tr -d ' ')"
+  n_bad="$(awk '$3 ~ /^(FAIL|NOT|LOAD)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$board_log" | wc -l | tr -d ' ')"
+  note_counts "$n_units" "$n_bad"
+  awk '
+    /^FAILED \(|^FAILED IN THE SHARDS|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
+    /^[^ ]/ { sec = 0; next }
+    sec == 1 && /^  [^ ]/ { unit = $1; got = 0; next }
+    sec == 1 && /^    / && unit != "" && !got { e = $0; sub(/^ +/, "", e); sub(/^first try: /, "", e); printf "%s\t%s\n", unit, e; got = 1; next }
+    sec == 2 && /^  [^ ]/ { e = $0; sub(/^ +/, "", e); printf "(outside any unit)\t%s\n", e }
+  ' "$board_log" | while IFS=$'\t' read -r name err; do note_failing board "$name" "$err"; done
 fi
 
 if step skins "the skins"; then
@@ -381,10 +432,16 @@ if step ps-tests "the PowerShell tests"; then
   # The test-*.ps1 scripts, on Windows only. test-groups.ps1 runs the Go suite in groups and test-touched.ps1 runs what a
   # diff touched, so neither is a test of its own.
   if [ "$os" = windows ] && command -v pwsh >/dev/null 2>&1; then
+    # Each script prints `ok   <check>` or `FAIL <check>` followed by want and got lines. Those are the tests here.
+    ps_log="$artefacts/ps-tests.log"
+    ps_run() { pwsh -NoProfile -File "$1" 2>&1 | tee -a "$ps_log"; return "${PIPESTATUS[0]}"; }
     for t in scripts/test-*.ps1; do
       case "$(basename "$t")" in test-groups.ps1|test-touched.ps1) continue ;; esac
-      check "$(basename "$t")" pwsh -NoProfile -File "$t"
+      check "$(basename "$t")" ps_run "$t"
     done
+    note_counts "$(grep -cE '^(ok  |FAIL )' "$ps_log" || true)" "$(grep -c '^FAIL ' "$ps_log" || true)"
+    awk '/^FAIL / { n = substr($0, 6); getline w; sub(/^ +/, "", w); printf "%s\t%s\n", n, w }' "$ps_log" \
+      | while IFS=$'\t' read -r name err; do note_failing ps-tests "$name" "$err"; done
   elif [ "$os" = windows ]; then
     echo "FAILED: no pwsh on PATH in the windows job." >&2
     mark_fail
