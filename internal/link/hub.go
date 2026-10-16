@@ -134,6 +134,9 @@ type Hub struct {
 	OnStream func(room, kind, detail string)
 	// LastSeen says when an offline room was last heard from, for the sentence a refused stream gets. Nil says nothing.
 	LastSeen func(room string) (time.Time, bool)
+	// OnLogin hears a room say its claude login needs doing, once per spell: only the edge from fine to needed, never
+	// the beats that repeat it. Nil does nothing. NewProxy wires it to the notifier.
+	OnLogin func(room, reason string)
 
 	mu    sync.Mutex
 	rooms map[string]*attached
@@ -169,6 +172,16 @@ func (h *Hub) changedNow() {
 	select {
 	case h.changed <- struct{}{}:
 	default:
+	}
+}
+
+// loginChanged is a room saying its claude login needs doing, or no longer does. The board is told at once, and
+// OnLogin hears the edge so it can ring once: a beat repeating the same reason never gets here.
+func (h *Hub) loginChanged(room, was, now string) {
+	log.Printf("[hub] %q claude login: %q -> %q", room, was, now)
+	h.changedNow()
+	if now != "" && was == "" && h.OnLogin != nil {
+		h.OnLogin(room, now)
 	}
 }
 
@@ -238,6 +251,8 @@ type attached struct {
 	// streams is how many ssh streams the hub has open to it. Both under mu.
 	access  *RemoteAccess
 	streams int
+	// login is why the room last said its claude login needs doing, "" when fine. Under mu.
+	login string
 
 	lastBeat time.Time
 	// lastData is when the last data connection was filed into the pool, and
@@ -569,7 +584,15 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 			if n.IdleCPU != nil && *n.IdleCPU >= 0 && *n.IdleCPU <= 100 {
 				a.idleCPU, a.haveIdle = *n.IdleCPU, true
 			}
+			was := a.login
+			if n.Login != nil {
+				a.login = *n.Login
+			}
+			now := a.login
 			a.mu.Unlock()
+			if n.Login != nil && now != was {
+				h.loginChanged(name, was, now)
+			}
 			// Echoed, so the room can tell a live socket from a half-open one.
 			// A write that succeeds into a dead connection is the failure mode
 			// a heartbeat exists to catch, and only a round trip catches it.
@@ -882,6 +905,9 @@ type Attached struct {
 	// RemoteAccess is what the room said about its ssh switch. Nil is a room that never says, which reads as unknown.
 	// Observed, never trusted for granting, and the hub cannot change it. See stream.go.
 	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
+	// LoginNeeded is why the room says its claude login needs doing, empty when it does not say or it is fine.
+	// Observed from the beat and never acted on here. See internal/daemon/loginneeded.go.
+	LoginNeeded string `json:"login_needed,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -951,12 +977,14 @@ func (h *Hub) Rooms() []Attached {
 			v := *a.access
 			acc = &v
 		}
+		login := a.login
 		a.mu.Unlock()
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
+			LoginNeeded: login,
 		})
 	}
 	return out

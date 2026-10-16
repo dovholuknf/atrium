@@ -186,6 +186,8 @@ type Daemon struct {
 	scans termScans
 	// looksIdleFired counts every looks-idle firing since start. See looksidle.go.
 	looksIdleFired atomic.Int64
+	// login is whether claude's login here is revoked. See loginneeded.go.
+	login loginState
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
@@ -477,6 +479,8 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling
+	d.ap.LoginNeeded = d.loginHealth
+	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
 	d.ap.OpenShell = d.handleShellOpen
@@ -737,6 +741,9 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 		return nil, err
 	}
 	if err := d.launchHeld(req); err != nil {
+		return nil, err
+	}
+	if err := d.launchNeedsLogin(req); err != nil {
 		return nil, err
 	}
 	return d.Launch(req)

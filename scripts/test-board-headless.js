@@ -11155,6 +11155,56 @@ async function sshBadgeSection(browser, base) {
   }
 }
 
+// A ROOM WHOSE CLAUDE LOGIN IS REVOKED SAYS SO. A red `login needed` chip on its row in the rooms list and on its tile
+// in the rooms dashboard, none on a room that is fine, and pressing it asks first and then sends the room's own DELETE
+// /v1/login-needed naming the room, which is how the refusal is lifted after a /login. Set LOGIN_SHOTS to a directory
+// for a picture, named by LOGIN_NAME (default login-needed-after). See js/rooms.js and internal/daemon/loginneeded.go.
+async function loginNeededSection(browser, base) {
+  const wasHub = hubMode, was = ALPHA.login_needed;
+  hubMode = true;
+  ALPHA.login_needed = "claude needs a login on this machine. run /login in any session here";
+  const shots = process.env.LOGIN_SHOTS || "", name = process.env.LOGIN_NAME || "login-needed-after";
+  const errors = [];
+  const lifts = [];
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/v1/login-needed", route => {
+      lifts.push({ method: route.request().method(), room: route.request().headers()["x-atrium-room"] || "" });
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ login_needed: null }) });
+    });
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof loginBadge === "function" && typeof loadHubRooms === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => loadHubRooms());
+    await p.evaluate(() => switchView("runners")); // the tab may sit in the `...` menu at this width
+    await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
+    const chips = await p.evaluate(() => Array.from(document.querySelectorAll("#room-list .roomrow")).map(r => ({
+      room: r.querySelector(".roomname").textContent.trim(),
+      chip: Array.from(r.querySelectorAll(".loginlift")).map(c => c.textContent.trim()).join("|") })));
+    const alpha = chips.find(c => c.room === "alpha");
+    if (!alpha || alpha.chip !== "login needed") fail("loginNeeded: alpha's row says " + JSON.stringify(alpha));
+    if (chips.some(c => c.room !== "alpha" && c.chip)) fail("loginNeeded: a room that is fine wears the chip: " + JSON.stringify(chips));
+    if (shots) await p.locator("#room-list").screenshot({ path: path.join(shots, name + ".png") }).catch(() => {});
+    const tip = await p.evaluate(() => document.querySelector("#room-list .loginlift").dataset.tip);
+    if (!/run \/login/.test(tip)) fail("loginNeeded: the tip does not say what to do: " + tip);
+    await p.click("#room-list .loginlift");
+    await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+    if (lifts.length) fail("loginNeeded: lifted before it asked.");
+    await p.click('#ask-actions button:has-text("lift it")');
+    await p.waitForTimeout(300);
+    if (lifts.length !== 1 || lifts[0].method !== "DELETE" || lifts[0].room !== "alpha") {
+      fail("loginNeeded: the lift sent " + JSON.stringify(lifts));
+    }
+    await ctx.close();
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    hubMode = wasHub;
+    if (was === undefined) delete ALPHA.login_needed; else ALPHA.login_needed = was;
+  }
+}
+
 // THE CACHE KEEP-ALIVE ON THE BOARD. The switch in the gear's settings sets the
 // default for new cards and saves it, a suspension shows with a clear button,
 // each card draws the right chip, the card menu's switch posts to the card, and
@@ -32290,7 +32340,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, popoutTagFlip: popoutTagFlipSection, prefsEverywhere: prefsEverywhereSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, chatTab: chatTabSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, restartMenu: restartMenuSection,
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, chatTab: chatTabSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -34211,6 +34261,7 @@ async function main() {
     await unit("keepalive", () => keepaliveSection(browser, base));
     await unit("idlePark", () => idleParkSection(browser, base));
     await unit("sshBadge", () => sshBadgeSection(browser, base));
+    await unit("loginNeeded", () => loginNeededSection(browser, base));
     await unit("restartMenu", () => restartMenuSection(browser, base));
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await unit("stuck", () => stuckSection(browser, base));

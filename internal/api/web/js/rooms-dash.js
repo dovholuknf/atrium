@@ -392,6 +392,7 @@ function roomTileHTML(room, snap, on) {
       <span class="rt-meta" data-tip="${meta.join(" &middot; ")}">${meta.join(" &middot; ")}</span>
       ${notHub}${typeof transportBadge === "function" ? transportBadge(room.via || room.transport, room.fallback) : ""}
       ${typeof sshBadge === "function" ? sshBadge(room) : ""}
+      ${typeof loginBadge === "function" ? loginBadge(room) : ""}
       <span class="grow"></span>
       <span class="roomcog" role="button" aria-label="settings for ${name}" data-tip="settings for ${name}"
         onclick="event.stopPropagation();openRoomCog('${q}')">&#9881;</span>

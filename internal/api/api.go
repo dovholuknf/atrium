@@ -122,6 +122,10 @@ type Server struct {
 	// thing that knows it is mid-boot. Nil in a build without it, which reads
 	// as "not settling" and is the behavior that existed before.
 	Settling func() bool
+	// LoginNeeded is the room's claude login flag for `/v1/health`: nil when fine. LoginHandler is
+	// `/v1/login-needed`, where DELETE lifts it. See internal/daemon/loginneeded.go.
+	LoginNeeded  func() map[string]any
+	LoginHandler http.HandlerFunc
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -880,6 +884,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
 	}
+	if s.LoginHandler != nil {
+		mux.HandleFunc("GET /v1/login-needed", s.LoginHandler)
+		mux.HandleFunc("DELETE /v1/login-needed", s.LoginHandler)
+	}
 	if s.Hold != nil {
 		mux.HandleFunc("GET /v1/hold", s.Hold)
 		mux.HandleFunc("POST /v1/hold", s.Hold)
@@ -969,6 +977,11 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	// exactly when a page is reconnecting. See internal/daemon/settling.go.
 	if s.Settling != nil && s.Settling() {
 		body["settling"] = true
+	}
+	if s.LoginNeeded != nil {
+		if l := s.LoginNeeded(); l != nil {
+			body["login_needed"] = l
+		}
 	}
 	writeJSON(w, http.StatusOK, body)
 }

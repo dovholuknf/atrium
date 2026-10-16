@@ -397,6 +397,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Git: true,
 		// IDLE CPU rides on the heartbeat, so the hub can break a tie between rooms with the same session count.
 		IdleCPU: roomstats.NewIdleMeter().Idle,
+		// WHETHER CLAUDE'S LOGIN HERE IS REVOKED, on the beat, so the hub can show it and ring once.
+		Login: d.LoginNeededReason,
 		// WHETHER THIS ROOM WILL TAKE A BUILD ITS HUB IS RUNNING, which is the
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See

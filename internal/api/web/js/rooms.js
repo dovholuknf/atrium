@@ -464,6 +464,7 @@ function roomRow(r) {
       <b class="roomname">${esc(r.name)}</b>
       ${transportBadge(r.attached && r.via ? r.via : r.transport, r.attached && r.fallback)}
       ${sshBadge(r)}
+      ${loginBadge(r)}
       ${roomState(r)}
       ${r.marked || r.state === "marked-for-deletion"
         ? `<span class="chip no">marked for deletion</span>` : ""}
@@ -545,6 +546,36 @@ function sshBadge(r) {
   return `<span class="chip" data-tip="${esc("remote access on, from " + (a.from || []).join(", "))}"
     >ssh${a.open ? " " + esc(a.open) : ""}</span>`;
 }
+
+// loginBadge is a red chip on a room whose claude login is revoked, and nothing otherwise.
+//
+// OBSERVED. The room read the line off a card's screen and said so on its beat, and it refuses new claude launches
+// until the screens stop showing it. The chip is also the one control: after a `/login` on that machine, pressing it
+// lifts the refusal at once rather than waiting for the room to see a clean screen. See
+// internal/daemon/loginneeded.go.
+function loginBadge(r) {
+  if (!r || !r.attached || !r.login_needed) return "";
+  return `<button type="button" class="chip no loginlift" data-room="${esc(r.name)}"
+    data-tip="${esc(r.login_needed + ". press it once you have, to let launches through again")}">login needed</button>`;
+}
+
+// The chip is wired by delegation like the cog, in the CAPTURE phase so the dashboard tile it sits on, which is itself
+// a button that picks the room, never hears the press.
+document.addEventListener("click", async e => {
+  const b = e.target.closest && e.target.closest(".loginlift");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const room = b.getAttribute("data-room") || "";
+  if (!await confirmUser("lift the login refusal?",
+    `Launches onto <b>${esc(room)}</b> are refused until claude is logged in there. Lift it if you have run <code>/login</code>.`,
+    "lift it")) return;
+  try {
+    await api("/v1/login-needed", { method: "DELETE", headers: { "X-Atrium-Room": room } });
+  } catch (err) {
+    toast("could not lift it", err.message);
+  }
+}, true);
 
 // sshFact is the room's facts row, in words, for every state the hub can know it in.
 function sshFact(r) {

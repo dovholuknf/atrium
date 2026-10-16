@@ -31,6 +31,9 @@ func (d *Daemon) healthBody() map[string]any {
 	if halted {
 		body["cause"] = fmt.Sprint(cause)
 	}
+	if l := d.loginHealth(); l != nil {
+		body["login_needed"] = l
+	}
 	return body
 }
 

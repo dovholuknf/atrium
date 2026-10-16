@@ -194,6 +194,14 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 	if hub.OnStream == nil {
 		hub.OnStream = p.RecordAudit
 	}
+	// A ROOM'S CLAUDE LOGIN GONE is said once, as a notice about the room. See internal/daemon/loginneeded.go.
+	if hub.OnLogin == nil {
+		hub.OnLogin = func(room, reason string) {
+			if n := p.notifier(); n != nil {
+				n.Remind(Notice{Name: "room " + room, Reason: ReasonLogin, Room: room})
+			}
+		}
+	}
 	hub.every.mu.Lock()
 	hub.every.onChange = p.feeds.everywhereChanged
 	hub.every.mu.Unlock()
@@ -1194,6 +1202,8 @@ type Known struct {
 	Waiting bool `json:"waiting"`
 	// RemoteAccess is what an attached room said about its ssh switch. Observed, and the hub cannot change it.
 	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
+	// LoginNeeded is why an attached room says its claude login needs doing. See Attached.LoginNeeded.
+	LoginNeeded string `json:"login_needed,omitempty"`
 }
 
 // Inventory is a hub that knows which rooms exist, not only which are here.

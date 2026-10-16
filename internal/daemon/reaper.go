@@ -225,6 +225,8 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.watchLooksIdle(time.Now()); err != nil {
 			log.Printf("[atrium] watching for idle prompts: %v", err)
 		}
+		// A revoked claude login shown on any screen. See loginneeded.go.
+		d.watchLoginNeeded(time.Now())
 		// Every Claude card's context size, and the launcher's one notice
 		// when a worker passes the threshold. See contextsize.go.
 		if err := d.watchContext(); err != nil {

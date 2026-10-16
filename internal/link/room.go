@@ -59,6 +59,8 @@ type Room struct {
 	// IdleCPU reads this machine's idle CPU percent for the beat to carry to the hub. Nil, or ok false, says
 	// nothing and the hub counts the room as unknown.
 	IdleCPU func() (float64, bool)
+	// Login says why this room's claude login needs doing, "" when it does not. Nil says nothing.
+	Login func() string
 	// OnPaths is handed the hub's list of transports, in its order, each time a
 	// welcome carries one, in its own goroutine. It is how the room writes the
 	// fallback down for a start when the hub cannot be reached. Nil ignores it.
@@ -436,6 +438,10 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 				if v, ok := r.IdleCPU(); ok {
 					n.IdleCPU = &v
 				}
+			}
+			if r.Login != nil {
+				v := r.Login()
+				n.Login = &v
 			}
 			if err := r.say(conn, n); err != nil {
 				// Closing is how the reader above finds out. Returning quietly

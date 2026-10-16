@@ -75,6 +75,8 @@ const (
 	ReasonQuestion   = "question"
 	ReasonInput      = "input"
 	ReasonFinished   = "finished"
+	// ReasonLogin is a room's claude login being revoked. Said once per spell by the hub, about a room and no card.
+	ReasonLogin = "login"
 )
 
 const (

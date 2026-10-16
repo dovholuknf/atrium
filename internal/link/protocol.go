@@ -103,6 +103,10 @@ type note struct {
 	// IdleCPU is a room's idle CPU percent, riding on its beat. A pointer so a room at 0 is not mistaken for one
 	// that did not say, and an older room that never sends it reads as unknown. See `placePRRoom`.
 	IdleCPU *float64 `json:"idle_cpu,omitempty"`
+	// Login is why this room's claude login needs doing, "" when it does not, riding on the beat. A pointer so a room
+	// that never says (an older build) is not read as a room that is fine. Observed, and never acted on by the hub
+	// beyond showing it and ringing once. See internal/daemon/loginneeded.go.
+	Login *string `json:"login,omitempty"`
 	// Bye is a side closing deliberately, so the other end logs a shutdown
 	// rather than a failure.
 	Bye string `json:"bye,omitempty"`
