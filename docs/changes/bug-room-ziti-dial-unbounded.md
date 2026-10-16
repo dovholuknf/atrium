@@ -21,3 +21,13 @@ ziti `Dial` takes no context, so a timed-out dial goroutine lived on. 1322 of th
   asserts the control connection is dropped once after N failures and the failure count resets.
 
 Out of scope: what creates a ziti context per attempt (`bug-room-ziti-goroutine-pileup`).
+
+## Revised after review
+
+- The in-flight counter is on the Room for the life of the process and is never reset on reattach. A dial gives its
+  slot back only when `Dial` returns, whichever attachment it belonged to. A dial that returns late with an ended
+  attachment (cancelled context or a stale session) closes its connection.
+- A dial still pending after `Timings.DataDeadline` (30s default) calls `dataFailed` once and keeps its slot. When
+  the cap is full and every slot is past its deadline, each ask counts as one more failure toward `dataRedialAfter`.
+- Tests: a blocking Dialer, five deadlines with no return drop the control link once (and call `Reset`); a full cap of
+  late dials turns asks into failures; ten reattaches against a blocking Dialer never exceed the cap.

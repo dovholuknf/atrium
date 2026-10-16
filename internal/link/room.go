@@ -99,6 +99,11 @@ type Room struct {
 	// nothing, and before this it said nothing at all.
 	dataErr  string
 	dataSaid time.Time
+	// dials are the data dials in flight, dataFails the failures in a row, and dropLink closes the current control
+	// connection. See dials.go.
+	dials     map[*dialSlot]struct{}
+	dataFails int
+	dropLink  func()
 	// taking makes sure one offer is acted on once, however many times the hub
 	// repeats it across reconnects.
 	taking taker
@@ -284,6 +289,7 @@ func (r *Room) attach(ctx context.Context) error {
 	r.mu.Lock()
 	r.session, r.up, r.since, r.lastErr = w.Session, true, time.Now(), ""
 	r.hubGit = w.Git
+	r.dropLink = func() { _ = conn.Close() }
 	r.mu.Unlock()
 	log.Printf("[link] attached to hub %s as %q", r.Dial.Describe(), r.Name)
 
@@ -514,42 +520,18 @@ func (r *Room) say(conn net.Conn, n note) error {
 	return writeJSON(conn, n)
 }
 
-// open dials n data connections and hands them to the listener.
+// open dials up to n data connections and hands them to the listener.
 //
-// Each dial is its own goroutine because a hub asking for four should get four
-// in one round trip rather than four in series, and over an overlay a dial is
-// not free.
+// Each dial is its own goroutine because a hub asking for four should get four in one round trip. They are bounded:
+// at most maxDataDials are in flight, and an ask that finds none free is dropped, since the hub asks again while its
+// pool is short. See dials.go.
 func (r *Room) open(ctx context.Context, n int, session string) {
 	for i := 0; i < n; i++ {
-		go func() {
-			dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
-			conn, err := r.Dial.Dial(dialCtx)
-			cancel()
-			if err != nil {
-				// One failed data dial is not a reason to tear the link down.
-				// The hub will ask again when it still has no connection, and
-				// the control connection is the thing that decides whether the
-				// link is alive. But it is said, see dataFailed.
-				r.dataFailed(err)
-				return
-			}
-			r.dataWorked()
-			br := bufio.NewReader(conn)
-			if _, err := sayHello(conn, br, hello{
-				Kind: "data", Room: r.Name, Session: session,
-			}); err != nil {
-				conn.Close()
-				return
-			}
-			// THE BUFFERED READER GOES WITH IT. `sayHello` may have pulled the
-			// first bytes of the hub's HTTP request into the buffer along with
-			// the welcome line, and handing over the bare conn would lose them.
-			select {
-			case r.conns <- &buffered{Conn: conn, br: br}:
-			case <-ctx.Done():
-				conn.Close()
-			}
-		}()
+		s, ok := r.startDial()
+		if !ok {
+			return
+		}
+		go r.dataDial(ctx, session, s)
 	}
 }
 
@@ -563,11 +545,16 @@ const dataSayEvery = time.Minute
 func (r *Room) dataFailed(err error) {
 	r.mu.Lock()
 	r.dataErr = err.Error()
+	r.dataFails++
+	redial := r.dataFails >= dataRedialAfter
 	say := time.Since(r.dataSaid) >= dataSayEvery
 	if say {
 		r.dataSaid = time.Now()
 	}
 	r.mu.Unlock()
+	if redial {
+		r.redialLink()
+	}
 	if say {
 		log.Printf("[link] a data connection to hub %s failed: %v. the control connection is up, "+
 			"so the room looks attached and serves nothing until one gets through", r.Dial.Describe(), err)
@@ -578,7 +565,7 @@ func (r *Room) dataFailed(err error) {
 func (r *Room) dataWorked() {
 	r.mu.Lock()
 	was := r.dataErr
-	r.dataErr, r.dataSaid = "", time.Time{}
+	r.dataErr, r.dataSaid, r.dataFails = "", time.Time{}, 0
 	r.mu.Unlock()
 	if was != "" {
 		log.Printf("[link] data connections to hub %s get through again", r.Dial.Describe())
