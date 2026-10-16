@@ -104,7 +104,7 @@ async function settingsOnceSection(browser, base) {
   const sp = await ctx.newPage();
   const wasHub = mock.hubMode;
   mock.hubMode = true;
-  mock.settingsDelay = 135;
+  mock.settingsDelay = 600;   // wide on purpose: on a loaded runner the load's later reads land well after 135ms
   // This page's reads, not the server's. In the full run the main page is still
   // open and reads settings on its own clock, which the server count took for a
   // second read by this load.

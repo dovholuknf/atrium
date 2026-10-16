@@ -1601,10 +1601,11 @@ async function usageTabSection(browser, base) {
 
 // The usage tab's weekly reset: a "this week" range from the last reset, the reset marked on the charts it
 // crosses, the pace line naming the next one, and the setting that says when it is. NOTHING HERE READS THE REAL
-// CLOCK: UC.now is set, and the board's time zone does not matter because the reset is worked out in its own zone.
+// CLOCK: UC.now is set. The reset is worked out in its own zone, but the pace line's "by midnight" is the browser's,
+// so that is pinned below.
 // USAGE_WEEK_SHOT=<file.png> also writes a screenshot of the tab, for the before and after pictures.
 async function usageWeekResetSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1500 } });
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1500 }, timezoneId: "America/New_York" });
   const sp = await ctx.newPage();
   const errors = [], reads = [], posts = [];
   sp.on("pageerror", e => errors.push(String(e)));
