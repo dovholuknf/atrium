@@ -69,6 +69,17 @@ func main() {
 	if *name == "" || *email == "" {
 		die("no name or email: set git config user.name and user.email, or pass -name and -email")
 	}
+	if *email != land.AuthorEmail {
+		origin := ""
+		if *email == gitOut("config", "user.email") {
+			origin = gitOut("config", "--show-origin", "user.email")
+		} else {
+			origin = "the -email flag"
+		}
+		if err := land.CheckEmail(*email, origin); err != nil {
+			die(err.Error())
+		}
+	}
 	if exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+*to).Run() == nil {
 		die("branch " + *to + " already exists")
 	}
