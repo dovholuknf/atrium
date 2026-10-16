@@ -20885,6 +20885,15 @@ async function mViewerSection(browser) {
       const openFile = async sel => { await p.evaluate(s => document.querySelector(s).scrollIntoView({ block: "center" }), sel); await p.tap(sel); await p.waitForFunction(() => !document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
       const settle = () => p.waitForFunction(() => !/^loading$/.test(document.getElementById("m-viewer-body").textContent), null, { timeout: slow(8000) });
       const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
+      // What the mock server saw of a streamed file: it waits for the read to be cut, or for the server to finish it.
+      const streamEnd = async key => {
+        for (let t = 0; t < slow(10000); t += 50) {
+          const r = (st.streamed || {})[key] || {};
+          if (r.aborted) return r;
+          await p.waitForTimeout(50);
+        }
+        return (st.streamed || {})[key] || {};
+      };
       // markdown, through the safe renderer, and Back restores the thread's scroll
       await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 300; });
       await p.waitForTimeout(150);
@@ -20953,16 +20962,14 @@ async function mViewerSection(browser) {
       await settle();
       v = await viewer();
       if (!/showing the first 1(\.0)? MB of 12 MB/.test(v.text) || v.text.length > 1048576 + 200) fail(tag + "a 200 to a range read is shown as " + v.text.slice(-60));
-      await p.waitForTimeout(300);
-      const ig = st.streamed["/w/card/ignores.log"] || {};
+      const ig = await streamEnd("/w/card/ignores.log");
       if (!ig.aborted) fail(tag + "a 200 that ignores Range was read to the end: " + JSON.stringify(ig));
       await back();
       // an image with no size is capped too, and asked about
       await p.evaluate(s => document.querySelector(s).click(), file("notes/huge.png"));
       await settle();
       if (!/Can't preview huge\.png/.test((await viewer()).text)) fail(tag + "an over-cap image of unknown size said " + (await viewer()).text);
-      await p.waitForTimeout(300);
-      const hg = st.streamed["notes/huge.png"] || {};
+      const hg = await streamEnd("notes/huge.png");
       if (!hg.aborted) fail(tag + "an image of unknown size was read to the end: " + JSON.stringify(hg));
       await back();
       // a cut inside a character leaves no replacement mark
@@ -25377,14 +25384,15 @@ function mServer(state) {
         const rec = (state.streamed = state.streamed || {});
         rec[want] = { sent: 0, aborted: false };
         res.on("close", () => { if (at < body.length) rec[want].aborted = true; });
+        // One chunk a millisecond, not as fast as loopback takes it: a loaded runner can read a whole 25 MB image before
+        // the page's cancel arrives, and then nothing was aborted, whatever the board does.
         const pump = () => {
-          while (at < body.length) {
-            const n = Math.min(65536, body.length - at);
-            const ok = res.write(body.subarray(at, at + n));
-            at += n; rec[want].sent = at;
-            if (!ok) { res.once("drain", pump); return; }
-          }
-          res.end();
+          if (res.destroyed) return;
+          if (at >= body.length) { res.end(); return; }
+          const n = Math.min(65536, body.length - at);
+          const ok = res.write(body.subarray(at, at + n));
+          at += n; rec[want].sent = at;
+          if (ok) setTimeout(pump, 1); else res.once("drain", () => setTimeout(pump, 1));
         };
         return pump();
       }
