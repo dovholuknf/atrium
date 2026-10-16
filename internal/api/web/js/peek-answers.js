@@ -362,6 +362,11 @@ document.addEventListener("click", async e => {
 window.addEventListener("pagehide", qaFlush);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") qaFlush(); });
 
+// An envelope drawn rather than typed. The old U+2709 glyph came from whichever fallback font had it, and its ink
+// sat low in the line box, so it never centred against the count beside it. A box centres the same everywhere.
+const MAIL_SVG = `<svg viewBox="0 0 12 9" aria-hidden="true"><rect x=".65" y=".65" width="10.7" height="7.7" rx="1"/>` +
+  `<path d="M1 1.4 6 5.4 11 1.4"/></svg>`;
+
 // THE MAIL CHIP: a card holding drafted answers that were not sent. Click opens its peek, which offers to send them.
 function answerChip(t) {
   const n = qaDraftCount(t);
@@ -370,5 +375,5 @@ function answerChip(t) {
   return `<span class="chip warn mail" role="button" tabindex="0" data-tip="${esc(tip)}" data-id="${esc(t.id)}" ` +
     `onclick="event.stopPropagation();openPeek(this.dataset.id,this,'menu')" ` +
     `onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openPeek(this.dataset.id,this,'menu')}"` +
-    `>&#9993;${n > 1 ? " " + n : ""}</span>`;
+    `>${MAIL_SVG}${n > 1 ? `<span class="mail-n">${n}</span>` : ""}</span>`;
 }

@@ -8695,6 +8695,57 @@ async function u016Section(browser, base) {
   if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
 }
 
+// ── the mail chip's envelope shares a centre line with its count and the chips beside it ──────────
+async function mailChipSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const drafts = JSON.stringify([{ at: "2026-09-19T12:00:00Z", qs: ["one?", "two?"], a: ["yes", "no"] }]);
+  landCard("a~land-mail", { supervised: true, answer_drafts: drafts });
+  landList = [LAND["a~land-mail"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.MAIL_SHOTS || "";
+  const tag = process.env.MAIL_SHOT_TAG || "after";
+  // Centre line of each box in the chip's row, and the envelope's against its count and the chip it sits in.
+  const measure = (p) => p.evaluate(() => {
+    const chip = document.querySelector(".card .chip.mail, .stackrow .chip.mail");
+    if (!chip) return null;
+    const mid = (e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; };
+    const ic = chip.querySelector("svg"), n = chip.querySelector(".mail-n");
+    const sib = [...chip.parentElement.querySelectorAll(".chip")].filter(c => c !== chip && c.getBoundingClientRect().height > 0);
+    return { chip: mid(chip), icon: ic ? mid(ic) : null, count: n ? mid(n) : null, sib: sib.map(mid), h: chip.getBoundingClientRect().height };
+  });
+  const check = (name, m) => {
+    if (!m) return fail("mailChip: " + name + ": no mail chip on the card");
+    if (m.icon === null) return fail("mailChip: " + name + ": the chip has no drawn envelope");
+    if (m.count === null) return fail("mailChip: " + name + ": two drafts did not show a count");
+    if (Math.abs(m.icon - m.chip) > 0.6) fail("mailChip: " + name + ": the envelope is " + (m.icon - m.chip).toFixed(2) + "px off the chip's centre");
+    if (Math.abs(m.icon - m.count) > 0.6) fail("mailChip: " + name + ": the envelope is " + (m.icon - m.count).toFixed(2) + "px off its count");
+    for (const s of m.sib) if (Math.abs(s - m.chip) > 0.6) fail("mailChip: " + name + ": a neighbouring chip is " + (s - m.chip).toFixed(2) + "px off");
+  };
+  try {
+    for (const [name, vp, mobile] of [["desktop", { width: 1280, height: 800 }, false], ["phone", { width: 412, height: 915 }, true]]) {
+      const ctx = await browser.newContext({ viewport: vp, hasTouch: mobile, isMobile: mobile });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      if (mobile) await p.evaluate(() => switchView("terms"));
+      await p.waitForSelector(".card .chip.mail, .stackrow .chip.mail", { state: "attached", timeout: slow(15000) });
+      check(name, await measure(p));
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        const row = p.locator(".card .chip.mail, .stackrow .chip.mail").first().locator("xpath=..");
+        await row.screenshot({ path: path.join(shots, `${name}-${tag}.png`) });
+      }
+      await ctx.close();
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("mailChip: the page threw: " + errors.join(" | "));
+}
+
 // ── u-021: the phone board header is one slim row behind a chevron ─────────
 async function phoneHeaderSection(browser, base) {
   const was = tasksMode;
@@ -34019,6 +34070,7 @@ async function main() {
     await unit("heldLine", () => heldLineSection(browser, base));
     await unit("u016", () => u016Section(browser, base));
     await unit("phoneHeader", () => phoneHeaderSection(browser, base));
+    await unit("mailChip", () => mailChipSection(browser, base));
     await unit("phoneFocus", () => phoneFocusSection(browser, base));
     await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
     await unit("phoneShare", () => phoneShareSection(browser, base));
