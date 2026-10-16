@@ -2317,6 +2317,56 @@ var migrations = []struct {
 			`UPDATE harness SET queues_mid_turn = 1 WHERE id = 'claude'`,
 		},
 	},
+	{
+		// A SAY TYPED INTO A RUNNER'S QUEUED BOX, and not yet read, is state `typed`. The CHECK on say.state cannot be
+		// altered in place, so the table is rebuilt, the pattern of 0010 and 0014. A rerun finds say_new gone and the
+		// new CHECK already in place, and does the same copy.
+		name: "0106_say_typed",
+		stmts: []string{
+			`DROP TABLE IF EXISTS say_new`,
+			`CREATE TABLE say_new (
+				id           TEXT PRIMARY KEY,
+				from_task    TEXT NOT NULL DEFAULT '',
+				from_wire    TEXT NOT NULL,
+				to_task      TEXT NOT NULL DEFAULT '',
+				to_wire      TEXT NOT NULL DEFAULT '',
+				to_input     TEXT NOT NULL,
+				via          TEXT NOT NULL,
+				room         TEXT NOT NULL DEFAULT '',
+				door         TEXT NOT NULL,
+				preview      TEXT NOT NULL,
+				chars        INTEGER NOT NULL,
+				when_word    TEXT NOT NULL DEFAULT '',
+				state        TEXT NOT NULL CHECK (state IN
+					('sent','queued','delivered','held','handed','unconfirmed','refused','unresolved','typed')),
+				channel      TEXT NOT NULL DEFAULT '',
+				message_id   TEXT NOT NULL DEFAULT '',
+				relay_id     TEXT NOT NULL DEFAULT '',
+				note         TEXT NOT NULL DEFAULT '',
+				reply_wanted INTEGER NOT NULL DEFAULT 0,
+				replied_at   TEXT NOT NULL DEFAULT '',
+				lapsed       INTEGER NOT NULL DEFAULT 0,
+				reset_at     TEXT NOT NULL DEFAULT '',
+				reset_kind   TEXT NOT NULL DEFAULT '',
+				sent_at      TEXT NOT NULL,
+				queued_at    TEXT NOT NULL DEFAULT '',
+				delivered_at TEXT NOT NULL DEFAULT '',
+				text         TEXT NOT NULL DEFAULT ''
+			)`,
+			`INSERT INTO say_new (id, from_task, from_wire, to_task, to_wire, to_input, via, room, door, preview, chars,
+				when_word, state, channel, message_id, relay_id, note, reply_wanted, replied_at, lapsed, reset_at,
+				reset_kind, sent_at, queued_at, delivered_at, text)
+				SELECT id, from_task, from_wire, to_task, to_wire, to_input, via, room, door, preview, chars,
+				when_word, state, channel, message_id, relay_id, note, reply_wanted, replied_at, lapsed, reset_at,
+				reset_kind, sent_at, queued_at, delivered_at, text FROM say`,
+			`DROP TABLE say`,
+			`ALTER TABLE say_new RENAME TO say`,
+			`CREATE INDEX IF NOT EXISTS say_to ON say (to_task, sent_at)`,
+			`CREATE INDEX IF NOT EXISTS say_from ON say (from_task, sent_at)`,
+			`CREATE INDEX IF NOT EXISTS say_message ON say (message_id)`,
+			`CREATE INDEX IF NOT EXISTS say_relay ON say (relay_id)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.
