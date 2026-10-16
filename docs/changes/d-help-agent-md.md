@@ -8,9 +8,12 @@ cites files, stays read only, and never restarts, stops or deploys atrium. Item 
 
 ## Proof
 
+The pasted answers below were given before a fix: they say a branch outside `claude/*` is refused. That holds only
+for agent launches. A human can name the branch anything, and the prompt no longer says otherwise.
+
 Run once from this worktree with `claude -p --allowedTools "Read,Grep,Glob" --append-system-prompt "$(cat docs/help-agent.md)"`.
 Run on the first draft of the prompt. The one correction since: the first draft said an https URL in the launch dialog's
-repo box was not read yet. The helper found in `js/launchrepo.js:83` that `launchRepoTyped` does read it, so the prompt now
+repo box was not read yet. The helper found in `launchRepoTyped` in `js/launchrepo.js` that `launchRepoTyped` does read it, so the prompt now
 says what the box reads today and that wider URL forms are coming.
 
 ### Q1: can I clone a git repo using atrium?

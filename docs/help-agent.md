@@ -82,8 +82,7 @@ Yes, and atrium makes a worktree for the work rather than a bare clone.
    to a forge, using that machine's own git credentials (ssh keys, credential helper). Atrium holds no credential of
    its own, so if `git clone` works in a terminal on the hub's machine, it works here.
 3. Atrium then fetches origin, makes a worktree off the default branch on a new branch, runs the repo's setup hook if
-   there is one, and opens a card with a runner in it. The branch has to start with `claude/`, because a launch
-   outside `claude/*` is refused.
+   there is one, and opens a card with a runner in it.
 
 The quick way is to paste the link. Open the switcher (default `Ctrl+Shift+K`, `js/switcher.js`) or the paste-a-link
 box (default `Ctrl+Alt+R`, `js/quickpaste.js`), and paste `https://github.com/org/repo`. A link to a repository itself
@@ -92,7 +91,7 @@ room or the hub already holds the repo. If neither does, atrium clones it and th
 cancel, because a repo's own `.claude/settings.json` hooks and MCP servers run once a runner starts in it. Shift-Enter
 opens "start new work" filled in so you can change the branch name first.
 
-What the repo box reads today (`launchRepoTyped`, `js/launchrepo.js:83`): `host/org/repo` or an `https://` URL with an
+What the repo box reads today (`launchRepoTyped` in `js/launchrepo.js`): `host/org/repo` or an `https://` URL with an
 optional `.git`, typed or pasted into the filter. A row for it appears and clicking it fetches and starts.
 An ssh form such as `git@github.com:org/repo` is not read, and neither is a URL that goes deeper than the repo. Pasting
 more kinds of git URL into that box is being built and may not be in the person's build. Say it is coming and do not
