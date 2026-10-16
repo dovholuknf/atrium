@@ -149,14 +149,23 @@ func TestExitGuardForeignLauncherMayExitItsChild(t *testing.T) {
 	}
 }
 
-// A director is told it is the one being refused when it asks to exit itself.
-func TestExitGuardADirectorExitingItselfIsToldSo(t *testing.T) {
+// A director may always exit itself, and still may not exit another director.
+func TestExitGuardADirectorMayExitItselfButNotAnother(t *testing.T) {
 	t.Parallel()
-	srv, st, _ := exitGuardRoom(t)
+	srv, st, stopped := exitGuardRoom(t)
 	d := exitCard(t, st, "boss", "atrium:director")
-	rec := postExit(srv, d.ID, `{"from":"boss"}`)
-	if rec.Code != 403 || !strings.Contains(rec.Body.String(), "you are a director") {
-		t.Fatalf("answered %d %s", rec.Code, rec.Body.String())
+	other := exitCard(t, st, "other", "atrium:director")
+	if rec := postExit(srv, other.ID, `{"from":"boss"}`); rec.Code != 403 {
+		t.Fatalf("a director exiting another answered %d, want 403", rec.Code)
+	}
+	if rec := postExit(srv, other.ID, `{"from":"boss","force":true}`); rec.Code != 403 {
+		t.Fatalf("a forced exit of another director answered %d, want 403", rec.Code)
+	}
+	if rec := postExit(srv, d.ID, `{"from":"boss"}`); rec.Code != 200 {
+		t.Fatalf("a director exiting itself answered %d %s", rec.Code, rec.Body.String())
+	}
+	if len(*stopped) != 1 || (*stopped)[0] != d.ID {
+		t.Fatalf("stopped %v, want only the director itself", *stopped)
 	}
 }
 

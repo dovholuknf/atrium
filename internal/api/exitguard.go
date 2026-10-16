@@ -30,9 +30,11 @@ type exitAsk struct {
 // second result says the exit goes ahead on a force, and should be recorded.
 //
 //   - No From: the operator. Anything, directors included.
-//   - A director (atrium:director or atrium:context-ceiling): never an agent's
-//     to end, force or not. Only the operator.
-//   - The caller itself, or a card the caller launched: yes.
+//   - The caller itself: yes, director or not. A per-item minion is a director
+//     and has to be able to end itself once it has landed.
+//   - A director (atrium:director or atrium:context-ceiling) that is not the
+//     caller: never an agent's to end, force or not. Only the operator.
+//   - A card the caller launched: yes.
 //   - Any other card: refused unless Force, which is recorded on the card.
 //
 // THE CALLER IS WHO IT SAYS IT IS. The route is as open as the rest of the
@@ -49,9 +51,9 @@ func (s *Server) guardExit(target *store.Task, in exitAsk) (forced bool, err err
 	}
 	if hasExitTag(target.Tags, exitDirectorTag) || hasExitTag(target.Tags, exitCeilingTag) {
 		if me != nil && me.ID == target.ID {
-			return false, fmt.Errorf("you are a director: only the operator ends you")
+			return false, nil
 		}
-		return false, fmt.Errorf("%s is a director. an agent cannot exit one, force or not: only the operator can", target.DisplayTitle())
+		return false, fmt.Errorf("%s is a director. an agent cannot exit another's, force or not: only the operator can", target.DisplayTitle())
 	}
 	if in.Foreign {
 		// A cross-room launch records its launcher as `name@room`, the name the
