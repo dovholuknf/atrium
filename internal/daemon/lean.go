@@ -396,6 +396,40 @@ func leanServers(configs, extra []string, gateway string, readFile func(string) 
 	return string(b), err
 }
 
+// unquoteStatusLine drops the quotes around a status line command's program when the
+// path inside needs none. On sg3 a command that opens with a quoted program path
+// (`"V:/work/tools/git/bin/bash.exe" "C:/.../statusline-command.sh"`) draws nothing under
+// claude, and the same program unquoted draws. A path with a space keeps its quotes, and
+// anything this cannot read is returned as it came. See docs/runtime/statusline-telemetry.md.
+func unquoteStatusLine(raw json.RawMessage) json.RawMessage {
+	var sl map[string]json.RawMessage
+	if json.Unmarshal(raw, &sl) != nil {
+		return raw
+	}
+	var cmd string
+	if json.Unmarshal(sl["command"], &cmd) != nil || !strings.HasPrefix(cmd, `"`) {
+		return raw
+	}
+	end := strings.Index(cmd[1:], `"`)
+	if end <= 0 {
+		return raw
+	}
+	prog := cmd[1 : end+1]
+	if strings.ContainsAny(prog, " \t$`&|;<>()") {
+		return raw
+	}
+	b, err := json.Marshal(prog + cmd[end+2:])
+	if err != nil {
+		return raw
+	}
+	sl["command"] = b
+	out, err := json.Marshal(sl)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
 // leanContextHooks are the hook events whose output lands in the context.
 var leanContextHooks = []string{"SessionStart", "UserPromptSubmit"}
 
@@ -428,6 +462,9 @@ func leanSettings(user []byte, stopHook string, agents []string, hk *hooks) (str
 		if v, ok := doc[k]; ok {
 			out[k] = v
 		}
+	}
+	if raw, ok := out["statusLine"].(json.RawMessage); ok {
+		out["statusLine"] = unquoteStatusLine(raw)
 	}
 	hooks := map[string]any{}
 	if raw, ok := doc["hooks"]; ok {

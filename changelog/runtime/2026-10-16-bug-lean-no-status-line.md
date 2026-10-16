@@ -1,0 +1,1 @@
+A lean card's status line no longer disappears when the operator's `statusLine` command opens with a quoted program path that has no space, as on sg3. Atrium unquotes that program in the lean `--settings`. Item bug-lean-no-status-line.

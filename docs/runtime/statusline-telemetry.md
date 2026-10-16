@@ -224,3 +224,24 @@ curl -s -X POST localhost:7777/telemetry -H 'content-type: application/json' -d 
 The card grows a red `ctx 92%` chip and an amber `5h 91%` beside it within five seconds, which is the board's
 poll interval. A session id nobody has answers `{"ok":true}` and changes nothing, which is the behaviour, not a
 failure.
+
+## A status line that draws nothing on Windows: the quoted program
+
+Claude Code honours `statusLine` from `--settings` under `--setting-sources project,local`. A lean launch on claude-sg4
+draws it, so lean is not what dropped it. On sg3 the operator's own `statusLine` is
+`"V:/work/tools/git/bin/bash.exe" "C:/Users/claude/.claude/statusline-command.sh"`, and Claude Code draws nothing for
+it, in a plain card as well as a lean one. The script runs fine by hand. Measured on sg3, same Claude Code 2.1.301:
+
+| command | draws |
+| --- | --- |
+| `echo SLMARKER` | yes |
+| `V:/work/tools/git/bin/bash.exe -c "echo BASHOK"` | yes |
+| `bash -c "echo BASHOK"` | yes |
+| `"V:/work/tools/git/bin/bash.exe" -c "echo BASHOK"` | no |
+| `"C:/Program Files/Git/usr/bin/bash.exe" "C:/Users/claude/.claude/statusline-command.sh"` on sg4 | yes |
+
+A command that opens with a quoted program path whose path has no space draws nothing on sg3. Atrium cannot rewrite
+the operator's own `settings.json`, but it writes the lean `--settings`, so `unquoteStatusLine` in
+`internal/daemon/lean.go` drops the quotes around that first token when the path holds no space or shell character.
+A path with a space keeps its quotes. A plain card still reads the operator's `settings.json` as it is, so on sg3 the
+operator should write the command unquoted there as well.

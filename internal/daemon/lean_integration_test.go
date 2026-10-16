@@ -188,6 +188,24 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 	}
 }
 
+func TestLeanSettingsStatusLineSurvivesAQuotedProgram(t *testing.T) {
+	t.Parallel()
+	user := `{"statusLine":{"type":"command","command":"\"V:/bin/bash.exe\" \"s.sh\""}}`
+	raw, err := leanSettings([]byte(user), "", nil, testHooks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		StatusLine struct{ Type, Command string }
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.StatusLine.Type != "command" || doc.StatusLine.Command != `V:/bin/bash.exe "s.sh"` {
+		t.Fatalf("statusLine should be kept with its program unquoted, got %+v in %s", doc.StatusLine, raw)
+	}
+}
+
 func TestLeanSettingsKeepsACardOutOfTheAgentView(t *testing.T) {
 	t.Parallel()
 	raw, err := leanSettings([]byte(leanTestSettings), "", nil, testHooks())
