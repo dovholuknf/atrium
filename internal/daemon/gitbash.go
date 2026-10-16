@@ -3,7 +3,6 @@ package daemon
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 )
@@ -14,7 +13,7 @@ import (
 // interactive one has, which is how that happened. So the launch looks first,
 // by the same order Claude Code does (see internal/claudeconf/shell.go), and
 // either leaves things alone, points the runner at a Git atrium installed, or
-// refuses with the reason before a card exists.
+// refuses with the reason before anything is spawned.
 
 const gitBashEnvName = "CLAUDE_CODE_GIT_BASH_PATH"
 
@@ -22,23 +21,16 @@ const gitBashEnvName = "CLAUDE_CODE_GIT_BASH_PATH"
 // KEY=VALUE to add to the runner's env, or empty.
 func checkGitBash(runnerID string, env []string) (string, error) {
 	home, _ := os.UserHomeDir()
-	look := func(name, path string) (string, error) {
-		old := os.Getenv("PATH")
-		os.Setenv("PATH", path)
-		defer os.Setenv("PATH", old)
-		return exec.LookPath(name)
-	}
 	return gitBashFor(runtime.GOOS, runnerID, env, home, func(p string) bool {
 		st, err := os.Stat(p)
 		return err == nil && !st.IsDir()
-	}, look)
+	})
 }
 
 // gitBashFor is the decision, with every lookup passed in so it runs the same
-// on any OS. lookPath is given the PATH of the env the runner will get, which
-// is not necessarily this process's.
-func gitBashFor(goos, runnerID string, env []string, home string, exists func(string) bool,
-	lookPath func(name, path string) (string, error)) (string, error) {
+// on any OS. git.exe is looked for on the PATH of the env the runner will get,
+// which is not necessarily this process's.
+func gitBashFor(goos, runnerID string, env []string, home string, exists func(string) bool) (string, error) {
 	if goos != "windows" || runnerID != "claude" {
 		return "", nil
 	}
@@ -54,10 +46,15 @@ func gitBashFor(goos, runnerID string, env []string, home string, exists func(st
 	if p := get(gitBashEnvName); p != "" && exists(p) {
 		return "", nil
 	}
-	if git, err := lookPath("git.exe", get("PATH")); err == nil && git != "" {
-		if exists(winDir(winDir(git)) + `\bin\bash.exe`) {
+	for _, dir := range strings.Split(get("PATH"), ";") {
+		dir = strings.TrimRight(strings.TrimSpace(dir), `\/`)
+		if dir == "" || !exists(dir+`\git.exe`) {
+			continue
+		}
+		if exists(winDir(dir) + `\bin\bash.exe`) {
 			return "", nil
 		}
+		break
 	}
 	roots := []string{get("ProgramFiles"), `C:\Program Files`}
 	for _, r := range roots {
