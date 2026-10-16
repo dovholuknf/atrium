@@ -384,6 +384,12 @@ function plan(files, opts) {
       for (const s of shared) p.warnings.push("the harness changed outside every unit (" + s + "), so bootClean stands in for it");
       continue;
     }
+    if (/^scripts\/lib\/(mock|browser)\.js$/.test(rel)) {
+      board = true;
+      p.jscheck.push(rel);
+      p.warnings.push(rel + " is the harness library every unit runs on, so bootClean stands in for it");
+      continue;
+    }
     if (rel === buckets.FILE || rel === "scripts/test-buckets.js" || rel === "scripts/check-test-buckets.js") {
       addNode("scripts/check-test-buckets.js", rel + " changed");
       if (rel.endsWith(".js")) p.jscheck.push(rel);

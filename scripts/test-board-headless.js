@@ -37,599 +37,33 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
   process.exit(2);
 }
 
-// One clock for the whole suite, so no section depends on the time of day the
-// run happens to start. A fixture built from Date.now() and checked as HH:MM
-// broke whenever the real time sat near midnight, because the board then
-// rightly says "tomorrow 00:04". So the run is SHIFTED, not frozen: Date.now()
-// and a no-argument `new Date()` answer real time plus a constant, which keeps
-// timers, debounces and performance.now working while every run starts at noon,
-// twelve hours from either midnight. Node and every browser context take the
-// same offset, so a fixture built in Node agrees with the page reading it.
-//   HEADLESS_CLOCK=real    no shift at all, for debugging against the real time
-//   HEADLESS_CLOCK=23:58   start the run at that local time instead of noon
-// A context that must see the real clock says so: newContext(o, { realClock: true }).
-// Workers do not get it, and no section here runs one that reads the time.
-function clockOffset() {
-  const spec = process.env.HEADLESS_CLOCK || "12:00";
-  if (spec === "real") return 0;
-  const m = /^(\d{1,2}):(\d\d)$/.exec(spec);
-  if (!m || +m[1] > 23 || +m[2] > 59) {
-    console.error("HEADLESS_CLOCK is 'real' or HH:MM, not '" + spec + "'");
-    process.exit(2);
-  }
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), +m[1], +m[2], 0, 0);
-  return target.getTime() - now.getTime();
-}
-const CLOCK_OFFSET = clockOffset();
-// Written as a function so the very same text runs in Node and, stringified, in
-// the page. A Proxy rather than a subclass keeps Date.prototype, instanceof and
-// Date.name exactly as they were: only construct, apply and now are answered here.
-// A section that replaces Date.now (to jump past a cap) replaces the proxy's `now`, never the real one, or the
-// shifted clock would call the replacement that calls it back.
-function installClock(offset) {
-  if (!offset) return;
-  const Real = Date;
-  const realNow = Real.now.bind(Real);
-  const shifted = () => realNow() + offset;
-  let now = shifted;
-  const proxy = new Proxy(Real, {
-    construct(target, args, newTarget) {
-      return Reflect.construct(target, args.length ? args : [shifted()], newTarget);
-    },
-    apply() { return new Real(shifted()).toString(); },
-    get(target, key, recv) {
-      if (key === "now") return now;
-      return Reflect.get(target, key, target === recv ? target : recv);
-    },
-    set(target, key, value) {
-      if (key === "now") { now = value; return true; }
-      return Reflect.set(target, key, value);
-    },
-  });
-  globalThis.Date = proxy;
-}
-installClock(CLOCK_OFFSET);
-// When the run started, on the shifted clock. The clock section runs late in a long run, so it checks the start here
-// and the page against Node's clock now.
-const RUN_T0 = Date.now();
-const CLOCK_INIT = "(" + installClock.toString() + ")(" + CLOCK_OFFSET + ");";
-// Wrap the browser so no section can forget the clock: it is the first init
-// script of every context, ahead of any a section adds. browser.newPage() makes
-// its own context, so it goes through the same door.
-function withClock(browser) {
-  const newContext = browser.newContext.bind(browser);
-  browser.newContext = async (opts, more) => {
-    const ctx = await newContext(opts || {});
-    if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
-    // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
-    if (!(more && more.redirect)) await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
-    return ctx;
-  };
-  browser.newPage = async opts => {
-    const ctx = await browser.newContext(opts);
-    const page = await ctx.newPage();
-    const close = page.close.bind(page);
-    page.close = async o => { try { await close(o); } finally { await ctx.close().catch(() => {}); } };
-    return page;
-  };
-  return browser;
-}
+// The browser and the mocked daemon live in lib/. Loading lib/browser.js installs the shifted clock and finds Chromium,
+// so it goes first: the fixtures in lib/mock.js are built from Date.now().
+const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, chromium } = require("./lib/browser.js");
+const { mock, hooks, FILED, T1, SEEN, qclickCards, UNTAGGED_CARDS, AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1, UC_CARDS, UC_MANY, LOOP, T2, SKINS, openStreams, hubStreams, stallHeld, NEWC, landCard, settingsBody, resetSkins, boardUsageSeen, QC_AT, mockSay, WEB_ROOT, HTML, server, resetPin, resetAudit, resetSwitches, hungResponses } = require("./lib/mock.js");
 
-// The board's xterm bundle, served off disk so a real Terminal is built. The
-// page loads these as `<script src="/vendor/...">`, which board-source leaves
-// external, and the attach-loop repro needs `openTerm` to build a real terminal
-// and open a socket rather than bail on a missing library.
-const WEB_ROOT = path.join(__dirname, "..", "internal", "api", "web");
-
-// Every Playwright timeout here goes through slow(). A loaded machine, a
-// `go test` beside this run say, can take longer than the budgets below, which
-// were set on an idle one. HEADLESS_SLOW=3 gives every wait three times as long
-// without editing the file. Sleeps are not scaled: a sleep that proves something
-// stays put has to keep its length.
-const SLOW = Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1;
-const slow = ms => Math.round(ms * SLOW);
-
-// For a page on Playwright's fake clock (`page.clock.install()` before the goto): waitForFunction, with the page's
-// clock moved forward a step at a time instead of waited out. `ms` is page time. A short real pause per step lets a
-// fetch or an event land. Rejects on timeout, as waitForFunction does. `step` 0 leaves the page's clock alone and
-// waits `ms` of real time: for what the browser does on its own clock, an EventSource reconnecting say. A fake-clock
-// page cannot use waitForFunction for that, because its polling runs on the faked requestAnimationFrame.
-async function fakeWait(p, fn, arg, ms, step = 100) {
-  const end = Date.now() + slow(ms);
-  for (let t = 0; ; t += step) {
-    if (await p.evaluate(fn, arg)) return true;
-    if (step ? t >= ms : Date.now() > end) throw new Error("fakeWait timed out after " + ms + "ms");
-    if (step) await p.clock.runFor(step);
-    await new Promise(r => setTimeout(r, step ? 5 : 50));
-  }
-}
-
-// `ms` of page time on the fake clock, every timer fired as it comes due, so a poll or a chained fetch still shows in a
-// request count. The real pause per step lets a fetch or a stream event land before the clock moves on.
-async function fakeTick(p, ms, step = 250) {
-  for (let t = 0; t < ms; t += step) { await p.clock.runFor(Math.min(step, ms - t)); await new Promise(r => setTimeout(r, 10)); }
-}
-
-// Playwright is a devDependency (see package.json) and CI may run without it.
-let chromium;
-try {
-  ({ chromium } = require("@playwright/test"));
-} catch (e) {
-  try { ({ chromium } = require("playwright")); } catch (e2) {
-    console.log("playwright is not installed, so the headless board check is " +
-      "skipped. run `npm install` and `npx playwright install chromium` to enable it.");
-    process.exit(0);
-  }
-}
-let exePath = "";
-try { exePath = chromium.executablePath(); } catch (e) {}
-if (!exePath || !require("fs").existsSync(exePath)) {
-  console.log("the chromium browser is not installed, so the headless board " +
-    "check is skipped. run `npx playwright install chromium` to enable it.");
-  process.exit(0);
-}
-
-// The mocked daemon. Its answers are mutable so the test can make /v1/tasks hang
-// and then recover with a different card.
-// status needs-input so the card lands in the stack view's default filter,
-// which opens showing that column. See stack.js stackShow().
-const T1 = {
-  id: "t1", status: "needs-input", display_title: "first card", runner: "claude",
-  rank: 1, worktree: "/tmp/one", why: "", idle_seconds: 0, wait_seconds: 0,
-  created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
-  tags: [], supervised: false, offline: false, pinned: false, auto_approve: false
-};
-const T2 = Object.assign({}, T1, { id: "t2", display_title: "second card" });
-// A card whose last turn nobody has seen, ending on two questions nobody has
-// answered. Its own card so the rest of this file's cards stay unmarked. See
-// docs/runtime/seen-design.md.
-const SEEN = Object.assign({}, T1, {
-  id: "seen1", display_title: "unread card",
-  seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false,
-    open_questions: ["land sa21 first?", "build the tray?"] }
-});
-// Cards for the `? N` click: two open questions and a held peer message. A
-// dismissed card answers `answered: true` with no questions, the way the room's
-// view does once the set is answered. See `questionsClickSection`.
-const QC_AT = "2026-09-29T09:00:00.000Z";
-const QC_BASE = Object.assign({}, T1, {
-  id: "qc1", display_title: "asking card", supervised: true, pinned: true,
-  seen: { unseen: false, turn_ended_at: QC_AT, questions_at: QC_AT, answered: false,
-    open_questions: ["land sa21 first?", "build the tray?"] },
-  activity: { held_peer: true, held_count: 2, held_seconds: 30, held_for: "line", held_turn: "asked" },
-});
-let qDismissMode = "ok";       // ok | stale | fail
-let qHeldQuiet = false;
-const qDismissed = new Set();
-let qDismissWrites = [];
-function qclickCards() {
-  return [Object.assign({}, QC_BASE, { activity: Object.assign({}, QC_BASE.activity, { held_quiet: qHeldQuiet }) },
-    qDismissed.has("qc1")
-    ? { seen: { unseen: false, turn_ended_at: QC_AT, questions_at: QC_AT, answered: true,
-        answered_via: "dismissed" } }
-    : {})];
-}
-// The card a popped-out (solo) window is opened onto. Supervised, so it reads
-// like a real live session rather than a dead one.
-const SOLO = Object.assign({}, T1, {
-  id: "s1", display_title: "solo card", supervised: true
-});
-// The card the attach-loop repro drives. Supervised on the single-card poll a
-// watchdog reads, so it always looks like it is "back" and worth attaching. Its
-// attach socket is mocked in the browser to close before it opens, which is the
-// exact failure that seized the screen.
-const LOOP = Object.assign({}, T1, {
-  id: "loop1", display_title: "loop card", supervised: true
-});
-// `histMany` swaps in 250 runs, more than two pages, for the scroll test, and
-// `histManyLive` puts one new run on top of them.
-let histMany = false;
-let histManyLive = false;
-const histRun = n => ({
-  id: "hm" + n, display_title: "run " + n, runner: "claude", status: "done",
-  created_at: new Date(Date.UTC(2026, 8, 18, 9, 0, n)).toISOString(), why: "run number " + n,
-  recap: "", worktree: "/tmp/run" + n, archived_at: ""
-});
-const HIST_MANY = Array.from({ length: 250 }, (_, i) => histRun(250 - i));
-function histFeed() { return histManyLive ? [histRun(251)].concat(HIST_MANY) : HIST_MANY; }
-const HIST = {
-  id: "h1", display_title: "old run", runner: "claude", status: "done",
-  created_at: "2026-09-18T09:00:00Z", why: "did a thing", recap: "",
-  worktree: "/tmp/old", archived_at: ""
-};
-// A pinned terminal whose runner was terminated: not supervised, still pinned,
-// so the strip draws it cold. This is the row that used to linger with no way to
-// remove it, since terminate is gone once the process is. `pinned` is mutable so
-// a PATCH can unpin it and the next /v1/tasks answer drops it, which is what
-// proves dismiss does not just hide it for one render.
-const PIN = {
-  id: "pin1", status: "dead", display_title: "terminated card", runner: "claude",
-  rank: 1, worktree: "/tmp/pinned", why: "", idle_seconds: 0, wait_seconds: 0,
-  created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
-  tags: [], supervised: false, offline: false, pinned: true, pid: 0, auto_approve: false
-};
-function resetPin() { PIN.pinned = true; }
-
-// A pinned, live card filed into the operator's `active` group, the shape of the
-// screenshot where the group said 0 and asked for a card to be filed into it.
-const FILED = Object.assign({}, PIN, {
-  id: "filed1", display_title: "filed card", status: "running", supervised: true,
-  tags: ["active"], worktree: "/tmp/filed"
-});
-// A live, unpinned, ungrouped row beside it, for the drag case.
-const LOOSE = Object.assign({}, T1, { id: "loose1", display_title: "loose card", supervised: true });
-
-// The terminals strip, exercising the paused, dead and subagents chips. AGLIVE is a live agent (a human's own
-// session, no `atrium:subagent` tag) with three subagents launched from it (`spawned_by_id`): SUBLIVE idle, SUBWORK
-// working and SUBASK asking, which shows through the fold. SHELVED1 is a stopped card. A dead UNPINNED session is not
-// in the strip at all (nothing to switch to), so the dead rows are PINNED, drawn cold: SUBDEAD and AGDEAD, which the
-// dead chip counts and lists.
-const SUBLIVE = {
-  id: "sublive", status: "running", display_title: "idle subagent", runner: "claude",
-  rank: 1, worktree: "/tmp/sublive", why: "", idle_seconds: 0, wait_seconds: 0,
-  created_at: "2026-09-19T12:00:00Z", last_activity_at: "2026-09-19T12:00:00Z",
-  tags: ["origin:agent", "atrium:subagent"], supervised: true, offline: false, pinned: false, auto_approve: false,
-  spawned_by_id: "aglive"
-};
-const SUBWORK = Object.assign({}, SUBLIVE, {
-  id: "subwork", display_title: "working subagent", activity: { what: "thinking" }
-});
-// A supervised subagent that is waiting on the operator: it shows through a folded parent.
-const SUBASK = Object.assign({}, SUBLIVE, {
-  id: "subask", display_title: "asking subagent", status: "needs-permission"
-});
-// Runner gone, held by its pin, drawn cold: behind the dead chip.
-const SUBDEAD = Object.assign({}, SUBLIVE, {
-  id: "subdead", display_title: "dead subagent", status: "dead",
-  supervised: false, pinned: true, pid: 0, spawned_by_id: ""
-});
-const AGLIVE = Object.assign({}, SUBLIVE, {
-  id: "aglive", display_title: "my terminal", tags: [], spawned_by_id: ""
-});
-// A dead agent (no tag), pinned cold: behind the dead chip.
-const AGDEAD = Object.assign({}, SUBLIVE, {
-  id: "agdead", display_title: "my dead terminal", tags: [],
-  status: "dead", supervised: false, pinned: true, pid: 0, spawned_by_id: ""
-});
-// A stopped card: behind the paused chip.
-const SHELVED1 = Object.assign({}, SUBLIVE, {
-  id: "paused1", display_title: "paused card", status: "paused", tags: [],
-  supervised: false, pinned: false, spawned_by_id: ""
-});
-
-// Four live untagged cards served in ADDRESS order, which is not name order and
-// not activity order, so a view that sorts on the wrong key is caught. The
-// shape of the screenshot: named cards whose dim second line is the path.
-const untaggedCard = (id, title, worktree, idle) => Object.assign({}, T1, {
-  id, display_title: title, worktree, repo: worktree.split("/").pop(), branch: "b",
-  idle_seconds: idle, supervised: true,
-  // last_activity_at is the stamp the sort goes by, so it says the same as idle_seconds
-  last_activity_at: new Date(Date.now() - idle * 1000).toISOString()
-});
-const UNTAGGED_CARDS = [
-  untaggedCard("u-sa67", "sa67 stages", "/w/claude/atrium/one", 30),
-  untaggedCard("u-sa65", "sa65 merger", "/w/github/dovholuknf/atrium", 10),
-  untaggedCard("u-night", "nightly-fail", "/w/github/openziti/ziti-sdk-csharp", 20),
-  untaggedCard("u-disc", "discourse-6101", "/w/github/openziti/ziti", 40)
-];
-// Cards added under a page that is already open, a 503 while a hub has no room,
-// an empty answer while it has none yet, and the `room~` tag a second room puts
-// on every id.
-let untaggedExtra = [];
-let untaggedDown = false;
-let untaggedEmpty = false;
-let untaggedTag = "";
-const NEWC = untaggedCard("u-new", "brand new", "/w/github/openziti/fresh", 5);
-
-// The cards the alert-landing section clicks through to, by id. `land-new` is
-// the race: listed before its terminal, and made supervised by the test a
-// moment after the click. `landList` is what the list answers on top of T1, and
-// `landPerms` the pending requests. See `landSection`.
-const LAND = {};
-function landCard(id, over) {
-  LAND[id] = Object.assign({}, T1, { id, display_title: id.replace("-", " "),
-    created_at: new Date().toISOString() }, over);
-  return LAND[id];
-}
-let landList = [];
-let landPerms = [];
-// What the typing readout's endpoint answers, and every request it got.
-let typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "nothing typed here yet" };
-let typingPolls = [];
-// Every PATCH that set a card's alias. See `aliasSection`.
-let aliasWrites = [];
-
-const filesDeleted = [];  // what the mock's /_hub/files delete was asked for
-let boardDocs = false;    // whether the mock answers /_hub/docs, as a hub with documents does
-let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged | land
-// One card per shipped terminal theme, filled in from the page's own table by
-// the card-colours section, plus one with no theme that takes the repo default.
-let wornTasks = [];
-// Whether the cached list agrees the loop card is attachable. Off during the
-// loop repro (the list lags the live card), on once it has recovered.
-let loopListSupervised = false;
-// How the mocked hub answers a card-scoped poll (GET /v1/tasks/<id>), which is
-// what a popped-out window opens on. `noroom` is the transient hub-restart state
-// (503, "no room is attached"), `gone` is a genuine missing card (404), and `ok`
-// returns the card.
-let soloMode = "ok";       // ok | noroom | gone
-// Whether the mock answers the `/_hub/*` probes as a hub. Off by default so the
-// board runs as a plain daemon for the tests above; the room-picker test turns
-// it on and loads a fresh page. `sggAttached` is the one room that flips from
-// disconnected to live under the open dropdown.
-let hubMode = false;
-const setupFixed = [];
-let sggAttached = false;
-// Whether the hub has a room to borrow `/v1/settings` from. False is the window
-// right after a hub restart: no room has re-attached, so the ALL-view read is
-// answered with the same 409 the real hub gives, and the board's load-time skin
-// read fails. Flipping it true and pushing a `rooms` event is a room attaching,
-// which is when the skin must heal without a reload. See the skin-heals test.
-let hubHasRoom = true;
-// The hub restart gate's mocked state: whether a pause is held, and how many
-// times the board called each of its three endpoints.
-let gatePaused = false;
-// What `GET /_hub/restart` says is left of a countdown, for a window opened during one.
-let gateCountdownLeft = 0;
-// Which hub process `GET /_hub/restart` names, and whether the hub is away. Away
-// drops every stream and hub call on the floor, the way a stopped hub refuses
-// the connection, so the board's event stream keeps retrying. See
-// restartStaysSection.
-let gateBoot = "boot-a";
-let hubAway = false;
-let gateRestartMode = "";
-let gateAsked = 0;
-let gateSlowMs = 1500;
-// The board build `/v1/health` reports. A change makes the board reload.
-let healthBuild = "test";
-// Whether the service worker and its offline page are served, and whether the
-// page itself answers 502 the way a share in front of a stopped atrium does.
-// Off by default: every other section runs without a worker. See atriumDownSection.
-let serveSW = false;
-let page502 = false;
-// The reconnect delay the event stream asks for, in ms. 0 says nothing and leaves the browser's own 3s, which is what
-// the daemon does. A section that drops the stream on purpose sets it so the reconnect is not waited out.
-let sseRetry = 0;
-const gateCalls = { input: 0, pause: 0, resume: 0 };
-const ALPHA = { name: "alpha", host: "alpha-host" };
-const SGG = { name: "sgg", host: "sgg-host" };
-
-// The operational audit feed the hub serves, newest first, across two rooms and
-// a hub-level line so the room and kind filters have something to sort. `auditLive`
-// arms one extra event that the live-delta test makes appear without a reload.
-const AUDIT_BASE = [
-  { id: "a4", at: "2026-09-19T12:06:00Z", room: "alpha", kind: "permission-requested",
-    detail: "Bash: ls" },
-  { id: "a3", at: "2026-09-19T12:05:00Z", room: "sgg", kind: "room-attached",
-    detail: "sgg running v2" },
-  { id: "a2", at: "2026-09-19T12:02:00Z", room: "sgg", kind: "session-start",
-    detail: "second card started on claude" },
-  { id: "a1", at: "2026-09-19T12:00:00Z", kind: "hub-started", detail: "the hub came up" }
-];
-let auditLive = false;
-const AUDIT_LIVE = { id: "a5", at: "2026-09-19T12:10:00Z", room: "sgg", kind: "session-exit",
-  detail: "second card exited with code 0 after 3s" };
-// `auditMany` swaps in a feed far taller than the window, for the scroll test, and
-// `auditManyLive` puts one more line on top of it.
-let auditMany = false;
-let auditManyLive = false;
-const AUDIT_MANY = Array.from({ length: 150 }, (_, i) => ({
-  id: "m" + (150 - i), at: new Date(Date.UTC(2026, 8, 19, 12, 0, 150 - i)).toISOString(),
-  room: i % 2 ? "sgg" : "alpha", kind: "session-start", detail: "card " + (150 - i) + " started"
-}));
-const AUDIT_MANY_LIVE = { id: "m151", at: "2026-09-19T12:03:00Z", room: "sgg", kind: "session-exit",
-  detail: "card 151 exited" };
-function auditFeed() {
-  if (auditMany) return auditManyLive ? [AUDIT_MANY_LIVE].concat(AUDIT_MANY) : AUDIT_MANY.slice();
-  return auditLive ? [AUDIT_LIVE].concat(AUDIT_BASE) : AUDIT_BASE.slice();
-}
-function resetAudit() { auditLive = false; auditMany = false; auditManyLive = false; }
-
-// The board skin follows the room-picker scope: the ALL view (no X-Atrium-Room
-// header) wears the HUB's own skin, and each room wears its own. `skinFor` is
-// the mocked hub-plus-rooms state, keyed by scope with "" for the ALL/hub view.
-// A skin-only save in the ALL view lands on the hub (skinFor[""]); one made
-// while scoped to a room lands on that room, and never on the hub. The list is
-// the same across scopes; only the selected one differs.
-const SKINS = ["harbour", "moss", "noir", "ember", "vapor", "sandstone"];
-let skinFor = { "": "noir", alpha: "moss", sgg: "ember" };
-function resetSkins() { skinFor = { "": "noir", alpha: "moss", sgg: "ember" }; }
-function settingsBody(room) {
-  const skin = skinFor[room] != null ? skinFor[room] : skinFor[""];
-  return Object.assign({ global_auto: gautoOn, global_auto_seconds: 0, board_skin: skin, board_skins: SKINS,
-    card_colors: cardColorsMock, idle_park_after_now: idleParkNow, idle_park_after_default: 7200,
-    idle_park_after_min: 1800 }, kaSettings);
-}
-// The idle park timer the mocked room holds, seconds or "off", and every write the board made to it.
-let idleParkNow = 7200;
-let idleParkWrites = [];
-// The card colours the mocked daemon holds: the seed a fresh daemon writes, then whatever the board saved.
-let cardColorsMock = { default: "", repos: {
-  "github/openziti-test-kitchen/appetizer": "active-work", "github/dovholuknf/atrium": "active-light",
-  "github/openziti/desktop-edge-win": "dracula", "github/netfoundry/docusaurus-shared": "matrix",
-  "github/dovholuknf/dotfiles": "tangent", "github/openziti/sdk-golang": "terracotta",
-  "github/netfoundry/sterling": "orange-coral", "github/openziti/ziti": "teal-dusk",
-  "github/openziti/ziti-console": "deep-amethyst", "github/openziti/ziti-doc": "imperial-purple",
-  "github/openziti/ziti-openwrt": "ocean-deep", "github/openziti/ziti-sdk-c": "neon-grape",
-  "github/openziti/ziti-sdk-csharp": "nord", "github/openziti/ziti-sdk-py": "deep-ocean",
-  "github/openziti/ziti-tunnel-sdk-c": "gruvbox-dark", "github/openziti-test-kitchen/ziti-tv": "mauve-purple",
-  "github/openziti/zrok": "electric-purple" } };
-// The cache keep-alive's room settings, and every write the board made to it or
-// to a card's switch. See keepaliveSection.
-let kaSettings = {};
-let kaWrites = [];
-// The global auto switch the mocked daemon holds, and whether a room-scoped
-// settings read fails: the room the picker is scoped to has not re-attached yet,
-// so the hub cannot reach it. See the gauto-never-blank test.
-let gautoOn = false;
-let roomSettingsDown = false;
-// Every settings read answered, and how long each takes. A hub's answer takes
-// over 100ms, which is what lets a load's several readers overlap.
-let settingsReads = 0;
-let settingsDelay = 0;
-// The on/off switch rows: one runner and one fixture in each state, so the test
-// can compare the pill's box across an on row and an off row, and flip each way.
-// `switchFail` makes the next write refuse, which must put the pill back.
-// `switchWrites` is every write the switches made, as "METHOD path enabled".
-const HON = { id: "hon", label: "claude", cmd: "claude", args: [], enabled: true,
-  found: "/usr/bin/claude", launch_mode: "pty" };
-const HOFF = Object.assign({}, HON, { id: "hoff", label: "codex", cmd: "codex", enabled: false });
-const FON = { id: "fon", label: "notes", harness: "claude", cwd: "/tmp/notes", enabled: true,
-  resume: true, sort: 0 };
-const FOFF = Object.assign({}, FON, { id: "foff", label: "scratch", enabled: false, sort: 1 });
-let switchFail = false;
-let switchWrites = [];
-function resetSwitches() {
-  HON.enabled = true; HOFF.enabled = false; FON.enabled = true; FOFF.enabled = false;
-  switchFail = false; switchWrites = [];
-}
-// A PUT onto one of the rows above. The row takes the new state unless the test
-// armed a refusal, which is answered the way the daemon answers a bad save.
-function switchPut(req, res, rows) {
-  let raw = "";
-  req.on("data", c => { raw += c; });
-  req.on("end", () => {
-    let body = {};
-    try { body = JSON.parse(raw || "{}"); } catch (e) {}
-    const id = decodeURIComponent(req.url.split("?")[0].split("/").pop());
-    switchWrites.push(req.method + " " + req.url.split("?")[0] + " " + body.enabled);
-    if (switchFail) {
-      switchFail = false;
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "the daemon refused the switch" }));
-      return;
-    }
-    const row = rows.find(r => r.id === id);
-    if (row) row.enabled = !!body.enabled;
-    sendJSON(res, row || body);
-  });
-}
-
-const hungResponses = [];   // held-open sockets, ended on teardown
-const openStreams = [];
-const hubStreams = [];       // hub event streams, used to push a `rooms` event
-
-// A room the hub still counts as attached but that does not answer: every
-// proxied read is held until this time, then refused. See idleRateSection.
-let roomStallUntil = 0;
-let stalledCount = 0;
-// The reads a stall is holding, so a stall timed on a page's fake clock can end them when it ends.
-const stallHeld = [];
-
-const HTML = wholeBoard();
-
-// The file endpoints the walk drawer uses, answering from a directory per card and the way
-// internal/api/filetext.go does: a write quotes the hash it read, and a stale one is a 409 that hands back what
-// is there now. `walkDirs` is card id -> a TEMPORARY COPY, never a real review folder. See `walkSection`.
-const walkDirs = {};
-const walkHash = b => crypto.createHash("sha256").update(b).digest("hex");
-function walkRoute(req, res, url) {
-  const m = /^\/v1\/tasks\/([^/]+)\/files\/(list|text)$/.exec(url);
-  if (!m || !walkDirs[m[1]]) return false;
-  const dir = walkDirs[m[1]];
-  const rel = new URL(req.url, "http://x").searchParams.get("path") || "";
-  const full = path.resolve(dir, rel);
-  const deny = () => { res.writeHead(403, { "Content-Type": "application/json" }); res.end('{"error":"outside"}'); };
-  if (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep)) { deny(); return true; }
-  if (m[2] === "list") {
-    let ents;
-    try { ents = fs.readdirSync(full, { withFileTypes: true }); } catch (e) { deny(); return true; }
-    const entries = ents.map(d => {
-      const st = fs.statSync(path.join(full, d.name));
-      return { name: d.name, path: rel ? rel.replace(/\/$/, "") + "/" + d.name : d.name, dir: d.isDirectory(),
-        size: d.isDirectory() ? undefined : st.size, mtime: st.mtime.toISOString() };
-    }).sort((a, b) => (a.dir === b.dir ? (a.name < b.name ? -1 : 1) : a.dir ? -1 : 1));
-    sendJSON(res, { path: rel, parent: "", entries });
-    return true;
-  }
-  if (req.method === "PUT") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      let body = {};
-      try { body = JSON.parse(raw || "{}"); } catch (e) {}
-      if (!String(body.hash || "").trim()) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end('{"error":"a write has to say what it was based on"}');
-        return;
-      }
-      let cur;
-      try { cur = fs.readFileSync(full); } catch (e) { deny(); return; }
-      if (walkHash(cur) !== body.hash) {
-        res.writeHead(409, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "that file changed while you were editing it. nothing was written.",
-          text: cur.toString("utf8").replace(/\r\n/g, "\n"), hash: walkHash(cur) }));
-        return;
-      }
-      let out = String(body.text || "");
-      if (body.eol === "\r\n") out = out.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
-      fs.writeFileSync(full, out);
-      sendJSON(res, { ok: true, hash: walkHash(Buffer.from(out)) });
-    });
-    return true;
-  }
-  let raw;
-  try { raw = fs.readFileSync(full); } catch (e) { deny(); return true; }
-  if (raw.length > (2 << 20)) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end('{"error":"that file is too large to edit here. download it instead"}');
-    return true;
-  }
-  sendJSON(res, { path: full.replace(/\\/g, "/"), text: raw.toString("utf8").replace(/\r\n/g, "\n"),
-    hash: walkHash(raw), eol: raw.includes("\r\n") ? "\r\n" : "\n" });
-  return true;
-}
-
-// THE UNIFIED CARD (docs/rnd/unified-card.md): one card per state, and 111 finished ones for the cap.
-const UC_AT = new Date(Date.UTC(2026, 8, 19, 12, 0, 0)).toISOString();
-const ucCard = (id, status, more) => Object.assign({
-  id, status, display_title: id, runner: "claude", rank: 1, worktree: "/tmp/" + id, why: "", idle_seconds: 30, wait_seconds: 0,
-  waiting_since: UC_AT, created_at: UC_AT, last_activity_at: UC_AT, tags: [], supervised: false, offline: false, pinned: false,
-  auto_approve: false, pid: 0
-}, more || {});
-const UC_CARDS = [
-  ucCard("uc-ready", "needs-input", { supervised: true, pid: 11 }),
-  ucCard("uc-agent", "needs-input", { supervised: true, pid: 12, tags: ["origin:agent"] }),
-  ucCard("uc-perm", "needs-permission", { supervised: true, pid: 13 }),
-  ucCard("uc-work", "running", { supervised: true, pid: 14, activity: { what: "thinking" } }),
-  ucCard("uc-quiet", "running", { supervised: true, pid: 15 }),
-  ucCard("uc-gone", "needs-input", { supervised: false }),
-  ucCard("uc-parked", "needs-input", { supervised: false, parked_at: UC_AT }),
-  ucCard("uc-paused", "paused"),
-  ucCard("uc-done", "done"),
-  ucCard("uc-dead", "dead"),
-];
-const UC_MANY = Array.from({ length: 111 }, (_, i) => ucCard("ud" + i, "done", {
-  pinned: i < 17, last_activity_at: new Date(Date.UTC(2026, 8, 19, 12, 0, 0) - i * 3600e3).toISOString() }));
-
-function sendJSON(res, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(body);
-}
 
 // What `/v1/tasks` answers right now: the list, or "hang" or "down". A
 // function so the change watcher below can ask without it counting as a read.
 function mockTasks(reading) {
-  if (tasksMode === "hang") return "hang";  // never answer
+  if (mock.tasksMode === "hang") return "hang";  // never answer
   // The pinned-cold strip: the terminated card while its pin holds it, and an
   // empty list once dismiss has unpinned it.
-  if (tasksMode === "pinned") { return PIN.pinned ? [PIN] : []; }
-  if (tasksMode === "filed") { return [FILED, LOOSE]; }
-  if (tasksMode === "seen") { return [T1, SEEN]; }
-  if (tasksMode === "qclick") { return qclickCards(); }
-  if (tasksMode === "land") { return [T1].concat(landList); }
+  if (mock.tasksMode === "pinned") { return mock.PIN.pinned ? [mock.PIN] : []; }
+  if (mock.tasksMode === "filed") { return [FILED, mock.LOOSE]; }
+  if (mock.tasksMode === "seen") { return [T1, SEEN]; }
+  if (mock.tasksMode === "qclick") { return qclickCards(); }
+  if (mock.tasksMode === "land") { return [T1].concat(mock.landList); }
   // Untagged cards in custom mode, for the sort and the new-card sections.
-  if (tasksMode === "untagged") {
-    if (untaggedDown) return "down";
-    if (untaggedEmpty) { return []; }
-    const list = [FILED].concat(UNTAGGED_CARDS, untaggedExtra);
-    return untaggedTag
-      ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list;
+  if (mock.tasksMode === "untagged") {
+    if (mock.untaggedDown) return "down";
+    if (mock.untaggedEmpty) { return []; }
+    const list = [FILED].concat(UNTAGGED_CARDS, mock.untaggedExtra);
+    return mock.untaggedTag
+      ? list.map(t => Object.assign({}, t, { id: mock.untaggedTag + "~" + t.id })) : list;
   }
   // The terminals strip: a live agent with three subagents, a paused card, and a dead (cold, pinned) agent and subagent.
-  if (tasksMode === "doers") {
+  if (mock.tasksMode === "doers") {
     return [AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1];
   }
   // The attach-loop repro. The cached LIST lags the live card: it carries the
@@ -639,471 +73,27 @@ function mockTasks(reading) {
   // state, where the list agrees the card is attachable and nothing tears it
   // down. Pinned so the row is present either way, the way a real lagging
   // list keeps the row while dropping the live flag.
-  if (tasksMode === "unified") { return UC_CARDS; }
-  if (tasksMode === "unifiedMany") { return UC_MANY; }
-  if (tasksMode === "worn") { return wornTasks; }
-  if (tasksMode === "keepalive") { return KA_CARDS; }
-  if (tasksMode === "stuck") { return stuckCards(); }
-  if (tasksMode === "blocker") { return blockerCards(); }
-  if (tasksMode === "ctxsize") { return CTX_CARDS; }
-  if (tasksMode === "onehover") { return [ONE_HOVER_CARD, OH_ASKED, OH_IDLE]; }
-  if (tasksMode === "peekstatus") { return [PS_YOURMOVE, PS_ASKS, PS_RUNNING, PS_STALE, PS_FRESH, PS_LONG]; }
-  if (tasksMode === "peek") {
+  if (mock.tasksMode === "unified") { return UC_CARDS; }
+  if (mock.tasksMode === "unifiedMany") { return UC_MANY; }
+  if (mock.tasksMode === "worn") { return mock.wornTasks; }
+  if (mock.tasksMode === "keepalive") { return KA_CARDS; }
+  if (mock.tasksMode === "stuck") { return stuckCards(); }
+  if (mock.tasksMode === "blocker") { return blockerCards(); }
+  if (mock.tasksMode === "ctxsize") { return CTX_CARDS; }
+  if (mock.tasksMode === "onehover") { return [ONE_HOVER_CARD, OH_ASKED, OH_IDLE]; }
+  if (mock.tasksMode === "peekstatus") { return [PS_YOURMOVE, PS_ASKS, PS_RUNNING, PS_STALE, PS_FRESH, PS_LONG]; }
+  if (mock.tasksMode === "peek") {
     // Idle a second longer on every read, so a refresh redraws the entries.
-    if (reading) peekReads++;
-    return PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + peekReads }));
+    if (reading) mock.peekReads++;
+    return PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + mock.peekReads }));
   }
-  if (tasksMode === "loop") {
+  if (mock.tasksMode === "loop") {
     return [Object.assign({}, LOOP,
-      { supervised: loopListSupervised, pinned: true })];
+      { supervised: mock.loopListSupervised, pinned: true })];
   }
-  return [tasksMode === "second" ? T2 : T1];
+  return [mock.tasksMode === "second" ? T2 : T1];
 }
-
-const server = http.createServer((req, res) => {
-  const url = req.url.split("?")[0];
-
-  if (hubAway) { req.socket.destroy(); return; }
-
-  if (roomStallUntil > Date.now() && url.startsWith("/v1/") && url !== "/v1/health" &&
-      !url.startsWith("/v1/events")) {
-    stalledCount++;
-    const answer = () => { clearTimeout(t); if (!res.headersSent) { res.writeHead(503); res.end("{}"); } };
-    const t = setTimeout(answer, roomStallUntil - Date.now());
-    stallHeld.push(answer);
-    return;
-  }
-
-  if (url === "/working.gif") {
-    res.writeHead(200, { "Content-Type": "image/gif" });
-    res.end(fs.readFileSync(path.join(WEB_ROOT, "working.gif")));
-    return;
-  }
-  if (serveSW && (url === "/sw.js" || url === "/down.html")) {
-    fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
-      if (err) { res.writeHead(404); res.end(""); return; }
-      res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html",
-        "Cache-Control": "no-store" });
-      res.end(body);
-    });
-    return;
-  }
-  // THE PAGE AS A BROWSER GETS IT, one <script src> per file. HTML above is every script inlined as one, where a
-  // function declaration hoists across files, so a file calling one that loads later works here and throws live.
-  // Only `bootClean` asks for this. `/raw/<anything>` is the same page, for a pop-out or card path.
-  if (url === "/raw" || url.startsWith("/raw/")) {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(fs.readFileSync(path.join(WEB_ROOT, "index.html")));
-    return;
-  }
-  if (url === "/read.html" || url === "/read.js") {
-    res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html" });
-    res.end(fs.readFileSync(path.join(WEB_ROOT, url)));
-    return;
-  }
-  if (/^\/(js|css)\/[A-Za-z0-9_.-]+\.(js|css)$/.test(url)) {
-    return fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
-      if (err) { res.writeHead(404); res.end(""); return; }
-      res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/css" });
-      res.end(body);
-    });
-  }
-  if (url === "/" || url === "/index.html") {
-    if (page502) { res.writeHead(502, { "Content-Type": "text/plain" }); res.end("bad gateway"); return; }
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(HTML);
-    return;
-  }
-  // The xterm bundle off disk, so a real terminal is built. Confined to
-  // /vendor/ under the web root.
-  // The phone page itself, which the chat tab embeds (`chatTab`).
-  if (url === "/m/" || url === "/m") {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(fs.readFileSync(path.join(WEB_ROOT, "m", "index.html")));
-    return;
-  }
-  if ((url.startsWith("/vendor/") || url.startsWith("/m/")) && !url.includes("..")) {
-    const file = path.join(WEB_ROOT, url);
-    fs.readFile(file, (err, body) => {
-      if (err) { res.writeHead(404); res.end(""); return; }
-      const type = url.endsWith(".css") ? "text/css" : "application/javascript"; // /m/ is the phone page's composer files
-      res.writeHead(200, { "Content-Type": type });
-      res.end(body);
-    });
-    return;
-  }
-  // A card-scoped poll, the one a popped-out window opens on. The hub answers a
-  // no-room restart with 503 and a genuine missing card with 404, and the solo
-  // window has to tell those apart. Placed before the list route, which is the
-  // exact path "/v1/tasks" with no trailing id.
-  // The typing gate readout's poll. Counted, so the section can prove it is not
-  // polled while the readout is off. See `typingSection`.
-  if (url.startsWith("/v1/tasks/") && url.endsWith("/typing")) {
-    typingPolls.push(req.url);
-    sendJSON(res, typingAnswer);
-    return;
-  }
-  // A card's keep-alive switch. Recorded, and answered the way the daemon does.
-  if (url.startsWith("/v1/tasks/") && url.endsWith("/keepalive") && req.method === "POST") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      let body = {};
-      try { body = JSON.parse(raw || "{}"); } catch (e) {}
-      kaWrites.push({ url, body });
-      sendJSON(res, { task_id: url.split("/")[3], keepalive: { state: body.on ? "on" : "off" } });
-    });
-    return;
-  }
-  // A `? N` chip's dismiss. Recorded, answered as the daemon does: the card's
-  // open questions go away unless the mock is told the set was stale.
-  if (url.startsWith("/v1/tasks/") && url.endsWith("/questions/dismiss") && req.method === "POST") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      let body = {};
-      try { body = JSON.parse(raw || "{}"); } catch (e) {}
-      const id = url.split("/")[3];
-      qDismissWrites.push({ url, body });
-      if (qDismissMode === "fail") {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "the store said no" }));
-        return;
-      }
-      if (qDismissMode === "nothing") { sendJSON(res, { dismissed: false, stale: false }); return; }
-      if (qDismissMode === "stale") { sendJSON(res, { dismissed: false, stale: true }); return; }
-      qDismissed.add(id);
-      sendJSON(res, { dismissed: true, stale: false });
-    });
-    return;
-  }
-  if (walkRoute(req, res, url)) return;
-  if (url.startsWith("/v1/tasks/")) {
-    const id = url.slice("/v1/tasks/".length);
-    // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
-    // state is what the next /v1/tasks answer reads to drop the row for good.
-    if (req.method === "PATCH") {
-      let raw = "";
-      req.on("data", c => { raw += c; });
-      req.on("end", () => {
-        let body = {};
-        try { body = JSON.parse(raw || "{}"); } catch (e) {}
-        if (id === "pin1" && typeof body.pinned === "boolean") PIN.pinned = body.pinned;
-        if ("alias" in body) aliasWrites.push({ id, body });
-        // A theme kept from the picker, saved on the worn list so a reload reads it back.
-        const worn = tasksMode === "worn" && wornTasks.find(t => t.id === id);
-        if (worn && typeof body.theme === "string") { worn.theme = body.theme; sendJSON(res, worn); return; }
-        sendJSON(res, id === "pin1" ? PIN : T1);
-      });
-      return;
-    }
-    // Ahead of the solo modes, which an earlier section can leave set: the
-    // group sections read this card's tags for its menu.
-    if (id === "filed1") { sendJSON(res, FILED); return; }
-    if (id.startsWith("ll-") && tasksMode === "worn") {
-      const one = wornTasks.find(t => t.id === id);
-      if (one) { sendJSON(res, one); return; }
-    }
-    if ((id.startsWith("land-") || id.startsWith("cc-")) && !id.includes("/")) {
-      if (LAND[id]) { sendJSON(res, LAND[id]); return; }
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "no such card" }));
-      return;
-    }
-    if (soloMode === "noroom") {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "no room is attached to this hub. the hub " +
-        "serves the board and holds nothing, so until a room connects there is " +
-        "nothing to show. run `atrium room join` on the machine your agents are on." }));
-      return;
-    }
-    if (soloMode === "gone") {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "no such card" }));
-      return;
-    }
-    if (id === "loop1") { sendJSON(res, LOOP); return; }
-    // The solo card under its room-tagged spelling, the form the hub serves
-    // while more than one room is attached. See `popoutTagFlipSection`.
-    if (id === "sgg~s1") { sendJSON(res, Object.assign({}, SOLO, { id: "sgg~s1" })); return; }
-    sendJSON(res, id === "s1" ? SOLO : id === "pin1" ? PIN : (id === "t2" ? T2 : T1));
-    return;
-  }
-  if (url === "/v1/tasks") {
-    const got = mockTasks(true);
-    if (got === "hang") { hungResponses.push(res); return; }
-    if (got === "down") { res.writeHead(503); res.end("{}"); return; }
-    sendJSON(res, { tasks: got });
-    return;
-  }
-  // The runners page. Everything it reads besides runners and fixtures is empty.
-  if (url === "/v1/harnesses") { sendJSON(res, { harnesses: [HON, HOFF] }); return; }
-  if (url.startsWith("/v1/harnesses/") && req.method === "PUT") {
-    switchPut(req, res, [HON, HOFF]); return;
-  }
-  if (url === "/v1/fixtures") { sendJSON(res, { fixtures: [FON, FOFF] }); return; }
-  if (url.startsWith("/v1/fixtures/") && req.method === "PUT") {
-    switchPut(req, res, [FON, FOFF]); return;
-  }
-  if (url === "/v1/hooks") { sendJSON(res, { missing: 0, hooks: [] }); return; }
-  // The rooms pill's fix: the room it wrote to, and the setup the hub then reads clean.
-  if (url === "/v1/hooks/install" && req.method === "POST") {
-    setupFixed.push(req.headers["x-atrium-room"] || "");
-    delete SGG.setup;
-    sendJSON(res, { report: { missing: 0, hooks: [] }, backup: "C:/Users/x/.claude/settings.json.atrium-1.bak", changed: true });
-    return;
-  }
-  if (url.startsWith("/_hub/setup-check") && req.method === "POST") { sendJSON(res, { room: "sgg", setup: null }); return; }
-  if (url === "/v1/sources") { sendJSON(res, { sources: [] }); return; }
-  if (url === "/v1/recognisers") { sendJSON(res, { recognisers: [] }); return; }
-  if (url === "/v1/actions") { sendJSON(res, { actions: [] }); return; }
-  if (url === "/v1/providers") { sendJSON(res, { providers: [] }); return; }
-  if (url === "/v1/dispatch") { sendJSON(res, { dispatches: [] }); return; }
-  if (url === "/v1/history") {
-    if (!histMany) { sendJSON(res, { tasks: [HIST], total: 1 }); return; }
-    // Paged the way the store pages, so "show more" and the live re-read ask
-    // for the same slices a real room answers.
-    const q = new URL(req.url, "http://x").searchParams;
-    const all = histFeed();
-    const offset = +q.get("offset") || 0, limit = +q.get("limit") || 100;
-    sendJSON(res, { tasks: all.slice(offset, offset + limit), total: all.length });
-    return;
-  }
-  if (url === "/v1/waiting") { waitingReads++; sendJSON(res, { tasks: [] }); return; }
-  if (url === "/v1/permissions") { sendJSON(res, { permissions: tasksMode === "land" ? landPerms : [] }); return; }
-  if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
-  if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
-  if (url === "/v1/usage" && req.method === "POST") {
-    let raw = "";
-    req.on("data", c => { raw += c; });
-    req.on("end", () => {
-      try { for (const [k, n] of Object.entries(JSON.parse(raw).counts || {})) boardUsageSeen.set(k, (boardUsageSeen.get(k) || 0) + n); } catch (e) {}
-      res.writeHead(204); res.end();
-    });
-    return;
-  }
-  if (url === "/v1/usage/board") {
-    const controls = [...boardUsageSeen].map(([control, n]) => ({ control, n, last: "2026-10-10" })).sort((x, y) => y.n - x.n);
-    sendJSON(res, { controls }); return;
-  }
-  if (url === "/v1/health") {
-    sendJSON(res, { build: healthBuild, settling: false, halted: false }); return;
-  }
-  if (url === "/v1/settings") {
-    // The scope is the room header the board's fetch wrapper adds, or "" for the
-    // ALL view. The hub answers the ALL view with its own skin and a room-scoped
-    // request with that room's, which is the whole of the feature.
-    const room = req.headers["x-atrium-room"] || "";
-    if (req.method === "POST" || req.method === "PUT") {
-      let raw = "";
-      req.on("data", c => { raw += c; });
-      req.on("end", () => {
-        let body = {};
-        try { body = JSON.parse(raw || "{}"); } catch (e) {}
-        const keys = Object.keys(body);
-        // The keep-alive's two settings, recorded so the test can read what the
-        // switch and the clear button sent.
-        if (keys.some(k => k.startsWith("cache_keepalive_"))) {
-          kaWrites.push({ url, body });
-          if ("cache_keepalive_default" in body) kaSettings.cache_keepalive_default = body.cache_keepalive_default;
-          if (body.cache_keepalive_suspended === false) kaSettings.cache_keepalive_suspended = "";
-          sendJSON(res, settingsBody(room));
-          return;
-        }
-        if ("idle_park_after" in body) {
-          idleParkWrites.push({ room, body });
-          idleParkNow = body.idle_park_after === "off" ? "off" : Number(body.idle_park_after);
-          sendJSON(res, settingsBody(room));
-          return;
-        }
-        // A skin-only save lands on the current scope: the hub for ALL, the room
-        // when scoped. Anything else in the ALL view still needs a room (409),
-        // which is the refusal the scoped skin does NOT get any more.
-        if (keys.length === 1 && keys[0] === "card_colors") {
-          cardColorsMock = body.card_colors;
-          sendJSON(res, settingsBody(room));
-          return;
-        }
-        if (keys.length === 1 && keys[0] === "board_skin") {
-          skinFor[room] = body.board_skin;
-          sendJSON(res, settingsBody(room));
-          return;
-        }
-        if (!room) {
-          res.writeHead(409, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "pick a room first" }));
-          return;
-        }
-        sendJSON(res, settingsBody(room));
-      });
-      return;
-    }
-    // A hub with no room to borrow from cannot answer the ALL view, the same 409
-    // the real proxy gives until a room re-attaches. A room-scoped read still
-    // goes straight to that room and is unaffected.
-    if (!room && !hubHasRoom) {
-      res.writeHead(409, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "pick a room first" }));
-      return;
-    }
-    if (room && roomSettingsDown) {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "room " + room + " is not attached" }));
-      return;
-    }
-    settingsReads++;
-    if (settingsDelay) { setTimeout(() => sendJSON(res, settingsBody(room)), settingsDelay); return; }
-    sendJSON(res, settingsBody(room));
-    return;
-  }
-  if (url === "/v1/themes") { sendJSON(res, { themes: [] }); return; }
-  // The plain-daemon stream and the hub's own spelling of it. On a hub the board
-  // opens `/v1/events/hub`, and the room-picker test writes a `rooms` event onto
-  // that one to make a room attach while the dropdown is open.
-  if (url === "/v1/events" || url === "/v1/events/hub" || url.startsWith("/v1/events/room/")) {
-    // An event stream that stays open and says nothing. The board polls for its
-    // data, so an idle stream is enough to keep it out of the reconnect state.
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
-    });
-    res.write((sseRetry ? "retry: " + sseRetry + "\n" : "") + ": open\n\n");
-    openStreams.push(res);
-    if (url === "/v1/events/hub") hubStreams.push(res);
-    return;
-  }
-  // The hub probes. Off by default (a plain daemon 404s them); the room-picker
-  // test turns `hubMode` on so the board runs as a hub with two rooms.
-  if (url.startsWith("/_hub/docs")) {
-    // Hub documents, for the board's documents tab. Off by default: a room's own board has none.
-    if (!boardDocs) { res.writeHead(404); res.end("not a hub"); return; }
-    const v = { n: 1, at: "2026-09-30T12:00:00Z", by: "operator", origin: "local", size: 14, kind: "markdown", mime: "text/markdown", name: "board.md", sha: "x", missing: false, purged: false };
-    if (url === "/_hub/docs/settings") { sendJSON(res, { operator: true, enabled: true, caps: {}, usage: {}, largest: [] }); return; }
-    if (url.startsWith("/_hub/docs/board-doc/raw")) { res.writeHead(200, { "Content-Type": "application/octet-stream" }); res.end("# Board doc\n\nhello"); return; }
-    if (url === "/_hub/docs/board-doc") { sendJSON(res, { slug: "board-doc", title: "Board doc", created: v.at, deleted: null, versions: [v] }); return; }
-    if (url.startsWith("/_hub/docs")) { sendJSON(res, { docs: [{ slug: "board-doc", title: "Board doc", created: v.at, updated: v.at, versions: 1, latest: v, deleted: null }], usage: { bytes: 14, cap: 1000000 } }); return; }
-  }
-  if (url.startsWith("/_hub/files")) {
-    // The hub file drop, for the board's files tab. It rides the documents flag: a hub with one has the other.
-    if (!boardDocs) { res.writeHead(404); res.end("not a hub"); return; }
-    if (url === "/_hub/files" && req.method === "GET") {
-      const now = Date.now();
-      sendJSON(res, { files: [
-        { name: "report.pdf", size: 2048, origin: "card", by: "card-a", room: "box", note: "the numbers", at: new Date(now - 3600000).toISOString(), expires: new Date(now + 5 * 86400000).toISOString() },
-        { name: "old log.txt", size: 512, origin: "local", by: "", room: "", note: "", at: new Date(now - 86400000).toISOString(), expires: new Date(now + 3600000 * 5).toISOString() },
-      ], usage: { bytes: 2560, cap: 1000000 } });
-      return;
-    }
-    if (url.endsWith("/delete") && req.method === "POST") { filesDeleted.push(decodeURIComponent(url.split("/")[3])); sendJSON(res, { ok: true }); return; }
-    res.writeHead(404); res.end("no such files route"); return;
-  }
-  if (url === "/_hub/rooms") {
-    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    if (!hubHasRoom) { sendJSON(res, { rooms: [] }); return; }
-    sendJSON(res, { rooms: sggAttached ? [ALPHA, SGG] : [ALPHA] });
-    return;
-  }
-  if (url === "/_hub/inventory") {
-    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    const alpha = Object.assign({ transport: "direct", attached: true,
-      first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T12:00:00Z" }, ALPHA);
-    // sgg has dialled in before, so it shows disconnected until it attaches: the
-    // picker only lists an ever-connected room, never one that is only inventory.
-    const sgg = Object.assign({ transport: "direct", attached: sggAttached,
-      first_seen: "2026-09-19T06:00:00Z", last_seen: "2026-09-19T11:00:00Z" }, SGG);
-    sendJSON(res, { rooms: [alpha, sgg] });
-    return;
-  }
-  if (url === "/_hub/health") { res.writeHead(404); res.end("not a hub"); return; }
-  // The hub restart gate's board calls. The countdown itself is pushed onto the
-  // open streams by the test, the way the hub pushes it. See restartGateSection.
-  if (url.startsWith("/_hub/restart")) {
-    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    const sub = url.slice("/_hub/restart".length);
-    if (sub === "/input") gateCalls.input++;
-    if (sub === "/pause") { gateCalls.pause++; gatePaused = true; }
-    if (sub === "/resume") { gateCalls.resume++; gatePaused = false; }
-    const answer = { paused: gatePaused, waiting: false, countdown_left: gateCountdownLeft, boards: 1,
-      boot: gateBoot };
-    if (sub === "") gateAsked++;
-    // `gateRestartMode` shapes only the board's `GET /_hub/restart`: `fail` answers 503, and
-    // `slow` holds the answer back, naming the hub as it was when it was asked.
-    if (sub === "" && gateRestartMode === "fail") { res.writeHead(503); res.end("{}"); return; }
-    if (sub === "" && gateRestartMode === "slow") { setTimeout(() => sendJSON(res, answer), gateSlowMs); return; }
-    sendJSON(res, answer);
-    return;
-  }
-  // The hub's backlog and director reports, read-only on the board. Open items only when `open=1`, as the hub does.
-  // See js/backlog.js.
-  if (url.startsWith("/_hub/backlog") || url.startsWith("/_hub/reports")) {
-    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    const q = new URL(req.url, "http://x").searchParams;
-    if (url.startsWith("/_hub/backlog")) {
-      let items = [
-        { id: "f-003", dept: "fabric", title: "An inventory of resources", status: "built", priority: "low" },
-        { id: "f-new-x", dept: "fabric", title: "Open work", status: "open" },
-        { id: "r-037", dept: "runtime", title: "Finished work", status: "done" }
-      ];
-      if (q.get("open") === "1") items = items.filter(b => b.status !== "done" && b.status !== "dropped");
-      if (q.get("dept")) items = items.filter(b => b.dept === q.get("dept"));
-      sendJSON(res, { items });
-      return;
-    }
-    sendJSON(res, { reports: [{ id: "rp_1", to_dept: "", from_by: "fabric", from_room: "sg4", subject: "f-003 built",
-      body: "done and tested", at: "2026-09-30T12:00:00Z", read_at: null, read_by: null }] });
-    return;
-  }
-  // The items a human owns that are blocked or finished. See js/backlog.js.
-  if (url.startsWith("/_hub/items")) {
-    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    sendJSON(res, { items: [{ item_id: "it-aa11", room: "sg4", card: "c1", state: "blocked", revision: 2,
-      owner_kind: "human", updated_at: "2026-10-13T12:00:00Z" }] });
-    return;
-  }
-  // The operational audit feed, newest first and filterable by room and kind the
-  // same way the hub serves it, so the pane's filters can be driven against a
-  // real response. See js/audit.js.
-  if (url === "/_hub/audit") {
-    if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
-    const q = new URL(req.url, "http://x").searchParams;
-    const room = (q.get("room") || "").toLowerCase();
-    const kind = q.get("kind") || "";
-    let events = auditFeed();
-    if (room) events = events.filter(e => (e.room || "").toLowerCase() === room);
-    if (kind) events = events.filter(e => e.kind === kind);
-    sendJSON(res, { events });
-    return;
-  }
-  // Everything else (sw.js, icons, favicon): a clean 404.
-  res.writeHead(404); res.end("");
-});
-
-// THE MOCK BROADCASTS ITS CHANGES, the way the daemon does.
-//
-// The board no longer re-reads the cards on a clock: it reads them at load, on
-// a resync, and when the stream says something changed. Every change on a real
-// daemon is broadcast, so a mock whose answer changes without saying so is a
-// daemon that does not exist. This watches what `/v1/tasks` and
-// `/v1/permissions` would answer and, when either moves, says so on every open
-// stream: a sweep `task-removed` (no id, so the board reads the list again) or a
-// `permission`. `mockBroadcast` is off in the sections that count requests
-// against a stream the test drives itself.
-let mockBroadcast = true;
-// Counted so `eventDriven` can prove the board never asks for it.
-let waitingReads = 0;
-let mockSaid = { tasks: "", perms: "" };
-function mockFingerprint(v) { try { return JSON.stringify(v); } catch (e) { return String(v); } }
-function mockSay(kind, data) {
-  openStreams.forEach(r => { try { r.write("event: " + kind + "\ndata: " + data + "\n\n"); } catch (e) {} });
-}
-const mockWatch = setInterval(() => {
-  const tasks = mockFingerprint(mockTasks(false));
-  const perms = mockFingerprint(tasksMode === "land" ? landPerms : []);
-  if (mockBroadcast && mockSaid.tasks && tasks !== mockSaid.tasks) mockSay("task-removed", "{}");
-  if (mockBroadcast && mockSaid.perms && perms !== mockSaid.perms) mockSay("permission", "{}");
-  mockSaid = { tasks, perms };
-}, 200);
-mockWatch.unref();
+hooks.tasks = mockTasks;
 
 let bad = 0;
 // The unit running now, and what failed in it. See unit() in main.
@@ -1186,7 +176,7 @@ async function wornSection(browser, base) {
     all["width-floor"] = true;
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   try {
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
@@ -1207,15 +197,15 @@ async function wornSection(browser, base) {
     // default filter, half of them pinned so the star is on some. One more with
     // no theme and a repo, which takes the repo default.
     const names = await wp.evaluate(() => Object.keys(TERM_THEMES));
-    wornTasks = names.map((n, i) => Object.assign({}, T1, {
+    mock.wornTasks = names.map((n, i) => Object.assign({}, T1, {
       id: "w-" + n, display_title: "themed " + n, theme: n, supervised: true,
       worktree: "/tmp/worn/" + n, pinned: i % 2 === 0
     }));
-    wornTasks.push(Object.assign({}, T1, {
+    mock.wornTasks.push(Object.assign({}, T1, {
       id: "w-default", display_title: "repo default", supervised: true,
       repo: "dovholuknf/atrium", worktree: "/tmp/worn/atrium"
     }));
-    tasksMode = "worn";
+    mock.tasksMode = "worn";
     const expect = await wp.evaluate(() => {
       const out = {};
       for (const [n, th] of Object.entries(TERM_THEMES)) out["w-" + n] = th.background;
@@ -1228,12 +218,12 @@ async function wornSection(browser, base) {
       await wp.evaluate(async () => { runRefresh(); await loadCards().catch(() => {}).then(renderTermList); });
       await wp.waitForFunction(n => document.querySelectorAll('#stack-list .stackrow[data-id^="w-"]').length >= n &&
         document.querySelectorAll('#term-list .card.tab[data-id^="w-"]').length >= n,
-        wornTasks.length, { timeout: slow(15000) });
+        mock.wornTasks.length, { timeout: slow(15000) });
       await wp.click('.tab[data-view="board"]');
       await wp.waitForFunction(([n, w]) =>
         document.querySelectorAll('.card:not(.tab)[data-id^="w-"]').length >= n &&
         document.querySelectorAll('.card:not(.tab).worn[data-id^="w-"]').length === (w ? n : 0),
-        [wornTasks.length, !!worn], { timeout: slow(15000) });
+        [mock.wornTasks.length, !!worn], { timeout: slow(15000) });
       await wp.click('.tab[data-view="stack"]');
     };
 
@@ -1298,8 +288,8 @@ async function wornSection(browser, base) {
       }
     }
     for (const [where, ids] of Object.entries(seen)) {
-      if (ids.size !== wornTasks.length) {
-        fail("with the setting on, the " + where + " drew " + ids.size + " worn cards of " + wornTasks.length + ".");
+      if (ids.size !== mock.wornTasks.length) {
+        fail("with the setting on, the " + where + " drew " + ids.size + " worn cards of " + mock.wornTasks.length + ".");
       }
     }
     if (low.length) {
@@ -1342,7 +332,7 @@ async function wornSection(browser, base) {
     });
     if (errors.length) fail("the card-colours page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -1365,15 +355,15 @@ async function termWearSection(browser, base) {
     // The exited rows are pinned and cold, so they are behind the dead chip.
     localStorage.setItem("atrium.terms.show", '["dead"]');
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, theme) => Object.assign({}, T1, {
     id, display_title: "row " + id, theme, supervised: true, pinned: true, worktree: "/tmp/tw/" + id
   });
   const dead = (id, theme) => Object.assign(live(id, theme), { status: "dead", supervised: false, pid: 0 });
   try {
-    wornTasks = [live("tw-atrium", "atrium"), live("tw-nord", "nord"), live("tw-light", "active-light"),
+    mock.wornTasks = [live("tw-atrium", "atrium"), live("tw-nord", "nord"), live("tw-light", "active-light"),
       dead("tw-dead", "dracula"), dead("tw-deadlight", "active-light")];
-    tasksMode = "worn";
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
@@ -1498,7 +488,7 @@ async function termWearSection(browser, base) {
 
     if (errors.length) fail("the terminals list switches page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -1516,8 +506,8 @@ async function bridgeSection(browser, base) {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
     localStorage.setItem("atrium.grouping", JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
   });
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   try {
     await bp.goto(base, { waitUntil: "domcontentloaded" });
     await bp.waitForTimeout(900);
@@ -1614,7 +604,7 @@ async function bridgeSection(browser, base) {
     }
     if (errors.length) fail("the bridge page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -2067,8 +1057,8 @@ async function groupRemoveSection(browser, base) {
     localStorage.setItem("atrium.grouping",
       JSON.stringify({ on: true, mode: "custom", groups: ["active", "spare"] }));
   });
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   try {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForTimeout(900);
@@ -2115,7 +1105,7 @@ async function groupRemoveSection(browser, base) {
     if (stray.length) fail("a heading that is not one of your groups takes the group menu: " + stray.join(", "));
     if (errors.length) fail("the group remove page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -2139,8 +1129,8 @@ async function groupColorSection(browser, base) {
         JSON.stringify({ on: true, mode: "custom", groups: ["active", "spare"] }));
     }
   });
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   const hues = page => page.evaluate(() => {
     const hue = sel => {
       const el = document.querySelector(sel);
@@ -2214,7 +1204,7 @@ async function groupColorSection(browser, base) {
     }
     if (errors.length) fail("the group colour page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -2238,8 +1228,8 @@ async function groupDragSection(browser, base) {
         JSON.stringify({ on: true, mode: "custom", groups: ["active", "spare"] }));
     }
   });
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   const heads = () => dp.evaluate(() =>
     [...document.querySelectorAll("#term-list .tgroup")].map(b =>
       b.classList.contains("pinnedhead") ? "*pinned" : b.querySelector(".tgname").textContent.trim()));
@@ -2321,7 +1311,7 @@ async function groupDragSection(browser, base) {
     }
     if (errors.length) fail("the group drag page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -2418,9 +1408,9 @@ async function websiteSkinSection(browser, base) {
 async function settingsOnceSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const sp = await ctx.newPage();
-  const wasHub = hubMode;
-  hubMode = true;
-  settingsDelay = 135;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.settingsDelay = 135;
   // This page's reads, not the server's. In the full run the main page is still
   // open and reads settings on its own clock, which the server count took for a
   // second read by this load.
@@ -2431,16 +1421,16 @@ async function settingsOnceSection(browser, base) {
     await sp.waitForTimeout(2500);
     if (settingsReads !== 1) fail("a board load read /v1/settings " + settingsReads + " times, not once.");
     const skin = await sp.evaluate(() => document.documentElement.getAttribute("data-skin"));
-    if (skin !== skinFor[""]) {
-      fail("with the settings read shared, the skin did not land (got " + skin + ", want " + skinFor[""] + ").");
+    if (skin !== mock.skinFor[""]) {
+      fail("with the settings read shared, the skin did not land (got " + skin + ", want " + mock.skinFor[""] + ").");
     }
     // A read made after the first has answered asks again: nothing finished is kept.
     const before = settingsReads;
     await sp.evaluate(() => api("/v1/settings"));
     if (settingsReads !== before + 1) fail("a settings read after the load did not reach the daemon.");
   } finally {
-    hubMode = wasHub;
-    settingsDelay = 0;
+    mock.hubMode = wasHub;
+    mock.settingsDelay = 0;
     await ctx.close();
   }
 }
@@ -2453,11 +1443,11 @@ async function restartGateSection(browser, base) {
   const gp = await ctx.newPage();
   const errors = [];
   gp.on("pageerror", e => errors.push(String(e)));
-  const wasHub = hubMode;
-  hubMode = true;
-  gatePaused = false;
-  Object.assign(gateCalls, { input: 0, pause: 0, resume: 0 });
-  sseRetry = 200;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.gatePaused = false;
+  Object.assign(mock.gateCalls, { input: 0, pause: 0, resume: 0 });
+  mock.sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2479,8 +1469,8 @@ async function restartGateSection(browser, base) {
     await gp.mouse.click(700, 450);
     await gp.keyboard.press("Shift");
     await run(300);
-    if (gateCalls.input !== 1) fail("a click and a key inside the throttle reported input " +
-      gateCalls.input + " times, not once.");
+    if (mock.gateCalls.input !== 1) fail("a click and a key inside the throttle reported input " +
+      mock.gateCalls.input + " times, not once.");
 
     // The countdown shows and counts.
     say({ state: "countdown", seconds: 5 });
@@ -2497,19 +1487,19 @@ async function restartGateSection(browser, base) {
     // ONLY THE PAUSE BUTTON STOPS IT. Typing, clicking elsewhere, the banner's own
     // text and scrolling leave it running, and none is reported as input.
     await run(3100);
-    const inputBefore = gateCalls.input;
+    const inputBefore = mock.gateCalls.input;
     await gp.mouse.click(700, 450);
     await gp.keyboard.press("a");
     await gp.mouse.wheel(0, 100);
     await gp.click(".toast.hubgate .what");
     await gp.click(".toast.hubgate b");
     await run(300);
-    if (gateCalls.pause !== 0) fail("a click on the banner's text paused the countdown.");
-    if (gateCalls.input !== inputBefore) fail("input with the countdown up was reported to the hub.");
+    if (mock.gateCalls.pause !== 0) fail("a click on the banner's text paused the countdown.");
+    if (mock.gateCalls.input !== inputBefore) fail("input with the countdown up was reported to the hub.");
     if (!(await gp.$(".toast.hubgate"))) fail("typing or clicking elsewhere took the countdown down.");
     await gp.click(".toast.hubgate .hubgate-act");
     await run(300);
-    if (gateCalls.pause !== 1) fail("clicking the countdown called pause " + gateCalls.pause + " times.");
+    if (mock.gateCalls.pause !== 1) fail("clicking the countdown called pause " + mock.gateCalls.pause + " times.");
     if (await gp.$(".toast.hubgate")) fail("the countdown toast stayed up after it was clicked.");
 
     // The hub says paused: a sticky toast with a resume button, which survives
@@ -2526,11 +1516,11 @@ async function restartGateSection(browser, base) {
     if (!(await gp.$(".toast.hubgate"))) fail("the paused toast timed out like an ordinary one.");
     await gp.click(".toast.hubgate .hubgate-act");
     await run(300);
-    if (gateCalls.resume !== 1) fail("the resume button called resume " + gateCalls.resume + " times.");
+    if (mock.gateCalls.resume !== 1) fail("the resume button called resume " + mock.gateCalls.resume + " times.");
     if (await gp.$(".toast.hubgate")) fail("the paused toast stayed up after resume.");
 
     // A window that opens while a pause is held shows it without an event.
-    gatePaused = true;
+    mock.gatePaused = true;
     const late = await ctx.newPage();
     await late.goto(base, { waitUntil: "domcontentloaded" });
     await late.waitForFunction(() => {
@@ -2538,7 +1528,7 @@ async function restartGateSection(browser, base) {
       return el && /restart on hold/.test(el.textContent);
     }, null, { timeout: slow(15000) }).catch(() => fail("a board opened during a pause did not show it."));
     await late.close();
-    gatePaused = false;
+    mock.gatePaused = false;
 
     // THE COUNTDOWN STAYS until the hub says what comes next: not the toast cap,
     // not a removal, not its own clock running out, not a stream reopen.
@@ -2594,7 +1584,7 @@ async function restartGateSection(browser, base) {
     await gp.setViewportSize({ width: 1400, height: 900 });
 
     // A window opened during a countdown shows what is left of it.
-    gateCountdownLeft = 30;
+    mock.gateCountdownLeft = 30;
     const mid = await ctx.newPage();
     await mid.goto(base, { waitUntil: "domcontentloaded" });
     await mid.waitForFunction(() => {
@@ -2602,7 +1592,7 @@ async function restartGateSection(browser, base) {
       return el && /atrium restarts in (29|30)s/.test(el.textContent);
     }, null, { timeout: slow(15000) }).catch(() => fail("a board opened during a countdown did not show it."));
     await mid.close();
-    gateCountdownLeft = 0;
+    mock.gateCountdownLeft = 0;
 
     // The cover is a wait card, and a wait card sets its own display, which
     // must not draw it while it is shut.
@@ -2643,17 +1633,17 @@ async function restartGateSection(browser, base) {
     }
     // The hub goes and a new one answers: the stream reopens onto a hub with a
     // new name and the modal clears. See restartStaysSection for the old hub.
-    gateBoot = "boot-a2";
+    mock.gateBoot = "boot-a2";
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
       .catch(() => fail("the restarting modal did not clear when the stream came back."));
     if (errors.length) fail("the restart gate page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    hubMode = wasHub;
-    gatePaused = false;
-    gateCountdownLeft = 0;
-    sseRetry = 0;
-    gateBoot = "boot-a";
+    mock.hubMode = wasHub;
+    mock.gatePaused = false;
+    mock.gateCountdownLeft = 0;
+    mock.sseRetry = 0;
+    mock.gateBoot = "boot-a";
     await ctx.close();
   }
 }
@@ -2669,11 +1659,11 @@ async function restartStaysSection(browser, base) {
   const errors = [];
   gp.on("pageerror", e => errors.push(String(e)));
   if (process.env.DEBUG_HEADLESS) gp.on("console", m => console.error("[stays] " + m.text()));
-  const wasHub = hubMode;
-  hubMode = true;
-  gatePaused = false;
-  gateBoot = "boot-a";
-  healthBuild = "test";
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.gatePaused = false;
+  mock.gateBoot = "boot-a";
+  mock.healthBuild = "test";
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2733,14 +1723,14 @@ async function restartStaysSection(browser, base) {
     if (!(await coverUp())) fail("the cover came down on a view switch, a terminals redraw or a dialog close.");
 
     // The old hub goes. The cover holds while nothing answers.
-    hubAway = true;
+    mock.hubAway = true;
     drop();
     await gp.waitForTimeout(2500);
     if (!(await coverUp())) fail("the cover came down while the hub was away.");
 
     // The new hub answers on the same build: the cover clears, and not before.
-    gateBoot = "boot-b";
-    hubAway = false;
+    mock.gateBoot = "boot-b";
+    mock.hubAway = false;
     await live().catch(() => fail("the stream did not come back from the new hub."));
     await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(10000) })
       .catch(() => fail("the cover did not clear once the new hub answered."));
@@ -2756,13 +1746,13 @@ async function restartStaysSection(browser, base) {
     say({ state: "restarting" });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("the second restarting drew no cover."));
-    hubAway = true;
+    mock.hubAway = true;
     drop();
     await gp.waitForTimeout(1500);
     const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(20000) });
-    gateBoot = "boot-c";
-    healthBuild = "test2";
-    hubAway = false;
+    mock.gateBoot = "boot-c";
+    mock.healthBuild = "test2";
+    mock.hubAway = false;
     let sawCoverWithReload = false;
     await reloaded.then(async () => {
       sawCoverWithReload = await gp.evaluate(() => document.getElementById("hubrestart").open);
@@ -2781,22 +1771,22 @@ async function restartStaysSection(browser, base) {
       .catch(() => fail("the reloaded board drew no countdown."));
     await watch();
     await gp.waitForTimeout(1300);
-    hubAway = true;
+    mock.hubAway = true;
     drop();
     await gp.waitForTimeout(2500);
     if (!(await gp.$(".toast.hubgate"))) fail("a countdown that ran out went while the hub was away.");
-    gateBoot = "boot-d";
-    hubAway = false;
+    mock.gateBoot = "boot-d";
+    mock.hubAway = false;
     await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: slow(15000) })
       .catch(() => {});
     if ((await seen()) !== "tc-") fail("over a missed restarting the screen went " + (await seen()) +
       ", not countdown, cover, clear.");
     if (errors.length) fail("the restart-stays page threw: " + errors.join(" | "));
   } finally {
-    hubMode = wasHub;
-    hubAway = false;
-    gateBoot = "boot-a";
-    healthBuild = "test";
+    mock.hubMode = wasHub;
+    mock.hubAway = false;
+    mock.gateBoot = "boot-a";
+    mock.healthBuild = "test";
     await ctx.close();
   }
 }
@@ -2809,14 +1799,14 @@ async function coverPollSection(browser, base) {
   const gp = await ctx.newPage();
   const errors = [];
   gp.on("pageerror", e => errors.push(String(e)));
-  const wasHub = hubMode;
-  hubMode = true;
-  gatePaused = false;
-  gateBoot = "boot-a";
-  gateRestartMode = "";
-  healthBuild = "test";
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.gatePaused = false;
+  mock.gateBoot = "boot-a";
+  mock.gateRestartMode = "";
+  mock.healthBuild = "test";
   // Every case drops the stream: a short retry keeps each reconnect from costing the browser's 3s.
-  sseRetry = 200;
+  mock.sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
@@ -2839,11 +1829,11 @@ async function coverPollSection(browser, base) {
       await gp.evaluate(() => hubClearRestarting());
     });
   const asked = async n => {
-    for (const end = Date.now() + 15000; gateAsked < n && Date.now() < end;) await gp.waitForTimeout(50);
+    for (const end = Date.now() + 15000; mock.gateAsked < n && Date.now() < end;) await gp.waitForTimeout(50);
   };
   const cover = async () => {
     // The board knows the hub it last heard from. A case that failed leaves it naming an older one.
-    await gp.evaluate(b => { hubBoot = b; }, gateBoot);
+    await gp.evaluate(b => { hubBoot = b; }, mock.gateBoot);
     say({ state: "restarting" });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("restarting drew no cover."));
@@ -2858,54 +1848,54 @@ async function coverPollSection(browser, base) {
     // The stream drops and a hub answers, the same process or not: that is live data, and the cover
     // clears with no stream event to ask again.
     await cover();
-    gateAsked = 0;
+    mock.gateAsked = 0;
     await blip();
     await asked(1);
     await cleared("the cover stayed up after the hub answered following a drop.");
 
     // A check already in flight swallows the new hub's stream open, and its answer is the old hub's.
-    gateBoot = "boot-a";
-    gateRestartMode = "slow";
-    gateSlowMs = 3000;
+    mock.gateBoot = "boot-a";
+    mock.gateRestartMode = "slow";
+    mock.gateSlowMs = 3000;
     await cover();
-    gateAsked = 0;
+    mock.gateAsked = 0;
     await blip();
     await asked(1);
-    gateBoot = "boot-b";
-    gateRestartMode = "";
+    mock.gateBoot = "boot-b";
+    mock.gateRestartMode = "";
     await blip();
     await cleared("the cover stayed up when a check in flight ate the new hub's stream open.", 15000);
-    gateRestartMode = "";
+    mock.gateRestartMode = "";
 
     // A check that fails while the stream is down is asked again, not dropped. This one holds on the
     // old code as well, and stays as the guard.
-    gateBoot = "boot-a";
-    gateRestartMode = "fail";
+    mock.gateBoot = "boot-a";
+    mock.gateRestartMode = "fail";
     await cover();
-    gateAsked = 0;
+    mock.gateAsked = 0;
     await blip();
     await asked(1);
     drop();
-    gateBoot = "boot-b";
-    gateRestartMode = "";
+    mock.gateBoot = "boot-b";
+    mock.gateRestartMode = "";
     await blip(true);
     await cleared("the cover stayed up after a failed check and a stream blip.", 15000);
 
     // A browser without `AbortSignal.timeout` still asks: a throw building the check must not leave it
     // marked in flight for good.
     await gp.evaluate(() => { delete AbortSignal.timeout; });
-    gateBoot = "boot-d";
+    mock.gateBoot = "boot-d";
     await cover();
-    gateAsked = 0;
+    mock.gateAsked = 0;
     await blip();
     await asked(1);
-    gateBoot = "boot-e";
+    mock.gateBoot = "boot-e";
     await cleared("the cover stayed up in a browser with no AbortSignal.timeout.");
     // AN ABANDONED GATE takes its cover down. The hub said restarting and went on answering from the same
     // process (the script was killed): no "something is wrong" while it answers, and the cover clears.
     // The window is 20s, moved through on the page's fake clock rather than waited out.
-    gateBoot = "boot-f";
-    gateRestartMode = "";
+    mock.gateBoot = "boot-f";
+    mock.gateRestartMode = "";
     await gp.clock.install();
     await cover();
     await gp.clock.runFor(12000);
@@ -2920,11 +1910,11 @@ async function coverPollSection(browser, base) {
     if (errors.length) fail("the cover poll page threw: " + errors.join(" | "));
     if (!bad) console.log("coverPoll ok");
   } finally {
-    hubMode = wasHub;
-    gateBoot = "boot-a";
-    gateRestartMode = "";
-    gateSlowMs = 1500;
-    sseRetry = 0;
+    mock.hubMode = wasHub;
+    mock.gateBoot = "boot-a";
+    mock.gateRestartMode = "";
+    mock.gateSlowMs = 1500;
+    mock.sseRetry = 0;
     await ctx.close();
   }
 }
@@ -2936,11 +1926,11 @@ async function coverStepsSection(browser, base) {
   const gp = await ctx.newPage();
   const errors = [];
   gp.on("pageerror", e => errors.push(String(e)));
-  const wasHub = hubMode;
-  hubMode = true;
-  gateBoot = "boot-a";
-  gateRestartMode = "";
-  healthBuild = "test";
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.gateBoot = "boot-a";
+  mock.gateRestartMode = "";
+  mock.healthBuild = "test";
   const state = () => gp.evaluate(() => {
     const dlg = document.getElementById("hubrestart");
     const anim = el => getComputedStyle(el).animationName;
@@ -2964,7 +1954,7 @@ async function coverStepsSection(browser, base) {
     openStreams.forEach(r => { try { r.write("event: hub-restart\ndata: {\"state\":\"restarting\"}\n\n"); } catch (e) {} });
     await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("restarting drew no cover."));
-    hubAway = true;
+    mock.hubAway = true;
     openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
     await gp.clock.runFor(6000);
     const early = await state();
@@ -2981,8 +1971,8 @@ async function coverStepsSection(browser, base) {
     await fakeWait(gp, () => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
       null, 25000).catch(() => fail("past 30s the cover offered no reload."));
     // The hub comes back and the reload lands on a cover that clears: the written-down cover carries on.
-    gateBoot = "boot-b";
-    hubAway = false;
+    mock.gateBoot = "boot-b";
+    mock.hubAway = false;
     const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(15000) }).then(() => true, () => false);
     await gp.click("#hubrestart-reload", { timeout: slow(2000) }).catch(() => {});
     if (!(await reloaded)) fail("the reload button did not reload the page.");
@@ -2991,9 +1981,9 @@ async function coverStepsSection(browser, base) {
     if (errors.length) fail("the cover steps page threw: " + errors.join(" | "));
     if (!bad) console.log("coverSteps ok");
   } finally {
-    hubMode = wasHub;
-    hubAway = false;
-    gateBoot = "boot-a";
+    mock.hubMode = wasHub;
+    mock.hubAway = false;
+    mock.gateBoot = "boot-a";
     await ctx.close();
   }
 }
@@ -3009,10 +1999,10 @@ async function atriumDownSection(browser, base) {
   const errors = [];
   dp.on("pageerror", e => errors.push(String(e)));
   if (process.env.DEBUG_HEADLESS) dp.on("console", m => console.error("[down] " + m.text()));
-  const wasHub = hubMode;
-  hubMode = true;
-  gateBoot = "boot-a";
-  sseRetry = 200;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.gateBoot = "boot-a";
+  mock.sseRetry = 200;
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const downUp = () => dp.evaluate(() => { const d = document.getElementById("atriumdown"); return !!(d && d.open); });
   // The page runs on a fake clock: the five seconds, the backoff and the countdown are moved through, not waited out.
@@ -3043,7 +2033,7 @@ async function atriumDownSection(browser, base) {
     if (await dp.evaluate(() => window.__downSeen)) fail("a stream blip put the down cover up.");
 
     // Atrium stops with nothing said: nothing for five seconds, then the cover.
-    hubAway = true;
+    mock.hubAway = true;
     drop();
     await run(3000);
     if (await downUp()) fail("the down cover went up before five seconds.");
@@ -3068,7 +2058,7 @@ async function atriumDownSection(browser, base) {
     if (!(await downUp())) fail("the down cover came down while atrium was still away.");
 
     // Atrium answers: the cover comes down on its own.
-    hubAway = false;
+    mock.hubAway = false;
     await until(() => !document.getElementById("atriumdown").open, 15000)
       .catch(() => fail("the down cover did not come down once atrium answered."));
     await live().catch(() => fail("the stream did not come back after atrium did."));
@@ -3085,12 +2075,12 @@ async function atriumDownSection(browser, base) {
     say({ state: "restarting" });
     await until(() => document.getElementById("hubrestart").open, 5000)
       .catch(() => fail("restarting drew no restart cover."));
-    hubAway = true;
+    mock.hubAway = true;
     drop();
     await run(8000);
     if (await dp.evaluate(() => window.__downSeen)) fail("a planned restart put the down cover up.");
-    gateBoot = "boot-b";
-    hubAway = false;
+    mock.gateBoot = "boot-b";
+    mock.hubAway = false;
     await until(() => !document.getElementById("hubrestart").open, 15000)
       .catch(() => fail("the restart cover did not clear on the new hub."));
     if (await dp.evaluate(() => window.__downSeen)) fail("the down cover showed as the planned restart ended.");
@@ -3101,7 +2091,7 @@ async function atriumDownSection(browser, base) {
 
   // THE RELOAD. A worker has to be installed and holding the offline page first,
   // which only a page with atrium up can do.
-  serveSW = true;
+  mock.serveSW = true;
   const sctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const sp = await sctx.newPage();
   sp.on("pageerror", e => errors.push(String(e)));
@@ -3118,7 +2108,7 @@ async function atriumDownSection(browser, base) {
         { timeout: slow(15000) }).catch(() => {});
       const card0 = await sp.evaluate(() =>
         getComputedStyle(document.documentElement).getPropertyValue("--card-0").trim());
-      hubAway = true;
+      mock.hubAway = true;
       drop();
       await sp.reload({ waitUntil: "load", timeout: slow(15000) })
         .catch(e => fail("a reload with atrium down did not load a page: " + e.message));
@@ -3138,18 +2128,18 @@ async function atriumDownSection(browser, base) {
       const clock = await sp.evaluate(() => document.getElementById("atriumdown-el").textContent).catch(() => "");
       if (!/^down for \d+s$/.test(clock)) fail("down.html's clock said " + JSON.stringify(clock));
       // Atrium comes back: the page reloads onto the board by itself.
-      hubAway = false;
+      mock.hubAway = false;
       await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: slow(15000) })
         .catch(() => fail("down.html did not reload onto the board once atrium answered."));
       await sp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
         .catch(() => fail("the board came back from down.html with the down cover stuck up."));
 
       // A share in front of a stopped atrium answers 502: the same page.
-      page502 = true;
+      mock.page502 = true;
       await sp.reload({ waitUntil: "load", timeout: slow(15000) }).catch(() => {});
       const title = await sp.evaluate(() => document.title).catch(() => "");
       if (title !== "atrium is not running") fail("a 502 on reload showed " + JSON.stringify(title) + ", not down.html.");
-      page502 = false;
+      mock.page502 = false;
       await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: slow(15000) })
         .catch(() => fail("down.html over a 502 did not reload onto the board once the page answered."));
 
@@ -3167,7 +2157,7 @@ async function atriumDownSection(browser, base) {
       say({ state: "restarting" });
       await sp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
         .catch(() => fail("restarting drew no restart cover before the reload."));
-      hubAway = true;
+      mock.hubAway = true;
       drop();
       await sp.reload({ waitUntil: "load", timeout: slow(15000) }).catch(() => {});
       const planned = await sp.evaluate(() => ({
@@ -3176,8 +2166,8 @@ async function atriumDownSection(browser, base) {
       if (planned.title !== "atrium is restarting" || /not running/.test(planned.text)) {
         fail("a reload during a planned restart showed " + JSON.stringify(planned.title) + ": " + planned.text);
       }
-      gateBoot = "boot-z";
-      hubAway = false;
+      mock.gateBoot = "boot-z";
+      mock.hubAway = false;
       const back = await sp.waitForFunction(() => {
         const d = document.getElementById("hubrestart");
         return d && d.open;
@@ -3189,12 +2179,12 @@ async function atriumDownSection(browser, base) {
     }
     if (errors.length) fail("the atrium-down pages threw: " + errors.join(" | "));
   } finally {
-    serveSW = false;
-    page502 = false;
-    sseRetry = 0;
-    hubAway = false;
-    hubMode = wasHub;
-    gateBoot = "boot-a";
+    mock.serveSW = false;
+    mock.page502 = false;
+    mock.sseRetry = 0;
+    mock.hubAway = false;
+    mock.hubMode = wasHub;
+    mock.gateBoot = "boot-a";
     await sctx.close();
   }
 }
@@ -3403,8 +2393,8 @@ async function tooltipSection(browser, base) {
     return t;
   };
   // The filed set has supervised cards, so the terminals pane has rows.
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   try {
     await tp.goto(base, { waitUntil: "domcontentloaded" });
     await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
@@ -3478,7 +2468,7 @@ async function tooltipSection(browser, base) {
     if (left.length) fail("the rendered board still has native titles: " + [...new Set(left)].join(" | "));
     if (errors.length) fail("the tooltip page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -3492,7 +2482,7 @@ async function tooltipSection(browser, base) {
 // window's claim never matched the board's pane, so neither let go.
 async function popoutTagFlipSection(browser, base) {
   // The restart section above leaves the card poll answering 404.
-  soloMode = "ok";
+  mock.soloMode = "ok";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const bp = await ctx.newPage();
   const errors = [];
@@ -3579,11 +2569,11 @@ async function popoutTagFlipSection(browser, base) {
 // with a write) shows up as a rate many times that, and the browser's six
 // connections per host saturate behind it. Then the room goes silent: see below.
 async function idleRateSection(browser, base) {
-  const wasHub = hubMode, wasSgg = sggAttached;
-  hubMode = true;
-  sggAttached = true;
-  soloMode = "ok";
-  tasksMode = "first";
+  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  mock.hubMode = true;
+  mock.sggAttached = true;
+  mock.soloMode = "ok";
+  mock.tasksMode = "first";
   const secs = +(process.env.IDLE_RATE_SECONDS || 12);
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
@@ -3625,7 +2615,7 @@ async function idleRateSection(browser, base) {
     const mut0 = await Promise.all(pages.map(p => p.evaluate(() => window.__atriumMut)));
     for (let i = 0; i < secs; i++) {
       if (i === 2 || i === 6) {
-        sggAttached = !sggAttached;
+        mock.sggAttached = !mock.sggAttached;
         hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
         await new Promise(r => setTimeout(r, 20));
       }
@@ -3655,19 +2645,19 @@ async function idleRateSection(browser, base) {
     // slot back and the queue stays within one pass.
     const stall = +(process.env.IDLE_RATE_STALL || 40);
     if (stall) {
-      stalledCount = 0;
+      mock.stalledCount = 0;
       // The stall is page time: the server holds every read until the loop below has run its page seconds.
-      roomStallUntil = Date.now() + slow(stall * 1000);
+      mock.roomStallUntil = Date.now() + slow(stall * 1000);
       let most = 0, where = "";
       for (let i = 0; i < stall; i++) {
         await fakeTick(board, 1000);
         const qs = await Promise.all(pages.map(p => p.evaluate(() => apiQueue.length)));
         qs.forEach((n, j) => { if (n > most) { most = n; where = pages[j].__who + " at " + (i + 1) + "s"; } });
         if (process.env.IDLE_RATE_REPORT && i % 5 === 4) {
-          console.log("  stall t+" + (i + 1) + "s queued " + qs.join(" ") + ", reads held " + stalledCount);
+          console.log("  stall t+" + (i + 1) + "s queued " + qs.join(" ") + ", reads held " + mock.stalledCount);
         }
       }
-      roomStallUntil = 0;
+      mock.roomStallUntil = 0;
       stallHeld.splice(0).forEach(answer => answer());
       if (most > 4) {
         fail("a room that stopped answering queued " + most + " board fetches (" + where +
@@ -3679,11 +2669,11 @@ async function idleRateSection(browser, base) {
     }
     if (errors.length) fail("the idle-rate pages threw: " + errors.join(" | "));
   } finally {
-    roomStallUntil = 0;
+    mock.roomStallUntil = 0;
     stallHeld.splice(0).forEach(answer => answer());
     await ctx.close();
-    hubMode = wasHub;
-    sggAttached = wasSgg;
+    mock.hubMode = wasHub;
+    mock.sggAttached = wasSgg;
   }
 }
 
@@ -3697,8 +2687,8 @@ async function idleRateSection(browser, base) {
 // again with a refresh on every turn: the board expanding and collapsing a group
 // on its own, and a fetch pass per flip.
 async function foldStillSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   await ctx.addInitScript(() => {
@@ -3726,7 +2716,7 @@ async function foldStillSection(browser, base) {
   let tick = 0;
   const beats = async n => {
     for (let i = 0; i < n; i++) {
-      LOOSE.display_title = "loose card " + (++tick);
+      mock.LOOSE.display_title = "loose card " + (++tick);
       openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
       await ctx.clock.runFor(1000);
       await new Promise(r => setTimeout(r, 150));
@@ -3771,9 +2761,9 @@ async function foldStillSection(browser, base) {
     if (shut.some(s => s.writes)) fail("shutting the untagged group left windows writing storage: " + JSON.stringify(shut));
     if (errors.length) fail("the fold-still pages threw: " + errors.join(" | "));
   } finally {
-    LOOSE.display_title = "loose card";
+    mock.LOOSE.display_title = "loose card";
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 
@@ -3797,9 +2787,9 @@ async function laneShotAt(p, which) {
 }
 async function laneFoldSection(browser, base) {
   const laneShot = laneShotAt;
-  const was = tasksMode;
-  tasksMode = "worn";
-  wornTasks = LANE_CARDS();
+  const was = mock.tasksMode;
+  mock.tasksMode = "worn";
+  mock.wornTasks = LANE_CARDS();
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   await ctx.addInitScript(() => {
@@ -3894,8 +2884,8 @@ async function laneFoldSection(browser, base) {
     if (errors.length) fail("laneFold: the page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
-    wornTasks = [];
-    tasksMode = was;
+    mock.wornTasks = [];
+    mock.tasksMode = was;
   }
 }
 
@@ -3939,8 +2929,8 @@ async function untaggedOrder(p, view) {
 // set, and `untagged` is the board's own heap, so it must read in the order the
 // sort pill says. The terminals pane sorted it on the address line.
 async function untaggedSortSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "untagged";
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
   const ctx = await untaggedContext(browser);
   const errors = [];
   try {
@@ -3985,7 +2975,7 @@ async function untaggedSortSection(browser, base) {
     if (errors.length) fail("the untagged-sort page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 
@@ -3993,9 +2983,9 @@ async function untaggedSortSection(browser, base) {
 // clears on a click. Nothing is marked on a first load, a reload, or a hub
 // restart that brings the same cards back, and nothing writes storage while idle.
 async function newCardSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "untagged";
-  untaggedExtra = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
+  mock.untaggedExtra = [];
   const ctx = await untaggedContext(browser);
   const errors = [];
   const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
@@ -4007,7 +2997,7 @@ async function newCardSection(browser, base) {
   // The page runs on a fake clock: the debounces, the pulse and the quiet spells are moved through, not waited out. The
   // real pause after each move lets the read a move started land and paint.
   const run = async (p, ms) => { await p.clock.runFor(ms); await new Promise(r => setTimeout(r, 150)); };
-  sseRetry = 200;
+  mock.sseRetry = 200;
   try {
     await ctx.clock.install();
     const p = await ctx.newPage();
@@ -4019,7 +3009,7 @@ async function newCardSection(browser, base) {
     if (m.arrived.length) fail("a first load marked cards that were already there as new: " + m.arrived.join(","));
 
     // A card arrives.
-    untaggedExtra = [NEWC];
+    mock.untaggedExtra = [NEWC];
     poke();
     await p.waitForSelector('#stack-list .stackrow.arrived.glow[data-id="u-new"]', { timeout: slow(10000) })
       .catch(() => fail("a new card on the stack did not pulse."));
@@ -4048,7 +3038,7 @@ async function newCardSection(browser, base) {
     await run(p, 1500);
     await p.evaluate(() => { window.__writes = []; });
     let tick = 0;
-    for (let i = 0; i < 5; i++) { LOOSE.display_title = "loose " + (++tick); poke(); await run(p, 1000); }
+    for (let i = 0; i < 5; i++) { mock.LOOSE.display_title = "loose " + (++tick); poke(); await run(p, 1000); }
     const idle = await p.evaluate(() => window.__writes);
     if (idle.length) fail("the new-card cue wrote storage " + idle.length + " times while idle: " +
       [...new Set(idle)].join(", "));
@@ -4074,23 +3064,23 @@ async function newCardSection(browser, base) {
 
     // A hub restart: the rooms go, the hub answers 503 and then an empty list,
     // then the same cards come back under a second room's tag. Nothing is new.
-    untaggedDown = true;
+    mock.untaggedDown = true;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await run(p, 2500);
-    untaggedDown = false; untaggedEmpty = true;
+    mock.untaggedDown = false; mock.untaggedEmpty = true;
     poke();
     await run(p, 2000);
-    untaggedEmpty = false; untaggedTag = "sgg";
+    mock.untaggedEmpty = false; mock.untaggedTag = "sgg";
     poke();
     await run(p, 3000);
     m = await marks(p);
     if (m.arrived.length) fail("a hub restart that brought the same cards back marked " + m.arrived.join(","));
 
     // And a reload in the middle of one, which starts on an empty board.
-    untaggedEmpty = true;
+    mock.untaggedEmpty = true;
     await p.reload({ waitUntil: "domcontentloaded" });
     await run(p, 2000);
-    untaggedEmpty = false;
+    mock.untaggedEmpty = false;
     poke();
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await run(p, 1500);
@@ -4098,9 +3088,9 @@ async function newCardSection(browser, base) {
     if (m.arrived.length) fail("a reload during a hub restart marked " + m.arrived.join(","));
     if (errors.length) fail("the new-card page threw: " + errors.join(" | "));
   } finally {
-    LOOSE.display_title = "loose card";
-    untaggedExtra = []; untaggedDown = false; untaggedEmpty = false; untaggedTag = "";
-    sseRetry = 0;
+    mock.LOOSE.display_title = "loose card";
+    mock.untaggedExtra = []; mock.untaggedDown = false; mock.untaggedEmpty = false; mock.untaggedTag = "";
+    mock.sseRetry = 0;
     await ctx.close();
   }
 
@@ -4111,7 +3101,7 @@ async function newCardSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(800);
-    untaggedExtra = [NEWC];
+    mock.untaggedExtra = [NEWC];
     poke();
     await p.waitForSelector('#stack-list .stackrow.arrived[data-id="u-new"] .chip.arrived', { timeout: slow(10000) })
       .catch(() => fail("under reduced motion the new card has no chip."));
@@ -4121,9 +3111,9 @@ async function newCardSection(browser, base) {
     });
     if (anim !== "none") fail("under reduced motion the new card still animates: " + anim);
   } finally {
-    untaggedExtra = [];
+    mock.untaggedExtra = [];
     await rctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 
@@ -4145,10 +3135,10 @@ async function themeLabSection(browser, base) {
   p.on("request", r => {
     if (r.method() === "PATCH" && /\/v1\/tasks\//.test(r.url())) patches.push(r.url() + " " + r.postData());
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   try {
-    wornTasks = [Object.assign({}, T1, { id: "tl-a", display_title: "row tl-a", theme: "nord", supervised: true, pinned: true, worktree: "/tmp/tl/a" })];
-    tasksMode = "worn";
+    mock.wornTasks = [Object.assign({}, T1, { id: "tl-a", display_title: "row tl-a", theme: "nord", supervised: true, pinned: true, worktree: "/tmp/tl/a" })];
+    mock.tasksMode = "worn";
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
@@ -4242,7 +3232,7 @@ async function themeLabSection(browser, base) {
     if (r.title !== "how the board looks" || r.term !== await bgOf("dracula")) fail("opening the skin lab over the theme panel left " + r.title + " / " + r.term + ".");
     if (errors.length) fail("the theme lab page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -4267,13 +3257,13 @@ async function themePreviewSection(browser, base) {
   p.on("request", r => {
     if (r.method() === "PATCH" && /\/v1\/tasks\//.test(r.url())) patches.push(r.url() + " " + r.postData());
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, theme) => Object.assign({}, T1, {
     id, display_title: "row " + id, theme, supervised: true, pinned: true, worktree: "/tmp/tp/" + id
   });
   try {
-    wornTasks = [live("tp-a", "nord"), live("tp-b", "atrium")];
-    tasksMode = "worn";
+    mock.wornTasks = [live("tp-a", "nord"), live("tp-b", "atrium")];
+    mock.tasksMode = "worn";
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
@@ -4393,7 +3383,7 @@ async function themePreviewSection(browser, base) {
     if (r.a !== bg.dracula) fail("after use it and a reload the row is " + r.a + ", not dracula.");
     if (errors.length) fail("the theme preview page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -4443,8 +3433,8 @@ function landedAt(p) {
 }
 
 async function landSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
   const reset = p => p.evaluate(() => {
     closeTerm(true);
@@ -4469,8 +3459,8 @@ async function landSection(browser, base) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   landCard("land-dead", { status: "dead", supervised: false, created_at: "2026-09-19T12:00:00Z" });
   landCard("land-pc", { status: "needs-permission", supervised: false, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"], LAND["land-dead"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"], mock.LAND["land-dead"]];
+  mock.landPerms = [];
   const errors = [];
   let ctx = await landContext(browser);
   try {
@@ -4484,11 +3474,11 @@ async function landSection(browser, base) {
 
     // 1. A new card whose terminal is not there yet, from its own toast.
     landCard("land-new", { supervised: false });
-    landList = landList.concat(LAND["land-new"]);
+    mock.landList = mock.landList.concat(mock.LAND["land-new"]);
     poke();
     await p.waitForSelector('#toasts .toast:has-text("land new is on the board")', { timeout: slow(10000) });
     await clickToast(p, "land new is on the board");
-    setTimeout(() => { LAND["land-new"].supervised = true; }, 1500);
+    setTimeout(() => { mock.LAND["land-new"].supervised = true; }, 1500);
     let at = await settle(p, a => a.opened === "land-new");
     if (at.opened !== "land-new" || at.view !== "terms") {
       fail("a new card's toast, clicked before its terminal opened, landed on " + JSON.stringify(at) +
@@ -4499,10 +3489,10 @@ async function landSection(browser, base) {
     // clicked with the board in the background arrives. Same race.
     await reset(p);
     landCard("land-new2", { supervised: false });
-    landList = landList.concat(LAND["land-new2"]);
+    mock.landList = mock.landList.concat(mock.LAND["land-new2"]);
     await p.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent("message",
       { data: { type: "goTo", view: "stack", taskFor: "land-new2", key: "" } })));
-    setTimeout(() => { LAND["land-new2"].supervised = true; }, 1000);
+    setTimeout(() => { mock.LAND["land-new2"].supervised = true; }, 1000);
     at = await settle(p, a => a.opened === "land-new2");
     if (at.opened !== "land-new2" || at.view !== "terms") {
       fail("a desktop notification for a new card landed on " + JSON.stringify(at) + ", not its terminal.");
@@ -4530,7 +3520,7 @@ async function landSection(browser, base) {
 
     // 5. A request on a card with no terminal: the request, flashed.
     await reset(p);
-    landPerms = [{ id: "perm-land", task_id: "land-pc", agent: "land pc", tool: "Bash", command: "ls",
+    mock.landPerms = [{ id: "perm-land", task_id: "land-pc", agent: "land pc", tool: "Bash", command: "ls",
       requested_at: new Date().toISOString().replace("Z", "") }];
     await p.evaluate(() => runRefresh());
     await p.waitForTimeout(800);
@@ -4547,7 +3537,7 @@ async function landSection(browser, base) {
       fail("a request on a card with no terminal landed on " + JSON.stringify(at) +
         (flashed ? "" : ", with the request not flashed") + ".");
     }
-    landPerms = [];
+    mock.landPerms = [];
     await p.evaluate(() => runRefresh());
 
     // 6. A toast about nothing: nowhere, and the dialog under it stays.
@@ -4607,12 +3597,12 @@ async function landSection(browser, base) {
     await p.waitForTimeout(1200);
     await spyAttach(p);
     landCard("land-new3", { supervised: false });
-    landList = landList.concat(LAND["land-new3"]);
+    mock.landList = mock.landList.concat(mock.LAND["land-new3"]);
     poke();
     await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"), null,
       { timeout: slow(10000) }).catch(() => fail("no desktop notification for a new card with the board unfocused."));
     await p.evaluate(() => window.__notes.find(n => n.title === "land new3 is on the board").onclick());
-    setTimeout(() => { LAND["land-new3"].supervised = true; }, 1000);
+    setTimeout(() => { mock.LAND["land-new3"].supervised = true; }, 1000);
     const at = await settle(p, a => a.opened === "land-new3");
     if (at.opened !== "land-new3" || at.view !== "terms") {
       fail("a desktop notification for a new card, clicked, landed on " + JSON.stringify(at) + ".");
@@ -4625,8 +3615,8 @@ async function landSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the landing pages threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── selecting the attached card again is a focus, not a re-attach ─────────
@@ -4637,12 +3627,12 @@ async function landSection(browser, base) {
 // line on every open, the way the daemon does, so a re-attach shows up both as
 // a second socket and as writes into xterm.
 async function reselectSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   landCard("land-other", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"], LAND["land-other"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"], mock.LAND["land-other"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -4714,8 +3704,8 @@ async function reselectSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the reselect page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── a cleared screen goes into the scrollback ──────────────────────────────
@@ -4726,11 +3716,11 @@ async function reselectSection(browser, base) {
 // history too, the alternate screen and a partial erase push nothing, and the
 // same bytes written again as a replay behave as they did live.
 async function clearKeepsPageSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   try {
@@ -4798,8 +3788,8 @@ async function clearKeepsPageSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the clear page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the room's clear mark puts the page into scrollback ────────────────────
@@ -4809,11 +3799,11 @@ async function clearKeepsPageSection(browser, base) {
 // the alternate screen keeps nothing, an unknown OSC is ignored, and a replay of the same bytes agrees with live.
 // CLEARMARK_SHOTS=/dir with CLEARMARK_SHOT=before|after saves the picture.
 async function clearMarkSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-mark", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-mark"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-mark"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   try {
@@ -4883,8 +3873,8 @@ async function clearMarkSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the clear mark page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("clearMark ok");
 }
 
@@ -4893,11 +3883,11 @@ async function clearMarkSection(browser, base) {
 // screen, with the time when it arrived live and without one when it came in a replay. It is a marker and a
 // decoration, so no row of the buffer changes. CLEARLINE_SHOTS=/dir with CLEARLINE_SHOT=before|after saves the picture.
 async function clearLineSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-clearline", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-clearline"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-clearline"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   try {
@@ -4974,8 +3964,8 @@ async function clearLineSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the clear line page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("clearLine ok");
 }
 
@@ -5348,11 +4338,11 @@ async function sayWhenSection(browser, base) {
 // second resume only points at it, a failed launch or the bound turns it into the reason. `RESUME_SHOTS=<dir>` writes
 // the pictures, tagged by `RESUME_TAG` (before|after), and runs on the old code too: only the asserts need the new.
 async function resumeSpinnerSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-res", { supervised: false, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
-  landList = [LAND["land-res"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-res"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.RESUME_SHOTS, tag = process.env.RESUME_TAG || "after";
   const ctx = await landContext(browser);
@@ -5362,8 +4352,8 @@ async function resumeSpinnerSection(browser, base) {
     await new Promise(r => { release = r; });
     if (launchAnswer) { await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: launchAnswer }) }); return; }
     landCard("land-res", { supervised: true, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
-    landList = [LAND["land-res"]];
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify(LAND["land-res"]) });
+    mock.landList = [mock.LAND["land-res"]];
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(mock.LAND["land-res"]) });
   });
   await ctx.addInitScript(() => {
     const Real = window.WebSocket;
@@ -5448,7 +4438,7 @@ async function resumeSpinnerSection(browser, base) {
     // 5. A failed launch is the reason, not a blank row.
     await p.evaluate(() => { window.__sock = null; closeTerm(true); });
     landCard("land-res", { supervised: false, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
-    landList = [LAND["land-res"]];
+    mock.landList = [mock.LAND["land-res"]];
     await p.evaluate(() => refresh());
     await p.waitForTimeout(400);
     launchAnswer = "no such runner";
@@ -5471,7 +4461,7 @@ async function resumeSpinnerSection(browser, base) {
       if (!/could not start it: .*no such runner/.test(chip[0] || "")) fail("a failed launch left no reason on the row: " + JSON.stringify(chip));
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
   if (errors.length) fail("the resume page threw: " + errors.join(" | "));
@@ -5482,11 +4472,11 @@ async function resumeSpinnerSection(browser, base) {
 // held on the socket shows it, one that drains and echoes inside 20ms never
 // flashes, and a typed key or escape sequence never shows it however long it is.
 async function pasteSpinnerSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -5576,8 +4566,8 @@ async function pasteSpinnerSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the paste spinner page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the typing gate readout ───────────────────────────────────────────────
@@ -5587,14 +4577,14 @@ async function pasteSpinnerSection(browser, base) {
 // and it follows what the endpoint says. Switched off, the polling stops.
 // See js/typing.js and docs/test-plan.md.
 async function typingSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z",
     activity: { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" } });
-  landList = [LAND["land-live"]];
-  landPerms = [];
-  typingPolls = [];
-  typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "nothing typed here yet" };
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  mock.typingPolls = [];
+  mock.typingAnswer = { line: "", count: 0, since_ms: -1, open: true, reason: "nothing typed here yet" };
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -5625,7 +4615,7 @@ async function typingSection(browser, base) {
     });
     if (!off.exists) fail("the terminal view has no typing readout line.");
     if (!off.hidden) fail("the typing readout shows when nobody switched it on.");
-    if (typingPolls.length) fail("the typing endpoint was polled with the readout off: " + typingPolls.length + "x");
+    if (mock.typingPolls.length) fail("the typing endpoint was polled with the readout off: " + mock.typingPolls.length + "x");
 
     // Switched on through the details drawer's debug checkbox, the way the operator does it.
     const box = await p.evaluate(() => {
@@ -5645,7 +4635,7 @@ async function typingSection(browser, base) {
           : { what: "idle" };
       }, on);
       const say = (name, ans, on) => (async () => {
-        typingAnswer = ans;
+        mock.typingAnswer = ans;
         await held(on);
         await p.waitForTimeout(1200);
         fs.mkdirSync(process.env.TYPING_SHOTS, { recursive: true });
@@ -5663,7 +4653,7 @@ async function typingSection(browser, base) {
       await held(true);
     }
 
-    typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
+    mock.typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
       reason: "13 unsent character(s) on the line" };
     await p.waitForFunction(() => /waits: 13/.test((document.getElementById("t-typing") || {}).textContent || ""),
       null, { timeout: slow(5000) }).catch(() => {});
@@ -5684,12 +4674,12 @@ async function typingSection(browser, base) {
     }
     if (/git st/.test(on.text)) fail("the readout repeats the text of the line: " + JSON.stringify(on.text));
     if (!on.shut) fail("a closed gate is not marked closed on the readout.");
-    if (!typingPolls.some(u => u.startsWith("/v1/tasks/land-live/typing"))) {
-      fail("the readout did not ask about the attached card: " + JSON.stringify(typingPolls));
+    if (!mock.typingPolls.some(u => u.startsWith("/v1/tasks/land-live/typing"))) {
+      fail("the readout did not ask about the attached card: " + JSON.stringify(mock.typingPolls));
     }
 
     // It follows the endpoint: the gate opening shows on the next poll.
-    typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
+    mock.typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
     await p.waitForFunction(() => document.getElementById("t-typing").textContent === "line empty", null,
       { timeout: slow(5000) }).catch(() => {});
     const opened = await p.evaluate(() => {
@@ -5704,7 +4694,7 @@ async function typingSection(browser, base) {
     // Three states, and the line's text is never repeated. Nothing held says the count, a held message says who
     // and how many, and a held message behind a line that looks empty quotes what atrium thinks is there.
     const read = async (ans, held, want) => {
-      typingAnswer = ans;
+      mock.typingAnswer = ans;
       await p.evaluate(h => {
         peekCard("land-live").activity = h ? { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" }
           : { what: "idle" };
@@ -5735,31 +4725,31 @@ async function typingSection(browser, base) {
     // Off again: hidden, and the polling stops.
     await p.evaluate(() => toggleTypingReadout(false));
     await p.waitForTimeout(200);
-    const n = typingPolls.length;
+    const n = mock.typingPolls.length;
     await p.waitForTimeout(1300);
     const after = await p.evaluate(() => document.getElementById("t-typing").hidden);
     if (!after) fail("the typing readout stayed up after it was switched off.");
-    if (typingPolls.length !== n) fail("the typing endpoint was still polled after the readout was switched off.");
+    if (mock.typingPolls.length !== n) fail("the typing endpoint was still polled after the readout was switched off.");
   } finally {
     await ctx.close();
   }
   if (errors.length) fail("the typing readout page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the terminal details drawer's debug section ──────────────────────────
 // The drawer on the shortcut strip carries a debug section with the live gate and the two debug switches. A click
 // outside it or Escape closes it. A switch changed in one window reaches the others. See js/peek-debug.js.
 async function termDebugSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z",
     activity: { what: "idle", held_peer: "runtime", held_count: 2, held_for: "line" } });
-  landList = [LAND["land-live"]];
-  landPerms = [];
-  typingPolls = [];
-  typingAnswer = { line: "", count: 0, since_ms: 500, open: false, reason: "line empty, waiting for 2s of quiet" };
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  mock.typingPolls = [];
+  mock.typingAnswer = { line: "", count: 0, since_ms: 500, open: false, reason: "line empty, waiting for 2s of quiet" };
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -5825,11 +4815,11 @@ async function termDebugSection(browser, base) {
     if (process.env.DEBUG_SHOTS) {
       const out = require("path").join(process.env.DEBUG_SHOTS, (process.env.DEBUG_SHOTS_TAG || "after") + "-");
       await p.locator("#t-drawer").screenshot({ path: out + "gate-closed-countdown.png" });
-      typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
+      mock.typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
       await p.waitForFunction(() => /^gate open/.test(document.getElementById("t-dbg-gate").textContent), null,
         { timeout: slow(5000) });
       await p.locator("#t-drawer").screenshot({ path: out + "gate-open.png" });
-      typingAnswer = { line: "", count: 0, since_ms: 500, open: false, reason: "line empty, waiting for 2s of quiet" };
+      mock.typingAnswer = { line: "", count: 0, since_ms: 500, open: false, reason: "line empty, waiting for 2s of quiet" };
       await p.waitForFunction(() => /opens in 2s/.test(document.getElementById("t-dbg-gate").textContent), null,
         { timeout: slow(5000) });
     }
@@ -5837,9 +4827,9 @@ async function termDebugSection(browser, base) {
     // Closing the drawer stops the asking.
     await p.evaluate(() => toggleTermDrawer(false));
     await p.waitForTimeout(200);
-    const n = typingPolls.length;
+    const n = mock.typingPolls.length;
     await p.waitForTimeout(1300);
-    if (typingPolls.length !== n) fail("the gate was still polled after the drawer closed.");
+    if (mock.typingPolls.length !== n) fail("the gate was still polled after the drawer closed.");
 
     // The gate line under the terminal speaks only when blocking, and never repeats the line.
     const line = await p.evaluate(() => {
@@ -5909,7 +4899,7 @@ async function termDebugSection(browser, base) {
       pinned: !document.getElementById("s-inputlag-pinned").hidden }));
     // The opens above each asked for the settings and a read still in flight is shared, so let them land first.
     await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
-    kaSettings = { input_lag_log: true, input_lag_pinned: false };
+    mock.kaSettings = { input_lag_log: true, input_lag_pinned: false };
     await p.evaluate(() => toggleTermDrawer(true));
     await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
     await p.waitForTimeout(200);
@@ -5919,12 +4909,12 @@ async function termDebugSection(browser, base) {
       fail("the machine logging switched this card's input lag box on: " + JSON.stringify(lagOnState));
     }
     // Pinned by ATRIUM_DEBUG_INPUTLAG: the note shows and this browser is left as it was.
-    kaSettings = { input_lag_log: true, input_lag_pinned: true };
+    mock.kaSettings = { input_lag_log: true, input_lag_pinned: true };
     await p.evaluate(() => toggleTermDrawer(true));
     await p.waitForFunction(() => !document.getElementById("s-inputlag-pinned").hidden, null, { timeout: slow(5000) })
       .catch(() => {});
     const lagPinned = await lagState();
-    kaSettings = {};
+    mock.kaSettings = {};
     await p.evaluate(() => toggleTermDrawer(false));
     if (!lagPinned.pinned || lagPinned.lag) {
       fail("the drawer did not show the pinned note, or changed this browser under a pinned machine: " + JSON.stringify(lagPinned));
@@ -5935,9 +4925,9 @@ async function termDebugSection(browser, base) {
       toggleTermDrawer(true);
     });
     await p.waitForTimeout(300);
-    const hiddenN = typingPolls.length;
+    const hiddenN = mock.typingPolls.length;
     await p.waitForTimeout(1300);
-    const asked = typingPolls.length - hiddenN;
+    const asked = mock.typingPolls.length - hiddenN;
     await p.evaluate(() => { toggleTermDrawer(false); delete document.hidden; });
     if (asked) fail("a hidden tab still asked for the gate " + asked + "x.");
 
@@ -5963,8 +4953,8 @@ async function termDebugSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the debug section page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("termDebug ok");
 }
 
@@ -5976,8 +4966,8 @@ async function termDebugSection(browser, base) {
 // frame into a 147ms one.
 // TERMLAG_TRACE=<file> keeps the raw trace. See REPORT.md on claude/u-term-debug-and-lag.
 async function termLagSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const ids = ["lag-a", "lag-b", "lag-c", "lag-d"];
   ids.forEach((id, i) => landCard(id, { supervised: true, created_at: "2026-09-19T12:0" + i + ":00Z", activity: { what: "working" } }));
   // The rest of a busy board: TERMLAG_CARDS cards in all, some working, their activity moving every refresh.
@@ -5988,11 +4978,11 @@ async function termLagSection(browser, base) {
       created_at: "2026-09-19T11:" + String(i % 60).padStart(2, "0") + ":00Z",
       activity: { what: i % 4 === 0 ? "working" : "idle" } }));
   }
-  landList = ids.map(id => LAND[id]).concat(more);
+  mock.landList = ids.map(id => mock.LAND[id]).concat(more);
   let tick = 0;
   const churn = setInterval(() => {
     tick++;
-    for (const c of landList) {
+    for (const c of mock.landList) {
       if (c.activity && c.activity.what === "working") {
         c.activity = Object.assign({}, c.activity, { tool: "Bash", tokens: tick * 97, since_seconds: tick * 2 });
         c.idle_seconds = 0;
@@ -6001,7 +4991,7 @@ async function termLagSection(browser, base) {
       }
     }
   }, 1000);
-  landPerms = [];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -6116,8 +5106,8 @@ async function termLagSection(browser, base) {
   }
   clearInterval(churn);
   if (errors.length) fail("the terminal lag page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("termLag ok");
 }
 
@@ -6127,12 +5117,12 @@ async function termLagSection(browser, base) {
 // hundred lines into such a terminal must measure next to nothing, and showing it again must draw what came. See
 // `holdHiddenRedraw` in js/terminal-list.js.
 async function termHiddenRedrawSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("hid-a", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "working" } });
   landCard("hid-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "working" } });
-  landList = [LAND["hid-a"], LAND["hid-b"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["hid-a"], mock.LAND["hid-b"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -6204,8 +5194,8 @@ async function termHiddenRedrawSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the hidden redraw page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("termHiddenRedraw ok");
 }
 
@@ -6215,12 +5205,12 @@ async function termHiddenRedrawSection(browser, base) {
 // divider. An in-place repaint (a spinner) is not new output, and a divider that cannot be found again after a replay
 // is dropped. See js/lastread.js. LASTREAD_SHOTS=/dir with LASTREAD_SHOT=before|after saves the picture.
 async function termLastReadSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("lr-a", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "working" } });
   landCard("lr-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "working" } });
-  landList = [LAND["lr-a"], LAND["lr-b"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["lr-a"], mock.LAND["lr-b"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -6481,8 +5471,8 @@ async function termLastReadSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the last-read page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("termLastRead ok");
 }
 
@@ -6491,14 +5481,14 @@ async function termLastReadSection(browser, base) {
 // and is neither timed nor polled. The hub and the room log for the whole machine, so they are told "on" while any
 // card is. See js/peek-debug.js, js/inputlag.js and js/typing.js.
 async function termDebugPerCardSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "idle" } });
   landCard("land-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "idle" } });
-  landList = [LAND["land-live"], LAND["land-b"]];
-  landPerms = [];
-  typingPolls = [];
-  typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
+  mock.landList = [mock.LAND["land-live"], mock.LAND["land-b"]];
+  mock.landPerms = [];
+  mock.typingPolls = [];
+  mock.typingAnswer = { line: "", count: 0, since_ms: 9000, open: true, reason: "line empty and quiet" };
   const errors = [];
   const posted = [];
   const ctx = await landContext(browser);
@@ -6555,10 +5545,10 @@ async function termDebugPerCardSection(browser, base) {
     await attach("land-b");
     await p.evaluate(() => toggleTermDrawer(false));
     await p.waitForTimeout(300);
-    const n = typingPolls.filter(u => u.includes("/land-b/")).length;
+    const n = mock.typingPolls.filter(u => u.includes("/land-b/")).length;
     await p.waitForTimeout(1300);
     const b = await state();
-    const bPolls = typingPolls.filter(u => u.includes("/land-b/")).length - n;
+    const bPolls = mock.typingPolls.filter(u => u.includes("/land-b/")).length - n;
     if (b.lag || b.typing || b.lagBox || b.typingBox || b.line) fail("a card switched on carried over to another card: " + JSON.stringify(b));
     if (bPolls) fail("the gate line polled a card it is not switched on for: " + bPolls + "x");
     const stored = await p.evaluate(() => ({ lagB: localStorage.getItem("atrium.debug.inputlag.land-b"),
@@ -6590,8 +5580,8 @@ async function termDebugPerCardSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the per-card debug page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
   if (!bad) console.log("termDebugPerCard ok");
 }
 
@@ -6604,7 +5594,7 @@ async function aliasSection(browser, base) {
   const ap = await ctx.newPage();
   const errors = [];
   ap.on("pageerror", e => errors.push(String(e)));
-  aliasWrites = [];
+  mock.aliasWrites = [];
   try {
     await ap.goto(base, { waitUntil: "domcontentloaded" });
     await ap.waitForFunction(() => typeof cardHTML === "function" && typeof aliasMenuItem === "function",
@@ -6635,8 +5625,8 @@ async function aliasSection(browser, base) {
     await ap.fill("#ask-input", "@dotfiles");
     await ap.click("#ask-actions button.go, #ask-actions button:last-child");
     await ap.evaluate(() => window.__aliasDone);
-    const w = aliasWrites.find(x => x.id === "t1");
-    if (!w || w.body.alias !== "@dotfiles") fail("setting an alias did not PATCH it: " + JSON.stringify(aliasWrites));
+    const w = mock.aliasWrites.find(x => x.id === "t1");
+    if (!w || w.body.alias !== "@dotfiles") fail("setting an alias did not PATCH it: " + JSON.stringify(mock.aliasWrites));
 
     // A default another card holds: a `no alias` chip saying who, and the menu
     // says it too. Backlog-2 item 47.
@@ -6723,7 +5713,7 @@ async function aliasSection(browser, base) {
     if (!cardCopy.has || cardCopy.chipTip || cardCopy.clip.join("|") !== "@sa89" || cardCopy.mark !== "✓")
       fail("the card's alias copy icon is wrong: " + JSON.stringify(cardCopy));
 
-    aliasWrites = [];
+    mock.aliasWrites = [];
     await ap.evaluate(() => document.getElementById("t-title").click());
     await ap.waitForSelector("#ask[open] #ask-input", { timeout: slow(5000) });
     const pre = await ap.inputValue("#ask-input");
@@ -6731,9 +5721,9 @@ async function aliasSection(browser, base) {
     await ap.fill("#ask-input", "@orch");
     await ap.click("#ask-actions button.go, #ask-actions button:last-child");
     await ap.waitForFunction(() => !document.querySelector("#ask[open]"), null, { timeout: slow(5000) });
-    for (let i = 0; i < 50 && !aliasWrites.length; i++) await ap.waitForTimeout(50);
-    const bw = aliasWrites.find(x => x.id === "t1");
-    if (!bw || bw.body.alias !== "@orch") fail("setting the alias from the bar did not PATCH it: " + JSON.stringify(aliasWrites));
+    for (let i = 0; i < 50 && !mock.aliasWrites.length; i++) await ap.waitForTimeout(50);
+    const bw = mock.aliasWrites.find(x => x.id === "t1");
+    if (!bw || bw.body.alias !== "@orch") fail("setting the alias from the bar did not PATCH it: " + JSON.stringify(mock.aliasWrites));
   } finally {
     await ctx.close();
   }
@@ -6785,11 +5775,11 @@ async function askAgainSection(browser, base) {
 // the paste and keep it up at least 300ms. A frame over the daemon's 4MB limit is
 // not sent, and says why.
 async function pasteBigSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -6983,8 +5973,8 @@ async function pasteBigSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the big paste page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── a big paste shows the spinner until its last byte is written ──────────
@@ -6992,12 +5982,12 @@ async function pasteBigSection(browser, base) {
 // answers `in-done` once the pty write returned. The box must be up the whole time bytes are still on the way and
 // down once the room has said so.
 async function pasteLandsSection(browser, base) {
-  const was = tasksMode, wasHub = hubMode;
-  tasksMode = "land";
-  hubMode = true;
+  const was = mock.tasksMode, wasHub = mock.hubMode;
+  mock.tasksMode = "land";
+  mock.hubMode = true;
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -7061,8 +6051,8 @@ async function pasteLandsSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the paste lands page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was; hubMode = wasHub;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was; mock.hubMode = wasHub;
 }
 
 // ── a pasted image with no bytes is never uploaded ────────────────────────
@@ -7070,11 +6060,11 @@ async function pasteLandsSection(browser, base) {
 // whose path is pasted to the agent: no upload request, and a toast saying to paste again.
 // There is no socket mock here and the paste path never needs one, so it waits for the card, not for a socket.
 async function pasteEmptySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   let uploads = 0;
@@ -7105,8 +6095,8 @@ async function pasteEmptySection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the empty paste page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── a slow paste shows the busy mark at once and keeps it ─────────────────
@@ -7116,11 +6106,11 @@ async function pasteEmptySection(browser, base) {
 // upload), survive the early echo, and go when the runner has said something
 // after the hold. Nothing coming back clears it at the cap.
 async function pasteBusySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -7242,8 +6232,8 @@ async function pasteBusySection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the busy paste page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the not-replayed notice opens or loads the pre-restart history ────────
@@ -7252,11 +6242,11 @@ async function pasteBusySection(browser, base) {
 // open calls the cog's viewer, clicking load re-attaches with carry=all under
 // the paste spinner, and an `atrium:` link a program printed does nothing.
 async function carryLinkSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -7372,8 +6362,8 @@ async function carryLinkSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the carry link page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── a pane never dials another card's terminal (attach-crossed-pane) ──────
@@ -7381,12 +6371,12 @@ async function carryLinkSection(browser, base) {
 // B's header: keystrokes went to the wrong session. Every retry must find the pane still showing the card it was for,
 // and a socket naming another card must never carry input.
 async function crossedPaneSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("cross-a", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   landCard("cross-b", { supervised: true, created_at: "2026-09-19T12:00:01Z" });
-  landList = [LAND["cross-a"], LAND["cross-b"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["cross-a"], mock.LAND["cross-b"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -7431,8 +6421,8 @@ async function crossedPaneSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the crossed pane page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the file-link tip survives a repaint of its row (backlog-2 t-001) ─────
@@ -7441,11 +6431,11 @@ async function crossedPaneSection(browser, base) {
 // after the hover delay. It now stays up across a repaint, and still goes when
 // the pointer really leaves, on a click, or for a different path.
 async function linkTipSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -7559,7 +6549,7 @@ async function linkTipSection(browser, base) {
     if (t.on) fail("a scroll left the path's tip up: " + JSON.stringify(t));
     if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -7568,11 +6558,11 @@ async function linkTipSection(browser, base) {
 // Claude Code puts paths in code spans and prose puts them in quotes and brackets. The link has to cover the path
 // and stop short of every character around it, whatever the path's shape and with or without a :line.
 async function backtickPathLinksSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -7639,7 +6629,7 @@ async function backtickPathLinksSection(browser, base) {
     }
     if (errors.length) fail("the backtick path page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -7650,11 +6640,11 @@ async function backtickPathLinksSection(browser, base) {
 // is hostile: script, an onerror image, a javascript: link and raw HTML must all arrive inert.
 // FOUTSIDE_SHOTS=dir writes the PNGs; FOUTSIDE_BEFORE=1 takes shots only, for the build without the feature.
 async function fileOpenOutsideSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.FOUTSIDE_SHOTS || "";
   const before = !!process.env.FOUTSIDE_BEFORE;
@@ -7803,7 +6793,7 @@ async function fileOpenOutsideSection(browser, base) {
     await shot(tabPage, "markdown-tab");
     if (errors.length) fail("the file-open page threw uncaught errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -7813,11 +6803,11 @@ async function fileOpenOutsideSection(browser, base) {
 // A click on an image (or any file the editor cannot show) opens a tab at once, with no menu.
 // TLATE_SHOTS=dir writes the PNGs.
 async function termLinkLateSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.TLATE_SHOTS || "";
   const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
@@ -7908,7 +6898,7 @@ async function termLinkLateSection(browser, base) {
     if (tabs.length !== 1 || tabs[0] !== want) fail("an image click opened " + JSON.stringify(tabs) + ", want " + want);
     if (errors.length) fail("the page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -7918,11 +6908,11 @@ async function termLinkLateSection(browser, base) {
 // its own, surviving a reload and never touching the board's origin zoom. RTS_SHOTS=<dir> takes pictures;
 // RTS_BEFORE=1 only takes them (the old page has no controls to check).
 async function readTabSizeSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.RTS_SHOTS || "";
   const before = !!process.env.RTS_BEFORE;
@@ -7982,7 +6972,7 @@ async function readTabSizeSection(browser, base) {
     if (r.keys.some(k => /read|zoom|font/i.test(k) && !["atrium.readfont", "atrium.readwidth", "atrium.readskin"].includes(k))) fail("the read page wrote another storage key: " + JSON.stringify(r.keys));
     if (errors.length) fail("the read tab threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -7993,11 +6983,11 @@ async function readTabSizeSection(browser, base) {
 // its own. RW_SHOTS=<dir> takes pictures, named by RW_PREFIX (before|after). RW_BEFORE=1 only takes them, since the
 // old page has none of the controls.
 async function readWidthSkinSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   resetSkins();
   const errors = [];
   const shots = process.env.RW_SHOTS || "";
@@ -8043,7 +7033,7 @@ async function readWidthSkinSection(browser, base) {
       }
       return;
     }
-    const sets0 = skinFor[""];
+    const sets0 = mock.skinFor[""];
 
     // 2558 wide. Narrow is the default and keeps the prose measure, and the table is let out of it.
     await open(2558, 1000);
@@ -8075,14 +7065,14 @@ async function readWidthSkinSection(browser, base) {
     // The skin: the board's (the hub's, noir here), then this page's own, then back.
     await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
     r = await m();
-    if (r.skin !== skinFor[""] || r.sel !== "") fail("the page does not wear the board's skin: " + JSON.stringify({ skin: r.skin, board: skinFor[""], sel: r.sel }));
+    if (r.skin !== mock.skinFor[""] || r.sel !== "") fail("the page does not wear the board's skin: " + JSON.stringify({ skin: r.skin, board: mock.skinFor[""], sel: r.sel }));
     if (JSON.stringify(r.opts) !== JSON.stringify([""].concat(SKINS))) fail("the picker is not the daemon's skin list: " + JSON.stringify(r.opts));
     const bg0 = r.bg;
     await p.selectOption("#skin", "ember");
     r = await m();
     if (r.skin !== "ember" || r.bg === bg0) fail("picking ember did not repaint: " + JSON.stringify(r));
     if (!r.keys.includes("atrium.readskin") || r.keys.includes("atrium.skin")) fail("the skin keys are " + r.keys.join());
-    if (skinFor[""] !== sets0) fail("the page changed the board's skin to " + skinFor[""]);
+    if (mock.skinFor[""] !== sets0) fail("the page changed the board's skin to " + mock.skinFor[""]);
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#md table");
     await p.waitForFunction(() => document.getElementById("skin").options.length > 1, null, { timeout: slow(5000) });
@@ -8094,7 +7084,7 @@ async function readWidthSkinSection(browser, base) {
     if (r.skin !== null) fail("the default skin left an attribute: " + JSON.stringify(r));
     await p.selectOption("#skin", "");
     r = await m();
-    if (r.skin !== skinFor[""] || r.keys.includes("atrium.readskin")) fail("the board's skin did not come back: " + JSON.stringify(r));
+    if (r.skin !== mock.skinFor[""] || r.keys.includes("atrium.readskin")) fail("the board's skin did not come back: " + JSON.stringify(r));
     await p.selectOption("#skin", "sandstone");
     if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-wide-sandstone.png`) });
     await p.selectOption("#skin", "");
@@ -8110,7 +7100,7 @@ async function readWidthSkinSection(browser, base) {
     if (shots) await p.screenshot({ path: path.join(shots, `${prefix}-phone-sandstone.png`) });
     if (errors.length) fail("the read tab threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -8119,11 +7109,11 @@ async function readWidthSkinSection(browser, base) {
 // The notice shows only while the operator's own line holds queued peer messages, is driven by the card list
 // (no timer, no request), and never takes focus or moves the grid.
 async function heldLineSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -8149,7 +7139,7 @@ async function heldLineSection(browser, base) {
   };
   const setAct = async (p, a) => {
     // The mock's own row too, or a list the board fetches meanwhile repaints the card without it.
-    if (a) LAND["land-live"].activity = a; else delete LAND["land-live"].activity;
+    if (a) mock.LAND["land-live"].activity = a; else delete mock.LAND["land-live"].activity;
     // What a whole-row task event does: the map takes the row, the terminals view repaints from it.
     await p.evaluate(async (a) => {
       const row = Object.assign({}, cardList().find(x => x.id === "land-live"));
@@ -8314,7 +7304,7 @@ async function heldLineSection(browser, base) {
     }
     if (errors.length) fail("typeAnyway threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 
@@ -8322,11 +7312,11 @@ async function heldLineSection(browser, base) {
 // A touch-first device attaches without ever sending a resize, draws the pty's
 // exact grid, zooms by font size, and has a key bar. A desktop is unchanged.
 async function phoneViewSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -8492,18 +7482,18 @@ async function phoneViewSection(browser, base) {
       fail("phoneView: the key bar shows on a desktop");
     await dctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneView: the page threw: " + errors.join(" | "));
 }
 
 // ── u-016: phone upload, header hide, landscape, full screen ─────────────
 async function u016Section(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -8690,19 +7680,19 @@ async function u016Section(browser, base) {
       await ctx.close();
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
 }
 
 // ── the mail chip's envelope shares a centre line with its count and the chips beside it ──────────
 async function mailChipSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const drafts = JSON.stringify([{ at: "2026-09-19T12:00:00Z", qs: ["one?", "two?"], a: ["yes", "no"] }]);
   landCard("a~land-mail", { supervised: true, answer_drafts: drafts });
-  landList = [LAND["a~land-mail"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["a~land-mail"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.MAIL_SHOTS || "";
   const tag = process.env.MAIL_SHOT_TAG || "after";
@@ -8741,19 +7731,19 @@ async function mailChipSection(browser, base) {
       await ctx.close();
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("mailChip: the page threw: " + errors.join(" | "));
 }
 
 // ── u-021: the phone board header is one slim row behind a chevron ─────────
 async function phoneHeaderSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("a~land-one", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   landCard("b~land-two", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["a~land-one"], LAND["b~land-two"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["a~land-one"], mock.LAND["b~land-two"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.PHONE_HEADER_SHOTS || "";
   const vis = (p, sel) => p.evaluate(s => {
@@ -8834,14 +7824,10 @@ async function phoneHeaderSection(browser, base) {
       fail("phoneHeader: the desktop header lost a control");
     await dctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneHeader: the page threw: " + errors.join(" | "));
 }
-
-/* The board counts its own controls (js/usage-board.js) and the ... menu lists them, most used first, with the ones
-   never used at the bottom. */
-const boardUsageSeen = new Map();
 async function boardUsageSection(browser, base) {
   const errors = [];
   const imgs = docImgDir("docs", "changes", "img");
@@ -8947,10 +7933,10 @@ async function boardUsageSection(browser, base) {
 // ── the desktop top nav: every tab whole or in the overflow menu, the chips give way first ───────
 // and its right edge is inside the nav, or when it sits in the `more` menu. The phone width keeps its scrolling nav.
 async function topNavSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   const errors = [];
   const shots = docImgDir("docs", "backlog", "ui", "img", "top-nav");
   const fill = (p) => p.evaluate(() => {
@@ -9038,7 +8024,7 @@ async function topNavSection(browser, base) {
     if (ph.more !== "none" || ph.ovf || ph.h > 60) fail("topNav phone: the phone header changed: " + JSON.stringify(ph));
     await pctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("topNav: the page threw: " + errors.join(" | "));
   if (!bad) console.log("topNav ok");
@@ -9046,10 +8032,10 @@ async function topNavSection(browser, base) {
 
 // ── u-tabs-order-and-hide: the top tabs can be ordered, put in the ... menu, or hidden ─────────────────────
 async function tabsOrderSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   const errors = [];
   const imgs = docImgDir("docs", "changes", "img");
   const stage = process.env.TABS_SHOT || "";
@@ -9177,7 +8163,7 @@ async function tabsOrderSection(browser, base) {
     if (!await p.evaluate(() => document.getElementById("tabsdlg").open)) fail("tabsOrder: the settings button does not open the arrange dialog");
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("tabsOrder: the page threw: " + errors.join(" | "));
   if (!bad) console.log("tabsOrder ok");
@@ -9192,12 +8178,12 @@ async function tabsOrderSection(browser, base) {
 // u-023: on a phone, collapsed, the terminal output gets at least 75% of the screen height. Measured as the visible
 // part of xterm's screen element over the visual viewport height, on the terminals tab and in the pop-out.
 async function phoneShareSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   landCard("land-two", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"], LAND["land-two"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"], mock.LAND["land-two"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.PHONE_SHARE_SHOTS || "";
   const fakeSock = () => {
@@ -9373,16 +8359,16 @@ async function phoneShareSection(browser, base) {
     await sctx.close();
     if (errors.length) fail("phoneShare: the page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 
 async function phoneTermBarSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -9486,16 +8472,16 @@ async function phoneTermBarSection(browser, base) {
     await dctx.close();
     if (errors.length) fail("phoneTermBar: the page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 
 async function phoneFocusSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -9605,7 +8591,7 @@ async function phoneFocusSection(browser, base) {
       await ctx.close();
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneFocus: the page threw: " + errors.join(" | "));
 }
@@ -9614,11 +8600,11 @@ async function phoneFocusSection(browser, base) {
 // Panning sideways used to be snapped back by "the pan follows the cursor". Now: while a touch is down and
 // after the reader pans by hand, output never moves the pane; typing or the follow chip brings the cursor back.
 async function phonePanSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -9725,17 +8711,17 @@ async function phonePanSection(browser, base) {
     if (!s.inView || s.chip) fail("phonePan: the follow chip did not follow the cursor: " + JSON.stringify(s));
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phonePan: the page threw: " + errors.join(" | "));
 }
 
 async function phoneFollowSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -9839,7 +8825,7 @@ async function phoneFollowSection(browser, base) {
     if (!s.inView || s.chip) fail("phoneFollow: output after the auto resume did not follow: " + JSON.stringify(s));
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneFollow: the page threw: " + errors.join(" | "));
 }
@@ -9850,11 +8836,11 @@ async function phoneFollowSection(browser, base) {
 // stays within 2px of the top of the pane's content box, after the attach, after a size frame and after a fit.
 // TERM_TOP_GAP_SHOTS=dir writes a screenshot of each state there.
 async function terminalTopGapSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -9928,7 +8914,7 @@ async function terminalTopGapSection(browser, base) {
     }
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("terminalTopGap: the page threw: " + errors.join(" | "));
 }
@@ -9937,11 +8923,11 @@ async function terminalTopGapSection(browser, base) {
 // A tap on the input's rows (between Claude Code's two rules) sends arrow keys in one frame; a tap on output,
 // a drag, and a long press send nothing; the helper textarea is focused at most once.
 async function phoneTapSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -10052,7 +9038,7 @@ async function phoneTapSection(browser, base) {
     if (focus > 1) fail("phoneTap: the helper textarea was focused " + focus + " times");
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneTap: the page threw: " + errors.join(" | "));
 }
@@ -10062,8 +9048,8 @@ async function phoneTapSection(browser, base) {
 // the attached phone terminal, whose socket is faked so every frame it sends can be read back.
 async function phoneKeysOpen(browser, base) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
     window.__sent = [];
@@ -10118,8 +9104,8 @@ async function phoneKeysOpen(browser, base) {
 }
 
 async function phoneKeyLabelSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   let h;
   try {
     h = await phoneKeysOpen(browser, base);
@@ -10189,14 +9175,14 @@ async function phoneKeyLabelSection(browser, base) {
     }
     console.log("phoneKeyLabel: enter, ^C, slide off and focus checked");
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     if (h) { if (h.errors.length) fail("phoneKeyLabel: the page threw: " + h.errors.join(" | ")); await h.ctx.close(); }
   }
 }
 
 async function phoneKeyLitSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   let h;
   try {
     h = await phoneKeysOpen(browser, base);
@@ -10235,7 +9221,7 @@ async function phoneKeyLitSection(browser, base) {
     if (bad.length) fail("phoneKeyLit: shared button hover rules outside (hover: hover): " + bad.join(" | "));
     console.log("phoneKeyLit: resting look after taps checked");
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     if (h) { if (h.errors.length) fail("phoneKeyLit: the page threw: " + h.errors.join(" | ")); await h.ctx.close(); }
   }
 }
@@ -10245,11 +9231,11 @@ async function phoneKeyLitSection(browser, base) {
 // resize. The key bar and the cursor row stay above its bottom edge, in the normal phone view and in full
 // screen, and restoring the height puts things back.
 async function phoneKeyboardSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -10326,7 +9312,7 @@ async function phoneKeyboardSection(browser, base) {
       if (back.resizes) fail("phoneKeyboard " + label + ": the keyboard sent " + back.resizes + " resize frame(s)");
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneKeyboard: the page threw: " + errors.join(" | "));
 }
@@ -10339,11 +9325,11 @@ async function phoneKeyboardSection(browser, base) {
 // view and the tray (term-phone) view. The last row, scrolled to the end, must end above the visual viewport's
 // bottom, and the keyboard case (a far shorter viewport) must hold the same.
 async function termListLastRowSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  for (let i = 0; i < 14; i++) landList.push(landCard("tls-" + i, { supervised: true, created_at: "2026-09-19T12:00:00Z", display_title: "row " + i, worktree: "/w/r" + i, repo: "r" + i, branch: "b" + i }));
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  for (let i = 0; i < 14; i++) mock.landList.push(landCard("tls-" + i, { supervised: true, created_at: "2026-09-19T12:00:00Z", display_title: "row " + i, worktree: "/w/r" + i, repo: "r" + i, branch: "b" + i }));
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.TERMLIST_SHOTS || "";
   const fakeSock = () => {
@@ -10415,7 +9401,7 @@ async function termListLastRowSection(browser, base) {
       }
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   // A browser without `cqh` drops the min() declaration, so each one needs a plain 70vh declaration before it.
   const css = fs.readFileSync(path.join(__dirname, "..", "internal", "api", "web", "css", "phone.css"), "utf8");
@@ -10431,11 +9417,11 @@ async function termListLastRowSection(browser, base) {
 // find bar, stepping, and output arriving while it is open leave the clipboard
 // alone; a drag, a double-click and a triple-click still copy.
 async function copySelectSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -10519,8 +9505,8 @@ async function copySelectSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the copy on select page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the chat tab (f-chat-tab) ──────────────────────────────────────────────
@@ -10530,12 +9516,12 @@ async function copySelectSection(browser, base) {
 // card, and the terminal button and the terminals tab's chat button switch back and forth. `CHAT_SHOTS=<dir>` writes the
 // before (terminals) and after (chat) pictures at 1400x900.
 async function chatTabSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("chat-a", { supervised: true, status: "running", display_title: "chat a", activity: { what: "thinking", seconds: 2 }, created_at: "2026-09-19T12:00:00Z" });
   landCard("chat-b", { supervised: true, status: "running", display_title: "chat b", created_at: "2026-09-19T12:05:00Z" });
-  landList = [LAND["chat-a"], LAND["chat-b"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["chat-a"], mock.LAND["chat-b"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -10663,7 +9649,7 @@ async function chatTabSection(browser, base) {
     if (await p.evaluate(() => document.querySelectorAll("#chat-frame-host iframe").length) !== 1) fail(tag + "more than one conversation frame");
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
@@ -10674,11 +9660,11 @@ async function chatTabSection(browser, base) {
 // way. The button goes on clear, scroll and Escape, and never shows for a selection no reply holds or a failed endpoint.
 // Also: an image paste no longer toasts where it landed.
 async function cleanCopySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -10815,8 +9801,8 @@ async function cleanCopySection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("cleanCopy: the page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── a second press fires nothing (backlog-2 item 19) ─────────────────────
@@ -11024,10 +10010,10 @@ async function idleParkSection(browser, base) {
   const ip = await ctx.newPage();
   const errors = [];
   ip.on("pageerror", e => errors.push(String(e)));
-  const wasHub = hubMode;
-  hubMode = true;
-  idleParkNow = 7200;
-  idleParkWrites = [];
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  mock.idleParkNow = 7200;
+  mock.idleParkWrites = [];
   const shots = process.env.IDLEPARK_SHOTS || "";
   try {
     await ip.goto(base, { waitUntil: "domcontentloaded" });
@@ -11064,16 +10050,16 @@ async function idleParkSection(browser, base) {
 
     await edit("45", null);
     await ip.waitForTimeout(400);
-    let w = idleParkWrites[0];
+    let w = mock.idleParkWrites[0];
     if (!w || w.body.idle_park_after !== "2700" || Object.keys(w.body).length !== 1) {
-      fail("45 minutes did not post {idle_park_after:\"2700\"}: " + JSON.stringify(idleParkWrites));
+      fail("45 minutes did not post {idle_park_after:\"2700\"}: " + JSON.stringify(mock.idleParkWrites));
     }
     if (w && w.room !== "alpha") fail("the idle park write did not name the room in X-Atrium-Room: " + JSON.stringify(w.room));
 
     await edit(null, false);
     await ip.waitForTimeout(400);
-    w = idleParkWrites[1];
-    if (!w || w.body.idle_park_after !== "off") fail("turning it off did not post \"off\": " + JSON.stringify(idleParkWrites));
+    w = mock.idleParkWrites[1];
+    if (!w || w.body.idle_park_after !== "off") fail("turning it off did not post \"off\": " + JSON.stringify(mock.idleParkWrites));
     if (w && w.room !== "alpha") fail("the off write did not name the room: " + JSON.stringify(w.room));
     s = await pane();
     if (s.on || !s.disabled) fail("the control does not read as off after saving off: " + JSON.stringify(s));
@@ -11081,13 +10067,13 @@ async function idleParkSection(browser, base) {
 
     await edit(null, true);
     await ip.waitForTimeout(300);
-    const before = idleParkWrites.length;
+    const before = mock.idleParkWrites.length;
     // The board shows three toasts and queues the rest, so clear the saved ones before looking for the refusal.
     await ip.evaluate(() => { document.getElementById("toasts").innerHTML = ""; });
     await edit("10", null);
     await ip.waitForTimeout(400);
-    if (idleParkWrites.length !== before) {
-      fail("a value under the floor was sent: " + JSON.stringify(idleParkWrites));
+    if (mock.idleParkWrites.length !== before) {
+      fail("a value under the floor was sent: " + JSON.stringify(mock.idleParkWrites));
     }
     await ip.waitForFunction(() => /the least is 30 minutes/.test(document.body.textContent), null,
       { timeout: slow(3000) }).catch(() => {});
@@ -11095,7 +10081,7 @@ async function idleParkSection(browser, base) {
     if (!/the least is 30 minutes/.test(toastText)) fail("a value under the floor was refused without naming the floor.");
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
-    hubMode = wasHub;
+    mock.hubMode = wasHub;
     await ctx.close();
   }
 }
@@ -11106,9 +10092,9 @@ async function idleParkSection(browser, base) {
 // Windows and the plain command elsewhere. There is no toggle anywhere. Set SSH_SHOTS to a directory for a picture, named
 // by SSH_NAME (default ssh-badge-after). See js/rooms.js and docs/rnd/ssh-via-hub.md.
 async function sshBadgeSection(browser, base) {
-  const wasHub = hubMode, was = ALPHA.remote_access;
-  hubMode = true;
-  ALPHA.remote_access = { on: true, from: ["hub", "m1mini"], port: 22, open: 1 };
+  const wasHub = mock.hubMode, was = mock.ALPHA.remote_access;
+  mock.hubMode = true;
+  mock.ALPHA.remote_access = { on: true, from: ["hub", "m1mini"], port: 22, open: 1 };
   const shots = process.env.SSH_SHOTS || "", name = process.env.SSH_NAME || "ssh-badge-after";
   const errors = [];
   const look = async platform => {
@@ -11170,7 +10156,7 @@ async function sshBadgeSection(browser, base) {
     await ctx.close();
 
     // Off, with nothing open: no badge, and a row that says where it is turned on.
-    ALPHA.remote_access = { on: false, port: 22, open: 0 };
+    mock.ALPHA.remote_access = { on: false, port: 22, open: 0 };
     ({ ctx, p } = await look("Win32"));
     if (await badge(p)) fail("an off room wears the ssh badge.");
     await p.evaluate(() => openRoomCog("alpha"));
@@ -11183,7 +10169,7 @@ async function sshBadgeSection(browser, base) {
     await ctx.close();
 
     // A room that never says is older than remote access, and says so.
-    delete ALPHA.remote_access;
+    delete mock.ALPHA.remote_access;
     ({ ctx, p } = await look("Win32"));
     if (await badge(p)) fail("a room that never said wears the ssh badge.");
     await p.evaluate(() => openRoomCog("alpha"));
@@ -11195,8 +10181,8 @@ async function sshBadgeSection(browser, base) {
     await ctx.close();
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
-    hubMode = wasHub;
-    if (was === undefined) delete ALPHA.remote_access; else ALPHA.remote_access = was;
+    mock.hubMode = wasHub;
+    if (was === undefined) delete mock.ALPHA.remote_access; else mock.ALPHA.remote_access = was;
   }
 }
 
@@ -11205,9 +10191,9 @@ async function sshBadgeSection(browser, base) {
 // /v1/login-needed naming the room, which is how the refusal is lifted after a /login. Set LOGIN_SHOTS to a directory
 // for a picture, named by LOGIN_NAME (default login-needed-after). See js/rooms.js and internal/daemon/loginneeded.go.
 async function loginNeededSection(browser, base) {
-  const wasHub = hubMode, was = ALPHA.login_needed;
-  hubMode = true;
-  ALPHA.login_needed = "claude needs a login on this machine. run /login in any session here";
+  const wasHub = mock.hubMode, was = mock.ALPHA.login_needed;
+  mock.hubMode = true;
+  mock.ALPHA.login_needed = "claude needs a login on this machine. run /login in any session here";
   const shots = process.env.LOGIN_SHOTS || "", name = process.env.LOGIN_NAME || "login-needed-after";
   const errors = [];
   const lifts = [];
@@ -11245,8 +10231,8 @@ async function loginNeededSection(browser, base) {
     await ctx.close();
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
-    hubMode = wasHub;
-    if (was === undefined) delete ALPHA.login_needed; else ALPHA.login_needed = was;
+    mock.hubMode = wasHub;
+    if (was === undefined) delete mock.ALPHA.login_needed; else mock.ALPHA.login_needed = was;
   }
 }
 
@@ -11260,10 +10246,10 @@ async function keepaliveSection(browser, base) {
   const kp = await ctx.newPage();
   const errors = [];
   kp.on("pageerror", e => errors.push(String(e)));
-  const was = tasksMode;
-  tasksMode = "keepalive";
-  kaWrites = [];
-  kaSettings = {
+  const was = mock.tasksMode;
+  mock.tasksMode = "keepalive";
+  mock.kaWrites = [];
+  mock.kaSettings = {
     cache_keepalive_default: true, cache_keepalive_suspended: "two refreshes in a row on two cards missed the cache",
     cache_keepalive_week_refreshes: 21,
   };
@@ -11304,14 +10290,14 @@ async function keepaliveSection(browser, base) {
     });
     await kp.waitForFunction(() => true, null, { timeout: slow(500) }).catch(() => {});
     await new Promise(r => setTimeout(r, 300));
-    const saved = kaWrites.find(w => w.url === "/v1/settings" && "cache_keepalive_default" in w.body);
+    const saved = mock.kaWrites.find(w => w.url === "/v1/settings" && "cache_keepalive_default" in w.body);
     if (!saved || saved.body.cache_keepalive_default !== false || Object.keys(saved.body).length !== 1) {
-      fail("unchecking the switch did not save {cache_keepalive_default:false}: " + JSON.stringify(kaWrites));
+      fail("unchecking the switch did not save {cache_keepalive_default:false}: " + JSON.stringify(mock.kaWrites));
     }
 
     // Clearing the suspension sends false and hides the notice.
     await kp.evaluate(() => clearKeepaliveSuspension());
-    const cleared = kaWrites.find(w => w.body.cache_keepalive_suspended === false);
+    const cleared = mock.kaWrites.find(w => w.body.cache_keepalive_suspended === false);
     if (!cleared) fail("clearing the suspension did not post cache_keepalive_suspended:false.");
     const stillShown = await kp.evaluate(() => !document.getElementById("s-keepalive-suspended").hidden);
     if (stillShown) fail("the suspension notice stayed up after it was cleared.");
@@ -11373,8 +10359,8 @@ async function keepaliveSection(browser, base) {
     if (menu.stopOn !== false || !/break-even/.test(menu.stopHelp)) {
       fail("a stopped card's menu switch does not read off with its reason: " + JSON.stringify(menu));
     }
-    const offPost = kaWrites.find(w => w.url === "/v1/tasks/ka-warm/keepalive");
-    const onPost = kaWrites.find(w => w.url === "/v1/tasks/ka-stop/keepalive");
+    const offPost = mock.kaWrites.find(w => w.url === "/v1/tasks/ka-warm/keepalive");
+    const onPost = mock.kaWrites.find(w => w.url === "/v1/tasks/ka-stop/keepalive");
     if (!offPost || offPost.body.on !== false) fail("turning a warm card off did not post on:false.");
     if (!onPost || onPost.body.on !== true) fail("turning a stopped card back on did not post on:true.");
 
@@ -11389,8 +10375,8 @@ async function keepaliveSection(browser, base) {
     }, null, { timeout: slow(5000) }).catch(() => fail("a break-even stop on the stream did not reach the toast log."));
   } finally {
     await ctx.close();
-    tasksMode = was;
-    kaSettings = {};
+    mock.tasksMode = was;
+    mock.kaSettings = {};
   }
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
 }
@@ -11405,8 +10391,8 @@ function kaFix(id, ka, over) {
 }
 
 async function cacheChipSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const shots = process.env.CACHE_SHOTS || "";
@@ -11414,8 +10400,8 @@ async function cacheChipSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     kaFix("cc-seed", { why: "not due", warm_until: new Date(Date.now() + 3600000).toISOString() });
-    landList = [LAND["cc-seed"]];
-    landPerms = [];
+    mock.landList = [mock.LAND["cc-seed"]];
+    mock.landPerms = [];
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof kaModel === "function", null, { timeout: slow(15000) });
 
@@ -11499,7 +10485,7 @@ async function cacheChipSection(browser, base) {
     kaFix("cc-none", { why: "no session id yet" });
     landCard("cc-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
     const ids = ["cc-kept", "cc-warm", "cc-cold", "cc-stop", "cc-off", "cc-none", "cc-shell"];
-    landList = ids.map(i => LAND[i]);
+    mock.landList = ids.map(i => mock.LAND[i]);
     const reqs = [];
     p.on("request", r => reqs.push(r.url()));
     await p.reload({ waitUntil: "domcontentloaded" });
@@ -11573,7 +10559,7 @@ async function cacheChipSection(browser, base) {
     // the real paint, and its time is brought to two seconds from now in the page once that paint and its fetch are done,
     // since a busy machine can spend the two seconds on the way here.
     kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
-    landList = [LAND["cc-flip"]];
+    mock.landList = [mock.LAND["cc-flip"]];
     await p.evaluate(() => switchView("stack"));
     const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
@@ -11598,7 +10584,7 @@ async function cacheChipSection(browser, base) {
     if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
     // A throttled tab is put right when it becomes visible again.
     // The cold card is no longer remembered, so the card is handed back as it would be by a list.
-    const back = JSON.parse(JSON.stringify(LAND["cc-flip"]));
+    const back = JSON.parse(JSON.stringify(mock.LAND["cc-flip"]));
     back.keepalive.warm_until = new Date(Date.now() + 90 * 60000).toISOString();
     await p.evaluate(t => {
       KA_SEEN.set(t.id, t);
@@ -11610,7 +10596,7 @@ async function cacheChipSection(browser, base) {
     await ctx.close();
 
     // 4. A phone: the short text, and nothing runs off the right edge.
-    landList = ids.map(i => LAND[i]);
+    mock.landList = ids.map(i => mock.LAND[i]);
     const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await pctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
     const q = await pctx.newPage();
@@ -11663,7 +10649,7 @@ async function cacheChipSection(browser, base) {
       kaFix("pp-cold", mk({ why: "parked", warm_until: hr(-30 * min) }));
       kaFix("pp-first", mk({ why: "not due", warm_until: hr(30 * min) }));
       const pids = ["pp-start", "pp-half", "pp-due", "pp-stop", "pp-cold", "pp-first"];
-      landList = pids.map(i => LAND[i]);
+      mock.landList = pids.map(i => mock.LAND[i]);
       await r.goto(base, { waitUntil: "domcontentloaded" });
       await r.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
       await r.waitForFunction(() => typeof kaModel === "function", null, { timeout: slow(15000) });
@@ -11721,7 +10707,7 @@ async function cacheChipSection(browser, base) {
       await pctx2.close();
     }
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     try { await ctx.close(); } catch (e) {}
   }
   if (errors.length) fail("cacheChip: the page threw: " + errors.join(" | "));
@@ -11736,8 +10722,8 @@ async function cacheChipSection(browser, base) {
 // context keeps this test's per-scope localStorage out of the others'.
 // Both rooms live, so all three scopes are pickable.
 async function skinScopeSection(browser, base) {
-  hubMode = true;
-  sggAttached = true;
+  mock.hubMode = true;
+  mock.sggAttached = true;
   resetSkins();
   const skinCtx = await browser.newContext();
   const skin = await skinCtx.newPage();
@@ -11754,7 +10740,7 @@ async function skinScopeSection(browser, base) {
     document.documentElement.getAttribute("data-skin") === w, want, { timeout: slow(15000) })
     .then(() => true, async () => {
       fail(what + ": the board wore " + JSON.stringify(await dataSkin()) + ", wanted " +
-        JSON.stringify(want) + ". The mock holds " + JSON.stringify(skinFor));
+        JSON.stringify(want) + ". The mock holds " + JSON.stringify(mock.skinFor));
       return false;
     });
   // THE LOAD'S OWN SETTINGS READS HAVE TO LAND BEFORE A SAVE. The remembered
@@ -11802,7 +10788,7 @@ async function skinScopeSection(browser, base) {
     // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
     await scopeTo("alpha", "moss");
     await scopeTo("sgg", "ember");
-    const held = { "": skinFor[""], alpha: skinFor.alpha, sgg: skinFor.sgg };
+    const held = { "": mock.skinFor[""], alpha: mock.skinFor.alpha, sgg: mock.skinFor.sgg };
     const distinct = new Set(Object.values(held));
     if (distinct.size !== 3) {
       fail("the three scopes did not hold three different skins at once: " +
@@ -11817,12 +10803,12 @@ async function skinScopeSection(browser, base) {
     await scopeTo(null, "noir");
     await skin.evaluate(() => saveSkin("vapor"));
     await wears("vapor", "a skin saved from the ALL view");
-    if (skinFor[""] !== "vapor") {
+    if (mock.skinFor[""] !== "vapor") {
       fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
-        JSON.stringify(skinFor[""]) + ", wanted vapor.");
+        JSON.stringify(mock.skinFor[""]) + ", wanted vapor.");
     }
-    if (skinFor.alpha !== "moss" || skinFor.sgg !== "ember") {
-      fail("saving the ALL skin leaked into a room: " + JSON.stringify(skinFor));
+    if (mock.skinFor.alpha !== "moss" || mock.skinFor.sgg !== "ember") {
+      fail("saving the ALL skin leaked into a room: " + JSON.stringify(mock.skinFor));
     }
 
     // A skin saved while scoped to alpha lands on alpha alone, and leaves the
@@ -11830,24 +10816,24 @@ async function skinScopeSection(browser, base) {
     await scopeTo("alpha", "moss");
     await skin.evaluate(() => saveSkin("sandstone"));
     await wears("sandstone", "a skin saved while scoped to alpha");
-    if (skinFor.alpha !== "sandstone") {
+    if (mock.skinFor.alpha !== "sandstone") {
       fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
-        JSON.stringify(skinFor.alpha) + ", wanted sandstone.");
+        JSON.stringify(mock.skinFor.alpha) + ", wanted sandstone.");
     }
-    if (skinFor[""] !== "vapor" || skinFor.sgg !== "ember") {
-      fail("saving alpha's skin leaked into another scope: " + JSON.stringify(skinFor));
+    if (mock.skinFor[""] !== "vapor" || mock.skinFor.sgg !== "ember") {
+      fail("saving alpha's skin leaked into another scope: " + JSON.stringify(mock.skinFor));
     }
 
     // A skin saved while scoped to sgg lands on sgg alone.
     await scopeTo("sgg", "ember");
     await skin.evaluate(() => saveSkin("harbour"));
     await wears(null, "a skin saved while scoped to sgg");
-    if (skinFor.sgg !== "harbour") {
+    if (mock.skinFor.sgg !== "harbour") {
       fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
-        JSON.stringify(skinFor.sgg) + ", wanted harbour.");
+        JSON.stringify(mock.skinFor.sgg) + ", wanted harbour.");
     }
-    if (skinFor[""] !== "vapor" || skinFor.alpha !== "sandstone") {
-      fail("saving sgg's skin leaked into another scope: " + JSON.stringify(skinFor));
+    if (mock.skinFor[""] !== "vapor" || mock.skinFor.alpha !== "sandstone") {
+      fail("saving sgg's skin leaked into another scope: " + JSON.stringify(mock.skinFor));
     }
 
     // Switching scope re-applies each saved skin independently: ALL is vapor,
@@ -11873,32 +10859,32 @@ async function skinScopeSection(browser, base) {
     // ALL is not the scope of the room that changed. The old code re-read the
     // skin on every attached-set flip and would repaint to `ember` here.
     await scopeTo(null, "vapor");
-    const allWas = skinFor[""];
-    skinFor[""] = "ember";
+    const allWas = mock.skinFor[""];
+    mock.skinFor[""] = "ember";
     // Past loadHubRooms' 2s throttle, so the `rooms` event below actually runs
     // its body rather than being coalesced away. Then a room leaves and one
     // attaches: two changes to the attached set, neither of which is the ALL
     // scope the operator is on, so the settled skin must not move.
     await skin.waitForTimeout(2200);
-    sggAttached = false;
+    mock.sggAttached = false;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await skin.waitForTimeout(2200);
-    sggAttached = true;
+    mock.sggAttached = true;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await skin.waitForTimeout(500);
     if ((await dataSkin()) !== "vapor") {
       fail("a room attaching or leaving clobbered the settled ALL skin: it " +
         "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
     }
-    skinFor[""] = allWas;
+    mock.skinFor[""] = allWas;
     if (skinErrors.length) {
       fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
     }
   } finally {
     await skin.close();
     await skinCtx.close();
-    hubMode = false;
-    sggAttached = false;
+    mock.hubMode = false;
+    mock.sggAttached = false;
     resetSkins();
   }
 }
@@ -11912,12 +10898,12 @@ async function skinScopeSection(browser, base) {
 // room attaches the read succeeds, and the skin must heal there rather than
 // waiting for another manual reload.
 async function skinHealSection(browser, base) {
-  hubMode = true;
-  hubHasRoom = false;
-  sggAttached = false;
+  mock.hubMode = true;
+  mock.hubHasRoom = false;
+  mock.sggAttached = false;
   // The hub wears paper, a light skin, which is the one clint set and did not
   // see paint. resetSkins in the finally puts the default back.
-  skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
+  mock.skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
   const healCtx = await browser.newContext();
   const heal = await healCtx.newPage();
   const healErrors = [];
@@ -11938,7 +10924,7 @@ async function skinHealSection(browser, base) {
     // Past loadHubRooms' 2s throttle, then a room attaches: the read now
     // succeeds and the skin heals to the hub's paper without a reload.
     await heal.waitForTimeout(2200);
-    hubHasRoom = true;
+    mock.hubHasRoom = true;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await heal.waitForFunction(() =>
       document.documentElement.getAttribute("data-skin") === "paper", null, { timeout: slow(15000) });
@@ -11948,8 +10934,8 @@ async function skinHealSection(browser, base) {
   } finally {
     await heal.close();
     await healCtx.close();
-    hubMode = false;
-    hubHasRoom = true;
+    mock.hubMode = false;
+    mock.hubHasRoom = true;
     resetSkins();
   }
 }
@@ -11976,7 +10962,7 @@ async function historySection(browser, base) {
   // main clips, so a view that is not a scroll box of its own can never show
   // the rows below the window. Two pages loaded, then checked at desktop and
   // phone widths.
-  histMany = true;
+  mock.histMany = true;
   await page.evaluate(() => renderHistory(false));
   await page.waitForFunction(() =>
     document.querySelectorAll("#history-list .row.line").length === 100, null,
@@ -12022,7 +11008,7 @@ async function historySection(browser, base) {
     return { scrollTop: list.scrollTop, id: row.dataset.id,
       offset: row.getBoundingClientRect().top - top };
   });
-  histManyLive = true;
+  mock.histManyLive = true;
   await page.evaluate(() => repaintLists());
   await page.waitForFunction(() =>
     document.querySelector("#history-list .row.line").dataset.id === "hm251", null,
@@ -12048,7 +11034,7 @@ async function historySection(browser, base) {
     { timeout: slow(15000) }).catch(() => fail("a fresh history load did not go back to one page."));
   const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
   if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
-  histMany = false; histManyLive = false;
+  mock.histMany = false; mock.histManyLive = false;
   await page.evaluate(() => renderHistory(false));
   } finally {
     await ctx.close();
@@ -12067,7 +11053,7 @@ function threwAt(e) {
 // prompt, one a `/model` was typed into, and one that ended a turn without
 // reporting. The room serves `escalation` only on the last, and only from
 // `stuckStep` 1. See internal/daemon/a2a.go and docs/test-plan.md BM.
-let stuckStep = 0;
+mock.stuckStep = 0;
 function stuckCards() {
   const launched = { supervised: true, tags: ["origin:agent"], spawned_by: "orchestrator" };
   const cards = [
@@ -12075,9 +11061,9 @@ function stuckCards() {
     Object.assign({}, T1, launched, { id: "st-slash", display_title: "slash command card" }),
     Object.assign({}, T1, launched, { id: "st-stuck", display_title: "silent worker" }),
   ];
-  if (stuckStep > 0) {
+  if (mock.stuckStep > 0) {
     cards[2].escalation = { source: "silent-stop", since: new Date(Date.now() - 3 * 60000).toISOString(),
-      count: stuckStep, minutes: 3, text: "silent worker is STUCK: it stopped without reporting, 3 minutes" };
+      count: mock.stuckStep, minutes: 3, text: "silent worker is STUCK: it stopped without reporting, 3 minutes" };
   }
   return cards;
 }
@@ -12091,9 +11077,9 @@ async function stuckSection(browser, base) {
   const sp = await ctx.newPage();
   const errors = [];
   sp.on("pageerror", e => errors.push(String(e)));
-  const was = tasksMode;
-  tasksMode = "stuck";
-  stuckStep = 0;
+  const was = mock.tasksMode;
+  mock.tasksMode = "stuck";
+  mock.stuckStep = 0;
   const stuckToasts = () => sp.evaluate(() => {
     try {
       return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
@@ -12128,7 +11114,7 @@ async function stuckSection(browser, base) {
     if (await stuckToasts() !== 0) fail("an idle card raised a stuck alert.");
 
     // Stuck: the mark, in the warn colour, with its own icon and a styled tooltip.
-    stuckStep = 1;
+    mock.stuckStep = 1;
     await settle();
     m = await marks();
     const s = m["st-stuck"];
@@ -12166,7 +11152,7 @@ async function stuckSection(browser, base) {
     });
     const saved = await sp.evaluate(() => JSON.parse(localStorage.getItem("atrium.sound") || "{}").stuck);
     if (saved !== "mark") fail("the stuck setting was not saved with the other alert settings: " + saved);
-    stuckStep = 2;
+    mock.stuckStep = 2;
     await settle();
     if (await stuckToasts() !== before) fail("\"only mark the card\" still raised a stuck alert.");
     m = await marks();
@@ -12178,15 +11164,15 @@ async function stuckSection(browser, base) {
       el.value = "off";
       el.dispatchEvent(new Event("change"));
     });
-    stuckStep = 3;
+    mock.stuckStep = 3;
     await settle();
     m = await marks();
     if (m["st-stuck"]) fail("stuck alerts off still draws the mark.");
     if (await stuckToasts() !== before) fail("stuck alerts off still raised an alert.");
   } finally {
     await ctx.close();
-    tasksMode = was;
-    stuckStep = 0;
+    mock.tasksMode = was;
+    mock.stuckStep = 0;
   }
   if (errors.length) fail("the stuck page threw: " + errors.join(" | "));
 }
@@ -12195,11 +11181,11 @@ async function stuckSection(browser, base) {
 // reason in words, rung whatever the "stuck agents" setting says, pinned in the
 // bell with an attach, and gone when the room clears `escalation`. The room half
 // does not exist yet, so the card is a fixture of the agreed contract.
-let blockerEsc = null;
+mock.blockerEsc = null;
 function blockerCards() {
   const launched = { supervised: true, tags: ["origin:agent"], spawned_by: "orchestrator" };
   const c = Object.assign({}, T1, launched, { id: "bl-card", display_title: "never started" });
-  if (blockerEsc) c.escalation = Object.assign({ since: new Date(Date.now() - 2 * 60000).toISOString(), count: 1, minutes: 2 }, blockerEsc);
+  if (mock.blockerEsc) c.escalation = Object.assign({ since: new Date(Date.now() - 2 * 60000).toISOString(), count: 1, minutes: 2 }, mock.blockerEsc);
   return [c];
 }
 async function blockerMarkSection(browser, base) {
@@ -12207,9 +11193,9 @@ async function blockerMarkSection(browser, base) {
   const sp = await ctx.newPage();
   const errors = [];
   sp.on("pageerror", e => errors.push(String(e)));
-  const was = tasksMode;
-  tasksMode = "blocker";
-  blockerEsc = null;
+  const was = mock.tasksMode;
+  mock.tasksMode = "blocker";
+  mock.blockerEsc = null;
   const settle = async () => { await sp.evaluate(() => runRefresh()); await new Promise(r => setTimeout(r, 400)); };
   const mark = () => sp.evaluate(() => {
     const m = document.querySelector('#stack-list .stackrow[data-id="bl-card"] .chip.blocker');
@@ -12227,7 +11213,7 @@ async function blockerMarkSection(browser, base) {
 
     // The stuck alert ON (the default): a blocker rings exactly once, not once
     // as a blocker and again as a stuck card.
-    blockerEsc = { source: "launch-prompt", prompt: "folder-trust", text: "stuck at the folder-trust prompt" };
+    mock.blockerEsc = { source: "launch-prompt", prompt: "folder-trust", text: "stuck at the folder-trust prompt" };
     await settle();
     await settle();
     if (await rung() !== 1) fail("a blocker with the stuck alert on rang " + await rung() + " times, not once.");
@@ -12257,7 +11243,7 @@ async function blockerMarkSection(browser, base) {
 
     // The count rising rings again, and the wording follows the prompt.
     const before = await rung();
-    blockerEsc = { source: "launch-prompt", prompt: "login", text: "stuck at a login", count: 2 };
+    mock.blockerEsc = { source: "launch-prompt", prompt: "login", text: "stuck at a login", count: 2 };
     await settle();
     if (await rung() <= before) fail("the next step of the backoff did not ring a blocker.");
     const reasons = await sp.evaluate(() => ["login", "update", "other"].map(p => blockerReason(
@@ -12292,15 +11278,15 @@ async function blockerMarkSection(browser, base) {
     if (!real) fail("a blocker's own log line is not red.");
 
     // Cleared by the room: gone from the card and from the bell's pin.
-    blockerEsc = null;
+    mock.blockerEsc = null;
     await settle();
     await sp.evaluate(() => openToastLog());
     if (await mark()) fail("a cleared blocker still wears the mark.");
     if (await sp.evaluate(() => !!document.querySelector("#toastlog-list .tlrow.pinned"))) fail("a cleared blocker is still pinned.");
   } finally {
     await ctx.close();
-    tasksMode = was;
-    blockerEsc = null;
+    mock.tasksMode = was;
+    mock.blockerEsc = null;
   }
   if (errors.length) fail("the blocker page threw: " + errors.join(" | "));
 }
@@ -12318,14 +11304,14 @@ async function ctxLimitLayersSection(browser, base) {
     all["width-floor"] = true;
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const row = (id, source, k, extra) => Object.assign({}, T1, {
     id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/cll/" + id,
     context_size: { tokens: 160000, warn: 160000 >= k * 1000, threshold_k: k, source }
   }, extra || {});
   try {
-    wornTasks = [row("ll-default", "default", 200), row("ll-hub", "hub", 300), row("ll-card", "card", 120)];
-    tasksMode = "worn";
+    mock.wornTasks = [row("ll-default", "default", 200), row("ll-hub", "hub", 300), row("ll-card", "card", 120)];
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
@@ -12355,7 +11341,7 @@ async function ctxLimitLayersSection(browser, base) {
     if ("context_limit_k" in sent) fail("a runner save still sends context_limit_k: " + sent.context_limit_k);
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -12407,10 +11393,10 @@ async function contextCycleSection(browser, base) {
     return route.fulfill({ json: { context_limits: { claude: 200 }, context_limits_default: { claude: 200 },
       context_limit_k_min: 10, context_limit_k_max: 2000, context_handoff_dir: "" } });
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   try {
-    wornTasks = [card];
-    tasksMode = "worn";
+    mock.wornTasks = [card];
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector('#stack-list .stackrow[data-id="ll-cycle"]', { state: "attached", timeout: slow(15000) });
 
@@ -12591,7 +11577,7 @@ async function contextCycleSection(browser, base) {
     if (posts.length !== n) fail("a list that is not harness=k was sent: " + JSON.stringify(posts.slice(n)));
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
   if (!bad) console.log("contextCycle ok");
@@ -12610,18 +11596,18 @@ async function ctxLineSection(browser, base) {
     all["width-floor"] = true;
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const row = (id, tokens, extra) => Object.assign({}, T1, {
     id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/cl/" + id,
     context_size: tokens == null ? undefined : { tokens, warn: tokens >= 150000, threshold_k: 150 }
   }, extra || {});
   try {
-    wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-warm", 170000),
+    mock.wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-warm", 170000),
       row("cl-over", 201000, { telemetry: { window: 1000000 } }),
       row("cl-long", 135000, { display_title: "a very long card title that has to wrap onto a second line in a narrow list" }),
       row("cl-none", null), row("cl-shelf", 201000, { status: "paused" }),
       row("cl-cycle", 201000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
-    tasksMode = "worn";
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
@@ -12677,8 +11663,8 @@ async function ctxLineSection(browser, base) {
     // and a context at 10%, 80% and 130% of the land line) at 2000px and 390px on a light and a dark skin.
     if (process.env.ROWFLOOD_SHOTS) {
       const dir = process.env.ROWFLOOD_SHOTS, tag = process.env.ROWFLOOD_TAG || "shot";
-      const keep = wornTasks;
-      wornTasks = [row("sh-plain", null, { display_title: "runtime", status: "working", worktree: "/tmp/cl/runtime" }),
+      const keep = mock.wornTasks;
+      mock.wornTasks = [row("sh-plain", null, { display_title: "runtime", status: "working", worktree: "/tmp/cl/runtime" }),
         row("sh-10", 40000, { display_title: "review (green, 20%)", worktree: "/tmp/cl/review" }),
         row("sh-70", 140000, { display_title: "r-owed-answers (yellow, 70%)", worktree: "/tmp/cl/r-owed-answers" }),
         row("sh-90", 180000, { display_title: "ui (red, 90%)", worktree: "/tmp/cl/ui" }),
@@ -12693,7 +11679,7 @@ async function ctxLineSection(browser, base) {
         }
       }
       await wp.setViewportSize({ width: 1400, height: 900 });
-      wornTasks = keep;
+      mock.wornTasks = keep;
       await wp.evaluate(async () => { await loadCards().catch(() => {}); await renderTermList(); });
     }
     // ROWFLOOD_REAL=<tasks.json> ROWFLOOD_REAL_SHOTS=<dir> ROWFLOOD_TAG=before|after: the board drawn from a COPY of a live
@@ -12705,10 +11691,10 @@ async function ctxLineSection(browser, base) {
       const d = JSON.parse(require("fs").readFileSync(process.env.ROWFLOOD_REAL, "utf8"));
       const list = (Array.isArray(d) ? d : d.tasks).filter(t => t.context_size).slice(0, 14);
       const themes = ["active-work", "electric-purple", "crimson-cave", "deep-ocean", "garnet", "forest-night", "", "cocoa"];
-      const keep = wornTasks;
+      const keep = mock.wornTasks;
       const roomOfRow = i => i % 3 === 0 ? "sg4-control" : i % 3 === 1 ? "claude-sg4" : "";
       const tagged = (i, id) => roomOfRow(i) ? roomOfRow(i) + "~" + id : id;
-      wornTasks = list.map((t, i) => Object.assign({}, t, {
+      mock.wornTasks = list.map((t, i) => Object.assign({}, t, {
         id: tagged(i, t.id), supervised: true, pinned: i < 5, theme: themes[i % themes.length], room: roomOfRow(i),
         // rows 8 to 10 are subagents of row 7, so row 7 wears a child count
         spawned_by_id: i >= 8 && i <= 10 ? list[7].id : t.spawned_by_id,
@@ -12773,7 +11759,7 @@ async function ctxLineSection(browser, base) {
       await shoot(pp, "phone390");
       await phoneCtx.close();
       await wp.setViewportSize({ width: 1400, height: 900 });
-      wornTasks = keep;
+      mock.wornTasks = keep;
       await wp.evaluate(async () => { hubIsHub = false; await loadCards().catch(() => {}); await renderTermList(); });
     }
     const r = got.rows;
@@ -12869,7 +11855,7 @@ async function ctxLineSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the terminals list threw: " + errors.join(" | "));
 }
@@ -12887,14 +11873,14 @@ async function landThePlaneSection(browser, base) {
     all["width-floor"] = true;
     localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const row = (id, tokens) => Object.assign({}, T1, {
     id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/cl/" + id,
     context_size: { tokens, warn: tokens >= 150000, threshold_k: 150 }
   });
   try {
-    wornTasks = [row("lp-100", 100000), row("lp-170", 170000), row("lp-201", 201000)];
-    tasksMode = "worn";
+    mock.wornTasks = [row("lp-100", 100000), row("lp-170", 170000), row("lp-201", 201000)];
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
@@ -13002,7 +11988,7 @@ async function landThePlaneSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the land-the-plane section threw: " + errors.join(" | "));
 }
@@ -13033,7 +12019,7 @@ const PEEK_CARDS = CTX_CARDS.map(t => Object.assign({}, t, { pinned: true, super
   // A name longer than the terminals list draws, and an address, for the popover's head.
   t.id === "cx-big" ? { display_title: "big context, a name the terminals list cuts short",
     worktree: "/src/atrium/one-hover", repo: "atrium", branch: "claude/one-hover" } : {}));
-let peekReads = 0;
+mock.peekReads = 0;
 
 // PAST THE GEAR'S CONTEXT THRESHOLD, A CARD WEARS A MARK AND NO NUMBER, on the
 // stack and the board. The number is in its details, one compact view reached
@@ -13079,8 +12065,8 @@ async function contextSizeSection(browser, base) {
     await route.fulfill({ json: { context_limits: { claude: 200 }, context_limits_default: { claude: 200 },
       context_limit_k_min: 10, context_limit_k_max: 2000 } });
   });
-  const was = tasksMode;
-  tasksMode = "ctxsize";
+  const was = mock.tasksMode;
+  mock.tasksMode = "ctxsize";
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: slow(15000) });
@@ -13222,7 +12208,7 @@ async function contextSizeSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the context size page threw: " + errors.join(" | "));
 }
@@ -13267,8 +12253,8 @@ async function peekEverywhereSection(browser, base) {
     ["board", '#board .card[data-id="cx-big"]'],
     ["terms", '#term-list .card.tab[data-id="cx-big"]'],
   ];
-  const was = tasksMode;
-  tasksMode = "peek";
+  const was = mock.tasksMode;
+  mock.tasksMode = "peek";
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector(tabs[0][1], { state: "attached", timeout: slow(15000) });
@@ -13463,7 +12449,7 @@ async function peekEverywhereSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the peek page threw: " + errors.join(" | "));
 }
@@ -13522,9 +12508,9 @@ async function peekOneHoverSection(browser, base) {
     return { text: norm(el.textContent), b: r.bottom, y: r.top, vh: innerHeight };
     function norm(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
   });
-  const was = tasksMode, wasDocs = boardDocs;
-  tasksMode = "onehover";
-  boardDocs = true;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  mock.tasksMode = "onehover";
+  mock.boardDocs = true;
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
@@ -13645,8 +12631,8 @@ async function peekOneHoverSection(browser, base) {
       .catch(() => fail("onehover: the gear's tooltip no longer shows."));
   } finally {
     await ctx.close();
-    tasksMode = was;
-    boardDocs = wasDocs;
+    mock.tasksMode = was;
+    mock.boardDocs = wasDocs;
   }
   if (errors.length) fail("the one hover page threw: " + errors.join(" | "));
 }
@@ -13665,8 +12651,8 @@ async function peekDrawersSection(browser, base) {
     sent_at: new Date(Date.now() - i * 60000).toISOString(), state: "delivered", channel: "terminal", preview: "say " + i, chars: 5, text: "say " + i }));
   await ctx.route("**/v1/tasks/*/says*", route => route.fulfill({ json: { says, more: false } }));
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
-  const was = tasksMode;
-  tasksMode = "onehover";
+  const was = mock.tasksMode;
+  mock.tasksMode = "onehover";
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
@@ -13771,7 +12757,7 @@ async function peekDrawersSection(browser, base) {
     if (!d.need.open) fail("peekDrawers: a drag-select in NEEDS YOU's text shut it");
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the peek drawers page threw: " + errors.join(" | "));
 }
@@ -13957,8 +12943,8 @@ async function peekStatusTruthSection(browser, base) {
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
   const shots = process.env.PEEKSTATUS_SHOTS || "";
-  const was = tasksMode;
-  tasksMode = "peekstatus";
+  const was = mock.tasksMode;
+  mock.tasksMode = "peekstatus";
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
@@ -14027,7 +13013,7 @@ async function peekStatusTruthSection(browser, base) {
     if (ov.x === "auto" || ov.x === "scroll") fail("peekStatus: the needs-you block can scroll sideways: " + JSON.stringify(ov));
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the peek status page threw: " + errors.join(" | "));
 }
@@ -14044,9 +13030,9 @@ async function peekHoverRestSection(browser, base) {
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
   const wait = ms => new Promise(r => setTimeout(r, ms));
   const isOpen = () => p.evaluate(() => !!document.querySelector(".peek.on"));
-  const was = tasksMode, wasDocs = boardDocs;
-  tasksMode = "onehover";
-  boardDocs = true;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  mock.tasksMode = "onehover";
+  mock.boardDocs = true;
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
@@ -14086,8 +13072,8 @@ async function peekHoverRestSection(browser, base) {
     if (!(await isOpen())) fail("peekHoverRest: moving within the card closed an open hover");
   } finally {
     await ctx.close();
-    tasksMode = was;
-    boardDocs = wasDocs;
+    mock.tasksMode = was;
+    mock.boardDocs = wasDocs;
   }
   if (errors.length) fail("the hover rest page threw: " + errors.join(" | "));
 }
@@ -14137,8 +13123,8 @@ async function looksIdleSection(browser, base) {
 // wrong room and came back "sql: no rows". See docs/backlog-2.md item 63 and
 // docs/fabric/card-room-routing.md. A write that names no card still carries it.
 async function cardRouteSection(browser, base) {
-  hubMode = true;
-  sggAttached = true;
+  mock.hubMode = true;
+  mock.sggAttached = true;
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   const errors = [];
@@ -14181,8 +13167,8 @@ async function cardRouteSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    hubMode = false;
-    sggAttached = false;
+    mock.hubMode = false;
+    mock.sggAttached = false;
   }
   if (errors.length) fail("the card-route page threw: " + errors.join(" | "));
 }
@@ -14193,12 +13179,12 @@ async function cardRouteSection(browser, base) {
 // the toast log keeps a line. A permission request from one still notifies,
 // unticking restores, and a card with a tone of its own is heard regardless.
 async function quietDoerSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
   const errors = [];
-  landList = [];
-  landPerms = [];
+  mock.landList = [];
+  mock.landPerms = [];
   const doer = (id, over) => landCard(id, Object.assign({ tags: ["origin:agent", "atrium:subagent"], supervised: false }, over || {}));
   for (const focused of [false, true]) {
     const ctx = await landContext(browser, !focused);
@@ -14214,7 +13200,7 @@ async function quietDoerSection(browser, base) {
       const arrive = async (c, title, seen) => {
         // Toasts cleared first, so an earlier one cannot be read as this one.
         await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
-        landList = landList.concat(c);
+        mock.landList = mock.landList.concat(c);
         poke();
         // The line is there whether it was said or not, so it says the poll ran.
         await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: slow(10000) });
@@ -14237,14 +13223,14 @@ async function quietDoerSection(browser, base) {
       const logRow = await p.evaluate(() => toastLog().find(e => e.title === "qd doer is on the board"));
       if (logRow.taskFor !== "qd-doer") fail(where + ": the muted log line does not name its card.");
 
-      landPerms = [{ id: "qd-perm", task_id: "qd-doer", agent: "qd doer", tool: "Bash", command: "ls",
+      mock.landPerms = [{ id: "qd-perm", task_id: "qd-doer", agent: "qd doer", tool: "Bash", command: "ls",
         requested_at: new Date().toISOString().replace("Z", "") }];
       poke();
       await p.evaluate(() => runRefresh());
       await p.waitForFunction(() => toastLog().some(e => e.title === "qd doer needs permission"), null,
         { timeout: slow(10000) }).catch(() => fail(where + ": a permission request from an agent-launched card left no trace."));
       if (!await said("qd doer needs permission")) fail(where + ": a permission request from an agent-launched card was muted.");
-      landPerms = [];
+      mock.landPerms = [];
 
       await p.evaluate(() => alerting.set({ quietDoers: false }));
       await arrive(doer("qd-doer2"), "qd doer2 is on the board");
@@ -14272,14 +13258,14 @@ async function quietDoerSection(browser, base) {
         b.dispatchEvent(new Event("change"));
       });
       if (await p.evaluate(() => alerting.get().quietDoers) !== false) fail(where + ": unticking the box did not store it.");
-      landList = [];
+      mock.landList = [];
     } finally {
       await ctx.close();
     }
   }
   if (errors.length) fail("the quiet doer pages threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── board-wide auto does not ring for a request it is about to approve ────
@@ -14287,13 +13273,13 @@ async function quietDoerSection(browser, base) {
 // the grace. With auto on, a request that is approved inside it raises nothing (no toast, no log line, no
 // notification), and one that outlives it rings. Off, it rings at once. A JSON body reads as a sentence.
 async function autoPermSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const poke = () => openStreams.forEach(r => { try { r.write("event: permission\ndata: {}\n\n"); } catch (e) {} });
   const errors = [];
-  landList = [];
-  landPerms = [];
-  gautoOn = true;
+  mock.landList = [];
+  mock.landPerms = [];
+  mock.gautoOn = true;
   const ctx = await landContext(browser, false);
   try {
     const p = await ctx.newPage();
@@ -14307,19 +13293,19 @@ async function autoPermSection(browser, base) {
       [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
     const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
     const ask = (id, agent, command) => {
-      landPerms = landPerms.concat([{ id, task_id: "ap-card", agent, tool: "Bash", command: command || "ls",
+      mock.landPerms = mock.landPerms.concat([{ id, task_id: "ap-card", agent, tool: "Bash", command: command || "ls",
         requested_at: new Date().toISOString().replace("Z", "") }]);
       poke();
       return p.evaluate(() => runRefresh());
     };
-    landList = [landCard("ap-card", { supervised: false })];
+    mock.landList = [landCard("ap-card", { supervised: false })];
     poke();
     await p.waitForTimeout(800);
 
     // Approved inside the grace: the hub answered, so the request is gone before anything rang.
     await ask("ap-a", "ap one");
     await p.waitForTimeout(500);
-    landPerms = [];
+    mock.landPerms = [];
     poke();
     await p.evaluate(() => runRefresh());
     await p.waitForTimeout(2200);
@@ -14342,22 +13328,22 @@ async function autoPermSection(browser, base) {
       { timeout: slow(6000) }).catch(() => fail("auto on: a request nothing approved never rang."));
     const row = await p.evaluate(() => toastLog().find(e => e.title === "ap two needs permission"));
     if (row.body !== "Bash: verdict: approve") fail("a JSON body did not read as a sentence: " + JSON.stringify(row.body));
-    landPerms = [];
+    mock.landPerms = [];
 
     // Off: no grace at all.
-    gautoOn = false;
+    mock.gautoOn = false;
     await p.evaluate(() => { globalAuto = false; });
     await ask("ap-c", "ap three");
     await p.waitForFunction(() => toastLog().some(e => e.title === "ap three needs permission"), null,
       { timeout: slow(1200) }).catch(() => fail("auto off: a request was held back."));
-    landPerms = [];
+    mock.landPerms = [];
   } finally {
     await ctx.close();
-    gautoOn = false;
+    mock.gautoOn = false;
   }
   if (errors.length) fail("the auto perm page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the notification drawer's off switch ──────────────────────────────────
@@ -14366,12 +13352,12 @@ async function autoPermSection(browser, base) {
 // counts it. A permission request still notifies. The choice lives in
 // localStorage, so a reload keeps it, and the bell and the aria-labels follow.
 async function notifyOffSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
   const errors = [];
-  landList = [];
-  landPerms = [];
+  mock.landList = [];
+  mock.landPerms = [];
   for (const focused of [false, true]) {
     const ctx = await landContext(browser, !focused);
     const where = focused ? "focused" : "unfocused";
@@ -14387,7 +13373,7 @@ async function notifyOffSection(browser, base) {
       const count = title => p.evaluate(t => toastLog().filter(e => e.title === t).reduce((a, e) => a + (e.n || 1), 0), title);
       const arrive = async (c, title) => {
         await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
-        landList = landList.concat(c);
+        mock.landList = mock.landList.concat(c);
         poke();
         await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: slow(10000) })
           .catch(() => fail(where + ": " + title + " never reached the drawer log."));
@@ -14425,14 +13411,14 @@ async function notifyOffSection(browser, base) {
       if (!(Number(badge) >= 1)) fail(where + ": the badge did not count a held alert: '" + badge + "'.");
 
       // A permission request is held too (clint, 2026-09-29), and still recorded.
-      landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
+      mock.landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
         requested_at: new Date().toISOString().replace("Z", "") }];
       poke();
       await p.evaluate(() => runRefresh());
       await p.waitForFunction(() => toastLog().some(e => e.title === "no a needs permission"), null,
         { timeout: slow(10000) }).catch(() => fail(where + ": a permission request left no trace while off."));
       if (await said("no a needs permission")) fail(where + ": off still said a permission request.");
-      landPerms = [];
+      mock.landPerms = [];
 
       // A failed fixture is held too: no toast, one drawer entry.
       await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
@@ -14466,14 +13452,14 @@ async function notifyOffSection(browser, base) {
       await p.waitForTimeout(1500);
       await arrive(landCard("no-b", { supervised: false }), "no b is on the board");
       if (!await said("no b is on the board")) fail(where + ": turning back on did not restore the alert.");
-      landList = [];
+      mock.landList = [];
     } finally {
       await ctx.close();
     }
   }
   if (errors.length) fail("the notify-off pages threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── clicking `? N` dismisses the questions ────────────────────────────────
@@ -14484,14 +13470,14 @@ async function notifyOffSection(browser, base) {
 // keyboard does what the mouse does. `!` and the queued mark take their own
 // click and do nothing else.
 async function questionsClickSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "qclick";
+  const was = mock.tasksMode;
+  mock.tasksMode = "qclick";
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   p.on("pageerror", e => errors.push(String(e)));
   const reset = async () => {
-    qDismissed.clear(); qDismissWrites = []; qDismissMode = "ok";
+    mock.qDismissed.clear(); mock.qDismissWrites = []; mock.qDismissMode = "ok";
     await p.evaluate(() => { termTask = null; localStorage.removeItem(TOASTLOG_KEY); return runRefresh(); });
     await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
       { state: "attached", timeout: slow(15000) });
@@ -14557,8 +13543,8 @@ async function questionsClickSection(browser, base) {
         : '#stack-list .stackrow[data-id="qc1"] .chip.questions',
       { state: "detached", timeout: slow(15000) }).catch(() => fail(name + ": the chip stayed after a dismiss and a poll."));
       await shot("after");
-      if (qDismissWrites.length !== 1) fail(name + ": " + qDismissWrites.length + " dismiss posts, not one.");
-      const w =qDismissWrites[0];
+      if (mock.qDismissWrites.length !== 1) fail(name + ": " + mock.qDismissWrites.length + " dismiss posts, not one.");
+      const w =mock.qDismissWrites[0];
       if (w.url !== "/v1/tasks/qc1/questions/dismiss" || w.body.questions_at !== QC_AT) {
         fail(name + ": the dismiss named " + JSON.stringify(w));
       }
@@ -14584,13 +13570,13 @@ async function questionsClickSection(browser, base) {
       await p.keyboard.press(key === " " ? "Space" : key);
       await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
         { state: "detached", timeout: slow(15000) }).catch(() => fail("key " + JSON.stringify(key) + " did not dismiss."));
-      if (qDismissWrites.length !== 1) fail("key " + JSON.stringify(key) + " sent " + qDismissWrites.length + " posts.");
+      if (mock.qDismissWrites.length !== 1) fail("key " + JSON.stringify(key) + " sent " + mock.qDismissWrites.length + " posts.");
       if (await p.evaluate(() => termTask)) fail("key " + JSON.stringify(key) + " selected a terminal.");
     }
 
     // A stale answer says so and leaves the chip.
     await reset();
-    qDismissMode = "stale";
+    mock.qDismissMode = "stale";
     await show("stack");
     await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
     await p.waitForFunction(() => toastLog()
@@ -14601,7 +13587,7 @@ async function questionsClickSection(browser, base) {
 
     // Already answered elsewhere: not "dismissed", and nothing was open.
     await reset();
-    qDismissMode = "nothing";
+    mock.qDismissMode = "nothing";
     await show("stack");
     await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
     await p.waitForFunction(() => toastLog().some(e => /nothing was open to dismiss/.test(e.title)), null,
@@ -14610,7 +13596,7 @@ async function questionsClickSection(browser, base) {
 
     // A failed call toasts the error and leaves the chip.
     await reset();
-    qDismissMode = "fail";
+    mock.qDismissMode = "fail";
     await show("stack");
     await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
     await p.waitForFunction(() => toastLog()
@@ -14622,7 +13608,7 @@ async function questionsClickSection(browser, base) {
     // `!` and the queued mark take their own click and change nothing else.
     for (const quiet of [false, true]) {
       await reset();
-      qHeldQuiet = quiet;
+      mock.qHeldQuiet = quiet;
       await p.evaluate(() => runRefresh());
       await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const sel = '#term-list .card.tab[data-id="qc1"] .chip.' + (quiet ? "queued" : "held");
@@ -14632,12 +13618,12 @@ async function questionsClickSection(browser, base) {
       await p.waitForTimeout(300);
       const term = await p.evaluate(() => termTask ? termTask.id : null);
       if (term !== null) fail("clicking the " + (quiet ? "queued" : "held") + " chip selected " + term);
-      if (qDismissWrites.length) fail("clicking the held chip posted a dismiss.");
+      if (mock.qDismissWrites.length) fail("clicking the held chip posted a dismiss.");
     }
   } finally {
     await ctx.close();
-    qDismissMode = "ok"; qHeldQuiet = false; qDismissed.clear();
-    tasksMode = was;
+    mock.qDismissMode = "ok"; mock.qHeldQuiet = false; mock.qDismissed.clear();
+    mock.tasksMode = was;
   }
   if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
 }
@@ -14667,10 +13653,10 @@ function topCounts(counts) {
 }
 
 async function eventDrivenSection(browser, base) {
-  const was = tasksMode, wasB = mockBroadcast;
-  tasksMode = "untagged";
-  mockBroadcast = false;
-  waitingReads = 0;
+  const was = mock.tasksMode, wasB = mock.mockBroadcast;
+  mock.tasksMode = "untagged";
+  mock.mockBroadcast = false;
+  mock.waitingReads = 0;
   const secs = +(process.env.EVENT_DRIVEN_SECONDS || 30);
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const counts = countRequests(ctx);
@@ -14747,14 +13733,14 @@ async function eventDrivenSection(browser, base) {
 
     // (c) Waiting is worked out, never asked for. Counted over the whole
     // section, boot included.
-    if (waitingReads) {
-      fail("the board fetched /v1/waiting " + waitingReads + " times. it is worked out from the cards now.");
+    if (mock.waitingReads) {
+      fail("the board fetched /v1/waiting " + mock.waitingReads + " times. it is worked out from the cards now.");
     }
     if (errors.length) fail("the event-driven page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
-    tasksMode = was;
-    mockBroadcast = wasB;
+    mock.tasksMode = was;
+    mock.mockBroadcast = wasB;
   }
 
   // (d) A hidden tab does no resync, and a visible one does. The resync is
@@ -14805,9 +13791,9 @@ async function eventDrivenSection(browser, base) {
 // ran the whole fan-out, and a 10s poll ran it again.
 const IDLE_BUDGET = 12;
 async function idleBudgetSection(browser, base) {
-  const was = tasksMode, wasB = mockBroadcast;
-  tasksMode = "untagged";
-  mockBroadcast = false;
+  const was = mock.tasksMode, wasB = mock.mockBroadcast;
+  mock.tasksMode = "untagged";
+  mock.mockBroadcast = false;
   const secs = +(process.env.IDLE_BUDGET_SECONDS || 60);
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const counts = countRequests(ctx);
@@ -14835,8 +13821,8 @@ async function idleBudgetSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    tasksMode = was;
-    mockBroadcast = wasB;
+    mock.tasksMode = was;
+    mock.mockBroadcast = wasB;
   }
 }
 
@@ -14845,17 +13831,17 @@ async function idleBudgetSection(browser, base) {
 // The walk drawer's 3s read of the findings folder, the `rooms` event's follow-up fetch, and the settling
 // re-check of /v1/health. Each is now told by an event, and this proves none of them asks on a clock.
 async function pollsGoneSection(browser, base) {
-  const was = tasksMode, wasB = mockBroadcast, wasHub = hubMode, wasSgg = sggAttached;
+  const was = mock.tasksMode, wasB = mock.mockBroadcast, wasHub = mock.hubMode, wasSgg = mock.sggAttached;
   const id = "land-pgone";
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-pgone-"));
   fs.mkdirSync(path.join(dir, "findings"));
   fs.writeFileSync(path.join(dir, "findings", "01-high-a.go-L10.txt"),
     "HIGH a.go line 10: something\n\na comment\n\nEvidence\nx\n");
-  walkDirs[id] = dir;
-  tasksMode = "land";
-  mockBroadcast = false;
-  landList = [landCard(id, { supervised: true, worktree: "/walk/" + id })];
-  landPerms = [];
+  mock.walkDirs[id] = dir;
+  mock.tasksMode = "land";
+  mock.mockBroadcast = false;
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/" + id })];
+  mock.landPerms = [];
   const errors = [];
   // Every page here runs on a fake clock: the quiet spells that prove nothing polls are moved through, not waited out.
   // The real pause after each move lets a request the page made be counted.
@@ -14899,8 +13885,8 @@ async function pollsGoneSection(browser, base) {
     }
 
     // (b) `rooms` with a payload paints with no fetch, and without `attached` still fetches.
-    hubMode = true;
-    sggAttached = false;
+    mock.hubMode = true;
+    mock.sggAttached = false;
     const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c2 = countRequests(ctx2);
     try {
@@ -14911,10 +13897,10 @@ async function pollsGoneSection(browser, base) {
       await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
       await run(p, 2500);
       c2.clear();
-      const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, ALPHA),
-        Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, SGG)];
+      const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, mock.ALPHA),
+        Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, mock.SGG)];
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: " + JSON.stringify({
-        rooms: ["alpha", "sgg"], attached: [ALPHA, SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
+        rooms: ["alpha", "sgg"], attached: [mock.ALPHA, mock.SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
       await p.waitForFunction(() => hubRooms.length === 2, null, { timeout: slow(5000) })
         .catch(() => fail("pollsGone: a rooms event with a payload did not paint the second room"));
       await run(p, 700);
@@ -14928,12 +13914,12 @@ async function pollsGoneSection(browser, base) {
       if (!c2.get("/_hub/rooms")) fail("pollsGone: a rooms event without `attached` did not fall back to fetching");
     } finally {
       await ctx2.close();
-      hubMode = wasHub;
-      sggAttached = wasSgg;
+      mock.hubMode = wasHub;
+      mock.sggAttached = wasSgg;
     }
 
     // (c) `health`: halted shows the halt, settling then clear ends it, and nothing re-reads /v1/health.
-    mockBroadcast = false;
+    mock.mockBroadcast = false;
     const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const c3 = countRequests(ctx3);
     try {
@@ -14962,11 +13948,11 @@ async function pollsGoneSection(browser, base) {
       await ctx3.close();
     }
   } finally {
-    tasksMode = was;
-    mockBroadcast = wasB;
-    hubMode = wasHub;
-    landList = [];
-    delete walkDirs[id];
+    mock.tasksMode = was;
+    mock.mockBroadcast = wasB;
+    mock.hubMode = wasHub;
+    mock.landList = [];
+    delete mock.walkDirs[id];
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   }
   if (errors.length) fail("pollsGone: the page threw: " + errors.join(" | "));
@@ -14996,12 +13982,12 @@ async function walkSection(browser, base) {
       fs.copyFileSync(path.join(s.dir, "findings", f), path.join(to, "findings", f));
     }
     if (fs.existsSync(path.join(s.dir, "pr.diff"))) fs.copyFileSync(path.join(s.dir, "pr.diff"), path.join(to, "pr.diff"));
-    walkDirs[s.id] = to;
+    mock.walkDirs[s.id] = to;
   }
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = samples.map(s => landCard(s.id, { supervised: true, worktree: "/walk/" + s.id }));
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = samples.map(s => landCard(s.id, { supervised: true, worktree: "/walk/" + s.id }));
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base }).catch(() => {});
@@ -15026,7 +14012,7 @@ async function walkSection(browser, base) {
     for (const s of samples) {
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
-      const dir = walkDirs[s.id];
+      const dir = mock.walkDirs[s.id];
       const files = () => fs.readdirSync(path.join(dir, "findings")).sort();
       const read = n => fs.readFileSync(path.join(dir, "findings", n), "utf8");
       const write = (n, t) => fs.writeFileSync(path.join(dir, "findings", n), t);
@@ -15193,9 +14179,9 @@ async function walkSection(browser, base) {
     }
   } finally {
     await ctx.close();
-    tasksMode = was;
-    landList = [];
-    for (const s of WALK_SAMPLES) delete walkDirs[s.id];
+    mock.tasksMode = was;
+    mock.landList = [];
+    for (const s of WALK_SAMPLES) delete mock.walkDirs[s.id];
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
   }
   if (errors.length) fail("walk: the page threw: " + errors.join(" | "));
@@ -15223,12 +14209,12 @@ async function walkContextSection(browser, base) {
       fs.mkdirSync(path.join(d, "src", "pkg"), { recursive: true });
       fs.writeFileSync(path.join(d, "src", "pkg", "a.go"), head);
     }
-    walkDirs[ids[k]] = d;
+    mock.walkDirs[ids[k]] = d;
   }
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [landCard(ids.a, { supervised: true, worktree: "/walk/a" }), landCard(ids.b, { supervised: true, worktree: "/walk/b" })];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(ids.a, { supervised: true, worktree: "/walk/a" }), landCard(ids.b, { supervised: true, worktree: "/walk/b" })];
+  mock.landPerms = [];
   const errors = [];
   const shotDir = process.env.WALK_SHOTS || "";
   const shotTag = process.env.WALK_SHOT || "after";
@@ -15361,9 +14347,9 @@ async function walkContextSection(browser, base) {
     await pp.close();
   } finally {
     await ctx.close();
-    tasksMode = was;
-    landList = [];
-    for (const k of Object.values(ids)) delete walkDirs[k];
+    mock.tasksMode = was;
+    mock.landList = [];
+    for (const k of Object.values(ids)) delete mock.walkDirs[k];
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
   }
   if (errors.length) fail("walkContext: the page threw: " + errors.join(" | "));
@@ -15374,11 +14360,11 @@ async function walkContextSection(browser, base) {
 // request, so a review walk keeps one tab. window.open is stubbed to record the
 // name, since a real popup is awkward headless.
 async function linkReuseSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -15477,7 +14463,7 @@ async function linkReuseSection(browser, base) {
     if (meta !== "no-referrer") fail("the page carries no no-referrer policy: " + meta);
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
 }
@@ -15485,11 +14471,11 @@ async function linkReuseSection(browser, base) {
 // A URL on the board's own origin routes in the board: in place with no window, to the main board from a popped-out
 // terminal, and every foreign URL opens as it always did.
 async function linkBoardSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
@@ -15542,7 +14528,7 @@ async function linkBoardSection(browser, base) {
     if (solo.alone.length !== 1 || !/[/][?]land=land-live$/.test(solo.alone[0])) fail("linkBoard: no main board and no fallback window: " + JSON.stringify(solo));
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("linkBoard: the page threw: " + errors.join(" | "));
 }
@@ -16839,11 +15825,11 @@ async function usagePolishSection(browser, base) {
 // bracketed paste then Enter. Enter never sends. xterm's own textarea takes no soft keyboard (inputmode none)
 // but still takes hardware keys. A desktop has neither.
 async function phoneComposeSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -16966,7 +15952,7 @@ async function phoneComposeSection(browser, base) {
     if (dsk.disp !== "none" || !dsk.hidden || dsk.im || dsk.ta) fail("phoneCompose: a desktop changed: " + JSON.stringify(dsk));
     await d.ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneCompose: the page threw: " + errors.join(" | "));
 }
@@ -16978,8 +15964,8 @@ const COMPOSE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP
 // The board's phone terminal with the upload endpoint mocked. mode.up is ok, slow or fail, and calls counts requests.
 async function composeBoardOpen(browser, base, errors, mode, calls) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
@@ -17023,8 +16009,8 @@ async function composeBoardOpen(browser, base, errors, mode, calls) {
 }
 
 async function composeImagesSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [], mode = { up: "ok" }, calls = { n: 0, names: [] };
   const png = (n) => ({ name: n, mimeType: "image/png", buffer: Buffer.from(COMPOSE_PNG, "base64") });
   try {
@@ -17136,14 +16122,14 @@ async function composeImagesSection(browser, base) {
     }
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("composeImages: the page threw: " + errors.join(" | "));
 }
 
 async function composePasteSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [], mode = { up: "ok" }, calls = { n: 0, names: [] };
   try {
     const { ctx, p } = await composeBoardOpen(browser, base, errors, mode, calls);
@@ -17185,7 +16171,7 @@ async function composePasteSection(browser, base) {
     if (n !== 1) fail("composePaste: " + n + " chips");
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("composePaste: the page threw: " + errors.join(" | "));
 }
@@ -17576,8 +16562,8 @@ async function mPermsSection(browser) {
 // bar sits above the first card, and a card is no taller than its content plus a small padding. The header's tab
 // segments are equal, unclipped and clear of the other controls.
 async function phoneListFitSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const long = [
     ["claude-sg4~fit-1", "fabric: director of rooms, hub, cross-room review and a very long title that keeps going", "/home/clint/git/github/dovholuknf/atrium-worktrees/claude/fabric/some/deep/path/r-023", 2],
     ["claude-sg4~fit-2", "ghsa-rg2j-wgmp-vxr5", "/home/clint/git/github/openziti/tlsuv-ghsa-rg2j-wgmp-vxr5-with-a-long-name", 0],
@@ -17585,13 +16571,13 @@ async function phoneListFitSection(browser, base) {
     ["m1mini~fit-4", "smoke: m1mini", "/Users/clint/git/smoke", 0],
     ["fit-5", "nf-self-hosted", "/home/clint/git/github/openziti/ziti/nf-self-hosted-deployment-checks", 0]
   ];
-  landList = long.map(([id, title, wt, q], i) => landCard(id, {
+  mock.landList = long.map(([id, title, wt, q], i) => landCard(id, {
     display_title: title, worktree: wt, repo: wt.split("/").pop(), branch: "b" + i, 
     supervised: true, created_at: "2026-09-19T12:00:00Z", tags: i < 3 ? ["group:g1"] : [],
     seen: q ? { unseen: false, turn_ended_at: "2026-09-29T09:00:00.000Z", questions_at: "2026-09-29T09:00:00.000Z",
       answered: false, open_questions: Array.from({ length: q }, (_, k) => "q" + k) } : undefined
   }));
-  landPerms = [];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.LISTFIT_SHOTS || "";
   try {
@@ -17682,7 +16668,7 @@ async function phoneListFitSection(browser, base) {
     }
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneListFit: the page threw: " + errors.join(" | "));
 }
@@ -17693,11 +16679,11 @@ async function phoneListFitSection(browser, base) {
 // screen, and tapping it opens the log. A held message nudges the envelope with its count and draws no notice.
 // At a desktop size the same toast still draws.
 async function phoneNudgeSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.LISTFIT_SHOTS || "";
   const shown = (p, sel) => p.evaluate(s => {
@@ -17850,7 +16836,7 @@ async function phoneNudgeSection(browser, base) {
     if (await shown(dp, "#phone-bell")) fail("phoneNudge: the corner badge shows on a desktop");
     await dctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("phoneNudge: the page threw: " + errors.join(" | "));
 }
@@ -17859,16 +16845,16 @@ async function phoneNudgeSection(browser, base) {
 // atrium cannot restart. An idle card posts to /v1/tasks/<id>/restart at once, a working one asks first, and a
 // refusal is a toast. `RESTART_SHOT=/path.png` also saves a picture of the menu.
 async function restartMenuSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-rs-idle", { supervised: true, created_at: "2026-10-09T12:00:00Z" });
   landCard("land-rs-work", { supervised: true, activity: { what: "Bash" }, created_at: "2026-10-09T12:01:00Z" });
   landCard("land-rs-park", { supervised: false, parked_at: "2026-10-09T11:00:00Z", resume_id: "abc-123",
     created_at: "2026-10-09T12:02:00Z" });
   landCard("land-rs-bare", { supervised: false, pinned: true, created_at: "2026-10-09T12:03:00Z" });
   landCard("land-rs-paused", { supervised: false, status: "paused", resume_id: "def-456", worktree: "/tmp/paused", created_at: "2026-10-09T12:04:00Z" });
-  landList = [LAND["land-rs-idle"], LAND["land-rs-work"], LAND["land-rs-park"], LAND["land-rs-bare"], LAND["land-rs-paused"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-rs-idle"], mock.LAND["land-rs-work"], mock.LAND["land-rs-park"], mock.LAND["land-rs-bare"], mock.LAND["land-rs-paused"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const posts = [];
@@ -17876,7 +16862,7 @@ async function restartMenuSection(browser, base) {
   await ctx.route("**/v1/tasks/*/restart", route => {
     posts.push(new URL(route.request().url()).pathname + " " + route.request().method());
     if (refuse) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "it did not exit when asked" }) });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-rs-idle"]) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND["land-rs-idle"]) });
   });
   await ctx.route("**/v1/tasks/*/resume", route => {
     posts.push(new URL(route.request().url()).pathname + " " + route.request().method());
@@ -17981,21 +16967,21 @@ async function restartMenuSection(browser, base) {
     if (labels.some(l => /^restart/.test(l))) fail("restartMenu: restart is offered on a card atrium cannot restart.");
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the restart menu page threw: " + errors.join(" | "));
 }
 
 // u-031: Shift+right click in the attached terminal opens termMenu at the pointer, with "new context".
 async function shiftMenuSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   landCard("land-busy", { supervised: true, created_at: "2026-09-19T12:01:00Z",
     new_context: { step: "clearing", n: 2, of: 4, label: "clear" } });
   landCard("land-bare", { supervised: false, pinned: true, created_at: "2026-09-19T12:02:00Z" });
-  landList = [LAND["land-live"], LAND["land-busy"], LAND["land-bare"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"], mock.LAND["land-busy"], mock.LAND["land-bare"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -18101,7 +17087,7 @@ async function shiftMenuSection(browser, base) {
     if (has(m)) fail("shiftMenu: new context is offered on an unsupervised card: " + JSON.stringify(m));
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
 }
@@ -18111,12 +17097,12 @@ async function shiftMenuSection(browser, base) {
 // makes nothing; a name that is already a group only files the card. Both group submenus list names A to Z, and a group made
 // in the last ten minutes wears "new" and stops wearing it after. `GROUP_MENUS_SHOTS=<dir> GROUP_MENUS_TAG=before|after`.
 async function groupMenusSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-gm-a", { supervised: true, status: "running", tags: [], created_at: "2026-09-19T12:00:00Z" });
   landCard("land-gm-b", { supervised: true, status: "running", tags: [], created_at: "2026-09-19T12:01:00Z" });
-  landList = [LAND["land-gm-a"], LAND["land-gm-b"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-gm-a"], mock.LAND["land-gm-b"]];
+  mock.landPerms = [];
   const errors = [];
   const shots = process.env.GROUP_MENUS_SHOTS, shotTag = process.env.GROUP_MENUS_TAG || "after";
   try {
@@ -18136,8 +17122,8 @@ async function groupMenusSection(browser, base) {
       const id = decodeURIComponent(new URL(r.url()).pathname.split("/").pop());
       const body = JSON.parse(r.postData() || "{}");
       patches.push(id + " " + r.postData());
-      if (LAND[id]) Object.assign(LAND[id], body);
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND[id] || {}) });
+      if (mock.LAND[id]) Object.assign(mock.LAND[id], body);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND[id] || {}) });
     });
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -18200,11 +17186,11 @@ async function groupMenusSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector('#term-list .tgroup[data-ghead="zeta"]', { timeout: slow(10000) })
       .catch(() => fail("groupMenus: the new group did not survive a reload"));
-    if (!(await groupsNow()).includes("zeta") || !LAND["land-gm-a"].tags.includes("zeta")) fail("groupMenus: zeta or the card's tag is gone after the reload");
+    if (!(await groupsNow()).includes("zeta") || !mock.LAND["land-gm-a"].tags.includes("zeta")) fail("groupMenus: zeta or the card's tag is gone after the reload");
     if (await under() === "empty") fail("groupMenus: the card is not under zeta after the reload");
 
     // The new one is "new", and sorted in. Remove from group lists A to Z too, with the same tag.
-    LAND["land-gm-b"].tags = ["prs", "zeta", "discourse"];
+    mock.LAND["land-gm-b"].tags = ["prs", "zeta", "discourse"];
     await p.evaluate(() => refresh());
     await p.waitForTimeout(500);
     fly = await flyout("land-gm-b", "remove from group");
@@ -18226,7 +17212,7 @@ async function groupMenusSection(browser, base) {
     await p.waitForTimeout(500);
     const after = await groupsNow();
     if (after.length !== before || after.filter(n => n === "active").length !== 1) fail("groupMenus: an existing name made a duplicate: " + JSON.stringify(after));
-    if (!LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(LAND["land-gm-b"].tags));
+    if (!mock.LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(mock.LAND["land-gm-b"].tags));
 
     // Eleven minutes on, discourse and zeta are no longer new. The clock is the page's Date.now.
     await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });
@@ -18240,7 +17226,7 @@ async function groupMenusSection(browser, base) {
     await shut();
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("groupMenus: the page threw: " + errors.join(" | "));
   if (!bad) console.log("groupMenus ok");
@@ -18326,16 +17312,16 @@ async function mGroupMenusSection(browser) {
 // has a grey line, and nothing asks "are you sure?" but a clean up of work that exists nowhere else, which has a
 // "never show me this again" tick. Stopped cards stay out of the list until the paused filter is on.
 async function termMenuSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-tm-run", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
   landCard("land-tm-stop", { supervised: false, status: "paused", resume_id: "r-1", worktree: "/tmp/stopped",
     created_at: "2026-09-19T12:01:00Z" });
   // A closed card: done, no session, pinned (the case that kept it listed), carrying the mark a close writes.
   landCard("land-tm-closed", { supervised: false, status: "done", pinned: true, tags: ["atrium:closed"],
     worktree: "/tmp/closed", created_at: "2026-09-19T12:02:00Z" });
-  landList = [LAND["land-tm-run"], LAND["land-tm-stop"], LAND["land-tm-closed"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-tm-run"], mock.LAND["land-tm-stop"], mock.LAND["land-tm-closed"]];
+  mock.landPerms = [];
   const errors = [];
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -18454,7 +17440,7 @@ async function termMenuSection(browser, base) {
     if (await dialogUp().count()) fail("termMenu: it asked again after never show me this again.");
     if (closes.length !== 1 || closes[0].answers["4"] !== "delete") fail("termMenu: the ticked clean up did not delete: " + JSON.stringify(closes));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("the terminals menu page threw: " + errors.join(" | "));
 }
@@ -18463,11 +17449,11 @@ async function termMenuSection(browser, base) {
 // up and ticks off each step the server says as a close-progress event, shuts itself when done and stays on a failure.
 // CLOSE_SHOT=<dir> writes the pictures there, CLOSE_SHOT_TAG names them (before or after).
 async function closeOneDialogSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-co-a", { supervised: true, status: "running", created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-co-a"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-co-a"]];
+  mock.landPerms = [];
   const errors = [];
   const shot = async (p, name) => {
     if (!process.env.CLOSE_SHOT) return;
@@ -18634,7 +17620,7 @@ async function closeOneDialogSection(browser, base) {
     if (errors.length) fail("closeOne: page errors: " + errors.join(" | "));
     await ctx.close();
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
   }
 }
 // ── the hub's notify command in the gear (u-030) ────────────────────────────
@@ -18807,11 +17793,11 @@ async function presenceSection(browser, base) {
 // terminal left in mouse mode ate back and forward until the browser was closed. The board must never swallow them,
 // with the terminal focused or not, mouse reporting on or off, and its own history entries must still step.
 async function backForwardSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
   try {
@@ -18882,18 +17868,18 @@ async function backForwardSection(browser, base) {
     if ((await view()) !== "runners") fail("backForward: forward twice did not return to runners: " + (await view()));
     const shown = await p.evaluate(() => VIEWS.find(isViewing));
     if (shown !== "runners") fail("backForward: history said runners but the board shows " + shown);
-  } finally { await ctx.close(); tasksMode = was; }
+  } finally { await ctx.close(); mock.tasksMode = was; }
   if (errors.length) fail("backForward: the page threw: " + errors.join(" | "));
 }
 
 // ── t-003c: the pty is taller than the pane, so the board draws all of it and clips to the cursor ──
 // Test plan @LETTER@ in docs/changes/u-033.md. A desktop pane, a size frame with more rows than the pane fits.
 async function tallPtySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const errors = [];
   const fakeSock = () => {
     const Real = window.WebSocket;
@@ -19079,7 +18065,7 @@ async function tallPtySection(browser, base) {
     if (old1.tall || old1.rows !== old1.fit) fail("tallPty: with no rows from the room the grid is not the fit: " + JSON.stringify(old1));
   } finally {
     await ctx.close();
-    tasksMode = was;
+    mock.tasksMode = was;
   }
   if (errors.length) fail("tallPty: the page threw: " + errors.join(" | "));
 }
@@ -19089,12 +18075,12 @@ async function tallPtySection(browser, base) {
 // answer is "not answering" and no warning. ROOMS_SETUP_SHOTS=<dir> saves the pill and the row.
 async function roomsSetupSection(browser, base) {
   const shots = process.env.ROOMS_SETUP_SHOTS || "";
-  const wasHub = hubMode, wasSgg = sggAttached;
-  hubMode = true;
-  sggAttached = true;
+  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  mock.hubMode = true;
+  mock.sggAttached = true;
   const hooksIssue = { answering: true, hooks_missing: 3, hooks_stale: 1, issues: [{ kind: "hooks", text: "atrium claude hooks: 3 missing, 1 stale" }] };
-  ALPHA.setup = { answering: true, hooks_missing: 0, issues: [{ kind: "build", text: "runs a different atrium build than the hub (bbbbbbbb, hub aaaaaaaa)" }] };
-  SGG.setup = hooksIssue;
+  mock.ALPHA.setup = { answering: true, hooks_missing: 0, issues: [{ kind: "build", text: "runs a different atrium build than the hub (bbbbbbbb, hub aaaaaaaa)" }] };
+  mock.SGG.setup = hooksIssue;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   const errors = [];
@@ -19129,11 +18115,11 @@ async function roomsSetupSection(browser, base) {
     if (shots) await (await p.$("#room-list")).screenshot({ path: path.join(shots, "row-after.png") });
 
     // The fix names the room and the pill clears with the row.
-    setupFixed.length = 0;
+    mock.setupFixed.length = 0;
     await p.click('#room-list .setupfix[data-room="sgg"]');
     await p.waitForFunction(() => !document.querySelector('#room-list .setupfix'), null, { timeout: slow(10000) })
       .catch(() => fail("roomsSetup: the fix button stayed after the fix"));
-    has("the fix did not post for sgg", setupFixed.length === 1 && setupFixed[0] === "sgg", setupFixed);
+    has("the fix did not post for sgg", mock.setupFixed.length === 1 && mock.setupFixed[0] === "sgg", mock.setupFixed);
     s = await pill();
     has("the tip still names sgg after the fix", !/sgg:/.test(s.tip), s);
     has("the pill stopped warning while alpha still has a build issue", s.warn, s);
@@ -19149,10 +18135,10 @@ async function roomsSetupSection(browser, base) {
       .catch(() => fail("roomsSetup: the row did not say not answering"));
   } finally {
     await ctx.close();
-    delete ALPHA.setup;
-    delete SGG.setup;
-    hubMode = wasHub;
-    sggAttached = wasSgg;
+    delete mock.ALPHA.setup;
+    delete mock.SGG.setup;
+    mock.hubMode = wasHub;
+    mock.sggAttached = wasSgg;
   }
   if (errors.length) fail("roomsSetup: the page threw: " + errors.join(" | "));
 }
@@ -19526,10 +18512,10 @@ async function readyPopoutSection(browser, base) {
 // which, and cannot flip the board's. Sound is counted through a fake AudioContext, desktop notifications through a
 // fake Notification, and both windows share one localStorage like two windows of one browser.
 async function popoutNotifySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser, true);
   await ctx.addInitScript(() => {
@@ -19690,8 +18676,8 @@ async function popoutNotifySection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the pop-out notify pages threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the focused window that shows a card silences its ready alert in EVERY window ──────────────────────
@@ -19836,13 +18822,13 @@ const cuText = (page, sel) => page.evaluate(s => {
 const cuLinks = (page, sel) => page.evaluate(s => [...document.querySelectorAll(s + " a")].map(a => a.getAttribute("href")), sel);
 
 async function cardUrlTableSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
   landCard("land-old", { alias: "rnd", status: "done" });
   landCard("land-d", { alias: "rnd", status: "done", recap: "first line\nthe last line" });
-  const found = id => ({ body: LAND[id] });
+  const found = id => ({ body: mock.LAND[id] });
   const miss = { status: 404, body: { error: "no card called \"rnd\"", would_work: ["rnd-director@claude-sg4 (@rnd2)", "plain@claude-sg4"] } };
   const row = async (name, pathname, lookups, setup, check, expectCard) => {
     const r = await cuOpen(browser, base, pathname, lookups, setup);
@@ -19913,14 +18899,14 @@ async function cardUrlTableSection(browser, base) {
     });
 
     // room not attached: says so, and offers the attached rooms as links
-    hubMode = true;
+    mock.hubMode = true;
     await row("noRoom", "/room/nope/rnd", { "rnd@nope": { status: 404, body: { error: "no room called \"nope\" is attached" } } }, null, async r => {
       const t = await cuText(r.page, "#cardurl");
       if (!/room nope is not attached to this hub/.test(t)) fail("cardUrlTable noRoom: it says: " + t);
       const links = await cuLinks(r.page, "#cardurl");
       if (links.join() !== "/room/alpha") fail("cardUrlTable noRoom: the links are " + links.join());
     });
-    hubMode = false;
+    mock.hubMode = false;
 
     // a board scoped to a room is not a terminal, and looks nothing up
     const scoped = await cuOpen(browser, base, "/room/claude-sg4", {});
@@ -19930,25 +18916,25 @@ async function cardUrlTableSection(browser, base) {
       if (s.only || s.solo) fail("cardUrlTable: /room/<room> alone booted as a terminal");
     } finally { await scoped.ctx.close(); }
   } finally {
-    hubMode = false;
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.hubMode = false;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("cardUrlTable ok");
 }
 
 async function cardUrlClashSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-x", { alias: "rnd", status: "needs-input", created_at: "2026-09-30T10:00:00Z" });
   landCard("land-y", { alias: "rnd", status: "done", created_at: "2026-09-30T11:00:00Z" });
   const clash = { status: 409, body: { error: "\"rnd\" is on more than one room", candidates: ["rnd@sg4 (sg4~land-x)", "rnd@m1 (m1~land-y)"] } };
   const lookups = {
     rnd: clash,
-    "sg4~land-x": { body: Object.assign({}, LAND["land-x"], { id: "sg4~land-x" }) },
-    "m1~land-y": { body: Object.assign({}, LAND["land-y"], { id: "m1~land-y" }) },
-    "rnd@sg4": { body: Object.assign({}, LAND["land-x"], { id: "sg4~land-x" }) }
+    "sg4~land-x": { body: Object.assign({}, mock.LAND["land-x"], { id: "sg4~land-x" }) },
+    "m1~land-y": { body: Object.assign({}, mock.LAND["land-y"], { id: "m1~land-y" }) },
+    "rnd@sg4": { body: Object.assign({}, mock.LAND["land-x"], { id: "sg4~land-x" }) }
   };
   try {
     // nothing remembered: the chooser, live before done, each one its qualified link. Picking remembers it for the path.
@@ -19983,22 +18969,22 @@ async function cardUrlClashSection(browser, base) {
       if (await r.page.evaluate(() => soloID)) fail("cardUrlClash: opened a card that was not a candidate");
     } finally { await r.ctx.close(); }
   } finally {
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("cardUrlClash ok");
 }
 
 async function cardUrlLinksSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "r1" });
   landCard("land-b", { alias: "other", room: "r1" });
   landCard("land-c", { alias: "twin", room: "r1" });
   landCard("land-n", { alias: "", wire_name: "", room: "r1" });
   landCard("land-h", { alias: "", wire_name: "sparta/handled", room: "r1" });
-  const lookups = { rnd: { body: LAND["land-a"] } };
+  const lookups = { rnd: { body: mock.LAND["land-a"] } };
   try {
     // the solo window: the switcher writes readable paths, a clashing alias does not get /alias/
     let r = await cuOpen(browser, base, "/alias/rnd", lookups);
@@ -20023,7 +19009,7 @@ async function cardUrlLinksSection(browser, base) {
     } finally { await r.ctx.close(); }
 
     // the board: a pop-out link is the card's readable path, and a clash gets the qualified one
-    landList = [LAND["land-a"], LAND["land-b"], Object.assign({}, LAND["land-c"]), Object.assign({}, LAND["land-c"], { id: "land-c2", room: "r2" })];
+    mock.landList = [mock.LAND["land-a"], mock.LAND["land-b"], Object.assign({}, mock.LAND["land-c"]), Object.assign({}, mock.LAND["land-c"], { id: "land-c2", room: "r2" })];
     r = await cuOpen(browser, base, "/", {});
     try {
       await r.page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 4, null, { timeout: slow(15000) });
@@ -20042,7 +19028,7 @@ async function cardUrlLinksSection(browser, base) {
       await cuSolo(r.page, "land-a");
       if (await r.page.evaluate(() => location.hash) !== "#term=land-a") fail("cardUrlLinks: the fragment was rewritten");
     } finally { await r.ctx.close(); }
-    landList = [LAND["land-a"]];
+    mock.landList = [mock.LAND["land-a"]];
     r = await cuOpen(browser, base, "/room/r1?land=land-a&view=terms", {});
     try {
       await r.page.waitForFunction(() => location.search === "", null, { timeout: slow(15000) });
@@ -20050,17 +19036,17 @@ async function cardUrlLinksSection(browser, base) {
       if (p !== "/") fail("cardUrlLinks: landFromURL left the address at " + p);
     } finally { await r.ctx.close(); }
   } finally {
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("cardUrlLinks ok");
 }
 
 async function cardUrlRoomSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [LAND["land-live"] || landCard("land-live", {})];
-  hubMode = true;
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [mock.LAND["land-live"] || landCard("land-live", {})];
+  mock.hubMode = true;
   try {
     const seen = [];
     const r = await cuOpen(browser, base, "/room/sgg", {}, () => { localStorage.setItem("atrium.room", "alpha"); localStorage.setItem("atrium.term", "alpha~t1"); });
@@ -20076,9 +19062,9 @@ async function cardUrlRoomSection(browser, base) {
       if (r.errors.length) fail("cardUrlRoom: the page threw: " + r.errors.join(" | "));
     } finally { await r.ctx.close(); }
   } finally {
-    hubMode = false;
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.hubMode = false;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("cardUrlRoom ok");
 }
@@ -20191,16 +19177,16 @@ async function mCardUrlSection(browser) {
 // A notification click finds a pop-out on a card's readable path. The board puts the path in the notification's data and
 // the worker matches a window whose address is that path, or whose fragment names the card, as it always did.
 async function cardUrlNotifySection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "r1" });
   landCard("land-n", { alias: "", wire_name: "", room: "r1" });
   // A done card whose alias a live card in another room took, with a handle that has capitals: the room form names it by
   // that handle, since the resolver lets the live alias win and compares a wire name as written.
   landCard("land-done", { alias: "twin", room: "r1", status: "done", wire_name: "sparta/Done-One" });
   landCard("land-live", { alias: "twin", room: "r2", status: "running" });
-  landList = [LAND["land-a"], LAND["land-n"], LAND["land-done"], LAND["land-live"]];
+  mock.landList = [mock.LAND["land-a"], mock.LAND["land-n"], mock.LAND["land-done"], mock.LAND["land-live"]];
   const r = await cuOpen(browser, base, "/", {}, null, true);
   try {
     await r.page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 5, null, { timeout: slow(15000) });
@@ -20249,20 +19235,20 @@ async function cardUrlNotifySection(browser, base) {
     if (await click({ taskFor: "land-c", path: "/alias/none" }, wins) !== "http://x/") fail("cardUrlNotify: a click with no pop-out did not land on the board, not a card window");
     if (await click({ taskFor: "land-n", path: "" }, ["http://x/alias/rnd", "http://x/"]) !== "http://x/") fail("cardUrlNotify: an empty path matched a card window");
   } finally {
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("cardUrlNotify ok");
 }
 
 // A pop-out that reloads onto another card takes that card's window name, so the board's one-window-per-card rule finds it.
 async function cardUrlWinNameSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "r1" });
   landCard("land-b", { alias: "other", room: "r1" });
-  const lookups = { rnd: { body: LAND["land-a"] }, other: { body: LAND["land-b"] } };
+  const lookups = { rnd: { body: mock.LAND["land-a"] }, other: { body: mock.LAND["land-b"] } };
   try {
     const r = await cuOpen(browser, base, "/alias/rnd", lookups, () => { window.name = "atrium-term-stale"; });
     try {
@@ -20282,8 +19268,8 @@ async function cardUrlWinNameSection(browser, base) {
       if (n3 !== "atrium-term-land-a") fail("cardUrlWinName: a #term window is named " + n3 + ", not atrium-term-land-a");
     } finally { await h.ctx.close(); }
   } finally {
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("cardUrlWinName ok");
 }
@@ -20291,9 +19277,9 @@ async function cardUrlWinNameSection(browser, base) {
 // A second pop-out click on a card that is already out brings that window up and says nothing. Asked twice: with the
 // handle the board kept, and after a board reload, when only the window's NAME is left to find it by.
 async function popoutRaiseSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "r1" });
   try {
     const r = await cuOpen(browser, base, "/", {});
@@ -20345,8 +19331,8 @@ async function popoutRaiseSection(browser, base) {
       if (out.length !== 1) fail("popoutRaise: " + out.length + " pop-outs after raising a #term window");
     } finally { await r.ctx.close(); }
   } finally {
-    landList = []; landPerms = [];
-    tasksMode = was;
+    mock.landList = []; mock.landPerms = [];
+    mock.tasksMode = was;
   }
   if (!bad) console.log("popoutRaise ok");
 }
@@ -20408,7 +19394,7 @@ async function clockSection(browser, base) {
 // Not in the default run: `HEADLESS_ONLY=u001Audit` only. Each one is a finding in
 // docs/backlog/ui/u-001-audit.md, and the wave that fixes it turns it green.
 async function u001AuditSection(browser, base) {
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
@@ -20416,14 +19402,14 @@ async function u001AuditSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   try {
     // R1. One tap on `? N` throws the questions away unread: their text lives only in the chip's tooltip.
-    tasksMode = "qclick";
-    qDismissed.clear(); qDismissWrites = []; qDismissMode = "ok";
+    mock.tasksMode = "qclick";
+    mock.qDismissed.clear(); mock.qDismissWrites = []; mock.qDismissMode = "ok";
     await p.goto(base, { waitUntil: "domcontentloaded" });
     const chip = '#stack-list .stackrow[data-id="qc1"] .chip.questions';
     await p.waitForSelector(chip, { timeout: slow(15000) });
     await p.locator(chip).tap({ force: true });
     await p.waitForTimeout(600);
-    if (qDismissWrites.length) fail("u001Audit R1: a tap on the ? chip on a phone dismissed the questions without showing them");
+    if (mock.qDismissWrites.length) fail("u001Audit R1: a tap on the ? chip on a phone dismissed the questions without showing them");
 
     // E1. The show, sort and group pills are the most common target on the board, and a thumb needs 44px.
     const pill = await p.evaluate(() => Math.min(...[...document.querySelectorAll("#stack .seg button")]
@@ -20431,9 +19417,9 @@ async function u001AuditSection(browser, base) {
     if (pill < 44) fail("u001Audit E1: the stack's filter pills are " + Math.round(pill) + "px tall on a phone, under 44");
 
     // R2. Editing a permission's command with the keyboard up leaves no way to approve without closing it.
-    tasksMode = "land";
-    landList = [];
-    landPerms = [{ id: "u1p", perm_id: "u1p", task_id: "t1", agent: "first card", tool: "Bash",
+    mock.tasksMode = "land";
+    mock.landList = [];
+    mock.landPerms = [{ id: "u1p", perm_id: "u1p", task_id: "t1", agent: "first card", tool: "Bash",
       command: "go test ./internal/api/... -run TestCompose -count=1", requested_at: new Date().toISOString() }];
     await p.evaluate(() => { permsLoaded = false; return runRefresh(); });
     await p.evaluate(() => switchView("perms"));
@@ -20448,8 +19434,8 @@ async function u001AuditSection(browser, base) {
     });
     if (kb.bottom > kb.H || kb.top < 0) fail("u001Audit R2: approve is off screen while the command is edited with the keyboard up: " + JSON.stringify(kb));
   } finally {
-    tasksMode = was;
-    landPerms = [];
+    mock.tasksMode = was;
+    mock.landPerms = [];
     await ctx.close();
   }
   if (errors.length) fail("u001Audit: the page threw: " + errors.join(" | "));
@@ -20460,8 +19446,8 @@ async function u001AuditSection(browser, base) {
 // whether the spinner was up at that moment. `window.__sent` is the record.
 async function pasteMockPage(browser, base, errors) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  landList = [LAND["land-live"]];
-  landPerms = [];
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
     const Real = window.WebSocket;
@@ -20496,8 +19482,8 @@ async function pasteMockPage(browser, base, errors) {
 // Every way a paste can arrive raises the box before the frame leaves, at 50KB
 // and at 1MB. The record is taken inside the page, at the moment of the send.
 async function pasteStartSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [];
   const { ctx, p } = await pasteMockPage(browser, base, errors);
   try {
@@ -20553,15 +19539,15 @@ async function pasteStartSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("pasteStart: the page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // A socket that answers: the box ends on the id it sent, not before, and two
 // pastes end in the order they left.
 async function pasteDoneSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [];
   const { ctx, p } = await pasteMockPage(browser, base, errors);
   try {
@@ -20620,14 +19606,14 @@ async function pasteDoneSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("pasteDone: the page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // A socket that never answers: the guess still ends the box, and the cap holds.
 async function pasteOldRoomSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [];
   const { ctx, p } = await pasteMockPage(browser, base, errors);
   try {
@@ -20660,14 +19646,14 @@ async function pasteOldRoomSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("pasteOldRoom: the page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // A socket that closes: a failed write sends no word, and the box goes.
 async function pasteCloseSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const errors = [];
   const { ctx, p } = await pasteMockPage(browser, base, errors);
   try {
@@ -20691,8 +19677,8 @@ async function pasteCloseSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("pasteClose: the page threw: " + errors.join(" | "));
-  landList = []; landPerms = [];
-  tasksMode = was;
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
 }
 
 // ── the board boots with nothing uncaught ────────────────────────────────
@@ -23493,8 +22479,8 @@ async function launchThrowawaySection(browser, base) {
 // paint at once on the next open, whatever the network is doing. Under the list is `start new work` (POST /v1/new), which
 // keeps its refusal-in-the-dialog behaviour. NEWWORK_SHOTS=<dir> writes the dialog with the list open.
 async function newWorkDialogSection(browser, base) {
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
   const asked = [];
   const cloned = [];
@@ -23734,7 +22720,7 @@ async function newWorkDialogSection(browser, base) {
     if (providersAsked) fail("repoList: providers were asked for " + providersAsked + " times over the whole dialog");
     if (errors.length) fail("repoList: page errors " + errors.join(" | "));
   } finally {
-    hubMode = wasHub;
+    mock.hubMode = wasHub;
     await ctx.close();
   }
   if (!bad) console.log("newWorkDialog ok");
@@ -23747,9 +22733,9 @@ async function newWorkDialogSection(browser, base) {
 // A LINK ANOTHER ROOM HOLDS: the dialog says who holds it before go, a room picked by name is sent as a pick, and a
 // live card at the holder is brought up (here, or raised in its window) with nothing launched.
 async function heldLinkSection(browser, base) {
-  const wasHub = hubMode, wasSgg = sggAttached;
-  hubMode = true;
-  sggAttached = true;
+  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  mock.hubMode = true;
+  mock.sggAttached = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const json = (route, body, status) => route.fulfill({ status: status || 200, contentType: "application/json", body: JSON.stringify(body) });
   const calls = [];
@@ -23797,22 +22783,22 @@ async function heldLinkSection(browser, base) {
     if (calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("heldLink: a live card still launched");
     if (errors.length) fail("heldLink: page errors: " + errors.join(" | "));
   } finally {
-    hubMode = wasHub;
-    sggAttached = wasSgg;
+    mock.hubMode = wasHub;
+    mock.sggAttached = wasSgg;
     await ctx.close();
   }
   if (!bad) console.log("heldLink ok");
 }
 
 async function dropdownsInstantSection(browser, base) {
-  const wasHub = hubMode, wasSgg = sggAttached;
-  hubMode = true;
-  sggAttached = true;
+  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  mock.hubMode = true;
+  mock.sggAttached = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await ctx.newPage();
-    const rows = [Object.assign({}, HON, { room: "alpha" }), Object.assign({}, HON, { id: "hon2", label: "gemini", room: "alpha" }),
-      Object.assign({}, HON, { room: "sgg" })];
+    const rows = [Object.assign({}, mock.HON, { room: "alpha" }), Object.assign({}, mock.HON, { id: "hon2", label: "gemini", room: "alpha" }),
+      Object.assign({}, mock.HON, { room: "sgg" })];
     await p.route(/\/v1\//, async r => {
       await new Promise(x => setTimeout(x, 500));
       if (new URL(r.request().url()).pathname === "/v1/harnesses") {
@@ -23847,8 +22833,8 @@ async function dropdownsInstantSection(browser, base) {
       await p.screenshot({ path: path.join(process.env.DROPDOWNS_SHOTS, "launch-room.png") });
     }
   } finally {
-    hubMode = wasHub;
-    sggAttached = wasSgg;
+    mock.hubMode = wasHub;
+    mock.sggAttached = wasSgg;
     await ctx.close();
   }
   if (!bad) console.log("dropdownsInstant ok");
@@ -23858,9 +22844,9 @@ async function dropdownsInstantSection(browser, base) {
 // for "your own code", and nothing typed is stored for a named pick. The repos tab sorts by name, last push or date added and
 // remembers it across a reload.
 async function discreteGroupSection(browser, base) {
-  const was = tasksMode, wasHub = hubMode;
-  tasksMode = "untagged";
-  hubMode = true;
+  const was = mock.tasksMode, wasHub = mock.hubMode;
+  mock.tasksMode = "untagged";
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   try {
@@ -23951,8 +22937,8 @@ async function discreteGroupSection(browser, base) {
     if ((await p.evaluate(() => hubReposSort())) !== "added") fail("discreteGroup: the repos sort was not remembered across a reload");
     if (errors.length) fail("discreteGroup: page errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
-    hubMode = wasHub;
+    mock.tasksMode = was;
+    mock.hubMode = wasHub;
     await ctx.close();
   }
   if (!bad) console.log("discreteGroup ok");
@@ -23962,8 +22948,8 @@ async function discreteGroupSection(browser, base) {
 // stack leaves the terminals on `by project`, and the other way round, across a switch of tabs and across a reload. A browser
 // that only has the old shared `atrium.grouping` starts every tab from it. The named groups and colours stay shared.
 async function groupingPerViewSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "untagged";
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   const tag = "groupingPerView: ";
@@ -24043,7 +23029,7 @@ async function groupingPerViewSection(browser, base) {
     if ((await p.evaluate(() => stackSort)) !== "activity" || (await p.evaluate(() => boardSortMode())) !== "name") fail(tag + "a terminals sort change moved another tab");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
   if (!bad) console.log("groupingPerView ok");
@@ -24164,11 +23150,11 @@ async function repoColorsSection(browser, base) {
 
     // CHILD_COLOUR_SHOT=<png> is the terminals list with a purple card and the children it launched from scratch folders.
     if (process.env.CHILD_COLOUR_SHOT) {
-      const was = tasksMode;
+      const was = mock.tasksMode;
       const row = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, theme: "", supervised: true, pinned: true,
         status: "running" }, extra);
       try {
-        wornTasks = [
+        mock.wornTasks = [
           row("cc-boss", { display_title: "pr-ziti-console-967: review", worktree: "/Users/me/git/github/openziti/ziti-console/feature/967" }),
           row("cc-critic", { display_title: "pr-967 panel: critic", launcher_id: "cc-boss", worktree: "C:/temp/pr967-review/critic" }),
           row("cc-verify", { display_title: "pr-967 verify s5", launcher_id: "cc-boss", worktree: "C:/temp/pr967-review/verify-s5" }),
@@ -24176,7 +23162,7 @@ async function repoColorsSection(browser, base) {
           row("cc-lead", { display_title: "explicit theme launcher", theme: "nord", worktree: "C:/temp/lead" }),
           row("cc-heir", { display_title: "child of the explicit theme", launcher_id: "cc-lead", worktree: "D:/tmp/pr1166-review" }),
           row("cc-lone", { display_title: "not launched by anyone", worktree: "C:/temp/lone" })];
-        tasksMode = "worn";
+        mock.tasksMode = "worn";
         const sp = await ctx.newPage();
         await sp.addInitScript(() => localStorage.setItem("atrium.cardColors", "1"));
         await sp.goto(base, { waitUntil: "domcontentloaded" });
@@ -24186,7 +23172,7 @@ async function repoColorsSection(browser, base) {
         await sp.evaluate(() => repoColorsHave({ card_colors: { default: "", repos: { "github/openziti/ziti-console": "deep-amethyst" } } }));
         await sp.waitForTimeout(800);
         await sp.locator("#term-list").screenshot({ path: process.env.CHILD_COLOUR_SHOT });
-      } finally { tasksMode = was; }
+      } finally { mock.tasksMode = was; }
     }
   } finally {
     await ctx.close();
@@ -24207,13 +23193,13 @@ async function themePickerSection(browser, base) {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   });
   const tag = "themePicker: ";
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, extra) => Object.assign({}, T1, {
     id, display_title: "row " + id, theme: "", supervised: true, pinned: true, worktree: "/tmp/tpk/" + id
   }, extra);
   try {
-    wornTasks = [live("pk-a", { worktree: "/Users/me/git/github/acme/widgets/main" }), live("pk-b"), live("pk-c", { theme: "nord" })];
-    tasksMode = "worn";
+    mock.wornTasks = [live("pk-a", { worktree: "/Users/me/git/github/acme/widgets/main" }), live("pk-b"), live("pk-c", { theme: "nord" })];
+    mock.tasksMode = "worn";
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
@@ -24330,7 +23316,7 @@ async function themePickerSection(browser, base) {
     await p.evaluate(() => document.getElementById("theme").close());
     if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
   if (!bad) console.log("themePicker ok");
@@ -24346,13 +23332,13 @@ async function borderColourLagSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
   const tag = "borderColourLag: ";
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, extra) => Object.assign({}, T1, {
     id, display_title: "row " + id, theme: "", supervised: true, pinned: true, worktree: "/tmp/bcl/" + id
   }, extra);
   try {
-    wornTasks = [live("bc-a", { theme: "nord" }), live("bc-b", { theme: "dracula" })];
-    tasksMode = "worn";
+    mock.wornTasks = [live("bc-a", { theme: "nord" }), live("bc-b", { theme: "dracula" })];
+    mock.tasksMode = "worn";
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
@@ -24396,7 +23382,7 @@ async function borderColourLagSection(browser, base) {
     if (errors.length) { console.error(tag + errors.join("; ")); process.exit(1); }
     console.log("borderColourLag ok");
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -24410,12 +23396,12 @@ async function themePickerShotsSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, theme: "", supervised: true, pinned: true, worktree: "/tmp/shot/" + id }, extra);
   try {
-    wornTasks = [live("sh-a", { display_title: "fix the flaky retry test", worktree: "/Users/me/git/github/acme/widgets/main" }),
+    mock.wornTasks = [live("sh-a", { display_title: "fix the flaky retry test", worktree: "/Users/me/git/github/acme/widgets/main" }),
       live("sh-b", { display_title: "second session" })];
-    tasksMode = "worn";
+    mock.tasksMode = "worn";
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
@@ -24437,7 +23423,7 @@ async function themePickerShotsSection(browser, base) {
     await p.waitForTimeout(300);
     await p.screenshot({ path: require("path").join(dir, prefix + "-themes-editor.png") });
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
 }
@@ -24647,9 +23633,9 @@ async function mHomeOrderSection(browser) {
 // The page as a browser gets it (`/raw`), a card's own window has no header and no list. "all cards" goes to the board,
 // "cards" opens the picker, and Back works because the board was a page of its own.
 async function cardUrlWayOutSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   try {
@@ -24666,7 +23652,7 @@ async function cardUrlWayOutSection(browser, base) {
         const rq = route.request();
         const u = new URL(rq.url());
         if (/^\/alias\/rnd$/.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
-        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND["land-a"]) });
         return route.continue();
       });
       try {
@@ -24700,7 +23686,7 @@ async function cardUrlWayOutSection(browser, base) {
       } finally { await ctx.close(); }
       if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
     }
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
 
   // the phone page
   const st = mServer({});
@@ -24752,12 +23738,12 @@ async function cardUrlWayOutSection(browser, base) {
 // The header shows on the board, and a card's own window has the way out and a picker that opens and switches. On the
 // page as a browser loads it (one script tag per file), at both phone widths.
 async function phoneBootSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
   landCard("land-b", { alias: "second", room: "claude-sg4", wire_name: "sparta/second", supervised: true });
-  landList = [LAND["land-a"], LAND["land-b"]];
+  mock.landList = [mock.LAND["land-a"], mock.LAND["land-b"]];
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   try {
     for (const w of [390, 412]) {
@@ -24772,7 +23758,7 @@ async function phoneBootSection(browser, base) {
           const rq = route.request();
           const u = new URL(rq.url());
           if (u.pathname === "/alias/rnd" && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
-          if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+          if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND["land-a"]) });
           return route.continue();
         });
         try {
@@ -24800,7 +23786,7 @@ async function phoneBootSection(browser, base) {
         if (errors.length) fail(tag + "threw: " + errors.join(" | "));
       }
     }
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
   if (!bad) console.log("phoneBoot ok");
 }
 
@@ -25320,9 +24306,9 @@ async function unifiedCardSection(browser, base) {
   const p = await ctx.newPage();
   const errors = [];
   p.on("pageerror", e => errors.push(e.message));
-  const was = tasksMode;
+  const was = mock.tasksMode;
   try {
-    tasksMode = "unified";
+    mock.tasksMode = "unified";
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof renderBoard === "function" && typeof cardsLoaded !== "undefined" && cardsLoaded,
       null, { timeout: slow(15000) });
@@ -25379,7 +24365,7 @@ async function unifiedCardSection(browser, base) {
     eq("animated live dots", r.liveDots, 0);
 
     // 111 finished: capped, with a more row, and not wider than a quiet column.
-    tasksMode = "unifiedMany";
+    mock.tasksMode = "unifiedMany";
     await p.evaluate(async () => { await loadCards(); renderBoard(); });
     await p.waitForSelector('#board [data-column="done"] .card', { timeout: slow(10000) });
     const m = await p.evaluate(() => {
@@ -25395,7 +24381,7 @@ async function unifiedCardSection(browser, base) {
     eq("pinned groups with 111 done", m.pins, 0);
     if (m.w > 360) fail("unifiedCard: done is " + m.w + "px wide, it must not grow with its count");
     if (errors.length) fail("unifiedCard: page errors: " + errors.join(" | "));
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("unifiedCard ok");
 }
 
@@ -27031,8 +26017,8 @@ async function pullsAbsentSection(browser, base) {
 // The items tab on the shape the live hub answers: an assignment row names its backlog item by `work_id` and carries no title, and
 // the titles and steps are the work rows' (`/_hub/work`). Titles, steps, and moving between list, detail and back.
 async function itemsRealShapeSection(browser, base) {
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 700 } });
   const errors = [];
   try {
@@ -27105,7 +26091,7 @@ async function itemsRealShapeSection(browser, base) {
     await p.waitForSelector(".it-detail");
     if (!await p.evaluate(t => itemsOpenId() === t, target)) fail("itemsRealShape: forward did not reopen the item");
   } finally {
-    hubMode = wasHub;
+    mock.hubMode = wasHub;
     await ctx.close();
   }
   if (errors.length) fail("itemsRealShape: threw " + errors.join(" | "));
@@ -27113,8 +26099,8 @@ async function itemsRealShapeSection(browser, base) {
 }
 
 async function itemsViewSection(browser, base) {
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
   try {
@@ -27231,7 +26217,7 @@ async function itemsViewSection(browser, base) {
     await p.evaluate(() => onItemEvent());
     await p.waitForFunction(() => !!document.querySelector('.it-row[data-item="it-new"]') && document.getElementById("c-items").textContent === "2", null, { timeout: slow(10000) });
     if (errors.length) fail("itemsView: page errors: " + errors.join(" | "));
-  } finally { await ctx.close(); hubMode = wasHub; }
+  } finally { await ctx.close(); mock.hubMode = wasHub; }
   if (!bad) console.log("itemsView ok");
 }
 
@@ -27241,8 +26227,8 @@ async function itemsEfficacySection(browser, base) {
   const css = fs.readFileSync(path.join(WEB_ROOT, "css", "efficacy.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const raw = (css.match(/#[0-9a-fA-F]{3,8}\b/g) || []).concat((css.match(/\b(?:rgba?|hsla?)\([^)]*\)/g) || []).filter(c => !/var\(/.test(c)));
   if (raw.length) fail("itemsEfficacy: efficacy.css holds raw colour: " + raw.slice(0, 5).join(" "));
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   try {
@@ -27270,7 +26256,7 @@ async function itemsEfficacySection(browser, base) {
     });
     if (!/Too few to trend/.test(few)) fail("itemsEfficacy: a thin week did not say so: " + few);
     if (errors.length) fail("itemsEfficacy: page errors: " + errors.join(" | "));
-  } finally { await ctx.close(); hubMode = wasHub; }
+  } finally { await ctx.close(); mock.hubMode = wasHub; }
   if (!bad) console.log("itemsEfficacy ok");
 }
 
@@ -27280,8 +26266,8 @@ async function itemsMockSection(browser, base) {
   const css = fs.readFileSync(path.join(WEB_ROOT, "css", "items.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const raw = (css.match(/#[0-9a-fA-F]{3,8}\b/g) || []).concat((css.match(/\b(?:rgba?|hsla?)\([^)]*\)/g) || []).filter(c => !/var\(/.test(c)));
   if (raw.length) fail("itemsMock: items.css holds raw colour: " + raw.slice(0, 5).join(" "));
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   try {
@@ -27357,7 +26343,7 @@ async function itemsMockSection(browser, base) {
     await p.waitForFunction(() => { const it = itemsList.find(x => x.id === "rd-item-lifecycle"); return it && it.state === "running" && it.steps[1].state === "done" && it.steps[2].state === "active"; }, null, { timeout: slow(10000) });
     if (!/Approved rd-item-lifecycle at e3a91c0/.test(await p.textContent("#items-note"))) fail("itemsMock: no notice after approving");
     if (errors.length) fail("itemsMock: page errors: " + errors.join(" | "));
-  } finally { await ctx.close(); hubMode = wasHub; }
+  } finally { await ctx.close(); mock.hubMode = wasHub; }
   if (!bad) console.log("itemsMock ok");
 }
 
@@ -27426,8 +26412,8 @@ async function itemsPhoneSection(browser, base) {
 }
 
 async function hubReposSection(browser, base) {
-  const wasHub = hubMode;
-  hubMode = true;
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
   try {
@@ -27570,7 +26556,7 @@ async function hubReposSection(browser, base) {
     if (!(await p.locator("#hubrepos-list .hr-ledger").count())) fail("hubRepos: the ledger was not drawn after a reload");
     await p.evaluate(() => localStorage.removeItem("atrium.reposView"));
     if (errors.length) fail("hubRepos: page errors: " + errors.join(" | "));
-  } finally { hubMode = wasHub; await ctx.close(); }
+  } finally { mock.hubMode = wasHub; await ctx.close(); }
   if (!bad) console.log("hubRepos ok");
 }
 
@@ -27703,7 +26689,7 @@ async function hubReposEmptyCheck(browser, base, view, tag) {
 const HR_LONG = "feat/oidc-device-flow-with-a-very-long-descriptive-branch-name-that-keeps-going-and-going";
 
 async function hubReposShelfSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "hubReposShelf";
   try {
     // Nothing stored is Shelf, drawn as a grid.
@@ -27753,12 +26739,12 @@ async function hubReposShelfSection(browser, base) {
     } finally { await ph.ctx.close(); }
     await hubReposEmptyCheck(browser, base, "shelf", tag);
     await hubReposShots(browser, base, "shelf");
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposShelf ok");
 }
 
 async function hubReposLedgerSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "hubReposLedger";
   try {
     const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1200, view: "ledger" });
@@ -27816,14 +26802,14 @@ async function hubReposLedgerSection(browser, base) {
     } finally { await ph.ctx.close(); }
     await hubReposEmptyCheck(browser, base, "ledger", tag);
     await hubReposShots(browser, base, "ledger");
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposLedger ok");
 }
 
 // The ledger's branch timeline: each ring is centred on the one line, at two zoom levels and in a light and a dark skin.
 // With DOTS_SHOT=<file> it also saves the timeline as a picture.
 async function hubReposTimelineDotsSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "hubReposTimelineDots";
   try {
     const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 1600, h: 1000, view: "ledger" });
@@ -27855,7 +26841,7 @@ async function hubReposTimelineDotsSection(browser, base) {
       }
       if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
     } finally { await ctx.close(); }
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposTimelineDots ok");
 }
 
@@ -27963,7 +26949,7 @@ async function hubReposBranchesSection(browser, base) {
   if (!bad) console.log("hubReposBranches ok");
 }
 async function hubReposFeedSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "hubReposFeed";
   try {
     const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1200, view: "feed" });
@@ -28007,7 +26993,7 @@ async function hubReposFeedSection(browser, base) {
     } finally { await ph.ctx.close(); }
     await hubReposEmptyCheck(browser, base, "feed", tag);
     await hubReposShots(browser, base, "feed");
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("hubReposFeed ok");
 }
 
@@ -28044,15 +27030,15 @@ async function trayHeadSection(browser, base) {
 async function pullsDrawerSection(browser, base) {
   const crypto = require("crypto");
   const sha = t => crypto.createHash("sha256").update(t).digest("hex");
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [
     landCard("land-pw1", { supervised: true, worktree: "/pr/walker" }),
     landCard("land-pw2", { supervised: true, worktree: "/pr/walker2" }),
     landCard("land-pw3", { supervised: true, worktree: "/pr/walker3" }),
     landCard("land-pw4", { supervised: true, worktree: "/pr/walker4" })
   ];
-  landPerms = [];
+  mock.landPerms = [];
   const errors = [];
   const PR = "https://github.com/openziti/r/pull/1";
   const mk = (key, pos, sev, file, line, code, bullet) => {
@@ -28339,8 +27325,8 @@ async function pullsDrawerSection(browser, base) {
     if (errors.length) fail("pullsDrawer: the page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
-    tasksMode = was;
-    landList = [];
+    mock.tasksMode = was;
+    mock.landList = [];
   }
   if (!bad) console.log("pullsDrawer ok");
 }
@@ -28426,8 +27412,8 @@ async function termRowBleedSection(browser, base) {
   const p = await ctx.newPage();
   const errors = [];
   p.on("pageerror", e => errors.push(e.message));
-  const was = tasksMode;
-  tasksMode = "filed";
+  const was = mock.tasksMode;
+  mock.tasksMode = "filed";
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForTimeout(900);
@@ -28489,7 +27475,7 @@ async function termRowBleedSection(browser, base) {
     if (steps.mini !== "mini" || steps.full !== "full") fail("termRowBleed: the corner buttons do not step: " + JSON.stringify(steps));
     if (steps.w !== 300) fail("termRowBleed: dragging the divider no longer sets the width: " + JSON.stringify(steps));
     if (errors.length) fail("termRowBleed: page errors: " + errors.join(" | "));
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("termRowBleed ok");
 }
 
@@ -28651,12 +27637,12 @@ const SOUND_POLICY = () => {
 
 // The phone layout of the full board: filters folded away, the sound hint out of the way, readable chips, short cards.
 async function phoneBoardCompactSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
   const mk = (n, over) => landCard(n + "~land-" + n, Object.assign({ supervised: true, created_at: "2026-09-19T12:00:00Z", worktree: "/home/clint/git/github/openziti/ziti-sdk-c-" + n,
     tags: ["gwt", "orchestrators", "ziti-sdk-c", "needs-review", "backlog-grooming"] }, over || {}));
-  landList = [mk("aa"), mk("bb"), mk("cc"), mk("dd")];
-  landPerms = [];
+  mock.landList = [mk("aa"), mk("bb"), mk("cc"), mk("dd")];
+  mock.landPerms = [];
   const shots = process.env.PHONE_BOARD_SHOTS || "";
   try {
     const tag = "phoneBoardCompact: ";
@@ -28787,19 +27773,19 @@ async function phoneBoardCompactSection(browser, base) {
     if (await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)) fail(tag + "the page scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
   if (!bad) console.log("phoneBoardCompact ok");
 }
 
 // The desktop board's files tab, the hub file drop. Hidden on a board with no /_hub/files.
 async function boardFilesSection(browser, base) {
-  const was = tasksMode, wasDocs = boardDocs;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   try {
     for (const on of [false, true]) {
-      boardDocs = on;
+      mock.boardDocs = on;
       const tag = "boardFiles " + (on ? "with" : "without") + " a hub: ";
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
       await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
@@ -28827,31 +27813,31 @@ async function boardFilesSection(browser, base) {
         await p.click("#m-files .f-row:not(.f-h) .f-act button");
         await p.waitForSelector("#m-files .d-sure", { timeout: slow(3000) });
         await p.click("#m-files .d-sure button:last-child");
-        if (filesDeleted.length) fail(tag + "keep it still deleted something");
+        if (mock.filesDeleted.length) fail(tag + "keep it still deleted something");
         await p.click("#m-files .f-row:not(.f-h) .f-act button");
         await p.click("#m-files .d-sure .d-warn");
         await p.waitForFunction(() => true, null, { timeout: slow(1000) });
         await p.waitForTimeout(400);
-        if (filesDeleted[0] !== "report.pdf") fail(tag + "delete asked for " + JSON.stringify(filesDeleted));
+        if (mock.filesDeleted[0] !== "report.pdf") fail(tag + "delete asked for " + JSON.stringify(mock.filesDeleted));
         await p.click("#m-files .d-back");
         await p.waitForFunction(() => document.getElementById("m-files").hidden, null, { timeout: slow(3000) });
       }
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { tasksMode = was; boardDocs = wasDocs; filesDeleted.length = 0; }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; mock.filesDeleted.length = 0; }
   if (!bad) console.log("boardFiles ok");
 }
 
 // The desktop board's documents tab and panel, shared with /m. Off on a board with no /_hub/docs.
 async function boardDocsSection(browser, base) {
-  const was = tasksMode, wasDocs = boardDocs;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   try {
     for (const on of [false, true]) {
-      boardDocs = on;
+      mock.boardDocs = on;
       const tag = "boardDocs " + (on ? "with" : "without") + " documents: ";
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
       await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
@@ -28888,7 +27874,7 @@ async function boardDocsSection(browser, base) {
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { tasksMode = was; boardDocs = wasDocs; }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; }
   if (!bad) console.log("boardDocs ok");
 }
 
@@ -28896,10 +27882,10 @@ async function boardDocsSection(browser, base) {
 // whose directory only holds the letters scattered in order are gone. A row says the card's title first and the short path
 // second, so two cards of one repo can be told apart. SWITCHER_SHOTS and SWITCHER_TAG write the picture.
 async function switcherRankSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   const card = (id, title, wt, branch, tags) => Object.assign({}, T1, { id, display_title: title, title, supervised: true,
     worktree: wt, repo: "ziti-console", display_repo: "ziti-console", branch, tags: tags || [] });
   const cards = [
@@ -28936,7 +27922,7 @@ async function switcherRankSection(browser, base) {
     const both = await rows("ziti-console");
     if (new Set(both.map(r => r.name)).size !== 2) fail("switcherRank: two cards of one repo read alike: " + JSON.stringify(both));
     if (errors.length) fail("switcherRank: page errors: " + errors.join(" | "));
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("switcherRank ok");
 }
 
@@ -28944,8 +27930,8 @@ async function switcherRankSection(browser, base) {
 // and its column on the board are all folded, then the switcher goes to it: the board's are open afterwards and the
 // list's stay shut, carrying the bridge.
 async function revealFoldsSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "untagged";
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await ctx.newPage();
@@ -28991,7 +27977,7 @@ async function revealFoldsSection(browser, base) {
     await p.waitForSelector('#board [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
       .catch(() => fail("revealFolds: the card is not visible on the board"));
     if (errors.length) fail("revealFolds: page errors: " + errors.join(" | "));
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("revealFolds ok");
 }
 
@@ -28999,13 +27985,13 @@ async function revealFoldsSection(browser, base) {
 // bridge is level with its heading and the heading wears the attached frame. Opening the group moves the bridge to the
 // card's row and shutting it again moves it back to the heading.
 async function groupBridgeSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "untagged";
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
   // The card has to wear its repo's colour: a plain card keeps a hairline frame while its group's heading wears the
   // attached frame, and that is not what this unit measures. An earlier unit can leave the colours emptied, and the
   // serial run keeps what each one leaves.
-  const colorsWas = cardColorsMock;
-  cardColorsMock = { default: "", repos: Object.assign({}, colorsWas.repos, { "github/openziti/ziti": "teal-dusk" }) };
+  const colorsWas = mock.cardColorsMock;
+  mock.cardColorsMock = { default: "", repos: Object.assign({}, colorsWas.repos, { "github/openziti/ziti": "teal-dusk" }) };
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await ctx.newPage();
@@ -29089,7 +28075,7 @@ async function groupBridgeSection(browser, base) {
     await settle();
     level(await read(), "head", "the heading, shut again");
     if (errors.length) fail("groupBridge: page errors: " + errors.join(" | "));
-  } finally { tasksMode = was; cardColorsMock = colorsWas; await ctx.close(); }
+  } finally { mock.tasksMode = was; mock.cardColorsMock = colorsWas; await ctx.close(); }
   if (!bad) console.log("groupBridge ok");
 }
 
@@ -29187,11 +28173,11 @@ async function collapsedBridgeSection(browser, base) {
 // upload as the one primary control with its title inside it, deleted as a quiet toggle, roomy rows, a usage meter at the
 // foot. Several documents are mocked at the route. DOCSPAGE_SHOTS and DOCSPAGE_TAG write the pictures.
 async function docsPageSection(browser, base) {
-  const was = tasksMode, wasDocs = boardDocs;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
-  boardDocs = true;
+  const was = mock.tasksMode, wasDocs = mock.boardDocs;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
+  mock.boardDocs = true;
   const at = "2026-10-09T08:00:00Z";
   const mk = (slug, title, kind, versions, by) => ({ slug, title, created: at, updated: at, versions, deleted: null,
     latest: { n: versions, kind, name: slug + ".md", size: 1200, at, by, origin: "card" } });
@@ -29241,15 +28227,15 @@ async function docsPageSection(browser, base) {
       if (errors.length) fail(t + "page errors: " + errors.join(" | "));
       await ctx.close();
     }
-  } finally { tasksMode = was; boardDocs = wasDocs; }
+  } finally { mock.tasksMode = was; mock.boardDocs = wasDocs; }
   if (!bad) console.log("docsPage ok");
 }
 
 async function soundPhoneSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   try {
     const tag = "soundPhone: ";
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -29281,7 +28267,7 @@ async function soundPhoneSection(browser, base) {
     if (hidden) fail(tag + "a hidden page counted as the window being looked at");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
   if (!bad) console.log("soundPhone ok");
 }
 
@@ -29293,10 +28279,10 @@ async function phoneBellSection(browser, base) {
 // A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
 // out are left alone, and the card paths map to their /m twins.
 async function phoneRedirectSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   try {
@@ -29312,7 +28298,7 @@ async function phoneRedirectSection(browser, base) {
         const rq = route.request();
         const u = new URL(rq.url());
         if (u.pathname === "/alias/rnd" && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
-        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND["land-a"]) });
         return route.continue();
       });
       try {
@@ -29335,7 +28321,7 @@ async function phoneRedirectSection(browser, base) {
       } finally { await ctx.close(); }
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     }
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
   if (!bad) console.log("phoneBell ok");
 }
 
@@ -29864,10 +28850,10 @@ async function gearHostsSection(browser, base) {
 // A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
 // out are left alone, and the card paths map to their /m twins.
 async function phoneRedirectSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const open = async (view, at, setup, fakeClock) => {
@@ -29883,7 +28869,7 @@ async function phoneRedirectSection(browser, base) {
       const u = new URL(rq.url());
       if (/^\/m\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>m</title>phone page" });
       if (/^\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
-      if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+      if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND["land-a"]) });
       return route.continue();
     });
     await p.goto(base + at, { waitUntil: "load" });
@@ -30009,7 +28995,7 @@ async function phoneRedirectSection(browser, base) {
       await x.ctx.close();
       await y.ctx.close();
     }));
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
   // the link on /m sets the opt-out and does not bounce back
   const st = mServer({});
   st.tasks = [mCard("r-1", { alias: "a", display_title: "a" })];
@@ -30765,18 +29751,16 @@ const UNIT_FILTER = process.env.HEADLESS_UNITS ? new Set(process.env.HEADLESS_UN
 const LIST_MODE = !!process.env.HEADLESS_LIST;
 const unitOrder = [];
 const unitResults = {};
-// The mock's own state: every module-level `let` above that a section sets. A unit can leave one set (soloMode "gone" after
-// core2, say) and break whichever unit runs next in the same process, which is what a shard changes. So a shard
-// puts them all back to how the process started before each unit, except between the members of a pin group, which
-// are meant to see each other's state. The plain serial run does not: it keeps what each unit leaves, as it always did.
-// It cannot reset a module-level `const` that a section mutates in place (qDismissed, LAND, walkDirs, gateCalls, HON and
-// FON), so a unit that leaves one changed still reaches the next unit in its shard. A new `let` of this kind goes in here too. The list is checked against the file when the units are listed.
-const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, sseRetry, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites });
-const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, sseRetry, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid, cardColorsMock, blockerEsc, idleParkNow, idleParkWrites } = s); };
-let mockInit = null, lastUnit = "";
+// The mock's own state is `mock` (lib/mock.js): every loose `let` a section sets and every object it mutates in place. A
+// unit can leave one set (soloMode "gone" after core2, say) and break whichever unit runs next, so before each unit
+// the run puts them all back to how the process started, except between the members of a pin group, which are meant to see
+// each other's state. This holds for the serial run and for a shard alike. A new piece of state goes on `mock`, and the
+// listing fails on a module-level `let` in this file or in lib/mock.js.
+let pristine = null, lastUnit = "";
 const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
+// What a unit changed on `mock`, field by field, as JSON.
 function mockSnapshot() {
-  const s = mockVars();
+  const s = mock.snapshot();
   const out = {};
   for (const k of Object.keys(s)) { try { out[k] = JSON.stringify(s[k]); } catch (e) { out[k] = "?"; } }
   return out;
@@ -30785,11 +29769,9 @@ function mockSnapshot() {
 async function unit(name, fn) {
   unitOrder.push(name);
   if (LIST_MODE || (UNIT_FILTER && !UNIT_FILTER.has(name))) return;
-  if (UNIT_FILTER) {
-    if (!mockInit) mockInit = structuredClone(mockVars());
-    else if (!pinnedTogether(lastUnit, name)) mockSet(structuredClone(mockInit));
-    lastUnit = name;
-  }
+  if (!pristine) pristine = mock.snapshot();
+  else if (!pinnedTogether(lastUnit, name)) mock.reset(pristine);
+  lastUnit = name;
   const before = bad, t0 = Date.now();
   const snap0 = process.env.HEADLESS_LEAKS ? mockSnapshot() : null;
   currentUnit = name;
@@ -30831,11 +29813,11 @@ async function switchPrewarmSection(browser, base) {
     const m = /\/v1\/tasks\/(sp-[a-z]+)$/.exec(new URL(r.url()).pathname);
     if (m && r.method() === "GET") gets.push(m[1]);
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/sp/" + id });
   try {
-    wornTasks = [live("sp-a"), live("sp-b"), live("sp-c"), live("sp-d")];
-    tasksMode = "worn";
+    mock.wornTasks = [live("sp-a"), live("sp-b"), live("sp-c"), live("sp-d")];
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
@@ -30927,7 +29909,7 @@ async function switchPrewarmSection(browser, base) {
     if (flying !== 2) fail("switchPrewarm: " + flying + " prewarms started at once, the cap is 2.");
     if (errors.length) fail("switchPrewarm: page errors " + errors.join("; "));
     if (!bad) console.log("switchPrewarm ok");
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
 // A CLICK OPENS THE PANE AT ONCE from the card the board's list already holds, and the read of the card that follows
@@ -30939,13 +29921,13 @@ async function attachAtOnceSection(browser, base) {
   const wp = await ctx.newPage();
   const errors = [];
   wp.on("pageerror", e => errors.push(String(e)));
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true,
     worktree: "/tmp/ao/" + id }, extra || {});
   const held = {};
   try {
-    wornTasks = [live("ao-a"), live("ao-b"), live("ao-c")];
-    tasksMode = "worn";
+    mock.wornTasks = [live("ao-a"), live("ao-b"), live("ao-c")];
+    mock.tasksMode = "worn";
     await wp.route("**/v1/tasks/ao-*", route => {
       const id = new URL(route.request().url()).pathname.split("/").pop();
       if (route.request().method() !== "GET" || id === "ao-zz-nolist" && false) return route.fallback();
@@ -31019,7 +30001,7 @@ async function attachAtOnceSection(browser, base) {
     }
     if (errors.length) fail("attachAtOnce: page errors " + errors.join("; "));
     if (!bad) console.log("attachAtOnce ok");
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
 // AN OPEN FILE BELONGS TO ITS CARD. Opened on A, hidden on B (whose terminal shows), back on A with the edited text
@@ -31030,7 +30012,7 @@ async function fileViewSection(browser, base) {
   const wp = await ctx.newPage();
   const errors = [];
   wp.on("pageerror", e => errors.push(String(e)));
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id) => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true,
     worktree: "/tmp/fv/" + id });
   const body = Array.from({ length: 200 }, (_, i) => "line " + i).join("\n");
@@ -31038,8 +30020,8 @@ async function fileViewSection(browser, base) {
     if (process.env.FILEVIEW_SHOTS) await wp.screenshot({ path: process.env.FILEVIEW_SHOTS + "/" + name + ".png" });
   };
   try {
-    wornTasks = [live("fv-a"), live("fv-b")];
-    tasksMode = "worn";
+    mock.wornTasks = [live("fv-a"), live("fv-b")];
+    mock.tasksMode = "worn";
     await wp.route(/\/v1\/tasks\/fv-[ab]\/files\/text/, route => route.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ path: "notes/x.md", text: body, hash: "h1", eol: "\n" }) }));
     await wp.route(/\/v1\/tasks\/fv-[ab]\/files(\?|$)/, route => route.fulfill({ status: 200, contentType: "application/json",
@@ -31128,7 +30110,7 @@ async function fileViewSection(browser, base) {
     if (await wp.evaluate(() => fileViews.has("fv-a"))) fail("fileView: a card that went away kept its file.");
     if (errors.length) fail("fileView: page errors " + errors.join("; "));
     if (!bad) console.log("fileView ok");
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
 // TERMINALS ARE KEPT ALIVE when you switch away. Switching back shows the same terminal with no new socket and no
@@ -31158,12 +30140,12 @@ async function keepAliveSection(browser, base) {
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false,
     worktree: "/tmp/ka/" + id }, extra || {});
   try {
-    wornTasks = [live("ka-a"), live("ka-b"), live("ka-c"), live("ka-d"), live("ka-e"), live("ka-p", { pinned: true })];
-    tasksMode = "worn";
+    mock.wornTasks = [live("ka-a"), live("ka-b"), live("ka-c"), live("ka-d"), live("ka-e"), live("ka-p", { pinned: true })];
+    mock.tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
@@ -31305,7 +30287,7 @@ async function keepAliveSection(browser, base) {
     if (none !== 0) fail("keepAlive: with the setting at 0 " + none + " terminals were kept.");
     if (errors.length) fail("keepAlive: page errors " + errors.join("; "));
     if (!bad) console.log("keepAlive ok");
-  } finally { tasksMode = was; await ctx.close(); }
+  } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
 // NOT IN THE DEFAULT RUN: `REPLAY=/path/replay.json HEADLESS_ONLY=switchBackCost node scripts/test-board-headless.js`.
@@ -31314,11 +30296,11 @@ async function keepAliveSection(browser, base) {
 async function switchBackCostSection(browser, base) {
   if (!process.env.REPLAY) return;
   const frames = JSON.parse(fs.readFileSync(process.env.REPLAY, "utf8"));
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false, worktree: "/tmp/sb/" + id });
   try {
-    wornTasks = [live("sb-a"), live("sb-b")];
-    tasksMode = "worn";
+    mock.wornTasks = [live("sb-a"), live("sb-b")];
+    mock.tasksMode = "worn";
     const rows = [];
     for (const keep of ["0", "8"]) {
       const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -31369,7 +30351,7 @@ async function switchBackCostSection(browser, base) {
     console.log("switch back to a card with a " + Math.round(frames.reduce((n, f) => n + f.b64.length * 0.75, 0) / 1024) + " KB replay (ms from attachTask):");
     for (const r of rows) console.log("  kept=" + r.keep + "  call returns " + r.back.sync.toFixed(1) + "  two frames " + r.back.frames2.toFixed(1) +
       "  last parsed " + (r.back.parsed ? r.back.parsed.toFixed(0) : "-") + "  new sockets " + r.back.newSocks + "  lines " + r.back.lines + "\n    " + r.back.marks);
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
 }
 
 // NOT IN THE DEFAULT RUN: `REPLAY=/path/replay.json HEADLESS_ONLY=keepMemory node scripts/test-board-headless.js`.
@@ -31379,12 +30361,12 @@ async function keepMemorySection(browser, base) {
   if (!process.env.REPLAY) return;
   const frames = JSON.parse(fs.readFileSync(process.env.REPLAY, "utf8"));
   const kb = Math.round(frames.reduce((n, f) => n + f.b64.length * 0.75, 0) / 1024);
-  const was = tasksMode;
+  const was = mock.tasksMode;
   const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false, worktree: "/tmp/km/" + id });
   const ids = Array.from({ length: 9 }, (_, i) => "km-" + i);
   try {
-    wornTasks = ids.map(live);
-    tasksMode = "worn";
+    mock.wornTasks = ids.map(live);
+    mock.tasksMode = "worn";
     const out = [];
     for (const [keep, lines] of [["0", "5000"], ["8", "5000"], ["8", "20000"]]) {
       const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -31436,7 +30418,7 @@ async function keepMemorySection(browser, base) {
     for (const r of out) console.log("  kept=" + r.keep + " hidden-lines=" + r.lines + ": 1 terminal heap " + r.one.heap.toFixed(0) + " rss " + r.one.rss.toFixed(0) +
       " MB; 9 visited heap " + r.nine.heap.toFixed(0) + " rss " + r.nine.rss.toFixed(0) + " MB (" + r.kept + " kept hidden, lines each " + (r.histLines[0] || "-") +
       ")  per kept terminal heap " + (r.kept ? ((r.nine.heap - r.one.heap) / r.kept).toFixed(1) : "-") + " rss " + (r.kept ? ((r.nine.rss - r.one.rss) / r.kept).toFixed(1) : "-") + " MB");
-  } finally { tasksMode = was; }
+  } finally { mock.tasksMode = was; }
 }
 
 // u-new-burn-chart-axes: the cumulative chart has a time axis, a percent-of-limit axis with the 100% line, the time
@@ -31837,7 +30819,7 @@ async function crFixturePage(browser, base, o) {
 }
 
 async function changeReqSection(browser, base) {
-  const wasHub = hubMode; hubMode = true;
+  const wasHub = mock.hubMode; mock.hubMode = true;
   const tag = "changeReq";
   const text = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
   try {
@@ -32092,7 +31074,7 @@ async function changeReqSection(browser, base) {
 
     await crContrast(browser, base, tag);
     await crShots(browser, base);
-  } finally { hubMode = wasHub; }
+  } finally { mock.hubMode = wasHub; }
   if (!bad) console.log("changeReq ok");
 }
 
@@ -32621,7 +31603,7 @@ async function main() {
     // A dot on the card whose last turn nobody saw, `? 2` for its two open
     // questions, and neither on the card with no seen state. On the stack and
     // on the terminal strip, which is where the operator is while workers run.
-    tasksMode = "seen";
+    mock.tasksMode = "seen";
     await page.evaluate(() => runRefresh());
     await page.waitForSelector('#stack-list .stackrow[data-id="seen1"] .chip.unseen',
       { state: "attached", timeout: slow(15000) });
@@ -32641,7 +31623,7 @@ async function main() {
     }
     if (seenMarks.plain !== 0) fail("a card with no seen state drew a seen mark");
     if (seenMarks.tab === false) fail("the terminal strip row did not draw the unread dot");
-    tasksMode = "first";
+    mock.tasksMode = "first";
     await page.evaluate(() => runRefresh());
     });
 
@@ -32680,7 +31662,7 @@ async function main() {
     // come back on the next render. `renderTermList` is driven directly: the
     // strip lives in the DOM on every view, and this is about what it draws, not
     // about the tab that reveals it.
-    tasksMode = "pinned";
+    mock.tasksMode = "pinned";
     resetPin();
     // A cold pinned row is behind the dead chip, so the chip is on for this part.
     await page.evaluate(() => { localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]'); });
@@ -32752,7 +31734,7 @@ async function main() {
       }
     }
     await page.evaluate(() => { localStorage.removeItem(termDeviceKey("atrium.terms.show")); });
-    tasksMode = "first";
+    mock.tasksMode = "first";
 
     // ── a pinned card filed into one of your groups is drawn in it ───────────
     // Custom grouping with one group, `active`, and a pinned card carrying that
@@ -32760,7 +31742,7 @@ async function main() {
     // hint. Then the drag case: a row moved by hand into the group's nest, and a
     // repaint whose markup did not change, must still put the rows back where the
     // markup says, since that stale DOM is what drew the card under `active 0`.
-    tasksMode = "filed";
+    mock.tasksMode = "filed";
     await page.evaluate(() => {
       localStorage.setItem("atrium.grouping",
         JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
@@ -32797,7 +31779,7 @@ async function main() {
       fail("a row dragged into a group stayed there after a repaint with unchanged markup.");
     }
     await page.evaluate(() => localStorage.removeItem("atrium.grouping"));
-    tasksMode = "first";
+    mock.tasksMode = "first";
 
     // ── the terminals tab's chips: paused, dead and subagents ────────────────
     // Replaces the two `hide inactive` toggles and `show stopped`. The strip carries a live agent (AGLIVE) with three
@@ -32806,7 +31788,7 @@ async function main() {
     // under it behind a count (a fold hides the asking one too), and the paused and dead rows are not
     // listed. Each chip brings its own rows back and the stored list is what survives a reload. Driven through the
     // board's own functions so the device-scoped key is exercised, not faked.
-    tasksMode = "doers";
+    mock.tasksMode = "doers";
     const chipState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
       const chip = v => document.querySelector(`#term-show button[data-v="${v}"]`);
@@ -33038,7 +32020,7 @@ async function main() {
     }
 
     await page.evaluate(() => { try { localStorage.removeItem(termDeviceKey("atrium.terms.show")); } catch (e) {} });
-    tasksMode = "first";
+    mock.tasksMode = "first";
 
     // ── the terminals tab is not blank at phone width ───────────────────────
     // THE BUG THIS SECTION EXISTS FOR. The terminals list used to lay itself out
@@ -33052,7 +32034,7 @@ async function main() {
     // the view, the group toolbar sits at the top of it (not floating below a
     // gap), and the cards are on-screen and stacked down the page.
     await page.setViewportSize({ width: 390, height: 780 });
-    tasksMode = "pinned";
+    mock.tasksMode = "pinned";
     resetPin();
     // The pinned card is cold, so it is behind the dead chip: on for this part.
     await page.evaluate(() => { localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]'); });
@@ -33175,7 +32157,7 @@ async function main() {
 
     // Put the width, the view and the data back for the sections below.
     await page.setViewportSize({ width: 1280, height: 800 });
-    tasksMode = "first";
+    mock.tasksMode = "first";
     await page.click('.tab[data-view="stack"]');
     await page.waitForSelector('#stack-list .stackrow', { timeout: slow(15000) });
 
@@ -33184,7 +32166,7 @@ async function main() {
     // single-flight guard. The pass wedges on the hung fetch.
     await page.click('.tab[data-view="stack"]');
     await page.waitForSelector('#stack-list .stackrow[data-id="t1"]', { timeout: slow(15000) });
-    tasksMode = "hang";
+    mock.tasksMode = "hang";
     await page.evaluate(() => runRefresh());
 
     // While it hangs, the board keeps its last paint rather than clearing.
@@ -33198,7 +32180,7 @@ async function main() {
     // Recover the endpoint with a DIFFERENT card. The watchdog must free the
     // single-flight latch past __atriumRunTimeout and the requeued pass must
     // repaint with the new data. If the board were wedged, t2 never appears.
-    tasksMode = "second";
+    mock.tasksMode = "second";
     if (process.env.DEBUG_HEADLESS) {
       for (let i = 0; i < 12; i++) {
         await page.waitForTimeout(500);
@@ -33264,8 +32246,8 @@ async function main() {
 
     // Drive the exact chain: the cached list lags (loop card not attachable) and
     // the single-card poll says supervised, so the watchdog keeps attaching.
-    tasksMode = "loop";
-    loopListSupervised = false;
+    mock.tasksMode = "loop";
+    mock.loopListSupervised = false;
     await page.evaluate(async () => {
       const t = await api("/v1/tasks/loop1");
       openTerm(t);
@@ -33293,7 +32275,7 @@ async function main() {
 
     // Recover: the attach starts succeeding and the list catches up. It must
     // attach ONCE more and then stop, not keep churning.
-    loopListSupervised = true;
+    mock.loopListSupervised = true;
     await page.evaluate(() => {
       window.__attachSucceeds = true;
       window.__openTermCount = 0;
@@ -33318,8 +32300,8 @@ async function main() {
       try { closeTerm(); } catch (e) {}
       window.WebSocket = window.__realWS;
     });
-    tasksMode = "first";
-    loopListSupervised = false;
+    mock.tasksMode = "first";
+    mock.loopListSupervised = false;
     await page.click('.tab[data-view="stack"]');
     await page.waitForSelector('#stack-list .stackrow', { timeout: slow(15000) });
 
@@ -33641,7 +32623,7 @@ async function main() {
     // solo window must treat that as a reconnect, not a dead card: no blocking
     // "nothing to attach to" modal, a non-blocking reconnecting line instead,
     // and it must paint the card on its own once the room is back.
-    soloMode = "noroom";
+    mock.soloMode = "noroom";
     const solo = await browser.newPage();
     const soloErrors = [];
     solo.on("pageerror", e => soloErrors.push(String(e)));
@@ -33672,7 +32654,7 @@ async function main() {
 
       // The room reattaches. The window must paint the card with no click: its
       // title carries the card's name once soloFetchCard returns.
-      soloMode = "ok";
+      mock.soloMode = "ok";
       await solo.waitForFunction(() =>
         /solo card/.test(document.title), null, { timeout: slow(20000) });
 
@@ -33700,7 +32682,7 @@ async function main() {
     // ── a genuinely missing card still dead-ends ────────────────────────────
     // The fix must not swallow a real 404. A bad link, the card the hub says
     // does not exist, still gets the "nothing to attach to" modal.
-    soloMode = "gone";
+    mock.soloMode = "gone";
     const bad404 = await browser.newPage();
     try {
       await bad404.goto(base + "#term=s1", { waitUntil: "domcontentloaded" });
@@ -33721,7 +32703,7 @@ async function main() {
     // disconnected to live on the `rooms` event, with no reopen. This is the
     // whole of the picker-live fix: the chip's counter was reactive, the open
     // menu was a snapshot from when it opened.
-    hubMode = true;
+    mock.hubMode = true;
     const hub = await browser.newPage();
     const hubErrors = [];
     hub.on("pageerror", e => hubErrors.push(String(e)));
@@ -33771,7 +32753,7 @@ async function main() {
 
       // Attach sgg, clear the loadHubRooms throttle, then push the `rooms` event
       // the hub sends on a membership change. Nothing reopens the menu.
-      sggAttached = true;
+      mock.sggAttached = true;
       await hub.waitForTimeout(2100);
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
 
@@ -33949,7 +32931,7 @@ async function main() {
         document.querySelectorAll("#audit-list .aud-row").length === 4, null,
         { timeout: slow(15000) }).catch(() => fail(
           "clearing the kind filter did not restore the full audit feed."));
-      auditLive = true;
+      mock.auditLive = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() => {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
@@ -33962,7 +32944,7 @@ async function main() {
       // main clips, so a pane that is not a scroll box of its own can never show
       // the rows below the window. The list scrolls and the filters above it do
       // not move. Checked at desktop and phone widths.
-      auditMany = true;
+      mock.auditMany = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
         document.querySelectorAll("#audit-list .aud-row").length === 150, null,
@@ -34003,7 +32985,7 @@ async function main() {
         return { scrollTop: list.scrollTop, id: row.dataset.id,
           offset: row.getBoundingClientRect().top - top };
       });
-      auditManyLive = true;
+      mock.auditManyLive = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
         document.querySelectorAll("#audit-list .aud-row").length === 151, null,
@@ -34028,8 +33010,8 @@ async function main() {
     } finally {
       resetAudit();
       await hub.close();
-      hubMode = false;
-      sggAttached = false;
+      mock.hubMode = false;
+      mock.sggAttached = false;
     }
     });
 
@@ -34080,9 +33062,9 @@ async function main() {
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
 
     // (1) the read fails at load: the hub has no room to borrow settings from.
-    hubMode = true;
-    hubHasRoom = false;
-    sggAttached = false;
+    mock.hubMode = true;
+    mock.hubHasRoom = false;
+    mock.sggAttached = false;
     const ga1Ctx = await browser.newContext();
     const ga1 = await ga1Ctx.newPage();
     const ga1Errors = [];
@@ -34096,18 +33078,18 @@ async function main() {
       }
       // Past loadHubRooms' 2s throttle, a room attaches and the read succeeds.
       await ga1.waitForTimeout(2200);
-      hubHasRoom = true;
+      mock.hubHasRoom = true;
       pushRooms();
       await gautoHeals("settings failing at load", ga1, "asking");
       if (ga1Errors.length) fail("the gauto load page threw: " + ga1Errors.join(" | "));
     } finally {
       await ga1.close();
       await ga1Ctx.close();
-      hubHasRoom = true;
+      mock.hubHasRoom = true;
     }
 
     // (2) a room scope whose room has not re-attached: the scoped read fails.
-    roomSettingsDown = true;
+    mock.roomSettingsDown = true;
     const ga2Ctx = await browser.newContext();
     await ga2Ctx.addInitScript(() => { try { localStorage.setItem("atrium.room", "alpha"); } catch (e) {} });
     const ga2 = await ga2Ctx.newPage();
@@ -34118,19 +33100,19 @@ async function main() {
       await ga2.waitForTimeout(1500);
       gautoDrawn("settings failing in a room scope", await gautoPaint(ga2));
       // The room comes back. The poll re-reads while the switch is unknown.
-      roomSettingsDown = false;
+      mock.roomSettingsDown = false;
       await gautoHeals("settings failing in a room scope", ga2, "asking");
       if (ga2Errors.length) fail("the gauto room page threw: " + ga2Errors.join(" | "));
     } finally {
       await ga2.close();
       await ga2Ctx.close();
-      roomSettingsDown = false;
+      mock.roomSettingsDown = false;
     }
 
     // (3) a stream reopen after a good read: approving everything, then the hub
     // restarts. The reopen's read fails, so the last answer must read as stale
     // rather than as fresh, and the button must still say something.
-    gautoOn = true;
+    mock.gautoOn = true;
     const ga3Ctx = await browser.newContext();
     const ga3 = await ga3Ctx.newPage();
     const ga3Errors = [];
@@ -34142,7 +33124,7 @@ async function main() {
       // reached the server, it was never ended, so it never reopened.
       await ga3.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
         { timeout: slow(15000) });
-      hubHasRoom = false;
+      mock.hubHasRoom = false;
       const reopened = ga3.waitForRequest(r => r.url().includes("/v1/events"), { timeout: slow(15000) });
       const settingsAfter = reopened.then(() => ga3.waitForResponse(r =>
         r.url().split("?")[0].endsWith("/v1/settings") && r.status() === 409, { timeout: slow(15000) }));
@@ -34155,7 +33137,7 @@ async function main() {
         fail("settings failing on a stream reopen: #gauto shows its old answer as fresh, " + JSON.stringify(g));
       }
       await ga3.waitForTimeout(2200);
-      hubHasRoom = true;
+      mock.hubHasRoom = true;
       pushRooms();
       await gautoHeals("settings failing on a stream reopen", ga3, "approving everything");
       if (ga3Errors.length) fail("the gauto reopen page threw: " + ga3Errors.join(" | "));
@@ -34164,9 +33146,9 @@ async function main() {
     } finally {
       await ga3.close();
       await ga3Ctx.close();
-      gautoOn = false;
-      hubMode = false;
-      hubHasRoom = true;
+      mock.gautoOn = false;
+      mock.hubMode = false;
+      mock.hubHasRoom = true;
     }
     });
 
@@ -34257,7 +33239,7 @@ async function main() {
         fail("a runner switched on did not stay on after the repaint."));
 
       // A refusal puts the pill back and says why.
-      switchFail = true;
+      mock.switchFail = true;
       put = wrote("/v1/harnesses/hon", "PUT");
       await sw.click('#harness-list .chip.toggle[data-id="hon"]');
       await put;
@@ -34683,11 +33665,11 @@ async function main() {
   }
 
   if (LIST_MODE) {
-    const lets = fs.readFileSync(__filename, "utf8").split("\n").filter(l => /^let [A-Za-z_]/.test(l)).map(l => /^let ([A-Za-z_]\w*)/.exec(l)[1]);
-    const known = new Set(Object.keys(mockVars()).concat(["chromium", "exePath", "bad", "currentUnit", "stuckStep", "peekReads", "mockInit", "lastUnit"]));
+    const lets = [__filename, path.join(__dirname, "lib", "mock.js")].flatMap(f => fs.readFileSync(f, "utf8").split("\n").filter(l => /^let [A-Za-z_]/.test(l)).map(l => /^let ([A-Za-z_]\w*)/.exec(l)[1]));
+    const known = new Set(["bad", "currentUnit", "pristine", "lastUnit"]);
     const missing = lets.filter(n => !known.has(n));
     if (missing.length) {
-      console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units. Add each to mockVars() and mockSet().");
+      console.error("a module-level let holds " + missing.join(", ") + ": nothing resets it between units. Put it on the mock object (mock.name = initial) so mock.reset() does.");
       process.exitCode = 1;
     }
     // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
@@ -35357,7 +34339,7 @@ async function alertKindsSection(browser, base) {
   console.log("alertKinds ok");
 }
 async function prefsEverywhereSection(browser, base) {
-  soloMode = "ok";
+  mock.soloMode = "ok";
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   try {
@@ -35702,9 +34684,9 @@ async function growlBoard(browser, base, hub, init, phone) {
   if (!growlBoard.off) await ctx.addInitScript(() => { try { localStorage.setItem("atrium.growler", "1"); } catch (e) {} });
   if (init) await ctx.addInitScript(init);
   const p = await ctx.newPage();
-  const h = { ctx, p, errors: [], posts: [], gets: 0, decides: [], messages: [], answer: null, wasHub: hubMode };
+  const h = { ctx, p, errors: [], posts: [], gets: 0, decides: [], messages: [], answer: null, wasHub: mock.hubMode };
   p.on("pageerror", e => h.errors.push(String(e)));
-  hubMode = hub;
+  mock.hubMode = hub;
   await ctx.route("**/_hub/growls**", async route => {
     const r = route.request();
     if (r.method() === "GET") { h.gets++; return route.fulfill({ status: 404, body: "" }); }
@@ -35741,7 +34723,7 @@ async function growlBoard(browser, base, hub, init, phone) {
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
     await p.waitForTimeout(150);
   };
-  h.close = async () => { hubMode = h.wasHub; await ctx.close(); };
+  h.close = async () => { mock.hubMode = h.wasHub; await ctx.close(); };
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
   if (hub) await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
@@ -36429,10 +35411,10 @@ async function growlPhoneSection(browser, base) {
 // are the pop-out's to ring, so its switch and mute hold them back, the board does not ring in its place and says so
 // on the growler, and closing the pop-out hands the reminders back. See the design, section 7.
 async function growlPopoutSection(browser, base) {
-  const was = tasksMode;
-  tasksMode = "land";
-  landList = [];
-  landPerms = [];
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [];
+  mock.landPerms = [];
   const errors = [];
   const ctx = await landContext(browser, true);
   await ctx.addInitScript(() => {
@@ -36556,7 +35538,7 @@ async function growlPopoutSection(browser, base) {
     if (/muted in its window/.test(await text(board, "#growl"))) fail("growlPopout: the board still says muted with the pop-out closed.");
     if (errors.length) fail("growlPopout: page errors: " + errors.join(" | "));
   } finally {
-    tasksMode = was;
+    mock.tasksMode = was;
     await ctx.close();
   }
   if (!bad) console.log("growlPopout ok");

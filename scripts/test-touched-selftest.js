@@ -85,6 +85,8 @@ const hl = fs.readFileSync(path.join(ROOT, "scripts/test-board-headless.js"), "u
 const tw = hl.findIndex(l => /^async function termWearSection\(/.test(l)) + 1;
 p = P(["scripts/test-board-headless.js"], { harnessLines: [[tw + 2, tw + 3]] });
 check("harness section: termWear", units(p).includes("termWear") && !p.warnings.length, [units(p), p.warnings]);
+p = P(["scripts/lib/mock.js", "scripts/lib/browser.js"]);
+check("harness library: bootClean and a warning each", units(p).join() === "bootClean" && p.warnings.length === 2, [units(p), p.warnings]);
 p = P(["scripts/test-board-headless.js"], { harnessLines: [[1, 1]] });
 check("harness top: bootClean and a warning", units(p).join() === "bootClean" && p.warnings.length === 1, [units(p), p.warnings]);
 p = P(["scripts/test-board-headless.js"]);
