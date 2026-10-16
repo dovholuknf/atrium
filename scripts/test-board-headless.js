@@ -15000,7 +15000,7 @@ async function mSwitcherSection(browser) {
     if (JSON.stringify(got) !== JSON.stringify(["need-1", "need-2", "need-3", "run-2", "run-3"])) fail(tag + "the default list is wrong: " + got.join(","));
     const chips = await p.$$eval("#m-card-menu .pm-chip", e => e.map(x => x.textContent + ":" + x.getAttribute("aria-pressed")));
     if (JSON.stringify(chips) !== JSON.stringify(["running:true", "needs you:true", "ready:false", "done:false", "all:false"])) fail(tag + "the chips are wrong: " + chips.join(","));
-    if (await p.$eval("#m-card-menu .pm-search", e => !e.hidden)) fail(tag + "a search box on a short list");
+    if (await p.$eval("#m-card-menu .pm-search", e => e.hidden)) fail(tag + "no search box to type into");
     await mShot(p, "switcher-412");
     // the sheet is solid, has an edge, and a backdrop dims the thread
     const look = await p.evaluate(() => {
@@ -15024,7 +15024,6 @@ async function mSwitcherSection(browser) {
     await p.tap('#m-card-menu .pm-chip[data-f="done"]');
     got = await names();
     if (got.length !== 15) fail(tag + "adding done gave " + got.length + " rows");
-    if (await p.$eval("#m-card-menu .pm-search", e => e.hidden)) fail(tag + "no search box on a long list");
     await p.fill("#m-card-menu .pm-search", "done-3");
     got = await names();
     if (got.length !== 1 || got[0] !== "done-3") fail(tag + "the search did not narrow: " + got.join(","));
@@ -15089,6 +15088,49 @@ async function mPickerDoneSection(browser) {
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mPickerDone ok");
+}
+
+// u-phone-card-search: the "cards" picker on the landing page. One tap, type part of an alias, the card opens.
+async function mHomePickerSection(browser) {
+  const st = mServer({});
+  const mk = (id, status, over) => mCard(id, Object.assign({ alias: id, display_title: id, status, waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } }, over || {}));
+  st.tasks = [mk("run-1", "running"), mk("need-1", "needs-permission"), mk("zebra-card", "done", { alias: "zebra-card", display_title: "an old job" })];
+  st.replies["zebra-card"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "Zebra reply." }] };
+  await st.open();
+  try {
+    for (const vp of [{ width: 360, height: 780 }, { width: 412, height: 892 }]) {
+      const tag = "mHomePicker " + vp.width + ": ";
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await mShot(p, "home-picker-" + vp.width);
+      if (await mNoSideways(p)) fail(tag + "the landing page scrolls sideways");
+      await p.tap("#m-home-pick");
+      await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) });
+      if (!(await p.evaluate(() => document.activeElement && document.activeElement.classList.contains("pm-search")))) fail(tag + "the search box is not focused on open");
+      if (await mNoSideways(p)) fail(tag + "the open picker scrolls the page sideways");
+      const box = await p.evaluate(() => { const r = document.getElementById("m-card-menu").getBoundingClientRect(); return { l: r.left, r: r.right }; });
+      if (box.l < 0 || box.r > vp.width + 1) fail(tag + "the menu leaves the screen: " + JSON.stringify(box));
+      await p.fill("#m-card-menu .pm-search", "zebr");
+      await mShot(p, "home-picker-open-" + vp.width);
+      const rows = await p.$$eval("#m-card-menu .pm-row b", e => e.map(x => x.textContent));
+      if (JSON.stringify(rows) !== JSON.stringify(["zebra-card"])) fail(tag + "typing part of an alias gave " + rows.join(","));
+      await p.tap("#m-card-menu .pm-row");
+      await p.waitForFunction(() => window.mCard && window.mCard.current() === "zebra-card", null, { timeout: slow(5000) }).catch(() => fail(tag + "the picked card did not open"));
+      if (!(await p.$eval("#m-card-menu", e => e.hidden))) fail(tag + "the menu stayed open after the pick");
+      // a hardware keyboard: Ctrl+K and "/" open it, Escape closes it
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.keyboard.press("Control+k");
+      await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) }).catch(() => fail(tag + "Ctrl+K did not open the picker"));
+      await p.keyboard.press("Escape");
+      await p.waitForFunction(() => document.getElementById("m-card-menu").hidden, null, { timeout: slow(3000) }).catch(() => fail(tag + "Escape did not close the picker"));
+      await p.keyboard.press("/");
+      await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) }).catch(() => fail(tag + "/ did not open the picker"));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHomePicker ok");
 }
 
 // Pull down at the very top of a card reloads the page. Not from mid-thread, the composer or the viewer.
@@ -23059,7 +23101,7 @@ async function main() {
       cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
-      mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection,
+      mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
@@ -25140,6 +25182,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mDocs", () => mDocsSection(browser));
     await unit("mSwitcher", () => mSwitcherSection(browser));
     await unit("mPickerDone", () => mPickerDoneSection(browser));
+    await unit("mHomePicker", () => mHomePickerSection(browser));
     await unit("mPull", () => mPullSection(browser));
     await unit("mNoSideways", () => mNoSidewaysSection(browser));
     await unit("mPrompts", () => mPromptsSection(browser));

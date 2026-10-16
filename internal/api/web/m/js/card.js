@@ -841,9 +841,11 @@
   }
 
   function menuClose() {
+    if (els.menu.contains(document.activeElement)) document.activeElement.blur();
     els.menu.hidden = true;
     if (els.menuBack) els.menuBack.hidden = true;
     els.pick.setAttribute("aria-expanded", "false");
+    if (els.homePick) els.homePick.setAttribute("aria-expanded", "false");
   }
 
   function menuPaint() {
@@ -852,9 +854,13 @@
     chips.innerHTML = PICK_CHIPS.map(c => '<button type="button" class="pm-chip" data-f="' + c[0] + '" aria-pressed="' + (set.has(c[0]) ? "true" : "false") + '">' + U.esc(c[1]) + "</button>").join("");
     let cards = window.mStore.cards().filter(t => !t.archived_at && t.id !== openId && pickMatches(t, set));
     cards.sort((a, b) => cardActivityCmp(a, b) || cardTieBreak(a, b));
-    search.hidden = cards.length <= PICK_LONG && !search.value;
     const q = search.value.trim().toLowerCase();
-    if (q) cards = cards.filter(t => { const nm = U.cardName(t); return (nm.main + " " + (nm.sub || "") + " " + U.statusLabel(t)).toLowerCase().indexOf(q) >= 0; });
+    // Typing looks across every chip, so a card is found by a piece of its name without first picking the right filter.
+    if (q) {
+      cards = window.mStore.cards().filter(t => !t.archived_at && t.id !== openId);
+      cards.sort((a, b) => cardActivityCmp(a, b) || cardTieBreak(a, b));
+      cards = cards.filter(t => { const nm = U.cardName(t); return [nm.main, nm.sub, t.alias, t.wire_name, t.room, (t.tags || []).join(" "), U.statusLabel(t)].join(" ").toLowerCase().indexOf(q) >= 0; });
+    }
     list.innerHTML = cards.length ? cards.map(t => {
       const nm = U.cardName(t);
       return '<button type="button" class="pm-row" data-id="' + U.esc(t.id) + '"><b>' + U.esc(nm.main) + "</b>" +
@@ -862,22 +868,38 @@
     }).join("") : '<p class="quiet">no cards here. try another chip</p>';
   }
 
-  function menuToggle() {
+  // `from` is the button that was pressed. On the landing page there is no sheet to hang the menu from, so it sits on the
+  // page under that button.
+  function menuToggle(from) {
     if (!els.menu.hidden) { menuClose(); return; }
+    const home = !openId;
+    from = from && from.nodeType ? from : home ? els.homePick : els.pick;
+    const host = home ? document.body : els.sheet;
+    if (els.menu.parentNode !== host) { host.appendChild(els.menuBack); host.appendChild(els.menu); }
+    els.menu.classList.toggle("onhome", home);
+    els.menuBack.classList.toggle("onhome", home);
+    if (home) {
+      const bottom = Math.round(from.getBoundingClientRect().bottom);
+      els.menu.style.top = (bottom + 4) + "px";
+      els.menuBack.style.top = bottom + "px";
+    } else { els.menu.style.top = ""; els.menuBack.style.top = ""; }
     if (!els.menu.querySelector(".pm-list")) {
       els.menu.innerHTML = '<div class="pm-chips" role="group" aria-label="which cards"></div>' +
-        '<input type="search" class="pm-search" placeholder="search cards" aria-label="search cards" spellcheck="false" autocomplete="off" hidden>' +
+        '<input type="search" class="pm-search" placeholder="search cards" aria-label="search cards" spellcheck="false" autocomplete="off" enterkeyhint="go">' +
         '<div class="pm-list"></div>';
     }
     els.menu.querySelector(".pm-search").value = "";
     menuPaint();
     if (els.menuBack) els.menuBack.hidden = false;
     els.menu.hidden = false;
-    els.pick.setAttribute("aria-expanded", "true");
+    (home ? els.homePick : els.pick).setAttribute("aria-expanded", "true");
+    // Focused on open, so a hardware keyboard types straight into it. A phone's keyboard comes up with it.
+    els.menu.querySelector(".pm-search").focus();
   }
 
   // Leaves this card without the slide and opens another, which writes its own history entry.
   function goTo(id) {
+    if (!openId) { menuClose(); open(id); return; }
     menuClose();
     offs.forEach(f => f());
     offs = [];
@@ -1063,7 +1085,19 @@
     // none, so coming back reads it again.
     let wasLive = false;
     window.mNet.on("live", () => { const on = !!window.mNet.live(); if (on && !wasLive && openId) loadReplies(); wasLive = on; });
-    els.pick.addEventListener("click", menuToggle);
+    els.menuBack = q("m-card-menu-back");
+    els.pick.addEventListener("click", () => menuToggle(els.pick));
+    els.homePick = q("m-home-pick");
+    if (els.homePick) els.homePick.addEventListener("click", () => menuToggle(els.homePick));
+    // Ctrl+K from anywhere, and "/" when nothing is being typed into: a hardware keyboard's way to the picker.
+    document.addEventListener("keydown", e => {
+      if (e.defaultPrevented || e.altKey || e.metaKey || document.body.classList.contains("chat-embed")) return;
+      const k = String(e.key).toLowerCase();
+      const t = e.target, typing = t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""));
+      if (k === "k" && e.ctrlKey) { e.preventDefault(); menuToggle(); }
+      else if (k === "/" && !e.ctrlKey && !typing && els.menu.hidden) { e.preventDefault(); menuToggle(); }
+      else if (k === "escape" && !els.menu.hidden) menuClose();
+    });
     // The card's changes, and the chip on a reply that edited files. Both open the changes sheet over the thread.
     q("m-card-changes").addEventListener("click", () => { if (openId && window.mChanges) window.mChanges.openCard(openId); });
     els.replies.addEventListener("click", bubbleAct);
@@ -1072,7 +1106,6 @@
       const c = e.target.closest && e.target.closest(".chg-chip");
       if (c && openId && window.mChanges) window.mChanges.openTurn(openId, c.dataset.at);
     });
-    els.menuBack = q("m-card-menu-back");
     if (els.menuBack) els.menuBack.addEventListener("click", menuClose);
     els.menu.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("pm-search")) menuPaint(); });
     els.menu.addEventListener("click", e => {

@@ -42,6 +42,8 @@ body.m.sheet-open { overscroll-behavior-y: none; }
 .titlebar { padding: 10px 0 14px; }
 .titlebar .h1row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
 .titlebar .h1row h1 { margin: 0; }
+.titlebar .h1row { flex-wrap: wrap; }
+.h1btns { display: inline-flex; gap: 8px; }
 .optsbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border: 1px solid var(--stroke); border-radius: 12px; background: none; color: var(--label); font-size: 14px; cursor: pointer; }
 .optsbtn[data-on]:not([data-on="0"]) { color: var(--head); border-color: var(--teal); }
 .opts { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; padding: 10px; border-radius: 14px; background: var(--lift); }

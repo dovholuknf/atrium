@@ -25,11 +25,13 @@
   max-height: 70dvh; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 6px; border-radius: 12px;
   background: var(--card-0); border: 1px solid var(--stroke); box-shadow: 0 12px 32px rgba(var(--shadow-rgb), .55); }
 #m-card-menu[hidden] { display: none; }
+/* On the landing page the menu hangs from the page, under the button that opened it (js/card.js sets the top). */
+#m-card-menu.onhome { position: fixed; z-index: 26; }
+#m-card-menu-back.onhome { position: fixed; z-index: 25; }
 #m-card-menu .pm-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 6px; }
 #m-card-menu .pm-chip { min-height: 40px; padding: 0 12px; border: 1px solid var(--stroke-dim); border-radius: 20px; background: none; color: var(--label); font: inherit; font-size: calc(var(--m-fs, 14px) * .9); cursor: pointer; }
 #m-card-menu .pm-chip[aria-pressed="true"] { background: var(--teal-bg); border-color: var(--teal); color: var(--head); }
 #m-card-menu .pm-search { display: block; width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 6px; padding: 0 12px; border: 1px solid var(--stroke-dim); border-radius: 10px; background: var(--bg-2); color: var(--head); font: inherit; font-size: var(--m-fs, 14px); }
-#m-card-menu .pm-search[hidden] { display: none; }
 #m-card-menu .pm-row { display: flex; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; align-items: center; padding: 0 10px; border: 0; background: none; color: var(--body); text-align: left; font-size: var(--m-fs, 14px); cursor: pointer; }
 #m-card-menu .pm-row span { color: var(--dim); font-size: calc(var(--m-fs, 14px) * .9); }
 #m-card-menu .quiet { margin: 8px; font-size: var(--m-fs, 14px); }
