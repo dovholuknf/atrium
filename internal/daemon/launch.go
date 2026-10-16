@@ -1283,6 +1283,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		atrium[classicRendererEnv] = v
 	}
 	env := childEnvFrom(base, launchEnv, atrium)
+	// Before anything is spawned: a runner that cannot run a tool must not make
+	// a card that looks alive. See gitbash.go.
+	if add, err := checkGitBash(h.ID, env); err != nil {
+		d.launchFailed(task.ID, err.Error())
+		return nil, err
+	} else if add != "" {
+		env = append(env, add)
+	}
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
 	// The runner a PTY launch started, nil in window mode. See spawnPTYRunner.
