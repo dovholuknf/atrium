@@ -269,7 +269,7 @@
       "page": "the phone's home list, header, shell and the code every phone screen shares",
       "units": [
         "mHome*", "mPrefsEverywhere", "mWorking", "mReload", "mReconnect", "mServe", "mHidden", "mOlder", "mFollow", "mCompact",
-        "mPinch", "mPull", "mNoSideways", "mSwitcher", "mActivityRead", "mReadRetry", "mGroupMenus", "mAgentIdle", "phone*"
+        "mPinch", "mPull", "mNoSideways", "mSwitcher", "mPickerDone", "mActivityRead", "mReadRetry", "mGroupMenus", "mAgentIdle", "phone*"
       ],
       "sources": [
         "internal/api/web/m/index.html",

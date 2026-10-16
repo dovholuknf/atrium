@@ -15060,6 +15060,37 @@ async function mSwitcherSection(browser) {
   if (!bad) console.log("mSwitcher ok");
 }
 
+// bug-phone-picker-needs-you-shows-done: "needs you" in the card picker never lists a done card, even one that still
+// carries an unread report. It stays under the "done" chip.
+async function mPickerDoneSection(browser) {
+  const st = mServer({});
+  const mk = (id, status, over) => mCard(id, Object.assign({ alias: id, display_title: id, status, waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } }, over || {}));
+  st.tasks = [mk("run-1", "running"), mk("run-2", "running"), mk("need-1", "needs-permission"),
+    mk("done-rep", "done", { spawned_by: "@human", reported_at: mIso(3 * M_MIN), human_at: mIso(30 * M_MIN) })];
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 892 }, "");
+    const tag = "mPickerDone: ";
+    const names = () => p.$$eval("#m-card-menu .pm-row b", e => e.map(x => x.textContent).sort());
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="run-1"]');
+    await p.waitForSelector("#m-replies", { timeout: slow(5000) });
+    await p.tap("#m-card-pick");
+    await p.waitForSelector("#m-card-menu:not([hidden]) .pm-row", { timeout: slow(3000) });
+    await mShot(p, "picker-done");
+    let got = await names();
+    if (JSON.stringify(got) !== JSON.stringify(["need-1", "run-2"])) fail(tag + "running and needs you listed " + got.join(","));
+    await p.tap('#m-card-menu .pm-chip[data-f="done"]');
+    got = await names();
+    if (got.indexOf("done-rep") < 0) fail(tag + "the done chip does not list the done card: " + got.join(","));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPickerDone ok");
+}
+
 // Pull down at the very top of a card reloads the page. Not from mid-thread, the composer or the viewer.
 // bug-phone-page-scrolls-sideways: the phone page never scrolls sideways. With every header button shown, a card with
 // an unbroken path and long chips, the view drawer open, on both lists, light and dark, at two phone widths, nothing
@@ -23028,7 +23059,7 @@ async function main() {
       cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
-      mSwitcher: mSwitcherSection,
+      mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection,
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
@@ -25108,6 +25139,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mFollow", () => mFollowSection(browser));
     await unit("mDocs", () => mDocsSection(browser));
     await unit("mSwitcher", () => mSwitcherSection(browser));
+    await unit("mPickerDone", () => mPickerDoneSection(browser));
     await unit("mPull", () => mPullSection(browser));
     await unit("mNoSideways", () => mNoSidewaysSection(browser));
     await unit("mPrompts", () => mPromptsSection(browser));

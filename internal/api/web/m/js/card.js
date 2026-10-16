@@ -831,11 +831,13 @@
     return new Set(["running", "needs"]);
   }
   function pickSave(set) { try { localStorage.setItem(PICK_KEY, JSON.stringify(Array.from(set))); } catch (e) {} }
+  // Done, dead and paused cards wait on nobody, whatever report or unread mark they still carry.
+  function finishedStatus(t) { return t.status === "done" || t.status === "dead" || t.status === "paused"; }
   function pickMatches(t, set) {
     if (set.has("all")) return true;
     const rs = window.mHome.reasons(t, window.mStore.perms());
-    return (set.has("running") && t.status === "running") || (set.has("needs") && rs.some(r => r.kind !== "ready")) ||
-      (set.has("ready") && t.status === "needs-input") || (set.has("done") && (t.status === "done" || t.status === "dead" || t.status === "paused"));
+    return (set.has("running") && t.status === "running") || (set.has("needs") && !finishedStatus(t) && rs.some(r => r.kind !== "ready")) ||
+      (set.has("ready") && t.status === "needs-input") || (set.has("done") && finishedStatus(t));
   }
 
   function menuClose() {
