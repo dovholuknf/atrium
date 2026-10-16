@@ -28,6 +28,7 @@ func TestRemoteAccessOnOffAndState(t *testing.T) {
 	t.Setenv("ATRIUM_AGENT_NAME", "")
 	t.Setenv(remoteaccess.EnvForce, "")
 	dir := t.TempDir()
+	writeRoomCert(t, dir)
 	if out, err := runRemoteAccess(t, dir); err != nil || !strings.Contains(out, "remote access: off") {
 		t.Fatalf("fresh state: %q %v", out, err)
 	}
@@ -60,6 +61,7 @@ func TestRemoteAccessOnOffAndState(t *testing.T) {
 // A session atrium supervises cannot turn it on. It can turn it off.
 func TestRemoteAccessOnRefusesInsideASupervisedSession(t *testing.T) {
 	dir := t.TempDir()
+	writeRoomCert(t, dir)
 	for _, env := range []string{"ATRIUM_TASK_ID", "ATRIUM_AGENT_NAME"} {
 		t.Setenv("ATRIUM_TASK_ID", "")
 		t.Setenv("ATRIUM_AGENT_NAME", "")
@@ -84,6 +86,7 @@ func TestRemoteAccessEnvForcesOffInTheState(t *testing.T) {
 	t.Setenv("ATRIUM_TASK_ID", "")
 	t.Setenv("ATRIUM_AGENT_NAME", "")
 	dir := t.TempDir()
+	writeRoomCert(t, dir)
 	if _, err := runRemoteAccess(t, dir, "on"); err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +99,7 @@ func TestRemoteAccessEnvForcesOffInTheState(t *testing.T) {
 
 func TestRemoteAccessLogPrintsNewestFirst(t *testing.T) {
 	dir := t.TempDir()
+	writeRoomCert(t, dir)
 	remoteaccess.AppendLog(dir, remoteaccess.LogLine{Event: "open", ID: "s1", Caller: "hub", Via: "direct"})
 	remoteaccess.AppendLog(dir, remoteaccess.LogLine{Event: "refused", ID: "s2", Caller: "m1mini", Error: "no"})
 	out, err := runRemoteAccess(t, dir, "log", "--n", "5")
@@ -110,6 +114,7 @@ func TestRemoteAccessOnTakesAnAddr(t *testing.T) {
 	t.Setenv("ATRIUM_AGENT_NAME", "")
 	t.Setenv(remoteaccess.EnvForce, "")
 	dir := t.TempDir()
+	writeRoomCert(t, dir)
 	if out, err := runRemoteAccess(t, dir, "on", "--addr", "192.168.1.147", "--from", "hub"); err != nil ||
 		!strings.Contains(out, "on, 192.168.1.147:22, from hub") {
 		t.Fatalf("on --addr: %q %v", out, err)

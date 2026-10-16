@@ -24,8 +24,8 @@ import (
 // ONLY THIS COMMAND WRITES THE FILE, on this machine. The hub, the board, the room's api and the agent listener have
 // no route that does, and that is the point: the room decides.
 func roomRemoteAccessCmd() *cobra.Command {
-	var dir string
-	where := func() string { return orDefault(dir, roomDir()) }
+	var dir, running, resolved string
+	where := func() string { return resolved }
 
 	c := &cobra.Command{
 		Use:   "remote-access",
@@ -35,10 +35,18 @@ func roomRemoteAccessCmd() *cobra.Command {
 			"stream to this machine's sshd (127.0.0.1:<port>, or --addr)  and nothing else. Atrium carries bytes only:\n" +
 			"the login is sshd's, and no key, password or agent socket passes through atrium.",
 		Args: cobra.NoArgs,
+		// Runs before every subcommand too, so none of them can write into a directory no room lives in.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			running = runningRoomDir()
+			d, _, err := pickRoomDir(dir, running)
+			resolved = d
+			return err
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			st := remoteaccess.Effective(where())
 			fmt.Fprintln(out, "remote access: "+st.Describe())
+			fmt.Fprintln(out, dirLine(where(), running))
 			if st.Err == nil && st.On && st.SetAt != "" {
 				fmt.Fprintf(out, "turned on %s by %s\n", st.SetAt, orDefaultWord(st.SetBy, "unknown"))
 			}
@@ -104,6 +112,7 @@ func roomRemoteAccessCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintln(out, "remote access: "+remoteaccess.Status{State: s}.Describe())
+			fmt.Fprintln(out, dirLine(where(), running))
 			if remoteaccess.Effective(where()).Forced {
 				fmt.Fprintln(out, "but "+remoteaccess.EnvForce+"=off is set in this environment, so it stays off")
 			}
@@ -133,6 +142,7 @@ func roomRemoteAccessCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "remote access: off. open streams end within ten seconds")
+			fmt.Fprintln(cmd.OutOrStdout(), dirLine(where(), running))
 			return nil
 		},
 	}
