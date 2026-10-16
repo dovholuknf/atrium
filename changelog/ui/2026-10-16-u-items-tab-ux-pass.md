@@ -1,0 +1,1 @@
+Design for an Items tab UX pass (docs/ui/items-tab-ux-pass.md): one row per item with its cards folded, a header count that agrees with the rows, labelled steps, and a two-column wide layout. No code changed. (u-items-tab-ux-pass)
