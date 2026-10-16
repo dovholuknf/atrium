@@ -110,6 +110,8 @@ type Timings struct {
 	// Access is how often a room looks at its remote access switch, and ends the ssh streams it no longer allows. See
 	// stream.go.
 	Access time.Duration
+	// PathsEvery is how often a room probes every rung for the board's per path badges. See pathstate.go.
+	PathsEvery time.Duration
 }
 
 // DefaultTimings are what both sides use unless something says otherwise.
@@ -148,6 +150,8 @@ func DefaultTimings() Timings {
 		Starve: 30 * time.Second,
 		// Ten seconds: turning remote access off ends every open stream within this.
 		Access: 10 * time.Second,
+		// Thirty seconds: a rung that came back should show soon, and a probe is one dial.
+		PathsEvery: 30 * time.Second,
 	}
 }
 
@@ -180,6 +184,9 @@ func (t Timings) fill() Timings {
 	}
 	if t.Access <= 0 {
 		t.Access = d.Access
+	}
+	if t.PathsEvery <= 0 {
+		t.PathsEvery = d.PathsEvery
 	}
 	return t
 }

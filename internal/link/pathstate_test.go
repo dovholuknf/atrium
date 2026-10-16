@@ -1,0 +1,142 @@
+package link
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestProbePathsSaysOnUpDownAndNone(t *testing.T) {
+	direct, ziti := &fakeDial{name: "direct"}, &fakeDial{name: "ziti"}
+	ziti.fail.Store(true)
+	l := NewLadder([]Rung{
+		{Path: Path{Transport: "direct", Addr: "h:1", From: "join"}, Dial: direct},
+		{Path: Path{Transport: "ziti", Service: "atrium-hub"}, Dial: ziti},
+	})
+	got := l.ProbePaths(context.Background(), time.Second)
+	if len(got) != 3 {
+		t.Fatalf("want a state per rung and one for the missing kind, got %+v", got)
+	}
+	want := []struct{ kind, state string }{{"direct", PathOn}, {"ziti", PathDown}, {"zrok", PathNone}}
+	for i, w := range want {
+		if got[i].Kind != w.kind || got[i].State != w.state {
+			t.Fatalf("path %d is %s %s, want %s %s", i, got[i].Kind, got[i].State, w.kind, w.state)
+		}
+	}
+	if direct.n.Load() != 0 {
+		t.Fatal("the rung the control connection stands on was dialled again")
+	}
+	if got[0].Addr != "h:1" || got[0].Source != "join" || got[1].Addr != "atrium-hub" {
+		t.Fatalf("addr and source should ride along: %+v", got)
+	}
+	if !strings.Contains(got[1].LastError, "refused") {
+		t.Fatalf("a down rung says why: %q", got[1].LastError)
+	}
+	ziti.fail.Store(false)
+	if s := l.ProbePaths(context.Background(), time.Second)[1]; s.State != PathUp {
+		t.Fatalf("a rung that answers is up, got %s", s.State)
+	}
+}
+
+func TestStampSinceMovesOnlyWhenTheStateDoes(t *testing.T) {
+	t0 := time.Unix(100, 0)
+	t1 := t0.Add(time.Minute)
+	prev := []PathState{{Kind: "direct", Addr: "a", State: PathOn, Since: t0}, {Kind: "ziti", State: PathDown, Since: t0}}
+	cur := []PathState{{Kind: "direct", Addr: "a", State: PathOn}, {Kind: "ziti", State: PathUp}, {Kind: "zrok", State: PathNone}}
+	got := stampSince(prev, cur, t1)
+	if !got[0].Since.Equal(t0) || !got[1].Since.Equal(t1) || !got[2].Since.Equal(t1) {
+		t.Fatalf("since: %v %v %v", got[0].Since, got[1].Since, got[2].Since)
+	}
+}
+
+// The beat shape. An older hub ignores the field, and an older room never sends it.
+func TestBeatCarriesPathStatesAndAnOlderBeatStillReads(t *testing.T) {
+	n := note{Beat: 5, PathStates: []PathState{{Kind: "direct", State: PathOn, RTTMs: 3}}}
+	b, err := json.Marshal(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"path_states":[{"kind":"direct","state":"on"`) {
+		t.Fatalf("beat shape: %s", b)
+	}
+	var back note
+	if err := json.Unmarshal(b, &back); err != nil || len(back.PathStates) != 1 || back.PathStates[0].RTTMs != 3 {
+		t.Fatalf("round trip: %v %+v", err, back)
+	}
+	var old note
+	if err := json.Unmarshal([]byte(`{"beat":9,"idle_cpu":50}`), &old); err != nil || old.PathStates != nil {
+		t.Fatalf("a beat with no paths: %v %+v", err, old)
+	}
+	if b, _ := json.Marshal(note{Beat: 1}); strings.Contains(string(b), "path_states") {
+		t.Fatalf("a room with nothing to say sends nothing: %s", b)
+	}
+}
+
+func TestCleanPathsBoundsAndDropsWhatItDoesNotKnow(t *testing.T) {
+	in := []PathState{{Kind: "direct", State: PathOn}, {Kind: "carrier-pigeon", State: PathUp},
+		{Kind: "ziti", State: "unlistened"}, {Kind: "zrok", State: PathDown, LastError: strings.Repeat("x", 1000)}}
+	got := cleanPaths(in)
+	if len(got) != 2 || got[1].Kind != "zrok" || len(got[1].LastError) != 300 {
+		t.Fatalf("got %+v", got)
+	}
+	many := make([]PathState, 40)
+	for i := range many {
+		many[i] = PathState{Kind: "direct", State: PathUp}
+	}
+	if len(cleanPaths(many)) != maxPathStates {
+		t.Fatal("a beat can make the hub keep any number of paths")
+	}
+}
+
+func TestListenersAreInOrderAndSinceMovesOnlyWhenUpFlips(t *testing.T) {
+	var h Hub
+	h.SetListener("ziti", false, errors.New("controller down"))
+	h.SetListener("direct", true, nil)
+	ls := h.Listeners()
+	if len(ls) != 2 || ls[0].Kind != "direct" || !ls[0].Up || ls[1].Up || ls[1].LastError != "controller down" {
+		t.Fatalf("got %+v", ls)
+	}
+	since := ls[1].Since
+	h.SetListener("ziti", false, errors.New("still down"))
+	if got := h.Listeners()[1]; !got.Since.Equal(since) || got.LastError != "still down" {
+		t.Fatalf("since moved without a flip: %+v", got)
+	}
+	h.SetListener("ziti", true, nil)
+	if got := h.Listeners()[1]; !got.Up || got.LastError != "" {
+		t.Fatalf("coming up clears the error: %+v", got)
+	}
+}
+
+func TestHealthListenersShape(t *testing.T) {
+	var h Hub
+	h.SetListener("direct", true, nil)
+	b, err := json.Marshal(map[string]any{"ok": true, "listeners": h.Listeners()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"listeners":[{"kind":"direct","up":true,"since":`) {
+		t.Fatalf("health shape: %s", b)
+	}
+}
+
+func TestMergePathsTellsUnlistenedFromNone(t *testing.T) {
+	paths := []PathState{{Kind: "direct", State: PathOn}, {Kind: "ziti", State: PathDown, LastError: "no answer"},
+		{Kind: "zrok", State: PathNone}}
+	ls := []ListenerState{{Kind: "direct", Up: true}, {Kind: "ziti", LastError: "controller down"}}
+	got := MergePaths(paths, ls)
+	if got[0].State != PathOn || got[1].State != PathUnlistened || got[1].LastError != "controller down" {
+		t.Fatalf("got %+v", got)
+	}
+	if got[2].State != PathUnlistened || !strings.Contains(got[2].LastError, "zrok") {
+		t.Fatalf("a kind the hub has no side for is unlistened: %+v", got[2])
+	}
+	if paths[1].State != PathDown {
+		t.Fatal("the room's own record was changed")
+	}
+	if got := MergePaths(paths, nil); got[1].State != PathDown {
+		t.Fatal("a hub that records no listeners says nothing it does not know")
+	}
+}

@@ -495,11 +495,16 @@ func (p *Proxy) history(w http.ResponseWriter, r *http.Request) {
 // is a board that lies at the one moment it matters.
 func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
 	rooms := p.hub.Rooms()
+	listeners := p.hub.Listeners()
 	out := map[string]any{
 		// THE HUB'S OWN BOARD HASH, for the same reason `rewriteHealth` swaps
 		// it on the scoped path: the browser is running the hub's copy of the
 		// board, so a room's hash here would reload every tab forever.
 		"ok": true, "build": p.buildFor(r.Context()), "rooms": len(rooms),
+	}
+	// THE HUB'S OWN SIDES, so "only on direct right now" is something a board can say. Absent from a hub that records none.
+	if len(listeners) > 0 {
+		out["listeners"] = listeners
 	}
 	type answer struct {
 		room string

@@ -66,6 +66,7 @@ func (i inventory) Known() ([]link.Known, error) {
 			k.Via, k.Fallback, k.Starved = a.Via, a.Fallback, a.Starved
 			k.RemoteAccess = a.RemoteAccess
 			k.LoginNeeded = a.LoginNeeded
+			k.Paths = link.MergePaths(a.Paths, i.hub.Listeners())
 			// PREFERRED OVER WHAT IS WRITTEN DOWN, because a live connection is
 			// telling us right now and the record is what it said last time.
 			// This is the only direction that rule runs in: the observed fields

@@ -463,6 +463,7 @@ function roomRow(r) {
     <div class="roomrow-top">
       <b class="roomname">${esc(r.name)}</b>
       ${transportBadge(r.attached && r.via ? r.via : r.transport, r.attached && r.fallback)}
+      ${r.attached ? pathBadges(r.paths) : ""}
       ${sshBadge(r)}
       ${loginBadge(r)}
       ${roomState(r)}
@@ -527,6 +528,37 @@ function transportBadge(t, fallback) {
   const tip = fallback ? `${m[1]}: on ${m[0]} because its first choice did not answer` : m[1];
   return `<span class="${cls}" data-tip="${esc(tip)}">${icons[m[2]] || ""}${esc(m[0])}${
     fallback ? ` <span class="tp-fb">fallback</span>` : ""}</span>`;
+}
+
+
+// pathBadges: one small badge per transport KIND, in a fixed order, from the room's own view of each way to the hub
+// (`paths` on the room record, see internal/link/pathstate.go). on is solid, up outlined, down wears the warning colour
+// with the error in the tip, none and unlistened are greyed with a reason. A kind with two rungs shows its best one.
+// Empty for a room that does not report paths, which is an older build and says nothing rather than something false.
+function pathBadges(paths) {
+  if (!Array.isArray(paths) || !paths.length) return "";
+  const rank = { on: 5, up: 4, down: 3, unlistened: 2, none: 1 };
+  const why = {
+    on: "the control connection is here", up: "answered a probe from the room",
+    down: "did not answer the room", none: "this room has no way to dial it",
+    unlistened: "the hub is not listening on it",
+  };
+  const label = { direct: "direct", ziti: "ziti", zrok: "zrok" };
+  const best = {};
+  for (const p of paths) {
+    if (!label[p.kind]) continue;
+    if (!best[p.kind] || (rank[p.state] || 0) > (rank[best[p.kind].state] || 0)) best[p.kind] = p;
+  }
+  const out = ["direct", "ziti", "zrok"].filter(k => best[k]).map(k => {
+    const p = best[k];
+    const state = rank[p.state] ? p.state : "none";
+    let tip = `${label[k]}: ${state}, ${why[state]}`;
+    if (p.addr) tip += ` (${p.addr})`;
+    if (p.rtt_ms) tip += `, ${p.rtt_ms} ms`;
+    if (p.last_error) tip += `. ${p.last_error}`;
+    return `<span class="chip pth pth-${state}" data-tip="${esc(tip)}">${label[k]}</span>`;
+  });
+  return out.length ? `<span class="pths" role="group" aria-label="paths to the hub">${out.join("")}</span>` : "";
 }
 
 // sshList says who a room's remote access is open to, as a sentence part: `hub and m1mini`.

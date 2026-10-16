@@ -1002,3 +1002,11 @@
     .peek-body.loading .peek-num b { animation: none; }
     .peek-bar.ctxline.over i { animation: none; }
   }
+  /* One badge per transport kind on a room (pathBadges in js/rooms.js). State is the style: solid is the live
+     connection, outlined answered a probe, the warning colour did not answer, grey is not available at all. */
+  .pths { display: inline-flex; gap: 3px; vertical-align: middle; }
+  .chip.pth { font-size: 10px; padding: 0 6px; border: 1px solid transparent; }
+  .chip.pth-on { background: var(--teal); color: var(--bg-0); }
+  .chip.pth-up { background: transparent; border-color: var(--teal); color: var(--teal); }
+  .chip.pth-down { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+  .chip.pth-none, .chip.pth-unlistened { background: var(--hairline); color: var(--dimmest); font-style: italic; }

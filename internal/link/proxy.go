@@ -1204,6 +1204,8 @@ type Known struct {
 	RemoteAccess *RemoteAccess `json:"remote_access,omitempty"`
 	// LoginNeeded is why an attached room says its claude login needs doing. See Attached.LoginNeeded.
 	LoginNeeded string `json:"login_needed,omitempty"`
+	// Paths is each rung as the room last reported it, with the hub's own listeners laid over. See MergePaths.
+	Paths []PathState `json:"paths,omitempty"`
 }
 
 // Inventory is a hub that knows which rooms exist, not only which are here.

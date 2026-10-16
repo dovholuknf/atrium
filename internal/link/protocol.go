@@ -107,6 +107,10 @@ type note struct {
 	// that never says (an older build) is not read as a room that is fine. Observed, and never acted on by the hub
 	// beyond showing it and ringing once. See internal/daemon/loginneeded.go.
 	Login *string `json:"login,omitempty"`
+	// PathStates is a room saying how each of its rungs looks from where it stands, riding on the beat (not `paths`, which
+	// is the hub's own list going the other way). Observed, bounded by the hub, never acted on. An older hub ignores it and
+	// an older room never sends it. See pathstate.go.
+	PathStates []PathState `json:"path_states,omitempty"`
 	// Bye is a side closing deliberately, so the other end logs a shutdown
 	// rather than a failure.
 	Bye string `json:"bye,omitempty"`

@@ -200,17 +200,20 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// rooms either, since nothing answers on it.
 	var lns []net.Listener
 	var kept []*hubSide
+	var sideStates []link.ListenerState
 	for i, s := range set.sides {
 		ln, err := s.listen()
 		if err != nil {
 			if i == 0 {
 				return fmt.Errorf("listening for rooms over %s: %w", s.kind, err)
 			}
+			sideStates = append(sideStates, link.ListenerState{Kind: s.kind, LastError: err.Error()})
 			log.Printf("[hub] not listening for rooms over %s, the hub runs without it: %v", s.kind, err)
 			continue
 		}
 		defer ln.Close()
 		log.Printf("[hub] listening for rooms over %s: %s", s.kind, s.says)
+		sideStates = append(sideStates, link.ListenerState{Kind: s.kind, Up: true})
 		lns = append(lns, ln)
 		kept = append(kept, s)
 	}
@@ -235,6 +238,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 
 	h := link.NewHub(link.Timings{})
+	for _, s := range sideStates {
+		var why error
+		if s.LastError != "" {
+			why = errors.New(s.LastError)
+		}
+		h.SetListener(s.Kind, s.Up, why)
+	}
 	// WHAT THIS HUB CAN HAND OUT, so a room that asked to be told can
 	// be told. Hashed once here rather than per attach: these are tens
 	// of megabytes each and they cannot change under a running hub.
@@ -548,6 +558,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		go func(ln net.Listener, via string) {
 			if err := h.ServeVia(ctx, ln, via); err != nil && ctx.Err() == nil {
 				log.Printf("[hub] the room listener over %s stopped: %v", via, err)
+				h.SetListener(via, false, err)
 			}
 		}(ln, set.sides[i].kind)
 	}

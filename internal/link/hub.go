@@ -30,6 +30,8 @@ type Hub struct {
 	// peerKey, when set, replaces the package `peerKey` for this hub. A seam for tests.
 	peerKey func(net.Conn) string
 	T       Timings
+	// lst is this hub's own sides, for health and for telling `unlistened` from `none`. See pathstate.go.
+	lst listenerSet
 	// Enrol answers a room that is joining for the first time and has no
 	// certificate yet. Supplied by the transport, because what a credential IS
 	// is the transport's business and not this file's. Nil refuses enrolment.
@@ -253,6 +255,8 @@ type attached struct {
 	streams int
 	// login is why the room last said its claude login needs doing, "" when fine. Under mu.
 	login string
+	// paths is what the room last said about each rung, on its beat. Under mu. Nil from a room that never says.
+	paths []PathState
 
 	lastBeat time.Time
 	// lastData is when the last data connection was filed into the pool, and
@@ -589,6 +593,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 				a.login = *n.Login
 			}
 			now := a.login
+			if n.PathStates != nil {
+				a.paths = cleanPaths(n.PathStates)
+			}
 			a.mu.Unlock()
 			if n.Login != nil && now != was {
 				h.loginChanged(name, was, now)
@@ -927,6 +934,8 @@ type Attached struct {
 	// LoginNeeded is why the room says its claude login needs doing, empty when it does not say or it is fine.
 	// Observed from the beat and never acted on here. See internal/daemon/loginneeded.go.
 	LoginNeeded string `json:"login_needed,omitempty"`
+	// Paths is how each of the room's rungs looked from the room on its last beat, nil from a room that does not say.
+	Paths []PathState `json:"paths,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -997,6 +1006,7 @@ func (h *Hub) Rooms() []Attached {
 			acc = &v
 		}
 		login := a.login
+		paths := append([]PathState(nil), a.paths...)
 		a.mu.Unlock()
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
@@ -1004,6 +1014,7 @@ func (h *Hub) Rooms() []Attached {
 			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 			LoginNeeded: login,
+			Paths:       paths,
 		})
 	}
 	return out

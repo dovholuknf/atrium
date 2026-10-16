@@ -107,6 +107,9 @@ type Room struct {
 	// restarter racing to bind the same address. See restarter and the Restart
 	// case in attach.
 	restarting restarter
+	// paths is the last probe of every rung, and pmu guards it. See pathstate.go.
+	pmu   sync.Mutex
+	paths []PathState
 }
 
 // restarter is the idempotent guard on OnRestart, the same shape as `taker` and
@@ -299,6 +302,9 @@ func (r *Room) attach(ctx context.Context) error {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	go r.beat(ctx, conn)
+	if pa, ok := r.Dial.(pather); ok {
+		go r.watchPaths(ctx, pa)
+	}
 	// WHAT THE REMOTE ACCESS SWITCH SAYS, at attach and on every change. See stream.go.
 	go r.watchAccess(ctx, func(n note) error { return r.say(conn, n) })
 	// WHAT IS HERE, SAID ONCE ON ATTACHING AND THEN ON CHANGE. The hub caches
@@ -489,6 +495,7 @@ func (r *Room) beat(ctx context.Context, conn net.Conn) {
 				v := r.Login()
 				n.Login = &v
 			}
+			n.PathStates = r.pathsNow()
 			if err := r.say(conn, n); err != nil {
 				// Closing is how the reader above finds out. Returning quietly
 				// would leave it blocked on a socket nothing will ever write

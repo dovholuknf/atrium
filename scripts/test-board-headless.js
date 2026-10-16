@@ -16260,6 +16260,73 @@ async function transportChipsSection(browser, base) {
   }
 }
 
+// pathBadges: the Rooms tab draws one badge per transport kind, in the fixed order direct, ziti, zrok, wearing the state
+// the room reported: on solid, up outlined, down the warning colour, none and unlistened grey, with the reason in the tip.
+// A room that reports nothing draws nothing. PATHS_SHOTS=dir writes the room rows without (before) and with (after) them.
+async function pathBadgesSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pathBadges === "function" && !document.getElementById("rooms").hidden,
+      null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const draw = ps => {
+        const h = document.createElement("div");
+        h.innerHTML = pathBadges(ps);
+        document.body.appendChild(h);
+        return [...h.querySelectorAll(".chip.pth")].map(c => ({ cls: c.className, text: c.textContent, tip: c.dataset.tip,
+          bg: getComputedStyle(c).backgroundColor, color: getComputedStyle(c).color }));
+      };
+      return {
+        none: pathBadges(undefined) + pathBadges([]),
+        mixed: draw([{ kind: "zrok", state: "none" }, { kind: "ziti", state: "down", addr: "atrium-hub", last_error: "no answer" },
+          { kind: "direct", state: "on", addr: "h:7779" }, { kind: "direct", state: "up", rtt_ms: 4 }]),
+        every: draw([{ kind: "direct", state: "on" }, { kind: "ziti", state: "up", rtt_ms: 7 }, { kind: "zrok", state: "unlistened",
+          last_error: "the hub is not listening on zrok" }]),
+        hostile: draw([{ kind: "direct", state: "down", last_error: '"><img src=x onerror=alert(1)>' }]),
+      };
+    });
+    if (got.none !== "") fail("a room that reports no paths drew badges: " + got.none);
+    if (got.mixed.map(c => c.text).join() !== "direct,ziti,zrok") fail("badges are not one per kind in the fixed order: " + JSON.stringify(got.mixed));
+    if (!got.mixed[0].cls.includes("pth-on")) fail("the live rung should win its kind: " + got.mixed[0].cls);
+    if (!got.mixed[1].cls.includes("pth-down") || !/no answer/.test(got.mixed[1].tip)) fail("a down path lacks its class or reason: " + JSON.stringify(got.mixed[1]));
+    if (!got.mixed[2].cls.includes("pth-none") || !/no way to dial/.test(got.mixed[2].tip)) fail("none: " + JSON.stringify(got.mixed[2]));
+    if (!got.every[1].cls.includes("pth-up") || !/7 ms/.test(got.every[1].tip)) fail("up: " + JSON.stringify(got.every[1]));
+    if (!got.every[2].cls.includes("pth-unlistened") || !/not listening/.test(got.every[2].tip)) fail("unlistened: " + JSON.stringify(got.every[2]));
+    if (new Set(got.every.map(c => c.bg + "|" + c.color)).size !== 3) fail("on, up and unlistened look alike: " + JSON.stringify(got.every));
+    if (got.hostile.length !== 1 || !/onerror/.test(got.hostile[0].tip)) fail("a path error was not kept as inert text: " + JSON.stringify(got.hostile));
+    const injected = await p.evaluate(() => !!document.querySelector("img[src=x]"));
+    if (injected) fail("a path error from a room became markup");
+
+    const shots = process.env.PATHS_SHOTS || "";
+    const rows = await p.evaluate(() => {
+      const h = document.createElement("div");
+      h.id = "pth-rows";
+      h.style.cssText = "position:fixed;left:10px;top:10px;width:900px;z-index:99999;background:var(--bg-1);padding:8px";
+      document.body.appendChild(h);
+      return ROOMS_DEMO_SET.length;
+    });
+    const paint = () => p.evaluate(() => { document.getElementById("pth-rows").innerHTML = ROOMS_DEMO_SET.map(r => roomRow(Object.assign({ attached: true }, r))).join(""); return document.querySelectorAll("#pth-rows .roomrow .pth").length; });
+    if ((await paint()) < rows * 2) fail("the demo room rows carry no path badges");
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.evaluate(() => { window.__pb = pathBadges; window.pathBadges = () => ""; });
+      await paint();
+      await p.locator("#pth-rows").screenshot({ path: path.join(shots, "path-badges-before.png") });
+      await p.evaluate(() => { window.pathBadges = window.__pb; });
+      await paint();
+      await p.locator("#pth-rows").screenshot({ path: path.join(shots, "path-badges-after.png") });
+    }
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // zitiLogo: a ziti transport badge wears the vendored OpenZiti mark (an inline gradient disc, no fetch) in place of
 // the ring glyph, at the badge's text height, with its own gradient id per badge; mTLS and zrok keep their icons.
 // On the demo rooms page the ziti rooms' cards carry it. ZITI_LOGO_SHOTS=dir writes the rooms page.
@@ -32216,7 +32283,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, ctxLimitLayers: ctxLimitLayersSection, contextCycle: contextCycleSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
-      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, zitiLogo: zitiLogoSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, usageTurns: usageTurnsSection, turnLimits: turnLimitsSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, zitiLogo: zitiLogoSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
@@ -34065,6 +34132,7 @@ async function main() {
   await unit("turnLimits", () => turnLimitsSection(browser, base));
     await unit("roomsDash", () => roomsDashSection(browser, base));
     await unit("transportChips", () => transportChipsSection(browser, base));
+    await unit("pathBadges", () => pathBadgesSection(browser, base));
     await unit("zitiLogo", () => zitiLogoSection(browser, base));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));
