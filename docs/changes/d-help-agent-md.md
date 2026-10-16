@@ -13,8 +13,8 @@ for agent launches. A human can name the branch anything, and the prompt no long
 
 Run once from this worktree with `claude -p --allowedTools "Read,Grep,Glob" --append-system-prompt "$(cat docs/help-agent.md)"`.
 Run on the first draft of the prompt. The one correction since: the first draft said an https URL in the launch dialog's
-repo box was not read yet. The helper found in `launchRepoTyped` in `js/launchrepo.js` that `launchRepoTyped` does read it, so the prompt now
-says what the box reads today and that wider URL forms are coming.
+repo box was not read yet. The helper found in `js/launchrepo.js` that `launchRepoTyped` does read it, so the prompt now
+says what the box reads, including the ssh and `/tree/<branch>` forms.
 
 ### Q1: can I clone a git repo using atrium?
 
