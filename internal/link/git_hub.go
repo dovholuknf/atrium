@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,7 +79,7 @@ func (p *Proxy) SetGitSettings(s GitSettings, hubDir string) {
 	p.gitSettings, p.gitDir = s, hubDir
 }
 
-// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos,url}. Loopback only, like the
+// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos,branches,url}. Loopback only, like the
 // control server, for everything but the list of repos: these start work on a room or on the
 // hub's disk, and an overlay is not an auth layer.
 func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
@@ -106,6 +107,44 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 			ans["age_seconds"] = int(time.Since(snap.Computed).Seconds())
 		}
 		_ = json.NewEncoder(w).Encode(ans)
+		return
+	}
+	// OPEN LIKE THE LIST OF REPOSITORIES, and from a snapshot like it: see gitsync/branchstatus.go. Branch names are
+	// checked before they are drawn, and no path on the hub's disk is named.
+	if sub == "git/branches" {
+		if r.Method != http.MethodGet {
+			fail(http.StatusMethodNotAllowed, "that has to be a GET")
+			return
+		}
+		q := r.URL.Query()
+		lim, _ := strconv.Atoi(q.Get("limit"))
+		repo := ""
+		if q.Get("repo") != "" {
+			ref, err := gitsync.ParseName(q.Get("repo"))
+			if err != nil {
+				fail(http.StatusBadRequest, "repo is host/owner/repo, like github/o/r")
+				return
+			}
+			repo = ref.Name()
+		}
+		for _, st := range q["status"] {
+			switch st {
+			case gitsync.BranchLanded, gitsync.BranchOpen, gitsync.BranchOrphaned, gitsync.BranchRoomOnly:
+			default:
+				fail(http.StatusBadRequest, "status is landed, open, orphaned or room-only")
+				return
+			}
+		}
+		if k := q.Get("kind"); k != "" && k != gitsync.KindCode && k != gitsync.KindDocs {
+			fail(http.StatusBadRequest, "kind is code or docs")
+			return
+		}
+		v, err := g.Store().BranchesSnapshot(repo, gitsync.BranchFilter{Statuses: q["status"], Kind: q.Get("kind"), Limit: lim})
+		if err != nil {
+			fail(http.StatusServiceUnavailable, "the hub could not read its store just now")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(v)
 		return
 	}
 	// THE LOOKUP has the reaches of a fetch, not of a sync: it starts no work and names no path. See git_url.go.

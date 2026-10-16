@@ -66,9 +66,10 @@ func (s *Store) ensureViewLoop() {
 	}
 }
 
-// RefreshView asks for the snapshots to be rebuilt: the repos list and the pushed answers. It returns at once.
+// RefreshView asks for the snapshots to be rebuilt: the repos list, the pushed answers and the branch statuses. It returns at once.
 func (s *Store) RefreshView() {
 	s.refreshPushed()
+	s.refreshBranches()
 	c := &s.views
 	c.mu.Lock()
 	if c.building {

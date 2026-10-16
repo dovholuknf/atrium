@@ -83,6 +83,8 @@ type Store struct {
 	skipInitRefresh bool
 	// pushed is the snapshot GET /_hub/git/pushed answers from. See pushedcache.go.
 	pushed pushedCache
+	// branches is the snapshot GET /_hub/git/branches answers from. See branchstatus.go.
+	branches branchCache
 	// pushedFn is Pushed. A test swaps it.
 	pushedFn func(ctx context.Context, name, branch, head string) (Pushed, error)
 }
