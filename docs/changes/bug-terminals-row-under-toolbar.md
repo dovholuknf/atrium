@@ -21,8 +21,11 @@ box scrolls instead.
 
 ## Test plan
 
-## @LETTER@. A pending link card keeps its height
+## A. A pending link card keeps its height
 
 1. Paste a link that fails to open while the Terminals tab lists many rows, grouped.
 
 **Expected:** the card above PINNED shows its title, the reason and the buttons in full, and the list scrolls under it.
+
+Before and after: `docs/changes/img/bug-terminals-row-under-toolbar/before.png` (the card squeezed to its borders) and
+`after.png` (the card whole).
