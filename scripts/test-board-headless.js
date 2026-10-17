@@ -4243,21 +4243,46 @@ async function pasteBigSection(browser, base) {
       return s;
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-    // Drives one gesture and samples the box on every frame for 800ms: room to see it paint at once and hold 300ms.
+    // Drives one gesture and watches the box for 800ms: room to see it paint at once and hold 300ms.
+    //
+    // THE FIRST PAINT IS READ ON FRAMES, because the claim is that the box is on the first frame after the gesture.
+    // THE HOLD IS READ FROM THE DOM, NOT FROM FRAMES. A MutationObserver notes the moment the box's `hidden` flips,
+    // delivered right after the task that flipped it, so a renderer that produces no frames for half a second under
+    // load cannot make a box that stayed up look like one that went down. That is what happened on macos CI (run
+    // 39000703278, shard 4, 79 units on 4 cpus): frames stopped at 160ms and at 290ms of a 1024ms hold that nothing in
+    // the product can end early (pasteEnd's callers: the socket closing, the cap, the terminal changing, output after
+    // `holdUntil`), and the old span, last frame minus first, read a starved renderer as a dropped box. The span is now
+    // first paint to the first moment the box was seen down, or the window's end when it is still up. A hand-on (a
+    // second paste hiding and showing it in one task) is no flip, because the observer sees a task's end state.
     window.__pasteRun = gesture => new Promise(done => {
       pasteEnd();
       window.__frames = [];
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
-      const seen = [];
-      let frame = 0, firstFrame = -1;
+      const seen = [], flips = [];
+      let frame = 0, firstFrame = -1, lastT = 0, gap = 0, wasVis = vis();
       const t0 = performance.now();
+      const mo = new MutationObserver(() => {
+        const v = vis();
+        if (v === wasVis) return;
+        wasVis = v;
+        flips.push({ t: Math.round(performance.now() - t0), up: v });
+      });
+      mo.observe(document.getElementById("term-pane") || document.body,
+        { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
       const loop = () => {
         const t = performance.now() - t0;
+        gap = Math.max(gap, t - lastT);
+        lastT = t;
         if (vis()) { seen.push(t); if (firstFrame < 0) firstFrame = frame; }
         frame++;
         if (t < 800) { requestAnimationFrame(loop); return; }
-        done({ first: seen.length ? Math.round(seen[0]) : -1, firstFrame,
-          span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
+        mo.disconnect();
+        const first = seen.length ? seen[0] : -1;
+        const down = flips.find(f => !f.up && f.t >= first);
+        // A box up now is up: its last moment is now, whatever frames were missed on the way.
+        const last = first < 0 ? -1 : down ? down.t : vis() ? t : -1;
+        done({ first: Math.round(first), firstFrame, frames: frame, gap: Math.round(gap), flips,
+          span: last >= 0 ? Math.round(last - first) : 0,
           sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
           text: (document.getElementById("t-pasting") || {}).textContent || "" });
       };
@@ -4279,9 +4304,12 @@ async function pasteBigSection(browser, base) {
     }
     // "Within a frame" counted in frames: the gesture itself blocks the thread for a 3MB string, so the first
     // frame after it lands late under load, and the spinner being on that frame is the claim.
+    // `frames`, `gap` (the longest wait between two frames) and `flips` (every time the box went up or down) are
+    // in the failure, so a run that fails explains whether the box went down or the renderer stopped.
     if (got.first < 0 || (got.first > 50 && got.firstFrame > 1) || got.span < 300) {
       fail(name + ": a big paste did not paint the spinner within a frame and hold it 300ms: " +
-        JSON.stringify({ first: got.first, firstFrame: got.firstFrame, span: got.span }));
+        JSON.stringify({ first: got.first, firstFrame: got.firstFrame, span: got.span, frames: got.frames, gap: got.gap,
+          flips: got.flips }));
     }
   };
   try {
