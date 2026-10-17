@@ -14304,9 +14304,9 @@ async function mWorkingSection(browser) {
   await st.open();
   try {
     for (const vp of M_VIEWS) {
+      st.tasks = [run];
       const { ctx, p, errors } = await mPage(browser, st, vp, "");
       const tag = "mWorking " + vp.width + ": ";
-      st.tasks = [run];
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
       await p.tap("#m-seg-all");
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
