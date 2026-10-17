@@ -685,8 +685,12 @@ async function pollsGoneSection(browser, base) {
       await ctx2.clock.install();
       const p = await ctx2.newPage();
       p.on("pageerror", e => errors.push(String(e)));
+      const streams0 = hubStreams.length;
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
+      // The event below goes to the streams open now, so the page's hub stream has to be one of them.
+      for (const t0 = Date.now(); hubStreams.length <= streams0 && Date.now() - t0 < slow(5000);) await p.waitForTimeout(50);
+      if (hubStreams.length <= streams0) fail("pollsGone: the page never opened its hub event stream");
       await run(p, 2500);
       c2.clear();
       const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, mock.ALPHA),
