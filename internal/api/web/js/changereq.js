@@ -276,7 +276,7 @@ async function crWrite(fn, after) {
   if (cr.busy) return;
   cr.busy = true; cr.err = "";
   hubReposPaint();
-  try { await fn(); } finally { cr.busy = false; }
+  try { await fn(); } finally { cr.busy = false; hubReposPaint(); }
   if (after) await after();
 }
 
