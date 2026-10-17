@@ -33,9 +33,9 @@ func TestRefusingControllerIsDialledOnABackoffNotInALoop(t *testing.T) {
 	z.gate.now = clk.now
 	dials := 0
 	for elapsed := time.Duration(0); elapsed < 10*time.Minute; elapsed += 100 * time.Millisecond {
-		before := reg.built.Load()
+		before := reg.dialed.Load()
 		_, _ = z.Dial(context.Background())
-		if reg.built.Load() != before {
+		if reg.dialed.Load() != before {
 			dials++
 		}
 		clk.advance(100 * time.Millisecond)
@@ -47,8 +47,8 @@ func TestRefusingControllerIsDialledOnABackoffNotInALoop(t *testing.T) {
 	if dials < 7 {
 		t.Fatalf("%d dials in 10 minutes, the backoff is holding the room off for good", dials)
 	}
-	if reg.live.Load() != 0 {
-		t.Fatalf("%d contexts left open on a controller that refuses: each keeps refreshing", reg.live.Load())
+	if reg.built.Load() != 1 || reg.closed.Load() != 0 {
+		t.Fatalf("built %d contexts, closed %d, want 1 and 0", reg.built.Load(), reg.closed.Load())
 	}
 }
 
@@ -60,7 +60,7 @@ func TestFirstTenSecondsOfARefusalIsFourDials(t *testing.T) {
 		_, _ = z.Dial(context.Background())
 		clk.advance(100 * time.Millisecond)
 	}
-	if got := reg.built.Load(); got != 4 {
+	if got := reg.dialed.Load(); got != 4 {
 		t.Fatalf("%d dials in 10 s, want 4 (at 0, 1, 3 and 7 s)", got)
 	}
 }
