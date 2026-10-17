@@ -35,16 +35,20 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
 #
-# THE GO TESTS ARE TWO JOBS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
-# wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the whole
+# THE GO TESTS ARE TWO JOBS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by wall
+# time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the whole
 # suite in one job, for a laptop.
+#
+# THE SMALL CHECKS RIDE WITH go-checks, the shortest job, and not with the board, the longest: the skins, the
+# contrast, the opencode plugin, the release refusals and the script parses have no platform in them and run once, on
+# the linux job (linux_job_only). The PowerShell parse and tests are Windows only and skip themselves elsewhere.
 group_list="go-test go-test-1 go-test-2 go-checks board board-visual"
 group_steps() {
   case "$1" in
     go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
-    go-checks) echo "gofmt,go-vet,go-race,govulncheck,clean-tree" ;;
+    go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     board-visual) echo "board-visual,clean-tree" ;;
-    board) echo "board,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
+    board) echo "board,clean-tree" ;;
     *) return 1 ;;
   esac
 }
@@ -129,6 +133,11 @@ check() {
     echo "FAILED: $label" >&2
     mark_fail
   fi
+}
+# A check with no platform in it runs once per run, on the linux job. A laptop runs it wherever it is.
+linux_job_only() {
+  if [ -n "${GITHUB_ACTIONS:-}" ] && [ "$os" != linux ]; then echo "skipped: runs once, on the linux job."; return 0; fi
+  return 1
 }
 # THE BOARD'S UNITS, split by scripts/board-visual-units.txt (one unit a line, # for a comment). `board_units gating`
 # is every unit not on the list, `board_units visual` the ones on it, both comma separated. A name on the list that
@@ -495,44 +504,46 @@ if step board-visual "the board, pixel and timing units"; then
 fi
 
 if step skins "the skins"; then
-  check "skins" bash scripts/check-skins.sh
+  linux_job_only || check "skins" bash scripts/check-skins.sh
 fi
 
 if step contrast "the contrast"; then
   # The skins check says every skin sets every variable. This one says the values are legible: text against the
   # surface it actually sits on, in all twenty one palettes, with every rgba lift composited first.
-  check "contrast" node scripts/check-contrast.js internal/api/web/css
+  linux_job_only || check "contrast" node scripts/check-contrast.js internal/api/web/css
 fi
 
 if step opencode "the opencode plugin"; then
   # The plugin is the opencode runner's permission gate, and it runs inside opencode where no Go test reaches. Its
   # child_process is mocked, so this needs no atrium and no opencode.
-  check "opencode plugin" node --test --experimental-test-module-mocks scripts/opencode/atrium.test.mjs
+  linux_job_only || check "opencode plugin" node --test --experimental-test-module-mocks scripts/opencode/atrium.test.mjs
 fi
 
 if step release "what the release refuses"; then
   # The refusals, not the release: `cut-release.sh --preflight` against a throwaway repository. No network, builds
   # nothing, takes a second.
-  check "release refusals" bash scripts/check-release.sh
+  linux_job_only || check "release refusals" bash scripts/check-release.sh
 fi
 
 if step parse "the packaging scripts parse"; then
   # A packaging script is run once, by a person, on the day it matters. A syntax error in one is found at exactly the
   # wrong moment, so the shell is asked to parse without running.
-  for f in packaging/postinstall.sh packaging/preremove.sh \
-           packaging/macos/scripts/postinstall \
-           scripts/atrium-service.sh scripts/package-linux.sh \
-           scripts/package-macos.sh \
-           scripts/release.sh scripts/publish-release.sh \
-           scripts/cut-release.sh scripts/check-release.sh \
-           scripts/ci.sh scripts/ci-linux.sh scripts/test.sh \
-           scripts/test-time-guard.sh scripts/test-time-guard-test.sh; do
-    if ! bash -n "$f"; then
-      echo "FAILED: $f does not parse" >&2
-      mark_fail
-    fi
-  done
-  echo "ok: shell scripts parse"
+  if ! linux_job_only; then
+    for f in packaging/postinstall.sh packaging/preremove.sh \
+             packaging/macos/scripts/postinstall \
+             scripts/atrium-service.sh scripts/package-linux.sh \
+             scripts/package-macos.sh \
+             scripts/release.sh scripts/publish-release.sh \
+             scripts/cut-release.sh scripts/check-release.sh \
+             scripts/ci.sh scripts/ci-linux.sh scripts/test.sh \
+             scripts/test-time-guard.sh scripts/test-time-guard-test.sh; do
+      if ! bash -n "$f"; then
+        echo "FAILED: $f does not parse" >&2
+        mark_fail
+      fi
+    done
+    echo "ok: shell scripts parse"
+  fi
 fi
 
 if step powershell "the PowerShell scripts parse"; then
