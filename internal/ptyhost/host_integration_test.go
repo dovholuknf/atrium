@@ -151,14 +151,30 @@ func TestWrappedRingIsTruncatedWithRebasedCuts(t *testing.T) {
 	_, addr := testHost(t, Options{})
 	c := daemonT(t, addr)
 	sp := spawnT(t, c, "c", KindRunner, 4096, "burst", "64")
-	waitFor(t, 20*time.Second, "the burst", func() bool { return infoOf(t, c, sp.RunID).OutOffset > 20000 })
-	if _, err := c.Resize(sp.RunID, 80, 24); err != nil {
-		t.Fatal(err)
-	}
-	a, err := c.Attach(sp.RunID, 0)
+	// THE WHOLE BURST LANDS BEFORE THE RESIZE. The claim is that a cut older than the ring is rebased to the ring
+	// start with the width in force there, which needs bytes written at 100x30 still in the ring at the attach. A
+	// resize placed while the burst is still landing can have 4096 bytes follow it before the attach, and then the
+	// ring holds only 80x24 bytes and one cut, which is right. Polling the offset past 20000 did that under load
+	// (sixteen busy processes, once in ten runs): the burst lands in one read when the box is quiet and in several
+	// when it is not. READY is what the runner prints after its burst, so the stream is read until it shows.
+	a0, err := c.Attach(sp.RunID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	newStream(a0).until(t, 20*time.Second, has("READY"))
+	// One attachment per run per connection, so the snapshot below is taken by a daemon that takes over.
+	d := daemonT2(t, addr, c)
+	resizedAt := infoOf(t, d, sp.RunID).OutOffset
+	if _, err := d.Resize(sp.RunID, 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	a, err := d.Attach(sp.RunID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The bytes after the resize are the repaint at the new size, about 1.4 KB on ConPTY, and must stay under the
+	// ring's 4096 for the 100x30 cut to be in it.
+	t.Logf("burst landed, resized at out offset %d, attached at %d, ring 4096", resizedAt, a.Info.OutOffset)
 	if !a.Truncated || a.From == 0 || a.Info.RingStart != a.From {
 		t.Fatalf("a wrapped ring: truncated=%v from=%d ring_start=%d", a.Truncated, a.From, a.Info.RingStart)
 	}
