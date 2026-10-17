@@ -14700,7 +14700,7 @@ async function mPromptsSection(browser) {
       await p.tap('#m-list .row[data-id="pr-1"]');
       await p.waitForSelector("#m-replies .reply.prompt", { timeout: slow(5000) });
       const rows = await p.$$eval("#m-replies .reply", els => els.map(e => ({
-        cls: e.className, src: (e.querySelector(".src") || {}).textContent || "", text: (e.querySelector(".own, .md") || {}).textContent || "",
+        cls: e.className, src: (e.querySelector(".src") || {}).textContent || "", note: (e.querySelector(".note") || {}).textContent || "", text: (e.querySelector(".own, .md") || {}).textContent || "",
         cut: !!e.querySelector(".cut"), html: e.innerHTML })));
       const texts = rows.map(r => r.text.trim());
       const want = ["Old reply.", "operator says <b>hi</b>", "found it", "/compact", "a very long paste", "sent from this phone", "Newest reply."];
@@ -14708,6 +14708,8 @@ async function mPromptsSection(browser) {
       if (rows[1].src !== "you" || !/mine/.test(rows[1].cls)) fail(tag + "operator prompt not marked as you");
       if (rows[1].html.indexOf("<b>") >= 0) fail(tag + "prompt text was not escaped");
       if (rows[2].src !== "scout" || !/peer/.test(rows[2].cls)) fail(tag + "peer prompt not named: " + rows[2].src);
+      if (!/→ you/.test(rows[2].note)) fail(tag + "a say to this card does not read as to you: " + rows[2].note);
+      if (rows[0].note || rows[1].note) fail(tag + "only a say from a session is marked as to you");
       if (!/command/.test(rows[3].cls)) fail(tag + "command prompt not a command row");
       if (!rows[4].cut || rows[1].cut) fail(tag + "cut marker wrong");
       if (rows.filter(r => r.text.trim() === "sent from this phone").length !== 1) fail(tag + "the local own row was not dropped");
