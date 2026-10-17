@@ -5459,7 +5459,7 @@ async function termProbeStormSection(browser, base) {
       }
     };
     await sweep();
-    await p.waitForTimeout(300);
+    for (let seen = -1; seen !== probes;) { seen = probes; await p.waitForTimeout(300); }
     const first = probes;
     let frame = 0;
     const spinner = setInterval(() => p.evaluate(([r, f]) => term.write("\x1b[" + r + ";1H\x1b[2K" + "|/-\\"[f % 4] + " working"), [spin, frame++]).catch(() => {}), 1000);
@@ -14304,9 +14304,9 @@ async function mWorkingSection(browser) {
   await st.open();
   try {
     for (const vp of M_VIEWS) {
+      st.tasks = [run];
       const { ctx, p, errors } = await mPage(browser, st, vp, "");
       const tag = "mWorking " + vp.width + ": ";
-      st.tasks = [run];
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
       await p.tap("#m-seg-all");
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
