@@ -56,7 +56,7 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 	if pr.Pid != p.Pid || pr.Pid == os.Getpid() || pr.Build != "test-host" {
 		t.Fatalf("probe %+v, started pid %d", pr, p.Pid)
 	}
-	matches, _ := filepath.Glob(filepath.Join(copies, "atrium.ptyhost*"))
+	matches, _ := filepath.Glob(filepath.Join(copies, "atrium-pty*"))
 	if len(matches) != 1 {
 		t.Fatalf("the copy: %v", matches)
 	}

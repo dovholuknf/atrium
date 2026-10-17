@@ -70,7 +70,7 @@ last bytes it was sent. A byte arriving after that is kept in the ring and reach
 ## Lifetime
 
 The host exits when it holds no pty (collected or not) and no daemon has been connected for `IdleExit` (default ten
-minutes). It never exits with a pty in it. `ptyhost.Start` copies the binary to `atrium.ptyhost[.exe]` beside it and
+minutes). It never exits with a pty in it. `ptyhost.Start` copies the binary to `atrium-pty[.exe]` beside it and
 starts that detached with `internal/detach`.
 
 ## Closing (G7)
