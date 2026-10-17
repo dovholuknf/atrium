@@ -27,8 +27,9 @@ async function websiteSkinSection(browser, base) {
     // change is partway there.
     const look = skin => wp.evaluate(async skin => {
       applySkin(skin);
-      await new Promise(r => setTimeout(r, 400));
-      const go = getComputedStyle(document.querySelector("button.go.newagent"));
+      getComputedStyle(document.body).color;
+      await Promise.all(document.getAnimations().filter(a => a instanceof CSSTransition).map(a => a.finished.catch(() => {})));
+      const go =getComputedStyle(document.querySelector("button.go.newagent"));
       const hd = getComputedStyle(document.querySelector("header"));
       const bd = getComputedStyle(document.body);
       const root = getComputedStyle(document.documentElement);
