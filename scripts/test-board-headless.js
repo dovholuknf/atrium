@@ -8577,7 +8577,8 @@ async function historySection(browser, base) {
   }
 
   // ── a new search starts at the top ────────────────────────────────────
-  await page.evaluate(() => renderHistory(false));
+  // With a live repaint landing on the same tick, as a poll's does while the fresh load is out.
+  await page.evaluate(() => { renderHistory(false); renderHistory(false, true); });
   await page.waitForFunction(() =>
     document.querySelectorAll("#history-list .row.line").length === 100, null,
     { timeout: slow(15000) }).catch(() => fail("a fresh history load did not go back to one page."));
