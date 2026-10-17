@@ -20,23 +20,26 @@
 # THE REPORT. build.claude/ci/summary.md says what ran, how long each step took, which tests failed with the end of
 # their output, the slowest tests, and the line that reproduces the run. The workflow copies it to the run's summary.
 #
-# A flaky test is a failure. There is no rerun and no quarantine list.
+# A flaky test is a failure. There is no rerun and no quarantine list. The one exception is the board's pixel and
+# timing units on scripts/board-visual-units.txt: the board-visual group runs them and the workflow does not let that
+# group redden the run. They are run and reported, never dropped.
 
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$here"
 
-all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard govulncheck board skins contrast opencode release parse powershell ps-tests clean-tree"
+all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard govulncheck board board-visual skins contrast opencode release parse powershell ps-tests clean-tree"
 
 # GROUPS. The workflow runs one job per group and platform, so the Go tests, the Go checks and the board run side by
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
-group_list="go-test go-checks board"
+group_list="go-test go-checks board board-visual"
 group_steps() {
   case "$1" in
     go-test) echo "go-build,go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,clean-tree" ;;
+    board-visual) echo "board-visual,clean-tree" ;;
     board) echo "board,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     *) return 1 ;;
   esac
@@ -120,6 +123,47 @@ check() {
     echo "FAILED: $label" >&2
     mark_fail
   fi
+}
+# THE BOARD'S UNITS, split by scripts/board-visual-units.txt (one unit a line, # for a comment). `board_units gating`
+# is every unit not on the list, `board_units visual` the ones on it, both comma separated. A name on the list that
+# the suite no longer has is an error, so the list cannot rot.
+board_units() {
+  HEADLESS_LIST=1 node scripts/test-board-headless.js | node -e '
+    const fs = require("fs");
+    const lines = fs.readFileSync(0, "utf8").split("\n").reverse();
+    const json = lines.find(l => l.startsWith("{"));
+    if (!json) { process.stderr.write("the harness listed no units\n"); process.exit(1); }
+    const all = JSON.parse(json).units;
+    const visual = fs.readFileSync("scripts/board-visual-units.txt", "utf8").split("\n")
+      .map(l => l.replace(/#.*/, "").trim()).filter(Boolean);
+    const gone = visual.filter(u => !all.includes(u));
+    if (gone.length) { process.stderr.write("board-visual-units.txt names units the suite lacks: " + gone.join(" ") + "\n"); process.exit(1); }
+    const want = process.argv[1] === "visual" ? visual : all.filter(u => !visual.includes(u));
+    process.stdout.write(want.join(","));
+  ' "$1"
+}
+# What the headless browser on this machine is, for reading a board unit that passes elsewhere and fails here.
+board_env_probe() {
+  node scripts/board-env-probe.js 2>&1 | tee "$artefacts/$1"
+}
+# The merged report of a sharded run: one row per unit (unit, time, result), then FAILED sections each unit with its
+# first error line indented under it. A unit that passed only on retry fails the run too, so it is counted as failed. A
+# flaky one that is reported and not failing is not. The shards' own output, which the runner keeps on a failure and
+# names on a "shard output:" line, is copied into the artifacts.
+board_report() {
+  local name="$1" log="$2" n_units n_bad dir
+  n_units="$(awk '$3 ~ /^(PASS|FAIL|NOT|LOAD|FLAKY)$/' "$log" | wc -l | tr -d ' ')"
+  n_bad="$(awk '$3 ~ /^(FAIL|NOT|LOAD)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$log" | wc -l | tr -d ' ')"
+  note_counts "$n_units" "$n_bad"
+  awk '
+    /^FAILED \(|^FAILED IN THE SHARDS|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
+    /^[^ ]/ { sec = 0; next }
+    sec == 1 && /^  [^ ]/ { unit = $1; got = 0; next }
+    sec == 1 && /^    / && unit != "" && !got { e = $0; sub(/^ +/, "", e); sub(/^first try: /, "", e); printf "%s\t%s\n", unit, e; got = 1; next }
+    sec == 2 && /^  [^ ]/ { e = $0; sub(/^ +/, "", e); printf "(outside any unit)\t%s\n", e }
+  ' "$log" | while IFS=$'\t' read -r unit err; do note_failing "$name" "$unit" "$err"; done
+  dir="$(sed -n 's/^shard output: //p' "$log" | tail -1)"
+  if [ -n "$dir" ] && [ -d "$dir" ]; then cp -R "$dir" "$artefacts/$name-shards" || true; fi
 }
 # Said once, in the summary: the machine and the toolchain, as the run saw them.
 machine_note=""
@@ -247,7 +291,7 @@ else
   echo "ok: go $have_go, node $have_node"
 fi
 # The headless board tests need playwright and its browser. Installed here, so a fresh machine needs nothing else.
-if want board && command -v npm >/dev/null 2>&1; then
+if { want board || want board-visual; } && command -v npm >/dev/null 2>&1; then
   if [ -f package-lock.json ]; then
     check "npm ci" npm ci --no-audit --no-fund
   else
@@ -371,24 +415,35 @@ if step board "the board"; then
   [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
   shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
   board_log="$artefacts/board.log"
+  # THE BOARD IS TWO RUNS. The units on scripts/board-visual-units.txt measure pixels and wait on timers, so a runner's
+  # fonts or load fail them and no code change does. They run in the board-visual group, which never reddens the run.
+  # This step runs every other unit.
+  gating="$(board_units gating)"
   board_run() {
-    env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" bash scripts/check-board.sh 2>&1 | tee "$board_log"
+    env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" HEADLESS_UNITS="$gating" \
+      bash scripts/check-board.sh 2>&1 | tee "$board_log"
     return "${PIPESTATUS[0]}"
   }
+  board_env_probe board-env.txt
   check "board" board_run
-  # The merged report: one row per unit (unit, time, result), then FAILED sections each unit with its first error line
-  # indented under it. A unit that passed only on retry fails the run too, so it is counted as failed. A flaky one that
-  # is reported and not failing is not.
-  n_units="$(awk '$3 ~ /^(PASS|FAIL|NOT|LOAD|FLAKY)$/' "$board_log" | wc -l | tr -d ' ')"
-  n_bad="$(awk '$3 ~ /^(FAIL|NOT|LOAD)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$board_log" | wc -l | tr -d ' ')"
-  note_counts "$n_units" "$n_bad"
-  awk '
-    /^FAILED \(|^FAILED IN THE SHARDS|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
-    /^[^ ]/ { sec = 0; next }
-    sec == 1 && /^  [^ ]/ { unit = $1; got = 0; next }
-    sec == 1 && /^    / && unit != "" && !got { e = $0; sub(/^ +/, "", e); sub(/^first try: /, "", e); printf "%s\t%s\n", unit, e; got = 1; next }
-    sec == 2 && /^  [^ ]/ { e = $0; sub(/^ +/, "", e); printf "(outside any unit)\t%s\n", e }
-  ' "$board_log" | while IFS=$'\t' read -r name err; do note_failing board "$name" "$err"; done
+  board_report board "$board_log"
+fi
+
+if step board-visual "the board, pixel and timing units"; then
+  # Same runner, only the units on the list, with the probe's facts in the artifacts so a failure here can be read
+  # against the machine. CR_CONTRAST adds the colour and the background it measured to each contrast failure.
+  cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
+  [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
+  shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
+  board_log="$artefacts/board-visual.log"
+  board_visual_run() {
+    env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" CR_CONTRAST=1 \
+      node scripts/test-board-sharded.js --local --units "$(board_units visual)" 2>&1 | tee "$board_log"
+    return "${PIPESTATUS[0]}"
+  }
+  board_env_probe board-visual-env.txt
+  check "board (pixel and timing units)" board_visual_run
+  board_report board-visual "$board_log"
 fi
 
 if step skins "the skins"; then

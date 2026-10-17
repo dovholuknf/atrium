@@ -1,0 +1,46 @@
+# Board units that run in the board-visual CI group, which reports and never reddens the run (ci.sh, ci.yml).
+# One unit a line. A name the suite does not have fails ci.sh, so this list cannot rot.
+#
+# A unit belongs here when it fails on a hosted runner for a reason no code change explains. Two kinds:
+#
+# LAYOUT AND CONTRAST. They measure pixels, so the runner's fonts and rendering decide them. All pass on Windows and in
+# the Playwright Linux image, and fail on hosted runners. scripts/board-env-probe.js says what a runner draws with.
+mGrowlQuestion
+terminalsOneLine
+changeReq
+mChangeReq
+mDocs
+#
+# TIMING. They wait on a timer and pass alone, but fail under the load of four shards on a runner, and a different set
+# fails each run.
+worn
+websiteSkin
+tooltip
+heldLine
+resumeSpinner
+pasteLands
+chatTab
+mWorking
+mPull
+coverSteps
+switchPrewarm
+collapsedBridge
+phoneView
+phoneHeader
+phoneFocus
+phoneTermBar
+phoneShare
+phonePan
+phoneFollow
+phoneTap
+phoneKeyboard
+phoneCompose
+phoneKeyLabel
+phoneKeyLit
+phoneListFit
+phoneNudge
+phoneMinionHidden
+phoneBoot
+phoneBoardCompact
+phoneBell
+phoneRedirect
