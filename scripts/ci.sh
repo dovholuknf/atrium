@@ -258,6 +258,12 @@ echo "node:        $(node --version 2>/dev/null || echo none)"
 if [ "$os" = windows ]; then
   echo "pwsh:        $(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null || echo none)"
 fi
+# Defender on the hosted Windows runner: whether it scans, what a never-seen executable pays, and the folders the
+# tests write binaries to excluded, with the cost measured again after. Only on GitHub's runner, which is thrown
+# away: a developer's machine is never changed by a CI script. It never fails the step. scripts/ci-defender.ps1.
+if [ "$os" = windows ] && [ -n "${GITHUB_ACTIONS:-}" ] && command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoProfile -File scripts/ci-defender.ps1 || echo "ci-defender: did not run (exit $?)"
+fi
 echo "shells:      sh=$(command -v sh || echo none) bash=$BASH_VERSION"
 echo "cleared:     ${leaked:-no ATRIUM_* variables were set}"
 echo "artefacts:   $here/$artefacts"
