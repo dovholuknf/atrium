@@ -249,10 +249,10 @@ machine" and not "it is deployed to the live hub".
 
 ## Conventions
 
-- Comments, especially in tests: never add or reword one while fixing a failing test. When a code change makes a
-  comment stale, delete it and do not rewrite it. Keep a comment only for a non-obvious reason, in one line. Never
-  write one about what changed or how the cause was found: that goes in the commit, `REPORT.md` or
-  `docs/troubleshooting-tests.md`.
+- Comments, especially in tests: delete every comment unless it is a one-line why for a non-obvious invariant. Trim
+  a longer one to that line or remove it. Apply this to every comment in each function or test you touch, and never
+  add or reword one while fixing a failing test. Never write one about what changed or how the cause was found: that
+  goes in the commit, `REPORT.md` or `docs/troubleshooting-tests.md`.
 - All paths in code use forward slashes (Go convention). Reading from gwt JSONs with backslashes is fine; pass
   through unchanged.
 - Wrap markdown at 120 characters.
