@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/zitictx"
-	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/sdk-golang/ziti/edge"
 )
 
@@ -54,15 +53,11 @@ type Ziti struct {
 	// Service is the name of the service the hub binds and rooms dial.
 	Service string
 
-	// The context is expensive to build and holds the authenticated session,
-	// so it is made once and reused for every dial. Without this a room with
-	// four data connections would authenticate to the controller four times on
-	// every reconnect. At most ONE is live: Reset and Close end it, and the
-	// next dial builds another.
+	// The context is expensive to build and holds the authenticated session, so the process has ONE per identity
+	// (internal/zitictx), opened by the first dial and never closed while the process runs. Reset logs it in again
+	// rather than building another, since every context left behind keeps its own refresh loop.
 	//
-	// mu guards the pointer and nothing else. It is never held across a dial,
-	// so a dial stuck inside the SDK cannot block Reset, which is the call
-	// that frees it.
+	// mu guards the pointer and nothing else. It is never held across a dial.
 	mu  sync.Mutex
 	ctx zitiConn
 	// newCtx builds one. Nil means the SDK, through internal/zitictx.
@@ -98,11 +93,7 @@ func (z *Ziti) build() (zitiConn, error) {
 	if strings.TrimSpace(z.Service) == "" {
 		return nil, errors.New("no ziti service named. --service is which service to use")
 	}
-	cfg, err := ziti.NewConfigFromFile(id)
-	if err != nil {
-		return nil, fmt.Errorf("could not load that identity: %w", err)
-	}
-	c, err := zitictx.New("link", cfg)
+	c, err := zitictx.SharedFile("link", id)
 	if err != nil {
 		return nil, fmt.Errorf("could not use that identity: %w", err)
 	}
@@ -124,16 +115,14 @@ func (z *Ziti) context() (zitiConn, error) {
 	return c, nil
 }
 
-// Reset closes the live context, which aborts a dial stuck inside it, and the
-// next dial builds a fresh one. The link calls it after repeated data dial
-// failures, when the context's session is the likelier fault.
+// Reset logs the live context in again, beside any dial in flight. The link calls it after repeated data dial
+// failures, when the context's session is the likelier fault. Nothing is closed and nothing is built.
 func (z *Ziti) Reset() {
 	z.mu.Lock()
 	c := z.ctx
-	z.ctx = nil
 	z.mu.Unlock()
-	if c != nil {
-		c.Close()
+	if r, ok := c.(interface{ Relogin() error }); ok {
+		go func() { _ = r.Relogin() }()
 	}
 }
 
@@ -166,8 +155,7 @@ func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
 		z.gate.failed()
 		return nil, err
 	}
-	// The SDK's Dial takes no context, so it runs beside one. A dial that outlives the caller's deadline closes the
-	// context under it, which is what stops the SDK retrying a controller that is not answering.
+	// The SDK's Dial takes no context, so it runs beside one.
 	type res struct {
 		c   net.Conn
 		err error
@@ -201,26 +189,14 @@ func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
 	}
 }
 
-// dialFailed backs the next dial off and closes the context that failed, so its refresh loop stops with it. A context
-// that has already been replaced is left alone.
-func (z *Ziti) dialFailed(zc zitiConn) {
-	z.gate.failed()
-	z.mu.Lock()
-	same := z.ctx == zc
-	if same {
-		z.ctx = nil
-	}
-	z.mu.Unlock()
-	if same {
-		zc.Close()
-	}
-}
+// dialFailed backs the next dial off. The context stays: closing it would only make the next dial build another.
+func (z *Ziti) dialFailed(zitiConn) { z.gate.failed() }
 
 // Hammering says dials to the controller are failing fast. Shown on the room's row.
 func (z *Ziti) Hammering() bool { return z.gate.hammering() }
 
-// Close releases the authenticated session. Safe to call twice.
-func (z *Ziti) Close() { z.Reset() }
+// Close does nothing. The context belongs to the process.
+func (z *Ziti) Close() {}
 
 // ZitiAuthenticated is `Hub.Authenticated` for this transport.
 //

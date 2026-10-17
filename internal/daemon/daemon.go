@@ -228,6 +228,8 @@ type Daemon struct {
 	relays relayState
 	// streams is the room's link for ssh streams to another room's sshd. See stream.go.
 	streams streamHolder
+	// hubDial is the room's ladder for commands on this machine. See hubdial.go.
+	hubDial hubDialHolder
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
 	// poolFeed is the one pass at a time that types queued items to a pool's idle cards. See item_pool.go.
@@ -1217,6 +1219,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// AN SSH STREAM to another room's sshd through the hub, upgraded to raw bytes. See stream.go.
 	agentMux.HandleFunc("/stream", d.handleStream)
 	agentMux.HandleFunc("/stream/status", d.handleStreamStatus)
+	agentMux.HandleFunc("/hubdial", d.handleHubDial)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
 	// the token opens this route and no other. See hubremote.go.

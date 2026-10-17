@@ -459,6 +459,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// SSH STREAMS: this room's switch lives beside its certificate, and the link carries the streams. See internal/link/stream.go.
 	room.RemoteDir = keys.Dir
 	d.SetStreamer(room)
+	d.SetHubDialer(climbing{dial})
 	d.SetSSHWizard(sshWizardHandler(keys.Dir, dial))
 	// THE HUB'S SET OF SSH KEYS, kept current in this room's authorized_keys. Best effort, never makes a key.
 	go sshSyncLoop(ctx, keys.Dir, dial)
