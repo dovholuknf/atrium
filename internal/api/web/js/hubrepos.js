@@ -47,6 +47,7 @@ function setHubReposView(v) {
   // Change requests are read when you go there (js/changereq.js), and the paint below shows "reading" until they arrive.
   if (v === "requests" && typeof cr !== "undefined" && !cr.loaded && !cr.inflight) crLoad();
   hubReposPaint();
+  navPush();
 }
 
 // THE SORT IS A PER-BROWSER PREFERENCE TOO, `atrium.reposSort`. name is the hub's own order, a to z, pushed is the newest push of main or any branch
