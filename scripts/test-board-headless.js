@@ -3114,9 +3114,15 @@ async function pasteSpinnerSection(browser, base) {
       termSock.bufferedAmount = 0;
       sendPasteText("x");
       const got = { now: window.__shown };
-      // After the frame the send waits for: output before the bytes left says nothing.
-      setTimeout(() => termSock.onmessage({ data: "x" }), 60);
-      setTimeout(() => { got.flight = !!pasteFlight; done(got); }, 150);
+      // Once the bytes have left: output before that says nothing, and the frame the send waits for is late on a
+      // loaded machine.
+      const echo = () => {
+        if (!(pasteFlight && pasteFlight.sent)) { setTimeout(echo, 10); return; }
+        termSock.onmessage({ data: "x" });
+        got.flight = !!pasteFlight;
+        done(got);
+      };
+      setTimeout(echo, 60);
     }));
     if (quick.now !== 1 || !quick.flight) {
       fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
