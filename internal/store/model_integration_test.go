@@ -9,12 +9,7 @@ import (
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(t.TempDir() + "/atrium.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
+	return openMigrated(t)
 }
 
 // A runner's model arguments survive a round trip. They are a list held as
