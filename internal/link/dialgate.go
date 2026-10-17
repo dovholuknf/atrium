@@ -7,10 +7,11 @@ import (
 
 // A backoff in front of an overlay's controller.
 //
-// THE SDK'S OWN REFRESH LOOP IS NOT OURS TO SLOW, so the guard is to stop owning a context that is failing. Two rooms
-// once sent 10,000 POSTs a minute each to a controller that was refusing, because a ziti context left open keeps
-// refreshing its api session with no pause. A dial that fails now closes the context (which ends that loop) and the
-// next dial is refused here, without touching the SDK, until the backoff has run. Each failure doubles it, to a cap.
+// THE SDK'S OWN REFRESH LOOP IS NOT OURS TO SLOW, so the guard is to stop making new ones. Two rooms once sent 10,000
+// POSTs a minute each to a controller that was refusing, because every ziti context built for a retry kept refreshing
+// its api session with no pause. The process now holds one context per identity and never builds another, and after a
+// failed dial the next one is refused here, without touching the SDK, until the backoff has run. Each failure doubles
+// it, to a cap.
 
 // dialFloor and dialCeiling bound the wait after a failed overlay dial. A minute, not longer: a room whose only path is
 // the overlay should find its controller again within the minute, and 60 s is 1/60th the rate that was seen.
