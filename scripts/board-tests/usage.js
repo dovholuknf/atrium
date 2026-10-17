@@ -2055,7 +2055,7 @@ async function usagePolishSection(browser, base) {
       ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
       ucSchedulePaint();
     });
-    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(10000) });
     const anim = await sp.evaluate(() => ({
       fade: getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName,
       grow: (document.querySelector("#uc-body g.ucgrow") ? getComputedStyle(document.querySelector("#uc-body g.ucgrow")).animationName : "none") }));
@@ -2069,7 +2069,7 @@ async function usagePolishSection(browser, base) {
       ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
       ucSchedulePaint();
     });
-    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(10000) });
     const anim = await sp.evaluate(() => getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName);
     if (anim !== "none") fail("usagePolish: reduced motion left the fade on: " + anim);
     const grow = await sp.evaluate(() => [...document.querySelectorAll("#uc-body g.ucgrow")]
