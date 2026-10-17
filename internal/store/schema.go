@@ -2367,6 +2367,16 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS say_relay ON say (relay_id)`,
 		},
 	},
+	{
+		// THE KEY A LAUNCH WAS MADE UNDER, so a retry of a launch whose answer was lost finds the card the first attempt
+		// filed instead of starting a second. Not unique: a key older than the replay window is ignored, and a new card
+		// may be filed under it. See store/launchkey.go.
+		name: "0107_task_launch_key",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN launch_key TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS task_launch_key ON task (launch_key) WHERE launch_key != ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

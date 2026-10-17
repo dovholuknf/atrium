@@ -307,6 +307,9 @@ type Task struct {
 	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
 	// LaunchBranch is the branch the card's checkout was on when an agent launched it. Empty for any other card.
 	LaunchBranch string `json:"launch_branch,omitempty"`
+	// LaunchReplay is set on the card a launch answered from the key it was made under, and not stored: the answer is
+	// the card the first attempt filed, and no second session was started. See launchkey.go.
+	LaunchReplay bool `json:"launch_replay,omitempty"`
 	// ReportedAt is the last time this card said something to its launcher: a
 	// structured report, or a peer message to it. See
 	// docs/runtime/a2a-reliability-design.md.
