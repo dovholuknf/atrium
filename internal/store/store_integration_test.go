@@ -5,18 +5,12 @@ package store
 import (
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"testing"
 )
 
 func open(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "atrium.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s
+	return openMigrated(t)
 }
 
 func TestRegisterIsIdempotentByWireName(t *testing.T) {
