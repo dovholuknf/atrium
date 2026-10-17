@@ -666,3 +666,21 @@ function Test-RoomBackOnHub([string]$Name, [datetime]$After, [string]$Commit = '
   if ($Commit -and $r.commit -and -not ($r.commit.StartsWith($Commit.Substring(0, [Math]::Min(7, $Commit.Length))))) { return $false }
   return $true
 }
+
+# Resolve-SshRoute finds the ssh name that reaches a room: the bare name first, then "<name>.atrium", which rides the
+# hub and still works when the bare name does not resolve or times out. $Probe is called with one candidate and returns
+# an object with Code and TimedOut. The result carries the candidate that answered (Host, empty when none did), the
+# answers seen in order (Results) and what was Tried, so the caller keeps to one route for every later call.
+function Resolve-SshRoute([string]$Name, [scriptblock]$Probe) {
+  $tried = @()
+  $results = @()
+  foreach ($cand in @($Name, "$Name.atrium")) {
+    $tried += $cand
+    $r = & $Probe $cand
+    $results += $r
+    if (-not $r.TimedOut -and $r.Code -eq 0) {
+      return [pscustomobject]@{ Host = $cand; Tried = $tried; Results = $results }
+    }
+  }
+  return [pscustomobject]@{ Host = ''; Tried = $tried; Results = $results }
+}
