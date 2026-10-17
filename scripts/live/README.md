@@ -90,3 +90,14 @@ process whose parent has already exited. Not from any job: on sg4 the whole inte
 scripts start the hub and rooms with `CREATE_BREAKAWAY_FROM_JOB` (`Start-Breakaway` in `live-common.ps1`).
 
 A room that answers a stop with 409 (its pty host would die with it) is never stopped with --runners by these scripts on their own. The stop fails, says how many runners are held and nothing has changed. Pass -KillRunners to deploy-batch.ps1, atrium-deploy.ps1 or stop-atrium.ps1 to end them anyway. test-stop-room-409.ps1 covers it.
+
+## ssh routes to remote rooms
+
+`atrium-deploy.ps1` reaches a remote room by its bare name first, then `<room>.atrium`, which rides the hub and works
+when the bare name times out or does not resolve. It says which route answered and uses it for every later ssh and scp
+call to that room. A room is "offline" only when neither route answered. `Resolve-SshRoute` in `live-common.ps1` does
+the choice and `test-ssh-route.ps1` tests it with a fake probe, under Windows PowerShell 5.1 or pwsh 7.
+
+The bare probe is capped at 10s with no retry. On mac the swap runs detached (nohup) and writes
+`~/.atrium/deploy-swap.out`, because over .atrium the ssh session dies with the room. On Windows the swap runs in the
+session and a dropped session is no verdict, so the hub decides. Either way the deploy waits on the hub for the room.
