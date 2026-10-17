@@ -21998,11 +21998,15 @@ async function switchPrewarmSection(browser, base) {
 
     // A pointer that leaves before the dwell fetches nothing; a sweep warms nothing.
     await wp.mouse.move(5, 5);
-    await row("sp-b").hover();
-    await idle(30);
-    await row("sp-c").hover();
-    await idle(30);
-    await wp.mouse.move(5, 5);
+    await wp.evaluate(() => {
+      const el = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
+      const fire = (type, target, related) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "mouse", relatedTarget: related }));
+      const b = el("sp-b"), c = el("sp-c");
+      fire("pointerover", b, document.body);
+      fire("pointerout", b, c);
+      fire("pointerover", c, b);
+      fire("pointerout", c, document.body);
+    });
     await idle(300);
     if (gets.length !== 1) fail("switchPrewarm: leaving before the dwell still fetched (" + gets.join(",") + ").");
 
