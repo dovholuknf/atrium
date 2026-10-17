@@ -157,6 +157,7 @@ func PostRoomLock(ctx context.Context, dir string, lock []byte) error {
 	if err != nil {
 		return err
 	}
+	defer closeDialer(d)
 	return link.PostRoomLock(ctx, d, room, lock)
 }
 
@@ -174,6 +175,7 @@ func roomSpecPullCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer closeDialer(d)
 			ctx, cancel := context.WithTimeout(cmd.Context(), time.Minute)
 			defer cancel()
 			raw, sum, err := link.FetchRoomSpec(ctx, d, room)
