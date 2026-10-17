@@ -6579,6 +6579,9 @@ async function phoneShareSection(browser, base) {
     if (!process.env.PHONE_SHARE_MEASURE_ONLY) {
       const rect = (q, sel) => q.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { t: r.top, b: r.bottom, l: r.left, r: r.right, w: r.width, h: r.height }; }, sel);
       const grid = (q) => q.evaluate(() => ({ cols: term.cols, rows: term.rows }));
+      const barSettled = (q, shown) => q.waitForFunction((want) => { const e = document.querySelector(".term-bar"), r = e.getBoundingClientRect();
+        const now = getComputedStyle(e).visibility !== "hidden" && r.bottom > 0;
+        return now === want && !e.getAnimations().length; }, shown, { timeout: slow(5000) }).catch(() => {});
       const barShown = (q) => q.evaluate(() => { const e = document.querySelector(".term-bar"); return getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; });
       // the tray is hidden: zero height, the terminal starts at the pane's top edge
       if (await barShown(p)) fail("phoneShare: the tray shows by default");
@@ -6599,7 +6602,7 @@ async function phoneShareSection(browser, base) {
       const g0 = await grid(p);
       // open it: it overlays, so the terminal does not move or change its grid
       await p.tap("#t-tray-handle");
-      await p.waitForTimeout(350);
+      await barSettled(p, true);
       if (!(await barShown(p))) fail("phoneShare: a tap on the handle did not open the tray");
       const scr2 = await rect(p, "#t-screen"), g1 = await grid(p);
       if (scr2.t !== scr.t || scr2.h !== scr.h || g1.cols !== g0.cols || g1.rows !== g0.rows) fail("phoneShare: opening the tray moved or resized the terminal: " + JSON.stringify([scr, scr2, g0, g1]));
@@ -6618,7 +6621,7 @@ async function phoneShareSection(browser, base) {
       const bb = await rect(p, ".term-bar");
       if (lt < bb.b - 2) fail("phoneShare: the card list opens over the tray: " + JSON.stringify([lt, bb]));
       await p.tap("#t-pick");
-      await p.waitForTimeout(350);
+      await barSettled(p, false);
       if (await p.evaluate(() => document.getElementById("term-layout").classList.contains("tl-open"))) fail("phoneShare: a second tap on the picker did not close the list");
       if (await barShown(p)) fail("phoneShare: the tray stayed open after the picker closed");
       // a swipe up closes it (touch events)
@@ -6628,23 +6631,23 @@ async function phoneShareSection(browser, base) {
         bar.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [mk(y0)], targetTouches: [mk(y0)], changedTouches: [mk(y0)] }));
         bar.dispatchEvent(new TouchEvent("touchend", { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [mk(y0 + dy)] })); }, dy);
       await p.tap("#t-tray-handle");
-      await p.waitForTimeout(300);
+      await barSettled(p, true);
       await swipe(p, 8);
       await p.waitForTimeout(300);
       if (!(await barShown(p))) fail("phoneShare: a small drag closed the tray");
       await swipe(p, -60);
-      await p.waitForTimeout(350);
+      await barSettled(p, false);
       if (await barShown(p)) fail("phoneShare: a swipe up did not close the tray");
       // a pull down on the handle opens it
       await p.evaluate(() => { const h = document.getElementById("t-tray-handle"), r = h.getBoundingClientRect();
         const mk = (y) => new Touch({ identifier: 2, target: h, clientX: r.left + 40, clientY: y });
         h.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [mk(r.top + 5)], changedTouches: [mk(r.top + 5)] }));
         h.dispatchEvent(new TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [mk(r.top + 40)], changedTouches: [mk(r.top + 40)] })); });
-      await p.waitForTimeout(300);
+      await barSettled(p, true);
       if (!(await barShown(p))) fail("phoneShare: a pull down on the handle did not open the tray");
       // a tap outside closes it
       await p.tap("#t-screen", { position: { x: 200, y: 400 } });
-      await p.waitForTimeout(350);
+      await barSettled(p, false);
       if (await barShown(p)) fail("phoneShare: a tap outside did not close the tray");
       const kh = await p.evaluate(() => Math.min(...[...document.querySelectorAll("#t-keys button")].map(b => b.getBoundingClientRect().height)));
       if (kh < 44) fail("phoneShare: a key is " + kh + "px tall, under 44");
