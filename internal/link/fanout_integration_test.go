@@ -37,7 +37,7 @@ func two(t *testing.T, a, b http.Handler) (*httptest.Server, *Hub, func()) {
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("alpha") && hub.Has("beta") })
 
 	front := httptest.NewServer(NewProxy(hub, nil, "", nil))
-	return front, hub, func() { front.Close(); stop(); ln.Close() }
+	return front, hub, func() { front.CloseClientConnections(); front.Close(); stop(); ln.Close() }
 }
 
 // cards answers `/v1/tasks` with one card, and says which room served every
