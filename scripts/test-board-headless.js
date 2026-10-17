@@ -15505,7 +15505,7 @@ async function mPullSection(browser) {
     await mShot(p, "pull-412");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     const t0 = Date.now();
-    while (await kept() && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
+    while (await kept().catch(() => false) && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
     await p.waitForTimeout(500);
     if (await kept().catch(() => false)) fail(tag + "a pull at the top did not reload the page");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
