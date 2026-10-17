@@ -350,23 +350,29 @@ const VIEWS = ["board", "stack", "perms", "runners", "terms", "chat", "history",
 // somebody makes is a place they might want to return to, and the two they
 // make constantly are switching view and switching session.
 //
-// THE ADDRESS BAR IS NOT TOUCHED, and that is deliberate. `#term=<id>` already
-// means something here: it is how a popped-out window resolves its card on
-// load. Putting the view in the hash would make every reload of a solo window
-// a negotiation between two meanings of the same string, which is the reason
-// the view was put in `localStorage` rather than the URL in the first place.
-// `pushState` carries a state object with the same URL, so the history entries
-// exist and the address does not move.
+// THE ADDRESS BAR CARRIES THE VIEW, AS A ROUTE THAT STARTS WITH `#/`. See js/route.js.
 //
-// That keeps the two restores separate and each one right for its job.
-// `localStorage` answers "where was I yesterday" across a reload and a daemon
-// restart. History answers "where was I a moment ago" inside this visit.
+// `#term=<id>` already means something here: it is how a popped-out window
+// resolves its card on load. A route always starts with `#/` and a pop-out
+// address with `#term=`, so the two strings can never be mistaken for each
+// other and a reload of a solo window has nothing to negotiate. A solo window
+// pushes no route at all.
+//
+// `pushState` carries a state object and the route as the URL, so back and
+// forward step through views, repos sub-views and change requests, and a copied
+// address lands on the same place. `localStorage` still answers "where was I
+// yesterday" for a bare address. History answers "where was I a moment ago"
+// inside this visit, and a route answers "go here".
 let navApplying = false;
 
 function navState() {
+  const r = routeNow();
   return {
     atrium: true,
-    view: VIEWS.find(isViewing) || "board",
+    view: r.view,
+    sub: r.sub,
+    reqTab: r.tab,
+    req: r.req,
     card: termTask ? termTask.id : "",
     // The item whose page is open on the items tab, so back closes the page rather than leaving the tab.
     item: typeof itemsOpenId === "function" && isViewing("items") ? itemsOpenId() : ""
@@ -379,14 +385,24 @@ function navState() {
 // showing would stack an entry, and back would appear broken by needing to be
 // pressed eleven times to move once.
 function navPush() {
-  if (termOnly()) return;
+  if (termOnly() || navApplying) return;
   const now = navState();
   const was = history.state;
-  if (was && was.atrium && was.view === now.view && was.card === now.card && (was.item || "") === now.item) return;
+  if (was && was.atrium && routeHash(routeOfState(was)) === routeHash(routeOfState(now)) && was.card === now.card && (was.item || "") === now.item) return;
   // The FIRST entry is replaced rather than pushed, or the first press of back
   // leaves the board for whatever was open in this tab before it.
-  if (was && was.atrium) history.pushState(now, "");
-  else history.replaceState(now, "");
+  if (was && was.atrium) history.pushState(now, "", routeURL(now));
+  else history.replaceState(now, "", routeURL(now));
+  routeRecord(now);
+}
+
+// What the board settled on by itself, such as the first request picked once the list arrived. It rewrites the entry
+// rather than adding one, so back does not step through things nobody did.
+function navReplace() {
+  if (termOnly() || navApplying || !history.state || !history.state.atrium) return;
+  const now = navState();
+  history.replaceState(now, "", routeURL(now));
+  routeRecord(now);
 }
 
 // Going back is not a new move, so nothing here pushes. `navApplying` is what
@@ -398,9 +414,10 @@ addEventListener("popstate", async (e) => {
   // entries of its own, and anything else in this tab's history belongs to
   // whatever was here before atrium.
   if (!s || !s.atrium || termOnly()) return;
+  routeRecord(s);
+  const settled = routeApply(routeOfState(s));
   navApplying = true;
   try {
-    switchView(s.view);
     if (s.view === "items" && typeof itemsShow === "function" && (s.item || "") !== itemsOpenId()) itemsShow(s.item || null, true);
     if (s.view === "terms" && s.card && (!termTask || termTask.id !== s.card)) {
       await attachTask(s.card);
@@ -408,6 +425,7 @@ addEventListener("popstate", async (e) => {
   } finally {
     navApplying = false;
   }
+  await settled;
 });
 
 function switchView(name) {
