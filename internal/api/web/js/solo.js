@@ -877,8 +877,13 @@ async function restoreWhereYouWere() {
     try { localStorage.removeItem("atrium.term"); } catch (e) {}
     card = "";
   }
-  if (!VIEWS.includes(view) || view === "board") return;
-  switchView(view);
+  if (routeLanded) {
+    if (routeLanded !== "terms") return;
+    view = "terms";
+  } else {
+    if (!VIEWS.includes(view) || view === "board") return;
+    switchView(view);
+  }
   if (view !== "terms" || !card) return;
 
   // Popped out since, in which case the board must not take it back: two
