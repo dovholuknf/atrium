@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -21,28 +22,39 @@ func startDaemonWith(t *testing.T, mutate func(*Options)) (*Daemon, *safeBuf, co
 	log.SetOutput(logs)
 	t.Cleanup(func() { log.SetOutput(old) })
 
-	dir := t.TempDir()
-	opts := Options{
-		AgentAddr: freePort(t),
-		HumanAddr: freePort(t),
-		DBPath:    filepath.ToSlash(filepath.Join(dir, "atrium.db")),
-		LongPoll:  2 * time.Second,
-		// Never the machine's real one. See Options.LocationFile.
-		LocationFile: filepath.Join(dir, "daemon.json"),
+	// A port freePort handed out can be taken before Run listens on it, so a bind failure gets fresh ports.
+	for attempt := 1; ; attempt++ {
+		dir := t.TempDir()
+		opts := Options{
+			AgentAddr: freePort(t),
+			HumanAddr: freePort(t),
+			DBPath:    filepath.ToSlash(filepath.Join(dir, "atrium.db")),
+			LongPoll:  2 * time.Second,
+			// Never the machine's real one. See Options.LocationFile.
+			LocationFile: filepath.Join(dir, "daemon.json"),
+		}
+		if mutate != nil {
+			mutate(&opts)
+		}
+		d, err := testNew(opts)
+		if err != nil {
+			t.Fatalf("daemon did not start: %v", err)
+		}
+		closeAtCleanup(t, d)
+		cancel, errCh := runAtCleanup(t, d)
+		// A listener accepts as soon as net.Listen returns, which is before the
+		// startup lines are written. Waiting on the port would race the log.
+		err = logs.waitForOrExit("ready. ctrl-c to stop", errCh)
+		if err == nil {
+			return d, logs, cancel, errCh
+		}
+		var early *exitedEarly
+		if errors.As(err, &early) && strings.Contains(early.err.Error(), "listener") && attempt < 5 {
+			t.Logf("attempt %d: %v", attempt, err)
+			continue
+		}
+		t.Fatalf("%v:\n%s", err, logs.String())
 	}
-	if mutate != nil {
-		mutate(&opts)
-	}
-	d, err := testNew(opts)
-	if err != nil {
-		t.Fatalf("daemon did not start: %v", err)
-	}
-	closeAtCleanup(t, d)
-	cancel, errCh := runAtCleanup(t, d)
-	// A listener accepts as soon as net.Listen returns, which is before the
-	// startup lines are written. Waiting on the port would race the log.
-	logs.waitFor(t, "ready. ctrl-c to stop")
-	return d, logs, cancel, errCh
 }
 
 func shutdownReq(t *testing.T, d *Daemon, token string) *http.Response {
