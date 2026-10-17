@@ -53,7 +53,8 @@ done
 # -json given by hand still keeps the stream, but prints it raw and writes no table, since the stream is then yours.
 runs="build.claude/test-runs"
 mkdir -p "$runs"
-stamp="$(date +%Y%m%d-%H%M%S)"
+# The pid too: ci.sh runs two of these side by side, and one second is not a unique name.
+stamp="$(date +%Y%m%d-%H%M%S)-$$"
 raw="$runs/$stamp-$mode.jsonl"
 tsv="$runs/$stamp-$mode.tsv"
 

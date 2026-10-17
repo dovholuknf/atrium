@@ -27,3 +27,19 @@ func TestOutsideJobScriptSkipsTheConsoleHost(t *testing.T) {
 		t.Fatalf("cmd's pid is no longer the fallback: %s", s)
 	}
 }
+
+func TestOutsideJobScriptHidesTheWindowAndStopsWhenCmdIsGone(t *testing.T) {
+	s := outsideJobScript()
+	for _, want := range []string{
+		"Win32_ProcessStartup", "ShowWindow=[uint16]0", "ProcessStartupInformation=$si",
+		"[Diagnostics.Stopwatch]::StartNew()", "-lt 5000",
+		`-Filter "ProcessId=$($r.ProcessId)")) { exit 4 }`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the script lacks %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "$i -lt 50") {
+		t.Errorf("the poll is counted in iterations again:\n%s", s)
+	}
+}

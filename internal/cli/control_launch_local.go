@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"os"
@@ -26,10 +28,22 @@ func launchLocalWait() time.Duration {
 // and whose card had not shown yet. The next launch for that directory looks outside them BEFORE it posts, so
 // a card that turned up late is returned and not started a second time. Kept for the life of this process
 // only: it is the retrying session's own memory, and nothing about it is worth a disk.
+//
+// keys is the launch key of that attempt. The first attempt makes one and the retry for the same directory sends it
+// again, so a room that has the card already filed under it returns that card and starts nothing, which closes the
+// window the snapshot cannot. A room older than the key ignores it, and the snapshot is what is left.
 var launchAttempts = struct {
 	sync.Mutex
 	known map[string]map[string]bool
-}{known: map[string]map[string]bool{}}
+	keys  map[string]string
+}{known: map[string]map[string]bool{}, keys: map[string]string{}}
+
+// newLaunchKey is a random key for one launch, made on its first attempt.
+func newLaunchKey() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 func launchAttemptKey(cwd string) string {
 	return strings.ToLower(strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(cwd), "\\", "/"), "/"))
@@ -78,12 +92,15 @@ func postLaunch(ctx context.Context, cwd string, req map[string]any, t *card) (r
 	// A PREVIOUS ATTEMPT THAT LOST ITS ANSWER: the card may have turned up since.
 	launchAttempts.Lock()
 	prior := launchAttempts.known[key]
+	launchKey := launchAttempts.keys[key]
 	launchAttempts.Unlock()
+	if launchKey == "" {
+		launchKey = newLaunchKey()
+	}
+	req["launch_key"] = launchKey
 	if prior != nil && canTell {
 		if found := pickLaunched(prior, cwd, before); found != nil {
-			launchAttempts.Lock()
-			delete(launchAttempts.known, key)
-			launchAttempts.Unlock()
+			clearLaunchAttempt(key)
 			*t = *found
 			return true, nil
 		}
@@ -93,7 +110,8 @@ func postLaunch(ctx context.Context, cwd string, req map[string]any, t *card) (r
 	err = askFor(ctx, launchLocalWait(), http.MethodPost, "/v1/launch", req, t)
 	if err == nil {
 		clearLaunchAttempt(key)
-		return false, nil
+		// A replay is the card an earlier attempt filed, which is a recovery in what the caller is told.
+		return t.LaunchReplay, nil
 	}
 	var refused *peerToolErr
 	if errors.As(err, &refused) && refused.code != http.StatusBadGateway {
@@ -119,6 +137,7 @@ func postLaunch(ctx context.Context, cwd string, req map[string]any, t *card) (r
 	}
 	launchAttempts.Lock()
 	launchAttempts.known[key] = known
+	launchAttempts.keys[key] = launchKey
 	launchAttempts.Unlock()
 	return false, err
 }
@@ -126,5 +145,6 @@ func postLaunch(ctx context.Context, cwd string, req map[string]any, t *card) (r
 func clearLaunchAttempt(key string) {
 	launchAttempts.Lock()
 	delete(launchAttempts.known, key)
+	delete(launchAttempts.keys, key)
 	launchAttempts.Unlock()
 }

@@ -543,7 +543,7 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 		go d.awaitShellExit(r)
 		go d.sweepIdleShell(r)
 	} else {
-		go d.awaitExit(r)
+		d.goAwaitExit(r)
 	}
 	log.Printf("[atrium] reattached %s for %s (run %s, pid %d)", row.Kind, row.TaskID, row.RunID, att.Info.Pid)
 }

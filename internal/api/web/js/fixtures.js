@@ -1374,6 +1374,8 @@ async function launchRunnerHereNow(harnessID, cwd, ontoTask, room) {
       body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
+  // The answer is the daemon's word on the card, ahead of its own event. See `cardLaunched` in js/cards.js.
+  cardLaunched(task);
   if (task && task.supervised) {
     switchView("terms");
     openTerm(task);
@@ -1974,6 +1976,9 @@ async function launchNow(opening) {
   document.getElementById("launch").close();
   // The room a launch went to is the default the next link opens on (linkRoomFor), whichever way it launched.
   rememberLaunchRoom(room, task && task.id);
+  // Recorded for a launch onto a card the board already lists. A brand new card is left for the list to bring. See
+  // `cardLaunched` in js/cards.js.
+  cardLaunched(task);
 
   // Straight to the terminal you just started. Landing on the board instead
   // means finding the new card and clicking attach, which is two steps to get

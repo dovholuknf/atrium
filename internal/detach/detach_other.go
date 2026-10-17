@@ -9,13 +9,17 @@ import (
 	"syscall"
 )
 
-// Start: the POSIX half. A new session, so the child has no controlling terminal and does not take the SIGHUP that
-// closing this room's terminal sends.
-func Start(exe string, args []string, out *os.File) (*os.Process, error) {
+// Setsid, so the child has no controlling terminal and does not take the SIGHUP that closing the room's terminal sends.
+func Start(exe string, args []string, log string) (*os.Process, error) {
 	cmd := exec.Command(exe, args...)
 	cmd.Stdin = nil
-	if out != nil {
-		cmd.Stdout, cmd.Stderr = out, out
+	if log != "" {
+		f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		cmd.Stdout, cmd.Stderr = f, f
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {

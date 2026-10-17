@@ -34,23 +34,36 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # GROUPS. The workflow runs one job per group and platform, so the Go tests, the Go checks and the board run side by
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
-group_list="go-test go-checks board board-visual"
+#
+# THE GO TESTS ARE TWO JOBS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by wall
+# time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the whole
+# suite in one job, for a laptop.
+#
+# THE BOARD IS TWO JOBS TOO. board-1 and board-2 are the board step over half the gating units each (board_units
+# says how they are halved), and board is all of them in one job.
+#
+# THE SMALL CHECKS RIDE WITH go-checks, the shortest job, and not with the board, the longest: the skins, the
+# contrast, the opencode plugin, the release refusals and the script parses have no platform in them and run once, on
+# the linux job (linux_job_only). The PowerShell parse and tests are Windows only and skip themselves elsewhere.
+group_list="go-test go-test-1 go-test-2 go-checks board board-1 board-2 board-visual"
 group_steps() {
   case "$1" in
-    go-test) echo "go-build,go-test,time-guard,clean-tree" ;;
-    go-checks) echo "gofmt,go-vet,go-race,govulncheck,clean-tree" ;;
+    go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
+    go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     board-visual) echo "board-visual,clean-tree" ;;
-    board) echo "board,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
+    board|board-1|board-2) echo "board,clean-tree" ;;
     *) return 1 ;;
   esac
 }
+# A group name ending in -1 or -2 picks that part of a step that has parts. Empty is the whole step.
+part_of() { case "$1" in *-1) echo 1 ;; *-2) echo 2 ;; esac; }
 
-only=""
+only=""; group=""; part=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --only) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--only needs a step name. steps: $all_steps" >&2; exit 2; }; only="$2"; shift 2 ;;
     --only=*) only="${1#--only=}"; shift ;;
-    --group) [ $# -ge 2 ] && only="$(group_steps "$2")" || { echo "--group needs one of: $group_list" >&2; exit 2; }; shift 2 ;;
+    --group) [ $# -ge 2 ] && only="$(group_steps "$2")" || { echo "--group needs one of: $group_list" >&2; exit 2; }; group="$2"; part="$(part_of "$2")"; shift 2 ;;
     --list) echo $all_steps | tr ' ' '\n'; exit 0 ;;
     --list-groups) for g in $group_list; do echo "$g: $(group_steps "$g")"; done; exit 0 ;;
     -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
@@ -124,21 +137,56 @@ check() {
     mark_fail
   fi
 }
+# A check with no platform in it runs once per run, on the linux job. A laptop runs it wherever it is.
+linux_job_only() {
+  if [ -n "${GITHUB_ACTIONS:-}" ] && [ "$os" != linux ]; then echo "skipped: runs once, on the linux job."; return 0; fi
+  return 1
+}
 # THE BOARD'S UNITS, split by scripts/board-visual-units.txt (one unit a line, # for a comment). `board_units gating`
 # is every unit not on the list, `board_units visual` the ones on it, both comma separated. A name on the list that
 # the suite no longer has is an error, so the list cannot rot.
+#
+# `board_units gating-1` and `gating-2` are the gating units in two halves of about equal time, for the two board
+# jobs: the harness's pin groups stay whole, and each goes, longest first, to the half with less so far, weighed by
+# scripts/board-suite-weights.json (a unit it lacks weighs the median). The same arithmetic as test-board-sharded.js
+# and deterministic, so the two jobs never both run a unit and never both leave one out.
 board_units() {
   HEADLESS_LIST=1 node scripts/test-board-headless.js | node -e '
     const fs = require("fs");
     const lines = fs.readFileSync(0, "utf8").split("\n").reverse();
     const json = lines.find(l => l.startsWith("{"));
     if (!json) { process.stderr.write("the harness listed no units\n"); process.exit(1); }
-    const all = JSON.parse(json).units;
+    const list = JSON.parse(json), all = list.units;
     const visual = fs.readFileSync("scripts/board-visual-units.txt", "utf8").split("\n")
       .map(l => l.replace(/#.*/, "").trim()).filter(Boolean);
     const gone = visual.filter(u => !all.includes(u));
     if (gone.length) { process.stderr.write("board-visual-units.txt names units the suite lacks: " + gone.join(" ") + "\n"); process.exit(1); }
-    const want = process.argv[1] === "visual" ? visual : all.filter(u => !visual.includes(u));
+    const which = process.argv[1];
+    let want = which === "visual" ? visual : all.filter(u => !visual.includes(u));
+    const half = (which.match(/^gating-([12])$/) || [])[1];
+    if (half) {
+      const ms = (JSON.parse(fs.readFileSync("scripts/board-suite-weights.json", "utf8")).ms) || {};
+      const known = Object.values(ms).filter(x => x > 0).sort((a, b) => a - b);
+      const dflt = known.length ? known[Math.floor(known.length / 2)] : 1;
+      const w = u => (ms[u] > 0 ? ms[u] : dflt);
+      const pinOf = new Map();
+      for (const [g, p] of Object.entries(list.pins || {})) for (const u of p.units) pinOf.set(u, g);
+      const groups = [], byPin = new Map();
+      for (const u of want) {
+        const g = pinOf.get(u);
+        if (!g) { groups.push({ units: [u], weight: w(u) }); continue; }
+        if (!byPin.has(g)) { const x = { units: [], weight: 0 }; byPin.set(g, x); groups.push(x); }
+        byPin.get(g).units.push(u); byPin.get(g).weight += w(u);
+      }
+      const bins = [{ units: [], weight: 0 }, { units: [], weight: 0 }];
+      for (const g of groups.slice().sort((a, b) => b.weight - a.weight)) {
+        const b = bins[0].weight <= bins[1].weight ? bins[0] : bins[1];
+        b.units.push(...g.units); b.weight += g.weight;
+      }
+      const at = new Map(all.map((u, i) => [u, i]));
+      want = bins[half - 1].units.sort((a, b) => at.get(a) - at.get(b));
+      process.stderr.write("gating-" + half + ": " + want.length + " units, " + Math.round(bins[half - 1].weight / 1000) + " s by the weight file\n");
+    }
     process.stdout.write(want.join(","));
   ' "$1"
 }
@@ -236,6 +284,7 @@ write_summary() {
     echo
     echo '```'
     echo "bash scripts/ci.sh"
+    [ -n "$group" ] && echo "bash scripts/ci.sh --group $group"
     [ -n "$failed_steps" ] && echo "bash scripts/ci.sh --only $failed_steps"
     echo '```'
     echo
@@ -257,6 +306,12 @@ echo "git:         $(git --version 2>/dev/null || echo none)"
 echo "node:        $(node --version 2>/dev/null || echo none)"
 if [ "$os" = windows ]; then
   echo "pwsh:        $(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>/dev/null || echo none)"
+fi
+# Defender on the hosted Windows runner: whether it scans, what a never-seen executable pays, and the folders the
+# tests write binaries to excluded, with the cost measured again after. Only on GitHub's runner, which is thrown
+# away: a developer's machine is never changed by a CI script. It never fails the step. scripts/ci-defender.ps1.
+if [ "$os" = windows ] && [ -n "${GITHUB_ACTIONS:-}" ] && command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoProfile -File scripts/ci-defender.ps1 || echo "ci-defender: did not run (exit $?)"
 fi
 echo "shells:      sh=$(command -v sh || echo none) bash=$BASH_VERSION"
 echo "cleared:     ${leaked:-no ATRIUM_* variables were set}"
@@ -337,15 +392,50 @@ if step go-test "go test"; then
   # The raw stream is kept whole.
   started=$(date +%s)
   # ALL the tests, unit and integration. CI is the only place the integration tests run. See scripts/test.sh.
-  bash scripts/test.sh full -json -p "$cpus" -timeout 20m 2>&1 \
-    | tee "$artefacts/go-test.json" \
-    | go run scripts/ci-report.go -dir "$artefacts"
-  codes=("${PIPESTATUS[@]}")
+  # go_test_run <label> <go test args>: the stream kept whole in <label>.json, and through the reporter live.
+  go_test_run() {
+    local label="$1" dir; shift
+    dir="$artefacts/go-test.$label"; mkdir -p "$dir"
+    bash scripts/test.sh full -json -timeout 20m "$@" 2>&1 | tee "$dir/stream.json" | go run scripts/ci-report.go -dir "$dir"
+    local codes=("${PIPESTATUS[@]}")
+    [ "${codes[0]}" = "0" ] && [ "${codes[2]}" = "0" ]
+  }
+  if [ -z "$part" ]; then
+    go_test_run all -p "$cpus" ./...; go_ok=$?
+    mv "$artefacts/go-test.all/stream.json" "$artefacts/go-test.json"
+    mv "$artefacts"/go-test.all/* "$artefacts/" 2>/dev/null
+  else
+    # THE TWO PARTS, each about half the suite's wall time on a windows-latest runner (run 39040667475, -p 4):
+    # internal/daemon was 480 of the 1480 package seconds, so no split by package halves anything, and daemon is cut
+    # by test name instead. Part 1 is daemon's TestA to TestF (51% of its seconds on windows, 44% on linux, 42% on
+    # macos) with gitsync, api, cli and three small packages. Part 2 is the rest of daemon with every other package,
+    # so a new package lands in part 2 and none is left out. go test takes one -run for every package named, so a
+    # part is two invocations side by side: daemon's one binary and -p 3 of the rest, the four binaries a whole run has.
+    daemon="./internal/daemon"; cut='^Test[A-F]'
+    part1="./internal/gitsync ./internal/api ./internal/cli ./internal/ptyhost ./internal/deployready ./internal/roomspec"
+    if [ "$part" = 1 ]; then
+      rest="$part1"
+      go_test_run daemon -run "$cut" "$daemon" & daemon_pid=$!
+    else
+      mod="$(go list -m)"
+      rest="$(go list -tags integration,git ./... | grep -v -x -F -f <(for p in $daemon $part1; do echo "$mod/${p#./}"; done) | tr '\n' ' ')"
+      go_test_run daemon -skip "$cut" "$daemon" & daemon_pid=$!
+    fi
+    echo "part $part: daemon $([ "$part" = 1 ] && echo -run || echo -skip) '$cut', then: $rest"
+    go_test_run rest -p $((cpus - 1)) $rest; rest_ok=$?
+    wait "$daemon_pid"; daemon_ok=$?
+    go_ok=$(( rest_ok || daemon_ok ))
+    # The merged stream is what time-guard reads and the files the summary reads come from, so the reporter runs
+    # once more over it, quietly: its text is in go-test.report.txt. The parts' own folders are then redundant.
+    cat "$artefacts/go-test.daemon/stream.json" "$artefacts/go-test.rest/stream.json" > "$artefacts/go-test.json"
+    go run scripts/ci-report.go -dir "$artefacts" < "$artefacts/go-test.json" > "$artefacts/go-test.report.txt" 2>&1 || true
+  fi
+  rm -rf "$artefacts"/go-test.all "$artefacts"/go-test.daemon "$artefacts"/go-test.rest
   echo "go test took $(( $(date +%s) - started ))s"
-  if [ "${codes[0]}" = "0" ] && [ "${codes[2]}" = "0" ]; then
+  if [ "$go_ok" = "0" ]; then
     echo "ok: go test"
   else
-    echo "FAILED: go test (go test exit ${codes[0]}, report exit ${codes[2]})" >&2
+    echo "FAILED: go test (see the FAIL lines above)" >&2
     mark_fail
   fi
   if [ -f "$artefacts/go-test.counts" ]; then
@@ -417,8 +507,8 @@ if step board "the board"; then
   board_log="$artefacts/board.log"
   # THE BOARD IS TWO RUNS. The units on scripts/board-visual-units.txt measure pixels and wait on timers, so a runner's
   # fonts or load fail them and no code change does. They run in the board-visual group, which never reddens the run.
-  # This step runs every other unit.
-  gating="$(board_units gating)"
+  # This step runs every other unit, or half of them in the board-1 and board-2 groups (board_units).
+  gating="$(board_units "gating${part:+-$part}")"
   board_run() {
     env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" HEADLESS_UNITS="$gating" \
       bash scripts/check-board.sh 2>&1 | tee "$board_log"
@@ -447,44 +537,46 @@ if step board-visual "the board, pixel and timing units"; then
 fi
 
 if step skins "the skins"; then
-  check "skins" bash scripts/check-skins.sh
+  linux_job_only || check "skins" bash scripts/check-skins.sh
 fi
 
 if step contrast "the contrast"; then
   # The skins check says every skin sets every variable. This one says the values are legible: text against the
   # surface it actually sits on, in all twenty one palettes, with every rgba lift composited first.
-  check "contrast" node scripts/check-contrast.js internal/api/web/css
+  linux_job_only || check "contrast" node scripts/check-contrast.js internal/api/web/css
 fi
 
 if step opencode "the opencode plugin"; then
   # The plugin is the opencode runner's permission gate, and it runs inside opencode where no Go test reaches. Its
   # child_process is mocked, so this needs no atrium and no opencode.
-  check "opencode plugin" node --test --experimental-test-module-mocks scripts/opencode/atrium.test.mjs
+  linux_job_only || check "opencode plugin" node --test --experimental-test-module-mocks scripts/opencode/atrium.test.mjs
 fi
 
 if step release "what the release refuses"; then
   # The refusals, not the release: `cut-release.sh --preflight` against a throwaway repository. No network, builds
   # nothing, takes a second.
-  check "release refusals" bash scripts/check-release.sh
+  linux_job_only || check "release refusals" bash scripts/check-release.sh
 fi
 
 if step parse "the packaging scripts parse"; then
   # A packaging script is run once, by a person, on the day it matters. A syntax error in one is found at exactly the
   # wrong moment, so the shell is asked to parse without running.
-  for f in packaging/postinstall.sh packaging/preremove.sh \
-           packaging/macos/scripts/postinstall \
-           scripts/atrium-service.sh scripts/package-linux.sh \
-           scripts/package-macos.sh \
-           scripts/release.sh scripts/publish-release.sh \
-           scripts/cut-release.sh scripts/check-release.sh \
-           scripts/ci.sh scripts/ci-linux.sh scripts/test.sh \
-           scripts/test-time-guard.sh scripts/test-time-guard-test.sh; do
-    if ! bash -n "$f"; then
-      echo "FAILED: $f does not parse" >&2
-      mark_fail
-    fi
-  done
-  echo "ok: shell scripts parse"
+  if ! linux_job_only; then
+    for f in packaging/postinstall.sh packaging/preremove.sh \
+             packaging/macos/scripts/postinstall \
+             scripts/atrium-service.sh scripts/package-linux.sh \
+             scripts/package-macos.sh \
+             scripts/release.sh scripts/publish-release.sh \
+             scripts/cut-release.sh scripts/check-release.sh \
+             scripts/ci.sh scripts/ci-linux.sh scripts/test.sh \
+             scripts/test-time-guard.sh scripts/test-time-guard-test.sh; do
+      if ! bash -n "$f"; then
+        echo "FAILED: $f does not parse" >&2
+        mark_fail
+      fi
+    done
+    echo "ok: shell scripts parse"
+  fi
 fi
 
 if step powershell "the PowerShell scripts parse"; then

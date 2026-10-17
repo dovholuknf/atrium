@@ -72,8 +72,7 @@ func TestAGivenUpRelayComesBackAsAMessage(t *testing.T) {
 	}
 }
 
-// THE WHOLE PROMISE, with a fake runner in place of the launch. A say to a done card is kept, a wake say resumes the
-// card, and the text kept earlier is typed into the new session, with the wake text queued behind it, not typed.
+// A say to a done card is kept, and a wake say types it into the new session ahead of the wake text, which is queued.
 func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
@@ -91,7 +90,6 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	}
 	d.sup.remove(target.ID)
 
-	// 1. Kept, with no session and no wake.
 	out, code := tell(t, d, "alice", "finished", "KEPTEARLIER")
 	if code != http.StatusOK || out["reachable"] != "kept" {
 		t.Fatalf("first say: %d %v", code, out)
@@ -100,7 +98,6 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 		t.Fatalf("undelivered %d, want 1", n)
 	}
 
-	// 2. A wake resumes it. The fake launch stands up a runner as the real one would.
 	var f *fakePTY
 	launched := 0
 	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
@@ -121,8 +118,6 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 		t.Fatalf("launched %d times, want 1", launched)
 	}
 
-	// 3. Not typed by the say itself, and not before the runner has said it started. Once it has, the kept text and
-	// the wake text go in as ONE submitted turn, the kept text first.
 	if strings.Contains(f.written(), "WAKETEXT") || strings.Contains(f.written(), "KEPTEARLIER") {
 		t.Fatalf("typed straight into a session that had only just started: %q", f.written())
 	}
@@ -143,8 +138,13 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	if n := strings.Count(got, "\r"); n != 1 {
 		t.Fatalf("%d submits, want ONE turn for everything held: %q", n, got)
 	}
-	time.Sleep(3 * d.hk.keptTick)
-	if n, _ := d.st.UndeliveredCount(target.ID); n != 0 {
+	deadline = time.Now().Add(5 * time.Second)
+	n, _ := d.st.UndeliveredCount(target.ID)
+	for n != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		n, _ = d.st.UndeliveredCount(target.ID)
+	}
+	if n != 0 {
 		t.Fatalf("undelivered %d after typing, want 0", n)
 	}
 	if got := f.written(); strings.Count(got, "\r") != 1 {
