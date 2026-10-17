@@ -1,0 +1,1 @@
+- transport-toggle-before.png and transport-toggle-after.png: the rooms page badges for a room with ziti off and one whose ziti dials keep failing, as they were drawn and now, from the `transportToggle` headless unit (TOGGLE_SHOTS).

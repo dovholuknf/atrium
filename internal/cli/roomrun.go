@@ -326,7 +326,14 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	if err != nil {
 		return err
 	}
+	// WHAT WAS TURNED OFF FROM THE HUB STAYS OFF across this start.
+	for _, k := range tr.Off {
+		dial.SetOff(k, true)
+	}
 	log.Printf("[link] will try %s", ladderSays(dial.Rungs()))
+	if len(tr.Off) > 0 {
+		log.Printf("[link] turned off here: %s", strings.Join(tr.Off, ", "))
+	}
 	if strings.TrimSpace(db) == "" {
 		db = defaultRoomDB()
 	}
@@ -390,6 +397,15 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
 		OnPaths: func(ps []link.Path) { learnHubPaths(keys, saved, dial, ps) },
+		// A transport turned off from the hub is written beside the others, so a restart keeps it.
+		PersistOff: func(off []string) error {
+			t, err := keys.Transports()
+			if err != nil {
+				return err
+			}
+			t.Off = off
+			return keys.SaveTransports(t)
+		},
 		Version: Version,
 		Commit:  runningCommit(),
 		Host:    hostname(),
