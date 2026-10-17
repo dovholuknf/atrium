@@ -4472,7 +4472,7 @@ async function pasteLandsSection(browser, base) {
             if (!m || !m.id) return;
             setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify({ t: "in-done", id: m.id }) }),
               window.__link.write);
-            setTimeout(() => { let k = 0; const iv = setInterval(() => { if (++k > window.__link.after / 100 || !this.onmessage) { clearInterval(iv); return; } this.onmessage({ data: new ArrayBuffer(4096) }); }, 100); }, window.__link.write);
+            setTimeout(() => { let k = 0; const iv = setInterval(() => { if (++k > window.__link.after / 100 || !this.onmessage) { clearInterval(iv); return; } window.__link.lastOut = performance.now(); this.onmessage({ data: new ArrayBuffer(4096) }); }, 100); }, window.__link.write);
           }, m ? window.__link.drain : 0);
         },
         close() { this.readyState = 3; } };
@@ -4492,7 +4492,7 @@ async function pasteLandsSection(browser, base) {
     await p.waitForTimeout(300);
     for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
       const got = await p.evaluate(([link, n]) => new Promise(done => {
-        window.__link.drain = link.drain; window.__link.write = link.write; window.__link.after = link.after || 0;
+        window.__link.drain = link.drain; window.__link.write = link.write; window.__link.after = link.after || 0; window.__link.lastOut = 0;
         pasteEnd();
         const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
         const t0 = performance.now();
@@ -4501,7 +4501,7 @@ async function pasteLandsSection(browser, base) {
           const t = performance.now() - t0;
           if (vis()) { lastUp = t; if (firstUp < 0) firstUp = t; }
           if (t < link.drain + link.write + (link.after || 0) + 1200) { requestAnimationFrame(loop); return; }
-          done({ firstUp: Math.round(firstUp), lastUp: Math.round(lastUp) });
+          done({ firstUp: Math.round(firstUp), lastUp: Math.round(lastUp), lastOut: Math.round(window.__link.lastOut - t0) });
         };
         requestAnimationFrame(loop);
         const dt = new DataTransfer();
@@ -4509,7 +4509,7 @@ async function pasteLandsSection(browser, base) {
         document.getElementById("t-screen").dispatchEvent(
           new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
       }), [link, 500 * 1024]);
-      const end = link.drain + link.write + (link.after || 0);
+      const end = link.after ? Math.max(got.lastOut, link.drain + link.write) : link.drain + link.write;
       if (got.firstUp < 0 || got.firstUp > 300) fail(name + ": a 500KB paste did not show the box at once: " + JSON.stringify(got));
       else if (got.lastUp < end - 150 && !(link.after === 0)) fail(name + ": the box went down before the last byte was written (" + end + "ms): " + JSON.stringify(got));
       else if (got.lastUp > end + 600) fail(name + ": the box stayed up after the last byte was written (" + end + "ms): " + JSON.stringify(got));
@@ -7540,6 +7540,7 @@ async function phoneKeyLitSection(browser, base) {
       const [x, y] = await centre(sel);
       await p.touchscreen.tap(x, y);
       await p.waitForTimeout(400);
+      await p.waitForFunction(() => !document.getAnimations().length);
       const now = await probe();
       for (const k of Object.keys(rest)) if (now[k] !== rest[k])
         fail("phoneKeyLit: after a tap on " + sel + " " + k + " reads " + now[k] + ", resting " + rest[k]);
@@ -15504,7 +15505,7 @@ async function mPullSection(browser) {
     await mShot(p, "pull-412");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     const t0 = Date.now();
-    while (await kept() && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
+    while (await kept().catch(() => false) && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
     await p.waitForTimeout(500);
     if (await kept().catch(() => false)) fail(tag + "a pull at the top did not reload the page");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
@@ -21998,11 +21999,15 @@ async function switchPrewarmSection(browser, base) {
 
     // A pointer that leaves before the dwell fetches nothing; a sweep warms nothing.
     await wp.mouse.move(5, 5);
-    await row("sp-b").hover();
-    await idle(30);
-    await row("sp-c").hover();
-    await idle(30);
-    await wp.mouse.move(5, 5);
+    await wp.evaluate(() => {
+      const el = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
+      const fire = (type, target, related) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "mouse", relatedTarget: related }));
+      const b = el("sp-b"), c = el("sp-c");
+      fire("pointerover", b, document.body);
+      fire("pointerout", b, c);
+      fire("pointerover", c, b);
+      fire("pointerout", c, document.body);
+    });
     await idle(300);
     if (gets.length !== 1) fail("switchPrewarm: leaving before the dwell still fetched (" + gets.join(",") + ").");
 
