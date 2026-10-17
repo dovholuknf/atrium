@@ -5459,7 +5459,7 @@ async function termProbeStormSection(browser, base) {
       }
     };
     await sweep();
-    await p.waitForTimeout(300);
+    for (let seen = -1; seen !== probes;) { seen = probes; await p.waitForTimeout(300); }
     const first = probes;
     let frame = 0;
     const spinner = setInterval(() => p.evaluate(([r, f]) => term.write("\x1b[" + r + ";1H\x1b[2K" + "|/-\\"[f % 4] + " working"), [spin, frame++]).catch(() => {}), 1000);
