@@ -7540,6 +7540,7 @@ async function phoneKeyLitSection(browser, base) {
       const [x, y] = await centre(sel);
       await p.touchscreen.tap(x, y);
       await p.waitForTimeout(400);
+      await p.waitForFunction(() => !document.getAnimations().length);
       const now = await probe();
       for (const k of Object.keys(rest)) if (now[k] !== rest[k])
         fail("phoneKeyLit: after a tap on " + sel + " " + k + " reads " + now[k] + ", resting " + rest[k]);
