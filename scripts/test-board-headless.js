@@ -22813,6 +22813,9 @@ async function changeReqSection(browser, base) {
 // there, not a guess. `before(skin)` may put the page in the state to measure after the skin is set.
 async function crInkCheck(p, skins, sels, width, before) {
   const bad = [];
+  // A blanked element's children that set their own colour (a label, a <b>) stay drawn, and when the text wraps (a wider font)
+  // the range's box reaches under them, so their ink reads as the background. Blank the whole subtree.
+  await p.addStyleTag({ content: "[data-crk], [data-crk] * { color: transparent !important; }" });
     for (const skin of skins) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
