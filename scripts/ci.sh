@@ -34,23 +34,29 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # GROUPS. The workflow runs one job per group and platform, so the Go tests, the Go checks and the board run side by
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
-group_list="go-test go-checks board board-visual"
+#
+# THE GO TESTS ARE TWO JOBS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
+# wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the whole
+# suite in one job, for a laptop.
+group_list="go-test go-test-1 go-test-2 go-checks board board-visual"
 group_steps() {
   case "$1" in
-    go-test) echo "go-build,go-test,time-guard,clean-tree" ;;
+    go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,clean-tree" ;;
     board-visual) echo "board-visual,clean-tree" ;;
     board) echo "board,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     *) return 1 ;;
   esac
 }
+# A group name ending in -1 or -2 picks that part of a step that has parts. Empty is the whole step.
+part_of() { case "$1" in *-1) echo 1 ;; *-2) echo 2 ;; esac; }
 
-only=""
+only=""; group=""; part=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --only) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--only needs a step name. steps: $all_steps" >&2; exit 2; }; only="$2"; shift 2 ;;
     --only=*) only="${1#--only=}"; shift ;;
-    --group) [ $# -ge 2 ] && only="$(group_steps "$2")" || { echo "--group needs one of: $group_list" >&2; exit 2; }; shift 2 ;;
+    --group) [ $# -ge 2 ] && only="$(group_steps "$2")" || { echo "--group needs one of: $group_list" >&2; exit 2; }; group="$2"; part="$(part_of "$2")"; shift 2 ;;
     --list) echo $all_steps | tr ' ' '\n'; exit 0 ;;
     --list-groups) for g in $group_list; do echo "$g: $(group_steps "$g")"; done; exit 0 ;;
     -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
@@ -236,6 +242,7 @@ write_summary() {
     echo
     echo '```'
     echo "bash scripts/ci.sh"
+    [ -n "$group" ] && echo "bash scripts/ci.sh --group $group"
     [ -n "$failed_steps" ] && echo "bash scripts/ci.sh --only $failed_steps"
     echo '```'
     echo
@@ -343,15 +350,50 @@ if step go-test "go test"; then
   # The raw stream is kept whole.
   started=$(date +%s)
   # ALL the tests, unit and integration. CI is the only place the integration tests run. See scripts/test.sh.
-  bash scripts/test.sh full -json -p "$cpus" -timeout 20m 2>&1 \
-    | tee "$artefacts/go-test.json" \
-    | go run scripts/ci-report.go -dir "$artefacts"
-  codes=("${PIPESTATUS[@]}")
+  # go_test_run <label> <go test args>: the stream kept whole in <label>.json, and through the reporter live.
+  go_test_run() {
+    local label="$1" dir; shift
+    dir="$artefacts/go-test.$label"; mkdir -p "$dir"
+    bash scripts/test.sh full -json -timeout 20m "$@" 2>&1 | tee "$dir/stream.json" | go run scripts/ci-report.go -dir "$dir"
+    local codes=("${PIPESTATUS[@]}")
+    [ "${codes[0]}" = "0" ] && [ "${codes[2]}" = "0" ]
+  }
+  if [ -z "$part" ]; then
+    go_test_run all -p "$cpus" ./...; go_ok=$?
+    mv "$artefacts/go-test.all/stream.json" "$artefacts/go-test.json"
+    mv "$artefacts"/go-test.all/* "$artefacts/" 2>/dev/null
+  else
+    # THE TWO PARTS, each about half the suite's wall time on a windows-latest runner (run 39040667475, -p 4):
+    # internal/daemon was 480 of the 1480 package seconds, so no split by package halves anything, and daemon is cut
+    # by test name instead. Part 1 is daemon's TestA to TestF (51% of its seconds on windows, 44% on linux, 42% on
+    # macos) with gitsync, api, cli and three small packages. Part 2 is the rest of daemon with every other package,
+    # so a new package lands in part 2 and none is left out. go test takes one -run for every package named, so a
+    # part is two invocations side by side: daemon's one binary and -p 3 of the rest, the four binaries a whole run has.
+    daemon="./internal/daemon"; cut='^Test[A-F]'
+    part1="./internal/gitsync ./internal/api ./internal/cli ./internal/ptyhost ./internal/deployready ./internal/roomspec"
+    if [ "$part" = 1 ]; then
+      rest="$part1"
+      go_test_run daemon -run "$cut" "$daemon" & daemon_pid=$!
+    else
+      mod="$(go list -m)"
+      rest="$(go list -tags integration,git ./... | grep -v -x -F -f <(for p in $daemon $part1; do echo "$mod/${p#./}"; done) | tr '\n' ' ')"
+      go_test_run daemon -skip "$cut" "$daemon" & daemon_pid=$!
+    fi
+    echo "part $part: daemon $([ "$part" = 1 ] && echo -run || echo -skip) '$cut', then: $rest"
+    go_test_run rest -p $((cpus - 1)) $rest; rest_ok=$?
+    wait "$daemon_pid"; daemon_ok=$?
+    go_ok=$(( rest_ok || daemon_ok ))
+    # The merged stream is what time-guard reads and the files the summary reads come from, so the reporter runs
+    # once more over it, quietly: its text is in go-test.report.txt. The parts' own folders are then redundant.
+    cat "$artefacts/go-test.daemon/stream.json" "$artefacts/go-test.rest/stream.json" > "$artefacts/go-test.json"
+    go run scripts/ci-report.go -dir "$artefacts" < "$artefacts/go-test.json" > "$artefacts/go-test.report.txt" 2>&1 || true
+  fi
+  rm -rf "$artefacts"/go-test.all "$artefacts"/go-test.daemon "$artefacts"/go-test.rest
   echo "go test took $(( $(date +%s) - started ))s"
-  if [ "${codes[0]}" = "0" ] && [ "${codes[2]}" = "0" ]; then
+  if [ "$go_ok" = "0" ]; then
     echo "ok: go test"
   else
-    echo "FAILED: go test (go test exit ${codes[0]}, report exit ${codes[2]})" >&2
+    echo "FAILED: go test (see the FAIL lines above)" >&2
     mark_fail
   fi
   if [ -f "$artefacts/go-test.counts" ]; then
