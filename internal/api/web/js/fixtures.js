@@ -1238,6 +1238,12 @@ function onOpenProgress(e) {
 // The card remembers the model for restarts, but each launch starts with an
 // empty field. Hide the control for runners without model_args, such as shells.
 function setLaunchModel(h) {
+  // The setup select resets and hides the same way: it is a claude runner's, and each launch starts on full setup.
+  const setupField = document.getElementById("l-setup-field");
+  if (setupField) {
+    setupField.hidden = !(h && hookTargetFor(h) === "claude");
+    document.getElementById("l-setup").value = "full";
+  }
   // The effort box resets and hides the same way, for a runner with no way to
   // take one.
   const effortField = document.getElementById("l-effort-field");
@@ -1539,6 +1545,8 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   // A choice that survived the dialog would be a setting somebody has to
   // remember to turn back, which is what this is not.
   setLaunchModel(h);
+  // A resume keeps the setup its card was started with (the tag is on the card), so it is not asked again.
+  if (resume) document.getElementById("l-setup-field").hidden = true;
 
   // The card-actions footer: terminate and remove, wired only when the dialog
   // is aimed at an existing card. Closes the dialog BEFORE running the action,
@@ -1935,6 +1943,13 @@ async function launchNow(opening) {
     // The same for the effort. See docs/runtime/launch-options-design.md.
     effort: document.getElementById("l-effort").value.trim()
   });
+  // Full setup says nothing, so a plain launch posts what it always did. Superlean implies lean on the room, so only
+  // the one flag goes.
+  if (!document.getElementById("l-setup-field").hidden) {
+    const setup = document.getElementById("l-setup").value;
+    if (setup === "lean") body.lean = true;
+    else if (setup === "superlean") body.superlean = true;
+  }
   // WHAT THE RECOGNISER KNEW, sent only when there was one. The daemon never
   // overwrites a card field with an empty value, so a plain launch says
   // nothing about the repo rather than blanking one a session reported for

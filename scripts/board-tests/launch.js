@@ -1,6 +1,6 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchRepoUrls, launchLink, launchThrowaway, newWorkDialog.
+// Units: launchRepoUrls, launchLink, launchThrowaway, launchSetup, newWorkDialog.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -59,6 +59,62 @@ async function launchThrowawaySection(browser, base) {
     await ctx.close();
   }
   if (!bad) console.log("launchThrowaway ok");
+}
+
+// THE SETUP SELECT in the launch dialog (docs/changes/r-superlean-launch-p3.md): full setup, lean, superlean, for a claude
+// runner only. Full setup (the default) sends neither flag, lean sends lean:true, superlean sends superlean:true alone. It
+// resets to full setup on every open, and is hidden for another runner and for a resume. SETUP_SHOTS=<dir> writes the dialog.
+async function launchSetupSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const bodies = [];
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    await p.route(/\/v1\/launch(\?|$)/, async r => {
+      bodies.push(JSON.parse(r.request().postData() || "{}"));
+      await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "t1", status: "running" }) });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openLaunch === "function" && typeof doLaunch === "function");
+    const state = () => p.evaluate(() => ({ shown: !document.getElementById("l-setup-field").hidden,
+      value: document.getElementById("l-setup").value, options: [...document.getElementById("l-setup").options].map(o => o.value) }));
+    const launch = async setup => {
+      await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+      if (setup) await p.selectOption("#l-setup", setup);
+      await p.evaluate(() => doLaunch());
+      await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("launchSetup: the dialog stayed open"));
+      return bodies[bodies.length - 1] || {};
+    };
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    let s = await state();
+    if (!s.shown || s.value !== "full" || s.options.join() !== "full,lean,superlean") fail("launchSetup: a fresh dialog " + JSON.stringify(s));
+    if (process.env.SETUP_SHOTS) {
+      await p.selectOption("#l-setup", "superlean");
+      await p.locator("dialog#launch").screenshot({ path: process.env.SETUP_SHOTS + "/launch-setup.png" });
+    }
+    await p.evaluate(() => document.getElementById("launch").close());
+    let b = await launch("");
+    if ("lean" in b || "superlean" in b) fail("launchSetup: full setup sent a flag " + JSON.stringify(b));
+    b = await launch("lean");
+    if (b.lean !== true || "superlean" in b) fail("launchSetup: lean body " + JSON.stringify(b));
+    b = await launch("superlean");
+    if (b.superlean !== true || "lean" in b) fail("launchSetup: superlean body " + JSON.stringify(b));
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    if ((await state()).value !== "full") fail("launchSetup: the choice carried over to the next open");
+    // another runner and a resume are not offered it
+    await p.evaluate(() => { document.getElementById("l-setup").value = "lean"; setLaunchModel({ id: "x", cmd: "C:\\bin\\codex.exe" }); });
+    s = await state();
+    if (s.shown || s.value !== "full") fail("launchSetup: a runner that is not claude was offered it " + JSON.stringify(s));
+    await p.evaluate(() => document.getElementById("launch").close());
+    await p.evaluate(async () => { await openLaunch(null, "abc", "/work/here", null, null); });
+    if ((await state()).shown) fail("launchSetup: a resume was offered it");
+    await p.evaluate(() => document.getElementById("launch").close());
+    if (errors.length) fail("launchSetup: page errors " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("launchSetup ok");
 }
 
 // THE LAUNCH DIALOG'S `repo` LIST (js/launchrepo.js, docs/changes/launch-repo-picker.md). `repo` opens a panel inside the
@@ -460,9 +516,10 @@ const units = [
   { name: "launchRepoUrls", run: ({ browser, base }) => launchRepoUrlsSection(browser, base) },
   { name: "launchLink", run: ({ browser, base }) => launchLinkSection(browser, base) },
   { name: "launchThrowaway", run: ({ browser, base }) => launchThrowawaySection(browser, base) },
+  { name: "launchSetup", run: ({ browser, base }) => launchSetupSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
 ];
-const sections = { launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, newWorkDialog: newWorkDialogSection };
+const sections = { launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, newWorkDialog: newWorkDialogSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

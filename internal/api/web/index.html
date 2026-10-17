@@ -3221,6 +3221,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <div class="toolbar" id="l-model-pick" hidden></div>
     </div>
+    <!-- SETUP: how much of the operator's own setup a claude runner starts with. Full is the default and sends nothing.
+         Lean drops the user CLAUDE.md, plugins and MCP servers, superlean goes below that
+         (docs/runtime/superlean-design.md). This launch only, and hidden for a runner that is not claude. -->
+    <div class="field" id="l-setup-field" hidden>
+      <label class="eyebrow" for="l-setup">setup</label>
+      <select id="l-setup">
+        <option value="full">full setup</option>
+        <option value="lean">lean</option>
+        <option value="superlean">superlean</option>
+      </select>
+    </div>
     <div class="field">
       <label class="eyebrow" for="l-cwd">working directory</label>
       <!-- `repo` first, because it is the control that answers this field. It lists the checkouts this room's own
