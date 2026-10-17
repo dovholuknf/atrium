@@ -152,13 +152,32 @@ type hubSSH struct {
 	got    bool
 }
 
+// link is the dialer for one hub call and what to do with it afterwards. The room passes its own ladder, which is never
+// closed here, because it holds the one ziti context the hub link uses. With none, a ladder is built for the call and
+// closed after it, since a ziti dialer holds a context whose goroutines live until it is.
+func (h *hubSSH) link() (string, link.Dialer, func(), error) {
+	if h.shared != nil {
+		saved, err := link.Keys{Dir: h.dir}.Joined()
+		if err != nil {
+			return "", nil, nil, err
+		}
+		return saved.Room, h.shared, func() {}, nil
+	}
+	room, d, err := roomLinkFor(h.dir)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	return room, d, func() { closeDialer(d) }, nil
+}
+
 func (h *hubSSH) fetch(ctx context.Context) ([]link.SSHEntry, string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	room, d, err := roomLinkFor(h.dir)
+	room, d, release, err := h.link()
 	if err != nil {
 		return nil, "", err
 	}
+	defer release()
 	if !h.got {
 		h.set, h.err = link.FetchSSHSet(ctx, d, room)
 		h.got = true
@@ -197,10 +216,11 @@ func (h *hubSSH) peers(ctx context.Context) ([]sshwizard.PeerKey, error) {
 }
 
 func (h *hubSSH) publish(ctx context.Context, p sshwizard.PublishRecord) error {
-	room, d, err := roomLinkFor(h.dir)
+	room, d, release, err := h.link()
 	if err != nil {
 		return err
 	}
+	defer release()
 	err = link.PublishSSH(ctx, d, room, link.SSHPublish{User: p.User, Key: p.Key, Port: p.Port, On: p.On})
 	h.mu.Lock()
 	h.got = false

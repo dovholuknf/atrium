@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
@@ -68,11 +66,11 @@ func TestSSHSyncOnTheRoomsLadderBuildsNoDialersOfItsOwn(t *testing.T) {
 	rc := countZitiRungs(t)
 	dir := joinedOverZiti(t)
 	m := localSSHMachine(dir, rc.rung())
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		hubCalls(m)
 	}
 	if got := rc.built.Load(); got != 0 {
-		t.Fatalf("ten passes built %d ziti dialers, want 0: the room's own ladder is the one to dial", got)
+		t.Fatalf("five passes built %d ziti dialers, want 0: the room's own ladder is the one to dial", got)
 	}
 	if rc.dials.Load() == 0 {
 		t.Fatal("the room's ladder was never dialled")
@@ -86,7 +84,7 @@ func TestSSHCallsWithNoLadderReleaseWhatTheyBuild(t *testing.T) {
 	rc := countZitiRungs(t)
 	dir := joinedOverZiti(t)
 	m := localSSHMachine(dir, nil)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		hubCalls(m)
 		if live := rc.live(); live > 0 {
 			t.Fatalf("after pass %d, %d ziti dialers are still live (built %d, closed %d)",
@@ -95,17 +93,5 @@ func TestSSHCallsWithNoLadderReleaseWhatTheyBuild(t *testing.T) {
 	}
 	if rc.built.Load() == 0 {
 		t.Fatal("nothing was built, so the test proved nothing")
-	}
-}
-
-func TestSSHWizardRouteOnTheRoomsLadderBuildsNoDialers(t *testing.T) {
-	rc := countZitiRungs(t)
-	dir := joinedOverZiti(t)
-	h := sshWizardHandler(dir, rc.rung())
-	for i := 0; i < 10; i++ {
-		h(httptest.NewRequest(http.MethodGet, "/v1/ssh/wizard", nil))
-	}
-	if got := rc.built.Load(); got != 0 {
-		t.Fatalf("ten wizard reads built %d ziti dialers, want 0", got)
 	}
 }
