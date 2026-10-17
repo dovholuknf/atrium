@@ -859,7 +859,7 @@ function soloSpeak(kind, item) {
 // view, and a remembered card that is gone or is no longer supervised, both
 // mean the same thing: whatever was written down does not describe this board
 // any more, so it is dropped and you get the board.
-async function restoreWhereYouWere() {
+async function restoreWhereYouWere(openedOn) {
   let view = "", card = "";
   try {
     view = localStorage.getItem("atrium.view") || "";
@@ -882,6 +882,8 @@ async function restoreWhereYouWere() {
     view = "terms";
   } else {
     if (!VIEWS.includes(view) || view === "board") return;
+    // The restore runs half a second after load, so a tab clicked in that gap is where the reader chose to be.
+    if (openedOn && document.querySelector(".tab.on").dataset.view !== openedOn) return;
     switchView(view);
   }
   if (view !== "terms" || !card) return;
