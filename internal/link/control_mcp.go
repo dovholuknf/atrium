@@ -3,6 +3,8 @@ package link
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -451,6 +453,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	c.registerFiles(s, class)
 	c.registerDeploy(s, class)
 	c.registerWorktrees(s, class)
+	c.registerTransport(s, class)
 	c.registerResources(s, class)
 
 	return s
@@ -548,19 +551,21 @@ func roomOf(req *mcp.CallToolRequest) string {
 // ctlCard is the part of a task these tools report. The board's own shape is
 // much larger and most of it is for drawing.
 type ctlCard struct {
-	ID       string   `json:"id"`
-	Title    string   `json:"display_title"`
-	Wire     string   `json:"wire_name"`
-	Alias    string   `json:"alias"`
-	Created  string   `json:"created_at"`
-	Status   string   `json:"status"`
-	Worktree string   `json:"worktree"`
-	Runner   string   `json:"runner"`
-	Why      string   `json:"why"`
-	Idle     int      `json:"idle_seconds"`
-	Wait     int      `json:"wait_seconds"`
-	Superv   bool     `json:"supervised"`
-	Tags     []string `json:"tags"`
+	ID string `json:"id"`
+	// LaunchReplay: the room answered with the card an earlier attempt filed under the same launch key.
+	LaunchReplay bool     `json:"launch_replay"`
+	Title        string   `json:"display_title"`
+	Wire         string   `json:"wire_name"`
+	Alias        string   `json:"alias"`
+	Created      string   `json:"created_at"`
+	Status       string   `json:"status"`
+	Worktree     string   `json:"worktree"`
+	Runner       string   `json:"runner"`
+	Why          string   `json:"why"`
+	Idle         int      `json:"idle_seconds"`
+	Wait         int      `json:"wait_seconds"`
+	Superv       bool     `json:"supervised"`
+	Tags         []string `json:"tags"`
 	// What the card was launched with. See docs/runtime/launch-options-design.md.
 	Model         string   `json:"model"`
 	Effort        string   `json:"effort"`
@@ -1690,6 +1695,37 @@ type launchOutput struct {
 // the answer reaches it, and long enough for a room that trusts the worktree and starts the runner first.
 const launchTimeout = 30 * time.Second
 
+// launchKeys holds, per room and directory, the key of a launch whose answer was lost and whose card had not shown
+// yet. Memory only, like the snapshot it backs: it is the hub's own memory of a retry, and a restart drops it.
+var launchKeys = struct {
+	sync.Mutex
+	m map[string]string
+}{m: map[string]string{}}
+
+func launchAttemptKey(room, cwd string) string {
+	return strings.ToLower(room + "|" + strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(cwd), "\\", "/"), "/"))
+}
+
+// launchKeyFor is the key a launch for this attempt sends: the one an earlier attempt made, else a new random one.
+func launchKeyFor(attempt string) string {
+	launchKeys.Lock()
+	defer launchKeys.Unlock()
+	if k := launchKeys.m[attempt]; k != "" {
+		return k
+	}
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	k := hex.EncodeToString(b)
+	launchKeys.m[attempt] = k
+	return k
+}
+
+func forgetLaunchKey(attempt string) {
+	launchKeys.Lock()
+	delete(launchKeys.m, attempt)
+	launchKeys.Unlock()
+}
+
 // LaunchRecoveredNote is what a launch says when its answer was lost but the card was found on the room.
 const LaunchRecoveredNote = "NOTE: the room's answer was slow, so the card was found by looking. it is running: do NOT launch it again. " +
 	LaunchStartedNote
@@ -1920,6 +1956,11 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if spawnedByDir != "" {
 		reqBody["spawned_by_dir"] = spawnedByDir
 	}
+	// THE LAUNCH KEY: made on the first attempt for this room and directory and sent again by the retry, so a room
+	// that has the card filed under it answers with that card and starts nothing. A room older than the key ignores
+	// it, and the snapshot below is what recovers.
+	attempt := launchAttemptKey(room, in.Cwd)
+	reqBody["launch_key"] = launchKeyFor(attempt)
 	var t ctlCard
 	// THE CARDS BEFORE THE POST, so a card that was not there is the launch's. Unreadable means no recovery
 	// is possible: nothing can be told apart from what was already running.
@@ -1933,6 +1974,11 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		// a retry is not a duplicate worker in the same directory.
 		var be *boardError
 		if !errors.As(err, &be) || be.code != http.StatusBadGateway {
+			// The room said no, so nothing was started and the key is not worth keeping. Any other failure, a
+			// timeout among them, leaves the outcome unknown and the key for the retry.
+			if be != nil {
+				forgetLaunchKey(attempt)
+			}
 			return out, err
 		}
 		if !canTell {
@@ -1940,11 +1986,15 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		}
 		found := c.findLaunched(ctx, room, in.Cwd, known)
 		if found == nil {
+			// The key stays: the retry sends it, and the room answers with the card if it turns up.
 			return out, err
 		}
 		t = *found
 		out.Recovered = true
+	} else if t.LaunchReplay {
+		out.Recovered = true
 	}
+	forgetLaunchKey(attempt)
 	out.Model, out.Effort = t.Model, t.Effort
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
 	// A tag `item:<id>` links the card to a backlog item, which goes in progress with it. The link is the card as the

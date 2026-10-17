@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	detachpkg "github.com/dovholuknf/atrium/internal/detach"
 	"log"
 	"net"
 	"net/http"
@@ -153,42 +154,27 @@ func onHubRestart(boardURL string, l roomLaunch, stop func()) func(link.RestartA
 	}
 }
 
-// spawnRoomRestart starts a detached copy of this binary that waits for the
-// ports to free and then runs `atrium room` again.
-//
-// Detached and released, so it survives this process winding down. The same
-// launch in full, so the room that comes back is the one that went away rather
-// than a default it happened to pick.
-//
-// ITS OUTPUT GOES SOMEWHERE. A room whose stderr is a file, which is how a
-// script starts one, hands that file on and the restarted room keeps writing
-// the same log. Anything else, a console or a pipe somebody is reading, gets
-// restart.log instead: a console is gone with this process, and a pipe held open
-// by the child keeps its reader waiting for an end that never comes.
+// A stderr that is a file is handed on so a scripted room keeps one log, and a console or pipe is not: it dies or blocks.
 func spawnRoomRestart(l roomLaunch) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	args := l.restartArgs()
-	out := os.Stderr
-	if fi, err := out.Stat(); err != nil || !fi.Mode().IsRegular() {
-		f, err := os.OpenFile(filepath.Join(l.dir, restartLogName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		if err != nil {
-			f = nil
+	out, ok := detachpkg.PathOf(os.Stderr)
+	if !ok {
+		out = filepath.Join(l.dir, restartLogName)
+		if f, err := os.OpenFile(out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err != nil {
+			out = ""
+		} else {
+			_ = f.Close()
 		}
-		out = f
 	}
 	p, err := startDetached(self, args, out)
-	if out != nil && out != os.Stderr {
-		_ = out.Close()
-	}
 	if err != nil {
 		return err
 	}
 	restartLog(l.dir, "spawned restarter pid %d: %s %s", p.Pid, self, strings.Join(args, " "))
-	// Released rather than waited on: tying its lifetime to this process is the
-	// opposite of what detached means.
 	return p.Release()
 }
 

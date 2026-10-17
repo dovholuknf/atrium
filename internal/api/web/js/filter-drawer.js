@@ -1,6 +1,6 @@
 // THE FILTER DRAWER: one control on the stack, board and terminals tabs, three configurations (docs/backlog/ui/u-011-interview.md).
 //
-// A line under the title bar says what the tab is set to, holds the search box and carries a `filters N` handle. A
+// A line under the title bar says what the tab is set to, holds the search box and carries a `filters` handle. A
 // click on the rest of the line rolls a drawer down over the content: SHOW chips, SORT BY, GROUP. It is an overlay, so
 // it never resizes the list or a terminal under it.
 //
@@ -84,7 +84,7 @@ function fdMount(tab) {
   host.classList.add("fstrip");
   host.classList.toggle("foverlay", fdOverlay(tab));
   const btn = `<button type="button" class="filtersbtn" tabindex="-1" aria-expanded="false" aria-controls="${cfg.host}-panel" aria-label="filters"
-        ><svg class="fchev" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5 10 13l5.5-5.5"/></svg><b class="fcount" hidden></b></button>`;
+        ><svg class="fchev" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7.5 10 13l5.5-5.5"/></svg></button>`;
   const qm = `<input type="search" class="fq" id="${cfg.q}" aria-label="search this list" placeholder="${esc(cfg.placeholder)}"
         spellcheck="false" autocomplete="off">
       <span class="matchcount" id="${cfg.match}"></span>`;
@@ -177,8 +177,7 @@ function fdCloseAll(except) {
   Object.keys(FD_TABS).forEach(t => { if (t !== except && fdIsOpen(t)) fdSet(t, false, false); });
 }
 
-// What the line says. `summary` is the settings in words, `changed` how many differ from the tab's defaults, `match`
-// the `12 of 40` text. Called by each tab's own painter, so the line is right whenever the list is.
+// What the line says. `summary` is the settings in words, `match` the `12 of 40` text. Called by each tab's own painter, so the line is right whenever the list is.
 function fdStatus(tab, s) {
   const host = fdHost(tab);
   if (!host) return;
@@ -186,11 +185,6 @@ function fdStatus(tab, s) {
   st.status = s;
   const sum = host.querySelector(".fsum");
   if (sum.textContent !== s.summary) sum.textContent = s.summary || "";
-  const n = s.changed || 0;
-  const c = host.querySelector(".fcount");
-  c.textContent = n ? String(n) : "";
-  c.hidden = !n;
-  host.dataset.changed = String(n);
   const m = host.querySelector(".matchcount");
   const mt = s.match || "";
   if (m.textContent !== mt) m.textContent = mt;
@@ -436,11 +430,6 @@ function groupWords(p) {
   if (!p || !p.on) return "ungrouped";
   const mode = usesCode(p) ? "code" : (p.mode || "project");
   return FD_GROUP_WORDS[mode] || "by " + mode;
-}
-// 1 when the tab's grouping is not what it comes as: on, by project.
-function groupChanged(view) {
-  const p = groupingPrefs(view);
-  return !p.on || usesCode(p) || (p.mode || "project") !== "project" ? 1 : 0;
 }
 
 // One chip's state in a stored list, for the three tabs' show rows.

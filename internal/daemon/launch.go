@@ -43,6 +43,11 @@ type LaunchRequest struct {
 	MovedFrom string `json:"moved_from,omitempty"`
 	Pinned    bool   `json:"pinned,omitempty"`
 	PinOrder  int    `json:"pin_order,omitempty"`
+	// LaunchKey is a random string the caller makes on its first attempt and sends again on a retry of the same
+	// launch. A card already filed under it on this room is returned, marked `launch_replay`, and nothing is started:
+	// the answer to the first attempt may have been lost while the card went on being made. Optional, and a launch
+	// without one is as it always was. Ignored on a launch onto a card (`task_id`).
+	LaunchKey string `json:"launch_key,omitempty"`
 	// Tags are what the operator calls this work. A script that starts a
 	// session from a ticket knows things the path does not.
 	Tags []string `json:"tags,omitempty"`
@@ -781,6 +786,15 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if req.MovedFrom != "" {
 		keys = append(keys, "move:"+req.MovedFrom)
 	}
+	// A KEYED LAUNCH WAITS FOR ITS OWN EARLIER ATTEMPT, so a retry that arrives while the first is still starting
+	// finds the card filed under the key and does not race it.
+	lk := strings.TrimSpace(req.LaunchKey)
+	if req.TaskID != "" {
+		lk = ""
+	}
+	if lk != "" {
+		keys = append(keys, "launchkey:"+lk)
+	}
 	unlock := d.launching.lock(keys...)
 	defer unlock()
 	// A REPEAT FOR ONE MOVE returns the card the first made.
@@ -792,6 +806,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if t := d.repeatLaunch(req.TaskID); t != nil {
 		return t, nil
 	}
+	if lk != "" {
+		if t, err := d.st.GetByLaunchKey(lk); err == nil {
+			log.Printf("[atrium] %s: a launch arrived again under its key, answered with the same card", t.DisplayTitle())
+			t.LaunchReplay = true
+			return t, nil
+		}
+	}
+	req.LaunchKey = lk
 	t, err := d.launchLocked(req)
 	if err == nil && req.TaskID != "" {
 		d.startedAt.Store(req.TaskID, time.Now())
@@ -1426,6 +1448,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		Repo: req.Repo, Org: req.Org, Host: req.Host,
 		Branch: req.Branch, Window: req.Window, Theme: req.Theme,
 	}); err != nil {
+		return nil, err
+	}
+	if err := d.st.SetLaunchKey(created.ID, req.LaunchKey); err != nil {
 		return nil, err
 	}
 	if req.MovedFrom != "" {

@@ -596,12 +596,16 @@ const HISTORY_PAGE = 100;
 // draws the page that was asked for.
 let historySeq = 0, historyWant = 0;
 
+// A live repaint while a fresh load is in flight is skipped: it would outrank the fresh load (the newer `seq` wins)
+// and draw the old page count over the search that was just typed.
+let historyFresh = 0;
 async function renderHistory(more, live) {
   const host = document.getElementById("history-list");
   if (!host) return;
+  if (live && historyFresh) return;
   const seq = ++historySeq;
   if (more) historyWant = historyShown + HISTORY_PAGE;
-  else if (!live) historyWant = 0;
+  else if (!live) { historyWant = 0; historyFresh = seq; }
   const pages = live ? Math.max(1, Math.ceil(Math.max(historyShown, historyWant) / HISTORY_PAGE)) : 1;
   const from = more ? historyShown : 0;
 
@@ -617,7 +621,8 @@ async function renderHistory(more, live) {
       total = res.total || 0;
       if (got.length < HISTORY_PAGE) break;
     }
-  } catch (e) { return; }
+  } catch (e) { if (historyFresh === seq) historyFresh = 0; return; }
+  if (historyFresh === seq) historyFresh = 0;
   if (seq !== historySeq) return;
 
   historyShown = from + rows.length;

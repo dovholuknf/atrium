@@ -100,6 +100,11 @@ memory environment, the lean-agents and lean-skills tags.
 | `atrium launch` | nothing | `--lean` and `--superlean` |
 | the board's launch dialog | nothing | one select: full setup (default), lean, superlean. Claude runner only |
 
+Not a lean option, and listed here because this is where the launch fields are: `/v1/launch` also takes an optional
+`launch_key`, which the hub's and the stdio `atrium_launch` make on the first attempt and send again on the retry for the
+same directory. The room returns the card already filed under it, marked `launch_replay`, and starts nothing. See
+`docs/changes/f-002.md`.
+
 `atrium launch` and the dialog have no lean option today, so both get lean and superlean together. Offering superlean
 where lean cannot be chosen would make the smaller option easier to reach than the larger one.
 

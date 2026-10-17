@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
@@ -56,6 +57,8 @@ type Zrok struct {
 	// share is kept so the hub can release it on the way out. Empty on a room,
 	// which created nothing and must delete nothing.
 	share *zroksdk.Share
+	// gate backs dials off after a failure. See dialgate.go.
+	gate dialGate
 }
 
 // Describe is what to log. THE TOKEN IS NOT PRINTED: on a private share it is
@@ -144,6 +147,10 @@ func (z *Zrok) Release() {
 
 // Dial opens one connection, which is the room's side.
 func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
+	if wait, ok := z.gate.allow(); !ok {
+		return nil, fmt.Errorf("the zrok controller is not answering. not dialling again for %s",
+			wait.Round(time.Second))
+	}
 	root, err := z.environmentRoot()
 	if err != nil {
 		return nil, err
@@ -153,11 +160,19 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 	}
 	conn, err := zroksdk.NewDialer(z.Token, root)
 	if err != nil {
+		z.gate.failed()
 		return nil, fmt.Errorf("could not reach that private share. "+
 			"is the hub running, and has this account been granted access: %w", err)
 	}
+	z.gate.worked()
 	return conn, nil
 }
+
+// Hammering says dials to zrok are failing fast. Shown on the room's row.
+func (z *Zrok) Hammering() bool { return z.gate.hammering() }
+
+// Close lets go of a share this process made. A room made none, so for a room it does nothing.
+func (z *Zrok) Close() { z.Release() }
 
 // ZrokAuthenticated is `Hub.Authenticated` for this transport.
 //

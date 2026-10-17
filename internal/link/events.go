@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -99,7 +100,7 @@ type feeds struct {
 
 	mu    sync.Mutex
 	subs  map[*sub]struct{}
-	pumps map[string]context.CancelFunc
+	pumps map[string]*pumpRun
 	stop  context.CancelFunc
 
 	// wake is the reconciler's shortcut when a client arrives, so a board scoped
@@ -140,9 +141,15 @@ type sub struct {
 
 func (s *sub) shut() { s.once.Do(func() { close(s.ch) }) }
 
+// pumpRun is one upstream stream and the reconcile run that started it, so a run winding down stops its own.
+type pumpRun struct {
+	cancel context.CancelFunc
+	run    context.Context
+}
+
 func newFeeds(p *Proxy) *feeds {
 	return &feeds{
-		p: p, subs: map[*sub]struct{}{}, pumps: map[string]context.CancelFunc{},
+		p: p, subs: map[*sub]struct{}{}, pumps: map[string]*pumpRun{},
 		wake: make(chan struct{}, 1), nudge: make(chan struct{}, 1),
 	}
 }
@@ -213,7 +220,7 @@ func (f *feeds) drop(s *sub) {
 // it pointless: a newly attached room's pump starts on the attach, not up to a
 // second after it.
 func (f *feeds) reconcile(ctx context.Context) {
-	defer f.closeAll()
+	defer f.closeAll(ctx)
 	// last is the fingerprint of the `rooms` payload most recently sent, and empty
 	// until the first, which is always sent: it is how a stream that just opened
 	// learns the set without a fetch.
@@ -239,19 +246,27 @@ func (f *feeds) reconcile(ctx context.Context) {
 		}
 
 		f.mu.Lock()
-		for name := range f.pumps {
+		for name, pr := range f.pumps {
 			if !want[name] {
-				f.pumps[name]()
+				pr.cancel()
 				delete(f.pumps, name)
+				log.Printf("[hub] stopped streaming events from %q: nobody is watching", name)
 			}
 		}
-		for name := range want {
-			if _, ok := f.pumps[name]; ok {
-				continue
+		// A RUN THAT HAS BEEN STOPPED STARTS NOTHING. The last board leaving and the next arriving overlap: the
+		// new run starts a room's pump while the old one is still on its way out, and the old run's closeAll
+		// used to cancel every pump in the map, the new run's included, which left the board streaming from no
+		// room. So a pump remembers its run, and a pump whose run is over is replaced rather than kept.
+		if ctx.Err() == nil {
+			for name := range want {
+				if pr, ok := f.pumps[name]; ok && pr.run.Err() == nil {
+					continue
+				}
+				pctx, cancel := context.WithCancel(ctx)
+				f.pumps[name] = &pumpRun{cancel: cancel, run: ctx}
+				go f.pump(pctx, name)
+				log.Printf("[hub] streaming events from %q", name)
 			}
-			pctx, cancel := context.WithCancel(ctx)
-			f.pumps[name] = cancel
-			go f.pump(pctx, name)
 		}
 		f.mu.Unlock()
 
@@ -369,12 +384,15 @@ func (f *feeds) count() int {
 	return len(f.pumps)
 }
 
-func (f *feeds) closeAll() {
+// closeAll stops the pumps one reconcile run started, and only those: a later run's are its own.
+func (f *feeds) closeAll(run context.Context) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for name, cancel := range f.pumps {
-		cancel()
-		delete(f.pumps, name)
+	for name, pr := range f.pumps {
+		if pr.run == run {
+			pr.cancel()
+			delete(f.pumps, name)
+		}
 	}
 }
 
@@ -414,10 +432,14 @@ func (f *feeds) read(ctx context.Context, room string) {
 	req.Header.Set("Accept", "text/event-stream")
 	res, err := f.p.roomClient(room).Do(req)
 	if err != nil {
+		if ctx.Err() == nil {
+			log.Printf("[hub] the event stream from %q did not open: %v", room, err)
+		}
 		return
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
+		log.Printf("[hub] the event stream from %q answered %d", room, res.StatusCode)
 		return
 	}
 	// Bounded per line, so a room cannot make the hub allocate without limit.
@@ -433,6 +455,9 @@ func (f *feeds) read(ctx context.Context, room string) {
 	for {
 		line, err := readLine(br, 1<<20)
 		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("[hub] the event stream from %q ended: %v", room, err)
+			}
 			return
 		}
 		switch {
