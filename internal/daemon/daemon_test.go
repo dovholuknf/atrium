@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -41,6 +42,20 @@ func (b *safeBuf) String() string {
 // there is stopped by go test's own timeout, which prints the goroutines.
 func (b *safeBuf) waitFor(t *testing.T, want string) {
 	t.Helper()
+	if err := b.waitForOrExit(want, nil); err != nil {
+		t.Fatalf("%v:\n%s", err, b.String())
+	}
+}
+
+// exitedEarly is Run returning before the line it was waited on for.
+type exitedEarly struct{ err error }
+
+func (e *exitedEarly) Error() string {
+	return "the daemon's Run exited before it was ready: " + e.err.Error()
+}
+func (e *exitedEarly) Unwrap() error { return e.err }
+
+func (b *safeBuf) waitForOrExit(want string, exited <-chan error) error {
 	// A daemon that never logs the line would otherwise hold the whole package
 	// until go test's own timeout, which once took 33 minutes.
 	deadline := time.After(time.Minute)
@@ -48,7 +63,7 @@ func (b *safeBuf) waitFor(t *testing.T, want string) {
 		b.mu.Lock()
 		if strings.Contains(b.buf.String(), want) {
 			b.mu.Unlock()
-			return
+			return nil
 		}
 		if b.wake == nil {
 			b.wake = make(chan struct{})
@@ -57,8 +72,10 @@ func (b *safeBuf) waitFor(t *testing.T, want string) {
 		b.mu.Unlock()
 		select {
 		case <-ch:
+		case err := <-exited:
+			return &exitedEarly{err}
 		case <-deadline:
-			t.Fatalf("no %q in the log after a minute:\n%s", want, b.String())
+			return fmt.Errorf("no %q in the log after a minute", want)
 		}
 	}
 }
