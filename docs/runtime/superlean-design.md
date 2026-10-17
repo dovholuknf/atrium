@@ -9,7 +9,7 @@ Per-item minions already start this way by hand, through launch `args`: `--tools
 "<line>"`, sonnet, effort low, lean. Superlean makes that one named option, recorded on the card, so a reopen, a resume
 and the keep-alive fork start it the same way again.
 
-Backlog item `r-superlean-launch`. Status: designed, not built.
+Backlog item `r-superlean-launch`. Status: built in phases P1 to P3, measured in P4 ("Numbers" and "Decisions" below).
 
 ## The flag set
 
@@ -149,4 +149,75 @@ in `leanArgs`, `superleanSystemPrompt`, the tag, `withoutLeanTags`, the `launche
 unit for the select and the request it sends.
 
 **P4, the numbers.** The measurement above, folded into this doc, and the two decisions it settles: the no-MCP mode,
-and whether minions launch superlean by default.
+and whether minions launch superlean by default. Done, below.
+
+## Numbers
+
+Claude Code 2.1.302, model `claude-opus-5-5` (what `claude -p` picked, `modelUsage` in the result). All rows are
+`claude -p "Reply with the single word ok."` in the `r-superlean-launch-p4` worktree on 2026-10-16, one model call each,
+so "first request" is `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` of that call, read from the
+`--output-format json` result, which is the same number the transcript holds. The breakdown is `claude -p "/context"`
+with the same flags, in thousands of tokens.
+
+The worktree's `AGENTS.md` loads as a 7.5k "memory file" in every row, so these totals sit above the lean doc's
+(11,029 for lean in a worktree) by that much. The cuts are what compare.
+
+| row | first request | vs lean | system prompt | system tools | system tools (deferred) | MCP tools (deferred) | total loaded |
+|---|---|---|---|---|---|---|---|
+| 1. lean | 18,749 | | 2.1 | 7.4 | 2.8 | 16.0 | 17.0 |
+| 2. superlean | 14,462 | -4,287 (-23%) | 1.6 | 3.7 | 0 | 16.0 | 12.7 |
+| 3. superlean with `mcp: ["mercurius"]` | not measured | | | | | | |
+| 4. superlean, `--system-prompt` in `args` (minion shape) | 12,847 | -5,902 (-31%) | 0.16 | 3.7 | 0 | 16.0 | 11.3 |
+| 5. superlean, atrium-control taken out | 13,416 | -5,333 (-28%) | 1.6 | 3.7 | 0 | 0 | 12.7 |
+
+How the rows were built. Row 1 is lean as `leanArgs` builds it: `--setting-sources project,local`,
+`--strict-mcp-config --mcp-config` with atrium-control only, the 22 tools of `leanDisallowed` in `--disallowedTools`,
+`leanSystemPrompt` appended, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Rows 2, 4 and 5 add `--tools=Read,Edit,Write,Grep,Glob,
+Bash,ToolSearch` and swap in `superleanSystemPrompt` (appended in 2 and 5, as `--system-prompt` in 4). Row 5 passes an
+empty `mcpServers`. `--tools` is written `--tools=<list>`: as a separate token it is variadic and swallows the prompt that
+follows.
+
+What is not the real thing, so the table is read as a comparison and not as a recording of a room launch:
+
+- **No room did the launch.** The flag set was rebuilt by hand from `leanArgs`, `superleanTools` and the two prompts in
+  `internal/daemon/lean.go`, because no room on this machine runs a binary with P1. The settings file carries only the
+  empty attribution and a permissive allow list. It leaves out the hooks `leanSettings` adds (reporters, Stop hook,
+  no-poll hook), which cost nothing on the wire in a one-turn run.
+- **Row 3 is not measured.** No MCP config on this machine holds a `mercurius` server, and `leanServers` refuses a name
+  no config holds. The lean doc priced it at 36 tokens with its six tools deferred, and nothing here suggests that moved.
+- **Idle CPU is not measured.** It needs two interactive sessions left idle ten minutes and their CPU seconds read twice.
+  This worker is headless and cannot drive an interactive terminal, and `Get-CimInstance` is denied here, so the pids
+  could not be matched to sessions either. `bug-idle-minion-spins-a-core` stays open: someone with a room on the P1
+  binary runs the plan in "Measurement plan" and removes one flag at a time if superlean spins more than lean.
+
+What the numbers say.
+
+- Superlean cuts 4.3k tokens a start from lean, 23% here, and more in a checkout with a lighter `AGENTS.md`. Almost all
+  of it is `system tools`: 7.4k down to 3.7k, and the deferred tool names (2.8k) gone with `--tools`.
+- The one-paragraph prompt saves 0.5k over `leanSystemPrompt`. Replacing Claude Code's own prompt, the minion shape,
+  saves another 1.6k (2.1k down to 0.16k) and is on the launcher, as "Claude Code's own system prompt" says.
+- atrium-control is 16k in `/context`, but deferred tools send only their names, so on the wire it costs 1,046 tokens
+  (row 2 less row 5). That is the whole saving of a no-MCP mode.
+- `ToolSearch` kept on the list holds up: the 16k of MCP schemas does not reach the wire.
+
+## Decisions
+
+**(a) The no-MCP mode: do not build it.** The design set the bar at 1k and the measurement is 1,046, over it by 46
+tokens, 7% of a superlean start. That is a bar met on noise, and the reasons against stand whole. The mode has to be
+refused for any launch with a launcher, which is every card a minion or a worker is, so it would be reachable only for
+an operator's throwaway, where 1k tokens a start is not what the operator is waiting on. A worker that cannot call
+`atrium_done` is a silent stop. Keep "Not offered" as written under "What each cut breaks". If the 1k matters later, the
+cheaper lever is the 7.5k `AGENTS.md` that every row loads, not the MCP server.
+
+**(b) Per-item minions and workers: launch superlean by default, with an escape.** The cut is 4.3k tokens a start and 5.9k
+in the minion shape, against a loss that is `TodoWrite`, `WebFetch`, `WebSearch`, `PowerShell` and later built-ins, for a
+worker whose brief is a bounded change. Per-item minions already start this way by hand through `args`, so this moves
+nothing they do not already do and makes it one recorded option that a reopen and the keep-alive fork repeat. Scope it:
+
+- per-item minions and the workers a card launches from an item: superlean, `superlean: false` to bring one back lean.
+- review workers: lean, as today. Superlean drops mercurius, and a reviewer cannot open a review without it.
+- `atrium_launch` from an orchestrator for anything else: lean stays the default, superlean opted into, as P2 shipped.
+- keep a caller's own `--tools` winning, which P1 does.
+
+This is a recommendation. Making it the default is a one-line change in the item launcher, filed as its own backlog item
+after the idle-CPU run, so a spin is found before the default moves.
