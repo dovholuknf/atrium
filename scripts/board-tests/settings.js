@@ -383,6 +383,7 @@ async function themePreviewSection(browser, base) {
     if (patches.length !== 1 || !/tp-a .*"theme":"dracula"/.test(patches[0])) {
       fail("use it did not save the theme once: " + patches.join(" | "));
     }
+    await p.evaluate(() => history.replaceState(history.state, "", location.pathname + location.search));
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
