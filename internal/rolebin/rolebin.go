@@ -65,7 +65,7 @@ func installedFrom(self string) string {
 	if !isRole {
 		return self
 	}
-	canon := filepath.Join(dir, "atrium"+filepath.Ext(base))
+	canon := filepath.Join(dir, "atrium"+ext())
 	if _, err := os.Stat(canon); err == nil {
 		return canon
 	}
