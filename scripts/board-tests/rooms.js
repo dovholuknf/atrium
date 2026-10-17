@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, zitiLogo, pollsGone, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
+// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, zitiLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -749,6 +749,64 @@ async function pollsGoneSection(browser, base) {
   }
   if (errors.length) fail("pollsGone: the page threw: " + errors.join(" | "));
   console.log("pollsGone: ok");
+}
+
+// findingsProbe: a card holding no findings folder is asked once per session, not on every attach. A card with one is
+// still probed and still gets its walk button. The card record carries no marker for a bare review folder, so the
+// miss is cached by card id (u-findings-probe-404).
+async function findingsProbeSection(browser, base) {
+  const was = mock.tasksMode, wasB = mock.mockBroadcast;
+  const plain = "land-fp-plain", review = "land-fp-review";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-fp-"));
+  fs.mkdirSync(path.join(dir, "findings"));
+  fs.writeFileSync(path.join(dir, "findings", "01-high-a.go-L10.txt"),
+    "HIGH a.go line 10: something\n\na comment\n\nEvidence\nx\n");
+  mock.walkDirs[review] = dir;
+  mock.tasksMode = "land";
+  mock.mockBroadcast = false;
+  mock.landList = [landCard(plain, { supervised: true, worktree: "/walk/" + plain }),
+    landCard(review, { supervised: true, worktree: "/walk/" + review })];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  const counts = countRequests(ctx);
+  try {
+    // The daemon's answer for a missing folder inside the card.
+    await ctx.route(u => u.pathname === "/v1/tasks/" + plain + "/files/list", r =>
+      r.fulfill({ status: 404, contentType: "application/json", body: '{"error":"not found"}' }));
+    await ctx.addInitScript(() => {
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+          onerror: null, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="' + plain + '"]', { state: "attached", timeout: slow(15000) });
+    const listed = id => (counts.get("/v1/tasks/" + id + "/files/list") || 0);
+    const settle = () => new Promise(r => setTimeout(r, 300));
+    for (const id of [plain, review, plain, review, plain]) { await p.evaluate(x => attachTask(x), id); await settle(); }
+    if (listed(plain) !== 1) fail("findingsProbe: a card with no findings was probed " + listed(plain) + " times over 3 attaches, want 1");
+    if (listed(review) < 1) fail("findingsProbe: a card holding findings was never probed");
+    await p.evaluate(x => attachTask(x), review);
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) })
+      .catch(() => fail("findingsProbe: the card holding findings lost its walk button"));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.mockBroadcast = wasB;
+    mock.landList = [];
+    delete mock.walkDirs[review];
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("findingsProbe: the page threw: " + errors.join(" | "));
+  console.log("findingsProbe: ok");
 }
 
 // The rooms dashboard: the room menu's tiles, fed `room-stats` snapshots.
@@ -1635,6 +1693,7 @@ const units = [
   { name: "pathBadges", run: ({ browser, base }) => pathBadgesSection(browser, base) },
   { name: "zitiLogo", run: ({ browser, base }) => zitiLogoSection(browser, base) },
   { name: "pollsGone", run: ({ browser, base }) => pollsGoneSection(browser, base) },
+  { name: "findingsProbe", run: ({ browser, base }) => findingsProbeSection(browser, base) },
   { name: "roomsMachine", run: ({ browser, base }) => roomsMachineSection(browser, base) },
   { name: "loginNeeded", run: ({ browser, base }) => loginNeededSection(browser, base) },
   { name: "restartMenu", run: ({ browser, base }) => restartMenuSection(browser, base) },
@@ -1642,7 +1701,7 @@ const units = [
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
+const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
