@@ -6,6 +6,7 @@
 package zitictx
 
 import (
+	"errors"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -32,12 +33,25 @@ func (c *counted) Close() {
 	})
 }
 
+// MaxLive is how many contexts may be open at once. A room needs one per ziti rung and one per overlay it serves, so a
+// count past this is a leak, and each leaked context retries its login against the controller forever.
+const MaxLive = 16
+
+// ErrTooMany is what New answers when MaxLive contexts are already open.
+var ErrTooMany = errors.New("too many open ziti contexts. one is being built and never closed")
+
 // New builds a context for `who` ("link", "capabilities", "native") and counts it.
 func New(who string, cfg *ziti.Config) (ziti.Context, error) {
+	if n := live.Add(1); n > MaxLive {
+		live.Add(-1)
+		log.Printf("[ziti] refusing a context (%s): %d are already live", who, n-1)
+		return nil, ErrTooMany
+	}
 	c, err := ziti.NewContext(cfg)
 	if err != nil {
+		live.Add(-1)
 		return nil, err
 	}
-	log.Printf("[ziti] context built (%s), %d live", who, live.Add(1))
+	log.Printf("[ziti] context built (%s), %d live", who, live.Load())
 	return &counted{Context: c, who: who}, nil
 }
