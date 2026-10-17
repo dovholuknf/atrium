@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
@@ -136,12 +137,16 @@ func roomLockCmd(prefix string) *cobra.Command {
 // roomLinkFor is the room's name and a dialer to the hub it joined, from the keys in dir. The dialer is the room that is
 // running on this machine, never a ladder of its own: see hubdial.go.
 func roomLinkFor(dir string) (string, link.Dialer, error) {
+	return roomLinkAt(dir, daemon.ReadLocation)
+}
+
+func roomLinkAt(dir string, location func() (daemon.Location, bool)) (string, link.Dialer, error) {
 	keys := link.Keys{Dir: orDefault(dir, roomDir())}
 	saved, err := keys.Joined()
 	if err != nil {
 		return "", nil, err
 	}
-	d, err := newLocalRoomDialer()
+	d, err := newLocalRoomDialer(location)
 	if err != nil {
 		return "", nil, err
 	}

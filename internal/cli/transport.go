@@ -346,11 +346,6 @@ func roomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, erro
 	return d, nil
 }
 
-// newZitiRung builds a ziti rung's dialer. A variable so a test can count what is built and closed.
-var newZitiRung = func(identity, service string) link.Dialer {
-	return &link.Ziti{Identity: identity, Service: service}
-}
-
 // rawRoomDialer is the transport with nothing wrapped round it. Enrolment dials
 // this, because the pinned handshake it runs is not the room's own.
 func rawRoomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
@@ -363,7 +358,7 @@ func rawRoomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, e
 				"this join string is for the ziti service %q, so this room needs an enrolled "+
 					"identity. pass --identity <file>", j.Service)
 		}
-		return newZitiRung(identity, j.Service), nil
+		return &link.Ziti{Identity: identity, Service: j.Service}, nil
 	case "zrok":
 		return &link.Zrok{Token: j.ShareToken}, nil
 	}

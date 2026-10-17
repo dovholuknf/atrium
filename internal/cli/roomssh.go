@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
@@ -121,7 +122,11 @@ func sshSetupCmd() *cobra.Command {
 // localSSHMachine is this machine and this room's key directory. The hub's ssh record is read and written over the
 // room's own link, and a hub that keeps none makes the steps that need it say so and wait.
 func localSSHMachine(dir string, shared link.Dialer) sshwizard.LocalMachine {
-	hub := &hubSSH{dir: dir, shared: shared}
+	return localSSHMachineAt(dir, shared, daemon.ReadLocation)
+}
+
+func localSSHMachineAt(dir string, shared link.Dialer, location func() (daemon.Location, bool)) sshwizard.LocalMachine {
+	hub := &hubSSH{dir: dir, shared: shared, location: location}
 	return sshwizard.LocalMachine{
 		KeyDir: dir,
 		JoinedFn: func() sshwizard.Joined {
@@ -144,12 +149,13 @@ func localSSHMachine(dir string, shared link.Dialer) sshwizard.LocalMachine {
 // hubSSH is this room's reading of the hub's ssh keys, kept for one command so the steps that each ask do not each
 // dial. Publishing drops it, so the check after a fix reads what the hub holds now.
 type hubSSH struct {
-	dir    string
-	shared link.Dialer
-	mu     sync.Mutex
-	set    []link.SSHEntry
-	err    error
-	got    bool
+	dir      string
+	shared   link.Dialer
+	location func() (daemon.Location, bool)
+	mu       sync.Mutex
+	set      []link.SSHEntry
+	err      error
+	got      bool
 }
 
 // link is the dialer for one hub call and what to do with it afterwards. The room passes its own ladder, which is never
@@ -163,7 +169,7 @@ func (h *hubSSH) link() (string, link.Dialer, func(), error) {
 		}
 		return saved.Room, h.shared, func() {}, nil
 	}
-	room, d, err := roomLinkFor(h.dir)
+	room, d, err := roomLinkAt(h.dir, h.location)
 	if err != nil {
 		return "", nil, nil, err
 	}
