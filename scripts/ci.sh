@@ -39,16 +39,19 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the whole
 # suite in one job, for a laptop.
 #
+# THE BOARD IS TWO JOBS TOO. board-1 and board-2 are the board step over half the gating units each (board_units
+# says how they are halved), and board is all of them in one job.
+#
 # THE SMALL CHECKS RIDE WITH go-checks, the shortest job, and not with the board, the longest: the skins, the
 # contrast, the opencode plugin, the release refusals and the script parses have no platform in them and run once, on
 # the linux job (linux_job_only). The PowerShell parse and tests are Windows only and skip themselves elsewhere.
-group_list="go-test go-test-1 go-test-2 go-checks board board-visual"
+group_list="go-test go-test-1 go-test-2 go-checks board board-1 board-2 board-visual"
 group_steps() {
   case "$1" in
     go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     board-visual) echo "board-visual,clean-tree" ;;
-    board) echo "board,clean-tree" ;;
+    board|board-1|board-2) echo "board,clean-tree" ;;
     *) return 1 ;;
   esac
 }
@@ -142,18 +145,48 @@ linux_job_only() {
 # THE BOARD'S UNITS, split by scripts/board-visual-units.txt (one unit a line, # for a comment). `board_units gating`
 # is every unit not on the list, `board_units visual` the ones on it, both comma separated. A name on the list that
 # the suite no longer has is an error, so the list cannot rot.
+#
+# `board_units gating-1` and `gating-2` are the gating units in two halves of about equal time, for the two board
+# jobs: the harness's pin groups stay whole, and each goes, longest first, to the half with less so far, weighed by
+# scripts/board-suite-weights.json (a unit it lacks weighs the median). The same arithmetic as test-board-sharded.js
+# and deterministic, so the two jobs never both run a unit and never both leave one out.
 board_units() {
   HEADLESS_LIST=1 node scripts/test-board-headless.js | node -e '
     const fs = require("fs");
     const lines = fs.readFileSync(0, "utf8").split("\n").reverse();
     const json = lines.find(l => l.startsWith("{"));
     if (!json) { process.stderr.write("the harness listed no units\n"); process.exit(1); }
-    const all = JSON.parse(json).units;
+    const list = JSON.parse(json), all = list.units;
     const visual = fs.readFileSync("scripts/board-visual-units.txt", "utf8").split("\n")
       .map(l => l.replace(/#.*/, "").trim()).filter(Boolean);
     const gone = visual.filter(u => !all.includes(u));
     if (gone.length) { process.stderr.write("board-visual-units.txt names units the suite lacks: " + gone.join(" ") + "\n"); process.exit(1); }
-    const want = process.argv[1] === "visual" ? visual : all.filter(u => !visual.includes(u));
+    const which = process.argv[1];
+    let want = which === "visual" ? visual : all.filter(u => !visual.includes(u));
+    const half = (which.match(/^gating-([12])$/) || [])[1];
+    if (half) {
+      const ms = (JSON.parse(fs.readFileSync("scripts/board-suite-weights.json", "utf8")).ms) || {};
+      const known = Object.values(ms).filter(x => x > 0).sort((a, b) => a - b);
+      const dflt = known.length ? known[Math.floor(known.length / 2)] : 1;
+      const w = u => (ms[u] > 0 ? ms[u] : dflt);
+      const pinOf = new Map();
+      for (const [g, p] of Object.entries(list.pins || {})) for (const u of p.units) pinOf.set(u, g);
+      const groups = [], byPin = new Map();
+      for (const u of want) {
+        const g = pinOf.get(u);
+        if (!g) { groups.push({ units: [u], weight: w(u) }); continue; }
+        if (!byPin.has(g)) { const x = { units: [], weight: 0 }; byPin.set(g, x); groups.push(x); }
+        byPin.get(g).units.push(u); byPin.get(g).weight += w(u);
+      }
+      const bins = [{ units: [], weight: 0 }, { units: [], weight: 0 }];
+      for (const g of groups.slice().sort((a, b) => b.weight - a.weight)) {
+        const b = bins[0].weight <= bins[1].weight ? bins[0] : bins[1];
+        b.units.push(...g.units); b.weight += g.weight;
+      }
+      const at = new Map(all.map((u, i) => [u, i]));
+      want = bins[half - 1].units.sort((a, b) => at.get(a) - at.get(b));
+      process.stderr.write("gating-" + half + ": " + want.length + " units, " + Math.round(bins[half - 1].weight / 1000) + " s by the weight file\n");
+    }
     process.stdout.write(want.join(","));
   ' "$1"
 }
@@ -474,8 +507,8 @@ if step board "the board"; then
   board_log="$artefacts/board.log"
   # THE BOARD IS TWO RUNS. The units on scripts/board-visual-units.txt measure pixels and wait on timers, so a runner's
   # fonts or load fail them and no code change does. They run in the board-visual group, which never reddens the run.
-  # This step runs every other unit.
-  gating="$(board_units gating)"
+  # This step runs every other unit, or half of them in the board-1 and board-2 groups (board_units).
+  gating="$(board_units "gating${part:+-$part}")"
   board_run() {
     env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" HEADLESS_UNITS="$gating" \
       bash scripts/check-board.sh 2>&1 | tee "$board_log"

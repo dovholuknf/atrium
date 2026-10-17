@@ -16,7 +16,10 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   time of a test is never a reason to run the suite again.
 - **`ci.sh` holds all of CI's logic.** `.github/workflows/ci.yml` only checks out, installs Go and node, and calls it.
   It runs on Linux, macOS and Windows with Git Bash, so nothing in it may assume a tool Git Bash lacks. `--only` runs
-  one step and `--list` names them. `ci-linux.sh` runs it in docker as a non-root user with no pwsh.
+  one step and `--list` names them. `--group` runs one workflow job's steps: `go-test-1` and `go-test-2` are the Go
+  suite in two halves (daemon cut by test name), `board-1` and `board-2` the gating board units in two halves by
+  `board-suite-weights.json`, `go-checks` the rest including the small checks, which run once on the linux job.
+  `go-test` and `board` are each whole, for a laptop. `ci-linux.sh` runs it in docker as a non-root user with no pwsh.
 - **CI ends by checking the tree is as it was.** A test that rewrites a tracked file or leaves a new one fails it.
 - `test-time-guard.sh` fails a package over 60s or a test over 5s unless `test-time-allow.txt` names it.
 - `check-test-globals.go` fails on a `_test.go` file assigning a package-level var. Hooks, delays and clocks belong on
