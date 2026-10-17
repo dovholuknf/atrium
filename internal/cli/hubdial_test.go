@@ -14,10 +14,7 @@ import (
 )
 
 func TestRoomLinkForWithNoRoomRunningErrorsAndBuildsNoContext(t *testing.T) {
-	prev := localRoomLocation
-	localRoomLocation = func() (daemon.Location, bool) { return daemon.Location{}, false }
-	t.Cleanup(func() { localRoomLocation = prev })
-	d, err := newLocalRoomDialer()
+	d, err := newLocalRoomDialer(func() (daemon.Location, bool) { return daemon.Location{}, false })
 	if err == nil || d != nil {
 		t.Fatalf("got %v, %v, want an error", d, err)
 	}
@@ -45,12 +42,9 @@ func TestLocalRoomDialerCarriesTheRoomsConnectionAndTouchesNoContext(t *testing.
 		}
 		io.WriteString(c, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: atrium-hubdial\r\n\r\nhello")
 	}()
-	prev := localRoomLocation
-	localRoomLocation = func() (daemon.Location, bool) {
+	d, err := newLocalRoomDialer(func() (daemon.Location, bool) {
 		return daemon.Location{Agent: "http://" + ln.Addr().String()}, true
-	}
-	t.Cleanup(func() { localRoomLocation = prev })
-	d, err := newLocalRoomDialer()
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
