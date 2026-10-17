@@ -161,6 +161,14 @@
       "tests": [],
       "checks": []
     },
+    "route": {
+      "file": "scripts/board-tests/route.js",
+      "page": "the address carries the view: routes, deep links, back and forward",
+      "units": ["deepLink*"],
+      "sources": ["internal/api/web/js/route.js"],
+      "tests": [],
+      "checks": []
+    },
     "growls": {
       "page": "growls, questions, notifications, toasts, held lines, auto permission",
       "units": [
