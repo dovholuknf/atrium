@@ -173,6 +173,15 @@ function cpuSampler() {
 
 const fmt = ms => ms >= 60000 ? Math.floor(ms / 60000) + "m" + String(Math.round((ms % 60000) / 1000)).padStart(2, "0") + "s" : (ms / 1000).toFixed(1) + "s";
 
+// A failure's whole message under its unit, since a Playwright timeout names its locator and reason only on the lines
+// after the first. The first line keeps the indent `board_report` (ci.sh) reads, the rest sit deeper.
+function printFail(indent, prefix, m) {
+  const lines = String(m).replace(/\x1b\[[0-9;]*m/g, "").split("\n").map(l => l.trimEnd()).filter((l, i) => i === 0 || l.trim());
+  console.log(indent + prefix + lines[0].slice(0, 300));
+  for (const l of lines.slice(1, 7)) console.log(indent + "  " + l.trim().slice(0, 300));
+  if (lines.length > 7) console.log(indent + "  ... and " + (lines.length - 7) + " more lines");
+}
+
 // Hand the whole run to another room's machine and return its exit code, or null when this run stays here, saying why.
 function dispatchRemote(opt) {
   const room = process.env.ATRIUM_SUITE_ROOM || "sg3";
@@ -301,7 +310,7 @@ async function main() {
     for (const r of failed_) {
       console.log("  " + r.unit + (r.status === "FLAKY (failed every try)" ? "  [flaky, failed both tries]" :
         r.status === "FLAKY (failed, not retried)" ? "  [flaky, not retried]" : ""));
-      for (const m of r.fails.slice(0, 6)) console.log("    " + m.split("\n")[0].slice(0, 300));
+      for (const m of r.fails.slice(0, 6)) printFail("    ", "", m);
       if (r.fails.length > 6) console.log("    ... and " + (r.fails.length - 6) + " more");
     }
   }
@@ -309,7 +318,7 @@ async function main() {
     console.log("\nFLAKY, reported and not failing the run (" + soft.length + "):");
     for (const r of soft) {
       console.log("  " + r.unit + ": " + r.status + ". " + flaky[r.unit].reason.split("\n")[0].slice(0, 160));
-      for (const m of r.fails.slice(0, 3)) console.log("    first try: " + m.split("\n")[0].slice(0, 300));
+      for (const m of r.fails.slice(0, 3)) printFail("    ", "first try: ", m);
     }
   }
 
@@ -317,7 +326,7 @@ async function main() {
     console.log("\nFAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (" + load_.length + "). These fail the run. Fix the wait, or list it with its reason:");
     for (const r of load_) {
       console.log("  " + r.unit);
-      for (const m of r.fails.slice(0, 3)) console.log("    first try: " + m.split("\n")[0].slice(0, 300));
+      for (const m of r.fails.slice(0, 3)) printFail("    ", "first try: ", m);
     }
   }
 
