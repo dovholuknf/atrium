@@ -460,8 +460,10 @@ async function cappedFetch(fetchFn, path, opts, read) {
     if (!isRead || !hubGateP) break;
     apiRelease();
   }
+  let answered = false;
   try {
     const res = await fetchFn(path, opts);
+    answered = true;
     if (isRead && hubGateStatus(res.status)) hubGateTrip();
     const out = read ? await read(res) : res;
     apiFailStreak = 0;
@@ -469,7 +471,9 @@ async function cappedFetch(fetchFn, path, opts, read) {
   } catch (err) {
     if (!(err && err.name === "AbortError")) {
       apiFailStreak++;
-      if (isRead) hubGateTrip();
+      // A hub that answered 404 ("not a hub" on a plain daemon) is up. Only a read that never got an answer is a reason
+      // to hold every poller.
+      if (isRead && !answered) hubGateTrip();
     }
     throw err;
   } finally {
