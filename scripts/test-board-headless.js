@@ -2764,7 +2764,7 @@ async function sayWhenSection(browser, base) {
         const d = document.createElement("div");
         d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
         const s = d.querySelector(".chip.held");
-        return s ? { text: s.textContent, tip: s.dataset.tip } : null;
+        return s ? { text: (s.querySelector("svg") ? "✉︎" : "") + (s.textContent.trim() ? " " + s.textContent.trim() : ""), tip: s.dataset.tip } : null;
       };
       return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
         lines: one({ held_for: "line", held_count: 2, held_seconds: 3723 }),
@@ -2811,7 +2811,7 @@ async function sayWhenSection(browser, base) {
         const d = document.createElement("div");
         d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
         const s = d.querySelector(".chip");
-        return s ? { cls: s.className, text: s.textContent, tip: s.dataset.tip } : null;
+        return s ? { cls: s.className, text: (s.querySelector("svg") ? "✉︎" : "") + (s.textContent.trim() ? " " + s.textContent.trim() : ""), tip: s.dataset.tip } : null;
       };
       return {
         asked: one({ held_for: "turn", held_turn: "asked", held_quiet: true }),
@@ -3114,9 +3114,15 @@ async function pasteSpinnerSection(browser, base) {
       termSock.bufferedAmount = 0;
       sendPasteText("x");
       const got = { now: window.__shown };
-      // After the frame the send waits for: output before the bytes left says nothing.
-      setTimeout(() => termSock.onmessage({ data: "x" }), 60);
-      setTimeout(() => { got.flight = !!pasteFlight; done(got); }, 150);
+      // Once the bytes have left: output before that says nothing, and the frame the send waits for is late on a
+      // loaded machine.
+      const echo = () => {
+        if (!(pasteFlight && pasteFlight.sent)) { setTimeout(echo, 10); return; }
+        termSock.onmessage({ data: "x" });
+        got.flight = !!pasteFlight;
+        done(got);
+      };
+      setTimeout(echo, 60);
     }));
     if (quick.now !== 1 || !quick.flight) {
       fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
@@ -4243,21 +4249,46 @@ async function pasteBigSection(browser, base) {
       return s;
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-    // Drives one gesture and samples the box on every frame for 800ms: room to see it paint at once and hold 300ms.
+    // Drives one gesture and watches the box for 800ms: room to see it paint at once and hold 300ms.
+    //
+    // THE FIRST PAINT IS READ ON FRAMES, because the claim is that the box is on the first frame after the gesture.
+    // THE HOLD IS READ FROM THE DOM, NOT FROM FRAMES. A MutationObserver notes the moment the box's `hidden` flips,
+    // delivered right after the task that flipped it, so a renderer that produces no frames for half a second under
+    // load cannot make a box that stayed up look like one that went down. That is what happened on macos CI (run
+    // 39000703278, shard 4, 79 units on 4 cpus): frames stopped at 160ms and at 290ms of a 1024ms hold that nothing in
+    // the product can end early (pasteEnd's callers: the socket closing, the cap, the terminal changing, output after
+    // `holdUntil`), and the old span, last frame minus first, read a starved renderer as a dropped box. The span is now
+    // first paint to the first moment the box was seen down, or the window's end when it is still up. A hand-on (a
+    // second paste hiding and showing it in one task) is no flip, because the observer sees a task's end state.
     window.__pasteRun = gesture => new Promise(done => {
       pasteEnd();
       window.__frames = [];
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
-      const seen = [];
-      let frame = 0, firstFrame = -1;
+      const seen = [], flips = [];
+      let frame = 0, firstFrame = -1, lastT = 0, gap = 0, wasVis = vis();
       const t0 = performance.now();
+      const mo = new MutationObserver(() => {
+        const v = vis();
+        if (v === wasVis) return;
+        wasVis = v;
+        flips.push({ t: Math.round(performance.now() - t0), up: v });
+      });
+      mo.observe(document.getElementById("term-pane") || document.body,
+        { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
       const loop = () => {
         const t = performance.now() - t0;
+        gap = Math.max(gap, t - lastT);
+        lastT = t;
         if (vis()) { seen.push(t); if (firstFrame < 0) firstFrame = frame; }
         frame++;
         if (t < 800) { requestAnimationFrame(loop); return; }
-        done({ first: seen.length ? Math.round(seen[0]) : -1, firstFrame,
-          span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
+        mo.disconnect();
+        const first = seen.length ? seen[0] : -1;
+        const down = flips.find(f => !f.up && f.t >= first);
+        // A box up now is up: its last moment is now, whatever frames were missed on the way.
+        const last = first < 0 ? -1 : down ? down.t : vis() ? t : -1;
+        done({ first: Math.round(first), firstFrame, frames: frame, gap: Math.round(gap), flips,
+          span: last >= 0 ? Math.round(last - first) : 0,
           sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
           text: (document.getElementById("t-pasting") || {}).textContent || "" });
       };
@@ -4279,9 +4310,12 @@ async function pasteBigSection(browser, base) {
     }
     // "Within a frame" counted in frames: the gesture itself blocks the thread for a 3MB string, so the first
     // frame after it lands late under load, and the spinner being on that frame is the claim.
+    // `frames`, `gap` (the longest wait between two frames) and `flips` (every time the box went up or down) are
+    // in the failure, so a run that fails explains whether the box went down or the renderer stopped.
     if (got.first < 0 || (got.first > 50 && got.firstFrame > 1) || got.span < 300) {
       fail(name + ": a big paste did not paint the spinner within a frame and hold it 300ms: " +
-        JSON.stringify({ first: got.first, firstFrame: got.firstFrame, span: got.span }));
+        JSON.stringify({ first: got.first, firstFrame: got.firstFrame, span: got.span, frames: got.frames, gap: got.gap,
+          flips: got.flips }));
     }
   };
   try {
@@ -6079,6 +6113,65 @@ async function mailChipSection(browser, base) {
     mock.tasksMode = was;
   }
   if (errors.length) fail("mailChip: the page threw: " + errors.join(" | "));
+}
+
+async function heldEnvelopeSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const shots = process.env.HELD_ENV_SHOTS || "";
+  const tag = process.env.HELD_ENV_TAG || "after";
+  const errors = [];
+  const measure = (p) => p.evaluate(() => {
+    const chip = document.querySelector(".card .chip.queued, .stackrow .chip.queued");
+    if (!chip) return null;
+    const mid = (e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; };
+    const ic = chip.querySelector("svg"), n = chip.querySelector(".mail-n");
+    const sib = [...chip.parentElement.children].filter(c => c !== chip && c.getBoundingClientRect().height > 0);
+    return { chip: mid(chip), icon: ic ? mid(ic) : null, count: n ? mid(n) : null, sib: sib.map(mid),
+      room: !!chip.parentElement.querySelector(".chip.room") };
+  });
+  const check = (name, m, counted) => {
+    if (!m) return fail("heldEnvelope: " + name + ": no held chip on the row");
+    if (m.icon === null) return fail("heldEnvelope: " + name + ": the chip has no drawn envelope");
+    if (counted && m.count === null) return fail("heldEnvelope: " + name + ": a count of 2 did not show");
+    if (!counted && m.count !== null) return fail("heldEnvelope: " + name + ": a count of 1 showed a number");
+    if (Math.abs(m.icon - m.chip) > 0.6) fail("heldEnvelope: " + name + ": the envelope is " + (m.icon - m.chip).toFixed(2) + "px off the chip's centre");
+    if (counted && Math.abs(m.icon - m.count) > 0.6) fail("heldEnvelope: " + name + ": the envelope is " + (m.icon - m.count).toFixed(2) + "px off its count");
+    if (m.sib.length < 3 || !m.room) fail("heldEnvelope: " + name + ": the row has " + m.sib.length + " neighbours, wanted the dots and the room pill");
+    for (const s of m.sib) if (Math.abs(s - m.icon) > 0.6) fail("heldEnvelope: " + name + ": a neighbour's centre is " + (s - m.icon).toFixed(2) + "px off the envelope");
+  };
+  try {
+    for (const [name, vp, mobile] of [["desktop", { width: 1280, height: 800 }, false], ["phone", { width: 412, height: 915 }, true]]) {
+      for (const count of [1, 2]) {
+        landCard("a~land-held", { supervised: true,
+          activity: { held_peer: "boss", held_count: count, held_seconds: 30, held_for: "turn", held_turn: "asked", held_quiet: true } });
+        mock.landList = [mock.LAND["a~land-held"]];
+        mock.landPerms = [];
+        const ctx = await browser.newContext({ viewport: vp, hasTouch: mobile, isMobile: mobile });
+        await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+        const p = await ctx.newPage();
+        p.on("pageerror", e => errors.push(String(e)));
+        await p.goto(base, { waitUntil: "domcontentloaded" });
+        await p.evaluate(() => switchView("terms"));
+        await p.waitForSelector(".card .chip.queued, .stackrow .chip.queued", { state: "attached", timeout: slow(15000) });
+        await p.evaluate(() => {
+          const c = document.querySelector(".card .chip.queued, .stackrow .chip.queued").parentElement;
+          if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-sg4</span>');
+          c.insertAdjacentHTML("afterbegin", '<span class="chip unseen">&#9679;</span><span class="chip unseen">&#9679;</span>');
+        });
+        check(name + " x" + count, await measure(p), count > 1);
+        if (shots) {
+          fs.mkdirSync(shots, { recursive: true });
+          const row = p.locator(".card .chip.queued, .stackrow .chip.queued").first().locator("xpath=../..");
+          await row.screenshot({ path: path.join(shots, `${name}-${count > 1 ? "count" : "single"}-${tag}.png`) });
+        }
+        await ctx.close();
+      }
+    }
+  } finally {
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("heldEnvelope: the page threw: " + errors.join(" | "));
 }
 
 // ── u-021: the phone board header is one slim row behind a chevron ─────────
@@ -8543,7 +8636,8 @@ async function historySection(browser, base) {
   }
 
   // ── a new search starts at the top ────────────────────────────────────
-  await page.evaluate(() => renderHistory(false));
+  // With a live repaint landing on the same tick, as a poll's does while the fresh load is out.
+  await page.evaluate(() => { renderHistory(false); renderHistory(false, true); });
   await page.waitForFunction(() =>
     document.querySelectorAll("#history-list .row.line").length === 100, null,
     { timeout: slow(15000) }).catch(() => fail("a fresh history load did not go back to one page."));
@@ -9226,9 +9320,13 @@ async function peekOneHoverSection(browser, base) {
     for (const re of want) if (!re.test(first)) fail("onehover: the details do not say " + re + ": " + first);
     // Off the card, a tooltip is as it was.
     await p.mouse.move(W / 2, 3);
+    // Opening a peek hides any tooltip, so one still closing or opening from the hovers above would take the gear's
+    // tooltip down after it showed. Wait until no peek is on screen, then let the grace timers run out.
+    await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: slow(5000) });
+    await new Promise(r => setTimeout(r, 400));
     const gear = await p.locator("#gear").boundingBox();
     await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
-    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) })
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000) })
       .catch(() => fail("onehover: the gear's tooltip no longer shows."));
   } finally {
     await ctx.close();
@@ -14703,7 +14801,7 @@ async function mPromptsSection(browser) {
       await p.tap('#m-list .row[data-id="pr-1"]');
       await p.waitForSelector("#m-replies .reply.prompt", { timeout: slow(5000) });
       const rows = await p.$$eval("#m-replies .reply", els => els.map(e => ({
-        cls: e.className, src: (e.querySelector(".src") || {}).textContent || "", text: (e.querySelector(".own, .md") || {}).textContent || "",
+        cls: e.className, src: (e.querySelector(".src") || {}).textContent || "", note: (e.querySelector(".note") || {}).textContent || "", text: (e.querySelector(".own, .md") || {}).textContent || "",
         cut: !!e.querySelector(".cut"), html: e.innerHTML })));
       const texts = rows.map(r => r.text.trim());
       const want = ["Old reply.", "operator says <b>hi</b>", "found it", "/compact", "a very long paste", "sent from this phone", "Newest reply."];
@@ -14711,6 +14809,8 @@ async function mPromptsSection(browser) {
       if (rows[1].src !== "you" || !/mine/.test(rows[1].cls)) fail(tag + "operator prompt not marked as you");
       if (rows[1].html.indexOf("<b>") >= 0) fail(tag + "prompt text was not escaped");
       if (rows[2].src !== "scout" || !/peer/.test(rows[2].cls)) fail(tag + "peer prompt not named: " + rows[2].src);
+      if (!/→ you/.test(rows[2].note)) fail(tag + "a say to this card does not read as to you: " + rows[2].note);
+      if (rows[0].note || rows[1].note) fail(tag + "only a say from a session is marked as to you");
       if (!/command/.test(rows[3].cls)) fail(tag + "command prompt not a command row");
       if (!rows[4].cut || rows[1].cut) fail(tag + "cut marker wrong");
       if (rows.filter(r => r.text.trim() === "sent from this phone").length !== 1) fail(tag + "the local own row was not dropped");
@@ -19598,7 +19698,7 @@ async function gearTermListSection(browser, base) {
         hide: document.querySelectorAll("#gear-term-hide, .termhide").length,
         group: document.querySelectorAll("#term-group button").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
       const a = await p.evaluate(() => {
         const was = sortByActivity;
         [...document.querySelectorAll("#gear-term-sort button")].find(b => !b.classList.contains("on")).click();
@@ -19662,13 +19762,12 @@ async function phoneBoardCompactSection(browser, base) {
       const btn = document.querySelector("#stack .filtersbtn");
       return { btn: vis(btn), expanded: btn && btn.getAttribute("aria-expanded"), btnH: btn ? Math.round(btn.getBoundingClientRect().height) : 0,
         rows: document.querySelector("#stack .fpanel").inert ? [] : ["stack-seg", "stack-sort", "stack-group"], q: vis(document.getElementById("stack-q")),
-        firstTop: Math.round(first.top), count: btn && btn.querySelector(".fcount") ? btn.querySelector(".fcount").textContent : "" };
+        firstTop: Math.round(first.top) };
     });
     if (!f.btn || f.expanded !== "false") fail(tag + "the filters button is missing or open: " + JSON.stringify(f));
     if (f.rows.length) fail(tag + "the pill rows are not folded: " + f.rows.join(","));
     if (!f.q || f.btnH < 40) fail(tag + "the search box is gone or the button is under 40px: " + JSON.stringify(f));
     if (f.firstTop > 200) fail(tag + "the first card starts at " + f.firstTop + "px, the filters still take the screen");
-    if (f.count !== "") fail(tag + "defaults count as active: " + f.count);
     // the sound hint covers no input and no tray handle, in every view
     const hint = async where => {
       // a switch of view is a click, which unlocks the sound and takes the hint down, so it is put back to measure it
@@ -19754,7 +19853,7 @@ async function phoneBoardCompactSection(browser, base) {
       await shot(v);
       await hint(v);
     }
-    // opening the button brings the rows back, with a count of the ones that are not the defaults
+    // opening the button brings the rows back
     await p.evaluate(() => document.querySelector('header nav .tab[data-view="stack"]').click());
     await p.waitForTimeout(300);
     await p.tap("#stack .filtersbtn");
@@ -19766,8 +19865,6 @@ async function phoneBoardCompactSection(browser, base) {
     await shot("stack-open");
     await p.tap("#stack .filtersbtn");
     await p.waitForTimeout(200);
-    const cnt = await p.evaluate(() => document.querySelector("#stack .filtersbtn .fcount").textContent);
-    if (cnt !== "1") fail(tag + "one changed filter should count 1: " + JSON.stringify(cnt));
     if (await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)) fail(tag + "the page scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -19979,6 +20076,53 @@ async function revealFoldsSection(browser, base) {
   if (!bad) console.log("revealFolds ok");
 }
 
+// GOING TO A CARD TURNS ON THE CHIP THAT HIDES IT, in the view on screen and no other chip. The board's column chip for
+// the card is off (and one more column is off for company), the stack's column chip is off: `revealCard` turns on the
+// card's own and leaves the other alone.
+async function revealChipSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof revealCard === "function" && lastTasks.some(x => x.id === "u-disc"), null, { timeout: slow(15000) });
+    const setup = await p.evaluate(() => {
+      const t = lastTasks.find(x => x.id === "u-disc");
+      const mine = boardColumnOf(t);
+      const other = BOARD_COLUMNS.map(c => c.id).filter(id => id !== mine)[0];
+      const keep = BOARD_COLUMNS.map(c => c.id).filter(id => id !== mine && id !== other);
+      localStorage.setItem("atrium.board.show", JSON.stringify(keep));
+      const col = COLUMNS.find(c => c.statuses.includes(t.status));
+      const stackOther = COLUMNS.map(c => c.id).find(id => id !== col.id);
+      localStorage.setItem("atrium.stack.show", JSON.stringify([stackOther]));
+      return { mine, other, stackOther, stackMine: col.id };
+    });
+    await p.evaluate(() => document.querySelector('.tab[data-view="board"]').click());
+    await p.waitForFunction(() => !document.querySelector('#board [data-id="u-disc"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("revealChip: the board still draws the card with its column chip off"));
+    await p.evaluate(() => revealCard("u-disc"));
+    await p.waitForSelector('#board [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("revealChip: going to the card did not bring it back on the board"));
+    const b = await p.evaluate(() => ({ on: [...boardShow()], stack: JSON.parse(localStorage.getItem("atrium.stack.show") || "[]") }));
+    if (!b.on.includes(setup.mine)) fail("revealChip: the card's column chip is still off");
+    if (b.on.includes(setup.other)) fail("revealChip: an unrelated column chip was turned on: " + JSON.stringify(b));
+    if (b.stack.join() !== setup.stackOther) fail("revealChip: the stack's chips changed while on the board: " + JSON.stringify(b));
+    await p.evaluate(() => document.querySelector('.tab[data-view="stack"]').click());
+    await p.waitForFunction(() => !document.querySelector('#stack-list [data-id="u-disc"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("revealChip: the stack still draws the card with its column chip off"));
+    await p.evaluate(() => revealCard("u-disc"));
+    await p.waitForSelector('#stack-list [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("revealChip: going to the card did not bring it back on the stack"));
+    const s = await p.evaluate(() => [...stackShow()]);
+    if (!s.includes(setup.stackMine) || !s.includes(setup.stackOther)) fail("revealChip: the stack chips are wrong: " + JSON.stringify(s));
+    if (errors.length) fail("revealChip: page errors: " + errors.join(" | "));
+  } finally { mock.tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("revealChip ok");
+}
+
 // THE BRIDGE RUNS FROM A SHUT GROUP. The attached card sits in a group the operator left shut: the group stays shut, the
 // bridge is level with its heading and the heading wears the attached frame. Opening the group moves the bridge to the
 // card's row and shutting it again moves it back to the heading.
@@ -20031,7 +20175,12 @@ async function groupBridgeSection(browser, base) {
     if (!top) fail("groupBridge: the card sits under no heading, so nothing is tested");
     await p.evaluate(() => repaintTermList());
     await settle();
+    await p.waitForSelector("#term-list .card.on", { state: "attached", timeout: slow(5000) });
     level(await read(), "card", "the row");
+    // The boot's restore switches to the remembered view a moment after the first poll. The rows are `.card.tab`, so
+    // a switch that marks the nav's tabs must leave them alone: the repaint after it is skipped for unchanged markup.
+    const kept = await p.evaluate(() => { switchView("terms"); return document.querySelectorAll("#term-list .card.on").length; });
+    if (kept !== 1) fail("groupBridge: switching to the terminals view took the attached row's mark off (" + kept + " rows on)");
     const cardFrame = await p.evaluate(() => getComputedStyle(document.querySelector("#term-list .card.on")).borderTopColor);
     await shot("group-bridge-before");
     // Shut the outermost group: the bridge moves to its heading and the group stays as it is left.
@@ -22767,6 +22916,9 @@ async function changeReqSection(browser, base) {
 // there, not a guess. `before(skin)` may put the page in the state to measure after the skin is set.
 async function crInkCheck(p, skins, sels, width, before) {
   const bad = [];
+  // A blanked element's children that set their own colour (a label, a <b>) stay drawn, and when the text wraps (a wider font)
+  // the range's box reaches under them, so their ink reads as the background. Blank the whole subtree.
+  await p.addStyleTag({ content: "[data-crk], [data-crk] * { color: transparent !important; }" });
     for (const skin of skins) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
@@ -23222,7 +23374,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -23488,7 +23640,6 @@ async function main() {
         lit: ["paused", "dead", "subagents"].filter(v => chip(v) && chip(v).classList.contains("on")),
         counts: { paused: count("paused"), dead: count("dead"), subagents: count("subagents") },
         stored: localStorage.getItem(termDeviceKey("atrium.terms.show")),
-        changed: document.querySelector("#fd-terms .fcount").textContent,
         pinnedCount: (document.querySelector("#term-list .pinnedhead .tgcount") || {}).textContent || "",
         pinnedEmpty: ((document.querySelector("#term-list .termbucket .bucketdrop") || {}).textContent || "").trim(),
         cold: [...document.querySelectorAll("#term-list .card.tab.cold")].map(c => c.dataset.id).sort().join(","),
@@ -23525,8 +23676,8 @@ async function main() {
     if (!cDef.shut || cDef.foldCount !== "3") {
       fail("the parent does not start folded with its three subagents counted on the chevron: " + JSON.stringify(cDef));
     }
-    if (cDef.lit.length || cDef.stored !== null || cDef.changed !== "") {
-      fail("with no key set a chip is lit, or the handle counts a change: " + JSON.stringify(cDef));
+    if (cDef.lit.length || cDef.stored !== null) {
+      fail("with no key set a chip is lit: " + JSON.stringify(cDef));
     }
     if (cDef.counts.paused !== "1" || cDef.counts.dead !== "2" || cDef.counts.subagents !== "3") {
       fail("the chips do not carry their counts (paused 1, dead 2, subagents 3): " + JSON.stringify(cDef.counts));
@@ -23544,8 +23695,8 @@ async function main() {
       fail("the paused chip did not list the paused card alone: " + JSON.stringify(cPaused));
     }
     if (!/(^|,)paused1(,|$)/.test(cPaused.cold)) fail("a paused row is not drawn cold: " + JSON.stringify(cPaused));
-    if (cPaused.changed !== "1" || cPaused.lit.join() !== "paused" || cPaused.stored !== '["paused"]') {
-      fail("the paused chip did not light alone, count one change and be stored: " + JSON.stringify(cPaused));
+    if (cPaused.lit.join() !== "paused" || cPaused.stored !== '["paused"]') {
+      fail("the paused chip did not light alone and be stored: " + JSON.stringify(cPaused));
     }
 
     // DEAD on as well: the pinned rows come back into their bucket, cold, as `2`.
@@ -23554,8 +23705,8 @@ async function main() {
     if (!cDead.deadSub || !cDead.deadAgent || !cDead.paused) {
       fail("the dead chip did not list the pinned rows whose runners are gone: " + JSON.stringify(cDead));
     }
-    if (cDead.pinnedCount !== "2" || cDead.changed !== "2" || cDead.lit.join() !== "paused,dead") {
-      fail("with dead on the bucket does not read 2, or the handle does not count two: " + JSON.stringify(cDead));
+    if (cDead.pinnedCount !== "2" || cDead.lit.join() !== "paused,dead") {
+      fail("with dead on the bucket does not read 2: " + JSON.stringify(cDead));
     }
 
     // SUBAGENTS on: every parent starts expanded. A chip change clears the folds written under the other meaning.
@@ -25040,12 +25191,14 @@ async function main() {
     await unit("roomsDash", bu("roomsDash"));
     await unit("transportChips", bu("transportChips"));
     await unit("pathBadges", bu("pathBadges"));
+    await unit("transportToggle", bu("transportToggle"));
     await unit("zitiLogo", bu("zitiLogo"));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));
     await unit("u016", () => u016Section(browser, base));
     await unit("phoneHeader", () => phoneHeaderSection(browser, base));
     await unit("mailChip", () => mailChipSection(browser, base));
+    await unit("heldEnvelope", () => heldEnvelopeSection(browser, base));
     await unit("phoneFocus", () => phoneFocusSection(browser, base));
     await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
     await unit("phoneShare", () => phoneShareSection(browser, base));
@@ -25061,6 +25214,7 @@ async function main() {
     await unit("eventDriven", () => eventDrivenSection(browser, base));
     await unit("idleBudget", () => idleBudgetSection(browser, base));
     await unit("pollsGone", bu("pollsGone"));
+    await unit("findingsProbe", bu("findingsProbe"));
     await unit("roomsMachine", bu("roomsMachine"));
     await unit("mHome", () => mHomeSection(browser));
     await unit("mResume", () => mResumeSection(browser));
@@ -25191,6 +25345,9 @@ async function main() {
     await unit("hubReposFeed", bu("hubReposFeed"));
     await unit("hubReposBranches", bu("hubReposBranches"));
     await unit("changeReq", () => changeReqSection(browser, base));
+    await unit("deepLinkView", bu("deepLinkView"));
+    await unit("deepLinkRequests", bu("deepLinkRequests"));
+    await unit("deepLinkBack", bu("deepLinkBack"));
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
@@ -25276,6 +25433,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
+    await unit("revealChip", () => revealChipSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));

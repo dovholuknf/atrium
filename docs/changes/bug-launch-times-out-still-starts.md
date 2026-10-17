@@ -34,8 +34,8 @@ In `launchHandler`, for the `/v1/launch` post only:
 
 ### Not done
 
-- A launch key (random, reused by the retry, the room returning the card filed under it). The room has no such field,
-  so it is a known gap, filed as its own bug. Step 4 narrows the retry window and does not close it.
+- A launch key. Done in f-002 (`docs/changes/f-002.md`): the snapshot recovery here stays as the fallback for a caller
+  that sends no key and for a room older than the field.
 - Follow-up: the room answers `/v1/launch` after the card is filed with status `starting`, not after the runner
   proves it started.
 

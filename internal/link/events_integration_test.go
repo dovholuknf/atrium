@@ -517,3 +517,31 @@ func TestANullEventPassesThroughUntagged(t *testing.T) {
 		t.Fatalf("a null payload came out %q", got)
 	}
 }
+
+// The last board leaving and the next arriving overlap on a hub, and the stream
+// the new one opens has to carry the room's events: the reconcile run on its
+// way out once cancelled the pump the next run had just started.
+func TestAStreamReopenedRightAfterACloseStillStreams(t *testing.T) {
+	say := make(chan string, 4)
+	front, _, done := pair(t, streamer(say))
+	defer done()
+
+	stopSaying := make(chan struct{})
+	defer close(stopSaying)
+	go func() {
+		for {
+			select {
+			case <-stopSaying:
+				return
+			case say <- sse("task", `{"id":"card1"}`):
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	for i := 0; i < 25; i++ {
+		ch, shut := listen(t, front.URL+"/v1/events/hub")
+		waitEvent(t, ch, "task")
+		shut()
+	}
+}

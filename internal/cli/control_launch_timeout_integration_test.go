@@ -115,3 +115,54 @@ func TestACardAlreadyThereIsNotTakenForTheLaunch(t *testing.T) {
 		t.Fatal("an old card in the directory was taken for a launch that never made one")
 	}
 }
+
+// THE KEY CLOSES WHAT THE SNAPSHOT CANNOT. The card is not on the list when the answer is lost, so looking finds
+// nothing, and the retry sends the key it made the first time. The room that files by key hands back that card.
+func TestARetryAfterALostAnswerSendsTheKeyAgain(t *testing.T) {
+	shortLaunchWait(t)
+	var mu sync.Mutex
+	var keys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/v1/tasks":
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []any{}})
+		case "/v1/launch":
+			var body struct {
+				Key string `json:"launch_key"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			keys = append(keys, body.Key)
+			if len(keys) == 1 {
+				time.Sleep(400 * time.Millisecond)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "c9", "launch_replay": len(keys) > 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	loc := filepath.Join(t.TempDir(), "daemon.json")
+	raw, _ := json.Marshal(map[string]any{"board": srv.URL, "pid": os.Getpid()})
+	if err := os.WriteFile(loc, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATRIUM_LOCATION", loc)
+	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
+
+	cwd := "/w/keyed-dir"
+	if _, _, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: cwd}); err == nil {
+		t.Fatal("a launch that outlasted its bound succeeded")
+	}
+	_, out, err := launchHandler(context.Background(), nil, LaunchInput{Item: "f-test", Cwd: cwd})
+	if err != nil || out.Card != "c9" || !strings.Contains(out.Note, "do NOT launch it again") {
+		t.Fatalf("retry = %+v, %v", out, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(keys) != 2 || keys[0] == "" || keys[0] != keys[1] {
+		t.Fatalf("keys sent = %v, want one key twice", keys)
+	}
+}

@@ -75,7 +75,9 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 		s := s
 		until(t, s, func() bool { return strings.Contains(f.written(), s) })
 	}
-	time.Sleep(300 * time.Millisecond)
+	// Typed is not recorded: the injector marks each say delivered after it types it.
+	until(t, "every say to be marked delivered", func() bool { return len(pendingFrom(t, d, id)) == 0 })
+	time.Sleep(100 * time.Millisecond)
 	got := f.written()
 	wake := strings.Index(got, ncWakeMark)
 	for _, s := range []string{"SAYDONEONE", "SAYDONETWO", "SAYNOW"} {

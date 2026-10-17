@@ -8,19 +8,16 @@ import (
 	"time"
 )
 
-// measure runs the probe for a while and returns its p99.
-func measure(t *testing.T, d time.Duration) time.Duration {
-	t.Helper()
+// measure runs the probe for a while and returns its p99 and how many samples
+// it took. A starved probe takes few, which is the thing being measured, so it
+// is the caller that decides how many are enough.
+func measure(d time.Duration) (p99 time.Duration, n int, ok bool) {
 	p := &Drift{}
 	stop := make(chan struct{})
 	go p.Run(stop)
 	time.Sleep(d)
 	close(stop)
-	p99, n, ok := p.Drain()
-	if !ok || n < 5 {
-		t.Fatalf("probe took %d samples", n)
-	}
-	return p99
+	return p.Drain()
 }
 
 // A loaded process reads worse than an idle one. One P and spinning goroutines
@@ -32,7 +29,10 @@ func TestLoadedProcessDriftsMore(t *testing.T) {
 	prev := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(prev)
 
-	idle := measure(t, 600*time.Millisecond)
+	idle, n, ok := measure(600 * time.Millisecond)
+	if !ok || n < 5 {
+		t.Fatalf("idle probe took %d samples", n)
+	}
 
 	quit := make(chan struct{})
 	defer close(quit)
@@ -52,10 +52,14 @@ func TestLoadedProcessDriftsMore(t *testing.T) {
 			}
 		}()
 	}
-	// A scheduler can have a quiet moment, so give it three looks.
+	// A scheduler can have a quiet moment, so give it three looks. Under this
+	// load the probe may take only a few samples, or none in a look, and a
+	// look with no sample is no reading rather than a failure.
 	var loaded time.Duration
 	for try := 0; try < 3 && loaded <= idle; try++ {
-		loaded = measure(t, 600*time.Millisecond)
+		if p99, _, ok := measure(600 * time.Millisecond); ok {
+			loaded = p99
+		}
 	}
 	if loaded <= idle {
 		t.Fatalf("loaded p99 %v is not above idle p99 %v", loaded, idle)
