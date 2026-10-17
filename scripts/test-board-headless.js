@@ -9226,9 +9226,13 @@ async function peekOneHoverSection(browser, base) {
     for (const re of want) if (!re.test(first)) fail("onehover: the details do not say " + re + ": " + first);
     // Off the card, a tooltip is as it was.
     await p.mouse.move(W / 2, 3);
+    // Opening a peek hides any tooltip, so one still closing or opening from the hovers above would take the gear's
+    // tooltip down after it showed. Wait until no peek is on screen, then let the grace timers run out.
+    await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: slow(5000) });
+    await new Promise(r => setTimeout(r, 400));
     const gear = await p.locator("#gear").boundingBox();
     await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
-    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) })
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000) })
       .catch(() => fail("onehover: the gear's tooltip no longer shows."));
   } finally {
     await ctx.close();
@@ -20077,6 +20081,7 @@ async function groupBridgeSection(browser, base) {
     if (!top) fail("groupBridge: the card sits under no heading, so nothing is tested");
     await p.evaluate(() => repaintTermList());
     await settle();
+    await p.waitForSelector("#term-list .card.on", { state: "attached", timeout: slow(5000) });
     level(await read(), "card", "the row");
     const cardFrame = await p.evaluate(() => getComputedStyle(document.querySelector("#term-list .card.on")).borderTopColor);
     await shot("group-bridge-before");
