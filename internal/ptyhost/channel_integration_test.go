@@ -33,8 +33,11 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, copies := t.TempDir(), t.TempDir()
+	// The idle clock starts when the host process does, and a probe is not a daemon, so it never restarts it. The
+	// idle time must outlast a slow start (copy, virus scan, process creation) plus the first dial, or the host is
+	// gone before anything can dial it and the pipe never answers.
 	p, err := Start(state, StartOptions{Exe: exe, CopyDir: copies,
-		Args: []string{"__host", state, "400ms"}})
+		Args: []string{"__host", state, "3s"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +59,7 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("the copy: %v", matches)
 	}
-	// and it exits by itself: no pty, no daemon, 400ms
+	// and it exits by itself: no pty, no daemon, 3s
 	c.Close()
 	done := make(chan struct{})
 	go func() { _, _ = p.Wait(); close(done) }()
