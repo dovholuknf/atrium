@@ -116,11 +116,12 @@ async function bootBoard() {
   // A broadcast round trip between two documents in one browser is well under
   // a frame. Half a second is many times that, and it is paid once at load.
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
+  const openedOn = document.querySelector(".tab.on").dataset.view;
   setTimeout(() => {
     runRefresh();
     // A board opened by clicking a desktop notification lands where the click
     // meant, after the restore has put it back where it was.
-    restoreWhereYouWere().finally(landFromURL);
+    restoreWhereYouWere(openedOn).finally(landFromURL);
     // AND THE COVER COMES OFF, on the view you were reading rather than on the
     // one the markup starts with. Here rather than earlier because this line
     // above is what puts the board back where it was, and uncovering before it
