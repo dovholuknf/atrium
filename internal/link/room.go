@@ -101,7 +101,9 @@ type Room struct {
 	dataSaid time.Time
 	// dials are the data dials in flight, dataFails the failures in a row, and dropLink closes the current control
 	// connection. See dials.go.
-	dials     map[*dialSlot]struct{}
+	dials map[*dialSlot]struct{}
+	// owed is how many asked-for data dials found every slot taken, paid as slots free. See dials.go.
+	owed      int
 	dataFails int
 	dropLink  func()
 	// taking makes sure one offer is acted on once, however many times the hub
@@ -529,12 +531,13 @@ func (r *Room) say(conn net.Conn, n note) error {
 // open dials up to n data connections and hands them to the listener.
 //
 // Each dial is its own goroutine because a hub asking for four should get four in one round trip. They are bounded:
-// at most maxDataDials are in flight, and an ask that finds none free is dropped, since the hub asks again while its
-// pool is short. See dials.go.
+// at most maxDataDials are in flight, and an ask that finds none free is owed, not dropped: the hub asks once per waiter
+// and a dropped ask left a request waiting its whole DialWait. See dials.go.
 func (r *Room) open(ctx context.Context, n int, session string) {
 	for i := 0; i < n; i++ {
 		s, ok := r.startDial()
 		if !ok {
+			r.owe(n - i)
 			return
 		}
 		go r.dataDial(ctx, session, s)

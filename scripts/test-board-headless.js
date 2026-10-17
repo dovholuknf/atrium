@@ -27819,6 +27819,8 @@ async function mChatThumbsSection(browser) {
     if (!/secret\.png/.test(r.text) || !r.text.includes(inA)) fail(tag + "the path text was lost: " + r.text);
     if (r.outImg) fail(tag + "a path outside the card got a thumbnail");
     if ((st.fileHits || []).some(h => /secret/.test(h))) fail(tag + "the outside path was fetched: " + st.fileHits.join());
+    await p.waitForFunction(() => [...document.querySelectorAll("#m-replies .md-img img")].every(i => i.complete && i.naturalWidth > 0),
+      null, { timeout: slow(8000) }).catch(() => {});
     const wide = await p.evaluate(() => Math.max(...[...document.querySelectorAll("#m-replies .md-img img")].map(i => i.getBoundingClientRect().width)));
     if (wide > 241 || wide < 100) fail(tag + "a thumbnail is " + wide + "px wide, want at most 240");
     await mShot(p, "chat-thumbs");
