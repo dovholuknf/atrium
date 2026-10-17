@@ -180,6 +180,7 @@ func roomLogins(ctx context.Context, hub string) map[string]string {
 	defer cancel()
 	var set []link.SSHEntry
 	if room, d, err := roomLinkFor(""); err == nil {
+		defer closeDialer(d)
 		set, _ = link.FetchSSHSet(ctx, d, room)
 	}
 	if len(set) == 0 {
