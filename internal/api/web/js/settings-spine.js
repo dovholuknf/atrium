@@ -1369,6 +1369,8 @@ function repaintLists(signal, fromStore) {
     chatter: () => Promise.resolve(),
     // Live by its own `backlog` and `report` events. See js/backlog.js.
     backlog: () => Promise.resolve(),
+    // Read on open and on its refresh button. See js/hubrepos.js.
+    hubrepos: () => Promise.resolve(),
     // Live by its own `pr` events, like the audit pane. See js/pulls.js.
     pulls: () => { pullsPaint(); return Promise.resolve(); }
   }[view];
