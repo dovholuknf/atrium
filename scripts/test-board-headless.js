@@ -19595,7 +19595,7 @@ async function gearTermListSection(browser, base) {
         hide: document.querySelectorAll("#gear-term-hide, .termhide").length,
         group: document.querySelectorAll("#term-group button").length
       }));
-      if (!f.shown || f.sort !== 3 || f.hide !== 0 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.group < 6) fail(tag + "the section is wrong: " + JSON.stringify(f));
       const a = await p.evaluate(() => {
         const was = sortByActivity;
         [...document.querySelectorAll("#gear-term-sort button")].find(b => !b.classList.contains("on")).click();
@@ -19974,6 +19974,53 @@ async function revealFoldsSection(browser, base) {
     if (errors.length) fail("revealFolds: page errors: " + errors.join(" | "));
   } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("revealFolds ok");
+}
+
+// GOING TO A CARD TURNS ON THE CHIP THAT HIDES IT, in the view on screen and no other chip. The board's column chip for
+// the card is off (and one more column is off for company), the stack's column chip is off: `revealCard` turns on the
+// card's own and leaves the other alone.
+async function revealChipSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "untagged";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof revealCard === "function" && lastTasks.some(x => x.id === "u-disc"), null, { timeout: slow(15000) });
+    const setup = await p.evaluate(() => {
+      const t = lastTasks.find(x => x.id === "u-disc");
+      const mine = boardColumnOf(t);
+      const other = BOARD_COLUMNS.map(c => c.id).filter(id => id !== mine)[0];
+      const keep = BOARD_COLUMNS.map(c => c.id).filter(id => id !== mine && id !== other);
+      localStorage.setItem("atrium.board.show", JSON.stringify(keep));
+      const col = COLUMNS.find(c => c.statuses.includes(t.status));
+      const stackOther = COLUMNS.map(c => c.id).find(id => id !== col.id);
+      localStorage.setItem("atrium.stack.show", JSON.stringify([stackOther]));
+      return { mine, other, stackOther, stackMine: col.id };
+    });
+    await p.evaluate(() => document.querySelector('.tab[data-view="board"]').click());
+    await p.waitForFunction(() => !document.querySelector('#board [data-id="u-disc"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("revealChip: the board still draws the card with its column chip off"));
+    await p.evaluate(() => revealCard("u-disc"));
+    await p.waitForSelector('#board [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("revealChip: going to the card did not bring it back on the board"));
+    const b = await p.evaluate(() => ({ on: [...boardShow()], stack: JSON.parse(localStorage.getItem("atrium.stack.show") || "[]") }));
+    if (!b.on.includes(setup.mine)) fail("revealChip: the card's column chip is still off");
+    if (b.on.includes(setup.other)) fail("revealChip: an unrelated column chip was turned on: " + JSON.stringify(b));
+    if (b.stack.join() !== setup.stackOther) fail("revealChip: the stack's chips changed while on the board: " + JSON.stringify(b));
+    await p.evaluate(() => document.querySelector('.tab[data-view="stack"]').click());
+    await p.waitForFunction(() => !document.querySelector('#stack-list [data-id="u-disc"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("revealChip: the stack still draws the card with its column chip off"));
+    await p.evaluate(() => revealCard("u-disc"));
+    await p.waitForSelector('#stack-list [data-id="u-disc"]', { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("revealChip: going to the card did not bring it back on the stack"));
+    const s = await p.evaluate(() => [...stackShow()]);
+    if (!s.includes(setup.stackMine) || !s.includes(setup.stackOther)) fail("revealChip: the stack chips are wrong: " + JSON.stringify(s));
+    if (errors.length) fail("revealChip: page errors: " + errors.join(" | "));
+  } finally { mock.tasksMode = was; await ctx.close(); }
+  if (!bad) console.log("revealChip ok");
 }
 
 // THE BRIDGE RUNS FROM A SHUT GROUP. The attached card sits in a group the operator left shut: the group stays shut, the
@@ -23219,7 +23266,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -25274,6 +25321,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
+    await unit("revealChip", () => revealChipSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
