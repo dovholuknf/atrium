@@ -98,6 +98,6 @@ when the bare name times out or does not resolve. It says which route answered a
 call to that room. A room is "offline" only when neither route answered. `Resolve-SshRoute` in `live-common.ps1` does
 the choice and `test-ssh-route.ps1` tests it with a fake probe, under Windows PowerShell 5.1 or pwsh 7.
 
-The bare probe is capped at 10s with no retry. The swap runs detached on the room machine and writes
-`~/.atrium/deploy-swap.out`, because over .atrium the ssh session dies with the room. The deploy waits on the hub for the
-room to return and reads that file whenever ssh answers.
+The bare probe is capped at 10s with no retry. On mac the swap runs detached (nohup) and writes
+`~/.atrium/deploy-swap.out`, because over .atrium the ssh session dies with the room. On Windows the swap runs in the
+session and a dropped session is no verdict, so the hub decides. Either way the deploy waits on the hub for the room.

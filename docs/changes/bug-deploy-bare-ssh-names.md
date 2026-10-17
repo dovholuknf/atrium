@@ -6,10 +6,11 @@ route worked. A hang on either route with no answer is still reported as a hang.
 fixed here.
 
 The bare probe is one ssh with `ConnectTimeout=5` and a 10s cap, never retried, so a dead bare name costs seconds before
-.atrium is tried. Over .atrium the ssh session rides the room being stopped and dies mid-swap, so the swap and its retry
-now run detached on the room machine (nohup on mac, a Win32_Process create on Windows so it leaves the sshd job), writing
-to `~/.atrium/deploy-swap.out`. The script waits on the hub (`Test-RoomBackOnHub`) and reads that file over ssh whenever
-ssh answers. Not run against a real Windows room here: the Windows launch command is only parse-checked.
+.atrium is tried. Over .atrium the ssh session rides the room being stopped and can die mid-swap. On mac the swap and its retry run
+detached (nohup) and write to `~/.atrium/deploy-swap.out`, which the script reads over ssh whenever ssh answers. On
+Windows the swap runs in the ssh session, because a Win32_Process create answers Access denied over ssh (sgg) and the
+in-session swap survives the session dropping (sg3). A dropped session there is no verdict: `Invoke-WindowsSwap` waits on
+the hub (`Test-RoomBackOnHub`) and the deploy goes on to its usual hub check. The Win32_Process path is removed.
 
 `test-ssh-route.ps1` tests `Resolve-SshRoute` in isolation with a fake probe, because the deploy script itself is not
 run without real rooms. It uses no pwsh-7-only syntax and was run under Windows PowerShell 5.1.
