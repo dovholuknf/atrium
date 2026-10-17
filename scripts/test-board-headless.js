@@ -930,6 +930,7 @@ async function groupColorSection(browser, base) {
         }
       }
     }
+    await cp.evaluate(() => history.replaceState(history.state, "", location.pathname + location.search));
     await cp.reload({ waitUntil: "domcontentloaded" });
     await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: slow(15000) });
     await cp.waitForSelector('.stackgroup[data-morph-key="stack:active"]', { state: "attached", timeout: slow(15000) });
@@ -6052,6 +6053,7 @@ async function u016Section(browser, base) {
         await p.waitForTimeout(300);
         if (!(await hd())) fail(tag + "rotating to landscape hid the header");
         await p.setViewportSize({ width: 390, height: 844 });
+        await p.evaluate(() => history.replaceState(history.state, "", location.pathname + location.search));
         await p.reload({ waitUntil: "domcontentloaded" });
         await ready();
         if (!(await vis(p, "#gear"))) fail(tag + "the open header did not stay open after a reload");
@@ -6765,6 +6767,7 @@ async function phoneTermBarSection(browser, base) {
       if (await p.evaluate(() => document.activeElement && document.activeElement.tagName) !== before) fail(tag + "the handle moved focus");
       if (await p.evaluate(() => localStorage.getItem("atrium.phone.trayOpen")) !== "1") fail(tag + "the open choice was not saved");
       if (process.env.U020_SHOT) await p.screenshot({ path: process.env.U020_SHOT + "-" + mode + "-open.png" });
+      await p.evaluate(() => history.replaceState(history.state, "", location.pathname + location.search));
       await p.reload({ waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
       if (!(await p.evaluate(() => document.body.classList.contains("tray-open")))) fail(tag + "the open choice did not survive a reload");
