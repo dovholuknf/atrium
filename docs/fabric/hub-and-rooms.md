@@ -78,7 +78,7 @@ running agents instead of ending them (`docs/terminal/ptyhost-protocol.md`, `int
 a room's terminals end with the room.
 
 The pty host (`atrium ptyhost`, `internal/ptyhost`) is a third process, and only exists with the `pty_host` setting
-on. It is a hidden subcommand of the same binary. The room starts it detached, from a copy named `atrium.ptyhost` beside
+on. It is a hidden subcommand of the same binary. The room starts it detached, from a copy named `atrium-pty` beside
 the installed binary so a swap of a new atrium never touches the image it runs from, and its output goes to
 `ptyhost.log` in the room's state dir. It owns the pseudo terminals and the processes in them, and keeps a bounded
 ring of each one's output. The room asks it for terminals and reattaches to what it kept. If the host cannot be

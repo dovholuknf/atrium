@@ -42,7 +42,7 @@ and none of the width bookkeeping of a screen model.
   belong to something else, and the spike took the whole host and every runner down with "netpoll failed".
 - **`argv[0]` is resolved on the host's PATH before the working directory is set.** go-pty resolves relative to
   `Dir`, so a bare `claude` would otherwise be looked for inside the repository being worked in.
-- **The host runs from a COPY**, `atrium.ptyhost[.exe]` next to the installed binary, so swapping in a new atrium never
+- **The host runs from a COPY**, `atrium-pty[.exe]` next to the installed binary, so swapping in a new atrium never
   touches the image the host runs from. A copy that is current, or that cannot be replaced, is used as it is.
 - **`Start` does not check for a running host.** Probe first. A second host for one state dir exits at once because
   the listener refuses it, since two hosts would split the runners between them.

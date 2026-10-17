@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/rolebin"
 )
 
 // WHICH BINARY GOES INTO settings.json.
@@ -59,8 +61,8 @@ func hookExeWith(locate func() (string, error), fallback string) string {
 	if strings.TrimSpace(fallback) != "" {
 		return normalizeExe(fallback)
 	}
-	self, err := os.Executable()
-	if err != nil {
+	self := rolebin.Installed()
+	if self == "" {
 		return ""
 	}
 	return normalizeExe(self)
