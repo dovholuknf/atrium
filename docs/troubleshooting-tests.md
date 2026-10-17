@@ -1,8 +1,9 @@
 # Troubleshooting tests
 
-Three cases, each written down so the next one is a procedure and not a night. Part 1 is a board unit that flakes
+Worked cases, each written down so the next one is a procedure and not a night. Part 1 is a board unit that flakes
 locally. Part 2 is a Go test that is slow only on a hosted runner. Part 3 is a board unit whose timing assertion
-fails only under a loaded shard. The rule under all three: **a fix comes from a trace of the failing run, never
+fails only under a loaded shard. Part 4 is two Go shapes: a test that fails only beside others, and a goroutine
+that logs after its test ended. The rule under all of them: **a fix comes from a trace of the failing run, never
 from reading the code and guessing**, and a timeout is never widened to make a number go away.
 
 # Part 1: a board unit that flakes locally
@@ -268,3 +269,27 @@ and a span under 300. Restore the file. A test that cannot fail has measured not
   that starves a renderer is the shard's, not a loop's. The product trace in step 2 took minutes and settled it.
 - Do not sample with a timer instead of frames. A starved main thread starves timers too. Observe the mutation.
 - Do not widen 300 ms. The product holds 1024 ms. The test was reading the wrong clock.
+
+# Part 4: two Go test shapes that look like flakes and are not
+
+Both from `internal/ptyhost`, both found by the method above, both short.
+
+## A test that fails only in a full-package run
+
+`TestWrappedRingIsTruncatedWithRebasedCuts` passed 8 of 8 alone and failed once in the package. A test that passes
+alone and fails beside others is a test whose premise holds only on a quiet machine. Find the premise: here, that
+the runner's 64 KB burst had all landed when a poll first saw the offset pass 20000. Log the quantity the premise
+is about (the offset at the resize and at the attach) and run under load until the log shows it false. Then make
+the test wait for the event the premise names (the runner prints READY after its burst) instead of a number that
+only correlates with it on a quiet box. The product's answer in the "failing" case was right: a cut older than
+the ring is gone, and the test was asking for it back.
+
+## "Log in goroutine after TestX has completed"
+
+This panic ends the whole package run, so it reads as a crash and is reported as one. It is one goroutine calling
+`t.Logf` after its test finished. Run the test with `-count=3`: the first repeat makes it reliable, because the
+goroutine lands on the next copy's clock. The stack names the goroutine (`Host.await`) and the logger it reached
+(`testHost`'s `Logf`). The cause is in the product when the thing being closed returns from Close before the
+goroutines it started are done, and that is where the fix goes: count them, wait for them in Close, bounded, and
+say so when the bound is hit. Muting the test's logger instead hides the same unfinished goroutine from every
+caller that is not a test.
