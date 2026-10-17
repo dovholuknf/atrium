@@ -323,7 +323,7 @@
     "m-growl": {
       "page": "the phone's growls and bell",
       "units": ["mGrowl", "mGrowlQuestion", "mGrowlStack", "mBell"],
-      "sources": ["internal/api/web/m/js/growl.js", "internal/api/web/m/js/bell.js", "internal/api/web/js/phone-bell.js"],
+      "sources": ["internal/api/web/m/m.css", "internal/api/web/m/js/growl.js", "internal/api/web/m/js/bell.js", "internal/api/web/js/phone-bell.js"],
       "tests": [],
       "checks": []
     },
