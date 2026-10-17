@@ -45,6 +45,15 @@ func closeAtCleanup(t *testing.T, d *Daemon) {
 		if t.Failed() {
 			testdiag.Dump(t, "the test failed")
 		}
+		// A runner is out of the supervisor before its exit is filed, so a runner that has left is not a store that
+		// is quiet. Closing under that write holds the file until its fsync returns, which on a slow disk is long.
+		exited := make(chan struct{})
+		go func() { d.exits.Wait(); close(exited) }()
+		select {
+		case <-exited:
+		case <-time.After(10 * time.Second):
+			t.Logf("LEAK %s: a runner was still running or filing its exit 10s after the test ended", t.Name())
+		}
 		_ = d.Close()
 		releaseDB(t, filepath.FromSlash(d.opts.DBPath))
 	})

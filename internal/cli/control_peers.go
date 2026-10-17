@@ -287,6 +287,8 @@ type card struct {
 	Idle     int    `json:"idle_seconds"`
 	Wait     int    `json:"wait_seconds"`
 	Superv   bool   `json:"supervised"`
+	// LaunchReplay: the room answered a launch with the card an earlier attempt filed under the same key.
+	LaunchReplay bool `json:"launch_replay"`
 	// What the room says the launch applied. Empty from a room older than
 	// launch options, which is how launchHandler notices.
 	Model         string   `json:"model"`

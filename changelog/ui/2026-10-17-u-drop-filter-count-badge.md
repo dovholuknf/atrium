@@ -1,0 +1,1 @@
+The filter drawer's handle no longer carries the green number counting settings that differ from the defaults. The summary line beside it still says what the tab is set to. (u-drop-filter-count-badge)

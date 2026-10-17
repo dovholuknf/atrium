@@ -25,6 +25,8 @@ const (
 	PathDown       = "down"
 	PathNone       = "none"
 	PathUnlistened = "unlistened"
+	// PathOff is a kind somebody turned off on purpose. Never dialled, never probed.
+	PathOff = "off"
 )
 
 // PathKinds is the fixed order the board draws a room's paths in.
@@ -46,6 +48,8 @@ type PathState struct {
 	// Mutual is true when the rung really does TLS with a client certificate, which is what "mTLS" claims.
 	Mutual bool   `json:"mtls,omitempty"`
 	Source string `json:"source,omitempty"`
+	// Hammering is true when dials on this path are failing fast. See dialgate.go.
+	Hammering bool `json:"hammering,omitempty"`
 }
 
 // pather is a Dialer that can say what every rung is doing. `Ladder` is the one there is.
@@ -69,6 +73,10 @@ func (l *Ladder) ProbePaths(ctx context.Context, wait time.Duration) []PathState
 		out[i] = PathState{Kind: rg.Path.Transport, Addr: pathAddr(rg.Path), Source: rg.Path.From}
 		if m, ok := rg.Dial.(interface{ Mutual() bool }); ok {
 			out[i].Mutual = m.Mutual()
+		}
+		if l.IsOff(rg.Path.Transport) {
+			out[i].State = PathOff
+			continue
 		}
 		on := has && samePath(rg.Path, r.Path)
 		if on {
@@ -202,7 +210,7 @@ func cleanPaths(in []PathState) []PathState {
 			break
 		}
 		switch p.State {
-		case PathOn, PathUp, PathDown, PathNone:
+		case PathOn, PathUp, PathDown, PathNone, PathOff:
 		default:
 			continue
 		}
@@ -304,7 +312,7 @@ func MergePaths(paths []PathState, ls []ListenerState) []PathState {
 	}
 	out := make([]PathState, len(paths))
 	for i, p := range paths {
-		if p.State != PathOn && !up[p.Kind] {
+		if p.State != PathOn && p.State != PathOff && !up[p.Kind] {
 			p.State = PathUnlistened
 			p.LastError = strings.TrimSpace(why[p.Kind])
 			if p.LastError == "" {
@@ -320,7 +328,23 @@ func MergePaths(paths []PathState, ls []ListenerState) []PathState {
 func (r *Room) pathsNow() []PathState {
 	r.pmu.Lock()
 	defer r.pmu.Unlock()
-	return append([]PathState(nil), r.paths...)
+	out := append([]PathState(nil), r.paths...)
+	// Said now, not at the last probe: a switch has to show on the row at once.
+	if l, ok := r.Dial.(offer); ok {
+		hot := l.Hammering()
+		for i := range out {
+			switch {
+			case l.IsOff(out[i].Kind):
+				out[i].State, out[i].Hammering = PathOff, false
+			default:
+				out[i].Hammering = hot[out[i].Kind]
+				if out[i].State == PathOff {
+					out[i].State = PathDown
+				}
+			}
+		}
+	}
+	return out
 }
 
 // watchPaths probes every rung once at once and then every PathsEvery, until the attachment ends. Each probe is bounded

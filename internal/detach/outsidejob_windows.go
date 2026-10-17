@@ -3,45 +3,41 @@
 package detach
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-// startOutsideJob is the last resort when a job refuses breakaway. A process cannot leave a job that forbids it, but
-// one created by another process can: WMI's Win32_Process.Create makes the child under WmiPrvSE, in no job of ours,
-// so a room task whose job is killed with the task no longer takes the pty host and every runner with it.
-//
-// WMI starts cmd.exe and the host is its child, so the pid WMI returns is cmd's. The script waits up to five seconds
-// for that child and answers its pid instead, which is the process a caller probes, waits on and kills. When none
-// appears it answers cmd's.
-//
-// The child gets the system environment and not ours. The pty host needs none of ours: a spawn carries its own env.
-func startOutsideJob(exe string, args []string, out *os.File) (*os.Process, error) {
+// A process WMI creates is WmiPrvSE's child, in no job of ours, which is the only way out of a job that forbids breakaway.
+func startOutsideJob(exe string, args []string, log string) (*os.Process, error) {
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", outsideJobScript())
-	cmd.Env = append(os.Environ(), "ATRIUM_DETACH_CMD="+outsideJobCommandLine(exe, args, outName(out)))
+	cmd.Env = append(os.Environ(), "ATRIUM_DETACH_CMD="+outsideJobCommandLine(exe, args, log))
 	got, err := cmd.Output()
 	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 4 {
+			return nil, fmt.Errorf("start outside the job through WMI: cmd.exe ended before it started %s, "+
+				"as it does when its redirect cannot open the log %q", filepath.Base(exe), log)
+		}
 		return nil, fmt.Errorf("start outside the job through WMI: %w", err)
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(got)))
 	if err != nil || pid <= 0 {
 		return nil, fmt.Errorf("start outside the job through WMI: no pid in %q", got)
 	}
-	return os.FindProcess(pid)
-}
-
-func outName(out *os.File) string {
-	if out == nil {
-		return ""
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return nil, fmt.Errorf("start outside the job through WMI: %s started as pid %d and had ended before it could be held: %w",
+			filepath.Base(exe), pid, err)
 	}
-	return out.Name()
+	return p, nil
 }
 
-// outsideJobCommandLine is what WMI runs: cmd, because WMI hands the child no handles and the redirect is how the
-// host's output reaches its log.
+// cmd.exe, because WMI hands the child no handles and the redirect is the only way its output reaches a log.
 func outsideJobCommandLine(exe string, args []string, log string) string {
 	parts := []string{`"` + exe + `"`}
 	for _, a := range args {
@@ -54,14 +50,17 @@ func outsideJobCommandLine(exe string, args []string, log string) string {
 	return `cmd.exe /c "` + line + ` >> "` + log + `" 2>&1"`
 }
 
-// outsideJobScript creates the process through WMI and answers the pid to probe. cmd's first child can be conhost.exe,
-// the console host, which is not the process wanted, so children are matched by image name and conhost is skipped.
+// Answers the child's pid, not cmd's, skipping conhost.exe, and exits 4 when cmd is gone before any child appeared.
 func outsideJobScript() string {
-	return `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:ATRIUM_DETACH_CMD}; ` +
+	return `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; ` +
+		`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:ATRIUM_DETACH_CMD; ProcessStartupInformation=$si}; ` +
 		`if ($r.ReturnValue -ne 0) { exit 3 }; ` +
 		`$p = $r.ProcessId; ` +
-		`for ($i = 0; $i -lt 50; $i++) { ` +
+		`$sw = [Diagnostics.Stopwatch]::StartNew(); ` +
+		`while ($sw.ElapsedMilliseconds -lt 5000) { ` +
 		`$k = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.ProcessId)" | Where-Object { $_.Name -ne 'conhost.exe' } | Select-Object -First 1; ` +
-		`if ($k) { $p = $k.ProcessId; break }; [Threading.Thread]::Sleep(100) ` +
+		`if ($k) { $p = $k.ProcessId; break }; ` +
+		`if (-not (Get-CimInstance Win32_Process -Filter "ProcessId=$($r.ProcessId)")) { exit 4 }; ` +
+		`[Threading.Thread]::Sleep(100) ` +
 		`}; [Console]::Out.Write($p)`
 }

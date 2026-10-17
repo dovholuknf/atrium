@@ -1354,13 +1354,16 @@ function termHeldChip(t) {
   const secs = Number(a.held_seconds) || 0;
   const count = Number(a.held_count) || 1;
   if (a.held_quiet) {
-    const n = count > 1 ? " " + count : "";
     return `<span class="chip queued" onclick="event.stopPropagation()"
-      data-tip="${esc(termQueuedTip(count, secs, a.held_turn, a.held_escalate_min))}">&#9993;&#xFE0E;${n}</span>`;
+      data-tip="${esc(termQueuedTip(count, secs, a.held_turn, a.held_escalate_min))}">${termHeldLabel(count)}</span>`;
   }
-  const label = "&#9993;&#xFE0E;" + (count > 1 ? " " + count : "");
   return `<span class="chip held" onclick="event.stopPropagation()"
-    data-tip="${esc(termHeldTip(count, secs, a.held_for, a.held_turn))}">${label}</span>`;
+    data-tip="${esc(termHeldTip(count, secs, a.held_for, a.held_turn))}">${termHeldLabel(count)}</span>`;
+}
+
+// The drawn envelope of the mail chip (peek-answers.js MAIL_SVG), so it centres against the count the same way.
+function termHeldLabel(count) {
+  return MAIL_SVG + (count > 1 ? `<span class="mail-n">${count}</span>` : "");
 }
 
 // The quiet mark's tooltip: how many, how long, and the one rule that holds
@@ -1990,7 +1993,6 @@ async function renderTermList() {
   const listed = shown.length + ended.length;
   fdStatus("terms", {
     summary: termSummary(show, shown.length + ended.length),
-    changed: show.size + (sortByActivity && !termSortStarted ? 0 : 1) + groupChanged("terms"),
     match: q && listed !== tasks.length + (show.has("dead") ? endedAll.length : 0)
       ? `${listed} of ${tasks.length + (show.has("dead") ? endedAll.length : 0)}` : ""
   });

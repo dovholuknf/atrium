@@ -90,6 +90,13 @@ const server = http.createServer((req, res) => {
 let failed = 0;
 const check = (ok, what) => { console.log((ok ? "ok   " : "FAIL ") + what); if (!ok) failed++; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Reads until `ok` holds or `ms` have passed, and answers the last read: a step waits on the state it asserts.
+const until = async (read, ok, ms = 3000) => {
+  const t0 = Date.now();
+  let v = await read();
+  while (!ok(v) && Date.now() - t0 < ms) { await sleep(50); v = await read(); }
+  return v;
+};
 
 // ── what each tab is, to the steps ──────────────────────────────────────────
 // `rows` are the cards a person would click, `chip` the one step 4 presses and what its count must read.
@@ -137,7 +144,6 @@ const state = page => page.evaluate(() => {
     panelVisible: getComputedStyle(panel).visibility === "visible" && panel.offsetHeight > 0,
     panel: r(panel), line: r(line), q: r(q), qid: q.id,
     sum: h.querySelector(".fsum").textContent, sumHidden: h.querySelector(".fsum").hidden,
-    count: Number(h.querySelector(".fcount").textContent || 0),
     active: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : "",
     activeIsQ: document.activeElement === q
   };
@@ -214,7 +220,6 @@ async function steps(browser, width, mobile, tabName) {
   check(s && !s.open && s.inert && !s.panelVisible, `${tag} 1: closed on load, and its panel is out of reach`);
   check(s && s.q.w > 40 && s.q.h > 10, `${tag} 1: the search box is on the collapsed line`);
   check(s && (mobile ? s.sum.length > 0 : s.sum.length > 0 && !s.sumHidden), `${tag} 1: the line says what the tab is set to ("${s && s.sum}")`);
-  check(s && s.count === 0, `${tag} 1: nothing differs from the defaults (filters ${s && s.count})`);
   let wantChips = null;
   if (tabName === "stack" || tabName === "board") {
     const seg = tabName === "stack" ? "stack-seg" : "board-seg";
@@ -265,7 +270,7 @@ async function steps(browser, width, mobile, tabName) {
   await focusSomething(page);
   let p = await linePoint(page);
   await mouse.click(p.x, p.y);
-  s = await state(page);
+  s = await until(() => state(page), x => x && x.open && x.panelVisible && !x.inert && x.panel.y >= x.line.b - 2);
   check(s && s.open && s.panelVisible && !s.inert, `${tag} 3: a click on the line opens the drawer`);
   check(s && s.panel.y >= s.line.b - 2, `${tag} 3: it hangs under the line`);
   await sleep(300);   // the accordion's slide
@@ -284,7 +289,6 @@ async function steps(browser, width, mobile, tabName) {
     return !!(e && e.closest(".fpanel"));
   });
   if (T.view === "terms") check(covers, `${tag} 3: it is over the list, not beside it`);
-  const countBefore = s.count;
 
   // 4: a chip ----------------------------------------------------------------------------------------------
   const chip = page.locator(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`).first();
@@ -292,7 +296,6 @@ async function steps(browser, width, mobile, tabName) {
   await mouse.click(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
   s = await state(page);
   check(s && s.open, `${tag} 4: a click inside the drawer leaves it open`);
-  check(s && s.count === countBefore + 1, `${tag} 4: filters N went up by one (${countBefore} -> ${s && s.count})`);
   const n = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"] .pillcount`, e => e.textContent);
   check(Number(n) === T.chip.count, `${tag} 4: the ${T.chip.v} chip counts ${T.chip.count} (${n})`);
   const lit = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`, e => e.classList.contains("on"));
@@ -374,8 +377,9 @@ async function steps(browser, width, mobile, tabName) {
     if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
     cardGets = [];
     await mouse.click(control.x, control.y);
-    await sleep(300);
-    const opened = await page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask));
+    const opened = await until(
+      () => page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask)),
+      v => v || cardGets.length > 0);
     check(cardGets.length > 0 || opened, `${tag} 5: the same click with the drawer shut does open it (fetched: ${cardGets.join(",") || "nothing"})`);
   }
   await ctx.close();
@@ -633,7 +637,7 @@ async function phoneAttached(browser) {
   await page.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
   await sleep(250);
   s = await state(page);
-  check(s && s.open && s.count === 1, `${tag}: a chip applies and the drawer stays open (filters ${s && s.count})`);
+  check(s && s.open, `${tag}: a chip applies and the drawer stays open`);
   await page.keyboard.press("Escape");
   await sleep(250);
   s = await state(page);
