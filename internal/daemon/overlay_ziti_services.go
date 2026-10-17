@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/zitictx"
-	"github.com/openziti/sdk-golang/ziti"
 )
 
 // What this identity is allowed to do, asked of the network rather than
@@ -99,19 +98,11 @@ func (d *Daemon) askZitiCapabilities() ZitiCapability {
 		return out
 	}
 
-	zcfg, err := ziti.NewConfigFromFile(path)
-	if err != nil {
-		out.Err = fmt.Sprintf("that identity file could not be read: %v", err)
-		return out
-	}
-	ctx, err := zitictx.New("capabilities", zcfg)
+	ctx, err := zitictx.SharedFile("capabilities", path)
 	if err != nil {
 		out.Err = fmt.Sprintf("that identity could not be used: %v", err)
 		return out
 	}
-	// Closed on the way out. This context exists to ask one question, and
-	// leaving it open would hold an api session per press of the button.
-	defer ctx.Close()
 
 	if err := ctx.Authenticate(); err != nil {
 		out.Err = fmt.Sprintf("the network would not accept this identity: %v", err)

@@ -121,11 +121,7 @@ func sshSetupCmd() *cobra.Command {
 // localSSHMachine is this machine and this room's key directory. The hub's ssh record is read and written over the
 // room's own link, and a hub that keeps none makes the steps that need it say so and wait.
 func localSSHMachine(dir string, shared link.Dialer) sshwizard.LocalMachine {
-	return localSSHMachineWith(dir, shared, rungBuilder{})
-}
-
-func localSSHMachineWith(dir string, shared link.Dialer, rungs rungBuilder) sshwizard.LocalMachine {
-	hub := &hubSSH{dir: dir, shared: shared, rungs: rungs}
+	hub := &hubSSH{dir: dir, shared: shared}
 	return sshwizard.LocalMachine{
 		KeyDir: dir,
 		JoinedFn: func() sshwizard.Joined {
@@ -150,7 +146,6 @@ func localSSHMachineWith(dir string, shared link.Dialer, rungs rungBuilder) sshw
 type hubSSH struct {
 	dir    string
 	shared link.Dialer
-	rungs  rungBuilder
 	mu     sync.Mutex
 	set    []link.SSHEntry
 	err    error
@@ -168,7 +163,7 @@ func (h *hubSSH) link() (string, link.Dialer, func(), error) {
 		}
 		return saved.Room, h.shared, func() {}, nil
 	}
-	room, d, err := h.rungs.linkFor(h.dir)
+	room, d, err := roomLinkFor(h.dir)
 	if err != nil {
 		return "", nil, nil, err
 	}
