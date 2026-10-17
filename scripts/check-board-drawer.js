@@ -90,6 +90,13 @@ const server = http.createServer((req, res) => {
 let failed = 0;
 const check = (ok, what) => { console.log((ok ? "ok   " : "FAIL ") + what); if (!ok) failed++; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Reads until `ok` holds or `ms` have passed, and answers the last read: a step waits on the state it asserts.
+const until = async (read, ok, ms = 3000) => {
+  const t0 = Date.now();
+  let v = await read();
+  while (!ok(v) && Date.now() - t0 < ms) { await sleep(50); v = await read(); }
+  return v;
+};
 
 // ── what each tab is, to the steps ──────────────────────────────────────────
 // `rows` are the cards a person would click, `chip` the one step 4 presses and what its count must read.
@@ -263,7 +270,7 @@ async function steps(browser, width, mobile, tabName) {
   await focusSomething(page);
   let p = await linePoint(page);
   await mouse.click(p.x, p.y);
-  s = await state(page);
+  s = await until(() => state(page), x => x && x.open && x.panelVisible && !x.inert && x.panel.y >= x.line.b - 2);
   check(s && s.open && s.panelVisible && !s.inert, `${tag} 3: a click on the line opens the drawer`);
   check(s && s.panel.y >= s.line.b - 2, `${tag} 3: it hangs under the line`);
   await sleep(300);   // the accordion's slide
@@ -370,8 +377,9 @@ async function steps(browser, width, mobile, tabName) {
     if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
     cardGets = [];
     await mouse.click(control.x, control.y);
-    await sleep(300);
-    const opened = await page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask));
+    const opened = await until(
+      () => page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask)),
+      v => v || cardGets.length > 0);
     check(cardGets.length > 0 || opened, `${tag} 5: the same click with the drawer shut does open it (fetched: ${cardGets.join(",") || "nothing"})`);
   }
   await ctx.close();
