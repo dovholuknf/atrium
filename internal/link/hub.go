@@ -797,16 +797,28 @@ func (h *Hub) Dial(ctx context.Context, room string) (net.Conn, error) {
 		return nil, ErrNoRoom
 	}
 
-	// Ask for a replacement BEFORE waiting, not after. Asking afterwards means
-	// every request under load pays the dial latency it was supposed to avoid.
+	// Take a pooled connection when there is one, and top the pool back up. The
+	// top-up is what keeps the next request from paying the dial latency.
 	//
 	// Only when the pool is actually short, though. Asking on every request
 	// made the room dial a fresh connection per board request under load, most
 	// of which arrived to a full pool and were closed on sight: a whole
 	// handshake per request, for nothing.
-	if len(a.idle) < a.want {
-		a.request(1)
+	select {
+	case c := <-a.idle:
+		if len(a.idle) < a.want {
+			a.request(1)
+		}
+		return c, nil
+	default:
 	}
+
+	// THE POOL WAS EMPTY, so this call is a waiter and nobody has asked for its
+	// connection. Deciding to ask from len(a.idle) BEFORE taking one is a race:
+	// twelve dials that all see a full pool ask for nothing, a few take what is
+	// there and the rest wait the whole DialWait for a connection no one was
+	// told to dial. A waiter always asks for its own.
+	a.request(1)
 
 	select {
 	case c := <-a.idle:
