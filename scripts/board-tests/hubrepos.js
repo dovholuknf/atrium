@@ -241,8 +241,15 @@ async function hubReposCopyWorks(ctx, p, sel, want, tag) {
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   await p.evaluate(() => { window.__clip = []; navigator.clipboard.writeText = async t => { window.__clip.push(t); }; });
   const first = (await p.locator(sel).first().locator(".hr-copylabel").textContent()).trim();
+  // "copied" is on screen for 1.4s and then gone, so a poll can step over it on a loaded machine. A page-side observer
+  // sees it the moment it is written and keeps the fact.
+  await p.evaluate(s => {
+    window.__sawCopied = false;
+    const look = () => { const e = document.querySelector(s); if (e && /copied/.test(e.textContent)) window.__sawCopied = true; };
+    new MutationObserver(look).observe(document.body, { subtree: true, childList: true, characterData: true });
+  }, sel);
   await p.locator(sel).first().click();
-  await p.waitForFunction(s => /copied/.test(document.querySelector(s).textContent), sel, { timeout: slow(5000) }).catch(() => fail(tag + ": the copy button never said copied"));
+  await p.waitForFunction(() => window.__sawCopied, null, { timeout: slow(5000) }).catch(() => fail(tag + ": the copy button never said copied"));
   const got = (await p.evaluate(() => window.__clip))[0];
   if (got !== want) fail(tag + ": copy wrote " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
   await p.waitForFunction(({ s, t }) => document.querySelector(s).textContent.trim() === t, { s: sel, t: first }, { timeout: slow(5000) }).catch(() => fail(tag + ": the copy button never went back to " + first));

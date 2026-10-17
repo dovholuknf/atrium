@@ -74,7 +74,7 @@
       "units": [
         "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "minion*", "boardMinionHidden", "stackMinionHidden", "laneFold",
         "nest*", "untaggedSort", "stackPinnedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors",
-        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "topNav", "trayHead",
+        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "revealChip", "topNav", "trayHead",
         "termsDrawerPush", "linkBoard", "linkReuse", "arrivedOnce", "controlsCompact", "closeOneDialog"
       ],
       "sources": [
@@ -161,11 +161,19 @@
       "tests": [],
       "checks": []
     },
+    "route": {
+      "file": "scripts/board-tests/route.js",
+      "page": "the address carries the view: routes, deep links, back and forward",
+      "units": ["deepLink*"],
+      "sources": ["internal/api/web/js/route.js"],
+      "tests": [],
+      "checks": []
+    },
     "growls": {
       "page": "growls, questions, notifications, toasts, held lines, auto permission",
       "units": [
         "growl*", "askAgain", "alertKinds", "questionsClick", "quietDoer", "popoutNotify", "notify*", "sayEnter", "sayWhen",
-        "toast*", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip"
+        "toast*", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip", "heldEnvelope"
       ],
       "sources": [
         "internal/api/web/js/growl.js",
@@ -227,7 +235,7 @@
       "file": "scripts/board-tests/rooms.js",
       "page": "rooms, the hub gate, the restart menu, transports, the down page",
       "units": [
-        "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "zitiLogo", "loginNeeded"
+        "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "zitiLogo", "loginNeeded", "findingsProbe"
       ],
       "sources": [
         "internal/api/web/js/rooms.js",
@@ -323,7 +331,7 @@
     "m-growl": {
       "page": "the phone's growls and bell",
       "units": ["mGrowl", "mGrowlQuestion", "mGrowlStack", "mBell"],
-      "sources": ["internal/api/web/m/js/growl.js", "internal/api/web/m/js/bell.js", "internal/api/web/js/phone-bell.js"],
+      "sources": ["internal/api/web/m/m.css", "internal/api/web/m/js/growl.js", "internal/api/web/m/js/bell.js", "internal/api/web/js/phone-bell.js"],
       "tests": [],
       "checks": []
     },
@@ -370,6 +378,7 @@
     "mcp/resources": {"package": "./internal/link", "sources": ["internal/link/resources_mcp.go"], "tests": ["internal/link/resources_*test.go"]},
     "mcp/ci": {"package": "./internal/link", "sources": ["internal/link/ci_door.go"], "tests": []},
     "mcp/worktrees": {"package": "./internal/link", "sources": ["internal/link/worktrees_mcp.go"], "tests": ["internal/link/worktrees_mcp_*test.go"]},
+    "hub/transport": {"package": "./internal/link", "sources": ["internal/link/dialgate.go", "internal/link/transportoff.go", "internal/link/transport_mcp.go"], "tests": ["internal/link/dialgate_*test.go", "internal/link/transportoff_*test.go"]},
     "agent": {"package": "./internal/daemon", "sources": ["internal/daemon/*.go"], "tests": ["internal/daemon/*_test.go"]},
     "store": {"package": "./internal/store", "sources": ["internal/store/*.go"], "tests": ["internal/store/*_test.go"]},
     "hubstore": {"package": "./internal/hubstore", "sources": ["internal/hubstore/*.go"], "tests": ["internal/hubstore/*_test.go"]},

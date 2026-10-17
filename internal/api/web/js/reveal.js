@@ -72,6 +72,38 @@ function revealFolds(t) {
   return true;
 }
 
+// A chip can hide the card as well as a fold: the column chip of the view on screen, and the subagents chip that rolls
+// a child up into its parent. Going to the card turns on just the chip that hides it, in the view being looked at, and
+// leaves every other chip and the search alone. The terminals list is not touched (its headings carry a bridge).
+// Returns true when a chip was turned on.
+function revealChips(t) {
+  const tab = document.querySelector(".tab[data-view].on");
+  const view = tab && tab.dataset.view;
+  const pool = shownCards(lastTasks).filter(x => !x.offline);
+  let changed = false;
+  if (view === "board" && typeof boardShow === "function") {
+    const on = boardShow(), bcol = boardColumnOf(t);
+    if (!t.offline && !on.has(bcol)) {
+      on.add(bcol);
+      try {
+        if (on.size === BOARD_COLUMNS.length) localStorage.removeItem(BOARD_SHOW_KEY);
+        else localStorage.setItem(BOARD_SHOW_KEY, JSON.stringify([...on]));
+      } catch (e) {}
+      changed = true;
+    }
+    if (!t.offline && !boardSubsOn() && subagentRollup(pool, false).rolled.has(t.id)) { toggleBoardSubs(); changed = true; }
+  } else if (view === "stack" && typeof stackShow === "function") {
+    const on = stackShow(), col = COLUMNS.find(c => c.statuses.includes(t.status));
+    if (!t.offline && col && on.size && !on.has(col.id)) {
+      on.add(col.id);
+      try { localStorage.setItem(STACK_SHOW_KEY, JSON.stringify([...on])); } catch (e) {}
+      changed = true;
+    }
+    if (!t.offline && !stackSubsOn() && subagentRollup(pool, false).rolled.has(t.id)) { toggleStackSubs(); changed = true; }
+  }
+  return changed;
+}
+
 // Scrolled to once the lists have painted what was opened. The first row of the card that is drawn and on screen.
 function revealScroll(id) {
   const sel = `[data-id="${CSS.escape(id)}"]`;
@@ -85,6 +117,9 @@ function revealCard(id) {
   if (!t) return false;
   let changed = false;
   try { changed = revealFolds(t); } catch (e) { return false; }
+  let chipped = false;
+  try { chipped = revealChips(t); } catch (e) {}
+  changed = changed || chipped;
   if (changed && typeof repaintLists === "function") repaintLists();
   // Two frames: the repaint of the list may itself wait a frame, and the row is not there to scroll to until it has.
   requestAnimationFrame(() => requestAnimationFrame(() => revealScroll(id)));

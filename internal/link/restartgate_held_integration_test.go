@@ -72,8 +72,9 @@ func TestAHeldAskIsPolledThroughAPause(t *testing.T) {
 	if _, err := http.Post(front.URL+"/_hub/restart/resume", "application/json", nil); err != nil {
 		t.Fatal(err)
 	}
-	// The countdown is 5s, so this takes a few polls.
-	deadline := time.Now().Add(10 * time.Second)
+	// The countdown is 5s, so this takes a few polls. The bound is only a hang
+	// guard, so a loaded runner has room to spare.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		code, out := postGate(t, front.URL, `{"ask":"`+id+`","hold":1}`)
 		if code != http.StatusOK {

@@ -104,7 +104,11 @@ func TestARelayedLaunchIsTheHubsOwnLaunchByAnotherDoor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hub launch: %v", err)
 	}
-	if direct := x.sg4.launchBody(); !reflect.DeepEqual(viaRelay, direct) {
+	direct := x.sg4.launchBody()
+	// Each launch makes its own random key.
+	delete(viaRelay, "launch_key")
+	delete(direct, "launch_key")
+	if !reflect.DeepEqual(viaRelay, direct) {
 		t.Fatalf("relay sent %+v, the hub's own launch sent %+v", viaRelay, direct)
 	}
 	if out.Card != ans.Card || out.Handle != ans.To || out.Brief != ans.Brief || out.Watch != ans.Watch {

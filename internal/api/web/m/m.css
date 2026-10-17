@@ -81,6 +81,8 @@ body.m.sheet-open { overscroll-behavior-y: none; }
    inside itself, and lists and paragraphs keep their spacing. */
 /* flex-shrink 0: the strip scrolls, a growler never shrinks under its own content and draws over the next. */
 .growl .gm-full, .growl .gm-strip, .growl .gm-note, .growl .gm-undo { flex: 0 0 auto; }
+/* ...except a lone one, which is the whole strip: it shrinks so its body gives way and the buttons stay in view. */
+.growl .gm-full:not(.gm-full ~ .gm-full):not(:has(~ .gm-full)) { flex: 0 1 auto; min-height: 0; }
 .growl .gm-body { flex: 1 1 auto; min-height: 5em; max-height: min(30dvh, 260px); overflow: auto; overflow-wrap: anywhere; color: var(--label); }
 .growl .gm-body p { margin: 0 0 .6em; }
 .growl .gm-body ol, .growl .gm-body ul { margin: 0 0 .6em; padding-left: 1.5em; }

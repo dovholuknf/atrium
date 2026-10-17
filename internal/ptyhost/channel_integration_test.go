@@ -33,22 +33,26 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, copies := t.TempDir(), t.TempDir()
+	since := time.Now()
 	p, err := Start(state, StartOptions{Exe: exe, CopyDir: copies,
-		Args: []string{"__host", state, "400ms"}})
+		Args: []string{"__host", state, "3s"}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("started after %s", time.Since(since))
 	t.Cleanup(func() { _ = p.Kill() })
 	c, err := DialTimeout(Address(state), 20*time.Second)
 	if err != nil {
 		data, _ := os.ReadFile(filepath.Join(state, "ptyhost.log"))
 		t.Fatalf("dial: %v\nhost log:\n%s", err, data)
 	}
+	t.Logf("dialed after %s", time.Since(since))
 	defer c.Close()
 	pr, err := c.Probe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("probed after %s, in a job: %v", time.Since(since), pr.InJob)
 	if pr.Pid != p.Pid || pr.Pid == os.Getpid() || pr.Build != "test-host" {
 		t.Fatalf("probe %+v, started pid %d", pr, p.Pid)
 	}
@@ -56,7 +60,6 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("the copy: %v", matches)
 	}
-	// and it exits by itself: no pty, no daemon, 400ms
 	c.Close()
 	done := make(chan struct{})
 	go func() { _, _ = p.Wait(); close(done) }()

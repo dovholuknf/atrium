@@ -175,8 +175,6 @@ func mintOwnRoom(store *hubstore.Store, side *hubSide, transport string, keys li
 	return nil
 }
 
-// startRoom runs `atrium room` detached with the whole launch, the same line
-// a hub-triggered restart would run, and its output going to room.log.
 func startRoom(l roomLaunch) (*os.Process, string, error) {
 	self, err := os.Executable()
 	if err != nil {
@@ -186,11 +184,6 @@ func startRoom(l roomLaunch) (*os.Process, string, error) {
 		return nil, "", err
 	}
 	logPath := filepath.Join(l.dir, roomLogName)
-	out, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, "", err
-	}
-	defer out.Close()
-	p, err := startDetached(self, l.startArgs(), out)
+	p, err := startDetached(self, l.startArgs(), logPath)
 	return p, logPath, err
 }

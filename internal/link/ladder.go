@@ -39,6 +39,9 @@ type Ladder struct {
 	on    Rung
 	has   bool
 
+	// off is the kinds turned off. See transportoff.go.
+	off map[string]bool
+
 	pmu     sync.Mutex
 	probing map[string]bool
 	rtts    map[string]int64
@@ -165,6 +168,9 @@ func (l *Ladder) Dial(ctx context.Context) (net.Conn, error) {
 	if !ok {
 		return nil, errors.New("this room has no transport to reach its hub")
 	}
+	if l.IsOff(r.Path.Transport) {
+		return nil, errTransportOff
+	}
 	return r.Dial.Dial(ctx)
 }
 
@@ -199,9 +205,9 @@ func (l *Ladder) Rungs() []Rung {
 // Climb dials from the top and stands on the first rung that answers, each
 // bounded by `wait`. When none does, the error names every rung and why.
 func (l *Ladder) Climb(ctx context.Context, wait time.Duration) (net.Conn, error) {
-	rungs := l.Rungs()
+	rungs := l.live()
 	if len(rungs) == 0 {
-		return nil, errors.New("this room has no transport to reach its hub")
+		return nil, errors.New("this room has no transport to reach its hub, or every one is turned off")
 	}
 	var why []string
 	for _, r := range rungs {
@@ -241,6 +247,9 @@ func (l *Ladder) Probe(ctx context.Context, wait time.Duration) bool {
 	above := append([]Rung(nil), l.rungs[:at]...)
 	l.mu.Unlock()
 	for _, r := range above {
+		if l.IsOff(r.Path.Transport) {
+			continue
+		}
 		if c, err := dialWithin(ctx, r.Dial, wait); err == nil {
 			_ = c.Close()
 			return true
