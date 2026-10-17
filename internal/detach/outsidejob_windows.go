@@ -29,7 +29,12 @@ func startOutsideJob(exe string, args []string, log string) (*os.Process, error)
 	if err != nil || pid <= 0 {
 		return nil, fmt.Errorf("start outside the job through WMI: no pid in %q", got)
 	}
-	return os.FindProcess(pid)
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return nil, fmt.Errorf("start outside the job through WMI: %s started as pid %d and had ended before it could be held: %w",
+			filepath.Base(exe), pid, err)
+	}
+	return p, nil
 }
 
 // cmd.exe, because WMI hands the child no handles and the redirect is the only way its output reaches a log.

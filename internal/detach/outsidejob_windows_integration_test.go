@@ -18,7 +18,7 @@ func TestStartOutsideJobAnswersTheProgramAndWritesItsLog(t *testing.T) {
 	}
 	log := filepath.Join(t.TempDir(), "out.log")
 	since := time.Now()
-	p, err := startOutsideJob(`C:\Windows\System32\PING.EXE`, []string{"-n", "2", "127.0.0.1"}, log)
+	p, err := startOutsideJob(`C:\Windows\System32\PING.EXE`, []string{"-n", "30", "127.0.0.1"}, log)
 	if err != nil {
 		if strings.Contains(err.Error(), "exit status 3") {
 			t.Skipf("WMI refused to create a process here: %v", err)
