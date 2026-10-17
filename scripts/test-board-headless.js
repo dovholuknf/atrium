@@ -25285,6 +25285,9 @@ async function main() {
     await unit("hubReposFeed", bu("hubReposFeed"));
     await unit("hubReposBranches", bu("hubReposBranches"));
     await unit("changeReq", () => changeReqSection(browser, base));
+    await unit("deepLinkView", bu("deepLinkView"));
+    await unit("deepLinkRequests", bu("deepLinkRequests"));
+    await unit("deepLinkBack", bu("deepLinkBack"));
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
