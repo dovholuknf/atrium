@@ -7,8 +7,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
+	"github.com/dovholuknf/atrium/internal/zitictx"
 )
 
 type countedRung struct {
@@ -32,11 +34,16 @@ func (r *rungCounts) rung() countedRung {
 	return countedRung{built: &r.built, closed: &r.closed, dials: &r.dials}
 }
 
-func (r *rungCounts) builder() rungBuilder {
-	return rungBuilder{ziti: func(string, string) link.Dialer {
-		r.built.Add(1)
-		return r.rung()
-	}}
+func countZitiRungs(t *testing.T) *rungCounts {
+	t.Helper()
+	rc := &rungCounts{}
+	old := newZitiRung
+	newZitiRung = func(string, string) link.Dialer {
+		rc.built.Add(1)
+		return rc.rung()
+	}
+	t.Cleanup(func() { newZitiRung = old })
+	return rc
 }
 
 func joinedOverZiti(t *testing.T) string {
@@ -58,9 +65,9 @@ func hubCalls(m sshwizard.LocalMachine) {
 }
 
 func TestSSHSyncOnTheRoomsLadderBuildsNoDialersOfItsOwn(t *testing.T) {
-	rc := &rungCounts{}
+	rc := countZitiRungs(t)
 	dir := joinedOverZiti(t)
-	m := localSSHMachineWith(dir, rc.rung(), rc.builder())
+	m := localSSHMachine(dir, rc.rung())
 	for i := 0; i < 5; i++ {
 		hubCalls(m)
 	}
@@ -75,18 +82,17 @@ func TestSSHSyncOnTheRoomsLadderBuildsNoDialersOfItsOwn(t *testing.T) {
 	}
 }
 
-func TestSSHCallsWithNoLadderReleaseWhatTheyBuild(t *testing.T) {
-	rc := &rungCounts{}
+func TestSSHCallsWithNoLadderAndNoRoomBuildNoDialer(t *testing.T) {
+	rc := countZitiRungs(t)
 	dir := joinedOverZiti(t)
-	m := localSSHMachineWith(dir, nil, rc.builder())
+	prev := localRoomLocation
+	localRoomLocation = func() (daemon.Location, bool) { return daemon.Location{}, false }
+	t.Cleanup(func() { localRoomLocation = prev })
+	m := localSSHMachine(dir, nil)
 	for i := 0; i < 5; i++ {
 		hubCalls(m)
-		if live := rc.live(); live > 0 {
-			t.Fatalf("after pass %d, %d ziti dialers are still live (built %d, closed %d)",
-				i+1, live, rc.built.Load(), rc.closed.Load())
-		}
 	}
-	if rc.built.Load() == 0 {
-		t.Fatal("nothing was built, so the test proved nothing")
+	if rc.built.Load() != 0 || zitictx.Live() != 0 {
+		t.Fatalf("built %d dialers, %d ziti contexts live, want 0 and 0", rc.built.Load(), zitictx.Live())
 	}
 }
