@@ -23,15 +23,13 @@ import (
 
 const hubDialUpgrade = "atrium-hubdial"
 
-var localRoomLocation = daemon.ReadLocation
-
 var errNoLocalRoom = errors.New("no room is running on this machine. start it with `atrium room`, which holds the link to the hub")
 
 // localRoomDialer dials the hub through the room's agent listener.
 type localRoomDialer struct{ agent string }
 
-func newLocalRoomDialer() (*localRoomDialer, error) {
-	loc, ok := localRoomLocation()
+func newLocalRoomDialer(location func() (daemon.Location, bool)) (*localRoomDialer, error) {
+	loc, ok := location()
 	if !ok || strings.TrimSpace(loc.Agent) == "" {
 		return nil, errNoLocalRoom
 	}
