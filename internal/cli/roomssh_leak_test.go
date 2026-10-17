@@ -32,16 +32,11 @@ func (r *rungCounts) rung() countedRung {
 	return countedRung{built: &r.built, closed: &r.closed, dials: &r.dials}
 }
 
-func countZitiRungs(t *testing.T) *rungCounts {
-	t.Helper()
-	rc := &rungCounts{}
-	old := newZitiRung
-	newZitiRung = func(string, string) link.Dialer {
-		rc.built.Add(1)
-		return rc.rung()
-	}
-	t.Cleanup(func() { newZitiRung = old })
-	return rc
+func (r *rungCounts) builder() rungBuilder {
+	return rungBuilder{ziti: func(string, string) link.Dialer {
+		r.built.Add(1)
+		return r.rung()
+	}}
 }
 
 func joinedOverZiti(t *testing.T) string {
@@ -63,9 +58,9 @@ func hubCalls(m sshwizard.LocalMachine) {
 }
 
 func TestSSHSyncOnTheRoomsLadderBuildsNoDialersOfItsOwn(t *testing.T) {
-	rc := countZitiRungs(t)
+	rc := &rungCounts{}
 	dir := joinedOverZiti(t)
-	m := localSSHMachine(dir, rc.rung())
+	m := localSSHMachineWith(dir, rc.rung(), rc.builder())
 	for i := 0; i < 5; i++ {
 		hubCalls(m)
 	}
@@ -81,9 +76,9 @@ func TestSSHSyncOnTheRoomsLadderBuildsNoDialersOfItsOwn(t *testing.T) {
 }
 
 func TestSSHCallsWithNoLadderReleaseWhatTheyBuild(t *testing.T) {
-	rc := countZitiRungs(t)
+	rc := &rungCounts{}
 	dir := joinedOverZiti(t)
-	m := localSSHMachine(dir, nil)
+	m := localSSHMachineWith(dir, nil, rc.builder())
 	for i := 0; i < 5; i++ {
 		hubCalls(m)
 		if live := rc.live(); live > 0 {
