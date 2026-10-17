@@ -2304,6 +2304,9 @@ async function clearKeepsPageSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termTask && termTask.id === "land-live", null, { timeout: slow(10000) });
+    // The unit resets the terminal under the renderer, and the WebGL one throws in loadCell while a frame is drawn
+    // against the emptied buffer. The DOM renderer is the one useWebgl already falls back to.
+    await p.evaluate(() => { if (term._atriumGl) { term._atriumGl.dispose(); term._atriumGl = null; } });
     // What the scrollback holds, as text, and how many lines of it.
     const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
       const w = d => new Promise(r => term.write(d, r));
