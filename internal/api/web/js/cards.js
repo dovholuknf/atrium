@@ -67,6 +67,30 @@ function dropCard(id) {
   return cardRows.delete(id);
 }
 
+// A LAUNCH ANSWER IS THE DAEMON'S WORD ON THE CARD, recorded the moment it lands.
+//
+// `/v1/launch` answers with the card's row, `supervised` and all, and the board opens the pane on it. The daemon's
+// own `task` event for the same card is coalesced (`taskCoalesce` in internal/api/api.go) and arrives up to a fifth
+// of a second LATER, and a room older than that only says to read the list again. Until one of those lands, the
+// cached copy of the card still says what it said before the click: not supervised. The in-flight mark in
+// js/terminal-list.js protects the pane until its socket opens, which on loopback is a few milliseconds, and after
+// that a repaint from the cache (`reconcileAttached`) found no supervised row for the attached card and tore the
+// pane down: the socket the board had just opened was closed, the terminal went, and the resume spinner had nothing
+// left to end on. The boot-time restore, which repaints the remembered view half a second after load, is one such
+// repaint. The headless `resumeSpinner` unit caught it there.
+//
+// So the answer is merged over the cached row, under the id the cache already holds: the merged view keys a card
+// as `room~id` and a launch answer comes back bare, so the cached key stays and only the fields move. A card the
+// cache has never seen is left for the list to bring, because inserting it under a bare id would draw it twice once
+// the tagged copy arrived. Merged rather than replaced because a decoration the answer omits (asks, seen) is
+// absent, not cleared, and the next read replaces the whole row anyway.
+function cardLaunched(row) {
+  if (!row || !row.id) return;
+  const key = Array.from(cardRows.keys()).find(k => bareId(k) === bareId(row.id));
+  if (!key) return;
+  cardRows.set(key, Object.assign({}, cardRows.get(key), row, { id: key }));
+}
+
 // WHAT IS WAITING ON YOU, worked out from the cards rather than asked for.
 //
 // The same filter as `st.Waiting()` in internal/store/tasks.go, which is what

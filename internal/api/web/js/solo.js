@@ -1019,13 +1019,21 @@ async function attachLastInstead(gone) {
 async function waitLoop(card) {
   const until = Date.now() + restoreWaitFor;
   let said = false, tries = 0;
+  // ONLY A LINE THIS LOOP WROTE IS THIS LOOP'S TO TAKE DOWN. The pane's wait line is shared: a resume that is still
+  // opening says so there (`openingSay`), and so does a reconnect. This loop runs half a second after boot
+  // (`restoreWhereYouWere`), and a card attached by hand in that half second, a resume for one, is exactly the
+  // "something else attached" it stops for. Stopping used to blank the line unconditionally, which took the
+  // "opening the conversation" line off a pane this loop never touched, and left a spinner on the card with
+  // nothing in the pane to end on. The headless `resumeSpinner` unit caught it. So an exit clears the line only
+  // when this loop put it there and nothing has attached since: an attached pane's line is the pane's.
+  const quiet = () => { if (said && !term && !termTask) termWait(""); };
   while (Date.now() < until) {
     // Somebody got there first: attached something by hand, went to another
     // view, or popped this one out. Any of those is a decision, and a restore
     // that overrode it would be the board arguing with you.
-    if (term || termTask) { rlog("stopped: something else attached"); termWait(""); return; }
-    if (!isViewing("terms")) { rlog("stopped: not on the terminals view"); termWait(""); return; }
-    if (poppedOut(card)) { rlog("stopped: it is in its own window"); termWait(""); return; }
+    if (term || termTask) { rlog("stopped: something else attached"); quiet(); return; }
+    if (!isViewing("terms")) { rlog("stopped: not on the terminals view"); quiet(); return; }
+    if (poppedOut(card)) { rlog("stopped: it is in its own window"); quiet(); return; }
 
     let task = null, err = "", gone = false;
     try { task = await api("/v1/tasks/" + encodeURIComponent(card)); }
@@ -1051,7 +1059,7 @@ async function waitLoop(card) {
     }
     if (gone) {
       rlog("stopped: the card is gone");
-      termWait("");
+      quiet();
       // And forgotten, or the next reload waits for it all over again.
       try {
         if (localStorage.getItem("atrium.term") === card) localStorage.removeItem("atrium.term");
@@ -1065,7 +1073,7 @@ async function waitLoop(card) {
     // Gone for good rather than not back yet. A card that has been archived is
     // never going to be supervised again, so waiting out the ninety seconds
     // would be waiting for nothing.
-    if (task && task.archived_at) { rlog("stopped: the card is archived"); termWait(""); return; }
+    if (task && task.archived_at) { rlog("stopped: the card is archived"); quiet(); return; }
     if (task && task.supervised) { rlog("it is back. attaching"); termWait(""); openTerm(task); return; }
     // Named as soon as there is a name to use, which is the first answer that
     // comes back. Before that it is `the session`, which is still better than
@@ -1085,7 +1093,7 @@ async function waitLoop(card) {
   // Ninety seconds and it never came back. Saying nothing would leave the
   // spinner up forever.
   rlog("gave up after", restoreWaitFor / 1000, "seconds");
-  termWait("");
+  quiet();
   toast("could not get back to your session", "it has not come back. pick one from the list.");
 }
 
