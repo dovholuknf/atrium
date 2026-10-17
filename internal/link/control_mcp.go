@@ -453,6 +453,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	c.registerFiles(s, class)
 	c.registerDeploy(s, class)
 	c.registerWorktrees(s, class)
+	c.registerTransport(s, class)
 	c.registerResources(s, class)
 
 	return s
