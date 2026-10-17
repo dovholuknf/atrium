@@ -510,13 +510,27 @@ func firstLine(err error) string {
 // SamePath is whether two paths are one, after Clean and slashes, and case where the filesystem folds it.
 func SamePath(a, b string) bool { return norm(a) == norm(b) }
 
+// resolve follows symlinks and expands Windows short names (RUNNER~1) in the part of p that exists, so /var/x and
+// /private/var/x on macOS, or a short and a long Windows path, name the same place. A directory that is gone keeps its
+// last element: its parent is resolved and the name is put back.
+func resolve(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	dir, base := filepath.Split(p)
+	if dir == "" || dir == p || base == "" {
+		return p
+	}
+	return filepath.Join(resolve(filepath.Clean(dir)), base)
+}
+
 func norm(p string) string {
 	p = strings.TrimSpace(strings.ReplaceAll(p, `\`, "/"))
 	p = strings.TrimPrefix(p, "//?/")
 	if p == "" {
 		return ""
 	}
-	p = filepath.ToSlash(filepath.Clean(p))
+	p = filepath.ToSlash(resolve(filepath.Clean(filepath.FromSlash(p))))
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		p = strings.ToLower(p)
 	}
