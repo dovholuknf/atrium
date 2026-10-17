@@ -617,6 +617,9 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	// Subscribed before the headers go out, or a client acting on them is not yet counted as a watcher.
+	s := p.feeds.addWith(room, everywhere)
+	defer p.feeds.drop(s)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -626,8 +629,6 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	s := p.feeds.addWith(room, everywhere)
-	defer p.feeds.drop(s)
 	// The growlers as they stand, first, so a fresh tab has them. See growl.go.
 	p.openGrowls(s)
 	// A DESKTOP TAB'S STREAM IS WHAT KEEPS ITS PRESENCE TRUE. When this request
