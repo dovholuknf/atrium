@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, zitiLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
+// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, zitiLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -949,6 +949,89 @@ async function pathBadgesSection(browser, base) {
   }
 }
 
+// transportToggle: ziti and zrok badges on a room row are switches. An off transport reads off, a transport whose dials
+// keep failing is flagged hot, and pressing a badge asks the room, through the hub, to turn that transport off or on
+// (POST /v1/link/transports with the room header). The room's refusal is shown as it was said. direct has no switch.
+// TOGGLE_SHOTS=dir writes the room rows before (no states, no switch) and after.
+async function transportToggleSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 400 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "transport-off": true })));
+  const calls = [];
+  await p.route("**/v1/link/transports", route => {
+    const req = route.request();
+    calls.push({ room: req.headers()["x-atrium-room"], body: req.postData() });
+    if (/"zrok"/.test(req.postData())) {
+      return route.fulfill({ status: 409, contentType: "application/json",
+        body: JSON.stringify({ error: "refused: zrok is this room's last working path to the hub, so it stays on" }) });
+    }
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pathBadges === "function" && !document.getElementById("rooms").hidden,
+      null, { timeout: slow(15000) });
+    const rooms = [
+      { name: "sg3", transport: "direct", via: "direct", attached: true, paths: [{ kind: "direct", state: "on", mtls: true, addr: "h:7779" },
+        { kind: "ziti", state: "off" }, { kind: "zrok", state: "none" }] },
+      { name: "m1mini", transport: "ziti", via: "ziti", attached: true, paths: [{ kind: "direct", state: "up", mtls: true },
+        { kind: "ziti", state: "on", hammering: true, last_error: "connection refused" }, { kind: "zrok", state: "up" }] },
+    ];
+    await p.evaluate(rs => {
+      window.__rooms = rs;
+      const h = document.createElement("div");
+      h.id = "tt-rows";
+      h.style.cssText = "position:fixed;left:10px;top:10px;width:900px;z-index:99999;background:var(--bg-1);padding:8px";
+      document.body.appendChild(h);
+      window.__paint = () => { h.innerHTML = window.__rooms.map(r => roomRow(r)).join(""); };
+      window.__paint();
+    }, rooms);
+    const chips = await p.evaluate(() => [...document.querySelectorAll("#tt-rows .roomrow")].map(r => [...r.querySelectorAll(".chip.pth")].map(c => ({
+      tag: c.tagName, cls: c.className, text: c.textContent.replace(/\s+/g, " ").trim(), kind: c.dataset.kind || "", on: c.dataset.on || "" }))));
+    const [sg3, mini] = chips;
+    if (sg3[0].tag !== "SPAN" || sg3[0].cls.includes("pthtoggle")) fail("direct must have no switch: " + JSON.stringify(sg3[0]));
+    if (!sg3[1].cls.includes("pth-off") || sg3[1].tag !== "BUTTON" || sg3[1].on !== "1" || !/ziti off/.test(sg3[1].text)) {
+      fail("an off ziti should read off and offer to turn on: " + JSON.stringify(sg3[1]));
+    }
+    if (sg3[2].tag !== "SPAN") fail("a kind the room cannot dial has a switch: " + JSON.stringify(sg3[2]));
+    if (!mini[1].cls.includes("hot") || !/!/.test(mini[1].text)) fail("a hammering transport is not flagged: " + JSON.stringify(mini[1]));
+    if (mini[1].on !== "0") fail("a live ziti should offer to turn off: " + JSON.stringify(mini[1]));
+
+    const shots = process.env.TOGGLE_SHOTS || "";
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.evaluate(() => {
+        // BEFORE: the badges as they were drawn, a state each and no switch.
+        window.__after = pathBadges;
+        window.pathBadges = ps => window.__after((ps || []).map(x => ({ kind: x.kind, state: x.state === "off" ? "none" : x.state, addr: x.addr, mtls: x.mtls })));
+        window.__paint();
+      });
+      await p.locator("#tt-rows").screenshot({ path: path.join(shots, "transport-toggle-before.png") });
+      await p.evaluate(() => { window.pathBadges = window.__after; window.__paint(); });
+      await p.locator("#tt-rows").screenshot({ path: path.join(shots, "transport-toggle-after.png") });
+    }
+
+    await p.locator("#tt-rows .roomrow:nth-child(1) .pthtoggle").click();
+    for (let i = 0; i < 50 && calls.length < 1; i++) await p.waitForTimeout(100);
+    if (!calls[0] || calls[0].room !== "sg3" || calls[0].body !== JSON.stringify({ transport: "ziti", on: true })) {
+      fail("turning ziti on asked the wrong thing: " + JSON.stringify(calls[0]));
+    }
+    // The refusal is shown as the room said it.
+    await p.locator("#tt-rows .roomrow:nth-child(2) .pthtoggle").nth(1).click();
+    for (let i = 0; i < 50 && calls.length < 2; i++) await p.waitForTimeout(100);
+    if (!calls[1] || calls[1].room !== "m1mini" || calls[1].body !== JSON.stringify({ transport: "zrok", on: false })) {
+      fail("turning zrok off asked the wrong thing: " + JSON.stringify(calls[1]));
+    }
+    await p.waitForFunction(() => /last working path to the hub/.test(document.body.innerText), null, { timeout: slow(5000) })
+      .catch(() => fail("the room's refusal was not shown"));
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // zitiLogo: a ziti transport badge wears the vendored OpenZiti mark (an inline gradient disc, no fetch) in place of
 // the ring glyph, at the badge's text height, with its own gradient id per badge; mTLS and zrok keep their icons.
 // On the demo rooms page the ziti rooms' cards carry it. ZITI_LOGO_SHOTS=dir writes the rooms page.
@@ -1691,6 +1774,7 @@ const units = [
   { name: "roomsDash", run: ({ browser, base }) => roomsDashSection(browser, base) },
   { name: "transportChips", run: ({ browser, base }) => transportChipsSection(browser, base) },
   { name: "pathBadges", run: ({ browser, base }) => pathBadgesSection(browser, base) },
+  { name: "transportToggle", run: ({ browser, base }) => transportToggleSection(browser, base) },
   { name: "zitiLogo", run: ({ browser, base }) => zitiLogoSection(browser, base) },
   { name: "pollsGone", run: ({ browser, base }) => pollsGoneSection(browser, base) },
   { name: "findingsProbe", run: ({ browser, base }) => findingsProbeSection(browser, base) },
@@ -1701,7 +1785,7 @@ const units = [
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
+const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

@@ -1010,3 +1010,6 @@
   .chip.pth-up { background: transparent; border-color: var(--teal); color: var(--teal); }
   .chip.pth-down { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
   .chip.pth-none, .chip.pth-unlistened { background: var(--hairline); color: var(--dimmest); font-style: italic; }
+  .chip.pth-off { background: transparent; color: var(--dimmest); border: 1px dashed var(--dimmest); text-decoration: line-through; }
+  .chip.pth.hot { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); font-weight: 600; }
+  button.chip.pthtoggle { cursor: pointer; font-family: inherit; }
