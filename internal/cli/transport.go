@@ -445,6 +445,14 @@ func (c climbing) Dial(ctx context.Context) (net.Conn, error) {
 
 func (c climbing) Describe() string { return c.l.Describe() }
 
+func (c climbing) Close() { c.l.Close() }
+
+func closeDialer(d link.Dialer) {
+	if c, ok := d.(interface{ Close() }); ok {
+		c.Close()
+	}
+}
+
 // ladderSays is the rungs in one line, best first, for the log and `room transports`.
 func ladderSays(rungs []link.Rung) string {
 	out := make([]string, len(rungs))
