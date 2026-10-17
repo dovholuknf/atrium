@@ -11,15 +11,8 @@ import (
 	"syscall"
 )
 
-// Start: the same two flags the CLI control server uses, for the same reasons. DETACHED_PROCESS gives the child no
-// console, so it does not die when this room's terminal closes, and CREATE_NEW_PROCESS_GROUP keeps a ctrl-c aimed
-// here from reaching it.
-//
-// CREATE_BREAKAWAY_FROM_JOB takes it out of any job object this room is in. A room started from a terminal or an
-// agent's shell usually is, and a job set to kill on close takes every member with it when its owner exits, detached
-// or not. A job that forbids breaking away refuses the flag with access denied, so that case retries without it
-// rather than not restarting at all.
-func Start(exe string, args []string, out *os.File) (*os.Process, error) {
+// log is a path and never a file this process holds open: cmd's `>>` on the WMI retry cannot open a held file.
+func Start(exe string, args []string, log string) (*os.Process, error) {
 	const (
 		detachedProcess  = 0x00000008
 		breakawayFromJob = 0x01000000
@@ -28,8 +21,13 @@ func Start(exe string, args []string, out *os.File) (*os.Process, error) {
 	start := func(flags uint32) (*os.Process, error) {
 		cmd := exec.Command(exe, args...)
 		cmd.Stdin = nil
-		if out != nil {
-			cmd.Stdout, cmd.Stderr = out, out
+		if log != "" {
+			f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+			cmd.Stdout, cmd.Stderr = f, f
 		}
 		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
 		if err := cmd.Start(); err != nil {
@@ -39,9 +37,8 @@ func Start(exe string, args []string, out *os.File) (*os.Process, error) {
 	}
 	p, err := start(base | breakawayFromJob)
 	if err != nil && errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
-		// The job refuses breakaway. Staying in it means the child ends with the job, so try to be made by a process
-		// outside it first, and only then fall back to starting inside.
-		if q, oerr := startOutsideJob(exe, args, out); oerr == nil {
+		// A job that forbids breakaway answers access denied, and a child left in it ends with it.
+		if q, oerr := startOutsideJob(exe, args, log); oerr == nil {
 			return q, nil
 		}
 		return start(base)
