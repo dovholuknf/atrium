@@ -2764,7 +2764,7 @@ async function sayWhenSection(browser, base) {
         const d = document.createElement("div");
         d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
         const s = d.querySelector(".chip.held");
-        return s ? { text: s.textContent, tip: s.dataset.tip } : null;
+        return s ? { text: (s.querySelector("svg") ? "✉︎" : "") + (s.textContent.trim() ? " " + s.textContent.trim() : ""), tip: s.dataset.tip } : null;
       };
       return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
         lines: one({ held_for: "line", held_count: 2, held_seconds: 3723 }),
@@ -2811,7 +2811,7 @@ async function sayWhenSection(browser, base) {
         const d = document.createElement("div");
         d.innerHTML = termHeldChip({ activity: Object.assign({ held_peer: "sg4/doer", held_seconds: 90 }, act) });
         const s = d.querySelector(".chip");
-        return s ? { cls: s.className, text: s.textContent, tip: s.dataset.tip } : null;
+        return s ? { cls: s.className, text: (s.querySelector("svg") ? "✉︎" : "") + (s.textContent.trim() ? " " + s.textContent.trim() : ""), tip: s.dataset.tip } : null;
       };
       return {
         asked: one({ held_for: "turn", held_turn: "asked", held_quiet: true }),
@@ -6107,6 +6107,65 @@ async function mailChipSection(browser, base) {
     mock.tasksMode = was;
   }
   if (errors.length) fail("mailChip: the page threw: " + errors.join(" | "));
+}
+
+async function heldEnvelopeSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const shots = process.env.HELD_ENV_SHOTS || "";
+  const tag = process.env.HELD_ENV_TAG || "after";
+  const errors = [];
+  const measure = (p) => p.evaluate(() => {
+    const chip = document.querySelector(".card .chip.queued, .stackrow .chip.queued");
+    if (!chip) return null;
+    const mid = (e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; };
+    const ic = chip.querySelector("svg"), n = chip.querySelector(".mail-n");
+    const sib = [...chip.parentElement.children].filter(c => c !== chip && c.getBoundingClientRect().height > 0);
+    return { chip: mid(chip), icon: ic ? mid(ic) : null, count: n ? mid(n) : null, sib: sib.map(mid),
+      room: !!chip.parentElement.querySelector(".chip.room") };
+  });
+  const check = (name, m, counted) => {
+    if (!m) return fail("heldEnvelope: " + name + ": no held chip on the row");
+    if (m.icon === null) return fail("heldEnvelope: " + name + ": the chip has no drawn envelope");
+    if (counted && m.count === null) return fail("heldEnvelope: " + name + ": a count of 2 did not show");
+    if (!counted && m.count !== null) return fail("heldEnvelope: " + name + ": a count of 1 showed a number");
+    if (Math.abs(m.icon - m.chip) > 0.6) fail("heldEnvelope: " + name + ": the envelope is " + (m.icon - m.chip).toFixed(2) + "px off the chip's centre");
+    if (counted && Math.abs(m.icon - m.count) > 0.6) fail("heldEnvelope: " + name + ": the envelope is " + (m.icon - m.count).toFixed(2) + "px off its count");
+    if (m.sib.length < 3 || !m.room) fail("heldEnvelope: " + name + ": the row has " + m.sib.length + " neighbours, wanted the dots and the room pill");
+    for (const s of m.sib) if (Math.abs(s - m.icon) > 0.6) fail("heldEnvelope: " + name + ": a neighbour's centre is " + (s - m.icon).toFixed(2) + "px off the envelope");
+  };
+  try {
+    for (const [name, vp, mobile] of [["desktop", { width: 1280, height: 800 }, false], ["phone", { width: 412, height: 915 }, true]]) {
+      for (const count of [1, 2]) {
+        landCard("a~land-held", { supervised: true,
+          activity: { held_peer: "boss", held_count: count, held_seconds: 30, held_for: "turn", held_turn: "asked", held_quiet: true } });
+        mock.landList = [mock.LAND["a~land-held"]];
+        mock.landPerms = [];
+        const ctx = await browser.newContext({ viewport: vp, hasTouch: mobile, isMobile: mobile });
+        await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+        const p = await ctx.newPage();
+        p.on("pageerror", e => errors.push(String(e)));
+        await p.goto(base, { waitUntil: "domcontentloaded" });
+        await p.evaluate(() => switchView("terms"));
+        await p.waitForSelector(".card .chip.queued, .stackrow .chip.queued", { state: "attached", timeout: slow(15000) });
+        await p.evaluate(() => {
+          const c = document.querySelector(".card .chip.queued, .stackrow .chip.queued").parentElement;
+          if (!c.querySelector(".chip.room")) c.insertAdjacentHTML("beforeend", '<span class="chip room" style="--rhue:160">claude-sg4</span>');
+          c.insertAdjacentHTML("afterbegin", '<span class="chip unseen">&#9679;</span><span class="chip unseen">&#9679;</span>');
+        });
+        check(name + " x" + count, await measure(p), count > 1);
+        if (shots) {
+          fs.mkdirSync(shots, { recursive: true });
+          const row = p.locator(".card .chip.queued, .stackrow .chip.queued").first().locator("xpath=../..");
+          await row.screenshot({ path: path.join(shots, `${name}-${count > 1 ? "count" : "single"}-${tag}.png`) });
+        }
+        await ctx.close();
+      }
+    }
+  } finally {
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("heldEnvelope: the page threw: " + errors.join(" | "));
 }
 
 // ── u-021: the phone board header is one slim row behind a chevron ─────────
@@ -25128,6 +25187,7 @@ async function main() {
     await unit("u016", () => u016Section(browser, base));
     await unit("phoneHeader", () => phoneHeaderSection(browser, base));
     await unit("mailChip", () => mailChipSection(browser, base));
+    await unit("heldEnvelope", () => heldEnvelopeSection(browser, base));
     await unit("phoneFocus", () => phoneFocusSection(browser, base));
     await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
     await unit("phoneShare", () => phoneShareSection(browser, base));
