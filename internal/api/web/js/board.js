@@ -420,7 +420,7 @@ function switchView(name) {
   // it must never be. Locking it here catches the paths nobody has found yet.
   if (termOnly() && name !== "terms") return;
   if (name !== "terms" && typeof lrLeave === "function") lrLeave("tab");
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === name));
+  document.querySelectorAll(".tab[data-view]").forEach(t => t.classList.toggle("on", t.dataset.view === name));
   VIEWS.forEach(v => document.getElementById(v).hidden = v !== name);
   // The session list is lent to the chat view while it is open. See js/chat.js.
   if (typeof chatView === "function") chatView(name === "chat");
@@ -511,7 +511,7 @@ function rememberWhereYouAre() {
     if (termTask) localStorage.setItem("atrium.term", termTask.id);
   } catch (e) {}
 }
-document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchView(t.dataset.view));
+document.querySelectorAll(".tab[data-view]").forEach(t => t.onclick = () => switchView(t.dataset.view));
 
 // What the runner is doing right now, as a chip.
 //

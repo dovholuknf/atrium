@@ -77,7 +77,7 @@ function revealFolds(t) {
 // leaves every other chip and the search alone. The terminals list is not touched (its headings carry a bridge).
 // Returns true when a chip was turned on.
 function revealChips(t) {
-  const tab = document.querySelector(".tab.on");
+  const tab = document.querySelector(".tab[data-view].on");
   const view = tab && tab.dataset.view;
   const pool = shownCards(lastTasks).filter(x => !x.offline);
   let changed = false;

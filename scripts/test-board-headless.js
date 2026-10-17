@@ -20111,6 +20111,10 @@ async function groupBridgeSection(browser, base) {
     await settle();
     await p.waitForSelector("#term-list .card.on", { state: "attached", timeout: slow(5000) });
     level(await read(), "card", "the row");
+    // The boot's restore switches to the remembered view a moment after the first poll. The rows are `.card.tab`, so
+    // a switch that marks the nav's tabs must leave them alone: the repaint after it is skipped for unchanged markup.
+    const kept = await p.evaluate(() => { switchView("terms"); return document.querySelectorAll("#term-list .card.on").length; });
+    if (kept !== 1) fail("groupBridge: switching to the terminals view took the attached row's mark off (" + kept + " rows on)");
     const cardFrame = await p.evaluate(() => getComputedStyle(document.querySelector("#term-list .card.on")).borderTopColor);
     await shot("group-bridge-before");
     // Shut the outermost group: the bridge moves to its heading and the group stays as it is left.
