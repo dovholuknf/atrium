@@ -41,6 +41,9 @@ function probeKnown(id) {
   return probeCache.known;
 }
 
+// Asks in flight, so a second hover on a row before the first answer lands waits for it instead of asking again.
+const probePending = new Map();
+
 // The key a miss is stored under. NUL cannot be in a row's text or a token.
 function probeMissKey(tok, row) { return "\u0000" + row + "\u0000" + tok; }
 
@@ -104,7 +107,13 @@ async function provideFileLinks(t, id, y, done) {
     spans.push({ token: c.token, range: { start, end } });
     if (!probeFresh(known, c.token, line.text) && !ask.includes(c.token)) ask.push(c.token);
   }
-  if (ask.length) await askProbe(id, ask, line.text);
+  const pendKey = tok => probeMissKey(id + "\u0000" + tok, line.text);
+  const fresh = ask.filter(tok => !probePending.has(pendKey(tok)));
+  if (fresh.length) {
+    const p = askProbe(id, fresh, line.text).finally(() => fresh.forEach(tok => probePending.delete(pendKey(tok))));
+    fresh.forEach(tok => probePending.set(pendKey(tok), p));
+  }
+  if (ask.length) await Promise.all(ask.map(tok => probePending.get(pendKey(tok))));
   if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
 
   const links = [];
