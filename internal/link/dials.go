@@ -86,6 +86,7 @@ func (r *Room) dataDial(ctx context.Context, session string, s *dialSlot) {
 	late := s.late
 	r.mu.Unlock()
 	r.endDial(s)
+	r.payOwed(ctx, session)
 	if err != nil {
 		// One failed data dial is not a reason to tear the link down by itself. The hub will ask again, and the
 		// control connection decides whether the link is alive. But it is said, and dataRedialAfter in a row drops it.
@@ -144,3 +145,40 @@ type stuckError struct{}
 func (stuckError) Error() string { return "a data dial is still pending past its deadline" }
 
 var errDialsStuck error = stuckError{}
+
+// maxOwed bounds what is owed, so a hub asking in a loop cannot grow it without end.
+const maxOwed = 64
+
+// owe records asks that found every slot taken.
+func (r *Room) owe(n int) {
+	r.mu.Lock()
+	r.owed += n
+	if r.owed > maxOwed {
+		r.owed = maxOwed
+	}
+	r.mu.Unlock()
+}
+
+// payOwed starts one owed dial in the slot that just came free. Each dial that ends pays one, so what is owed drains
+// as fast as the cap allows. Nothing is paid once the attachment is over: its asks went with it.
+func (r *Room) payOwed(ctx context.Context, session string) {
+	if ctx.Err() != nil || r.currentSession() != session {
+		r.mu.Lock()
+		r.owed = 0
+		r.mu.Unlock()
+		return
+	}
+	r.mu.Lock()
+	if r.owed == 0 {
+		r.mu.Unlock()
+		return
+	}
+	r.owed--
+	r.mu.Unlock()
+	s, ok := r.startDial()
+	if !ok {
+		r.owe(1)
+		return
+	}
+	go r.dataDial(ctx, session, s)
+}
