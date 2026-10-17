@@ -582,10 +582,10 @@ async function readTabSizeSection(browser, base) {
     if (r.h <= r.v + 50) fail("the long document does not overflow the window: " + JSON.stringify(r));
     await p.mouse.move(300, 300);
     await p.mouse.wheel(0, 600);
-    await p.waitForTimeout(250);
+    await p.waitForFunction(() => scrollY >= 100, null, { timeout: slow(5000) }).catch(() => {});
     if ((await m()).y < 100) fail("the wheel did not scroll the read tab");
     await p.keyboard.press("End");
-    await p.waitForTimeout(250);
+    await p.waitForFunction(() => scrollY + innerHeight >= document.scrollingElement.scrollHeight - 5, null, { timeout: slow(5000) }).catch(() => {});
     r = await m();
     if (r.y + r.v < r.h - 5) fail("End did not reach the bottom: " + JSON.stringify(r));
     await p.evaluate(() => scrollTo(0, 0));
