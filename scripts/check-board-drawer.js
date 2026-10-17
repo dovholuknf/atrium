@@ -98,6 +98,18 @@ const until = async (read, ok, ms = 3000) => {
   return v;
 };
 
+// The point a click should land on, read again until two reads agree: a drawer's slide and an accordion's re-flow move it.
+const still = async read => {
+  let a = await read();
+  for (let i = 0; i < 60; i++) {
+    await sleep(50);
+    const b = await read();
+    if (a && b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5) return b;
+    a = b;
+  }
+  return a;
+};
+
 // ── what each tab is, to the steps ──────────────────────────────────────────
 // `rows` are the cards a person would click, `chip` the one step 4 presses and what its count must read.
 const TABS = {
@@ -368,10 +380,10 @@ async function steps(browser, width, mobile, tabName) {
     await page.evaluate(() => { const x = document.getElementById("check-xterm"); if (x) x.remove(); });
     // The stack and the board are an accordion: with the drawer shut the card sits higher, so find it again by id.
     if (control.id) {
-      const now = await page.evaluate(id => {
+      const now = await still(() => page.evaluate(id => {
         const e = [...document.querySelectorAll('[data-id="' + id + '"]')].find(x => x.offsetParent !== null);
         if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left + Math.min(40, b.width / 3), y: b.top + Math.min(14, b.height / 2) };
-      }, control.id);
+      }, control.id));
       if (now) { control.x = now.x; control.y = now.y; }
     }
     if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
@@ -393,8 +405,11 @@ async function keeps(browser, width, mobile) {
     await goto(page, view);
     const p = await linePoint(page);
     await pointer(page, mobile).click(p.x, p.y);
-    const b = await page.locator(`.fdrawer.open ${sel}`).first().boundingBox();
-    await pointer(page, mobile).click(b.x + b.width / 2, b.y + b.height / 2);
+    const b = await still(async () => {
+      const r = await page.locator(`.fdrawer.open ${sel}`).first().boundingBox();
+      return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    await pointer(page, mobile).click(b.x, b.y);
   };
   await press("stack", '#stack-sort button[data-sort="name"]');
   await press("stack", '#stack-seg button[data-v="finished"]');
