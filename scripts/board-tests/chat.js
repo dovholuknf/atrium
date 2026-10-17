@@ -305,7 +305,9 @@ async function chatTabSection(browser, base) {
     await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
     await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
     if (await p.evaluate(() => !!(typeof termTask !== "undefined" && termTask))) fail(tag + "selecting a row attached a terminal");
-    if (!await p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"))) fail(tag + "the selected row is not marked");
+    const marked = await p.waitForFunction(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"),
+      null, { timeout: slow(5000) }).then(() => true, () => false);
+    if (!marked) fail(tag + "the selected row is not marked");
     const fr = p.frames().find(f => /\/m\/\?chat=1/.test(f.url()));
     if (!fr) { fail(tag + "no phone page frame"); return; }
     await fr.waitForSelector("#m-replies .reply", { timeout: slow(10000) });
