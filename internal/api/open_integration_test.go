@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -142,12 +143,20 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		t.Fatalf("the row's walker is not the card: %v %+v", err, row)
 	}
 	// The card owns what the open made, and its disk was measured.
-	rec := httpDo(t, oh.h, "GET", "/v1/tasks/"+out["card"].(string)+"/resources")
+	// The measure runs after the answer has gone, so wait for it rather than read once.
+	var rec *httptest.ResponseRecorder
 	var inv struct {
 		Resources []store.CardResource `json:"resources"`
 		Disk      int64                `json:"disk_bytes"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+	for deadline := time.Now().Add(openMeasureWait); ; time.Sleep(5 * time.Millisecond) {
+		rec = httpDo(t, oh.h, "GET", "/v1/tasks/"+out["card"].(string)+"/resources")
+		inv.Disk = 0
+		_ = json.Unmarshal(rec.Body.Bytes(), &inv)
+		if inv.Disk > 0 || time.Now().After(deadline) {
+			break
+		}
+	}
 	kinds := []string{}
 	for _, r := range inv.Resources {
 		kinds = append(kinds, r.Kind+" "+r.Ref)
