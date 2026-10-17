@@ -199,10 +199,12 @@ board_env_probe() {
 # flaky one that is reported and not failing is not. The shards' own output, which the runner keeps on a failure and
 # names on a "shard output:" line, is copied into the artifacts.
 board_report() {
-  local name="$1" log="$2" n_units n_bad dir
+  local name="$1" log="$2" n_units n_bad n_checks dir
   n_units="$(awk '$3 ~ /^(PASS|FAIL|NOT|LOAD|FLAKY)$/' "$log" | wc -l | tr -d ' ')"
   n_bad="$(awk '$3 ~ /^(FAIL|NOT|LOAD)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$log" | wc -l | tr -d ' ')"
-  note_counts "$n_units" "$n_bad"
+  n_checks="$(grep -c '^FAIL ' "$log" || true)"
+  note_counts "$n_units" "$((n_bad + n_checks))"
+  grep '^FAIL ' "$log" | while IFS= read -r line; do note_failing "$name" "(check)" "${line#FAIL }"; done
   awk '
     /^FAILED \(|^FAILED IN THE SHARDS|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
     /^[^ ]/ { sec = 0; next }
