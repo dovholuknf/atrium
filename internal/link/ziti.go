@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
@@ -66,6 +67,8 @@ type Ziti struct {
 	ctx zitiConn
 	// newCtx builds one. Nil means the SDK, through internal/zitictx.
 	newCtx func() (zitiConn, error)
+	// gate backs dials off after a failure. See dialgate.go.
+	gate dialGate
 }
 
 // zitiConn is the part of a ziti context this package uses.
@@ -154,20 +157,67 @@ func (z *Ziti) Listen() (net.Listener, error) {
 
 // Dial opens one connection, which is the room's side.
 func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
+	if wait, ok := z.gate.allow(); !ok {
+		return nil, fmt.Errorf("the ziti controller is not answering. not dialling again for %s",
+			wait.Round(time.Second))
+	}
 	zc, err := z.context()
 	if err != nil {
+		z.gate.failed()
 		return nil, err
 	}
-	// The SDK's Dial takes no context. The caller's deadline still applies to
-	// everything above, and a dial that hangs is bounded by the controller's
-	// own timeouts, or by Reset closing the context under it.
-	conn, err := zc.Dial(z.Service)
-	if err != nil {
-		return nil, fmt.Errorf("could not dial the ziti service %q. "+
-			"does this identity have a dial policy for it: %w", z.Service, err)
+	// The SDK's Dial takes no context, so it runs beside one. A dial that outlives the caller's deadline closes the
+	// context under it, which is what stops the SDK retrying a controller that is not answering.
+	type res struct {
+		c   net.Conn
+		err error
 	}
-	return conn, nil
+	ch := make(chan res, 1)
+	go func() {
+		c, err := zc.Dial(z.Service)
+		if err != nil {
+			ch <- res{nil, err}
+			return
+		}
+		ch <- res{c, nil}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			z.dialFailed(zc)
+			return nil, fmt.Errorf("could not dial the ziti service %q. "+
+				"does this identity have a dial policy for it: %w", z.Service, r.err)
+		}
+		z.gate.worked()
+		return r.c, nil
+	case <-ctx.Done():
+		z.dialFailed(zc)
+		go func() {
+			if r := <-ch; r.c != nil {
+				_ = r.c.Close()
+			}
+		}()
+		return nil, fmt.Errorf("the ziti dial for %q did not finish: %w", z.Service, ctx.Err())
+	}
 }
+
+// dialFailed backs the next dial off and closes the context that failed, so its refresh loop stops with it. A context
+// that has already been replaced is left alone.
+func (z *Ziti) dialFailed(zc zitiConn) {
+	z.gate.failed()
+	z.mu.Lock()
+	same := z.ctx == zc
+	if same {
+		z.ctx = nil
+	}
+	z.mu.Unlock()
+	if same {
+		zc.Close()
+	}
+}
+
+// Hammering says dials to the controller are failing fast. Shown on the room's row.
+func (z *Ziti) Hammering() bool { return z.gate.hammering() }
 
 // Close releases the authenticated session. Safe to call twice.
 func (z *Ziti) Close() { z.Reset() }

@@ -14,6 +14,8 @@ The filter drawer is restyled as part of the header. Shots are in `img/filter-dr
 - **Chevrons.** The drawer chevron is a 20px icon (a 32x28 hit area, 44x40 on a phone). The card's subagent-rollup chevron
   (`.tkidfold .tcaret`, terminals list) goes from 11px to 20px with `line-height: 1`, so the row does not grow.
 - Kept: attached card never filtered, phone terminals line, swallow guards, keyboard close.
+- **The attached card shows even when its column chip is off,** so neither the column's count nor the `filters N` count
+  reflects it. A column holding the attached card is drawn whatever its chip says.
 
 | | before | after |
 |---|---|---|

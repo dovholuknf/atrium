@@ -326,7 +326,14 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	if err != nil {
 		return err
 	}
+	// WHAT WAS TURNED OFF FROM THE HUB STAYS OFF across this start.
+	for _, k := range tr.Off {
+		dial.SetOff(k, true)
+	}
 	log.Printf("[link] will try %s", ladderSays(dial.Rungs()))
+	if len(tr.Off) > 0 {
+		log.Printf("[link] turned off here: %s", strings.Join(tr.Off, ", "))
+	}
 	if strings.TrimSpace(db) == "" {
 		db = defaultRoomDB()
 	}
@@ -390,6 +397,15 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
 		OnPaths: func(ps []link.Path) { learnHubPaths(keys, saved, dial, ps) },
+		// A transport turned off from the hub is written beside the others, so a restart keeps it.
+		PersistOff: func(off []string) error {
+			t, err := keys.Transports()
+			if err != nil {
+				return err
+			}
+			t.Off = off
+			return keys.SaveTransports(t)
+		},
 		Version: Version,
 		Commit:  runningCommit(),
 		Host:    hostname(),
@@ -443,9 +459,9 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// SSH STREAMS: this room's switch lives beside its certificate, and the link carries the streams. See internal/link/stream.go.
 	room.RemoteDir = keys.Dir
 	d.SetStreamer(room)
-	d.SetSSHWizard(sshWizardHandler(keys.Dir))
+	d.SetSSHWizard(sshWizardHandler(keys.Dir, dial))
 	// THE HUB'S SET OF SSH KEYS, kept current in this room's authorized_keys. Best effort, never makes a key.
-	go sshSyncLoop(ctx, keys.Dir)
+	go sshSyncLoop(ctx, keys.Dir, dial)
 	// THE HUB RUNS THE FORGE. This room asks it about pull requests and issues and never runs gh or bb itself.
 	d.SetHubForge(forge.NewRemote(room.Forge))
 	// The room's stable hub remote forwards over the same link's git kind.

@@ -463,7 +463,7 @@ function roomRow(r) {
     <div class="roomrow-top">
       <b class="roomname">${esc(r.name)}</b>
       ${transportBadge(r.attached && r.via ? r.via : r.transport, r.attached && r.fallback)}
-      ${r.attached ? pathBadges(r.paths) : ""}
+      ${r.attached ? pathBadges(r.paths, r.name) : ""}
       ${sshBadge(r)}
       ${loginBadge(r)}
       ${roomState(r)}
@@ -535,13 +535,13 @@ function transportBadge(t, fallback) {
 // (`paths` on the room record, see internal/link/pathstate.go). on is solid, up outlined, down wears the warning colour
 // with the error in the tip, none and unlistened are greyed with a reason. A kind with two rungs shows its best one.
 // Empty for a room that does not report paths, which is an older build and says nothing rather than something false.
-function pathBadges(paths) {
+function pathBadges(paths, room) {
   if (!Array.isArray(paths) || !paths.length) return "";
-  const rank = { on: 5, up: 4, down: 3, unlistened: 2, none: 1 };
+  const rank = { off: 6, on: 5, up: 4, down: 3, unlistened: 2, none: 1 };
   const why = {
     on: "the control connection is here", up: "answered a probe from the room",
     down: "did not answer the room", none: "this room has no way to dial it",
-    unlistened: "the hub is not listening on it",
+    unlistened: "the hub is not listening on it", off: "turned off on purpose. the room does not dial it",
   };
   const label = { direct: "direct", ziti: "ziti", zrok: "zrok" };
   // "mTLS" is claimed only for a rung that says it presents a client certificate (`mtls` on the path).
@@ -558,7 +558,19 @@ function pathBadges(paths) {
     if (p.addr) tip += ` (${p.addr})`;
     if (p.rtt_ms) tip += `, ${p.stale ? "last measured connect time" : "connect time"} ${p.rtt_ms} ms`;
     if (p.last_error) tip += `. ${p.last_error}`;
-    return `<span class="chip pth pth-${state}" data-tip="${esc(tip)}">${shown(p)}</span>`;
+    // A path that keeps failing is flagged, on the badge and in its tip.
+    const hot = p.hammering ? " hot" : "";
+    if (p.hammering) tip += `. dials to its controller keep failing, backing off`;
+    // ziti and zrok carry a switch: pressing the badge turns that transport off, or back on. The room refuses to turn
+    // off its last working path to the hub.
+    if (room && (p.kind === "ziti" || p.kind === "zrok") && state !== "none" && state !== "unlistened") {
+      const turnOn = state === "off";
+      tip += `. press to turn it ${turnOn ? "on" : "off"}`;
+      return `<button type="button" class="chip pth pth-${state}${hot} pthtoggle" data-room="${esc(room)}"
+        data-kind="${p.kind}" data-on="${turnOn ? "1" : "0"}" data-tip="${esc(tip)}">${shown(p)}${
+        turnOn ? " off" : ""}${p.hammering ? " !" : ""}</button>`;
+    }
+    return `<span class="chip pth pth-${state}${hot}" data-tip="${esc(tip)}">${shown(p)}</span>`;
   });
   return out.length ? `<span class="pths" role="group" aria-label="paths to the hub">${out.join("")}</span>` : "";
 }
@@ -608,6 +620,30 @@ document.addEventListener("click", async e => {
     await api("/v1/login-needed", { method: "DELETE", headers: { "X-Atrium-Room": room } });
   } catch (err) {
     toast("could not lift it", err.message);
+  }
+}, true);
+
+// The transport switch, wired by delegation in the capture phase for the same reason as the login chip. The room
+// answers a refusal in a sentence, and that sentence is what is shown.
+document.addEventListener("click", async e => {
+  const b = e.target.closest && e.target.closest(".pthtoggle");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const room = b.getAttribute("data-room") || "";
+  const kind = b.getAttribute("data-kind") || "";
+  const on = b.getAttribute("data-on") === "1";
+  if (!on && !await confirmUser(`turn ${kind} off?`,
+    `<b>${esc(room)}</b> stops dialling ${esc(kind)} and closes its context. Runners are not touched. The room refuses if ` +
+    `this is its last working path to the hub.`, `turn ${kind} off`, "transport-off")) return;
+  try {
+    await api("/v1/link/transports", {
+      method: "POST", headers: { "X-Atrium-Room": room, "Content-Type": "application/json" },
+      body: JSON.stringify({ transport: kind, on }),
+    });
+    toast(`${kind} ${on ? "on" : "off"} for ${room}`, "");
+  } catch (err) {
+    toast(`could not turn ${kind} ${on ? "on" : "off"}`, err.message);
   }
 }, true);
 

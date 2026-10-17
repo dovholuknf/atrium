@@ -308,9 +308,7 @@ async function chatTabSection(browser, base) {
     const marked = await p.waitForFunction(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"),
       null, { timeout: slow(5000) }).then(() => true, () => false);
     if (!marked) fail(tag + "the selected row is not marked");
-    const found = () => p.frames().find(f => /\/m\/\?chat=1/.test(f.url()));
-    for (let i = 0; i < 100 && !found(); i++) await p.waitForTimeout(50);
-    const fr = found();
+    const fr = await (await p.$('#chat-frame-host iframe[data-card="chat-a"]')).contentFrame();
     if (!fr) { fail(tag + "no phone page frame"); return; }
     await fr.waitForSelector("#m-replies .reply", { timeout: slow(10000) });
     await fr.waitForSelector("#m-compose textarea", { timeout: slow(10000) });

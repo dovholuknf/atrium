@@ -15,7 +15,7 @@
 // THE BOARD NEVER MERGES. There is no merge button. The one action that touches a merge is "record that it was merged", a
 // sha field the operator fills after doing it, checked as 7 to 40 hex characters here and by the hub's 409 there.
 
-const cr = { reqs: [], loaded: false, offline: false, note: "", tab: "open", sel: "", detail: {}, form: null, act: "", draft: { sha: "", note: "" }, err: "", busy: false, inflight: false, again: false, run: null };
+const cr = { reqs: [], loaded: false, offline: false, note: "", tab: "open", sel: "", detail: {}, form: null, act: "", draft: { sha: "", note: "" }, err: "", busy: false, inflight: false, again: false, run: null, pending: "", missing: "" };
 
 const crRepoKey = r => (r.host || "github") + "/" + r.owner + "/" + r.repo;
 const crOpen = () => cr.reqs.filter(r => r.state === "open");
@@ -53,10 +53,15 @@ async function crLoadOnce() {
       : r.status === 404 ? "This hub does not have change requests yet. It may be too old."
       : "The hub would not list change requests: " + crCore.errText(r);
   }
-  if (cr.loaded && !cr.reqs.some(x => x.id === cr.sel)) cr.sel = "";
-  if (cr.loaded && !cr.sel) { const first = (cr.tab === "open" ? crOpen() : crClosed())[0] || cr.reqs[0]; cr.sel = first ? first.id : ""; }
+  if (cr.loaded && cr.pending) {
+    const want = cr.reqs.find(x => x.id === cr.pending);
+    if (want) { cr.sel = want.id; cr.tab = want.state === "open" ? "open" : "closed"; } else { cr.sel = ""; cr.missing = cr.pending; }
+    cr.pending = "";
+  } else if (cr.loaded && !cr.reqs.some(x => x.id === cr.sel)) cr.sel = "";
+  if (cr.loaded && !cr.sel && !cr.missing) { const first = (cr.tab === "open" ? crOpen() : crClosed())[0] || cr.reqs[0]; cr.sel = first ? first.id : ""; }
   if (cr.sel) await crDetail(cr.sel, true);
   hubReposPaint();
+  navReplace();
 }
 
 // One request with its `pushed` answer. A list row has no `pushed`: the hub answers it per request.
@@ -246,6 +251,7 @@ function crView() {
   const top = '<div class="cr-bar"><h2 class="cr-h2">Change requests</h2>' + (crCore.state.readOnly ? "" : '<button type="button" class="cr-btn go" data-cr="new">Open a request</button>') + "</div>";
   if (cr.form) return top + crForm();
   if (!cr.reqs.length) return crEmpty();
+  if (cr.missing) return top + crStrip() + '<div class="cr-ledger">' + crList() + '<main class="cr-detail" aria-live="polite"><p class="cr-quiet cr-none" role="alert">No change request ' + esc(cr.missing) + ".</p></main></div>";
   const r = cr.reqs.find(x => x.id === cr.sel) || cr.reqs[0];
   return top + crStrip() + '<div class="cr-ledger">' + crList() + crPage(r) + "</div>";
 }
@@ -282,7 +288,7 @@ async function crDoAct(id, body, done) {
     hubReposPaint();
   });
 }
-async function crLoadAfter(id) { cr.sel = id; delete cr.detail[id]; await crLoad(); }
+async function crLoadAfter(id) { cr.sel = id; cr.missing = ""; delete cr.detail[id]; await crLoad(); navPush(); }
 
 async function crSubmitNew() {
   const f = cr.form;
@@ -306,11 +312,11 @@ async function crSubmitNew() {
 
 function crClick(el) {
   const act = el.dataset.cr, id = el.dataset.id;
-  if (act === "tab") { cr.tab = el.dataset.tab; cr.form = null; const l = cr.tab === "open" ? crOpen() : crClosed(); if (!l.some(x => x.id === cr.sel) && l[0]) { cr.sel = l[0].id; cr.act = ""; cr.err = ""; crDetail(cr.sel); } hubReposPaint(); }
+  if (act === "tab") { cr.tab = el.dataset.tab; cr.form = null; cr.missing = ""; cr.pending = ""; const l = cr.tab === "open" ? crOpen() : crClosed(); if (!l.some(x => x.id === cr.sel) && l[0]) { cr.sel = l[0].id; cr.act = ""; cr.err = ""; crDetail(cr.sel); } hubReposPaint(); navPush(); }
   else if (act === "sel" || act === "goto") {
-    cr.form = null; cr.act = ""; cr.err = ""; cr.draft = { sha: "", note: "" }; cr.sel = id;
+    cr.missing = ""; cr.pending = ""; cr.form = null; cr.act = ""; cr.err = ""; cr.draft = { sha: "", note: "" }; cr.sel = id;
     const r = cr.reqs.find(x => x.id === id); if (r) cr.tab = r.state === "open" ? "open" : "closed";
-    if (act === "goto") setHubReposView("requests"); else hubReposPaint();
+    if (act === "goto") setHubReposView("requests"); else { hubReposPaint(); navPush(); }
     crDetail(id);
   } else if (act === "new") {
     const repo = el.dataset.repo || ((hubRepos.repos || [])[0] ? crRepoKey(hubRepos.repos[0]) : "github/");
