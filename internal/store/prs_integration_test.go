@@ -13,11 +13,7 @@ import (
 
 func openPRStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(t.TempDir() + "/atrium.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := openMigrated(t)
 	st.DefaultReviewsRoot = filepath.ToSlash(t.TempDir())
 	return st
 }
