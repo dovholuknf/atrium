@@ -5258,7 +5258,7 @@ async function fileOpenOutsideSection(browser, base) {
 }
 
 // ── a file link that was a miss comes back, and an image opens without asking (bug-term-file-links) ──
-// A path hovered before the file exists is a miss; the miss must expire so the link appears once the file does.
+// A path hovered before the file exists is a miss; the miss stands until its row changes, so the link appears once the file does.
 // A click on an image (or any file the editor cannot show) opens a tab at once, with no menu.
 // TLATE_SHOTS=dir writes the PNGs.
 async function termLinkLateSection(browser, base) {
@@ -5302,7 +5302,6 @@ async function termLinkLateSection(browser, base) {
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: slow(10000) });
     await p.waitForTimeout(300);
-    await p.evaluate(() => { probeMissTtl = 400; });
     await p.evaluate(() => termSock.onmessage({ data: "wrote out/late.md here\r\n.atrium/incoming/shot.png\r\n" }));
     await p.waitForTimeout(200);
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
@@ -5325,23 +5324,22 @@ async function termLinkLateSection(browser, base) {
     await p.waitForTimeout(300);
     if (await menuOn()) fail("a missing file's path was a link");
 
-    // 2. the file appears, and past the expiry the same path links.
+    // 2. the file appears and the row is rewritten: the same path links. An unchanged row is not asked again.
     exists.add("out/late.md");
-    await p.waitForTimeout(600);
+    await p.evaluate(() => new Promise(res => term.write("\x1b[1;1H\x1b[2Kwrote out/late.md again", res)));
     await hover(10, 0);
     await shot(p, "late-2-appeared");
     await p.mouse.click(...at(10, 0));
     await p.waitForTimeout(300);
-    if (!await menuOn()) fail("a path that was missing, then written, did not become a link after the miss expired");
+    if (!await menuOn()) fail("a path that was missing, then written, did not become a link once its row changed");
     await p.keyboard.press("Escape");
 
     // 3. a hit is kept: it still links after the expiry with the file's probe answering nothing.
     exists.delete("out/late.md");
-    await p.waitForTimeout(600);
     await hover(10, 0);
     await p.mouse.click(...at(10, 0));
     await p.waitForTimeout(300);
-    if (!await menuOn()) fail("a hit was forgotten when the miss ttl passed");
+    if (!await menuOn()) fail("a hit was forgotten");
     await p.keyboard.press("Escape");
 
     // 4. an image opens in a tab at once, no menu.
@@ -5355,6 +5353,93 @@ async function termLinkLateSection(browser, base) {
     const tabs = await p.evaluate(() => window.__tabs);
     const want = "/v1/tasks/land-live/files/view?path=.atrium%2Fincoming%2Fshot.png";
     if (tabs.length !== 1 || tabs[0] !== want) fail("an image click opened " + JSON.stringify(tabs) + ", want " + want);
+    if (errors.length) fail("the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── sweeping an unchanged terminal probes nothing (bug-terminal-probe-storm) ──
+// 40 rows of mostly-miss text, the pointer swept over them for 10 s. Only the first pass may ask the daemon, and that
+// at most once per row. A spinner redrawing one other row once a second asks nothing, and only a row whose own
+// text changed asks again.
+async function termProbeStormSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  let probes = 0;
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route("**/files/probe", route => {
+    probes++;
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found: [] }) });
+  });
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const rows = 40;
+    await p.evaluate(n => new Promise(res => {
+      let s = "\x1b[2J\x1b[H";
+      for (let i = 0; i < n; i++) s += "row" + i + " the quick.brown fox_" + i + ".txt jumps over v2." + i + ".1\r\n";
+      term.write(s, res);
+    }), rows);
+    await p.waitForTimeout(300);
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height, rows: term.rows };
+    });
+    const visible = Math.min(rows, cell.rows) - 1;
+    const spin = cell.rows;
+    const sweep = async () => {
+      for (let r = 0; r < visible; r++) {
+        await p.mouse.move(box.x + cell.w * 12, box.y + cell.h * (r + 0.5), { steps: 2 });
+        await p.waitForTimeout(15);
+      }
+    };
+    await sweep();
+    await p.waitForTimeout(300);
+    const first = probes;
+    let frame = 0;
+    const spinner = setInterval(() => p.evaluate(([r, f]) => term.write("\x1b[" + r + ";1H\x1b[2K" + "|/-\\"[f % 4] + " working"), [spin, frame++]).catch(() => {}), 1000);
+    if (first > rows) fail("the first pass asked " + first + " times for " + rows + " rows");
+    const t0 = Date.now();
+    while (Date.now() - t0 < 10000) await sweep();
+    clearInterval(spinner);
+    if (frame < 5) fail("the spinner redrew only " + frame + " times");
+    if (probes !== first) fail("sweeping an unchanged terminal for 10s probed " + (probes - first) + " more times");
+    await p.evaluate(() => new Promise(res => term.write("\x1b[1;1H\x1b[2Kchanged row v9.9 here.txt", res)));
+    await sweep();
+    await p.waitForTimeout(300);
+    const again = probes;
+    if (again === first || again > first + 1) fail("a changed row asked " + (again - first) + " times, want 1");
+    await sweep();
+    await p.waitForTimeout(300);
+    if (probes !== again) fail("rows asked again with no new output: " + (probes - again));
+    if (process.env.PROBE_COUNTS) console.log("probe storm: first pass " + first + ", after output " + (again - first) + ", then " + (probes - again));
     if (errors.length) fail("the page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -23093,7 +23178,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -25108,6 +25193,7 @@ async function main() {
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
+    await unit("termProbeStorm", () => termProbeStormSection(browser, base));
     await unit("roomsSetup", bu("roomsSetup"));
     await unit("readTabSize", bu("readTabSize"));
     await unit("readWidthSkin", bu("readWidthSkin"));

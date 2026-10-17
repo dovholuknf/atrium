@@ -22,15 +22,17 @@
 // board is worth using from another machine.
 
 // What the daemon has already answered, for one card. A hit is kept for the
-// card's life. A miss is kept only briefly: `the` is not a file and should not be
-// asked about once per line, but a path hovered before the agent wrote it (a
-// summary, an attachment named in a table) becomes one a moment later, and a
-// miss held until the card changed left it plain text for good.
+// card's life, by token. A miss is kept by token AND THE TEXT OF ITS ROW: `the` is
+// not a file and is not asked about again however the pointer moves, and output
+// elsewhere in the terminal (a spinner redrawing one row) touches no other row's
+// answer. A path hovered before the agent wrote it (a summary, an attachment named
+// in a table) becomes a link once its row's text changes, because the row is then a
+// new key and is asked again. No clock: a timer re-asked every row on every sweep,
+// which was the storm.
 let probeCache = { id: "", known: new Map() };
 
-// How long a miss stands, in milliseconds. `let` so a test can shorten it.
-let probeMissTtl = 3000;
-const probeMiss = Symbol("miss");
+// More misses than this and the cache starts over, so a long session cannot grow it without bound.
+const probeMissCap = 20000;
 
 // The cache for a card, emptied if the card changed. Switching cards changes
 // which directory a word is measured against, so nothing carries over.
@@ -39,17 +41,17 @@ function probeKnown(id) {
   return probeCache.known;
 }
 
-// Whether `tok` has an answer worth using: a hit, or a miss still inside its ttl.
-function probeFresh(known, tok) {
-  if (!known.has(tok)) return false;
-  const v = known.get(tok);
-  return !(v && v[probeMiss] && Date.now() - v.at > probeMissTtl);
+// The key a miss is stored under. NUL cannot be in a row's text or a token.
+function probeMissKey(tok, row) { return "\u0000" + row + "\u0000" + tok; }
+
+// Whether `tok` on the row `row` has an answer worth using: a hit, or a miss for this very row text.
+function probeFresh(known, tok, row) {
+  return known.has(tok) || known.has(probeMissKey(tok, row));
 }
 
 // The hit for `tok`, or null for a miss or nothing.
 function probeHit(known, tok) {
-  const v = known.get(tok);
-  return v && !v[probeMiss] ? v : null;
+  return known.get(tok) || null;
 }
 
 // The daemon's own bound, repeated here so a wide line is cut before it is
@@ -100,9 +102,9 @@ async function provideFileLinks(t, id, y, done) {
     // words nobody is pointing at.
     if (y < start.y || y > end.y) continue;
     spans.push({ token: c.token, range: { start, end } });
-    if (!probeFresh(known, c.token) && !ask.includes(c.token)) ask.push(c.token);
+    if (!probeFresh(known, c.token, line.text) && !ask.includes(c.token)) ask.push(c.token);
   }
-  if (ask.length) await askProbe(id, ask);
+  if (ask.length) await askProbe(id, ask, line.text);
   if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
 
   const links = [];
@@ -118,7 +120,7 @@ async function provideFileLinks(t, id, y, done) {
 // A failure is silent and cached as nothing, so the terminal behaves exactly
 // as it did before any of this existed. A decoration that cannot be drawn is
 // not something to interrupt somebody about.
-async function askProbe(id, paths) {
+async function askProbe(id, paths, row) {
   const batch = paths.slice(0, probeBatch);
   let found = [];
   try {
@@ -135,8 +137,11 @@ async function askProbe(id, paths) {
   // EVERY path asked about is written down, not just the ones that came back.
   // Remembering only the hits means every word that is not a file is asked
   // about again on the next hover, which is most of the words.
-  const now = Date.now();
-  for (const p of batch) known.set(p, hits.get(p) || { [probeMiss]: true, at: now });
+  if (known.size > probeMissCap) known.clear();
+  for (const p of batch) {
+    if (hits.has(p)) known.set(p, hits.get(p));
+    else known.set(probeMissKey(p, row), true);
+  }
 }
 
 // One link, with somewhere to go and something to say on the way.
