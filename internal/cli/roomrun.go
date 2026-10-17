@@ -459,9 +459,9 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	// SSH STREAMS: this room's switch lives beside its certificate, and the link carries the streams. See internal/link/stream.go.
 	room.RemoteDir = keys.Dir
 	d.SetStreamer(room)
-	d.SetSSHWizard(sshWizardHandler(keys.Dir))
+	d.SetSSHWizard(sshWizardHandler(keys.Dir, dial))
 	// THE HUB'S SET OF SSH KEYS, kept current in this room's authorized_keys. Best effort, never makes a key.
-	go sshSyncLoop(ctx, keys.Dir)
+	go sshSyncLoop(ctx, keys.Dir, dial)
 	// THE HUB RUNS THE FORGE. This room asks it about pull requests and issues and never runs gh or bb itself.
 	d.SetHubForge(forge.NewRemote(room.Forge))
 	// The room's stable hub remote forwards over the same link's git kind.
