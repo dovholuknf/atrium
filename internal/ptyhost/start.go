@@ -1,20 +1,20 @@
 package ptyhost
 
 import (
-	"fmt"
-	"io"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/detach"
+	"github.com/dovholuknf/atrium/internal/rolebin"
 )
 
 // StartOptions for Start. The zero value is what the daemon wants.
 type StartOptions struct {
-	// Exe is the installed binary the host is copied from. Default: this process's own.
+	// Exe is the installed binary the host is copied from. Default: rolebin.Installed().
 	Exe string
-	// CopyDir is where atrium.ptyhost[.exe] is put. Default: next to Exe.
+	// CopyDir is where atrium-pty[.exe] is put. Default: next to Exe.
 	CopyDir string
 	// IdleExit is passed to the host. Default: DefaultIdleExit.
 	IdleExit time.Duration
@@ -25,23 +25,20 @@ type StartOptions struct {
 	Args []string
 }
 
-// Runs from a copy, `atrium.ptyhost` beside the binary, so the rename-aside swap of a new atrium never touches the host's image.
+// Runs from a copy, `atrium-pty` beside the binary, so the rename-aside swap of a new atrium never touches the host's image.
 func Start(stateDir string, o StartOptions) (*os.Process, error) {
 	exe := o.Exe
 	if exe == "" {
-		var err error
-		if exe, err = os.Executable(); err != nil {
-			return nil, err
+		if exe = rolebin.Installed(); exe == "" {
+			return nil, errors.New("cannot find the atrium binary")
 		}
 	}
 	dir := o.CopyDir
 	if dir == "" {
 		dir = filepath.Dir(exe)
 	}
-	copyPath, err := copyForHost(exe, dir)
-	if err != nil {
-		return nil, err
-	}
+	copyPath := rolebin.EnsureIn("pty", exe, dir)
+	rolebin.RemoveLegacy(dir)
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -56,52 +53,4 @@ func Start(stateDir string, o StartOptions) (*os.Process, error) {
 		}
 	}
 	return detach.Start(copyPath, args, filepath.Join(stateDir, "ptyhost.log"))
-}
-
-// copyForHost puts a copy of exe in dir as atrium.ptyhost (with exe's extension) and returns its path. A copy that
-// is already there and current is left alone, which also covers a copy a running host holds open on Windows. A copy
-// that cannot be replaced is used as it is when one exists, since a stale copy still speaks a protocol the host
-// answers `probe` for.
-func copyForHost(exe, dir string) (string, error) {
-	dst := filepath.Join(dir, "atrium.ptyhost"+filepath.Ext(exe))
-	si, err := os.Stat(exe)
-	if err != nil {
-		return "", err
-	}
-	if di, err := os.Stat(dst); err == nil && di.Size() == si.Size() && !di.ModTime().Before(si.ModTime()) {
-		return dst, nil
-	}
-	tmp := dst + ".new"
-	if err := copyFile(exe, tmp); err != nil {
-		_ = os.Remove(tmp)
-		if _, statErr := os.Stat(dst); statErr == nil {
-			return dst, nil
-		}
-		return "", fmt.Errorf("copy %s for the pty host: %w", exe, err)
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
-		if _, statErr := os.Stat(dst); statErr == nil {
-			return dst, nil
-		}
-		return "", fmt.Errorf("install the pty host copy: %w", err)
-	}
-	return dst, nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o700)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
 }
