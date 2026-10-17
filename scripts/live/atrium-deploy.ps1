@@ -152,15 +152,20 @@ function Invoke-SshOnce([string]$Label, [string[]]$SshArgs, [int]$Cap) {
 $bareOpts = @('-o', 'ConnectTimeout=5', '-o', 'BatchMode=yes')
 $bareCap = 10
 $readOpts = @('-o', 'ConnectTimeout=8', '-o', 'BatchMode=yes')
-# Over <room>.atrium the ssh session rides the room being stopped and dies mid-swap, so the swap runs detached on the room
-# machine and writes to a file. This starts it, then waits on the hub, reading the file whenever ssh answers.
+# Over <room>.atrium the ssh session rides the room being stopped. On mac the swap runs detached (nohup) and writes to a
+# file, and the hub is waited on, reading the file whenever ssh answers. On Windows it runs in the session, which survives
+# the drop (sg3), and a dropped session is no verdict: the hub decides.
 function Start-DetachedSwap([string]$Name, [string]$SshHost, [string]$Os, [string]$Script, [datetime]$Since, [int]$Budget) {
+  $back = { Test-RoomBackOnHub $Name $Since $commit }
+  if ($Os -eq 'windows') {
+    $run = { Invoke-SshOnce "ssh $Name swap" @($SshHost, $Script) $Budget }
+    return Invoke-WindowsSwap $run $back $Budget
+  }
   $launch = Invoke-SshOnce "ssh $Name swap launch" @($SshHost, (New-DetachedCommand $Os $Script)) $diagCap
   if ($launch.TimedOut -or $launch.Code -ne 0 -or $launch.Out -notmatch 'detached') {
     return [pscustomobject]@{ Back = $false; Out = "DETACH-FAILED $($launch.Out)"; TimedOut = $launch.TimedOut }
   }
   $readCmd = Read-DetachedCommand $Os
-  $back = { Test-RoomBackOnHub $Name $Since $commit }
   $read = {
     $x = Invoke-Capped $ssh ($readOpts + @($SshHost, $readCmd)) $diagCap
     if ($x.TimedOut -or $x.Code -ne 0) { throw 'read failed' }
@@ -284,7 +289,7 @@ foreach ($name in $remoteNames) {
   $swapCap = $portWait + 120
   $swapRes = $null
   $os = if ($r.GOOS -eq 'windows') { 'windows' } else { 'mac' }
-  Invoke-Step "ssh ${name}: stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start, detached from the session" {
+  Invoke-Step "ssh ${name}: stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start" {
     $script:swapRes = Start-DetachedSwap $name $sshHost $os $r.Swap $start $swapCap
     $script:swapOut = @($swapRes.Out -split "`r?`n" | Where-Object { $_ -and $_ -ne $SwapDone })
     $swapOut | ForEach-Object { Say "  ${name}: $_" }

@@ -8,7 +8,7 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Resolve-SshRoute', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone') {
+foreach ($n in 'Resolve-SshRoute', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'Invoke-WindowsSwap') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -68,12 +68,28 @@ $mac = New-DetachedCommand 'mac' $script
 Check 'mac: runs under nohup, output to a file, from a decoded script' ($mac -match 'nohup sh' -and $mac -match 'deploy-swap\.out' -and $mac -match 'base64 --decode')
 $b64 = [regex]::Match($mac, 'echo ([A-Za-z0-9+/=]+) \|').Groups[1].Value
 Check 'mac: the script file ends in SWAP-DONE' ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) -eq ($script + ' ; echo SWAP-DONE'))
-$win = New-DetachedCommand 'windows' $script
-$errs = $null
-[void][System.Management.Automation.Language.Parser]::ParseInput($win, [ref]$null, [ref]$errs)
-Check 'windows: the launch command parses' ($errs.Count -eq 0)
-Check 'windows: started through Win32_Process so it leaves the ssh session' ($win -match 'Win32_Process' -and $win -match 'deploy-swap')
-Check 'windows: the swap script is carried in the command' ($win -match [regex]::Escape((ConvertTo-Base64Utf8 $script)))
-Check 'read commands name the output file' ((Read-DetachedCommand 'mac') -match 'deploy-swap\.out' -and (Read-DetachedCommand 'windows') -match 'deploy-swap\.out')
+$threw = $false
+try { [void](New-DetachedCommand 'windows' $script) } catch { $threw = $true }
+Check 'windows has no detached command' $threw
+
+$script:polls = 0
+$run = { [pscustomobject]@{ Code = 255; TimedOut = $false; Out = 'client_loop: send disconnect: Connection reset' } }
+$back = { $script:polls++; $script:polls -ge 2 }
+$w = Invoke-WindowsSwap $run $back 30 0
+Check 'windows: the swap session drops and the hub check is still reached' ($w.Back -and -not $w.TimedOut -and $script:polls -eq 2)
+
+$run = { [pscustomobject]@{ Code = 0; TimedOut = $false; Out = 'started' } }
+$script:polls = 0
+$w = Invoke-WindowsSwap $run { $script:polls++; $true } 30 0
+Check 'windows: a swap that finished is returned for the hub check without waiting here' (-not $w.TimedOut -and $script:polls -eq 0 -and $w.Out -eq 'started')
+
+$run = { [pscustomobject]@{ Code = 3; TimedOut = $false; Out = 'PORT-WAIT-TIMEOUT' } }
+$w = Invoke-WindowsSwap $run { $true } 30 0
+Check 'windows: a verdict the swap printed is returned, not waited past' ($w.Out -eq 'PORT-WAIT-TIMEOUT' -and -not $w.Back)
+
+$run = { [pscustomobject]@{ Code = -1; TimedOut = $true; Out = '' } }
+$w = Invoke-WindowsSwap $run { $true } 30 0
+Check 'windows: a hung swap is reported hung' $w.TimedOut
+Check 'the mac read command names the output file' ((Read-DetachedCommand 'mac') -match 'deploy-swap\.out')
 if ($fail -gt 0) { Write-Host "$fail failed"; exit 1 }
 Write-Host 'all passed'
