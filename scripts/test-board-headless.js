@@ -25091,6 +25091,7 @@ async function main() {
     await unit("mCleanUpForeign", () => mCleanUpForeignSection(browser));
     await unit("mGrowlStack", () => mGrowlStackSection(browser));
     await unit("itemsRealShape", bu("itemsRealShape"));
+    await unit("itemsUx", bu("itemsUx"));
     await unit("itemsView", bu("itemsView"));
     await unit("itemsMock", bu("itemsMock"));
     await unit("itemsEfficacy", bu("itemsEfficacy"));
