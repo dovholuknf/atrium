@@ -1990,7 +1990,6 @@ async function renderTermList() {
   const listed = shown.length + ended.length;
   fdStatus("terms", {
     summary: termSummary(show, shown.length + ended.length),
-    changed: show.size + (sortByActivity && !termSortStarted ? 0 : 1) + groupChanged("terms"),
     match: q && listed !== tasks.length + (show.has("dead") ? endedAll.length : 0)
       ? `${listed} of ${tasks.length + (show.has("dead") ? endedAll.length : 0)}` : ""
   });

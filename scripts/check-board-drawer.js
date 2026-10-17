@@ -137,7 +137,6 @@ const state = page => page.evaluate(() => {
     panelVisible: getComputedStyle(panel).visibility === "visible" && panel.offsetHeight > 0,
     panel: r(panel), line: r(line), q: r(q), qid: q.id,
     sum: h.querySelector(".fsum").textContent, sumHidden: h.querySelector(".fsum").hidden,
-    count: Number(h.querySelector(".fcount").textContent || 0),
     active: document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : "",
     activeIsQ: document.activeElement === q
   };
@@ -214,7 +213,6 @@ async function steps(browser, width, mobile, tabName) {
   check(s && !s.open && s.inert && !s.panelVisible, `${tag} 1: closed on load, and its panel is out of reach`);
   check(s && s.q.w > 40 && s.q.h > 10, `${tag} 1: the search box is on the collapsed line`);
   check(s && (mobile ? s.sum.length > 0 : s.sum.length > 0 && !s.sumHidden), `${tag} 1: the line says what the tab is set to ("${s && s.sum}")`);
-  check(s && s.count === 0, `${tag} 1: nothing differs from the defaults (filters ${s && s.count})`);
   let wantChips = null;
   if (tabName === "stack" || tabName === "board") {
     const seg = tabName === "stack" ? "stack-seg" : "board-seg";
@@ -284,7 +282,6 @@ async function steps(browser, width, mobile, tabName) {
     return !!(e && e.closest(".fpanel"));
   });
   if (T.view === "terms") check(covers, `${tag} 3: it is over the list, not beside it`);
-  const countBefore = s.count;
 
   // 4: a chip ----------------------------------------------------------------------------------------------
   const chip = page.locator(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`).first();
@@ -292,7 +289,6 @@ async function steps(browser, width, mobile, tabName) {
   await mouse.click(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
   s = await state(page);
   check(s && s.open, `${tag} 4: a click inside the drawer leaves it open`);
-  check(s && s.count === countBefore + 1, `${tag} 4: filters N went up by one (${countBefore} -> ${s && s.count})`);
   const n = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"] .pillcount`, e => e.textContent);
   check(Number(n) === T.chip.count, `${tag} 4: the ${T.chip.v} chip counts ${T.chip.count} (${n})`);
   const lit = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`, e => e.classList.contains("on"));
@@ -633,7 +629,7 @@ async function phoneAttached(browser) {
   await page.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
   await sleep(250);
   s = await state(page);
-  check(s && s.open && s.count === 1, `${tag}: a chip applies and the drawer stays open (filters ${s && s.count})`);
+  check(s && s.open, `${tag}: a chip applies and the drawer stays open`);
   await page.keyboard.press("Escape");
   await sleep(250);
   s = await state(page);

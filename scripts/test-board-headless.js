@@ -19661,13 +19661,12 @@ async function phoneBoardCompactSection(browser, base) {
       const btn = document.querySelector("#stack .filtersbtn");
       return { btn: vis(btn), expanded: btn && btn.getAttribute("aria-expanded"), btnH: btn ? Math.round(btn.getBoundingClientRect().height) : 0,
         rows: document.querySelector("#stack .fpanel").inert ? [] : ["stack-seg", "stack-sort", "stack-group"], q: vis(document.getElementById("stack-q")),
-        firstTop: Math.round(first.top), count: btn && btn.querySelector(".fcount") ? btn.querySelector(".fcount").textContent : "" };
+        firstTop: Math.round(first.top) };
     });
     if (!f.btn || f.expanded !== "false") fail(tag + "the filters button is missing or open: " + JSON.stringify(f));
     if (f.rows.length) fail(tag + "the pill rows are not folded: " + f.rows.join(","));
     if (!f.q || f.btnH < 40) fail(tag + "the search box is gone or the button is under 40px: " + JSON.stringify(f));
     if (f.firstTop > 200) fail(tag + "the first card starts at " + f.firstTop + "px, the filters still take the screen");
-    if (f.count !== "") fail(tag + "defaults count as active: " + f.count);
     // the sound hint covers no input and no tray handle, in every view
     const hint = async where => {
       // a switch of view is a click, which unlocks the sound and takes the hint down, so it is put back to measure it
@@ -19753,7 +19752,7 @@ async function phoneBoardCompactSection(browser, base) {
       await shot(v);
       await hint(v);
     }
-    // opening the button brings the rows back, with a count of the ones that are not the defaults
+    // opening the button brings the rows back
     await p.evaluate(() => document.querySelector('header nav .tab[data-view="stack"]').click());
     await p.waitForTimeout(300);
     await p.tap("#stack .filtersbtn");
@@ -19765,8 +19764,6 @@ async function phoneBoardCompactSection(browser, base) {
     await shot("stack-open");
     await p.tap("#stack .filtersbtn");
     await p.waitForTimeout(200);
-    const cnt = await p.evaluate(() => document.querySelector("#stack .filtersbtn .fcount").textContent);
-    if (cnt !== "1") fail(tag + "one changed filter should count 1: " + JSON.stringify(cnt));
     if (await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)) fail(tag + "the page scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -23534,7 +23531,6 @@ async function main() {
         lit: ["paused", "dead", "subagents"].filter(v => chip(v) && chip(v).classList.contains("on")),
         counts: { paused: count("paused"), dead: count("dead"), subagents: count("subagents") },
         stored: localStorage.getItem(termDeviceKey("atrium.terms.show")),
-        changed: document.querySelector("#fd-terms .fcount").textContent,
         pinnedCount: (document.querySelector("#term-list .pinnedhead .tgcount") || {}).textContent || "",
         pinnedEmpty: ((document.querySelector("#term-list .termbucket .bucketdrop") || {}).textContent || "").trim(),
         cold: [...document.querySelectorAll("#term-list .card.tab.cold")].map(c => c.dataset.id).sort().join(","),
@@ -23571,8 +23567,8 @@ async function main() {
     if (!cDef.shut || cDef.foldCount !== "3") {
       fail("the parent does not start folded with its three subagents counted on the chevron: " + JSON.stringify(cDef));
     }
-    if (cDef.lit.length || cDef.stored !== null || cDef.changed !== "") {
-      fail("with no key set a chip is lit, or the handle counts a change: " + JSON.stringify(cDef));
+    if (cDef.lit.length || cDef.stored !== null) {
+      fail("with no key set a chip is lit: " + JSON.stringify(cDef));
     }
     if (cDef.counts.paused !== "1" || cDef.counts.dead !== "2" || cDef.counts.subagents !== "3") {
       fail("the chips do not carry their counts (paused 1, dead 2, subagents 3): " + JSON.stringify(cDef.counts));
@@ -23590,8 +23586,8 @@ async function main() {
       fail("the paused chip did not list the paused card alone: " + JSON.stringify(cPaused));
     }
     if (!/(^|,)paused1(,|$)/.test(cPaused.cold)) fail("a paused row is not drawn cold: " + JSON.stringify(cPaused));
-    if (cPaused.changed !== "1" || cPaused.lit.join() !== "paused" || cPaused.stored !== '["paused"]') {
-      fail("the paused chip did not light alone, count one change and be stored: " + JSON.stringify(cPaused));
+    if (cPaused.lit.join() !== "paused" || cPaused.stored !== '["paused"]') {
+      fail("the paused chip did not light alone and be stored: " + JSON.stringify(cPaused));
     }
 
     // DEAD on as well: the pinned rows come back into their bucket, cold, as `2`.
@@ -23600,8 +23596,8 @@ async function main() {
     if (!cDead.deadSub || !cDead.deadAgent || !cDead.paused) {
       fail("the dead chip did not list the pinned rows whose runners are gone: " + JSON.stringify(cDead));
     }
-    if (cDead.pinnedCount !== "2" || cDead.changed !== "2" || cDead.lit.join() !== "paused,dead") {
-      fail("with dead on the bucket does not read 2, or the handle does not count two: " + JSON.stringify(cDead));
+    if (cDead.pinnedCount !== "2" || cDead.lit.join() !== "paused,dead") {
+      fail("with dead on the bucket does not read 2: " + JSON.stringify(cDead));
     }
 
     // SUBAGENTS on: every parent starts expanded. A chip change clears the folds written under the other meaning.

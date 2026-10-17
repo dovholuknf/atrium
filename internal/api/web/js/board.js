@@ -1850,7 +1850,6 @@ async function renderBoard(signal) {
   paintBoardCount(shown.filter(t => !roll.rolled.has(t.id)));
   fdStatus("board", {
     summary: boardSummary(showCols),
-    changed: boardChanged(showCols),
     match: all.length === live.length - roll.rolled.size && offline.length === shown.filter(t => t.offline).length
       ? "" : `${all.length} of ${live.length - roll.rolled.size}`
   });
@@ -2110,13 +2109,6 @@ function boardSummary(show) {
   if (show.size < BOARD_COLUMNS.length) parts.unshift(show.size + " of " + BOARD_COLUMNS.length + " columns");
   if (boardSubsOn()) parts.push("subagents");
   return parts.join(" \u00b7 ");
-}
-// Settings in the drawer that differ from the board's defaults: every column on, subagents off, by activity, by project.
-function boardChanged(show) {
-  let n = BOARD_COLUMNS.length - show.size;
-  if (boardSubsOn()) n++;
-  if (boardSortMode() !== "activity") n++;
-  return n + groupChanged("board");
 }
 
 // What order the cards come out in, inside whatever they are grouped by.
