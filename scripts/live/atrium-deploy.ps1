@@ -148,6 +148,31 @@ function Invoke-SshOnce([string]$Label, [string[]]$SshArgs, [int]$Cap) {
   if ($r.TimedOut) { Say "$Label hung past ${Cap}s, killed. not retried" }
   $r
 }
+# A dead bare name must cost seconds, not a minute, before the .atrium route is tried: one short connect, no retry.
+$bareOpts = @('-o', 'ConnectTimeout=5', '-o', 'BatchMode=yes')
+$bareCap = 10
+$readOpts = @('-o', 'ConnectTimeout=8', '-o', 'BatchMode=yes')
+# Over <room>.atrium the ssh session rides the room being stopped. On mac the swap runs detached (nohup) and writes to a
+# file, and the hub is waited on, reading the file whenever ssh answers. On Windows it runs in the session, which survives
+# the drop (sg3), and a dropped session is no verdict: the hub decides.
+function Start-DetachedSwap([string]$Name, [string]$SshHost, [string]$Os, [string]$Script, [datetime]$Since, [int]$Budget) {
+  $back = { Test-RoomBackOnHub $Name $Since $commit }
+  if ($Os -eq 'windows') {
+    $run = { Invoke-SshOnce "ssh $Name swap" @($SshHost, $Script) $Budget }
+    return Invoke-WindowsSwap $run $back $Budget
+  }
+  $launch = Invoke-SshOnce "ssh $Name swap launch" @($SshHost, (New-DetachedCommand $Os $Script)) $diagCap
+  if ($launch.TimedOut -or $launch.Code -ne 0 -or $launch.Out -notmatch 'detached') {
+    return [pscustomobject]@{ Back = $false; Out = "DETACH-FAILED $($launch.Out)"; TimedOut = $launch.TimedOut }
+  }
+  $readCmd = Read-DetachedCommand $Os
+  $read = {
+    $x = Invoke-Capped $ssh ($readOpts + @($SshHost, $readCmd)) $diagCap
+    if ($x.TimedOut -or $x.Code -ne 0) { throw 'read failed' }
+    $x.Out
+  }
+  Wait-SwapDone $back $read $Budget
+}
 function Get-HungMsg([string]$Label, [int]$Cap) { "failed - $Label hung past ${Cap}s and was killed" }
 $built = @()
 
@@ -205,22 +230,36 @@ $remote = @{
 # room's own log is read over ssh only to explain a failure, in Show-RoomLog.
 $localRoomLink = ${function:Get-RoomLink}
 $script:swapStart = Get-Date
+$script:sshHosts = @{}
 function Get-RoomLink {
   if (-not $remote.Contains($RoomName)) { return & $localRoomLink }
   if (Test-RoomBackOnHub $RoomName $script:swapStart $commit) { return 'up' }
   return 'down'
 }
 function Show-RoomLog([string]$Name) {
-  $r = Invoke-Ssh "log tail ${Name}" @($Name, $remote[$Name].Log) $diagCap
+  $r = Invoke-Ssh "log tail ${Name}" @($script:sshHosts[$Name], $remote[$Name].Log) $diagCap
   if ($r.TimedOut) { Say "${Name}: log tail hung, skipped. the verdict is the hub's, not the log's"; return }
   ($r.Out -split "`n" | Select-Object -Last 15) | ForEach-Object { Say "  ${Name} log: $_" }
 }
 foreach ($name in $remoteNames) {
   if ($want -notcontains $name) { continue }
   $r = $remote[$name]
-  $probe = Invoke-Ssh "ssh $name probe" @($name, 'echo ok') $probeCap
-  if ($probe.TimedOut) { $results[$name] = Get-HungMsg 'ssh probe' $probeCap; Say "${name}: probe hung"; continue }
-  if ($probe.Code -ne 0) { $results[$name] = 'failed - offline, ssh could not connect'; Say "${name}: offline"; continue }
+  $route = Resolve-SshRoute $name {
+    param($h)
+    if ($h -eq $name) { return Invoke-Capped $ssh ($bareOpts + @($h, 'echo ok')) $bareCap }
+    Invoke-Ssh "ssh $h probe" @($h, 'echo ok') $probeCap
+  }
+  if (-not $route.Host) {
+    if (@($route.Results | Where-Object { $_.TimedOut }).Count -gt 0) {
+      $results[$name] = Get-HungMsg 'ssh probe' $probeCap; Say "${name}: probe hung ($($route.Tried -join ', '))"; continue
+    }
+    $results[$name] = 'failed - offline, ssh could not connect by any route'
+    Say "${name}: offline, no route answered ($($route.Tried -join ', '))"
+    continue
+  }
+  $sshHost = $route.Host
+  $script:sshHosts[$name] = $sshHost
+  Say "${name}: ssh route $sshHost"
   $exe = if ($r.GOOS -eq 'windows') { 'atrium.exe' } else { 'atrium' }
   $out = Join-Path $Repo "build.claude\deploy\$($r.GOOS)-$($r.GOARCH)\$exe"
   if ($built -notcontains "$($r.GOOS)-$($r.GOARCH)") {
@@ -236,7 +275,7 @@ foreach ($name in $remoteNames) {
   }
   $script:scpRes = $null
   Invoke-Step "scp $out -> ${name}:$($r.Dest)" {
-    $script:scpRes = Invoke-CappedRetry "scp $name" $scp (@('-q') + $sshOpts + @($out, "${name}:$($r.Dest)")) $scpCap
+    $script:scpRes = Invoke-CappedRetry "scp $name" $scp (@('-q') + $sshOpts + @($out, "${sshHost}:$($r.Dest)")) $scpCap
   }
   if (-not $WhatIf -and $scpRes.TimedOut) { $results[$name] = Get-HungMsg 'scp' $scpCap; continue }
   if (-not $WhatIf -and $scpRes.Code -ne 0) { $results[$name] = 'failed - scp failed'; continue }
@@ -249,15 +288,17 @@ foreach ($name in $remoteNames) {
   $swapOut = @()
   $swapCap = $portWait + 120
   $swapRes = $null
+  $os = if ($r.GOOS -eq 'windows') { 'windows' } else { 'mac' }
   Invoke-Step "ssh ${name}: stop, wait up to ${portWait}s for the port, swap (old kept as atrium.prev), start" {
-    $script:swapRes = Invoke-SshOnce "ssh $name swap" @($name, $r.Swap) $swapCap
-    $script:swapOut = @($swapRes.Out -split "`r?`n" | Where-Object { $_ })
+    $script:swapRes = Start-DetachedSwap $name $sshHost $os $r.Swap $start $swapCap
+    $script:swapOut = @($swapRes.Out -split "`r?`n" | Where-Object { $_ -and $_ -ne $SwapDone })
     $swapOut | ForEach-Object { Say "  ${name}: $_" }
   }
   if ($WhatIf) { $results[$name] = 'success (WhatIf)'; continue }
   # A swap call that hung is not a verdict either way: the hub decides below whether the room came back.
+  if ($swapRes.Out -like 'DETACH-FAILED*') { $results[$name] = 'failed - the swap could not be started on the room'; continue }
   $swapHung = $swapRes.TimedOut
-  if ($swapHung) { Say "${name}: the swap call hung past ${swapCap}s. checking the hub for the room anyway" }
+  if ($swapHung) { Say "${name}: the swap output was not seen within ${swapCap}s. checking the hub for the room anyway" }
   if ($swapOut -contains $portTimeout) {
     $results[$name] = "failed - the room still held its port after ${portWait}s, so nothing was swapped or started"
     continue
@@ -270,9 +311,10 @@ foreach ($name in $remoteNames) {
   # The old room can outlive the port check by a moment and answer the detach: wait for the port again, detach once more.
   if (($swapOut -join "`n") -match 'left it running|not attached') {
     Say "${name}: detach found the old room still running. retrying once"
-    $retryRes = Invoke-SshOnce "ssh $name detach retry" @($name, $r.Retry) $swapCap
-    $retryOut = @($retryRes.Out -split "`r?`n" | Where-Object { $_ })
+    $retryRes = Start-DetachedSwap $name $sshHost $os $r.Retry $start $swapCap
+    $retryOut = @($retryRes.Out -split "`r?`n" | Where-Object { $_ -and $_ -ne $SwapDone })
     $retryOut | ForEach-Object { Say "  ${name}: $_" }
+    if ($retryRes.Out -like 'DETACH-FAILED*') { $results[$name] = 'failed - the swap retry could not be started on the room'; continue }
     $retryStore = $retryOut | Where-Object { $_ -like "$StoreTimeout*" } | Select-Object -First 1
     if ($retryStore) {
       $results[$name] = "failed - the old room still held its store after ${StoreBudget}s more ($($retryStore -replace "^$StoreTimeout ", 'pid ')), so it was not started"

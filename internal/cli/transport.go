@@ -346,26 +346,14 @@ func roomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, erro
 	return d, nil
 }
 
-// rungBuilder builds a rung's dialer. The zero value builds the real ones. `ziti` is a seam so a test can count what
-// is built and closed.
-type rungBuilder struct {
-	ziti func(identity, service string) link.Dialer
-}
-
-func (b rungBuilder) newZiti(identity, service string) link.Dialer {
-	if b.ziti != nil {
-		return b.ziti(identity, service)
-	}
+// newZitiRung builds a ziti rung's dialer. A variable so a test can count what is built and closed.
+var newZitiRung = func(identity, service string) link.Dialer {
 	return &link.Ziti{Identity: identity, Service: service}
 }
 
 // rawRoomDialer is the transport with nothing wrapped round it. Enrolment dials
 // this, because the pinned handshake it runs is not the room's own.
 func rawRoomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
-	return rungBuilder{}.raw(j, keys, identity)
-}
-
-func (b rungBuilder) raw(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
 	switch j.Transport {
 	case "direct":
 		return link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}, nil
@@ -375,7 +363,7 @@ func (b rungBuilder) raw(j link.Join, keys link.Keys, identity string) (link.Dia
 				"this join string is for the ziti service %q, so this room needs an enrolled "+
 					"identity. pass --identity <file>", j.Service)
 		}
-		return b.newZiti(identity, j.Service), nil
+		return newZitiRung(identity, j.Service), nil
 	case "zrok":
 		return &link.Zrok{Token: j.ShareToken}, nil
 	}
@@ -388,11 +376,7 @@ func (b rungBuilder) raw(j link.Join, keys link.Keys, identity string) (link.Dia
 // room on its own machine (`atrium room transports`). `skipped` names what could
 // not be a rung and why, for the log. See docs/rnd/room-transport-order.md.
 func roomLadder(keys link.Keys, saved link.Saved, tr link.RoomTransports) (*link.Ladder, []string, error) {
-	return rungBuilder{}.ladder(keys, saved, tr)
-}
-
-func (b rungBuilder) ladder(keys link.Keys, saved link.Saved, tr link.RoomTransports) (*link.Ladder, []string, error) {
-	rungs, skipped := b.rungs(keys, saved, tr, nil)
+	rungs, skipped := roomRungs(keys, saved, tr, nil)
 	if len(rungs) == 0 {
 		return nil, skipped, fmt.Errorf("this room has no transport it can reach its hub on: %s",
 			strings.Join(skipped, "; "))
@@ -403,10 +387,6 @@ func (b rungBuilder) ladder(keys link.Keys, saved link.Saved, tr link.RoomTransp
 // roomRungs builds the rungs, reusing a dialer from `had` for a path that has not
 // changed, so learning the hub's list does not open a second ziti session.
 func roomRungs(keys link.Keys, saved link.Saved, tr link.RoomTransports, had []link.Rung) ([]link.Rung, []string) {
-	return rungBuilder{}.rungs(keys, saved, tr, had)
-}
-
-func (b rungBuilder) rungs(keys link.Keys, saved link.Saved, tr link.RoomTransports, had []link.Rung) ([]link.Rung, []string) {
 	paths, skipped := link.Candidates(saved, tr)
 	var rungs []link.Rung
 	for _, p := range paths {
@@ -414,7 +394,7 @@ func (b rungBuilder) rungs(keys link.Keys, saved link.Saved, tr link.RoomTranspo
 			rungs = append(rungs, link.Rung{Path: p, Dial: d})
 			continue
 		}
-		d, err := b.rung(keys, saved, p)
+		d, err := rungDialer(keys, saved, p)
 		if err != nil {
 			skipped = append(skipped, p.Transport+": "+err.Error())
 			continue
@@ -442,8 +422,8 @@ func reuse(had []link.Rung, p link.Path) link.Dialer {
 // The hub refuses a name that enrolled a certificate on the old path, so a
 // direct room falling back to ziti without it would be turned away by name. An
 // old-form overlay join never wraps, for the reason `roomDialer` gives.
-func (b rungBuilder) rung(keys link.Keys, saved link.Saved, p link.Path) (link.Dialer, error) {
-	d, err := b.raw(link.Join{
+func rungDialer(keys link.Keys, saved link.Saved, p link.Path) (link.Dialer, error) {
+	d, err := rawRoomDialer(link.Join{
 		Transport: p.Transport, Addr: p.Addr, Service: p.Service, ShareToken: p.Share,
 	}, keys, p.Identity)
 	if err != nil {

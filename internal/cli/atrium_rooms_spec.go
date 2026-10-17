@@ -133,24 +133,19 @@ func roomLockCmd(prefix string) *cobra.Command {
 
 // ── the room's side ─────────────────────────────────────
 
-// roomLinkFor is the room's name and a dialer to the hub it joined, from the keys in dir.
+// roomLinkFor is the room's name and a dialer to the hub it joined, from the keys in dir. The dialer is the room that is
+// running on this machine, never a ladder of its own: see hubdial.go.
 func roomLinkFor(dir string) (string, link.Dialer, error) {
-	return rungBuilder{}.linkFor(dir)
-}
-
-func (b rungBuilder) linkFor(dir string) (string, link.Dialer, error) {
 	keys := link.Keys{Dir: orDefault(dir, roomDir())}
 	saved, err := keys.Joined()
 	if err != nil {
 		return "", nil, err
 	}
-	// THE SAME LADDER THE ROOM CLIMBS, so a room on its fallback can still be set up.
-	tr, _ := keys.Transports()
-	l, _, err := b.ladder(keys, saved, tr)
+	d, err := newLocalRoomDialer()
 	if err != nil {
 		return "", nil, err
 	}
-	return saved.Room, climbing{l}, nil
+	return saved.Room, d, nil
 }
 
 // PostRoomLock sends a room.lock (a JSON object with "version": 1) to the hub this machine joined, over the room's
