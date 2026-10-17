@@ -35,13 +35,14 @@ jobs:
     # job hides which way.
     #
     # ONE JOB PER PLATFORM AND GROUP, so a run takes as long as its slowest group and not the sum. The groups are
-    # `ci.sh --list-groups`: the Go tests, the other Go checks, and the board. Which steps belong to which is ci.sh's
+    # `ci.sh --list-groups`: the Go tests in two halves, the other Go checks, the board in two halves, and the
+    # board's pixel and timing units. Which steps belong to which, and which tests are in which half, is ci.sh's
     # business, so this file only names the group.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        group: [go-test, go-checks, board, board-visual]
+        group: [go-test-1, go-test-2, go-checks, board-1, board-2, board-visual]
     name: check (${{ matrix.os }}, ${{ matrix.group }})
     runs-on: ${{ matrix.os }}
     # `board-visual` is the board's pixel and timing units (scripts/board-visual-units.txt). It reports and never

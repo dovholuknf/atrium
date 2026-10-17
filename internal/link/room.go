@@ -117,6 +117,12 @@ type Room struct {
 	// paths is the last probe of every rung, and pmu guards it. See pathstate.go.
 	pmu   sync.Mutex
 	paths []PathState
+	// PersistOff writes the kinds that are off down, so a restart keeps the choice. Nil keeps it in memory only.
+	PersistOff func(off []string) error
+	// tmu serialises switching a transport. forceMove makes the next attach end read as moving, not failing, so the
+	// room climbs onto another transport at once when the one it stood on was turned off.
+	tmu       sync.Mutex
+	forceMove atomic.Bool
 }
 
 // restarter is the idempotent guard on OnRestart, the same shape as `taker` and
@@ -349,7 +355,7 @@ func (r *Room) attach(ctx context.Context) error {
 	for {
 		var n note
 		if err := readNote(conn, br, r.T.Silence, &n); err != nil {
-			if moving.Load() {
+			if moving.Load() || r.forceMove.Swap(false) {
 				return errMovingUp
 			}
 			if ctx.Err() != nil {

@@ -25,15 +25,7 @@ type StartOptions struct {
 	Args []string
 }
 
-// Start launches a host for stateDir, detached, and returns without waiting for it to listen: Dial retries.
-//
-// Detached with internal/detach: DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP and CREATE_BREAKAWAY_FROM_JOB with the
-// retry without breakaway on Windows, and Setsid elsewhere (design 3.3). It runs from a COPY, `atrium.ptyhost` next
-// to the installed binary, so the rename-aside swap of a new atrium never touches the image the host runs from.
-// Callers should Probe first: Start on a state dir that already has a host makes a second process that exits at
-// once, refused by the listener.
-//
-// The host's output goes to `ptyhost.log` in stateDir.
+// Runs from a copy, `atrium.ptyhost` beside the binary, so the rename-aside swap of a new atrium never touches the host's image.
 func Start(stateDir string, o StartOptions) (*os.Process, error) {
 	exe := o.Exe
 	if exe == "" {
@@ -53,11 +45,6 @@ func Start(stateDir string, o StartOptions) (*os.Process, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, err
 	}
-	logf, err := os.OpenFile(filepath.Join(stateDir, "ptyhost.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	defer logf.Close()
 	args := o.Args
 	if args == nil {
 		args = []string{"ptyhost", "--state-dir", stateDir}
@@ -68,7 +55,7 @@ func Start(stateDir string, o StartOptions) (*os.Process, error) {
 			args = append(args, "--build", o.Build)
 		}
 	}
-	return detach.Start(copyPath, args, logf)
+	return detach.Start(copyPath, args, filepath.Join(stateDir, "ptyhost.log"))
 }
 
 // copyForHost puts a copy of exe in dir as atrium.ptyhost (with exe's extension) and returns its path. A copy that

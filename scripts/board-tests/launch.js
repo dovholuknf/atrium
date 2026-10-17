@@ -306,7 +306,9 @@ async function newWorkDialogSection(browser, base) {
     await p.click("#l-nw-btn");
     await p.waitForFunction(() => document.querySelectorAll("#l-nw-list .pvrepo").length >= 3, null, { timeout: slow(1200) })
       .catch(() => fail("repoList: a second open waited on the network instead of painting what it had"));
-    if (Date.now() - t0 > slow(400)) fail("repoList: a second open took " + (Date.now() - t0) + "ms to paint");
+    // The list is held 1500ms, so painting before that is the claim. The click and the poll are the harness's round trips and
+    // cost a few hundred ms on a loaded runner: the budget sits well under the hold and well over those.
+    if (Date.now() - t0 > slow(1000)) fail("repoList: a second open took " + (Date.now() - t0) + "ms to paint");
     holdList = 0;
 
     // the directory picker's failure is a line in the picker

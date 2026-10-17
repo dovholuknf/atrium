@@ -407,6 +407,9 @@ async function resumeStart(id, t, where, pick, full) {
     }
   }
   if (!task || !task.supervised) { openingEnd(id); refresh(); return; }
+  // Before the pane opens on it, so a repaint from the cache in the moments before the daemon's own event lands
+  // agrees that the card is supervised and leaves the pane up. See `cardLaunched` in js/cards.js.
+  cardLaunched(task);
   if (where === "window") { popOutTask(task.id); openingEnd(id); return; }
   switchView("terms");
   openTerm(task);

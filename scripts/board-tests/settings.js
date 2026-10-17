@@ -900,16 +900,28 @@ async function skinScopeSection(browser, base) {
     // attaches: two changes to the attached set, neither of which is the ALL
     // scope the operator is on, so the settled skin must not move.
     await skin.waitForTimeout(2200);
+    // The re-read a room flip would do is `bootSkin`, counted. A stream that reopens meanwhile reads settings too,
+    // and that read is right to win (the daemon's answer wins), so with one the skin itself is not judged.
+    let reopened = 0;
+    skin.on("request", r => { if (/\/v1\/events/.test(r.url())) reopened++; });
+    await skin.evaluate(() => {
+      window.__bootSkins = 0;
+      const f = bootSkin;
+      window.bootSkin = (...a) => { window.__bootSkins++; return f(...a); };
+    });
     mock.sggAttached = false;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await skin.waitForTimeout(2200);
     mock.sggAttached = true;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await skin.waitForTimeout(500);
-    if ((await dataSkin()) !== "vapor") {
+    const reread = await skin.evaluate(() => window.__bootSkins);
+    if (reread) fail("a room attaching or leaving re-read the settled ALL skin " + reread + " times.");
+    if (!reopened && (await dataSkin()) !== "vapor") {
       fail("a room attaching or leaving clobbered the settled ALL skin: it " +
         "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
     }
+    if (reopened) console.log("skinScope: the event stream reopened " + reopened + " times during the room flips, so the skin itself was not judged");
     mock.skinFor[""] = allWas;
     if (skinErrors.length) {
       fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));

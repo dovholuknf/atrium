@@ -69,6 +69,10 @@ type Host struct {
 
 	closing atomic.Bool
 	done    chan struct{}
+	// Every goroutine the host starts that may call logf: a pty's drain and await, a client's reader and writer.
+	// Close waits for them, so logf is never called after Close has returned. The idle loop is not counted: it is
+	// what calls Close when the host goes idle, and it returns right after.
+	wg sync.WaitGroup
 }
 
 // NewHost makes a host that has not started listening.
@@ -203,6 +207,18 @@ func (h *Host) Close() {
 		}
 		_ = p.closer.Close()
 	}
+	// WAIT FOR THE GOROUTINES, so nothing logs after Close has returned. A test's logger panics the whole package
+	// when a goroutine logs after its test ended: TestWrappedRingIsTruncatedWithRebasedCuts at -count=3 died on
+	// "exited code=1" from await, which starts after the kill above and used to outlive Close. Bounded, because a
+	// pty read on a platform that does not unblock on close would otherwise hold the host open for good: the
+	// runners are killed, so the wait is tens of milliseconds, and the bound is only for a pty that never answers.
+	waited := make(chan struct{})
+	go func() { h.wg.Wait(); close(waited) }()
+	select {
+	case <-waited:
+	case <-time.After(5 * time.Second):
+		h.logf("closing with goroutines still running after 5s")
+	}
 	close(h.done)
 }
 
@@ -242,6 +258,7 @@ func (h *Host) newClient(conn net.Conn) *client {
 		return c
 	}
 	h.clients[c] = struct{}{}
+	h.wg.Add(2)
 	h.mu.Unlock()
 	go c.writeLoop()
 	go c.readLoop()
@@ -270,6 +287,7 @@ func (c *client) push(v any, n int) bool {
 }
 
 func (c *client) writeLoop() {
+	defer c.h.wg.Done()
 	for {
 		select {
 		case <-c.done:
@@ -345,6 +363,7 @@ func (c *client) teardown() error {
 }
 
 func (c *client) readLoop() {
+	defer c.h.wg.Done()
 	dec := json.NewDecoder(c.conn)
 	for {
 		var q Request
@@ -532,6 +551,7 @@ func (c *client) spawn(q *Request) {
 	h.ptys[p.runID] = p
 	h.mu.Unlock()
 	h.logf("spawned %s id=%s kind=%s pid=%d %dx%d ring=%d", p.runID, p.id, p.kind, p.pid, cols, rows, ringN)
+	h.wg.Add(2)
 	go h.drain(p)
 	go h.await(p)
 	c.reply(q, Reply{OK: true, Pid: p.pid, RunID: p.runID})
@@ -539,6 +559,7 @@ func (c *client) spawn(q *Request) {
 
 // drain reads the pty for as long as it lives, whether or not a client is connected. It never waits on a client.
 func (h *Host) drain(p *hpty) {
+	defer h.wg.Done()
 	defer close(p.drained)
 	buf := make([]byte, 32<<10)
 	for {
@@ -576,6 +597,7 @@ func (h *Host) drain(p *hpty) {
 // is closed), no bytes for a short quiet spell, bounded. A byte that still arrives after that is kept in the ring
 // like any other and reaches a later attach.
 func (h *Host) await(p *hpty) {
+	defer h.wg.Done()
 	err := p.cmd.Wait()
 	code := 0
 	if p.cmd.ProcessState != nil {
