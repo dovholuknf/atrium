@@ -76,7 +76,11 @@ func TestZitiRedialsNeverHoldMoreThanOneContext(t *testing.T) {
 	base := runtime.NumGoroutine()
 	z, reg := newFakeZiti(false)
 	l := NewLadder([]Rung{{Path: Path{Transport: "ziti", Service: "hub"}, Dial: z}})
+	// Each cycle is an hour apart, so the backoff never holds a dial back.
+	var hour atomic.Int64
+	z.gate.now = func() time.Time { return time.Unix(hour.Load(), 0) }
 	for i := 0; i < 200; i++ {
+		hour.Add(3600)
 		_, _ = l.Dial(context.Background())
 		l.Reset()
 	}
