@@ -307,6 +307,9 @@ type Task struct {
 	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
 	// LaunchBranch is the branch the card's checkout was on when an agent launched it. Empty for any other card.
 	LaunchBranch string `json:"launch_branch,omitempty"`
+	// LaunchReplay is set on the card a launch answered from the key it was made under, and not stored: the answer is
+	// the card the first attempt filed, and no second session was started. See launchkey.go.
+	LaunchReplay bool `json:"launch_replay,omitempty"`
 	// ReportedAt is the last time this card said something to its launcher: a
 	// structured report, or a peer message to it. See
 	// docs/runtime/a2a-reliability-design.md.
@@ -598,6 +601,8 @@ type Store struct {
 	haltCause error
 	// closed is set by Close. See ErrClosed.
 	closed atomic.Bool
+	// inflight is the calls running an operation. Close waits for it to reach zero so no connection outlives it.
+	inflight atomic.Int64
 
 	// OnHalt is called once, from the goroutine that hit the failure. The
 	// daemon uses it to close the agent-facing listener and stop supervised
@@ -812,6 +817,7 @@ func raceLost(err error) bool {
 // buffered file sink writes what it is holding before the process exits.
 func (s *Store) Close() error {
 	s.closed.Store(true)
+	s.waitInflight()
 	for _, c := range s.cold {
 		if cl, ok := c.(io.Closer); ok {
 			if err := cl.Close(); err != nil {
@@ -876,12 +882,23 @@ func (s *Store) guard(op func() error) error {
 	if halted, cause := s.Halted(); halted {
 		return fmt.Errorf("%w: %v", ErrHalted, cause)
 	}
+	run := func() error {
+		s.inflight.Add(1)
+		defer s.inflight.Add(-1)
+		if s.closed.Load() {
+			return ErrClosed
+		}
+		return op()
+	}
 	delay := retryBase
 	var err error
 	for attempt := 0; attempt < retryAttempts; attempt++ {
-		err = op()
+		err = run()
 		if err == nil {
 			return nil
+		}
+		if errors.Is(err, ErrClosed) {
+			return err
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -998,4 +1015,19 @@ type LaunchCmd struct {
 	Exe     string   `json:"exe"`
 	Args    []string `json:"args"`
 	EnvKeys []string `json:"env_keys,omitempty"`
+}
+
+// closeWait bounds Close's wait for calls in flight. Each is bounded by busy_timeout, so this is never reached.
+const closeWait = 10 * time.Second
+
+// waitInflight lets the calls that were mid-operation when Close set the flag finish, so db.Close finds every
+// connection free and the file is released when Close returns.
+func (s *Store) waitInflight() {
+	deadline := time.Now().Add(closeWait)
+	for s.inflight.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if n := s.inflight.Load(); n != 0 {
+		log.Printf("store: close: %d call(s) still running after %v", n, closeWait)
+	}
 }

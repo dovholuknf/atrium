@@ -2423,7 +2423,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 		}
 	}()
 
-	go d.awaitExit(r)
+	d.goAwaitExit(r)
 
 	// The room announces the session starting, so the hub's audit log carries a
 	// line the hub could not derive on its own. Best effort and after the runner
@@ -2436,6 +2436,20 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
 
 	return r, nil
+}
+
+// goAwaitExit runs awaitExit and counts it in d.exits. A runner under a pty host is not counted: it is meant to
+// outlive this daemon, so its exit is not something the daemon's close can wait for.
+func (d *Daemon) goAwaitExit(r *runner) {
+	if hostOf(r) != nil {
+		go d.awaitExit(r)
+		return
+	}
+	d.exits.Add(1)
+	go func() {
+		defer d.exits.Done()
+		d.awaitExit(r)
+	}()
 }
 
 // awaitExit waits for the runner to end, does what only a live runner can, and

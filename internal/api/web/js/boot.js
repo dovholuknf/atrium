@@ -94,6 +94,7 @@ startRooms().then(() => {
 // it, so the question is settled first.
 async function bootBoard() {
   if (await guestKnown) { showGuestPage(); return; }
+  routeBoot();
   connect();
   // The runner list, read once now so the launch dialog opens with its options already in place. Not awaited: nothing
   // here needs it, and it is re-read in the background when opened.

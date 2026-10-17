@@ -235,7 +235,7 @@
          address, a save that failed, a card that just asked for something.
          The badge counts what has arrived since this was last opened. -->
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
-      aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span><span class="hmsg" hidden>&#9993;&#xFE0E;<span class="pb-n"></span></span></button>
+      aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span><span class="hmsg" hidden><svg viewBox="0 0 12 9" aria-hidden="true"><rect x=".65" y=".65" width="10.7" height="7.7" rx="1"/><path d="M1 1.4 6 5.4 11 1.4"/></svg><span class="pb-n"></span></span></button>
     <button id="quickpaste-open" class="icon" onclick="openQuickPaste()"
       aria-label="open a link: a pull request, issue, branch or ticket (ctrl-alt-r)" data-tip="open a link: a pull request, issue, branch or ticket (ctrl-alt-r)">&#128279;&#xFE0E;</button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
@@ -1338,7 +1338,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- u-026: phone only, and only while the header has no bell of its own (the full screen terminal). See js/phone-bell.js. -->
 <button type="button" id="phone-bell" onclick="openToastLog()" hidden aria-label="what the board has told you"
   data-tip="what the board has told you"><span class="pb-bell"><span class="glyph">&#128276;</span><span class="pb-n"></span></span><span
-  class="pb-mail" hidden>&#9993;&#xFE0E;<span class="pb-n"></span></span></button>
+  class="pb-mail" hidden><svg viewBox="0 0 12 9" aria-hidden="true"><rect x=".65" y=".65" width="10.7" height="7.7" rx="1"/><path d="M1 1.4 6 5.4 11 1.4"/></svg><span class="pb-n"></span></span></button>
 
 <button id="held" onclick="applyHeld()"
   data-tip="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
@@ -3849,6 +3849,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/topnav.js"></script>
 <script src="/js/usage-board.js"></script>
 <script src="/js/down.js"></script>
+<script src="/js/route.js"></script>
 <script src="/js/boot.js"></script>
 </body>
 </html>

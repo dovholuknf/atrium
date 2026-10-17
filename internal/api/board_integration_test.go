@@ -55,33 +55,34 @@ func TestBoardScriptParses(t *testing.T) {
 	}
 	files := scriptFiles(t)
 
-	// EACH FILE ON ITS OWN FIRST, so the failure names one of two dozen files
-	// rather than an offset into their concatenation.
+	// ONE NODE FOR ALL OF IT. Starting node costs more than parsing a file, and on a macOS runner two dozen
+	// starts ran the test past its time ceiling. vm.Script parses without running, as --check does.
+	//
+	// EACH FILE ON ITS OWN FIRST, so the failure names one of two dozen files rather than an offset into
+	// their concatenation.
+	//
+	// AND THE CONCATENATION, which is what the browser ends up with. These are classic scripts sharing one
+	// global scope, so a block left open at the end of one file is closed by the next and neither file is
+	// wrong on its own.
+	const parse = `
+const vm = require('vm'), fs = require('fs');
+let bad = 0, all = '';
+for (const f of process.argv.slice(1)) {
+  const src = fs.readFileSync(f, 'utf8');
+  all += src;
+  try { new vm.Script(src, { filename: f }); }
+  catch (e) { bad++; console.log('FILE ' + f + ' does not parse:\n' + e.stack.split('\n    at ')[0]); }
+}
+try { new vm.Script(all, { filename: 'board.js' }); }
+catch (e) { bad++; console.log('JOINED does not parse:\n' + e.stack.split('\n    at ')[0]); }
+process.exit(bad ? 1 : 0);`
+	args := []string{"-e", parse}
 	for _, f := range files {
-		out, err := exec.Command(node, "--check",
-			filepath.Join("web", "js", f.name)).CombinedOutput()
-		if err != nil {
-			t.Errorf("js/%s does not parse:\n%s", f.name, out)
-		}
+		args = append(args, filepath.Join("web", "js", f.name))
 	}
-
-	// AND THE CONCATENATION, which is what the browser ends up with. These are
-	// classic scripts sharing one global scope, so a block left open at the end
-	// of one file is closed by the next and neither file is wrong on its own.
-	var all strings.Builder
-	for _, f := range files {
-		all.WriteString(f.body)
-	}
-	js := filepath.Join(t.TempDir(), "board.js")
-	if err := os.WriteFile(js, []byte(all.String()), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// --check parses without running. This code expects a browser and would
-	// not survive being executed.
-	out, err := exec.Command(node, "--check", js).CombinedOutput()
-	if err != nil {
-		t.Fatalf("the board's script does not parse once the files are joined:\n%s\n"+
-			"line numbers are relative to the concatenation, in load order", out)
+	if out, err := exec.Command(node, args...).CombinedOutput(); err != nil {
+		t.Fatalf("the board's script does not parse:\n%s\n"+
+			"a JOINED line number is relative to the concatenation, in load order", out)
 	}
 }
 

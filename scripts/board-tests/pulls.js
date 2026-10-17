@@ -736,8 +736,9 @@ async function pullsAbsentSection(browser, base) {
     p.on("request", r => { if (new URL(r.url()).pathname === "/v1/prs") asked++; });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof pullsPaint === "function", null, { timeout: slow(15000) });
-    await p.waitForFunction(() => !pulls.loading, null, { timeout: slow(10000) });
-    await p.waitForTimeout(500);
+    // The first read starts when the event stream opens, so "not loading" is also true before it has begun.
+    await p.waitForFunction(() => pulls.loaded || pulls.loadFailed, null, { timeout: slow(10000) })
+      .catch(() => fail("pullsAbsent: the first read of /v1/prs never ended"));
     if (!asked) fail("pullsAbsent: the board never asked for /v1/prs");
     if (await p.evaluate(() => !document.querySelector('.tab[data-view="pulls"]').hidden)) fail("pullsAbsent: the pulls tab shows with no /v1/prs");
     if (errors.length) fail("pullsAbsent: page errors: " + errors.join(" | "));

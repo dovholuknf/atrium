@@ -313,6 +313,9 @@ type Daemon struct {
 	// closeOnce guards releasing the store, so the shutdown path and a caller's
 	// deferred Close cannot both close the database. See closeDB.
 	closeOnce sync.Once
+	// exits counts the awaitExit goroutines still running. A runner leaves the supervisor BEFORE its exit is filed,
+	// so "no runner left" does not mean "nothing is writing"; a test waits on this before it closes the store.
+	exits sync.WaitGroup
 	// clearOnce guards removing the address file, which the shutdown path does
 	// before it closes the store and Run's deferred call would do again after.
 	// See clearLocation.

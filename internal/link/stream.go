@@ -463,6 +463,8 @@ func (r *Room) linkHandler() http.Handler {
 		switch {
 		case req.URL.Path == "/_link/ssh":
 			r.serveSSH(w, req)
+		case req.URL.Path == "/v1/link/transports":
+			r.transportsHandler(w, req)
 		case req.URL.Path == "/_link" || strings.HasPrefix(req.URL.Path, "/_link/"):
 			http.NotFound(w, req)
 		default:

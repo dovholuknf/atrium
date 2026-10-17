@@ -254,17 +254,6 @@ function stackSummary(show, n) {
   return [what + (stackSubsOn() ? " + subagents" : ""), s.label + (stackDesc ? " \u2193" : " \u2191"), groupWords(g)].join(" \u00b7 ");
 }
 
-// How many settings in the drawer differ from the stack's defaults: ready alone, last active, by project, subagents
-// off. Each chip that is not as it comes counts, and so does the sort and the group.
-function stackChanged(show) {
-  const dflt = new Set(["needs-input"]);
-  let n = 0;
-  new Set([...show, ...dflt]).forEach(id => { if (show.has(id) !== dflt.has(id)) n++; });
-  if (stackSubsOn()) n++;
-  if (stackSort !== "activity" || stackDesc) n++;
-  return n + groupChanged("stack");
-}
-
 function paintStack() {
   const q = fdSearchText("stack");
   const show = stackShow();
@@ -308,7 +297,6 @@ function paintStack() {
   const visible = pool.length - roll.rolled.size;
   fdStatus("stack", {
     summary: stackSummary(show, list.length),
-    changed: stackChanged(show),
     match: list.length === visible ? "" : `${list.length} of ${visible}`
   });
 

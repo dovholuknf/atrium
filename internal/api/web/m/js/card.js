@@ -282,6 +282,7 @@
 
   // What was typed into the session, from the replies endpoint. The operator's own are "you", a peer's are quieter and
   // carry the sender's name, a command is one small line. Absent `prompts` leaves the thread as it was.
+  const PEER_TO_YOU = "→ you";
   function promptHTML(p) {
     const cut = p.truncated ? '<p class="cut">cut</p>' : "";
     const text = String(p.text || "");
@@ -290,7 +291,9 @@
     if (p.kind === "command") return '<article class="reply prompt command"' + dk + '>' + headerHTML("command", p.at, "", "", text, k) + body(text);
     if (p.kind === "peer") {
       const m = /^\[atrium\] (.+?) says:\s*/.exec(text);
-      return '<article class="reply prompt peer"' + dk + '>' + headerHTML(m ? m[1] : "a peer", p.at, "", "", m ? text.slice(m[0].length) : text, k) + body(m ? text.slice(m[0].length) : text);
+      // "-> you": this card is the one spoken to. A bubble headed by another name alone reads as that card's own output,
+      // which is how a say to this card was taken for one meant for another.
+      return '<article class="reply prompt peer"' + dk + '>' + headerHTML(m ? m[1] : "a peer", p.at, "", PEER_TO_YOU, m ? text.slice(m[0].length) : text, k) + body(m ? text.slice(m[0].length) : text);
     }
     return '<article class="reply mine prompt"' + dk + '>' + headerHTML("you", p.at, "", "", text, k) + body(text);
   }
