@@ -135,6 +135,10 @@ func roomLockCmd(prefix string) *cobra.Command {
 
 // roomLinkFor is the room's name and a dialer to the hub it joined, from the keys in dir.
 func roomLinkFor(dir string) (string, link.Dialer, error) {
+	return rungBuilder{}.linkFor(dir)
+}
+
+func (b rungBuilder) linkFor(dir string) (string, link.Dialer, error) {
 	keys := link.Keys{Dir: orDefault(dir, roomDir())}
 	saved, err := keys.Joined()
 	if err != nil {
@@ -142,7 +146,7 @@ func roomLinkFor(dir string) (string, link.Dialer, error) {
 	}
 	// THE SAME LADDER THE ROOM CLIMBS, so a room on its fallback can still be set up.
 	tr, _ := keys.Transports()
-	l, _, err := roomLadder(keys, saved, tr)
+	l, _, err := b.ladder(keys, saved, tr)
 	if err != nil {
 		return "", nil, err
 	}
