@@ -1,6 +1,7 @@
 # Telling the hub, the room and the pty host apart in Task Manager, ps and Activity Monitor
 
-Status: design, 2026-10-14. Nothing here is built. Written by @rnd for backlog `r-ptyhost-in-arch-and-process-names`,
+Status: superseded 2026-10-17 by `docs/runtime/process-names-design.md`, which uses copies instead of hard links and
+dash names. The findings below still stand. Original status: design, 2026-10-14. Nothing here is built. Written by @rnd for backlog `r-ptyhost-in-arch-and-process-names`,
 part B only. Part A (the docs that never mention the pty host) is another worker's and is not touched here. For
 clint's review before anything is built.
 

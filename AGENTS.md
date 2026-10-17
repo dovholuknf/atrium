@@ -33,7 +33,7 @@ defaults are in `internal/cli/atrium_defaults.go`. `atrium daemon` still runs th
 agents :7777, no hub). `docs/fabric/hub-and-rooms.md` has the details.
 
 The pty host is the same binary again, `atrium ptyhost`, hidden from `--help`. With the `pty_host` setting on, the room
-starts it detached (from a copy, `atrium.ptyhost`, beside the binary) and asks it for every terminal, so a runner lives
+starts it detached (from a copy, `atrium-pty`, beside the binary) and asks it for every terminal, so a runner lives
 in the host and not in the room. It listens on no port. `docs/terminal/ptyhost-protocol.md` has the channel, the
 frames and the lifetime.
 
