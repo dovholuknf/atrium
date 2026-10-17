@@ -2,6 +2,10 @@
 
 P = passed, F = failed, F* = failed then passed on retry. A test absent from a run passed.
 
+The area is the step, not the job. From the split of the CI matrix (ci-split) the `board` area runs as the `board-1`
+and `board-2` jobs and `go` as `go-test-1` and `go-test-2`, so a test's job is in the run's artifact name
+(`ci-<os>-<group>-attempt-N`) and the area column stays comparable across the runs before and after.
+
 R1=https://github.com/dovholuknf/atrium/actions/runs/38992005406, R2=https://github.com/dovholuknf/atrium/actions/runs/38996454669, R3=https://github.com/dovholuknf/atrium/actions/runs/38996589488, R4=https://github.com/dovholuknf/atrium/actions/runs/38998557699, R5=https://github.com/dovholuknf/atrium/actions/runs/39000519389, R6=https://github.com/dovholuknf/atrium/actions/runs/39000703278, R7=https://github.com/dovholuknf/atrium/actions/runs/39003297482, R8=https://github.com/dovholuknf/atrium/actions/runs/39032382613 (8c58ebd5), R9=https://github.com/dovholuknf/atrium/actions/runs/39034662485 (b7f498eb)
 
 ```

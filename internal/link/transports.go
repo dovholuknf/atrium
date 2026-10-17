@@ -108,6 +108,8 @@ type RoomTransports struct {
 	Paths []Path `json:"paths,omitempty"`
 	// Hub is the hub's list as last heard, in the hub's order.
 	Hub []Path `json:"hub,omitempty"`
+	// Off is the kinds turned off from the hub or the board, ziti or zrok. Kept across a restart.
+	Off []string `json:"off,omitempty"`
 }
 
 // Local returns the room-local path for a kind, or a fresh one.

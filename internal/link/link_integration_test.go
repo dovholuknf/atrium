@@ -56,6 +56,8 @@ func pairWith(t *testing.T, handler http.Handler, tune func(*Proxy)) (*httptest.
 	}
 	front := httptest.NewServer(px)
 	return front, hub, func() {
+		// A stream a failed test left open would hold Close for the rest of the run.
+		front.CloseClientConnections()
 		front.Close()
 		stop()
 		ln.Close()
