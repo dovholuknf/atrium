@@ -157,7 +157,8 @@ a backlog of reds.
 
 **The operator is told of every post** (`f-ci-hook-notify-operator`). Each post raises one growler on the board, the
 channel a new push device and a change request already use (`Proxy.ciNotify`, `CIHook.Tell`), so the toast and the
-desktop notification come with it. The title is what came in, from the parsed fields only: `CI <conclusion>: <repo>
+desktop notification come with it. The growler's reason is `ci`: the board draws a plain notice with the whole body,
+the run link clickable, and dismiss only (no reply, compose, open or snooze). The title is what came in, from the parsed fields only: `CI <conclusion>: <repo>
 <workflow> on <branch> at <sha7>, attempt <n>`. The body is what the hub did, then the run link:
 
 | Outcome | Body |

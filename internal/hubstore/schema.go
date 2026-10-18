@@ -948,6 +948,40 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS ci_delivery_run ON ci_delivery (run_ref)`,
 		},
 	},
+	{
+		// A GROWLER MAY BE ABOUT A CI POST. The reason CHECK gains 'ci', and SQLite cannot change one in place, so growl is
+		// rebuilt as 0014 did backlog_item. Nothing references growl.
+		name: "0031_growl_ci",
+		stmts: []string{
+			`DROP TABLE IF EXISTS growl_rebuilt`,
+			`CREATE TABLE growl_rebuilt (
+				id          TEXT PRIMARY KEY,
+				room_id     TEXT NOT NULL,
+				card_id     TEXT NOT NULL DEFAULT '',
+				reason      TEXT NOT NULL CHECK (reason IN ('permission','halt','blocked','question','deploy-hold','ci')),
+				title       TEXT NOT NULL,
+				body        TEXT NOT NULL DEFAULT '',
+				subject     TEXT NOT NULL DEFAULT '',
+				raised_at   TEXT NOT NULL,
+				state       TEXT NOT NULL CHECK (state IN ('open','snoozed','dismissed','acted','resolved')),
+				until       TEXT NOT NULL DEFAULT '',
+				reminders   INTEGER NOT NULL DEFAULT 0,
+				changed_at  TEXT NOT NULL,
+				changed_via TEXT NOT NULL DEFAULT '',
+				changed_tab TEXT NOT NULL DEFAULT '',
+				ended_at    TEXT NOT NULL DEFAULT ''
+			)`,
+			`INSERT INTO growl_rebuilt (id, room_id, card_id, reason, title, body, subject, raised_at, state, until, reminders,
+					changed_at, changed_via, changed_tab, ended_at)
+				SELECT id, room_id, card_id, reason, title, body, subject, raised_at, state, until, reminders,
+					changed_at, changed_via, changed_tab, ended_at
+				FROM growl`,
+			`DROP TABLE growl`,
+			`ALTER TABLE growl_rebuilt RENAME TO growl`,
+			`CREATE INDEX IF NOT EXISTS growl_room ON growl (room_id, reason, ended_at)`,
+			`CREATE INDEX IF NOT EXISTS growl_state ON growl (state)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

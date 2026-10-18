@@ -41,6 +41,8 @@
   }
   /* The card shrinks the body, not the buttons, when the window is short. */
   :is(#growl, #growl-phone) .gr-full { flex: 0 1 auto; min-height: 0; }
+  :is(#growl, #growl-phone) .gr-ci { min-height: 0; }
+  :is(#growl, #growl-phone) .gr-ci a { color: var(--blue, #7C9CFF); }
   :is(#growl, #growl-phone) .gr-body p { margin: 0 0 .6em; }
   :is(#growl, #growl-phone) .gr-body ol, :is(#growl, #growl-phone) .gr-body ul { margin: 0 0 .6em; padding-left: 1.5em; }
   :is(#growl, #growl-phone) .gr-body li { margin: 0 0 .2em; }

@@ -77,6 +77,8 @@ const (
 	ReasonFinished   = "finished"
 	// ReasonLogin is a room's claude login being revoked. Said once per spell by the hub, about a room and no card.
 	ReasonLogin = "login"
+	// ReasonCI is the CI hook telling the operator what a post came to. A growler reason, a plain notice with no card.
+	ReasonCI = "ci"
 )
 
 const (

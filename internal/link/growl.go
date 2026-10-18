@@ -104,7 +104,7 @@ var growlBackoff = []time.Duration{
 
 // growlUrgency orders the stack, most urgent first.
 var growlUrgency = map[string]int{
-	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5,
+	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5, ReasonCI: 6,
 }
 
 // The card reasons R1 derives. Passed to the store, which touches no other

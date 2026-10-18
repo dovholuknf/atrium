@@ -174,7 +174,7 @@ func (p *Proxy) ciNotify(title, body string) {
 	}
 	sort.Strings(names)
 	id := fmt.Sprintf("ci|%d|%d", time.Now().UnixNano(), ciNoticeSeq.Add(1))
-	raised, err := rs.Raise(names[0], GrowlRow{ID: id, Reason: ReasonQuestion, Subject: id, Title: title, Body: body})
+	raised, err := rs.Raise(names[0], GrowlRow{ID: id, Reason: ReasonCI, Title: title, Body: body})
 	if err != nil {
 		log.Printf("[hub] growlers could not raise a ci hook notice: %v", err)
 		return
