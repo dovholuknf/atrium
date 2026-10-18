@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { slow, fakeWait } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { countRequests, landContext, topCounts } = require("../lib/helpers.js");
@@ -240,14 +240,15 @@ async function restartStaysSection(browser, base) {
   mock.gatePaused = false;
   mock.gateBoot = "boot-a";
   mock.healthBuild = "test";
+  mock.sseRetry = 200;
   const say = state => {
     const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
   };
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const coverUp = () => gp.evaluate(() => document.getElementById("hubrestart").open);
-  const live = () => gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
-    null, { timeout: slow(15000) });
+  const live = () => fakeWait(gp, () => document.getElementById("conn").classList.contains("live"), null, 15000, 0);
+  const wait = (fn, ms) => fakeWait(gp, fn, null, ms);
   // What is on screen each frame, as runs: `t` a gate toast, `c` the cover, `-`
   // neither. A `-` anywhere but at the very end is a gap.
   const watch = () => gp.evaluate(() => {
@@ -268,20 +269,22 @@ async function restartStaysSection(browser, base) {
   const seen = () => gp.evaluate(() => window.__seen);
   const gaps = async () => ((await seen()).replace(/-$/, "").match(/-/g) || []).length;
   try {
+    await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
-    await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await gp.waitForTimeout(500);
+    await wait(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), 15000);
+    await gp.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(gp, 500);
 
     // Countdown to cover, with no frame between them.
     say({ state: "countdown", seconds: 1 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await wait(() => !!document.querySelector(".toast.hubgate"), 5000)
       .catch(() => fail("a countdown drew no toast."));
     await watch();
-    await gp.waitForTimeout(1500);
+    await fakeTick(gp, 1500);
     if (!(await gp.$(".toast.hubgate"))) fail("the countdown toast went at 0 before the hub said restarting.");
     say({ state: "restarting" });
-    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+    await wait(() => document.getElementById("hubrestart").open, 5000)
       .catch(() => fail("restarting drew no cover."));
     if (await gaps()) fail("between the countdown and the cover a frame showed neither: " + (await seen()));
 
@@ -295,22 +298,22 @@ async function restartStaysSection(browser, base) {
       await closeOpenDialogs();
       document.getElementById("hubrestart").close();
     });
-    await gp.waitForTimeout(1500);
+    await fakeTick(gp, 1500);
     if (!(await coverUp())) fail("the cover came down on a view switch, a terminals redraw or a dialog close.");
 
     // The old hub goes. The cover holds while nothing answers.
     mock.hubAway = true;
     drop();
-    await gp.waitForTimeout(2500);
+    await fakeTick(gp, 2500);
     if (!(await coverUp())) fail("the cover came down while the hub was away.");
 
     // The new hub answers on the same build: the cover clears, and not before.
     mock.gateBoot = "boot-b";
     mock.hubAway = false;
     await live().catch(() => fail("the stream did not come back from the new hub."));
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(10000) })
+    await wait(() => !document.getElementById("hubrestart").open, 10000)
       .catch(() => fail("the cover did not clear once the new hub answered."));
-    await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: slow(5000) })
+    await wait(() => window.__seen.endsWith("c-"), 5000)
       .catch(() => {});
     if ((await seen()) !== "tc-") fail("from the countdown to the new hub the screen went " + (await seen()) +
       ", not countdown, cover, clear.");
@@ -320,42 +323,44 @@ async function restartStaysSection(browser, base) {
     // reloads. The cover is up when the reloaded page first paints and comes
     // down once that page has the new hub.
     say({ state: "countdown", seconds: 1 });
-    await gp.waitForTimeout(1300);
+    await fakeTick(gp, 1300);
     say({ state: "restarting" });
-    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+    await wait(() => document.getElementById("hubrestart").open, 5000)
       .catch(() => fail("the second restarting drew no cover."));
     mock.hubAway = true;
     drop();
-    await gp.waitForTimeout(1500);
-    const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(20000) });
+    await fakeTick(gp, 1500);
+    let reloaded = false;
+    gp.once("domcontentloaded", () => { reloaded = true; });
     mock.gateBoot = "boot-c";
     mock.healthBuild = "test2";
     mock.hubAway = false;
-    let sawCoverWithReload = false;
-    await reloaded.then(async () => {
-      sawCoverWithReload = await gp.evaluate(() => document.getElementById("hubrestart").open);
-    }).catch(() => fail("a new build after the restart did not reload the board."));
+    for (const end = Date.now() + slow(20000); !reloaded;) {
+      if (Date.now() > end) fail("a new build after the restart did not reload the board.");
+      await fakeTick(gp, 250).catch(() => {});
+    }
+    const sawCoverWithReload = await gp.evaluate(() => document.getElementById("hubrestart").open);
     if (!sawCoverWithReload) fail("the board reloaded onto the new build with the cover down.");
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+    await wait(() => !document.getElementById("hubrestart").open, 15000)
       .catch(() => fail("the cover did not clear after the reload settled."));
 
     // A window that missed `restarting` (its stream was reconnecting when the
     // hub said it) keeps the countdown at 0 while the hub is away, and the
     // cover takes over from it when a different hub answers.
     await live().catch(() => fail("the reloaded board never went live."));
-    await gp.waitForTimeout(500);
+    await fakeTick(gp, 500);
     say({ state: "countdown", seconds: 1 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await wait(() => !!document.querySelector(".toast.hubgate"), 5000)
       .catch(() => fail("the reloaded board drew no countdown."));
     await watch();
-    await gp.waitForTimeout(1300);
+    await fakeTick(gp, 1300);
     mock.hubAway = true;
     drop();
-    await gp.waitForTimeout(2500);
+    await fakeTick(gp, 2500);
     if (!(await gp.$(".toast.hubgate"))) fail("a countdown that ran out went while the hub was away.");
     mock.gateBoot = "boot-d";
     mock.hubAway = false;
-    await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: slow(15000) })
+    await wait(() => window.__seen.endsWith("c-"), 15000)
       .catch(() => {});
     if ((await seen()) !== "tc-") fail("over a missed restarting the screen went " + (await seen()) +
       ", not countdown, cover, clear.");
@@ -365,6 +370,7 @@ async function restartStaysSection(browser, base) {
     mock.hubAway = false;
     mock.gateBoot = "boot-a";
     mock.healthBuild = "test";
+    mock.sseRetry = 0;
     await ctx.close();
   }
 }
