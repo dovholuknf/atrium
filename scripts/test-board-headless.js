@@ -34,7 +34,7 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
 
 // The browser and the mocked daemon live in lib/. Loading lib/browser.js installs the shifted clock and finds Chromium,
 // so it goes first: the fixtures in lib/mock.js are built from Date.now().
-const { slow, fakeWait, fakeTick, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
 const { landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
@@ -3077,7 +3077,7 @@ async function pasteSpinnerSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
     await p.evaluate(() => {
       const real = pasteShow;
       pasteShow = f => { window.__shown++; real(f); };
@@ -4493,7 +4493,7 @@ async function pasteLandsSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
     for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
       await p.evaluate(([link, n]) => {
         window.__got = null;
@@ -7499,7 +7499,7 @@ async function phoneKeysOpen(browser, base, fakeClock) {
   const cdp = await ctx.newCDPSession(p);
   if (fakeClock) {
     await p.clock.install();
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
   }
   const wait = (ms) => fakeClock ? p.clock.runFor(ms) : p.waitForTimeout(ms);
   const centre = (sel) => p.evaluate((s) => {
@@ -22169,7 +22169,7 @@ async function switchPrewarmSection(browser, base) {
     await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
     const row = id => wp.locator('#term-list .card.tab[data-id="' + id + '"]');
     await row("sp-a").waitFor({ timeout: slow(10000) });
-    await wp.clock.pauseAt(Date.now() + 60000);
+    await fakePause(wp);
     let flushSeq = 0;
     const flush = async () => {
       const n = ++flushSeq;
