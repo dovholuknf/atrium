@@ -2007,6 +2007,10 @@ async function usagePolishSection(browser, base) {
   const ka = { rows: 3, replies: 3, input: 100, output: 200, cache_write_5m: 0, cache_write_1h: 0, cache_read: 5000, cost: 0 };
   const bf = { rows: 4, replies: 4, input: 10, output: 20, cache_write_5m: 0, cache_write_1h: 0, cache_read: 50, cost: 0 };
   const total = { rows: 9, replies: 16, input: 1110, output: 2220, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 95050, cost: 0 };
+  const reloaded = async sp => {
+    await sp.evaluate(() => { window.__items0 = UC.items; window.__turns0 = UC.turns; loadUsageTab(); });
+    await sp.waitForFunction(() => !UC.inflight && UC.items !== window.__items0 && UC.turns !== window.__turns0, null, { timeout: slow(10000), polling: 10 });
+  };
   const run = async (reduced, fn) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: reduced ? "reduce" : "no-preference" });
     const sp = await ctx.newPage();
@@ -2050,8 +2054,7 @@ async function usagePolishSection(browser, base) {
     if (!old.includes("sg4 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
       fail("usagePolish: the too-old line without a build reads " + JSON.stringify(old));
     // A live row fades the number that changed and grows a new bar.
-    await sp.evaluate(() => loadUsageTab());
-    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await reloaded(sp);
     await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
     await sp.evaluate(() => {
       ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
@@ -2065,8 +2068,7 @@ async function usagePolishSection(browser, base) {
     if (anim.grow !== "ucgrow") fail("usagePolish: a new bar does not grow: " + anim.grow);
   });
   await run(true, async sp => {
-    await sp.evaluate(() => loadUsageTab());
-    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await reloaded(sp);
     await sp.evaluate(() => {
       ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
       ucSchedulePaint();
