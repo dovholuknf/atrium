@@ -28,6 +28,7 @@ async function readyOnceSection(browser, base) {
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await fakeWait(page, () => typeof alerting !== "undefined", null, 15000);
     await fakeTick(page, 1500);
+    await page.clock.pauseAt(Date.now() + 60000);
     await page.evaluate(() => {
       localStorage.removeItem("atrium.toastlog");
       alerting.set({ debounce: 0, muted: true });

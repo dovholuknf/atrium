@@ -3077,6 +3077,7 @@ async function pasteSpinnerSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
+    await p.clock.pauseAt(Date.now() + 60000);
     await p.evaluate(() => {
       const real = pasteShow;
       pasteShow = f => { window.__shown++; real(f); };
@@ -4492,6 +4493,7 @@ async function pasteLandsSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
+    await p.clock.pauseAt(Date.now() + 60000);
     for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
       await p.evaluate(([link, n]) => {
         window.__got = null;
