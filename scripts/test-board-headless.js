@@ -10077,11 +10077,13 @@ async function autoPermSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof alerting !== "undefined" && typeof permsToAnnounce === "function", null,
       { timeout: slow(15000) });
     await p.evaluate(() => { window.__atriumAutoGraceMs = 1500; globalAuto = true; });
-    await p.waitForTimeout(1500);
+    await p.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(p, 1500);
     const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
       [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
     const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
@@ -10093,15 +10095,15 @@ async function autoPermSection(browser, base) {
     };
     mock.landList = [landCard("ap-card", { supervised: false })];
     poke();
-    await p.waitForTimeout(800);
+    await p.evaluate(() => runRefresh());
 
     // Approved inside the grace: the hub answered, so the request is gone before anything rang.
     await ask("ap-a", "ap one");
-    await p.waitForTimeout(500);
+    await fakeTick(p, 500);
     mock.landPerms = [];
     poke();
     await p.evaluate(() => runRefresh());
-    await p.waitForTimeout(2200);
+    await fakeTick(p, 2200);
     // AUTOPERM_SHOT=<file.png> writes a picture of the board and its toast log after the approved request.
     if (process.env.AUTOPERM_SHOT) {
       await p.evaluate(() => openToastLog());
@@ -10115,10 +10117,9 @@ async function autoPermSection(browser, base) {
 
     // Not approved: it is still here when the grace ends, so it rings, and promptly.
     await ask("ap-b", "ap two", '{"message":"{\\"verdict\\":\\"approve\\",\\"why\\":\\"fine\\"}"}');
-    await p.waitForTimeout(400);
+    await fakeTick(p, 400);
     if (await logged("ap two needs permission")) fail("auto on: a request rang before the grace was up.");
-    await p.waitForFunction(() => toastLog().some(e => e.title === "ap two needs permission"), null,
-      { timeout: slow(6000) }).catch(() => fail("auto on: a request nothing approved never rang."));
+    await fakeWait(p, () => toastLog().some(e => e.title === "ap two needs permission"), null, 6000).catch(() => fail("auto on: a request nothing approved never rang."));
     const row = await p.evaluate(() => toastLog().find(e => e.title === "ap two needs permission"));
     if (row.body !== "Bash: verdict: approve") fail("a JSON body did not read as a sentence: " + JSON.stringify(row.body));
     mock.landPerms = [];
@@ -10127,8 +10128,7 @@ async function autoPermSection(browser, base) {
     mock.gautoOn = false;
     await p.evaluate(() => { globalAuto = false; });
     await ask("ap-c", "ap three");
-    await p.waitForFunction(() => toastLog().some(e => e.title === "ap three needs permission"), null,
-      { timeout: slow(1200) }).catch(() => fail("auto off: a request was held back."));
+    await fakeWait(p, () => toastLog().some(e => e.title === "ap three needs permission"), null, 1200).catch(() => fail("auto off: a request was held back."));
     mock.landPerms = [];
   } finally {
     await ctx.close();
@@ -10157,18 +10157,20 @@ async function notifyOffSection(browser, base) {
     try {
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
+      await p.clock.install();
       await p.goto(base, { waitUntil: "domcontentloaded" });
-      await p.waitForFunction(() => typeof alerting !== "undefined" && typeof notifyIsOff === "function", null,
-        { timeout: slow(15000) });
-      await p.waitForTimeout(1500);
+      await fakeWait(p, () => typeof alerting !== "undefined" && typeof notifyIsOff === "function", null, 15000);
+      await p.clock.pauseAt(Date.now() + 60000);
+      await fakeTick(p, 1500);
       const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
         [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
       const count = title => p.evaluate(t => toastLog().filter(e => e.title === t).reduce((a, e) => a + (e.n || 1), 0), title);
       const arrive = async (c, title) => {
         await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+        c.created_at = new Date(await p.evaluate(() => Date.now())).toISOString();
         mock.landList = mock.landList.concat(c);
         poke();
-        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: slow(10000) })
+        await fakeWait(p, t => toastLog().some(e => e.title === t), title, 10000)
           .catch(() => fail(where + ": " + title + " never reached the drawer log."));
       };
 
@@ -10208,8 +10210,7 @@ async function notifyOffSection(browser, base) {
         requested_at: new Date().toISOString().replace("Z", "") }];
       poke();
       await p.evaluate(() => runRefresh());
-      await p.waitForFunction(() => toastLog().some(e => e.title === "no a needs permission"), null,
-        { timeout: slow(10000) }).catch(() => fail(where + ": a permission request left no trace while off."));
+      await fakeWait(p, () => toastLog().some(e => e.title === "no a needs permission"), null, 10000).catch(() => fail(where + ": a permission request left no trace while off."));
       if (await said("no a needs permission")) fail(where + ": off still said a permission request.");
       mock.landPerms = [];
 
@@ -10217,16 +10218,14 @@ async function notifyOffSection(browser, base) {
       await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
       openStreams.forEach(r => { try { r.write("event: fixtures-started\ndata: " +
         JSON.stringify({ started: 0, failed: [{ label: "no-fx" }] }) + "\n\n"); } catch (e) {} });
-      await p.waitForFunction(() => toastLog().some(e => e.title === "1 fixture did not start"), null,
-        { timeout: slow(10000) }).catch(() => fail(where + ": a failed fixture left no drawer entry while off."));
+      await fakeWait(p, () => toastLog().some(e => e.title === "1 fixture did not start"), null, 10000).catch(() => fail(where + ": a failed fixture left no drawer entry while off."));
       if (await said("1 fixture did not start")) fail(where + ": off still said a failed fixture.");
       if (await count("1 fixture did not start") !== 1) fail(where + ": the failed fixture was not recorded exactly once.");
 
       // It survives a reload, and the bell is drawn struck at once.
       await p.reload({ waitUntil: "domcontentloaded" });
-      await p.waitForFunction(() => typeof notifyIsOff === "function", null, { timeout: slow(15000) });
-      await p.waitForFunction(() => document.querySelector("#toastlog-open .glyph").textContent === "\u{1F515}", null,
-        { timeout: slow(5000) }).catch(() => fail(where + ": the struck bell did not survive a reload."));
+      await fakeWait(p, () => typeof notifyIsOff === "function", null, 15000);
+      await fakeWait(p, () => document.querySelector("#toastlog-open .glyph").textContent === "\u{1F515}", null, 5000).catch(() => fail(where + ": the struck bell did not survive a reload."));
       if (!await p.evaluate(() => notifyIsOff())) fail(where + ": the choice did not survive a reload.");
       // The gear shows the same switch.
       if (!await p.evaluate(() => { paintSettings(); return document.getElementById("s-notifyoff").checked; })) {
@@ -10242,7 +10241,9 @@ async function notifyOffSection(browser, base) {
       if (/permission requests still come through/.test(l.toggleTip)) {
         fail(where + ": the toggle's tip still promises permission requests come through.");
       }
-      await p.waitForTimeout(1500);
+      await fakeWait(p, () => document.getElementById("conn").classList.contains("live"), null, 15000);
+      await p.evaluate(() => runRefresh());
+      await fakeTick(p, 1500);
       await arrive(landCard("no-b", { supervised: false }), "no b is on the board");
       if (!await said("no b is on the board")) fail(where + ": turning back on did not restore the alert.");
       mock.landList = [];
