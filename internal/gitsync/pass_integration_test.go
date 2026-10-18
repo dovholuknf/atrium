@@ -3,13 +3,11 @@
 package gitsync
 
 import (
-	"bufio"
 	"context"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -410,31 +408,6 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 	if time.Since(start) < 2*p.BodyIdle {
 		t.Fatalf("it was not slower than the deadlines (%v), so it proved nothing", time.Since(start))
 	}
-
-	// The same for a want list that arrives a few bytes at a time.
-	body := string(pktLine("want "+strings.Repeat("a", 40)+"\n")) + "0000" + string(pktLine("done\n"))
-	c := rawConn(t, srv)
-	head := "POST /git/room/sg3/github/o/r.git/git-upload-pack HTTP/1.1\r\nHost: x\r\n" +
-		"Content-Type: application/x-git-upload-pack-request\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
-	if _, err := c.Write([]byte(head)); err != nil {
-		t.Fatal(err)
-	}
-	var sent time.Duration
-	for i := 0; i < len(body); i++ {
-		end := i + 1
-		if _, err := c.Write([]byte(body[i:end])); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(10 * time.Millisecond)
-		sent += 10 * time.Millisecond
-	}
-	if sent < p.BodyIdle {
-		t.Fatalf("the body was not slower than the deadline (%v)", sent)
-	}
-	line, err := bufio.NewReader(c).ReadString('\n')
-	if err != nil || !strings.Contains(line, "200") {
-		t.Fatalf("a slow but moving body was cut: %q %v", line, err)
-	}
 }
 
 // The connection may carry the reader's next request, so a deadline that passed must not be left on it.
@@ -461,5 +434,37 @@ func TestTheDeadlinesAreClearedWhenTheRequestEnds(t *testing.T) {
 			t.Fatalf("request %d = %d", i, resp.StatusCode)
 		}
 		time.Sleep(450 * time.Millisecond) // longer than every deadline, so a stale one would have passed
+	}
+}
+
+type deadlineWriter struct {
+	http.ResponseWriter
+	set []time.Time
+}
+
+func (d *deadlineWriter) SetReadDeadline(t time.Time) error {
+	d.set = append(d.set, t)
+	return nil
+}
+
+// A body that arrives a few bytes at a time is never cut: every read moves the deadline a whole idle window ahead.
+func TestEveryReadOfARequestBodyMovesItsIdleDeadline(t *testing.T) {
+	const idle = 300 * time.Millisecond
+	w := &deadlineWriter{ResponseWriter: httptest.NewRecorder()}
+	r := &idleReader{rc: http.NewResponseController(w), body: io.NopCloser(strings.NewReader("0123456789")), idle: idle}
+	buf := make([]byte, 1)
+	for i := 0; i < 10; i++ {
+		before := time.Now()
+		if _, err := r.Read(buf); err != nil {
+			t.Fatal(err)
+		}
+		after := time.Now()
+		got := w.set[len(w.set)-1]
+		if got.Before(before.Add(idle)) || got.After(after.Add(idle)) {
+			t.Fatalf("read %d set %v, want within [%v, %v]", i, got, before.Add(idle), after.Add(idle))
+		}
+	}
+	if len(w.set) != 10 {
+		t.Fatalf("%d deadlines for 10 reads", len(w.set))
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/testwait"
 )
 
 // bsFix is a work tree with a claude/main whose history was REWRITTEN after the branches were cut (so no branch is an
@@ -205,10 +207,10 @@ func TestBranchesSnapshotRunsNoGitOnARequest(t *testing.T) {
 	if err != nil || !v.Building || v.Computed != "" || len(v.Branches) != 0 {
 		t.Fatalf("first ask: %+v %v", v, err)
 	}
-	for i := 0; i < 200 && v.Computed == ""; i++ {
-		time.Sleep(50 * time.Millisecond)
+	testwait.Eventually(t, branchPassBound, "the first pass to finish", func() bool {
 		v, _ = x.st.BranchesSnapshot("github/o/r", BranchFilter{})
-	}
+		return v.Computed != ""
+	})
 	if v.Computed == "" || v.Main == nil || v.Counts[BranchLanded] != 1 || len(v.Branches) != 1 {
 		t.Fatalf("built: %+v", v)
 	}
