@@ -1,0 +1,1 @@
+`.github/workflows/ci-notify.yml` runs when the `ci`, `docs` or `release` workflow completes. It calls `scripts/ci-notify.sh` to validate the event and write the body, then the ziti-hook action posts that body to the hub over ziti with the `ATRIUM_CI_HOOK_SECRET` secret. Phase 2 of f-hub-ci-hook.
