@@ -805,7 +805,9 @@ async function skinScopeSection(browser, base) {
   };
   // scopeTo reloads the board into a scope (null for ALL) and waits for the
   // skin that scope wears to land and the reads behind it to finish.
+  const picker = () => skin.waitForFunction(() => typeof pickRoom === "function", null, { timeout: slow(15000) });
   const scopeTo = async (room, want) => {
+    await picker();
     await Promise.all([
       skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
       skin.evaluate(r => pickRoom(r), room)
@@ -880,6 +882,7 @@ async function skinScopeSection(browser, base) {
     // attribute), and each is read fresh on its own reload.
     await scopeTo(null, "vapor");
     await scopeTo("alpha", "sandstone");
+    await picker();
     await Promise.all([
       skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
       skin.evaluate(() => pickRoom("sgg"))
