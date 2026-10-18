@@ -89,6 +89,8 @@ func pushBody(reason string) string {
 		return "finished its turn"
 	case ReasonLogin:
 		return "needs a claude login: run /login on that machine"
+	case ReasonCI:
+		return "a CI post reached the hub"
 	case "test":
 		return "this is a test alert"
 	}

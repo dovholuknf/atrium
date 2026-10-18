@@ -12,7 +12,7 @@
   const TAB = "m" + Math.random().toString(36).slice(2, 10);
   const NAME = {
     permission: ["permission", "permissions"], halt: ["halt", "halts"], blocked: ["blocked", "blocked"],
-    question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"],
+    question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"], ci: ["CI notice", "CI notices"],
   };
   const SNOOZES = [["15 min", 15], ["1 h", 60], ["tomorrow 9am", 0]];
   const UNDO_MS = 10000;
@@ -47,6 +47,12 @@
   }
 
   function full(g) {
+    if (g.reason === "ci") {
+      const body = String(g.body || "").split(/(https:\/\/github\.com\/[^\s<>"']+)/).map((part, i) =>
+        i % 2 ? '<a href="' + U.esc(part) + '" target="_blank" rel="noopener noreferrer">' + U.esc(part) + "</a>" : U.esc(part)).join("");
+      return '<div class="gm-full" data-id="' + U.esc(g.id) + '"><div class="gm-head"><b>' + U.esc(g.title) + "</b></div>" +
+        '<div class="gm-body">' + body + '</div><div class="gm-acts"><button data-do="dismiss">dismiss this</button></div></div>';
+    }
     const perm = g.reason === "permission";
     const dead = perm && !g.subject ? " disabled" : "";
     // A question is read whole, in a box that scrolls. Anything else keeps its one line.

@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/edge"
@@ -146,8 +150,45 @@ func (z *Ziti) ListenService(name string) (net.Listener, error) {
 	return ln, nil
 }
 
+var ciNoticeSeq atomic.Uint64
+
+// ciNotify puts one post in front of the operator as a growler on the board, the channel a new push device and a change
+// request already use. It hangs on the first room by name because a growler needs one. A hub with no room attached, or
+// none wired for growlers, says nothing here and the audit line is still written.
+func (p *Proxy) ciNotify(title, body string) {
+	g := p.growler()
+	if g == nil {
+		return
+	}
+	rs, ok := g.st.(growlRaiser)
+	if !ok {
+		return
+	}
+	rooms := p.hub.Rooms()
+	if len(rooms) == 0 {
+		return
+	}
+	names := make([]string, 0, len(rooms))
+	for _, r := range rooms {
+		names = append(names, r.Name)
+	}
+	sort.Strings(names)
+	id := fmt.Sprintf("ci|%d|%d", time.Now().UnixNano(), ciNoticeSeq.Add(1))
+	raised, err := rs.Raise(names[0], GrowlRow{ID: id, Reason: ReasonCI, Title: title, Body: body})
+	if err != nil {
+		log.Printf("[hub] growlers could not raise a ci hook notice: %v", err)
+		return
+	}
+	if raised {
+		g.publish(nil)
+	}
+}
+
 // SetCIHook turns the hook on for this hub. A hub that never calls it answers /_hub/ci-hook 404.
 func (p *Proxy) SetCIHook(h *CIHook) {
+	if h.Tell == nil {
+		h.Tell = p.ciNotify
+	}
 	p.mu.Lock()
 	p.ci = h
 	p.mu.Unlock()

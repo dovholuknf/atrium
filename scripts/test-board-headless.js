@@ -18435,6 +18435,62 @@ async function growlChoiceOnceSection(browser, base) {
   if (!bad) console.log("growlChoiceOnce ok");
 }
 
+// A CI hook notice is a plain alert: its title, its body whole with the run link clickable, and dismiss. No reply box,
+// no compose, no open.
+async function ciGrowlSection(browser, base) {
+  const url = "https://github.com/o/r/actions/runs/7";
+  const title = "CI failure: o/r CI on main at 0123456, attempt 1";
+  const rows = {
+    delivered: GR("d", "ci", 1, { room: "alpha", card_id: "", card: "", title, body: "Delivering to qa (needs), orch (needs). " + url }),
+    dropped: GR("x", "ci", 1, { room: "alpha", card_id: "", card: "", title, body: "Dropped: no route names this repository. " + url }),
+    hostile: GR("h", "ci", 1, { room: "alpha", card_id: "", card: "", title,
+      body: "Dropped: <img src=x onerror=window.__pwned=1> https://evil.example/x " + url })
+  };
+  for (const phone of [false, true]) {
+    for (const [name, row] of Object.entries(rows)) {
+      const tag = "ciGrowl " + (phone ? "phone" : "desktop") + " " + name + ": ";
+      const h = await growlQuestionFace(browser, base, phone, [row]);
+      const { p, root } = h;
+      try {
+        const f = await p.evaluate(root => {
+          const r = document.querySelector(root + " .gr-full");
+          const b = r.querySelector(".gr-body");
+          const doing = [...r.querySelectorAll("button")].map(x => x.dataset.do);
+          return {
+            head: r.querySelector(".gr-head b").textContent, text: b.textContent, doing,
+            textarea: r.querySelectorAll("textarea, .gr-replybox, .gr-reply, .gr-choices").length,
+            links: [...b.querySelectorAll("a")].map(a => ({ href: a.getAttribute("href"), target: a.target, text: a.textContent })),
+            imgs: r.querySelectorAll("img").length, pwned: !!window.__pwned
+          };
+        }, root);
+        if (f.head !== title) fail(tag + "the title was " + JSON.stringify(f.head));
+        if (f.textarea) fail(tag + "a reply control was drawn: " + JSON.stringify(f));
+        if (f.doing.join() !== "dismiss") fail(tag + "the controls were " + JSON.stringify(f.doing) + ", want dismiss only.");
+        if (!f.text.includes(name === "delivered" ? "Delivering to qa (needs)" : "Dropped:")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
+        if (f.links.length !== 1 || f.links[0].href !== url || f.links[0].target !== "_blank" || f.links[0].text !== url) {
+          fail(tag + "the run link did not render as one link: " + JSON.stringify(f.links));
+        }
+        if (name === "hostile" && (f.imgs || f.pwned || !f.text.includes("<img src=x"))) fail(tag + "the body was not escaped: " + JSON.stringify(f));
+        if (name === "delivered") {
+          await p.click(root + " .gr-full [data-do=dismiss]");
+          await p.waitForTimeout(150);
+          if (h.posts.length !== 1 || h.posts[0].body.do !== "dismiss") fail(tag + "dismiss posted " + JSON.stringify(h.posts));
+        }
+        const shots = process.env.CIGROWL_SHOTS;
+        if (shots && !phone && name === "dropped") {
+          fs.mkdirSync(shots, { recursive: true });
+          await p.locator(root).screenshot({ path: path.join(shots, "after.png") });
+          await h.say([Object.assign({}, row, { reason: "question", urgency: 4 })]);
+          await p.waitForTimeout(150);
+          await p.locator(root).screenshot({ path: path.join(shots, "before.png") });
+        }
+        if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+      } finally { await h.close(); }
+    }
+  }
+  if (!bad) console.log("ciGrowl ok");
+}
+
 async function joinedClickSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -23204,7 +23260,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, trayHead: trayHeadSection,
-      gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
+      gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection, ciGrowl: ciGrowlSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
       gearHosts: gearHostsSection,
@@ -25314,6 +25370,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("gearTermList", () => gearTermListSection(browser, base));
     await unit("growlLinks", () => growlLinksSection(browser, base));
     await unit("growlChoiceOnce", () => growlChoiceOnceSection(browser, base));
+    await unit("ciGrowl", () => ciGrowlSection(browser, base));
     await unit("mOutputAt", () => mOutputAtSection(browser));
     await unit("mStickBottom", () => mStickBottomSection(browser));
     await unit("mSendFree", () => mSendFreeSection(browser));
@@ -26337,7 +26394,7 @@ async function mServeSection(browser) {
 // and `/_hub/growls/{id}` is answered from the page's own routes, in the shape @runtime agreed: the whole set per
 // event, `remind` an array, `card_id` raw and `card` tagged, POST 200/409/404/400.
 const GR_T0 = Date.parse("2026-09-30T10:00:00Z");
-const GR_URG = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5 };
+const GR_URG = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5, ci: 6 };
 function GR(id, reason, n, x) {
   return Object.assign({
     id: "alpha|" + id + "|" + reason, room: "alpha", card_id: id, card: "alpha~" + id, reason,

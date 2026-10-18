@@ -28,9 +28,9 @@ const growlUndo = new Map();
 
 const GROWL_NAME = {
   permission: ["permission", "permissions"], halt: ["halt", "halts"], blocked: ["blocked", "blocked"],
-  question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"]
+  question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"], ci: ["CI notice", "CI notices"]
 };
-const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5 };
+const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5, ci: 6 };
 const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["tomorrow 9am", 0]];
 
 function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
@@ -230,11 +230,24 @@ function growlPrimary(g) {
     case "permission": return `<button data-do="approve"${g.subject ? "" : " disabled"}>approve once</button>`;
     case "halt": return `<button data-do="room">open the room</button>`;
     case "deploy-hold": return `<button data-do="lift">lift</button>`;
+    case "ci": return "";
     default: return `<button data-do="open">open</button>`;
   }
 }
 
+// A CI notice's body whole, escaped first, with a github.com run link made clickable. The hub only ever puts that one
+// kind of link in it, and the pattern refuses anything else.
+function growlCIBodyHTML(text) {
+  return String(text || "").split(/(https:\/\/github\.com\/[^\s<>"']+)/).map((part, i) =>
+    i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener noreferrer">${esc(part)}</a>` : esc(part)).join("");
+}
+
 function growlFull(g) {
+  if (g.reason === "ci") {
+    return `<div class="gr-full" data-id="${esc(g.id)}" data-reason="ci">` +
+      `<div class="gr-head"><b>${esc(g.title)}</b></div><div class="gr-body gr-ci">${growlCIBodyHTML(g.body)}</div>` +
+      `<div class="gr-acts"><button data-do="dismiss" data-tip="stops this alert">dismiss this</button></div></div>`;
+  }
   const off = (g.room_offline ? `<span class="gr-off">room offline</span>` : "") +
     (growlMutedInPopout(g) ? `<span class="gr-off">muted in its window</span>` : "");
   const perm = g.reason === "permission";

@@ -269,11 +269,15 @@ func (s *Store) GrowlRoom(roomID, reason string, on bool, g Growl) (raised, chan
 // again, ended or not, so a request that is finished does not come back as a growler.
 func (s *Store) GrowlRaise(roomID string, g Growl) (raised bool, err error) {
 	at := s.now()
+	reason := "question"
+	if g.Reason == "ci" {
+		reason = "ci"
+	}
 	err = s.tx(func(t *sql.Tx) error {
 		raised = false
 		res, err := t.Exec(`INSERT INTO growl (id, room_id, reason, title, body, subject, raised_at, state,
-			changed_at, changed_via) VALUES (?, ?, 'question', ?, ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
-			g.ID, roomID, g.Title, g.Body, g.Subject, ts(at), ts(at))
+			changed_at, changed_via) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
+			g.ID, roomID, reason, g.Title, g.Body, g.Subject, ts(at), ts(at))
 		if err != nil {
 			return err
 		}
