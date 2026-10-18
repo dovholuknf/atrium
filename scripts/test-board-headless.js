@@ -22140,28 +22140,39 @@ async function switchPrewarmSection(browser, base) {
     window.WebSocket = new Proxy(W, { construct(T, a) { window.__socks++; return new T(...a); } });
   });
   const gets = [];
+  const flushed = [];
   wp.on("request", r => {
     const m = /\/v1\/tasks\/(sp-[a-z]+)$/.exec(new URL(r.url()).pathname);
     if (m && r.method() === "GET") gets.push(m[1]);
+    const fl = new RegExp("/v1/tasks/flush([0-9]+)$").exec(new URL(r.url()).pathname);
+    if (fl) flushed.push(+fl[1]);
   });
   const was = mock.tasksMode;
   const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/sp/" + id });
   try {
     mock.wornTasks = [live("sp-a"), live("sp-b"), live("sp-c"), live("sp-d")];
     mock.tasksMode = "worn";
+    await wp.clock.install();
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
     await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
     const row = id => wp.locator('#term-list .card.tab[data-id="' + id + '"]');
     await row("sp-a").waitFor({ timeout: slow(10000) });
-    const idle = ms => wp.waitForTimeout(ms);
+    let flushSeq = 0;
+    const flush = async () => {
+      const n = ++flushSeq;
+      await wp.evaluate(n => { fetch("/v1/tasks/flush" + n).catch(() => {}); }, n);
+      await until(() => flushed.includes(n), 5000, "the flush request " + n);
+    };
+    const idle = async ms => { await fakeTick(wp, ms); await flush(); };
 
     // Rest on a row: fetched once, after the dwell.
     await row("sp-a").hover();
     await idle(40);
     if (gets.length) fail("switchPrewarm: the card was fetched before the dwell was up (" + gets.join(",") + ").");
     await idle(250);
+    await until(() => gets.length >= 1, 5000, "the rest on sp-a fetched");
     if (gets.join(",") !== "sp-a") fail("switchPrewarm: resting on a row did not fetch its card once (" + gets.join(",") + ").");
 
     // Resting on the same row again inside the fresh window does not fetch again.
@@ -22221,6 +22232,7 @@ async function switchPrewarmSection(browser, base) {
     await wp.mouse.move(5, 5);
     await row("sp-b").hover();
     await idle(250);
+    await until(() => getsOf("sp-b") >= 1, 5000, "the rest on sp-b fetched");
     if (getsOf("sp-b") !== 1) fail("switchPrewarm: resting on sp-b did not fetch it once (" + getsOf("sp-b") + ").");
     await wp.evaluate(() => attachTask("sp-b"));
     await idle(200);
@@ -22230,8 +22242,10 @@ async function switchPrewarmSection(browser, base) {
     await wp.mouse.move(5, 5);
     await row("sp-c").hover();
     await idle(250);
+    await until(() => getsOf("sp-c") >= 1, 5000, "the rest on sp-c fetched");
     await idle(3100);
     await wp.evaluate(() => attachTask("sp-c"));
+    await until(() => getsOf("sp-c") >= 2, 5000, "the stale click fetched sp-c again");
     await idle(200);
     if (getsOf("sp-c") !== 2) fail("switchPrewarm: a click after the prewarm went stale did not fetch again (" + getsOf("sp-c") + " GETs, two expected).");
 
@@ -22239,6 +22253,7 @@ async function switchPrewarmSection(browser, base) {
     await wp.route("**/v1/tasks/sp-*", () => {});
     const capFrom = gets.length;
     await wp.evaluate(() => { prewarmFlying = 0; prewarmed.clear(); for (const id of ["sp-a", "sp-b", "sp-c", "sp-d"]) prewarmCard(id); });
+    await until(() => gets.length - capFrom >= 2, 5000, "two prewarms started");
     await idle(300);
     const flying = gets.length - capFrom;
     if (flying !== 2) fail("switchPrewarm: " + flying + " prewarms started at once, the cap is 2.");
