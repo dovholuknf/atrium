@@ -38,8 +38,9 @@ async function restartGateSection(browser, base) {
   try {
     await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
-    await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await fakeWait(gp, () => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, 15000);
+    await gp.clock.pauseAt(Date.now() + 60000);
 
     // Input is reported, and throttled.
     await gp.mouse.click(700, 450);
@@ -50,7 +51,7 @@ async function restartGateSection(browser, base) {
 
     // The countdown shows and counts.
     say({ state: "countdown", seconds: 5 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await fakeWait(gp, () => !!document.querySelector(".toast.hubgate"), null, 5000)
       .catch(() => fail("a countdown from the hub drew no toast."));
     const first = await countdownText();
     if (!/atrium restarts in [45]s/.test(first)) {
@@ -81,10 +82,10 @@ async function restartGateSection(browser, base) {
     // The hub says paused: a sticky toast with a resume button, which survives
     // the stack filling up.
     say({ state: "paused" });
-    await gp.waitForFunction(() => {
+    await fakeWait(gp, () => {
       const el = document.querySelector(".toast.hubgate");
       return el && /restart on hold/.test(el.textContent);
-    }, null, { timeout: slow(5000) }).catch(() => fail("a pause from the hub drew no paused toast."));
+    }, null, 5000).catch(() => fail("a pause from the hub drew no paused toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
     await run(100);
     if (!(await gp.$(".toast.hubgate .hubgate-act"))) fail("the paused toast was pushed off the stack.");
@@ -99,10 +100,10 @@ async function restartGateSection(browser, base) {
     mock.gatePaused = true;
     const late = await ctx.newPage();
     await late.goto(base, { waitUntil: "domcontentloaded" });
-    await late.waitForFunction(() => {
+    await fakeWait(late, () => {
       const el = document.querySelector(".toast.hubgate");
       return el && /restart on hold/.test(el.textContent);
-    }, null, { timeout: slow(15000) }).catch(() => fail("a board opened during a pause did not show it."));
+    }, null, 15000).catch(() => fail("a board opened during a pause did not show it."));
     await late.close();
     mock.gatePaused = false;
 
@@ -111,7 +112,7 @@ async function restartGateSection(browser, base) {
     const hasCountdown = () => gp.evaluate(() =>
       [...document.querySelectorAll(".toast.hubgate")].some(el => /atrium restarts in/.test(el.textContent)));
     say({ state: "countdown", seconds: 3 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await fakeWait(gp, () => !!document.querySelector(".toast.hubgate"), null, 5000)
       .catch(() => fail("the second countdown drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
     await run(100);
@@ -128,8 +129,7 @@ async function restartGateSection(browser, base) {
     // nobody: the "cancelled countdown stayed on screen" flake.
     const streamsWere = openStreams.filter(r => !r.destroyed).length;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
-    await gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
-      { timeout: slow(15000) }).catch(() => fail("the stream did not come back."));
+    await fakeWait(gp, () => document.getElementById("conn").classList.contains("live"), null, 15000).catch(() => fail("the stream did not come back."));
     for (const end = Date.now() + 15000;
       openStreams.filter(r => !r.destroyed).length < streamsWere && Date.now() < end;) {
       await run(50);
@@ -137,13 +137,13 @@ async function restartGateSection(browser, base) {
     await run(500);
     if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
     say({ state: "cancelled" });
-    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await fakeWait(gp, () => !document.querySelector(".toast.hubgate"), null, 5000)
       .catch(() => fail("a cancelled countdown stayed on screen."));
 
     // On a phone the cap is one, and a paused toast is on top of it, not in it.
     await gp.setViewportSize({ width: 400, height: 800 });
     say({ state: "paused" });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await fakeWait(gp, () => !!document.querySelector(".toast.hubgate"), null, 5000)
       .catch(() => fail("a pause on a phone drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 3; i++) toast("phone filler " + i, "pushing the stack"); });
     await run(100);
@@ -155,7 +155,7 @@ async function restartGateSection(browser, base) {
       fail("on a phone the stack was " + JSON.stringify(phone) + ", not the paused toast and one other.");
     }
     say({ state: "resumed" });
-    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
+    await fakeWait(gp, () => !document.querySelector(".toast.hubgate"), null, 5000)
       .catch(() => fail("a resume did not take the paused toast down."));
     await gp.setViewportSize({ width: 1400, height: 900 });
 
@@ -163,10 +163,10 @@ async function restartGateSection(browser, base) {
     mock.gateCountdownLeft = 30;
     const mid = await ctx.newPage();
     await mid.goto(base, { waitUntil: "domcontentloaded" });
-    await mid.waitForFunction(() => {
+    await fakeWait(mid, () => {
       const el = document.querySelector(".toast.hubgate");
       return el && /atrium restarts in (29|30)s/.test(el.textContent);
-    }, null, { timeout: slow(15000) }).catch(() => fail("a board opened during a countdown did not show it."));
+    }, null, 15000).catch(() => fail("a board opened during a countdown did not show it."));
     await mid.close();
     mock.gateCountdownLeft = 0;
 
@@ -178,7 +178,7 @@ async function restartGateSection(browser, base) {
 
     // Restarting: a modal that Escape and closing every dialog both leave up.
     say({ state: "restarting" });
-    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+    await fakeWait(gp, () => document.getElementById("hubrestart").open, null, 5000)
       .catch(() => fail("the hub restarting drew no modal."));
     // It says how long it has been, and it wears the skin: its card is the
     // palette's own card colour, whatever skin is on.
@@ -211,7 +211,7 @@ async function restartGateSection(browser, base) {
     // new name and the modal clears. See restartStaysSection for the old hub.
     mock.gateBoot = "boot-a2";
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+    await fakeWait(gp, () => !document.getElementById("hubrestart").open, null, 15000)
       .catch(() => fail("the restarting modal did not clear when the stream came back."));
     if (errors.length) fail("the restart gate page threw uncaught errors: " + errors.join(" | "));
   } finally {
