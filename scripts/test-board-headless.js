@@ -25586,7 +25586,7 @@ async function liveHomeSection(browser, base) {
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="lh-dir"]');
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-      await p.waitForTimeout(400);
+      await p.waitForFunction(() => getComputedStyle(document.getElementById("m-card")).transform === "none", null, { timeout: slow(5000) });
       const m = await p.evaluate(() => {
         const bar = document.querySelector("#m-card .sheet-top"), w = window.innerWidth;
         const kids = [...bar.children].filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect());
