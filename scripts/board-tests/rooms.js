@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { slow, fakeWait, fakeTick, until: untilTrue } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakeRun, until: untilTrue } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { countRequests, landContext, topCounts } = require("../lib/helpers.js");
@@ -1728,8 +1728,10 @@ async function hubGateSection(browser, base) {
   p.on("response", res => { if (res.status() === 503 && !/\/v1\/health/.test(res.url())) { bad503++; if (process.env.GATE_DEBUG) console.log("503", res.url()); } });
   p.on("console", m => { if (m.type() === "error" && /503/.test(m.text())) logged.push(m.text()); });
   try {
+    await p.clock.install();
     await p.goto(base + "/raw", { waitUntil: "load" });
-    await p.waitForTimeout(1500);
+    await p.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(p, 1500);
     // The auth fields live in a form, so the browser stops warning about them.
     const loose = await p.evaluate(() => ["auth-pass", "auth-secret"].filter(id => { const e = document.getElementById(id); return !e || !e.form; }));
     if (loose.length) fail("hubGate: password fields outside a form: " + loose.join(", "));
@@ -1737,17 +1739,17 @@ async function hubGateSection(browser, base) {
     down = true; bad503 = 0; logged.length = 0;
     // Pollers fire on their own timers, so the first one finds out and the rest are behind it.
     await p.evaluate(() => { api("/v1/tasks").catch(() => {}); });
-    await p.waitForTimeout(300);
+    await fakeWait(p, () => !!hubGateP, null, 5000);
     await p.evaluate(() => { for (const u of ["/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/permissions", "/v1/themes", "/v1/shares"]) api(u).catch(() => {}); });
-    await p.waitForTimeout(300);
+    await fakeTick(p, 300);
     const first = bad503;
     await p.evaluate(() => { for (const u of ["/v1/tasks", "/v1/settings", "/v1/harnesses", "/v1/providers", "/v1/prs", "/v1/usage/turn-limits"]) api(u).catch(() => {}); });
-    await p.waitForTimeout(2500);
+    await fakeTick(p, 2500);
     if (bad503 !== first) fail("hubGate: pollers kept asking a hub known to be down (" + first + " then " + bad503 + ")");
     if (first > 1) fail("hubGate: the first burst logged " + first + " failures, wanted 1");
     // One probe answers, and the held reads go out and finish.
     down = false;
-    const done = await p.evaluate(async () => { try { await api("/v1/settings"); return true; } catch (e) { return String(e && e.message); } });
+    const done = await fakeRun(p, (_, done) => { api("/v1/settings").then(() => done(true), e => done(String(e && e.message))); });
     if (done !== true) fail("hubGate: reads did not resume once the hub answered: " + done);
   } finally {
     await ctx.close();
