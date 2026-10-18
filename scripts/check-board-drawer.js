@@ -470,13 +470,19 @@ async function touch(browser, tabName) {
   await goto(page, T.view);
   await page.evaluate(() => {
     window.__touches = 0;
-    ["touchstart", "touchmove", "touchend", "touchcancel"].forEach(t => document.addEventListener(t, () => { window.__touches++; }, { capture: true, passive: true }));
+    window.__last = null;
+    ["touchstart", "touchmove", "touchend", "touchcancel"].forEach(t => document.addEventListener(t, e => {
+      window.__touches++;
+      const p = e.touches[0];
+      window.__last = t + ":" + (p ? Math.round(p.clientY) : null);
+    }, { capture: true, passive: true }));
   });
-  const received = () => page.evaluate(() => window.__touches);
+  const received = () => page.evaluate(() => ({ n: window.__touches, last: window.__last }));
   const send = async (type, x, y) => {
-    const before = await received();
+    const want = type.toLowerCase() + ":" + (type === "touchEnd" ? null : Math.round(y));
+    const { n } = await received();
     await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
-    await until(received, n => n > before);
+    await until(received, v => v.n > n && v.last === want);
   };
   const quiet = () => until(
     () => page.evaluate(() => {
