@@ -8315,6 +8315,7 @@ async function idleParkSection(browser, base) {
     await ip.waitForFunction(() => typeof openRoomCog === "function" && typeof loadHubRooms === "function",
       null, { timeout: slow(15000) });
     await ip.evaluate(() => loadHubRooms());
+    await ip.waitForFunction(() => hubInventory.some(r => r.name === "alpha"), null, { timeout: slow(15000) });
     await ip.evaluate(() => openRoomCog("alpha"));
     await ip.waitForSelector("#roomcfg[open]", { timeout: slow(8000) });
     const pane = () => ip.evaluate(() => {
