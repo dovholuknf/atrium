@@ -8407,7 +8407,8 @@ async function sshBadgeSection(browser, base) {
       null, { timeout: slow(15000) });
     await p.evaluate(() => loadHubRooms());
     await p.evaluate(() => switchView("runners")); // the tab may sit in the `...` menu at this width
-    await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
+    await p.waitForFunction(() => hubIsHub && Array.from(document.querySelectorAll("#room-list .roomrow"))
+      .some(r => /alpha/.test(r.textContent)), null, { timeout: slow(10000) });
     return { ctx, p };
   };
   const facts = p => p.evaluate(() => {
