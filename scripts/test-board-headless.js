@@ -1276,6 +1276,7 @@ async function toastStaysSection(browser, base) {
   const errors = [];
   tp.on("pageerror", e => errors.push(String(e)));
   try {
+    await tp.clock.install();
     await tp.goto(base, { waitUntil: "domcontentloaded" });
     await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await tp.evaluate(() => {
@@ -1288,36 +1289,24 @@ async function toastStaysSection(browser, base) {
       // And a card waiting on you, which is answered.
       alerting.notify("ready card is ready", "its turn ended", "stack", "", "ready9", "ready9", "", "",
         { pending: true });
-      // The poll after it, asked for now rather than waited on. Waiting for the
-      // board's own timer let a loaded machine deliver that poll 9s in, when the
-      // toast's own 9 seconds, which no test budget scales, were nearly spent,
-      // and all three checks below failed on timing alone (item 85).
+      window.__born = Date.now();
       refresh();
     });
+    await fakePause(tp);
     const has = title => tp.evaluate(t => [...document.querySelectorAll("#toasts .toast:not(.leaving)")]
       .some(el => el.querySelector("b").textContent === t), title);
-    const born = Date.now();
-    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
-      .catch(() => fail("no poll reaped toasts, so the test did not exercise the bug (waited " + slow(12000) +
-        "ms for reapToasts after a forced refresh)."));
-    // The checks below are about a 9 second life. A reap that took most of it to
-    // arrive cannot tell a toast reaped early from one that expired, so say that
-    // rather than report three failures that are one slow poll.
-    const reapedAt = Date.now() - born;
-    if (reapedAt > 6000) {
-      fail("toastStays: the forced poll took " + reapedAt + "ms to reap, too late to judge a 9s toast.");
-      return;
-    }
-    await tp.waitForTimeout(400);
+    const age = () => tp.evaluate(() => Date.now() - window.__born);
+    await fakeWait(tp, () => window.__reaps >= 1, null, 12000)
+      .catch(() => fail("no poll reaped toasts, so the test did not exercise the bug."));
     if (!(await has("new card is on the board"))) {
-      fail("an arrival toast was taken down by the poll after it, " + (Date.now() - born) + "ms in.");
+      fail("an arrival toast was taken down by the poll after it, " + (await age()) + "ms in.");
     }
     const answered = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast.answered b")]
       .some(b => b.textContent === "ready card is ready"));
     if (!answered) fail("a toast for a card no longer waiting was not marked answered.");
-    await tp.waitForTimeout(Math.max(0, 8500 - (Date.now() - born)));
+    await tp.clock.runFor(Math.max(0, 8500 - (await age())));
     if (!(await has("new card is on the board"))) fail("an arrival toast went before its 9 seconds.");
-    await tp.waitForTimeout(1200);
+    await tp.clock.runFor(1200);
     if (await has("new card is on the board")) fail("an arrival toast outlived its 9 seconds.");
     if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
   } finally {
