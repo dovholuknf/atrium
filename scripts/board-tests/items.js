@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, fakeWait, fakeTick } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause } = require("../lib/browser.js");
 const { mock, WEB_ROOT } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { docImgDir } = require("../lib/helpers.js");
@@ -28,7 +28,7 @@ async function readyOnceSection(browser, base) {
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await fakeWait(page, () => typeof alerting !== "undefined", null, 15000);
     await fakeTick(page, 1500);
-    await page.clock.pauseAt(Date.now() + 60000);
+    await fakePause(page);
     await page.evaluate(() => {
       localStorage.removeItem("atrium.toastlog");
       alerting.set({ debounce: 0, muted: true });

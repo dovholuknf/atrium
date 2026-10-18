@@ -173,6 +173,9 @@ async function fakeWait(p, fn, arg, ms, step = 100) {
   }
 }
 
+// pauseAt(future) would jump there and fire every due timer, the 60s resync included, mid-test: pause one ms on, the clock can sit between whole ms.
+const fakePause = async p => p.clock.pauseAt(await p.evaluate(() => Date.now() + 1));
+
 // `ms` of page time on the fake clock, every timer fired as it comes due, so a poll or a chained fetch still shows in a
 // request count. The real pause per step lets a fetch or a stream event land before the clock moves on.
 async function fakeTick(p, ms, step = 250) {
@@ -258,4 +261,4 @@ if (!exePath || !require("fs").existsSync(exePath)) {
   process.exit(0);
 }
 
-module.exports = { slow, fakeWait, fakeTick, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
+module.exports = { slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
