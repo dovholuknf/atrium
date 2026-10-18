@@ -60,10 +60,20 @@ func addUsage(t *testing.T, s *store.Store, at time.Time, cause string, in, out,
 	}
 }
 
+func noUsage(since, until time.Time, bucketSecs int, card string) (*store.UsageSeries, error) {
+	return &store.UsageSeries{Since: since, Until: until, Bucket: bucketSecs}, nil
+}
+
 func fullSources(s *store.Store, clk Clock, out *[][]byte) Sources {
+	src := storeFreeSources(clk, out)
+	src.Usage = s.UsageBuckets
+	return src
+}
+
+func storeFreeSources(clk Clock, out *[][]byte) Sources {
 	return Sources{
 		Room: "sg3", Started: t0.Add(-time.Hour), Clock: clk,
-		Usage:        s.UsageBuckets,
+		Usage:        noUsage,
 		ProcessTimes: func() (time.Duration, uint64, error) { return 3 * time.Second, 212000000, nil },
 		Disk:         func() (string, uint64, uint64, error) { return "C:/x", 392, 512, nil },
 		DBBytes:      func() (int64, error) { return 740, nil },
@@ -403,12 +413,11 @@ func TestTokenArithmetic(t *testing.T) {
 }
 
 func TestCadenceIsTenSecondsAndDiskIsSeparate(t *testing.T) {
-	st := openStore(t)
 	clk := newClock(t0)
 	var mu sync.Mutex
 	var pushed int
 	diskCalls := 0
-	src := fullSources(st, clk, new([][]byte))
+	src := storeFreeSources(clk, new([][]byte))
 	src.Publish = func([]byte) { mu.Lock(); pushed++; mu.Unlock() }
 	src.Disk = func() (string, uint64, uint64, error) {
 		mu.Lock()
@@ -456,9 +465,8 @@ func TestCadenceIsTenSecondsAndDiskIsSeparate(t *testing.T) {
 }
 
 func TestGetEqualsLastPushed(t *testing.T) {
-	st := openStore(t)
 	var pushed [][]byte
-	sm := New(fullSources(st, newClock(t0), &pushed))
+	sm := New(storeFreeSources(newClock(t0), &pushed))
 	if sm.Bytes() != nil {
 		t.Error("bytes before the first sample")
 	}
