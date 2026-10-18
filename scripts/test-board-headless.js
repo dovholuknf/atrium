@@ -15781,6 +15781,9 @@ async function mDocsSection(browser) {
       const nv = hub.log.filter(r => /\/blob\/versions$/.test(r.path)).pop();
       if (!nv || JSON.stringify(nv.fields) !== '["file"]') fail(tag + "a new version is not the versions route with file only: " + JSON.stringify(nv));
       hub.docs.blob.deleted = { at: "2026-09-30T12:00:00Z", by: "operator" };
+      try { await p.waitForSelector("#m-docs .d-acts input[type=file]", { state: "attached", timeout: 2000 }); } catch (e) {
+        fail(tag + "no upload input before b3: " + JSON.stringify({ text: await p.evaluate(() => document.getElementById("m-docs").innerText), href: await p.evaluate(() => location.href), log: hub.log.slice(-12), doc: hub.docs.blob }));
+      }
       await p.setInputFiles("#m-docs .d-acts input[type=file]", { name: "b3.zip", mimeType: "application/zip", buffer: Buffer.from("zip3") });
       await p.waitForFunction(() => /restore it first/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
       hub.docs.blob.deleted = null;
