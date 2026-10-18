@@ -15412,6 +15412,7 @@ async function mHomePickerSection(browser) {
       const tag = "mHomePicker " + vp.width + ": ";
       const { ctx, p, errors } = await mPage(browser, st, vp, "");
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.waitForFunction(() => window.mStore && window.mStore.cards().some(t => t.id === "zebra-card"), null, { timeout: slow(10000) });
       await mShot(p, "home-picker-" + vp.width);
       if (await mNoSideways(p)) fail(tag + "the landing page scrolls sideways");
       await p.tap("#m-home-pick");
@@ -15421,6 +15422,7 @@ async function mHomePickerSection(browser) {
       const box = await p.evaluate(() => { const r = document.getElementById("m-card-menu").getBoundingClientRect(); return { l: r.left, r: r.right }; });
       if (box.l < 0 || box.r > vp.width + 1) fail(tag + "the menu leaves the screen: " + JSON.stringify(box));
       await p.fill("#m-card-menu .pm-search", "zebr");
+      await p.waitForSelector("#m-card-menu .pm-row", { timeout: slow(5000) }).catch(() => {});
       await mShot(p, "home-picker-open-" + vp.width);
       const rows = await p.$$eval("#m-card-menu .pm-row b", e => e.map(x => x.textContent));
       if (JSON.stringify(rows) !== JSON.stringify(["zebra-card"])) fail(tag + "typing part of an alias gave " + rows.join(","));
