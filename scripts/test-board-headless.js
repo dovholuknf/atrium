@@ -3110,20 +3110,24 @@ async function pasteSpinnerSection(browser, base) {
     // 2. A paste that drains and echoes inside 20ms is still drawn, at once, and
     // is gone once the runner has been quiet since the echo.
     const quick = await p.evaluate(() => new Promise(done => {
-      pasteEnd();
-      window.__shown = 0;
-      termSock.bufferedAmount = 0;
-      sendPasteText("x");
-      const got = { now: window.__shown };
-      // Once the bytes have left: output before that says nothing, and the frame the send waits for is late on a
-      // loaded machine.
-      const echo = () => {
-        if (!(pasteFlight && pasteFlight.sent)) { setTimeout(echo, 10); return; }
-        termSock.onmessage({ data: "x" });
-        got.flight = !!pasteFlight;
-        done(got);
+      const attempt = tries => {
+        pasteEnd();
+        window.__shown = 0;
+        termSock.bufferedAmount = 0;
+        sendPasteText("x");
+        const got = { now: window.__shown };
+        // A send that left after the hold ran out is not a paste that landed inside it, so go again.
+        const echo = () => {
+          const f = pasteFlight;
+          if (!(f && f.sent)) { setTimeout(echo, 10); return; }
+          if (Date.now() >= f.holdUntil && tries > 0) { attempt(tries - 1); return; }
+          termSock.onmessage({ data: "x" });
+          got.flight = !!pasteFlight;
+          done(got);
+        };
+        setTimeout(echo, 60);
       };
-      setTimeout(echo, 60);
+      attempt(5);
     }));
     if (quick.now !== 1 || !quick.flight) {
       fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
