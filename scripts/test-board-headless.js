@@ -5353,6 +5353,8 @@ async function termLinkLateSection(browser, base) {
     });
     const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
     const menuOn = () => p.evaluate(() => document.getElementById("cardmenu").classList.contains("on"));
+    const menuUp = () => p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
+      { timeout: slow(3000) }).then(() => true, () => false);
     const hover = async (col, r, linked) => {
       await p.mouse.move(...at(40, 5));
       await p.mouse.move(...at(col, r), { steps: 3 });
@@ -5373,16 +5375,14 @@ async function termLinkLateSection(browser, base) {
     await hover(10, 0, true);
     await shot(p, "late-2-appeared");
     await p.mouse.click(...at(10, 0));
-    await p.waitForTimeout(300);
-    if (!await menuOn()) fail("a path that was missing, then written, did not become a link once its row changed");
+    if (!await menuUp()) fail("a path that was missing, then written, did not become a link once its row changed");
     await p.keyboard.press("Escape");
 
     // 3. a hit is kept: it still links after the expiry with the file's probe answering nothing.
     exists.delete("out/late.md");
     await hover(10, 0, true);
     await p.mouse.click(...at(10, 0));
-    await p.waitForTimeout(300);
-    if (!await menuOn()) fail("a hit was forgotten");
+    if (!await menuUp()) fail("a hit was forgotten");
     await p.keyboard.press("Escape");
 
     // 4. an image opens in a tab at once, no menu.
