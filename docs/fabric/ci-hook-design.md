@@ -155,6 +155,27 @@ a backlog of reds.
   action fails a step on 300 and above, so a slow room never fails CI, and delivery runs on one worker fed by the
   pending list.
 
+**The operator is told of every post** (`f-ci-hook-notify-operator`). Each post raises one growler on the board, the
+channel a new push device and a change request already use (`Proxy.ciNotify`, `CIHook.Tell`), so the toast and the
+desktop notification come with it. The title is what came in, from the parsed fields only: `CI <conclusion>: <repo>
+<workflow> on <branch> at <sha7>, attempt <n>`. The body is what the hub did, then the run link:
+
+| Outcome | Body |
+| --- | --- |
+| routed | `Delivering to <to> (<kind>), ...`. The delivery's own end is the audit line, not a second alert |
+| no rule names the repo | `Dropped: no route names this repository.` |
+| a rule names it and a filter dropped it | `Dropped: filtered`, naming workflow, branch, conclusion or `change` |
+| a repeat of a recorded run | `Dropped: a repeat of a run already recorded.` |
+| repository not in `ci_hook.repos` | `Dropped: that repository is not in the hook's list.` |
+| no or wrong secret | `Dropped: no secret.` or `Dropped: wrong secret.`, nothing from the body |
+| body unreadable, over 512 KiB, not JSON, missing a field | `Dropped: malformed, ...` |
+| over the rate | `Dropped: too many notices, over 60 a minute.` |
+
+A body that could not be parsed has no fields, so its alert has none. The secret, the body's free text and the full
+sha are never in an alert. The alerts a stranger could cause, a bad secret and the rate limit, are held to one a minute
+each, so they cannot fill the board. A hub with no room attached or no growlers wired raises none, and the audit line
+is still written. A recent-posts list in the settings (`f-ci-hook-settings`) can read the same events, and is not built.
+
 No new board tab. The audit pane already shows the lines, and a refused or expired delivery is the one thing a human
 acts on, so it is an audit line of its own kind that the pane can filter on.
 

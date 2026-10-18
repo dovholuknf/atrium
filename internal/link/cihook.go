@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -63,8 +64,13 @@ type CIHook struct {
 	Audit func(kind, detail string)
 	// Now is the clock, injected by tests.
 	Now func() time.Time
+	// Tell raises one operator notification for a post: a title naming what came in and a body saying what the hub did.
+	// Nil tells nobody. Proxy.SetCIHook fills it in.
+	Tell func(title, body string)
 
 	bucket ciBucket
+	qmu    sync.Mutex
+	quiet  map[string]time.Time
 	kick   chan struct{}
 	mu     sync.Mutex
 	swept  time.Time
@@ -87,6 +93,32 @@ func (h *CIHook) audit(kind, detail string) {
 		h.Audit(kind, detail)
 	}
 }
+
+// tell raises the operator notification for one post.
+func (h *CIHook) tell(title, body string) {
+	if h.Tell != nil {
+		h.Tell(title, body)
+	}
+}
+
+// tellThrottled is tell for a post nothing vouches for: at most one a minute per kind, so a stranger or a runaway loop
+// cannot fill the board with notices.
+func (h *CIHook) tellThrottled(kind, title, body string) {
+	h.qmu.Lock()
+	now := h.now()
+	if h.quiet == nil {
+		h.quiet = map[string]time.Time{}
+	}
+	if at, ok := h.quiet[kind]; ok && now.Sub(at) < time.Minute {
+		h.qmu.Unlock()
+		return
+	}
+	h.quiet[kind] = now
+	h.qmu.Unlock()
+	h.tell(title, body)
+}
+
+const ciDropped = "Dropped: "
 
 // ServeHTTP is the listener on the ziti-hook service. POST / and nothing else, so a runner holding the dial identity
 // reaches this and not the board, the API or the control MCP.
@@ -156,10 +188,12 @@ func (h *CIHook) Receive(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		h.audit("ci-hook-refused", why)
+		h.tellThrottled("secret", "CI hook refused a post", ciDropped+why+".")
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	if !h.bucket.allow(h.now()) {
+		h.tellThrottled("rate", "CI hook is being posted to too fast", ciDropped+"too many notices, over 60 a minute.")
 		w.Header().Set("Retry-After", "1")
 		ciReply(w, http.StatusTooManyRequests, map[string]string{"error": "too many notices, slow down"})
 		return
@@ -168,20 +202,25 @@ func (h *CIHook) Receive(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var big *http.MaxBytesError
 		if errors.As(err, &big) {
+			h.tell("CI hook got a post it could not use", ciDropped+"the body is over 512 KiB.")
 			ciReply(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "the body is over 512 KiB"})
 			return
 		}
+		h.tell("CI hook got a post it could not use", ciDropped+"the body could not be read.")
 		ciReply(w, http.StatusBadRequest, map[string]string{"error": "the body could not be read"})
 		return
 	}
 	var ev ciEvent
 	if err := json.Unmarshal(raw, &ev); err != nil {
+		h.tell("CI hook got a post it could not use", ciDropped+"malformed, the body is not a workflow_run event.")
 		ciReply(w, http.StatusUnprocessableEntity, map[string]string{"error": "the body is not a workflow_run event"})
 		return
 	}
 	run := ev.WorkflowRun
 	if run.ID == 0 || run.RunAttempt == 0 || strings.TrimSpace(run.Conclusion) == "" ||
 		strings.TrimSpace(ev.Repository.FullName) == "" {
+		h.tell("CI hook got a post it could not use", ciDropped+"malformed, a workflow_run event needs "+
+			"workflow_run.id, run_attempt and conclusion, and repository.full_name.")
 		ciReply(w, http.StatusUnprocessableEntity, map[string]string{"error": "a workflow_run event needs " +
 			"workflow_run.id, run_attempt and conclusion, and repository.full_name"})
 		return
@@ -189,6 +228,7 @@ func (h *CIHook) Receive(w http.ResponseWriter, r *http.Request) {
 	repo := ciClean(ev.Repository.FullName, 120)
 	if repos, err := h.Store.CIHookRepos(); err == nil && len(repos) > 0 && !ciListed(repos, repo) {
 		h.audit("ci-hook-refused", "repository not listed")
+		h.tell("CI hook refused a post from "+repo, ciDropped+"that repository is not in the hook's list.")
 		ciReply(w, http.StatusForbidden, map[string]string{"error": "that repository is not listed"})
 		return
 	}
@@ -208,6 +248,7 @@ func (h *CIHook) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dup {
+		h.tell(ciTitle(rec), ciDropped+"a repeat of a run already recorded."+ciLink(rec))
 		ciReply(w, http.StatusOK, map[string]bool{"duplicate": true})
 		return
 	}
@@ -221,6 +262,7 @@ func (h *CIHook) Receive(w http.ResponseWriter, r *http.Request) {
 	targets := ciTargets(routes, rec, ciClean(run.Path, 200), last, hadLast)
 	text := ciLine(rec)
 	told := make([]string, 0, len(targets))
+	kinds := make([]string, 0, len(targets))
 	for _, t := range targets {
 		if _, err := h.Store.CIDeliveryAdd(hubstore.CIDelivery{
 			RunRef: rec.ID, Target: t.To, Kind: t.Kind, Wake: t.Wake, Text: text}); err != nil {
@@ -228,9 +270,15 @@ func (h *CIHook) Receive(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		told = append(told, t.To)
+		kinds = append(kinds, t.To+" ("+t.Kind+")")
 	}
 	h.audit("ci-hook", fmt.Sprintf("%s %s on %s: %s. told: %s", rec.Repo, rec.Workflow, rec.Branch, rec.Conclusion,
 		ciOrNobody(told)))
+	if len(targets) > 0 {
+		h.tell(ciTitle(rec), "Delivering to "+strings.Join(kinds, ", ")+"."+ciLink(rec))
+	} else {
+		h.tell(ciTitle(rec), ciDropped+ciWhyNot(routes, rec, ciClean(run.Path, 200), last, hadLast)+ciLink(rec))
+	}
 	if len(targets) > 0 {
 		select {
 		case h.kick <- struct{}{}:
@@ -291,6 +339,43 @@ func ciLine(r hubstore.CIRun) string {
 		line += " " + r.URL
 	}
 	return line + " " + ciSignoff
+}
+
+// ciTitle is what came in, from parsed fields only.
+func ciTitle(r hubstore.CIRun) string {
+	sha := r.SHA
+	if len(sha) > 7 {
+		sha = sha[:7]
+	}
+	return fmt.Sprintf("CI %s: %s %s on %s at %s, attempt %d", r.Conclusion, r.Repo, r.Workflow, r.Branch, sha, r.Attempt)
+}
+
+func ciLink(r hubstore.CIRun) string {
+	if r.URL == "" {
+		return ""
+	}
+	return " " + r.URL
+}
+
+// ciWhyNot says why no rule told anybody: none names the repo, or the rules that do were filtered out by the first
+// field of theirs that did not match.
+func ciWhyNot(routes []CIRoute, run hubstore.CIRun, path, last string, hadLast bool) string {
+	for _, r := range routes {
+		if !strings.EqualFold(r.Repo, run.Repo) {
+			continue
+		}
+		switch {
+		case r.Workflow != "" && r.Workflow != run.Workflow && r.Workflow != path:
+			return "filtered, the rule for this repository takes another workflow."
+		case r.Branch != "" && r.Branch != run.Branch:
+			return "filtered, the rule for this repository takes another branch."
+		case len(r.Conclusion) > 0 && !slices.Contains(r.Conclusion, run.Conclusion):
+			return "filtered, the rule for this repository does not take the conclusion " + run.Conclusion + "."
+		default:
+			return "filtered, the conclusion is the same as the last run's and the rule asks for a change."
+		}
+	}
+	return "no route names this repository."
 }
 
 // CIRoute is one rule from a run to a handle.
