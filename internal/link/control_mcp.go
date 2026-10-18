@@ -350,8 +350,11 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 		Name: "atrium_launch_worker",
 		Description: "Start a new agent for PARALLEL WORK that ends when its branch merges. Same parameters as " +
 			"`atrium_launch`, and the same session, but the card is marked `lifetime: work`: once its branch is merged " +
-			"to claude/main atrium EXITS its runner. The card and the worktree stay. Use it for a worker with a job " +
-			"that ends in a merge.\n\n" +
+			"to claude/main atrium EXITS its runner, and it also exits it a few seconds after the worker's own final " +
+			"`atrium_done`, scratch or not, so a finished worker never holds a launch slot. Pass `resident: true` to " +
+			"keep one running. A blocked worker keeps running. The card and the worktree stay, and `atrium_say` with " +
+			"`wake: true` resumes the worker for another round. Use it for a worker with a job that ends in a " +
+			"merge or a report.\n\n" +
 			"Use `atrium_launch` instead for an investigation, a long conversation, or anything the human said to " +
 			"leave open: atrium never exits that card on a merge. Which one you call is the choice, so make it.",
 	}, audited(c, "ctl-launch", describeLaunch, c.launchWorkerHandler))

@@ -777,7 +777,6 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if req.Item && !hasTag(req.Tags, ItemTag) {
 		req.Tags = append(append([]string{}, req.Tags...), ItemTag)
 	}
-	keepScratchOpen(&req)
 	// AN OWNER THAT CANNOT BE is refused here, before a card or a worktree exists. See item_hub.go.
 	if err := checkItemLaunch(req); err != nil {
 		return nil, err
