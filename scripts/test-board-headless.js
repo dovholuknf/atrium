@@ -1408,6 +1408,7 @@ async function toastLivesSection(browser, base) {
 async function tooltipSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const tp = await ctx.newPage();
+  await tp.clock.install();
   const errors = [];
   tp.on("pageerror", e => errors.push(String(e)));
   // The first visible, non-empty `data-tip` under a selector, marked so the
@@ -1444,12 +1445,13 @@ async function tooltipSection(browser, base) {
     const text = await mark(sel);
     if (!text) { fail("no " + what + " with a data-tip to hover (" + sel + ")."); return null; }
     await tp.mouse.move(2, 890);
-    await tp.waitForTimeout(100);
+    await fakePause(tp);
     await tp.hover("[data-tipprobe]");
-    await tp.waitForTimeout(150);
+    await tp.clock.runFor(400);
     if ((await tipNow()).on) fail("the tooltip on " + what + " came up before the hover delay.");
-    await tp.waitForTimeout(600);
+    await tp.clock.runFor(150);
     const t = await tipNow();
+    await tp.clock.resume();
     if (!t.on) fail("hovering " + what + " did not bring up the styled tooltip.");
     else if (t.text !== text) fail("the tooltip on " + what + " said " + JSON.stringify(t.text) +
       ", not its data-tip " + JSON.stringify(text));
