@@ -22828,7 +22828,7 @@ async function crFixturePage(browser, base, o) {
   await p.waitForFunction(() => document.querySelector("#hubrepos-list .cr-ledger, #hubrepos-list .cr-offline, #hubrepos-list .hr-hero, #hubrepos-list .hr-ledger"), null, { timeout: slow(10000) });
   // The requests are read once by the view and once more when the repos arrive; both are settled before a test touches the page.
   await p.waitForFunction(() => hubRepos.loaded && !hubRepos.inflight && !cr.inflight, null, { timeout: slow(8000) });
-  await p.waitForTimeout(300);
+  await frames(p, 2);
   await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });  return { ctx, p, errors, hub, fx };
 }
 
@@ -22851,10 +22851,10 @@ async function crInkCheck(p, skins, sels, width, before) {
     for (const skin of skins) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
-      await p.waitForTimeout(80);
+      await settleStyle(p);
       const passed = await crInkBatch(p, sels, width);
       // the batch's restore restarts colour transitions, and a miss read mid-transition is not a miss
-      if (passed.size < sels.length) await p.waitForTimeout(400);
+      if (passed.size < sels.length) await settleStyle(p);
       for (const sel of sels) {
         if (passed.has(sel)) continue;
         let box = null, ratio = 99;
@@ -22950,10 +22950,10 @@ async function crShots(browser, base) {
       await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (st === "closed") { await p.click('.cr-seg [data-tab="closed"]'); await p.click('.cr-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test(document.querySelector(".cr-title").textContent)); }
       if (st === "readonly") { await p.click('[data-cr="withdraw"]'); await p.waitForSelector(".cr-ro"); }
-      await p.waitForTimeout(250);
+      await settleStyle(p);
       const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
       await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
-      await p.waitForTimeout(200);
+      await settleStyle(p);
       await p.screenshot({ path: require("path").join(dir, "requests-" + st + "-" + w + "-" + skin + ".png") });
     } finally { await ctx.close(); }
   }
