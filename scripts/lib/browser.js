@@ -205,7 +205,7 @@ async function settleStyle(p, ms = 5000) {
     // A repeating animation (a spinner, a three-pulse dot of 5.7s) says nothing about whether a style change has landed.
     last = await p.evaluate(() => document.getAnimations().filter(a => { const it = a.effect.getComputedTiming().iterations; return !(it > 1); }).map(a => {
       const t = a.effect.target, c = a.effect.getComputedTiming();
-      return (a.animationName || a.transitionProperty || "?") + " on " + (t ? t.tagName.toLowerCase() + (t.id ? "#" + t.id : "") + (typeof t.className === "string" && t.className ? "." + t.className.trim().split(/s+/).join(".") : "") : "none") +
+      return (a.animationName || a.transitionProperty || "?") + " on " + (t ? t.tagName.toLowerCase() + (t.id ? "#" + t.id : "") + (typeof t.className === "string" && t.className ? "." + t.className.trim().split(/\s+/).join(".") : "") : "none") +
         " " + a.playState + " iterations=" + c.iterations + " duration=" + c.duration + " currentTime=" + a.currentTime;
     }));
     clean = last.length ? 0 : clean + 1;
