@@ -711,6 +711,10 @@ func (s *Store) ledgerRunning(tx *Tx, w *WorkItem, payload map[string]any) error
 	if w.Running() {
 		return nil
 	}
+	// The launch that made the item is its first generation, and its runner can die before this event is filed.
+	if made, _ := payload["item_made"].(bool); made && w.Generation == 1 {
+		return nil
+	}
 	gen := w.Generation + 1
 	by := payloadWord(payload, "by", "a launch")
 	// A RESTART OR A RESUME IS NOT NEW WORK. Only a launch that carried a prompt reopens an item that ended

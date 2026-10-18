@@ -1518,6 +1518,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// card does not put it on the ledger after the fact. The board's own
 	// dialog gets none: clint did not ask for a queue of verdicts. See
 	// internal/store/ledger.go.
+	madeItem := false
 	if req.Resume == "" && (hasTag(req.Tags, OriginAgentTag) || reportTo != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.st.CreateWorkItem(t, store.NewWorkItem{
@@ -1525,6 +1526,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			}); err != nil {
 				return nil, err
 			}
+			madeItem = true
 		}
 	}
 	// AN ITEM, for a fresh item launch: its mirror row, its owner and the push the hub is owed. See item_hub.go.
@@ -1601,6 +1603,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"effort": effort, "env_keys": sortedKeys(extraEnv),
 		// What was named and the card it resolved to at launch. See reportto.go.
 		"report_to": reportTo, "report_to_id": reportedTo,
+		"item_made": madeItem,
 	}); err != nil {
 		return nil, err
 	}

@@ -859,3 +859,17 @@ func TestAnUnexpectedEndStillSendsANotice(t *testing.T) {
 		t.Fatalf("item is %s", w.State)
 	}
 }
+
+func TestTheLaunchThatMadeTheItemIsNotASecondRunWhenItsRunnerDiedFirst(t *testing.T) {
+	s := openTestStore(t)
+	launcher, worker, _ := ledgerPair(t, s)
+	exit(t, s, worker.ID, nil)
+	launchedWith(t, s, worker.ID, map[string]any{"by": "launch", "prompted": true, "item_made": true})
+	exit(t, s, worker.ID, map[string]any{"by": "launch", "detected": "never started"})
+	if w := mustItem(t, s, worker.ID); w.Generation != 1 || w.State != WorkEnded {
+		t.Fatalf("one death left %+v", w)
+	}
+	if msgs, _ := s.PendingMessages(launcher.ID); len(msgs) != 1 {
+		t.Fatalf("one death sent %d notices", len(msgs))
+	}
+}
