@@ -48,6 +48,37 @@ function sh(args, env) {
   r = await sh([path.join(tmp, "missing.json")]);
   if (r.code !== 2) fail("a missing file exited " + r.code + ", wanted 2");
 
+  // No event file: the body comes from the run's own context. Every GITHUB_ variable is set, so a real run's own do not leak in.
+  const ctx = { GITHUB_REPOSITORY: "o/r", GITHUB_RUN_ID: "42", GITHUB_RUN_ATTEMPT: "3", GITHUB_WORKFLOW: "ci",
+    GITHUB_WORKFLOW_REF: "o/r/.github/workflows/ci.yml@refs/heads/x", GITHUB_HEAD_REF: "", GITHUB_REF_NAME: "feat/a\"b",
+    GITHUB_SHA: "abc1234", GITHUB_EVENT_NAME: "push", GITHUB_EVENT_PATH: "", GITHUB_SERVER_URL: "https://github.com" };
+  const own = path.join(tmp, "own.json");
+  r = await sh(["--out", own], ctx);
+  if (r.code !== 0 || r.stdout !== own) fail("a body from the run's context exited " + r.code + ": " + r.stderr);
+  else {
+    let b = null;
+    try { b = JSON.parse(fs.readFileSync(own, "utf8")); } catch (e) { fail("the context body is not JSON: " + e.message); }
+    const w = b && b.workflow_run;
+    if (!w || w.id !== 42 || w.run_attempt !== 3 || w.name !== "ci" || w.path !== ".github/workflows/ci.yml" ||
+        w.head_branch !== 'feat/a"b' || w.head_sha !== "abc1234" || w.event !== "push" || w.conclusion !== "failure" ||
+        w.html_url !== "https://github.com/o/r/actions/runs/42" || b.repository.full_name !== "o/r")
+      fail("the context body was " + JSON.stringify(b));
+  }
+  const prEvent = path.join(tmp, "pr-event.json");
+  fs.writeFileSync(prEvent, '{"pull_request":{"head":{"sha":"deadbee"}}}');
+  r = await sh(["--out", own, "--conclusion", "timed_out"],
+    { ...ctx, GITHUB_EVENT_NAME: "pull_request", GITHUB_HEAD_REF: "feat/pr", GITHUB_EVENT_PATH: prEvent });
+  if (r.code !== 0) fail("a pull request body exited " + r.code + ": " + r.stderr);
+  else if (spawnSync("jq", ["--version"]).status === 0) {
+    const w = JSON.parse(fs.readFileSync(own, "utf8")).workflow_run;
+    if (w.head_branch !== "feat/pr" || w.head_sha !== "deadbee" || w.conclusion !== "timed_out" || w.event !== "pull_request")
+      fail("the pull request body was " + JSON.stringify(w));
+  }
+  r = await sh(["--out", own, "--conclusion", "bogus"], ctx);
+  if (r.code !== 2) fail("a bad conclusion exited " + r.code + ", wanted 2");
+  r = await sh(["--out", own], { ...ctx, GITHUB_RUN_ID: "x1" });
+  if (r.code !== 2) fail("a non-numeric run id exited " + r.code + ", wanted 2");
+
   r = await sh([runEvent, "--out", out, "--url", "http://127.0.0.1:1/"]);
   if (r.code !== 2) fail("a url with no secret exited " + r.code + ", wanted 2");
 

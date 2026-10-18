@@ -22,9 +22,9 @@ listener receives today.
 
 ## What the sender sends
 
-The action runs inside a workflow and sends that workflow's event JSON. A CI workflow cannot report its own
-conclusion that way, so the notice comes from a second workflow on `workflow_run: completed`. Its event JSON carries
-`workflow_run` with `id`, `run_attempt`, `name`, `path`, `head_branch`, `head_sha`, `event`, `conclusion`, `html_url`
+The action runs inside a workflow and sends the body it is given. The `ci` workflow's last job, which `needs` every
+other job and runs on `failure()`, builds that body from the run's own push or pull request context. The body has the
+fields of a `workflow_run` event, because that is the shape the hub reads: `workflow_run` with `id`, `run_attempt`, `name`, `path`, `head_branch`, `head_sha`, `event`, `conclusion`, `html_url`
 and `repository.full_name`. That is the one shape the hub accepts.
 
 ## Decisions
@@ -67,7 +67,7 @@ expiry, so changing the GitHub secret is not a race. The compare is `subtle.Cons
 A missing or wrong secret is a 401 with no body detail, and one audit line `ci-hook-refused` naming the reason
 (`no secret`, `wrong secret`) and nothing from the body.
 
-**Phase 2, OIDC.** The notifier job sets `permissions: id-token: write` and the action's `audience`. The hub reads
+**Phase 2, OIDC.** The `notify` job sets `permissions: id-token: write` and the action's `audience`. The hub reads
 `Authorization: Bearer <jwt>` and checks:
 
 - RS256 only, signed by a key in `https://token.actions.githubusercontent.com/.well-known/jwks`. The set is cached for
@@ -77,7 +77,7 @@ A missing or wrong secret is a 401 with no body detail, and one audit line `ci-h
   name>`. `exp`, `nbf` and `iat` with 60 s leeway.
 - `repository` is in `ci_hook.repos`, and equals the payload's `repository.full_name`, so a token from one repo cannot
   report a run of another.
-- `job_workflow_ref` names a notifier workflow listed for that repo in `ci_hook.repos`.
+- `job_workflow_ref` names a workflow listed for that repo in `ci_hook.repos`.
 
 `ci_hook.require` is `secret` (the phase 1 default), `oidc` or `both`. Phase 2 makes `both` the default once a repo is
 set up for it. The ziti dial policy stays the first gate in every mode. The secret and the token are defence in depth,
@@ -160,15 +160,19 @@ acts on, so it is an audit line of its own kind that the pane can filter on.
 
 ### 6. Atrium's own workflow: the script decides, the workflow carries
 
-`scripts/ci-notify.sh` (and `.ps1`) takes the event file path, the hub URL and the secret as parameters. It checks
-the event is a `workflow_run`, writes the body (the event JSON as is), and POSTs it when a URL is given. Locally it
-POSTs to `http://127.0.0.1:7778/_hub/ci-hook` with a fixture event, which is how a person tests a route without
-GitHub.
+`scripts/ci-notify.sh` takes the hub URL and the secret as parameters, and an event file path only to replay a recorded
+`workflow_run` event. With no event file it builds the body from the run's own context (`GITHUB_REPOSITORY`,
+`GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_WORKFLOW`, the head branch and sha, `GITHUB_EVENT_NAME`), in the shape the
+hub reads, and every one of those falls back to the repo's git state when run by hand. It writes the body, and POSTs it
+when a URL is given. Locally it POSTs to `http://127.0.0.1:7778/_hub/ci-hook`, which is how a person tests a route
+without GitHub. (`scripts/ci-notify.ps1` replays an event file only.)
 
-`.github/workflows/ci-notify.yml`, on `workflow_run: completed` for the CI workflow: check out, run
-`scripts/ci-notify.sh "$GITHUB_EVENT_PATH"` with no URL to validate and write the body, then the `ziti-hook` step with
-that file as `payload` and the secrets as inputs. The action is the transport, in the place `actions/checkout` sits:
-it carries bytes and decides nothing. Every decision about what to send is in the script.
+The `notify` job in `.github/workflows/ci.yml`: `needs` every other job of the workflow and `if: failure()`, so a green
+run starts nothing and docs and release never notify. It checks out, runs `scripts/ci-notify.sh` with no URL to write
+the body, then the `ziti-hook` step with that body as `payload` and the secrets as inputs. The action is the transport,
+in the place `actions/checkout` sits: it carries bytes and decides nothing. Every decision about what to send is in the
+script. There is no `ci-notify.yml` and no `workflow_run` trigger. The route's `conclusion` filter stays as a second
+guard.
 
 ### 7. Tests with no GitHub and no controller
 
@@ -188,7 +192,8 @@ it runs on loopback.
   goes down then up, and two audit lines exist. An `Accept` error goes back to the loop.
 - **End to end:** the existing link test harness, a hub and one room. POST a fixture to the loopback route and see the
   message on the card.
-- **Script:** `ci-notify.sh` against a fixture event and a non-`workflow_run` event, comparing the body and the exit
+- **Script:** `ci-notify.sh` against a fixture event, a non-`workflow_run` event, and with no event file against a faked GitHub
+  environment (a push and a pull request), comparing the body and the exit
   code.
 
 A live ziti check is a manual step in the change notes, with the throwaway-listener bind tweak the ziti-hook design

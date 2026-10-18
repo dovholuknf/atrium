@@ -90,3 +90,24 @@ jobs:
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
+
+  # Tells the hub when this run failed, and only then. It needs every other job, so it starts when they are done, and
+  # `failure()` keeps a green run silent. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` builds the body from this
+  # run's own context, and the ziti-hook action only carries it to the hub over ziti.
+  notify:
+    needs: [check]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: body
+        run: |
+          path=$(bash scripts/ci-notify.sh)
+          echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
+      - uses: dovholuknf/ziti-hook@main
+        with:
+          transport: ziti
+          url: http://ziti-hook.ziti/
+          payload: ${{ steps.body.outputs.body }}
+          ziti-identity: ${{ secrets.ZITI_HOOK_IDENTITY }}
+          secret: ${{ secrets.ATRIUM_CI_HOOK_SECRET }}
