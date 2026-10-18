@@ -13223,17 +13223,18 @@ async function tallPtySection(browser, base) {
     if (rs.some(r => r.rows > fit)) fail("tallPty: a resize frame carried the pty's height, not the pane's: " + JSON.stringify(rs));
 
     // 6. a link inside the clipped grid opens itself. The text is on a row the clip is showing.
-    await put("\x1b[2J\x1b[47;1Hsee https://example.com/tall-link now\x1b[48;1Hprompt");
+    await termWrite(p, "\x1b[2J\x1b[47;1Hsee https://example.com/tall-link now\x1b[48;1Hprompt");
     await p.evaluate(() => { window.__opened = []; window.openLinkReused = (u) => window.__opened.push(u); });
     const lb = await p.evaluate(() => {
       const host = document.getElementById("t-screen"), x = host.querySelector(".xterm-screen").getBoundingClientRect();
       const d = term._core._renderService.dimensions.css.cell;
       return { x: x.left + d.width * 12, y: x.top + d.height * 46.5 };
     });
-    await p.mouse.move(lb.x, lb.y);
-    await p.waitForTimeout(150);
+    await p.mouse.move(lb.x - 30, lb.y);
+    await p.mouse.move(lb.x, lb.y, { steps: 3 });
+    await p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) });
     await p.mouse.click(lb.x, lb.y);
-    await p.waitForTimeout(200);
+    await until(() => p.evaluate(() => window.__opened.length), 3000, "the link click opened nothing").catch(() => {});
     const opened = await p.evaluate(() => window.__opened);
     if (opened.length !== 1 || opened[0] !== "https://example.com/tall-link") fail("tallPty: a click on a link in the clip opened " + JSON.stringify(opened));
 
