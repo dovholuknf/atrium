@@ -7141,14 +7141,11 @@ async function phoneFollowSection(browser, base) {
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
       null, { timeout: slow(10000) });
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":60,"rows":80}' }));
-    await p.waitForTimeout(300);
     const feed = (n, tag) => p.evaluate(({ n, tag }) => {
       for (let i = 0; i < n; i++) termSock.onmessage({ data: tag + i + "\r\n" });
     }, { n, tag });
     await feed(79, "seed");
-    await p.waitForTimeout(300);
-    // the cursor row's position against the visible pane, in px (0 while inside)
-    const st = () => p.evaluate(() => {
+    await p.evaluate(() => { window.__phst = () => {
       const host = document.getElementById("t-screen"), hb = host.getBoundingClientRect();
       const ch = term._core._renderService.dimensions.css.cell.height, b = term.buffer.active;
       const vv = window.visualViewport;
@@ -7157,29 +7154,33 @@ async function phoneFollowSection(browser, base) {
       const c = document.getElementById("t-follow"), n = c.querySelector(".n");
       return { st: host.scrollTop, sh: host.scrollHeight, ch: host.clientHeight, inView: rowTop >= top - 1 && rowTop + ch <= bottom + 1,
         chip: !c.hidden, n: n && !n.hidden ? n.textContent : "", box: c.hidden ? null : (r => ({ x: r.x, y: r.y, w: r.width, h: r.height }))(c.getBoundingClientRect()),
-        vy: b.viewportY, by: b.baseY };
-    });
+        vy: b.viewportY, by: b.baseY, abs: b.baseY + b.cursorY };
+    }; });
+    const st = () => p.evaluate(() => window.__phst());
+    const until = (cond) => p.waitForFunction((c) => { const s = window.__phst(); return eval(c); }, cond, { timeout: slow(10000) }).catch(() => {});
     const pan = (to) => p.evaluate((to) => new Promise(res => {
       const host = document.getElementById("t-screen");
       host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
       host.scrollTop = to;
       requestAnimationFrame(() => requestAnimationFrame(() => { host.dispatchEvent(new TouchEvent("touchend", { bubbles: true })); res(); }));
     }), to);
+    await until("s.abs >= 79 && s.inView");
     let s = await st();
     if (s.sh <= s.ch + 100) fail("phoneFollow: the grid does not scroll vertically: " + JSON.stringify(s));
     if (!s.inView || s.chip) fail("phoneFollow: the cursor is in view at the start but the button state is wrong: " + JSON.stringify(s));
     // 1. pan away: the button shows with no count, then output raises it
     await pan(0);
+    await until("s.chip && !s.inView");
     s = await st();
     if (!s.chip || s.inView || s.n) fail("phoneFollow: panning away did not show a bare button: " + JSON.stringify(s));
     await feed(7, "more");
-    await p.waitForTimeout(300);
+    await until("s.n === '7'");
     s = await st();
     if (!s.chip || s.n !== "7") fail("phoneFollow: the count did not rise to 7: " + JSON.stringify(s));
     if (s.st > 2) fail("phoneFollow: output moved the pan: " + JSON.stringify(s));
     // 2. a real tap on the button goes back to the cursor and hides it
     await p.touchscreen.tap(s.box.x + s.box.w / 2, s.box.y + s.box.h / 2);
-    await p.waitForTimeout(900);
+    await until("s.inView && !s.chip");
     s = await st();
     if (!s.inView || s.chip) fail("phoneFollow: a tap on the button did not follow: " + JSON.stringify(s));
     // 3. streaming after that keeps the cursor row in view the whole time
@@ -7202,15 +7203,16 @@ async function phoneFollowSection(browser, base) {
     // 4. pan away, stream, then pan back to within a row: it follows with no tap
     await pan(0);
     await feed(20, "away");
-    await p.waitForTimeout(300);
+    await until("s.n === '20'");
     s = await st();
     if (!s.chip || s.n !== "20") fail("phoneFollow: the second pan away did not count 20: " + JSON.stringify(s));
     await pan(s.sh);
-    await p.waitForTimeout(900);
+    await until("!s.chip && s.inView");
     s = await st();
     if (s.chip || !s.inView) fail("phoneFollow: panning back to the cursor did not resume the follow: " + JSON.stringify(s));
+    const before = s.abs;
     await feed(3, "after");
-    await p.waitForTimeout(300);
+    await until("s.abs >= " + (before + 3) + " && s.inView && !s.chip");
     s = await st();
     if (!s.inView || s.chip) fail("phoneFollow: output after the auto resume did not follow: " + JSON.stringify(s));
     await ctx.close();
