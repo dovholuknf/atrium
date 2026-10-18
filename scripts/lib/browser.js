@@ -64,6 +64,19 @@ const CLOCK_INIT = "(" + installClock.toString() + ")(" + CLOCK_OFFSET + ");";
 // Wrap the browser so no section can forget the clock: it is the first init
 // script of every context, ahead of any a section adds. browser.newPage() makes
 // its own context, so it goes through the same door.
+function retryGoto(page) {
+  const goto = page.goto.bind(page);
+  page.goto = async (url, o) => {
+    for (let n = 1; ; n++) {
+      try { return await goto(url, o); } catch (e) {
+        if (n >= 3 || !/net::ERR_NO_BUFFER_SPACE/.test(String(e && e.message))) throw e;
+        console.log("RETRY page.goto " + url + " attempt " + n + ": ERR_NO_BUFFER_SPACE");
+        await new Promise(r => setTimeout(r, 250 * n));
+      }
+    }
+  };
+  return page;
+}
 function withClock(browser) {
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (opts, more) => {
@@ -71,6 +84,8 @@ function withClock(browser) {
     if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
     // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
     if (!(more && more.redirect)) await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
+    const newPage = ctx.newPage.bind(ctx);
+    ctx.newPage = async () => retryGoto(await newPage());
     return ctx;
   };
   browser.newPage = async opts => {
