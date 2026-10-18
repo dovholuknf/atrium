@@ -158,11 +158,14 @@ function termLinkTo(board, card) {
 // `2/2 rooms` in the header found an empty list under `rooms` and concluded the
 // feature did not work. They are one list now, because to the person reading it
 // they are one question: what machines are there.
+let renderRoomsSeq = 0;
 async function renderRooms() {
   const el = document.getElementById("room-list");
   if (!el) return;
+  const mine = ++renderRoomsSeq;
   const attached = typeof hubAttachedRows === "function" ? await hubAttachedRows() : "";
   const rooms = await loadRooms();
+  if (mine !== renderRoomsSeq) return;
   if (!roomsRead.answered) {
     // A daemon too old to have the endpoint. Not an error worth drawing:
     // nothing has ever been in this list on that machine.
