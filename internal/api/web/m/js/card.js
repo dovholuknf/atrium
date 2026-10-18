@@ -398,7 +398,7 @@
   // thread while a touch is down, for about 300 ms after it lifts (a finger's momentum), or while a scroll is running.
   let stick = true;
   const LEAVE = 24, AT_END = 2, MOMENTUM = 300;
-  let touching = false, touchEndAt = 0, lastScrollAt = 0, progUntil = 0, progAt = 0, lastTop = 0, progTop = -1;
+  let touching = false, touchEndAt = 0, lastScrollAt = 0, progUntil = 0, progAt = 0, lastTop = 0, progTop = -1, order = 0, progOrd = 0, userOrd = 0;
   function active() { const n = Date.now(); return touching || n - touchEndAt < MOMENTUM || n - lastScrollAt < 120; }
   // Scroll anchoring is the browser's own way of holding a reader still when something above them grows (an image
   // loading, a bubble reflowing). It is on while not following and off while following, where toEnd does the job.
@@ -406,7 +406,7 @@
   function gapOf() { return els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight; }
   // `force` is for what the reader asked for: the jump arrow, their own message going out.
   // Every move the page makes itself goes through here, so its scroll event is not mistaken for the reader's.
-  function setTop(v) { progAt = Date.now(); progUntil = progAt + 80; els.scroll.scrollTop = v; lastTop = progTop = els.scroll.scrollTop; }
+  function setTop(v) { progOrd = ++order; progAt = Date.now(); progUntil = progAt + 80; els.scroll.scrollTop = v; lastTop = progTop = els.scroll.scrollTop; }
   function toEnd(force) {
     if (!els) return;
     if (!force && (!stick || active())) return;
@@ -546,6 +546,7 @@
   // `touching` follows touch events and a mouse or pen button, never a touch's pointer events: the browser cancels a touch's
   // pointer when it takes the drag over for scrolling (pointercancel), which is exactly when the finger is still down.
   function byHand(e) {
+    userOrd = ++order;
     userAt = Date.now();
     if (!els) return;
     if (e && (e.type === "touchstart" || (e.type === "pointerdown" && e.pointerType !== "touch"))) touching = true;
@@ -565,7 +566,7 @@
     // let go of the end. A reader's scroll up does: past LEAVE px from the bottom.
     // On a slow machine the event of our own scroll can arrive after the short window, so it is also known by the place
     // it left the thread at: an event that finds the thread exactly where the page put it is the page's, not the reader's.
-    const mine = userAt <= progAt && (Date.now() < progUntil || Math.abs(els.scroll.scrollTop - progTop) < 1);
+    const mine = userOrd < progOrd && (Date.now() < progUntil || Math.abs(els.scroll.scrollTop - progTop) < 1);
     const moved = els.scroll.scrollTop - lastTop;
     lastTop = els.scroll.scrollTop;
     if (mine) return;

@@ -16113,6 +16113,16 @@ async function mStickBottomSection(browser) {
       await p.tap("#m-jump");
       await settled("jump to latest");
       if (await jump()) fail(tag + "the jump control stayed after jumping");
+      await p.evaluate(() => {
+        const e = document.getElementById("m-card-scroll");
+        document.getElementById("m-jump").click();
+        e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+        e.scrollTop = 0;
+      });
+      try { await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) }); }
+      catch (e) { fail(tag + "a wheel right after a page scroll was taken for the page's own: no jump control"); }
+      await p.tap("#m-jump");
+      await settled("jump after a same-instant wheel");
       // your own message lands you on it, even from far up
       await scrolledUp("scrolled up again");
       await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
