@@ -195,12 +195,13 @@ async function until(fn, ms, what, step = 25) {
 }
 
 // Waits for the page's styles to stop moving: two frames so the transition the last change started has begun, then no
-// running animation, twice running so one queued behind another is seen. Throws at the deadline.
+// running finite animation, twice running so one queued behind another is seen. Throws at the deadline.
 async function settleStyle(p, ms = 5000) {
   const end = Date.now() + slow(ms);
   for (let clean = 0; clean < 2;) {
     await frames(p, 2);
-    clean = (await p.evaluate(() => document.getAnimations().length)) ? 0 : clean + 1;
+    // A spinner or shimmer never ends and says nothing about whether a style change has landed.
+    clean = (await p.evaluate(() => document.getAnimations().filter(a => a.effect.getComputedTiming().iterations !== Infinity).length)) ? 0 : clean + 1;
     if (clean < 2 && Date.now() > end) throw new Error("settleStyle: animations still running after " + ms + "ms");
   }
 }
