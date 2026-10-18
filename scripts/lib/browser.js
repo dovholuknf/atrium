@@ -179,6 +179,65 @@ async function fakeTick(p, ms, step = 250) {
   for (let t = 0; t < ms; t += step) { await p.clock.runFor(Math.min(step, ms - t)); await new Promise(r => setTimeout(r, 10)); }
 }
 
+// `n` requestAnimationFrame turns of the page, so a style recalc or a layout has run.
+const frames = (p, n = 2) => p.evaluate(k => new Promise(r => { const go = i => (i <= 0 ? r() : requestAnimationFrame(() => go(i - 1))); go(k); }), n);
+
+// A condition spun on from Node in short real steps under one deadline, throwing `what` when it never holds. A page on
+// the fake clock uses fakeWait instead.
+async function until(fn, ms, what, step = 25) {
+  const end = Date.now() + slow(ms);
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() > end) throw new Error("until timed out after " + ms + "ms: " + what);
+    await new Promise(r => setTimeout(r, step));
+  }
+}
+
+// Waits for the page's styles to stop moving: two frames so the transition the last change started has begun, then no
+// running animation, twice running so one queued behind another is seen. Throws at the deadline.
+async function settleStyle(p, ms = 5000) {
+  const end = Date.now() + slow(ms);
+  for (let clean = 0; clean < 2;) {
+    await frames(p, 2);
+    clean = (await p.evaluate(() => document.getAnimations().length)) ? 0 : clean + 1;
+    if (clean < 2 && Date.now() > end) throw new Error("settleStyle: animations still running after " + ms + "ms");
+  }
+}
+
+// Counts the requests a page makes, from now, whose url matches `re`. waitFor(n) is the sentinel: do the thing that must
+// follow, wait for its request, then assert the earlier one never came.
+function watchRequests(page, re, method) {
+  const seen = [];
+  const on = r => { if (re.test(r.url()) && (!method || r.method() === method)) seen.push(r.url()); };
+  page.on("request", on);
+  return {
+    seen,
+    get count() { return seen.length; },
+    waitFor: (n, ms = 5000) => until(() => seen.length >= n, ms, "request " + re + " x" + n + ", saw " + seen.length),
+    stop: () => page.off("request", on),
+  };
+}
+
+// "The page was not reloaded" as a fact: a window flag, and a beforeunload that marks sessionStorage for the document
+// that replaces this one. armUnload after the load, reloaded() after a frame or two.
+const armUnload = p => p.evaluate(() => {
+  window.__armed = true;
+  window.addEventListener("beforeunload", () => { try { sessionStorage.setItem("__unloaded", "1"); } catch (e) {} });
+});
+const reloaded = p => p.evaluate(() => !window.__armed || sessionStorage.getItem("__unloaded") === "1");
+
+// term.write with its callback: resolves once the terminal has parsed the data, so a read after it sees the result.
+const termWrite = (p, data, term = "term") => p.evaluate(([d, t]) => new Promise(r => (0, eval)(t).write(d, r)), [data, term]);
+
+// For a page on the fake clock: runs `fn(arg, done)` in the page, where `done(value)` is how it answers, and moves the
+// page's clock until it has. The page-side timers of a test are fired by the clock, not waited out.
+async function fakeRun(p, fn, arg, ms = 5000) {
+  await p.evaluate(([src, a]) => { window.__fr = undefined; (0, eval)("(" + src + ")")(a, v => { window.__fr = { v }; }); }, [fn.toString(), arg]);
+  await fakeWait(p, () => window.__fr, null, ms);
+  return p.evaluate(() => window.__fr.v);
+}
+
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
 try {
@@ -198,4 +257,4 @@ if (!exePath || !require("fs").existsSync(exePath)) {
   process.exit(0);
 }
 
-module.exports = { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
+module.exports = { slow, fakeWait, fakeTick, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };

@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick } = require("../lib/browser.js");
 const { mock, WEB_ROOT } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { docImgDir } = require("../lib/helpers.js");
@@ -24,56 +24,43 @@ async function readyOnceSection(browser, base) {
     Document.prototype.hasFocus = () => true;
   });
   try {
+    await page.clock.install();
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
-    await page.waitForTimeout(1500);
-    const got = await page.evaluate(async () => {
+    await fakeWait(page, () => typeof alerting !== "undefined", null, 15000);
+    await fakeTick(page, 1500);
+    await page.evaluate(() => {
       localStorage.removeItem("atrium.toastlog");
       alerting.set({ debounce: 0, muted: true });
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
       const w = (id, since) => ({ id, task_id: id, status: "needs-input", waiting_since: since });
       const say = t => ({ title: t.id + " ready", body: "done" });
-      const check = items => alerting.check("waiting", items, say);
-      const rings = title => toastLog().filter(e => e.title === title).reduce((n, e) => n + (e.n || 1), 0);
-      const out = {};
-      check([]);
-      // Leaves the set and comes back with the same wait.
-      check([w("ro-a", "S1")]);
-      out.heldAtOnce = rings("ro-a ready");
-      await sleep(900);
-      out.first = rings("ro-a ready");
-      check([]);
-      check([w("ro-a", "S1")]);
-      await sleep(900);
-      out.sameWait = rings("ro-a ready");
-      // A new wait.
-      check([]);
-      check([w("ro-a", "S2")]);
-      await sleep(900);
-      out.newWait = rings("ro-a ready");
-      // A wait that ends inside the quiet.
-      check([]);
-      check([w("ro-b", "S1")]);
-      await sleep(200);
-      check([]);
-      await sleep(900);
-      out.ended = rings("ro-b ready");
-      // Activity inside the quiet pushes the ring out.
-      check([w("ro-c", "S1")]);
-      await sleep(350);
-      alerting.activity("ro-c");
-      await sleep(400);
-      out.busy = rings("ro-c ready");
-      await sleep(500);
-      out.settled = rings("ro-c ready");
-      // Two quiet waits are one alert.
-      check([]);
-      check([w("ro-d", "S1"), w("ro-e", "S1")]);
-      await sleep(900);
-      out.pile = rings("2 agents are ready");
-      out.single = rings("ro-d ready") + rings("ro-e ready");
-      return out;
+      window.__ro = {
+        w,
+        check: items => alerting.check("waiting", items, say),
+        rings: title => toastLog().filter(e => e.title === title).reduce((n, e) => n + (e.n || 1), 0),
+        out: {},
+      };
+      window.__ro.check([]);
     });
+    const step = (fn, arg) => page.evaluate(([src, a]) => { const r = window.__ro; return (0, eval)("(" + src + ")")(r, a); }, [fn.toString(), arg]);
+    await step(r => { r.check([r.w("ro-a", "S1")]); r.out.heldAtOnce = r.rings("ro-a ready"); });
+    await fakeTick(page, 900);
+    await step(r => { r.out.first = r.rings("ro-a ready"); r.check([]); r.check([r.w("ro-a", "S1")]); });
+    await fakeTick(page, 900);
+    await step(r => { r.out.sameWait = r.rings("ro-a ready"); r.check([]); r.check([r.w("ro-a", "S2")]); });
+    await fakeTick(page, 900);
+    await step(r => { r.out.newWait = r.rings("ro-a ready"); r.check([]); r.check([r.w("ro-b", "S1")]); });
+    await fakeTick(page, 200);
+    await step(r => r.check([]));
+    await fakeTick(page, 900);
+    await step(r => { r.out.ended = r.rings("ro-b ready"); r.check([r.w("ro-c", "S1")]); });
+    await fakeTick(page, 350);
+    await step(r => alerting.activity("ro-c"));
+    await fakeTick(page, 400);
+    await step(r => { r.out.busy = r.rings("ro-c ready"); });
+    await fakeTick(page, 500);
+    await step(r => { r.out.settled = r.rings("ro-c ready"); r.check([]); r.check([r.w("ro-d", "S1"), r.w("ro-e", "S1")]); });
+    await fakeTick(page, 900);
+    const got = await step(r => { r.out.pile = r.rings("2 agents are ready"); r.out.single = r.rings("ro-d ready") + r.rings("ro-e ready"); return r.out; });
     if (got.heldAtOnce !== 0) fail("readyOnce: a fresh wait rang at once: " + JSON.stringify(got));
     if (got.first !== 1) fail("readyOnce: a quiet wait did not ring exactly once: " + JSON.stringify(got));
     if (got.sameWait !== 1) fail("readyOnce: the same wait rang again after leaving and returning: " + JSON.stringify(got));

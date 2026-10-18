@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/chat.js` runs just these units, the way the full run would.
 const path = require("path");
 const fs = require("fs");
-const { slow } = require("../lib/browser.js");
+const { slow, until, frames, settleStyle } = require("../lib/browser.js");
 const { mock, landCard } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { landContext } = require("../lib/helpers.js");
@@ -295,7 +295,7 @@ async function chatTabSection(browser, base) {
     // before: the terminals tab as it is
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector("#term-list .card.tab[data-id]", { timeout: slow(10000) });
-    await p.waitForTimeout(500);
+    await settleStyle(p);
     await shot("chat-before-terminals-1400x900.png");
     // the tab opens, with the terminals' own list in it
     await p.click('.tab[data-view="chat"]');
@@ -305,8 +305,8 @@ async function chatTabSection(browser, base) {
     await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
     await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
     if (await p.evaluate(() => !!(typeof termTask !== "undefined" && termTask))) fail(tag + "selecting a row attached a terminal");
-    const marked = await p.waitForFunction(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"),
-      null, { timeout: slow(5000) }).then(() => true, () => false);
+    const isOn = () => p.evaluate(() => document.querySelector('#term-list .card.tab[data-id="chat-a"]').classList.contains("on"));
+    const marked = await until(async () => { if (!await isOn()) return false; await frames(p, 2); return isOn(); }, 5000, "the selected row marked").then(() => true, () => false);
     if (!marked) fail(tag + "the selected row is not marked");
     const fr = await (await p.$('#chat-frame-host iframe[data-card="chat-a"]')).contentFrame();
     if (!fr) { fail(tag + "no phone page frame"); return; }
@@ -339,11 +339,15 @@ async function chatTabSection(browser, base) {
     });
     if (!sides.md) fail(tag + "a reply is not rendered as markdown");
     if (!(sides.mineRight > sides.theirsRight - 1 && sides.mineLeft > sides.theirsLeft)) fail(tag + "own bubble is not to the right of the reply: " + JSON.stringify(sides));
-    await p.waitForTimeout(500);
+    await settleStyle(p);
     await shot("chat-after-chat-1400x900.png");
     // wide: the column follows the pane, the list is as wide as the terminals' list
+    const paneFits = async w => {
+      await until(async () => await p.evaluate(x => innerWidth === x, w) && Math.abs(await p.evaluate(() => document.getElementById("chat-frame-host").getBoundingClientRect().width) - await fr.evaluate(() => innerWidth)) <= 2, 5000, "the chat pane at " + w);
+      await settleStyle(p);
+    };
     await p.setViewportSize({ width: 2400, height: 1200 });
-    await p.waitForTimeout(500);
+    await paneFits(2400);
     await shot("chat-" + (process.env.CHAT_SHOT_TAG || "after") + "-chat-2400x1200.png");
     const widths = async () => ({
       pane: await p.evaluate(() => document.getElementById("chat-frame-host").getBoundingClientRect().width),
@@ -353,7 +357,7 @@ async function chatTabSection(browser, base) {
     const wide = await widths();
     if (wide.col.w < wide.pane * 0.85) fail(tag + "at 2400 the column does not fill the pane: " + JSON.stringify(wide));
     await p.setViewportSize({ width: 1400, height: 900 });
-    await p.waitForTimeout(300);
+    await paneFits(1400);
     const narrow = await widths();
     if (narrow.col.w < narrow.pane * 0.85 || narrow.col.w > narrow.pane) fail(tag + "at 1400 the column does not track the pane: " + JSON.stringify(narrow));
     // the list is the terminals' width, dragged by the terminals' own grip, and it moves both tabs

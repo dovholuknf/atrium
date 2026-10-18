@@ -34,7 +34,7 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
 
 // The browser and the mocked daemon live in lib/. Loading lib/browser.js installs the shifted clock and finds Chromium,
 // so it goes first: the fixtures in lib/mock.js are built from Date.now().
-const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
+const { slow, fakeWait, fakeTick, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
 const { landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
@@ -3072,12 +3072,11 @@ async function pasteSpinnerSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
     await p.evaluate(() => {
       const real = pasteShow;
       pasteShow = f => { window.__shown++; real(f); };
@@ -3085,7 +3084,7 @@ async function pasteSpinnerSection(browser, base) {
 
     // 1. A one-line paste held on the socket for 50ms shows, and an echo inside
     // the hold does not take it down (u-007: a busy runner echoes at once).
-    const heldGot = await p.evaluate(() => new Promise(done => {
+    const heldGot = await fakeRun(p, (_, done) => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       pasteEnd();
       window.__shown = 0;
@@ -3095,7 +3094,7 @@ async function pasteSpinnerSection(browser, base) {
       setTimeout(() => { got.during = vis(); got.text = (document.getElementById("t-pasting") || {}).textContent; }, 40);
       setTimeout(() => { termSock.bufferedAmount = 0; termSock.onmessage({ data: "one line" }); }, 50);
       setTimeout(() => { got.after = vis(); got.shown = window.__shown; done(got); }, 120);
-    }));
+    });
     // Inside the hold the echo is only noted. Held, then gone once it is quiet.
     if (!heldGot.after) fail("an echo 50ms in took the spinner down inside its hold: " + JSON.stringify(heldGot));
     heldGot.after = false;
@@ -3109,7 +3108,7 @@ async function pasteSpinnerSection(browser, base) {
 
     // 2. A paste that drains and echoes inside 20ms is still drawn, at once, and
     // is gone once the runner has been quiet since the echo.
-    const quick = await p.evaluate(() => new Promise(done => {
+    const quick = await fakeRun(p, (_, done) => {
       const attempt = tries => {
         pasteEnd();
         window.__shown = 0;
@@ -3128,15 +3127,15 @@ async function pasteSpinnerSection(browser, base) {
         setTimeout(echo, 60);
       };
       attempt(5);
-    }));
+    });
     if (quick.now !== 1 || !quick.flight) {
       fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
     }
-    await p.waitForFunction(() => !pasteFlight, null, { timeout: 4000 })
+    await fakeWait(p, () => !pasteFlight, null, 4000)
       .catch(() => fail("a paste echoed once and then quiet never cleared"));
 
     // 3. Typed input never shows it: a key, an escape sequence, or a long burst.
-    const typed = await p.evaluate(() => new Promise(done => {
+    const typed = await fakeRun(p, (_, done) => {
       pasteEnd();
       window.__shown = 0;
       termSock.bufferedAmount = 5;
@@ -3148,7 +3147,7 @@ async function pasteSpinnerSection(browser, base) {
         termSock.bufferedAmount = 0;
         done(got);
       }, 150);
-    }));
+    });
     if (typed.shown || typed.flight) fail("typed input started the paste spinner: " + JSON.stringify(typed));
   } finally {
     await ctx.close();
@@ -4488,14 +4487,14 @@ async function pasteLandsSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
     for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
-      const got = await p.evaluate(([link, n]) => new Promise(done => {
+      await p.evaluate(([link, n]) => {
+        window.__got = null;
         window.__link.drain = link.drain; window.__link.write = link.write; window.__link.after = link.after || 0; window.__link.lastOut = 0;
         pasteEnd();
         const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
@@ -4505,14 +4504,17 @@ async function pasteLandsSection(browser, base) {
           const t = performance.now() - t0;
           if (vis()) { lastUp = t; if (firstUp < 0) firstUp = t; }
           if (t < link.drain + link.write + (link.after || 0) + 1200) { requestAnimationFrame(loop); return; }
-          done({ firstUp: Math.round(firstUp), lastUp: Math.round(lastUp), lastOut: Math.round(window.__link.lastOut - t0) });
+          window.__got = { firstUp: Math.round(firstUp), lastUp: Math.round(lastUp), lastOut: Math.round(window.__link.lastOut - t0) };
         };
         requestAnimationFrame(loop);
         const dt = new DataTransfer();
         dt.setData("text/plain", "ok   github.com/x/y 0.1s\n".repeat(Math.ceil(n / 25)));
         document.getElementById("t-screen").dispatchEvent(
           new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-      }), [link, 500 * 1024]);
+      }, [link, 500 * 1024]);
+      await fakeTick(p, link.drain + link.write + (link.after || 0) + 1200);
+      await fakeWait(p, () => window.__got, null, 2000);
+      const got = await p.evaluate(() => window.__got);
       const end = link.after ? Math.max(got.lastOut, link.drain + link.write) : link.drain + link.write;
       if (got.firstUp < 0 || got.firstUp > 300) fail(name + ": a 500KB paste did not show the box at once: " + JSON.stringify(got));
       else if (got.lastUp < end - 150 && !(link.after === 0)) fail(name + ": the box went down before the last byte was written (" + end + "ms): " + JSON.stringify(got));
@@ -5442,14 +5444,13 @@ async function termProbeStormSection(browser, base) {
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await p.waitForSelector("#t-screen .xterm-screen", { timeout: slow(10000) });
     const rows = 40;
-    await p.evaluate(n => new Promise(res => {
-      let s = "\x1b[2J\x1b[H";
-      for (let i = 0; i < n; i++) s += "row" + i + " the quick.brown fox_" + i + ".txt jumps over v2." + i + ".1\r\n";
-      term.write(s, res);
-    }), rows);
-    await p.waitForTimeout(300);
+    let feed = "\x1b[2J\x1b[H";
+    for (let i = 0; i < rows; i++) feed += "row" + i + " the quick.brown fox_" + i + ".txt jumps over v2." + i + ".1\r\n";
+    await termWrite(p, feed);
+    await p.waitForFunction(() => term._core._renderService.dimensions.css.cell.width > 0 && term.rows > 0, null, { timeout: slow(10000) });
+    await frames(p, 2);
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
     const cell = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
@@ -5460,14 +5461,19 @@ async function termProbeStormSection(browser, base) {
     const sweep = async () => {
       for (let r = 0; r < visible; r++) {
         await p.mouse.move(box.x + cell.w * 12, box.y + cell.h * (r + 0.5), { steps: 2 });
-        await p.waitForTimeout(15);
+        await frames(p, 1);
       }
+    };
+    const quiet = async () => {
+      await until(() => p.evaluate(() => probePending.size === 0), 5000, "the probes answered");
+      await frames(p, 2);
+      await until(() => p.evaluate(() => probePending.size === 0), 5000, "the probes answered");
     };
     const settle = async () => {
       for (let pass = 0; pass < 6; pass++) {
         const before = probes;
         await sweep();
-        for (let seen = -1; seen !== probes;) { seen = probes; await p.waitForTimeout(300); }
+        await quiet();
         if (probes === before) return;
       }
       fail("the terminal kept probing through 6 sweeps with no new output");
@@ -5475,19 +5481,20 @@ async function termProbeStormSection(browser, base) {
     await settle();
     const first = probes;
     let frame = 0;
-    const spinner = setInterval(() => p.evaluate(([r, f]) => term.write("\x1b[" + r + ";1H\x1b[2K" + "|/-\\"[f % 4] + " working"), [spin, frame++]).catch(() => {}), 1000);
     if (first > rows) fail("the first pass asked " + first + " times for " + rows + " rows");
-    const t0 = Date.now();
-    while (Date.now() - t0 < 10000) await sweep();
-    clearInterval(spinner);
+    for (let round = 0; round < 10; round++) {
+      await termWrite(p, "\x1b[" + spin + ";1H\x1b[2K" + "|/-\\"[frame++ % 4] + " working");
+      await sweep();
+    }
+    await quiet();
     if (frame < 5) fail("the spinner redrew only " + frame + " times");
     if (probes !== first) fail("sweeping an unchanged terminal for 10s probed " + (probes - first) + " more times");
-    await p.evaluate(() => new Promise(res => term.write("\x1b[1;1H\x1b[2Kchanged row v9.9 here.txt", res)));
+    await termWrite(p, "\x1b[1;1H\x1b[2Kchanged row v9.9 here.txt");
     await settle();
     const again = probes;
     if (again === first || again > first + 1) fail("a changed row asked " + (again - first) + " times, want 1");
     await sweep();
-    await p.waitForTimeout(300);
+    await quiet();
     if (probes !== again) fail("rows asked again with no new output: " + (probes - again));
     if (process.env.PROBE_COUNTS) console.log("probe storm: first pass " + first + ", after output " + (again - first) + ", then " + (probes - again));
     if (errors.length) fail("the page threw: " + errors.join(" | "));
@@ -6646,7 +6653,7 @@ async function phoneShareSection(browser, base) {
       const grid = (q) => q.evaluate(() => ({ cols: term.cols, rows: term.rows }));
       const barSettled = (q, shown) => q.waitForFunction((want) => { const e = document.querySelector(".term-bar"), r = e.getBoundingClientRect();
         const now = getComputedStyle(e).visibility !== "hidden" && r.bottom > 0;
-        return now === want && !e.getAnimations().length; }, shown, { timeout: slow(5000) }).catch(() => {});
+        return now === want && !e.getAnimations().length; }, shown, { timeout: slow(5000) });
       const barShown = (q) => q.evaluate(() => { const e = document.querySelector(".term-bar"); return getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; });
       // the tray is hidden: zero height, the terminal starts at the pane's top edge
       if (await barShown(p)) fail("phoneShare: the tray shows by default");
@@ -7614,8 +7621,7 @@ async function phoneKeyLitSection(browser, base) {
     for (const sel of ["#t-keys [data-key=left]", "#t-keys [data-key=enter]", "#t-keys [data-key=tab]", "#t-keys-attach"]) {
       const [x, y] = await centre(sel);
       await p.touchscreen.tap(x, y);
-      await p.waitForTimeout(400);
-      await p.waitForFunction(() => !document.getAnimations().length);
+      await settleStyle(p);
       const now = await probe();
       for (const k of Object.keys(rest)) if (now[k] !== rest[k])
         fail("phoneKeyLit: after a tap on " + sel + " " + k + " reads " + now[k] + ", resting " + rest[k]);
@@ -22142,28 +22148,39 @@ async function switchPrewarmSection(browser, base) {
     window.WebSocket = new Proxy(W, { construct(T, a) { window.__socks++; return new T(...a); } });
   });
   const gets = [];
+  const flushed = [];
   wp.on("request", r => {
     const m = /\/v1\/tasks\/(sp-[a-z]+)$/.exec(new URL(r.url()).pathname);
     if (m && r.method() === "GET") gets.push(m[1]);
+    const fl = new RegExp("/v1/tasks/flush([0-9]+)$").exec(new URL(r.url()).pathname);
+    if (fl) flushed.push(+fl[1]);
   });
   const was = mock.tasksMode;
   const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/sp/" + id });
   try {
     mock.wornTasks = [live("sp-a"), live("sp-b"), live("sp-c"), live("sp-d")];
     mock.tasksMode = "worn";
+    await wp.clock.install();
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
     await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
     const row = id => wp.locator('#term-list .card.tab[data-id="' + id + '"]');
     await row("sp-a").waitFor({ timeout: slow(10000) });
-    const idle = ms => wp.waitForTimeout(ms);
+    let flushSeq = 0;
+    const flush = async () => {
+      const n = ++flushSeq;
+      await wp.evaluate(n => { fetch("/v1/tasks/flush" + n).catch(() => {}); }, n);
+      await until(() => flushed.includes(n), 5000, "the flush request " + n);
+    };
+    const idle = async ms => { await fakeTick(wp, ms); await flush(); };
 
     // Rest on a row: fetched once, after the dwell.
     await row("sp-a").hover();
     await idle(40);
     if (gets.length) fail("switchPrewarm: the card was fetched before the dwell was up (" + gets.join(",") + ").");
     await idle(250);
+    await until(() => gets.length >= 1, 5000, "the rest on sp-a fetched");
     if (gets.join(",") !== "sp-a") fail("switchPrewarm: resting on a row did not fetch its card once (" + gets.join(",") + ").");
 
     // Resting on the same row again inside the fresh window does not fetch again.
@@ -22223,6 +22240,7 @@ async function switchPrewarmSection(browser, base) {
     await wp.mouse.move(5, 5);
     await row("sp-b").hover();
     await idle(250);
+    await until(() => getsOf("sp-b") >= 1, 5000, "the rest on sp-b fetched");
     if (getsOf("sp-b") !== 1) fail("switchPrewarm: resting on sp-b did not fetch it once (" + getsOf("sp-b") + ").");
     await wp.evaluate(() => attachTask("sp-b"));
     await idle(200);
@@ -22232,8 +22250,10 @@ async function switchPrewarmSection(browser, base) {
     await wp.mouse.move(5, 5);
     await row("sp-c").hover();
     await idle(250);
+    await until(() => getsOf("sp-c") >= 1, 5000, "the rest on sp-c fetched");
     await idle(3100);
     await wp.evaluate(() => attachTask("sp-c"));
+    await until(() => getsOf("sp-c") >= 2, 5000, "the stale click fetched sp-c again");
     await idle(200);
     if (getsOf("sp-c") !== 2) fail("switchPrewarm: a click after the prewarm went stale did not fetch again (" + getsOf("sp-c") + " GETs, two expected).");
 
@@ -22241,6 +22261,7 @@ async function switchPrewarmSection(browser, base) {
     await wp.route("**/v1/tasks/sp-*", () => {});
     const capFrom = gets.length;
     await wp.evaluate(() => { prewarmFlying = 0; prewarmed.clear(); for (const id of ["sp-a", "sp-b", "sp-c", "sp-d"]) prewarmCard(id); });
+    await until(() => gets.length - capFrom >= 2, 5000, "two prewarms started");
     await idle(300);
     const flying = gets.length - capFrom;
     if (flying !== 2) fail("switchPrewarm: " + flying + " prewarms started at once, the cap is 2.");
@@ -22830,7 +22851,7 @@ async function crFixturePage(browser, base, o) {
   await p.waitForFunction(() => document.querySelector("#hubrepos-list .cr-ledger, #hubrepos-list .cr-offline, #hubrepos-list .hr-hero, #hubrepos-list .hr-ledger"), null, { timeout: slow(10000) });
   // The requests are read once by the view and once more when the repos arrive; both are settled before a test touches the page.
   await p.waitForFunction(() => hubRepos.loaded && !hubRepos.inflight && !cr.inflight, null, { timeout: slow(8000) });
-  await p.waitForTimeout(300);
+  await frames(p, 2);
   await p.waitForFunction(() => !cr.inflight, null, { timeout: slow(5000) });  return { ctx, p, errors, hub, fx };
 }
 
@@ -22853,10 +22874,10 @@ async function crInkCheck(p, skins, sels, width, before) {
     for (const skin of skins) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
-      await p.waitForTimeout(80);
+      await settleStyle(p);
       const passed = await crInkBatch(p, sels, width);
       // the batch's restore restarts colour transitions, and a miss read mid-transition is not a miss
-      if (passed.size < sels.length) await p.waitForTimeout(400);
+      if (passed.size < sels.length) await settleStyle(p);
       for (const sel of sels) {
         if (passed.has(sel)) continue;
         let box = null, ratio = 99;
@@ -22952,10 +22973,10 @@ async function crShots(browser, base) {
       await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (st === "closed") { await p.click('.cr-seg [data-tab="closed"]'); await p.click('.cr-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test(document.querySelector(".cr-title").textContent)); }
       if (st === "readonly") { await p.click('[data-cr="withdraw"]'); await p.waitForSelector(".cr-ro"); }
-      await p.waitForTimeout(250);
+      await settleStyle(p);
       const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
       await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
-      await p.waitForTimeout(200);
+      await settleStyle(p);
       await p.screenshot({ path: require("path").join(dir, "requests-" + st + "-" + w + "-" + skin + ".png") });
     } finally { await ctx.close(); }
   }
