@@ -171,33 +171,7 @@ func (r *Room) Run(ctx context.Context) error {
 	// running: it takes connections off the channel for the life of the room,
 	// across any number of hub restarts, because an http.Server does not care
 	// where its listener gets sockets from.
-	srv := &http.Server{
-		// THE BOARD'S HANDLER WITH `/_link/ssh` IN FRONT, on the link only. See linkHandler.
-		Handler: r.linkHandler(),
-		// EVERY TIMEOUT HERE IS ZERO, AND THAT IS THE WHOLE POINT OF THIS
-		// COMMENT, because setting one looks obviously correct and breaks the
-		// feature in a way that takes an evening to find.
-		//
-		// A `ReadHeaderTimeout` starts when the connection is ACCEPTED, not
-		// when bytes arrive. These connections are dialled in advance and wait
-		// in the hub's pool precisely so the first request after a hub restart
-		// does not pay for a dial. So a pool that has been warm for longer than
-		// the timeout is a pool of connections the room has already closed, and
-		// the symptom is every request answering EOF while the link reports
-		// perfectly healthy and four connections idle.
-		//
-		// A read or write timeout is worse: the terminal websocket and the
-		// event stream are meant to be open for hours.
-		//
-		// What bounds this instead is the link itself. These connections arrive
-		// only from a room that authenticated, the hub closes the whole pool
-		// when the link drops, and the heartbeat is what notices a dead peer.
-		// There is no anonymous client here to defend against.
-		ReadHeaderTimeout: 0,
-		ReadTimeout:       0,
-		WriteTimeout:      0,
-		IdleTimeout:       0,
-	}
+	srv := newLinkServer(r.linkHandler())
 	go func() {
 		_ = srv.Serve(&reverseListener{r: r, ctx: ctx})
 		// Serve only returns when the listener says it is done, which happens
@@ -667,4 +641,34 @@ func (b *buffered) Read(p []byte) (int, error) { return b.br.Read(p) }
 func (b *buffered) CloseWrite() error {
 	closeWrite(b.Conn)
 	return nil
+}
+
+func newLinkServer(h http.Handler) *http.Server {
+	return &http.Server{
+		// THE BOARD'S HANDLER WITH `/_link/ssh` IN FRONT, on the link only. See linkHandler.
+		Handler: h,
+		// EVERY TIMEOUT HERE IS ZERO, AND THAT IS THE WHOLE POINT OF THIS
+		// COMMENT, because setting one looks obviously correct and breaks the
+		// feature in a way that takes an evening to find.
+		//
+		// A `ReadHeaderTimeout` starts when the connection is ACCEPTED, not
+		// when bytes arrive. These connections are dialled in advance and wait
+		// in the hub's pool precisely so the first request after a hub restart
+		// does not pay for a dial. So a pool that has been warm for longer than
+		// the timeout is a pool of connections the room has already closed, and
+		// the symptom is every request answering EOF while the link reports
+		// perfectly healthy and four connections idle.
+		//
+		// A read or write timeout is worse: the terminal websocket and the
+		// event stream are meant to be open for hours.
+		//
+		// What bounds this instead is the link itself. These connections arrive
+		// only from a room that authenticated, the hub closes the whole pool
+		// when the link drops, and the heartbeat is what notices a dead peer.
+		// There is no anonymous client here to defend against.
+		ReadHeaderTimeout: 0,
+		ReadTimeout:       0,
+		WriteTimeout:      0,
+		IdleTimeout:       0,
+	}
 }

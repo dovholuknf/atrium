@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -125,12 +126,22 @@ func TestHubLeavesARequestPendingWhenBoardWideAutoIsOff(t *testing.T) {
 	proxy, done := oneRoom(t, "alpha", g.handler())
 	defer done()
 
-	proxy.SetInventory(&remembering{boardAuto: false})
+	inv := &looked{remembering: &remembering{boardAuto: false}}
+	proxy.SetInventory(inv)
 
-	// Long enough that an approver that was going to act would have. Nothing
-	// should have touched the request.
-	time.Sleep(time.Second)
+	waitFor(t, 5*time.Second, func() bool { return inv.looks.Load() >= 1 })
 	if decided, _, _ := g.answered(); decided {
 		t.Fatalf("a request was approved with board-wide auto off")
 	}
+}
+
+type looked struct {
+	*remembering
+	looks atomic.Int64
+}
+
+func (l *looked) BoardAuto() (bool, *time.Time, error) {
+	on, until, err := l.remembering.BoardAuto()
+	l.looks.Add(1)
+	return on, until, err
 }

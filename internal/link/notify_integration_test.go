@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/testwait"
 )
 
 // fakeStore is NotifyStore with the semantics of hubstore.NotifyRecord.
@@ -115,14 +117,7 @@ func (r *recSink) count() int {
 
 func until(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if ok() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	testwait.Eventually(t, 5*time.Second, what, ok)
 }
 
 func settle() { time.Sleep(150 * time.Millisecond) }

@@ -228,14 +228,14 @@ func TestTheGateScriptHoldsThroughAPauseThenGoes(t *testing.T) {
 // exits non-zero rather than polling forever.
 func TestTheGateScriptExitsWhenTheHubDiesWhileHeld(t *testing.T) {
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
-	front := httptest.NewServer(p)
+	front, polls := pollCounted(p)
 	events, shut := listen(t, front.URL+"/v1/events/hub")
 	defer shut()
 
-	code, said := runGateScript(t, front.URL, "-Countdown", "5", "-Idle", "0.05", "-Wait", "1", "-Hold", "0.3")
+	code, said := runGateScript(t, front.URL, "-Countdown", "5", "-Idle", "0.05", "-Wait", "0.3", "-Hold", "0.1")
 	waitEvent(t, events, restartEvent)
 	p.restart.pause()
-	time.Sleep(2 * time.Second)
+	heldPastItsWait(t, polls, 300*time.Millisecond)
 	front.CloseClientConnections()
 	front.Close()
 	c, out := exitOf(t, code, said, 30*time.Second)
@@ -251,15 +251,15 @@ func TestTheGateScriptExitsWhenTheHubDiesWhileHeld(t *testing.T) {
 // non-zero.
 func TestTheGateScriptExitsWhenTheHubForgetsTheAsk(t *testing.T) {
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
-	front := httptest.NewServer(p)
+	front, polls := pollCounted(p)
 	defer front.Close()
 	events, shut := listen(t, front.URL+"/v1/events/hub")
 	defer shut()
 
-	code, said := runGateScript(t, front.URL, "-Countdown", "5", "-Idle", "0.05", "-Wait", "1", "-Hold", "0.3")
+	code, said := runGateScript(t, front.URL, "-Countdown", "5", "-Idle", "0.05", "-Wait", "0.3", "-Hold", "0.1")
 	waitEvent(t, events, restartEvent)
 	p.restart.pause()
-	time.Sleep(time.Second)
+	heldPastItsWait(t, polls, 300*time.Millisecond)
 	// What a new hub knows about the old one's ask: nothing.
 	p.restart.mu.Lock()
 	a := p.restart.held
@@ -272,4 +272,23 @@ func TestTheGateScriptExitsWhenTheHubForgetsTheAsk(t *testing.T) {
 	if c == 0 || !strings.Contains(out, "forgot the ask") {
 		t.Fatalf("after the hub forgot the ask the script exited %d: %s", c, out)
 	}
+}
+
+func pollCounted(p *Proxy) (*httptest.Server, *atomic.Int64) {
+	var polls atomic.Int64
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/_hub/restart" {
+			polls.Add(1)
+		}
+		p.ServeHTTP(w, r)
+	}))
+	return front, &polls
+}
+
+func heldPastItsWait(t *testing.T, polls *atomic.Int64, wait time.Duration) {
+	t.Helper()
+	paused, before := time.Now(), polls.Load()
+	waitFor(t, 30*time.Second, func() bool {
+		return time.Since(paused) >= wait && polls.Load() >= before+4
+	})
 }

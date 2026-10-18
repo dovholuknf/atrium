@@ -190,17 +190,16 @@ func TestTheScopedStreamWithoutTheParameterIsUnchanged(t *testing.T) {
 		for i := 0; i < 20; i++ {
 			beta <- sse("task", `{"id":"card2","title":"indexed"}`)
 			alpha <- sse("task", own)
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
 		}
 		hub.IndexEverywhere("beta", nil)
 	}()
 	var got strings.Builder
 	buf := make([]byte, 4096)
-	end := time.Now().Add(3 * time.Second)
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		for time.Now().Before(end) {
+		for strings.Count(got.String(), sse("task", own)) < 20 {
 			n, err := res.Body.Read(buf)
 			got.Write(buf[:n])
 			if err != nil {
@@ -208,9 +207,14 @@ func TestTheScopedStreamWithoutTheParameterIsUnchanged(t *testing.T) {
 			}
 		}
 	}()
-	time.Sleep(3200 * time.Millisecond)
+	select {
+	case <-readDone:
+	case <-time.After(10 * time.Second):
+		res.Body.Close()
+		<-readDone
+		t.Fatalf("the room's own events did not all arrive: %q", got.String())
+	}
 	res.Body.Close()
-	<-readDone
 	raw := got.String()
 	if !strings.Contains(raw, sse("task", own)) {
 		t.Fatalf("the room's own event is not there byte for byte: %q", raw)

@@ -16,6 +16,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/testwait"
 )
 
 // pair stands a hub and a room up, attached, and hands back the proxy's URL.
@@ -127,14 +129,7 @@ func parallel(t *testing.T) {
 
 func waitFor(t *testing.T, limit time.Duration, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
-		if ok() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("timed out waiting")
+	testwait.Eventually(t, limit, "the condition", ok)
 }
 
 // The whole feature in one test: a request to the hub is answered by the room's
@@ -314,20 +309,19 @@ func TestAnUpgradeBecomesARawConnection(t *testing.T) {
 // connections the pool exists to hold. The link went on reporting itself
 // healthy with four idle connections while every request answered EOF.
 //
-// The pause here is longer than any header timeout somebody would plausibly
-// reintroduce.
+// Any timeout on the server is a bug, whatever its length, so the server's own
+// settings are asserted instead of waiting out one.
 func TestAConnectionThatWaitedInThePoolStillWorks(t *testing.T) {
-	if testing.Short() {
-		t.Skip("this one has to actually wait")
-	}
-	// Twelve seconds of nothing, so it waits beside the other tests.
 	parallel(t)
+	srv := newLinkServer(http.NotFoundHandler())
+	if srv.ReadHeaderTimeout != 0 || srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || srv.IdleTimeout != 0 {
+		t.Fatalf("the link server has a timeout: %v %v %v %v",
+			srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout)
+	}
 	front, _, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "still here")
 	}))
 	defer done()
-
-	time.Sleep(12 * time.Second)
 
 	res, err := http.Get(front.URL + "/v1/health")
 	if err != nil {

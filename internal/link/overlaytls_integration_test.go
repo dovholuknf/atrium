@@ -310,13 +310,15 @@ func TestThePeekDoesNotEatTheFirstByte(t *testing.T) {
 	ln := MixedListener(inner, cfg, "ziti")
 	defer ln.Close()
 
+	release := make(chan struct{})
+	defer close(release)
 	// The old path: what was written is what is read, from its first byte.
 	go func() {
 		c, err := net.Dial("tcp", inner.Addr().String())
 		if err == nil {
 			_, _ = c.Write([]byte("{\"v\":1}\n"))
 			defer c.Close()
-			time.Sleep(time.Second)
+			<-release
 		}
 	}()
 	conn, err := ln.Accept()

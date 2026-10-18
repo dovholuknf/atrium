@@ -149,14 +149,15 @@ func TestARoomDoesNotInstallTheBinaryItIsAlreadyRunning(t *testing.T) {
 			return nil
 		},
 	}
-	hub, _, done := offering(t, up, selfBuild(t, Offer{
+	build := selfBuild(t, Offer{
 		Version: "dev", SHA256: sum, Size: size,
 		OS: runtime.GOOS, Arch: runtime.GOARCH,
-	}))
+	})
+	hub, room, done := offering(t, up, build)
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
-	time.Sleep(2 * time.Second)
+	room.consider(context.Background(), &build.Offer)
 	mu.Lock()
 	defer mu.Unlock()
 	if asked {
@@ -184,13 +185,13 @@ func TestAHubCannotUpgradeARoomThatDidNotAgree(t *testing.T) {
 		},
 	}
 	sum, size := selfSum(t)
-	hub, _, done := offering(t, up, selfBuild(t, Offer{Version: "v2", SHA256: sum, Size: size,
-		OS: runtime.GOOS, Arch: runtime.GOARCH}))
+	build := selfBuild(t, Offer{Version: "v2", SHA256: sum, Size: size,
+		OS: runtime.GOOS, Arch: runtime.GOARCH})
+	hub, room, done := offering(t, up, build)
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
-	// Long enough that a fetch would have finished.
-	time.Sleep(2 * time.Second)
+	room.consider(context.Background(), &build.Offer)
 	mu.Lock()
 	defer mu.Unlock()
 	if asked {
@@ -217,12 +218,13 @@ func TestAnotherPlatformsBuildIsRefused(t *testing.T) {
 		},
 	}
 	sum, size := selfSum(t)
-	hub, _, done := offering(t, up, selfBuild(t, Offer{Version: "v2", SHA256: sum, Size: size,
-		OS: "plan9", Arch: "sparc64"}))
+	build := selfBuild(t, Offer{Version: "v2", SHA256: sum, Size: size,
+		OS: "plan9", Arch: "sparc64"})
+	hub, room, done := offering(t, up, build)
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
-	time.Sleep(2 * time.Second)
+	room.consider(context.Background(), &build.Offer)
 	mu.Lock()
 	defer mu.Unlock()
 	if asked {
@@ -250,15 +252,19 @@ func TestABuildThatDoesNotMatchItsHashIsNotInstalled(t *testing.T) {
 		},
 	}
 	_, size := selfSum(t)
-	hub, _, done := offering(t, up, selfBuild(t, Offer{
-		Version: "v2", Size: size,
-		SHA256: "0000000000000000000000000000000000000000000000000000000000000000",
-		OS:     runtime.GOOS, Arch: runtime.GOARCH,
+	const bad = "0000000000000000000000000000000000000000000000000000000000000000"
+	hub, room, done := offering(t, up, selfBuild(t, Offer{
+		Version: "v2", Size: size, SHA256: bad,
+		OS: runtime.GOOS, Arch: runtime.GOARCH,
 	}))
 	defer done()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("leaf") })
 
-	time.Sleep(3 * time.Second)
+	waitFor(t, 5*time.Second, func() bool {
+		room.taking.mu.Lock()
+		defer room.taking.mu.Unlock()
+		return room.taking.settled[bad]
+	})
 	mu.Lock()
 	defer mu.Unlock()
 	if asked {

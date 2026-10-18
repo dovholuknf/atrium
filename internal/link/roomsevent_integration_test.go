@@ -376,8 +376,8 @@ func TestAutoApprovesFromTheEventWithNoBoardAndNoPolling(t *testing.T) {
 	l.raise("p9")
 	waitFor(t, 5*time.Second, func() bool { _, d := l.counts(); return d["p9"] == 1 })
 
-	// Idle for several of the old ticks.
-	time.Sleep(2500 * time.Millisecond)
+	l.raise("p10")
+	waitFor(t, 5*time.Second, func() bool { _, d := l.counts(); return d["p10"] == 1 })
 	gets, decides := l.counts()
 	if gets != base {
 		t.Errorf("the room was read %d more time(s) while nothing happened", gets-base)
