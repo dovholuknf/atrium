@@ -3,7 +3,11 @@
 package daemon
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +149,81 @@ func TestALinkCardIsNotExitedByItsReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "x"})
+	expectNoExit(t, got)
+}
+
+// A work worker's done exits its runner, and a wake say afterwards resumes the same card.
+func TestAWorkWorkerIsExitedByDoneAndAWakeSayResumesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	_, worker := launchedPair(t, d)
+	d.hk.keptTick, d.hk.keptSettle = 20*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { d.pending.stopAll() })
+	if err := d.st.SetLifetime(worker.ID, store.LifetimeWork); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetResumeID(worker.ID, "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan string, 1)
+	d.hk.exitOnReportDelay = 10 * time.Millisecond
+	d.hk.stopAfterReport = func(dd *Daemon, id string) error {
+		dd.sup.remove(id)
+		exited <- id
+		return nil
+	}
+
+	if rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research"}); rec.Code != 200 {
+		t.Fatalf("finish answered %d: %s", rec.Code, rec.Body)
+	}
+	select {
+	case id := <-exited:
+		if id != worker.ID {
+			t.Fatalf("exited %s, want %s", id, worker.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the worker was never asked to leave")
+	}
+	if card, _ := d.st.Get(worker.ID); card.Status != store.StatusDone {
+		t.Fatalf("card is in %s, want done", card.Status)
+	}
+
+	launched := make(chan string, 1)
+	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		launched <- req.TaskID
+		typedRunner(t, d, worker.ID)
+		return d.st.Get(worker.ID)
+	}
+	raw, _ := json.Marshal(map[string]any{"from": "orchestrator", "to": "worker", "text": "one more round", "wake": true})
+	w := httptest.NewRecorder()
+	d.handleTell(w, httptest.NewRequest("POST", "/tell", strings.NewReader(string(raw))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("wake say answered %d: %s", w.Code, w.Body.String())
+	}
+	select {
+	case id := <-launched:
+		if id != worker.ID {
+			t.Fatalf("woke %s, want the exited card %s", id, worker.ID)
+		}
+	default:
+		t.Fatal("the wake say did not resume the exited worker")
+	}
+}
+
+// A blocked work worker keeps running.
+func TestABlockedWorkWorkerKeepsRunning(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	got := watchExits(t, d, launcher.ID, nil)
+	if err := d.st.SetLifetime(worker.ID, store.LifetimeWork); err != nil {
+		t.Fatal(err)
+	}
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportBlocked, Ask: "need a key"})
 	expectNoExit(t, got)
 }
 
