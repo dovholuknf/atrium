@@ -468,13 +468,29 @@ async function touch(browser, tabName) {
   const { ctx, page } = await open(browser, 390, true);
   const cdp = await ctx.newCDPSession(page);
   await goto(page, T.view);
-  const send = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  await page.evaluate(() => {
+    window.__touches = 0;
+    ["touchstart", "touchmove", "touchend", "touchcancel"].forEach(t => document.addEventListener(t, () => { window.__touches++; }, { capture: true, passive: true }));
+  });
+  const received = () => page.evaluate(() => window.__touches);
+  const send = async (type, x, y) => {
+    const before = await received();
+    await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+    await until(received, n => n > before);
+  };
+  const quiet = () => until(
+    () => page.evaluate(() => {
+      const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
+      return !h || (h.getAnimations({ subtree: true }).length === 0 && !h.classList.contains("fdragging"));
+    }),
+    ok => ok);
   const drag = async (x, y0, y1, steps) => {
+    await quiet();
     await send("touchStart", x, y0);
-    for (let i = 1; i <= steps; i++) { await send("touchMove", x, y0 + (y1 - y0) * i / steps); await sleep(16); }
+    for (let i = 1; i <= steps; i++) await send("touchMove", x, y0 + (y1 - y0) * i / steps);
     await sleep(120);   // a finger that stops before it lifts leaves no fling, and a tap during one is eaten
     await send("touchEnd");
-    await sleep(350);
+    await quiet();
   };
   let s = await state(page);
   const panelH = await page.evaluate(() => document.querySelector(".fdrawer:not([hidden]) .fpanel") && [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").scrollHeight);
