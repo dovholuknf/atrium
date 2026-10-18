@@ -325,7 +325,8 @@ timeout is the call that hung, and a timeout's first line now carries the same c
 
 A unit that fails on the Linux or macos runner and passes 15 of 15 here is not reproduced yet. Playwright's own
 image on a Linux docker (WSL does) runs the same suite against this worktree, bind-mounted, with the image's
-browser and fonts. Six shell burners stand in for the shard load. Fifteen runs, FAIL and TIMING lines only:
+browser and fonts. Six shell burners stand in for the shard load, so run this only on a machine set aside for load
+tests, never on a room that other sessions share. Fifteen runs, FAIL and TIMING lines only:
 
 ```
 docker run --rm -v /path/to/worktree:/work -w /work -e HEADLESS_UNITS=<unit> \
