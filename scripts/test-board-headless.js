@@ -16066,7 +16066,7 @@ async function mStickBottomSection(browser) {
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="sb-1"]');
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-      if (await p.evaluate(() => document.getElementById("m-card-scroll").scrollHeight <=document.getElementById("m-card-scroll").clientHeight + 50)) fail(tag + "the thread is not long enough to test");
+      if (await p.evaluate(() => document.getElementById("m-card-scroll").scrollHeight <= document.getElementById("m-card-scroll").clientHeight + 50)) fail(tag + "the thread is not long enough to test");
       await settled("on open");
       // the first open again, with an image that loads late and tall: the thread still ends up at the newest
       await p.route("**/late-*.svg", async r => {
