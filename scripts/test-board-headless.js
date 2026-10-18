@@ -22502,6 +22502,7 @@ async function pinNowSection(browser, base) {
     await wp.route(/\/v1\/tasks\/pn-[ab]$/, async route => {
       if (route.request().method() !== "PATCH") return route.continue();
       patches++;
+      if (mode !== "fail") { const r = mock.wornTasks.find(x => route.request().url().endsWith("/" + x.id)); if (r) r.pinned = !!JSON.parse(route.request().postData() || "{}").pinned; }
       if (mode === "fail") { await new Promise(r => setTimeout(r, 400)); return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) }); }
       await new Promise(r => setTimeout(r, 2000));
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row("pn-a")) });
@@ -22516,7 +22517,8 @@ async function pinNowSection(browser, base) {
     // Click, then read the star after two animation frames, with the PATCH still held.
     const t0 = Date.now();
     await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-a"] .pin').click());
-    await wp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const waitStar = async (id, want) => { const end = Date.now() + 1500; while (Date.now() < end && await star(id) !== want) await wp.waitForTimeout(10); };
+    await waitStar("pn-a", true);
     const took = Date.now() - t0;
     if (await star("pn-a") !== true) fail("pinNow: the star did not turn on within a frame of the click.");
     if (took > 1500) fail("pinNow: the repaint waited " + took + "ms, behind the PATCH.");
@@ -22524,7 +22526,7 @@ async function pinNowSection(browser, base) {
     // Refused: the star goes on, then back.
     mode = "fail";
     await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-b"] .pin').click());
-    await wp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await waitStar("pn-b", true);
     if (await star("pn-b") !== true) fail("pinNow: a refused pin was not shown first.");
     for (let i = 0; i < 30 && await star("pn-b") !== false; i++) await wp.waitForTimeout(100);
     if (await star("pn-b") !== false) fail("pinNow: a refused PATCH did not put the star back.");
