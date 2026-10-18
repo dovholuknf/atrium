@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/settings.js` runs just these units, the way the full run would.
 const path = require("path");
 const fs = require("fs");
-const { slow } = require("../lib/browser.js");
+const { slow, until, frames, settleStyle } = require("../lib/browser.js");
 const { mock, T1, landCard, resetSkins, SKINS, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { landContext } = require("../lib/helpers.js");
@@ -25,10 +25,10 @@ async function websiteSkinSection(browser, base) {
     await wp.waitForSelector("button.go.newagent", { state: "visible", timeout: slow(15000) });
     // Buttons carry `transition: all`, so a colour read straight after a skin
     // change is partway there.
-    const look = skin => wp.evaluate(async skin => {
-      applySkin(skin);
-      getComputedStyle(document.body).color;
-      await Promise.all(document.getAnimations().filter(a => a instanceof CSSTransition).map(a => a.finished.catch(() => {})));
+    const look = async skin => {
+      await wp.evaluate(skin => { applySkin(skin); getComputedStyle(document.body).color; }, skin);
+      await settleStyle(wp);
+      return wp.evaluate(() => {
       const go =getComputedStyle(document.querySelector("button.go.newagent"));
       const hd = getComputedStyle(document.querySelector("header"));
       const bd = getComputedStyle(document.body);
@@ -40,7 +40,8 @@ async function websiteSkinSection(browser, base) {
         hdBorder: hd.borderBottomColor, bodyBg: bd.backgroundImage,
         palette: vars.map(v => v + "=" + root.getPropertyValue(v).trim()).join(" ")
       };
-    }, skin);
+      });
+    };
     const harbour = await look("harbour");
     const site = await look("website");
     const noir = await look("noir");
@@ -87,7 +88,7 @@ async function websiteSkinSection(browser, base) {
     if (process.env.WEBSITE_SHOTS) {
       for (const s of ["website", "harbour"]) {
         await wp.evaluate(s => applySkin(s), s);
-        await wp.waitForTimeout(300);
+        await settleStyle(wp);
         await wp.screenshot({ path: path.join(process.env.WEBSITE_SHOTS, "board-" + s + ".png") });
       }
     }
@@ -156,7 +157,8 @@ async function themeLabSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="tl-a"]', { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => !document.getElementById("terms").hidden);
+    await settleStyle(p);
     await p.evaluate(async () => {
       termTask = lastTasks.find(t => t.id === "tl-a");
       term = { options: {}, dispose() {} };
@@ -283,7 +285,8 @@ async function themePreviewSection(browser, base) {
     await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: slow(15000) });
     // Let the view switch finish. `switchView` clears `on` from every `.tab`,
     // the rows included, and a late one would unselect the stand-in attach.
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => !document.getElementById("terms").hidden);
+    await settleStyle(p);
     const bg = await p.evaluate(() => {
       const hex = h => { const n = parseInt(h.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
       const o = {};
@@ -299,9 +302,13 @@ async function themePreviewSection(browser, base) {
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       placeTabBridge();
     }, id);
-    const read = () => p.evaluate(async () => {
-      await new Promise(r => setTimeout(r, 400));
-      await loadCards().catch(() => {}).then(renderStack);
+    const read = async () => {
+      await p.evaluate(async () => {
+        await loadCards().catch(() => {}).then(renderStack);
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      });
+      await settleStyle(p);
+      return p.evaluate(() => {
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
       const a = row("tp-a"), b = row("tp-b");
       const bridge = [...document.querySelectorAll("#term-layout .tabbridge")].find(x => !x.hidden);
@@ -316,11 +323,12 @@ async function themePreviewSection(browser, base) {
         term: term && term.options.theme ? term.options.theme.background : null,
         wrap: !labIs("theme")
       };
-    });
+      });
+    };
     const rowBack = () => p.waitForFunction(a => {
       const row = document.querySelector('#term-list .card.tab[data-id="tp-a"]');
       return row && getComputedStyle(row).backgroundColor === a;
-    }, saved.a, { timeout: slow(5000) }).catch(() => {});
+    }, saved.a, { timeout: slow(5000) });
     const themeHex = n => p.evaluate(n => TERM_THEMES[n].background.toLowerCase(), n);
 
     await attach("tp-a");
@@ -393,7 +401,8 @@ async function themePreviewSection(browser, base) {
     await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: slow(15000) });
     // Let the view switch finish. `switchView` clears `on` from every `.tab`,
     // the rows included, and a late one would unselect the stand-in attach.
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => !document.getElementById("terms").hidden);
+    await settleStyle(p);
     await attach("tp-a");
     r = await read();
     if (r.a !== bg.dracula) fail("after use it and a reload the row is " + r.a + ", not dracula.");
@@ -1069,7 +1078,8 @@ async function themePickerSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="pk-a"]', { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => !document.getElementById("terms").hidden);
+    await settleStyle(p);
     await p.evaluate(() => repoColorsHave({ card_colors: { default: "", repos: {} } }));
     const attach = id => p.evaluate(async id => {
       termTask = lastTasks.find(t => t.id === id);
@@ -1206,7 +1216,8 @@ async function themePickerShotsSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="sh-a"]', { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => !document.getElementById("terms").hidden);
+    await settleStyle(p);
     await p.evaluate(async () => {
       termTask = lastTasks.find(t => t.id === "sh-a");
       term = { options: {}, dispose() {} };
