@@ -6439,6 +6439,11 @@ async function tabsOrderSection(browser, base) {
       clipped: shown.some(t => t.getBoundingClientRect().right > nr.right + 1),
       saved: localStorage.getItem("atrium.tabs") };
   });
+  const laidOut = (p, waiting) => p.waitForFunction((w) => {
+    const tab = document.querySelector('header nav .tab[data-view="perms"]');
+    const n = document.getElementById("tabmore").querySelector(".count");
+    return tab.classList.contains("umenu") === w && (w ? !n.hidden && n.textContent === "3" : n.hidden);
+  }, waiting, { timeout: slow(15000) });
   const arrange = async (p) => { await p.evaluate(() => window.openTabsArrange()); await p.waitForSelector("#tabsdlg[open]"); };
   const row = (v) => '#tabsdlg-list .tabsdlg-row[data-view="' + v + '"]';
   try {
@@ -6489,12 +6494,12 @@ async function tabsOrderSection(browser, base) {
     v = await view(p);
     if (v.shown.includes("perms") || v.listed.includes("perms")) fail("tabsOrder: perms with nothing waiting should be gone " + JSON.stringify(v));
     await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero"); });
-    await p.waitForTimeout(150);
+    await laidOut(p, true);
     v = await view(p);
     if (!v.listed.includes("perms") || v.badge !== "3") fail("tabsOrder: hidden perms with 3 waiting did not reach the ... button " + JSON.stringify(v));
     if (v.shown.includes("perms")) fail("tabsOrder: hidden perms is back in the bar");
     await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = ""; c.classList.add("zero"); });
-    await p.waitForTimeout(150);
+    await laidOut(p, false);
     v = await view(p);
     if (v.listed.includes("perms") || v.badge) fail("tabsOrder: perms stays in the menu once nothing waits " + JSON.stringify(v));
     await p.evaluate(() => { const c = document.getElementById("c-perm"); c.textContent = "3"; c.classList.remove("zero"); });
