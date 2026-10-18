@@ -14158,7 +14158,7 @@ async function u001AuditSection(browser, base) {
 // ── the paste spinner: starts on the paste, stops on the room's word ──────
 // A page whose attach socket is a mock that records every frame it is sent, and
 // whether the spinner was up at that moment. `window.__sent` is the record.
-async function pasteMockPage(browser, base, errors) {
+async function pasteMockPage(browser, base, errors, fake) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
@@ -14184,9 +14184,15 @@ async function pasteMockPage(browser, base, errors) {
   });
   const p = await ctx.newPage();
   p.on("pageerror", e => errors.push(String(e)));
+  if (fake) await p.clock.install();
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
   await p.evaluate(() => attachTask("land-live"));
+  if (fake) {
+    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null, 10000);
+    await fakePause(p);
+    return { ctx, p };
+  }
   await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
     null, { timeout: slow(10000) });
   await p.waitForTimeout(300);
@@ -14263,26 +14269,29 @@ async function pasteDoneSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   const errors = [];
-  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  const { ctx, p } = await pasteMockPage(browser, base, errors, true);
   try {
-    const got = await p.evaluate(async () => {
+    const got = await fakeRun(p, async (_, answer) => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       const wait = ms => new Promise(r => setTimeout(r, ms));
-      const idOf = i => window.__sent.filter(x => x.id)[i].id;
+      const sentIds = async n => {
+        while (window.__sent.filter(x => x.id).length < n) await wait(10);
+        return window.__sent.filter(x => x.id).map(x => x.id);
+      };
       const done = id => termSock.onmessage({ data: JSON.stringify({ t: "in-done", id }) });
       const out = {};
       // First paste: answer it, so the socket is known to answer.
       sendPasteText("one");
+      const [id0] = await sentIds(1);
       await wait(100);
-      done(idOf(0));
+      done(id0);
       await wait(100);
       out.floor = vis();
       await wait(450);
       out.first = vis();
       // Second: output past the hold and a long quiet must not end it.
       sendPasteText("two");
-      await wait(100);
-      const id1 = idOf(1);
+      const id1 = (await sentIds(2))[1];
       await wait(500);
       termSock.onmessage({ data: "echo" });
       await wait(1900);
@@ -14296,8 +14305,7 @@ async function pasteDoneSection(browser, base) {
       // Two in a row: the first word leaves the second up.
       sendPasteText("three");
       sendPasteText("four");
-      await wait(150);
-      const ids = window.__sent.filter(x => x.id).map(x => x.id);
+      const ids = await sentIds(4);
       out.ids = ids.slice(2);
       await wait(400);
       done(ids[2]);
@@ -14306,8 +14314,8 @@ async function pasteDoneSection(browser, base) {
       done(ids[3]);
       await wait(120);
       out.afterFour = vis();
-      return out;
-    });
+      answer(out);
+    }, null, 20000);
     if (got.floor !== true) fail("pasteDone: the word ended the box inside its floor: " + JSON.stringify(got));
     if (got.first !== false) fail("pasteDone: the word did not end the box: " + JSON.stringify(got));
     if (got.quiet !== true) fail("pasteDone: output and quiet ended an acknowledged paste: " + JSON.stringify(got));
@@ -14329,14 +14337,15 @@ async function pasteOldRoomSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   const errors = [];
-  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  const { ctx, p } = await pasteMockPage(browser, base, errors, true);
   try {
-    const got = await p.evaluate(async () => {
+    const got = await fakeRun(p, async (_, answer) => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       const wait = ms => new Promise(r => setTimeout(r, ms));
+      const sent = async n => { while (window.__sent.filter(x => x.id).length < n) await wait(10); };
       const out = {};
       sendPasteText("one");
-      await wait(100);
+      await sent(1);
       out.up = vis();
       await wait(450);
       termSock.onmessage({ data: "echo" });
@@ -14344,15 +14353,15 @@ async function pasteOldRoomSection(browser, base) {
       out.guessed = vis();
       // No output at all: only the cap ends it. Time is moved, not waited for.
       sendPasteText("two");
-      await wait(100);
+      await sent(2);
       out.upAgain = vis();
       const real = Date.now;
       Date.now = () => real() + 21000;
       await wait(150);
       Date.now = real;
       out.capped = vis();
-      return out;
-    });
+      answer(out);
+    }, null, 20000);
     if (!got.up || !got.upAgain) fail("pasteOldRoom: the box did not come up: " + JSON.stringify(got));
     if (got.guessed) fail("pasteOldRoom: output past the hold did not end it on a socket that never answers: " + JSON.stringify(got));
     if (got.capped) fail("pasteOldRoom: the cap did not end a paste that got no output: " + JSON.stringify(got));
@@ -14369,22 +14378,23 @@ async function pasteCloseSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   const errors = [];
-  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  const { ctx, p } = await pasteMockPage(browser, base, errors, true);
   try {
-    const got = await p.evaluate(async () => {
+    const got = await fakeRun(p, async (_, answer) => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       const wait = ms => new Promise(r => setTimeout(r, ms));
+      const sent = async n => { while (window.__sent.filter(x => x.id).length < n) await wait(10); };
       const out = {};
       sendPasteText("one");
-      await wait(100);
+      await sent(1);
       out.up = vis();
       const sock = termSock;
       sock.readyState = 3;
       sock.onclose({ code: 1006, reason: "" });
       await wait(20);
       out.closed = vis();
-      return out;
-    });
+      answer(out);
+    }, null, 20000);
     if (!got.up) fail("pasteClose: the box did not come up: " + JSON.stringify(got));
     if (got.closed) fail("pasteClose: a closed socket left the box up: " + JSON.stringify(got));
   } finally {
