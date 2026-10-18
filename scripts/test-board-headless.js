@@ -9830,11 +9830,12 @@ async function peekHoverRestSection(browser, base) {
   const W = 1400, H = 1000;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   const p = await ctx.newPage();
+  await p.clock.install();
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
   await ctx.addInitScript(() => { try { localStorage.setItem("atrium.termlist.w", "640"); } catch (e) {} });
-  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const wait = ms => p.clock.runFor(ms);
   const isOpen = () => p.evaluate(() => !!document.querySelector(".peek.on"));
   const was = mock.tasksMode, wasDocs = mock.boardDocs;
   mock.tasksMode = "onehover";
@@ -9843,12 +9844,14 @@ async function peekHoverRestSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
-    await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
+    await fakeWait(p, sel => { const e = document.querySelector(sel); return !!e && e.getClientRects().length > 0; }, row, 15000);
+    await fakePause(p);
     await wait(1500);
     const b = await p.locator(row).boundingBox();
     const y = Math.round(b.y + b.height / 2);
     const x0 = Math.round(b.x + 20);
     const ms = await p.evaluate(() => PEEK_HOVER_MS);
+    const opens = () => fakeWait(p, () => !!document.querySelector(".peek.on"), null, 2500);
     const away = async () => { await p.mouse.move(W / 2, 3); await p.evaluate(() => closePeek()); await wait(300); };
 
     await away();
@@ -9862,15 +9865,13 @@ async function peekHoverRestSection(browser, base) {
     // Rest: it opens one PEEK_HOVER_MS after the last big move, not before.
     await wait(ms - 350);
     if (await isOpen()) fail("peekHoverRest: the details opened before a full second of rest");
-    await p.waitForFunction(() => !!document.querySelector(".peek.on"), null, { timeout: slow(2500) })
-      .catch(() => fail("peekHoverRest: resting after the sweep did not open the details"));
+    await opens().catch(() => fail("peekHoverRest: resting after the sweep did not open the details"));
 
     // Jitter: 6px wiggles every 150ms do not re-arm the timer.
     await away();
     await p.mouse.move(x0, y);
     for (let i = 0; i < 4; i++) { await wait(150); await p.mouse.move(x0 + (i % 2 ? 0 : 6), y); }
-    await p.waitForFunction(() => !!document.querySelector(".peek.on"), null, { timeout: slow(2500) })
-      .catch(() => fail("peekHoverRest: jitter under 10px kept the details from opening"));
+    await opens().catch(() => fail("peekHoverRest: jitter under 10px kept the details from opening"));
     // An open one is not touched by moving within its card.
     await p.mouse.move(x0 + 150, y + 3);
     await p.mouse.move(x0 + 300, y);
