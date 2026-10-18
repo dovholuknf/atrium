@@ -269,6 +269,11 @@ async function restartStaysSection(browser, base) {
   const seen = () => gp.evaluate(() => window.__seen);
   const gaps = async () => ((await seen()).replace(/-$/, "").match(/-/g) || []).length;
   try {
+    await gp.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        window.__coverAtLoad = document.getElementById("hubrestart").open;
+      });
+    });
     await gp.clock.install();
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await wait(() => typeof hubIsHub !== "undefined" && hubIsHub &&
@@ -339,7 +344,8 @@ async function restartStaysSection(browser, base) {
       if (Date.now() > end) fail("a new build after the restart did not reload the board.");
       await fakeTick(gp, 250).catch(() => {});
     }
-    const sawCoverWithReload = await gp.evaluate(() => document.getElementById("hubrestart").open);
+    const sawCoverWithReload = await wait(() => window.__coverAtLoad !== undefined, 5000)
+      .then(() => gp.evaluate(() => window.__coverAtLoad));
     if (!sawCoverWithReload) fail("the board reloaded onto the new build with the cover down.");
     await wait(() => !document.getElementById("hubrestart").open, 15000)
       .catch(() => fail("the cover did not clear after the reload settled."));
