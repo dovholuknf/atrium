@@ -14587,7 +14587,7 @@ async function mBubblesSection(browser) {
       await p.waitForFunction(() => window.__copied.length === 1, null, { timeout: slow(3000) });
       const copied = await p.evaluate(() => window.__copied[0]);
       if (copied !== MULTI) fail(tag + "copy wrote " + JSON.stringify(copied));
-      if (!/copied/.test(await p.textContent(bub(2) + " .bact[data-act=copy]"))) fail(tag + "copy gave no feedback");
+      await p.waitForFunction(s => /copied/.test(document.querySelector(s).textContent), bub(2) + " .bact[data-act=copy]", { timeout: slow(3000) }).catch(() => fail(tag + "copy gave no feedback"));
       // reply: the quote, a "> " on every line, a blank line, the caret at the end
       const ta = "#m-compose textarea";
       const box = () => p.evaluate(s => { const t = document.querySelector(s); return { v: t.value, at: t.selectionStart, end: t.selectionEnd, focus: document.activeElement === t }; }, ta);
@@ -14619,11 +14619,11 @@ async function mBubblesSection(browser) {
         window.__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
         document.execCommand = c => { const a = document.activeElement; window.__copied.push(c === "copy" && a && a.tagName === "TEXTAREA" ? a.value : "wrong:" + c); return true; };
       });
+      await p.waitForFunction(s => document.querySelector(s).textContent === "copy", bub(2) + " .bact[data-act=copy]", { timeout: slow(4000) });
       await p.tap(bub(2) + " .bact[data-act=copy]");
-      await p.waitForFunction(() => window.__copied.length === 1, null, { timeout: slow(3000) });
+      await p.waitForFunction(s => window.__copied.length === 1 && /copied/.test(document.querySelector(s).textContent), bub(2) + " .bact[data-act=copy]", { timeout: slow(3000) }).catch(() => fail(tag + "the execCommand copy gave no feedback"));
       const old = await p.evaluate(() => ({ t: window.__copied[0], strays: [...document.body.children].filter(e => e.tagName === "TEXTAREA").length }));
       if (old.t !== MULTI || old.strays) fail(tag + "the execCommand copy gave " + JSON.stringify(old));
-      if (!/copied/.test(await p.textContent(bub(2) + " .bact[data-act=copy]"))) fail(tag + "the execCommand copy gave no feedback");
       // L1: a selection left behind holds the thread only until the composer takes focus, or a minute passes
       const hold = async n => {
         await p.evaluate(() => document.activeElement && document.activeElement.blur());
