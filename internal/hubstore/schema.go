@@ -910,6 +910,44 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// CI RUNS THE HUB HEARD ABOUT, and one delivery per target. Never the request body. See cihook.go.
+		name: "0030_ci_hook",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS ci_run (
+				id          TEXT PRIMARY KEY,
+				repo        TEXT NOT NULL,
+				workflow    TEXT NOT NULL DEFAULT '',
+				branch      TEXT NOT NULL DEFAULT '',
+				sha         TEXT NOT NULL DEFAULT '',
+				run_id      INTEGER NOT NULL,
+				attempt     INTEGER NOT NULL,
+				conclusion  TEXT NOT NULL,
+				url         TEXT NOT NULL DEFAULT '',
+				auth        TEXT NOT NULL DEFAULT '',
+				received_at TEXT NOT NULL,
+				UNIQUE (repo, run_id, attempt)
+			)`,
+			`CREATE INDEX IF NOT EXISTS ci_run_stream ON ci_run (repo, workflow, branch, received_at)`,
+			`CREATE TABLE IF NOT EXISTS ci_delivery (
+				id         TEXT PRIMARY KEY,
+				run_ref    TEXT NOT NULL,
+				target     TEXT NOT NULL,
+				kind       TEXT NOT NULL DEFAULT '',
+				wake       INTEGER NOT NULL DEFAULT 0,
+				text       TEXT NOT NULL,
+				state      TEXT NOT NULL DEFAULT 'pending'
+				             CHECK (state IN ('pending','delivered','unconfirmed','expired','refused','folded')),
+				answer     TEXT NOT NULL DEFAULT '',
+				card       TEXT NOT NULL DEFAULT '',
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS ci_delivery_state ON ci_delivery (state)`,
+			`CREATE INDEX IF NOT EXISTS ci_delivery_run ON ci_delivery (run_ref)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

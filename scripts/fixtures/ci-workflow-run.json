@@ -1,0 +1,17 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 1234567890,
+    "run_attempt": 1,
+    "name": "CI",
+    "path": ".github/workflows/ci.yml",
+    "head_branch": "main",
+    "head_sha": "0123456789abcdef0123456789abcdef01234567",
+    "event": "push",
+    "conclusion": "failure",
+    "html_url": "https://github.com/dovholuknf/atrium/actions/runs/1234567890"
+  },
+  "repository": {
+    "full_name": "dovholuknf/atrium"
+  }
+}
