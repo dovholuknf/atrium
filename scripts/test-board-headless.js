@@ -4488,14 +4488,14 @@ async function pasteLandsSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
     for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
-      const got = await p.evaluate(([link, n]) => new Promise(done => {
+      await p.evaluate(([link, n]) => {
+        window.__got = null;
         window.__link.drain = link.drain; window.__link.write = link.write; window.__link.after = link.after || 0; window.__link.lastOut = 0;
         pasteEnd();
         const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
@@ -4505,14 +4505,17 @@ async function pasteLandsSection(browser, base) {
           const t = performance.now() - t0;
           if (vis()) { lastUp = t; if (firstUp < 0) firstUp = t; }
           if (t < link.drain + link.write + (link.after || 0) + 1200) { requestAnimationFrame(loop); return; }
-          done({ firstUp: Math.round(firstUp), lastUp: Math.round(lastUp), lastOut: Math.round(window.__link.lastOut - t0) });
+          window.__got = { firstUp: Math.round(firstUp), lastUp: Math.round(lastUp), lastOut: Math.round(window.__link.lastOut - t0) };
         };
         requestAnimationFrame(loop);
         const dt = new DataTransfer();
         dt.setData("text/plain", "ok   github.com/x/y 0.1s\n".repeat(Math.ceil(n / 25)));
         document.getElementById("t-screen").dispatchEvent(
           new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-      }), [link, 500 * 1024]);
+      }, [link, 500 * 1024]);
+      await fakeTick(p, link.drain + link.write + (link.after || 0) + 1200);
+      await fakeWait(p, () => window.__got, null, 2000);
+      const got = await p.evaluate(() => window.__got);
       const end = link.after ? Math.max(got.lastOut, link.drain + link.write) : link.drain + link.write;
       if (got.firstUp < 0 || got.firstUp > 300) fail(name + ": a 500KB paste did not show the box at once: " + JSON.stringify(got));
       else if (got.lastUp < end - 150 && !(link.after === 0)) fail(name + ": the box went down before the last byte was written (" + end + "ms): " + JSON.stringify(got));
