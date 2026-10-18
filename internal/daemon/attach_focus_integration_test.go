@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -15,6 +16,23 @@ func sendFrame(t *testing.T, h *heldAttach, in attachIn) {
 	frame, _ := json.Marshal(in)
 	if err := h.c.Write(context.Background(), websocket.MessageText, frame); err != nil {
 		t.Fatalf("could not send %q: %v", in.T, err)
+	}
+}
+
+func focusSeqIs(t *testing.T, r *runner, want uint64) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		r.mu.Lock()
+		got := r.activeSeq
+		r.mu.Unlock()
+		if got >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the daemon never took the focus frame: active seq %d, want %d", got, want)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -31,6 +49,7 @@ func TestThePTYFollowsTheWindowThatWasLastUsedAndReturnsOnDetach(t *testing.T) {
 	first := holdAttach(t, d, "two-windows", 140, 32)
 	ptyIs(t, f, r, viewport{140, 32})
 	sendFrame(t, first, attachIn{T: "focus"})
+	focusSeqIs(t, r, 1)
 
 	// The second window is taller and wider. Using it moves the pty to it.
 	second := holdAttach(t, d, "two-windows", 170, 44)
