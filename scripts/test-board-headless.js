@@ -7388,7 +7388,7 @@ async function phoneTapSection(browser, base) {
 // ── the phone key bar: a long press names the key, a tap is not left lit (u-029) ──
 // Real pointer events through CDP touch (the same ones a finger makes), never click() alone. The key bar sits on
 // the attached phone terminal, whose socket is faked so every frame it sends can be read back.
-async function phoneKeysOpen(browser, base) {
+async function phoneKeysOpen(browser, base, fakeClock) {
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
@@ -7421,6 +7421,11 @@ async function phoneKeysOpen(browser, base) {
     null, { timeout: slow(10000) });
   await p.waitForSelector("#t-keys button", { state: "visible", timeout: slow(5000) });
   const cdp = await ctx.newCDPSession(p);
+  if (fakeClock) {
+    await p.clock.install();
+    await p.clock.pauseAt(Date.now() + 60000);
+  }
+  const wait = (ms) => fakeClock ? p.clock.runFor(ms) : p.waitForTimeout(ms);
   const centre = (sel) => p.evaluate((s) => {
     const r = document.querySelector(s).getBoundingClientRect();
     return [r.left + r.width / 2, r.top + r.height / 2];
@@ -7430,9 +7435,9 @@ async function phoneKeysOpen(browser, base) {
   const press = async (sel, ms, dx) => {
     const [x, y] = await centre(sel);
     await touch("touchStart", x, y);
-    await p.waitForTimeout(ms);
-    if (dx) { await touch("touchMove", x + dx, y); await p.waitForTimeout(80); }
-    return async () => { await touch("touchEnd", x, y); await p.waitForTimeout(120); };
+    await wait(ms);
+    if (dx) { await touch("touchMove", x + dx, y); await wait(80); }
+    return async () => { await touch("touchEnd", x, y); await wait(120); };
   };
   const frames = () => p.evaluate(() => window.__sent.slice());
   const clear = () => p.evaluate(() => { window.__sent.length = 0; });
@@ -7442,7 +7447,7 @@ async function phoneKeysOpen(browser, base) {
     const r = el.getBoundingClientRect();
     return { text: el.textContent, l: r.left, r: r.right, t: r.top, b: r.bottom, vw: document.documentElement.clientWidth };
   });
-  return { ctx, p, errors, press, frames, clear, label, centre, touch };
+  return { ctx, p, errors, press, wait, frames, clear, label, centre, touch };
 }
 
 async function phoneKeyLabelSection(browser, base) {
@@ -7450,8 +7455,8 @@ async function phoneKeyLabelSection(browser, base) {
   mock.tasksMode = "land";
   let h;
   try {
-    h = await phoneKeysOpen(browser, base);
-    const { p, press, frames, clear, label } = h;
+    h = await phoneKeysOpen(browser, base, true);
+    const { p, press, wait, frames, clear, label } = h;
     const key = (k) => "#t-keys [data-key=" + k + "]";
     await clear();
     await p.evaluate(() => { window.__fg = 0; document.addEventListener("focusin", () => { window.__fg++; }, true); });
@@ -7490,7 +7495,7 @@ async function phoneKeyLabelSection(browser, base) {
     lb = await label();
     if (!lb || !/^ctrl c/.test(lb.text)) fail("phoneKeyLabel: a held ^C shows " + JSON.stringify(lb));
     if ((await frames()).length) fail("phoneKeyLabel: ^C fired before its hold time");
-    await p.waitForTimeout(400);
+    await wait(400);
     await up();
     got = await frames();
     if (got.length !== 1 || !/"t":"signal"/.test(got[0]) || !/int/.test(got[0])) fail("phoneKeyLabel: a held ^C sent " + JSON.stringify(got));
@@ -7503,7 +7508,7 @@ async function phoneKeyLabelSection(browser, base) {
     if (await label()) fail("phoneKeyLabel: the bubble stays after sliding off");
     await up();
     up = await press(key("int"), 100, 60);
-    await p.waitForTimeout(700);
+    await wait(700);
     await up();
     got = await frames();
     if (got.length) fail("phoneKeyLabel: sliding off still sent " + JSON.stringify(got));
