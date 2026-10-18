@@ -6653,7 +6653,7 @@ async function phoneShareSection(browser, base) {
       const grid = (q) => q.evaluate(() => ({ cols: term.cols, rows: term.rows }));
       const barSettled = (q, shown) => q.waitForFunction((want) => { const e = document.querySelector(".term-bar"), r = e.getBoundingClientRect();
         const now = getComputedStyle(e).visibility !== "hidden" && r.bottom > 0;
-        return now === want && !e.getAnimations().length; }, shown, { timeout: slow(5000) }).catch(() => {});
+        return now === want && !e.getAnimations().length; }, shown, { timeout: slow(5000) });
       const barShown = (q) => q.evaluate(() => { const e = document.querySelector(".term-bar"); return getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; });
       // the tray is hidden: zero height, the terminal starts at the pane's top edge
       if (await barShown(p)) fail("phoneShare: the tray shows by default");
