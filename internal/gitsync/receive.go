@@ -372,7 +372,7 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 			return
 		}
 	}
-	serveCGI(gitCGI(exe, dir, pushConfig(hooks, rc.h.pushLimit()), cgiEnv()), w, forGit(r, dir, "/info/refs"))
+	serveCGI(gitCGI(exe, dir, append(pushConfig(hooks, rc.h.pushLimit()), rc.h.hk.config...), cgiEnv()), w, forGit(r, dir, "/info/refs"))
 }
 
 // cannotCreate says why a push could not make this repository, or "". A repository that is in the store
@@ -672,7 +672,7 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	out.Header.Del("Content-Encoding")
 	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 
-	serveCGI(gitCGI(exe, dir, pushConfig(hooks, rc.h.pushLimit()), cgiEnv()), resp, out)
+	serveCGI(gitCGI(exe, dir, append(pushConfig(hooks, rc.h.pushLimit()), rc.h.hk.config...), cgiEnv()), resp, out)
 	defer rc.h.Store().RefreshView()
 
 	// THE REFS ARE THE RESULT. Whatever git said, a push is settled for exactly the refs that now hold the

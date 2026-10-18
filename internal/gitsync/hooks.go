@@ -16,6 +16,8 @@ type hubHooks struct {
 	inNameCheck func()
 	// onContains is told of each repository whose branches are searched, which is only one that has the object.
 	onContains func(dir string)
+	// config is further git config for a push, after the hub's own.
+	config [][2]string
 }
 
 const (

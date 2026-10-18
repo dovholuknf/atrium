@@ -67,6 +67,8 @@ func newRecv(t *testing.T, set ...func(*Hub)) *recvFix {
 	root := t.TempDir()
 	x := &recvFix{t: t, log: &MemPushLog{}, cards: map[string]cardAns{}}
 	x.h = &Hub{Dir: filepath.Join(root, "hub"), Runner: NewRunner(), PushLog: x.log}
+	// receive-pack runs auto maintenance after the client has its answer, and it writes maintenance.lock into the TempDir.
+	x.h.hk.config = [][2]string{{"receive.autogc", "false"}}
 	for _, f := range set {
 		f(x.h)
 	}

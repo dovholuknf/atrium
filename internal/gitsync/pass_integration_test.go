@@ -381,12 +381,12 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
 	}
 	t.Parallel()
-	const chunks = 24
+	const chunks = 60
 	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
 		pr, pw := io.Pipe()
 		go func() {
 			for i := 0; i < chunks; i++ {
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 				if _, err := pw.Write([]byte("0123456789")); err != nil {
 					return
 				}
@@ -407,7 +407,7 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 	if err != nil || resp.StatusCode != 200 || len(b) != chunks*10 {
 		t.Fatalf("%d, %d bytes, %v", resp.StatusCode, len(b), err)
 	}
-	if time.Since(start) < 1000*time.Millisecond {
+	if time.Since(start) < 2*p.BodyIdle {
 		t.Fatalf("it was not slower than the deadlines (%v), so it proved nothing", time.Since(start))
 	}
 
@@ -420,15 +420,15 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 		t.Fatal(err)
 	}
 	var sent time.Duration
-	for i := 0; i < len(body); i += 6 {
-		end := min(i+6, len(body))
+	for i := 0; i < len(body); i++ {
+		end := i + 1
 		if _, err := c.Write([]byte(body[i:end])); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(50 * time.Millisecond)
-		sent += 50 * time.Millisecond
+		time.Sleep(10 * time.Millisecond)
+		sent += 10 * time.Millisecond
 	}
-	if sent < 400*time.Millisecond {
+	if sent < p.BodyIdle {
 		t.Fatalf("the body was not slower than the deadline (%v)", sent)
 	}
 	line, err := bufio.NewReader(c).ReadString('\n')
