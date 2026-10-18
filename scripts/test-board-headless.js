@@ -5444,14 +5444,13 @@ async function termProbeStormSection(browser, base) {
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await p.waitForSelector("#t-screen .xterm-screen", { timeout: slow(10000) });
     const rows = 40;
-    await p.evaluate(n => new Promise(res => {
-      let s = "\x1b[2J\x1b[H";
-      for (let i = 0; i < n; i++) s += "row" + i + " the quick.brown fox_" + i + ".txt jumps over v2." + i + ".1\r\n";
-      term.write(s, res);
-    }), rows);
-    await p.waitForTimeout(300);
+    let feed = "\x1b[2J\x1b[H";
+    for (let i = 0; i < rows; i++) feed += "row" + i + " the quick.brown fox_" + i + ".txt jumps over v2." + i + ".1\r\n";
+    await termWrite(p, feed);
+    await p.waitForFunction(() => term._core._renderService.dimensions.css.cell.width > 0 && term.rows > 0, null, { timeout: slow(10000) });
+    await frames(p, 2);
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
     const cell = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
@@ -5462,14 +5461,19 @@ async function termProbeStormSection(browser, base) {
     const sweep = async () => {
       for (let r = 0; r < visible; r++) {
         await p.mouse.move(box.x + cell.w * 12, box.y + cell.h * (r + 0.5), { steps: 2 });
-        await p.waitForTimeout(15);
+        await frames(p, 1);
       }
+    };
+    const quiet = async () => {
+      await until(() => p.evaluate(() => probePending.size === 0), 5000, "the probes answered");
+      await frames(p, 2);
+      await until(() => p.evaluate(() => probePending.size === 0), 5000, "the probes answered");
     };
     const settle = async () => {
       for (let pass = 0; pass < 6; pass++) {
         const before = probes;
         await sweep();
-        for (let seen = -1; seen !== probes;) { seen = probes; await p.waitForTimeout(300); }
+        await quiet();
         if (probes === before) return;
       }
       fail("the terminal kept probing through 6 sweeps with no new output");
@@ -5477,19 +5481,20 @@ async function termProbeStormSection(browser, base) {
     await settle();
     const first = probes;
     let frame = 0;
-    const spinner = setInterval(() => p.evaluate(([r, f]) => term.write("\x1b[" + r + ";1H\x1b[2K" + "|/-\\"[f % 4] + " working"), [spin, frame++]).catch(() => {}), 1000);
     if (first > rows) fail("the first pass asked " + first + " times for " + rows + " rows");
-    const t0 = Date.now();
-    while (Date.now() - t0 < 10000) await sweep();
-    clearInterval(spinner);
+    for (let round = 0; round < 10; round++) {
+      await termWrite(p, "\x1b[" + spin + ";1H\x1b[2K" + "|/-\\"[frame++ % 4] + " working");
+      await sweep();
+    }
+    await quiet();
     if (frame < 5) fail("the spinner redrew only " + frame + " times");
     if (probes !== first) fail("sweeping an unchanged terminal for 10s probed " + (probes - first) + " more times");
-    await p.evaluate(() => new Promise(res => term.write("\x1b[1;1H\x1b[2Kchanged row v9.9 here.txt", res)));
+    await termWrite(p, "\x1b[1;1H\x1b[2Kchanged row v9.9 here.txt");
     await settle();
     const again = probes;
     if (again === first || again > first + 1) fail("a changed row asked " + (again - first) + " times, want 1");
     await sweep();
-    await p.waitForTimeout(300);
+    await quiet();
     if (probes !== again) fail("rows asked again with no new output: " + (probes - again));
     if (process.env.PROBE_COUNTS) console.log("probe storm: first pass " + first + ", after output " + (again - first) + ", then " + (probes - again));
     if (errors.length) fail("the page threw: " + errors.join(" | "));

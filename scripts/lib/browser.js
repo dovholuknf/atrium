@@ -228,7 +228,7 @@ const armUnload = p => p.evaluate(() => {
 const reloaded = p => p.evaluate(() => !window.__armed || sessionStorage.getItem("__unloaded") === "1");
 
 // term.write with its callback: resolves once the terminal has parsed the data, so a read after it sees the result.
-const termWrite = (p, data, term = "term") => p.evaluate(([d, t]) => new Promise(r => window[t].write(d, r)), [data, term]);
+const termWrite = (p, data, term = "term") => p.evaluate(([d, t]) => new Promise(r => (0, eval)(t).write(d, r)), [data, term]);
 
 // For a page on the fake clock: runs `fn(arg, done)` in the page, where `done(value)` is how it answers, and moves the
 // page's clock until it has. The page-side timers of a test are fired by the clock, not waited out.
