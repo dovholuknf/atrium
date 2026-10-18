@@ -19066,6 +19066,7 @@ async function quickPasteSection(browser, base) {
   const st = { calls: [] };
   await ctx.addInitScript(() => {
     window.__clip = "";
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
       readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
   });
@@ -19258,8 +19259,6 @@ async function quickPasteSection(browser, base) {
     // One link through the box with Enter: answers what /v1/open was sent, and every call made, in order.
     const enter = async (url, edit) => {
       st.calls = [];
-      // the attached terminal's one-time notice about its width is a dialog the box will not stack on
-      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
       await p.evaluate(u => { window.__clip = u; }, url);
       await p.keyboard.press("Control+Alt+KeyR");
       await p.waitForFunction(u => document.getElementById("sw-q").value === u, url, { timeout: slow(5000) })
