@@ -74,10 +74,7 @@ func TestEnsureUsesAHeldCopyAsItIs(t *testing.T) {
 	dst := filepath.Join(dir, "atrium-pty"+ext())
 	write(t, exe, "build-two")
 	write(t, dst, "build-one")
-	old := rename
-	rename = func(a, b string) error { return errors.New("held") }
-	t.Cleanup(func() { rename = old })
-	if got := EnsureIn("pty", exe, dir); got != dst || read(t, dst) != "build-one" {
+	if got := ensureWith("pty", exe, dir, func(a, b string) error { return errors.New("held") }); got != dst || read(t, dst) != "build-one" {
 		t.Fatalf("got %s with %q", got, read(t, dst))
 	}
 	if _, err := os.Stat(dst + ".new"); err == nil {
@@ -91,10 +88,7 @@ func TestEnsureNeverMovesThePtyCopyAside(t *testing.T) {
 	write(t, exe, "build-two")
 	write(t, filepath.Join(dir, "atrium-pty"+ext()), "build-one")
 	var moved []string
-	old := rename
-	rename = func(a, b string) error { moved = append(moved, a); return old(a, b) }
-	t.Cleanup(func() { rename = old })
-	EnsureIn("pty", exe, dir)
+	ensureWith("pty", exe, dir, func(a, b string) error { moved = append(moved, a); return os.Rename(a, b) })
 	if len(moved) != 1 || filepath.Base(moved[0]) != "atrium-pty"+ext()+".new" {
 		t.Fatalf("renames: %v", moved)
 	}
