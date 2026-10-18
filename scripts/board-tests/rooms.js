@@ -1108,9 +1108,11 @@ async function roomsDashSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   await p.addInitScript(skip);
   try {
+    await p.clock.install();
     await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
       roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await p.clock.pauseAt(Date.now() + 60000);
     const chip = await p.evaluate(() => document.getElementById("rooms-t").textContent);
     if (chip !== "3/4 rooms") fail("the demo's chip did not read 3/4 rooms: " + chip);
 
@@ -1281,7 +1283,7 @@ async function roomsDashSection(browser, base) {
       };
       roomsDemoTimer = setInterval(roomsDemoTick, 2000);
     });
-    await p.waitForTimeout(4300);
+    await fakeTick(p, 4300);
     const dashFetches = await p.evaluate(() => window.__rdFetches);
     const hubReqs = reqs.filter(r => / \/_hub\//.test(r));
     if (dashFetches.length || hubReqs.length) {
@@ -1301,9 +1303,11 @@ async function roomsDashSection(browser, base) {
   const q = await plain.newPage();
   await q.addInitScript(skip);
   try {
+    await q.clock.install();
     await q.goto(base + "/", { waitUntil: "domcontentloaded" });
     await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await q.waitForTimeout(2300);
+    await q.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(q, 2300);
     const st = await q.evaluate(() => ({ demo: ROOMS_DEMO, live: roomsDemoLive, ticks: roomsDemoTicks,
       timer: roomsDemoTimer, cards: roomsDemoCards.length, chip: document.getElementById("rooms").hidden,
       stats: Object.keys(roomStats).length }));
@@ -1318,12 +1322,14 @@ async function roomsDashSection(browser, base) {
   const guest = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const g = await guest.newPage();
   await g.addInitScript(skip);
+  await g.clock.install();
   await g.route(u => new URL(u).pathname === "/v1/tasks",
     r => r.fulfill({ status: 403, contentType: "text/plain", body: "this link is one terminal." }));
   try {
     await g.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
     await g.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
-    await g.waitForTimeout(2300);
+    await g.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(g, 2300);
     const st = await g.evaluate(() => ({ live: roomsDemoLive, ticks: roomsDemoTicks, timer: roomsDemoTimer,
       chip: document.getElementById("rooms").hidden }));
     if (st.live || st.ticks || st.timer || !st.chip) fail("a guest page opened with ?demo=rooms ran the demo: " + JSON.stringify(st));
