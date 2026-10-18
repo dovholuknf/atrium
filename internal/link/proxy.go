@@ -125,6 +125,9 @@ type Proxy struct {
 	// without one answers /_hub/growls 404. See growl.go.
 	growl *Growler
 
+	// ci is the hub's CI hook. Nil until SetCIHook wires it, and a hub without one answers /_hub/ci-hook 404.
+	ci *CIHook
+
 	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
 	// a hub without one answers /_hub/git 404. See git_hub.go.
 	gitHub *gitsync.Hub
@@ -1634,6 +1637,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(sub, "growls/") {
 		p.serveGrowls(w, r, sub)
+		return
+	}
+	if sub == "ci-hook" || sub == "ci-hook/routes" {
+		p.serveCIHook(w, r, sub)
 		return
 	}
 	if sub == "forge" || strings.HasPrefix(sub, "forge/") {

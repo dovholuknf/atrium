@@ -54,6 +54,9 @@ type atriumFlags struct {
 	boardShareMode string
 	boardService   string
 
+	// ciHookService is the ziti service the hub binds to hear CI, empty for off. See link/cihook_bind.go.
+	ciHookService string
+
 	// Binaries to offer rooms, one per platform. Empty means this hub can
 	// only offer what it is running, which is no use to a room on another
 	// kind of machine. See `atrium_builds.go`.
@@ -91,6 +94,8 @@ func (f *atriumFlags) bind(c *cobra.Command, prefix string) {
 		"with --board-transport ziti: the ziti service to bind the board to (uses --"+prefix+"identity)")
 	c.Flags().StringVar(&f.boardShareMode, "board-share", "private",
 		"with --board-transport zrok: private (needs zrok on the other end) or public (a URL, no login)")
+	c.Flags().StringVar(&f.ciHookService, "ci-hook-service", "",
+		"bind this ziti service to hear CI webhooks, with --"+prefix+"identity. empty is off. keeps retrying while the controller is down")
 }
 
 const hubLong = "Serves the board on a port your browser opens, and listens on a second port\n" +
@@ -514,6 +519,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetPush(link.NewPush(store, notifier))
 	proxy.SetGrowler(growler)
 	growler.Start(ctx)
+	startCIHook(ctx, f.ciHookService, zitiIdentity, store, h, proxy)
 
 	// A room attaching is synced and collected, off the attach path. The timers stop and the
 	// git children are cancelled within ten seconds of the hub stopping.

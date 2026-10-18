@@ -136,6 +136,11 @@ func (c *controlMCP) deliverAs(ctx context.Context, room, to, fromWire, text, wh
 	if err != nil {
 		return refusal(err)
 	}
+	return c.postSay(ctx, room, id, handle, fromWire, text, when, kind, wake)
+}
+
+// postSay is the post half of deliverAs, for a caller that has already resolved the card.
+func (c *controlMCP) postSay(ctx context.Context, room, id, handle, fromWire, text, when, kind string, wake bool) RelayAnswer {
 	body := map[string]any{"text": text, "from": fromWire}
 	if w := strings.TrimSpace(when); w != "" {
 		body["when"] = w
