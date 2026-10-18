@@ -793,6 +793,9 @@ async function skinScopeSection(browser, base) {
   skin.on("requestfailed", r => settingsOut.delete(r));
   skin.on("framenavigated", f => { if (f === skin.mainFrame()) settingsOut.clear(); });
   const settled = async what => {
+    await skin.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
+      null, { timeout: slow(15000) }).catch(() => fail(what + ": the event stream never opened."));
+    await skin.evaluate(() => new Promise(r => setTimeout(r, 0)));
     for (const end = Date.now() + 15000; settingsOut.size && Date.now() < end;) {
       await skin.waitForTimeout(50);
     }
