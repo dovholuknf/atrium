@@ -176,13 +176,14 @@ async function readyTwoWindowsSection(browser, base) {
       }
     };
   });
+  await ctx.clock.install();
   const open = async () => {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof alerting !== "undefined" && typeof soloAlert === "function", null,
       { timeout: slow(15000) });
-    await p.waitForTimeout(1500);
+    await fakeTick(p, 1500);
     await p.evaluate(() => {
       alerting.set({ debounce: 0, muted: false });
       document.dispatchEvent(new Event("pointerdown"));
@@ -193,6 +194,7 @@ async function readyTwoWindowsSection(browser, base) {
   const a = await open();
   const b = await open();
   try {
+    await b.clock.pauseAt(Date.now() + 60000);
     await a.evaluate(() => localStorage.removeItem("atrium.toastlog"));
     // A: focused, the board with X attached on the terminals view.
     await a.evaluate(() => {
@@ -202,7 +204,7 @@ async function readyTwoWindowsSection(browser, base) {
       document.getElementById("terms").hidden = false;
       sayWhetherFocused();
     });
-    await b.waitForTimeout(300);
+    await fakeWait(b, () => focusedElsewhere.watch === "tw-x", null, 5000, 20);
     const state = p => p.evaluate(t => ({
       toasted: [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)),
       osc: window.__osc
@@ -217,7 +219,7 @@ async function readyTwoWindowsSection(browser, base) {
       alerting.check("waiting", [{ id: "tw-x", task_id: "tw-x", status: "needs-input", waiting_since: "W1" }],
         t => ({ title: t.id + " is ready", body: "done" }));
     }, [0, 0]);
-    await b.waitForTimeout(1000);
+    await fakeTick(b, 1000);
     const a1 = await state(a), b1 = await state(b);
     if (a1.toasted || a1.osc || b1.toasted || b1.osc) fail("readyTwoWindows: the focused board's card rang in a window: " + JSON.stringify({ a1, b1 }));
     if (await logged(b)) fail("readyTwoWindows: the focused card's ready was logged");
@@ -232,18 +234,18 @@ async function readyTwoWindowsSection(browser, base) {
       history.replaceState(null, "", "#term=tw-x");
       soloAlert("ready", true, { id: "tw-x", waiting_since: "P1" });
     });
-    await b.waitForTimeout(1000);
+    await fakeTick(b, 1000);
     const a2 = await state(a), b2 = await state(b);
     if (a2.toasted || a2.osc || b2.toasted || b2.osc) fail("readyTwoWindows: an unfocused pop-out rang for the card the focused board shows: " + JSON.stringify({ a2, b2 }));
 
     // 3. Control: focus leaves the board, and the next wait rings.
     await a.evaluate(() => { window.__focus = false; sayWhetherFocused(); });
-    await b.waitForTimeout(300);
+    await fakeWait(b, () => !focusedElsewhere.win, null, 5000, 20);
     await b.evaluate(() => {
       soloKnown = { perm: null, ready: false };
       soloAlert("ready", true, { id: "tw-x", waiting_since: "P2" });
     });
-    await b.waitForTimeout(1000);
+    await fakeTick(b, 1000);
     const b3 = await state(b);
     if (!b3.toasted && !b3.osc) fail("readyTwoWindows: with focus away the next wait did not ring: " + JSON.stringify(b3));
   } finally {
