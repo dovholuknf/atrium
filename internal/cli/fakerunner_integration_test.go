@@ -594,46 +594,66 @@ func startTestDaemon(t *testing.T) (agentAddr, humanAddr string) {
 	old := log.Writer()
 	log.SetOutput(io.Discard)
 	t.Cleanup(func() { log.SetOutput(old) })
-	dir := t.TempDir()
-	agentAddr, humanAddr = freeAddr(t), freeAddr(t)
-	d, err := daemon.New(daemon.Options{
-		AgentAddr:    agentAddr,
-		HumanAddr:    humanAddr,
-		DBPath:       filepath.ToSlash(filepath.Join(dir, "atrium.db")),
-		LongPoll:     2 * time.Second,
-		LocationFile: filepath.Join(dir, "daemon.json"),
-	})
-	if err != nil {
-		t.Fatalf("daemon did not start: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { _ = d.Run(ctx); close(done) }()
-	t.Cleanup(func() {
-		cancel()
-		<-done
-		d.Close()
-	})
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if resp, err := http.Get("http://" + humanAddr + "/v1/tasks"); err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return agentAddr, humanAddr
-			}
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		agentAddr, humanAddr = freeAddrs(t)
+		dir := t.TempDir()
+		d, err := daemon.New(daemon.Options{
+			AgentAddr:    agentAddr,
+			HumanAddr:    humanAddr,
+			DBPath:       filepath.ToSlash(filepath.Join(dir, "atrium.db")),
+			LongPoll:     2 * time.Second,
+			LocationFile: filepath.Join(dir, "daemon.json"),
+		})
+		if err != nil {
+			t.Fatalf("daemon did not start: %v", err)
 		}
-		time.Sleep(10 * time.Millisecond)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		var runErr error
+		go func() { runErr = d.Run(ctx); close(done) }()
+		stop := func() {
+			cancel()
+			<-done
+			d.Close()
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			select {
+			case <-done:
+				lastErr = runErr
+				d.Close()
+				goto retry
+			default:
+			}
+			if resp, err := http.Get("http://" + humanAddr + "/v1/tasks"); err == nil {
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					t.Cleanup(stop)
+					return agentAddr, humanAddr
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		stop()
+		t.Fatal("test daemon never answered")
+	retry:
 	}
-	t.Fatal("test daemon never answered")
+	t.Fatalf("test daemon never bound its ports: %v", lastErr)
 	return "", ""
 }
 
-func freeAddr(t *testing.T) string {
+// freeAddrs holds both listeners open until both ports are chosen, so the two cannot be equal.
+func freeAddrs(t *testing.T) (string, string) {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	var addrs []string
+	for i := 0; i < 2; i++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		addrs = append(addrs, l.Addr().String())
 	}
-	defer l.Close()
-	return l.Addr().String()
+	return addrs[0], addrs[1]
 }
