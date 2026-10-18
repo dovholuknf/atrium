@@ -6176,6 +6176,54 @@ async function heldEnvelopeSection(browser, base) {
   if (errors.length) fail("heldEnvelope: the page threw: " + errors.join(" | "));
 }
 
+async function cycleChipSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const shots = process.env.CYCLE_CHIP_SHOTS || "";
+  const tag = process.env.CYCLE_CHIP_TAG || "after";
+  const errors = [];
+  try {
+    landCard("a~land-cycle", { supervised: true,
+      display_title: "minion: orchestrator errand with a very long name", cwd: "C:/Users/claude/git/atrium-minion:claude/job17-18",
+      new_context: { step: "limit", n: 1, of: 3, label: "waiting for the limit ack" } });
+    mock.landList = [mock.LAND["a~land-cycle"]];
+    mock.landPerms = [];
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector(".term-list .card .chip.cycle", { state: "attached", timeout: slow(15000) });
+    await p.evaluate(() => document.getElementById("term-layout").style.setProperty("--termw", "230px"));
+    const m = await p.evaluate(() => {
+      const chip = document.querySelector(".term-list .card .chip.cycle");
+      const card = chip.closest(".card");
+      const r = (e) => e.getBoundingClientRect();
+      const c = r(chip), k = r(card);
+      const over = [...card.querySelectorAll(".tname, .tpath")].filter(e => r(e).width > 0).filter(e => {
+        const t = r(e);
+        return c.left < t.right - 0.5 && c.right > t.left + 0.5 && c.top < t.bottom - 0.5 && c.bottom > t.top + 0.5;
+      }).map(e => e.className);
+      return { inside: c.left >= k.left - 0.5 && c.right <= k.right + 0.5, over,
+        cut: chip.scrollWidth > chip.clientWidth + 1, ellipsis: getComputedStyle(chip).textOverflow,
+        tip: chip.getAttribute("data-tip") };
+    });
+    if (!m.inside) fail("cycleChip: the chip runs past the card");
+    if (m.over.length) fail("cycleChip: the chip is drawn over " + m.over.join(", "));
+    if (m.ellipsis !== "ellipsis") fail("cycleChip: a long chip does not ellipsize");
+    if (!/step 1 of 3/.test(m.tip || "")) fail("cycleChip: the full text is not in data-tip: " + m.tip);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.locator(".term-list .card").first().screenshot({ path: path.join(shots, `cycle-chip-${tag}.png`) });
+    }
+    await ctx.close();
+  } finally {
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("cycleChip: the page threw: " + errors.join(" | "));
+}
+
 // ── u-021: the phone board header is one slim row behind a chevron ─────────
 async function phoneHeaderSection(browser, base) {
   const was = mock.tasksMode;
@@ -24975,6 +25023,7 @@ async function main() {
     await unit("phoneHeader", () => phoneHeaderSection(browser, base));
     await unit("mailChip", () => mailChipSection(browser, base));
     await unit("heldEnvelope", () => heldEnvelopeSection(browser, base));
+    await unit("cycleChip", () => cycleChipSection(browser, base));
     await unit("phoneFocus", () => phoneFocusSection(browser, base));
     await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
     await unit("phoneShare", () => phoneShareSection(browser, base));

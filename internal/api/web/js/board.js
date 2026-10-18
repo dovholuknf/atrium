@@ -999,7 +999,7 @@ function newContextChip(t) {
   const n = t.new_context;
   if (!n) return "";
   if (n.step === "failed") {
-    return `<span class="chip warn" data-tip="${esc("new context stopped, and nothing further was typed. " +
+    return `<span class="chip warn cycle" data-tip="${esc("new context stopped, and nothing further was typed. " +
       (n.reason || "") + ". click to dismiss this, or run new context again")}"
       onclick="event.stopPropagation();dismissNewContext('${t.id}')"
       >new context failed</span>`;
@@ -1010,7 +1010,7 @@ function newContextChip(t) {
   const q = Number(n.queued) || 0;
   const queued = q ? `<span class="chip" data-tip="typed into the card when the new context ends"
     >${q} message${q === 1 ? "" : "s"} queued</span>` : "";
-  return `<span class="chip" data-tip="${esc("context cycle, step " + n.n + " of " + n.of + ": " + n.label +
+  return `<span class="chip cycle" data-tip="${esc("context cycle, step " + n.n + " of " + n.of + ": " + n.label +
     (n.reason ? " (" + n.reason + ")" : ""))}"
     >context ${n.n}/${n.of}: ${esc(word)}</span>${queued}`;
 }
