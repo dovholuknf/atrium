@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { slow, fakeWait, fakeTick, fakeRun, until: untilTrue } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { countRequests, landContext, topCounts } = require("../lib/helpers.js");
@@ -40,7 +40,7 @@ async function restartGateSection(browser, base) {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await fakeWait(gp, () => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), null, 15000);
-    await gp.clock.pauseAt(Date.now() + 60000);
+    await fakePause(gp);
 
     // Input is reported, and throttled.
     await gp.mouse.click(700, 450);
@@ -273,7 +273,7 @@ async function restartStaysSection(browser, base) {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await wait(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), 15000);
-    await gp.clock.pauseAt(Date.now() + 60000);
+    await fakePause(gp);
     await fakeTick(gp, 500);
 
     // Countdown to cover, with no frame between them.
@@ -410,7 +410,7 @@ async function atriumDownSection(browser, base) {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await until(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), 15000);
-    await dp.clock.pauseAt(Date.now() + 60000);
+    await fakePause(dp);
     await run(500);
 
     // A blip is not atrium being down.
@@ -1112,7 +1112,7 @@ async function roomsDashSection(browser, base) {
     await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
       roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
     const chip = await p.evaluate(() => document.getElementById("rooms-t").textContent);
     if (chip !== "3/4 rooms") fail("the demo's chip did not read 3/4 rooms: " + chip);
 
@@ -1306,7 +1306,7 @@ async function roomsDashSection(browser, base) {
     await q.clock.install();
     await q.goto(base + "/", { waitUntil: "domcontentloaded" });
     await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await q.clock.pauseAt(Date.now() + 60000);
+    await fakePause(q);
     await fakeTick(q, 2300);
     const st = await q.evaluate(() => ({ demo: ROOMS_DEMO, live: roomsDemoLive, ticks: roomsDemoTicks,
       timer: roomsDemoTimer, cards: roomsDemoCards.length, chip: document.getElementById("rooms").hidden,
@@ -1328,7 +1328,7 @@ async function roomsDashSection(browser, base) {
   try {
     await g.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
     await g.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
-    await g.clock.pauseAt(Date.now() + 60000);
+    await fakePause(g);
     await fakeTick(g, 2300);
     const st = await g.evaluate(() => ({ live: roomsDemoLive, ticks: roomsDemoTicks, timer: roomsDemoTimer,
       chip: document.getElementById("rooms").hidden }));
@@ -1730,7 +1730,7 @@ async function hubGateSection(browser, base) {
   try {
     await p.clock.install();
     await p.goto(base + "/raw", { waitUntil: "load" });
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
     await fakeTick(p, 1500);
     // The auth fields live in a form, so the browser stops warning about them.
     const loose = await p.evaluate(() => ["auth-pass", "auth-secret"].filter(id => { const e = document.getElementById(id); return !e || !e.form; }));

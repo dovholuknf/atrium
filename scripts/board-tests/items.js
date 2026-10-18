@@ -194,7 +194,7 @@ async function readyTwoWindowsSection(browser, base) {
   const a = await open();
   const b = await open();
   try {
-    await b.clock.pauseAt(Date.now() + 60000);
+    await fakePause(b);
     await a.evaluate(() => localStorage.removeItem("atrium.toastlog"));
     // A: focused, the board with X attached on the terminals view.
     await a.evaluate(() => {
@@ -592,7 +592,7 @@ async function noReadyChildrenSection(browser, base) {
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
       { timeout: slow(15000) });
-    await page.clock.pauseAt(Date.now() + 60000);
+    await fakePause(page);
     await fakeTick(page, 1500);
     await page.evaluate(() => { localStorage.removeItem("atrium.toastlog"); alerting.set({ debounce: 0, muted: true }); });
     const step = async list => {
@@ -659,7 +659,7 @@ async function readyNoSeedSection(browser, base) {
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
       { timeout: slow(15000) });
-    await page.clock.pauseAt(Date.now() + 60000);
+    await fakePause(page);
     await fakeTick(page, 1500);
     await page.evaluate(() => alerting.set({ debounce: 0, muted: true, desktop: true }));
     const step = async list => {

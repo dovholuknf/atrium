@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
 const { boardUsageSeen, landCard, mock, T1, SKINS } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { CTX_CARDS, CTX_USAGE, docImgDir } = require("../lib/helpers.js");
@@ -1781,7 +1781,7 @@ async function usageGroupsSection(browser, base) {
       await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
-      await sp.clock.pauseAt(Date.now() + 60000);
+      await fakePause(sp);
       await fakeTick(sp, 1500);
       await fn(sp, reads);
     } finally { await ctx.close(); }

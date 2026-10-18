@@ -10082,7 +10082,7 @@ async function autoPermSection(browser, base) {
     await p.waitForFunction(() => typeof alerting !== "undefined" && typeof permsToAnnounce === "function", null,
       { timeout: slow(15000) });
     await p.evaluate(() => { window.__atriumAutoGraceMs = 1500; globalAuto = true; });
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
     await fakeTick(p, 1500);
     const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
       [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
@@ -10160,7 +10160,7 @@ async function notifyOffSection(browser, base) {
       await p.clock.install();
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await fakeWait(p, () => typeof alerting !== "undefined" && typeof notifyIsOff === "function", null, 15000);
-      await p.clock.pauseAt(Date.now() + 60000);
+      await fakePause(p);
       await fakeTick(p, 1500);
       const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
         [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
@@ -26519,7 +26519,7 @@ async function growlBoard(browser, base, hub, init, phone) {
   await p.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
   if (hub) await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
   if (growlBoard.fake) {
-    await p.clock.pauseAt(Date.now() + 60000);
+    await fakePause(p);
     await p.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
   }
   return h;
