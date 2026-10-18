@@ -87,6 +87,7 @@ function Get-RoomSetupScript {
         $clean = if ($UsePackDir) { "`nRemove-Item -LiteralPath `$packdir, `"`$packdir.tgz`" -Recurse -Force -ErrorAction SilentlyContinue" } else { '' }
         return "`$Bin = Join-Path `$HOME '.atrium\bin\atrium.exe'; `$packdir = Join-Path `$HOME '.atrium\provision\pack-src'`n" +
             "`$ErrorActionPreference = 'Continue'`n" +
+            "`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }`n" +
             "if (-not (Test-Path -LiteralPath `$Bin)) { 'setup-missing=binary'; exit 127 }`n" +
             "`$spec = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$b64')).Replace('@@ACCOUNT@@', ([Security.Principal.WindowsIdentity]::GetCurrent().Name -split '\\')[-1])`n" +
             "`$OutputEncoding = New-Object Text.UTF8Encoding `$false`n" +
