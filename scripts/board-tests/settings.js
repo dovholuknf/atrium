@@ -317,6 +317,10 @@ async function themePreviewSection(browser, base) {
         wrap: !labIs("theme")
       };
     });
+    const rowBack = () => p.waitForFunction(a => {
+      const row = document.querySelector('#term-list .card.tab[data-id="tp-a"]');
+      return row && getComputedStyle(row).backgroundColor === a;
+    }, saved.a, { timeout: slow(5000) }).catch(() => {});
     const themeHex = n => p.evaluate(n => TERM_THEMES[n].background.toLowerCase(), n);
 
     await attach("tp-a");
@@ -352,10 +356,7 @@ async function themePreviewSection(browser, base) {
     await p.evaluate(() => { pickTheme(); previewTheme("dracula"); });
     await p.evaluate(() => clearTermPane(false));
     // The repaint rides a queued refresh (dropThemePreview), which under load outlasts read()'s 400ms.
-    await p.waitForFunction(a => {
-      const row = document.querySelector('#term-list .card.tab[data-id="tp-a"]');
-      return row && getComputedStyle(row).backgroundColor === a;
-    }, saved.a, { timeout: slow(5000) }).catch(() => {});
+    await rowBack();
     r = await read();
     if (r.a !== saved.a || !r.wrap) fail("after detaching mid-preview the row is " + r.a + ", picker hidden " + r.wrap);
     if (await p.evaluate(() => themePreview)) fail("detaching left a preview held.");
@@ -368,6 +369,7 @@ async function themePreviewSection(browser, base) {
       termTask = lastTasks.find(t => t.id === "tp-b");
       term = { options: {}, dispose() {} };
     });
+    await rowBack();
     r = await read();
     if (r.a !== saved.a) fail("after switching to tp-b mid-preview, tp-a is " + r.a + ", not its saved " + saved.a);
 
