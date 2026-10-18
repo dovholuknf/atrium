@@ -7982,7 +7982,7 @@ async function cleanCopySection(browser, base) {
     await p.waitForTimeout(300);
     const toasts = () => p.evaluate(() => document.getElementById("toasts").textContent);
     const btn = () => p.evaluate(() => { const b = document.getElementById("cc-btn"); return b ? b.getBoundingClientRect().toJSON() : null; });
-    // Selects the lines, does the plain copy (what ctrl-c does), and lets the popup lookup settle.
+    // Selects the lines, does the plain copy (what ctrl-c does), and waits for the popup lookup to finish.
     const select = async (out, lines) => {
       await p.evaluate(([out, lines]) => {
         window.__clip = [];
@@ -7991,8 +7991,7 @@ async function cleanCopySection(browser, base) {
         term.selectLines(lines[0], lines[1]);
       }, [out, lines]);
       await p.waitForTimeout(100);
-      const sel = await p.evaluate(() => { const s = term.getSelection(); copySelection(); offerCleanCopy(); return s; });
-      await p.waitForTimeout(400);
+      const sel = await p.evaluate(async () => { const s = term.getSelection(); copySelection(); await offerCleanCopy(); return s; });
       return { sel, clip: await p.evaluate(() => window.__clip.slice()), btn: await btn() };
     };
     const shot = async name => {
@@ -8040,7 +8039,7 @@ async function cleanCopySection(browser, base) {
     await p.mouse.move(sbox.x + sc.w * 10, sbox.y + sc.h * 3.5, { steps: 5 });
     await p.mouse.move(sbox.x + sc.w * 20, sbox.y + sc.h * 3.5, { steps: 5 });
     await p.mouse.up();
-    await p.waitForTimeout(500);
+    await p.waitForSelector("#cc-btn", { timeout: slow(5000) }).catch(() => {});
     const dragSel = await p.evaluate(() => ({ sel: term.getSelection(), clip: window.__clip.slice() }));
     if (!dragSel.sel) fail("cleanCopy: the mouse drag selected nothing, so this proves nothing");
     if (dragSel.clip.length) fail("cleanCopy: a drag copied with copy on select off: " + JSON.stringify(dragSel.clip));
