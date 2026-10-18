@@ -1148,10 +1148,11 @@ const alerting = (() => {
   }
 
   function holdWaits(fresh, describe) {
+    const now = Date.now();
     fresh.forEach(i => {
       const k = rungKey("waiting", i);
       if (held.has(k)) { held.get(k).item = i; return; }
-      held.set(k, { item: i, at: Date.now(), timer: 0 });
+      held.set(k, { item: i, at: now, timer: 0 });
     });
     settleWaits(describe);
   }
