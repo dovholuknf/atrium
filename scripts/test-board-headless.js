@@ -22167,6 +22167,7 @@ async function switchPrewarmSection(browser, base) {
     await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
     const row = id => wp.locator('#term-list .card.tab[data-id="' + id + '"]');
     await row("sp-a").waitFor({ timeout: slow(10000) });
+    await wp.clock.pauseAt(Date.now() + 60000);
     let flushSeq = 0;
     const flush = async () => {
       const n = ++flushSeq;
