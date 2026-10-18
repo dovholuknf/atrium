@@ -3,7 +3,7 @@
 // Units: land, landThePlane.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/deploy.js` runs just these units, the way the full run would.
-const { slow } = require("../lib/browser.js");
+const { slow, frames, until } = require("../lib/browser.js");
 const { mock, openStreams, landCard, T1 } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { landContext } = require("../lib/helpers.js");
@@ -48,7 +48,7 @@ async function landSection(browser, base) {
     do {
       at = await landedAt(p);
       if (want(at)) return at;
-      await p.waitForTimeout(200);
+      await new Promise(r => setTimeout(r, 50));
     } while (Date.now() < until);
     return at;
   };
@@ -65,7 +65,7 @@ async function landSection(browser, base) {
     if (process.env.DEBUG_HEADLESS) p.on("console", m => console.error("[land] " + m.text()));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1200);
+    await p.evaluate(() => runRefresh());
     await spyAttach(p);
 
     // 1. A new card whose terminal is not there yet, from its own toast.
@@ -119,16 +119,17 @@ async function landSection(browser, base) {
     mock.landPerms = [{ id: "perm-land", task_id: "land-pc", agent: "land pc", tool: "Bash", command: "ls",
       requested_at: new Date().toISOString().replace("Z", "") }];
     await p.evaluate(() => runRefresh());
-    await p.waitForTimeout(800);
+    await until(() => p.evaluate(() => permsLocal.some(q => q.id === "perm-land")), 10000, "the request never reached the pass", 10);
     await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
     await p.evaluate(() => { toast("land pc needs permission", "Bash: ls", "perms", "perm-land", "land-pc"); });
     await clickToast(p, "land pc needs permission");
-    await p.waitForTimeout(800);
-    at = await landedAt(p);
-    const flashed = await p.evaluate(() => {
+    const flash = () => p.evaluate(() => {
       const el = document.querySelector('#perms-list .perm[data-id="perm-land"]');
       return !!el && el.classList.contains("flash");
     });
+    await until(async () => (await landedAt(p)).view === "perms" && await flash(), 5000, "the request was never flashed", 10).catch(() => {});
+    at = await landedAt(p);
+    const flashed = await flash();
     if (at.view !== "perms" || !flashed || at.opened) {
       fail("a request on a card with no terminal landed on " + JSON.stringify(at) +
         (flashed ? "" : ", with the request not flashed") + ".");
@@ -140,7 +141,7 @@ async function landSection(browser, base) {
     await reset(p);
     await p.evaluate(() => { document.getElementById("toastlog").showModal(); toast("land nowhere", "copied"); });
     await clickToast(p, "land nowhere");
-    await p.waitForTimeout(500);
+    await frames(p, 3);
     at = await landedAt(p);
     if (at.view !== "stack" || !at.dialogs.includes("toastlog")) {
       fail("a toast about nothing took the board to " + JSON.stringify(at) + ".");
@@ -162,7 +163,7 @@ async function landSection(browser, base) {
     await reset(p);
     await solo.evaluate(() => { toast("solo card is ready", "", "stack", null, "s1"); });
     await clickToast(solo, "solo card is ready");
-    await p.waitForTimeout(800);
+    await frames(p, 3);
     at = await landedAt(p);
     if (at.opened) fail("a popped-out window's alert for its own card attached the board to " + at.opened);
     await solo.close();
@@ -190,7 +191,7 @@ async function landSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(1200);
+    await p.evaluate(() => runRefresh());
     await spyAttach(p);
     landCard("land-new3", { supervised: false });
     mock.landList = mock.landList.concat(mock.LAND["land-new3"]);
