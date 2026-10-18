@@ -592,9 +592,9 @@ async function loginNeededSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof loginBadge === "function" && typeof loadHubRooms === "function",
       null, { timeout: slow(15000) });
-    await p.evaluate(() => loadHubRooms());
     await p.evaluate(() => switchView("runners")); // the tab may sit in the `...` menu at this width
-    await p.waitForSelector("#room-list .roomrow", { timeout: slow(10000) });
+    await p.waitForFunction(() => hubIsHub && !!document.querySelector("#room-list .roomrow .loginlift"),
+      null, { timeout: slow(10000) });
     const chips = await p.evaluate(() => Array.from(document.querySelectorAll("#room-list .roomrow")).map(r => ({
       room: r.querySelector(".roomname").textContent.trim(),
       chip: Array.from(r.querySelectorAll(".loginlift")).map(c => c.textContent.trim()).join("|") })));
