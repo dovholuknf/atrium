@@ -5353,10 +5353,11 @@ async function termLinkLateSection(browser, base) {
     });
     const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
     const menuOn = () => p.evaluate(() => document.getElementById("cardmenu").classList.contains("on"));
-    const hover = async (col, r) => {
+    const hover = async (col, r, linked) => {
       await p.mouse.move(...at(40, 5));
       await p.mouse.move(...at(col, r), { steps: 3 });
-      await p.waitForTimeout(500);
+      if (linked) await p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) });
+      else await p.waitForTimeout(500);
     };
 
     // 1. the file is not there yet: plain text, a click does nothing.
@@ -5369,7 +5370,7 @@ async function termLinkLateSection(browser, base) {
     // 2. the file appears and the row is rewritten: the same path links. An unchanged row is not asked again.
     exists.add("out/late.md");
     await p.evaluate(() => new Promise(res => term.write("\x1b[1;1H\x1b[2Kwrote out/late.md again", res)));
-    await hover(10, 0);
+    await hover(10, 0, true);
     await shot(p, "late-2-appeared");
     await p.mouse.click(...at(10, 0));
     await p.waitForTimeout(300);
@@ -5378,7 +5379,7 @@ async function termLinkLateSection(browser, base) {
 
     // 3. a hit is kept: it still links after the expiry with the file's probe answering nothing.
     exists.delete("out/late.md");
-    await hover(10, 0);
+    await hover(10, 0, true);
     await p.mouse.click(...at(10, 0));
     await p.waitForTimeout(300);
     if (!await menuOn()) fail("a hit was forgotten");
@@ -5386,7 +5387,7 @@ async function termLinkLateSection(browser, base) {
 
     // 4. an image opens in a tab at once, no menu.
     exists.add(".atrium/incoming/shot.png");
-    await hover(3, 1);
+    await hover(3, 1, true);
     await shot(p, "image-hover");
     await p.mouse.click(...at(3, 1));
     await p.waitForTimeout(400);
