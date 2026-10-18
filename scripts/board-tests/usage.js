@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
 const { boardUsageSeen, landCard, mock, T1, SKINS } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { CTX_CARDS, CTX_USAGE, docImgDir } = require("../lib/helpers.js");
@@ -1776,11 +1776,13 @@ async function usageGroupsSection(browser, base) {
       opts.items404 ? route.fulfill({ status: 404, body: "not found" }) : route.fulfill({ json: itemsBody }));
     await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
     try {
+      await sp.clock.install();
       await sp.goto(base, { waitUntil: "domcontentloaded" });
       await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
-      await sp.waitForTimeout(1500);
+      await sp.clock.pauseAt(Date.now() + 60000);
+      await fakeTick(sp, 1500);
       await fn(sp, reads);
     } finally { await ctx.close(); }
   };
@@ -1788,8 +1790,8 @@ async function usageGroupsSection(browser, base) {
     .map(m => m.querySelector(".uctitle").textContent));
   const pick = async (sp, v) => {
     await sp.selectOption("#uc-group", v);
-    await sp.waitForFunction(v => UC.group === v && !UC.inflight, v, { timeout: slow(5000) });
-    await sp.waitForTimeout(200);
+    await fakeWait(sp, v => UC.group === v && !UC.inflight, v, 5000);
+    await fakeTick(sp, 200);
   };
   await run({}, async (sp, reads) => {
     if (await sp.$("#uc-body [data-role=groups]")) fail("usageGroups: card view draws group tiles.");
@@ -1848,9 +1850,9 @@ async function usageGroupsSection(browser, base) {
     reads.length = 0;
     for (let i = 0; i < 6; i++) {
       await sp.evaluate(() => { for (let k = 0; k < 10; k++) onUsageEvent({ data: JSON.stringify({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 1, output: 1, cause: "operator" }) }); });
-      await sp.waitForTimeout(1000);
+      await fakeTick(sp, 1000);
     }
-    await sp.waitForTimeout(500);
+    await fakeTick(sp, 500);
     const n = reads.filter(r => r.group === "dept").length;
     if (n !== 1) fail("usageGroups: a burst of usage events for 6.5s gave " + n + " re-reads, want 1.");
   });
