@@ -1,7 +1,7 @@
 # Tell the hub a CI run finished.
 #
 # THERE IS NO LOGIC IN THIS FILE. What is sent is decided by `scripts/ci-notify.sh`. This file checks out, runs the
-# script to validate the event and write the body, and hands that file to the ziti-hook action, which only carries it.
+# script to validate the event and write the body, and hands that body to the ziti-hook action, which only carries it.
 
 name: ci-notify
 
@@ -19,11 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: body
-        run: echo "path=$(bash scripts/ci-notify.sh "$GITHUB_EVENT_PATH")" >> "$GITHUB_OUTPUT"
+        run: |
+          path=$(bash scripts/ci-notify.sh "$GITHUB_EVENT_PATH")
+          echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         with:
           transport: ziti
           url: http://ziti-hook.ziti/
-          payload: ${{ steps.body.outputs.path }}
+          payload: ${{ steps.body.outputs.body }}
           ziti-identity: ${{ secrets.ZITI_HOOK_IDENTITY }}
           secret: ${{ secrets.ATRIUM_CI_HOOK_SECRET }}
