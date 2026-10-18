@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { slow, fakeWait, fakeTick } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, until: untilTrue } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { countRequests, landContext, topCounts } = require("../lib/helpers.js");
@@ -393,7 +393,7 @@ async function atriumDownSection(browser, base) {
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const downUp = () => dp.evaluate(() => { const d = document.getElementById("atriumdown"); return !!(d && d.open); });
   // The page runs on a fake clock: the five seconds, the backoff and the countdown are moved through, not waited out.
-  const run = ms => dp.clock.runFor(ms);
+  const run = ms => fakeTick(dp, ms);
   const until = (fn, ms) => fakeWait(dp, fn, null, ms);
   const live = () => fakeWait(dp, () => document.getElementById("conn").classList.contains("live"), null, 15000, 0);
   // Whether the down cover opened at any frame since this was called.
@@ -410,6 +410,7 @@ async function atriumDownSection(browser, base) {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await until(() => typeof hubIsHub !== "undefined" && hubIsHub &&
       document.getElementById("conn").classList.contains("live"), 15000);
+    await dp.clock.pauseAt(Date.now() + 60000);
     await run(500);
 
     // A blip is not atrium being down.
@@ -511,8 +512,9 @@ async function atriumDownSection(browser, base) {
       if (down.card0 && card0 && down.card0 !== card0) {
         fail("down.html wore " + down.card0 + ", not the board's " + card0 + ".");
       }
-      await sp.waitForTimeout(1200);
-      const clock = await sp.evaluate(() => document.getElementById("atriumdown-el").textContent).catch(() => "");
+      const clockNow = () => sp.evaluate(() => document.getElementById("atriumdown-el").textContent).catch(() => "");
+      await untilTrue(async () => /^down for \d+s$/.test(await clockNow()), 5000, "down.html's clock never drew").catch(() => {});
+      const clock = await clockNow();
       if (!/^down for \d+s$/.test(clock)) fail("down.html's clock said " + JSON.stringify(clock));
       // Atrium comes back: the page reloads onto the board by itself.
       mock.hubAway = false;
@@ -534,13 +536,14 @@ async function atriumDownSection(browser, base) {
       // board it reloads onto puts the restart cover back until the new hub.
       await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
         { timeout: slow(15000) }).catch(() => fail("the board after down.html never went live."));
-      await sp.waitForTimeout(500);
+      await sp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
       const say = state => {
         const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
         openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
       };
       say({ state: "countdown", seconds: 1 });
-      await sp.waitForTimeout(1300);
+      await sp.waitForFunction(() => /restarts in 0s/.test((document.querySelector(".toast.hubgate b") || {}).textContent || ""),
+        null, { timeout: slow(5000) }).catch(() => fail("the countdown never ran out."));
       say({ state: "restarting" });
       await sp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
         .catch(() => fail("restarting drew no restart cover before the reload."));
