@@ -3,43 +3,37 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 )
 
-var (
-	templateOnce sync.Once
-	templateDir  string
-	templateErr  error
-)
+var templateDir = filepath.Join(os.TempDir(), fmt.Sprintf("atrium-store-template-%d", os.Getpid()))
+
+var migratedTemplate = sync.OnceValue(func() error {
+	if err := os.MkdirAll(templateDir, 0o700); err != nil {
+		return err
+	}
+	s, err := Open(filepath.Join(templateDir, "atrium.db"))
+	if err != nil {
+		return err
+	}
+	return s.Close()
+})
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	if templateDir != "" {
-		os.RemoveAll(templateDir)
-	}
+	os.RemoveAll(templateDir)
 	os.Exit(code)
 }
 
 // Migrating a database is about 110 transactions, which a hosted Windows runner pays hundreds of times over.
 func openMigrated(t *testing.T) *Store {
 	t.Helper()
-	templateOnce.Do(func() {
-		templateDir, templateErr = os.MkdirTemp("", "atrium-store-template")
-		if templateErr != nil {
-			return
-		}
-		s, err := Open(filepath.Join(templateDir, "atrium.db"))
-		if err != nil {
-			templateErr = err
-			return
-		}
-		templateErr = s.Close()
-	})
-	if templateErr != nil {
-		t.Fatalf("template: %v", templateErr)
+	if err := migratedTemplate(); err != nil {
+		t.Fatalf("template: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(templateDir, "atrium.db"))
 	if err != nil {

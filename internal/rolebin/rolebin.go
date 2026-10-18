@@ -20,8 +20,6 @@ var roleNames = map[string]string{
 
 var legacyNames = []string{"atrium.ptyhost"}
 
-var rename = os.Rename
-
 var logOnce sync.Once
 
 func ext() string {
@@ -89,6 +87,10 @@ func Ensure(role string) string {
 
 // EnsureIn is Ensure for a given installed binary and a given directory for the copy.
 func EnsureIn(role, exe, dir string) string {
+	return ensureWith(role, exe, dir, os.Rename)
+}
+
+func ensureWith(role, exe, dir string, rename func(oldpath, newpath string) error) string {
 	if os.Getenv("ATRIUM_ROLEBIN") == "off" {
 		return exe
 	}
@@ -96,7 +98,7 @@ func EnsureIn(role, exe, dir string) string {
 	if !ok || exe == "" {
 		return exe
 	}
-	got, err := ensure(role, name, exe, dir)
+	got, err := ensure(role, name, exe, dir, rename)
 	if err != nil {
 		logOnce.Do(func() { log.Printf("rolebin: %s copy of %s unavailable, using the binary itself: %v", role, exe, err) })
 		return exe
@@ -104,7 +106,7 @@ func EnsureIn(role, exe, dir string) string {
 	return got
 }
 
-func ensure(role, name, exe, dir string) (string, error) {
+func ensure(role, name, exe, dir string, rename func(oldpath, newpath string) error) (string, error) {
 	dst := filepath.Join(dir, name+filepath.Ext(exe))
 	if role != "pty" {
 		sweepOld(dir, name)
