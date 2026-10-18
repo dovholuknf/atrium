@@ -5458,8 +5458,16 @@ async function termProbeStormSection(browser, base) {
         await p.waitForTimeout(15);
       }
     };
-    await sweep();
-    for (let seen = -1; seen !== probes;) { seen = probes; await p.waitForTimeout(300); }
+    const settle = async () => {
+      for (let pass = 0; pass < 6; pass++) {
+        const before = probes;
+        await sweep();
+        for (let seen = -1; seen !== probes;) { seen = probes; await p.waitForTimeout(300); }
+        if (probes === before) return;
+      }
+      fail("the terminal kept probing through 6 sweeps with no new output");
+    };
+    await settle();
     const first = probes;
     let frame = 0;
     const spinner = setInterval(() => p.evaluate(([r, f]) => term.write("\x1b[" + r + ";1H\x1b[2K" + "|/-\\"[f % 4] + " working"), [spin, frame++]).catch(() => {}), 1000);
@@ -5470,8 +5478,7 @@ async function termProbeStormSection(browser, base) {
     if (frame < 5) fail("the spinner redrew only " + frame + " times");
     if (probes !== first) fail("sweeping an unchanged terminal for 10s probed " + (probes - first) + " more times");
     await p.evaluate(() => new Promise(res => term.write("\x1b[1;1H\x1b[2Kchanged row v9.9 here.txt", res)));
-    await sweep();
-    await p.waitForTimeout(300);
+    await settle();
     const again = probes;
     if (again === first || again > first + 1) fail("a changed row asked " + (again - first) + " times, want 1");
     await sweep();
