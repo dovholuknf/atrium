@@ -986,6 +986,11 @@ async function groupDragSection(browser, base) {
   const heads = () => dp.evaluate(() =>
     [...document.querySelectorAll("#term-list .tgroup")].map(b =>
       b.classList.contains("pinnedhead") ? "*pinned" : b.querySelector(".tgname").textContent.trim()));
+  const quiet = async (...sels) => {
+    await dp.waitForFunction(s => typeof termHeadDrag !== "undefined" && !termHeadDrag && !termDragID && !termDragEl &&
+      !document.querySelector("#term-list .dragging, #term-list .dropover") &&
+      s.every(q => document.querySelector(q)), sels, { timeout: slow(15000), polling: 10 });
+  };
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await dp.waitForTimeout(900);
@@ -1020,18 +1025,22 @@ async function groupDragSection(browser, base) {
     if (writes.length) fail("reordering groups wrote to a card: " + writes.join(" | "));
 
     // A row dropped on a heading is a row drag, and reorders nothing.
+    await quiet('#term-list .card.tab[data-id="loose1"]', '#term-list .tgroup[data-ghead="spare"]');
     await dp.locator('#term-list .card.tab[data-id="loose1"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="spare"]'));
     await dp.waitForTimeout(500);
     st = await dp.evaluate(() => groupingPrefs().groups);
     if (JSON.stringify(st) !== '["spare","active"]') fail("a row dropped on a heading reordered the groups: " + JSON.stringify(st));
     // And a heading dropped on the pinned bucket pins nothing.
+    await quiet('#term-list .tgroup[data-ghead="active"]', "#term-list .termbucket");
     await dp.locator('#term-list .tgroup[data-ghead="active"]').dragTo(dp.locator("#term-list .termbucket"));
     await dp.waitForTimeout(500);
     if (writes.some(w => /pinned/.test(w))) fail("a heading dropped on the pinned bucket pinned something: " + writes.join(" | "));
     writes.length = 0;
 
     // A row dragged from a group onto `untagged` leaves that group.
+    await quiet('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
+      '#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]');
     await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').dragTo(
       dp.locator('#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]'));
     await dp.waitForTimeout(600);
