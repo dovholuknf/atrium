@@ -388,3 +388,5 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
 - Do not widen the click's 30 seconds. The call that hangs is named now, so find out why it hangs.
 - Do not expect the same unit to fail twice. The last ten failed runs on main held 27 distinct units and 22 of them
   failed once, so a green run after a fix says little. Count a fix by the wait it adds on the state the step asserts.
+- Do not hunt for the line of a thrown unit. Its `failing.tsv` row now names the call and its line, as in
+  `waitForSelector("#uc-body .ucfade") at usage.js:2072:14`. `HEADLESS_TRACE=1` prints every page action before it.
