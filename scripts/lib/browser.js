@@ -230,6 +230,14 @@ const reloaded = p => p.evaluate(() => !window.__armed || sessionStorage.getItem
 // term.write with its callback: resolves once the terminal has parsed the data, so a read after it sees the result.
 const termWrite = (p, data, term = "term") => p.evaluate(([d, t]) => new Promise(r => window[t].write(d, r)), [data, term]);
 
+// For a page on the fake clock: runs `fn(arg, done)` in the page, where `done(value)` is how it answers, and moves the
+// page's clock until it has. The page-side timers of a test are fired by the clock, not waited out.
+async function fakeRun(p, fn, arg, ms = 5000) {
+  await p.evaluate(([src, a]) => { window.__fr = undefined; (0, eval)("(" + src + ")")(a, v => { window.__fr = { v }; }); }, [fn.toString(), arg]);
+  await fakeWait(p, () => window.__fr, null, ms);
+  return p.evaluate(() => window.__fr.v);
+}
+
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
 try {
@@ -249,4 +257,4 @@ if (!exePath || !require("fs").existsSync(exePath)) {
   process.exit(0);
 }
 
-module.exports = { slow, fakeWait, fakeTick, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
+module.exports = { slow, fakeWait, fakeTick, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };

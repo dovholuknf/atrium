@@ -34,7 +34,7 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
 
 // The browser and the mocked daemon live in lib/. Loading lib/browser.js installs the shifted clock and finds Chromium,
 // so it goes first: the fixtures in lib/mock.js are built from Date.now().
-const { slow, fakeWait, fakeTick, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
+const { slow, fakeWait, fakeTick, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
 const { landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
@@ -3072,12 +3072,11 @@ async function pasteSpinnerSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
     await p.evaluate(() => {
       const real = pasteShow;
       pasteShow = f => { window.__shown++; real(f); };
@@ -3085,7 +3084,7 @@ async function pasteSpinnerSection(browser, base) {
 
     // 1. A one-line paste held on the socket for 50ms shows, and an echo inside
     // the hold does not take it down (u-007: a busy runner echoes at once).
-    const heldGot = await p.evaluate(() => new Promise(done => {
+    const heldGot = await fakeRun(p, (_, done) => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       pasteEnd();
       window.__shown = 0;
@@ -3095,7 +3094,7 @@ async function pasteSpinnerSection(browser, base) {
       setTimeout(() => { got.during = vis(); got.text = (document.getElementById("t-pasting") || {}).textContent; }, 40);
       setTimeout(() => { termSock.bufferedAmount = 0; termSock.onmessage({ data: "one line" }); }, 50);
       setTimeout(() => { got.after = vis(); got.shown = window.__shown; done(got); }, 120);
-    }));
+    });
     // Inside the hold the echo is only noted. Held, then gone once it is quiet.
     if (!heldGot.after) fail("an echo 50ms in took the spinner down inside its hold: " + JSON.stringify(heldGot));
     heldGot.after = false;
@@ -3109,7 +3108,7 @@ async function pasteSpinnerSection(browser, base) {
 
     // 2. A paste that drains and echoes inside 20ms is still drawn, at once, and
     // is gone once the runner has been quiet since the echo.
-    const quick = await p.evaluate(() => new Promise(done => {
+    const quick = await fakeRun(p, (_, done) => {
       const attempt = tries => {
         pasteEnd();
         window.__shown = 0;
@@ -3128,15 +3127,15 @@ async function pasteSpinnerSection(browser, base) {
         setTimeout(echo, 60);
       };
       attempt(5);
-    }));
+    });
     if (quick.now !== 1 || !quick.flight) {
       fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
     }
-    await p.waitForFunction(() => !pasteFlight, null, { timeout: 4000 })
+    await fakeWait(p, () => !pasteFlight, null, 4000)
       .catch(() => fail("a paste echoed once and then quiet never cleared"));
 
     // 3. Typed input never shows it: a key, an escape sequence, or a long burst.
-    const typed = await p.evaluate(() => new Promise(done => {
+    const typed = await fakeRun(p, (_, done) => {
       pasteEnd();
       window.__shown = 0;
       termSock.bufferedAmount = 5;
@@ -3148,7 +3147,7 @@ async function pasteSpinnerSection(browser, base) {
         termSock.bufferedAmount = 0;
         done(got);
       }, 150);
-    }));
+    });
     if (typed.shown || typed.flight) fail("typed input started the paste spinner: " + JSON.stringify(typed));
   } finally {
     await ctx.close();
