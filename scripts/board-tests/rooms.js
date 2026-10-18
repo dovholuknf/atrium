@@ -741,7 +741,9 @@ async function pollsGoneSection(browser, base) {
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await p.waitForSelector("#conn.live", { timeout: slow(10000) });
       await run(p, 2500);
+      await p.waitForFunction(() => !refreshTimer && !refreshInFlight && !refreshDirty, null, { timeout: slow(10000) });
       c3.clear();
       const say = h => mockSay("health", JSON.stringify(h));
       const halt = () => p.evaluate(() => { const e = document.getElementById("halted");
