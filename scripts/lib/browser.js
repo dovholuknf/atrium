@@ -173,8 +173,15 @@ async function fakeWait(p, fn, arg, ms, step = 100) {
   }
 }
 
-// pauseAt(future) would jump there and fire every due timer, the 60s resync included, mid-test: pause one ms on, the clock can sit between whole ms.
-const fakePause = async p => p.clock.pauseAt(await p.evaluate(() => Date.now() + 1));
+// pauseAt(future) would jump there and fire every due timer, the 60s resync included, mid-test. The clock runs live, so
+// a target too close is already past by the time it lands: widen the margin until it is not.
+const fakePause = async p => {
+  for (const ms of [2, 10, 50, 250]) {
+    try { return await p.clock.pauseAt(await p.evaluate(m => Date.now() + m, ms)); }
+    catch (e) { if (!/past/.test(e.message)) throw e; }
+  }
+  throw new Error("fakePause: the page clock outran every margin");
+};
 
 // `ms` of page time on the fake clock, every timer fired as it comes due, so a poll or a chained fetch still shows in a
 // request count. The real pause per step lets a fetch or a stream event land before the clock moves on.
