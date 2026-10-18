@@ -69,8 +69,9 @@ function retryGoto(page) {
   page.goto = async (url, o) => {
     for (let n = 1; ; n++) {
       try { return await goto(url, o); } catch (e) {
-        if (n >= 3 || !/net::ERR_NO_BUFFER_SPACE/.test(String(e && e.message))) throw e;
-        console.log("RETRY page.goto " + url + " attempt " + n + ": ERR_NO_BUFFER_SPACE");
+        const why = (/net::ERR_NO_BUFFER_SPACE/.exec(String(e && e.message)) || /interrupted by another navigation to "chrome-error:/.exec(String(e && e.message)) || [])[0];
+        if (n >= 3 || !why) throw e;
+        console.log("RETRY page.goto " + url + " attempt " + n + ": " + (why.startsWith("net::") ? why : "chrome-error"));
         await new Promise(r => setTimeout(r, 250 * n));
       }
     }
