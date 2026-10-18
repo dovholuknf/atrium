@@ -34,7 +34,7 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
 
 // The browser and the mocked daemon live in lib/. Loading lib/browser.js installs the shifted clock and finds Chromium,
 // so it goes first: the fixtures in lib/mock.js are built from Date.now().
-const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
+const { slow, fakeWait, fakeTick, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
 const { landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
@@ -7614,8 +7614,7 @@ async function phoneKeyLitSection(browser, base) {
     for (const sel of ["#t-keys [data-key=left]", "#t-keys [data-key=enter]", "#t-keys [data-key=tab]", "#t-keys-attach"]) {
       const [x, y] = await centre(sel);
       await p.touchscreen.tap(x, y);
-      await p.waitForTimeout(400);
-      await p.waitForFunction(() => !document.getAnimations().length);
+      await settleStyle(p);
       const now = await probe();
       for (const k of Object.keys(rest)) if (now[k] !== rest[k])
         fail("phoneKeyLit: after a tap on " + sel + " " + k + " reads " + now[k] + ", resting " + rest[k]);
