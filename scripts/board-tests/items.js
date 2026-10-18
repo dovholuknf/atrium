@@ -588,15 +588,17 @@ async function noReadyChildrenSection(browser, base) {
   const card = (id, status, extra) => ({ id, wire_name: id, status, supervised: true, tags: [], title: id,
     display_title: id, created_at: "2026-09-01T10:00:00Z", ...extra });
   try {
+    await page.clock.install();
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
       { timeout: slow(15000) });
-    await page.waitForTimeout(1500);
+    await page.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(page, 1500);
     await page.evaluate(() => { localStorage.removeItem("atrium.toastlog"); alerting.set({ debounce: 0, muted: true }); });
     const step = async list => {
       rows = list;
       await page.evaluate(() => refresh());
-      await page.waitForTimeout(700);
+      await fakeTick(page, 700);
     };
     const rings = who => page.evaluate(w => toastLog().filter(e => e.title.startsWith(w + " ")).length, who);
     const kid = (id, status) => card(id, status, { tags: ["atrium:subagent"], spawned_by_id: "par" });
@@ -653,15 +655,17 @@ async function readyNoSeedSection(browser, base) {
   await page.route(u => new URL(u).pathname === "/v1/tasks", route =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: rows }) }));
   try {
+    await page.clock.install();
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
       { timeout: slow(15000) });
-    await page.waitForTimeout(1500);
+    await page.clock.pauseAt(Date.now() + 60000);
+    await fakeTick(page, 1500);
     await page.evaluate(() => alerting.set({ debounce: 0, muted: true, desktop: true }));
     const step = async list => {
       rows = list;
       await page.evaluate(() => refresh());
-      await page.waitForTimeout(800);
+      await fakeTick(page, 800);
     };
     const said = () => page.evaluate(() => ({
       notes: window.__notes.map(n => n.title).filter(t => /^rns-/.test(t)),
@@ -680,7 +684,7 @@ async function readyNoSeedSection(browser, base) {
     none("an idle agent card counted by a later poll was announced", await said());
     // a turn that ends now is the one event: one line in the log, said once as a notification or a toast
     await step([old, late, idle, card("rns-turn", "needs-input", { waiting_since: new Date().toISOString() })]);
-    await page.waitForTimeout(600);
+    await fakeTick(page, 600);
     const s = await said();
     if (s.log.join() !== "rns-turn is ready x1" || s.notes.length + s.toasts.length !== 1) {
       fail("readyNoSeed: a turn that ended while the board was open was not exactly one notification: " + JSON.stringify(s));
