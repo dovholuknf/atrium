@@ -4611,26 +4611,32 @@ async function pasteBusySection(browser, base) {
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     window.__vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
     // Samples the box at given offsets from now, and says what it saw.
-    window.__watch = (gesture, at) => new Promise(done => {
+    window.__watch = (gesture, at) => {
       pasteEnd();
-      const t0 = performance.now();
+      window.__seen = null;
       const seen = {};
       for (const ms of at) setTimeout(() => { seen[ms] = window.__vis(); }, ms);
       gesture();
       seen.sync = window.__vis();
       seen.text = (document.getElementById("t-pasting") || {}).textContent || "";
-      setTimeout(() => done(seen), Math.max(...at) + 50);
-    });
+      setTimeout(() => { window.__seen = seen; }, Math.max(...at) + 50);
+    };
   });
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
-    await p.waitForTimeout(300);
+    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null, 10000);
+    await fakePause(p);
+    const watch = async (fn, arg, at) => {
+      await p.evaluate(fn, arg);
+      await fakeTick(p, Math.max(...at) + 100, 50);
+      await fakeWait(p, () => window.__seen, null, 2000, 50);
+      return p.evaluate(() => window.__seen);
+    };
 
     // What "landed" is: up on the gesture, up through the echo and the wait for
     // the real answer at 1000ms, gone after it.
@@ -4644,45 +4650,46 @@ async function pasteBusySection(browser, base) {
     const at = [100, 300, 700, 1700];
 
     // 1. ctrl-v, the paste event.
-    expect("ctrl-v", await p.evaluate(a => window.__watch(() => {
+    expect("ctrl-v", await watch(a => window.__watch(() => {
       const dt = new DataTransfer();
       dt.setData("text/plain", "hello there");
       document.getElementById("t-screen").dispatchEvent(
         new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    }, a), at), /pasting/);
+    }, a), at, at), /pasting/);
 
     // 2. Right click, with a clipboard that takes 300ms to answer: the box is
     // already up while it is being read.
-    expect("right click", await p.evaluate(a => {
+    expect("right click", await watch(a => {
       Object.defineProperty(navigator, "clipboard", { configurable: true,
         value: { readText: () => new Promise(r => setTimeout(() => r("clipboard text"), 300)),
           read: () => Promise.resolve([]) } });
-      return window.__watch(() => {
+      window.__watch(() => {
         document.getElementById("t-screen").dispatchEvent(
           new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
       }, a);
-    }, at), /clipboard|pasting/);
+    }, at, at), /clipboard|pasting/);
 
     // 3. The paste box.
-    expect("paste box", await p.evaluate(a => window.__watch(() => {
+    expect("paste box", await watch(a => window.__watch(() => {
       openPasteBox("");
       document.getElementById("t-paste-in").value = "from the box";
       sendPasteBox();
-    }, a), at), /pasting/);
+    }, a), at, at), /pasting/);
 
     // 4. An image whose upload is slow to answer, 600ms. The box says what is
     // landing, and takes the path over as a paste when it arrives.
-    const img = await p.evaluate(a => {
-      const real = window.fetch;
+    const imgAt = [100, 400, 900, 2100];
+    const img = await watch(a => {
+      const real = window.__realFetch = window.fetch;
       window.fetch = (u, o) => /\/files$/.test(String(u))
         ? new Promise(r => setTimeout(() => r(new Response(JSON.stringify({ paths: ["/tmp/pasted.png"] }),
           { status: 200, headers: { "Content-Type": "application/json" } })), 600))
         : real.call(window, u, o);
-      const r = window.__watch(() => {
+      window.__watch(() => {
         uploadIntoTerm([new File(["png"], "pasted.png", { type: "image/png" })]);
       }, a);
-      return r.then(seen => { window.fetch = real; return seen; });
-    }, [100, 400, 900, 2100]);
+    }, imgAt, imgAt);
+    await p.evaluate(() => { window.fetch = window.__realFetch; });
     if (!img.sync || !/uploading pasted\.png/.test(img.text)) {
       fail("an image upload did not show the box at once, naming the file: " + JSON.stringify(img));
     }
@@ -4692,15 +4699,19 @@ async function pasteBusySection(browser, base) {
 
     // 5. Nothing comes back: the cap clears it. The clock is moved rather than
     // waited for, so the poll finds the paste older than the cap.
-    const cap = await p.evaluate(() => new Promise(done => {
+    await p.evaluate(() => {
+      window.__cap = null;
       window.__silent = true;
       pasteEnd();
       sendPasteText("nobody answers");
       const got = { before: window.__vis() };
       const real = Date.now;
       Date.now = () => real() + pasteGiveUpMs + 1000;
-      setTimeout(() => { Date.now = real; got.after = window.__vis(); window.__silent = false; done(got); }, 200);
-    }));
+      setTimeout(() => { Date.now = real; got.after = window.__vis(); window.__silent = false; window.__cap = got; }, 200);
+    });
+    await fakeTick(p, 300, 50);
+    await fakeWait(p, () => window.__cap, null, 2000, 50);
+    const cap = await p.evaluate(() => window.__cap);
     if (!cap.before) fail("a paste to a silent runner did not show the box: " + JSON.stringify(cap));
     if (cap.after) fail("a paste to a silent runner was still boxed past the cap: " + JSON.stringify(cap));
   } finally {
