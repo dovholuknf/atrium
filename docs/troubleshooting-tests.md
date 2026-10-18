@@ -386,3 +386,5 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
   failed, or trace where it fails.
 - Do not fix a theory. `termBox`'s empty draw had a tidy story and the trace placed it outside the loop.
 - Do not widen the click's 30 seconds. The call that hangs is named now, so find out why it hangs.
+- Do not expect the same unit to fail twice. The last ten failed runs on main held 27 distinct units and 22 of them
+  failed once, so a green run after a fix says little. Count a fix by the wait it adds on the state the step asserts.
