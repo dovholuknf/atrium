@@ -98,6 +98,58 @@ function withClock(browser) {
   return browser;
 }
 
+// Which call in the suite a page action came from. A Playwright timeout's own stack names the unit function at best,
+// so every page and locator action is wrapped: the call site is read as it starts, a rejection carries it as
+// `calledAt` for threwAt(), and HEADLESS_TRACE=1 prints each one as it starts, with the unit it belongs to.
+const TRACED_PAGE = ["goto", "click", "dblclick", "fill", "type", "press", "hover", "focus", "tap", "check", "uncheck",
+  "selectOption", "setInputFiles", "dispatchEvent", "waitForSelector", "waitForFunction", "waitForURL", "waitForEvent",
+  "waitForRequest", "waitForResponse", "waitForLoadState"];
+const TRACED_LOCATOR = ["click", "dblclick", "fill", "type", "press", "hover", "focus", "tap", "check", "uncheck",
+  "selectOption", "dispatchEvent", "waitFor"];
+const traced = new WeakSet();
+function callSite() {
+  const l = String(new Error().stack).split("\n").slice(1)
+    .find(s => /scripts[\\/]/.test(s) && !/tracedCall|lib[\\/]browser\.js|node_modules|node:internal/.test(s));
+  return l ? l.trim().replace(/^at /, "") : "";
+}
+function argText(a) {
+  if (a === undefined) return "";
+  if (typeof a === "function") return "function";
+  try { return JSON.stringify(a).slice(0, 120); } catch (e) { return String(a).slice(0, 120); }
+}
+function traceMethods(obj, names, prefix, who) {
+  for (const m of names) {
+    if (typeof obj[m] !== "function") continue;
+    const orig = obj[m].bind(obj);
+    obj[m] = function tracedCall(...args) {
+      const what = prefix + m + "(" + argText(args[0]) + ")", at = callSite();
+      const where = what + (at ? " at " + at : "");
+      if (process.env.HEADLESS_TRACE) console.log("TRACE " + (who() || "-") + " " + where);
+      return orig(...args).catch(e => { if (e && typeof e === "object" && !e.calledAt) e.calledAt = where; throw e; });
+    };
+  }
+  return obj;
+}
+function withTrace(browser, who) {
+  const wrapPage = page => {
+    if (traced.has(page)) return page;
+    traced.add(page);
+    traceMethods(page, TRACED_PAGE, "", who);
+    const locator = page.locator.bind(page);
+    page.locator = (...a) => traceMethods(locator(...a), TRACED_LOCATOR, "locator(" + argText(a[0]) + ").", who);
+    return page;
+  };
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...a) => {
+    const ctx = await newContext(...a);
+    ctx.on("page", wrapPage);
+    const newPage = ctx.newPage.bind(ctx);
+    ctx.newPage = async (...b) => wrapPage(await newPage(...b));
+    return ctx;
+  };
+  return browser;
+}
+
 // Every Playwright timeout here goes through slow(). A loaded machine, a
 // `go test` beside this run say, can take longer than the budgets below, which
 // were set on an idle one. HEADLESS_SLOW=3 gives every wait three times as long
@@ -146,4 +198,4 @@ if (!exePath || !require("fs").existsSync(exePath)) {
   process.exit(0);
 }
 
-module.exports = { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, chromium };
+module.exports = { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };

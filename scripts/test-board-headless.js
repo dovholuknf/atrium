@@ -34,7 +34,7 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
 
 // The browser and the mocked daemon live in lib/. Loading lib/browser.js installs the shifted clock and finds Chromium,
 // so it goes first: the fixtures in lib/mock.js are built from Date.now().
-const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, chromium } = require("./lib/browser.js");
+const { slow, fakeWait, fakeTick, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
 const { landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
@@ -8732,9 +8732,15 @@ async function historySection(browser, base) {
 // Where in this file a throw came from. A bare "Timeout 30000ms exceeded" names
 // no wait, so a failure nobody can run alone could not even be found.
 function threwAt(e) {
+  if (e && e.calledAt) return " (" + e.calledAt + ")";
   const at = String((e && e.stack) || "").split("\n")
     .find(l => /test-board-headless\.js:\d+/.test(l));
   return at ? " (at " + at.trim().replace(/^at /, "") + ")" : "";
+}
+// The place goes on the first line, which is the line failing.tsv keeps. Playwright's call log follows.
+function threwMessage(e) {
+  const lines = String(e && e.message ? e.message : e).replace(/\x1b\[[0-9;]*m/g, "").split("\n");
+  return lines[0] + threwAt(e) + (lines.length > 1 ? "\n" + lines.slice(1).join("\n") : "");
 }
 
 // The stuck section's cards. A launched card a restart resumed onto an idle
@@ -22038,6 +22044,7 @@ async function trayHeadSection(browser, base) {
 //   HEADLESS_UNITS=a,b,c      run just those units, in the suite's own order, each one's failure kept to itself
 //   HEADLESS_LIST=1           print the units and their pin groups as JSON and stop, with no browser
 //   HEADLESS_RESULTS=file     write { unit: { ms, ok, fails } } there when the run ends
+//   HEADLESS_TRACE=1          print each page action (click, fill, waitFor...) as it starts, with its unit and line
 // scripts/test-board-sharded.js is the caller: it splits the units over several processes of this file and merges what
 // they write. With none of these set the run is the plain serial one, one throw ends it, as it always did.
 //
@@ -22078,7 +22085,7 @@ async function unit(name, fn) {
   try { await fn(); }
   catch (e) {
     if (!UNIT_FILTER) throw e;
-    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    fail(name + ": the unit threw: " + threwMessage(e));
   } finally { results.currentUnit = ""; }
   const ms = Date.now() - t0;
   if (snap0) {
@@ -23222,7 +23229,7 @@ async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
 
-  const browser = LIST_MODE ? null : withClock(await chromium.launch());
+  const browser = LIST_MODE ? null : withTrace(withClock(await chromium.launch()), () => results.currentUnit);
   // A unit moved to scripts/board-tests/<bucket>.js still runs here, in its place in the suite order, through unit().
   const bu = name => () => bt.run(name, { browser, base });
   // HEADLESS_ONLY=termWear,bridge, or `node scripts/test-board-headless.js termWear bridge`, runs just those sections, for working on one.
@@ -23282,7 +23289,7 @@ async function main() {
         process.exit(2);
       }
       for (const n of ONLY.split(",")) await only[n](browser, base);
-    } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
+    } catch (e) { fail("the headless run threw: " + threwMessage(e)); }
     await browser.close();
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await new Promise(r => server.close(r));
@@ -25437,7 +25444,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("recogniserRepo", bu("recogniserRepo"));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
-    if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    if (!LIST_MODE) fail("the headless run threw: " + threwMessage(e));
     if (process.env.DEBUG_HEADLESS && page) {
       try {
         const diag = await page.evaluate(() => ({
