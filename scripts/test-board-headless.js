@@ -20152,10 +20152,20 @@ async function groupBridgeSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="u-disc"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
-    const settle = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
-      placeTabBridge(); r();
-    }))));
+    const settle = () => p.evaluate(() => new Promise(r => {
+      const box = () => [...document.querySelectorAll("#term-list .tgroup.carries, #term-list .card.on, #term-layout")]
+        .map(e => { const x = e.getBoundingClientRect(); return [x.top, x.bottom, x.left, x.right].join(); }).join("|");
+      let last = null, same = 0;
+      const tick = () => {
+        const now = box();
+        same = now === last && !document.getAnimations().length ? same + 1 : 0;
+        last = now;
+        if (same >= 2) { placeTabBridge(); r(); } else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }));
     const read = () => p.evaluate(() => {
+      placeTabBridge();
       const bridges = [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden)
         .map(b => b.getBoundingClientRect());
       const mid = r => (r.top + r.bottom) / 2;
@@ -20201,7 +20211,8 @@ async function groupBridgeSection(browser, base) {
     if (!g.folded.includes(top)) fail("groupBridge: the group was opened");
     level(g, "head", "the shut group's heading");
     // The heading wears the attached card's frame, and the bridge is a funnel: taller at the pane than at the heading.
-    await p.waitForTimeout(500);   // the heading eases its border in
+    await p.evaluate(() => document.fonts.ready);
+    await settle();
     const fun = await p.evaluate(() => {
       const h = document.querySelector("#term-list .tgroup.carries"), hr = h.getBoundingClientRect();
       const b = [...document.querySelectorAll("#term-layout .tabbridge")].find(x => !x.hidden), br = b.getBoundingClientRect();
