@@ -5642,6 +5642,7 @@ async function heldLineSection(browser, base) {
         r.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: 2, restored: true }) });
       });
       await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      await p.waitForSelector("#t-heldline .hl-menu", { state: "attached", timeout: slow(5000) });
       const menu = () => p.evaluate(() => getComputedStyle(document.querySelector("#t-heldline .hl-menu")).display);
       if (await menu() !== "none") fail(tag + "the menu is open before the chip is hovered");
       await p.hover("#t-heldline .hl-text");
@@ -5679,6 +5680,7 @@ async function heldLineSection(browser, base) {
         else r.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: 2 }) });
       });
       await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      await p.waitForSelector("#t-heldline .hl-menu", { state: "attached", timeout: slow(5000) });
       await p.hover("#t-heldline .hl-text");
       const item = p.locator("#t-heldline .hl-item[data-act=type-anyway]");
       if (await item.count() !== 1) fail(tag + "no Type anyway item on the chip");
