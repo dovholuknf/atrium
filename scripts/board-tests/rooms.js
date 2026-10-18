@@ -310,6 +310,8 @@ async function restartStaysSection(browser, base) {
     await live().catch(() => fail("the stream did not come back from the new hub."));
     await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(10000) })
       .catch(() => fail("the cover did not clear once the new hub answered."));
+    await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: slow(5000) })
+      .catch(() => {});
     if ((await seen()) !== "tc-") fail("from the countdown to the new hub the screen went " + (await seen()) +
       ", not countdown, cover, clear.");
     await gp.evaluate(() => cancelAnimationFrame(window.__watch));
