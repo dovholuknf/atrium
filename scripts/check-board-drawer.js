@@ -102,10 +102,11 @@ const until = async (read, ok, ms = 3000) => {
 };
 
 // The point a click should land on, read again until two reads agree: a drawer's slide and an accordion's re-flow move it.
-const still = async read => {
+const still = async (read, ms = 3000) => {
+  const t0 = Date.now();
   let a = await read();
-  for (let i = 0; i < 60; i++) {
-    await sleep(50);
+  while (Date.now() - t0 < ms) {
+    await sleep(10);
     const b = await read();
     if (a && b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5) return b;
     a = b;
@@ -511,7 +512,11 @@ async function touch(browser, tabName) {
     const want = type.toLowerCase() + ":" + (type === "touchEnd" ? null : Math.round(y));
     const { n } = await received();
     if (type === "touchStart") { began = Date.now(); trace.length = 0; }
-    const sent = `${type} x=${x === undefined ? "-" : Math.round(x)} y=${y === undefined ? "-" : Math.round(y)} +${Date.now() - began}ms`;
+    const under = type === "touchStart" ? " under=" + await page.evaluate(([px, py]) => {
+      const e = document.elementFromPoint(px, py);
+      return e ? e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + [...e.classList].map(c => "." + c).join("") : "none";
+    }, [x, y]) : "";
+    const sent = `${type} x=${x === undefined ? "-" : Math.round(x)} y=${y === undefined ? "-" : Math.round(y)}${under} +${Date.now() - began}ms`;
     await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
     const got = await until(received, v => v.n > n && v.last === want);
     trace.push(`     ${sent} | page n=${got.n} last=${got.last} +${Date.now() - began}ms | ${await drawerNow()}`);
@@ -530,15 +535,24 @@ async function touch(browser, tabName) {
     await send("touchEnd");
     await quiet();
   };
+  // The line and the panel are read when a gesture starts: a late re-layout moves them, and a finger on a stale point lands elsewhere.
+  const lineDrag = async (frac, steps) => {
+    await quiet();
+    const g = await still(async () => {
+      const b = await linePoint(page);
+      const h = await page.evaluate(() => [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").scrollHeight);
+      return { x: b.x, y: b.y, h };
+    });
+    await drag(g.x, g.y, g.y + g.h * frac, steps);
+  };
   let s = await state(page);
-  const panelH = await page.evaluate(() => document.querySelector(".fdrawer:not([hidden]) .fpanel") && [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").scrollHeight);
-  const p = await linePoint(page);
+  const panelH = await page.evaluate(() => [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").scrollHeight);
   check(panelH > 60, `${tag} 8: the panel has a height to pull (${panelH})`);
 
-  await drag(p.x, p.y, p.y + panelH * 0.25, 6);
+  await lineDrag(0.25, 6);
   s = await state(page);
   check(s && !s.open, `${tag} 8: a quarter of the way down snaps back`);
-  await drag(p.x, p.y, p.y + panelH * 0.5, 8);
+  await lineDrag(0.5, 8);
   s = await state(page);
   check(s && s.open, `${tag} 8: half way opens it`);
   check(s && s.panelVisible, `${tag} 8: and it is drawn`);
