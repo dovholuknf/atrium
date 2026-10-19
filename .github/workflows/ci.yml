@@ -90,7 +90,8 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
           ARTIFACT: ci-${{ matrix.os }}-${{ matrix.group }}-attempt-${{ github.run_attempt }}
-        run: echo "- check (${{ matrix.os }}, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          echo "- check (${{ matrix.os }}, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
 
       # What ci.sh left in build.claude/ci: go test's raw stream, the whole
       # output of each failed package, every test's time, and the goroutine
