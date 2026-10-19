@@ -978,6 +978,8 @@ async function pullsDrawerSection(browser, base) {
       const ph = await ctx.newPage();
       ph.on("pageerror", e => errors.push(String(e)));
       await ph.setViewportSize(vp);
+      // the board re-attaches the remembered card half a second after load, which would take the drawer from land-pw1
+      await ph.addInitScript(() => localStorage.removeItem("atrium.term"));
       await ph.goto(base, { waitUntil: "domcontentloaded" });
       await ph.waitForFunction(() => typeof pulls !== "undefined" && pulls.loaded, null, { timeout: slow(15000) });
       await ph.evaluate(() => attachTask("land-pw1"));
