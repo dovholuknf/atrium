@@ -5100,42 +5100,24 @@ async function backtickPathLinksSection(browser, base) {
   }
 }
 
-// ── a file link asks where to open, and a .md renders in a tab (u-file-open-outside) ──
-// Clicking a file path in the terminal offers atrium's editor, a tab, and, only when that room has an
-// editor_command, the machine it opens on. The tab renders markdown from the room's bytes, and the markdown
-// is hostile: script, an onerror image, a javascript: link and raw HTML must all arrive inert.
-// FOUTSIDE_SHOTS=dir writes the PNGs; FOUTSIDE_BEFORE=1 takes shots only, for the build without the feature.
-async function fileOpenOutsideSection(browser, base) {
+// ── a file link asks where to open (u-file-open-outside) ──
+// The menu offers atrium's editor, a tab, and, only when that room has an editor_command, the machine it opens on.
+// It needs no terminal: fileLinkMenu is called for the card the pane would hold. FILEMENU_SHOTS=dir writes the PNGs.
+async function fileMenuSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
-  const shots = process.env.FOUTSIDE_SHOTS || "";
-  const before = !!process.env.FOUTSIDE_BEFORE;
+  const shots = process.env.FILEMENU_SHOTS || "";
   const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
   let editorCommand = "explorer.exe {path}";
-  let opened = [], settingsRooms = [];
+  const opened = [], settingsRooms = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
-    const Real = window.WebSocket;
-    window.WebSocket = function (url, protocols) {
-      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
-      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
-        onopen: null, onclose: null, onmessage: null, onerror: null,
-        send() {}, close() { this.readyState = 3; } };
-      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
-      return s;
-    };
-    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     window.__tabs = [];
     window.open = (u) => { window.__tabs.push(u); return null; };
-  });
-  await ctx.route("**/files/probe", route => {
-    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
-    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
   });
   await ctx.route("**/v1/settings", route => {
     settingsRooms.push(route.request().headers()["x-atrium-room"] || "");
@@ -5144,81 +5126,79 @@ async function fileOpenOutsideSection(browser, base) {
   });
   await ctx.route("**/files/open", route => {
     opened.push(JSON.parse(route.request().postData() || "{}").path);
-    route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+    route.fulfill({ status: 200, contentType: "application/json", body: "{\"ok\":true}" });
   });
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
-    await p.waitForTimeout(300);
-    await p.evaluate(() => termSock.onmessage({ data: "see docs/plan.md here\r\nsrc/beta.go\r\n" }));
-    await p.waitForTimeout(200);
-    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
-    const cell = await p.evaluate(() => {
-      const d = term._core._renderService.dimensions.css.cell;
-      return { w: d.width, h: d.height };
-    });
-    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
-    await p.mouse.move(...at(40, 5));
-    await p.mouse.move(...at(8, 0), { steps: 3 });
-    await p.waitForTimeout(800);
-    if (before) await shot(p, "popup-before");
-    await p.mouse.click(...at(8, 0));
-    await p.waitForTimeout(400);
-    if (before) { await shot(p, "popup-before-click"); return; }
-    await shot(p, "popup-after");
-    const menu = () => p.evaluate(() => {
-      const m = document.getElementById("cardmenu");
-      return { on: m.classList.contains("on"), items: [...m.querySelectorAll(":scope > button")].map(b => b.textContent.trim()) };
-    });
-    let m = await menu();
-    if (!m.on) { fail("clicking a file path did not open the menu: " + JSON.stringify(m)); return; }
-    if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
-    if (process.env.FOUTSIDE_MD_SHOT) await p.locator("#cardmenu").screenshot({ path: process.env.FOUTSIDE_MD_SHOT });
+    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
+    const menuState = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
+      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+    const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
+    const ask = async rel => {
+      await p.evaluate(rel => { fileLinkMenu({ clientX: 100, clientY: 100 }, "land-live", { rel, dir: false }); }, rel);
+      if (!await menuState(true)) { fail("fileLinkMenu for " + rel + " did not open the menu"); return []; }
+      return items();
+    };
+    const choose = async text => { await p.locator("#cardmenu button", { hasText: text }).click(); await menuState(false); };
+    const until = async cond => {
+      const end = Date.now() + slow(3000);
+      while (Date.now() < end && !(await cond())) await new Promise(r => setTimeout(r, 10));
+    };
+    const tabs = () => p.evaluate(() => window.__tabs);
+    const same = (got, want) => JSON.stringify(got) === JSON.stringify(want);
+
+    let got = await ask("docs/plan.md");
     const want = ["open rendered", "open in atrium's editor", "open on sg4"];
-    if (JSON.stringify(m.items) !== JSON.stringify(want)) fail("the file menu offered " + JSON.stringify(m.items) + ", want " + JSON.stringify(want));
+    if (!same(got, want)) fail("the file menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
+    if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
+    await shot(p, "menu-md");
     if (!settingsRooms.includes("sg4")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
+    await choose("open on sg4");
+    await until(() => opened.length > 0);
+    if (!same(opened, ["docs/plan.md"])) fail("open on sg4 sent " + JSON.stringify(opened));
 
-    // open on sg4 calls files/open with the path.
-    await p.locator("#cardmenu button", { hasText: "open on sg4" }).click();
-    await p.waitForTimeout(300);
-    if (JSON.stringify(opened) !== JSON.stringify(["docs/plan.md"])) fail("open on sg4 sent " + JSON.stringify(opened));
+    await ask("docs/plan.md");
+    await choose("open rendered");
+    await until(async () => (await tabs()).length > 0);
 
-    // open in a tab: a .md goes to the renderer, anything else to the view route.
-    await p.mouse.move(...at(40, 5));
-    await p.mouse.click(...at(8, 0));
-    await p.waitForTimeout(400);
-    await p.locator("#cardmenu button", { hasText: "open rendered" }).click();
-    await p.mouse.move(...at(40, 5));
-    await p.mouse.move(...at(3, 1), { steps: 2 });
-    await p.waitForTimeout(500);
-    await p.mouse.click(...at(3, 1));
-    await p.waitForTimeout(400);
-    const goMenu = await menu();
+    got = await ask("src/beta.go");
     const wantGo = ["open in atrium's editor", "open in a tab", "open on sg4"];
-    if (JSON.stringify(goMenu.items) !== JSON.stringify(wantGo)) fail("a .go menu offered " + JSON.stringify(goMenu.items));
+    if (!same(got, wantGo)) fail("a .go menu offered " + JSON.stringify(got));
     if (!await p.locator("#cardmenu button", { hasText: "open in a tab" }).locator("svg.out").count()) fail("open in a tab has no icon");
-    await p.locator("#cardmenu button", { hasText: "open in a tab" }).click();
-    const tabs = await p.evaluate(() => window.__tabs);
-    if (tabs[0] !== "/read.html#land-live/docs%2Fplan.md") fail("a .md tab opened " + tabs[0]);
-    if (tabs[1] !== "/v1/tasks/land-live/files/view?path=src%2Fbeta.go") fail("a .go tab opened " + tabs[1]);
+    await shot(p, "menu-go");
+    await choose("open in a tab");
+    await until(async () => (await tabs()).length > 1);
+    const opens = await tabs();
+    if (opens[0] !== "/read.html#land-live/docs%2Fplan.md") fail("a .md tab opened " + opens[0]);
+    if (opens[1] !== "/v1/tasks/land-live/files/view?path=src%2Fbeta.go") fail("a .go tab opened " + opens[1]);
 
-    // without an editor_command there is no third entry, and no default is invented.
     editorCommand = "";
-    await p.mouse.move(...at(40, 5));
-    await p.mouse.move(...at(8, 0), { steps: 2 });
-    await p.waitForTimeout(500);
-    await p.mouse.click(...at(8, 0));
-    await p.waitForTimeout(400);
-    m = await menu();
-    if (JSON.stringify(m.items) !== JSON.stringify(want.slice(0, 2))) fail("with no editor_command the menu offered " + JSON.stringify(m.items));
+    got = await ask("docs/plan.md");
+    if (!same(got, want.slice(0, 2))) fail("with no editor_command the menu offered " + JSON.stringify(got));
     await p.keyboard.press("Escape");
+    if (errors.length) fail("the file menu page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
 
-    // The markdown tab, fed hostile markdown.
+// ── a markdown tab renders hostile markdown inert (u-file-open-outside) ──
+// Script, an onerror image, a javascript: link and raw HTML must all arrive inert. MARKDOWNTAB_SHOTS=dir writes the PNG.
+async function markdownTabSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const shots = process.env.MARKDOWNTAB_SHOTS || "";
+  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
+  const ctx = await landContext(browser);
+  try {
     const hostile = [
       "# Title", "", "<script>window.__pwn = 1</script>",
       '<img src=x onerror="window.__pwn = 2">', "",
@@ -5237,7 +5217,8 @@ async function fileOpenOutsideSection(browser, base) {
       body: /\.png/.test(route.request().url()) ? Buffer.from("iVBORw0KGgo=", "base64") : hostile }));
     await tabPage.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
     await tabPage.waitForSelector("#md h1", { timeout: slow(8000) });
-    await tabPage.waitForTimeout(300);
+    await tabPage.waitForFunction(() => document.querySelectorAll("#md table td").length >= 2, null,
+      { timeout: slow(3000), polling: 10 });
     const r = await tabPage.evaluate(() => ({
       pwn: window.__pwn, scripts: document.querySelectorAll("#md script").length,
       handlers: [...document.querySelectorAll("#md *")].filter(e => [...e.attributes].some(a => /^on/i.test(a.name))).length,
@@ -5257,7 +5238,7 @@ async function fileOpenOutsideSection(browser, base) {
     if (!/<script>window\.__pwn/.test(r.text)) fail("raw HTML was dropped rather than shown as text: " + r.text.slice(0, 200));
     if (r.table !== 2) fail("the table did not render: " + r.table);
     await shot(tabPage, "markdown-tab");
-    if (errors.length) fail("the file-open page threw uncaught errors: " + errors.join(" | "));
+    if (errors.length) fail("the markdown tab page threw uncaught errors: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
     await ctx.close();
@@ -23267,7 +23248,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileOpenOutside: fileOpenOutsideSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -25309,7 +25290,8 @@ async function main() {
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
-    await unit("fileOpenOutside", () => fileOpenOutsideSection(browser, base));
+    await unit("fileMenu", () => fileMenuSection(browser, base));
+    await unit("markdownTab", () => markdownTabSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
     await unit("termProbeStorm", () => termProbeStormSection(browser, base));
     await unit("roomsSetup", bu("roomsSetup"));
