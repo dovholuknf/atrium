@@ -69,7 +69,7 @@ func (s *Store) CardHomeAdd(path, backlogID, taskID string, attempt int, outputs
 func (s *Store) CardHomeNew(h CardHome) (CardHome, error) {
 	h.ID, h.CreatedAt, h.State = newID(), ts(s.now()), CardHomeLive
 	err := s.guard(func() error {
-		_, err := s.db.Exec(`INSERT INTO card_home (id, path, kind, card, clone, branch, base, created_at, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live')`,
+		_, err := s.db.Exec(`INSERT INTO card_home (id, path, kind, backlog_id, task_id, card, clone, branch, base, created_at, state) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, 'live')`,
 			h.ID, h.Path, h.Kind, h.Card, h.Clone, h.Branch, h.Base, h.CreatedAt)
 		return err
 	})
