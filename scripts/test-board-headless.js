@@ -10150,6 +10150,8 @@ async function questionsClickSection(browser, base) {
   const reset = async () => {
     mock.qDismissed.clear(); mock.qDismissWrites = []; mock.qDismissMode = "ok";
     await p.evaluate(() => { termTask = null; localStorage.removeItem(TOASTLOG_KEY); return runRefresh(); });
+    await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.dismiss && t.dismiss()));
+    await p.waitForFunction(() => !document.querySelector("#toasts .toast"), null, { timeout: slow(5000) });
     await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
       { state: "attached", timeout: slow(15000) });
     await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
