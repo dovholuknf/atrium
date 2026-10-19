@@ -1492,8 +1492,11 @@ async function usageTabSection(browser, base) {
     await sp.evaluate(() => { UC.cacheReads = false; ucPaint(); });
     let l = await label();
     if (l.t !== "cache reads hidden" || l.p !== "false" || !/counted apart/.test(l.tip)) fail("usageTab: off reads " + JSON.stringify(l));
+    // the click's POST answer lands in ucHaveSetting late and would overwrite the settings event below
+    await sp.evaluate(() => { window.__posted = new Promise(r => { const o = ucHaveSetting; ucHaveSetting = s => { o(s); r(); }; }); });
     await sp.click("#uc-cache");
     await sp.waitForFunction(() => document.getElementById("uc-cache-label").textContent === "cache reads shown", null, { timeout: slow(5000) });
+    await sp.evaluate(() => window.__posted);
     l = await label();
     if (l.p !== "true" || !/drawn in the charts/.test(l.tip)) fail("usageTab: on reads " + JSON.stringify(l));
     if (!(await sp.evaluate(() => !!document.querySelector("#uc-cache i.uck-read")))) fail("usageTab: the swatch is gone.");
