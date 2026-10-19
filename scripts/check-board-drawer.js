@@ -309,8 +309,11 @@ async function steps(browser, width, mobile, tabName) {
 
   // 4: a chip ----------------------------------------------------------------------------------------------
   const chip = page.locator(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`).first();
-  const chipBox = await chip.boundingBox();
-  await mouse.click(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
+  const chipAt = await still(async () => {
+    const r = await chip.boundingBox();
+    return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await mouse.click(chipAt.x, chipAt.y);
   s = await state(page);
   check(s && s.open, `${tag} 4: a click inside the drawer leaves it open`);
   const n = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"] .pillcount`, e => e.textContent);

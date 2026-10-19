@@ -414,6 +414,14 @@ if step flaky "the flaky suite"; then
       flaky_n=$((flaky_n + cur_ran)); flaky_bad=$((flaky_bad + cur_failed))
       note_counts "$flaky_n" "$flaky_bad"
     fi
+    while IFS=$'\t' read -r script_name script_path; do
+      [ -n "$script_name" ] || continue
+      flaky_n=$((flaky_n + 1))
+      if ! check "flaky script $script_name" node "$script_path"; then
+        flaky_bad=$((flaky_bad + 1)); note_failing flaky "$script_name" "(script) $script_path failed"
+      fi
+      note_counts "$flaky_n" "$flaky_bad"
+    done < <(node scripts/flaky-suite.js scripts)
   fi
 fi
 
@@ -575,7 +583,7 @@ if step board "the board"; then
   # This step runs every other unit, or half of them in the board-1 and board-2 groups (board_units).
   gating="$(board_units "gating${part:+-$part}")"
   board_run() {
-    env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" HEADLESS_UNITS="$gating" \
+    env FULL_SUITE=1 HEADLESS_SHARDED=1 ATRIUM_SUITE_LOCAL=1 SKIP_DRAWER_CHECK=1 BOARD_SHARDS="$shards" HEADLESS_UNITS="$gating" \
       bash scripts/check-board.sh 2>&1 | tee "$board_log"
     return "${PIPESTATUS[0]}"
   }
