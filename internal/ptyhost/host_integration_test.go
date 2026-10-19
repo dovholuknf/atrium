@@ -430,11 +430,9 @@ func TestSlowReaderIsClosedAndTheDrainCarriesOn(t *testing.T) {
 	})
 	// The drain never slowed: the whole burst lands in the ring.
 	w := daemonT(t, addr)
-	tail, err := w.Attach(sp.RunID, 3072*1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	newStream(tail).until(t, 60*time.Second, has("READY\r\n"))
+	waitFor(t, 60*time.Second, "the whole burst and READY in the ring", func() bool {
+		return infoOf(t, w, sp.RunID).OutOffset >= 3072*1024+int64(len("READY\r\n"))
+	})
 	d := dialT(t, addr)
 	if _, err := d.Hello("test", true); err != nil {
 		t.Fatal(err)
