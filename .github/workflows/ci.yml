@@ -83,11 +83,14 @@ jobs:
         # Invoke bash explicitly because ci.sh has no executable bit in git.
         run: bash scripts/ci.sh --group ${{ matrix.group }}
 
-      # ci.sh's own report, on the run's page. A copy, decides nothing.
+      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
       - name: summary
         if: always()
         shell: bash
-        run: cat build.claude/ci/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ARTIFACT: ci-${{ matrix.os }}-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+        run: echo "- check (${{ matrix.os }}, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
 
       # What ci.sh left in build.claude/ci: go test's raw stream, the whole
       # output of each failed package, every test's time, and the goroutine
