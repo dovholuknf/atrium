@@ -246,7 +246,10 @@ machine" and not "it is deployed to the live hub".
 - A feature gets its own branch off `claude/main`, and merges back to `claude/main` when it is done.
 - `claude/main` has to fast-forward onto `origin/main`. If it does not, rebase it on `origin/main` and fix the
   conflict before calling anything done. Landing on the remote `main` is the finish line.
-
+- A merge worker merges the branch, runs `bash scripts/test-touched.sh`, and lands with
+  `git push hub HEAD:claude/main`. The hub takes that only as a fast-forward of its `claude/main`, and the orchestrator's
+  checkout follows it (`docs/fabric/git-sync-design.md` 4.3). A refusal means `claude/main` moved: merge again and
+  push again. Never push `main` or a tag, and never ask the orchestrator to move `claude/main` by hand.
 ## Conventions
 
 - Comments, especially in tests: delete every comment unless it is a one-line why for a non-obvious invariant. Trim

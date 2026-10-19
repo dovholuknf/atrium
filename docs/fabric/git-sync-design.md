@@ -87,7 +87,15 @@ Serving the checkout directly would be one moving part fewer. It is not done, fo
 - **Mirror in.** Every 30 seconds, and at once when asked, the hub reads `branch` in `checkout` (`git rev-parse`) and,
   when it moved, runs `git -C <bare> fetch --no-tags <checkout> +refs/heads/<branch>:refs/heads/<branch>`. A local
   fetch, run by the hub process, not by an agent.
-- **Tell the rooms.** When the mirrored ref moved, the hub asks every attached room that has the repo to sync
+- **The hub's tip never goes backwards, and the merger lands claude/main.** When `branch` is `claude/main`, the recorded
+  merger (or the operator) may `git push hub HEAD:claude/main`, and ONLY a fast-forward of the hub's current tip passes:
+  anything else is refused with `atrium: refs/heads/claude/main is not a fast-forward of what the hub has`. `main` and
+  tags stay refused. The pass remembers the tip it last set in `refs/atrium/mirrored`. A hub tip that is not it came from a
+  push, and is never force-fetched over. When it is ahead of the checkout's the checkout FOLLOWS: it fetches the hub's commits into the checkout and fast-forwards the checkout's `claude/main` with
+  `merge --ff-only` when that branch is checked out in a clean worktree, or moves the ref (`update-ref` with the old
+  value) when it is checked out nowhere. A dirty worktree, or a checkout that has diverged from the hub, is never
+  touched or rewritten. The pass stops mirroring from it, and says why in the hub log (`git-mirror-stuck`, once per
+  change) and in the mirror's error on the board, until the checkout is in step.- **Tell the rooms.** When the mirrored ref moved, the hub asks every attached room that has the repo to sync
   (section 6). A room that is not attached syncs when it next attaches.
 - **Deliver out.** After a collect (section 7) that MOVED a ref (`for-each-ref refs/rooms/<room>` compared before and
   after), the hub runs `git -C <checkout> -c safe.directory=<checkout> fetch --no-tags --prune --no-write-fetch-head

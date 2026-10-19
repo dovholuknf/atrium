@@ -553,7 +553,8 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		if markerKind(dir) == KindAdopted {
 			r, _ := rc.h.Store().mirrorOf(dir)
 			for _, u := range req.Updates {
-				if why := mirrorRefuses(name, u.Ref, r.Branch); why != "" {
+				lands := u.Old != zeroSHA && u.New != zeroSHA && rc.h.isMerger(ctx, who)
+				if why := mirrorRefuses(name, u.Ref, r.Branch, lands); why != "" {
 					refuseAll(why)
 					return
 				}

@@ -23,10 +23,16 @@ func adoptedSentence(name string) string {
 // mirror pass force-fetches the integration branch and nothing else, and a room's sync fetches only that branch, so
 // a work branch beside it is never written over and never fetched by accident. What the pass owns (the integration
 // branch, and main and claude/main whatever the entry names), a tag and anything outside refs/heads are refused, the
-// operator included. `branch` is the git_repos entry's branch, "" when the entry is no longer configured.
-func mirrorRefuses(name, ref, branch string) string {
+// operator included. The one exception is `lands`: the recorded merger moving claude/main that is already there, which
+// the pre-receive hook holds to a fast-forward. `branch` is the git_repos entry's branch, "" when the entry is no longer configured.
+func mirrorRefuses(name, ref, branch string, lands bool) string {
 	if branch == "" {
 		branch = IntegrationBranch
+	}
+	if lands && ref == ClaudeMainRef && headsPrefix+branch == ClaudeMainRef {
+		// THE MERGER LANDS claude/main HERE, and the pre-receive hook holds it to a fast-forward. The mirror pass
+		// never moves the hub's tip backwards, and the checkout follows it (followCheckout).
+		return ""
 	}
 	if !strings.HasPrefix(ref, headsPrefix) || isMainRef(ref) || ref == headsPrefix+branch {
 		return adoptedSentence(name)
