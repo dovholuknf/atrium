@@ -19300,6 +19300,53 @@ async function childFoldSection(browser, base) {
 // neither the room nor the hub holds is fetched by the hub and cloned (prepare), and the card STOPS at start or cancel:
 // nothing is started until start. Shift-Enter opens "start new work" with the repo and a branch name in it.
 // REPOSHOT=dir writes the row's picture, REPOBEFORE=1 takes it as it was before (the kind switched off).
+async function termRowChipsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termRoomChip === "function" && !document.getElementById("rooms").hidden,
+      null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const list = document.createElement("div");
+      list.id = "termrow-probe";
+      list.className = "term-list";
+      list.style.cssText = "position:fixed;left:10px;top:10px;width:260px;z-index:99999;display:block";
+      list.innerHTML = `<div class="termscroll"><div class="card tab"><div class="card-line">
+        <div class="title"><span class="pin">&#9734;</span><span class="tstack"
+          ><span class="tname">ziti-hook minion: builds what ziti-edge-tunnel needs before it can run</span
+          ><span class="tpath">github/dovholuknf/atrium:claude/ziti-hook-minion-builds-things</span></span></div>
+        <div class="chips"><span class="chip warn">? 1</span><span class="chip room" style="--rhue:200">claude-sg4</span></div>
+      </div></div></div>`;
+      document.body.appendChild(list);
+      const fit = el => ({ scroll: el.scrollWidth, client: el.clientWidth });
+      const room = list.querySelector(".chip.room");
+      return {
+        room: fit(room), badge: fit(list.querySelector(".chip.warn")),
+        name: fit(list.querySelector(".tname")), path: fit(list.querySelector(".tpath")),
+        card: list.querySelector(".card").getBoundingClientRect().right,
+        roomRight: room.getBoundingClientRect().right,
+      };
+    });
+    if (process.env.TERMROW_SHOTS) {
+      fs.mkdirSync(process.env.TERMROW_SHOTS, { recursive: true });
+      await p.locator("#termrow-probe").screenshot({ path: path.join(process.env.TERMROW_SHOTS, process.env.TERMROW_SHOT_NAME || "terminals-row.png") });
+    }
+    if (got.room.scroll > got.room.client) fail("the room chip is cut: " + JSON.stringify(got));
+    if (got.room.client < 40) fail("the room chip shrank: " + JSON.stringify(got));
+    if (got.badge.scroll > got.badge.client) fail("the questions badge is cut: " + JSON.stringify(got));
+    if (got.name.scroll <= got.name.client) fail("the title did not ellipsize at a narrow list width: " + JSON.stringify(got));
+    if (got.path.scroll <= got.path.client) fail("the path line did not ellipsize at a narrow list width: " + JSON.stringify(got));
+    if (got.roomRight > got.card + 1) fail("the room chip runs past the card: " + JSON.stringify(got));
+    if (errors.length) fail("termRowChips page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function repoPasteSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const errors = [];
@@ -25756,7 +25803,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("homesRoot", bu("homesRoot"));
     await unit("homesDisk", bu("homesDisk"));
     await unit("homesLaunch", bu("homesLaunch"));
-    await unit("termRowChips", bu("termRowChips"));
+    await unit("termRowChips", () => termRowChipsSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + threwMessage(e));
