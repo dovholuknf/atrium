@@ -195,10 +195,8 @@ function fileLink(id, range, hit) {
       else if (notEditable(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
     },
-    hover: (ev) => {
-      const text = hit.dir
-        ? hit.rel + "/\nopens the file browser here"
-        : hit.rel + "  " + bytes(hit.size) + "\nclick to open it: in atrium's editor, in a tab, or on the machine it is on";
+    hover: hit.dir ? (ev) => {
+      const text = hit.rel + "/\nopens the file browser here";
       const same = linkTip.path === hit.rel;
       clearTimeout(linkTip.timer);
       linkTip.timer = 0;
@@ -211,8 +209,8 @@ function fileLink(id, range, hit) {
       linkTip.path = hit.rel;
       linkTip.text = text;
       tipSoon(() => placeTip(pointerAnchor(ev), text));
-    },
-    leave: () => linkTipLeave()
+    } : undefined,
+    leave: hit.dir ? () => linkTipLeave() : undefined
   };
 }
 

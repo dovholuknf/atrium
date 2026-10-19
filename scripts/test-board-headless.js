@@ -4911,11 +4911,7 @@ async function crossedPaneSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── the file-link tip survives a repaint of its row (backlog-2 t-001) ─────
-// xterm drops the link under the pointer when its row is redrawn, which fires
-// `leave` and then `hover` again. The tip used to hide on `leave` and come back
-// after the hover delay. It now stays up across a repaint, and still goes when
-// the pointer really leaves, on a click, or for a different path.
+// ── hovering a file path underlines it and shows no tip; a click opens the menu ──
 async function linkTipSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -4923,6 +4919,8 @@ async function linkTipSection(browser, base) {
   mock.landList = [mock.LAND["land-live"]];
   mock.landPerms = [];
   const errors = [];
+  const shots = process.env.LINKTIP_SHOTS || "";
+  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
     const Real = window.WebSocket;
@@ -4936,7 +4934,6 @@ async function linkTipSection(browser, base) {
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
-  // Every word asked about is a file, so both paths become links.
   await ctx.route("**/files/probe", route => {
     const paths = JSON.parse(route.request().postData() || "{}").paths || [];
     const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
@@ -4950,20 +4947,12 @@ async function linkTipSection(browser, base) {
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: slow(10000) });
-    await p.waitForTimeout(300);
-    const row = "see src/alpha.go here";
-    await p.evaluate(row => termSock.onmessage({ data: row + "\r\nsrc/beta.go\r\n" }), row);
-    await p.waitForTimeout(200);
-    // The tip's state, and every time it went on or off.
+    await p.evaluate(() => new Promise(res => term.write("see src/alpha.go here\r\nsrc/beta.go\r\n", res)));
     await p.evaluate(() => {
       window.__tipLog = [];
       const t = document.getElementById("tip");
       new MutationObserver(() => window.__tipLog.push(t.classList.contains("on"))).observe(t,
         { attributes: true, attributeFilter: ["class"] });
-    });
-    const tip = () => p.evaluate(() => {
-      const t = document.getElementById("tip");
-      return { on: t.classList.contains("on"), text: t.textContent };
     });
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
     const cell = await p.evaluate(() => {
@@ -4971,68 +4960,29 @@ async function linkTipSection(browser, base) {
       return { w: d.width, h: d.height };
     });
     const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
-    const onAlpha = at(8, 0), onBeta = at(3, 1), off = at(40, 5);
+    const tipOn = () => p.evaluate(() => document.getElementById("tip").classList.contains("on"));
+    const underlined = () => p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) }).then(() => true, () => false);
 
-    // 1. Hovering brings the tip up after the delay.
-    await p.mouse.move(...off);
-    await p.mouse.move(...onAlpha, { steps: 3 });
-    await p.waitForTimeout(800);
-    let t = await tip();
-    if (!t.on || !/src\/alpha\.go/.test(t.text)) {
-      fail("hovering a path in the terminal did not show its tip, so this proves nothing: " + JSON.stringify(t));
-      return;
-    }
+    await shot(p, "before-hover");
+    await p.mouse.move(...at(40, 5));
+    await p.mouse.move(...at(8, 0), { steps: 3 });
+    if (!await underlined()) { fail("hovering a path in the terminal did not underline it, so this proves nothing"); return; }
+    const deadline = Date.now() + 600;
+    while (Date.now() < deadline && !(await tipOn())) await new Promise(r => setTimeout(r, 10));
+    if (await tipOn()) fail("hovering a file path showed a tip");
+    await shot(p, "hover-underlined");
 
-    // 2. A repaint of the hovered row, then the pointer nudged so xterm asks for
-    // the link again. The tip must never go off in between.
-    await p.evaluate(row => { window.__tipLog.length = 0; termSock.onmessage({ data: "\x1b[3A\r" + row + "\r\n" }); }, row);
-    await p.mouse.move(onAlpha[0] + 1, onAlpha[1]);
-    await p.waitForTimeout(700);
+    await p.mouse.move(...at(3, 1), { steps: 2 });
+    if (!await underlined()) fail("hovering a second path did not underline it");
+    if (await tipOn()) fail("hovering a second file path showed a tip");
+
+    await p.mouse.click(...at(3, 1));
+    const menu = await p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
+      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+    if (!menu) fail("clicking a file path did not open the menu");
+    await shot(p, "click-menu");
     const log = await p.evaluate(() => window.__tipLog.slice());
-    t = await tip();
-    if (log.includes(false)) fail("the tip went off while its row was repainted: " + JSON.stringify(log));
-    if (!t.on || !/src\/alpha\.go/.test(t.text)) fail("the tip was gone after its row repainted: " + JSON.stringify(t));
-
-    // 3. A different path replaces it at once, not after the delay.
-    await p.mouse.move(...onBeta, { steps: 2 });
-    await p.waitForTimeout(100);
-    t = await tip();
-    if (t.on && /alpha/.test(t.text)) fail("the tip for the old path stayed while the pointer was on another: " +
-      JSON.stringify(t));
-    await p.waitForTimeout(700);
-    t = await tip();
-    if (!t.on || !/src\/beta\.go/.test(t.text)) fail("the other path did not get its own tip: " + JSON.stringify(t));
-
-    // 4. The pointer leaving the link for blank terminal goes after the grace.
-    await p.mouse.move(...off, { steps: 2 });
-    await p.waitForTimeout(500);
-    t = await tip();
-    if (t.on) fail("the tip stayed after the pointer left the path: " + JSON.stringify(t));
-
-    // 5. The pointer leaving the terminal altogether hides at once.
-    await p.mouse.move(...onAlpha, { steps: 2 });
-    await p.waitForTimeout(800);
-    if (!(await tip()).on) fail("the tip did not come back for the second hover, so step 5 proves nothing.");
-    await p.mouse.move(box.x - 20, box.y - 20);
-    await p.waitForTimeout(50);
-    t = await tip();
-    if (t.on) fail("the tip stayed after the pointer left the terminal: " + JSON.stringify(t));
-
-    // 6. A click that opens the file takes it down at once.
-    await p.mouse.move(...onAlpha, { steps: 2 });
-    await p.waitForTimeout(800);
-    await p.mouse.click(...onAlpha);
-    await p.waitForTimeout(50);
-    t = await tip();
-    if (t.on) fail("the tip stayed after the path was clicked: " + JSON.stringify(t));
-
-    // 7. A scroll of the page hides it.
-    await p.mouse.move(...off);
-    await p.mouse.move(...onAlpha, { steps: 2 });
-    await p.waitForTimeout(800);
-    await p.evaluate(() => window.dispatchEvent(new Event("scroll")));
-    t = await tip();
-    if (t.on) fail("a scroll left the path's tip up: " + JSON.stringify(t));
+    if (log.includes(true)) fail("the tip element went on during a hover and click: " + JSON.stringify(log));
     if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -5848,9 +5798,8 @@ async function phoneViewSection(browser, base) {
     const cell = await p.evaluate(() => { const c = term._core._renderService.dimensions.css.cell; return { w: c.w || c.width, h: c.height }; });
     const sbox = await p.locator("#t-screen .xterm-screen").boundingBox();
     await p.mouse.move(sbox.x + cell.w * 12, sbox.y + cell.h * 0.5, { steps: 3 });
-    await p.waitForTimeout(900);
-    const tip = await p.evaluate(() => { const t = document.getElementById("tip"); return { on: t.classList.contains("on"), text: t.textContent }; });
-    if (!tip.on || !/alpha/.test(tip.text)) fail("phoneView: a link did not hit at a non-default zoom: " + JSON.stringify(tip));
+    const linked = await p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(3000) }).then(() => true, () => false);
+    if (!linked) fail("phoneView: a link did not hit at a non-default zoom");
 
     // the keyboard covers the prompt: the cursor row is scrolled clear of it, nothing resizes
     await p.evaluate(() => { termSock.onmessage({ data: "\x1b[2J\x1b[" + term.rows + ";1Hprompt" }); });
