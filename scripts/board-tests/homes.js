@@ -20,11 +20,13 @@ async function open(browser, base) {
   return { ctx, p, errors };
 }
 
-async function shot(p, name) {
+async function shot(p, name, sel) {
   const dir = process.env.HOMES_SHOTS || "";
   if (!dir) return;
   fs.mkdirSync(dir, { recursive: true });
-  await p.screenshot({ path: path.join(dir, name + ".png") });
+  const file = path.join(dir, name + ".png");
+  if (sel) await p.locator(sel).first().screenshot({ path: file });
+  else await p.screenshot({ path: file });
 }
 
 async function homesChipsSection(browser, base) {
@@ -34,6 +36,7 @@ async function homesChipsSection(browser, base) {
       const draw = h => {
         homesLoaded(h ? [h] : []);
         const box = document.createElement("div");
+        box.className = "homes-probe";
         box.style.cssText = "position:fixed;left:10px;top:10px;z-index:99999;background:var(--bg-1);padding:8px";
         box.innerHTML = homePathChips({ id: "t1" });
         document.body.appendChild(box);
@@ -53,7 +56,19 @@ async function homesChipsSection(browser, base) {
     if (/ago/.test(got.fresh.size) || got.fresh.old) fail("a fresh size showed its age: " + JSON.stringify(got.fresh));
     if (!/ago/.test(got.old.size) || !got.old.old) fail("a size over an hour old hid its age: " + JSON.stringify(got.old));
     if (!/not measured/.test(got.never.size)) fail("an unmeasured home claimed a size: " + JSON.stringify(got.never));
-    await shot(p, "home-chips");
+    await p.evaluate(() => {
+      document.querySelectorAll(".homes-probe").forEach(b => b.remove());
+      const now = Date.now();
+      const base = { id: "h1", card: "t1", path: "/srv/cards/fix-the-thing-a1b2c3", state: "kept", bytes: 5.2e9, files: 1840 };
+      const wrap = document.createElement("div");
+      wrap.id = "homes-shot";
+      wrap.style.cssText = "position:fixed;left:10px;top:10px;width:760px;z-index:99999;background:var(--bg-1);padding:12px";
+      const row = (label, h) => { homesLoaded([h]); return '<div style="margin:6px 0;color:var(--dim)">' + label + '</div><div class="chips">' + homePathChips({ id: "t1" }) + "</div>"; };
+      wrap.innerHTML = row("Terminals tab chips, measured a minute ago", Object.assign({ measured_at: new Date(now - 60e3).toISOString() }, base)) +
+        row("card detail chips, measured three hours ago", Object.assign({ measured_at: new Date(now - 3 * 3600e3).toISOString() }, base));
+      document.body.appendChild(wrap);
+    });
+    await shot(p, "home-chips", "#homes-shot");
     if (errors.length) fail("homesChips page errors: " + errors.join("; "));
   } finally {
     await ctx.close();
@@ -73,6 +88,19 @@ async function homesRootSection(browser, base) {
         unset: row({ homes: 0 }),
       };
     });
+    for (const [name, d] of [["room-tile", { card_root: "/srv/cards", homes: 14, homes_bytes: 41e9, root_free_bytes: 500e9, root_total_bytes: 1000e9 }],
+      ["room-tile-orange", { card_root: "/srv/cards", homes: 14, homes_bytes: 41e9, root_free_bytes: 15e9, root_total_bytes: 1000e9 }]]) {
+      await p.evaluate(d => {
+        document.getElementById("homes-shot") && document.getElementById("homes-shot").remove();
+        const wrap = document.createElement("div");
+        wrap.id = "homes-shot";
+        wrap.style.cssText = "position:fixed;left:10px;top:10px;width:300px;z-index:99999;background:var(--bg-1);padding:12px";
+        wrap.innerHTML = '<div class="rd-band machine"><div class="rd-h">machine</div>' +
+          '<div class="rd-row"><span>disk <b>' + fmtGB(d.root_free_bytes).replace(" GB", "") + "/" + fmtGB(d.root_total_bytes) + "</b> free</span></div>" + cardRootRow("k", d) + "</div>";
+        document.body.appendChild(wrap);
+      }, d);
+      await shot(p, name, "#homes-shot");
+    }
     if (got.roomy !== "0") fail("a roomy card root drew orange: " + JSON.stringify(got));
     if (got.pct !== "1") fail("under 10 percent free was not orange: " + JSON.stringify(got));
     if (got.bytes !== "1") fail("under 20 GB free was not orange: " + JSON.stringify(got));
@@ -94,23 +122,38 @@ async function homesDiskSection(browser, base) {
     });
     const sent = await p.evaluate(async (posted) => {
       diskView = { root: "/srv/cards", free_bytes: 5e9, total_bytes: 1e12, bytes: 3e9, homes: [
-        { id: "h1", card: "t1", title: "one", path: "/srv/cards/one-aaaaaa", state: "kept", reason: "dirty", bytes: 2e9, running: false },
-        { id: "h2", card: "t2", title: "two", path: "/srv/cards/two-bbbbbb", state: "live", bytes: 1e9, running: true },
+        { id: "h1", card: "t1", title: "one", path: "/srv/cards/one-aaaaaa", state: "kept", reason: "dirty", bytes: 2e9, measured_at: new Date().toISOString(), running: false },
+        { id: "h2", card: "t2", title: "two", path: "/srv/cards/two-bbbbbb", state: "live", bytes: 1e9, measured_at: new Date().toISOString(), running: true },
+        { id: "h3", card: "", title: "", path: "/srv/cards/gone-cccccc", state: "kept", reason: "its card was deleted", bytes: 4e8, measured_at: new Date().toISOString(), orphaned: true, running: false },
       ], not_atriums: ["/srv/cards/stray"], outside: [] };
+      const view = JSON.stringify(diskView);
       paintDiskPanel();
       const buttons = [...document.querySelectorAll("#rc-disk .homerm")].map(b => b.dataset.home);
       window.askUser = async () => true;
       await removeHomeFromDisk(document.querySelector("#rc-disk .homerm"));
-      return { buttons, calls: [] };
+      return { buttons, calls: [], view };
     }, posted);
     sent.calls = posted;
-    if (sent.buttons.join() !== "h1") fail("remove offered on the wrong homes: " + sent.buttons);
+    await p.evaluate(view => {
+      diskView = JSON.parse(view);
+      const out = document.getElementById("rc-disk");
+      const wrap = document.createElement("div");
+      wrap.id = "homes-shot";
+      wrap.style.cssText = "position:fixed;left:10px;top:10px;width:820px;z-index:99999;background:var(--bg-1);padding:12px";
+      const h = document.createElement("div");
+      h.className = "dlg-sec-h";
+      h.textContent = "Disk";
+      wrap.append(h, out);
+      document.body.appendChild(wrap);
+      paintDiskPanel();
+    }, sent.view);
+    await shot(p, "disk-panel", "#homes-shot");
+    if (sent.buttons.join() !== "h1,h3") fail("remove offered on the wrong homes: " + sent.buttons);
     const post = sent.calls.find(c => c.url === "/v1/homes/remove");
     if (!post) fail("remove posted nothing: " + JSON.stringify(sent.calls));
     const body = JSON.parse(post.body);
     if (Object.keys(body).join() !== "id" || body.id !== "h1") fail("remove posted more than the id: " + post.body);
     if (/srv\/cards/.test(post.body)) fail("remove posted a path: " + post.body);
-    await shot(p, "disk-panel");
     if (errors.length) fail("homesDisk page errors: " + errors.join("; "));
   } finally {
     await ctx.close();
@@ -138,6 +181,14 @@ async function homesLaunchSection(browser, base) {
       return { shown, cwdOff: document.getElementById("l-cwd").disabled };
     });
     got.body = launched.length ? JSON.parse(launched[0]) : null;
+    await p.evaluate(() => {
+      const d = document.getElementById("launch");
+      if (!d.open) d.show();
+      const on = document.getElementById("l-home-on");
+      if (!on.checked) { on.checked = true; on.dispatchEvent(new Event("change")); }
+      document.getElementById("l-home-field").scrollIntoView({ block: "center" });
+    });
+    await shot(p, "new-card-form", "#launch");
     if (!got.shown) fail("the new-home tick is not offered on a fresh launch");
     if (!got.body) fail("the launch posted nothing");
     if (got.body.home !== true || got.body.repo !== "github.com/o/r" || got.body.branch !== "feat/x") fail("the home launch lacks home, repo or branch: " + JSON.stringify(got.body));
