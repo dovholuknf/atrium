@@ -832,7 +832,9 @@ async function cardMenu(e, id) {
     t.throwaway ? {
       label: t.promote_to ? "keep it somewhere else…" : "keep this work…",
       help: (t.promote_to ? "Moving to " + t.promote_to + ". " : "") + "This directory is temporary and goes when the session ends. " +
-        "Promoting it moves the directory somewhere you choose and the card " +
+        (typeof homeOf === "function" && homeOf(t)
+          ? "Promoting it keeps the directory where it is, under the card root, and the card "
+          : "Promoting it moves the directory somewhere you choose and the card ") +
         "stops being temporary. While a session is running the move happens " +
         "as it ends, because a directory cannot be moved out from under it.",
       act: () => promoteCard(id, t)

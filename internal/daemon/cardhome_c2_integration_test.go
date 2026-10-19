@@ -180,3 +180,54 @@ func TestCullKeepsTheBranchWhenTheHubDoesNotHaveIt(t *testing.T) {
 		t.Fatal("the branch was deleted")
 	}
 }
+
+func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _, err := d.st.Register(store.Observed{WireName: "homed", Worktree: filepath.ToSlash(dd.Work), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.CardHomeCard(row.Path, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	say := launcherSayBody(d.saysDir(task.ID), task.ID, "line one\nline two")
+	want := filepath.Join(dd.Meta, "says", task.ID+".md")
+	if say != "read "+want+" and do what it says." {
+		t.Fatalf("say %q, want a file at %s", say, want)
+	}
+	if b, err := os.ReadFile(want); err != nil || string(b) != "line one\nline two" {
+		t.Fatalf("say file: %q %v", b, err)
+	}
+	if got := d.handoffPath(task); got != filepath.Join(dd.Meta, "handoff.md") {
+		t.Fatalf("handoff at %s", got)
+	}
+	path, err := d.prepareHandoff(task)
+	if err != nil || path != d.handoffPath(task) {
+		t.Fatalf("prepare: %q %v", path, err)
+	}
+}
+
+func TestALongSayAndTheHandoffKeepTheOldPlacesForACardWithNoHome(t *testing.T) {
+	t.Parallel()
+	d, _ := homeRoom(t)
+	task, _, err := d.st.Register(store.Observed{WireName: "plain", Worktree: filepath.ToSlash(t.TempDir()), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir := d.saysDir(task.ID); dir != "" {
+		t.Fatalf("a card with no home has a says dir %q", dir)
+	}
+	say := launcherSayBody(d.saysDir(task.ID), task.ID, "line one\nline two")
+	if want := filepath.Join(os.TempDir(), "atrium-says", task.ID+".md"); !strings.Contains(say, want) {
+		t.Fatalf("say %q, want the old place %s", say, want)
+	}
+	if got, want := d.handoffPath(task), filepath.Join(os.TempDir(), "atrium", "handoffs", task.ID+".md"); got != want {
+		t.Fatalf("handoff at %s, want %s", got, want)
+	}
+}

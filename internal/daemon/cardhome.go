@@ -93,6 +93,14 @@ func (d *Daemon) homeOf(cardID string) (store.CardHome, bool) {
 	return row, true
 }
 
+// saysDir is where a long say from a launcher is written: the card's .atrium/says, "" for a card with no home.
+func (d *Daemon) saysDir(cardID string) string {
+	if h, ok := d.homeOf(cardID); ok {
+		return filepath.Join(dirsOf(h.Path).Meta, "says")
+	}
+	return ""
+}
+
 // homeRequest says which kind of home a launch wants, "" for none: a launch with a directory of its own, a launch onto
 // a card that exists and a resume get none.
 func homeRequest(req LaunchRequest, cwd string, onto bool) string {

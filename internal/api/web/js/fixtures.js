@@ -1323,6 +1323,7 @@ document.getElementById("l-throwaway-on").addEventListener("change", e => {
   if (e.target.checked) {
     document.getElementById("l-home-on").checked = false;
     setHome(false);
+  if (typeof paintThrowawayHint === "function") { paintThrowawayHint(); loadHomes(); }
   }
   setThrowaway(e.target.checked);
   // A throwaway has nothing of a link's to clean up.

@@ -13,6 +13,7 @@ const ROOT_LOW_BYTES = 20e9;
 let cardHomes = {};
 let homesAt = 0;
 let homesBusy = false;
+let homesRoot = "";
 
 function homeKey(id) { return String(id || "").split("~").pop(); }
 
@@ -29,11 +30,26 @@ async function loadHomes(force) {
   try {
     const v = await api("/v1/homes");
     homesLoaded(v && v.homes);
+    homesRoot = v && !v.error && v.root || "";
+    paintThrowawayHint();
   } catch (e) {
     homesAt = Date.now();
   } finally {
     homesBusy = false;
   }
+}
+
+const THROWAWAY_KEPT = " If it turns out to matter, promote it from the card's menu and it stays where it is, under the card root.";
+
+// paintThrowawayHint says where a promoted throwaway ends up: in place when the room has a card root, since the
+// throwaway is then a home, and somewhere chosen when it has none.
+function paintThrowawayHint() {
+  const el = document.getElementById("l-throwaway-hint");
+  if (!el) return;
+  if (!el.dataset.was) el.dataset.was = el.textContent;
+  el.textContent = homesRoot
+    ? el.dataset.was.replace(/\s+If it turns out to matter[\s\S]*$/, "") + THROWAWAY_KEPT
+    : el.dataset.was;
 }
 
 function homeOf(task) {
@@ -109,9 +125,10 @@ function cardRootRow(key, d) {
   const low = cardRootLow(d);
   const total = diskLabel(d.homes_bytes) || "0 KB";
   const free = d.root_total_bytes ? fmtGB(d.root_free_bytes).replace(" GB", "") + "/" + fmtGB(d.root_total_bytes) + " free" : "";
+  const tip = "card homes under " + d.card_root + (free ? ", " + free : "") + (low ? ". the drive is nearly full" : "");
   return `<div class="rd-row rd-cardroot${low ? " low" : ""}" data-low="${low ? "1" : "0"}"
-      data-tip="${esc("card homes under " + d.card_root + (low ? ". the drive is nearly full" : ""))}"
-      ><span><b data-v="${key}.homes">${esc(total)}</b> in ${Number(d.homes) || 0} homes${free ? ", " + esc(free) : ""}</span></div>`;
+      data-tip="${esc(tip)}"
+      ><span><b data-v="${key}.homes">${esc(total)}</b> in ${Number(d.homes) || 0} homes</span></div>`;
 }
 
 // ── the Disk panel in room settings ─────────────────────────────────────────

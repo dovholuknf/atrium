@@ -687,7 +687,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 		// A say from the card's own launcher is typed as keystrokes, not a paste, so the worker reads it as an
 		// instruction. See launchersay.go.
 		banner = launcherBanner(from)
-		body = launcherSayBody(target.ID, text)
+		body = launcherSayBody(d.saysDir(target.ID), target.ID, text)
 	} else if d.bracketedPasteFor(target.ID, false) {
 		body = bracketedPaste(body)
 	}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestAShortLauncherSayIsTypedPlainOnOneLine(t *testing.T) {
-	got := launcherSayBody("t1", "change how you land")
+	got := launcherSayBody("", "t1", "change how you land")
 	if got != "change how you land" {
 		t.Fatalf("a short say was altered: %q", got)
 	}
@@ -18,7 +18,7 @@ func TestAShortLauncherSayIsTypedPlainOnOneLine(t *testing.T) {
 
 func TestALongOrMultiLineLauncherSayGoesInAFile(t *testing.T) {
 	for _, text := range []string{"line one\nline two", strings.Repeat("x ", 200)} {
-		got := launcherSayBody("t-say-file", text)
+		got := launcherSayBody("", "t-say-file", text)
 		if strings.ContainsAny(got, "\r\n\x1b") || len(got) > launcherSayInline {
 			t.Fatalf("the typed line is not one short line: %q", got)
 		}

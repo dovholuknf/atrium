@@ -45,12 +45,16 @@ func launcherBanner(from string) string {
 	return atriumLabel("your launcher @" + from + " instructs you:")
 }
 
-// launcherSayBody is the single line typed after the banner.
-func launcherSayBody(taskID, text string) string {
+// launcherSayBody is the single line typed after the banner. A long say goes in dir, the card's .atrium/says when it
+// has a home and the temp folder's atrium-says when it has not.
+func launcherSayBody(dir, taskID, text string) string {
 	if !strings.ContainsAny(text, "\r\n\x1b") && len(text) <= launcherSayInline {
 		return text
 	}
-	path := filepath.Join(os.TempDir(), "atrium-says", taskID+".md")
+	if dir == "" {
+		dir = filepath.Join(os.TempDir(), "atrium-says")
+	}
+	path := filepath.Join(dir, taskID+".md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
 		if err = os.WriteFile(path, []byte(stripPasteMarkers(text)), 0o600); err == nil {
 			return "read " + path + " and do what it says."

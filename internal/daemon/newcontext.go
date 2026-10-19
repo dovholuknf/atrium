@@ -236,9 +236,14 @@ var atriumBinary = func() string {
 }
 
 // handoffPath is where a card's cycle writes its handoff: the room's
-// context_handoff_dir, else <temp>/atrium/handoffs, then <card-id>.md.
+// context_handoff_dir, else the card's home (<home>/.atrium/handoff.md), else <temp>/atrium/handoffs, then <card-id>.md.
 func (d *Daemon) handoffPath(t *store.Task) string {
 	dir := d.st.ContextHandoffDir()
+	if dir == "" {
+		if h, ok := d.homeOf(t.ID); ok {
+			return filepath.Join(dirsOf(h.Path).Meta, "handoff.md")
+		}
+	}
 	if dir == "" {
 		dir = filepath.Join(os.TempDir(), "atrium", "handoffs")
 	}
