@@ -18,7 +18,10 @@ COMMIT   := $(shell git rev-parse HEAD 2>/dev/null)
 # Tracked files only. Go's own dirty flag counts untracked ones, and this
 # checkout always has some. See `Tree` in internal/cli/version.go.
 TREE     := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/null),modified,clean)
-LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
+# The room code fingerprint, apart from the board. See internal/codeid.
+CODEID   := $(shell go run ./tools/codeid 2>/dev/null)
+LDFLAGS  := -X github.com/dovholuknf/atrium/internal/api.CodeID=$(CODEID) \
+            -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
             -X github.com/dovholuknf/atrium/internal/cli.Commit=$(COMMIT) \
             -X github.com/dovholuknf/atrium/internal/cli.Tree=$(TREE)
 

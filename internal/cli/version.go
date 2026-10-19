@@ -53,6 +53,8 @@ var Commit = ""
 // files only and says so here.
 var Tree = ""
 
+func init() { api.RunningCommit = runningCommit }
+
 func versionInfo() (version, commit, dirty string) { return versionInfoOf(Commit, Tree) }
 
 // versionInfoOf is versionInfo for the stamped commit and tree state given.

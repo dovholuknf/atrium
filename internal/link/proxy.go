@@ -168,6 +168,8 @@ type Proxy struct {
 	landGit   LandGit
 	ciRuns    func(context.Context) ([]CIPoint, error)
 	hubBuild  string
+	// hubCode is the fingerprint of the hub's own Go, apart from its board. See internal/codeid.
+	hubCode string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
 	// prc is the PR claim table. See prclaim.go.

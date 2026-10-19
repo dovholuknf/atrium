@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // Whether the rooms are set up alike, which the rooms pill says.
@@ -63,10 +66,13 @@ type RoomSetup struct {
 	// HooksUnreadable is the parse error when settings.json cannot be read. Nothing is written then, so no fix.
 	HooksUnreadable string `json:"hooks_unreadable,omitempty"`
 	// HooksTwoGates is true when the dotfiles gate and atrium's own are both registered. It is one of HooksMissing.
-	HooksTwoGates bool     `json:"hooks_two_gates,omitempty"`
-	Build         string   `json:"build,omitempty"`
-	Go            string   `json:"go,omitempty"`
-	Runners       []string `json:"runners,omitempty"`
+	HooksTwoGates bool   `json:"hooks_two_gates,omitempty"`
+	Build         string `json:"build,omitempty"`
+	// Code is the room's code fingerprint and Commit the commit it was built from. Both are empty on an old room.
+	Code    string   `json:"code,omitempty"`
+	Commit  string   `json:"commit,omitempty"`
+	Go      string   `json:"go,omitempty"`
+	Runners []string `json:"runners,omitempty"`
 	// Issues is what is wrong, named once here so the pill and the row cannot disagree.
 	Issues []SetupIssue `json:"issues"`
 
@@ -150,7 +156,7 @@ func (p *Proxy) checkSetup(ctx context.Context, a Attached) bool {
 	defer cancel()
 	f := p.readSetup(ctx, a.Name)
 	f.since = a.Since
-	f.Issues = p.setupIssues(f)
+	f.Issues = p.setupIssues(ctx, f)
 	k := keyOf(a.Name)
 	p.setup.mu.Lock()
 	defer p.setup.mu.Unlock()
@@ -181,8 +187,10 @@ func (p *Proxy) readSetup(ctx context.Context, room string) *RoomSetup {
 		} `json:"hooks"`
 	}
 	var health struct {
-		Build string `json:"build"`
-		Go    string `json:"go"`
+		Build  string `json:"build"`
+		Code   string `json:"code"`
+		Commit string `json:"commit"`
+		Go     string `json:"go"`
 	}
 	var harnesses struct {
 		Harnesses []struct {
@@ -206,6 +214,7 @@ func (p *Proxy) readSetup(ctx context.Context, room string) *RoomSetup {
 		}
 	}
 	f.Build, f.Go = health.Build, health.Go
+	f.Code, f.Commit = health.Code, health.Commit
 	for _, h := range harnesses.Harnesses {
 		if h.Enabled && h.Found != "" {
 			f.Runners = append(f.Runners, h.ID)
@@ -233,7 +242,7 @@ func (p *Proxy) setupGet(ctx context.Context, room, path string, out any) error 
 }
 
 // setupIssues names what is wrong with an answering room. A build is only compared when both sides say one.
-func (p *Proxy) setupIssues(f *RoomSetup) []SetupIssue {
+func (p *Proxy) setupIssues(ctx context.Context, f *RoomSetup) []SetupIssue {
 	issues := []SetupIssue{}
 	if !f.Answering {
 		return issues
@@ -257,11 +266,58 @@ func (p *Proxy) setupIssues(f *RoomSetup) []SetupIssue {
 			issues = append(issues, SetupIssue{"hooks", text})
 		}
 	}
-	if p.boardID != "" && f.Build != "" && f.Build != p.boardID {
-		issues = append(issues, SetupIssue{"build",
-			fmt.Sprintf("runs a different atrium build than the hub (%s, hub %s)", shortID(f.Build), shortID(p.boardID))})
+	if text := p.buildIssue(ctx, f); text != "" {
+		issues = append(issues, SetupIssue{"build", text})
 	}
 	return issues
+}
+
+// SetHubCode says the fingerprint of this hub's own Go, apart from its board. Empty says nothing, and a room's build is
+// then compared by board hash alone.
+func (p *Proxy) SetHubCode(code string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.hubCode = strings.TrimSpace(code)
+}
+
+// buildIssue is the text of the build issue, or "" when there is none. When both sides carry a code fingerprint it alone
+// decides: a board-only difference is the same room code and says nothing. A room with no fingerprint (an old build)
+// keeps the board-hash compare.
+func (p *Proxy) buildIssue(ctx context.Context, f *RoomSetup) string {
+	p.mu.Lock()
+	hubCode, hubCommit, g := p.hubCode, p.hubBuild, p.landGit
+	p.mu.Unlock()
+	if hubCode != "" && f.Code != "" {
+		if hubCode == f.Code {
+			return ""
+		}
+		return fmt.Sprintf("runs different atrium code than the hub (%s, hub %s)%s",
+			shortID(f.Code), shortID(hubCode), newerBuild(ctx, g, f.Commit, hubCommit))
+	}
+	if p.boardID != "" && f.Build != "" && f.Build != p.boardID {
+		return fmt.Sprintf("runs a different atrium build than the hub (%s, hub %s)", shortID(f.Build), shortID(p.boardID))
+	}
+	return ""
+}
+
+// newerBuild words the two commits and which one is newer, when git can say. It is "" when either commit is missing, and
+// names only the commits when neither holds the other.
+func newerBuild(ctx context.Context, g LandGit, room, hub string) string {
+	room, hub = strings.ToLower(strings.TrimSpace(room)), strings.ToLower(strings.TrimSpace(hub))
+	if !gitsync.ValidSHA(room) || !gitsync.ValidSHA(hub) {
+		return ""
+	}
+	out := fmt.Sprintf(": room commit %s, hub commit %s", shortID(room), shortID(hub))
+	if g == nil {
+		return out
+	}
+	if has, known, _ := g.Contains(ctx, hub, room); known && has {
+		return out + ", the hub is newer"
+	}
+	if has, known, _ := g.Contains(ctx, room, hub); known && has {
+		return out + ", the room is newer"
+	}
+	return out
 }
 
 func shortID(s string) string {

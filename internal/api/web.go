@@ -45,6 +45,14 @@ var web embed.FS
 // for the changes it exists for.
 var BuildID = buildID(embeddedBoard())
 
+// CodeID fingerprints the Go this binary was built from, with the board left out. Stamped by the linker (see
+// internal/codeid), empty on a plain build. A hub redeployed with only a board change has a new BuildID and the same
+// CodeID, so the hub can tell a room is running identical code. Reported beside `build` on `/v1/health`.
+var CodeID string
+
+// RunningCommit says which commit this binary was built from, set by the cli package. Reported as `commit` on health.
+var RunningCommit = func() string { return "" }
+
 // EmbeddedBoard is the board compiled into this binary.
 //
 // Exported so a HUB can serve these files itself. The hub is the half being

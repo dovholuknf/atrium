@@ -131,7 +131,8 @@ $commit = git -C $Repo rev-parse HEAD
 $ver = git -C $Repo describe --tags --exact-match 2>$null
 if (-not $ver) { $ver = 'dev' }
 $pkg = 'github.com/dovholuknf/atrium/internal/cli'
-$ldflags = "-X $pkg.Version=$ver -X $pkg.Commit=$commit -X $pkg.Tree=clean"
+$codeId = (& go -C $Repo run ./tools/codeid)
+$ldflags = "-X github.com/dovholuknf/atrium/internal/api.CodeID=$codeId -X $pkg.Version=$ver -X $pkg.Commit=$commit -X $pkg.Tree=clean"
 
 $scp = 'C:\WINDOWS\System32\OpenSSH\scp.exe'
 $ssh = 'C:\WINDOWS\System32\OpenSSH\ssh.exe'

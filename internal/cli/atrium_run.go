@@ -535,6 +535,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	proxy.SetLandGit(landGit{store: store, hub: gitHub})
 	proxy.SetHubBuild(runningCommit())
+	proxy.SetHubCode(api.CodeID)
 	gitHub.Observed = func() { go proxy.RefreshAllGitSteps(ctx, true) }
 	{
 		before := h.OnAttach

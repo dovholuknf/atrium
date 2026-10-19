@@ -975,6 +975,13 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	// `build` is here rather than on its own endpoint because health is the
 	// one thing every page already asks, on a timer and on every reconnect.
 	body := map[string]any{"ok": !halted, "halted": halted, "build": s.boardID(), "go": runtime.Version()}
+	// The room's code fingerprint and commit, beside `build`, so the hub can tell a board-only difference from a code one.
+	if CodeID != "" {
+		body["code"] = CodeID
+	}
+	if c := RunningCommit(); c != "" {
+		body["commit"] = c
+	}
 	if halted {
 		body["cause"] = fmt.Sprint(cause)
 	}

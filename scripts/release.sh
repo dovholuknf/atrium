@@ -34,6 +34,7 @@ fi
 # no .git in it and builds there. Without the override it would have to repeat
 # the ldflags, and a binary stamped two different ways in two places is a probe
 # that proves nothing the day one of them is edited.
+codeid="$(go run ./tools/codeid 2>/dev/null || true)"
 commit="${ATRIUM_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 
 # Under build.claude like everything else. It is gitignored, which is what makes
@@ -83,6 +84,7 @@ for target in $targets; do
     -trimpath \
     -buildvcs=false \
     -ldflags "-s -w \
+      -X github.com/dovholuknf/atrium/internal/api.CodeID=$codeid \
       -X github.com/dovholuknf/atrium/internal/cli.Version=$version \
       -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" \
     -o "$binary" ./cmd/atrium
