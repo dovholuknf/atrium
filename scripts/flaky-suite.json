@@ -14,6 +14,7 @@
   {"kind": "board", "name": "groupDrag", "reason": "failed in 2 of the last 20 runs, on windows, after two fixes"},
   {"kind": "board", "name": "toastsTop", "reason": "failed in 2 of the last 20 runs, on macos and ubuntu, after two fixes"},
   {"kind": "board", "name": "walkContext", "reason": "failed in 2 of the last 20 runs, on windows and macos, after a fix"},
-  {"kind": "board", "name": "usageTab", "reason": "failed on macos in run 39313597529 when a settings event off read cache reads shown, passes alone, a late settings answer is the guess"}
+  {"kind": "board", "name": "usageTab", "reason": "failed on macos in run 39313597529 when a settings event off read cache reads shown, passes alone, a late settings answer is the guess"},
+  {"kind": "board", "name": "growlPopout", "reason": "failed on macos in run 39317080811: the board still thought the card was popped out after the window closed, passes alone"}
  ]
 }
