@@ -5,6 +5,7 @@ package ptyhost
 import (
 	"bytes"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -430,8 +431,13 @@ func TestSlowReaderIsClosedAndTheDrainCarriesOn(t *testing.T) {
 	})
 	// The drain never slowed: the whole burst lands in the ring.
 	w := daemonT(t, addr)
+	burst, ready := kb(3072), "READY\r\n"
+	landed := int64(len(burst) + len(ready))
+	if runtime.GOOS != "windows" {
+		landed += int64(strings.Count(burst, "\n") + strings.Count(ready, "\n"))
+	}
 	waitFor(t, 60*time.Second, "the whole burst and READY in the ring", func() bool {
-		return infoOf(t, w, sp.RunID).OutOffset >= 3072*1024+int64(len("READY\r\n"))
+		return infoOf(t, w, sp.RunID).OutOffset >= landed
 	})
 	d := dialT(t, addr)
 	if _, err := d.Hello("test", true); err != nil {
