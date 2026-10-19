@@ -987,8 +987,10 @@ async function groupDragSection(browser, base) {
     [...document.querySelectorAll("#term-list .tgroup")].map(b =>
       b.classList.contains("pinnedhead") ? "*pinned" : b.querySelector(".tgname").textContent.trim()));
   const quiet = async (...sels) => {
+    // A pointer resting on a card opens its hover peek a second later, over the card the next drag starts on.
+    await dp.mouse.move(1, 1);
     await dp.waitForFunction(s => typeof termHeadDrag !== "undefined" && !termHeadDrag && !termDragID && !termDragEl &&
-      !document.querySelector("#term-list .dragging, #term-list .dropover") &&
+      !document.querySelector("#term-list .dragging, #term-list .dropover, .peek.on") &&
       s.every(q => document.querySelector(q)), sels, { timeout: slow(15000), polling: 10 });
   };
   try {
