@@ -394,7 +394,13 @@ func homeWorkState(row store.CardHome, dd homeDirs) (why, branch string, onHub b
 // work and never the safety rules: the board's Disk view is the one caller that may. A failed check keeps the home with
 // the reason, and the card's launcher gets one notice.
 func (d *Daemon) reclaimHome(t *store.Task, row store.CardHome, force bool) (removed bool, kept, branch string) {
-	keep := func(reason string) (bool, string, string) {
+	removed, kept, branch, _ = d.reclaimHomeBranch(t, row, force)
+	return
+}
+
+// reclaimHomeBranch is reclaimHome that also says whether the local branch was in fact deleted.
+func (d *Daemon) reclaimHomeBranch(t *store.Task, row store.CardHome, force bool) (removed bool, kept, branch string, branchGone bool) {
+	keep := func(reason string) (bool, string, string, bool) {
 		if row.State != store.CardHomeKept || row.Reason != reason {
 			_ = d.st.CardHomeSet(row.Path, store.CardHomeKept, reason, row.Owed)
 			if t != nil {
@@ -403,7 +409,7 @@ func (d *Daemon) reclaimHome(t *store.Task, row store.CardHome, force bool) (rem
 			}
 			log.Printf("[atrium] kept the home %s: %s", row.Path, reason)
 		}
-		return false, reason, branch
+		return false, reason, branch, false
 	}
 	path, err := d.homeGuard(row)
 	if err != nil {
@@ -433,7 +439,9 @@ func (d *Daemon) reclaimHome(t *store.Task, row store.CardHome, force bool) (rem
 			}
 			_, _ = gitIn(clone, "worktree", "prune")
 			if onHub && branch != "" && !protectedBranch(branch, DefaultCullInto) {
-				if _, err := gitIn(clone, "branch", "-D", branch); err != nil {
+				if _, err := gitIn(clone, "branch", "-D", branch); err == nil {
+					branchGone = true
+				} else {
 					log.Printf("[atrium] kept the branch %s of %s: %v", branch, row.Path, err)
 				}
 			}
@@ -444,7 +452,7 @@ func (d *Daemon) reclaimHome(t *store.Task, row store.CardHome, force bool) (rem
 	}
 	_ = d.st.CardHomeSet(row.Path, store.CardHomeRemoved, "", row.Owed)
 	log.Printf("[atrium] removed the home %s", row.Path)
-	return true, "", branch
+	return true, "", branch, branchGone
 }
 
 // homeClone is the clone a worktree home was added from: the ledger's, else the one its .git file points back to.
@@ -467,9 +475,9 @@ func (d *Daemon) cullHome(t *store.Task, into string, row store.CardHome) (*Cull
 		return nil, err
 	}
 	freed := homeBytes(row.Path)
-	removed, kept, branch := d.reclaimHome(t, row, false)
+	removed, kept, branch, gone := d.reclaimHomeBranch(t, row, false)
 	res.Branch = branch
-	res.WorktreeRemoved, res.ScratchRemoved, res.BriefRemoved, res.BranchDeleted = removed, removed, removed, removed
+	res.WorktreeRemoved, res.ScratchRemoved, res.BriefRemoved, res.BranchDeleted = removed, removed, removed, gone
 	res.Kept = kept
 	if removed {
 		res.BytesFreed = freed

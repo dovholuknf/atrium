@@ -98,6 +98,8 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// homeSize is the size walk over the card homes. See homesize.go.
+	homeSize homeSizer
 	// hk is this daemon's own seams, delays and limits. A test changes its daemon's copy. See hooks.go.
 	hk hooks
 	// logins are the sign-ins this daemon has started and not finished. See auth_flow.go.
@@ -533,6 +535,9 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.StopRunnerBy = d.StopRunnerBy
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
 	d.ap.HoldCull = d.HoldCull
+	d.ap.Homes = d.DiskView
+	d.ap.HomeRemove = d.RemoveHome
+	d.ap.HomeOpen = d.OpenHome
 	d.ap.WorktreesAudit = d.handleWorktreesAudit
 	d.ap.GitPush = d.GitPush
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
@@ -1313,6 +1318,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
 	d.startRoomStats(ctx)
+	go d.sizeLoop(ctx)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
 	// database not in incremental auto_vacuum mode. See vacuum.go.

@@ -172,3 +172,37 @@ func (s *Store) CardHomeWorktree(path, clone, branch, base string) error {
 		return err
 	})
 }
+
+// CardHomeMeasure records what a size walk found. The size is an observation of the disk, so it may be stored.
+func (s *Store) CardHomeMeasure(path string, bytes, files int64) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE card_home SET bytes = ?, files = ?, measured_at = ? WHERE path = ?`,
+			bytes, files, ts(s.now()), path)
+		return err
+	})
+}
+
+// CardHomeByID is the ledger row with that id, and the only way the board names one.
+func (s *Store) CardHomeByID(id string) (CardHome, bool, error) {
+	if id == "" {
+		return CardHome{}, false, nil
+	}
+	return s.cardHomeOne(`WHERE id = ?`, id)
+}
+
+// CardHomeBackfillIDs gives a row made before the id column existed an id of its own.
+func (s *Store) CardHomeBackfillIDs() error {
+	rows, err := s.cardHomes(`WHERE id = ''`)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if err := s.guard(func() error {
+			_, err := s.db.Exec(`UPDATE card_home SET id = ? WHERE path = ? AND id = ''`, newID(), r.Path)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}

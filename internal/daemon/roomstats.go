@@ -44,7 +44,8 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 		Disk: func() (string, uint64, uint64, error) {
 			return roomstats.DiskOf(d.worktreeVolume())
 		},
-		DBBytes: func() (int64, error) { return roomstats.DBBytes(d.opts.DBPath) },
+		DBBytes:   func() (int64, error) { return roomstats.DBBytes(d.opts.DBPath) },
+		CardHomes: d.cardHomesStat,
 		Worktrees: func() (int, error) {
 			ts, err := d.st.List()
 			if err != nil {

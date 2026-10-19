@@ -2419,6 +2419,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="s-idlepark-hint"></span>
     </div>
     </section>
+
+    <section class="dlg-sec" id="rc-disk-sec">
+    <div class="dlg-sec-h">disk</div>
+    <!-- Card homes. One folder per launched card under one root, and this is where the root is set and where a home that was
+         kept, or that no card owns any more, is removed. Removal posts the ledger row's id and never a path.
+         See docs/runtime/card-home-design.md section 7. -->
+    <div class="field">
+      <label class="eyebrow" for="s-cardroot">card root</label>
+      <div class="picker">
+        <input id="s-cardroot" spellcheck="false" data-saves="saveCardRoot"
+          placeholder="empty means atrium-cards under WORKTREE_ROOT, or ~/atrium/cards">
+      </div>
+      <span class="hintline">Every card launched with a home of its own works in a folder here, so the room's work is in
+        one place and its space can be taken back. Never a drive root, your home folder, atrium's own state folder or a
+        folder under the git folder. Cards already running are not moved.</span>
+    </div>
+    <div class="field" id="rc-disk"></div>
+    </section>
   </div>
 </dialog>
 
@@ -3288,6 +3306,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         session ends the directory, the card and the conversation are all deleted. If it turns
         out to matter, promote it from the card's menu and it moves somewhere you choose.</span>
     </div>
+    <!-- A NEW HOME is the other answer to the directory question: atrium makes the folder, under the room's card root, and
+         with a repo adds the worktree in it. Ticking it quiets the path box above, as the throwaway does.
+         See docs/runtime/card-home-design.md section 3. -->
+    <div class="field" id="l-home-field">
+      <label class="check">
+        <input type="checkbox" id="l-home-on">
+        <span>new home</span>
+      </label>
+      <div class="picker" id="l-home-fields" hidden>
+        <input type="text" id="l-home-repo" spellcheck="false" aria-label="repo of the new home"
+          placeholder="repo: github.com/owner/repo, or a clone's path. empty is an empty folder">
+        <input type="text" id="l-home-branch" spellcheck="false" aria-label="branch of the new home"
+          placeholder="branch (optional)">
+      </div>
+      <span class="hintline">Atrium makes a folder for this card under the room's card root and starts here. With a repo
+        it adds a worktree on a new branch inside it. When the card is culled and its work is pushed or landed, the whole
+        folder is removed.</span>
+    </div>
     <!-- A LINK'S WORK IS MADE ON DISK (a worktree, maybe a clone, claude/* branches), and this is the way to have it
          taken away again. Shown for a link only. Wired to the card's own close (js/sharing.js, cleanupWhenDone). -->
     <div class="field" id="l-cleanup-field" hidden>
@@ -3815,6 +3851,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/hubpush.js"></script>
 <script src="/js/hubhosts.js"></script>
 <script src="/js/themes.js"></script>
+<script src="/js/homes.js"></script>
 <script src="/js/terminal.js"></script>
 <script src="/js/termcursor.js"></script>
 <script src="/js/terminal-list.js"></script>

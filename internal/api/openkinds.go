@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/safepath"
@@ -153,6 +154,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	var (
 		wt      prWorktreeResult
 		scratch string
+		home    bool
 		status  int
 		err     error
 	)
@@ -165,7 +167,9 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 		}
 		ans.Worktree, ans.Repo = wt.Path, host+"/"+org+"/"+repo
 	} else {
-		if scratch, err = s.scratchDir(k.host, k.branch); err != nil {
+		if s.cardRootOK() {
+			home = true
+		} else if scratch, err = s.scratchDir(k.host, k.branch); err != nil {
 			worktreeFail(w, http.StatusBadRequest, err)
 			return
 		}
@@ -206,7 +210,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 
 	// 4. the card
 	steps.begin("card", "starting the card")
-	task, err := s.Launch(s.openOtherLaunchBody(in, got, ans.Worktree, key, host, org, repo, k.branch))
+	task, err := s.Launch(s.openOtherLaunchBody(in, got, ans.Worktree, key, host, org, repo, k.branch, home))
 	if err != nil {
 		undo()
 		openFail(w, http.StatusBadRequest, "card", "launch_failed", "the card did not start: "+err.Error())
@@ -214,6 +218,9 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	}
 	s.PublishTask(task)
 	ans.Card, ans.Created = task.ID, true
+	if home {
+		ans.Worktree = task.Worktree
+	}
 	if err := s.st.MoveResources(pending, task.ID); err != nil {
 		log.Printf("[atrium api] open %s: the inventory was not handed to %s: %v", key, task.ID, err)
 	}
@@ -251,7 +258,7 @@ func cardRepo(t *store.Task) string {
 
 // openOtherLaunchBody is the card's launch for a non-PR link: the recogniser's fields, the link's tag, and the
 // stranger note after the prompt.
-func (s *Server) openOtherLaunchBody(in openRequest, got *store.Resolved, cwd, key, host, org, repo, branch string) []byte {
+func (s *Server) openOtherLaunchBody(in openRequest, got *store.Resolved, cwd, key, host, org, repo, branch string, home bool) []byte {
 	harness := strings.TrimSpace(in.Harness)
 	if harness == "" && repo != "" {
 		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil {
@@ -282,7 +289,7 @@ func (s *Server) openOtherLaunchBody(in openRequest, got *store.Resolved, cwd, k
 		"harness": harness, "cwd": cwd, "title": title, "why": in.Why, "prompt": prompt,
 		"tags": tags, "model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"repo": repo, "org": org, "host": host, "branch": branch, "window": got.Window, "theme": got.Theme,
-		"source_kind": got.Kind, "source_url": in.URL,
+		"source_kind": got.Kind, "source_url": in.URL, "home": home,
 	})
 	return body
 }
@@ -496,4 +503,12 @@ func (s *Server) inScratch(path string) string {
 		return ""
 	}
 	return real
+}
+
+// cardRootOK is whether this room has a card root a home may be made in, so a link with no repo gets a home of its own.
+func (s *Server) cardRootOK() bool {
+	set, _ := s.st.Setting(cardroot.Setting)
+	scm, _ := s.st.Setting(gitsync.SettingSCMRoot)
+	_, err := cardroot.Resolve(set, gitsync.EffectiveSCMRoot(scm))
+	return err == nil
 }

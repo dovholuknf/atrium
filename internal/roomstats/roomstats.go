@@ -69,8 +69,14 @@ type Disk struct {
 	FreeBytes  uint64 `json:"free_bytes"`
 	TotalBytes uint64 `json:"total_bytes"`
 	DBBytes    int64  `json:"db_bytes"`
-	Worktrees  int    `json:"worktrees"`
-	StaleSince string `json:"stale_since,omitempty"`
+	// CardRoot is the room's card root and the drive it is on, with the sum of the homes in it.
+	CardRoot       string `json:"card_root,omitempty"`
+	RootFreeBytes  uint64 `json:"root_free_bytes,omitempty"`
+	RootTotalBytes uint64 `json:"root_total_bytes,omitempty"`
+	Homes          int    `json:"homes,omitempty"`
+	HomesBytes     int64  `json:"homes_bytes,omitempty"`
+	Worktrees      int    `json:"worktrees"`
+	StaleSince     string `json:"stale_since,omitempty"`
 }
 
 // Runner is a harness row: its kind and whether its binary resolves.
@@ -124,6 +130,8 @@ type Sources struct {
 	Disk func() (path string, free, total uint64, err error)
 	// DBBytes is the database with its WAL.
 	DBBytes func() (int64, error)
+	// CardHomes is the card root, its drive and the homes in it. Nil leaves those fields off.
+	CardHomes func() (root string, free, total uint64, homes int, bytes int64)
 	// Worktrees counts distinct existing card worktrees the room knows.
 	Worktrees func() (int, error)
 	Runners   func() ([]Runner, error)
@@ -235,6 +243,9 @@ func (s *Sampler) SampleDisk() {
 	}
 	if err == nil && s.src.Worktrees != nil {
 		d.Worktrees, err = s.src.Worktrees()
+	}
+	if err == nil && s.src.CardHomes != nil {
+		d.CardRoot, d.RootFreeBytes, d.RootTotalBytes, d.Homes, d.HomesBytes = s.src.CardHomes()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

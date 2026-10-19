@@ -286,6 +286,11 @@ type Server struct {
 	// was checked to contain, which this room's worktree has to be sitting on.
 	// Empty when the proof is made here.
 	Cull func(taskID, into, tip string) (any, error)
+	// Homes is the Disk view and HomeRemove its remove button, which takes a ledger row id and never a path. See
+	// internal/daemon/homedisk.go.
+	Homes      func() (any, error)
+	HomeRemove func(id string) (any, error)
+	HomeOpen   func(id string) (any, error)
 	// GitPush is atrium_git_push: the room pushes one plain branch from the card's own directory to the hub through
 	// its hub forwarder, under the same rules as `git push hub <branch>`. See internal/daemon/hubremote.go.
 	GitPush func(taskID, branch string) (any, error)
@@ -767,6 +772,15 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Cull != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/cull", s.cullRunner)
+	}
+	if s.Homes != nil {
+		mux.HandleFunc("GET /v1/homes", s.homes)
+	}
+	if s.HomeOpen != nil {
+		mux.HandleFunc("POST /v1/homes/open", s.openHome)
+	}
+	if s.HomeRemove != nil {
+		mux.HandleFunc("POST /v1/homes/remove", s.removeHome)
 	}
 	if s.HoldCull != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/cull/hold", s.holdCull)
