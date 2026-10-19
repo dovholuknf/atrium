@@ -31,6 +31,7 @@ A new agent: `docs/agents.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-
 | `fabric/hub-decisions.md` | the same, for the hub | the hub and room decisions, 1 to 19 |
 | `test-plan.md`, `changes/` | the merger | the test plan, and the sections waiting to be folded into it |
 | `troubleshooting-tests.md` | an agent on a flaky or slow test | worked cases: a board unit that flakes, a Go test slow only on CI, a timing assertion under load, a test that fails only beside others, a log after a test ended |
+| `qa/lessons-learned.md` | an agent or director on flaky tests and CI | the rules that held, the CI shape, how to read a run |
 | `backlog/<dept>/` | the directors, and `atrium backlog import` | one file per backlog item. The live backlog is on the hub |
 | `archive/` | anyone curious | designs a later doc replaced, each with a `Status: superseded by` line |
 | `blog/` | the blog | post ideas and outlines, nothing published |
