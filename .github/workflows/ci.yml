@@ -24,8 +24,8 @@ permissions:
 
 jobs:
   # THE FLAKY SUITE FIRST, ONE JOB PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then, and
-  # `ci.sh --group flaky` runs only those. Each platform's other jobs wait for that platform's flaky job (`needs`), and
-  # run whether it passed or not (`!cancelled()`), so a red flaky job reports first and does not hide the rest.
+  # `ci.sh --group flaky` runs only those. Every other job waits for all three flaky jobs (`needs`) and does not run when
+  # one is red, so a failing flaky test stops the run before the rest starts.
   flaky-ubuntu:
     name: check (ubuntu-latest, flaky)
     runs-on: ubuntu-latest
@@ -125,8 +125,7 @@ jobs:
   # names the group. No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual
   # failure out of its own exit status.
   check-ubuntu:
-    needs: flaky-ubuntu
-    if: ${{ !cancelled() }}
+    needs: [flaky-ubuntu, flaky-macos, flaky-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -160,8 +159,7 @@ jobs:
           if-no-files-found: ignore
 
   check-macos:
-    needs: flaky-macos
-    if: ${{ !cancelled() }}
+    needs: [flaky-ubuntu, flaky-macos, flaky-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -195,8 +193,7 @@ jobs:
           if-no-files-found: ignore
 
   check-windows:
-    needs: flaky-windows
-    if: ${{ !cancelled() }}
+    needs: [flaky-ubuntu, flaky-macos, flaky-windows]
     strategy:
       fail-fast: false
       matrix:
