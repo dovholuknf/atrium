@@ -523,6 +523,7 @@ async function openTask(id) {
   document.getElementById("d-files-toggle").classList.remove("open");
   // Token use on record, folded the same way. See js/usage.js.
   paintUsageField();
+  paintHears();
   // The question, when there is one, named the way the row names it: a card
   // stopped on another SESSION reads differently from one stopped on you, and
   // that difference is the whole reason `ask_peer` exists.

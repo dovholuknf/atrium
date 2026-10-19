@@ -3637,6 +3637,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <div class="queued" id="d-say-queue"></div>
     </div>
+    <!-- WHAT IT HEARS. Hub events this card is subscribed to, by the human here or by the agent itself. Hidden on a
+         board with no hub. See js/hears.js. -->
+    <div class="field" id="d-hears-field" hidden>
+      <label class="eyebrow">hears</label>
+      <div class="chips" id="d-hears"></div>
+      <div class="toolbar" id="d-hears-form" hidden>
+        <input type="text" id="d-hears-repo" placeholder="owner/name, or empty for any" aria-label="repo">
+        <input type="text" id="d-hears-branch" placeholder="branch" aria-label="branch" size="10">
+        <button class="go" type="button" data-hears="add">subscribe</button>
+        <button type="button" data-hears="cancel">cancel</button>
+        <span class="hintline" id="d-hears-note"></span>
+      </div>
+    </div>
     <!-- Getting a file back out. Folded, because most of the time you are not
          after one, and open when you are.
 
@@ -3849,6 +3862,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/expose3.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/usage.js"></script>
+<script src="/js/hears.js"></script>
 <script src="/js/usage-charts.js"></script>
 <script src="/js/usage-limits.js"></script>
 <script src="/js/usage-groups.js"></script>

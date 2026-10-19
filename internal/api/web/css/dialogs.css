@@ -854,3 +854,15 @@
     .toast.cold-handoff { animation: none; background-size: 100% 100%; }
     .card.cold-flash, .stackrow.cold-flash { animation: none; box-shadow: 0 0 0 2px #9fe3ff; }
   }
+
+  /* ── the Hears line in the card details (js/hears.js) ── */
+  #d-hears { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  #d-hears .hears-chip {
+    background: var(--lift); border-color: rgba(var(--stroke-dim-rgb),.6); color: var(--body);
+    font-size: var(--fs-xs); padding: 3px 4px 3px 9px; display: inline-flex; align-items: center; gap: 4px;
+  }
+  #d-hears .hears-x { border: 0; background: transparent; color: inherit; padding: 0 5px; cursor: pointer; font-size: var(--fs-sm); }
+  #d-hears .hears-add { font-size: var(--fs-xs); padding: 3px 9px; }
+  #d-hears-form { margin-top: 8px; gap: 6px; }
+  #d-hears-form input { min-width: 0; }
+  #d-hears-form #d-hears-repo { flex: 1 1 14em; }

@@ -13107,7 +13107,74 @@ async function closeOneDialogSection(browser, base) {
     mock.tasksMode = was;
   }
 }
-// ── the hub's notify command in the gear (u-030) ────────────────────────────
+// ── the Hears line in the card details ──────────────────────────────────────
+//
+// The mock server answers 404 to /_hub/events/subs, so each case routes it in the browser context.
+async function hearsSection(browser, base) {
+  const errors = [];
+  let subs = [{ id: "s1", kind: "land", repo: "dovholuknf/atrium", branch: "main", card: "sg4~x", wake: false },
+    { id: "s2", kind: "land", repo: "", branch: "", card: "sg4~x", wake: true }];
+  const posts = [], gets = [];
+  const open = async (ctx, hub) => {
+    await ctx.route("**/_hub/events/subs**", route => {
+      const req = route.request();
+      if (!hub) return route.fulfill({ status: 404, body: "not a hub" });
+      if (req.method() === "POST") {
+        const b = JSON.parse(req.postData());
+        posts.push(b);
+        if (b.action === "unsubscribe") subs = subs.filter(s => s.id !== b.id);
+        else subs.push({ id: "s" + (subs.length + 3), kind: b.kind, repo: b.repo, branch: b.branch, card: b.card, wake: false });
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ removed: 1 }) });
+      }
+      gets.push(new URL(req.url()).searchParams.get("card"));
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ subscriptions: subs }) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    await p.evaluate(() => { window.roomNow = () => "sg4"; });
+    return p;
+  };
+  const chips = p => p.evaluate(() => [...document.querySelectorAll("#d-hears .hears-chip")].map(c => c.textContent.replace("×", "").trim()));
+
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await open(ctx, true);
+    await p.evaluate(() => openTask("c1"));
+    const id = await p.evaluate(() => current.id);
+    await p.waitForFunction(() => !document.getElementById("d-hears-field").hidden, null, { timeout: slow(10000) });
+    const shown = await chips(p);
+    if (JSON.stringify(shown) !== JSON.stringify(["land dovholuknf/atrium main", "land any any (wakes)"])) fail("hears: chips " + JSON.stringify(shown));
+    if (gets[gets.length - 1] !== "sg4~" + id) fail("hears: asked the hub for " + gets[gets.length - 1]);
+
+    await p.click('#d-hears .hears-x[data-id="s1"]');
+    await p.waitForFunction(() => document.querySelectorAll("#d-hears .hears-chip").length === 1, null, { timeout: slow(10000) });
+    const rm = posts[posts.length - 1];
+    if (rm.action !== "unsubscribe" || rm.id !== "s1") fail("hears: remove posted " + JSON.stringify(rm));
+
+    await p.click('#d-hears [data-act="hear-form"]');
+    if ((await p.inputValue("#d-hears-branch")) !== "main") fail("hears: the branch was not prefilled with main");
+    await p.fill("#d-hears-repo", "dovholuknf/atrium");
+    await p.fill("#d-hears-branch", "release");
+    await p.click('#d-hears-form [data-hears="add"]');
+    await p.waitForFunction(() => document.querySelectorAll("#d-hears .hears-chip").length === 2, null, { timeout: slow(10000) });
+    const add = posts[posts.length - 1];
+    if (add.action !== "subscribe" || add.kind !== "land" || add.repo !== "dovholuknf/atrium" || add.branch !== "release" || add.card !== "sg4~" + id) {
+      fail("hears: add posted " + JSON.stringify(add));
+    }
+    if (errors.length) fail("hears threw: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await open(ctx2, false);
+    const id = "c1";
+    await p.evaluate(i => openTask(i), id);
+    await p.waitForTimeout(500);
+    if (!(await p.evaluate(() => document.getElementById("d-hears-field").hidden))) fail("hears: a board with no hub drew the line");
+  } finally { await ctx2.close(); }
+}// ── the hub's notify command in the gear (u-030) ────────────────────────────
 //
 // The mock server answers 404 to /_hub/notify, so each case routes it in the browser context.
 async function notifyCommandSection(browser, base) {
@@ -23601,14 +23668,14 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection,
-      mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, arrivedOnce: arrivedOnceSection, popoutNotify: popoutNotifySection, 
+      mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, hears: hearsSection, presence: presenceSection, tallPty: tallPtySection, arrivedOnce: arrivedOnceSection, popoutNotify: popoutNotifySection, 
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
       
       mAgentIdle: mAgentIdleSection, greyMeansDead: greyMeansDeadSection, noResumeButton: noResumeButtonSection, mResume: mResumeSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
-      notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
+      notifyCommand: notifyCommandSection, hears: hearsSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
@@ -25482,6 +25549,7 @@ async function main() {
     await unit("termMenu", () => termMenuSection(browser, base));
     await unit("closeOneDialog", () => closeOneDialogSection(browser, base));
     await unit("notifyCommand", () => notifyCommandSection(browser, base));
+    await unit("hears", () => hearsSection(browser, base));
     await unit("presence", () => presenceSection(browser, base));
     await unit("tallPty", () => tallPtySection(browser, base));
     await unit("usagePolish", bu("usagePolish"));
