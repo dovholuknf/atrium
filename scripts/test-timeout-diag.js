@@ -1,6 +1,7 @@
 // The shared page setup (lib/browser.js): a click on a selector that never appears fails at the 5 s default, prints one
 // TIMEOUT-DIAG line, and still throws the original error. A present-but-covered button checks the geometry fields.
-const { withClock, withTrace, chromium, DEFAULT_WAIT } = require("./lib/browser.js");
+const http = require("http");
+const { withClock, withTrace, chromium, DEFAULT_WAIT, NAV_WAIT } = require("./lib/browser.js");
 
 let failed = 0;
 const eq = (a, b, what) => { if (a !== b) { failed++; console.error("FAIL " + what + ": got " + JSON.stringify(a) + ", want " + JSON.stringify(b)); } };
@@ -41,6 +42,25 @@ const eq = (a, b, what) => { if (a !== b) { failed++; console.error("FAIL " + wh
     eq(!!k.box && k.box.width === 80, true, "covered: bounding box");
     eq(!!k.atCentre && k.atCentre.id + "/" + k.atCentre.tag + "/" + k.atCentre.classes, "cover/div/veil", "covered: element at the centre");
 
+    const hang = http.createServer(() => {});
+    await new Promise(r => hang.listen(0, "127.0.0.1", r));
+    const url = "http://127.0.0.1:" + hang.address().port + "/";
+    lines.length = 0;
+    err = null;
+    await page.goto(url, { timeout: 1500 }).catch(e => { err = e; });
+    hang.closeAllConnections();
+    hang.close();
+    eq(!!err && err.name === "TimeoutError", true, "a goto that never answers throws the original TimeoutError");
+    const gl = lines.find(l => l.startsWith("TIMEOUT-DIAG "));
+    eq(!!gl, true, "goto: one TIMEOUT-DIAG line");
+    const gj = JSON.parse((gl || "x {}").slice(13));
+    eq(gj.diagError, undefined, "goto: no diagError");
+    eq(gj.selector, null, "goto: no selector");
+    eq(gj.url, url, "goto: url");
+    eq(typeof gj.waitedMs === "number" && gj.waitedMs >= 1400, true, "goto: waitedMs");
+    eq(lines.some(l => l.startsWith("SLOW-WAIT ") && /"kind":"goto"/.test(l)), true, "goto: SLOW-WAIT line");
+
+    eq(NAV_WAIT(), 30000 * (Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1), "navigation default is 30 s");
     eq(DEFAULT_WAIT(), 5000 * (Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1), "default scales with slow()");
     await page.close();
   } finally { console.log = log; await browser.close(); }

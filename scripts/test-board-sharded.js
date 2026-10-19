@@ -159,6 +159,22 @@ function runShard(label, units, dir) {
 }
 runShard.children = new Set();
 
+// One line for this OS job: goto timing across every shard and retry log in `dir`. p95 is the worst shard's own p95.
+function waitTimesLine(dir) {
+  try {
+    let count = 0, p95 = 0, max = 0;
+    for (const f of fs.readdirSync(dir).filter(n => n.endsWith(".log"))) {
+      for (const l of fs.readFileSync(path.join(dir, f), "utf8").split(/\r?\n/)) {
+        if (!l.startsWith("WAIT-TIMES ")) continue;
+        const g = JSON.parse(l.slice(11)).goto;
+        if (!g) continue;
+        count += g.count; p95 = Math.max(p95, g.p95); max = Math.max(max, g.max);
+      }
+    }
+    if (count) console.log("WAIT-TIMES-SUMMARY " + os.platform() + " goto: " + count + " waits, p95 " + p95 + "ms (worst shard), max " + max + "ms");
+  } catch (e) {}
+}
+
 // Average and peak CPU over the run, from os.cpus() once a second.
 function cpuSampler() {
   const snap = () => os.cpus().reduce((a, c) => { const t = Object.values(c.times).reduce((x, y) => x + y, 0); return { idle: a.idle + c.times.idle, total: a.total + t }; }, { idle: 0, total: 0 });
@@ -341,6 +357,7 @@ async function main() {
     (failed_.length ? ", " + failed_.length + " failed" : "") + (stray.length ? ", " + stray.length + " outside any unit" : "") + ".");
   console.log("wall time " + fmt(wall) + " on " + shards.length + " shards (the units add up to " + fmt(sum) + " run one after another)." +
     " cpu " + load.avg.toFixed(0) + "% average, " + load.peak.toFixed(0) + "% peak.");
+  waitTimesLine(dir);
   const keep = hard.length || stray.length || opt.logs;
   if (keep) console.log("shard output: " + dir);
 
