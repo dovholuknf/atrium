@@ -6,7 +6,6 @@
 //   node scripts/flaky-suite.js check       exit 1 when an entry names a test that does not exist
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
 
 const root = path.join(__dirname, "..");
 const entries = JSON.parse(fs.readFileSync(path.join(__dirname, "flaky-suite.json"), "utf8")).entries;
@@ -32,13 +31,9 @@ function check() {
     if (!files.some(f => re.test(fs.readFileSync(path.join(dir, f), "utf8")))) bad.push("no func " + e.name + " in " + e.package);
   }
   if (board.length) {
-    const r = spawnSync(process.execPath, [path.join(__dirname, "test-board-headless.js")], { env: Object.assign({}, process.env, { HEADLESS_LIST: "1" }), encoding: "utf8" });
-    const json = (r.stdout || "").split("\n").reverse().find(l => l.startsWith("{"));
-    if (!json) bad.push("the harness listed no units");
-    else {
-      const units = JSON.parse(json).units;
-      for (const e of board) if (!units.includes(e.name)) bad.push("no board unit " + e.name);
-    }
+    const src = fs.readFileSync(path.join(__dirname, "test-board-headless.js"), "utf8");
+    const units = new Set([...src.matchAll(new RegExp("unit[(]\"([A-Za-z0-9_]+)\"", "g"))].map(m => m[1]));
+    for (const e of board) if (!units.has(e.name)) bad.push("no board unit " + e.name);
   }
   if (bad.length) { console.error("flaky-suite.json names tests that do not exist or is malformed:\n  " + bad.join("\n  ")); return 1; }
   console.log("ok: " + entries.length + " flaky-suite entries all name a test that exists");
