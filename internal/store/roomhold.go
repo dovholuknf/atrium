@@ -62,6 +62,21 @@ type RoomHold struct {
 	// these are told to continue after the restart. The rest were waiting for a
 	// human, and still are.
 	Working []string `json:"working,omitempty"`
+	// Refused is the cards whose gated call the hold refused. Only these hear a lift that restarts nothing.
+	Refused []string `json:"refused,omitempty"`
+}
+
+// WasRefused reports whether the hold refused a gated call from a card.
+func (h *RoomHold) WasRefused(taskID string) bool {
+	if h == nil {
+		return false
+	}
+	for _, id := range h.Refused {
+		if id == taskID {
+			return true
+		}
+	}
+	return false
 }
 
 // Worked reports whether a card was working when the hold took its turn.
@@ -170,11 +185,17 @@ func (s *Store) MarkHoldWorking(kind, taskID string) (bool, error) {
 			return err
 		}
 		for i := range holds {
-			if holds[i].Kind != kind || holds[i].Worked(taskID) {
+			if holds[i].Kind != kind {
 				continue
 			}
-			holds[i].Working = append(holds[i].Working, taskID)
-			wrote = true
+			if !holds[i].Worked(taskID) {
+				holds[i].Working = append(holds[i].Working, taskID)
+				wrote = true
+			}
+			if !holds[i].WasRefused(taskID) {
+				holds[i].Refused = append(holds[i].Refused, taskID)
+				wrote = true
+			}
 		}
 		if !wrote {
 			return nil

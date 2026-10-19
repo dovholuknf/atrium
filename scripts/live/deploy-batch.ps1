@@ -31,6 +31,17 @@ if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit
 if (-not (Test-NewBuildStamped)) { exit 1 }
 if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 
+# A stop the room is going to refuse is found out here, before any hold is set: a hold set and then called off has
+# already refused every card's calls once. Only -KillRunners gets past it.
+if (Test-StopWouldRefuse) {
+  try {
+    $pf = Invoke-RestMethod $RoomPreflightUrl -TimeoutSec 5
+    Say "REFUSED: the pty host would die with the room, so this stop would end every runner. runners held by the pty host: $($pf.runners.host), in the room's own process: $($pf.runners.in_process)."
+  } catch { Say 'REFUSED: the pty host would die with the room, so this stop would end every runner.' }
+  Say 'FATAL: nothing changed and no deploy hold was set. pass -KillRunners to end the runners'
+  exit 1
+}
+
 # A new context under way is waited out first: stopping the room cuts a clear off between its steps.
 if (-not $WhatIf) {
   if (-not (Wait-NewContextsDone)) { Say 'a new context is still under way, nothing changed'; exit 0 }
@@ -62,7 +73,7 @@ $revert = Save-Revert
 # 1. Stop the room gracefully first, so it parks its runners and saves what to reopen. A room that refuses because its
 #    pty host would die with it stops the deploy here, before anything has changed. Only -KillRunners ends them.
 if (-not (Stop-Room)) {
-  # Nothing was stopped, so the hold set above must not keep every card waiting.
+  # Nothing was stopped, so the hold set above must not keep every card waiting. The preflight above makes this rare.
   try { Invoke-RestMethod -Method Post -Uri $RoomHoldUrl -ContentType 'application/json' -Body '{"action":"lift","by":"deploy-batch","outcome":"cancelled"}' -TimeoutSec 15 | Out-Null } catch { Say "could not lift the deploy hold: $($_.Exception.Message)" }
   Say 'FATAL: the room refused to stop without ending its runners. nothing changed, the deploy hold is lifted. pass -KillRunners to end them'; exit 1
 }

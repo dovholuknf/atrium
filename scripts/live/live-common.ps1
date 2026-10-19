@@ -144,6 +144,16 @@ function Test-RunnersSurvive([string]$Url = $RoomPreflightUrl, [hashtable]$Heade
   return [bool]($r.pty_host -and $r.pty_host.on -and -not $r.pty_host.in_job -and $r.runners -and $r.runners.in_process -eq 0)
 }
 
+# Test-StopWouldRefuse says whether the room's plain shutdown would answer 409, which is what Stop-Room reports as
+# REFUSED: the pty host is in the room task's job, so it would die with the room, and at least one runner lives in it.
+# Asked before any hold is set, so a deploy that is going to refuse never holds the room. -KillRunners is not refused.
+# An unreadable preflight answers $false: the stop itself still decides.
+function Test-StopWouldRefuse([string]$Url = $RoomPreflightUrl, [hashtable]$Headers = @{}) {
+  if ($KillRunners) { return $false }
+  try { $r = Invoke-RestMethod $Url -Headers $Headers -TimeoutSec 10 } catch { return $false }
+  return [bool]($r.pty_host -and $r.pty_host.on -and $r.pty_host.in_job -and $r.runners -and $r.runners.host -gt 0)
+}
+
 # Wait-HoldQuiet waits for every held card to end its turn, the way `atrium_deploy wait` does, up to -MaxSeconds.
 # Names the cards still working while it waits. Returns $true when the room is quiet, $false when the bound ran out.
 function Wait-HoldQuiet([int]$MaxSeconds = 300) {

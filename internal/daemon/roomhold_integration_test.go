@@ -118,6 +118,7 @@ func TestAnAgentsSayIsHeldAndTheOperatorsIsNot(t *testing.T) {
 		t.Fatalf("during the hold the hooks carried %+v, want the operator's only", msgs)
 	}
 
+	ask(t, d, "worker", "Bash", "ls")
 	if _, err := d.liftDeployHold(HoldOutcomeCancelled, "merge", "build broke"); err != nil {
 		t.Fatal(err)
 	}
@@ -332,6 +333,7 @@ func TestACardWithItsOwnWakeHearsBothInOneLine(t *testing.T) {
 func TestAHoldThatRunsOutIsLiftedWithItsSentence(t *testing.T) {
 	t.Parallel()
 	d, worker, _ := heldRoom(t)
+	ask(t, d, "worker", "Bash", "ls")
 	d.holdTick(time.Now().Add(2 * time.Hour))
 	if d.deployHold() != nil {
 		t.Fatal("still held after its expiry")
@@ -339,6 +341,43 @@ func TestAHoldThatRunsOutIsLiftedWithItsSentence(t *testing.T) {
 	msgs := pendingFrom(t, d, worker.ID)
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "hold ran out after 60 minutes") {
 		t.Fatalf("worker has %+v", msgs)
+	}
+}
+
+func TestACalledOffHoldTellsOnlyTheCardItRefused(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	var idle []*store.Task
+	for _, n := range []string{"idle1", "idle2", "idle3"} {
+		c := peerCard(t, d, n)
+		if err := d.st.SetStatus(c.ID, store.StatusNeedsInput); err != nil {
+			t.Fatal(err)
+		}
+		idle = append(idle, c)
+	}
+	refused := peerCard(t, d, "refused")
+	if err := d.st.SetStatus(refused.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.startDeployHold(holdStart{By: "merge"}); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, d, "refused", "Bash", "ls")
+
+	if _, err := d.liftDeployHold(HoldOutcomeCancelled, "merge", "build broke"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range idle {
+		if msgs := pendingFrom(t, d, c.ID); len(msgs) != 0 {
+			t.Fatalf("%s never made a call under the hold and was told %+v", c.DisplayTitle(), msgs)
+		}
+	}
+	msgs := pendingFrom(t, d, refused.ID)
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "room deploy called off by merge: build broke") {
+		t.Fatalf("the refused card has %+v, want the one queued line", msgs)
+	}
+	if d.deployHeld(refused.ID) {
+		t.Fatal("the refused card is still held")
 	}
 }
 

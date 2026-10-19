@@ -303,7 +303,7 @@ func (d *Daemon) startDeployHold(in holdStart) (*store.RoomHold, error) {
 // noteHoldWorking records that a held card made a gated call the hold refused.
 // That call is the proof it was working, and the hold is what ended its turn.
 func (d *Daemon) noteHoldWorking(h *store.RoomHold, taskID string) {
-	if h.Worked(taskID) {
+	if h.Worked(taskID) && h.WasRefused(taskID) {
 		return
 	}
 	if wrote, err := d.st.MarkHoldWorking(h.Kind, taskID); err != nil {
@@ -383,9 +383,12 @@ func (d *Daemon) liftDeployHold(outcome, who, why string) (*store.RoomHold, erro
 		if !h.Holds(id) {
 			continue
 		}
-		if t, err := d.st.Get(id); err == nil {
-			if _, err := d.deliverPeerAs(store.DeliveryDeploy, t, "atrium", line); err != nil {
-				log.Printf("[atrium] could not wake %s after the deploy hold: %v", t.DisplayTitle(), err)
+		if h.WasRefused(id) {
+			if t, err := d.st.Get(id); err == nil {
+				if _, err := d.st.QueueCaused(t.ID, line, "atrium", "", store.DeliveryDeploy, false); err != nil {
+					log.Printf("[atrium] could not tell %s the deploy hold is lifted: %v", t.DisplayTitle(), err)
+				}
+				d.publishTask(t.ID)
 			}
 		}
 		d.releaseHeld(id)
