@@ -137,6 +137,10 @@ round. Remove it before the commit.
 
 ## What not to do
 
+- Do not add a flat wait. A test waits by spinning on an observable condition in short steps inside ONE overall
+  deadline taken from `slow()`. A "nothing happens" check waits for a sentinel (something that must happen after it,
+  `watchRequests(...).waitFor(n)`) or moves the fake clock, and a flat wait that has to stay carries a one-line
+  `// wait: <why>` comment. `scripts/check-test-waits.go` fails when a file's count rises.
 - Do not widen a timeout. The boot restore fires on its own clock, so a longer wait moves the window, it does not
   close it.
 - Do not add a guard where the symptom shows (`reconcileAttached`) without a trace saying that is the only closer.
