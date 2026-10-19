@@ -35,19 +35,29 @@ jobs:
     # job hides which way.
     #
     # ONE JOB PER PLATFORM AND GROUP, so a run takes as long as its slowest group and not the sum. The groups are
-    # `ci.sh --list-groups`: the Go tests in two halves, the other Go checks, the board in two halves, and the
-    # board's pixel and timing units. Which steps belong to which, and which tests are in which half, is ci.sh's
+    # `ci.sh --list-groups`. Runners are scarce, so the quick groups share a job: 12 jobs, not 18, and the slower the
+    # runner the more jobs it gets. Which steps belong to which, and which tests are in which half, is ci.sh's
     # business, so this file only names the group.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        group: [go-test-1, go-test-2, go-checks, board-1, board-2, board-visual]
+        include:
+          - { os: ubuntu-latest, group: go-all }
+          - { os: ubuntu-latest, group: board-1 }
+          - { os: ubuntu-latest, group: board-2 }
+          - { os: macos-latest, group: go-test }
+          - { os: macos-latest, group: go-checks-visual }
+          - { os: macos-latest, group: board-1 }
+          - { os: macos-latest, group: board-2 }
+          - { os: windows-latest, group: go-test-1 }
+          - { os: windows-latest, group: go-test-2 }
+          - { os: windows-latest, group: go-checks-visual }
+          - { os: windows-latest, group: board-1 }
+          - { os: windows-latest, group: board-2 }
     name: check (${{ matrix.os }}, ${{ matrix.group }})
     runs-on: ${{ matrix.os }}
-    # `board-visual` is the board's pixel and timing units (scripts/board-visual-units.txt). It reports and never
-    # reddens the run, so a runner's fonts or load cannot block a push. Its failures stay in the log and the artifacts.
-    continue-on-error: ${{ matrix.group == 'board-visual' }}
+    # No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual failure out of its own
+    # exit status and leaves it in the log, the summary and the artifacts.
     steps:
       - uses: actions/checkout@v4
 

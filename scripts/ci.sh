@@ -21,8 +21,8 @@
 # their output, the slowest tests, and the line that reproduces the run. The workflow copies it to the run's summary.
 #
 # A flaky test is a failure. There is no rerun and no quarantine list. The one exception is the board's pixel and
-# timing units on scripts/board-visual-units.txt: the board-visual group runs them and the workflow does not let that
-# group redden the run. They are run and reported, never dropped.
+# timing units on scripts/board-visual-units.txt: the board-visual step runs them and a failure there is reported but
+# never fails the exit status, in whichever group it runs. They are run and reported, never dropped.
 
 set -uo pipefail
 
@@ -35,9 +35,9 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
 #
-# THE GO TESTS ARE TWO JOBS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by wall
-# time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the whole
-# suite in one job, for a laptop.
+# THE GO TESTS ARE TWO JOBS ON WINDOWS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
+# wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the
+# whole suite in one job, which the faster macos and linux runners use.
 #
 # THE BOARD IS TWO JOBS TOO. board-1 and board-2 are the board step over half the gating units each (board_units
 # says how they are halved), and board is all of them in one job.
@@ -45,11 +45,17 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # THE SMALL CHECKS RIDE WITH go-checks, the shortest job, and not with the board, the longest: the skins, the
 # contrast, the opencode plugin, the release refusals and the script parses have no platform in them and run once, on
 # the linux job (linux_job_only). The PowerShell parse and tests are Windows only and skip themselves elsewhere.
-group_list="go-test go-test-1 go-test-2 go-checks board board-1 board-2 board-visual"
+#
+# THE MERGED GROUPS use fewer runners. go-checks-visual is go-checks and board-visual in one job, go-all is go-test,
+# go-checks and board-visual in one. board-visual never fails the exit status (soft_nfail), so merging it hides no
+# go-checks failure and no go-checks failure hides it.
+group_list="go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual"
 group_steps() {
   case "$1" in
     go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
+    go-checks-visual) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,board-visual,clean-tree" ;;
+    go-all) echo "go-build,go-test,time-guard,gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,board-visual,clean-tree" ;;
     board-visual) echo "board-visual,clean-tree" ;;
     board|board-1|board-2) echo "board,clean-tree" ;;
     *) return 1 ;;
@@ -87,8 +93,10 @@ case "$(uname -s)" in
   *) os=linux ;;
 esac
 
-fail=0; nfail=0
+fail=0; nfail=0; soft_nfail=0
 mark_fail() { fail=1; nfail=$((nfail + 1)); }
+# Reported in the log, the summary and failing.tsv, but not counted against the job: only board-visual's failures.
+hard_failed() { [ $((nfail - soft_nfail)) -gt 0 ]; }
 # ARTEFACTS. What is too big for the log goes here, and ci.yml uploads the folder with the run: go test's raw -json
 # stream, every failed package's whole output, every test's time, the goroutine dumps a failing test writes, and
 # summary.md.
@@ -237,7 +245,8 @@ git_before="$(git status --porcelain --untracked-files=all 2>/dev/null | grep -v
 write_summary() {
   close_step
   local f="$artefacts/summary.md" verdict="PASSED"
-  [ "$fail" != "0" ] && verdict="FAILED"
+  hard_failed && verdict="FAILED"
+  [ "$verdict" = PASSED ] && [ "$soft_nfail" != 0 ] && verdict="PASSED (board-visual failed, which does not fail the job)"
   {
     echo "# ci on $os: $verdict"
     echo
@@ -534,7 +543,9 @@ if step board-visual "the board, pixel and timing units"; then
     return "${PIPESTATUS[0]}"
   }
   board_env_probe board-visual-env.txt
+  nfail_before=$nfail
   check "board (pixel and timing units)" board_visual_run
+  soft_nfail=$((nfail - nfail_before))
   board_report board-visual "$board_log"
 fi
 
@@ -629,8 +640,9 @@ fi
 
 echo
 write_summary
-if [ "$fail" != "0" ]; then
+if hard_failed; then
   echo "ci failed. see above." >&2
   exit 1
 fi
+if [ "$soft_nfail" != 0 ]; then echo "board-visual failed and does not fail the job. see above." >&2; fi
 echo "everything passed."
