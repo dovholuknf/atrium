@@ -1388,17 +1388,19 @@ function openTerm(task) {
 //
 // CLEAN COPY. What a terminal selection holds is Claude Code's render of a reply: an indent, a `│`/`▎` bar on a quote,
 // hard line breaks where the TUI wrapped. The raw text is in the transcript, so `cleanCopy` looks for the selection in
-// the card's recent replies and, on a match, the clipboard gets the source substring instead. No match, a slow or failed
-// endpoint, a copy that was superseded: exactly `getSelection()`, which is what this did before. A copy is never lost.
+// the card's recent replies and, on a match, the "copy clean" button copies the source substring. No match, a slow or
+// failed endpoint: the button copies the selection de-rendered locally. This plain copy is always exactly `getSelection()`.
 function copySelection(quiet) {
   if (!term || !term.hasSelection()) return;
   navigator.clipboard.writeText(term.getSelection())
     .catch(() => { if (!quiet) toast("could not copy", "the browser refused clipboard access"); });
 }
 
-// THE COPY CLEAN BUTTON. A plain copy is the terminal's text as shown, and says nothing. When the selection lands inside
-// a reply `cleanCopy` can match, a small button pops up beside it, and clicking it copies the reply's raw markdown. It
-// goes when the selection clears, on scroll, on Escape, and when the terminal closes. Never a toast, either way.
+// THE COPY CLEAN BUTTON. A plain copy is the terminal's text as shown, and says nothing. A small button pops up beside
+// every settled selection at once, and clicking it copies the best text ready by then: the reply's raw markdown when
+// `cleanCopy` matched the selection in the background, else the selection de-rendered locally by `ccDerender`. The click
+// never waits on the lookup. It goes when the selection clears, on scroll, on Escape, and when the terminal closes.
+// Never a toast, either way.
 let ccBtn = null, ccSeq = 0;
 
 function hideCleanCopy() {
@@ -1406,16 +1408,60 @@ function hideCleanCopy() {
   if (ccBtn) { ccBtn.remove(); ccBtn = null; }
 }
 
-// Called once a selection has settled (the mouseup that ends a press, ctrl-a). Looks up the reply, and shows the button
-// only on a match. A later selection, or a hide, supersedes a lookup still in flight.
+const CC_GUTTER = /^\s*[│▎┃║▏▍●⎿]+ ?/;
+const CC_BOXEDGE = /^\s*[╭╮╰╯┌┐└┘├┤┬┴┼─━═╔╗╚╝╠╣]+\s*$/;
+const CC_ITEM = /^\s*([-*+]|\d+[.)])\s/;
+const CC_HEAD = /^\s*#{1,6}\s/;
+
+// A selection of the terminal's render as plain text: the TUI's gutters, bars and box borders dropped, the common left
+// indent dropped, trailing spaces trimmed, and the lines the TUI hard-wrapped joined back into one. Blank lines, list
+// items, headings, code and table lines stay on their own lines, as does a line after one that ended well short of the
+// widest line (the end of a paragraph).
+function ccDerender(sel) {
+  const rows = [];
+  for (const raw of String(sel).split(/\r?\n/)) {
+    if (CC_BOXEDGE.test(raw)) continue;
+    let s = raw.replace(CC_GUTTER, m => " ".repeat(Math.max(0, m.search(/[│▎┃║▏▍●⎿]/))));
+    s = s.replace(/\s*[│┃║]\s*$/, "").trimEnd();
+    rows.push({ s, len: raw.trimEnd().length });
+  }
+  const body = rows.filter(r => r.s.trim());
+  const indent = body.length ? Math.min(...body.map(r => r.s.length - r.s.trimStart().length)) : 0;
+  const ref = rows.reduce((m, r) => Math.max(m, r.len), 0);
+  const out = [];
+  let joinable = false;
+  for (const r of rows) {
+    const t = r.s.slice(Math.min(indent, r.s.length - r.s.trimStart().length));
+    if (!t.trim()) { out.push(""); joinable = false; continue; }
+    const lead = t.length - t.trimStart().length;
+    const own = CC_ITEM.test(t) || CC_HEAD.test(t) || lead >= 4 || /^```/.test(t.trim()) || /[{};]$/.test(t)
+      || /^\s*\|/.test(t) || /\|.*\|/.test(t);
+    if (joinable && !own) out[out.length - 1] = out[out.length - 1] + " " + t.trim();
+    else out.push(t);
+    joinable = !(CC_HEAD.test(t) || lead >= 4 || /^```/.test(t.trim()) || /[{};]$/.test(t) || /\|/.test(t))
+      && ref - r.len <= 12;
+  }
+  while (out.length && !out[0]) out.shift();
+  while (out.length && !out[out.length - 1]) out.pop();
+  return out.join("\n");
+}
+
+// Called once a selection has settled (the mouseup that ends a press, ctrl-a). The button shows at once. The reply
+// lookup runs behind it and, on a match, upgrades what a click copies. A later selection, or a hide, supersedes it.
+// Resolves when the lookup has finished.
 async function offerCleanCopy() {
   hideCleanCopy();
   if (!term || !term.hasSelection() || !termTask) return;
   const mine = term, seq = ccSeq;
   const text = mine.getSelection();
   const edges = selectionEdges(mine);
+  let best = ccDerender(text);
+  showCleanCopyButton(mine, () => best);
   const raw = await cleanCopy(text, termTask.id, edges);
-  if (raw == null || seq !== ccSeq || term !== mine || !mine.hasSelection()) return;
+  if (raw != null && seq === ccSeq) best = raw;
+}
+
+function showCleanCopyButton(mine, textNow) {
   const pos = mine.getSelectionPosition();
   const screen = document.querySelector("#t-screen .xterm-screen");
   const dims = mine._core && mine._core._renderService && mine._core._renderService.dimensions;
@@ -1426,12 +1472,12 @@ async function offerCleanCopy() {
   btn.id = "cc-btn";
   btn.className = "cc-btn";
   btn.textContent = "copy clean";
-  btn.dataset.tip = "copy the reply's own markdown instead of the terminal's render";
+  btn.dataset.tip = "copy without the terminal's gutters and line breaks, as the reply's own markdown when it is one";
   btn.setAttribute("aria-label", "copy clean");
   // The press must not clear the selection or take the terminal's focus before the click lands.
   btn.addEventListener("mousedown", e => e.preventDefault());
   btn.addEventListener("click", () => {
-    navigator.clipboard.writeText(raw).catch(() => toast("could not copy", "the browser refused clipboard access"));
+    navigator.clipboard.writeText(textNow()).catch(() => toast("could not copy", "the browser refused clipboard access"));
     hideCleanCopy();
     if (term) term.focus();
   });

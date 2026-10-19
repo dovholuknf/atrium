@@ -7859,6 +7859,7 @@ async function cleanCopySection(browser, base) {
     contentType: "application/json", body: JSON.stringify({ paths: ["/work/.atrium/pasted-1.png"] }) }));
   await ctx.route("**/v1/tasks/*/replies*", route => {
     if (mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"x"}' });
+    if (mode === "slow") return;
     const all = /[?&]all=1/.test(route.request().url());
     if (all) allReads++;
     // `?all=1` also holds an old reply and one from a conversation before a /clear, which the last ten do not.
@@ -7957,17 +7958,60 @@ async function cleanCopySection(browser, base) {
     await p.waitForTimeout(100);
     if (await btn()) fail("cleanCopy: the button stayed after Escape");
 
-    // 3. A selection of something no reply holds: the render, and no button.
+    // 3. Tool output no reply holds: the plain copy is the render, and the button still shows.
     const b = await select("$ ls -la\r\ntotal 48 files in this directory\r\n", [0, 1]);
     if (b.clip.length !== 1 || b.clip[0] !== b.sel) fail("cleanCopy: a selection matching nothing copied " + JSON.stringify(b.clip) + ", not " + JSON.stringify(b.sel));
-    if (b.btn) fail("cleanCopy: a button offered for a selection no reply holds");
+    if (!b.btn) fail("cleanCopy: no button for tool output that matches no reply");
     await shot("copy-clean-popup-nomatch.png");
 
-    // 4. The endpoint fails: the render, no button.
+    // 3b. A three character selection gets the button.
+    const s3 = await select("  abc\r\n", [0, 0]);
+    if (!s3.btn) fail("cleanCopy: no button for a 3 character selection");
+
+    // 4. The endpoint fails: the plain copy is the render, and the button still shows.
     mode = "fail";
     const c = await select(shown, [2, 3]);
     if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopy: a failed endpoint copied " + JSON.stringify(c.clip) + ", not " + JSON.stringify(c.sel));
-    if (c.btn) fail("cleanCopy: a button offered with the replies endpoint down");
+    if (!c.btn) fail("cleanCopy: no button with the replies endpoint down");
+    await p.click("#cc-btn");
+    await p.waitForTimeout(100);
+    const cc = await p.evaluate(() => window.__clip.slice());
+    if (cc[cc.length - 1] !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: the endpoint-down button copied " + JSON.stringify(cc));
+
+    // 4a. The button shows before a slow endpoint answers, and a click before then copies the local de-render.
+    mode = "slow";
+    await p.evaluate(([out]) => {
+      window.__clip = [];
+      term.reset();
+      termSock.onmessage({ data: out });
+    }, [shown]);
+    await p.waitForTimeout(100);
+    await p.evaluate(() => { term.selectLines(2, 3); window.__offer = offerCleanCopy(); });
+    if (!await btn()) fail("cleanCopy: the button waited for a slow replies endpoint");
+    await p.click("#cc-btn");
+    await p.waitForTimeout(100);
+    const sl = await p.evaluate(() => window.__clip.slice());
+    if (sl.length !== 1 || sl[0] !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: a click before the lookup copied " + JSON.stringify(sl));
+    mode = "ok";
+
+    // 4a2. The reply match still wins when the lookup is done.
+    const w1 = await select(shown, [2, 3]);
+    await p.click("#cc-btn");
+    await p.waitForTimeout(100);
+    const wc = await p.evaluate(() => window.__clip.slice());
+    if (!w1.btn || wc[wc.length - 1] !== want) fail("cleanCopy: the reply match did not win: " + JSON.stringify(wc));
+
+    // 4a3. The pure de-render.
+    const dr = await p.evaluate(() => ({
+      wrap: ccDerender("  ▎ Please review the plan and tell\n  ▎ me what is missing from it.\n"),
+      list: ccDerender("  - first item\n  - second item\n  - third item\n"),
+      para: ccDerender("  A long first line of a paragraph here\n  its tail.\n\n  Next paragraph.\n"),
+      box: ccDerender("╭────────╮\n│ output │\n╰────────╯\n"),
+    }));
+    if (dr.wrap !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: wrapped paragraph de-rendered to " + JSON.stringify(dr.wrap));
+    if (dr.list !== "- first item\n- second item\n- third item") fail("cleanCopy: list items de-rendered to " + JSON.stringify(dr.list));
+    if (dr.para !== "A long first line of a paragraph here its tail.\n\nNext paragraph.") fail("cleanCopy: paragraphs de-rendered to " + JSON.stringify(dr.para));
+    if (dr.box !== "output") fail("cleanCopy: a box de-rendered to " + JSON.stringify(dr.box));
 
     // 4b. A reply older than the last ten, and one from a prior transcript, both offer the button, and the second
     // selection in the same card reuses the one `?all=1` read.
