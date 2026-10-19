@@ -2393,7 +2393,7 @@ var migrations = []struct {
 				reason     TEXT NOT NULL DEFAULT '',
 				owed       TEXT NOT NULL DEFAULT '',
 				outputs    TEXT NOT NULL DEFAULT '[]',
-				kind       TEXT NOT NULL DEFAULT 'task' CHECK (kind IN ('task','card'))
+				kind       TEXT NOT NULL DEFAULT 'task' CHECK (kind IN ('worktree','scratch','task','throwaway'))
 			)`,
 			`CREATE INDEX IF NOT EXISTS card_home_state ON card_home (state)`,
 			`CREATE INDEX IF NOT EXISTS card_home_task ON card_home (backlog_id, task_id)`,

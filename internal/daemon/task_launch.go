@@ -21,7 +21,7 @@ import (
 // TaskTagPrefix starts the tag that says a card runs a task of an item: `atrium:task:<tid>`.
 const TaskTagPrefix = "atrium:task:"
 
-// SettingCardRoot is where task folders go. Unset, it is atrium-tasks under WORKTREE_ROOT.
+// SettingCardRoot is where task folders go. Unset, it is atrium-cards under WORKTREE_ROOT.
 const SettingCardRoot = "card_root"
 
 var taskIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,30}$`)
@@ -133,9 +133,9 @@ func (d *Daemon) taskFolder(spec *taskSpec) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	b := make([]byte, 4)
+	b := make([]byte, 3)
 	_, _ = rand.Read(b)
-	folder := filepath.Join(root, spec.BacklogID, spec.TaskID+"-a"+strconv.Itoa(spec.Attempt)+"-"+hex.EncodeToString(b))
+	folder := filepath.Join(root, spec.BacklogID+"-"+spec.TaskID+"-a"+strconv.Itoa(spec.Attempt)+"-"+hex.EncodeToString(b))
 	if err := d.st.CardHomeAdd(filepath.ToSlash(folder), spec.BacklogID, spec.TaskID, spec.Attempt, spec.Outputs); err != nil {
 		return "", err
 	}
@@ -152,7 +152,7 @@ func (d *Daemon) cardRoot() (string, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		if w := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); w != "" {
-			root = filepath.Join(w, "atrium-tasks")
+			root = filepath.Join(w, "atrium-cards")
 		}
 	}
 	if root == "" {

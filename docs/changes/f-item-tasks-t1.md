@@ -15,7 +15,7 @@ Docs: none, the design is docs/runtime/item-tasks-design.md and the reference pa
 - A capture that fails keeps the folder and the task is `capture-failed`. There is no retry or discard for it until T4, and
   `task_retry` says so.
 - The room refuses a `card_root` that is a drive root, the home directory, an ancestor of it, or holds atrium's state.
-  Without `card_root` the folders go under `$WORKTREE_ROOT/atrium-tasks`, and without either the task stays pending.
+  Without `card_root` the folders go under `$WORKTREE_ROOT/atrium-cards`, and without either the task stays pending.
 - A task worker's `done` moves its item as any item worker's does, but the owner gets no per-task notice. The owner hears
   only of a capture that failed, once.
 - A worker that is blocked is an item blocked: the owner unblocks it as before. A worker that ends with no done fails the
@@ -31,7 +31,7 @@ Docs: none, the design is docs/runtime/item-tasks-design.md and the reference pa
 3. Let the worker write `out.txt` and `RECAP.md` and end with `atrium_done` naming `RECAP.md`, with a `why`.
 
 **Expected:** the task reads `captured` with its line, why and one file. The file is in the hub's drop as
-`<item>-<task>-out.txt`. The task folder under `<card_root>/<item>/` is gone, and the room has one `removed` row for it.
+`<item>-<task>-out.txt`. The task folder under `<card_root>/` is gone, and the room has one `removed` row for it.
 
 ### @LETTER@2. A capture that fails keeps the folder
 

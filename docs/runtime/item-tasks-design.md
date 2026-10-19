@@ -130,13 +130,13 @@ The item's detail shows the tasks as a list with this record (7).
 
 ## 4. The lifecycle
 
-**The folder.** New room setting `card_root`. Its default is `$WORKTREE_ROOT/atrium-tasks` when `WORKTREE_ROOT` is set.
+**The folder.** New room setting `card_root`. Its default is `$WORKTREE_ROOT/atrium-cards` when `WORKTREE_ROOT` is set.
 With neither set, the room refuses a task launch with a sentence naming the setting, and never falls back to a temp
 directory or the home folder. That keeps every task off `C:` on sg4, where `WORKTREE_ROOT` is on `D:`. A `card_root`
 that is a drive root, the home directory or an ancestor of it, or inside the room's state directory is refused when it
 is set.
 
-A task folder is `<card_root>/<backlog id>/<task id>-a<attempt>-<ulid>`. The room creates it, refusing one that exists,
+A task folder is `<card_root>/<backlog id>-<task id>-a<attempt>-<id6>`. The room creates it, refusing one that exists,
 and writes a ledger row in a new room table `card_home` (end of the room's migration slice): path, backlog id, task id,
 attempt, card, created at, state (`live`, `kept`, `removed`) and the reason it was kept.
 
