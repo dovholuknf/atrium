@@ -78,15 +78,30 @@ function retryGoto(page) {
   };
   return page;
 }
+const CPU_THROTTLE = Number(process.env.HEADLESS_CPU_THROTTLE) > 0 ? Number(process.env.HEADLESS_CPU_THROTTLE) : 0;
+if (CPU_THROTTLE) console.log("HEADLESS_CPU_THROTTLE=" + CPU_THROTTLE + ": every page and popup runs " + CPU_THROTTLE + "x slower");
+const throttled = new WeakSet();
+async function throttle(page) {
+  if (!CPU_THROTTLE || throttled.has(page)) return page;
+  throttled.add(page);
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU_THROTTLE });
+  } catch (e) {
+    if (!/closed|detached/i.test(String(e && e.message))) throw e;
+  }
+  return page;
+}
 function withClock(browser) {
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (opts, more) => {
     const ctx = await newContext(opts || {});
+    if (CPU_THROTTLE) ctx.on("page", p => { throttle(p).catch(e => console.log("CPU throttle failed: " + e.message)); });
     if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
     // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
     if (!(more && more.redirect)) await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
     const newPage = ctx.newPage.bind(ctx);
-    ctx.newPage = async () => retryGoto(await newPage());
+    ctx.newPage = async () => retryGoto(await throttle(await newPage()));
     return ctx;
   };
   browser.newPage = async opts => {
@@ -337,22 +352,28 @@ async function fakeRun(p, fn, arg, ms = 5000) {
 }
 
 // Playwright is a devDependency (see package.json) and CI may run without it.
+// A run that asked for a throttle, or that gates a build, must not turn a missing browser into a green skip.
+const MUST_RUN = process.env.FULL_SUITE === "1" || !!process.env.CI || !!process.env.HEADLESS_CPU_THROTTLE;
+function cannotRun(msg) {
+  if (MUST_RUN) {
+    console.error("FAIL: " + msg + ". this run (FULL_SUITE, CI or HEADLESS_CPU_THROTTLE) cannot skip.");
+    process.exit(1);
+  }
+  console.log(msg + ", so the headless board check is skipped.");
+  process.exit(0);
+}
 let chromium;
 try {
   ({ chromium } = require("@playwright/test"));
 } catch (e) {
   try { ({ chromium } = require("playwright")); } catch (e2) {
-    console.log("playwright is not installed, so the headless board check is " +
-      "skipped. run `npm install` and `npx playwright install chromium` to enable it.");
-    process.exit(0);
+    cannotRun("playwright is not installed. run `npm install` and `npx playwright install chromium`");
   }
 }
 let exePath = "";
 try { exePath = chromium.executablePath(); } catch (e) {}
 if (!exePath || !require("fs").existsSync(exePath)) {
-  console.log("the chromium browser is not installed, so the headless board " +
-    "check is skipped. run `npx playwright install chromium` to enable it.");
-  process.exit(0);
+  cannotRun("the chromium browser is not installed. run `npx playwright install chromium`");
 }
 
 module.exports = { DEFAULT_WAIT, NAV_WAIT, slow, fakeWait, fakeTick, fakePause, fakeRun, frames, afterFrames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };

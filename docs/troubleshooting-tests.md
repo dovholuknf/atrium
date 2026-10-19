@@ -24,6 +24,11 @@ $env:HEADLESS_UNITS='resumeSpinner'
 for ($i=1; $i -le 12; $i++) { node scripts/test-board-headless.js | Out-Null; if ($LASTEXITCODE) { "run $i FAIL" } else { "run $i ok" } }
 ```
 
+To reproduce a flake that only shows on a slow CI runner, add `HEADLESS_CPU_THROTTLE=4` (any rate above 1). Every
+page and popup then runs that many times slower, through the browser's own CPU throttle, and the run prints a line
+saying so. Waits are not scaled, so a throttled run still hits the same deadlines. With the variable set a missing
+playwright fails the run instead of skipping it.
+
 Note the failure text and the line in `scripts/test-board-headless.js` that produced it. The assertion tells you WHAT
 was wrong (the pane said nothing). It never tells you WHO did it. That is what the trace is for.
 
