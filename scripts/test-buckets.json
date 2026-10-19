@@ -214,6 +214,18 @@
       "tests": [],
       "checks": []
     },
+    "termrow": {
+      "file": "scripts/board-tests/termrow.js",
+      "page": "a Terminals tab row: which side gives way when the list is narrow",
+      "units": [
+        "termRow*"
+      ],
+      "sources": [
+        "internal/api/web/css/terminal.css"
+      ],
+      "tests": [],
+      "checks": []
+    },
     "usage": {
       "file": "scripts/board-tests/usage.js",
       "page": "usage: the tab, burn charts, context, turn limits, cache",

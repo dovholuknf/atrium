@@ -284,12 +284,10 @@
      the one thing on the entry that changes what a click does. Narrowing the list shrank it to nothing, so
      the click that would have raised that window landed on the card and did something else. The name gives
      way instead, which it can afford to, since it is already truncating. */
-  .term-list .card .card-line > .chips { flex: 0 1 auto; min-width: 0; overflow: visible; flex-wrap: nowrap; }
-  /* A wider font (DejaVu on Linux) made "new context failed" plus the room chip wider than a narrow strip, and the chips ran past
-     the card because they never shrank. Now the line shrinks as one and the room chip, a name and not a duration, is the one that
-     truncates, since every other chip is flex: none. */
+  .term-list .card .card-line > .chips { flex: none; overflow: visible; flex-wrap: nowrap; }
+  /* The chips never shrink, the room chip included: it is what tells two rooms' cards apart. The title and its address give way. */
   .term-list .card .card-line > .chips .chip.room,
-  .term-list .card .card-line > .chips .chip.cycle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .term-list .card .card-line > .chips .chip.cycle { flex: none; overflow: visible; text-overflow: clip; }
   /* ONE LINE, running or parked. The board's card line wraps (be49b743) so a busy card grows a line, which here put
      the chips under a long path and made a parked row, with its resume chip, taller than a running one. The title
      already truncates, so it gives way and the chips stay beside it. */

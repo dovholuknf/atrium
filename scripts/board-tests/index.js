@@ -8,7 +8,7 @@
 //
 // A unit not listed in a bucket file is still in the harness, waiting to be moved.
 
-const names = ["backlog", "boot", "chat", "deploy", "homes", "hubrepos", "items", "launch", "pulls", "rooms", "changereq", "route", "settings", "usage"];
+const names = ["backlog", "boot", "chat", "deploy", "homes", "hubrepos", "items", "launch", "pulls", "rooms", "changereq", "route", "settings", "termrow", "usage"];
 const buckets = {};
 for (const n of names) buckets[n] = require("./" + n + ".js");
 

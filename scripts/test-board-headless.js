@@ -25756,6 +25756,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("homesRoot", bu("homesRoot"));
     await unit("homesDisk", bu("homesDisk"));
     await unit("homesLaunch", bu("homesLaunch"));
+    await unit("termRowChips", bu("termRowChips"));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + threwMessage(e));
