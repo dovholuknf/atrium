@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 // A run-level rollup of every failing unit across the matrix, for the run's summary page.
-//   ci-rollup.js --local RUN_DIR [--history DIR] [--run ID] [--out FILE]
-//   ci-rollup.js --repo OWNER/NAME --run ID [--token T] [--branch main] [--out FILE]
+//   ci-rollup.js --local RUN_DIR [--history DIR] [--run ID] [--out FILE] [--summary FILE]
+//   ci-rollup.js --repo OWNER/NAME --run ID [--token T] [--branch main] [--out FILE] [--summary FILE]
+// The table goes to --out (written) or --summary (appended), else stdout. Workflow commands for the run page's
+// Annotations block go to stdout.
 // RUN_DIR and each DIR/<run-id> hold one folder per job, named ci-<os>-latest-<group>-attempt-<n>, as ci.sh left them.
 // A history run with no job folders is unknown, never green. Best effort: any failure prints a line and exits 0.
 const fs = require('fs');
@@ -12,6 +14,8 @@ const { execFileSync } = require('child_process');
 const { jobFailures, retryPassed } = require('./ci-failures');
 
 const MAX_ROWS = 30;
+const MAX_ANNOTATIONS = 10;
+const MAX_MESSAGE = 1000;
 const WINDOW = 10;
 const JOB_DIR = /^ci-(\w+)-latest-(.+)-attempt-(\d+)$/;
 
@@ -60,6 +64,26 @@ function retryText(r) {
   return 'no retry';
 }
 
+const escData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+const escProp = (s) => escData(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
+const clip = (s) => { s = String(s).replace(/\s+/g, ' '); return s.length > MAX_MESSAGE ? s.slice(0, MAX_MESSAGE - 3) + '...' : s; };
+
+function annotate({ run, jobs, rows, missing }) {
+  const title = escProp(run ? `ci run ${run}` : 'ci run');
+  if (!rows.length && !missing.length) return [`::notice title=${title}::${escData(`green, all ${jobs.length} jobs passed`)}`];
+  const rank = (r) => (r.isNew ? 0 : r.retried ? 1 : 2);
+  const ordered = rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r);
+  const cut = ordered.length > MAX_ANNOTATIONS - 1;
+  const shown = cut ? ordered.slice(0, MAX_ANNOTATIONS - 2) : ordered;
+  const out = shown.map((r) => `::error title=${escProp(r.unit)}::${escData(clip(`${r.os} ${r.job}: ${r.error} | retry: ${retryText(r)} | history: ${r.history}`))}`);
+  if (cut) out.push(`::notice title=${title}::${escData(`and ${ordered.length - shown.length} more, see the table`)}`);
+  const n = ordered.filter((r) => r.isNew).length;
+  const k = ordered.filter((r) => r.retried).length;
+  const totals = `${rows.length} failing unit${rows.length === 1 ? '' : 's'}, ${n} new, ${k} passed on retry`;
+  out.push(`::notice title=${title}::${escData(missing.length ? `${totals}, ${missing.length} job${missing.length === 1 ? '' : 's'} left no artifact` : totals)}`);
+  return out;
+}
+
 function render({ run, jobs, rows, missing, history, note }) {
   const out = [];
   const label = run ? `ci run ${run}` : 'ci run';
@@ -98,7 +122,8 @@ function build({ run, current, histRuns, jobsWithoutArtifacts = [], note }) {
   const withHistory = ago(rows, history);
   withHistory.sort((a, b) => (b.isNew - a.isNew) || (b.failed - a.failed) || (a.os + a.job + a.unit < b.os + b.job + b.unit ? -1 : 1));
   const missing = jobsWithoutArtifacts.map((j) => `${j}: failed and left no artifact, so its units are not listed`);
-  return render({ run, jobs: current.jobs, rows: withHistory, missing, history, note });
+  const ctx = { run, jobs: current.jobs, rows: withHistory, missing, history, note };
+  return { summary: render(ctx), commands: annotate(ctx) };
 }
 
 function local(opts) {
@@ -196,6 +221,12 @@ function unzip(zip, to) {
   }
 }
 
+function emit(opts, text) {
+  if (opts.out) fs.writeFileSync(opts.out, text);
+  else if (opts.summary) fs.appendFileSync(opts.summary, text);
+  else process.stdout.write(text);
+}
+
 function parse(argv) {
   const o = { branch: 'main' };
   for (let i = 0; i < argv.length; i++) {
@@ -206,18 +237,21 @@ function parse(argv) {
   return o;
 }
 
-module.exports = { build, readRun, local };
+module.exports = { build, readRun, local, escData, escProp };
 
 if (require.main === module) {
   (async () => {
     try {
       const opts = parse(process.argv.slice(2));
-      const text = opts.local ? local(opts) : await remote(opts);
-      if (opts.out) fs.writeFileSync(opts.out, text);
-      else process.stdout.write(text);
+      const { summary, commands } = opts.local ? local(opts) : await remote(opts);
+      emit(opts, summary);
+      process.stdout.write(commands.join('\n') + '\n');
     } catch (e) {
       console.error(`ci-rollup: ${e.message}`);
-      process.stdout.write(`## ci rollup unavailable\n\n${String(e.message).replace(/\s+/g, ' ')}\n`);
+      const msg = String(e.message).replace(/\s+/g, ' ');
+      const text = `## ci rollup unavailable\n\n${msg}\n`;
+      try { emit(parse(process.argv.slice(2)), text); } catch { process.stdout.write(text); }
+      process.stdout.write(`::warning title=ci rollup unavailable::${escData(msg)}\n`);
     }
   })();
 }

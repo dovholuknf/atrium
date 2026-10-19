@@ -122,7 +122,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY" || true
+        run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" || true
 
   # Tells the hub when this run failed, and only then. It needs every other job, so it starts when they are done, and
   # `failure()` keeps a green run silent. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` builds the body from this
