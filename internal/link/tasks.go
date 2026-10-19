@@ -17,17 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// TASKS OF AN ITEM, ON THE HUB. See internal/hubstore/task.go for the rows and docs/runtime/item-tasks-design.md.
-//
-//	GET  /_hub/items/<id>/tasks   {tasks, context, learnings}
-//	POST /_hub/items/<id>/tasks   {do: add|context|hold|release|cancel|retry, by, task?, ...}
-//	POST /_hub/items/tasks/sync   a room's report about a task of its own: capturing, file, captured, capture-failed, failed
-//	                              and reaped. The room name comes from the link, and a replay is a no-op
-//
-// WHO MAY: the item's owner (its earliest assignment, ownerMayAct) and the board. Cards attached as orchestrator or
-// relay are not honoured in stage T1, because work_card.role is never written.
-//
-// ONE TASK AT A TIME PER ITEM, started by taskSchedule on a change and on a 30 second tick.
+// TASKS OF AN ITEM, ON THE HUB.
 
 const (
 	taskTick     = 30 * time.Second
@@ -228,8 +218,7 @@ func (p *Proxy) taskMayAct(ctx context.Context, st *hubstore.Store, id, by strin
 	return p.ownerMayAct(ctx, st, as[0], by)
 }
 
-// taskStopWorker asks the room to cancel the assignment a running task's card holds. The task is already cancelled, and the
-// room captures what it can when its worker leaves.
+// taskStopWorker asks the room to cancel the assignment a running task's card holds.
 func (p *Proxy) taskStopWorker(ctx context.Context, st *hubstore.Store, t hubstore.Task, by string) string {
 	room, card, ok := strings.Cut(t.Card, "~")
 	if !ok {
@@ -495,8 +484,7 @@ func (p *Proxy) taskOwner(st *hubstore.Store, id string, w hubstore.Work) taskOw
 	return taskOwnerOf{hubstore.OwnerHuman, ""}
 }
 
-// taskLaunchDone writes what a launch came to. A refusal puts the task back to pending with the sentence. A launch whose
-// answer was lost, or that failed in a way that does not say it did not start, is unconfirmed and is never sent again.
+// taskLaunchDone writes what a launch came to.
 func (p *Proxy) taskLaunchDone(st *hubstore.Store, t hubstore.Task, room string, out launchOutput, err error) {
 	if err == nil {
 		_, bare := splitTag(out.Card)

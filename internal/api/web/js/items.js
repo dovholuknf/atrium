@@ -467,6 +467,19 @@ function itemDocsHtml(d) {
   return "";
 }
 
+// The item's tasks, read only: the hub's `tasks` of /_hub/work/<id>. A task row is { task_id, title, state, attempt, line, why, files, reason }.
+function itemTasksHtml(d) {
+  if (!Array.isArray(d.tasks) || !d.tasks.length) return "";
+  return '<div class="it-tasks" data-tasks="' + esc(d.backlog) + '"><h2>Tasks</h2>' + d.tasks.map(t => {
+    const files = Array.isArray(t.files) ? t.files : [];
+    return '<div class="it-task" data-task="' + esc(t.task_id) + '"><span class="it-id">' + esc(t.task_id) + '</span><span class="it-tag">' + esc(String(t.state || "").replace(/-/g, " ")) + '</span>' +
+      '<b>' + esc(t.title || "") + '</b>' + (t.attempt > 1 ? ' <span class="it-dim">attempt ' + t.attempt + '</span>' : "") +
+      (t.line ? '<div class="it-task-line">' + esc(t.line) + '</div>' : "") + (t.why ? '<div class="it-dim">why: ' + esc(t.why) + '</div>' : "") +
+      (t.reason ? '<div class="it-dim">' + esc(t.reason) + '</div>' : "") +
+      (files.length ? '<div class="it-dim">files: ' + files.map(f => esc(f.name)).join(", ") + '</div>' : "") + '</div>';
+  }).join("") + '</div>';
+}
+
 function itemDetailHtml(it) {
   const d = itemsDetail && itemsDetail.id === it.id ? itemsDetail : it;
   const hist = d.history || [];
@@ -481,7 +494,7 @@ function itemDetailHtml(it) {
     (d.note && d.state === "finished" ? '<div class="it-bodyex">' + esc(d.note) + "</div>" : "") + "</div>" +
     '<div class="it-actions"><button type="button" class="it-btn" data-act="backlog" data-backlog="' + esc(d.backlog) + '">open backlog item</button>' +
     (d.state !== "finished" ? '<button type="button" class="it-btn it-cancel" data-act="cancel" data-id="' + esc(d.id) + '" aria-label="cancel item ' + esc(d.id) + '">cancel item</button>' : "") +
-    "</div></div>" + itemDocsHtml(d) + itemQuestionHtml(d) +
+    "</div></div>" + itemDocsHtml(d) + itemQuestionHtml(d) + itemTasksHtml(d) +
     '<div class="it-grid"><div class="it-tl">' + d.steps.map((s, i) => itemStepHtml(d, s, i)).join("") +
     (hist.length ? '<ol class="it-history">' + hist.map(e => "<li><b>" + esc(e.state) + "</b> r" + e.revision + ' <time data-tip="' + esc(e.at) + '">' + esc(itemAge(e.at)) + " ago</time></li>").join("") + "</ol>" : "") +
     "</div>" + itemSideHtml(d) + "</div></div>";

@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 )
 
-// THE FOLDERS A TASK OF AN ITEM RAN IN. A folder is removed by its row and by nothing else: the path of a task is made
-// here and never read off a request.
+// THE FOLDERS A TASK OF AN ITEM RAN IN.
 
 const (
 	TaskDirLive    = "live"

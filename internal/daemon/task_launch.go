@@ -16,9 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A TASK OF AN ITEM, launched by the hub. The hub sends the task; this room makes the folder, writes BRIEF.md into it and
-// starts the card there. The folder is `<task_root>/<item>/<tid>-a<n>-<id>`, recorded in the task_dir ledger before it is
-// made, and removed only by that row. See task_capture.go and docs/runtime/item-tasks-design.md.
+// A TASK OF AN ITEM, launched by the hub.
 
 // TaskTagPrefix starts the tag that says a card runs a task of an item: `atrium:task:<tid>`.
 const TaskTagPrefix = "atrium:task:"

@@ -165,8 +165,6 @@ func clipBytes(s string, max int) string {
 	return s
 }
 
-// CheckOutput is why an outputs entry is refused, or "": a name or glob relative to the task folder, with no drive, no
-// leading slash and no `..` segment.
 func CheckOutput(o string) string {
 	o = strings.TrimSpace(o)
 	switch {
@@ -399,8 +397,7 @@ func taskPayload(m map[string]any) string {
 	return string(b)
 }
 
-// moveTask runs a guarded UPDATE of one task, and says whether it changed a row. The set clause is the caller's, the
-// WHERE adds the states the task may be moving from.
+// moveTask runs a guarded UPDATE of one task, and says whether it changed a row.
 func moveTask(t *sql.Tx, id, taskID string, from []string, set string, args ...any) (bool, error) {
 	ph := strings.TrimSuffix(strings.Repeat("?,", len(from)), ",")
 	all := append(append([]any{}, args...), id, taskID)
@@ -415,8 +412,6 @@ func moveTask(t *sql.Tx, id, taskID string, from []string, set string, args ...a
 	return n > 0, nil
 }
 
-// TaskBegin takes a pending task for a launch: it is running, on a new attempt, with nothing yet on its card. False when
-// it was not pending, so two schedulers cannot both start it.
 func (s *Store) TaskBegin(id, taskID, room string) (Task, bool, error) {
 	var out Task
 	moved := false
@@ -435,8 +430,6 @@ func (s *Store) TaskBegin(id, taskID, room string) (Task, bool, error) {
 	return out, moved, err
 }
 
-// TaskWait puts a task that was taken for a launch back to pending, on the attempt it had before, with the reason it
-// waits.
 func (s *Store) TaskWait(id, taskID, reason string) error {
 	return s.tx(func(t *sql.Tx) error {
 		_, err := moveTask(t, id, taskID, []string{TaskRunning},
@@ -542,8 +535,7 @@ func (s *Store) TaskSetHeld(id, taskID string, hold bool) (bool, error) {
 	return moved, err
 }
 
-// TaskCancel stops a task. A pending or held one is cancelled for good. A running one is cancelled and its worker asked to
-// leave by the caller, and the capture the room then runs is still taken (TaskCaptured on a cancelled task).
+// TaskCancel stops a task.
 func (s *Store) TaskCancel(id, taskID, by string) (bool, error) {
 	moved := false
 	err := s.tx(func(t *sql.Tx) error {
@@ -611,8 +603,7 @@ func currentAttempt(t *sql.Tx, e TaskEvent) (Task, error) {
 	return task, err
 }
 
-// TaskCapturingNow is the room saying the worker called done and capture has begun. False for a task that is not running
-// on that attempt.
+// TaskCapturingNow is the room saying the worker called done and capture has begun.
 func (s *Store) TaskCapturingNow(e TaskEvent) (bool, error) {
 	e = e.clean()
 	moved := false
@@ -637,9 +628,7 @@ func (s *Store) TaskCapturingNow(e TaskEvent) (bool, error) {
 	return moved, err
 }
 
-// TaskCapturedAs is the room's captured result, with the files already on the hub. It is applied once: a replay of the same
-// attempt answers false. A task the owner cancelled keeps `cancelled` and takes the result, so what was kept is on the
-// record. An older attempt than the task's is ignored.
+// TaskCapturedAs is the room's captured result, with the files already on the hub.
 func (s *Store) TaskCapturedAs(e TaskEvent) (Task, bool, error) {
 	e = e.clean()
 	var out Task
@@ -701,8 +690,6 @@ func (s *Store) TaskCapturedAs(e TaskEvent) (Task, bool, error) {
 	return out, applied, err
 }
 
-// TaskCaptureFailedAs is the room saying a capture could not keep everything: the folder stays, and the reason names the
-// step. A cancelled task stays cancelled and says so.
 func (s *Store) TaskCaptureFailedAs(e TaskEvent) (Task, bool, error) {
 	e = e.clean()
 	var out Task
@@ -809,8 +796,7 @@ type Learning struct {
 	At      string `json:"at"`
 }
 
-// addLearning appends what a task's worker learned, under the cap of 50 entries or 20 KB on the item. At the cap nothing is
-// dropped and nothing is appended: a `task-learning-capped` fact says so, once per task.
+// addLearning appends what a task's worker learned, under the cap of 50 entries or 20 KB on the item.
 func addLearning(t *sql.Tx, now, id, taskID string, attempt int, text string) error {
 	var n, bytes int
 	if err := t.QueryRow(`SELECT COUNT(*), COALESCE(SUM(LENGTH(payload)), 0) FROM work_fact WHERE backlog_id = ? AND kind = ?`,

@@ -1,6 +1,6 @@
 # Item tasks: throwaway low-context workers, captured and reaped
 
-Backlog item `f-item-tasks-throwaway-workers`, high. Status: designed, not built.
+Backlog item `f-item-tasks-throwaway-workers`, high. Status: stage T1 built (scratch tasks, one at a time, capture and reap). See `docs/changes/f-item-tasks-t1.md` for what differs from this design.
 
 clint, 2026-10-18 23:12: "i want items to have tasks that can be associated so i can give a throw away worker the task
 and have it complete the task. the idea is that multiple super low context claude instances are what i'm after. it'd

@@ -196,6 +196,11 @@
 
   .it-history { margin: 6px 0 0 52px; padding-left: 18px; color: var(--label); font-size: var(--fs-xs); }
   .it-history b { color: var(--head); }
+  .it-tasks { margin: 14px 0; }
+  .it-tasks h2 { font-size: var(--fs-sm); margin: 0 0 6px; color: var(--head); }
+  .it-task { padding: 6px 0; border-top: 1px solid var(--stroke); color: var(--body); }
+  .it-task b { margin-left: 8px; color: var(--head); }
+  .it-task-line { margin-top: 2px; }
 
   /* a phone-width board: the buttons stack under the question */
   @media (max-width: 900px) {

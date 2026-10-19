@@ -92,4 +92,5 @@ the hazard it did not catch on its own is a route that grows a parameter: `<id>/
 | `finish.go` | a session declaring its work over |
 | `actions.go` | saying a stored prompt to a card, and asking the runner to leave |
 | `sweep.go` | two timers that are easy to confuse: archiving, and deleting |
+| `task_launch.go` / `task_capture.go` | a task of an item: the folder atrium makes and removes by its ledger row, and capturing its files to the hub first |
 | `newcontext_journal.go` | new contexts in flight, journalled so a restart can end them with a reason |

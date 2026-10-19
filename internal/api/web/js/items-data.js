@@ -191,7 +191,8 @@ function itemAwaitsApproval(it) { return !!it && it.state === "blocked" && !!it.
 // step row is { step, state, party, started_at, ended_at, sha, cards, reason }, `cards` a JSON list. The item row stays whatever
 // the hub's `/_hub/items` said unless the engine is waiting on the human for the design.
 function itemWithWork(it, w) {
-  if (!w || !Array.isArray(w.steps) || !w.steps.length) return it;
+  const tasks = w && Array.isArray(w.tasks) && w.tasks.length ? w.tasks : null;
+  if (!w || !Array.isArray(w.steps) || !w.steps.length) return tasks ? Object.assign({}, it, { tasks }) : it;
   const by = {};
   for (const s of w.steps) by[s.step] = s;
   const steps = itemsBlankSteps().map(b => {
@@ -204,6 +205,7 @@ function itemWithWork(it, w) {
       reason: s.state === "skipped" ? s.reason || "" : "", note: s.state === "active" ? s.reason || "" : "" });
   });
   const out = Object.assign({}, it, { steps, hasWork: true });
+  if (tasks) out.tasks = tasks;
   // The landed check (hub internal/link/docdebt_landed.go): {not_said} for a feature, {offer: {id, title}} for a doc worker's item.
   if (w.docs && typeof w.docs === "object") out.docs = w.docs;
   // The assignment row has no title of its own: the work row does, the backlog item's title.

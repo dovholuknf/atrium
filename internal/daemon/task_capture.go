@@ -18,10 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// CAPTURING A TASK'S RESULT. A task ends with done: the room waits for the runner to leave, reads the files the task named
-// through safepath, sends each to the hub, and only after the hub has the result removes the folder, by its ledger row. A
-// capture that could not keep everything leaves the folder and says why. A worker that ended with no done leaves it too.
-// The posts are `/_hub/items/tasks/sync` over the link this room already holds, and a replay is a no-op there.
+// CAPTURING A TASK'S RESULT.
 
 const (
 	taskCaptureFiles   = 20
@@ -169,8 +166,7 @@ func readRecap(folder string) string {
 	return strings.ToValidUTF8(strings.TrimSpace(string(buf[:n])), "")
 }
 
-// resolveTaskOutputs lists the files the task named, each resolved through safepath, under the caps. A folder is every
-// regular file in it. What is not there is returned by name, and is not an error.
+// resolveTaskOutputs lists the files the task named, each resolved through safepath, under the caps.
 func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missing []string, err error) {
 	root, err := filepath.EvalSymlinks(folder)
 	if err != nil {
@@ -247,8 +243,6 @@ func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missi
 	return files, missing, nil
 }
 
-// reapTaskFolder removes a captured task's folder by its ledger row, links as links, and tells the hub it is gone. What the
-// hub has not acknowledged stays on the row and is sent again. The kept folders of older attempts go with it.
 func (d *Daemon) reapTaskFolder(row store.TaskDir) {
 	if err := os.RemoveAll(filepath.FromSlash(row.Path)); err != nil {
 		_ = d.st.TaskDirSet(row.Path, store.TaskDirKept, "captured, and the folder could not be removed: "+err.Error(), "")
@@ -316,8 +310,6 @@ func (d *Daemon) captureFailed(task *store.Task, row store.TaskDir, reason strin
 	}
 }
 
-// taskRunnerEnded files a task whose runner left with no done: the folder stays and the hub is told. A runner atrium ended
-// for a restart, or one whose done is being captured, is not a failure.
 func (d *Daemon) taskRunnerEnded(x runExit) {
 	task, err := d.st.Get(x.taskID)
 	if err != nil || !isTaskCard(task) || task.Status == store.StatusDone || x.cause == store.CauseShutdown {

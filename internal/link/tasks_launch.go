@@ -2,8 +2,6 @@ package link
 
 import "strconv"
 
-// taskBlock is the `task` of a launch body: what the room needs to make the folder and write BRIEF.md. The hub renders no
-// brief, so the room's own words for it cannot drift from the folder it describes.
 type taskBlock struct {
 	BacklogID string   `json:"backlog_id"`
 	TaskID    string   `json:"task_id"`
