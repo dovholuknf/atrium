@@ -7973,8 +7973,9 @@ async function cleanCopySection(browser, base) {
     const c = await select(shown, [2, 3]);
     if (c.clip.length !== 1 || c.clip[0] !== c.sel) fail("cleanCopy: a failed endpoint copied " + JSON.stringify(c.clip) + ", not " + JSON.stringify(c.sel));
     if (!c.btn) fail("cleanCopy: no button with the replies endpoint down");
+    const clipLen = await p.evaluate(() => window.__clip.length);
     await p.click("#cc-btn");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(k => window.__clip.length > k, clipLen);
     const cc = await p.evaluate(() => window.__clip.slice());
     if (cc[cc.length - 1] !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: the endpoint-down button copied " + JSON.stringify(cc));
 
@@ -7985,19 +7986,21 @@ async function cleanCopySection(browser, base) {
       term.reset();
       termSock.onmessage({ data: out });
     }, [shown]);
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => term.buffer.active.getLine(3).translateToString().trim() !== "");
     await p.evaluate(() => { term.selectLines(2, 3); window.__offer = offerCleanCopy(); });
     if (!await btn()) fail("cleanCopy: the button waited for a slow replies endpoint");
+    const slLen = await p.evaluate(() => window.__clip.length);
     await p.click("#cc-btn");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(k => window.__clip.length > k, slLen);
     const sl = await p.evaluate(() => window.__clip.slice());
     if (sl.length !== 1 || sl[0] !== "Please review the plan and tell me what is missing from it.") fail("cleanCopy: a click before the lookup copied " + JSON.stringify(sl));
     mode = "ok";
 
     // 4a2. The reply match still wins when the lookup is done.
     const w1 = await select(shown, [2, 3]);
+    const wLen = await p.evaluate(() => window.__clip.length);
     await p.click("#cc-btn");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(k => window.__clip.length > k, wLen);
     const wc = await p.evaluate(() => window.__clip.slice());
     if (!w1.btn || wc[wc.length - 1] !== want) fail("cleanCopy: the reply match did not win: " + JSON.stringify(wc));
 
