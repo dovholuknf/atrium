@@ -118,7 +118,35 @@ function argText(a) {
   if (typeof a === "function") return "function";
   try { return JSON.stringify(a).slice(0, 120); } catch (e) { return String(a).slice(0, 120); }
 }
-function traceMethods(obj, names, prefix, who) {
+const inflight = new WeakMap();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const within = (p, ms) => Promise.race([p, sleep(ms).then(() => { throw new Error("diag step timed out"); })]);
+// One TIMEOUT-DIAG line per Playwright TimeoutError: what was waited for and what the page looked like. Never throws.
+async function timeoutDiag(e, page, sel, what, who) {
+  if (!e || e.name !== "TimeoutError" || e.diagged) return;
+  e.diagged = true;
+  const d = { unit: who() || null, wait: what, selector: sel || null, error: String(e.message).split("\n")[0].slice(0, 200) };
+  try {
+    d.inflight = inflight.has(page) ? inflight.get(page).size : null;
+    if (sel) {
+      const loc = page.locator(sel);
+      d.matches = await within(loc.count(), 1500);
+      if (d.matches) {
+        const first = loc.first();
+        d.visible = await within(first.isVisible(), 1500);
+        d.box = await within(first.boundingBox({ timeout: 1000 }), 1500);
+        if (d.box) {
+          d.atCentre = await within(page.evaluate(([x, y]) => {
+            const n = document.elementFromPoint(x, y);
+            return n ? { tag: n.tagName.toLowerCase(), id: n.id || "", classes: typeof n.className === "string" ? n.className : "" } : null;
+          }, [d.box.x + d.box.width / 2, d.box.y + d.box.height / 2]), 1500);
+        }
+      }
+    }
+  } catch (err) { d.diagError = String(err && err.message).slice(0, 120); }
+  try { console.log("TIMEOUT-DIAG " + JSON.stringify(d)); } catch (err) {}
+}
+function traceMethods(obj, names, prefix, who, page, locSel) {
   for (const m of names) {
     if (typeof obj[m] !== "function") continue;
     const orig = obj[m].bind(obj);
@@ -126,7 +154,12 @@ function traceMethods(obj, names, prefix, who) {
       const what = prefix + m + "(" + argText(args[0]) + ")", at = callSite();
       const where = what + (at ? " at " + at : "");
       if (process.env.HEADLESS_TRACE) console.log("TRACE " + (who() || "-") + " " + where);
-      return orig(...args).catch(e => { if (e && typeof e === "object" && !e.calledAt) e.calledAt = where; throw e; });
+      const sel = locSel !== undefined ? locSel : (typeof args[0] === "string" ? args[0] : null);
+      return orig(...args).catch(async e => {
+        if (e && typeof e === "object" && !e.calledAt) e.calledAt = where;
+        await timeoutDiag(e, page, sel, where, who);
+        throw e;
+      });
     };
   }
   return obj;
@@ -135,14 +168,21 @@ function withTrace(browser, who) {
   const wrapPage = page => {
     if (traced.has(page)) return page;
     traced.add(page);
-    traceMethods(page, TRACED_PAGE, "", who);
+    const open = new Set();
+    inflight.set(page, open);
+    page.on("request", r => open.add(r));
+    page.on("requestfinished", r => open.delete(r));
+    page.on("requestfailed", r => open.delete(r));
+    traceMethods(page, TRACED_PAGE, "", who, page);
     const locator = page.locator.bind(page);
-    page.locator = (...a) => traceMethods(locator(...a), TRACED_LOCATOR, "locator(" + argText(a[0]) + ").", who);
+    page.locator = (...a) => traceMethods(locator(...a), TRACED_LOCATOR, "locator(" + argText(a[0]) + ").", who, page, typeof a[0] === "string" ? a[0] : null);
     return page;
   };
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...a) => {
     const ctx = await newContext(...a);
+    ctx.setDefaultTimeout(DEFAULT_WAIT());
+    ctx.setDefaultNavigationTimeout(DEFAULT_WAIT());
     ctx.on("page", wrapPage);
     const newPage = ctx.newPage.bind(ctx);
     ctx.newPage = async (...b) => wrapPage(await newPage(...b));
@@ -158,6 +198,9 @@ function withTrace(browser, who) {
 // stays put has to keep its length.
 const SLOW = Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1;
 const slow = ms => Math.round(ms * SLOW);
+// A normal UI step takes well under a second, so Playwright's 30 s default only hides a stuck one. A wait that is slow on
+// purpose passes its own slow(n).
+const DEFAULT_WAIT = () => slow(5000);
 
 // For a page on Playwright's fake clock (`page.clock.install()` before the goto): waitForFunction, with the page's
 // clock moved forward a step at a time instead of waited out. `ms` is page time. A short real pause per step lets a
@@ -276,4 +319,4 @@ if (!exePath || !require("fs").existsSync(exePath)) {
   process.exit(0);
 }
 
-module.exports = { slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
+module.exports = { DEFAULT_WAIT, slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
