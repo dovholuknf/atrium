@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -21,8 +22,8 @@ import (
 // TaskTagPrefix starts the tag that says a card runs a task of an item: `atrium:task:<tid>`.
 const TaskTagPrefix = "atrium:task:"
 
-// SettingCardRoot is where task folders go. Unset, it is atrium-cards under WORKTREE_ROOT.
-const SettingCardRoot = "card_root"
+// SettingCardRoot is the room's card root, where every home and task folder goes.
+const SettingCardRoot = cardroot.Setting
 
 var taskIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,30}$`)
 
@@ -144,42 +145,6 @@ func (d *Daemon) taskFolder(spec *taskSpec) (string, error) {
 		return "", fmt.Errorf("could not make the task folder: %v", err)
 	}
 	return folder, nil
-}
-
-// cardRoot is where task folders go, refusing a root that a task's removal could do harm in.
-func (d *Daemon) cardRoot() (string, error) {
-	root, _ := d.st.Setting(SettingCardRoot)
-	root = strings.TrimSpace(root)
-	if root == "" {
-		if w := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); w != "" {
-			root = filepath.Join(w, "atrium-cards")
-		}
-	}
-	if root == "" {
-		return "", errors.New("this room has no place for task folders: set card_root in its settings, or set WORKTREE_ROOT")
-	}
-	abs, err := filepath.Abs(filepath.FromSlash(root))
-	if err != nil {
-		return "", err
-	}
-	if filepath.Dir(abs) == abs {
-		return "", errors.New("card_root is a drive root. name a folder of its own for task folders")
-	}
-	guarded := []string{StateDir()}
-	if home, err := os.UserHomeDir(); err == nil {
-		guarded = append(guarded, home)
-	}
-	for _, g := range guarded {
-		if g = strings.TrimSpace(g); g == "" {
-			continue
-		}
-		if ga, err := filepath.Abs(g); err == nil {
-			if rel, err := filepath.Rel(abs, ga); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				return "", fmt.Errorf("card_root %s holds %s. name a folder of its own for task folders", abs, ga)
-			}
-		}
-	}
-	return abs, nil
 }
 
 // taskBrief is BRIEF.md for a task: what to do, what the item is, where to work and what to leave, and how to end.

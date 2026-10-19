@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Clean up throwaways after their processes exit: remove the directory,
@@ -44,6 +45,10 @@ func (d *Daemon) endThrowaway(taskID string) {
 	// Somebody decided this mattered while it was running. The directory moves
 	// instead of going, which is the whole reason it is safe to start work in
 	// a throwaway before knowing whether the work matters.
+	if row, ok := d.homeOf(t.ID); ok && row.Kind == store.CardHomeThrowaway {
+		d.endHomeThrowaway(t, row)
+		return
+	}
 	if t.PromoteTo != "" {
 		d.promoteThrowaway(t.ID, t.Worktree, filepath.FromSlash(t.PromoteTo))
 		return
@@ -138,4 +143,34 @@ func (d *Daemon) sweepThrowaways() {
 		}
 		d.endThrowaway(t.ID)
 	}
+}
+
+// endHomeThrowaway is the end of a throwaway that lives in a home. Promoted, the home is kept where it is and the ledger
+// says so: nothing moves any more. Otherwise the home goes whole, then the transcripts and the card.
+func (d *Daemon) endHomeThrowaway(t *store.Task, row store.CardHome) {
+	if t.PromoteTo != "" {
+		if err := d.st.Promoted(t.ID, t.Worktree); err != nil {
+			log.Printf("[atrium] record the promote of %s: %v", t.ID, err)
+		}
+		_ = d.st.CardHomeSet(row.Path, store.CardHomeKept, "promoted, so it was kept where it is", row.Owed)
+		if err := d.st.SetWhy(t.ID, ""); err != nil {
+			log.Printf("[atrium] clear the throwaway note on %s: %v", t.ID, err)
+		}
+		d.publishTask(t.ID)
+		return
+	}
+	d.CloseShell(t.ID)
+	if err := api.ForgetTranscripts(t.Worktree); err != nil {
+		log.Printf("[atrium] could not delete the conversations for %s: %v", t.ID, err)
+	}
+	if removed, kept, _ := d.reclaimHome(t, row, true); !removed {
+		log.Printf("[atrium] could not delete the home of throwaway %s: %s", t.ID, kept)
+		return
+	}
+	if err := d.st.Forget(t.ID); err != nil {
+		log.Printf("[atrium] could not delete the throwaway card %s: %v", t.ID, err)
+		return
+	}
+	d.ap.Broadcast("task-removed", map[string]string{"id": t.ID})
+	log.Printf("[atrium] threw away %s and its home", t.ID)
 }

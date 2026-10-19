@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
 )
@@ -38,6 +39,8 @@ type launchOpts struct {
 	// atrium derives none of it, and every one is optional.
 	repo, org, host, branch, window, theme string
 	ifRunning, reportTo                    string
+	base                                   string
+	home                                   bool
 	// onto is a card to start the runner on, by handle, alias, name@room or id.
 	onto  string
 	tags  []string
@@ -101,7 +104,9 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.repo, "repo", "", "which repository this work is in")
 	c.Flags().StringVar(&o.org, "org", "", "which organisation owns it, so two forks are told apart")
 	c.Flags().StringVar(&o.host, "host", "", "which forge it is on, such as github.com")
-	c.Flags().StringVar(&o.branch, "branch", "", "which branch this directory is on")
+	c.Flags().StringVar(&o.branch, "branch", "", "which branch this directory is on, or with --repo as host/owner/repo the branch of the worktree atrium makes")
+	c.Flags().StringVar(&o.base, "base", "", "with --repo as host/owner/repo: where a new branch starts (default claude/main)")
+	c.Flags().BoolVar(&o.home, "home", false, "run in a new empty folder atrium makes under the room's card root, for scratch work")
 	c.Flags().StringVar(&o.window, "window", "",
 		"which pile this belongs to, and what the board groups by. free text: "+
 			"active-work, pull-requests, tangent, a repo name, anything")
@@ -161,6 +166,12 @@ func launchAgent(o launchOpts) error {
 		// The card knows its directory. The daemon uses it when none is sent.
 		return launchBody(o, "")
 	}
+	if strings.TrimSpace(o.cwd) == "" && (o.home || daemon.RepoIsRef(o.repo)) {
+		return launchBody(o, "")
+	}
+	if strings.TrimSpace(o.cwd) != "" && (o.home || daemon.RepoIsRef(o.repo)) {
+		return fmt.Errorf("pass --cwd for a directory you made, or --repo / --home for one atrium makes, not both")
+	}
 	if strings.TrimSpace(o.cwd) == "" {
 		got, err := os.Getwd()
 		if err != nil {
@@ -214,6 +225,8 @@ func launchBody(o launchOpts, cwd string) error {
 		"org":         o.org,
 		"host":        o.host,
 		"branch":      o.branch,
+		"base":        o.base,
+		"home":        o.home,
 		"window":      o.window,
 		"theme":       o.theme,
 		"if_running":  o.ifRunning,

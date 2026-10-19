@@ -647,7 +647,11 @@ func resolvePeer(ctx context.Context, who string) (id, handle string, err error)
 type LaunchInput struct {
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`.
 	Lifetime string `json:"-"`
-	Cwd      string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
+	Cwd      string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and name repo (or home) so atrium makes the card's own folder under the room's card root. not together with repo"`
+	Repo     string `json:"repo,omitempty" jsonschema:"the repository to work in, as host/owner/repo (cloned from the hub when the room has no clone yet) or an absolute path to a clone on the room. atrium makes the card's home under its card root and adds a git worktree there as the card's directory. use this instead of making a worktree yourself. not together with cwd"`
+	Branch   string `json:"branch,omitempty" jsonschema:"the branch for the worktree that repo makes. made from base when it does not exist. default claude/<title>"`
+	Base     string `json:"base,omitempty" jsonschema:"where a new branch starts. default the clone's claude/main, else its default branch"`
+	Home     bool   `json:"home,omitempty" jsonschema:"true asks for a home with no repo: an empty folder under the room's card root for scratch work. the card is kept open"`
 	Title    string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why      string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	// Prompt is the first thing the new session is told.
@@ -764,8 +768,13 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	*mcp.CallToolResult, LaunchOutput, error) {
 
 	out := LaunchOutput{}
-	if strings.TrimSpace(in.Cwd) == "" {
-		return nil, out, fmt.Errorf("say where to run it. atrium does not create the directory")
+	atriumHome := strings.TrimSpace(in.Cwd) == ""
+	if atriumHome && strings.TrimSpace(in.Repo) == "" && !in.Home {
+		return nil, out, fmt.Errorf("say where to run it: cwd for a directory you made, or repo (with branch) so atrium " +
+			"makes the card's own folder, or home for an empty one")
+	}
+	if !atriumHome && strings.TrimSpace(in.Repo) != "" {
+		return nil, out, fmt.Errorf("pass cwd for a directory you made, or repo for one atrium makes, not both")
 	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
@@ -792,21 +801,26 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	// reports that it read nothing, which is worse than no briefing at all
 	// because it looks like the file was empty.
 	prompt := strings.TrimSpace(in.Prompt)
+	homeBrief := ""
 	if brief := strings.TrimSpace(in.Brief); brief != "" {
 		// THE ITEM'S STEP LINES AND FOLDER GO FIRST (item lifecycle L8). A hub that cannot answer costs the header only.
 		brief = link.WithItemBrief(brief, link.ItemBrief(ctx, roomHubCall(strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))), workID))
-		path, err := writeBrief(in.Cwd, brief)
-		if err != nil {
-			return nil, out, err
-		}
-		if in.Isolated {
-			prompt = daemon.ItemBriefPrompt(briefFile, prompt)
-		} else if in.Resident {
-			prompt = daemon.ResidentBriefPrompt(briefFile, prompt)
+		if atriumHome {
+			homeBrief = brief
 		} else {
-			prompt = briefPrompt(prompt)
+			path, err := writeBrief(in.Cwd, brief)
+			if err != nil {
+				return nil, out, err
+			}
+			if in.Isolated {
+				prompt = daemon.ItemBriefPrompt(briefFile, prompt)
+			} else if in.Resident {
+				prompt = daemon.ResidentBriefPrompt(briefFile, prompt)
+			} else {
+				prompt = briefPrompt(prompt)
+			}
+			out.Brief = path
 		}
-		out.Brief = path
 	}
 	// THE SAME LINEAGE THE HUB'S atrium_launch RECORDS, for the parts that are this room's: who
 	// launched it, the origin marker, the worker marker and the report line. Without them the room
@@ -828,6 +842,20 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	if in.Superlean {
 		req["superlean"] = true
 	}
+	if atriumHome {
+		delete(req, "cwd")
+		for k, v := range map[string]string{"repo": in.Repo, "branch": in.Branch, "base": in.Base} {
+			if v = strings.TrimSpace(v); v != "" {
+				req[k] = v
+			}
+		}
+		if in.Home {
+			req["home"] = true
+		}
+		if homeBrief != "" {
+			req["brief"] = homeBrief
+		}
+	}
 	if in.Isolated {
 		req["tags"] = append(tags, link.ItemTag)
 		if o := strings.TrimSpace(in.ItemOwner); o != "" {
@@ -842,7 +870,11 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		req["spawned_by"] = me
 	}
 	var t card
-	recovered, err := postLaunch(ctx, in.Cwd, req, &t)
+	keyDir := in.Cwd
+	if atriumHome {
+		keyDir = in.Repo + "|" + in.Branch + "|" + in.Title
+	}
+	recovered, err := postLaunch(ctx, keyDir, req, &t)
 	if err != nil {
 		return nil, out, err
 	}

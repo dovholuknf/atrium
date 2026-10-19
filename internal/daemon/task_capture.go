@@ -244,7 +244,7 @@ func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missi
 }
 
 func (d *Daemon) reapTaskFolder(row store.CardHome) {
-	if err := os.RemoveAll(filepath.FromSlash(row.Path)); err != nil {
+	if err := removeTree(filepath.FromSlash(row.Path)); err != nil {
 		_ = d.st.CardHomeSet(row.Path, store.CardHomeKept, "captured, and the folder could not be removed: "+err.Error(), "")
 		log.Printf("[atrium] task %s/%s was captured but %s could not be removed: %v", row.BacklogID, row.TaskID, row.Path, err)
 		return
@@ -253,7 +253,7 @@ func (d *Daemon) reapTaskFolder(row store.CardHome) {
 	older, _ := d.st.CardHomesOf(row.BacklogID, row.TaskID)
 	for _, o := range older {
 		if o.Attempt < row.Attempt && o.State == store.CardHomeKept {
-			if os.RemoveAll(filepath.FromSlash(o.Path)) == nil {
+			if removeTree(filepath.FromSlash(o.Path)) == nil {
 				_ = d.st.CardHomeSet(o.Path, store.CardHomeRemoved, "a later attempt took its place", "")
 			}
 		}

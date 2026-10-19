@@ -261,6 +261,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.pruneOld(); err != nil {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
+		// And the home ledger: folders already gone, removals to try again, a throwaway the room restarted past.
+		if err := d.sweepHomes(); err != nil {
+			log.Printf("[atrium] sweeping card homes: %v", err)
+		}
 		// And the scrollback saved for cards that are no longer here. Same
 		// tick and no second timer: it is the same question the two sweeps
 		// above ask, about a file instead of a row. See `carryover.go`.

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/mcprule"
@@ -352,15 +353,7 @@ type Daemon struct {
 // The `hub` segment stays. It is where every existing database with
 // WORKTREE_ROOT set already lives, and a daemon that opens a new empty
 // database shows a board that has lost every card.
-func StateDir() string {
-	if root := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); root != "" {
-		return filepath.Join(root, "hub")
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".atrium")
-	}
-	return ".atrium"
-}
+func StateDir() string { return cardroot.StateDir() }
 
 // DefaultDBPath puts the database next to the rest of atrium's state.
 func DefaultDBPath() string {

@@ -140,6 +140,10 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool) (*CullResult, e
 	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 
+	if row, ok := d.homeOf(taskID); ok {
+		return d.cullHome(t, into, row)
+	}
+
 	// A directory that is not a git checkout is the scratch directory a launcher made. There is no branch of its
 	// own to prove merged, so the launcher's call is the claim. See reclaim.go.
 	if fi, err := os.Stat(filepath.FromSlash(t.Worktree)); err == nil && fi.IsDir() && !hasDotGit(t.Worktree) &&

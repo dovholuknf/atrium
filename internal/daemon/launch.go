@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -113,6 +114,11 @@ type LaunchRequest struct {
 	Org    string `json:"org,omitempty"`
 	Host   string `json:"host,omitempty"`
 	Branch string `json:"branch,omitempty"`
+	// Base is where a new branch starts, and Home asks for a home with no repo. With `repo` as `host/owner/repo` or a
+	// path to a clone and no cwd, the room makes the card's home and adds `<home>/work` as a worktree on Branch. See
+	// cardhome.go.
+	Base string `json:"base,omitempty"`
+	Home bool   `json:"home,omitempty"`
 	// Interactive marks a launch somebody pressed, as opposed to one that
 	// happened on its own.
 	//
@@ -862,6 +868,15 @@ func (d *Daemon) repeatLaunch(taskID string) *store.Task {
 }
 
 func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
+	var made store.CardHome
+	t, err := d.launchCore(req, &made)
+	if err != nil && made.Path != "" {
+		d.reclaimHome(nil, made, true)
+	}
+	return t, err
+}
+
+func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
 		return nil, fmt.Errorf("unknown harness %q", req.Harness)
@@ -924,8 +939,28 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	}
 
 	cwd := strings.TrimSpace(req.Cwd)
+	if err := homeLaunchRefusal(req, cwd); err != nil {
+		return nil, err
+	}
+	var home *store.CardHome
+	var homeDir homeDirs
+	if kind := homeRequest(req, cwd, task != nil); kind != "" {
+		row, dd, err := d.launchHome(kind, &req)
+		switch {
+		case err == nil:
+			home, homeDir, cwd, *made = &row, dd, dd.Work, row
+		case kind == store.CardHomeThrowaway && errors.Is(err, cardroot.ErrNone):
+		default:
+			return nil, err
+		}
+	} else if task != nil {
+		if row, ok := d.homeOf(task.ID); ok {
+			homeDir = dirsOf(row.Path)
+			home = &row
+		}
+	}
 	// Create a temporary directory only for a throwaway without a supplied
-	// directory or existing card.
+	// directory or existing card, and with no home to hold it.
 	throwaway := req.Throwaway && cwd == "" && task == nil
 	if throwaway {
 		tmp, err := makeThrowawayDir()
@@ -934,6 +969,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 		cwd = tmp
 	}
+	throwaway = req.Throwaway && task == nil && (throwaway || (home != nil && home.Kind == store.CardHomeThrowaway))
 	if cwd == "" && task != nil {
 		cwd = task.Worktree
 	}
@@ -950,7 +986,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
 	launchBranch := ""
-	if task == nil && req.Resume == "" && !throwaway && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
+	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
 		branch, why := agentCheckoutBranch(cwd)
 		launchBranch = branch
 		if why != "" {
@@ -1018,20 +1054,25 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		d.scopeHubRemote(cwd)
 	}
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
-		p, err := writeBriefFile(cwd, brief, !outside)
+		briefDir, briefName := cwd, briefFileName
+		if home != nil {
+			briefDir = homeDir.Dir
+			briefName = filepath.ToSlash(filepath.Join(homeDir.Dir, briefFileName))
+		}
+		p, err := writeBriefFile(briefDir, brief, !outside)
 		if err != nil {
 			return nil, err
 		}
 		briefPath = filepath.ToSlash(p)
 		if hasTag(req.Tags, InterviewTag) {
-			wanted = briefPromptEnding(briefFileName, wanted, "")
+			wanted = briefPromptEnding(briefName, wanted, "")
 		} else {
 			if req.Item || hasTag(req.Tags, ItemTag) {
-				wanted = ItemBriefPrompt(briefFileName, wanted)
+				wanted = ItemBriefPrompt(briefName, wanted)
 			} else if isResident(req.Tags) {
-				wanted = briefPromptEnding(briefFileName, wanted, ResidentEndingLine)
+				wanted = briefPromptEnding(briefName, wanted, ResidentEndingLine)
 			} else {
-				wanted = briefPrompt(wanted)
+				wanted = BriefPrompt(briefName, wanted)
 			}
 			if !outside && !req.Item && !hasTag(req.Tags, ItemTag) {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
@@ -1237,6 +1278,12 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		task.Worktree = filepath.ToSlash(cwd)
 	}
 
+	if home != nil && made.Path != "" {
+		if err := d.st.CardHomeCard(home.Path, task.ID); err != nil {
+			return nil, err
+		}
+	}
+
 	// Mark the card before spawning so even an immediate exit cleans up its
 	// temporary directory. Use the default cleanup note unless the operator
 	// supplied their own reason for the session.
@@ -1283,6 +1330,12 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"ATRIUM_RUNNER": h.ID,
 	}
 	d.tellWhereIAm(atrium)
+	// A HOME'S TEMP FOLDER, over the harness and the machine, so nothing the runner starts writes outside it.
+	if home != nil {
+		for k, v := range homeEnv(homeDir) {
+			atrium[k] = v
+		}
+	}
 	// THE CARD'S GIT TOKEN for the room's hub forwarder, scoped to the forwarder's URL. Nothing for a card that runs
 	// outside code. See hubGitEnv.
 	d.hubGitEnv(task.ID, isOutsideCode(req, task), overEnv(h.Env, addedEnv), atrium)
@@ -1896,7 +1949,11 @@ func briefPromptEnding(file, prompt, ending string) string {
 	if body != "" && !onlyReadTheBrief(body, file) {
 		then = "Then: " + body
 	}
-	out := "Read " + file + " in this directory first. It holds everything you are expected to know. " +
+	where := " in this directory first."
+	if filepath.IsAbs(filepath.FromSlash(file)) {
+		where = " first."
+	}
+	out := "Read " + file + where + " It holds everything you are expected to know. " +
 		"Re-read it whenever you lose the thread rather than guessing.\n" + then
 	if ending != "" {
 		out += "\n\n" + ending

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -1594,7 +1595,11 @@ func (c *controlMCP) reserveSlot(room string, live, limit int) (id string, ok bo
 }
 
 type launchInput struct {
-	Cwd    string `json:"cwd" jsonschema:"the directory to run in. it has to exist already"`
+	Cwd    string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and name repo (or home) so atrium makes the card's own folder under the room's card root. not together with repo"`
+	Repo   string `json:"repo,omitempty" jsonschema:"the repository to work in, as host/owner/repo (cloned from the hub when the room has no clone yet) or an absolute path to a clone on the room. atrium makes the card's home under its card root and adds a git worktree there as the card's directory. use this instead of making a worktree yourself. not together with cwd"`
+	Branch string `json:"branch,omitempty" jsonschema:"the branch for the worktree that repo makes. made from base when it does not exist. default claude/<title>"`
+	Base   string `json:"base,omitempty" jsonschema:"where a new branch starts. default the clone's claude/main, else its default branch"`
+	Home   bool   `json:"home,omitempty" jsonschema:"true asks for a home with no repo: an empty folder under the room's card root for scratch work. the card is kept open"`
 	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
 	Why    string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
 	Prompt string `json:"prompt,omitempty" jsonschema:"the first instruction it gets"`
@@ -1786,8 +1791,12 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	*mcp.CallToolResult, launchOutput, error) {
 
 	out := launchOutput{}
-	if strings.TrimSpace(in.Cwd) == "" {
-		return nil, out, &refusedError{"say where to run it. atrium does not create the directory"}
+	if strings.TrimSpace(in.Cwd) == "" && strings.TrimSpace(in.Repo) == "" && !in.Home {
+		return nil, out, &refusedError{"say where to run it: cwd for a directory you made, or repo (with branch) so atrium " +
+			"makes the card's own folder, or home for an empty one"}
+	}
+	if strings.TrimSpace(in.Cwd) != "" && strings.TrimSpace(in.Repo) != "" {
+		return nil, out, &refusedError{"pass cwd for a directory you made, or repo for one atrium makes, not both"}
 	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
@@ -1952,6 +1961,18 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if in.Isolated {
 		reqBody["item"] = true
 	}
+	if in.Repo != "" {
+		reqBody["repo"] = strings.TrimSpace(in.Repo)
+	}
+	if in.Branch != "" {
+		reqBody["branch"] = strings.TrimSpace(in.Branch)
+	}
+	if in.Base != "" {
+		reqBody["base"] = strings.TrimSpace(in.Base)
+	}
+	if in.Home {
+		reqBody["home"] = true
+	}
 	if in.Superlean {
 		reqBody["superlean"] = true
 	}
@@ -1965,6 +1986,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// that has the card filed under it answers with that card and starts nothing. A room older than the key ignores
 	// it, and the snapshot below is what recovers.
 	keyDir := in.Cwd
+	if keyDir == "" {
+		keyDir = in.Repo + "|" + in.Branch + "|" + in.Title
+	}
 	if in.Task != nil {
 		keyDir = in.Task.dir()
 		reqBody["task"] = in.Task
@@ -1975,7 +1999,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// THE CARDS BEFORE THE POST, so a card that was not there is the launch's. Unreadable means no recovery
 	// is possible: nothing can be told apart from what was already running.
 	before, canTell := c.listCards(ctx, room)
-	canTell = canTell && in.Task == nil
+	canTell = canTell && in.Task == nil && strings.TrimSpace(in.Cwd) != ""
 	known := IDSet(launchRows(before))
 	// A launch waits on the room trusting the worktree and starting the runner, which is longer
 	// than the 8 s every other call here is bounded by.
@@ -2022,7 +2046,11 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if brief != "" {
 		// The room wrote it; name it back in the same slash form the rest of
 		// atrium carries, so the caller can add to the file it already reads.
-		out.Brief = strings.TrimRight(strings.ReplaceAll(in.Cwd, "\\", "/"), "/") + "/" + "BRIEF.md"
+		dir := in.Cwd
+		if strings.TrimSpace(dir) == "" {
+			dir = path.Dir(strings.TrimRight(strings.ReplaceAll(t.Worktree, "\\", "/"), "/"))
+		}
+		out.Brief = strings.TrimRight(strings.ReplaceAll(dir, "\\", "/"), "/") + "/" + "BRIEF.md"
 	}
 	// Where the human looks. Worth returning rather than leaving them to assemble
 	// it, because the fragment form is not guessable.

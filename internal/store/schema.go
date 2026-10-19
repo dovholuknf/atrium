@@ -2399,6 +2399,22 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS card_home_task ON card_home (backlog_id, task_id)`,
 		},
 	},
+	{
+		// CARD HOMES, C1: the ledger gains the clone, branch and start a worktree home was made from, the last size walk,
+		// and when the folder was removed. See docs/runtime/card-home-design.md section 2.
+		name: "0109_card_home_c1",
+		stmts: []string{
+			`ALTER TABLE card_home ADD COLUMN id TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE card_home ADD COLUMN clone TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE card_home ADD COLUMN branch TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE card_home ADD COLUMN base TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE card_home ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE card_home ADD COLUMN files INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE card_home ADD COLUMN measured_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE card_home ADD COLUMN removed_at TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS card_home_card ON card_home (card)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -87,7 +88,9 @@ func globalAutoView(s *Server) map[string]any {
 		// Where atrium_git_clone makes clones, and the credential helper it may use for a
 		// private repository. Empty is a value: no scm folder means the tool refuses and
 		// says how to set it, and no helper means public repositories only.
-		gitsync.SettingSCMRoot:          "git_scm_root",
+		gitsync.SettingSCMRoot: "git_scm_root",
+		// Where every launched card's home goes. Read as stored: empty means the default, which is derived and never written.
+		cardroot.Setting:                "card_root",
 		gitsync.SettingCredentialHelper: "git_credential_helper",
 		gitsync.SettingCredentialHosts:  "git_credential_hosts",
 		// A second address file, for callers running as another account.
@@ -287,6 +290,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The scm folder, `<scm_root>/<host>/<owner>/<repo>`, and the credential helper
 		// for atrium's clones. Pointers, because clearing one is a request.
 		GitSCMRoot          *string `json:"git_scm_root"`
+		CardRoot            *string `json:"card_root"`
 		GitCredentialHelper *string `json:"git_credential_helper"`
 		GitCredentialHosts  *string `json:"git_credential_hosts"`
 		// Where to publish the address for other accounts, and clearing it
@@ -609,6 +613,23 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(gitsync.SettingSCMRoot, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.CardRoot != nil {
+		v := strings.TrimSpace(*body.CardRoot)
+		if v != "" {
+			scm, _ := s.st.Setting(gitsync.SettingSCMRoot)
+			if body.GitSCMRoot != nil {
+				scm = strings.TrimSpace(*body.GitSCMRoot)
+			}
+			if _, err := cardroot.Check(v, cardroot.StateDir(), gitsync.EffectiveSCMRoot(scm)); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if err := s.st.SetSetting(cardroot.Setting, v); err != nil {
 			s.fail(w, err)
 			return
 		}
