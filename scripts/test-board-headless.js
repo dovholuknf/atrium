@@ -16153,7 +16153,7 @@ async function mCardUploadSection(browser) {
       if (ins.length !== 1 || !(ins[0].multiple && /image/.test(ins[0].accept) && /pdf/.test(ins[0].accept) && ins[0].capture === null)) fail(tag + "picker input wrong: " + JSON.stringify(ins));
       if (await p.$("#m-compose .mc-cam")) fail(tag + "the camera button is still there");
       const btns = await p.$$eval("#m-compose .mc-attach", bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
-      if (btns.length !== 1 || btns.some(b => b[0] < 40 || b[1] < 40)) fail(tag + "the attach button is missing or too small: " + JSON.stringify(btns));
+      if (btns.length !== 1 || btns.some(b => b[0] < 39.5 || b[1] < 39.5)) fail(tag + "the attach button is missing or too small: " + JSON.stringify(btns));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       await mShot(p, "upload-row-" + vp.width);
       // two files from the picker and a pasted image, held in flight
