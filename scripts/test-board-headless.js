@@ -25726,6 +25726,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("boardUsage", bu("boardUsage"));
+    await unit("pullsPasteOpening", bu("pullsPasteOpening"));
     await unit("pulls", bu("pulls"));
     await unit("pullsPanelStage", bu("pullsPanelStage"));
     await unit("pullsPage", bu("pullsPage"));

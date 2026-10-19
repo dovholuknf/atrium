@@ -1,6 +1,6 @@
 // pulls: pull requests: the page, the drawer, the panel, moving one.
 //
-// Units: pulls, pullsPanelStage, pullsPage, pullsAbsent, pullsDrawer, prMove.
+// Units: pullsPasteOpening, pulls,pullsPanelStage, pullsPage, pullsAbsent, pullsDrawer, prMove.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/pulls.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -283,8 +283,9 @@ async function pullsSection(browser, base) {
     await p.waitForFunction(() => /already/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a 200 existing answer was not said"));
     await pullPaste(p, "https://nowhere.example/x");
-    await p.waitForFunction(() => /no recogniser matches this/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
+    await p.waitForFunction(() => /no recogniser matches this/.test((document.querySelector(".card.linkopen.failed") || {}).textContent || ""), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: the 422 word was not shown"));
+    await p.evaluate(() => [...linkOpenings.keys()].forEach(linkOpeningEnd));
     // an issue opens a card and no row: the note says so and the card is attached
     await p.evaluate(() => { window.__attached = []; const was = attachTask; attachTask = id => { window.__attached.push(id); return was(id); }; });
     await pullPaste(p, "https://github.com/openziti/r/issues/7");
@@ -294,8 +295,9 @@ async function pullsSection(browser, base) {
     // halted
     st.halted = true;
     await pullPaste(p, "https://github.com/openziti/r/pull/5");
-    await p.waitForFunction(() => /halted/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
+    await p.waitForFunction(() => /halted/.test((document.querySelector(".card.linkopen.failed") || {}).textContent || ""), null, { timeout: slow(5000) })
       .catch(() => fail("pulls: a halted 503 did not show the halted word"));
+    await p.evaluate(() => [...linkOpenings.keys()].forEach(linkOpeningEnd));
     st.halted = false;
     // the walk button on a ready row (pr_b is ready now) starts a walker. The drawer itself is pullsDrawer's
     await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="walk"]');
@@ -1051,7 +1053,73 @@ async function pullsDrawerSection(browser, base) {
   if (!bad) console.log("pullsDrawer ok");
 }
 
+async function pullsPasteOpeningSection(browser, base) {
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const shots = process.env.PASTE_SHOTS || "", tag = process.env.PASTE_TAG || "after";
+  const shot = (p, name) => shots ? p.screenshot({ path: path.join(shots, name + "-" + tag + ".png") }) : null;
+  const rowOf = {
+    id: "pr_z", url: "https://github.com/openziti/x/pull/1", host: "github.com", org: "openziti", repo: "x", org_repo: "openziti/x",
+    number: 1, title: "an existing review", why: "", head: "", head7: "abc1234", state: "ready", run_state: "", run_error: "",
+    cost_usd: 0, started_at: "", ready_at: "2026-10-01T09:20:00Z", created_at: "2026-10-01T09:00:00Z", archived_at: "", run_dir: "",
+    second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 0, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 0 }, walker_task: ""
+  };
+  const opens = [];
+  let release = null;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.route(/\/v1\/prs(\/|\?|$)/, route => json(route, 200, { prs: [rowOf], counts: {}, nav_count: 0 }));
+  await ctx.route(/\/v1\/open$/, async route => {
+    opens.push(JSON.parse(route.request().postData() || "{}"));
+    await new Promise(r => { release = r; });
+    return json(route, 422, { error: "could not fetch the head of pull request 972", code: "failed" });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) });
+    await p.evaluate(() => switchView("pulls"));
+    await p.waitForSelector("#pulls-paste", { timeout: slow(10000) });
+    await p.click("#pulls-paste");
+    await p.fill("#pulls-pop-url", "https://github.com/openziti/x/pull/972");
+    await shot(p, "popover");
+    await p.click("#pulls-pop-go");
+    await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
+      .catch(() => fail("pullsPasteOpening: the popover paste drew no card"));
+    if (!(await p.isHidden("#pulls-pop"))) fail("pullsPasteOpening: the popover stayed open while the open was in flight");
+    for (let i = 0; i < 50 && !opens.length; i++) await p.waitForTimeout(50);
+    if (!opens.length || !/^op-/.test(opens[0].progress || "") || opens[0].url !== "https://github.com/openziti/x/pull/972")
+      fail("pullsPasteOpening: /v1/open was sent " + JSON.stringify(opens));
+    if (await p.evaluate(() => [...linkOpenings.keys()][0]) !== opens[0].progress) fail("pullsPasteOpening: the card is not keyed by the progress id");
+    await p.evaluate(() => {
+      const o = [...linkOpenings.values()][0];
+      linkOpeningStep([...linkOpenings.keys()][0], "fetching the head of pull request 972");
+      o.since = Date.now() - 14000;
+      linkOpeningPaint();
+    });
+    const line = () => p.evaluate(() => (document.querySelector(".card.linkopen .linkopen-say") || {}).textContent || "");
+    if (!/fetching the head of pull request 972… 1[4-6]s$/.test(await line())) fail("pullsPasteOpening: the step line is " + JSON.stringify(await line()));
+    await shot(p, "slow-step");
+    const before = await line();
+    await p.waitForFunction(b => (document.querySelector(".card.linkopen .linkopen-say") || {}).textContent !== b, before, { timeout: slow(4000) })
+      .catch(() => fail("pullsPasteOpening: the elapsed seconds were not repainted"));
+    await p.evaluate(() => linkOpeningStep([...linkOpenings.keys()][0], "making the worktree"));
+    if (/\ds$/.test(await line())) fail("pullsPasteOpening: a new step kept the old step's seconds: " + await line());
+    release();
+    await p.waitForSelector(".card.linkopen.failed", { timeout: slow(5000) })
+      .catch(() => fail("pullsPasteOpening: a failed open did not stay as a card"));
+    if (!/could not fetch the head/.test(await p.textContent(".card.linkopen.failed"))) fail("pullsPasteOpening: the failure had no reason");
+    await p.evaluate(() => [...linkOpenings.keys()].forEach(linkOpeningEnd));
+    if (await p.evaluate(() => linkOpeningTimer)) fail("pullsPasteOpening: the timer kept running with no opening in flight");
+  } finally { await ctx.close(); }
+  if (errors.length) fail("pullsPasteOpening: page errors: " + errors.join(" | "));
+  if (!bad) console.log("pullsPasteOpening ok");
+}
+
 const units = [
+  { name: "pullsPasteOpening", run: ({ browser, base }) => pullsPasteOpeningSection(browser, base) },
   { name: "pulls", run: ({ browser, base }) => pullsSection(browser, base) },
   { name: "pullsPanelStage", run: ({ browser, base }) => pullsPanelStageSection(browser, base) },
   { name: "pullsPage", run: ({ browser, base }) => pullsPageSection(browser, base) },
@@ -1059,7 +1127,7 @@ const units = [
   { name: "pullsDrawer", run: ({ browser, base }) => pullsDrawerSection(browser, base) },
   { name: "prMove", run: ({ browser, base }) => prMoveSection(browser, base) },
 ];
-const sections = { pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
+const sections = { pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

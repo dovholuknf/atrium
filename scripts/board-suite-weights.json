@@ -193,6 +193,7 @@
   "pulls": 16009,
   "pullsAbsent": 1152,
   "pullsPage": 4000,
+  "pullsPasteOpening": 3000,
   "pullsDrawer": 6709,
   "pullsPanelStage": 614,
   "questionsClick": 16999,

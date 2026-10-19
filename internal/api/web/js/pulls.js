@@ -487,21 +487,25 @@ async function pullsPaste() {
   if (!u) { pullsSay("paste the URL of a pull request"); return; }
   // ONE CALL: the worktree, the review row and its card, on whichever room the hub picks (js/fixtures.js has the
   // launch dialog's door to the same verb). The row arrives on the event stream, and the card is attached.
+  const whyText = why ? why.value.trim() : "";
+  if (url) url.value = "";
+  if (why) why.value = "";
+  pullsPopToggle(false);
+  const id = linkOpeningId();
+  linkOpeningBegin(id, u);
   let out;
   try {
-    out = await pullsPost("/v1/open", { url: u, why: why ? why.value.trim() : "" });
+    out = await pullsPost("/v1/open", { progress: id, url: u, why: whyText });
   } catch (e) {
-    pullsSay(pullsErr(e));
+    linkOpeningFail(id, pullsErr(e));
     return;
   }
+  linkOpeningEnd(id);
   // A link that is not a pull request opens a card and no row, so the board would show nothing changed here.
   const pr = !out || !!out.pr;
   pullsSay(out && out.created === false
     ? "that " + (pr ? "PR" : "link") + " already has its card, so that one is attached"
     : pr ? "" :"opened " + (out.title || out.key) + " as a card. it is not a pull request, so it has no row here");
-  if (url) url.value = "";
-  if (why) why.value = "";
-  pullsPopToggle(false);
   loadPulls();
   if (out && out.card) await attachTask(out.card);
 }

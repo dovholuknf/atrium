@@ -330,10 +330,12 @@ func credentialHelper(kind, cmd string) string {
 // are reset, then the forge CLI's own is the only one asked. It answers from the CLI's login, so no token is read,
 // stored or put in the argv.
 func fetchArgs(spec forge.FetchSpec, dst, helper string) []string {
-	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}
+	noGC := []string{"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	args := append([]string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}, noGC...)
 	if spec.Hub != "" {
 		// The hub's store, through a loopback on this machine, which speaks http. No helper: it needs no credential.
-		args, helper = []string{"-c", "protocol.allow=never", "-c", "protocol.http.allow=always"}, ""
+		args = append([]string{"-c", "protocol.allow=never", "-c", "protocol.http.allow=always"}, noGC...)
+		helper = ""
 	}
 	if helper != "" {
 		args = append(args, "-c", "credential.helper=", "-c", "credential.helper="+helper)
@@ -352,6 +354,7 @@ func fetchPRHead(ctx context.Context, dir string, spec forge.FetchSpec, dst, hel
 		allow = "http"
 	}
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL="+allow)
+	cmd.WaitDelay = 5 * time.Second
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return errors.New(strings.TrimSpace(tailLines(string(out))))
 	}

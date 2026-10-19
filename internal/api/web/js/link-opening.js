@@ -19,9 +19,31 @@ function linkOpeningId() {
 
 // A card for url. `name` is what the link was read as when that is known yet.
 function linkOpeningBegin(id, url, name) {
-  linkOpenings.set(id, { url, name: name || "", step: "opening the link", error: "" });
+  linkOpenings.set(id, { url, name: name || "", step: "opening the link", since: Date.now(), error: "" });
   linkOpeningPaint();
+  linkOpeningTick();
   return id;
+}
+
+// A step that runs long says for how long, so a slow one reads as working and not as stuck. The timer runs only while
+// an opening is in flight.
+let linkOpeningTimer = 0;
+
+function linkOpeningElapsed(o) {
+  const s = Math.floor((Date.now() - o.since) / 1000);
+  return s > 3 ? " " + s + "s" : "";
+}
+
+function linkOpeningTick() {
+  if (!linkOpenings.size) {
+    clearInterval(linkOpeningTimer);
+    linkOpeningTimer = 0;
+    return;
+  }
+  if (!linkOpeningTimer) linkOpeningTimer = setInterval(() => {
+    if (!linkOpenings.size) { linkOpeningTick(); return; }
+    linkOpeningPaint();
+  }, 1000);
 }
 
 function linkOpeningName(id, name) {
@@ -34,6 +56,7 @@ function linkOpeningName(id, name) {
 function linkOpeningStep(id, step) {
   const o = linkOpenings.get(id);
   if (!o || o.error || !step) return;
+  if (o.step !== step) o.since = Date.now();
   o.step = step;
   linkOpeningPaint();
 }
@@ -59,6 +82,7 @@ function linkOpeningFail(id, why, heldCard) {
 function linkOpeningEnd(id) {
   if (!linkOpenings.delete(id)) return;
   linkOpeningPaint();
+  linkOpeningTick();
 }
 
 function linkOpeningHTML(id, o) {
@@ -77,7 +101,7 @@ function linkOpeningHTML(id, o) {
          <button type="button" data-op-act="again">again</button>
          <button type="button" data-op-act="dismiss">dismiss</button>
        </div>`
-    : `<div class="linkopen-say"><span class="linkopen-spin" aria-hidden="true"></span>${esc(o.step)}…</div>`;
+    : `<div class="linkopen-say"><span class="linkopen-spin" aria-hidden="true"></span>${esc(o.step)}…${linkOpeningElapsed(o)}</div>`;
   return `<div class="card linkopen${o.error ? " failed" : ""}" data-linkopen="${esc(id)}" role="status">
     <div class="card-line"><div class="title">${esc(name)}</div></div>
     ${o.name ? `<div class="linkopen-url">${esc(o.url)}</div>` : ""}
