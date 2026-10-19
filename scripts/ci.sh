@@ -392,6 +392,8 @@ if step go-build "go build"; then
   check "go build" go build -o build.claude/ ./...
   # No test assigns a package variable: a hook, delay, limit or clock belongs on the struct that uses it.
   check "test globals" go run scripts/check-test-globals.go
+  # No test gains a flat wait: spin on a condition, or mark the line `// wait: <why>`.
+  check "test waits" go run scripts/check-test-waits.go
 fi
 
 if step go-test "go test"; then
