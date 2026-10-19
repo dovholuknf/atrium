@@ -270,6 +270,7 @@ async function fakeTick(p, ms, step = 250) {
 
 // `n` requestAnimationFrame turns of the page, so a style recalc or a layout has run.
 const frames = (p, n = 2) => p.evaluate(k => new Promise(r => { const go = i => (i <= 0 ? r() : requestAnimationFrame(() => go(i - 1))); go(k); }), n);
+const afterFrames = frames;
 
 // A condition spun on from Node in short real steps under one deadline, throwing `what` when it never holds. A page on
 // the fake clock uses fakeWait instead.
@@ -354,4 +355,4 @@ if (!exePath || !require("fs").existsSync(exePath)) {
   process.exit(0);
 }
 
-module.exports = { DEFAULT_WAIT, NAV_WAIT, slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
+module.exports = { DEFAULT_WAIT, NAV_WAIT, slow, fakeWait, fakeTick, fakePause, fakeRun, frames, afterFrames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium };
