@@ -245,18 +245,20 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" || true
 
-  # Tells the hub when this run failed, and only then. It needs every other job, so it starts when they are done, and
-  # `failure()` keeps a green run silent. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` builds the body from this
-  # run's own context, and the ziti-hook action only carries it to the hub over ziti.
+  # Tells the hub when this run finished, green or red, for now. It needs every other job, so it starts when they are
+  # done. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks the conclusion from the jobs' results and builds the
+  # body from this run's own context, and the ziti-hook action only carries it to the hub over ziti.
   notify:
     needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
-    if: failure()
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - id: body
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          path=$(bash scripts/ci-notify.sh)
+          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS")
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         with:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tell the hub a CI run failed. The script decides what is sent, and the workflow only carries it.
 #
-#   ci-notify.sh [EVENT_FILE] [--conclusion C] [--out FILE] [--url URL] [--secret S] [--local]
+#   ci-notify.sh [EVENT_FILE] [--conclusion C | --needs "RESULTS"] [--out FILE] [--url URL] [--secret S] [--local]
 #
 # With no EVENT_FILE the body is built from this run's own context: GITHUB_REPOSITORY, GITHUB_RUN_ID,
 # GITHUB_RUN_ATTEMPT, GITHUB_WORKFLOW, GITHUB_WORKFLOW_REF, GITHUB_HEAD_REF or GITHUB_REF_NAME, GITHUB_SHA (a pull
@@ -10,6 +10,8 @@
 # failure, timed_out, cancelled, success or action_required, default failure. Run by hand outside GitHub, every field
 # the run would give falls back to the repo's git state, a fresh run id and dovholuknf/atrium.
 # With EVENT_FILE (a workflow_run event JSON) the body is that event as is, which replays a recorded run. Anything
+# --needs takes the space-separated results of the jobs the run waited on and picks the conclusion: failure if any
+# failed or was skipped, cancelled if any was cancelled, else success. A skipped job means a gate stopped the run.
 # else exits 3 and writes nothing.
 # The body is written to --out (default build.claude/ci-notify-body.json) and that path is printed. With no --url
 # that is all it does, and the ziti-hook step carries the body. With --url it POSTs the body with the secret in
@@ -23,6 +25,9 @@ event=""; conclusion="failure"; out="${CI_NOTIFY_OUT:-build.claude/ci-notify-bod
 while [ $# -gt 0 ]; do
   case "$1" in
     --conclusion) [ $# -ge 2 ] || { echo "--conclusion needs a value" >&2; exit 2; }; conclusion="$2"; shift 2 ;;
+    --needs) [ $# -ge 2 ] || { echo "--needs needs the job results" >&2; exit 2; }
+      case " $2 " in *" failure "*) conclusion=failure ;; *" cancelled "*) conclusion=cancelled ;;
+        *" skipped "*) conclusion=failure ;; *) conclusion=success ;; esac; shift 2 ;;
     --out) [ $# -ge 2 ] || { echo "--out needs a file" >&2; exit 2; }; out="$2"; shift 2 ;;
     --url) [ $# -ge 2 ] || { echo "--url needs an address" >&2; exit 2; }; url="$2"; shift 2 ;;
     --secret) [ $# -ge 2 ] || { echo "--secret needs a value" >&2; exit 2; }; secret="$2"; shift 2 ;;
