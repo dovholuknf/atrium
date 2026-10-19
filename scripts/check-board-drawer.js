@@ -581,7 +581,19 @@ async function touch(browser, tabName) {
   check(ob === "none", `${tag} 8: overscroll-behavior is off on the line (${ob})`);
   // A tap on the search box only types. Sent as the same touch pair the drags use: mixing `touchscreen.tap` into a session
   // that has just run raw CDP gestures can lose the tap, which says nothing about the app.
-  const q = (await state(page)).q;
+  const settledClosed = async () => {
+    const t0 = Date.now();
+    for (;;) {
+      const k = await page.evaluate(() => {
+        const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
+        return !!h && !h.classList.contains("open") && !h.classList.contains("fdragging") && h.getAnimations({ subtree: true }).length === 0;
+      });
+      if (k || Date.now() - t0 >= 3000) return k;
+      await sleep(10);
+    }
+  };
+  await settledClosed();
+  const q = await still(async () => (await state(page)).q);
   const qx = q.x + q.w / 2, qy = q.y + q.h / 2;
   await send("touchStart", qx, qy);
   await sleep(40);
