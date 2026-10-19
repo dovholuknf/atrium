@@ -3519,6 +3519,7 @@ async function termDebugSection(browser, base) {
     if (asked) fail("a hidden tab still asked for the gate " + asked + "x.");
 
     // A second window of the same browser follows a switch with no reload.
+    await p.evaluate(() => { localStorage.removeItem("atrium.view"); localStorage.removeItem("atrium.term"); });
     const q = await ctx.newPage();
     q.on("pageerror", e => errors.push(String(e)));
     await q.goto(base, { waitUntil: "domcontentloaded" });
