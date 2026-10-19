@@ -100,6 +100,12 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 // on exactly it, because the proof was made where the area branch lives. Empty
 // means the proof is made here, against a branch of this repository.
 func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
+	return d.cullProved(taskID, into, tip, false)
+}
+
+// cullProved is CullProved, and with idle the card need not have reported done: the sweep reclaims a landed worker that
+// sat at needs-input. See landed.go.
+func (d *Daemon) cullProved(taskID, into, tip string, idle bool) (*CullResult, error) {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return nil, err
@@ -117,7 +123,11 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	if d.nctx.holding(taskID) {
 		return nil, fmt.Errorf("%s was not culled: %w", t.DisplayTitle(), errCullNewContext)
 	}
-	if why := d.reclaimBlock(t); why != "" {
+	block := d.reclaimBlock
+	if idle {
+		block = d.reclaimBlockIdle
+	}
+	if why := block(t); why != "" {
 		return nil, fmt.Errorf("%s was not culled: %s", t.DisplayTitle(), why)
 	}
 	if strings.TrimSpace(t.Worktree) == "" {
@@ -307,7 +317,7 @@ func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 		if _, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+into); err != nil {
 			return nil, fmt.Errorf("there is no branch %s to check it against", into)
 		}
-		p.merged, err = isAncestor(wt, "refs/heads/"+p.branch, "refs/heads/"+into)
+		p.merged, err = landedInto(wt, p.branch, into)
 		if err != nil {
 			return nil, err
 		}
@@ -444,7 +454,7 @@ func deleteMergedBranch(p *cullPlan, into string) error {
 		head, err = gitIn(p.common, "--git-dir="+p.common, "rev-parse", "--verify", "-q", "refs/heads/"+p.branch)
 		merged = err == nil && head == p.tip
 	} else {
-		merged, err = isAncestor(p.common, "refs/heads/"+p.branch, "refs/heads/"+into)
+		merged, err = landedInto(p.common, p.branch, into)
 	}
 	if err != nil || !merged {
 		return fmt.Errorf("the worktree was removed and branch %s kept, because it no longer "+

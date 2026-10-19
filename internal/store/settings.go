@@ -41,11 +41,11 @@ const (
 	SettingPruneAfter = "prune_after"
 	// SettingMergedCullGrace is how long a worker whose branch merged stays
 	// before the room culls it, in seconds. `off` disables the mark and the
-	// cull, and unset means `off` too: see DefaultMergedCullGrace. See daemon/mergedcull.go.
+	// cull, and unset means a day: see DefaultMergedCullGrace. See daemon/mergedcull.go.
 	SettingMergedCullGrace = "merged_cull_grace"
-	// DefaultMergedCullGrace is what an unset or reset merged_cull_grace means. A worker leaves only when a human, or
-	// an agent on a human's word, exits it, so a merge never culls on its own.
-	DefaultMergedCullGrace = "off"
+	// DefaultMergedCullGrace is what an unset or reset merged_cull_grace means, in seconds: a day. `off` opts a room out. A worker leaves when a human, or
+	// an agent on a human's word, exits it, or when its work landed and it sat idle that long.
+	DefaultMergedCullGrace = "86400"
 	// SettingEscalateHeldAfter is how many minutes a `when: done` message waits for
 	// the turn to end before the next tool call carries it. Empty means fifteen. See
 	// daemon/escalate.go.

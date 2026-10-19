@@ -271,9 +271,7 @@ func TestTheSweepNeverCullsAStayOpenCard(t *testing.T) {
 	}
 }
 
-// A merge alone reclaims nothing: the setting is off until the operator sets a grace, and the launcher's
-// atrium_cull is what says the work is merged and deployed.
-func TestAMergeAloneReclaimsNothingByDefault(t *testing.T) {
+func TestAMergeMarksNothingWithTheGraceOff(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
@@ -282,7 +280,7 @@ func TestAMergeAloneReclaimsNothingByDefault(t *testing.T) {
 	r := newCullRepo(t, true)
 	launcher := peerCard(t, d, "orchestrator")
 	worker := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
-	if err := d.st.SetSetting(SettingMergedCullGrace, ""); err != nil {
+	if err := d.st.SetSetting(SettingMergedCullGrace, "off"); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.st.SetLineage(worker.ID, "orchestrator", launcher.ID); err != nil {

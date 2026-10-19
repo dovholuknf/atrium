@@ -56,7 +56,7 @@ func globalAutoView(s *Server) map[string]any {
 		store.SettingSweepDead:  "sweep_dead_after",
 		store.SettingPruneAfter: "prune_after",
 		// How long a worker whose branch merged stays before it is culled.
-		// Empty is the default, `off`, which is never. See store.DefaultMergedCullGrace.
+		// Empty is the default, a day. See store.DefaultMergedCullGrace.
 		store.SettingMergedCullGrace: "merged_cull_grace",
 		// How many minutes a room deploy hold may last. Empty is sixty.
 		store.SettingDeployHoldMax: "deploy_hold_max",
@@ -460,6 +460,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		store.SettingMergedCullGrace: body.MergedCullGrace,
 	} {
 		if value == nil {
+			continue
+		}
+		if key == store.SettingMergedCullGrace && strings.TrimSpace(*value) == "" {
+			if err := s.st.SetSetting(key, ""); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
 			continue
 		}
 		if err := housekeeping(s, key, *value); err != nil {

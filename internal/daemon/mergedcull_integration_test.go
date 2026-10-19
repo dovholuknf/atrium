@@ -432,8 +432,8 @@ func TestAProvedCullRefusesATipThatIsNotAHexSha(t *testing.T) {
 	}
 }
 
-// With merged_cull_grace never set, a merge marks nothing and a merged worker keeps its worktree and branch.
-func TestAMergedWorkerStaysWithTheDefaultSetting(t *testing.T) {
+// With merged_cull_grace off, a merge marks nothing and a merged worker keeps its worktree and branch.
+func TestAMergedWorkerStaysWithTheGraceOff(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
@@ -442,11 +442,11 @@ func TestAMergedWorkerStaysWithTheDefaultSetting(t *testing.T) {
 	r := newCullRepo(t, true)
 	_, worker := mergedWorker(t, d, r)
 	// cullCard turns the grace on for the tests about it. Put the room back to a new room's state.
-	if err := d.st.SetSetting(SettingMergedCullGrace, ""); err != nil {
+	if err := d.st.SetSetting(SettingMergedCullGrace, "off"); err != nil {
 		t.Fatal(err)
 	}
 	if _, on := d.mergedGrace(); on {
-		t.Fatal("an unset merged_cull_grace reads as on")
+		t.Fatal("merged_cull_grace off reads as on")
 	}
 
 	res := markedMerged(t, d, DefaultCullInto)
