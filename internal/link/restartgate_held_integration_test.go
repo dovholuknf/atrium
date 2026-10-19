@@ -38,6 +38,7 @@ func TestAHeldAskIsPolledThroughAPause(t *testing.T) {
 	}
 	lightSlot(t)
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	clock := stopClock(p.restart)
 	front := httptest.NewServer(p)
 	defer front.Close()
 	events, shut := listen(t, front.URL+"/v1/events/hub")
@@ -61,6 +62,7 @@ func TestAHeldAskIsPolledThroughAPause(t *testing.T) {
 	// Well past the 0.3s wait, one short poll at a time.
 	started := time.Now()
 	for time.Since(started) < time.Second {
+		clock.advance(200 * time.Millisecond)
 		code, out := postGate(t, front.URL, `{"ask":"`+id+`","hold":0.2}`)
 		if code != http.StatusOK || out["answer"] != "waiting" || out["paused"] != true {
 			t.Fatalf("a poll during the pause answered %d %v", code, out)
@@ -72,8 +74,14 @@ func TestAHeldAskIsPolledThroughAPause(t *testing.T) {
 	if _, err := http.Post(front.URL+"/_hub/restart/resume", "application/json", nil); err != nil {
 		t.Fatal(err)
 	}
-	// The countdown is 5s, so this takes a few polls. The bound is only a hang
-	// guard, so a loaded runner has room to spare.
+	// The gate's clock is stopped so a stalled runner cannot run the 0.3s wait out between the resume and the countdown.
+	clock.advance(100 * time.Millisecond)
+	for e := waitEvent(t, events, restartEvent); fields(t, e.Data)["state"] != "countdown"; e = waitEvent(t, events, restartEvent) {
+	}
+	clock.advance(6 * time.Second)
+	if _, err := http.Post(front.URL+"/_hub/restart/input", "application/json", nil); err != nil {
+		t.Fatal(err)
+	}
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		code, out := postGate(t, front.URL, `{"ask":"`+id+`","hold":1}`)
