@@ -417,11 +417,26 @@ func (rc *Receiver) removeCreated(dir string) {
 	for i := 0; i < 20 && os.RemoveAll(dir) != nil; i++ {
 		time.Sleep(50 * time.Millisecond)
 	}
+	owner := filepath.Dir(dir)
+	for _, d := range []string{owner, filepath.Dir(owner)} {
+		for i := 0; i < 20 && !rc.removeIfEmpty(d); i++ {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+}
+
+// removeIfEmpty is true when d is gone or holds something that is meant to stay. A directory that reads empty and
+// still will not go is a child Windows has not finished deleting.
+func (rc *Receiver) removeIfEmpty(d string) bool {
 	gl := rc.h.lock(storeWideLock)
 	gl.Lock()
 	defer gl.Unlock()
-	_ = os.Remove(filepath.Dir(dir))
-	_ = os.Remove(filepath.Dir(filepath.Dir(dir)))
+	err := os.Remove(d)
+	if err == nil || os.IsNotExist(err) {
+		return true
+	}
+	ents, rerr := os.ReadDir(d)
+	return rerr == nil && len(ents) > 0
 }
 
 // isMerger says whether the pusher is the card the hub has recorded as the merger, or its successor on the same room
