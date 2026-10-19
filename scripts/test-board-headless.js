@@ -20999,6 +20999,8 @@ async function gearHostsSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    await p.waitForFunction(() => new Promise(r => requestAnimationFrame(() => r(!!document.getElementById("gear").onclick))),
+      null, { timeout: slow(20000), polling: 10 });
     return { ctx, p, st, errors };
   };
   let h = await open("hub");
