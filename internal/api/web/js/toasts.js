@@ -190,6 +190,15 @@ function placeToasts() {
   host.style.setProperty("--toast-right", Math.min(room, Math.max(8, Math.round(innerWidth - r.right + 12))) + "px");
 }
 addEventListener("resize", placeToasts);
+// The bar settles after the stack is placed (fonts, chips), and nothing else says so.
+if (window.ResizeObserver) {
+  const barWatch = new ResizeObserver(placeToasts);
+  const paneEl = document.getElementById("term-pane");
+  if (paneEl) {
+    barWatch.observe(paneEl);
+    paneEl.querySelectorAll(".term-bar, #t-pasting, #t-find").forEach(el => barWatch.observe(el));
+  }
+}
 
 // Typing in a guarded dialog marks it as holding something not yet saved.
 //
