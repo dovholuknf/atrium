@@ -64,8 +64,10 @@ const byStatus = (...ss) => TASKS.filter(t => ss.includes(t.status) && !(t.tags 
 
 // ── the server ──────────────────────────────────────────────────────────────
 let cardGets = [];
+let seen = [];
 const server = http.createServer((req, res) => {
   const p = new URL(req.url, "http://x").pathname;
+  seen.push(req.method + " " + p);
   const json = o => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
   if (p === "/" || p === "/index.html") { res.writeHead(200, { "Content-Type": "text/html" }); return res.end(HTML); }
   if ((p.startsWith("/vendor/") || p.startsWith("/css/") || p === "/working.gif") && !p.includes("..")) {
@@ -88,7 +90,8 @@ const server = http.createServer((req, res) => {
 });
 
 let failed = 0;
-const check = (ok, what) => { console.log((ok ? "ok   " : "FAIL ") + what); if (!ok) failed++; };
+let onFail = null;   // a step's way to say why, printed under the FAIL line and never starting with it
+const check = (ok, what) => { console.log((ok ? "ok   " : "FAIL ") + what); if (!ok) { failed++; if (onFail) onFail(); } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Reads until `ok` holds or `ms` have passed, and answers the last read: a step waits on the state it asserts.
 const until = async (read, ok, ms = 3000) => {
@@ -388,11 +391,29 @@ async function steps(browser, width, mobile, tabName) {
     }
     if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
     cardGets = [];
+    seen = [];
     await mouse.click(control.x, control.y);
     const opened = await until(
       () => page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask)),
       v => v || cardGets.length > 0);
-    check(cardGets.length > 0 || opened, `${tag} 5: the same click with the drawer shut does open it (fetched: ${cardGets.join(",") || "nothing"})`);
+    const ok = cardGets.length > 0 || opened;
+    const why = ok ? null : await page.evaluate(({ x, y, id }) => {
+      const sel = e => e ? e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + [...e.classList].map(c => "." + c).join("") : "none";
+      const t = [...document.querySelectorAll('[data-id="' + id + '"]')].find(e => e.offsetParent !== null) || null;
+      const b = t && t.getBoundingClientRect(), top = document.elementFromPoint(x, y);
+      const cs = t && getComputedStyle(t);
+      return `click=(${Math.round(x)},${Math.round(y)}) target=${sel(t)} box=${b ? [b.x, b.y, b.width, b.height].map(Math.round).join(",") : "none"}` +
+        ` visibility=${cs ? cs.visibility : "-"} display=${cs ? cs.display : "-"} pointer-events=${cs ? cs.pointerEvents : "-"}` +
+        ` elementFromPoint=${sel(top)} covered=${!!(t && top && !t.contains(top) && !top.contains(t))} viewport=${innerWidth}x${innerHeight}` +
+        ` dialogOpen=${!!document.querySelector("dialog[open]")} termTask=${typeof termTask !== "undefined" ? !!termTask : "n/a"}`;
+    }, control);
+    check(ok, `${tag} 5: the same click with the drawer shut does open it (fetched: ${cardGets.join(",") || "nothing"})`);
+    if (!ok) {
+      console.log("     click target: " + why);
+      console.log("     drawer now: " + JSON.stringify(await state(page)));
+      console.log("     requests since the click: " + (seen.join(", ") || "none"));
+      console.log("     pending timers: the page does not expose them");
+    }
   }
   await ctx.close();
 }
@@ -478,11 +499,26 @@ async function touch(browser, tabName) {
     }, { capture: true, passive: true }));
   });
   const received = () => page.evaluate(() => ({ n: window.__touches, last: window.__last }));
+  // The drag's `d` is private to filter-drawer.js, so `on` and `y1` come from the class and grid row it writes.
+  const drawerNow = () => page.evaluate(() => {
+    const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
+    if (!h) return "no drawer";
+    const panel = h.querySelector(".fpanel"), wrap = h.querySelector(".fwrap");
+    return `open=${h.classList.contains("open")} on=${h.classList.contains("fdragging")}` +
+      ` drawn=${getComputedStyle(panel).visibility === "visible" && panel.offsetHeight > 0}` +
+      ` y1=${wrap.style.gridTemplateRows || panel.style.transform || "-"} h=${Math.round(panel.scrollHeight)}/${panel.offsetHeight}`;
+  });
+  const trace = [];
+  let began = 0;
+  onFail = () => { console.log("     touch log of the last gesture (sent | received | drawer after):"); trace.forEach(l => console.log(l)); };
   const send = async (type, x, y) => {
     const want = type.toLowerCase() + ":" + (type === "touchEnd" ? null : Math.round(y));
     const { n } = await received();
+    if (type === "touchStart") { began = Date.now(); trace.length = 0; }
+    const sent = `${type} x=${x === undefined ? "-" : Math.round(x)} y=${y === undefined ? "-" : Math.round(y)} +${Date.now() - began}ms`;
     await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
-    await until(received, v => v.n > n && v.last === want);
+    const got = await until(received, v => v.n > n && v.last === want);
+    trace.push(`     ${sent} | page n=${got.n} last=${got.last} +${Date.now() - began}ms | ${await drawerNow()}`);
   };
   const quiet = () => until(
     () => page.evaluate(() => {
@@ -543,6 +579,7 @@ async function touch(browser, tabName) {
   await sleep(300);
   s = await state(page);
   check(s && s.activeIsQ && !s.open, `${tag} 8: a tap on the search box focuses it and does not open the drawer`);
+  onFail = null;
   await ctx.close();
 }
 
