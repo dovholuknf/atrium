@@ -35,7 +35,7 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 	state, copies := t.TempDir(), t.TempDir()
 	since := time.Now()
 	p, err := Start(state, StartOptions{Exe: exe, CopyDir: copies,
-		Args: []string{"__host", state, "3s"}})
+		Args: []string{"__host", state, "500ms"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 	}
 	t.Logf("dialed after %s", time.Since(since))
 	defer c.Close()
-	pr, err := c.Probe()
+	pr, err := c.Hello("test-client", false)
 	if err != nil {
 		t.Fatal(err)
 	}
