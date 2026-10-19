@@ -1187,7 +1187,12 @@ async function coverPollSection(browser, base) {
     mock.gateRestartMode = "";
     await gp.clock.install();
     await cover();
-    await gp.clock.runFor(12000);
+    for (let t = 0; t < 12000; t += 1000) {
+      await gp.clock.runFor(1000);
+      for (const end = Date.now() + 15000; await gp.evaluate(() => hubChecking) && Date.now() < end;) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
     if (!(await coverUp())) fail("an abandoned gate's cover came down before the window ran out.");
     if (await gp.evaluate(() => document.getElementById("hubrestart").classList.contains("stalled"))) {
       fail("the cover said something was wrong while the hub kept answering.");
@@ -5360,7 +5365,10 @@ async function termProbeStormSection(browser, base) {
     await termWrite(p, feed);
     await p.waitForFunction(() => term._core._renderService.dimensions.css.cell.width > 0 && term.rows > 0, null, { timeout: slow(10000) });
     await frames(p, 2);
-    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const box = await p.evaluate(() => {
+      const r = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      return { x: r.x, y: r.y };
+    });
     const cell = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
       return { w: d.width, h: d.height, rows: term.rows };
