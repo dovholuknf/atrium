@@ -320,16 +320,107 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 	}
 	have, _ := run.Git(ctx, bare, "rev-parse", "--verify", "-q", "refs/heads/"+r.Branch+"^{commit}")
 	have = strings.TrimSpace(have)
-	if have == want {
-		return mirrored{sha: want}, nil
+	mark := func(sha string) {
+		_, _ = run.Git(ctx, bare, "update-ref", mirroredRef, sha)
 	}
-	if _, err := run.Git(ctx, bare, "-c", "safe.directory="+ck, "fetch", "-q", "--no-tags", "--no-write-fetch-head",
-		ck, "+refs/heads/"+r.Branch+":refs/heads/"+r.Branch); err != nil {
+	stuck := func(err error) (mirrored, error) {
+		h.auditFailure("", "git-mirror-stuck", "mirror-stuck:"+r.Name, err)
 		return mirrored{sha: have}, err
 	}
+	if have == want {
+		mark(want)
+		h.auditFailure("", "git-mirror-stuck", "mirror-stuck:"+r.Name, nil)
+		return mirrored{sha: want}, nil
+	}
+	// A TIP THE HUB TOOK BY A PUSH IS NEVER MOVED BACKWARDS. It is the tip that is not the one this pass last mirrored.
+	// The checkout follows it, and until it has, or when it has diverged, nothing is mirrored from it and nothing in it
+	// is touched. A tip this pass set itself is the checkout's to rewrite, as a re-signed claude/main is.
+	force := "+"
+	if last, _ := run.Git(ctx, bare, "rev-parse", "--verify", "-q", mirroredRef+"^{commit}"); have != "" && strings.TrimSpace(last) != "" && strings.TrimSpace(last) != have {
+		force = ""
+		if _, err := run.Git(ctx, bare, "cat-file", "-e", want+"^{commit}"); err == nil {
+			if _, err := run.Git(ctx, bare, "merge-base", "--is-ancestor", want, have); err == nil {
+				if err := h.followCheckout(ctx, r, bare, have, want); err != nil {
+					return stuck(err)
+				}
+				mark(have)
+				h.auditFailure("", "git-mirror-stuck", "mirror-stuck:"+r.Name, nil)
+				return mirrored{sha: have}, nil
+			}
+		}
+	}
+	if _, err := run.Git(ctx, bare, "-c", "safe.directory="+ck, "fetch", "-q", "--no-tags", "--no-write-fetch-head",
+		ck, force+"refs/heads/"+r.Branch+":refs/heads/"+r.Branch); err != nil {
+		if force == "" {
+			return stuck(fmt.Errorf("the checkout %s and the hub have each moved %s, so nothing is mirrored from it until they are in step: %w", r.Checkout, r.Branch, err))
+		}
+		return mirrored{sha: have}, err
+	}
+	mark(want)
+	h.auditFailure("", "git-mirror-stuck", "mirror-stuck:"+r.Name, nil)
 	h.audit("", "git-mirrored", r.Name+" "+r.Branch+" is now "+short(want))
 	return mirrored{sha: want, moved: true}, nil
 }
+
+// followCheckout brings the checkout's branch up to `have`, a tip the hub took by a push, and only by fast-forward. A
+// branch checked out in a worktree that is clean is merged with --ff-only. A branch that is checked out nowhere has its
+// ref moved. A dirty worktree, or a branch that is not behind `have`, is not touched, and the answer says why.
+func (h *Hub) followCheckout(ctx context.Context, r Repo, bare, have, want string) error {
+	run := h.runner()
+	ck := slash(r.Checkout)
+	safe := []string{"-c", "safe.directory=" + ck}
+	git := func(dir string, args ...string) (string, error) {
+		return run.Git(ctx, dir, append(append([]string{}, safe...), args...)...)
+	}
+	stuck := func(why string) error {
+		return fmt.Errorf("the hub holds %s at %s, which the checkout %s has not followed, and %s. nothing is mirrored from it until it is in step",
+			r.Branch, short(have), r.Checkout, why)
+	}
+	ref := "refs/heads/" + r.Branch
+	if _, err := git(ck, "fetch", "-q", "--no-tags", slash(bare), ref); err != nil {
+		return stuck("the hub's commits could not be fetched into it: " + err.Error())
+	}
+	if got, _ := git(ck, "rev-parse", "--verify", "-q", "FETCH_HEAD^{commit}"); strings.TrimSpace(got) != have {
+		return stuck("the hub's tip moved while it was fetched")
+	}
+	if _, err := git(ck, "merge-base", "--is-ancestor", want, have); err != nil {
+		return stuck("it is not behind the hub's tip")
+	}
+	if cur, _ := git(ck, "rev-parse", "--verify", "-q", ref+"^{commit}"); strings.TrimSpace(cur) != want {
+		return stuck("it moved while the hub looked")
+	}
+	dir := ""
+	if out, err := git(ck, "worktree", "list", "--porcelain"); err == nil {
+		path := ""
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			switch {
+			case strings.HasPrefix(line, "worktree "):
+				path = strings.TrimPrefix(line, "worktree ")
+			case line == "branch "+ref:
+				dir = path
+			}
+		}
+	}
+	if dir == "" {
+		if _, err := git(ck, "update-ref", "-m", "atrium: follow the hub", ref, have, want); err != nil {
+			return stuck("its branch could not be moved: " + err.Error())
+		}
+		h.audit("", "git-checkout-followed", r.Name+" "+r.Branch+" ref moved to "+short(have))
+		return nil
+	}
+	if st, err := git(dir, "status", "--porcelain", "--untracked-files=no"); err != nil || strings.TrimSpace(st) != "" {
+		return stuck("it has changes that are not committed")
+	}
+	if _, err := git(dir, "merge", "-q", "--ff-only", have); err != nil {
+		return stuck("it could not be fast-forwarded: " + err.Error())
+	}
+	h.audit("", "git-checkout-followed", r.Name+" "+r.Branch+" fast-forwarded to "+short(have))
+	return nil
+}
+
+// mirroredRef holds the tip the mirror pass last set, in the bare repository. A hub tip that is not it came from a push.
+const mirroredRef = "refs/atrium/mirrored"
 
 func short(sha string) string {
 	if len(sha) > 12 {
