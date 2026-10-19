@@ -2561,9 +2561,11 @@ async function toastsTopSection(browser, base) {
   // Where the stack is, and each toast's box, oldest first as in the DOM.
   const where = pg => pg.evaluate(() => {
     const host = document.getElementById("toasts");
+    const hr = host.getBoundingClientRect();
     const boxes = [...host.querySelectorAll(".toast:not(.leaving)")].map(el => {
-      const r = el.getBoundingClientRect();
-      return { title: el.querySelector("b").textContent, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      // Layout box: the entrance animation's -14px start frame must not read as the toast's place.
+      const top = hr.top + el.offsetTop, left = hr.left + el.offsetLeft;
+      return { title: el.querySelector("b").textContent, top, bottom: top + el.offsetHeight, left, right: left + el.offsetWidth };
     });
     const bar = document.querySelector("#term-pane .term-bar").getBoundingClientRect();
     const pane = document.getElementById("term-pane").getBoundingClientRect();
