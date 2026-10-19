@@ -21,8 +21,8 @@ import (
 // TaskTagPrefix starts the tag that says a card runs a task of an item: `atrium:task:<tid>`.
 const TaskTagPrefix = "atrium:task:"
 
-// SettingTaskRoot is where task folders go. Unset, it is atrium-tasks under WORKTREE_ROOT.
-const SettingTaskRoot = "task_root"
+// SettingCardRoot is where task folders go. Unset, it is atrium-tasks under WORKTREE_ROOT.
+const SettingCardRoot = "card_root"
 
 var taskIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,30}$`)
 
@@ -102,15 +102,15 @@ func (d *Daemon) taskLaunchFromJSON(body []byte) (*store.Task, error) {
 	req.Brief = taskBrief(spec, folder)
 	task, err := d.Launch(req)
 	if err != nil {
-		if rows, _ := d.st.TaskDirsOf(spec.BacklogID, spec.TaskID); len(rows) > 0 {
-			if last := rows[len(rows)-1]; last.Card == "" && last.Attempt == spec.Attempt && last.State == store.TaskDirLive {
+		if rows, _ := d.st.CardHomesOf(spec.BacklogID, spec.TaskID); len(rows) > 0 {
+			if last := rows[len(rows)-1]; last.Card == "" && last.Attempt == spec.Attempt && last.State == store.CardHomeLive {
 				_ = os.Remove(filepath.FromSlash(last.Path))
-				_ = d.st.TaskDirSet(last.Path, store.TaskDirRemoved, "the launch was refused", "")
+				_ = d.st.CardHomeSet(last.Path, store.CardHomeRemoved, "the launch was refused", "")
 			}
 		}
 		return nil, err
 	}
-	if err := d.st.TaskDirCard(filepath.ToSlash(folder), task.ID); err != nil {
+	if err := d.st.CardHomeCard(filepath.ToSlash(folder), task.ID); err != nil {
 		return nil, err
 	}
 	return task, nil
@@ -118,37 +118,37 @@ func (d *Daemon) taskLaunchFromJSON(body []byte) (*store.Task, error) {
 
 // taskFolder is the folder this attempt runs in: the one the ledger already has for it (a replayed launch), else a new one.
 func (d *Daemon) taskFolder(spec *taskSpec) (string, error) {
-	rows, err := d.st.TaskDirsOf(spec.BacklogID, spec.TaskID)
+	rows, err := d.st.CardHomesOf(spec.BacklogID, spec.TaskID)
 	if err != nil {
 		return "", err
 	}
 	for _, r := range rows {
-		if r.Attempt == spec.Attempt && r.State == store.TaskDirLive {
+		if r.Attempt == spec.Attempt && r.State == store.CardHomeLive {
 			if _, err := os.Stat(filepath.FromSlash(r.Path)); err == nil {
 				return filepath.FromSlash(r.Path), nil
 			}
 		}
 	}
-	root, err := d.taskRoot()
+	root, err := d.cardRoot()
 	if err != nil {
 		return "", err
 	}
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	folder := filepath.Join(root, spec.BacklogID, spec.TaskID+"-a"+strconv.Itoa(spec.Attempt)+"-"+hex.EncodeToString(b))
-	if err := d.st.TaskDirAdd(filepath.ToSlash(folder), spec.BacklogID, spec.TaskID, spec.Attempt, spec.Outputs); err != nil {
+	if err := d.st.CardHomeAdd(filepath.ToSlash(folder), spec.BacklogID, spec.TaskID, spec.Attempt, spec.Outputs); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(folder, 0o755); err != nil {
-		_ = d.st.TaskDirSet(filepath.ToSlash(folder), store.TaskDirRemoved, "the folder could not be made", "")
+		_ = d.st.CardHomeSet(filepath.ToSlash(folder), store.CardHomeRemoved, "the folder could not be made", "")
 		return "", fmt.Errorf("could not make the task folder: %v", err)
 	}
 	return folder, nil
 }
 
-// taskRoot is where task folders go, refusing a root that a task's removal could do harm in.
-func (d *Daemon) taskRoot() (string, error) {
-	root, _ := d.st.Setting(SettingTaskRoot)
+// cardRoot is where task folders go, refusing a root that a task's removal could do harm in.
+func (d *Daemon) cardRoot() (string, error) {
+	root, _ := d.st.Setting(SettingCardRoot)
 	root = strings.TrimSpace(root)
 	if root == "" {
 		if w := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); w != "" {
@@ -156,14 +156,14 @@ func (d *Daemon) taskRoot() (string, error) {
 		}
 	}
 	if root == "" {
-		return "", errors.New("this room has no place for task folders: set task_root in its settings, or set WORKTREE_ROOT")
+		return "", errors.New("this room has no place for task folders: set card_root in its settings, or set WORKTREE_ROOT")
 	}
 	abs, err := filepath.Abs(filepath.FromSlash(root))
 	if err != nil {
 		return "", err
 	}
 	if filepath.Dir(abs) == abs {
-		return "", errors.New("task_root is a drive root. name a folder of its own for task folders")
+		return "", errors.New("card_root is a drive root. name a folder of its own for task folders")
 	}
 	guarded := []string{StateDir()}
 	if home, err := os.UserHomeDir(); err == nil {
@@ -175,7 +175,7 @@ func (d *Daemon) taskRoot() (string, error) {
 		}
 		if ga, err := filepath.Abs(g); err == nil {
 			if rel, err := filepath.Rel(abs, ga); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				return "", fmt.Errorf("task_root %s holds %s. name a folder of its own for task folders", abs, ga)
+				return "", fmt.Errorf("card_root %s holds %s. name a folder of its own for task folders", abs, ga)
 			}
 		}
 	}

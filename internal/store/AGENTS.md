@@ -61,5 +61,5 @@ sources, actions, messages, recaps, settings.
 | `sources.go` | a command on a timer, shaped like harness because it is the same idea |
 | `actions.go` | named prompts the operator wrote, and which card each belongs on |
 | `recap.go` | what a session says it did, bounded |
-| `taskdir.go` | the folders a task of an item ran in, one ledger row each, so only atrium removes one |
+| `cardhome.go` | the folders a task of an item ran in, one ledger row each, so only atrium removes one |
 | `history.go` | everything ever run here, cut by whether it was written up |

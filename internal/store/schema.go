@@ -2379,10 +2379,10 @@ var migrations = []struct {
 	},
 	{
 		// THE FOLDERS A TASK OF AN ITEM RAN IN, one row each, so a folder is removed only by what made it. See
-		// store/taskdir.go.
-		name: "0108_task_dir",
+		// store/cardhome.go.
+		name: "0108_card_home",
 		stmts: []string{
-			`CREATE TABLE IF NOT EXISTS task_dir (
+			`CREATE TABLE IF NOT EXISTS card_home (
 				path       TEXT PRIMARY KEY,
 				backlog_id TEXT NOT NULL,
 				task_id    TEXT NOT NULL,
@@ -2392,10 +2392,11 @@ var migrations = []struct {
 				state      TEXT NOT NULL DEFAULT 'live' CHECK (state IN ('live','kept','removed')),
 				reason     TEXT NOT NULL DEFAULT '',
 				owed       TEXT NOT NULL DEFAULT '',
-				outputs    TEXT NOT NULL DEFAULT '[]'
+				outputs    TEXT NOT NULL DEFAULT '[]',
+				kind       TEXT NOT NULL DEFAULT 'task' CHECK (kind IN ('task','card'))
 			)`,
-			`CREATE INDEX IF NOT EXISTS task_dir_state ON task_dir (state)`,
-			`CREATE INDEX IF NOT EXISTS task_dir_task ON task_dir (backlog_id, task_id)`,
+			`CREATE INDEX IF NOT EXISTS card_home_state ON card_home (state)`,
+			`CREATE INDEX IF NOT EXISTS card_home_task ON card_home (backlog_id, task_id)`,
 		},
 	},
 }

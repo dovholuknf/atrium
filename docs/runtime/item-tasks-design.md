@@ -130,14 +130,14 @@ The item's detail shows the tasks as a list with this record (7).
 
 ## 4. The lifecycle
 
-**The folder.** New room setting `task_root`. Its default is `$WORKTREE_ROOT/atrium-tasks` when `WORKTREE_ROOT` is set.
+**The folder.** New room setting `card_root`. Its default is `$WORKTREE_ROOT/atrium-tasks` when `WORKTREE_ROOT` is set.
 With neither set, the room refuses a task launch with a sentence naming the setting, and never falls back to a temp
-directory or the home folder. That keeps every task off `C:` on sg4, where `WORKTREE_ROOT` is on `D:`. A `task_root`
+directory or the home folder. That keeps every task off `C:` on sg4, where `WORKTREE_ROOT` is on `D:`. A `card_root`
 that is a drive root, the home directory or an ancestor of it, or inside the room's state directory is refused when it
 is set.
 
-A task folder is `<task_root>/<backlog id>/<task id>-a<attempt>-<ulid>`. The room creates it, refusing one that exists,
-and writes a ledger row in a new room table `task_dir` (end of the room's migration slice): path, backlog id, task id,
+A task folder is `<card_root>/<backlog id>/<task id>-a<attempt>-<ulid>`. The room creates it, refusing one that exists,
+and writes a ledger row in a new room table `card_home` (end of the room's migration slice): path, backlog id, task id,
 attempt, card, created at, state (`live`, `kept`, `removed`) and the reason it was kept.
 
 **The launch.** The hub's scheduler (6) asks the task's room to launch with a new `task` block on the launch body
@@ -169,8 +169,8 @@ with the step and the reason ("the worktree has 2 uncommitted files", "the hub's
 or discard: discard captures nothing more, removes the folder and marks the task `captured` with the reason
 "discarded by <who>".
 
-**The removal.** By ledger row only, never by a path from a request. The path must resolve inside `task_root`, must
-not be `task_root` itself, and must not be a link. The walk removes every entry, and a link or a junction inside is
+**The removal.** By ledger row only, never by a path from a request. The path must resolve inside `card_root`, must
+not be `card_root` itself, and must not be a link. The walk removes every entry, and a link or a junction inside is
 removed as a link, never followed. A folder whose removal fails partway is `kept` with the error, and the next sweep
 tries again.
 
@@ -190,7 +190,7 @@ The two shapes differ in the folder and in what lasts:
 
 | | `scratch` | `code` |
 | --- | --- | --- |
-| folder | an empty directory under `task_root` | `git worktree add` under `task_root`, from the room's clone of `repo` |
+| folder | an empty directory under `card_root` | `git worktree add` under `card_root`, from the room's clone of `repo` |
 | starts from | the placed input files | `base`: a branch, or `t<n>` for that task's captured tip |
 | branch | none | `claude/<backlog id>-<task id>`, pushed to the hub on capture |
 | lasts | outputs, recap, why | the branch, outputs, recap, why |
@@ -203,7 +203,7 @@ checkout: a worktree is added from it, and `inspectCull`'s refusal of the main c
 **Reaping and the cleanup rules.** A task card is reaped by capture, not by `atrium_cull` and not by the merged sweep,
 because capture is a stronger proof than either: the hub holds the branch, so nothing on the room is the only copy.
 The rules of `r-card-reclaim-on-done` stay true for every other card. Cleanup only what atrium created holds: the folder
-and the worktree are removed by the `task_dir` row atrium wrote, and nothing else on the room is touched. The card
+and the worktree are removed by the `card_home` row atrium wrote, and nothing else on the room is touched. The card
 stays, archived.
 
 The **hub branch** stays as the artifact until the item lands. When the item's `landed` step is done, the hub prunes
@@ -246,7 +246,7 @@ Per `AGENTS.md`, added at the end of each slice and tolerant of already being th
 
 - **hub:** `work_task` and its index on `(backlog_id, state)`. Then `work.task_context` and `work.task_parallel` with
   `ADD COLUMN`.
-- **room:** `task_dir` and its index on `state`.
+- **room:** `card_home` and its index on `state`.
 
 An older hub ignores the new table and columns, and an older room refuses a launch body with a `task` block it does not
 know, which the hub shows on the task as `failed` with that room's sentence, naming the room as too old.
@@ -266,9 +266,9 @@ With no live hub, using the existing link harness (a hub and one room on loopbac
 - **Capture, code:** a dirty worktree, an unpushed commit, and a hub tip that differs each give `capture-failed` with
   the folder kept. A clean one pushes, removes the worktree and the local branch, and keeps the hub branch.
 - **Removal:** a junction or symlink inside the folder pointing at another directory: the link goes, the target is
-  untouched. A ledger path outside `task_root`, or `task_root` itself: refused. A folder with no ledger row is never
+  untouched. A ledger path outside `card_root`, or `card_root` itself: refused. A folder with no ledger row is never
   removed.
-- **Folder root:** no `WORKTREE_ROOT` and no `task_root` refuses the launch. A `task_root` at a drive root, home or the
+- **Folder root:** no `WORKTREE_ROOT` and no `card_root` refuses the launch. A `card_root` at a drive root, home or the
   state dir is refused.
 - **Failed and retry:** a worker that dies leaves `failed` and its folder. Retry makes a new folder, and capture of
   attempt 2 removes both.
@@ -278,7 +278,7 @@ With no live hub, using the existing link harness (a hub and one room on loopbac
 
 ## 10. Build stages
 
-1. **T1, scratch tasks, serial:** `work_task`, `task_dir`, `atrium_item task_*`, the launch `task` block, capture and
+1. **T1, scratch tasks, serial:** `work_task`, `card_home`, `atrium_item task_*`, the launch `task` block, capture and
    removal for `scratch`, the `why` field, item learnings, one task at a time per item. Board read-only list.
 2. **T2, code tasks:** worktrees, the clean and push checks, hub branch pruning on landed.
 3. **T3, parallel:** `after`, `task_parallel`, the scheduler on the room cap, inputs by hub file id.

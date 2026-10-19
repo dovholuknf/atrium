@@ -75,7 +75,7 @@ func (d *Daemon) taskPost(body map[string]any) (json.RawMessage, error) {
 	return nil, last
 }
 
-func (d *Daemon) taskEvent(row store.TaskDir, event string, more map[string]any) map[string]any {
+func (d *Daemon) taskEvent(row store.CardHome, event string, more map[string]any) map[string]any {
 	m := map[string]any{"event": event, "backlog_id": row.BacklogID, "task_id": row.TaskID, "attempt": row.Attempt,
 		"card": row.Card, "folder": row.Path}
 	for k, v := range more {
@@ -96,8 +96,8 @@ func (d *Daemon) startTaskCapture(task *store.Task, in FinishRequest, cancelled 
 }
 
 func (d *Daemon) captureTask(task *store.Task, in FinishRequest, cancelled bool) {
-	row, ok, err := d.st.TaskDirByCard(task.ID)
-	if err != nil || !ok || row.State != store.TaskDirLive {
+	row, ok, err := d.st.CardHomeByCard(task.ID)
+	if err != nil || !ok || row.State != store.CardHomeLive {
 		return
 	}
 	d.waitRunnerGone(task.ID, taskExitWait)
@@ -243,27 +243,27 @@ func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missi
 	return files, missing, nil
 }
 
-func (d *Daemon) reapTaskFolder(row store.TaskDir) {
+func (d *Daemon) reapTaskFolder(row store.CardHome) {
 	if err := os.RemoveAll(filepath.FromSlash(row.Path)); err != nil {
-		_ = d.st.TaskDirSet(row.Path, store.TaskDirKept, "captured, and the folder could not be removed: "+err.Error(), "")
+		_ = d.st.CardHomeSet(row.Path, store.CardHomeKept, "captured, and the folder could not be removed: "+err.Error(), "")
 		log.Printf("[atrium] task %s/%s was captured but %s could not be removed: %v", row.BacklogID, row.TaskID, row.Path, err)
 		return
 	}
-	d.owePost(row, store.TaskDirRemoved, "captured", d.taskEvent(row, "reaped", map[string]any{"reason": "captured"}))
-	older, _ := d.st.TaskDirsOf(row.BacklogID, row.TaskID)
+	d.owePost(row, store.CardHomeRemoved, "captured", d.taskEvent(row, "reaped", map[string]any{"reason": "captured"}))
+	older, _ := d.st.CardHomesOf(row.BacklogID, row.TaskID)
 	for _, o := range older {
-		if o.Attempt < row.Attempt && o.State == store.TaskDirKept {
+		if o.Attempt < row.Attempt && o.State == store.CardHomeKept {
 			if os.RemoveAll(filepath.FromSlash(o.Path)) == nil {
-				_ = d.st.TaskDirSet(o.Path, store.TaskDirRemoved, "a later attempt took its place", "")
+				_ = d.st.CardHomeSet(o.Path, store.CardHomeRemoved, "a later attempt took its place", "")
 			}
 		}
 	}
 }
 
 // owePost records a folder's new state with the event the hub is owed, then sends it and clears it on an answer.
-func (d *Daemon) owePost(row store.TaskDir, state, reason string, body map[string]any) {
+func (d *Daemon) owePost(row store.CardHome, state, reason string, body map[string]any) {
 	raw, _ := json.Marshal(body)
-	if err := d.st.TaskDirSet(row.Path, state, reason, string(raw)); err != nil {
+	if err := d.st.CardHomeSet(row.Path, state, reason, string(raw)); err != nil {
 		log.Printf("[atrium] could not record task folder %s: %v", row.Path, err)
 		return
 	}
@@ -271,19 +271,19 @@ func (d *Daemon) owePost(row store.TaskDir, state, reason string, body map[strin
 		log.Printf("[atrium] the hub was not told %v of %s, it will be sent again: %v", body["event"], row.Path, err)
 		return
 	}
-	_ = d.st.TaskDirOwedClear(row.Path)
+	_ = d.st.CardHomeOwedClear(row.Path)
 }
 
 // flushTaskOwed sends again what the hub has not acknowledged. Run when the room comes up and after each capture.
 func (d *Daemon) flushTaskOwed() {
-	rows, err := d.st.TaskDirsOwed()
+	rows, err := d.st.CardHomesOwed()
 	if err != nil {
 		return
 	}
 	for _, r := range rows {
 		var body map[string]any
 		if json.Unmarshal([]byte(r.Owed), &body) != nil {
-			_ = d.st.TaskDirOwedClear(r.Path)
+			_ = d.st.CardHomeOwedClear(r.Path)
 			continue
 		}
 		if _, err := d.taskPost(body); err != nil {
@@ -292,14 +292,14 @@ func (d *Daemon) flushTaskOwed() {
 				return
 			}
 		}
-		_ = d.st.TaskDirOwedClear(r.Path)
+		_ = d.st.CardHomeOwedClear(r.Path)
 	}
 }
 
 // captureFailed keeps the folder, tells the hub which step failed, and tells the owner once.
-func (d *Daemon) captureFailed(task *store.Task, row store.TaskDir, reason string, cancelled bool) {
+func (d *Daemon) captureFailed(task *store.Task, row store.CardHome, reason string, cancelled bool) {
 	log.Printf("[atrium] capturing task %s/%s failed: %s", row.BacklogID, row.TaskID, reason)
-	d.owePost(row, store.TaskDirKept, reason, d.taskEvent(row, "capture-failed", map[string]any{"reason": reason}))
+	d.owePost(row, store.CardHomeKept, reason, d.taskEvent(row, "capture-failed", map[string]any{"reason": reason}))
 	if cancelled {
 		return
 	}
@@ -318,13 +318,13 @@ func (d *Daemon) taskRunnerEnded(x runExit) {
 	if _, loaded := d.taskHandled.LoadOrStore(task.ID, true); loaded {
 		return
 	}
-	row, ok, err := d.st.TaskDirByCard(task.ID)
-	if err != nil || !ok || row.State != store.TaskDirLive {
+	row, ok, err := d.st.CardHomeByCard(task.ID)
+	if err != nil || !ok || row.State != store.CardHomeLive {
 		return
 	}
 	reason := fmt.Sprintf("the worker ended with no done (exit code %d)", x.code)
 	if x.tail != "" {
 		reason += ": " + firstLine(x.tail)
 	}
-	d.owePost(row, store.TaskDirKept, reason, d.taskEvent(row, "failed", map[string]any{"reason": reason}))
+	d.owePost(row, store.CardHomeKept, reason, d.taskEvent(row, "failed", map[string]any{"reason": reason}))
 }
