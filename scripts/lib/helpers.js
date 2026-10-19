@@ -4,6 +4,7 @@
 const path = require("path");
 const { T1 } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
+const { slow, fakeWait } = require("../lib/browser.js");
 const SCRIPTS = path.join(__dirname, "..");
 
 // Doc screenshots go under build.claude/ so a run never rewrites a tracked file. REFRESH_DOC_IMAGES=1 writes the
@@ -91,4 +92,47 @@ async function hubReposNoOverflow(p, tag) {
   if (r.page > 1 || r.list > 1 || r.wide) fail(tag + ": scrolls sideways " + JSON.stringify(r));
 }
 
-module.exports = { docImgDir, landContext, CTX_CARDS, CTX_USAGE, countRequests, topCounts, hubReposNoOverflow };
+const ATTACH_TRIES = 5;
+const ATTACH_WAIT_MS = 1000;
+
+// A normal attach opens in about 0.1 s, so a socket still not open after 1 s is not coming: tear it down and attach again.
+// `check(id)` runs in the page and is the unit's own condition. `attach: false` waits on an attach the unit already
+// started. `fake` polls by moving the page clock, for a page on the fake clock. Every miss is logged for the CI ledger.
+async function attachRetry(p, o) {
+  const { unit, id, check, attach = true, fake = false } = o;
+  const tries = o.tries || ATTACH_TRIES;
+  const misses = [];
+  const holds = async () => {
+    if (fake) {
+      try { await fakeWait(p, check, id, ATTACH_WAIT_MS, 10); return true; }
+      catch (e) { if (/fakeWait timed out/.test(e.message)) return false; throw e; }
+    }
+    const end = Date.now() + slow(ATTACH_WAIT_MS);
+    for (;;) {
+      if (await p.evaluate(check, id)) return true;
+      if (Date.now() > end) return false;
+      await new Promise(r => setTimeout(r, 10));
+    }
+  };
+  for (let n = 1; n <= tries; n++) {
+    const t0 = Date.now();
+    if (n > 1 || attach) await p.evaluate(x => attachTask(x), id);
+    if (await holds()) {
+      if (n > 1) console.log("ATTACHRETRY-RECOVERED " + JSON.stringify({ unit, id, try: n }));
+      return;
+    }
+    const state = await p.evaluate(x => ({
+      sock: typeof termSock !== "undefined" && termSock ? termSock.readyState : "none",
+      task: typeof termTask !== "undefined" && termTask ? termTask.id : "",
+      marks: window.__switchMarks || [],
+      row: !![...document.querySelectorAll("#stack-list .stackrow")].find(e => e.dataset.id === x),
+    }), id);
+    const miss = { unit, id, try: n, ms: Date.now() - t0, termSock: state.sock, termTask: state.task, switchMarks: state.marks, rowInDom: state.row };
+    misses.push(miss);
+    console.log("ATTACHRETRY " + JSON.stringify(miss));
+    await p.evaluate(() => { try { if (termSock) termSock.close(); } catch (e) {} closeTerm(); });
+  }
+  throw new Error(unit + ": the card terminal never attached in " + tries + " tries of " + ATTACH_WAIT_MS + "ms: " + misses.map(m => JSON.stringify(m)).join(" | "));
+}
+
+module.exports = { attachRetry, docImgDir, landContext, CTX_CARDS, CTX_USAGE, countRequests, topCounts, hubReposNoOverflow };

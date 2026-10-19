@@ -9,7 +9,7 @@ const os = require("os");
 const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
-const { countRequests, landContext, topCounts } = require("../lib/helpers.js");
+const { attachRetry, countRequests, landContext, topCounts } = require("../lib/helpers.js");
 
 // The hub restart gate, the board's half. The hub's events are written onto the
 // open streams the way the hub writes them, and the board's three calls are
@@ -676,8 +676,7 @@ async function pollsGoneSection(browser, base) {
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { state: "attached", timeout: slow(15000) });
-      await p.evaluate(x => attachTask(x), id);
-      await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+      await attachRetry(p, { unit: "pollsGone", id, fake: true, check: () => !!document.querySelector("#t-walk:not([hidden])") });
       await p.click("#t-walk");
       await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
       await run(p, 500);

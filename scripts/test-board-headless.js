@@ -37,7 +37,7 @@ if (process.env.FULL_SUITE !== "1" && !process.env.HEADLESS_UNITS && !process.en
 const { slow, fakeWait, fakeTick, fakePause, fakeRun, frames, until, settleStyle, watchRequests, armUnload, reloaded, termWrite, RUN_T0, CLOCK_OFFSET, withClock, withTrace, chromium } = require("./lib/browser.js");
 const { results, fail } = require("./lib/results.js");
 const bt = require("./board-tests/index.js");
-const { landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
+const { attachRetry, landContext, CTX_USAGE, CTX_CARDS, countRequests, topCounts, hubReposNoOverflow, docImgDir } = require("./lib/helpers.js");
 const { mock, hooks, FILED, T1, SEEN, qclickCards, UNTAGGED_CARDS, AGLIVE, SUBLIVE, SUBWORK, SUBASK, SUBDEAD, AGDEAD, SHELVED1, UC_CARDS, UC_MANY, LOOP, T2, SKINS, openStreams, hubStreams, stallHeld, NEWC, landCard, settingsBody, resetSkins, boardUsageSeen, QC_AT, mockSay, WEB_ROOT, HTML, server, resetPin, resetAudit, resetSwitches, hungResponses } = require("./lib/mock.js");
 
 
@@ -2233,9 +2233,7 @@ async function reselectSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "reselect", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     // From here on nothing may reach xterm or dial a socket.
     await p.evaluate(() => {
@@ -2303,8 +2301,7 @@ async function clearKeepsPageSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termTask && termTask.id === "land-live", null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "clearKeepsPage", id: "land-live", check: () => termSock && termTask && termTask.id === "land-live" });
     // The unit resets the terminal under the renderer, and the WebGL one throws in loadCell while a frame is drawn
     // against the emptied buffer. The DOM renderer is the one useWebgl already falls back to.
     await p.evaluate(() => { if (term._atriumGl) { term._atriumGl.dispose(); term._atriumGl = null; } });
@@ -2389,8 +2386,7 @@ async function clearMarkSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-mark"));
-    await p.waitForFunction(() => termSock && termTask && termTask.id === "land-mark", null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "clearMark", id: "land-mark", check: () => termSock && termTask && termTask.id === "land-mark" });
     // What sits above the viewport on the normal buffer, as text.
     const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
       const w = d => new Promise(r => term.write(d, r));
@@ -2473,8 +2469,7 @@ async function clearLineSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-clearline"));
-    await p.waitForFunction(() => termSock && termTask && termTask.id === "land-clearline", null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "clearLine", id: "land-clearline", check: () => termSock && termTask && termTask.id === "land-clearline" });
     // Feeds `seq` (after `quiet` ms of nothing, so the terminal counts as live) and reads what the divider did.
     const run = (seq, o) => p.evaluate(async ([seq, o]) => {
       const w = d => new Promise(r => term.write(d, r));
@@ -2980,7 +2975,7 @@ async function resumeSpinnerSection(browser, base) {
 
     // 2. The launch answers, the pane is up and still says so until output.
     release();
-    await p.waitForFunction(() => window.__sock && termTask && termTask.id === "land-res", null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "resumeSpinner", id: "land-res", attach: false, check: () => window.__sock && termTask && termTask.id === "land-res" });
     await p.waitForTimeout(200);
     await shot(p, "3-pane-opening");
     if (isNew) {
@@ -3075,8 +3070,7 @@ async function pasteSpinnerSection(browser, base) {
     await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
+    await attachRetry(p, { unit: "pasteSpinner", id: "land-live", fake: true, check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen") });
     await fakePause(p);
     await p.evaluate(() => {
       const real = pasteShow;
@@ -3192,9 +3186,7 @@ async function typingSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "typing", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(1200);
 
     const off = await p.evaluate(() => {
@@ -3359,9 +3351,7 @@ async function termDebugSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing.land-live"); localStorage.removeItem("atrium.debug.inputlag.land-live"); });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "termDebug", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
 
     // The section: shut until the drawer opens, then the gate, the rows, and both switches. The settings dialog no
     // longer carries the switches.
@@ -3526,8 +3516,7 @@ async function termDebugSection(browser, base) {
     await q.waitForFunction(() => typeof toggleInputLag === "function" && typeof toggleTypingReadout === "function",
       null, { timeout: slow(15000) });
     await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await q.evaluate(() => attachTask("land-live"));
-    await q.waitForFunction(() => termTask && termTask.id === "land-live", null, { timeout: slow(10000) });
+    await attachRetry(q, { unit: "termDebug", id: "land-live", check: () => termTask && termTask.id === "land-live" });
     await p.evaluate(() => { toggleInputLag(true); toggleTypingReadout(true); });
     await q.waitForFunction(() => lagOn && typingOn, null, { timeout: slow(5000) }).catch(() => {});
     const on = await q.evaluate(() => ({ lag: lagOn, typing: typingOn,
@@ -3603,9 +3592,7 @@ async function termLagSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     for (const id of ids) {
-      await p.evaluate(id => attachTask(id), id);
-      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
-        { timeout: slow(10000) });
+      await attachRetry(p, { unit: "termLag", id: id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
       await p.waitForTimeout(300);
     }
     // A working agent's screen: a block of new text now and then, and a status block under it redrawn ten times a
@@ -3735,9 +3722,7 @@ async function termHiddenRedrawSection(browser, base) {
     // This is about what is drawn after a hide, read at the bottom. Coming back to where you left off is termLastRead.
     await p.evaluate(() => localStorage.setItem("atrium.termReturn", "bottom"));
     for (const id of ["hid-a", "hid-b"]) {
-      await p.evaluate(id => attachTask(id), id);
-      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, id,
-        { timeout: slow(10000) });
+      await attachRetry(p, { unit: "termHiddenRedraw", id: id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
       await p.waitForTimeout(300);
     }
     // hid-a is kept and hidden. Its WebGL context goes, as `keepEnforce` takes it past the first few, and its DOM
@@ -3766,8 +3751,7 @@ async function termHiddenRedrawSection(browser, base) {
     if (r.err) fail("termHiddenRedraw: " + r.err);
     else if (r.measured > 200) fail("termHiddenRedraw: a hidden DOM-rendered terminal measured " + r.measured +
       " cells for 500 lines; it redraws while hidden.");
-    await p.evaluate(() => attachTask("hid-a"));
-    await p.waitForFunction(() => termTask && termTask.id === "hid-a", null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "termHiddenRedraw", id: "hid-a", check: () => termTask && termTask.id === "hid-a" });
     await p.waitForTimeout(500);
     const shown = await p.evaluate(() => {
       const b = term.buffer.active, out = [];
@@ -4108,9 +4092,7 @@ async function termDebugPerCardSection(browser, base) {
     const legacy = await p.evaluate(() => [localStorage.getItem("atrium.debug.inputlag"), localStorage.getItem("atrium.debug.typing")]);
     if (legacy[0] !== null || legacy[1] !== null) fail("the old browser-wide debug keys were left behind: " + JSON.stringify(legacy));
 
-    const attach = id => p.evaluate(id => attachTask(id), id)
-      .then(() => p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id,
-        id, { timeout: slow(10000) }));
+    const attach = id => attachRetry(p, { unit: "termDebugPerCard", id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
     const state = () => p.evaluate(() => ({ card: termTask && termTask.id, lag: lagOn, typing: typingOn,
       lagBox: document.getElementById("s-inputlag").checked, typingBox: document.getElementById("s-typing").checked,
       line: !document.getElementById("t-typing").hidden }));
@@ -4302,8 +4284,7 @@ async function pasteBigSection(browser, base) {
     });
   });
   const attach = async p => {
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "pasteBig", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
   };
   const MB = 1048576;
@@ -4328,7 +4309,6 @@ async function pasteBigSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
     await attach(p);
 
     for (const mb of [1, 3]) {
@@ -4491,8 +4471,7 @@ async function pasteLandsSection(browser, base) {
     await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen"), null, 10000);
+    await attachRetry(p, { unit: "pasteLands", id: "land-live", fake: true, check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" && !!term && !!document.querySelector("#t-screen .xterm-screen") });
     await fakePause(p);
     for (const [name, link] of [["slow link", { drain: 1200, write: 1500 }], ["fast link", { drain: 20, write: 30, after: 0 }], ["fast link, runner still printing the paste back", { drain: 20, write: 30, after: 1500 }]]) {
       await p.evaluate(([link, n]) => {
@@ -4552,9 +4531,7 @@ async function pasteEmptySection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "pasteEmpty", id: "land-live", check: () => termTask && termTask.id === "land-live" });
     await p.evaluate(() => {
       Object.defineProperty(navigator, "clipboard", { configurable: true,
         value: { readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
@@ -4628,8 +4605,7 @@ async function pasteBusySection(browser, base) {
     await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null, 10000);
+    await attachRetry(p, { unit: "pasteBusy", id: "land-live", fake: true, check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await fakePause(p);
     const watch = async (fn, arg, at) => {
       await p.evaluate(fn, arg);
@@ -4754,9 +4730,7 @@ async function carryLinkSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "carryLink", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
 
     // The notice the way the daemon writes it, then three forgeries a program
@@ -4885,13 +4859,10 @@ async function crossedPaneSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     // A never opens, so it closes and schedules its retry.
-    await p.evaluate(() => attachTask("cross-a"));
-    await p.waitForFunction(() => termTask && termTask.id === "cross-a" && window.__socks.length, null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "crossedPane", id: "cross-a", check: () => termTask && termTask.id === "cross-a" && window.__socks.length });
     await p.evaluate(() => { const s = termSock; s.readyState = 3; s.onclose({ code: 1006, reason: "" }); });
     // The pane moves to B before the retry fires.
-    await p.evaluate(() => attachTask("cross-b"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "cross-b", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "crossedPane", id: "cross-b", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "cross-b" });
     await p.waitForTimeout(slow(3500));
     const st = await p.evaluate(() => ({
       title: termTask && termTask.id, sock: termSock && termSock.url,
@@ -4944,9 +4915,7 @@ async function linkTipSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "linkTip", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => new Promise(res => term.write("see src/alpha.go here\r\nsrc/beta.go\r\n", res)));
     await p.evaluate(() => {
       window.__tipLog = [];
@@ -5042,9 +5011,7 @@ async function backtickPathLinksSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "backtickPathLinks", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     const lines = cases.map(c => c[0]);
     await p.evaluate(rows => new Promise(res => term.write("\x1b[2J\x1b[H" + rows.join("\r\n") + "\r\n", res)), lines);
@@ -5286,9 +5253,7 @@ async function termLinkLateSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "termLinkLate", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     await p.evaluate(() => termSock.onmessage({ data: "wrote out/late.md here\r\n.atrium/incoming/shot.png\r\n" }));
     await p.waitForTimeout(200);
@@ -5385,9 +5350,7 @@ async function termProbeStormSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "termProbeStorm", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForSelector("#t-screen .xterm-screen", { timeout: slow(10000) });
     const rows = 40;
     let feed = "\x1b[2J\x1b[H";
@@ -5474,9 +5437,7 @@ async function heldLineSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "heldLine", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     return p;
   };
@@ -5681,9 +5642,7 @@ async function phoneViewSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneView", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     return p;
   };
@@ -5859,9 +5818,7 @@ async function u016Section(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "u016", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     return p;
   };
@@ -6587,9 +6544,7 @@ async function phoneShareSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneShare", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await fill(p);
     await check(p, "terminals");
     if (shots) await p.screenshot({ path: shots + "-terminals-390x844.png" });
@@ -6746,9 +6701,7 @@ async function phoneTermBarSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneTermBar", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     return p;
   };
@@ -6796,8 +6749,7 @@ async function phoneTermBarSection(browser, base) {
       if (await p.evaluate(() => document.body.classList.contains("tray-open"))) fail(tag + "the chevron did not hide the tray");
       if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail(tag + "the tray moved the board header's key");
       if (mode === "normal") {
-        await p.evaluate(() => attachTask("land-live"));
-        await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(10000) });
+        await attachRetry(p, { unit: "phoneTermBar", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask });
         await p.waitForTimeout(300);
       }
     }
@@ -6868,9 +6820,7 @@ async function phoneFocusSection(browser, base) {
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-      await p.evaluate(() => attachTask("land-live"));
-      await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-        null, { timeout: slow(10000) });
+      await attachRetry(p, { unit: "phoneFocus", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
       await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
       await p.waitForTimeout(300);
       // the browser's scroll-into-view: bring the focused textarea inside the pane, and the pane inside the page
@@ -6989,9 +6939,7 @@ async function phonePanSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack||e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phonePan", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
     await p.waitForTimeout(300);
     await p.evaluate(() => {
@@ -7106,9 +7054,7 @@ async function phoneFollowSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack||e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneFollow", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":60,"rows":80}' }));
     const feed = (n, tag) => p.evaluate(({ n, tag }) => {
       for (let i = 0; i < n; i++) termSock.onmessage({ data: tag + i + "\r\n" });
@@ -7227,9 +7173,7 @@ async function terminalTopGapSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "terminalTopGap", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     await p.evaluate((x) => termSock.onmessage({ data: x }), "\x1b[2J\x1b[1;1Hfirst line\r\nsecond line\r\nthird line");
     await p.waitForTimeout(250);
@@ -7314,9 +7258,7 @@ async function phoneTapSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneTap", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
     await p.waitForTimeout(300);
     const rule = "─".repeat(60);
@@ -7435,9 +7377,7 @@ async function phoneKeysOpen(browser, base, fakeClock) {
   p.on("pageerror", e => errors.push(String(e.stack || e)));
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-  await p.evaluate(() => attachTask("land-live"));
-  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-    null, { timeout: slow(10000) });
+  await attachRetry(p, { unit: "phoneKeysOpen", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
   await p.waitForSelector("#t-keys button", { state: "visible", timeout: slow(5000) });
   const cdp = await ctx.newCDPSession(p);
   if (fakeClock) {
@@ -7627,9 +7567,7 @@ async function phoneKeyboardSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneKeyboard", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
     await p.waitForTimeout(300);
     await p.evaluate(() => {
@@ -7722,8 +7660,7 @@ async function termListLastRowSection(browser, base) {
         p.on("pageerror", e => errors.push(String(e.stack || e)));
         await p.goto(base, { waitUntil: "domcontentloaded" });
         await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-        await p.evaluate(() => attachTask("tls-0"));
-        await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "tls-0", null, { timeout: slow(10000) });
+        await attachRetry(p, { unit: "termListLastRow", id: "tls-0", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "tls-0" });
         await p.evaluate(() => {
           const vv = window.visualViewport;
           window.__vv = (px) => new Promise(res => {
@@ -7811,9 +7748,7 @@ async function copySelectSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "copySelect", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
       copyOnSelect = true;
@@ -7927,9 +7862,7 @@ async function cleanCopySection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "cleanCopy", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     const toasts = () => p.evaluate(() => document.getElementById("toasts").textContent);
     const btn = () => p.evaluate(() => { const b = document.getElementById("cc-btn"); return b ? b.getBoundingClientRect().toJSON() : null; });
@@ -10603,9 +10536,7 @@ async function walkSection(browser, base) {
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
       // The card has to be in the list before it can be attached, or attachTask finds nothing.
       await p.waitForSelector('#stack-list .stackrow[data-id="' + s.id + '"]', { state: "attached", timeout: slow(15000) });
-      await p.evaluate(id => attachTask(id), s.id);
-      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, s.id,
-        { timeout: slow(10000) });
+      await attachRetry(p, { unit: "walk", id: s.id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
       await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) })
         .catch(() => fail(nm + "no walk button for a card with a findings folder."));
       await p.click("#t-walk");
@@ -10817,8 +10748,7 @@ async function walkContextSection(browser, base) {
   const open = async (p, id) => {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { state: "attached", timeout: slow(15000) });
-    await p.evaluate(x => attachTask(x), id);
-    await p.waitForFunction(x => termSock && termSock.readyState === 1 && termTask && termTask.id === x, id, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "walkContext", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
     await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
     await p.click("#t-walk");
     await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) });
@@ -10976,9 +10906,7 @@ async function linkReuseSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: slow(10000) });
+    await attachRetry(p, { unit: "linkReuse", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
 
     const urls = [
@@ -11150,9 +11078,7 @@ async function phoneComposeSection(browser, base) {
     p.on("pageerror", e => { errors.push(String(e.stack || e)); });
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneCompose", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     return { ctx, p };
   };
@@ -11294,9 +11220,7 @@ async function composeBoardOpen(browser, base, errors, mode, calls) {
   p.on("pageerror", e => { errors.push(String(e.stack || e)); });
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-  await p.evaluate(() => attachTask("land-live"));
-  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-    null, { timeout: slow(10000) });
+  await attachRetry(p, { unit: "composeBoardOpen", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
   await p.evaluate(() => new Promise(r => term.write("[?2004h", r)));
   await p.waitForSelector("#t-compose textarea", { timeout: slow(5000) });
   await p.waitForTimeout(300);
@@ -12005,9 +11929,7 @@ async function phoneNudgeSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     // The terminal view, attached, which is where the alerts matter most.
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "phoneNudge", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     const bell = () => p.evaluate(() => ({
       n: Number(document.querySelector("#toastlog-open .count").textContent || 0),
@@ -12174,9 +12096,7 @@ async function shiftMenuSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     const attach = async (id) => {
-      await p.evaluate(i => attachTask(i), id);
-      await p.waitForFunction(i => termSock && termSock.readyState === 1 && termTask && termTask.id === i,
-        id, { timeout: slow(10000) });
+      await attachRetry(p, { unit: "shiftMenu", id: id, check: i => termSock && termSock.readyState === 1 && termTask && termTask.id === i });
       await p.waitForTimeout(300);
     };
     const fire = (opts) => p.evaluate(o => {
@@ -13009,9 +12929,7 @@ async function backForwardSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "backForward", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(200); };
 
@@ -13096,9 +13014,7 @@ async function tallPtySection(browser, base) {
     p.on("pageerror", e => errors.push(String(e.stack || e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "tallPty", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.waitForTimeout(300);
     const size = async (rows) => {
       await p.evaluate((r) => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":' + r + '}' }), rows);
@@ -14118,14 +14034,11 @@ async function pasteMockPage(browser, base, errors, fake) {
   if (fake) await p.clock.install();
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-  await p.evaluate(() => attachTask("land-live"));
+  await attachRetry(p, { unit: "pasteDone", id: "land-live", fake, check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
   if (fake) {
-    await fakeWait(p, () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null, 10000);
     await fakePause(p);
     return { ctx, p };
   }
-  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-    null, { timeout: slow(10000) });
   await p.waitForTimeout(300);
   return { ctx, p };
 }

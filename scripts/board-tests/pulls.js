@@ -8,7 +8,7 @@ const crypto = require("crypto");
 const { slow } = require("../lib/browser.js");
 const { openStreams, mock, landCard } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
-const { landContext } = require("../lib/helpers.js");
+const { attachRetry, landContext } = require("../lib/helpers.js");
 
 // ── the pulls view ───────────────────────────────────────
 // /v1/prs is mocked in the page (nothing real behind it), the event stream is the harness's real one.
@@ -867,8 +867,7 @@ async function pullsDrawerSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector('#stack-list .stackrow[data-id="land-pw1"]', { state: "attached", timeout: slow(15000) });
     await p.waitForFunction(() => typeof pulls !== "undefined" && pulls.loaded, null, { timeout: slow(15000) });
-    await p.evaluate(() => attachTask("land-pw1"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pw1", null, { timeout: slow(10000) });
+    await attachRetry(p, { unit: "pullsDrawer", id: "land-pw1", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pw1" });
     await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) })
       .catch(() => fail("pullsDrawer: the walker of a pulls row has no walk button"));
     await p.click("#t-walk");
@@ -982,8 +981,7 @@ async function pullsDrawerSection(browser, base) {
       await ph.addInitScript(() => localStorage.removeItem("atrium.term"));
       await ph.goto(base, { waitUntil: "domcontentloaded" });
       await ph.waitForFunction(() => typeof pulls !== "undefined" && pulls.loaded, null, { timeout: slow(15000) });
-      await ph.evaluate(() => attachTask("land-pw1"));
-      await ph.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pw1", null, { timeout: slow(10000) });
+      await attachRetry(ph, { unit: "pullsDrawer", id: "land-pw1", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pw1" });
       await ph.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
       await ph.click("#t-walk");
       await ph.waitForSelector("#walk-item .wk-actions button[data-act=y]", { state: "attached", timeout: slow(10000) });
@@ -1038,8 +1036,7 @@ async function pullsDrawerSection(browser, base) {
     q.on("pageerror", e => errors.push(String(e)));
     await q.goto(base, { waitUntil: "domcontentloaded" });
     await q.waitForSelector('#stack-list .stackrow[data-id="land-pw4"]', { state: "attached", timeout: slow(15000) });
-    await q.evaluate(() => attachTask("land-pw4"));
-    await q.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    await attachRetry(q, { unit: "pullsDrawer", id: "land-pw4", check: () => !!document.querySelector("#t-walk:not([hidden])") });
     if (await q.evaluate(() => walkTenant.prId)) fail("pullsDrawer: the review was known before the rows were");
     st.gate = null;
     release();
