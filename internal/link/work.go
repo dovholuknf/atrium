@@ -229,7 +229,11 @@ func (p *Proxy) writeWorkDetail(w http.ResponseWriter, r *http.Request, st *hubs
 	if got.Facts == nil {
 		got.Facts = []hubstore.WorkFact{}
 	}
-	crJSON(w, http.StatusOK, map[string]any{"work": got.Work, "cards": got.Cards, "assignments": got.Assignments,
+	tasks, _ := st.TaskList(id)
+	if tasks == nil {
+		tasks = []hubstore.Task{}
+	}
+	crJSON(w, http.StatusOK, map[string]any{"tasks": tasks, "work": got.Work, "cards": got.Cards, "assignments": got.Assignments,
 		"facts": got.Facts, "steps": got.Lifecycle.Steps, "lifecycle": got.Lifecycle, "cost": p.costOf(st, got.Work.BacklogID, got.Cards, got.Lifecycle.Steps),
 		"efficacy": p.efficacyOf(st, got.Work.BacklogID), "docs": p.docsOf(r.Context(), st, id)})
 }

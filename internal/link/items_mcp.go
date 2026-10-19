@@ -27,25 +27,44 @@ const itemToolDesc = "Items you own: work you started with `item` on a launch, o
 	"- `cancel {id}`: end an item that is not finished, and its worker.\n" +
 	"- `submit {pool, brief, owner?, room?}`: queue an item on a pool: resident cards tagged `atrium:pool:<name>`. A pool " +
 	"is fed ONE ITEM AT A TIME PER CARD, in the order submitted, and an item waits until a card is idle. You own it unless " +
-	"`owner` names `human` or a role. `room` is the pool's room, yours by default.\n\n" +
+	"`owner` names `human` or a role. `room` is the pool's room, yours by default.\n" +
+	"- `task_add {id, title, brief, outputs?, room?, model?, context?}`: a task of the item `id`: a throwaway low-context worker " +
+	"in a folder atrium makes on a room, then removes once what lasts is kept. `brief` is the whole of what the worker is told " +
+	"about the job. `outputs` are file names or globs, relative to the folder, that are kept on the hub. `context` sets the " +
+	"item's task context, which every task's brief carries. Tasks of an item run one at a time, in the order added.\n" +
+	"- `task_list {id}`: the item's tasks, with each one's state and result.\n" +
+	"- `task_hold {id, task}`, `task_release {id, task}`: keep a pending task from starting, and let it start.\n" +
+	"- `task_cancel {id, task}`: stop a task. A running one's worker is asked to leave and what it made is kept if it can be.\n" +
+	"- `task_retry {id, task}`: a failed task again, as a new attempt in a new folder.\n" +
+	"- `task_context {id, context}`: set the words every task's brief of that item carries.\n\n" +
 	"Only the owner may unblock or cancel. An item the human owns has no unblock here: the human types into the worker's " +
 	"terminal."
 
 type itemInput struct {
-	Action string `json:"action" jsonschema:"list, get, show, unblock, cancel or submit"`
-	Pool   string `json:"pool,omitempty" jsonschema:"for submit: the pool's name"`
-	Brief  string `json:"brief,omitempty" jsonschema:"for submit: the task, typed to whichever card takes it"`
-	Owner  string `json:"owner,omitempty" jsonschema:"for submit: human, orchestrator, merger or director. empty is you"`
-	Room   string `json:"room,omitempty" jsonschema:"for submit: the room the pool is on. default is yours"`
-	ID     string `json:"id,omitempty" jsonschema:"the item id, for get, unblock and cancel"`
-	Answer string `json:"answer,omitempty" jsonschema:"for unblock: what to type to the worker"`
-	State  string `json:"state,omitempty" jsonschema:"for list: only items in this state"`
-	All    bool   `json:"all,omitempty" jsonschema:"for list: every owner's items and not only yours"`
+	Action  string   `json:"action" jsonschema:"list, get, show, unblock, cancel or submit"`
+	Pool    string   `json:"pool,omitempty" jsonschema:"for submit: the pool's name"`
+	Brief   string   `json:"brief,omitempty" jsonschema:"for submit: the task, typed to whichever card takes it"`
+	Owner   string   `json:"owner,omitempty" jsonschema:"for submit: human, orchestrator, merger or director. empty is you"`
+	Room    string   `json:"room,omitempty" jsonschema:"for submit: the room the pool is on. default is yours"`
+	ID      string   `json:"id,omitempty" jsonschema:"the item id, for get, unblock and cancel"`
+	Answer  string   `json:"answer,omitempty" jsonschema:"for unblock: what to type to the worker"`
+	State   string   `json:"state,omitempty" jsonschema:"for list: only items in this state"`
+	All     bool     `json:"all,omitempty" jsonschema:"for list: every owner's items and not only yours"`
+	Task    string   `json:"task,omitempty" jsonschema:"for task_hold, task_release, task_cancel and task_retry: the task, like t1"`
+	Title   string   `json:"title,omitempty" jsonschema:"for task_add: one line"`
+	Outputs []string `json:"outputs,omitempty" jsonschema:"for task_add: files or globs, relative to the task folder, to keep on the hub"`
+	Model   string   `json:"model,omitempty" jsonschema:"for task_add: the model the worker runs on. empty is the launch default"`
+	Context string   `json:"context,omitempty" jsonschema:"for task_add and task_context: the words every task of this item carries in its brief, up to 2 KB"`
+	Kind    string   `json:"kind,omitempty" jsonschema:"for task_add: scratch. code is not built yet"`
+	Repo    string   `json:"repo,omitempty" jsonschema:"for task_add: reserved for code tasks"`
+	Base    string   `json:"base,omitempty" jsonschema:"for task_add: reserved for code tasks"`
+	After   []string `json:"after,omitempty" jsonschema:"for task_add: reserved for ordered tasks"`
 }
 
 type itemOutput struct {
 	Items []hubstore.Item `json:"items,omitempty"`
 	Item  *hubstore.Item  `json:"item,omitempty"`
+	Tasks []hubstore.Task `json:"tasks,omitempty"`
 	Note  string          `json:"note,omitempty"`
 	// Lines and Folder are `show`: one line per step, and where the item's logs live.
 	Lines  []string `json:"lines,omitempty"`
@@ -146,7 +165,83 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		}
 		return t.act(ctx, req, id, "cancel", "", "cancel asked of the worker's room")
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, show, unblock, cancel, submit", in.Action)}
+	if strings.HasPrefix(strings.TrimSpace(in.Action), "task_") {
+		return t.taskAction(ctx, req, in)
+	}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, show, unblock, cancel, submit, task_add, task_list, "+
+		"task_hold, task_release, task_cancel, task_retry, task_context", in.Action)}
+}
+
+func (t ownerItemTools) taskAction(ctx context.Context, req *mcp.CallToolRequest, in itemInput) (
+	*mcp.CallToolResult, itemOutput, error) {
+
+	var out itemOutput
+	id := strings.TrimSpace(in.ID)
+	action := strings.TrimPrefix(strings.TrimSpace(in.Action), "task_")
+	if id == "" {
+		return nil, out, &refusedError{in.Action + " needs id: the backlog id of the item"}
+	}
+	path := "/_hub/items/" + url.PathEscape(id) + "/tasks"
+	switch action {
+	case "list":
+		var res struct {
+			Tasks     []hubstore.Task `json:"tasks"`
+			Context   string          `json:"context"`
+			Learnings []struct {
+				Text string `json:"text"`
+			} `json:"learnings"`
+		}
+		if err := t.call(ctx, http.MethodGet, path, nil, &res); err != nil {
+			return nil, out, err
+		}
+		out.Tasks = res.Tasks
+		out.Note = fmt.Sprintf("%d tasks, %d learnings", len(res.Tasks), len(res.Learnings))
+		if res.Context != "" {
+			out.Note += ". task context: " + res.Context
+		}
+		return nil, out, nil
+	case "add":
+		if strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.Brief) == "" {
+			return nil, out, &refusedError{"task_add needs title and brief"}
+		}
+		body := map[string]any{"do": "add", "by": t.by(req), "title": in.Title, "brief": in.Brief, "kind": in.Kind,
+			"repo": in.Repo, "base": in.Base, "after": in.After, "outputs": in.Outputs, "room": in.Room, "model": in.Model,
+			"context": in.Context}
+		var res struct {
+			Task hubstore.Task `json:"task"`
+		}
+		if err := t.call(ctx, http.MethodPost, path, body, &res); err != nil {
+			return nil, out, err
+		}
+		out.Tasks = []hubstore.Task{res.Task}
+		out.Note = "task " + res.Task.TaskID + " is " + res.Task.State + ". it starts when no other task of this item is running"
+		return nil, out, nil
+	case "context":
+		if err := t.call(ctx, http.MethodPost, path, map[string]any{"do": "context", "by": t.by(req), "context": in.Context}, nil); err != nil {
+			return nil, out, err
+		}
+		out.Note = "the item's task context is set"
+		return nil, out, nil
+	case "hold", "release", "cancel", "retry":
+		if strings.TrimSpace(in.Task) == "" {
+			return nil, out, &refusedError{in.Action + " needs task, like t1"}
+		}
+		var res struct {
+			Task hubstore.Task `json:"task"`
+			Note string        `json:"note"`
+		}
+		if err := t.call(ctx, http.MethodPost, path, map[string]any{"do": action, "by": t.by(req), "task": in.Task}, &res); err != nil {
+			return nil, out, err
+		}
+		out.Tasks = []hubstore.Task{res.Task}
+		out.Note = "task " + res.Task.TaskID + " is " + res.Task.State
+		if res.Note != "" {
+			out.Note += ". " + res.Note
+		}
+		return nil, out, nil
+	}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of task_add, task_list, task_hold, task_release, task_cancel, "+
+		"task_retry, task_context", in.Action)}
 }
 
 func (t ownerItemTools) act(ctx context.Context, req *mcp.CallToolRequest, id, do, answer, note string) (

@@ -177,12 +177,15 @@ const handshakeWait = 10 * time.Second
 const maxLine = 64 << 10
 
 // writeJSON writes one frame and a newline.
-func writeJSON(w io.Writer, v any) error {
+func writeJSON(w io.Writer, v any) error { return writeJSONLimit(w, v, maxLine) }
+
+// writeJSONLimit is writeJSON with the frame bound the caller names.
+func writeJSONLimit(w io.Writer, v any, limit int) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	if len(raw) > maxLine {
+	if len(raw) > limit {
 		return errors.New("frame too large")
 	}
 	_, err = w.Write(append(raw, '\n'))
@@ -196,7 +199,10 @@ func writeJSON(w io.Writer, v any) error {
 // first bytes of HTTP. Reading the hello with a throwaway reader eats them, and
 // the symptom is a first request that hangs while every later one works, which
 // is a bad afternoon.
-func readJSON(br *bufio.Reader, v any) error {
+func readJSON(br *bufio.Reader, v any) error { return readJSONLimit(br, v, maxLine) }
+
+// readJSONLimit is readJSON with the frame bound the caller names.
+func readJSONLimit(br *bufio.Reader, v any, limit int) error {
 	// BOUNDED WHILE READING, NOT AFTER, and the difference is the whole point
 	// of this loop existing instead of a one-line `ReadString`.
 	//
@@ -214,7 +220,7 @@ func readJSON(br *bufio.Reader, v any) error {
 	for {
 		chunk, err := br.ReadSlice('\n')
 		line = append(line, chunk...)
-		if len(line) > maxLine {
+		if len(line) > limit {
 			return errors.New("frame too large")
 		}
 		if err == nil {

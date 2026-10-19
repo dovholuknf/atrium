@@ -235,7 +235,7 @@ func (r *Room) Relay(ctx context.Context, req RelayRequest) (RelayAnswer, error)
 	if err := conn.SetDeadline(time.Now().Add(relayWait)); err != nil {
 		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
 	}
-	if err := writeJSON(conn, req); err != nil {
+	if err := writeJSONLimit(conn, req, announceMax); err != nil {
 		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
 	}
 	// NOT `readJSON`: a peers answer from a busy hub is more than one frame.
@@ -268,7 +268,7 @@ func (h *Hub) serveRelay(ctx context.Context, name string, conn net.Conn, br *bu
 		return
 	}
 	var req RelayRequest
-	if err := readJSON(br, &req); err != nil {
+	if err := readJSONLimit(br, &req, announceMax); err != nil {
 		log.Printf("[hub] could not read %q's relay: %v", name, err)
 		return
 	}

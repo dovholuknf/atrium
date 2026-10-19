@@ -113,6 +113,10 @@ func (p *Proxy) serveItems(w http.ResponseWriter, r *http.Request, sub string) {
 		p.itemSubmit(w, r)
 	case rest == "sync" && write:
 		p.itemSync(w, r, st)
+	case rest == "tasks/sync" && write:
+		p.taskSync(w, r, st)
+	case strings.HasSuffix(rest, "/tasks") && !strings.Contains(strings.TrimSuffix(rest, "/tasks"), "/"):
+		p.serveTasks(w, r, st, strings.TrimSuffix(rest, "/tasks"), write)
 	case rest != "" && !strings.Contains(rest, "/") && !write:
 		it, err := st.ItemByID(rest)
 		if err != nil {
@@ -205,6 +209,9 @@ func (p *Proxy) itemSync(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		p.backlogEvent("item", map[string]string{"id": got.ID, "state": got.State, "owner_kind": got.OwnerKind})
 		// THE ITEM'S STEPS FOLLOW ITS ASSIGNMENTS. Off this request's path: reading git may take seconds, and the room waits.
 		p.refreshWorkSoon(st, got.WorkID)
+		if got.WorkID != "" {
+			_, _ = st.TaskCardSeen(got.WorkID, got.Room, got.Card, got.CreatedAt)
+		}
 	}
 	crJSON(w, http.StatusOK, map[string]any{"ok": true, "applied": applied, "item": got})
 }

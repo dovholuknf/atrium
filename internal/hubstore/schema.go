@@ -982,6 +982,49 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS growl_state ON growl (state)`,
 		},
 	},
+	{
+		// ITEM TASKS: a task belongs to one item, with a brief, a state and a result. `work_task` is the cache of the
+		// task facts in work_fact. The two columns on `work` are the owner's context every task's brief carries and how
+		// many tasks may run at once. See task.go and docs/runtime/item-tasks-design.md, sections 1 and 8.
+		name: "0032_work_task",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS work_task (
+				backlog_id TEXT NOT NULL,
+				task_id    TEXT NOT NULL,
+				title      TEXT NOT NULL,
+				brief      TEXT NOT NULL,
+				kind       TEXT NOT NULL DEFAULT 'scratch' CHECK (kind IN ('scratch','code')),
+				repo       TEXT NOT NULL DEFAULT '',
+				base       TEXT NOT NULL DEFAULT '',
+				after      TEXT NOT NULL DEFAULT '[]',
+				outputs    TEXT NOT NULL DEFAULT '[]',
+				room       TEXT NOT NULL DEFAULT '',
+				model      TEXT NOT NULL DEFAULT '',
+				state      TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','held','running','capturing',
+				             'captured','capture-failed','failed','unconfirmed','cancelled')),
+				attempt    INTEGER NOT NULL DEFAULT 0,
+				card       TEXT NOT NULL DEFAULT '',
+				folder     TEXT NOT NULL DEFAULT '',
+				branch     TEXT NOT NULL DEFAULT '',
+				sha        TEXT NOT NULL DEFAULT '',
+				diffstat   TEXT NOT NULL DEFAULT '',
+				line       TEXT NOT NULL DEFAULT '',
+				why        TEXT NOT NULL DEFAULT '',
+				learned    TEXT NOT NULL DEFAULT '',
+				recap      TEXT NOT NULL DEFAULT '',
+				files      TEXT NOT NULL DEFAULT '[]',
+				reason     TEXT NOT NULL DEFAULT '',
+				created_by TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				started_at TEXT NOT NULL DEFAULT '',
+				ended_at   TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (backlog_id, task_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS work_task_state ON work_task (backlog_id, state)`,
+			`ALTER TABLE work ADD COLUMN task_context TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE work ADD COLUMN task_parallel INTEGER NOT NULL DEFAULT 2`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

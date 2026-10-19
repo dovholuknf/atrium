@@ -150,6 +150,8 @@ type Proxy struct {
 	// ctl is the control tools' state, kept so the gate ticker can tell a waiter through
 	// the same path atrium_say takes. Nil until SetControl.
 	ctl *controlMCP
+	// taskMu serialises the task scheduler. See tasks.go.
+	taskMu sync.Mutex
 	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
 	// /_hub/deploy-ready 404. See deployready.go.
 	ready *deployReadyState
@@ -1372,7 +1374,7 @@ func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/v1/launch", "/v1/tasks", "/v1/intake", "/v1/dispatch",
+	case "/v1/launch", "/v1/launch/task", "/v1/tasks", "/v1/intake", "/v1/dispatch",
 		// A PULL REVIEW IS NEW WORK, so a new one is refused like a launch is: it puts a run, a
 		// checkout and forks on the machine somebody is decommissioning. `POST /v1/prs`, the door
 		// that makes a row, and a walker LAUNCH, which makes a card. A retry, an abort, a start, a

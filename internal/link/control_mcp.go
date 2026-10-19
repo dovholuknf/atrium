@@ -1636,6 +1636,8 @@ type launchInput struct {
 	ItemOwner string `json:"item_owner,omitempty" jsonschema:"who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
 	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`, atrium_launch leaves it empty.
 	Lifetime string `json:"-"`
+	// Task is a task of an item: the room makes the folder and writes the brief. Never a parameter. See tasks_launch.go.
+	Task *taskBlock `json:"-"`
 }
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the
@@ -1933,7 +1935,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		tags = slices.DeleteFunc(tags, func(t string) bool { return strings.TrimSpace(t) == SubagentTag })
 		tags = append(tags, InterviewTag)
 	}
-	if wid := WorkOfTags(tags); wid != "" && brief != "" && !isInterview(in.Kind) {
+	if wid := WorkOfTags(tags); wid != "" && brief != "" && !isInterview(in.Kind) && in.Task == nil {
 		brief = WithItemBrief(brief, ItemBrief(ctx, func(ctx context.Context, method, path string, body, out any) error {
 			return c.ask(ctx, method, path, "", body, out)
 		}, wid))
@@ -1962,17 +1964,27 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// THE LAUNCH KEY: made on the first attempt for this room and directory and sent again by the retry, so a room
 	// that has the card filed under it answers with that card and starts nothing. A room older than the key ignores
 	// it, and the snapshot below is what recovers.
-	attempt := launchAttemptKey(room, in.Cwd)
+	keyDir := in.Cwd
+	if in.Task != nil {
+		keyDir = in.Task.dir()
+		reqBody["task"] = in.Task
+	}
+	attempt := launchAttemptKey(room, keyDir)
 	reqBody["launch_key"] = launchKeyFor(attempt)
 	var t ctlCard
 	// THE CARDS BEFORE THE POST, so a card that was not there is the launch's. Unreadable means no recovery
 	// is possible: nothing can be told apart from what was already running.
 	before, canTell := c.listCards(ctx, room)
+	canTell = canTell && in.Task == nil
 	known := IDSet(launchRows(before))
 	// A launch waits on the room trusting the worktree and starting the runner, which is longer
 	// than the 8 s every other call here is bounded by.
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: launchTimeout, Transport: c.client.Transport}}
-	if err := long.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
+	launchPath := "/v1/launch"
+	if in.Task != nil {
+		launchPath = "/v1/launch/task"
+	}
+	if err := long.ask(ctx, http.MethodPost, launchPath, room, reqBody, &t); err != nil {
 		// THE ANSWER MAY BE LOST WHILE THE CARD EXISTS. Look for it before reporting a failure, so
 		// a retry is not a duplicate worker in the same directory.
 		var be *boardError
