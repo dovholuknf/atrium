@@ -1,4 +1,4 @@
-﻿Docs: d-slim-orchestrator
+Docs: d-slim-orchestrator
 
 ## Test plan
 

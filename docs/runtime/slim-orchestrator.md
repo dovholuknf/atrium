@@ -1,4 +1,4 @@
-﻿# Slim orchestrator
+# Slim orchestrator
 
 On 2026-10-19 an orchestrator kept merging branches and running tests inline. That work eats its context and its
 attention, and a merge it does itself is one nobody else reviewed. So the operator asked for an orchestrator that
