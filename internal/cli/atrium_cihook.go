@@ -13,8 +13,11 @@ import (
 // startCIHook wires the hub's CI hook: the loopback route and the delivery worker always, the ziti-hook bind only when a
 // service is named. See docs/fabric/ci-hook-design.md.
 func startCIHook(ctx context.Context, service, identity string, store *hubstore.Store, h *link.Hub, proxy *link.Proxy) {
-	hook := link.NewCIHook(store, proxy.CIDeliverer(), func(kind, detail string) { proxy.RecordAudit("", kind, detail) })
+	hook := link.NewCIHook(store, proxy.Deliverer(), func(kind, detail string) { proxy.RecordAudit("", kind, detail) })
 	proxy.SetCIHook(hook)
+	events := proxy.NewEventHook(store, "land@"+defaultRoomName(), func(kind, detail string) { proxy.RecordAudit("", kind, detail) })
+	hook.SetEvents(events)
+	proxy.SetEvents(events)
 	go hook.Run(ctx)
 	if service == "" {
 		return

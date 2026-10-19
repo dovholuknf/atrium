@@ -29,43 +29,45 @@ func (d *Daemon) handleHubAsk(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
-	ha, _ := d.relay().(HubAsker)
-	if ha == nil {
-		writeJSONCode(w, http.StatusServiceUnavailable, errBody("this atrium is not a room linked to a hub, so it has "+
-			"no hub backlog to ask"))
+	code, data, msg := d.hubCall(r.Context(), strings.TrimSpace(in.From), in.Method, in.Path, in.Body)
+	if code != http.StatusOK {
+		writeJSONCode(w, code, errBody(msg))
 		return
 	}
-	cctx, cancel := context.WithTimeout(r.Context(), relayWait)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if len(data) == 0 {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	_, _ = w.Write(data)
+}
+
+// hubCall is one ask of the hub over the link, answered as a status, the hub's data and a sentence for a refusal. Both
+// `POST /v1/hub/ask` and the room's own subscription handler ride it.
+func (d *Daemon) hubCall(ctx context.Context, from, method, path string, body json.RawMessage) (int, json.RawMessage, string) {
+	ha, _ := d.relay().(HubAsker)
+	if ha == nil {
+		return http.StatusServiceUnavailable, nil, "this atrium is not a room linked to a hub, so it has no hub backlog to ask"
+	}
+	cctx, cancel := context.WithTimeout(ctx, relayWait)
 	defer cancel()
-	res, err := ha.Hub(cctx, strings.TrimSpace(in.From), in.Method, in.Path, in.Body)
+	res, err := ha.Hub(cctx, from, method, path, body)
 	switch {
 	case errors.Is(err, ErrRelayOld):
-		writeJSONCode(w, http.StatusBadGateway, errBody(err.Error()))
-		return
+		return http.StatusBadGateway, nil, err.Error()
 	case errors.Is(err, ErrRelayUnconfirmed):
-		writeJSONCode(w, http.StatusGatewayTimeout, errBody(err.Error()+". it may have gone through: look before "+
-			"asking again"))
-		return
+		return http.StatusGatewayTimeout, nil, err.Error() + ". it may have gone through: look before asking again"
 	case err != nil:
-		writeJSONCode(w, http.StatusBadGateway, errBody(err.Error()))
-		return
+		return http.StatusBadGateway, nil, err.Error()
 	case !res.OK && strings.Contains(res.Error, "does not know the relay op"):
-		writeJSONCode(w, http.StatusBadGateway, errBody("the hub is older than the backlog over the link, so it cannot "+
-			"carry this. update the hub"))
-		return
+		return http.StatusBadGateway, nil, "the hub is older than the backlog over the link, so it cannot carry this. update the hub"
 	case !res.OK:
 		code := res.Code
 		if code < 400 {
 			code = http.StatusBadGateway
 		}
-		writeJSONCode(w, code, errBody(res.Error))
-		return
+		return code, nil, res.Error
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if len(res.Data) == 0 {
-		_, _ = w.Write([]byte("{}"))
-		return
-	}
-	_, _ = w.Write(res.Data)
+	return http.StatusOK, res.Data, ""
 }

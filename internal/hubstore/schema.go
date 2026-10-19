@@ -1025,6 +1025,55 @@ var migrations = []struct {
 			`ALTER TABLE work ADD COLUMN task_parallel INTEGER NOT NULL DEFAULT 2`,
 		},
 	},
+	{
+		// HUB EVENTS, WHO SUBSCRIBED, AND ONE DELIVERY PER SUBSCRIPTION. Never the request body. See events.go.
+		name: "0033_hub_events",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS hub_event (
+				id          TEXT PRIMARY KEY,
+				kind        TEXT NOT NULL,
+				repo        TEXT NOT NULL DEFAULT '',
+				branch      TEXT NOT NULL DEFAULT '',
+				outcome     TEXT NOT NULL DEFAULT '',
+				from_sha    TEXT NOT NULL DEFAULT '',
+				to_sha      TEXT NOT NULL DEFAULT '',
+				commits     INTEGER NOT NULL DEFAULT 0,
+				reason      TEXT NOT NULL DEFAULT '',
+				source      TEXT NOT NULL DEFAULT '',
+				received_at TEXT NOT NULL,
+				UNIQUE (kind, repo, branch, outcome, from_sha, to_sha)
+			)`,
+			`CREATE TABLE IF NOT EXISTS event_sub (
+				id         TEXT PRIMARY KEY,
+				kind       TEXT NOT NULL,
+				repo       TEXT NOT NULL DEFAULT '',
+				branch     TEXT NOT NULL DEFAULT '',
+				card       TEXT NOT NULL,
+				wake       INTEGER NOT NULL DEFAULT 0,
+				created_by TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				UNIQUE (kind, repo, branch, card)
+			)`,
+			`CREATE INDEX IF NOT EXISTS event_sub_card ON event_sub (card)`,
+			`CREATE TABLE IF NOT EXISTS event_delivery (
+				id         TEXT PRIMARY KEY,
+				event_ref  TEXT NOT NULL,
+				target     TEXT NOT NULL,
+				kind       TEXT NOT NULL DEFAULT '',
+				wake       INTEGER NOT NULL DEFAULT 0,
+				text       TEXT NOT NULL,
+				state      TEXT NOT NULL DEFAULT 'pending'
+				             CHECK (state IN ('pending','delivered','unconfirmed','expired','refused','folded')),
+				answer     TEXT NOT NULL DEFAULT '',
+				card       TEXT NOT NULL DEFAULT '',
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS event_delivery_state ON event_delivery (state)`,
+			`CREATE INDEX IF NOT EXISTS event_delivery_event ON event_delivery (event_ref)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

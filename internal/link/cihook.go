@@ -48,10 +48,12 @@ type CITarget struct {
 type CIAnswer struct {
 	State  string
 	Detail string
+	// Gone is a room saying it has no such card, which only a subscription to a card id takes as final.
+	Gone bool
 }
 
-// CIDeliverer is the say path, as the hook needs it. A fake answers each state in the tests.
-type CIDeliverer interface {
+// Deliverer is the say path, as the hook needs it. A fake answers each state in the tests.
+type Deliverer interface {
 	Resolve(ctx context.Context, to string) (CITarget, CIAnswer)
 	Send(ctx context.Context, t CITarget, from, text, kind string, wake bool) CIAnswer
 }
@@ -59,7 +61,7 @@ type CIDeliverer interface {
 // CIHook is the receiver and its delivery worker.
 type CIHook struct {
 	Store   *hubstore.Store
-	Deliver CIDeliverer
+	Deliver Deliverer
 	// Audit writes one hub-level line. Nil records nothing.
 	Audit func(kind, detail string)
 	// Now is the clock, injected by tests.
@@ -67,6 +69,8 @@ type CIHook struct {
 	// Tell raises one operator notification for a post: a title naming what came in and a body saying what the hub did.
 	// Nil tells nobody. Proxy.SetCIHook fills it in.
 	Tell func(title, body string)
+	// Events is the hub's event hook, whose deliveries this loop works on the same tick. Nil works none.
+	Events *EventHook
 
 	bucket ciBucket
 	qmu    sync.Mutex
@@ -77,8 +81,14 @@ type CIHook struct {
 }
 
 // NewCIHook builds the receiver.
-func NewCIHook(st *hubstore.Store, d CIDeliverer, audit func(kind, detail string)) *CIHook {
+func NewCIHook(st *hubstore.Store, d Deliverer, audit func(kind, detail string)) *CIHook {
 	return &CIHook{Store: st, Deliver: d, Audit: audit, kick: make(chan struct{}, 1)}
+}
+
+// SetEvents makes the event hook's deliveries part of this loop: worked on the same tick, and a new event wakes it.
+func (h *CIHook) SetEvents(e *EventHook) {
+	h.Events = e
+	e.kick = h.kick
 }
 
 func (h *CIHook) now() time.Time {
@@ -526,6 +536,9 @@ func (h *CIHook) Run(ctx context.Context) {
 // Pass tries every pending delivery once. The name is resolved again on every try, so a new session that took the alias
 // gets what the last holder missed.
 func (h *CIHook) Pass(ctx context.Context) {
+	if h.Events != nil {
+		defer h.Events.Pass(ctx)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.now()
@@ -607,8 +620,8 @@ func (h *CIHook) settle(d hubstore.CIDelivery, a CIAnswer, card string) {
 
 type proxyCIDeliverer struct{ p *Proxy }
 
-// CIDeliverer is the hub's own say path, through the control server's resolution and post.
-func (p *Proxy) CIDeliverer() CIDeliverer { return proxyCIDeliverer{p} }
+// Deliverer is the hub's own say path, through the control server's resolution and post.
+func (p *Proxy) Deliverer() Deliverer { return proxyCIDeliverer{p} }
 
 func (d proxyCIDeliverer) ctl() *controlMCP {
 	d.p.mu.Lock()
@@ -653,5 +666,5 @@ func (d proxyCIDeliverer) Send(ctx context.Context, t CITarget, from, text, kind
 	case ans.Unreachable:
 		return CIAnswer{State: hubstore.CIPending, Detail: ans.Error}
 	}
-	return CIAnswer{State: hubstore.CIRefused, Detail: ans.Error}
+	return CIAnswer{State: hubstore.CIRefused, Detail: ans.Error, Gone: ans.Code == http.StatusNotFound}
 }

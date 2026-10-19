@@ -517,6 +517,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.HubGitURL = d.handleHubGitURL
 	d.ap.HubCI = d.handleHubCI
 	d.ap.HubAsk = d.handleHubAsk
+	d.ap.HubCall = d.hubCall
 	d.ap.ItemAct = d.handleItemAct
 	d.ap.PoolSubmit = d.handlePoolSubmit
 	d.ap.RestartWake = d.handleRestartWake

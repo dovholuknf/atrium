@@ -130,6 +130,8 @@ type Proxy struct {
 
 	// ci is the hub's CI hook. Nil until SetCIHook wires it, and a hub without one answers /_hub/ci-hook 404.
 	ci *CIHook
+	// ev is the hub's event hook. Nil until SetEvents wires it, and a hub without one answers /_hub/events 404.
+	ev *EventHook
 
 	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
 	// a hub without one answers /_hub/git 404. See git_hub.go.
@@ -1648,6 +1650,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "ci-hook" || sub == "ci-hook/routes" {
 		p.serveCIHook(w, r, sub)
+		return
+	}
+	if sub == "events" || sub == "events/subs" {
+		p.serveHubEvents(w, r, sub)
 		return
 	}
 	if sub == "forge" || strings.HasPrefix(sub, "forge/") {

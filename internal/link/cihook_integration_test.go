@@ -714,7 +714,7 @@ func TestACIRunReachesTheCardOnARoomThroughTheHubsOwnSayPath(t *testing.T) {
 	}
 	defer st.Close()
 	secret, _ := st.MintCIHookSecret(false)
-	hook := NewCIHook(st, x.proxy.CIDeliverer(), nil)
+	hook := NewCIHook(st, x.proxy.Deliverer(), nil)
 	x.proxy.SetCIHook(hook)
 	if err := st.SetCIHookRoutes(`[{"repo":"o/r","to":"@orch","kind":"needs"}]`); err != nil {
 		t.Fatal(err)
@@ -746,7 +746,7 @@ func TestAParkedCardIsPendingUntilARouteWakesIt(t *testing.T) {
 	}
 	defer st.Close()
 	secret, _ := st.MintCIHookSecret(false)
-	hook := NewCIHook(st, x.proxy.CIDeliverer(), nil)
+	hook := NewCIHook(st, x.proxy.Deliverer(), nil)
 	x.proxy.SetCIHook(hook)
 	_ = st.SetCIHookRoutes(`[{"repo":"o/r","to":"@orch"}]`)
 	req, _ := http.NewRequest(http.MethodPost, x.board+"/_hub/ci-hook", strings.NewReader(ciBody("o/r", 9, 1, "CI", "main", "failure")))

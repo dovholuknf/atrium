@@ -247,7 +247,7 @@ func TestANoticeBecomesAGrowlerOnTheBoard(t *testing.T) {
 	}
 	x.proxy.SetGrowler(NewGrowler(testGrowlStore{st}))
 	secret, _ := st.MintCIHookSecret(false)
-	hook := NewCIHook(st, x.proxy.CIDeliverer(), nil)
+	hook := NewCIHook(st, x.proxy.Deliverer(), nil)
 	x.proxy.SetCIHook(hook)
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(ciBody("o/r", 1, 1, "CI", "main", "failure")))
 	req.Header.Set(ciSecretHeader, secret)

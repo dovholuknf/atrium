@@ -235,6 +235,9 @@ type Server struct {
 	// HubAsk is atrium_backlog and atrium_reports for a session here, `POST /v1/hub/ask`, asked of the hub over the
 	// link. Owned by the daemon. See internal/daemon/hubask.go.
 	HubAsk http.HandlerFunc
+	// HubCall is one ask of the hub over the link, answered as a status, the hub's data and a refusal's sentence. It is
+	// what a card's subscriptions ride. Owned by the daemon. See internal/daemon/hubask.go.
+	HubCall func(ctx context.Context, from, method, path string, body json.RawMessage) (int, json.RawMessage, string)
 	// ItemAct is `POST /v1/items/{id}/{unblock|cancel}`, which the hub calls for an item's owner. Owned by the daemon.
 	// See internal/daemon/item_hub.go.
 	ItemAct http.HandlerFunc
@@ -866,6 +869,10 @@ func (s *Server) Handler() http.Handler {
 	if s.HubAsk != nil {
 		mux.HandleFunc("POST /v1/hub/ask", s.HubAsk)
 	}
+	if s.HubCall != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/subscriptions", s.cardSubscriptions)
+	}
+	mux.HandleFunc("POST /v1/tasks/exist", s.cardsExist)
 	if s.ItemAct != nil {
 		mux.HandleFunc("POST /v1/items/{id}/{act}", s.ItemAct)
 	}

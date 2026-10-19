@@ -34,7 +34,7 @@ func hubAskPath(p string) bool {
 	if base == "/_hub/backlog/follow" || base == "/_hub/backlog/follow/" {
 		return false
 	}
-	if base == hubPublishPath {
+	if base == hubPublishPath || base == hubSubsPath {
 		return true
 	}
 	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items"} {
@@ -71,7 +71,7 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 		// FROM THE LINK, never from the room's word. See above.
 		// `room` is only a field of a new row, and the endpoints refuse a field they do not know.
 		if base, _, _ := strings.Cut(req.Path, "?"); base == "/_hub/backlog" || base == "/_hub/reports" ||
-			base == "/_hub/items/sync" || base == "/_hub/items/tasks/sync" {
+			base == "/_hub/items/sync" || base == "/_hub/items/tasks/sync" || base == hubSubsPath {
 			m["room"] = from
 		} else if base == "/_hub/items" || (strings.HasPrefix(base, "/_hub/items/") && strings.HasSuffix(base, "/tasks")) {
 			// A submit names the room its POOL is on, which is the caller's to say. `by` is still the link's.

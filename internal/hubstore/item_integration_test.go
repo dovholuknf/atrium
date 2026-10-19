@@ -134,8 +134,8 @@ func TestItemHolderResolvesARoleAtTheTime(t *testing.T) {
 
 // THE MIGRATION IS A NEW ONE AT THE END, and reopening a store with it recorded changes nothing.
 func TestItemMigrationIsLastAndIdempotent(t *testing.T) {
-	last := migrations[len(migrations)-11]
-	if last.name != "0022_work_backfill" || migrations[len(migrations)-14].name != "0019_room_ssh" {
+	last := migrations[len(migrations)-12]
+	if last.name != "0022_work_backfill" || migrations[len(migrations)-15].name != "0019_room_ssh" {
 		t.Fatalf("the item migration is not where it was: %q", last.name)
 	}
 	s := open(t)

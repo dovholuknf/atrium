@@ -29,7 +29,7 @@ import (
 
 // cardRoutesNotCards are the `/v1/tasks/<segment>` routes whose segment is not
 // a card. The hub keeps the same set (`notCards` in internal/link/cardroute.go).
-var cardRoutesNotCards = map[string]bool{"prune": true, "pin-order": true, "archive-workers": true}
+var cardRoutesNotCards = map[string]bool{"prune": true, "pin-order": true, "archive-workers": true, "exist": true}
 
 // looksLikeID is the shape of an id this room mints, a UUID.
 func looksLikeID(s string) bool {
