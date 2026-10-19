@@ -2377,6 +2377,27 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS task_launch_key ON task (launch_key) WHERE launch_key != ''`,
 		},
 	},
+	{
+		// THE FOLDERS A TASK OF AN ITEM RAN IN, one row each, so a folder is removed only by what made it. See
+		// store/taskdir.go.
+		name: "0108_task_dir",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS task_dir (
+				path       TEXT PRIMARY KEY,
+				backlog_id TEXT NOT NULL,
+				task_id    TEXT NOT NULL,
+				attempt    INTEGER NOT NULL DEFAULT 1,
+				card       TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				state      TEXT NOT NULL DEFAULT 'live' CHECK (state IN ('live','kept','removed')),
+				reason     TEXT NOT NULL DEFAULT '',
+				owed       TEXT NOT NULL DEFAULT '',
+				outputs    TEXT NOT NULL DEFAULT '[]'
+			)`,
+			`CREATE INDEX IF NOT EXISTS task_dir_state ON task_dir (state)`,
+			`CREATE INDEX IF NOT EXISTS task_dir_task ON task_dir (backlog_id, task_id)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

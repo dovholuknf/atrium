@@ -2600,6 +2600,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		return true, err
 	}
 
+	d.taskRunnerEnded(x)
 	// The room announces the exit with its reason, which the hub cannot see: it
 	// watches a card go dead, not why. See lifecycle.go.
 	exitLine := fmt.Sprintf("%s exited with code %d after %s",

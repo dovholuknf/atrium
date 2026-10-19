@@ -82,6 +82,8 @@ type FinishRequest struct {
 	// Learned is one paragraph a pool card leaves for its pool with a done, appended to LEARNINGS.md. Ignored for any
 	// card that is not in a pool. See learnings.go.
 	Learned string `json:"learned,omitempty"`
+	// Why is why a task of an item did it the way it did, carried to the task's result. Ignored for any other card.
+	Why string `json:"why,omitempty"`
 	// viaSay is a done that was read out of a worker's own atrium_say to its launcher. The launcher has the words
 	// already, so no second notice is queued to it. Never on the wire. See doneBySay.
 	viaSay bool
@@ -473,7 +475,10 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if itemEnd != nil && itemEnd.changed && in.Status == ReportDone && itemEnd.item.Pool != "" && strings.TrimSpace(in.Learned) != "" {
 		d.appendLearned(task, itemEnd.item, in.Learned)
 	}
-	if itemEnd != nil && itemEnd.changed {
+	if in.Ended && in.Status == ReportDone && isTaskCard(task) {
+		d.startTaskCapture(task, in, false)
+	}
+	if itemEnd != nil && itemEnd.changed && !isTaskCard(task) {
 		d.itemNotify(task, itemEnd.item, itemNoticeText(task, itemEnd.item, in, sha, recap))
 	}
 	// A QUESTION IN A REPORT is owed an answer until the launcher gives one; any report without

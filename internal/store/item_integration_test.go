@@ -137,7 +137,7 @@ func TestItemOfTaskIsTheLatest(t *testing.T) {
 }
 
 func TestItemStuckMigrationIsLast(t *testing.T) {
-	if last := migrations[len(migrations)-1].name; last != "0107_task_launch_key" {
+	if last := migrations[len(migrations)-1].name; last != "0108_task_dir" {
 		t.Fatalf("the last migration is %q", last)
 	}
 }

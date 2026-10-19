@@ -111,7 +111,10 @@ func itemNoticeKey(id string, revision int, state string) string {
 type itemPush struct{ mu sync.Mutex }
 
 // kickItems pushes what is owed, off the caller's path.
-func (d *Daemon) kickItems() { go d.flushItems() }
+func (d *Daemon) kickItems() {
+	go d.flushItems()
+	go d.flushTaskOwed()
+}
 
 // flushItems pushes what the hub has not taken, oldest first, through the link this room already holds. One pass at a
 // time. A hub that is not answering stops the pass (every other row would fail the same way) and the rows stay with
@@ -249,7 +252,11 @@ func itemNoticeText(task *store.Task, it *store.ItemRow, in FinishRequest, sha s
 // hears. A role owner is whoever holds the role now, asked of the hub. Reached by nobody, the end is held for the
 // orchestrator like any other report that found no one.
 func (d *Daemon) itemNotify(task *store.Task, it *store.ItemRow, text string) {
-	key := itemNoticeKey(it.ID, it.Revision, it.State)
+	d.itemNotifyKeyed(task, it, itemNoticeKey(it.ID, it.Revision, it.State), text)
+}
+
+// itemNotifyKeyed is itemNotify under a key of the caller's: one notice per key.
+func (d *Daemon) itemNotifyKeyed(task *store.Task, it *store.ItemRow, key, text string) {
 	switch it.OwnerKind {
 	case store.ItemOwnerHuman:
 		return
@@ -446,6 +453,9 @@ func (d *Daemon) itemCancel(id, by string) (map[string]any, int, error) {
 			}
 		}
 	default:
+		if card, err := d.st.Get(it.TaskID); err == nil {
+			d.startTaskCapture(card, FinishRequest{}, true)
+		}
 		go func() {
 			if err := d.askExit(it.TaskID, 10*time.Second); err != nil {
 				log.Printf("[atrium] item %s cancelled by %s, and its worker was not asked to leave: %v", id, by, err)

@@ -61,6 +61,8 @@ type Server struct {
 	// Launch starts a runner. The daemon owns process spawning, so the API
 	// hands the request body straight through rather than reaching for it.
 	Launch func(body []byte) (*store.Task, error)
+	// TaskLaunch starts a task of an item: the daemon makes the folder and writes the brief.
+	TaskLaunch func(body []byte) (*store.Task, error)
 	// Kill stops the runner behind a card.
 	Kill func(taskID string) error
 	// RunAction says a stored action's prompt to a card, and optionally asks
@@ -757,6 +759,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/harnesses/{id}/setup/fix", s.fixRunnerSetup)
 	mux.HandleFunc("DELETE /v1/harnesses/{id}", s.deleteHarness)
 	mux.HandleFunc("POST /v1/launch", s.launch)
+	mux.HandleFunc("POST /v1/launch/task", s.launchTask)
 	mux.HandleFunc("GET /v1/launch/cwd", s.launchCwd)
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
 	if s.StopRunner != nil {
@@ -2586,7 +2589,15 @@ func (s *Server) deleteHarness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
-	if s.Launch == nil {
+	s.launchWith(w, r, s.Launch)
+}
+
+func (s *Server) launchTask(w http.ResponseWriter, r *http.Request) {
+	s.launchWith(w, r, s.TaskLaunch)
+}
+
+func (s *Server) launchWith(w http.ResponseWriter, r *http.Request, launch func(body []byte) (*store.Task, error)) {
+	if launch == nil {
 		writeErr(w, http.StatusNotImplemented, fmt.Errorf("no launcher wired"))
 		return
 	}
@@ -2595,7 +2606,7 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	task, err := s.Launch(body)
+	task, err := launch(body)
 	if err != nil {
 		// A refused resume is the one launch failure with somewhere to go. It
 		// carries the card already holding the conversation, so the board can

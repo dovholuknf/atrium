@@ -237,6 +237,8 @@ type Daemon struct {
 	hubDial hubDialHolder
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
+	// taskHandled is the task cards whose end is already being filed, by a capture or by a failure. See task_capture.go.
+	taskHandled sync.Map
 	// poolFeed is the one pass at a time that types queued items to a pool's idle cards. See item_pool.go.
 	poolFeed poolFeeder
 
@@ -465,6 +467,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.DecideBy = d.decideBy
 	d.ap.Room = opts.Room
 	d.ap.Launch = d.launchFromJSON
+	d.ap.TaskLaunch = d.taskLaunchFromJSON
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise

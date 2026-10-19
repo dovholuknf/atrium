@@ -66,10 +66,14 @@ type doneInput struct {
 	Artifact string `json:"artifact,omitempty" jsonschema:"sha or artifact location. a path or URL to what you made, when there is no commit"`
 	Line     string `json:"line,omitempty" jsonschema:"optional: one line, up to 20 words, shown after the sha"`
 	Learned  string `json:"learned,omitempty" jsonschema:"optional, for a card in a pool: one paragraph about the code and your own misses that the next item should know. atrium appends it to LEARNINGS.md"`
+	Why      string `json:"why,omitempty" jsonschema:"optional, for a task of an item: why you did it the way you did, up to 1000 bytes. the owner reads it beside the result"`
 }
 
 // LearnedMax is the longest `learned` atrium_done takes, in bytes: one paragraph. The room's is the same, and cuts.
 const LearnedMax = 1500
+
+// WhyMax is the longest `why` atrium_done takes, in bytes.
+const WhyMax = 1000
 
 type blockedInput struct {
 	Reason string `json:"reason" jsonschema:"what stops you, in up to 50 words"`
@@ -173,6 +177,10 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 	if len(learned) > LearnedMax {
 		return nil, EndOutput{}, fmt.Errorf("learned is %d bytes, over %d. one paragraph", len(learned), LearnedMax)
 	}
+	why := strings.Join(strings.Fields(in.Why), " ")
+	if len(why) > WhyMax {
+		return nil, EndOutput{}, fmt.Errorf("why is %d bytes, over %d. shorten it, details go in REPORT.md", len(why), WhyMax)
+	}
 	tail := ""
 	if line != "" {
 		tail = ": " + line
@@ -184,7 +192,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 		return nil, EndOutput{}, fmt.Errorf("give sha (the commit) or artifact (a path or URL to what you made)")
 	case artifact != "":
 		out, err := d.Report(ctx, req, map[string]any{
-			"status": "done", "recap": "done " + artifact + tail, "artifact": artifact, "ended": true, "learned": learned,
+			"status": "done", "recap": "done " + artifact + tail, "artifact": artifact, "ended": true, "learned": learned, "why": why,
 		})
 		return nil, out, err
 	}
@@ -192,7 +200,7 @@ func (d EndDoor) Done(ctx context.Context, req *mcp.CallToolRequest, in doneInpu
 		return nil, EndOutput{}, fmt.Errorf("%s", why)
 	}
 	out, err := d.Report(ctx, req, map[string]any{
-		"status": "done", "recap": "done " + sha + tail, "sha": sha, "ended": true, "learned": learned,
+		"status": "done", "recap": "done " + sha + tail, "sha": sha, "ended": true, "learned": learned, "why": why,
 	})
 	return nil, out, err
 }
