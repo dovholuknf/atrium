@@ -244,6 +244,7 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	if err != nil {
 		return nil, err
 	}
+	rows = s.adoptWorktree(ctx, t, rows)
 	pv := &closePreview{Card: t.ID, Items: []closeItem{}, Asks: []closeAsk{}, Warnings: []string{},
 		DiskBytes: diskOf(rows), CanStash: s.Stash != nil,
 		Kept: []string{"the card and its transcript", "this list, with what freeing each row said"}}

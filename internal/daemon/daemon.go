@@ -131,6 +131,9 @@ type Daemon struct {
 	// mergedCulling is set while the sweep is culling due workers, so a slow
 	// exit is not started twice by the next tick. See mergedcull.go.
 	mergedCulling atomic.Bool
+	// landed is why landed workers are still here, and landedSweeping is set while that pass runs. See landed.go.
+	landed         landedState
+	landedSweeping atomic.Bool
 
 	// perms holds the hook connections parked on a permission answer. See
 	// permwait.go.
@@ -681,6 +684,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// The deploy hold, and which cards it holds. See roomhold.go.
 	d.loadHolds()
 	api.HeldOf = d.heldFor
+	api.LandedKeptOf = d.landedKeptFor
 	api.NewContextOf = d.newContextFor
 	// The cache keep-alive: each card's switch and its current idle stretch,
 	// and the per-card switch the board flips. See keepalive.go.

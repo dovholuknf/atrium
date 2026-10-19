@@ -1146,6 +1146,8 @@ type view struct {
 	// nor held. Durable. See docs/rnd/merged-cull-design.md.
 	// Embedded, so the fields sit flat on the card: cull_at, cull_into, cull_held.
 	*store.MergedView
+	// LandedKept is why a card whose work landed has not been reclaimed: a tag, a hold, a question, uncommitted changes.
+	LandedKept any `json:"landed_kept,omitempty"`
 	// Row is always 1. It tells the board this payload is a whole list row, so a
 	// "task" event can be upserted without a re-fetch. Never omitted.
 	Row int `json:"row"`
@@ -1193,6 +1195,9 @@ var RestartWakeOf func(taskID string) any
 // HeldOf returns the room deploy hold a card is held by, or nil. Supplied by the
 // daemon, read from memory.
 var HeldOf func(taskID string) any
+
+// LandedKeptOf is why a card whose work landed is still here, or nil. Supplied by the daemon.
+var LandedKeptOf func(taskID string) any
 
 // NewContextOf returns a card's new-context sequence, or nil. Supplied by the
 // daemon, which holds it in memory.
@@ -1249,6 +1254,9 @@ func (s *Server) toView(t *store.Task) view {
 	}
 	if HeldOf != nil {
 		v.Held = HeldOf(t.ID)
+	}
+	if LandedKeptOf != nil {
+		v.LandedKept = LandedKeptOf(t.ID)
 	}
 	if NewContextOf != nil {
 		v.NewContext = NewContextOf(t.ID)

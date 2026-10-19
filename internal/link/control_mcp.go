@@ -400,8 +400,8 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"kept, and so is its branch, and the answer says why. The worker is still asked to " +
 			"leave in that case, which frees its launch-cap slot. Nothing is forced: git removes " +
 			"the worktree only when it agrees it is clean. The card and its history stay.\n\n" +
-			"A merge alone reclaims nothing. A room whose operator set merged_cull_grace marks a merged " +
-			"worker and culls it after that grace unless it has a new turn or is held. `hold=true` " +
+			"A room reclaims a landed worker on its own: merged_cull_grace (a day unless set, `off` opts out) " +
+			"marks a merged worker, and one idle that long is culled unless it has a new turn or is held. `hold=true` " +
 			"keeps a worker for good: the mark is dropped and nothing marks it again, only an " +
 			"explicit cull removes it.",
 	}, audited(c, "ctl-cull", describeCull, c.cullHandler))

@@ -33,8 +33,7 @@ import (
 // exits or marks it because of a merge.
 
 // MergedGraceDefault is how long a merged worker stays before it is culled when the operator turns the automatic
-// cull on by setting a grace. Unset, the setting is off (store.DefaultMergedCullGrace): only an explicit atrium_cull
-// or atrium_exit removes a worker.
+// cull on by setting a grace. Unset, the setting is a day (store.DefaultMergedCullGrace), and `off` disables it.
 const MergedGraceDefault = 30 * time.Minute
 
 // SettingMergedCullGrace is the daemon setting. Seconds, or `off`.
@@ -49,8 +48,7 @@ func (d *Daemon) mergedGrace() (time.Duration, bool) {
 	}
 	v = strings.TrimSpace(v)
 	if v == "" {
-		// OFF UNLESS SET. A merge is not a deploy, and the launcher's atrium_cull is what says the work is both.
-		// See reclaim.go.
+		// A day unless set, and `off` is how a room opts out.
 		v = store.DefaultMergedCullGrace
 	}
 	if v == "off" {
