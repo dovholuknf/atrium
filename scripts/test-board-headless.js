@@ -10766,6 +10766,7 @@ async function walkContextSection(browser, base) {
     await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
     await p.click("#t-walk");
     await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) });
+    await p.waitForFunction(x => termTask && termTask.id === x && dock.open && dock.taskId === x, id, { timeout: slow(10000), polling: 10 });
   };
   const shot = async (p, name) => {
     if (!shotDir) return;
@@ -10810,6 +10811,7 @@ async function walkContextSection(browser, base) {
     if (r.filter(x => /\bdel\b/.test(x.cls)).length !== 2) fail("walkContext: the removed lines were lost when the context grew");
     await shot(p, "desktop-grown");
     if (await p.$eval("#walk-sheet", e => getComputedStyle(e).display) !== "none") fail("walkContext: the terminal sheet handle shows on a wide screen");
+    await p.evaluate(() => localStorage.removeItem("atrium.term"));
     await p.close();
 
     // Desktop, card B: no src/, so context stops at the hunk and removed lines still draw.
