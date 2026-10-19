@@ -12060,7 +12060,11 @@ async function phoneNudgeSection(browser, base) {
     await p.evaluate(() => document.getElementById("toastlog").close());
     await p.evaluate(() => document.body.classList.remove("term-full"));
     await p.waitForFunction(() => document.getElementById("phone-bell").hidden, null, { timeout: slow(5000) });
-    if (await p.evaluate(() => document.querySelector("#toastlog-open .hmsg").hidden))
+    const headerMail = await p.evaluate(() => {
+      followHeldLine([{ id: "land-live", supervised: true, activity: { held_peer: true, held_for: "line", held_count: 3 } }]);
+      return document.querySelector("#toastlog-open .hmsg").hidden;
+    });
+    if (headerMail)
       fail("phoneNudge: the header bell does not carry the envelope");
     // the width rule: a toast over a terminal cannot collapse when the pane's edge is far from the viewport's
     // (hubShowPaused draws the one toast a phone still shows)
