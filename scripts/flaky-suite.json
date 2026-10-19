@@ -20,6 +20,7 @@
   {"kind": "go", "package": "internal/link", "name": "TestTheReviewRouteRefusesACardAndAnotherOrigin", "reason": "failed on windows in run 39327546452: TempDir cleanup could not remove hub.db, the file was still in use"},
   {"kind": "board", "name": "atriumDown", "reason": "load-sensitive: the reload after atrium goes down got ERR_EMPTY_RESPONSE, so the worker did not answer that navigation. Passes alone, fails 4 of 10 with ten copies at once. Cause is a guess, not confirmed."},
   {"kind": "board", "name": "shiftMenu", "reason": "race-in-test: the row-menu check waits for any `#cardmenu button`, which the previous menu already satisfies, so a slow termMenu answer reads the stale menu. Wait for the menu to be shown."},
+  {"kind": "board", "name": "keepAlive", "reason": "unproven: failed once on ubuntu board-2 at 8d45a38 (an evicted card did not attach with a new socket), passed on the retry in 5091 ms. Cause not read yet."},
   {"kind": "board", "name": "phoneNudge", "reason": "race-in-test: reads `#toastlog-open .hmsg` after waiting on a different element, so a late header tick reads the envelope hidden. Wait for the state the check asserts."},
   {"kind": "board", "name": "questionsClick", "reason": "failed in 6 of the last 20 runs on every OS, a fix named it and it still failed"},
   {"kind": "board", "name": "cardUrlWayOut", "reason": "failed in 4 of the last 20 runs, on windows, no fix"},
