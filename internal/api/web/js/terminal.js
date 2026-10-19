@@ -605,6 +605,10 @@ function paintTermChips(task) {
   // minute.
   const tc = document.getElementById("t-copy");
   if (tc && !tc.firstChild) tc.innerHTML = copyIcon();
+  const homeChips = typeof homePathChips === "function" ? homePathChips(task) : "";
+  if (!homeChips && typeof loadHomes === "function") {
+    loadHomes().then(() => { if (homeOf(task)) paintTermChips(task); });
+  }
   document.getElementById("t-chips").innerHTML =
     // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
     // the id's tag and answers "" with a single room attached, so this draws
@@ -620,10 +624,10 @@ function paintTermChips(task) {
     // and swallowed clicks meant for what was behind it. A path is also a
     // thing you select with the mouse, which a click handler over all of it
     // makes awkward.
-    `<span class="chip path" data-path="${esc(task.worktree || "")}"
+    (homeChips || `<span class="chip path" data-path="${esc(task.worktree || "")}"
        ><button class="copybit" data-tip="copy this path"
          onclick="event.stopPropagation();copyPath(this.parentNode)"
-         >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
+         >${copyIcon()}</button>${esc(task.worktree || "")}</span>`);
   if (typeof composeBar === "function") composeBar(task);
 }
 

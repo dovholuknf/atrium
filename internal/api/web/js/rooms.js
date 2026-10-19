@@ -902,6 +902,8 @@ async function loadRoomCfg() {
     return;
   }
   fillMachineFields(s);
+  if (typeof fillCardRoot === "function") fillCardRoot(s);
+  if (typeof loadDiskPanel === "function") loadDiskPanel();
 }
 
 // closeRoomCfg puts the write scope back.

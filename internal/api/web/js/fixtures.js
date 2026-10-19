@@ -1302,7 +1302,28 @@ function setThrowaway(on) {
   cwd.disabled = on;
 }
 
+// setHome is the new-home tick: it quiets the directory box like a throwaway, shows the repo and branch boxes, and
+// unticks the throwaway, since each is its own answer to where the card works.
+function setHome(on) {
+  const fields = document.getElementById("l-home-fields");
+  if (fields) fields.hidden = !on;
+  const cwd = document.getElementById("l-cwd");
+  if (cwd) cwd.disabled = on || document.getElementById("l-throwaway-on").checked;
+}
+
+document.getElementById("l-home-on").addEventListener("change", e => {
+  if (e.target.checked) {
+    document.getElementById("l-throwaway-on").checked = false;
+    syncMore();
+  }
+  setHome(e.target.checked);
+});
+
 document.getElementById("l-throwaway-on").addEventListener("change", e => {
+  if (e.target.checked) {
+    document.getElementById("l-home-on").checked = false;
+    setHome(false);
+  }
   setThrowaway(e.target.checked);
   // A throwaway has nothing of a link's to clean up.
   syncMore();
@@ -1528,6 +1549,11 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   document.getElementById("l-throwaway-field").hidden = !!resume || !!ontoTask;
   document.getElementById("l-throwaway-on").checked = false;
   setThrowaway(false);
+  document.getElementById("l-home-field").hidden = !!resume || !!ontoTask;
+  document.getElementById("l-home-on").checked = false;
+  document.getElementById("l-home-repo").value = "";
+  document.getElementById("l-home-branch").value = "";
+  setHome(false);
   // Off every time, like the model: deleting what a link made is asked for each time it is wanted.
   document.getElementById("l-cleanup-on").checked = false;
 
@@ -1837,10 +1863,11 @@ async function launchNow(opening) {
   // a directory is supplied, so a previous field value must not carry through.
   const throwaway = !document.getElementById("l-throwaway-field").hidden &&
     document.getElementById("l-throwaway-on").checked;
+  const homeOn = !document.getElementById("l-home-field").hidden && document.getElementById("l-home-on").checked;
   const cleanup = !document.getElementById("l-cleanup-field").hidden &&
     document.getElementById("l-cleanup-on").checked;
   // Every recognised link goes to the open verb unless the directory was typed over, which names a place to start in.
-  const opening_ = !throwaway && !!launchResolved &&
+  const opening_ = !throwaway && !homeOn && !!launchResolved &&
     document.getElementById("l-cwd").value.trim() === (launchResolved.shownCwd || "");
   // WHICH MACHINE IT STARTS ON: the room box when it is shown, else what the caller worked out (linkRoomFor), else the
   // hub decides, which keeps a link a room already claimed on that room.
@@ -1928,7 +1955,7 @@ async function launchNow(opening) {
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
     throwaway,
-    cwd: throwaway ? "" : document.getElementById("l-cwd").value.trim(),
+    cwd: throwaway || homeOn ? "" : document.getElementById("l-cwd").value.trim(),
     title: document.getElementById("l-title").value.trim(),
     why: document.getElementById("l-why").value.trim(),
     // Split on commas and never on spaces, the same rule everywhere else: a
@@ -1967,6 +1994,11 @@ async function launchNow(opening) {
       source_kind: launchResolved.kind || "",
       source_url: launchResolved.url || ""
     });
+  }
+  if (homeOn) {
+    body.home = true;
+    body.repo = document.getElementById("l-home-repo").value.trim();
+    body.branch = document.getElementById("l-home-branch").value.trim();
   }
   // A refusal throws, and `busyWhile` puts the reason in this dialog with the
   // form still filled in, rather than closing it and stacking a modal.

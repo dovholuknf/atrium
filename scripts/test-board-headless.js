@@ -25751,6 +25751,10 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("quickPaste", () => quickPasteSection(browser, base));
     await unit("repoPaste", () => repoPasteSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
+    await unit("homesChips", bu("homesChips"));
+    await unit("homesRoot", bu("homesRoot"));
+    await unit("homesDisk", bu("homesDisk"));
+    await unit("homesLaunch", bu("homesLaunch"));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + threwMessage(e));

@@ -490,12 +490,14 @@ async function measureCardDisk() {
 async function openTask(id) {
   if (typeof revealCard === "function") revealCard(id);
   current = await api(`/v1/tasks/${id}`);
+  if (typeof loadHomes === "function") await loadHomes();
   document.getElementById("d-title").textContent = current.display_title;
   document.getElementById("d-chips").innerHTML = [
     `<span class="chip accent">${esc(current.runner || "?")}</span>`,
     `<span class="chip" data-tip="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
     current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
-    current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
+    (typeof homePathChips === "function" && homePathChips(current)) ||
+      (current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : ""),
     // What the card owns on disk, measured on ask. A click measures it again. See internal/api/resources.go.
     current.disk_bytes ? `<button type="button" class="chip" id="d-disk" onclick="measureCardDisk()" ` +
       `data-tip="its worktree and review folder, as last measured. click to measure again">` +
@@ -2016,6 +2018,7 @@ function connect() {
     let d;
     try { d = JSON.parse(e.data); } catch (err) { return; }
     if (typeof onRoomStats === "function") onRoomStats(d);
+    if (typeof loadHomes === "function") loadHomes();
   });
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);

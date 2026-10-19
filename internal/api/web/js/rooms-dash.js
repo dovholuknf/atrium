@@ -350,7 +350,7 @@ function machineBand(key, m, d, s) {
     ? `<div class="rd-row" data-tip="card worktrees atrium knows about"><span><b data-v="${key}.wt">${d.worktrees}</b> worktrees</span></div>`
     : "";
   const lat = latencyRow(key, s && s.latency);
-  return `<div class="rd-band machine"><div class="rd-h">machine</div>${shown}${lat}${disk}${wt}</div>`;
+  return `<div class="rd-band machine"><div class="rd-h">machine</div>${shown}${lat}${disk}${typeof cardRootRow === "function" ? cardRootRow(key, d) : ""}${wt}</div>`;
 }
 
 // ── the tiles ───────────────────────────────────────────────────────────────
