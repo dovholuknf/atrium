@@ -86,19 +86,24 @@ async function homesRootSection(browser, base) {
 async function homesDiskSection(browser, base) {
   const { ctx, p, errors } = await open(browser, base);
   try {
-    const sent = await p.evaluate(async () => {
+    const posted = [];
+    await p.route("**/v1/homes**", route => {
+      const r = route.request();
+      if (r.method() === "POST") posted.push({ url: new URL(r.url()).pathname, body: r.postData() });
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(r.method() === "POST" ? { removed: true, freed: 2e9 } : { homes: [] }) });
+    });
+    const sent = await p.evaluate(async (posted) => {
       diskView = { root: "/srv/cards", free_bytes: 5e9, total_bytes: 1e12, bytes: 3e9, homes: [
         { id: "h1", card: "t1", title: "one", path: "/srv/cards/one-aaaaaa", state: "kept", reason: "dirty", bytes: 2e9, running: false },
         { id: "h2", card: "t2", title: "two", path: "/srv/cards/two-bbbbbb", state: "live", bytes: 1e9, running: true },
       ], not_atriums: ["/srv/cards/stray"], outside: [] };
       paintDiskPanel();
       const buttons = [...document.querySelectorAll("#rc-disk .homerm")].map(b => b.dataset.home);
-      const calls = [];
       window.askUser = async () => true;
-      window.api = async (url, opts) => { calls.push({ url, body: opts && opts.body }); return url === "/v1/homes" ? diskView : { removed: true, freed: 2e9 }; };
       await removeHomeFromDisk(document.querySelector("#rc-disk .homerm"));
-      return { buttons, calls };
-    });
+      return { buttons, calls: [] };
+    }, posted);
+    sent.calls = posted;
     if (sent.buttons.join() !== "h1") fail("remove offered on the wrong homes: " + sent.buttons);
     const post = sent.calls.find(c => c.url === "/v1/homes/remove");
     if (!post) fail("remove posted nothing: " + JSON.stringify(sent.calls));
@@ -115,6 +120,11 @@ async function homesDiskSection(browser, base) {
 async function homesLaunchSection(browser, base) {
   const { ctx, p, errors } = await open(browser, base);
   try {
+    const launched = [];
+    await p.route("**/v1/launch", route => {
+      launched.push(route.request().postData());
+      route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "stop" }) });
+    });
     const got = await p.evaluate(async () => {
       openLaunch("claude", "", "");
       const shown = !document.getElementById("l-home-field").hidden;
@@ -124,11 +134,10 @@ async function homesLaunchSection(browser, base) {
       document.getElementById("l-home-repo").value = "github.com/o/r";
       document.getElementById("l-home-branch").value = "feat/x";
       document.getElementById("l-cwd").value = "/typed/dir";
-      let body = null;
-      window.api = async (url, opts) => { if (url === "/v1/launch") { body = JSON.parse(opts.body); throw new Error("stop"); } return {}; };
       try { await launchNow(false); } catch (e) {}
-      return { shown, body, cwdOff: document.getElementById("l-cwd").disabled };
+      return { shown, cwdOff: document.getElementById("l-cwd").disabled };
     });
+    got.body = launched.length ? JSON.parse(launched[0]) : null;
     if (!got.shown) fail("the new-home tick is not offered on a fresh launch");
     if (!got.body) fail("the launch posted nothing");
     if (got.body.home !== true || got.body.repo !== "github.com/o/r" || got.body.branch !== "feat/x") fail("the home launch lacks home, repo or branch: " + JSON.stringify(got.body));
