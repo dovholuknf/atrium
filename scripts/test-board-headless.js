@@ -14871,8 +14871,9 @@ async function mTypeSteadySection(browser) {
     st.replies["ty-1"] = { source: "transcript", replies: st.replies["ty-1"].replies.concat([{ at: at2, text: "A new reply that must be followed. " + "more ".repeat(60) }]) };
     st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
     await p.waitForFunction(() => /must be followed/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-    await p.waitForTimeout(300);
-    const gap = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight; });
+    const readGap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight; });
+    let gap = await readGap();
+    for (const t2 = Date.now(); gap > 4 && Date.now() - t2 < slow(3000);) { await p.waitForTimeout(10); gap = await readGap(); }
     if (gap > 4) fail(tag + "an emptied but focused box still holds the thread, gap " + gap);
     // and the next input pins again
     await p.keyboard.type("x");
