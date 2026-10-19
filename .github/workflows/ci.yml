@@ -101,6 +101,25 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # The run page's own summary: every failing unit across the matrix, whether the alone retry passed it, and how often it
+  # failed in the last 10 runs on main. THERE IS NO LOGIC HERE: `scripts/ci-rollup.js` does it all and is best effort, so
+  # this job cannot fail the run and nothing waits on it.
+  rollup:
+    needs: [check]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: rollup
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY" || true
+
   # Tells the hub when this run failed, and only then. It needs every other job, so it starts when they are done, and
   # `failure()` keeps a green run silent. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` builds the body from this
   # run's own context, and the ziti-hook action only carries it to the hub over ziti.

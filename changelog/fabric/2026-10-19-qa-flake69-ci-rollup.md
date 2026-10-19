@@ -1,0 +1,2 @@
+The ci run page now has a rollup. A new `rollup` job in `ci.yml` runs `scripts/ci-rollup.js` after the matrix, always, and appends to the run's summary a table of every failing unit across all jobs: os, job, unit, first error, whether the shard's alone retry passed it, and "failed in N of the last 10 runs on main" or NEW. A green run says so in one line. It is best effort and cannot fail the run. The parsing is shared with the flake ledger in `scripts/ci-failures.js`.
+Docs: none, a CI summary page has no reference page

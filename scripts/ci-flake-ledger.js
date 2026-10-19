@@ -3,13 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { jobFailures } = require('./ci-failures');
 
 const DATA = process.env.LEDGER_DIR || 'D:/tmp/qa-flake-ledger';
 const ARTIFACTS = process.env.CI_ARTIFACTS || 'C:/Users/claude/.atrium2/hub/ci-artifacts/github.com/dovholuknf/atrium';
 const HISTORY_CSV = process.env.CI_HISTORY_CSV || 'D:/tmp/qa-ci-history.csv';
 const HISTORY_MD = process.env.CI_HISTORY_MD || 'D:/tmp/qa-ci-history.md';
 const FIX_REPO = process.env.FIX_REPO || 'D:/worktrees/claude/atrium/qa';
-const MODULE = 'github.com/dovholuknf/atrium/';
 const OSES = ['windows', 'macos', 'ubuntu'];
 
 const file = (n) => path.join(DATA, n);
@@ -68,36 +68,6 @@ function seed() {
   };
   writeJson('ledger.json', ledger);
   console.log(`seeded ${runs.length} history runs, ${failures.length} failures, ${Object.keys(presence).length} units`);
-}
-
-function parseTsv(p) {
-  return fs.readFileSync(p, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => l.split('\t'));
-}
-
-function jobFailures(dir) {
-  const m = /^ci-(\w+)-latest-(.+)-attempt-\d+$/.exec(path.basename(dir));
-  if (!m) return [];
-  const os = m[1];
-  const job = m[2];
-  const out = [];
-  const ft = path.join(dir, 'failing.tsv');
-  const rows = fs.existsSync(ft) ? parseTsv(ft) : [];
-  for (const r of rows) {
-    const [grp, a, b = ''] = r;
-    if (grp === 'go-test' || grp === 'go-race') {
-      const mm = /^(\S+)\s+(Test\S*)$/.exec(a);
-      const pkg = (mm ? mm[1] : a.split(/\s+/)[0]).replace(MODULE, '');
-      out.push({ os, group: pkg, unit: mm ? mm[2] : '(package)', error: b.trim() });
-    } else if (a === '(check)') {
-      const cm = /^([^:]+):\s*(.*)$/.exec(b);
-      out.push({ os, group: grp, unit: `check: ${cm ? cm[1] : b}`, error: (cm ? cm[2] : b).trim() });
-    } else out.push({ os, group: grp, unit: a, error: b.replace(/^\S+:\s*/, '').trim() });
-  }
-  const st = path.join(dir, 'steps.tsv');
-  if (!rows.length && fs.existsSync(st)) {
-    for (const r of parseTsv(st)) if (r[2] === 'FAILED') out.push({ os, group: 'step', unit: `step: ${r[0]}`, error: `${job} step ${r[0]} FAILED` });
-  }
-  return out;
 }
 
 function runSha(runDir) {
