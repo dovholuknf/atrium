@@ -646,6 +646,7 @@ const server = http.createServer((req, res) => {
     const got = hooks.tasks(true);
     if (got === "hang") { hungResponses.push(res); return; }
     if (got === "down") { res.writeHead(503); res.end("{}"); return; }
+    if (mock.tasksDelay) { setTimeout(() => sendJSON(res, { tasks: got }), mock.tasksDelay); return; }
     sendJSON(res, { tasks: got });
     return;
   }

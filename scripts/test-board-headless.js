@@ -10385,7 +10385,9 @@ async function eventDrivenSection(browser, base) {
     // (a) An older room: task events with no `row`. One every half second for
     // the whole window, so a board that pulled per clump would pull every 1.5s.
     counts.clear();
+    mock.tasksDelay = 100;
     for (let i = 0; i < secs * 2; i++) await say({ id: card.id, status: "running" }, 500);
+    mock.tasksDelay = 0;
     const partial = counts.get("/v1/tasks") || 0;
     console.log("eventDriven: " + secs + "s of task events without row: " + partial + " /v1/tasks");
     // Once every 5s over a window of secs is floor(secs / 5) + 1: one at each

@@ -1477,6 +1477,8 @@ let tasksTimer = 0;
 function tasksSoon() {
   if (tasksTimer) return;
   const fire = () => {
+    // A read still in flight has not stamped cardsReadAt yet, so firing now would queue a second read behind it.
+    if (cardsLoading) { cardsLoading.then(fire, fire); return; }
     const wait = cardsReadAt + TASKS_EVERY - Date.now();
     if (wait > 0) { tasksTimer = setTimeout(fire, wait); return; }
     tasksTimer = 0;
