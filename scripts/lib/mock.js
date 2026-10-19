@@ -331,6 +331,7 @@ mock.roomSettingsDown = false;
 // over 100ms, which is what lets a load's several readers overlap.
 mock.settingsReads = 0;
 mock.settingsDelay = 0;
+mock.settingsHold = null;
 // The on/off switch rows: one runner and one fixture in each state, so the test
 // can compare the pill's box across an on row and an off row, and flip each way.
 // `switchFail` makes the next write refuse, which must put the pill back.
@@ -764,6 +765,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     mock.settingsReads++;
+    if (mock.settingsHold) { mock.settingsHold.then(() => sendJSON(res, settingsBody(room))); return; }
     if (mock.settingsDelay) { setTimeout(() => sendJSON(res, settingsBody(room)), mock.settingsDelay); return; }
     sendJSON(res, settingsBody(room));
     return;

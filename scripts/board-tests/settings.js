@@ -106,17 +106,31 @@ async function settingsOnceSection(browser, base) {
   const sp = await ctx.newPage();
   const wasHub = mock.hubMode;
   mock.hubMode = true;
-  mock.settingsDelay = 600;   // wide on purpose: on a loaded runner the load's later reads land well after 135ms
+  let release;
+  mock.settingsHold = new Promise(r => { release = r; });
   // This page's reads, not the server's. In the full run the main page is still
   // open and reads settings on its own clock, which the server count took for a
   // second read by this load.
   let settingsReads = 0;
+  let roomsLanded = false;
   sp.on("request", r => { if (new URL(r.url()).pathname === "/v1/settings") settingsReads++; });
+  sp.on("response", r => { if (new URL(r.url()).pathname === "/_hub/rooms") roomsLanded = true; });
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
-    await sp.waitForTimeout(2500);
+    // The answer is held until the room list has landed, so every read of the load is inside one round trip however slow the runner.
+    const roomsBy = Date.now() + 15000;
+    while (!roomsLanded && Date.now() < roomsBy) await sp.waitForTimeout(10);
+    if (!roomsLanded) fail("the hub's room list never reached the page.");
+    await sp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    release();
+    const skinBy = Date.now() + 15000;
+    let skin;
+    while (Date.now() < skinBy) {
+      skin = await sp.evaluate(() => document.documentElement.getAttribute("data-skin"));
+      if (skin === mock.skinFor[""]) break;
+      await sp.waitForTimeout(10);
+    }
     if (settingsReads !== 1) fail("a board load read /v1/settings " + settingsReads + " times, not once.");
-    const skin = await sp.evaluate(() => document.documentElement.getAttribute("data-skin"));
     if (skin !== mock.skinFor[""]) {
       fail("with the settings read shared, the skin did not land (got " + skin + ", want " + mock.skinFor[""] + ").");
     }
@@ -126,7 +140,8 @@ async function settingsOnceSection(browser, base) {
     if (settingsReads !== before + 1) fail("a settings read after the load did not reach the daemon.");
   } finally {
     mock.hubMode = wasHub;
-    mock.settingsDelay = 0;
+    mock.settingsHold = null;
+    release();
     await ctx.close();
   }
 }
