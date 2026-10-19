@@ -1,0 +1,1 @@
+- Pasting a pull request in the Pull requests popover now closes the popover and draws a card with the open's steps, a step that runs past three seconds shows its elapsed seconds, and the PR-head fetch no longer runs `git gc` in your clone, which was most of a 32 second open. bug-pr-link-open-slow-no-feedback.

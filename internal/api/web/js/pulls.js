@@ -425,6 +425,11 @@ function pullsGroupHTML(key, label, rows) {
 const PULL_SKELETON = '<div class="pull-skel"></div>'.repeat(3);
 
 function pullsPaint() {
+  pullsPaintRows();
+  if (typeof linkOpeningPaint === "function") linkOpeningPaint();
+}
+
+function pullsPaintRows() {
   const list = document.getElementById("pulls-list");
   if (!list) return;
   pullsPaintFilters();

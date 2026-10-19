@@ -1,6 +1,6 @@
 // pulls: pull requests: the page, the drawer, the panel, moving one.
 //
-// Units: pullsPasteOpening, pulls,pullsPanelStage, pullsPage, pullsAbsent, pullsDrawer, prMove.
+// Units: pullsPasteOpening, pulls, pullsPanelStage, pullsPage, pullsAbsent, pullsDrawer, prMove.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/pulls.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1086,8 +1086,11 @@ async function pullsPasteOpeningSection(browser, base) {
     await p.fill("#pulls-pop-url", "https://github.com/openziti/x/pull/972");
     await shot(p, "popover");
     await p.click("#pulls-pop-go");
+    await p.waitForTimeout(300);
+    await shot(p, "in-flight");
     await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
       .catch(() => fail("pullsPasteOpening: the popover paste drew no card"));
+    if (!await p.locator("#pulls-list .card.linkopen").isVisible()) fail("pullsPasteOpening: the card is not visible on the pulls page");
     if (!(await p.isHidden("#pulls-pop"))) fail("pullsPasteOpening: the popover stayed open while the open was in flight");
     for (let i = 0; i < 50 && !opens.length; i++) await p.waitForTimeout(50);
     if (!opens.length || !/^op-/.test(opens[0].progress || "") || opens[0].url !== "https://github.com/openziti/x/pull/972")
@@ -1099,7 +1102,7 @@ async function pullsPasteOpeningSection(browser, base) {
       o.since = Date.now() - 14000;
       linkOpeningPaint();
     });
-    const line = () => p.evaluate(() => (document.querySelector(".card.linkopen .linkopen-say") || {}).textContent || "");
+    const line = () => p.evaluate(() => ((document.querySelector(".card.linkopen .linkopen-say") || {}).textContent || "").trim());
     if (!/fetching the head of pull request 972… 1[4-6]s$/.test(await line())) fail("pullsPasteOpening: the step line is " + JSON.stringify(await line()));
     await shot(p, "slow-step");
     const before = await line();
@@ -1108,7 +1111,7 @@ async function pullsPasteOpeningSection(browser, base) {
     await p.evaluate(() => linkOpeningStep([...linkOpenings.keys()][0], "making the worktree"));
     if (/\ds$/.test(await line())) fail("pullsPasteOpening: a new step kept the old step's seconds: " + await line());
     release();
-    await p.waitForSelector(".card.linkopen.failed", { timeout: slow(5000) })
+    await p.waitForSelector(".card.linkopen.failed", { state: "attached", timeout: slow(5000) })
       .catch(() => fail("pullsPasteOpening: a failed open did not stay as a card"));
     if (!/could not fetch the head/.test(await p.textContent(".card.linkopen.failed"))) fail("pullsPasteOpening: the failure had no reason");
     await p.evaluate(() => [...linkOpenings.keys()].forEach(linkOpeningEnd));

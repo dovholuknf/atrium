@@ -119,6 +119,8 @@ function linkOpeningPaint() {
   if (col) col.insertAdjacentHTML("afterbegin", html);
   const list = document.querySelector("#term-list .termscroll") || document.getElementById("term-list");
   if (list) list.insertAdjacentHTML("afterbegin", html);
+  const prs = document.getElementById("pulls-list");
+  if (prs) prs.insertAdjacentHTML("afterbegin", html);
 }
 
 document.addEventListener("click", e => {
