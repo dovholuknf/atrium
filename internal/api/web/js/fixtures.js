@@ -1323,7 +1323,6 @@ document.getElementById("l-throwaway-on").addEventListener("change", e => {
   if (e.target.checked) {
     document.getElementById("l-home-on").checked = false;
     setHome(false);
-  if (typeof paintThrowawayHint === "function") { paintThrowawayHint(); loadHomes(); }
   }
   setThrowaway(e.target.checked);
   // A throwaway has nothing of a link's to clean up.
@@ -1555,6 +1554,7 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   document.getElementById("l-home-repo").value = "";
   document.getElementById("l-home-branch").value = "";
   setHome(false);
+  if (typeof paintThrowawayHint === "function") { paintThrowawayHint(); loadHomes(); }
   // Off every time, like the model: deleting what a link made is asked for each time it is wanted.
   document.getElementById("l-cleanup-on").checked = false;
 

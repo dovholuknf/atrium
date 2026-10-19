@@ -2436,6 +2436,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         one place and its space can be taken back. Never a drive root, your home folder, atrium's own state folder or a
         folder under the git folder. Cards already running are not moved.</span>
     </div>
+    <div class="field">
+      <label class="eyebrow" for="s-cardrootreq">agents and the card root</label>
+      <label><input id="s-cardrootreq" type="checkbox" data-saves="saveCardRootRequired">
+        refuse an agent launch outside the card root</label>
+      <span class="hintline">Off by default. When on, an agent that launches a card with a directory of its own is told to
+        pass repo and branch so the room makes the folder, unless it says scratch. Launches from the board are never
+        refused.</span>
+    </div>
     <div class="field" id="rc-disk"></div>
     </section>
   </div>

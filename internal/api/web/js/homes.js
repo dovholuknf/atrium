@@ -218,7 +218,14 @@ async function saveCardRoot() {
   await loadDiskPanel();
 }
 
+async function saveCardRootRequired() {
+  const el = document.getElementById("s-cardrootreq");
+  if (el) await saveHousekeeping("card_root_required", !!el.checked);
+}
+
 function fillCardRoot(s) {
+  const req = document.getElementById("s-cardrootreq");
+  if (req) req.checked = !!(s && s.card_root_required);
   const el = document.getElementById("s-cardroot");
   if (el) el.value = (s && s.card_root) || "";
 }

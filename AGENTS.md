@@ -244,6 +244,9 @@ machine" and not "it is deployed to the live hub".
 - `claude/main` is the integration branch, branched from `origin/main`. Every feature branches from it and merges
   back to it. Recreate it from `origin/main` when it is missing.
 - A feature gets its own branch off `claude/main`, and merges back to `claude/main` when it is done.
+- A worker is launched with `repo` and `branch`, not with a worktree made by hand: the room makes the card's home under its
+  `card_root` and adds the worktree there. `scratch: true` is for throwaway work. With the room setting
+  `card_root_required` on, the room refuses an agent launch whose `cwd` is outside the card root.
 - `claude/main` has to fast-forward onto `origin/main`. If it does not, rebase it on `origin/main` and fix the
   conflict before calling anything done. Landing on the remote `main` is the finish line.
 - A merge worker merges the branch, runs `bash scripts/test-touched.sh`, and lands with

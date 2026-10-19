@@ -985,6 +985,13 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
+	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) &&
+		d.st.CardRootRequiredOn() {
+		if root, err := d.cardRoot(); err == nil && !insideRoot(root, cwd) {
+			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or home: true) so the "+
+				"room makes the folder, or pass scratch: true if this is throwaway work", filepath.ToSlash(cwd), filepath.ToSlash(root))
+		}
+	}
 	launchBranch := ""
 	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
 		branch, why := agentCheckoutBranch(cwd)

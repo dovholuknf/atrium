@@ -296,7 +296,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +
 			"gate and its own card, it outlives the session that started it, and the human can " +
 			"watch it, type into it or take it over. It is a colleague rather than a call.\n\n" +
-			"Atrium does not create the directory. Make it first.\n\n" +
+			"LAUNCH WITH `repo` AND `branch`, NOT WITH A WORKTREE YOU MADE. Give `repo` (host/owner/repo, or an absolute path to a clone on the room) and optionally `branch` and `base`, and atrium makes the card's home under the room's card root and adds the worktree there, so the room's work is in one place and its space is taken back when the card is culled. `home: true` alone makes an empty home for scratch work. `cwd` is for a directory that already exists and is not together with `repo`. A room can be set to refuse an agent launch whose `cwd` is outside its card root.\n\n" +
 			"IT STARTS EMPTY. Unlike a subagent it inherits nothing of your conversation, " +
 			"which is the point as often as it is the cost: hand it what it needs and it is " +
 			"not carrying three hours of unrelated debugging. Use `prompt` for that.\n\n" +
@@ -342,8 +342,8 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"to the hub, publishes and calls atrium_done. It runs on opus unless `model` or the " +
 			"worker_policy `interview_model` says otherwise.\n\n" +
 			"WHAT IT WRITES GOES IN GIT. A `cwd` that is not a git checkout on a `claude/*` branch is " +
-			"REFUSED, with the reason, so a writeup is not lost in a scratch folder. Make a worktree on a " +
-			"claude/* branch, or pass `scratch: true` for work that is throwaway.\n\n" +
+			"REFUSED, with the reason, so a writeup is not lost in a scratch folder. Use `repo` and `branch`, or " +
+			"pass `scratch: true` for work that is throwaway.\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
 	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 

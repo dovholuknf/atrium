@@ -129,7 +129,7 @@ func addPeerTools(s *mcp.Server) {
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +
 			"gate and its own card, it outlives the session that started it, and the human can " +
 			"watch it, type into it or take it over. It is a colleague rather than a call.\n\n" +
-			"Atrium does not create the directory. Make it first.\n\n" +
+			"LAUNCH WITH `repo` AND `branch`, NOT WITH A WORKTREE YOU MADE. Give `repo` (host/owner/repo, or an absolute path to a clone on the room) and optionally `branch` and `base`, and atrium makes the card's home under the room's card root and adds the worktree there, so the room's work is in one place and its space is taken back when the card is culled. `home: true` alone makes an empty home for scratch work. `cwd` is for a directory that already exists and is not together with `repo`. A room can be set to refuse an agent launch whose `cwd` is outside its card root.\n\n" +
 			"IT STARTS EMPTY. Unlike a subagent it inherits nothing of your conversation, " +
 			"which is the point as often as it is the cost: hand it what it needs and it is " +
 			"not carrying three hours of unrelated debugging. Use `brief` for that. It is " +

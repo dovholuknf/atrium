@@ -231,3 +231,62 @@ func TestALongSayAndTheHandoffKeepTheOldPlacesForACardWithNoHome(t *testing.T) {
 		t.Fatalf("handoff at %s, want %s", got, want)
 	}
 }
+
+func requiredRoom(t *testing.T, on bool) (*Daemon, string) {
+	t.Helper()
+	d, root := homeRoom(t)
+	d.hk.settleWindow = 30 * time.Second
+	if _, err := d.st.SaveHarness(store.Harness{
+		ID: "quick", Label: "quick", Enabled: true, LaunchMode: store.LaunchPTY,
+		Cmd: os.Args[0], Args: []string{"-test.run=TestHelperSourceProcess"},
+		PromptArgs: []string{"-test.v={prompt}"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if on {
+		if err := d.st.SetSetting(store.SettingCardRootRequired, "on"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return d, root
+}
+
+func launchOutside(d *Daemon, cwd string, tags []string, scratch bool) error {
+	_, err := d.Launch(LaunchRequest{Harness: "quick", Cwd: cwd, Title: "outside", Prompt: "go", Tags: tags, Scratch: scratch})
+	return err
+}
+
+func refusedForRoot(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "card root") && strings.Contains(err.Error(), "repo")
+}
+
+func TestAnAgentLaunchOutsideTheCardRootIsRefusedWhenRequired(t *testing.T) {
+	t.Parallel()
+	d, _ := requiredRoom(t, true)
+	err := launchOutside(d, t.TempDir(), []string{OriginAgentTag}, false)
+	if !refusedForRoot(err) {
+		t.Fatalf("an agent launch outside the root was not refused with the repo and branch sentence: %v", err)
+	}
+	if !strings.Contains(err.Error(), "branch") || !strings.Contains(err.Error(), "scratch") {
+		t.Fatalf("the refusal does not name branch and scratch: %v", err)
+	}
+}
+
+func TestAnAgentLaunchOutsideTheCardRootIsAllowedWhenNotRequired(t *testing.T) {
+	t.Parallel()
+	d, _ := requiredRoom(t, false)
+	if err := launchOutside(d, t.TempDir(), []string{OriginAgentTag}, true); refusedForRoot(err) {
+		t.Fatalf("refused with the setting off: %v", err)
+	}
+}
+
+func TestScratchAndAHumanLaunchAreNeverRefusedForTheCardRoot(t *testing.T) {
+	t.Parallel()
+	d, _ := requiredRoom(t, true)
+	if err := launchOutside(d, t.TempDir(), []string{OriginAgentTag}, true); refusedForRoot(err) {
+		t.Fatalf("scratch was refused: %v", err)
+	}
+	if err := launchOutside(d, t.TempDir(), nil, false); refusedForRoot(err) {
+		t.Fatalf("a human launch was refused: %v", err)
+	}
+}

@@ -33,6 +33,15 @@ func (s *Store) PtyHostOn() bool {
 	return err == nil && strings.EqualFold(strings.TrimSpace(v), "on")
 }
 
+// SettingCardRootRequired is `on` when the room refuses an agent launch whose directory is outside the card root.
+const SettingCardRootRequired = "card_root_required"
+
+// CardRootRequiredOn reports whether the setting is on. Unset is off.
+func (s *Store) CardRootRequiredOn() bool {
+	v, err := s.Setting(SettingCardRootRequired)
+	return err == nil && strings.EqualFold(strings.TrimSpace(v), "on")
+}
+
 // NewRunID makes a run id: random, 128 bits, the same shape as every other key.
 func NewRunID() string { return newID() }
 
