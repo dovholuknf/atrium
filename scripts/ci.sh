@@ -401,9 +401,8 @@ if step flaky "the flaky suite"; then
     fi
     flaky_units="$(node scripts/flaky-suite.js board-units)"
     if [ -n "$flaky_units" ]; then
-      cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
-      [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
-      shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 4 ] || shards=4
+      # One shard: the units run one after another, so none of them runs under another's load.
+      shards=1
       board_log="$artefacts/flaky-board.log"
       flaky_board_run() {
         env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards"           node scripts/test-board-sharded.js --local --no-retry --units "$flaky_units" 2>&1 | tee "$board_log"
