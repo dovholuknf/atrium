@@ -406,8 +406,8 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
 (`bash scripts/ci.sh --group flaky`, one job per platform), with no retry, and every other step skips them, so each
 test runs in exactly one place. The other jobs of a platform wait for its flaky job and run even when it is red.
 
-- **Enters** when it failed in at least 2 of the last 20 runs of the flake ledger
-  (`node scripts/ci-flake-ledger.js report --window 20`), whether or not a fix names it. Add an entry with its kind
+- **Enters** the first time it fails in CI and is not listed, whether or not a fix names it. The ledger
+  (`node scripts/ci-flake-ledger.js report --window 20`) shows which. Add an entry with its kind
   (`go` with the package, or `board`), its name and a one-line reason. A fix entry is a commit subject that names the
   test, not proof that it held.
 - **Leaves** after 30 quiet runs, counted in the ledger with the entry in place. Remove the entry in the same change
