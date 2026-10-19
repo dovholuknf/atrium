@@ -23,6 +23,7 @@ func TestCodexCommandDoesNotQuoteTheProgram(t *testing.T) {
 // And claude still gets its quotes, because a shell reads that one and would
 // otherwise split the path in half.
 func TestClaudeCommandStillQuotesAPathWithASpace(t *testing.T) {
+	withGitBash(t)
 	got := HookCommandFor("C:/Program Files/atrium/atrium.exe", "session-start")
 	if !strings.HasPrefix(got, `"C:/Program Files/atrium/atrium.exe"`) {
 		t.Fatalf("claude's command lost its quotes, so the shell will split it: %s", got)

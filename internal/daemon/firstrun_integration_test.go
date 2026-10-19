@@ -41,6 +41,11 @@ func TestAClaudePtyLaunchDeclinesTheFullscreenRenderer(t *testing.T) {
 // Launched for real through the pty path, the runner starts with the variable.
 func TestALaunchedClaudeStartsOnTheClassicRenderer(t *testing.T) {
 	d := testDaemon(t)
+	bash := filepath.Join(t.TempDir(), "bash.exe")
+	if err := os.WriteFile(bash, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CODE_GIT_BASH_PATH", bash)
 	t.Setenv("ATRIUM_TEST_ENV_DUMP", "1")
 	// An inherited choice is not the operator's for this runner: the room's own
 	// CLAUDE_CODE_ variables are stripped, and the default goes on anyway.

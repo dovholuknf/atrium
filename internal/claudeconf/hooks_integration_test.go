@@ -11,10 +11,20 @@ import (
 	"testing"
 )
 
+func withGitBash(t *testing.T) {
+	t.Helper()
+	bash := filepath.Join(t.TempDir(), "bash.exe")
+	if err := os.WriteFile(bash, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(gitBashEnv, bash)
+}
+
 // Both Inspect and Install read the home directory, so a test has to move it
 // or it would report on whoever is running the suite.
 func withHome(t *testing.T, contents string) string {
 	t.Helper()
+	withGitBash(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -425,6 +435,7 @@ func TestInstallCreatesTheFileWhenThereIsNone(t *testing.T) {
 // asserting otherwise fails on a build machine for a reason that has nothing
 // to do with hooks.
 func TestHookCommandQuotesAPathWithSpaces(t *testing.T) {
+	withGitBash(t)
 	got := HookCommandFor("/opt/atrium bin/atrium", "tool-start")
 	if !strings.HasPrefix(got, `"/opt/atrium bin/atrium"`) {
 		t.Fatalf("a spaced path was written unquoted: %s", got)
@@ -440,6 +451,7 @@ func TestHookCommandSlashesAWindowsPath(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("filepath.ToSlash only converts backslashes on Windows")
 	}
+	withGitBash(t)
 	got := HookCommandFor(`C:\Program Files\atrium\atrium.exe`, "tool-start")
 	if !strings.HasPrefix(got, `"C:/Program Files/atrium/atrium.exe"`) {
 		t.Fatalf("a windows path was not slashed: %s", got)
