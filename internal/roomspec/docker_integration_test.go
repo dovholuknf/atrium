@@ -32,7 +32,9 @@ func TestLinuxAdapterInDocker(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	run(docker, "version", "--format", "{{.Server.Version}}")
+	if kind := run(docker, "version", "--format", "{{.Server.Os}}"); kind != Linux {
+		t.Skipf("docker serves %s containers, ubuntu:24.04 needs linux ones", kind)
+	}
 
 	bin := filepath.Join(t.TempDir(), "rs.test")
 	build := exec.Command("go", "test", "-tags", "integration", "-c", "-o", bin, ".")
