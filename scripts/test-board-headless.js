@@ -10762,7 +10762,12 @@ async function walkContextSection(browser, base) {
   const S = "#walk-drawer ";
   const open = async (p, id) => {
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForFunction(x => {
+      if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+      const t = Date.now();
+      if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+      return false;
+    }, id, { timeout: slow(15000), polling: 10 });
     await attachRetry(p, { unit: "walkContext", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
     await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
     await p.click("#t-walk");
