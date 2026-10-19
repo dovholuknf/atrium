@@ -1,0 +1,26 @@
+# The two toolchain installs and the one call to ci.sh, shared by every job in ci.yml. No logic: it configures the
+# runner and calls scripts/ci.sh, as the workflow's header says.
+name: ci-run
+description: Install Go and node, then run one group of scripts/ci.sh
+inputs:
+  group:
+    description: the ci.sh group to run
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    # ci.sh stops when node is not major 22, so this version is the one it checks.
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    # `shell: bash` is Git Bash on a Windows runner, the same shell ci.sh is written for. Invoked through bash because
+    # ci.sh has no executable bit in git.
+    - name: everything
+      shell: bash
+      run: bash scripts/ci.sh --group ${{ inputs.group }}

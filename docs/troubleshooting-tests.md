@@ -399,3 +399,21 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
   failed once, so a green run after a fix says little. Count a fix by the wait it adds on the state the step asserts.
 - Do not hunt for the line of a thrown unit. Its `failing.tsv` row now names the call and its line, as in
   `waitForSelector("#uc-body .ucfade") at usage.js:2072:14`. `HEADLESS_TRACE=1` prints every page action before it.
+
+# The flaky suite: how a test enters and leaves
+
+`scripts/flaky-suite.json` lists every test known to fail now and then. CI runs them first and alone
+(`bash scripts/ci.sh --group flaky`, one job per platform), with no retry, and every other step skips them, so each
+test runs in exactly one place. The other jobs of a platform wait for its flaky job and run even when it is red.
+
+- **Enters** when it failed in at least 2 of the last 20 runs of the flake ledger
+  (`node scripts/ci-flake-ledger.js report --window 20`), whether or not a fix names it. Add an entry with its kind
+  (`go` with the package, or `board`), its name and a one-line reason. A fix entry is a commit subject that names the
+  test, not proof that it held.
+- **Leaves** after 30 quiet runs, counted in the ledger with the entry in place. Remove the entry in the same change
+  that records the count.
+- **A typo fails loudly.** `node scripts/flaky-suite.js check` runs in the `go-build` step and at the start of the
+  flaky step, and fails on a name that no longer exists, since an empty `-run` would run everything.
+- `scripts/test-touched.sh` runs a touched manifest test ahead of the rest of its plan.
+- A manifest board unit that is also on `board-visual-units.txt` runs in the flaky job and fails it. That is the point
+  of the move, and the unit is not run in board-visual.

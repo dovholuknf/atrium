@@ -15,6 +15,8 @@
 #   - the headless board units read off the code for each changed internal/api/web file, plus bootClean, run through
 #     scripts/test-board-sharded.js --local --units (which sets HEADLESS_UNITS per shard). A web file that maps to no
 #     unit gets bootClean only, and a warning
+#   - THE FLAKY SUITE FIRST: a changed package or unit that scripts/flaky-suite.json lists runs ahead of the rest, once
+#     and with no retry, and the later run skips it. The answer from the bad tests comes before the long run
 #   - gofmt -l over the changed .go files, failing and naming any it lists
 #   - the node scripts/test-*.js whose subject changed, a syntax check of changed scripts
 #
@@ -116,11 +118,32 @@ gofmt_changed() {
 if printf '%s\n' "$files" | grep -q '\.go$'; then step "gofmt -l (changed Go files)" gofmt_changed; fi
 for f in ${jschecks[@]+"${jschecks[@]}"}; do step "node --check $f" node --check "$f"; done
 for f in ${shchecks[@]+"${shchecks[@]}"}; do step "bash -n $f" bash -n "$f"; done
+# the flaky suite's tests this diff touched, first and alone, then skipped by the runs below
+flaky_skip=()
+if [ ${#gopkgs[@]} -gt 0 ] || [ -n "$units" ]; then
+  flaky_re="$(node scripts/flaky-suite.js go-regex)"
+  flaky_gopkgs=" $(node scripts/flaky-suite.js go-pkgs) "
+  flaky_board=",$(node scripts/flaky-suite.js board-units),"
+  fpk=()
+  for p in ${gopkgs[@]+"${gopkgs[@]}"}; do case "$flaky_gopkgs" in *" $p "*) fpk+=("$p") ;; esac; done
+  if [ ${#fpk[@]} -gt 0 ] && [ -n "$flaky_re" ]; then
+    step "flaky suite: go test ${fpk[*]}" bash scripts/test.sh all -run "$flaky_re" "${fpk[@]}"
+    flaky_skip=(-skip "$flaky_re")
+  fi
+  fu=""; rest_units=""
+  for u in $(echo "$units" | tr ',' ' '); do
+    case "$flaky_board" in *",$u,"*) fu="${fu:+$fu,}$u" ;; *) rest_units="${rest_units:+$rest_units,}$u" ;; esac
+  done
+  if [ -n "$fu" ]; then
+    step "flaky suite: headless units $fu" bash -c 'node scripts/test-board-sharded.js --local --no-retry --units "$1"' _ "$fu"
+    units="$rest_units"
+  fi
+fi
 [ "$gobuild" = 1 ] && step "go build ./..." go build -o /dev/null ./...
 for g in ${gofiles[@]+"${gofiles[@]}"}; do step "go test $g" go test -count=1 $g; done
 for g in ${govet[@]+"${govet[@]}"}; do step "go vet $g" go vet "$g"; done
 # test.sh: unit mode keeps the 20ms budget, all mode adds -tags integration.
-[ ${#gopkgs[@]} -gt 0 ] && step "go test ($mode) ${gopkgs[*]}" bash scripts/test.sh "$mode" "${gopkgs[@]}"
+[ ${#gopkgs[@]} -gt 0 ] && step "go test ($mode) ${gopkgs[*]}" bash scripts/test.sh "$mode" ${flaky_skip[@]+"${flaky_skip[@]}"} "${gopkgs[@]}"
 for n in ${nodes[@]+"${nodes[@]}"}; do step "node $n" node "$n"; done
 
 if [ -n "$units" ]; then

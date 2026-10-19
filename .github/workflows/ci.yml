@@ -23,65 +23,18 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    # ALL THREE, and Windows is not the afterthought. It is atrium's primary
-    # platform: ConPTY, the rename-aside binary swap, the logon task, and every
-    # path rule are Windows behaviour, and a Linux-only matrix builds none of
-    # it. The first run of this workflow found four tests that had never left
-    # Windows, and a Windows runner is what finds the reverse of each.
-    #
-    # `fail-fast: false` so one platform failing still reports the other. The
-    # interesting case is exactly when they disagree, and cancelling the second
-    # job hides which way.
-    #
-    # ONE JOB PER PLATFORM AND GROUP, so a run takes as long as its slowest group and not the sum. The groups are
-    # `ci.sh --list-groups`. Runners are scarce, so the quick groups share a job: 12 jobs, not 18, and the slower the
-    # runner the more jobs it gets. Which steps belong to which, and which tests are in which half, is ci.sh's
-    # business, so this file only names the group.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, group: go-all }
-          - { os: ubuntu-latest, group: board-1 }
-          - { os: ubuntu-latest, group: board-2 }
-          - { os: macos-latest, group: go-test }
-          - { os: macos-latest, group: go-checks-visual }
-          - { os: macos-latest, group: board-1 }
-          - { os: macos-latest, group: board-2 }
-          - { os: windows-latest, group: go-test-1 }
-          - { os: windows-latest, group: go-test-2 }
-          - { os: windows-latest, group: go-checks-visual }
-          - { os: windows-latest, group: board-1 }
-          - { os: windows-latest, group: board-2 }
-    name: check (${{ matrix.os }}, ${{ matrix.group }})
-    runs-on: ${{ matrix.os }}
-    # No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual failure out of its own
-    # exit status and leaves it in the log, the summary and the artifacts.
+  # THE FLAKY SUITE FIRST, ONE JOB PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then, and
+  # `ci.sh --group flaky` runs only those. Each platform's other jobs wait for that platform's flaky job (`needs`), and
+  # run whether it passed or not (`!cancelled()`), so a red flaky job reports first and does not hide the rest.
+  flaky-ubuntu:
+    name: check (ubuntu-latest, flaky)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: ./.github/actions/ci-run
         with:
-          # Read from go.mod rather than pinned here. Two places naming a Go
-          # version is two places to forget, and the one in go.mod is the one
-          # that is actually true.
-          go-version-file: go.mod
-          cache: true
-
-      # ci.sh stops when node is not major 22, so this version is the one it checks.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: everything
-        # `shell: bash` rather than the default, which on a Windows runner is
-        # PowerShell. GitHub maps this to Git Bash there, which is the same
-        # shell `scripts/ci.sh` is written for and the same one a developer on
-        # Windows runs it in.
-        shell: bash
-        # Invoke bash explicitly because ci.sh has no executable bit in git.
-        run: bash scripts/ci.sh --group ${{ matrix.group }}
+          group: flaky
 
       # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
       - name: summary
@@ -89,18 +42,189 @@ jobs:
         shell: bash
         env:
           JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-${{ matrix.os }}-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          ARTIFACT: ci-ubuntu-latest-flaky-attempt-${{ github.run_attempt }}
         run: |
-          echo "- check (${{ matrix.os }}, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+          echo "- check (ubuntu-latest, flaky): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
 
-      # What ci.sh left in build.claude/ci: go test's raw stream, the whole
-      # output of each failed package, every test's time, and the goroutine
-      # dumps of failed tests. Kept on a pass too, so a slow test can be
-      # compared against a run that was fine.
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ci-${{ matrix.os }}-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          name: ci-ubuntu-latest-flaky-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  flaky-macos:
+    name: check (macos-latest, flaky)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: flaky
+
+      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
+      - name: summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ARTIFACT: ci-macos-latest-flaky-attempt-${{ github.run_attempt }}
+        run: |
+          echo "- check (macos-latest, flaky): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-macos-latest-flaky-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  flaky-windows:
+    name: check (windows-latest, flaky)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: flaky
+
+      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
+      - name: summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ARTIFACT: ci-windows-latest-flaky-attempt-${{ github.run_attempt }}
+        run: |
+          echo "- check (windows-latest, flaky): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-windows-latest-flaky-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ALL THREE PLATFORMS, and Windows is not the afterthought. It is atrium's primary platform: ConPTY, the rename-aside
+  # binary swap, the logon task, and every path rule are Windows behaviour, and a Linux-only matrix builds none of it.
+  #
+  # `fail-fast: false` so one platform failing still reports the other. The interesting case is exactly when they
+  # disagree, and cancelling the second job hides which way.
+  #
+  # ONE JOB PER PLATFORM AND GROUP, so a run takes as long as its slowest group and not the sum. The groups are
+  # `ci.sh --list-groups`. Runners are scarce, so the quick groups share a job, and the slower the runner the more jobs
+  # it gets. Which steps belong to which, and which tests are in which half, is ci.sh's business, so this file only
+  # names the group. No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual
+  # failure out of its own exit status.
+  check-ubuntu:
+    needs: flaky-ubuntu
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [go-all, board-1, board-2]
+    name: check (ubuntu-latest, ${{ matrix.group }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: ${{ matrix.group }}
+
+      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
+      - name: summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ARTIFACT: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+        run: |
+          echo "- check (ubuntu-latest, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  check-macos:
+    needs: flaky-macos
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [go-test, go-checks-visual, board-1, board-2]
+    name: check (macos-latest, ${{ matrix.group }})
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: ${{ matrix.group }}
+
+      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
+      - name: summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ARTIFACT: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+        run: |
+          echo "- check (macos-latest, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  check-windows:
+    needs: flaky-windows
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [go-test-1, go-test-2, go-checks-visual, board-1, board-2]
+    name: check (windows-latest, ${{ matrix.group }})
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: ${{ matrix.group }}
+
+      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
+      - name: summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ARTIFACT: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+        run: |
+          echo "- check (windows-latest, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
@@ -109,7 +233,7 @@ jobs:
   # failed in the last 10 runs on main. THERE IS NO LOGIC HERE: `scripts/ci-rollup.js` does it all and is best effort, so
   # this job cannot fail the run and nothing waits on it.
   rollup:
-    needs: [check]
+    needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -128,7 +252,7 @@ jobs:
   # `failure()` keeps a green run silent. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` builds the body from this
   # run's own context, and the ziti-hook action only carries it to the hub over ziti.
   notify:
-    needs: [check]
+    needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
     if: failure()
     runs-on: ubuntu-latest
     steps:

@@ -23,7 +23,7 @@
 // --save-weights refreshes. A unit with no weight gets the median one.
 //
 // ONE merged report follows: every unit, slowest first, then the failures. Every failed unit is run once more, alone
-// on a quiet machine. A unit named in scripts/board-suite-flaky.json that fails both tries is reported as flaky and
+// on a quiet machine. A unit named in scripts/flaky-suite.json that fails both tries is reported as flaky and
 // still fails the run, one that passes the second time is labelled flaky and does not. A unit NOT on the list that
 // passes the second time is shown in its own block (it failed under the load of the shards, not on its own, so it
 // wants fixing or listing) and still fails the run, so a race is never passed quietly. A unit that fails both tries
@@ -38,7 +38,7 @@ const path = require("path");
 const HERE = __dirname;
 const HEADLESS = process.env.BOARD_HEADLESS_FILE || path.join(HERE, "test-board-headless.js");
 const WEIGHTS = path.join(HERE, "board-suite-weights.json");
-const FLAKY = path.join(HERE, "board-suite-flaky.json");
+const FLAKY = path.join(HERE, "flaky-suite.json");
 const DEFAULT_WEIGHT_MS = 8000;
 
 // Three quarters of the cores. Each shard is a node and a Chromium with its renderer, GPU and network processes, and a
@@ -235,7 +235,7 @@ async function main() {
   const list = listUnits();
   const groups = makeGroups(list, opt.units);
   const weights = (readJSON(WEIGHTS, {}) || {}).ms || {};
-  const flaky = (readJSON(FLAKY, {}) || {}).flaky || {};
+  const flaky = Object.fromEntries(((readJSON(FLAKY, {}) || {}).entries || []).filter(e => e.kind === "board").map(e => [e.name, e]));
   const n = opt.shards || defaultShards();
   const shards = plan(groups, weights, n);
   const wanted = groups.flatMap(g => g.units);

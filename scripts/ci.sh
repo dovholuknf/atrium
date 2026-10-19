@@ -29,11 +29,16 @@ set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$here"
 
-all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard govulncheck board board-visual skins contrast opencode release parse powershell ps-tests clean-tree"
+all_steps="machine toolchain flaky gofmt go-vet go-build go-test go-race time-guard govulncheck board board-visual skins contrast opencode release parse powershell ps-tests clean-tree"
 
 # GROUPS. The workflow runs one job per group and platform, so the Go tests, the Go checks and the board run side by
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
+#
+# THE FLAKY SUITE RUNS FIRST. scripts/flaky-suite.json lists every test known to fail now and then, and the flaky group
+# runs only those, with no retry and no quarantine: a failure fails the job. Every other step skips them, so a test runs
+# in exactly one place, and the workflow starts the other jobs after this one (`needs: flaky`) so the bad tests answer
+# fast and alone.
 #
 # THE GO TESTS ARE TWO JOBS ON WINDOWS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
 # wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the
@@ -49,9 +54,10 @@ all_steps="machine toolchain gofmt go-vet go-build go-test go-race time-guard go
 # THE MERGED GROUPS use fewer runners. go-checks-visual is go-checks and board-visual in one job, go-all is go-test,
 # go-checks and board-visual in one. board-visual never fails the exit status (soft_nfail), so merging it hides no
 # go-checks failure and no go-checks failure hides it.
-group_list="go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual"
+group_list="flaky go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual"
 group_steps() {
   case "$1" in
+    flaky) echo "flaky,clean-tree" ;;
     go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     go-checks-visual) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,board-visual,clean-tree" ;;
@@ -169,8 +175,11 @@ board_units() {
       .map(l => l.replace(/#.*/, "").trim()).filter(Boolean);
     const gone = visual.filter(u => !all.includes(u));
     if (gone.length) { process.stderr.write("board-visual-units.txt names units the suite lacks: " + gone.join(" ") + "\n"); process.exit(1); }
+    const flaky = JSON.parse(fs.readFileSync("scripts/flaky-suite.json", "utf8")).entries
+      .filter(e => e.kind === "board").map(e => e.name);
     const which = process.argv[1];
-    let want = which === "visual" ? visual : all.filter(u => !visual.includes(u));
+    let want = which === "visual" ? visual.filter(u => !flaky.includes(u))
+      : all.filter(u => !visual.includes(u) && !flaky.includes(u));
     const half = (which.match(/^gating-([12])$/) || [])[1];
     if (half) {
       const ms = (JSON.parse(fs.readFileSync("scripts/board-suite-weights.json", "utf8")).ms) || {};
@@ -357,7 +366,7 @@ else
   echo "ok: go $have_go, node $have_node"
 fi
 # The headless board tests need playwright and its browser. Installed here, so a fresh machine needs nothing else.
-if { want board || want board-visual; } && command -v npm >/dev/null 2>&1; then
+if { want board || want board-visual || want flaky; } && command -v npm >/dev/null 2>&1; then
   if [ -f package-lock.json ]; then
     check "npm ci" npm ci --no-audit --no-fund
   else
@@ -366,6 +375,47 @@ if { want board || want board-visual; } && command -v npm >/dev/null 2>&1; then
   deps=""
   if [ "$os" = linux ] && [ -n "${CI:-}" ]; then deps="--with-deps"; fi
   check "playwright browser" npx --no-install playwright install $deps chromium
+fi
+
+if step flaky "the flaky suite"; then
+  # Only the tests on scripts/flaky-suite.json, once each: no retry and no quarantine, so a failure here fails the job.
+  # The names are checked first because an empty -run would run everything.
+  if check "flaky suite names" node scripts/flaky-suite.js check; then
+    flaky_n=0; flaky_bad=0
+    flaky_pkgs="$(node scripts/flaky-suite.js go-pkgs)"
+    flaky_re="$(node scripts/flaky-suite.js go-regex)"
+    if [ -n "$flaky_re" ]; then
+      mkdir -p "$artefacts/go-flaky"
+      bash scripts/test.sh full -json -timeout 20m -p "$cpus" -run "$flaky_re" $flaky_pkgs 2>&1         | tee "$artefacts/go-flaky/stream.json" | go run scripts/ci-report.go -dir "$artefacts/go-flaky"
+      codes=("${PIPESTATUS[@]}")
+      if [ "${codes[0]}" != 0 ] || [ "${codes[2]}" != 0 ]; then
+        echo "FAILED: flaky go tests" >&2; mark_fail
+      else
+        echo "ok: flaky go tests"
+      fi
+      if [ -f "$artefacts/go-flaky/go-test.counts" ]; then
+        read -r n_ran n_failed < "$artefacts/go-flaky/go-test.counts"
+        flaky_n=$((flaky_n + n_ran)); flaky_bad=$((flaky_bad + n_failed))
+        while IFS=$'	' read -r _ name err; do [ -n "$name" ] && note_failing flaky "$name" "$err"; done < "$artefacts/go-flaky/go-test.failing.tsv"
+      fi
+    fi
+    flaky_units="$(node scripts/flaky-suite.js board-units)"
+    if [ -n "$flaky_units" ]; then
+      cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
+      [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
+      shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 4 ] || shards=4
+      board_log="$artefacts/flaky-board.log"
+      flaky_board_run() {
+        env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards"           node scripts/test-board-sharded.js --local --no-retry --units "$flaky_units" 2>&1 | tee "$board_log"
+        return "${PIPESTATUS[0]}"
+      }
+      board_env_probe flaky-env.txt
+      check "flaky board units" flaky_board_run
+      board_report flaky "$board_log"
+      flaky_n=$((flaky_n + cur_ran)); flaky_bad=$((flaky_bad + cur_failed))
+      note_counts "$flaky_n" "$flaky_bad"
+    fi
+  fi
 fi
 
 if step gofmt "gofmt"; then
@@ -394,6 +444,7 @@ if step go-build "go build"; then
   check "test globals" go run scripts/check-test-globals.go
   # No test gains a flat wait: spin on a condition, or mark the line `// wait: <why>`.
   check "test waits" go run scripts/check-test-waits.go
+  check "flaky suite names" node scripts/flaky-suite.js check
 fi
 
 if step go-test "go test"; then
@@ -413,8 +464,10 @@ if step go-test "go test"; then
     local codes=("${PIPESTATUS[@]}")
     [ "${codes[0]}" = "0" ] && [ "${codes[2]}" = "0" ]
   }
+  flaky_skip="$(node scripts/flaky-suite.js go-regex)"
+  skip_flaky=(); [ -n "$flaky_skip" ] && skip_flaky=(-skip "$flaky_skip")
   if [ -z "$part" ]; then
-    go_test_run all -p "$cpus" ./...; go_ok=$?
+    go_test_run all -p "$cpus" ${skip_flaky[@]+"${skip_flaky[@]}"} ./...; go_ok=$?
     mv "$artefacts/go-test.all/stream.json" "$artefacts/go-test.json"
     mv "$artefacts"/go-test.all/* "$artefacts/" 2>/dev/null
   else
@@ -428,14 +481,14 @@ if step go-test "go test"; then
     part1="./internal/gitsync ./internal/api ./internal/cli ./internal/ptyhost ./internal/deployready ./internal/roomspec"
     if [ "$part" = 1 ]; then
       rest="$part1"
-      go_test_run daemon -run "$cut" "$daemon" & daemon_pid=$!
+      go_test_run daemon -run "$cut" ${skip_flaky[@]+"${skip_flaky[@]}"} "$daemon" & daemon_pid=$!
     else
       mod="$(go list -m)"
       rest="$(go list -tags integration,git ./... | grep -v -x -F -f <(for p in $daemon $part1; do echo "$mod/${p#./}"; done) | tr '\n' ' ')"
-      go_test_run daemon -skip "$cut" "$daemon" & daemon_pid=$!
+      go_test_run daemon -skip "$cut${flaky_skip:+|$flaky_skip}" "$daemon" & daemon_pid=$!
     fi
     echo "part $part: daemon $([ "$part" = 1 ] && echo -run || echo -skip) '$cut', then: $rest"
-    go_test_run rest -p $((cpus - 1)) $rest; rest_ok=$?
+    go_test_run rest -p $((cpus - 1)) ${skip_flaky[@]+"${skip_flaky[@]}"} $rest; rest_ok=$?
     wait "$daemon_pid"; daemon_ok=$?
     go_ok=$(( rest_ok || daemon_ok ))
     # The merged stream is what time-guard reads and the files the summary reads come from, so the reporter runs
