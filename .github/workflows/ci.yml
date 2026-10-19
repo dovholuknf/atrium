@@ -228,7 +228,7 @@ jobs:
 
   # The run page's own summary: every failing unit across the matrix, whether the alone retry passed it, and how often it
   # failed in the last 10 runs on main. THERE IS NO LOGIC HERE: `scripts/ci-rollup.js` does it all and is best effort, so
-  # this job cannot fail the run and nothing waits on it.
+  # this job cannot fail the run. The notify job waits on it, so the run's summary exists before the hub is told.
   rollup:
     needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
     if: always()
@@ -245,11 +245,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" || true
 
-  # Tells the hub when this run finished, green or red, for now. It needs every other job, so it starts when they are
-  # done. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks the conclusion from the jobs' results and builds the
-  # body from this run's own context, and the ziti-hook action only carries it to the hub over ziti.
+  # Tells the hub when this run finished, green or red, for now. It needs every other job, rollup last, so it starts when
+  # they are done. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks the conclusion from the jobs' results and builds
+  # the body from this run's own context, and the ziti-hook action only carries it to the hub over ziti.
   notify:
-    needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
+    needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows, rollup]
     if: always()
     runs-on: ubuntu-latest
     steps:
