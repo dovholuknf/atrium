@@ -145,7 +145,8 @@ const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
 // One finger or one mouse, whichever the width calls for.
 function pointer(page, mobile) {
   return {
-    async click(x, y) { if (mobile) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(250); }
+    async click(x, y) { if (mobile) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(250); },
+    async clickOn(loc, position) { if (mobile) await loc.tap({ position }); else await loc.click({ position }); await sleep(250); }
   };
 }
 
@@ -331,7 +332,7 @@ async function steps(browser, width, mobile, tabName) {
     const rows = [...document.querySelectorAll(rowsSel)].filter(e => e.offsetParent !== null);
     const r = rows.map(e => ({ e, b: e.getBoundingClientRect() }))
       .find(x => x.b.top > p.bottom + 6 && x.b.bottom < innerHeight - 4 && x.b.left >= 0 && x.b.right <= innerWidth + 2);
-    return r ? { id: r.e.dataset.id || "", x: r.b.left + Math.min(40, r.b.width / 3), y: r.b.top + Math.min(14, r.b.height / 2) } : null;
+    return r ? { id: r.e.dataset.id || "", dx: Math.min(40, r.b.width / 3), dy: Math.min(14, r.b.height / 2), x: r.b.left + Math.min(40, r.b.width / 3), y: r.b.top + Math.min(14, r.b.height / 2) } : null;
   }, T.rows);
   check(!!target, `${tag} 5: there is a card below the drawer to click`);
   if (target) {
@@ -381,18 +382,13 @@ async function steps(browser, width, mobile, tabName) {
   // open it, or the swallow above proved nothing.
   if (control) {
     await page.evaluate(() => { const x = document.getElementById("check-xterm"); if (x) x.remove(); });
-    // The stack and the board are an accordion: with the drawer shut the card sits higher, so find it again by id.
-    if (control.id) {
-      const now = await still(() => page.evaluate(id => {
-        const e = [...document.querySelectorAll('[data-id="' + id + '"]')].find(x => x.offsetParent !== null);
-        if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left + Math.min(40, b.width / 3), y: b.top + Math.min(14, b.height / 2) };
-      }, control.id));
-      if (now) { control.x = now.x; control.y = now.y; }
-    }
-    if (!mobile) { await page.mouse.move(control.x, control.y); await sleep(400); }
+    // The row is found when the click happens: a stored point goes stale when the accordion or a chip re-lays the page out.
+    const row = control.id ? page.locator("[data-id=\"" + control.id + "\"]:visible").first() : null;
+    const at = { x: control.dx, y: control.dy };
+    if (!mobile) { if (row) await row.hover({ position: at }); else await page.mouse.move(control.x, control.y); await sleep(400); }
     cardGets = [];
     seen = [];
-    await mouse.click(control.x, control.y);
+    if (row) await mouse.clickOn(row, at); else await mouse.click(control.x, control.y);
     const opened = await until(
       () => page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask)),
       v => v || cardGets.length > 0);
