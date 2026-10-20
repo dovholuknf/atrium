@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
 const fakeAgent = "http://127.0.0.1:7777"
+
+var gitSlots = make(chan struct{}, 4)
 
 type testEnv struct {
 	OSEnv
@@ -19,7 +22,12 @@ type testEnv struct {
 	vars  map[string]string
 	// memo holds each git answer by directory and arguments. The repos never change during a run, and asking git
 	// again costs a process per question.
-	memo map[string]gitAnswer
+	memo *gitMemo
+}
+
+type gitMemo struct {
+	mu sync.Mutex
+	m  map[string]gitAnswer
 }
 
 type gitAnswer struct {
@@ -32,11 +40,18 @@ func (e testEnv) Git(dir string, args ...string) (string, error) {
 		return e.OSEnv.Git(dir, args...)
 	}
 	key := dir + "\x00" + strings.Join(args, "\x00")
-	if a, ok := e.memo[key]; ok {
+	e.memo.mu.Lock()
+	a, ok := e.memo.m[key]
+	e.memo.mu.Unlock()
+	if ok {
 		return a.out, a.err
 	}
+	gitSlots <- struct{}{}
 	out, err := e.OSEnv.Git(dir, args...)
-	e.memo[key] = gitAnswer{out, err}
+	<-gitSlots
+	e.memo.mu.Lock()
+	e.memo.m[key] = gitAnswer{out, err}
+	e.memo.mu.Unlock()
 	return out, err
 }
 
@@ -549,32 +564,46 @@ func TestGitGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	memo := map[string]gitAnswer{}
+	memo := &gitMemo{m: map[string]gitAnswer{}}
+	groups := map[string][]gitCase{}
+	var order []string
 	for _, c := range gitCases {
-		if c.win && runtime.GOOS != "windows" {
-			continue
+		if _, ok := groups[c.repo]; !ok {
+			order = append(order, c.repo)
 		}
-		tool := c.tool
-		if tool == "" {
-			tool = "Bash"
-		}
-		cmd := render(c.cmd, rp, tool)
-		if strings.Contains(c.cmd, "{hub-backslash}") {
-			cmd = strings.ReplaceAll(c.cmd, "{hub-backslash}", rp["hub"])
-		}
-		in := Input{ToolName: tool, CWD: rp[c.repo]}
-		in.ToolInput.Command = cmd
-		env := testEnv{agent: fakeAgent, memo: memo}
-		if c.noRoom {
-			env.agent = ""
-		}
-		d := rules.Evaluate(in, env)
-		got := "allow"
-		if d.Action == "deny" {
-			got = "block"
-		}
-		if got != c.expect {
-			t.Errorf("[%s/%s] %q: want %s, got %s (%s: %s)", c.repo, tool, cmd, c.expect, got, d.Rule, d.Reason)
-		}
+		groups[c.repo] = append(groups[c.repo], c)
+	}
+	for _, repo := range order {
+		cases := groups[repo]
+		t.Run(repo, func(t *testing.T) {
+			t.Parallel()
+			for _, c := range cases {
+				if c.win && runtime.GOOS != "windows" {
+					continue
+				}
+				tool := c.tool
+				if tool == "" {
+					tool = "Bash"
+				}
+				cmd := render(c.cmd, rp, tool)
+				if strings.Contains(c.cmd, "{hub-backslash}") {
+					cmd = strings.ReplaceAll(c.cmd, "{hub-backslash}", rp["hub"])
+				}
+				in := Input{ToolName: tool, CWD: rp[c.repo]}
+				in.ToolInput.Command = cmd
+				env := testEnv{agent: fakeAgent, memo: memo}
+				if c.noRoom {
+					env.agent = ""
+				}
+				d := rules.Evaluate(in, env)
+				got := "allow"
+				if d.Action == "deny" {
+					got = "block"
+				}
+				if got != c.expect {
+					t.Errorf("[%s/%s] %q: want %s, got %s (%s: %s)", c.repo, tool, cmd, c.expect, got, d.Rule, d.Reason)
+				}
+			}
+		})
 	}
 }
