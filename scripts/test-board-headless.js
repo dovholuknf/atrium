@@ -8067,6 +8067,67 @@ async function cleanCopySection(browser, base) {
   mock.tasksMode = was;
 }
 
+// ── clean copy: the button sits in the terminal of the card in hand, not the first one opened ──
+async function cleanCopyTwoSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-one", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-two", { supervised: true, created_at: "2026-09-19T12:01:00Z" });
+  mock.landList = [mock.LAND["land-one"], mock.LAND["land-two"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: () => Promise.resolve(), readText: () => Promise.resolve(""), read: () => Promise.resolve([]) } });
+  });
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({
+    contentType: "application/json", body: JSON.stringify({ source: "transcript", more: false, replies: [] }) }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    for (const id of ["land-one", "land-two"]) {
+      await attachRetry(p, { unit: "cleanCopyTwo", id, check: i => termSock && termSock.readyState === 1 && termTask && termTask.id === i });
+    }
+    const shown = "  Here is the draft:\r\n\r\n  ▎ Please review the plan and tell\r\n  ▎ me what is missing from it.\r\n";
+    await p.evaluate(([out]) => {
+      termSock.onmessage({ data: out });
+      term.selectLines(2, 3);
+      window.__offer = offerCleanCopy();
+    }, [shown]);
+    await p.waitForSelector("#cc-btn", { timeout: slow(5000) });
+    const r = await p.evaluate(() => {
+      const b = document.getElementById("cc-btn").getBoundingClientRect();
+      const s = term.element.querySelector(".xterm-screen").getBoundingClientRect();
+      return { b: b.toJSON(), s: s.toJSON(), screens: document.querySelectorAll(".xterm-screen").length };
+    });
+    if (process.env.SHOTS_DIR) {
+      fs.mkdirSync(process.env.SHOTS_DIR, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.SHOTS_DIR, process.env.SHOT_NAME || "copy-clean-second-card.png") });
+    }
+    if (r.screens < 2) fail("cleanCopyTwo: only " + r.screens + " terminal screen exists, so this proves nothing");
+    const inside = r.b.left >= r.s.left && r.b.top >= r.s.top && r.b.right <= r.s.right + 1 && r.b.bottom <= r.s.bottom + 1;
+    if (!inside) fail("cleanCopyTwo: the button " + JSON.stringify(r.b) + " is outside the second card's screen " + JSON.stringify(r.s));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("cleanCopyTwo: the page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
 // ── a second press fires nothing (backlog-2 item 19) ─────────────────────
 // Every request-firing button goes through `busyWhile` or `oneAtATime` in
 // js/core.js. Each case presses twice (or calls twice) while the first request
@@ -23325,7 +23386,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -25241,6 +25302,7 @@ async function main() {
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));
     await unit("cleanCopy", () => cleanCopySection(browser, base));
+    await unit("cleanCopyTwo", () => cleanCopyTwoSection(browser, base));
     await unit("chatTab", bu("chatTab"));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));

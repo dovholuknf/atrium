@@ -74,7 +74,7 @@ function callerFrames(n) {
 }
 
 function watchViewportElement() {
-  const vp = document.querySelector("#t-screen .xterm-viewport");
+  const vp = term && term.element && term.element.querySelector(".xterm-viewport");
   if (!vp) {
     console.debug("[atrium] no .xterm-viewport to watch");
     return;
@@ -113,7 +113,7 @@ function watchViewportElement() {
   // The textarea, because the pin is meant to stop it being somewhere that
   // needs scrolling to. If this reports anything other than the top left, the
   // pin did not take and that is the whole answer.
-  const ta = document.querySelector("#t-screen .xterm-helper-textarea");
+  const ta = term.element.querySelector(".xterm-helper-textarea");
   if (ta) {
     const cs = getComputedStyle(ta);
     console.debug("[atrium] helper textarea at", cs.top, cs.left,

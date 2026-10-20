@@ -1470,7 +1470,7 @@ async function offerCleanCopy() {
 
 function showCleanCopyButton(mine, textNow) {
   const pos = mine.getSelectionPosition();
-  const screen = document.querySelector("#t-screen .xterm-screen");
+  const screen = mine.element && mine.element.querySelector(".xterm-screen");
   const dims = mine._core && mine._core._renderService && mine._core._renderService.dimensions;
   if (!pos || !screen || !dims || !dims.css || !dims.css.cell) return;
   const cell = dims.css.cell, box = screen.getBoundingClientRect();

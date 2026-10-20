@@ -3146,7 +3146,7 @@ function wirePhoneTap() {
     const s = t0; t0 = null;
     if (!s || !term || !termPhone() || phonePinch || e.touches.length) return;
     if (performance.now() - s.t > PHONE_TAP_MS || host.scrollLeft !== s.l || host.scrollTop !== s.tp) return;
-    const scr = host.querySelector(".xterm-screen");
+    const scr = term.element && term.element.querySelector(".xterm-screen");
     let cw = 0, ch = 0;
     try { const d = term._core._renderService.dimensions.css.cell; cw = d.width; ch = d.height; } catch (err) {}
     if (!scr || !cw || !ch) return;
