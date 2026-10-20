@@ -1989,9 +1989,11 @@ func (d *Daemon) Kill(taskID string) error {
 	// terminate an already-dead card produce a dialog and change nothing.
 	gone := false
 	proc, err := os.FindProcess(t.PID)
+	if err == nil {
+		killTree(t.PID)
+	}
 	if err != nil {
 		gone = true
-	} else if killTree(t.PID); false {
 	} else if err := proc.Kill(); err != nil {
 		if !processAlive(t.PID) {
 			gone = true
