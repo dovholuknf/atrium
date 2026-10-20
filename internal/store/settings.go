@@ -204,6 +204,9 @@ const untilPrefix = "until:"
 // A read failure answers false. This sits on the permission path, and the safe
 // answer to "should I stop asking" is no.
 //
+// A setting never written answers true: the gate records everything and asks
+// about nothing until somebody writes "off". An explicit off stays off.
+//
 // A deadline that has passed also answers false, checked against the clock
 // here rather than enforced by a timer somewhere. A timer that has to fire is
 // a timer that does not fire across a restart, and auto mode surviving a
@@ -223,7 +226,7 @@ func (s *Store) GlobalAutoUntil() (bool, *time.Time) {
 	if err != nil {
 		return false, nil
 	}
-	if v == "on" {
+	if v == "" || v == "on" {
 		return true, nil
 	}
 	if !strings.HasPrefix(v, untilPrefix) {

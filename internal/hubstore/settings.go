@@ -290,6 +290,8 @@ func (s *Store) SetHubSkin(name string) error { return s.SetHubSetting(SettingBo
 // and the flag surviving a restart it should not have is the failure worth
 // designing against. Mirrors store.GlobalAutoUntil exactly.
 //
+// A flag never written answers on, and an explicit off stays off.
+//
 // The second value is nil when it is on with no deadline, which is what turning
 // it on by hand means.
 func (s *Store) BoardAuto() (bool, *time.Time, error) {
@@ -297,7 +299,7 @@ func (s *Store) BoardAuto() (bool, *time.Time, error) {
 	if err != nil {
 		return false, nil, err
 	}
-	if v == "on" {
+	if v == "" || v == "on" {
 		return true, nil, nil
 	}
 	if !strings.HasPrefix(v, boardAutoUntil) {

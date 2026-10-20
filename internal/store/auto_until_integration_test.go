@@ -144,8 +144,11 @@ func TestGlobalAutoWithADeadline(t *testing.T) {
 	t.Parallel()
 	s := open(t)
 
+	if err := s.SetGlobalAuto(false); err != nil {
+		t.Fatal(err)
+	}
 	if on, until := s.GlobalAutoUntil(); on || until != nil {
-		t.Fatal("a fresh database has global auto on")
+		t.Fatal("an explicit off reads as on")
 	}
 
 	until := time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond)
@@ -241,5 +244,19 @@ func TestADeadlineSurvivesAReopen(t *testing.T) {
 	}
 	if got == nil || !got.Equal(until) {
 		t.Fatalf("the deadline came back as %v after a restart", got)
+	}
+}
+
+func TestGlobalAutoNeverWrittenReadsOn(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	if on, until := s.GlobalAutoUntil(); !on || until != nil {
+		t.Fatalf("an unwritten switch reads on=%v until=%v, want on with no deadline", on, until)
+	}
+	if err := s.SetGlobalAuto(false); err != nil {
+		t.Fatal(err)
+	}
+	if s.GlobalAuto() {
+		t.Fatal("an explicit off reads as on")
 	}
 }

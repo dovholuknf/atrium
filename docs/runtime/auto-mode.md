@@ -91,6 +91,15 @@ browser, so it is one answer for the machine and two tabs cannot disagree about 
 It is recorded as `global-auto` rather than `auto`. "I turned this session loose" and "I turned the whole board
 loose" are different answers to be reading back six hours later.
 
+### It is on until somebody writes off
+
+A board-wide switch that was never written reads as on, in the room and on the hub, and the header says
+"approving everything". The gate is a hook that runs whatever Claude's own mode is, so a default of off meant a session
+in Claude's auto mode was still asked on the board for every call. An explicit off stays off and an explicit on stays
+on. The default is applied in the read, not by writing a value, so a room that never wrote it changes too. Auto mode
+still sits last in the chain, so a queued message, a shelved card and a standing rule all still win, and everything is
+still recorded as `global-auto`. A read failure still answers off.
+
 ### Turning it on empties the queue
 
 The permission chain runs once per request, when that request arrives. Anything already waiting had asked before

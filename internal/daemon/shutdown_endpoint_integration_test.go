@@ -17,6 +17,11 @@ import (
 // that turn a guard on.
 func startDaemonWith(t *testing.T, mutate func(*Options)) (*Daemon, *safeBuf, context.CancelFunc, chan error) {
 	t.Helper()
+	return startDaemonUsing(t, mutate, testNew)
+}
+
+func startDaemonUsing(t *testing.T, mutate func(*Options), build func(Options) (*Daemon, error)) (*Daemon, *safeBuf, context.CancelFunc, chan error) {
+	t.Helper()
 	logs := &safeBuf{}
 	old := log.Writer()
 	log.SetOutput(logs)
@@ -36,7 +41,7 @@ func startDaemonWith(t *testing.T, mutate func(*Options)) (*Daemon, *safeBuf, co
 		if mutate != nil {
 			mutate(&opts)
 		}
-		d, err := testNew(opts)
+		d, err := build(opts)
 		if err != nil {
 			t.Fatalf("daemon did not start: %v", err)
 		}
