@@ -10170,8 +10170,11 @@ async function notifyOffSection(browser, base) {
       }
 
       // Back on: alerts say themselves again and the bell is whole.
+      await fakeWait(p, () => document.getElementById("conn").classList.contains("live"), null, 15000);
       await p.evaluate(() => openToastLog());
+      await fakeWait(p, () => document.getElementById("toastlog").open, null, 5000);
       await p.click("#toastlog-toggle");
+      await fakeWait(p, () => !notifyIsOff(), null, 5000).catch(() => fail(where + ": the toggle click did not turn notifications back on."));
       await p.evaluate(() => document.getElementById("toastlog").close());
       l = await label();
       if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": turning back on did not repaint: " + JSON.stringify(l));

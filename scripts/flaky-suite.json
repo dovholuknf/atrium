@@ -16,6 +16,7 @@
   {"kind": "board", "name": "phoneRedirect", "reason": "failed in 3 of the last 20 runs, on windows, after a speedup that did not stop it"},
   {"kind": "board", "name": "phonePan", "reason": "failed in 2 of the last 20 runs, on macos, no fix"},
   {"kind": "board", "name": "bootClean", "reason": "failed in 2 of the last 20 runs, on windows, no fix"},
+  {"kind": "board", "name": "notifyOff", "reason": "failed once in CI on macos in a shard, passed alone on retry, fixed by waiting for boot and the toggle to land"},
   {"kind": "board", "name": "cardUrlRoom", "reason": "failed in 2 of the last 20 runs, on windows and macos, no fix"},
   {"kind": "board", "name": "groupDrag", "reason": "failed in 2 of the last 20 runs, on windows, after two fixes"},
   {"kind": "board", "name": "toastsTop", "reason": "failed in 2 of the last 20 runs, on macos and ubuntu, after two fixes"},
