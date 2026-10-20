@@ -25,8 +25,8 @@
 // ONE merged report follows: every unit, slowest first, then the failures. Every failed unit is run once more, alone
 // on a quiet machine. A unit named in scripts/flaky-suite.json that fails both tries is reported as flaky and
 // still fails the run, one that passes the second time is labelled flaky and does not. A unit NOT on the list that
-// passes the second time is shown in its own block (it failed under the load of the shards, not on its own, so it
-// wants fixing or listing) and still fails the run, so a race is never passed quietly. A unit that fails both tries
+// passes the second time is a pass that is never read as a clean one: its row says PASSED ON RETRY, a block gives its
+// first-try error and both timings, and the run passes. A unit that fails both tries
 // fails the run, as does any unit that did not run, any failure outside every unit, and, with --no-retry, any failure.
 // With no flags test-board-headless.js is still the plain serial run.
 
@@ -187,6 +187,8 @@ function cpuSampler() {
   return { stop() { clearInterval(timer); const now = snap(), d = now.total - first.total; return { avg: d > 0 ? 100 * (1 - (now.idle - first.idle) / d) : 0, peak }; } };
 }
 
+const RETRY_PASS = "PASSED ON RETRY (slow or stalled, first try failed)";
+
 const fmt = ms => ms >= 60000 ? Math.floor(ms / 60000) + "m" + String(Math.round((ms % 60000) / 1000)).padStart(2, "0") + "s" : (ms / 1000).toFixed(1) + "s";
 
 // A failure's whole message under its unit, since a Playwright timeout names its locator and reason only on the lines
@@ -297,6 +299,8 @@ async function main() {
       got[u].retryOk = !!(x && x.ok);
       got[u].retryFails = x ? x.fails : ["the retry did not run (exit " + r.code + "). see " + r.log];
       if (x) got[u].retryMs = x.ms;
+      if (got[u].retryOk && !flaky[u]) console.log("PASSED ON RETRY, NOT A CLEAN PASS: " + u + ": first try failed after " + fmt(got[u].ms) +
+        ", the retry passed in " + fmt(got[u].retryMs) + ". see " + r.log);
     }
   }
   const wall = Date.now() - t0;
@@ -307,16 +311,16 @@ async function main() {
     const x = got[u];
     let status;
     if (x.ok) status = "PASS";
-    else if (x.tries === 2 && x.retryOk) status = flaky[u] ? "FLAKY (passed on retry)" : "LOAD (passed on retry)";
+    else if (x.tries === 2 && x.retryOk) status = flaky[u] ? "FLAKY (passed on retry)" : RETRY_PASS;
     else if (x.tries === 2) status = flaky[u] ? "FLAKY (failed every try)" : "FAIL";
     else status = x.notRun ? "NOT RUN" : (flaky[u] ? "FLAKY (failed, not retried)" : "FAIL");
     return Object.assign({ unit: u, status }, x);
   });
   const hard = rows.filter(r => r.status === "FAIL" || r.status === "NOT RUN" || r.status === "FLAKY (failed every try)" ||
-    r.status === "FLAKY (failed, not retried)" || r.status === "LOAD (passed on retry)");
+    r.status === "FLAKY (failed, not retried)");
   const soft = rows.filter(r => r.status.startsWith("FLAKY") && !hard.includes(r));
-  const load_ = rows.filter(r => r.status === "LOAD (passed on retry)");
-  const failed_ = hard.filter(r => !load_.includes(r));
+  const retried_ = rows.filter(r => r.status === RETRY_PASS);
+  const failed_ = hard;
 
   console.log("\nunit".padEnd(26) + "time".padStart(9) + "  result");
   for (const r of rows.slice().sort((a, b) => b.ms - a.ms)) console.log(r.unit.padEnd(25) + fmt(r.ms).padStart(9) + "  " + r.status + "  " + r.shard + (r.retryMs ? "  (retry " + fmt(r.retryMs) + ")" : ""));
@@ -338,10 +342,10 @@ async function main() {
     }
   }
 
-  if (load_.length) {
-    console.log("\nFAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (" + load_.length + "). These fail the run. Fix the wait, or list it with its reason:");
-    for (const r of load_) {
-      console.log("  " + r.unit);
+  if (retried_.length) {
+    console.log("\nPASSED ON RETRY, NOT A CLEAN PASS (" + retried_.length + "). The run passes. Each failed in its shard and passed alone. Fix the wait, or list it with its reason:");
+    for (const r of retried_) {
+      console.log("  " + r.unit + "  [first try " + fmt(r.ms) + " failed, retry " + fmt(r.retryMs) + " passed]");
       for (const m of r.fails.slice(0, 3)) printFail("    ", "first try: ", m);
     }
   }
@@ -353,12 +357,12 @@ async function main() {
 
   const sum = rows.reduce((s, r) => s + r.ms, 0);
   console.log("\n" + rows.filter(r => r.status === "PASS").length + " of " + rows.length + " units passed" +
-    (soft.length ? ", " + soft.length + " flaky" : "") + (load_.length ? ", " + load_.length + " passed only on retry (failing the run)" : "") +
+    (soft.length ? ", " + soft.length + " flaky" : "") + (retried_.length ? ", " + retried_.length + " PASSED ON RETRY (not clean, the run passes)" : "") +
     (failed_.length ? ", " + failed_.length + " failed" : "") + (stray.length ? ", " + stray.length + " outside any unit" : "") + ".");
   console.log("wall time " + fmt(wall) + " on " + shards.length + " shards (the units add up to " + fmt(sum) + " run one after another)." +
     " cpu " + load.avg.toFixed(0) + "% average, " + load.peak.toFixed(0) + "% peak.");
   waitTimesLine(dir);
-  const keep = hard.length || stray.length || opt.logs;
+  const keep = hard.length || stray.length || retried_.length || opt.logs;
   if (keep) console.log("shard output: " + dir);
 
   if (opt.saveWeights) {

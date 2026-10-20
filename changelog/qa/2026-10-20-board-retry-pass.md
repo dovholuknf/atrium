@@ -1,0 +1,1 @@
+A board unit that fails in its shard and passes alone on the retry is now a pass that is marked PASSED ON RETRY and never read as clean, in the shard report, the run summary, the rollup and the flake ledger, and no longer fails the run (board-retry-pass).

@@ -34,19 +34,11 @@ function jobFailures(dir) {
   return out;
 }
 
-function retryPassed(dir) {
-  const log = path.join(dir, 'board.log');
-  if (!fs.existsSync(log)) return new Set();
-  const lines = fs.readFileSync(log, 'utf8').split(/\r?\n/);
-  const out = new Set();
-  const at = lines.findIndex((l) => l.startsWith('FAILED IN THE SHARDS, PASSED ALONE'));
-  if (at < 0) return out;
-  for (const l of lines.slice(at + 1)) {
-    const m = /^ {2}(\S.*)$/.exec(l);
-    if (m) out.add(m[1].trim());
-    else if (!/^ {4}/.test(l)) break;
-  }
-  return out;
+function retriedRows(dir) {
+  const m = /^ci-(\w+)-latest-(.+)-attempt-\d+$/.exec(path.basename(dir));
+  const rt = path.join(dir, 'retried.tsv');
+  if (!m || !fs.existsSync(rt)) return [];
+  return parseTsv(rt).map(([grp, unit, error = '', times = '']) => ({ os: m[1], group: grp, unit, error: error.trim(), times: times.trim() }));
 }
 
-module.exports = { parseTsv, jobFailures, retryPassed };
+module.exports = { parseTsv, jobFailures, retriedRows };

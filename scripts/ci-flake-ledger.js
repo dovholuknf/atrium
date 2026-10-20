@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { jobFailures } = require('./ci-failures');
+const { jobFailures, retriedRows } = require('./ci-failures');
 
 const DATA = process.env.LEDGER_DIR || 'D:/tmp/qa-flake-ledger';
 const ARTIFACTS = process.env.CI_ARTIFACTS || 'C:/Users/claude/.atrium2/hub/ci-artifacts/github.com/dovholuknf/atrium';
@@ -108,6 +108,8 @@ function ingest(args) {
       continue;
     }
     for (const d of jobs) fails.push(...jobFailures(path.join(dir, d)));
+    const slow = [];
+    for (const d of jobs) slow.push(...retriedRows(path.join(dir, d)));
     const seen = new Set();
     let n = 0;
     for (const f of fails) {
@@ -117,9 +119,18 @@ function ingest(args) {
       ledger.failures.push({ run: id, os: f.os, group: f.group, unit: f.unit, error: f.error });
       n++;
     }
+    const seenSlow = new Set();
+    let r = 0;
+    for (const f of slow) {
+      const k = `${f.os}|${f.group}|${f.unit}`;
+      if (seenSlow.has(k)) continue;
+      seenSlow.add(k);
+      ledger.failures.push({ run: id, os: f.os, group: f.group, unit: f.unit, error: f.error, retried: true });
+      r++;
+    }
     const m = meta[id] || {};
     ledger.runs.push({ id, sha: (hasDir && runSha(dir)) || m.sha || null, date: m.date || null, conclusion: conclusion || 'failure', source: 'artifacts' });
-    console.log(`${id}: ingested, ${n} failures`);
+    console.log(`${id}: ingested, ${n} failures, ${r} passed on retry`);
   }
   ledger.runs.sort(byId);
   writeJson('ledger.json', ledger);
@@ -229,18 +240,19 @@ function report(args) {
     rows.push({
       s, inWin, per, failedLatest,
       winRuns: new Set(inWin.map((f) => f.run)).size,
+      retryRuns: new Set(inWin.filter((f) => f.retried).map((f) => f.run)).size,
       isNew: failedLatest && idNum(s.firstSeen) >= firstLatest,
     });
   }
   rows.sort((a, b) => b.winRuns - a.winRuns || (a.s.unit < b.s.unit ? -1 : 1));
   out.push(`Failing units in the window: ${rows.length}. Columns: runs failed / runs in window, per OS (windows, macos, ubuntu). "Seen" is runs the ledger holds from the unit's start, a lower bound where no history covers the unit.`);
   out.push('');
-  out.push('| unit | group | window | windows | macos | ubuntu | first seen | total fail / seen | latest | fixed by |');
-  out.push('|---|---|---|---|---|---|---|---|---|---|');
+  out.push('| unit | group | window | windows | macos | ubuntu | first seen | total fail / seen | passed on retry | latest | fixed by |');
+  out.push('|---|---|---|---|---|---|---|---|---|---|---|');
   for (const r of rows) {
     const osNew = OSES.filter((os) => r.s.fails.some((f) => f.os === os && latestIds.has(f.run)) && !r.s.fails.some((f) => f.os === os && idNum(f.run) < firstLatest));
     const tag = r.failedLatest ? (r.isNew ? 'NEW' : `known${osNew.length ? `, new on ${osNew.join('+')}` : ''}`) : '';
-    out.push(`| ${r.s.unit.replace(/\|/g, '\\|')} | ${r.s.group} | ${r.winRuns}/${n} | ${r.per.join(' | ')} | ${r.s.firstSeen} | ${r.s.totalFailRuns}/${r.s.totalRuns} | ${tag} | ${fixedBy(fixes, r.s.unit).replace(/\|/g, '\\|')} |`);
+    out.push(`| ${r.s.unit.replace(/\|/g, '\\|')} | ${r.s.group} | ${r.winRuns}/${n} | ${r.per.join(' | ')} | ${r.s.firstSeen} | ${r.s.totalFailRuns}/${r.s.totalRuns} | ${r.retryRuns ? `${r.retryRuns}/${r.winRuns} runs, PASSED ON RETRY` : ''} | ${tag} | ${fixedBy(fixes, r.s.unit).replace(/\|/g, '\\|')} |`);
   }
   out.push('');
   out.push(`Latest ${latestRuns.length} runs (${latestRuns.map((r) => r.id).join(', ')}): a unit is NEW when it never failed in a run before the first of these, known otherwise.`);

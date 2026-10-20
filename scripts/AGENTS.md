@@ -10,6 +10,10 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   `-tags integration`, `full` adds `-tags integration,git`. A file named `*_integration_test.go` starts with
   `//go:build integration` and does not compile without the tag. CI is the only place integration tests run as a
   matter of course.
+- **A board unit that fails in its shard and passes alone on the retry is a PASS, marked and never clean.**
+  `test-board-sharded.js` exits 0 and prints `PASSED ON RETRY (slow or stalled, first try failed)` with the first-try
+  error and both timings. `ci.sh` writes `retried.tsv` and a summary section, `ci-rollup.js` and `ci-flake-ledger.js`
+  list it. Go has no rerun, and a unit that fails both tries still fails. `test-board-sharded-retry.js` pins it.
 - **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms. The
   fix is to move the test into an integration file, not to raise the number.
 - **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the

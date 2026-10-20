@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { jobFailures, retryPassed } = require('./ci-failures');
+const { jobFailures, retriedRows } = require('./ci-failures');
 
 const MAX_ROWS = 30;
 const MAX_ANNOTATIONS = 10;
@@ -37,29 +37,29 @@ function jobDirs(dir) {
 function readRun(dir) {
   const jobs = jobDirs(dir);
   const failures = [];
+  const retried = [];
   for (const j of jobs) {
-    const retried = retryPassed(j.dir);
-    for (const f of jobFailures(j.dir)) failures.push({ ...f, job: j.job, retried: retried.has(f.unit) });
+    for (const f of jobFailures(j.dir)) failures.push({ ...f, job: j.job });
+    for (const f of retriedRows(j.dir)) retried.push({ ...f, job: j.job });
   }
-  return { jobs, failures };
+  return { jobs, failures, retried };
 }
 
 function ago(rows, history) {
   const known = history.filter((h) => h.known);
   const n = history.length;
   return rows.map((r) => {
-    const failed = known.filter((h) => h.keys.has(unitKey(r))).length;
+    const failed = known.filter((h) => h.keys.has(unitKey(r)) || h.rkeys.has(unitKey(r))).length;
     let text;
     if (!known.length) text = 'history unavailable';
     else if (!failed) text = 'NEW';
-    else text = `failed in ${failed} of the last ${n}`;
+    else text = `${r.times ? 'failed or passed on retry' : 'failed'} in ${failed} of the last ${n}`;
     if (known.length && known.length < n) text += ` (${n - known.length} unknown)`;
     return { ...r, failed, history: text, isNew: known.length > 0 && !failed };
   });
 }
 
 function retryText(r) {
-  if (r.retried) return 'passed on retry, fails the job';
   if (r.group === 'board' && !r.unit.startsWith('check:') && !r.unit.startsWith('step:')) return 'failed on retry';
   return 'no retry';
 }
@@ -68,27 +68,50 @@ const escData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').repl
 const escProp = (s) => escData(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
 const clip = (s) => { s = String(s).replace(/\s+/g, ' '); return s.length > MAX_MESSAGE ? s.slice(0, MAX_MESSAGE - 3) + '...' : s; };
 
-function annotate({ run, jobs, rows, missing }) {
+function annotate({ run, jobs, rows, retried, missing }) {
   const title = escProp(run ? `ci run ${run}` : 'ci run');
-  if (!rows.length && !missing.length) return [`::notice title=${title}::${escData(`green, all ${jobs.length} jobs passed`)}`];
-  const rank = (r) => (r.isNew ? 0 : r.retried ? 1 : 2);
+  const warn = (r) => `::warning title=${escProp(`PASSED ON RETRY: ${r.unit}`)}::${escData(clip(`${r.os} ${r.job}: not a clean pass, the job passed. ${r.times} | first try: ${r.error} | history: ${r.history}`))}`;
+  if (!rows.length && !missing.length) {
+    const green = retried.length
+      ? `green, all ${jobs.length} jobs passed, ${retried.length} unit${retried.length === 1 ? '' : 's'} PASSED ON RETRY (not clean)`
+      : `green, all ${jobs.length} jobs passed`;
+    return [`::notice title=${title}::${escData(green)}`, ...retried.slice(0, MAX_ANNOTATIONS - 1).map(warn)];
+  }
+  const rank = (r) => (r.isNew ? 0 : 1);
   const ordered = rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r);
-  const cut = ordered.length > MAX_ANNOTATIONS - 1;
-  const shown = cut ? ordered.slice(0, MAX_ANNOTATIONS - 2) : ordered;
-  const out = shown.map((r) => `::error title=${escProp(r.unit)}::${escData(clip(`${r.os} ${r.job}: ${r.error} | retry: ${retryText(r)} | history: ${r.history}`))}`);
-  if (cut) out.push(`::notice title=${title}::${escData(`and ${ordered.length - shown.length} more, see the table`)}`);
+  const lines = [
+    ...ordered.map((r) => `::error title=${escProp(r.unit)}::${escData(clip(`${r.os} ${r.job}: ${r.error} | retry: ${retryText(r)} | history: ${r.history}`))}`),
+    ...retried.map(warn),
+  ];
+  const cut = lines.length > MAX_ANNOTATIONS - 1;
+  const shown = cut ? lines.slice(0, MAX_ANNOTATIONS - 2) : lines;
+  const out = shown.slice();
+  if (cut) out.push(`::notice title=${title}::${escData(`and ${lines.length - shown.length} more, see the table`)}`);
   const n = ordered.filter((r) => r.isNew).length;
-  const k = ordered.filter((r) => r.retried).length;
-  const totals = `${rows.length} failing unit${rows.length === 1 ? '' : 's'}, ${n} new, ${k} passed on retry`;
+  const totals = `${rows.length} failing unit${rows.length === 1 ? '' : 's'}, ${n} new${retried.length ? `, ${retried.length} passed on retry (not clean)` : ''}`;
   out.push(`::notice title=${title}::${escData(missing.length ? `${totals}, ${missing.length} job${missing.length === 1 ? '' : 's'} left no artifact` : totals)}`);
   return out;
 }
 
-function render({ run, jobs, rows, missing, history, note }) {
+function retriedTable(retried) {
+  const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 160);
+  const out = ['| os | job | unit | timings | first try error | history |', '|---|---|---|---|---|---|'];
+  for (const r of retried.slice(0, MAX_ROWS)) out.push(`| ${r.os} | ${r.job} | ${cell(r.unit)} | ${cell(r.times)} | ${cell(r.error)} | ${r.history} |`);
+  if (retried.length > MAX_ROWS) out.push('', `and ${retried.length - MAX_ROWS} more`);
+  return out;
+}
+
+function render({ run, jobs, rows, retried, missing, history, note }) {
   const out = [];
   const label = run ? `ci run ${run}` : 'ci run';
+  const retriedHead = `${retried.length} unit${retried.length === 1 ? '' : 's'} PASSED ON RETRY (not clean passes)`;
   if (!rows.length && !missing.length) {
-    out.push(`## ${label}: green`, '', `All ${jobs.length} jobs passed.`, '');
+    if (!retried.length) {
+      out.push(`## ${label}: green`, '', `All ${jobs.length} jobs passed.`, '');
+      return out.join('\n');
+    }
+    out.push(`## ${label}: green, but ${retriedHead}`, '', `All ${jobs.length} jobs passed. Each unit below failed in its shard and passed alone on the retry, so it is slow or stalls under load.`, '');
+    out.push(...retriedTable(retried), '');
     return out.join('\n');
   }
   out.push(`## ${label}: ${rows.length} failing unit${rows.length === 1 ? '' : 's'}`, '');
@@ -103,6 +126,7 @@ function render({ run, jobs, rows, missing, history, note }) {
     if (rows.length > MAX_ROWS) out.push('', `and ${rows.length - MAX_ROWS} more`);
     out.push('');
   }
+  if (retried.length) out.push(`### ${retriedHead}`, '', ...retriedTable(retried), '');
   for (const m of missing) out.push(`- ${m}`);
   if (missing.length) out.push('');
   if (note) out.push(note, '');
@@ -110,19 +134,21 @@ function render({ run, jobs, rows, missing, history, note }) {
 }
 
 function build({ run, current, histRuns, jobsWithoutArtifacts = [], note }) {
-  const history = histRuns.map((h) => ({ id: h.id, known: h.known, keys: new Set(h.failures.map(unitKey)) }));
-  const seen = new Set();
-  const rows = [];
-  for (const f of current.failures) {
-    const k = `${f.os}|${f.job}|${f.unit}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    rows.push(f);
-  }
-  const withHistory = ago(rows, history);
+  const history = histRuns.map((h) => ({ id: h.id, known: h.known, keys: new Set(h.failures.map(unitKey)), rkeys: new Set((h.retried || []).map(unitKey)) }));
+  const dedupe = (list) => {
+    const seen = new Set();
+    return list.filter((f) => {
+      const k = `${f.os}|${f.job}|${f.unit}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  const withHistory = ago(dedupe(current.failures), history);
   withHistory.sort((a, b) => (b.isNew - a.isNew) || (b.failed - a.failed) || (a.os + a.job + a.unit < b.os + b.job + b.unit ? -1 : 1));
+  const retried = ago(dedupe(current.retried || []), history).sort((a, b) => (b.failed - a.failed) || (a.os + a.job + a.unit < b.os + b.job + b.unit ? -1 : 1));
   const missing = jobsWithoutArtifacts.map((j) => `${j}: failed and left no artifact, so its units are not listed`);
-  const ctx = { run, jobs: current.jobs, rows: withHistory, missing, history, note };
+  const ctx = { run, jobs: current.jobs, rows: withHistory, retried, missing, history, note };
   return { summary: render(ctx), commands: annotate(ctx) };
 }
 
@@ -133,7 +159,7 @@ function local(opts) {
     const ids = fs.readdirSync(opts.history).filter((d) => /^\d+$/.test(d) && d !== opts.run).sort(idCmp).slice(-WINDOW);
     for (const id of ids) {
       const r = readRun(path.join(opts.history, id));
-      histRuns.push({ id, known: r.jobs.length > 0, failures: r.failures });
+      histRuns.push({ id, known: r.jobs.length > 0, failures: r.failures, retried: r.retried });
     }
   }
   return build({ run: opts.run, current, histRuns });
@@ -204,7 +230,7 @@ async function remote(opts) {
       fs.mkdirSync(dir, { recursive: true });
       try { await fetchRun(r.id, dir); } catch (e) { console.error(`ci-rollup: run ${r.id}: ${e.message}`); }
       const read = readRun(dir);
-      histRuns.push({ id: String(r.id), known: read.jobs.length > 0, failures: read.failures });
+      histRuns.push({ id: String(r.id), known: read.jobs.length > 0, failures: read.failures, retried: read.retried });
     }
   } catch (e) {
     console.error(`ci-rollup: history: ${e.message}`);

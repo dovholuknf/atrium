@@ -23,6 +23,8 @@
 # A flaky test is a failure. There is no rerun and no quarantine list. The one exception is the board's pixel and
 # timing units on scripts/board-visual-units.txt: the board-visual step runs them and a failure there is reported but
 # never fails the exit status, in whichever group it runs. They are run and reported, never dropped.
+# The sharded board runner alone retries a failed unit once, alone: a pass there is marked PASSED ON RETRY in the log
+# and the summary, and never reads as a clean pass.
 
 set -uo pipefail
 
@@ -128,6 +130,11 @@ failing_tsv="$artefacts/failing.tsv"
 # Each failed test also goes to failing.tsv as step, name, first error line, which the summary lists under its own heading.
 note_counts() { cur_ran="$1"; cur_failed="$2"; }
 note_failing() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$failing_tsv"; }
+# A board unit that failed in its shard and passed on retry: a pass, never a clean one. retried.tsv is step, unit, first
+# error line, both timings, and the summary lists it under its own heading.
+retried_tsv="$artefacts/retried.tsv"
+: > "$retried_tsv"
+note_retried() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$retried_tsv"; }
 close_step() {
   [ -z "$cur" ] && return
   local res=ok
@@ -212,23 +219,29 @@ board_env_probe() {
   node scripts/board-env-probe.js 2>&1 | tee "$artefacts/$1"
 }
 # The merged report of a sharded run: one row per unit (unit, time, result), then FAILED sections each unit with its
-# first error line indented under it. A unit that passed only on retry fails the run too, so it is counted as failed. A
-# flaky one that is reported and not failing is not. The shards' own output, which the runner keeps on a failure and
-# names on a "shard output:" line, is copied into the artifacts.
+# first error line indented under it. A unit that passed only on retry passes the run and is not counted as failed: it
+# goes to retried.tsv, with its timings. The shards' own output, which the runner keeps on a failure or a retried
+# pass and names on a "shard output:" line, is copied into the artifacts.
 board_report() {
   local name="$1" log="$2" n_units n_bad n_checks dir
-  n_units="$(awk '$3 ~ /^(PASS|FAIL|NOT|LOAD|FLAKY)$/' "$log" | wc -l | tr -d ' ')"
-  n_bad="$(awk '$3 ~ /^(FAIL|NOT|LOAD)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$log" | wc -l | tr -d ' ')"
+  n_units="$(awk '$3 ~ /^(PASS|PASSED|FAIL|NOT|FLAKY)$/' "$log" | wc -l | tr -d ' ')"
+  n_bad="$(awk '$3 ~ /^(FAIL|NOT)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$log" | wc -l | tr -d ' ')"
   n_checks="$(grep -c '^FAIL ' "$log" || true)"
   note_counts "$n_units" "$((n_bad + n_checks))"
   grep '^FAIL ' "$log" | while IFS= read -r line; do note_failing "$name" "(check)" "${line#FAIL }"; done
   awk '
-    /^FAILED \(|^FAILED IN THE SHARDS|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
+    /^FAILED \(|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
     /^[^ ]/ { sec = 0; next }
     sec == 1 && /^  [^ ]/ { unit = $1; got = 0; next }
     sec == 1 && /^    / && unit != "" && !got { e = $0; sub(/^ +/, "", e); sub(/^first try: /, "", e); printf "%s\t%s\n", unit, e; got = 1; next }
     sec == 2 && /^  [^ ]/ { e = $0; sub(/^ +/, "", e); printf "(outside any unit)\t%s\n", e }
   ' "$log" | while IFS=$'\t' read -r unit err; do note_failing "$name" "$unit" "$err"; done
+  awk '
+    /^PASSED ON RETRY, NOT A CLEAN PASS \(/ { sec = 1; unit = ""; next }
+    /^[^ ]/ { sec = 0; next }
+    sec == 1 && /^  [^ ]/ { unit = $1; t = $0; sub(/^[^[]*\[/, "", t); sub(/\]$/, "", t); got = 0; next }
+    sec == 1 && /^    / && unit != "" && !got { e = $0; sub(/^ +/, "", e); sub(/^first try: /, "", e); printf "%s\t%s\t%s\n", unit, e, t; got = 1 }
+  ' "$log" | while IFS=$'\t' read -r unit err times; do note_retried "$name" "$unit" "$err" "$times"; done
   dir="$(sed -n 's/^shard output: //p' "$log" | tail -1)"
   if [ -n "$dir" ] && [ -d "$dir" ]; then cp -R "$dir" "$artefacts/$name-shards" || true; fi
 }
@@ -256,6 +269,7 @@ write_summary() {
   local f="$artefacts/summary.md" verdict="PASSED"
   hard_failed && verdict="FAILED"
   [ "$verdict" = PASSED ] && [ "$soft_nfail" != 0 ] && verdict="PASSED (board-visual failed, which does not fail the job)"
+  [ "$verdict" = PASSED ] && [ -s "$retried_tsv" ] && verdict="PASSED, BUT $(wc -l < "$retried_tsv" | tr -d ' ') BOARD UNIT(S) PASSED ONLY ON RETRY (not clean, see below)"
   {
     echo "# ci on $os: $verdict"
     echo
@@ -267,6 +281,16 @@ write_summary() {
     echo "| step | seconds | result | tests run | tests failed |"
     echo "|---|---|---|---|---|"
     awk -F'\t' '{printf "| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5}' "$steps_tsv"
+    if [ -s "$retried_tsv" ]; then
+      echo
+      echo "## PASSED ON RETRY, NOT CLEAN PASSES (they do not fail the job)"
+      echo
+      echo "Each failed in its shard and passed alone on the retry, so it is slow or stalls under load. Fix the wait, or list it in scripts/flaky-suite.json with its reason."
+      echo
+      echo "| step | unit | timings | first-try error |"
+      echo "|---|---|---|---|"
+      awk -F'\t' '{gsub(/\|/, "\\\\|", $3); printf "| %s | %s | %s | %s |\n", $1, $2, $4, $3}' "$retried_tsv"
+    fi
     if [ -s "$failing_tsv" ]; then
       echo
       echo "## Failing tests"

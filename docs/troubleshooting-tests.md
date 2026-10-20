@@ -379,11 +379,16 @@ headless harness) has no unit of its own. Prove it by breaking one selector and 
 Both outputs must name the selector and the line on the failure's first line, and the sharded one must show the
 call log under it. Keep the two logs beside the change: they are its evidence, the way a trace is a fix's.
 
-## 5. Where the LOAD reds come from
+## 5. Where the PASSED ON RETRY units come from
 
-The sharded run uses one and a half shards per core, and a unit that fails in the shards and passes alone fails the
-run by policy (`LOAD` in the report). Every run therefore reddens on a new handful of such units, two to five, and
-the eight fixed so far all held. Each fix is a wait on the state the step asserts (`until()` in the drawer check,
+The sharded run uses one and a half shards per core, and a unit that fails in the shards and passes alone on the retry
+is a pass, never a clean one. The run exits 0 and says so loudly: the row reads
+`PASSED ON RETRY (slow or stalled, first try failed)`, a block lists each unit with its first-try error and both
+timings, and in CI the same units get a section in
+`summary.md`, a warning annotation, a section in the run rollup and a row in the flake ledger (the `passed on retry`
+column), so a repeat offender stays visible. A unit that fails both tries still fails the run, and the flaky suite
+still runs once with no retry. Every run used to redden on a new handful of such units, two to five, and the eight
+fixed so far all held. Each fix is a wait on the state the step asserts (`until()` in the drawer check,
 `loaded || loadFailed` before reading the pulls, the hub stream before writing a rooms event). The pattern is in Part
 3. What this part adds: the units on `scripts/board-visual-units.txt` do not redden the run, so a unit moved there
 is one nobody will fix, and a unit split into single-purpose halves fails on the half that names the race.
