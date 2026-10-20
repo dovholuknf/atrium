@@ -15,7 +15,7 @@ var visibleOnPurpose = map[string]string{
 	"internal/api/fileopen.go:openFile":              "an editor the operator asked for",
 	"internal/api/termopen.go:openTerminal":          "a terminal window the operator asked for",
 	"internal/daemon/homedisk.go:OpenHome":           "the file manager, opened for the operator",
-	"internal/daemon/launch.go:launchCore":           "window launch mode: a terminal the operator asked for",
+	"internal/daemon/launch.go:launchLocked":         "window launch mode: a terminal the operator asked for",
 	"internal/cli/control.go:spawnDetached":          "starts the daemon itself, DETACHED_PROCESS on purpose (cli.detach)",
 	"internal/detach/detach_windows.go:Start":        "flags are deliberate: the pty host and the room must outlive their job",
 	"internal/cli/new.go:repoOfCheckout":             "operator CLI, runs in the operator's own console",
