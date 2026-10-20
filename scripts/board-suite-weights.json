@@ -151,6 +151,7 @@
   "notifyOff": 10546,
   "oneTooltip": 746,
   "pasteBig": 15215,
+  "dragNotTyped": 1500,
   "pasteBusy": 8743,
   "pasteClose": 1105,
   "pasteDone": 5217,

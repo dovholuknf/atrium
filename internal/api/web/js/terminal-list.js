@@ -2228,6 +2228,7 @@ function wireTermDrag(host) {
       e.dataTransfer.effectAllowed = "move";
       // Firefox refuses to start a drag with nothing set.
       e.dataTransfer.setData("text/plain", termDragID);
+      e.dataTransfer.setData("application/x-atrium-card", termDragID);
     };
     el.ondragend = () => {
       const aborted = !!termDragID;
@@ -2429,6 +2430,7 @@ function wireHeadDrag(host, el) {
     termHeadDrag = el.dataset.ghead;
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", termHeadDrag);
+    e.dataTransfer.setData("application/x-atrium-card", termHeadDrag);
     el.classList.add("dragging");
   };
   el.ondragend = () => {

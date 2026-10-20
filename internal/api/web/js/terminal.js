@@ -1990,18 +1990,24 @@ async function uploadIntoTerm(files) {
 // AWAY from the terminal to display it, so removing them would cost a guest the
 // session over a mis-aimed drag. So the drop is swallowed and answered with the
 // daemon's own sentence.
+// The list marks its own drags with this type beside the `text/plain` Firefox needs, so a reorder let go over the
+// terminal is not mistaken for text to paste.
+function boardOwnDrag(dt) {
+  return !!dt && Array.from(dt.types || []).includes("application/x-atrium-card");
+}
+
 function wireTerminalDrops(screen) {
   if (!screen || screen.dataset.drops) return;
   screen.dataset.drops = "1";
   screen.addEventListener("dragover", e => {
-    if (!termTask) return;
+    if (!termTask || boardOwnDrag(e.dataTransfer)) return;
     e.preventDefault();
     if (!isGuest()) screen.classList.add("dropping");
   });
   screen.addEventListener("dragleave", () => screen.classList.remove("dropping"));
   screen.addEventListener("drop", e => {
     screen.classList.remove("dropping");
-    if (!termTask) return;
+    if (!termTask || boardOwnDrag(e.dataTransfer)) return;
     const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
     if (!files.length) {
       // A DROPPED BLOCK OF TEXT IS A PASTE. Left to the browser it went
