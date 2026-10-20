@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { jobFailures, retriedRows } = require('./ci-failures');
+const { jobFailures, retryPassed, retriedRows } = require('./ci-failures');
 
 const MAX_ROWS = 30;
 const MAX_ANNOTATIONS = 10;
@@ -39,7 +39,8 @@ function readRun(dir) {
   const failures = [];
   const retried = [];
   for (const j of jobs) {
-    for (const f of jobFailures(j.dir)) failures.push({ ...f, job: j.job });
+    const loaded = retryPassed(j.dir);
+    for (const f of jobFailures(j.dir)) failures.push({ ...f, job: j.job, retried: loaded.has(f.unit) });
     for (const f of retriedRows(j.dir)) retried.push({ ...f, job: j.job });
   }
   return { jobs, failures, retried };
@@ -60,6 +61,7 @@ function ago(rows, history) {
 }
 
 function retryText(r) {
+  if (r.retried) return 'passed on retry, not on the flaky list, fails the job';
   if (r.group === 'board' && !r.unit.startsWith('check:') && !r.unit.startsWith('step:')) return 'failed on retry';
   return 'no retry';
 }
@@ -77,7 +79,7 @@ function annotate({ run, jobs, rows, retried, missing }) {
       : `green, all ${jobs.length} jobs passed`;
     return [`::notice title=${title}::${escData(green)}`, ...retried.slice(0, MAX_ANNOTATIONS - 1).map(warn)];
   }
-  const rank = (r) => (r.isNew ? 0 : 1);
+  const rank = (r) => (r.isNew ? 0 : r.retried ? 1 : 2);
   const ordered = rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r);
   const lines = [
     ...ordered.map((r) => `::error title=${escProp(r.unit)}::${escData(clip(`${r.os} ${r.job}: ${r.error} | retry: ${retryText(r)} | history: ${r.history}`))}`),
@@ -88,7 +90,8 @@ function annotate({ run, jobs, rows, retried, missing }) {
   const out = shown.slice();
   if (cut) out.push(`::notice title=${title}::${escData(`and ${lines.length - shown.length} more, see the table`)}`);
   const n = ordered.filter((r) => r.isNew).length;
-  const totals = `${rows.length} failing unit${rows.length === 1 ? '' : 's'}, ${n} new${retried.length ? `, ${retried.length} passed on retry (not clean)` : ''}`;
+  const k = ordered.filter((r) => r.retried).length;
+  const totals = `${rows.length} failing unit${rows.length === 1 ? '' : 's'}, ${n} new${k ? `, ${k} unlisted passed on retry` : ''}${retried.length ? `, ${retried.length} passed on retry (not clean)` : ''}`;
   out.push(`::notice title=${title}::${escData(missing.length ? `${totals}, ${missing.length} job${missing.length === 1 ? '' : 's'} left no artifact` : totals)}`);
   return out;
 }

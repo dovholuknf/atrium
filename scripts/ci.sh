@@ -23,8 +23,9 @@
 # A flaky test is a failure. There is no rerun and no quarantine list. The one exception is the board's pixel and
 # timing units on scripts/board-visual-units.txt: the board-visual step runs them and a failure there is reported but
 # never fails the exit status, in whichever group it runs. They are run and reported, never dropped.
-# The sharded board runner alone retries a failed unit once, alone: a pass there is marked PASSED ON RETRY in the log
-# and the summary, and never reads as a clean pass.
+# The sharded board runner alone retries a failed unit once, alone. A unit on scripts/flaky-suite.json that then passes is
+# marked PASSED ON RETRY in the log and the summary, never reads as a clean pass, and does not fail the job. Any other
+# unit that passes on retry still fails it.
 
 set -uo pipefail
 
@@ -38,9 +39,10 @@ all_steps="machine toolchain flaky gofmt go-vet go-build go-test go-race time-gu
 # group ends with clean-tree, which only looks at what that job did.
 #
 # THE FLAKY SUITE RUNS FIRST. scripts/flaky-suite.json lists every test known to fail now and then, and the flaky group
-# runs only those, with no retry and no quarantine: a failure fails the job. Every other step skips them, so a test runs
-# in exactly one place, and the workflow starts the other jobs after this one (`needs: flaky`) so the bad tests answer
-# fast and alone.
+# runs only those, with no quarantine: a failure fails the job, and a board unit gets one retry (a go test gets none), so
+# a listed unit that fails and then passes is marked PASSED ON RETRY and does not fail the job. Every other step skips
+# them, so a test runs in exactly one place, and the workflow starts the other jobs after this one (`needs: flaky`) so
+# the bad tests answer fast and alone.
 #
 # THE GO TESTS ARE TWO JOBS ON WINDOWS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
 # wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the
@@ -219,18 +221,19 @@ board_env_probe() {
   node scripts/board-env-probe.js 2>&1 | tee "$artefacts/$1"
 }
 # The merged report of a sharded run: one row per unit (unit, time, result), then FAILED sections each unit with its
-# first error line indented under it. A unit that passed only on retry passes the run and is not counted as failed: it
-# goes to retried.tsv, with its timings. The shards' own output, which the runner keeps on a failure or a retried
-# pass and names on a "shard output:" line, is copied into the artifacts.
+# first error line indented under it. A unit that passed only on retry and is NOT on the flaky list fails the run too, so
+# it is counted as failed. One that IS on the flaky list passes the run and is not counted as failed: it goes to
+# retried.tsv, with its timings. The shards' own output, which the runner keeps on a failure or a retried pass and names
+# on a "shard output:" line, is copied into the artifacts.
 board_report() {
   local name="$1" log="$2" n_units n_bad n_checks dir
-  n_units="$(awk '$3 ~ /^(PASS|PASSED|FAIL|NOT|FLAKY)$/' "$log" | wc -l | tr -d ' ')"
-  n_bad="$(awk '$3 ~ /^(FAIL|NOT)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$log" | wc -l | tr -d ' ')"
+  n_units="$(awk '$3 ~ /^(PASS|PASSED|FAIL|NOT|LOAD|FLAKY)$/' "$log" | wc -l | tr -d ' ')"
+  n_bad="$(awk '$3 ~ /^(FAIL|NOT|LOAD)$/ || ($3 == "FLAKY" && $0 ~ /failed every try|failed, not retried/)' "$log" | wc -l | tr -d ' ')"
   n_checks="$(grep -c '^FAIL ' "$log" || true)"
   note_counts "$n_units" "$((n_bad + n_checks))"
   grep '^FAIL ' "$log" | while IFS= read -r line; do note_failing "$name" "(check)" "${line#FAIL }"; done
   awk '
-    /^FAILED \(|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
+    /^FAILED \(|^FAILED IN THE SHARDS|^FAILED OUTSIDE/ { sec = ($0 ~ /OUTSIDE/) ? 2 : 1; unit = ""; next }
     /^[^ ]/ { sec = 0; next }
     sec == 1 && /^  [^ ]/ { unit = $1; got = 0; next }
     sec == 1 && /^    / && unit != "" && !got { e = $0; sub(/^ +/, "", e); sub(/^first try: /, "", e); printf "%s\t%s\n", unit, e; got = 1; next }
@@ -410,7 +413,8 @@ if { want board || want board-visual || want flaky; } && command -v npm >/dev/nu
 fi
 
 if step flaky "the flaky suite"; then
-  # Only the tests on scripts/flaky-suite.json, once each: no retry and no quarantine, so a failure here fails the job.
+  # Only the tests on scripts/flaky-suite.json, no quarantine: a failure here fails the job. A board unit gets one retry,
+  # alone, and a pass on it is marked PASSED ON RETRY.
   # The names are checked first because an empty -run would run everything.
   if check "flaky suite names" node scripts/flaky-suite.js check; then
     flaky_n=0; flaky_bad=0
@@ -437,7 +441,7 @@ if step flaky "the flaky suite"; then
       shards=1
       board_log="$artefacts/flaky-board.log"
       flaky_board_run() {
-        env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards"           node scripts/test-board-sharded.js --local --no-retry --units "$flaky_units" 2>&1 | tee "$board_log"
+        env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards"           node scripts/test-board-sharded.js --local --units "$flaky_units" 2>&1 | tee "$board_log"
         return "${PIPESTATUS[0]}"
       }
       board_env_probe flaky-env.txt

@@ -379,16 +379,16 @@ headless harness) has no unit of its own. Prove it by breaking one selector and 
 Both outputs must name the selector and the line on the failure's first line, and the sharded one must show the
 call log under it. Keep the two logs beside the change: they are its evidence, the way a trace is a fix's.
 
-## 5. Where the PASSED ON RETRY units come from
+## 5. Where the LOAD reds come from
 
-The sharded run uses one and a half shards per core, and a unit that fails in the shards and passes alone on the retry
-is a pass, never a clean one. The run exits 0 and says so loudly: the row reads
-`PASSED ON RETRY (slow or stalled, first try failed)`, a block lists each unit with its first-try error and both
-timings, and in CI the same units get a section in
-`summary.md`, a warning annotation, a section in the run rollup and a row in the flake ledger (the `passed on retry`
-column), so a repeat offender stays visible. A unit that fails both tries still fails the run, and the flaky suite
-still runs once with no retry. Every run used to redden on a new handful of such units, two to five, and the eight
-fixed so far all held. Each fix is a wait on the state the step asserts (`until()` in the drawer check,
+The sharded run uses one and a half shards per core, and a unit that fails in the shards and passes alone fails the
+run by policy (`LOAD` in the report) unless it is on `scripts/flaky-suite.json`. A listed unit that fails its first
+try and passes the retry is a pass that is never read as clean: the flaky job gives its board units one retry, the row
+reads `PASSED ON RETRY (slow or stalled, first try failed)`, a block lists the unit with its first-try error and both
+timings, and the job stays green. CI also puts those units in `summary.md`, a warning annotation, the run rollup and
+the `passed on retry` column of the flake ledger, so a repeat offender stays visible. A unit that fails both tries
+fails everywhere, and a go test in the flaky suite gets no retry. Every run therefore reddens on a new handful of
+unlisted such units, two to five, and the eight fixed so far all held. Each fix is a wait on the state the step asserts (`until()` in the drawer check,
 `loaded || loadFailed` before reading the pulls, the hub stream before writing a rooms event). The pattern is in Part
 3. What this part adds: the units on `scripts/board-visual-units.txt` do not redden the run, so a unit moved there
 is one nobody will fix, and a unit split into single-purpose halves fails on the half that names the race.
@@ -408,7 +408,8 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
 # The flaky suite: how a test enters and leaves
 
 `scripts/flaky-suite.json` lists every test known to fail now and then. CI runs them first and alone
-(`bash scripts/ci.sh --group flaky`, one job per platform), with no retry, and every other step skips them, so each
+(`bash scripts/ci.sh --group flaky`, one job per platform), with one retry for a board unit and none for a go
+test, and every other step skips them, so each
 test runs in exactly one place. Every other job waits for all three flaky jobs and is skipped when one is red, so one failing flaky test stops the run.
 
 - **Enters** the first time it fails in CI and is not listed, whether or not a fix names it. The ledger
