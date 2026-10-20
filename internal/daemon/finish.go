@@ -592,7 +592,19 @@ func (d *Daemon) taskFor(agent, taskID string) (*store.Task, error) {
 			return t, nil
 		}
 	}
-	return d.st.GetByWireName(d.st.Qualify(agent))
+	t, err := d.st.GetByWireName(d.st.Qualify(agent))
+	if err == nil {
+		return t, nil
+	}
+	if name := strings.TrimSpace(agent); name != "" {
+		if t, e := d.st.Get(name); e == nil && t != nil {
+			return t, nil
+		}
+		if t, e := d.st.GetByAlias(strings.TrimPrefix(name, "@")); e == nil && t != nil {
+			return t, nil
+		}
+	}
+	return nil, err
 }
 
 // errString is an error from a literal, without reaching for fmt.

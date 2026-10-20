@@ -136,12 +136,12 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	}
 
 	// 1. The limit prompt, naming the file and the binary, and only that.
-	want := newContextLimitPrompt(path, "/opt/atrium/atrium")
+	want := newContextLimitPrompt(path, "/opt/atrium/atrium", false)
 	until(t, "the limit prompt", func() bool {
 		return strings.Contains(f.written(), want) && strings.HasSuffix(f.written(), "\r")
 	})
-	if want != "you are at context limit. wrap what is in flight, write your handoff to "+path+
-		", then run /opt/atrium/atrium ready." {
+	if want != "you are at context limit. wrap what is in flight, then either write your handoff to "+path+
+		" and run /opt/atrium/atrium ready, or call the atrium_ready tool with the handoff text." {
 		t.Fatalf("the prompt reads %q", want)
 	}
 

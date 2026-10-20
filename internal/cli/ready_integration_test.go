@@ -35,7 +35,7 @@ func TestReadyPrintsTheLineOrFailsWithTheReason(t *testing.T) {
 	if err := reportReady(&out, srv.URL, "worker"); err != nil {
 		t.Fatal(err)
 	}
-	if got["agent"] != "worker" || got["task_id"] != "t-1" {
+	if got["agent"] != "worker" || got["task_id"] != "" {
 		t.Fatalf("sent %v", got)
 	}
 	if !strings.Contains(out.String(), "End your turn now.") {

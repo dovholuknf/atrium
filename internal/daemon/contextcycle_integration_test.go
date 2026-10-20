@@ -78,7 +78,7 @@ func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
 		t.Fatalf("no automatic cycle on the limit step: %v", d.newContextFor(id))
 	}
 
-	for turn := 1; turn <= 3; turn++ {
+	for turn := 1; turn < maxLimitAsks; turn++ {
 		// A burst inside the turn types nothing more.
 		statuslines(d, id, 20)
 		if got := prompts(f); got != turn {
@@ -102,8 +102,8 @@ func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
 	if step(d, id) != NewContextLimit {
 		t.Fatalf("the cycle left the limit step with no ack: %v", d.newContextFor(id))
 	}
-	if v, _ := d.newContextFor(id).(map[string]any); v["prompted"] != 4 {
-		t.Fatalf("the chip counts %v prompts, want 4", v["prompted"])
+	if v, _ := d.newContextFor(id).(map[string]any); v["prompted"] != maxLimitAsks {
+		t.Fatalf("the chip counts %v prompts, want %d", v["prompted"], maxLimitAsks)
 	}
 }
 
@@ -346,11 +346,15 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 // The limit prompt names the binary and the path, in clint's words.
 func TestTheLimitPromptWording(t *testing.T) {
 	t.Parallel()
-	got := newContextLimitPrompt("/tmp/atrium/handoffs/c1.md", "/usr/local/bin/atrium")
-	want := "you are at context limit. wrap what is in flight, write your handoff to /tmp/atrium/handoffs/c1.md, " +
-		"then run /usr/local/bin/atrium ready."
+	got := newContextLimitPrompt("/tmp/atrium/handoffs/c1.md", "/usr/local/bin/atrium", false)
+	want := "you are at context limit. wrap what is in flight, then either write your handoff to " +
+		"/tmp/atrium/handoffs/c1.md and run /usr/local/bin/atrium ready, or call the atrium_ready tool with the handoff text."
 	if got != want {
 		t.Fatalf("got %q", got)
+	}
+	if got := newContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true); strings.Contains(got, "/tmp/c1.md") ||
+		!strings.Contains(got, "atrium_ready") {
+		t.Fatalf("a runner with no shell was told %q", got)
 	}
 }
 

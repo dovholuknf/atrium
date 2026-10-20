@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -30,6 +31,8 @@ import (
 type ReadyRequest struct {
 	Agent  string `json:"agent"`
 	TaskID string `json:"task_id,omitempty"`
+	// Handoff is the handoff text itself, from a session with no shell to write the file. Absent means read the file.
+	Handoff *string `json:"handoff,omitempty"`
 }
 
 // ReadyLine is what the CLI prints when the ack lands.
@@ -57,10 +60,15 @@ func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := d.taskFor(in.Agent, in.TaskID)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, errString("atrium has no card for this session"))
+		who := strings.TrimSpace(in.Agent)
+		if who == "" {
+			who = in.TaskID
+		}
+		writeJSONErr(w, http.StatusNotFound, fmt.Errorf("atrium has no card for this session: looked up %q as a card id, "+
+			"wire name and alias on this room", who))
 		return
 	}
-	out, code, err := d.ready(task)
+	out, code, err := d.readyHandoff(task, in.Handoff)
 	if err != nil {
 		writeJSONErr(w, code, err)
 		return
@@ -70,6 +78,11 @@ func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 
 // ready stores the card's handoff and acks its cycle.
 func (d *Daemon) ready(task *store.Task) (map[string]any, int, error) {
+	return d.readyHandoff(task, nil)
+}
+
+// readyHandoff is ready with the handoff text given, which it writes to the cycle's file first.
+func (d *Daemon) readyHandoff(task *store.Task, handoff *string) (map[string]any, int, error) {
 	cur := d.nctx.get(task.ID)
 	// A restart wrap-up waiting on this card takes the ack, with no file asked for: the conversation is kept.
 	if (cur == nil || cur.step != NewContextLimit) && d.wrap.ack(task.ID) {
@@ -80,6 +93,24 @@ func (d *Daemon) ready(task *store.Task) (map[string]any, int, error) {
 		return nil, http.StatusConflict, errString("no context cycle is waiting for atrium ready on this card")
 	}
 	path := cur.file
+	if handoff != nil {
+		text := *handoff
+		if strings.TrimSpace(text) == "" {
+			return nil, http.StatusConflict, errString("the handoff text is empty: write what a fresh session needs to carry on")
+		}
+		if len(text) > handoffKeep {
+			text = text[:handoffKeep]
+			for !utf8.ValidString(text) {
+				text = text[:len(text)-1]
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, http.StatusInternalServerError, fmt.Errorf("could not write the handoff to %s: %w", path, err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			return nil, http.StatusInternalServerError, fmt.Errorf("could not write the handoff to %s: %w", path, err)
+		}
+	}
 	b, err := os.ReadFile(path)
 	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
 		return nil, http.StatusConflict, fmt.Errorf("write your handoff to %s first, then run atrium ready again", path)

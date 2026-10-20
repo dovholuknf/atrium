@@ -114,6 +114,16 @@ func addPeerTools(s *mcp.Server) {
 	link.AddEndTools(s, link.EndDoor{Report: endReport})
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "atrium_ready",
+		Description: "Say your handoff is written, when atrium's limit prompt asked for it and you have no shell to " +
+			"write the file and run `atrium ready`.\n\n" +
+			"Pass `handoff`: everything a fresh session needs to carry on, as markdown. Atrium writes it to the " +
+			"handoff path the prompt named, stores it on your card, types /clear when this turn ends, then tells the " +
+			"new session to read it. End your turn after the call.\n\n" +
+			"Refused with a sentence when no context cycle is waiting on your card or the text is empty.",
+	}, readyHandler)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
 		Description: "Start a new agent in a directory, on its own card, supervised by atrium.\n\n" +
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +

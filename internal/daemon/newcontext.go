@@ -139,9 +139,38 @@ const newContextClear = "/clear"
 
 // newContextLimitPrompt is the limit prompt: where the handoff goes and how to say
 // it is written. The binary is named in full, since the CLI is not on PATH in every room.
-func newContextLimitPrompt(path, bin string) string {
-	return "you are at context limit. wrap what is in flight, write your handoff to " + path +
-		", then run " + bin + " ready."
+func newContextLimitPrompt(path, bin string, noShell bool) string {
+	if noShell {
+		return "you are at context limit. wrap what is in flight, then call the atrium_ready tool with your handoff as its text."
+	}
+	return "you are at context limit. wrap what is in flight, then either write your handoff to " + path +
+		" and run " + bin + " ready, or call the atrium_ready tool with the handoff text."
+}
+
+// runnerHasNoShell is whether the card's launch withholds both shells, so the prompt names the tool alone.
+func (d *Daemon) runnerHasNoShell(taskID string) bool {
+	t, err := d.st.Get(taskID)
+	if err != nil || t == nil {
+		return false
+	}
+	args := t.LaunchArgs
+	if h, _ := d.harnessOf(taskID); h != nil {
+		args = append(append([]string{}, h.Args...), args...)
+	}
+	denied := map[string]bool{}
+	for i, a := range args {
+		v := ""
+		switch {
+		case (a == "--disallowedTools" || a == "--disallowed-tools") && i+1 < len(args):
+			v = args[i+1]
+		case strings.HasPrefix(a, "--disallowedTools=") || strings.HasPrefix(a, "--disallowed-tools="):
+			v = a[strings.Index(a, "=")+1:]
+		}
+		for _, n := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' }) {
+			denied[n] = true
+		}
+	}
+	return denied["Bash"] && denied["PowerShell"]
 }
 
 // newContextWake is what the new session is told, and reads the handoff back.
@@ -291,6 +320,9 @@ func defaultNCTiming() ncTimings {
 		promptLost:    2 * time.Minute,
 	}
 }
+
+// maxLimitAsks is how many times the limit prompt is typed before the cycle stops re-asking and waits.
+const maxLimitAsks = 3
 
 // newContext is one card's sequence as the board draws it.
 type newContext struct {
@@ -593,6 +625,8 @@ func newContextView(c *newContext) map[string]any {
 		n, label = 1, "waiting for atrium ready"
 		if c.acked {
 			label = "atrium ready came, clearing when the turn ends"
+		} else if c.prompted >= maxLimitAsks {
+			label = fmt.Sprintf("new context waiting: the session did not call ready after %d asks", maxLimitAsks)
 		} else if c.prompted > 1 {
 			label += fmt.Sprintf(" (asked %d times)", c.prompted)
 		}
@@ -913,7 +947,7 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 // Never closer than promptGap, for a runner whose turns are not counted. Never with
 // a dialog on screen, whose Enter it would answer.
 func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
-	if d.act.dialogOpen(taskID) {
+	if d.act.dialogOpen(taskID) || c.prompted >= maxLimitAsks {
 		return false
 	}
 	// The turn count is read BEFORE busy. A turn that begins between the two reads then shows as busy, or as a count
@@ -966,7 +1000,7 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 		}
 		return mid || !busy
 	}
-	text := newContextLimitPrompt(path, d.hk.atriumBinary())
+	text := newContextLimitPrompt(path, d.hk.atriumBinary(), d.runnerHasNoShell(taskID))
 	d.nctx.setTyping(taskID, gen, true)
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, text, ok)
 	d.nctx.setTyping(taskID, gen, false)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +50,53 @@ func newReady() *cobra.Command {
 }
 
 func reportReady(out io.Writer, hubURL, name string) error {
+	answer, err := postReady(hubURL, name, nil)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, answer.Message)
+	if !answer.Stored {
+		fmt.Fprintf(out, "  the handoff could not be stored on the card. it is still at %s\n", answer.Path)
+	}
+	return nil
+}
+
+type ReadyInput struct {
+	Handoff string `json:"handoff" jsonschema:"the handoff as markdown: what you are doing and why, what is done and left, decisions and their reasons, branches, commits and files, how to check the work. at most 256 KB"`
+}
+
+type ReadyOutput struct {
+	Ok      bool   `json:"ok"`
+	Path    string `json:"path,omitempty"`
+	Message string `json:"message"`
+}
+
+func readyHandler(_ context.Context, _ *mcp.CallToolRequest, in ReadyInput) (*mcp.CallToolResult, ReadyOutput, error) {
+	out := ReadyOutput{}
+	if strings.TrimSpace(in.Handoff) == "" {
+		return nil, out, fmt.Errorf("the handoff is empty: write what a fresh session needs to carry on")
+	}
+	if strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")) == "" && os.Getenv("ATRIUM_TASK_ID") == "" {
+		return nil, out, fmt.Errorf("this session has no ATRIUM_AGENT_NAME to mean itself by, so atrium cannot tell which card is ready")
+	}
+	answer, err := postReady("", "", &in.Handoff)
+	if err != nil {
+		return nil, out, err
+	}
+	out.Ok, out.Path, out.Message = true, answer.Path, answer.Message
+	return nil, out, nil
+}
+
+type readyAnswer struct {
+	Error   string `json:"error"`
+	Path    string `json:"path"`
+	Stored  bool   `json:"stored"`
+	Message string `json:"message"`
+}
+
+// postReady says the handoff is written, with its text when the session has no shell to write the file.
+func postReady(hubURL, name string, handoff *string) (readyAnswer, error) {
+	var answer readyAnswer
 	agent := name
 	if agent == "" {
 		agent = os.Getenv("ATRIUM_AGENT_NAME")
@@ -57,41 +106,38 @@ func reportReady(out io.Writer, hubURL, name string) error {
 			agent = filepath.Base(cwd)
 		}
 	}
-	taskID := os.Getenv("ATRIUM_TASK_ID")
-	if agent == "" && taskID == "" {
-		return fmt.Errorf("could not work out which session this is. pass --name")
+	taskID := ""
+	if name == "" {
+		taskID = os.Getenv("ATRIUM_TASK_ID")
 	}
-	body, err := json.Marshal(map[string]any{"agent": agent, "task_id": taskID})
+	if agent == "" && taskID == "" {
+		return answer, fmt.Errorf("could not work out which session this is. pass --name")
+	}
+	req := map[string]any{"agent": agent, "task_id": taskID}
+	if handoff != nil {
+		req["handoff"] = *handoff
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
-		return err
+		return answer, err
 	}
 
 	url := hubAddress(hubURL) + "/ready"
 	client := &http.Client{Timeout: finishTimeout}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("no daemon answered at %s: %w", url, err)
+		return answer, fmt.Errorf("no daemon answered at %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	var answer struct {
-		Error   string `json:"error"`
-		Path    string `json:"path"`
-		Stored  bool   `json:"stored"`
-		Message string `json:"message"`
-	}
 	_ = json.Unmarshal(raw, &answer)
 	if resp.StatusCode >= 300 {
 		why := answer.Error
 		if why == "" {
 			why = strings.TrimSpace(string(raw))
 		}
-		return fmt.Errorf("atrium refused: %s", why)
+		return answer, fmt.Errorf("atrium refused: %s", why)
 	}
-	fmt.Fprintln(out, answer.Message)
-	if !answer.Stored {
-		fmt.Fprintf(out, "  the handoff could not be stored on the card. it is still at %s\n", answer.Path)
-	}
-	return nil
+	return answer, nil
 }
