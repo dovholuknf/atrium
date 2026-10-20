@@ -16012,7 +16012,11 @@ async function mStickBottomSection(browser) {
           e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
           e.scrollTop = 0;
         });
-        try { await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) }); }
+        try {
+          // The scroll event is delivered on a frame, so the jump control is timed from the event, not from the assignment.
+          await p.waitForFunction(() => window.__sb.scrolls > 0 || !document.getElementById("m-jump").hidden, null, { timeout: slow(10000) });
+          await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+        }
         catch (e) {
           const s = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return Object.assign({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, hidden: document.getElementById("m-jump").hidden }, window.__sb); });
           fail(tag + what + ": no jump control " + JSON.stringify(s));
@@ -27905,6 +27909,8 @@ async function mOpenQSection(browser) {
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
       const t = await p.textContent("#m-card-scroll");
       await mShot(p, "openq-" + id);
+      // The sheet gets its on class two frames after it opens, and a tap cannot land on it while it is still off screen.
+      await p.waitForFunction(() => { const s = document.getElementById("m-card"); return s.classList.contains("on") && !s.getAnimations().length; }, null, { timeout: slow(10000) });
       await p.tap("#m-card-back");
       await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
       return { n: t.split(Q).length - 1, old: /Old one\?/.test(t) };
