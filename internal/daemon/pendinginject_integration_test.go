@@ -266,3 +266,32 @@ func TestACardThatRefusesPeerTypingIsNotHeld(t *testing.T) {
 		t.Fatalf("raised the held signal for a card that refuses peer typing: %+v", a)
 	}
 }
+
+func TestStillBlockedNoteUsesTheEntryHeldUnderTheLock(t *testing.T) {
+	d := testDaemon(t)
+	task, _, _ := ncCard(t, d)
+	id := task.ID
+	peerCard(t, d, "alice")
+	if err := d.st.SetPeerTyping(id, true); err != nil {
+		t.Fatal(err)
+	}
+	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now(), prompted: 1}
+	sayViaMessage(t, d, "alice", id, "HELDTEXT")
+	d.pending.mu.Lock()
+	if ht := d.pending.by[id]; ht != nil && ht.timer != nil {
+		ht.timer.Stop()
+	}
+	d.pending.mu.Unlock()
+	if heldCount(d.pending, id) != 1 {
+		t.Fatalf("the message should be held, got %d", heldCount(d.pending, id))
+	}
+	d.pending.betweenHoldChecks = func() {
+		d.nctx.mu.Lock()
+		delete(d.nctx.by, id)
+		d.nctx.mu.Unlock()
+	}
+	d.pending.try(id)
+	if heldCount(d.pending, id) != 1 {
+		t.Fatalf("the held message should still wait, got %d", heldCount(d.pending, id))
+	}
+}

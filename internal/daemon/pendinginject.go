@@ -96,6 +96,8 @@ type pendingInjector struct {
 	by map[string]*heldTell
 	// running is the cards with an attempt in flight, and whether something asked for another meanwhile. See attempt.
 	running map[string]*attemptRun
+	// betweenHoldChecks is a test seam between the two reads of the new-context hold in try.
+	betweenHoldChecks func()
 }
 
 // attemptRun is one card's attempt in flight. again is set by a retry that fired while it ran.
@@ -397,6 +399,9 @@ func (pi *pendingInjector) try(taskID string) {
 			entries = kept
 		}
 	}
+	if pi.betweenHoldChecks != nil {
+		pi.betweenHoldChecks()
+	}
 	if pi.d.holdingMessages(taskID) && len(entries) == 0 || pi.d.frozenForMove(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
@@ -508,7 +513,8 @@ func (pi *pendingInjector) try(taskID string) {
 		return
 	}
 	// Still blocked. Widen the backoff, warn once for this tick, and reschedule.
-	from := ht.entries[0].from
+	front := ht.entries[0]
+	from := front.from
 	waited := time.Since(ht.since)
 	final := ht.step >= len(pi.d.hk.backoffSteps)-1
 	if !final {
@@ -519,7 +525,7 @@ func (pi *pendingInjector) try(taskID string) {
 		ht.timer.Reset(next)
 	}
 	pi.mu.Unlock()
-	pi.noteHeld(taskID, pi.heldFor(taskID, entries[0]))
+	pi.noteHeld(taskID, pi.heldFor(taskID, front))
 
 	// Not in the first minute. The front of the backoff is seconds apart, and a
 	// message held that briefly is the gate working, not something to announce.

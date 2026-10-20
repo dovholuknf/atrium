@@ -1,0 +1,1 @@
+A held message's retry no longer panics when the new-context hold lifts between two checks in one attempt: the still-blocked note now names the front entry read under the lock, not the earlier snapshot (pendinginject-empty-snapshot).
