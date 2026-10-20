@@ -406,7 +406,7 @@ func TestExitComesAfterTheLastBytes(t *testing.T) {
 func TestSlowReaderIsClosedAndTheDrainCarriesOn(t *testing.T) {
 	_, addr := testHost(t, Options{ClientQueue: 64 << 10})
 	c := daemonT(t, addr)
-	sp := spawnT(t, c, "c", KindRunner, 16<<20, "burst", "3072")
+	sp := spawnT(t, c, "c", KindRunner, 16<<20, "burstgo", "3072")
 	// Attach and never read: the raw connection is used by hand, since Client always reads.
 	raw, err := dialChannel(addr, time.Second)
 	if err != nil {
@@ -421,6 +421,8 @@ func TestSlowReaderIsClosedAndTheDrainCarriesOn(t *testing.T) {
 	buf := make([]byte, 4096)
 	_, _ = raw.Read(buf) // the hello reply
 	_ = enc.Encode(Request{V: VAttach, Seq: 2, RunID: sp.RunID})
+	_, _ = raw.Read(buf) // the attach reply
+	_ = enc.Encode(Request{V: VWrite, Seq: 3, RunID: sp.RunID, Data: []byte("\r")})
 	// The probe connection stays answered while the runner floods and the slow one backs up.
 	waitFor(t, 30*time.Second, "the slow client to be closed", func() bool {
 		p, err := pc.Probe()

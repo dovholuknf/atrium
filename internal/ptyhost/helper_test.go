@@ -14,6 +14,7 @@ import (
 //	echo                  prints READY, then GOT:<line> for each line typed. `quit` exits 0, `exit7` exits 7
 //	tick                  prints T000001, T000002 ... every 10ms. `quit` exits 0
 //	burst <kb>            writes <kb> KB at once, then behaves like echo
+//	burstgo <kb>          prints READY, waits for one byte, then writes <kb> KB and behaves like echo
 //	burstexit <kb> <code> writes <kb> KB and exits at once with <code>
 //
 // And as `__host <stateDir> <idle>`, which is what the Start test launches detached.
@@ -51,6 +52,11 @@ func runnerMain(args []string) {
 	case "burstexit":
 		out(kb(atoi(1)))
 		os.Exit(atoi(2))
+	case "burstgo":
+		out("READY\r\n")
+		_, _ = os.Stdin.Read(make([]byte, 1))
+		out(kb(atoi(1)))
+		echoLoop(out)
 	case "burst":
 		out(kb(atoi(1)))
 		echoLoop(out)
