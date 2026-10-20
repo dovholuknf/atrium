@@ -9,8 +9,8 @@ Docs: none, a fix that makes the hold do what its design says
 1. Have several idle cards in a room and one working card.
 2. Set a deploy hold, let the working card make a tool call (it is refused), then call the hold off.
 
-**Expected:** the working card gets one queued line, "room deploy called off by ...", at its next tool call. No idle
-card receives anything or starts a turn, and nothing is typed into any terminal.
+**Expected:** superseded by bug-deploy-calloff-wakes-every-card: no card receives anything, working or idle, and
+nothing is typed into any terminal.
 
 ### @LETTER@2. A deploy that will refuse never holds
 

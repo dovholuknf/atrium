@@ -396,8 +396,8 @@ func (pi *pendingInjector) try(taskID string) {
 		return
 	}
 	// A card held for a room deploy holds everything retried here the same way,
-	// the operator's own text included, which the hooks still carry. wakeTyped
-	// re-arms the retry once the wake is in.
+	// the operator's own text included, which the hooks still carry. The
+	// retry is re-armed when the hold lifts.
 	if pi.d.deployHeld(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
@@ -576,7 +576,7 @@ func (pi *pendingInjector) withoutHeldPeers(taskID string, msgs []*store.Message
 	queues := pi.d.queuesMidTurnFor(taskID)
 	wouldQueue := queues && pi.d.act.midTurn(taskID)
 	for _, e := range peers {
-		if e.waitTurn && (!pi.d.midTurnInputFor(taskID) || queues) && pi.d.heldAged(taskID, e.at) {
+		if e.waitTurn && (!pi.d.midTurnInputFor(taskID) || queues) && pi.d.heldAged(e.at) {
 			continue
 		}
 		// Typing it now would only fill the runner's queued box, so the hook that is running is the route.

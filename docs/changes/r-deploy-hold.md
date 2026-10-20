@@ -33,38 +33,36 @@ The permission history records it as decided by `deploy-hold`. The owner's call 
 1. From one held agent, `atrium_say` to another held card.
 2. From the board, type a message to the same card.
 
-**Expected:** the say answers `queued` with "held: <room> is being redeployed. it is delivered after the wake". The
+**Expected:** the say answers `queued` with "held: <room> is being redeployed. it is delivered when the hold lifts". The
 board message is delivered during the hold.
 
-### @LETTER@5. `wait`, then the deploy, then one wake each
+### @LETTER@5. `wait`, then the deploy, then a silent release
 
 1. From the owner, `action: wait`. It answers `busy` with a list, or `quiet`.
 2. Run the deploy the owner runs today (`scripts/live/deploy-batch.ps1`).
 
-**Expected:** after the room is back, each held card gets one line behind `[atrium] restart wake:` saying
-`room deploy done: <room> is on build <new> (was <old>)`, typed once its runner is up and its turn is over. The
-held say from @LETTER@4 arrives after that line, not before. A card that had queued its own restart wake gets its
-own line and the hold's in one prompt.
+**Expected:** after the room is back, no held card is sent anything: no restart wake, no queued line. The held say
+from @LETTER@4 is delivered. A card that had queued its own restart wake still gets that wake, unchanged.
 
 ### @LETTER@6. The same build coming back
 
 1. Hold the room, then restart it with no binary swap (`restart_atrium`).
 
-**Expected:** the wake says `room deploy did not take: <room> came back on build <old>`.
+**Expected:** the hold is lifted and no card is sent anything.
 
 ### @LETTER@7. Called off, and run out
 
 1. Hold the room, then from the owner `action: cancel` with a `why`.
 2. Set the room setting `deploy_hold_max` to `1`, hold the room again, and wait two minutes.
 
-**Expected:** 1: every held card gets `room deploy called off by <owner>: <why>` as a message, and `status` shows
-the requests waiting again. 2: the same with `room deploy hold ran out after 1 minutes with no redeploy`.
+**Expected:** 1: the hold is lifted and no held card is sent anything, working or idle, and `status` shows the
+requests waiting again. 2: the same when the hold runs out.
 
 ### @LETTER@8. A launch onto a held room
 
 1. While held, launch from a held director, then from the owner.
 
-**Expected:** the director's launch is refused with "<room> is being redeployed: launch after the wake". The
+**Expected:** the director's launch is refused with "<room> is being redeployed: launch when the hold lifts". The
 owner's goes ahead.
 
 ### @LETTER@9. With no hold, nothing changes

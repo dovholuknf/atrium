@@ -3,6 +3,10 @@
 Status: built. One call holds every agent in a room for a deploy and resumes the working ones after (`/v1/hold`,
 `internal/daemon/roomhold.go`).
 
+Superseded in part by `docs/changes/bug-deploy-calloff-wakes-every-card.md`: a lift, at startup or called off, now
+sends NO message to any card, so every wake, queued line and `resume-continue` event described below is gone. The hold
+still refuses gated calls and holds agents' messages until it lifts.
+
 Origin: design, 2026-09-30, @rnd. Item `docs/backlog/rnd/rd-new-room-deploy-hold.md`. Built by @runtime (room and
 hub), @ui draws the banner. Shares the hold step with r-037 (`docs/rnd/freeze-budget-design.md` section 1), and is
 built on it: whichever is built first builds the step, and the second adds its kind. Replaces "wait until the room is

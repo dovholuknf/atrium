@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -24,9 +23,10 @@ import (
 //
 // A deploy owner sets it, every other card here has its next gated call refused
 // with "end your turn and wait", and messages between agents are held. The room
-// restarts on a new build and lifts its own hold at startup, typing one wake line
-// into each held card. A hold that is called off, runs out, or is lifted on the
-// board wakes the same cards by message instead.
+// restarts on a new build and lifts its own hold at startup. Every lift, at startup
+// or called off, runs out or lifted on the board, releases the cards SILENTLY:
+// nothing is typed or queued into a card, since a message wakes an idle card onto a
+// cold prompt cache.
 //
 // REFUSE, DO NOT PARK. A hook parked across the room's own restart fails open
 // when the daemon goes, and runs the call it was holding. A refusal the model
@@ -40,11 +40,7 @@ const (
 	deployHoldMaxDefault = 60 * time.Minute
 	// holdTickEvery is how often an expired hold is looked for.
 	holdTickEvery = 30 * time.Second
-	// awaitWakeMax bounds how long a card lifted at startup keeps its agents'
-	// messages back while its wake waits to be typed. A runner that never comes
-	// back must not hold them for ever.
-	awaitWakeMax = 30 * time.Minute
-	// maxHoldLine bounds the refusal and the wake, reasons cut to fit.
+	// maxHoldLine bounds the refusal, reasons cut to fit.
 	maxHoldLine = 600
 )
 
@@ -55,12 +51,9 @@ const DecidedByDeployHold = "deploy-hold"
 type holdState struct {
 	mu    sync.Mutex
 	holds []store.RoomHold
-	// awaiting is the cards a startup lift woke, and when, whose agents'
-	// messages stay held until the wake has been typed. See deployHeld.
-	awaiting map[string]time.Time
 }
 
-func newHoldState() *holdState { return &holdState{awaiting: map[string]time.Time{}} }
+func newHoldState() *holdState { return &holdState{} }
 
 func (hs *holdState) set(holds []store.RoomHold) {
 	hs.mu.Lock()
@@ -80,35 +73,6 @@ func (hs *holdState) kind(kind string) *store.RoomHold {
 	return nil
 }
 
-func (hs *holdState) await(ids []string, at time.Time) {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-	for _, id := range ids {
-		hs.awaiting[id] = at
-	}
-}
-
-// awaitingWake reports whether a card's wake is still to be typed, and forgets
-// one that has waited past awaitWakeMax.
-func (hs *holdState) awaitingWake(taskID string, now time.Time) bool {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-	at, ok := hs.awaiting[taskID]
-	if ok && now.Sub(at) > awaitWakeMax {
-		delete(hs.awaiting, taskID)
-		return false
-	}
-	return ok
-}
-
-func (hs *holdState) woke(taskID string) bool {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-	_, ok := hs.awaiting[taskID]
-	delete(hs.awaiting, taskID)
-	return ok
-}
-
 // loadHolds fills the copy at startup. A hold that cannot be read is logged and
 // treated as none: the permission path must never halt on it.
 func (d *Daemon) loadHolds() {
@@ -124,13 +88,9 @@ func (d *Daemon) loadHolds() {
 func (d *Daemon) deployHold() *store.RoomHold { return d.holds.kind(store.HoldDeploy) }
 
 // deployHeld reports whether a card is held for a deploy: its gated calls are
-// refused and its agents' messages wait. A card woken by a startup lift stays
-// held for messages until its wake is typed, so nothing is typed ahead of it.
+// refused and its agents' messages wait.
 func (d *Daemon) deployHeld(taskID string) bool {
-	if d.deployHold().Holds(taskID) {
-		return true
-	}
-	return d.holds.awaitingWake(taskID, time.Now())
+	return d.deployHold().Holds(taskID)
 }
 
 // holdingFrom is the question a delivery path asks about one message: a
@@ -145,7 +105,7 @@ func (d *Daemon) holdingFrom(taskID, from string) bool {
 
 // deployHoldNote is what a sender is told while its target is held.
 func (d *Daemon) deployHoldNote() string {
-	return "held: " + d.roomWord() + " is being redeployed. it is delivered after the wake."
+	return "held: " + d.roomWord() + " is being redeployed. it is delivered when the hold lifts."
 }
 
 func (d *Daemon) roomWord() string {
@@ -158,8 +118,7 @@ func (d *Daemon) roomWord() string {
 // deployRefusal is what a held card's gated call is answered with.
 func (d *Daemon) deployRefusal(h *store.RoomHold) string {
 	head := "[atrium] room deploy: " + d.roomWord() + " is being redeployed by " + orWord(h.By, "the deploy owner")
-	tail := ". end your turn now and wait. do not retry this call and do not poll. one message will say when " +
-		"the room is back, and this call will not have run."
+	tail := ". this call did not run. end your turn, do not poll, and run it again later."
 	return fitReasons(head, h.Whys, tail)
 }
 
@@ -177,7 +136,7 @@ func fitReasons(head string, whys []string, tail string) string {
 	return head + " (for: " + why + ")" + tail
 }
 
-// Outcomes a lift can have. Each changes only the first sentence of the wake.
+// Outcomes a lift can have, recorded on each held card's timeline.
 const (
 	HoldOutcomeDeployed  = "deployed"
 	HoldOutcomeSameBuild = "same-build"
@@ -185,35 +144,6 @@ const (
 	HoldOutcomeExpired   = "expired"
 	HoldOutcomeOperator  = "operator"
 )
-
-// wakeLine is what a held card hears after the lift.
-func (d *Daemon) wakeLine(h *store.RoomHold, outcome, who, why string) string {
-	room := d.roomWord()
-	var head string
-	switch outcome {
-	case HoldOutcomeDeployed:
-		head = "room deploy done: " + room + " is on build " + d.build + " (was " + h.FromBuild + ")"
-	case HoldOutcomeSameBuild:
-		head = "room deploy did not take: " + room + " came back on build " + h.FromBuild +
-			". the deploy may have been reverted"
-	case HoldOutcomeCancelled:
-		head = "room deploy called off by " + orWord(who, "the deploy owner")
-		if why != "" {
-			head += ": " + why
-		}
-	case HoldOutcomeExpired:
-		head = fmt.Sprintf("room deploy hold ran out after %d minutes with no redeploy",
-			int(h.ExpiresAt.Sub(h.StartedAt).Round(time.Minute).Minutes()))
-	default:
-		head = "room deploy hold lifted by the operator"
-	}
-	tail := ". messages are flowing again. resume your work. a call the hold refused did not run: run it " +
-		"again if you still need it."
-	if outcome == HoldOutcomeDeployed {
-		return fitReasons(head, h.Whys, tail)
-	}
-	return fitReasons(head, nil, tail)
-}
 
 // ── the build ───────────────────────────────────────────────────────────────
 
@@ -286,11 +216,6 @@ func (d *Daemon) startDeployHold(in holdStart) (*store.RoomHold, error) {
 		}
 	}
 	h.Cards = d.holdableCards()
-	for _, id := range h.Cards {
-		if t, err := d.st.Get(id); err == nil && wasMidTurn(t) {
-			h.Working = append(h.Working, id)
-		}
-	}
 	if err := d.st.SetRoomHold(h); err != nil {
 		return nil, err
 	}
@@ -298,19 +223,6 @@ func (d *Daemon) startDeployHold(in holdStart) (*store.RoomHold, error) {
 	log.Printf("[atrium] deploy hold %s set by %s on %d card(s)", h.ID, orWord(h.By, "an unnamed caller"), len(h.Cards))
 	d.holdChanged(&h)
 	return &h, nil
-}
-
-// noteHoldWorking records that a held card made a gated call the hold refused.
-// That call is the proof it was working, and the hold is what ended its turn.
-func (d *Daemon) noteHoldWorking(h *store.RoomHold, taskID string) {
-	if h.Worked(taskID) && h.WasRefused(taskID) {
-		return
-	}
-	if wrote, err := d.st.MarkHoldWorking(h.Kind, taskID); err != nil {
-		log.Printf("[atrium] could not record %s as working under the deploy hold: %v", taskID, err)
-	} else if wrote {
-		d.loadHolds()
-	}
 }
 
 // holdableCards is every card with a session that could make a gated call: the
@@ -370,27 +282,15 @@ func (d *Daemon) cardNamed(name string) *store.Task {
 	return nil
 }
 
-// liftDeployHold ends the hold with no restart and wakes every held card by
-// message. Answers nil when there was no hold to lift.
-func (d *Daemon) liftDeployHold(outcome, who, why string) (*store.RoomHold, error) {
-	h, err := d.st.LiftRoomHold(store.HoldDeploy, "", outcome, nil)
+// liftDeployHold ends the hold with no restart. Nothing is sent to a held card.
+// Answers nil when there was no hold to lift.
+func (d *Daemon) liftDeployHold(outcome string) (*store.RoomHold, error) {
+	h, err := d.st.LiftRoomHold(store.HoldDeploy, "", outcome)
 	if err != nil || h == nil {
 		return h, err
 	}
 	d.loadHolds()
-	line := d.wakeLine(h, outcome, who, why)
 	for _, id := range h.Cards {
-		if !h.Holds(id) {
-			continue
-		}
-		if h.WasRefused(id) {
-			if t, err := d.st.Get(id); err == nil {
-				if _, err := d.st.QueueCaused(t.ID, line, "atrium", "", store.DeliveryDeploy, false); err != nil {
-					log.Printf("[atrium] could not tell %s the deploy hold is lifted: %v", t.DisplayTitle(), err)
-				}
-				d.publishTask(t.ID)
-			}
-		}
 		d.releaseHeld(id)
 	}
 	log.Printf("[atrium] deploy hold %s lifted (%s)", h.ID, outcome)
@@ -398,12 +298,7 @@ func (d *Daemon) liftDeployHold(outcome, who, why string) (*store.RoomHold, erro
 	return h, nil
 }
 
-// liftAtStartup lifts a deploy hold this room was restarted under. Runs before
-// any runner is started, so every restart wake it queues is newer than the runner
-// that will take it, which is what the wake's own gate asks.
-//
-// A card this room supervised gets a restart wake, typed once its runner is back.
-// Any other card gets a message, since nothing restarted it.
+// liftAtStartup lifts a deploy hold this room was restarted under, silently.
 func (d *Daemon) liftAtStartup() {
 	h := d.deployHold()
 	if h == nil {
@@ -413,30 +308,7 @@ func (d *Daemon) liftAtStartup() {
 	if h.FromBuild == d.build {
 		outcome = HoldOutcomeSameBuild
 	}
-	line := d.wakeLine(h, outcome, "", "") + " check `git status` first."
-	tell := d.st.UnexpectedExitOn()
-	reopened := map[string]bool{}
-	for _, id := range d.readReopen() {
-		reopened[id] = true
-	}
-	wakes := map[string]string{}
-	var others, idle []string
-	for _, id := range h.Cards {
-		if !h.Holds(id) {
-			continue
-		}
-		// A card that was waiting for a human still is. Nothing to hand back.
-		if !tell || !h.Worked(id) {
-			idle = append(idle, id)
-			continue
-		}
-		if reopened[id] {
-			wakes[id] = line
-		} else {
-			others = append(others, id)
-		}
-	}
-	lifted, err := d.st.LiftRoomHold(store.HoldDeploy, h.ID, outcome, wakes)
+	lifted, err := d.st.LiftRoomHold(store.HoldDeploy, h.ID, outcome)
 	if err != nil || lifted == nil {
 		if err != nil {
 			log.Printf("[atrium] could not lift the deploy hold at startup: %v", err)
@@ -444,24 +316,10 @@ func (d *Daemon) liftAtStartup() {
 		return
 	}
 	d.loadHolds()
-	d.loadWakes()
-	ids := make([]string, 0, len(wakes))
-	for id := range wakes {
-		ids = append(ids, id)
-	}
-	d.holds.await(ids, time.Now())
-	for _, id := range idle {
+	for _, id := range lifted.Cards {
 		d.releaseHeld(id)
 	}
-	for _, id := range others {
-		if t, err := d.st.Get(id); err == nil {
-			if _, err := d.deliverPeerAs(store.DeliveryDeploy, t, "atrium", line); err != nil {
-				log.Printf("[atrium] could not wake %s after the deploy: %v", t.DisplayTitle(), err)
-			}
-		}
-	}
-	log.Printf("[atrium] deploy hold %s lifted at startup (%s): %d wake(s), %d message(s), %d left idle",
-		h.ID, outcome, len(wakes), len(others), len(idle))
+	log.Printf("[atrium] deploy hold %s lifted at startup (%s)", h.ID, outcome)
 }
 
 // launchHeld refuses a launch onto a held room, which would start a runner the
@@ -478,7 +336,7 @@ func (d *Daemon) launchHeld(req LaunchRequest) error {
 	if t := d.cardNamed(by); t != nil && !h.Holds(t.ID) && (t.ID == h.ByCard || containsID(h.Exempt, t.ID)) {
 		return nil
 	}
-	return errString(d.roomWord() + " is being redeployed: launch after the wake")
+	return errString(d.roomWord() + " is being redeployed: launch when the hold lifts")
 }
 
 func containsID(ids []string, id string) bool {
@@ -488,14 +346,6 @@ func containsID(ids []string, id string) bool {
 		}
 	}
 	return false
-}
-
-// wakeTyped is the restart wake loop saying a card's wake went in. Its agents'
-// messages flow from here.
-func (d *Daemon) wakeTyped(taskID string) {
-	if d.holds.woke(taskID) {
-		d.releaseHeld(taskID)
-	}
 }
 
 // holdLoop lifts a hold that has run out.
@@ -517,7 +367,7 @@ func (d *Daemon) holdTick(now time.Time) {
 	if h == nil || h.ExpiresAt.IsZero() || now.Before(h.ExpiresAt) {
 		return
 	}
-	if _, err := d.liftDeployHold(HoldOutcomeExpired, "", ""); err != nil {
+	if _, err := d.liftDeployHold(HoldOutcomeExpired); err != nil {
 		log.Printf("[atrium] could not lift an expired deploy hold: %v", err)
 	}
 }
@@ -633,7 +483,7 @@ func (d *Daemon) handleHold(w http.ResponseWriter, r *http.Request) {
 			if in.Outcome == HoldOutcomeCancelled {
 				outcome = HoldOutcomeCancelled
 			}
-			h, err := d.liftDeployHold(outcome, in.By, strings.TrimSpace(in.Why))
+			h, err := d.liftDeployHold(outcome)
 			if err != nil {
 				writeJSONErr(w, http.StatusInternalServerError, err)
 				return

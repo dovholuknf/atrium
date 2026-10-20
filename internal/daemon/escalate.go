@@ -34,13 +34,9 @@ func (d *Daemon) heldAfter() time.Duration {
 }
 
 // heldAged reports whether a message queued at `at` has waited past the setting
-// and may leave the turn wait. A card whose deploy wake is still to be typed never
-// counts: an old message must not land ahead of the wake.
-func (d *Daemon) heldAged(taskID string, at time.Time) bool {
-	if at.IsZero() || time.Since(at) < d.heldAfter() {
-		return false
-	}
-	return !d.holds.awaitingWake(taskID, time.Now())
+// and may leave the turn wait.
+func (d *Daemon) heldAged(at time.Time) bool {
+	return !at.IsZero() && time.Since(at) >= d.heldAfter()
 }
 
 // escalatesByTyping is true when the typist may type an aged message mid-turn: the
@@ -52,7 +48,7 @@ func (d *Daemon) heldAged(taskID string, at time.Time) bool {
 // message with the same `waited N minutes` line, which is the one route that reaches the model. See takeMessages.
 func (d *Daemon) escalatesByTyping(taskID string, waitTurn bool, at time.Time) bool {
 	return waitTurn && d.act.midTurn(taskID) && d.midTurnInputFor(taskID) && !d.queuesMidTurnFor(taskID) &&
-		d.heldAged(taskID, at)
+		d.heldAged(at)
 }
 
 // turnHoldsAged is turnHolds for a message with an age.

@@ -167,7 +167,7 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 		for _, m := range msgs {
 			if !m.WaitTurn {
 				kept = append(kept, m)
-			} else if d.heldAged(taskID, m.CreatedAt) {
+			} else if d.heldAged(m.CreatedAt) {
 				age := time.Since(m.CreatedAt)
 				c := *m
 				c.Text = escalationLine(age) + "\n" + m.Text

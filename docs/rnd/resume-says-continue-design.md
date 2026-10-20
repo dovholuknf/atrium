@@ -3,6 +3,10 @@
 Status: built. A card the restart interrupted is told to carry on, and the card shows it is opening
 (`internal/api/web/js/resume-opening.js`).
 
+Superseded in part by `docs/changes/bug-deploy-calloff-wakes-every-card.md`: a lift, at startup or called off, now
+sends NO message to any card, so every wake, queued line and `resume-continue` event described below is gone. The hold
+still refuses gated calls and holds agents' messages until it lifts.
+
 Origin: design, 2026-09-30, @rnd. Item `docs/backlog/runtime/r-new-resume-says-continue.md`. Built by @runtime with
 the escalation stages (`docs/rnd/held-message-escalation-design.md`). Nothing here is built.
 

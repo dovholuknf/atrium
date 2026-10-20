@@ -129,24 +129,6 @@ func TestAYoungDoneMessageIsStillDeliveredByTheStopHook(t *testing.T) {
 	}
 }
 
-// A card whose deploy wake is still to be typed keeps an old message waiting.
-func TestAnAgedMessageWaitsForTheDeployWake(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	bob := peerCard(t, d, "bob")
-	id := doneTo(t, d, bob.ID, "", "rebase when you can")
-	age(t, d, id, 20*time.Minute)
-	d.holds.await([]string{bob.ID}, time.Now())
-
-	if msgs, _ := d.takeMessages(bob.ID, "permission"); len(msgs) != 0 {
-		t.Fatalf("an aged message landed ahead of the wake: %d", len(msgs))
-	}
-	d.holds.woke(bob.ID)
-	if msgs, _ := d.takeMessages(bob.ID, "permission"); len(msgs) != 1 {
-		t.Fatal("the aged message did not land once the wake was typed")
-	}
-}
-
 // The typist, on a runner that takes input mid-turn: an aged message stops waiting
 // for the turn and is typed.
 func TestTheTypistStopsHoldingAnAgedMessageMidTurn(t *testing.T) {
