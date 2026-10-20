@@ -206,15 +206,41 @@ func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
 		script string
 		keeps  bool
 	}{
-		"prints and leaves a background child": {"echo '" + good + "'; sleep 20 &", true},
+		"prints and leaves a background child": {"echo '" + good + "'; : > \"$1\"; sleep 20 &", true},
 		"a child outlives the killed parent":   {"sleep 30 & sleep 30", false},
 	}
 	for name, c := range cases {
 		for i := 0; i < 2; i++ { // the second call is not blocked by the first
+			ready := filepath.Join(t.TempDir(), "ready")
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			stopAt := make(chan time.Time, 1)
+			exited := make(chan struct{})
+			if c.keeps {
+				cancel()
+				ctx, cancel = context.WithCancel(context.Background())
+				go func() {
+					for {
+						if _, err := os.Stat(ready); err == nil {
+							stopAt <- time.Now()
+							cancel()
+							return
+						}
+						select {
+						case <-exited:
+							return
+						case <-time.After(5 * time.Millisecond):
+						}
+					}
+				}()
+			}
 			start := time.Now()
-			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script}, 1<<20, 500*time.Millisecond)
+			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script, "sh", ready}, 1<<20, 500*time.Millisecond)
+			close(exited)
 			cancel()
+			select {
+			case start = <-stopAt:
+			default:
+			}
 			if took := time.Since(start); took > 3*time.Second {
 				t.Fatalf("%s: call %d took %v", name, i, took)
 			}
