@@ -387,6 +387,17 @@ func (pi *pendingInjector) try(taskID string) {
 	// been typed. Reschedule quietly at the same interval: releaseHeld re-arms
 	// the retry to the front when the cycle ends.
 	if pi.d.holdingMessages(taskID) {
+		if !pi.d.frozenForMove(taskID) {
+			kept := entries[:0:0]
+			for _, e := range entries {
+				if e.from == "" {
+					kept = append(kept, e)
+				}
+			}
+			entries = kept
+		}
+	}
+	if pi.d.holdingMessages(taskID) && len(entries) == 0 || pi.d.frozenForMove(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
 			ht.timer.Reset(pi.d.hk.backoffSteps[step])

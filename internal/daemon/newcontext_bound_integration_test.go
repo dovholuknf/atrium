@@ -22,6 +22,7 @@ func TestNewContextAckNeverComesReleasesTheHold(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	if !d.holdingMessages(task.ID) {
 		t.Fatal("the cycle did not hold the card")
 	}
@@ -47,6 +48,7 @@ func TestNewContextProcessDiesReleasesTheHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.sup.remove(task.ID)
+	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
 	until(t, "the hold to lift", func() bool { return !d.holdingMessages(task.ID) })
 	if r := failedWith(d, task.ID); !strings.Contains(r, "terminal closed") {
 		t.Fatalf("reason: %q", r)

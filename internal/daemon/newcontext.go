@@ -576,6 +576,21 @@ func (n *newContexts) holding(taskID string) bool {
 	return cur != nil && cur.step != NewContextFailed
 }
 
+// holdsInput is holding once the limit prompt has gone in. Before it, nothing is under way that a message could
+// land in the wrong side of, so a cycle whose prompt was never typed holds nothing.
+func (n *newContexts) holdsInput(taskID string) bool {
+	if n == nil {
+		return false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	if cur == nil || cur.step == NewContextFailed {
+		return false
+	}
+	return cur.step != NewContextLimit || cur.prompted > 0 || cur.acked || cur.typing
+}
+
 func (n *newContexts) get(taskID string) *newContext {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -658,7 +673,7 @@ var errNewContextGone = errors.New("superseded")
 // a new-context cycle. While it is, no message is typed and no hook carries one,
 // because it would land in the context about to be cleared, or be lost with it. The cycle's own typing (`ncType`) does not ask.
 func (d *Daemon) holdingMessages(taskID string) bool {
-	return d.nctx.holding(taskID) || d.frozenForMove(taskID)
+	return d.nctx.holdsInput(taskID) || d.frozenForMove(taskID)
 }
 
 // frozenForMove reports whether the card is frozen for a move between rooms. It
@@ -1003,14 +1018,16 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 	text := newContextLimitPrompt(path, d.hk.atriumBinary(), d.runnerHasNoShell(taskID))
 	d.nctx.setTyping(taskID, gen, true)
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, text, ok)
-	d.nctx.setTyping(taskID, gen, false)
 	if gone {
+		d.nctx.setTyping(taskID, gen, false)
 		return errNewContextGone
 	}
 	if err != nil || !wrote {
+		d.nctx.setTyping(taskID, gen, false)
 		return err
 	}
 	d.nctx.notePrompt(taskID, gen, turn, cycleTimeNow())
+	d.nctx.setTyping(taskID, gen, false)
 	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
 		"text": text, "via": "terminal", "from": newContextBy, "kind": store.PromptFYI,
 	}); err != nil {

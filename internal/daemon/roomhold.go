@@ -97,7 +97,10 @@ func (d *Daemon) deployHeld(taskID string) bool {
 // new-context cycle holds every message, and a deploy hold holds an agent's but
 // never the operator's, since the operator reaching out is what must still work.
 func (d *Daemon) holdingFrom(taskID, from string) bool {
-	if d.holdingMessages(taskID) {
+	if from != "" && d.holdingMessages(taskID) {
+		return true
+	}
+	if from == "" && d.frozenForMove(taskID) {
 		return true
 	}
 	return from != "" && d.deployHeld(taskID)

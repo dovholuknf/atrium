@@ -195,3 +195,47 @@ func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
 	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
 }
+
+func TestOperatorSayDuringACycleIsNotHeldButAPeersIs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := ncCard(t, d)
+	id := task.ID
+	peerCard(t, d, "alice")
+
+	if err := d.StartNewContext(id); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	if out := sayViaMessage(t, d, "alice", id, heldSay); out["warning"] != newContextHoldNote {
+		t.Fatalf("a peer's say was not held: %v", out)
+	}
+	out := sayViaMessage(t, d, "", id, "OPERATORLINE")
+	if out["warning"] == newContextHoldNote || out["delivered"] == "queued" {
+		t.Fatalf("the operator's say was held by the cycle: %v", out)
+	}
+	until(t, "the operator's line", func() bool { return strings.Contains(f.written(), "OPERATORLINE") })
+	if strings.Contains(f.written(), heldSay) {
+		t.Fatalf("the peer's say was typed during the cycle: %q", f.written())
+	}
+}
+
+func TestACycleWhoseLimitPromptWasNotTypedHoldsNothing(t *testing.T) {
+	d := testDaemon(t)
+	id := "cycler-untyped"
+	d.nctx.mu.Lock()
+	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now()}
+	d.nctx.mu.Unlock()
+	if d.holdingMessages(id) || d.holdingFrom(id, "alice") {
+		t.Fatal("a cycle that has typed nothing held messages")
+	}
+	d.nctx.mu.Lock()
+	d.nctx.by[id].prompted = 1
+	d.nctx.mu.Unlock()
+	if !d.holdingMessages(id) || !d.holdingFrom(id, "alice") || d.holdingFrom(id, "") {
+		t.Fatal("after the prompt the cycle should hold a peer's message and never the operator's")
+	}
+}

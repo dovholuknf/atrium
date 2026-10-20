@@ -126,12 +126,24 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	// the message into the context about to be cleared, and during the clear it
 	// would be lost. It stays queued and the hooks after the wake carry it. See
 	// newcontext.go.
-	if d.holdingMessages(taskID) {
+	held := d.holdingMessages(taskID)
+	if held && d.frozenForMove(taskID) {
 		return nil, nil
 	}
 	msgs, err := d.st.PendingMessages(taskID)
 	if err != nil || len(msgs) == 0 {
 		return nil, err
+	}
+	if held {
+		kept := msgs[:0:0]
+		for _, m := range msgs {
+			if m.FromHuman() {
+				kept = append(kept, m)
+			}
+		}
+		if msgs = kept; len(msgs) == 0 {
+			return nil, nil
+		}
 	}
 	// HELD FOR A DEPLOY: another agent's words wait for the wake, and the
 	// operator's still go. See roomhold.go.
