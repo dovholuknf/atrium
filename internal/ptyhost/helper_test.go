@@ -70,7 +70,7 @@ func runnerMain(args []string) {
 		_ = os.WriteFile(args[1], []byte(strconv.Itoa(ch.Process.Pid)), 0o600)
 		echoLoop(out)
 	case "sleeper":
-		time.Sleep(10 * time.Minute)
+		time.Sleep(10 * time.Minute) // wait: a child that outlives its runner until the test kills it
 	case "tick":
 		go echoLoop(out)
 		for i := 1; ; i++ {
