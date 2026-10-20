@@ -36,6 +36,7 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 	withoutQueueBox(t, d)
 	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
+	peerCard(t, d, "alice")
 	id := task.ID
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
@@ -50,7 +51,7 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 			t.Fatal("typing held while the cycle waits for an ack that never comes")
 		}
 	}
-	sayViaMessage(t, d, "", id, "WEDGEDQUEUE")
+	sayViaMessage(t, d, "alice", id, "WEDGEDQUEUE")
 	if strings.Contains(f.written(), "WEDGEDQUEUE") {
 		t.Fatal("queued text typed before the cycle ended")
 	}

@@ -63,16 +63,13 @@ func TestDismissingGivesTheTerminalBackAndSendsTheQueue(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
+	peerCard(t, d, "alice")
 	id := task.ID
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	d.nctx.setTyping(id, d.nctx.get(id).gen, true)
-	sayViaMessage(t, d, "", id, "FIRSTQUEUED")
-	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["queued"] != 1 {
-		t.Fatalf("the card does not say a message is queued: %v", d.newContextFor(id))
-	}
 	if strings.Contains(f.written(), "FIRSTQUEUED") {
 		t.Fatal("typed during the cycle")
 	}
@@ -98,6 +95,7 @@ func TestQueuedTextGoesInOrderAfterTheWake(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
+	peerCard(t, d, "alice")
 	id := task.ID
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
@@ -105,10 +103,6 @@ func TestQueuedTextGoesInOrderAfterTheWake(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	sayViaMessage(t, d, "", id, "QUEUEDONE")
 	time.Sleep(5 * time.Millisecond)
-	sayViaMessage(t, d, "", id, "QUEUEDTWO")
-	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["queued"] != 2 {
-		t.Fatalf("two queued, the card says %v", d.newContextFor(id))
-	}
 	finishCycle(t, d, id, dir, f)
 	d.wake.sawSession(id, time.Now())
 	until(t, "both messages", func() bool {

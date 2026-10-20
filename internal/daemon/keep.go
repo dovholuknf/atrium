@@ -110,7 +110,7 @@ func (d *Daemon) deliverKept(taskID string) {
 			return
 		}
 		if ready && len(msgs) > 0 &&
-			!d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.holdingMessages(taskID) && !d.deployHeld(taskID) {
+			!d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.nctx.holding(taskID) && !d.frozenForMove(taskID) && !d.deployHeld(taskID) {
 			wrote, err := d.typeLabelledThroughGate(run, taskID, "", messageBanner(msgs, false))
 			if err != nil {
 				log.Printf("[atrium] could not type what is kept into %s: %v", taskID, err)
