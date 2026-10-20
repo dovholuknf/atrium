@@ -10399,10 +10399,10 @@ async function eventDrivenSection(browser, base) {
     if (partial < 1) fail("task events without a whole row never pulled /v1/tasks, so an older room's change is never drawn");
 
     // (a) The same stream carrying whole rows. Each one repaints the card from
-    // the event, so the title below changes with no request at all. A quiet
-    // gap first, so the trailing pull the last partial event queued lands
-    // before the count starts.
-    await fakeTick(p, 6000);
+    // the event, so the title below changes with no request at all. The count
+    // starts once the page holds no read and has none queued, so a trailing
+    // pull the partial events caused is not charged to the whole-row ones.
+    await fakeWait(p, () => !tasksTimer && !cardsLoading && !refreshInFlight && !refreshTimer, null, 30000);
     counts.clear();
     for (let i = 0; i < secs * 2; i++) await say(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i }), 500);
     const whole = counts.get("/v1/tasks") || 0;
