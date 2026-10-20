@@ -226,7 +226,7 @@ async function backlogPrioritySection(browser, base) {
     await b.p.waitForFunction(() => /Could not change/.test(document.getElementById("backlog-note").textContent), null, { timeout: slow(8000) });
     const note = await b.p.evaluate(() => document.getElementById("backlog-note").textContent);
     if (note !== "Could not change bk-low: item is closed") fail("backlogPriority: the refusal note is " + JSON.stringify(note));
-    await settle(b.p, 400);
+    await b.p.waitForFunction(() => document.querySelector('#backlog-items select.bl-prio[data-id="bk-low"]').value === "low", null, { timeout: slow(8000) }).catch(() => {});
     const sel = await b.p.evaluate(() => document.querySelector('#backlog-items select.bl-prio[data-id="bk-low"]').value);
     if (sel !== "low") fail("backlogPriority: after a refusal the select reads " + sel + ", not what the hub holds");
   } finally { if (b) await b.ctx.close(); mock.hubMode = was; }
