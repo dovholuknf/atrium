@@ -9,9 +9,11 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-$def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Test-StopWouldRefuse' }, $true) |
-  Select-Object -First 1
-$real = $def.Extent.Text
+$real = (@('Test-StopWouldRefuse', 'Get-HostInJobLines') | ForEach-Object {
+    $n = $_
+    ($ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
+      Select-Object -First 1).Extent.Text
+  }) -join "`n"
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "deploy-batch-preflight-$PID"
 New-Item -ItemType Directory $tmp | Out-Null
@@ -60,6 +62,10 @@ $real
   Check 'it posted nothing to the room' ($log -notmatch 'post ')
   Check 'it stopped nothing and changed nothing' ($log -notmatch 'stop-room|stop-hub|install|save-revert|wait-contexts')
   Check 'it said REFUSED with the runner counts and -KillRunners' ($log -match 'REFUSED' -and $log -match 'held by the pty host: 18' -and $log -match '-KillRunners')
+  Check 'it said the cause plainly and what to do' ($log -match 'inside a job object that refused breakaway' -and $log -match 'inherited from the process that started the room' -and $log -match 'restart the room ONCE from a jobless start')
+
+  Run '{"pty_host":{"on":true,"in_job":true,"in_job_cause":"the cause the room named (pid 4242)"},"runners":{"host":18,"in_process":8}}' @()
+  Check 'it quotes the cause the room gave, naming its starter' ($log -match 'the cause the room named \(pid 4242\)')
 
   Run $dies @('-KillRunners')
   Check 'with -KillRunners the hold is set as before' ($log -match 'set-hold')

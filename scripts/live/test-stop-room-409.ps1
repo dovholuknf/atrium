@@ -11,7 +11,7 @@ function Say($m) { $said.Add("$m") }
 
 # Only the helpers are loaded, not live-common's top level, which looks at the machine.
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Invoke-Step', 'Stop-Room') {
+foreach ($n in 'Invoke-Step', 'Get-HostInJobLines', 'Stop-Room') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -38,6 +38,7 @@ Check 'it posted once, with no body' ($posts.Count -eq 1 -and $posts[0] -eq '')
 Check 'it never posted runners:true' (-not ($posts -match 'runners'))
 Check 'it said it was refused and how many runners' (($said -join "`n") -match 'REFUSED' -and ($said -join "`n") -match 'held by the pty host: 3')
 Check 'it named -KillRunners' (($said -join "`n") -match '-KillRunners')
+Check 'it said the cause plainly and what to do' (($said -join "`n") -match 'inside a job object that refused breakaway' -and ($said -join "`n") -match 'jobless start')
 
 $posts.Clear(); $said.Clear()
 $KillRunners = $true

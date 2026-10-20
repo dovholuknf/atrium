@@ -4,6 +4,7 @@
 package detach
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -27,3 +28,10 @@ func Start(exe string, args []string, log string) (*os.Process, error) {
 	}
 	return cmd.Process, nil
 }
+
+// There are no job objects off Windows, so there is nothing to start outside of.
+func StartOutsideJob(string, []string, string) (*os.Process, error) {
+	return nil, errors.New("job objects exist only on Windows")
+}
+
+func InJob(int) (bool, error) { return false, nil }

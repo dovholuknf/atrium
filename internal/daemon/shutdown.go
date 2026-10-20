@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -141,7 +142,7 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// A host inside the room task's job dies with the task, so leaving its runners up would be a promise the stop
 	// cannot keep. Refused before anything changes, with the way out.
 	if d.hostInJob.Load() && d.leavesRunnersUp(runners) {
-		http.Error(w, hostInJobRefusal, http.StatusConflict)
+		http.Error(w, hostInJobRefusal(os.Getppid()), http.StatusConflict)
 		return
 	}
 	// The first request's value is the one in force. A later request that differs is refused rather than changing what

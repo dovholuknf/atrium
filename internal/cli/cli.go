@@ -169,6 +169,7 @@ func newDaemon() *cobra.Command {
 				LocationFile:  locationFile,
 				BoardDir:      boardDir,
 				StartedBy:     startedBy,
+				HostBuild:     VersionLine(),
 			})
 		},
 	}

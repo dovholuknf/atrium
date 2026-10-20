@@ -100,6 +100,9 @@ const (
 	// reads the daemon log. See Store.ClaimResumeID.
 	ResumeMoved   = "resume-moved"
 	ResumeRefused = "resume-refused"
+	// InProcessRunner is the `by` of a `notified` event on a card whose runner started in the room's own process
+	// although the pty_host setting is on, so it ends with the room. The payload carries the reason.
+	InProcessRunner = "pty-host-fallback"
 )
 
 // ErrHalted is returned by every store call once the store has halted.

@@ -54,7 +54,9 @@ and none of the width bookkeeping of a screen model.
   unix socket at mode 0600, and when the state dir path is over the 103-byte `sun_path` limit it goes to a private
   `/tmp/atrium-<uid>/` instead.
 - **`in_job` on a probe means ending the starter's job ends the host and every runner.** The host is started with
-  `CREATE_BREAKAWAY_FROM_JOB` and is still inside a job only when that job refused breakaway.
+  `CREATE_BREAKAWAY_FROM_JOB` and is still inside a job only when that job refused breakaway. A caller already in a
+  job goes straight to WMI (`internal/detach`), since breakaway escapes only the innermost job and a terminal's job
+  can sit under another that keeps the host.
 - **Integration tests carry `//go:build integration`** and do not compile under a plain `go test`. See
   `scripts/test.sh`.
 

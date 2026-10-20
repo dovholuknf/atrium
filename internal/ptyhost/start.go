@@ -42,15 +42,19 @@ func Start(stateDir string, o StartOptions) (*os.Process, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, err
 	}
-	args := o.Args
-	if args == nil {
-		args = []string{"ptyhost", "--state-dir", stateDir}
-		if o.IdleExit > 0 {
-			args = append(args, "--idle-exit", o.IdleExit.String())
-		}
-		if o.Build != "" {
-			args = append(args, "--build", o.Build)
-		}
+	return detach.Start(copyPath, startArgs(stateDir, o), filepath.Join(stateDir, "ptyhost.log"))
+}
+
+func startArgs(stateDir string, o StartOptions) []string {
+	if o.Args != nil {
+		return o.Args
 	}
-	return detach.Start(copyPath, args, filepath.Join(stateDir, "ptyhost.log"))
+	args := []string{"ptyhost", "--state-dir", stateDir}
+	if o.IdleExit > 0 {
+		args = append(args, "--idle-exit", o.IdleExit.String())
+	}
+	if o.Build != "" {
+		args = append(args, "--build", o.Build)
+	}
+	return args
 }

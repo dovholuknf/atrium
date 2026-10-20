@@ -37,6 +37,10 @@ const (
 	hostEOFWait = 2 * time.Second
 	// hostMaxRing is the largest ring the host accepts.
 	hostMaxRing = 512 << 20
+	// hostStartWait bounds how long startup waits for the host before it reopens runners, and hostStartPoll is the
+	// gap between attempts. A host that is not up in this long is reported and runners fall back in-process.
+	hostStartWait = 45 * time.Second
+	hostStartPoll = time.Second
 )
 
 // hostLink is this daemon's one connection to the host.
@@ -60,6 +64,52 @@ func (l *hostLink) close() {
 }
 
 func (d *Daemon) hostStateDir() string { return filepath.Dir(d.opts.DBPath) }
+
+// waitForHost is startup's wait for the pty host, run before runners are reopened. Without it the first dial fails
+// while the host is still coming up, the failure is remembered for hostRetry, and every runner reopened in that
+// window starts in this process and ends with it. Bounded, so a host that never comes up costs hostStartWait and
+// then falls back loudly. Does nothing with the setting off.
+func (d *Daemon) waitForHost() {
+	if !d.st.PtyHostOn() {
+		return
+	}
+	wait, poll := d.hk.hostStartWait, d.hk.hostStartPoll
+	deadline := time.Now().Add(wait)
+	var last string
+	for {
+		d.ph.mu.Lock()
+		d.ph.failAt = time.Time{}
+		d.ph.mu.Unlock()
+		_, addr, err := d.hostClient(true, true)
+		if err == nil {
+			log.Printf("[atrium] the pty host is connected at %s, reopening runners through it", addr)
+			return
+		}
+		if err.Error() != last {
+			log.Printf("[atrium] waiting for the pty host before reopening runners: %v", err)
+			last = err.Error()
+		}
+		if time.Now().After(deadline) {
+			log.Printf("[atrium] WARNING pty_host is on and no host answered in %s (%v). runners reopened now start "+
+				"IN THIS PROCESS and end with this room", wait, err)
+			return
+		}
+		time.Sleep(poll)
+	}
+}
+
+// hostFallback is a runner or shell that starts in this process with pty_host on. It is said in the log and on the
+// card, because that runner ends with the room and nothing else says so.
+func (d *Daemon) hostFallback(taskID, kind, name, why string) {
+	log.Printf("[atrium] WARNING pty_host is on but %s for %s is running IN THIS PROCESS (%s). it ends when this "+
+		"room does", name, taskID, why)
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+		"by": store.InProcessRunner, "kind": kind, "why": why,
+		"what": "started in the room's own process, not the pty host, so it ends with the room",
+	}); err != nil {
+		log.Printf("[atrium] could not record that %s runs in this process: %v", taskID, err)
+	}
+}
 
 // hostClient returns the connection, making it when there is none.
 //
@@ -140,7 +190,7 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 	cols, rows int) (t term, ok bool, err error) {
 	cl, addr, err := d.hostClient(false, true)
 	if err != nil {
-		log.Printf("[atrium] pty_host is on but there is no host (%v), starting %s in this process", err, name)
+		d.hostFallback(taskID, kind, name, "there is no host: "+err.Error())
 		return nil, false, nil
 	}
 	ring := min(api.ScrollbackBytes(d.st), hostMaxRing)
@@ -153,7 +203,7 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 		if errors.As(err, &re) {
 			return nil, true, fmt.Errorf("could not start %s: %w", name, err)
 		}
-		log.Printf("[atrium] the pty host went away starting %s (%v), starting it in this process", name, err)
+		d.hostFallback(taskID, kind, name, "the pty host went away starting it: "+err.Error())
 		d.killStrays(taskID, kind)
 		return nil, false, nil
 	}
@@ -161,7 +211,7 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 	if err != nil {
 		// Started and unreachable. Ended here so the fallback is not a second copy of the same session.
 		_ = cl.Signal(sp.RunID, ptyhost.SigKill)
-		log.Printf("[atrium] could not attach to %s in the pty host (%v), starting it in this process", name, err)
+		d.hostFallback(taskID, kind, name, "could not attach to it in the pty host: "+err.Error())
 		return nil, false, nil
 	}
 	return newHostTerm(cl, addr, sp.RunID, sp.Pid, att, true), true, nil

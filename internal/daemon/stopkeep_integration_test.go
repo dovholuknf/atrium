@@ -192,8 +192,13 @@ func TestStopRefusedWhenHostInJob(t *testing.T) {
 		return rec, stopped(d)
 	}
 	rec, went := ask("")
-	if rec.Code != http.StatusConflict || went || !strings.Contains(rec.Body.String(), "would die with this room's task") {
+	if rec.Code != http.StatusConflict || went {
 		t.Fatalf("a stop on an in-job host: %d %q stopped=%v", rec.Code, rec.Body.String(), went)
+	}
+	for _, want := range []string{"inside a job object that refused breakaway", "inherited from the process that started this room", "restart this room once from a jobless start"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("the refusal does not say %q: %q", want, rec.Body.String())
+		}
 	}
 	if d.stopRunners.Load() {
 		t.Fatal("a refused stop changed the daemon")
@@ -276,5 +281,10 @@ func TestHostStateCountsHostRunners(t *testing.T) {
 	d.hostInJob.Store(true)
 	if _, inJob, _, _ := get(); !inJob {
 		t.Fatal("in_job did not follow the probe")
+	}
+	w := httptest.NewRecorder()
+	d.handleHostState(w, httptest.NewRequest("GET", "/v1/preflight", nil))
+	if !strings.Contains(w.Body.String(), "in_job_cause") || !strings.Contains(w.Body.String(), "refused breakaway") {
+		t.Fatalf("a host in a job does not say why: %s", w.Body.String())
 	}
 }

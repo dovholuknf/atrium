@@ -91,6 +91,8 @@ type Options struct {
 	// can claim to be one. `POST /v1/preflight` reports it. Empty when nothing
 	// supervised the start.
 	StartedBy string
+	// HostBuild is the build string a pty host this daemon starts reports in its probe, shown in /v1/preflight.
+	HostBuild string
 }
 
 // Daemon owns the store and both listeners.
@@ -410,6 +412,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		peerLimit: newPeerLimiter(),
 		launching: newKeyedMutex(),
 	}
+	d.ph.opts.Build = opts.HostBuild
 	if tune != nil {
 		tune(&d.hk)
 	}
@@ -1365,6 +1368,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// Terminals a pty host kept while no daemon was here, BEFORE fixtures so a card that already has
 			// a live runner is not started a second time. Whatever the setting says: off is the rollback, and a
 			// host still holding runners must be picked up or the next start would run a second copy of each.
+			d.waitForHost()
 			d.reattachRuns()
 			d.startFixtures()
 			d.reopenSaved()

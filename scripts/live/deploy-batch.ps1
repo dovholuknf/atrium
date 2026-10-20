@@ -34,11 +34,10 @@ if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 # A stop the room is going to refuse is found out here, before any hold is set: a hold set and then called off has
 # already refused every card's calls once. Only -KillRunners gets past it.
 if (Test-StopWouldRefuse) {
-  try {
-    $pf = Invoke-RestMethod $RoomPreflightUrl -TimeoutSec 5
-    Say "REFUSED: the pty host would die with the room, so this stop would end every runner. runners held by the pty host: $($pf.runners.host), in the room's own process: $($pf.runners.in_process)."
-  } catch { Say 'REFUSED: the pty host would die with the room, so this stop would end every runner.' }
-  Say 'FATAL: nothing changed and no deploy hold was set. pass -KillRunners to end the runners'
+  $pf = $null
+  try { $pf = Invoke-RestMethod $RoomPreflightUrl -TimeoutSec 5 } catch {}
+  foreach ($line in (Get-HostInJobLines $pf)) { Say $line }
+  Say 'FATAL: nothing changed and no deploy hold was set'
   exit 1
 }
 

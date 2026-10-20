@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -458,6 +459,105 @@ func TestAnUnreachableHostFallsBackToAnInProcessTerminal(t *testing.T) {
 	}
 	d.CloseShell(task.ID)
 	_ = r.tm().Kill()
+}
+
+func TestStartupWaitsForTheHostSoNoRunnerLandsInProcess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, err := os.MkdirTemp("", "ht")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	d := daemonAt(t, dir)
+	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
+	d.hk.hostStartWait, d.hk.hostStartPoll = 20*time.Second, 20*time.Millisecond
+
+	hostUp := make(chan *ptyhost.Host, 1)
+	time.AfterFunc(600*time.Millisecond, func() {
+		h, err := ptyhost.Listen(dir, ptyhost.Options{})
+		if err != nil {
+			t.Errorf("start the host: %v", err)
+		}
+		hostUp <- h
+	})
+	t.Cleanup(func() {
+		if h := <-hostUp; h != nil {
+			h.Close()
+		}
+	})
+
+	d.waitForHost()
+
+	task := cardAt(t, d, "waits-for-host", t.TempDir())
+	sh, args := someShell(t)
+	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	r := d.sup.get(task.ID)
+	if r == nil || hostOf(r) == nil {
+		t.Fatalf("the runner reopened after the wait is not in the host: %+v", r)
+	}
+	_ = r.tm().Kill()
+}
+
+func TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir := t.TempDir()
+	d := daemonAt(t, dir)
+	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
+	d.hk.hostStartWait, d.hk.hostStartPoll = 150*time.Millisecond, 10*time.Millisecond
+
+	start := time.Now()
+	d.waitForHost()
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("the wait for a host that never comes ran %s past its bound", took)
+	}
+	task := cardAt(t, d, "in-process-said", t.TempDir())
+	sh, args := someShell(t)
+	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	r := d.sup.get(task.ID)
+	if r == nil || hostOf(r) != nil {
+		t.Fatalf("want an in-process runner, got %+v", r)
+	}
+	evs, err := d.st.Events(task.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	said := false
+	for _, e := range evs {
+		if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), store.InProcessRunner) {
+			said = true
+		}
+	}
+	if !said {
+		t.Fatalf("the card does not say its runner is in the room's process: %+v", evs)
+	}
+	_ = r.tm().Kill()
+}
+
+func TestWaitForHostDoesNothingWithTheSettingOff(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	d := daemonAt(t, dir)
+	if err := d.st.SetSetting(store.SettingPtyHost, "off"); err != nil {
+		t.Fatal(err)
+	}
+	d.hk.hostStartWait = time.Hour
+	done := make(chan struct{})
+	go func() { d.waitForHost(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("waitForHost waited with pty_host off")
+	}
 }
 
 // An old exited run and a newer live one on the same card: the old end is history, and the card is not dead.

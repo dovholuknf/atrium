@@ -53,9 +53,9 @@ Invoke-Step "start sg4-control: $CtlExe $shown" {
     Get-ChildItem $CtlDir -Filter 'room.err.*' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
       ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
   }
-  # Outside any job object, through cmd for the redirects.
+  # In no job object, through cmd for the redirects.
   $q = $argv | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }
-  $null = Start-Breakaway "cmd.exe /c `"`"$CtlExe`" $($q -join ' ') > $CtlDir\room.out 2> $CtlDir\room.err`""
+  $null = Start-Jobless "`"$CtlExe`" $($q -join ' ') > $CtlDir\room.out 2> $CtlDir\room.err" 'control'
 }
 
 if (-not $WhatIf) {

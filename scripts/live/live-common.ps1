@@ -154,6 +154,21 @@ function Test-StopWouldRefuse([string]$Url = $RoomPreflightUrl, [hashtable]$Head
   return [bool]($r.pty_host -and $r.pty_host.on -and $r.pty_host.in_job -and $r.runners -and $r.runners.host -gt 0)
 }
 
+# Get-HostInJobLines is what a refused stop says, from a /v1/preflight body: the cause, the runner counts, and what to do.
+# The cause is the room's own words when it gave them (it names the process that started it), else the plain one.
+function Get-HostInJobLines($pf) {
+  $cause = 'the pty host is inside a job object that refused breakaway, inherited from the process that started the room'
+  if ($pf.pty_host -and $pf.pty_host.in_job_cause) { $cause = $pf.pty_host.in_job_cause }
+  $held = 'unknown'; $local = 'unknown'
+  if ($pf.runners) { $held = $pf.runners.host; $local = $pf.runners.in_process }
+  @(
+    "REFUSED: $cause, so this stop would end every runner and lose any text typed and not sent. nothing was stopped.",
+    "  runners held by the pty host: $held, in the room's own process: $local. typed text is not exposed, so ask whoever is at the terminals.",
+    '  to fix it for good: restart the room ONCE from a jobless start (start-atrium-room.ps1 from a shell atrium does not supervise), which ends the runners once and leaves the next pty host outside any job.',
+    '  to end the runners now and restart anyway, run again with -KillRunners'
+  )
+}
+
 # Wait-HoldQuiet waits for every held card to end its turn, the way `atrium_deploy wait` does, up to -MaxSeconds.
 # Names the cards still working while it waits. Returns $true when the room is quiet, $false when the bound ran out.
 function Wait-HoldQuiet([int]$MaxSeconds = 300) {
@@ -462,12 +477,13 @@ function Stop-Room {
             catch { Say "room shutdown post: $($_.Exception.Message)" }
           } else {
             $script:StopRoomRefused = $true
-            Say 'REFUSED: the pty host would die with the room, so this stop would end every runner and lose any text typed and not sent. nothing was stopped.'
             try {
               $pf = Invoke-RestMethod $RoomPreflightUrl -TimeoutSec 5
-              Say "  runners held by the pty host: $($pf.runners.host), in the room's own process: $($pf.runners.in_process). typed text is not exposed, so ask whoever is at the terminals."
-            } catch { Say "  could not read $RoomPreflightUrl for the runner counts: $($_.Exception.Message)" }
-            Say '  to end them anyway, run again with -KillRunners'
+            } catch {
+              $pf = $null
+              Say "could not read $RoomPreflightUrl for the runner counts: $($_.Exception.Message)"
+            }
+            foreach ($line in (Get-HostInJobLines $pf)) { Say $line }
           }
         }
       }
@@ -544,12 +560,8 @@ function Set-LiveHosts($h) {
   if ($h.Value) { $env:ATRIUM_HOSTS = $h.Value } else { Remove-Item Env:ATRIUM_HOSTS -ErrorAction SilentlyContinue }
 }
 
-# Start-Breakaway starts a command line OUTSIDE any job object this process is in: CREATE_BREAKAWAY_FROM_JOB, no
-# window, its own process group, this process's environment. Start-Process cannot do it, so a hub started that way
-# belonged to the job of the room whose shell ran the script, and died when that room was stopped (2026-10-14).
-# Returns the new pid. Throws when the job does not allow breakaway, rather than start something that would not
-# outlive it.
-function Start-Breakaway([string]$CommandLine) {
+# Initialize-LiveSpawn loads the Win32 calls the starts and the job checks below make.
+function Initialize-LiveSpawn {
   if (-not ('AtriumLive.Spawn' -as [type])) {
     Add-Type -Namespace AtriumLive -Name Spawn -MemberDefinition @'
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -562,8 +574,21 @@ public struct PROCESS_INFORMATION { public System.IntPtr hProcess, hThread; publ
 public static extern bool CreateProcessW(string app, System.Text.StringBuilder cmd, System.IntPtr pa, System.IntPtr ta,
   bool inherit, uint flags, System.IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
 [DllImport("kernel32.dll")] public static extern bool CloseHandle(System.IntPtr h);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern System.IntPtr OpenProcess(uint access, bool inherit, int pid);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool IsProcessInJob(System.IntPtr process, System.IntPtr job, out bool result);
 '@
   }
+}
+
+# Start-Breakaway starts a command line OUTSIDE any job object this process is in: CREATE_BREAKAWAY_FROM_JOB, no
+# window, its own process group, this process's environment. Start-Process cannot do it, so a hub started that way
+# belonged to the job of the room whose shell ran the script, and died when that room was stopped (2026-10-14).
+# Returns the new pid. Throws when the job does not allow breakaway, rather than start something that would not
+# outlive it.
+function Start-Breakaway([string]$CommandLine) {
+  Initialize-LiveSpawn
   $si = New-Object AtriumLive.Spawn+STARTUPINFO
   $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
   $pi = New-Object AtriumLive.Spawn+PROCESS_INFORMATION
@@ -577,6 +602,73 @@ public static extern bool CreateProcessW(string app, System.Text.StringBuilder c
   [AtriumLive.Spawn]::CloseHandle($pi.hProcess) | Out-Null
   [AtriumLive.Spawn]::CloseHandle($pi.hThread) | Out-Null
   return $pi.dwProcessId
+}
+
+# Test-ProcessInJob says whether a process is inside ANY job object, which is what ending the terminal tab that started it
+# ends. $null when it cannot be asked. CREATE_BREAKAWAY_FROM_JOB leaves only the innermost job, so a process it started
+# can still be in the one above (2026-10-20: the room and its pty host, started from a Windows Terminal tab).
+function Test-ProcessInJob([int]$ProcId) {
+  Initialize-LiveSpawn
+  $h = [AtriumLive.Spawn]::OpenProcess(0x1000, $false, $ProcId)
+  if ($h -eq [IntPtr]::Zero) { return $null }
+  try {
+    $in = $false
+    if ([AtriumLive.Spawn]::IsProcessInJob($h, [IntPtr]::Zero, [ref]$in)) { return $in }
+    return $null
+  } finally { [AtriumLive.Spawn]::CloseHandle($h) | Out-Null }
+}
+
+# Get-StartRoute picks how a detached process is started. A caller already inside a job goes straight to WMI, the one
+# start that is in no job of ours: CreateProcess with breakaway only escapes the innermost job. Outside any job the
+# cheaper breakaway start is enough.
+function Get-StartRoute([bool]$InJob) { if ($InJob) { 'wmi' } else { 'breakaway' } }
+
+# Start-Wmi starts a command line through Win32_Process Create: WmiPrvSE is its parent, so it is in no job of ours and
+# survives the terminal that ran the script. Hidden. Returns the pid, throws when WMI refuses.
+function Start-Wmi([string]$CommandLine) {
+  $si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+  $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $CommandLine; ProcessStartupInformation = $si }
+  if ($r.ReturnValue -ne 0) { throw "Win32_Process Create returned $($r.ReturnValue): $CommandLine" }
+  return [int]$r.ProcessId
+}
+
+# New-LaunchScript writes the .cmd a WMI start runs: WMI hands the child no copy of this process's environment, so the
+# ATRIUM_* variables it needs (ATRIUM_HOSTS, ATRIUM_DEBUG_INPUTLAG, ATRIUM_PRIORITY) are set in the script, and nothing
+# else is, so no credential in this shell is written to disk. A value that cannot sit inside set "..." is skipped.
+function New-LaunchScript([string]$Path, [string]$Command) {
+  $lines = @('@echo off')
+  foreach ($e in (Get-ChildItem Env: | Where-Object { $_.Name -like 'ATRIUM_*' })) {
+    if ($e.Value -match '["\r\n]') { continue }
+    $lines += ('set "{0}={1}"' -f $e.Name, ($e.Value -replace '%', '%%'))
+  }
+  $lines += $Command
+  Set-Content -Path $Path -Value $lines -Encoding ASCII
+}
+
+# Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
+# when the result is still in one. Returns the pid of the cmd that runs it. Throws only when neither route could start it.
+function Start-Jobless([string]$Command, [string]$Tag) {
+  $route = Get-StartRoute ([bool](Test-ProcessInJob $PID))
+  $procId = $null
+  if ($route -eq 'wmi') {
+    try {
+      $launch = Join-Path $Base "launch-$Tag.cmd"
+      New-LaunchScript $launch $Command
+      $procId = Start-Wmi "cmd.exe /c `"$launch`""
+    } catch {
+      Say "WARNING: could not start $Tag through WMI ($($_.Exception.Message)). falling back to breakaway, which leaves it in any outer job"
+    }
+  }
+  if ($null -eq $procId) { $procId = Start-Breakaway "cmd.exe /c `"$Command`"" }
+  $in = Test-ProcessInJob $procId
+  if ($in) {
+    Say "WARNING: $Tag (pid $procId) is inside a job object that refused breakaway, inherited from the terminal or task that ran this script. closing that terminal can end it and its pty host. run this from a shell started outside any job (a service or scheduled task) to avoid that"
+  } elseif ($null -eq $in) {
+    Say "$Tag started as pid $procId (route $route). whether it is in a job could not be read"
+  } else {
+    Say "$Tag started as pid $procId (route $route), in no job object"
+  }
+  return $procId
 }
 
 # Start-Hub starts the atrium detached, through cmd so the redirect appends and the caller's output can end.
@@ -595,7 +687,7 @@ function Start-Hub {
     Clear-SessionEnv
     Set-LiveHosts $h
     Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} ({1}) =====" -f (Get-Date -Format o), $said)
-    $null = Start-Breakaway "cmd.exe /c $line"
+    $null = Start-Jobless $line 'hub'
   }
 }
 
@@ -612,8 +704,8 @@ function Start-Room {
   Invoke-Step "start room: $AtriumBin $($RoomArgs -join ' ')" {
     Clear-SessionEnv
     Set-LiveHosts $h
-    # Through cmd for the redirects, and outside any job object, so stopping a room never takes this one with it.
-    $null = Start-Breakaway "cmd.exe /c `"`"$AtriumBin`" $($RoomArgs -join ' ') > $Base\room.out 2> $Base\room.err`""
+    # Through cmd for the redirects, and in no job object, so stopping a room never takes this one with it and closing the terminal never takes the room.
+    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') > $Base\room.out 2> $Base\room.err" 'room'
   }
   return $true
 }

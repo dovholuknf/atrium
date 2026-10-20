@@ -373,6 +373,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		// because those are children of this process and must not claim to be
 		// the supervisor's.
 		StartedBy: startedBy,
+		HostBuild: VersionLine(),
 	})
 	if err != nil {
 		return err

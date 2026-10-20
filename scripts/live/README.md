@@ -87,7 +87,9 @@ is not under atrium, such as a fresh `wt.exe` window. The check is `refuse-super
 
 It also refuses from inside a job object that holds a room and no desktop (no terminal or shell), which catches a
 process whose parent has already exited. Not from any job: on sg4 the whole interactive session is one job. The start
-scripts start the hub and rooms with `CREATE_BREAKAWAY_FROM_JOB` (`Start-Breakaway` in `live-common.ps1`).
+scripts start the hub and rooms with `Start-Jobless` in `live-common.ps1`: through WMI when the shell is itself in a job
+(breakaway only leaves the innermost job, so a room started from a terminal tab stayed in the tab's job), else with
+`CREATE_BREAKAWAY_FROM_JOB`. It says when the result is still in a job. `test-start-jobless.ps1` covers it.
 
 A room that answers a stop with 409 (its pty host would die with it) is never stopped with --runners by these scripts on their own. The stop fails, says how many runners are held and nothing has changed. Pass -KillRunners to deploy-batch.ps1, atrium-deploy.ps1 or stop-atrium.ps1 to end them anyway. test-stop-room-409.ps1 covers it.
 

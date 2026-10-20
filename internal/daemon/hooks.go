@@ -47,6 +47,9 @@ type hooks struct {
 	preflightEachFor  time.Duration
 	preflightTotalFor time.Duration
 
+	// The pty host at startup. See waitForHost.
+	hostStartWait, hostStartPoll time.Duration
+
 	// Runners.
 	helpRunner        func(exe string) (string, error)
 	runnerFound       func(h *store.Harness) string
@@ -107,6 +110,8 @@ func defaultHooks() hooks {
 		preflightRun:          preflightRun,
 		preflightEachFor:      preflightEachFor,
 		preflightTotalFor:     preflightTotalFor,
+		hostStartWait:         hostStartWait,
+		hostStartPoll:         hostStartPoll,
 		helpRunner:            helpRunner,
 		runnerFound:           runnerFound,
 		agentSpawn:            agentSpawn,

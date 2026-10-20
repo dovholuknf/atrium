@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -145,9 +147,19 @@ type shutdownBody struct {
 	Runners bool `json:"runners"`
 }
 
-// hostInJobRefusal is what a stop answers when the host would die with the room's task.
-const hostInJobRefusal = "the pty host would die with this room's task, so this restart would end every agent. " +
-	"stop with --runners, or fix the task's job policy"
+// hostInJobCause says why a pty host in a job would die with it. The job is inherited down the chain of whatever
+// started this room, so the parent is the nearest name there is for it.
+func hostInJobCause(ppid int) string {
+	return fmt.Sprintf("the pty host is inside a job object that refused breakaway, inherited from the process that "+
+		"started this room (its parent was pid %d, usually a terminal tab or a scheduled task)", ppid)
+}
+
+// hostInJobRefusal is what a stop answers when the host would die with the job it sits in.
+func hostInJobRefusal(ppid int) string {
+	return hostInJobCause(ppid) + ", so this restart would end every runner. restart this room once from a jobless " +
+		"start (scripts/live start-atrium.ps1, or `atrium run` started by a service), which ends runners once and " +
+		"keeps the next restart from ending them. or stop with --runners to end them now"
+}
 
 // wantsRunners reads the request's ask to end runners, from the body or `?runners=1`.
 func wantsRunners(r *http.Request) bool {
@@ -176,9 +188,13 @@ func (d *Daemon) handleHostState(w http.ResponseWriter, _ *http.Request) {
 			local++
 		}
 	}
+	host := map[string]any{"on": d.st.PtyHostOn(), "in_job": d.hostInJob.Load(), "build": build}
+	if d.hostInJob.Load() {
+		host["in_job_cause"] = hostInJobCause(os.Getppid())
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"pty_host": map[string]any{"on": d.st.PtyHostOn(), "in_job": d.hostInJob.Load(), "build": build},
+		"pty_host": host,
 		"runners":  map[string]any{"host": held, "in_process": local},
 	})
 }

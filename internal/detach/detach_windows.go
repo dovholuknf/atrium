@@ -6,11 +6,16 @@ package detach
 
 import (
 	"errors"
+	"log"
 	"os"
 	"os/exec"
 	"syscall"
 )
 
+// A caller inside a job object starts the child through WMI first, since CREATE_BREAKAWAY_FROM_JOB is not enough:
+// a terminal's job may allow breakaway while a job above it does not, and the child then sits in that outer job,
+// which ends with the terminal tab. Only a process WMI creates is in none of ours.
+//
 // log is a path and never a file this process holds open: cmd's `>>` on the WMI retry cannot open a held file.
 func Start(exe string, args []string, log string) (*os.Process, error) {
 	const (
@@ -35,13 +40,36 @@ func Start(exe string, args []string, log string) (*os.Process, error) {
 		}
 		return cmd.Process, nil
 	}
+	tried := false
+	if in, _ := selfInJob(); in {
+		tried = true
+		q, err := startOutsideJob(exe, args, log)
+		if err == nil {
+			return q, nil
+		}
+		logFallback(exe, "this process is inside a job object", err)
+	}
 	p, err := start(base | breakawayFromJob)
 	if err != nil && errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
-		// A job that forbids breakaway answers access denied, and a child left in it ends with it.
-		if q, oerr := startOutsideJob(exe, args, log); oerr == nil {
-			return q, nil
+		if !tried {
+			q, oerr := startOutsideJob(exe, args, log)
+			if oerr == nil {
+				return q, nil
+			}
+			logFallback(exe, "this process's job refused breakaway", oerr)
 		}
 		return start(base)
 	}
 	return p, err
+}
+
+// StartOutsideJob starts exe through WMI so it is in no job object, which the caller wants when it already knows it
+// is in one that would end it.
+func StartOutsideJob(exe string, args []string, log string) (*os.Process, error) {
+	return startOutsideJob(exe, args, log)
+}
+
+func logFallback(exe, why string, err error) {
+	log.Printf("[atrium] %s could not be started outside the job object (%v). %s, so it will end with the "+
+		"process or terminal that started this one", exe, err, why)
 }
