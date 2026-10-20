@@ -42,6 +42,8 @@ type proxyOpts struct {
 	// hubAlt is the hub door tried after hub when hub is not there: the default board, when hub was found elsewhere.
 	hubAlt string
 	claim  string
+	// parent ends the proxy when the ssh that started it is gone.
+	parent parentWatch
 }
 
 // defaultHubBoard is where `atrium run` serves the hub's board unless told otherwise.
@@ -100,7 +102,7 @@ func newSSHProxy() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "--via is hub or room")
 				os.Exit(proxyExit)
 			}
-			o := proxyOpts{room: strings.TrimSuffix(args[0], sshcfg.Suffix), via: via, claim: callerClaim(), room2: hubAddress("")}
+			o := proxyOpts{room: strings.TrimSuffix(args[0], sshcfg.Suffix), via: via, claim: callerClaim(), room2: hubAddress(""), parent: watchParent()}
 			o.hub, o.hubAlt = hubDoors(hub)
 			code := runProxy(os.Stdin, os.Stdout, cmd.ErrOrStderr(), o)
 			os.Exit(code)
@@ -169,7 +171,7 @@ func runProxy(stdin io.Reader, stdout, stderr io.Writer, o proxyOpts) int {
 		return proxyExit
 	}
 	defer conn.Close()
-	joinStdio(stdin, stdout, conn, br)
+	joinStdio(stdin, stdout, conn, br, o.parent)
 	return 0
 }
 
@@ -236,15 +238,63 @@ func cleanHeader(s string) string {
 	}, s)
 }
 
-// joinStdio is the whole of the proxy's work: stdin to the stream, the stream to stdout, a half close each way. It
-// returns when the stream ends, which is when ssh is done with it.
-func joinStdio(stdin io.Reader, stdout io.Writer, conn net.Conn, br *bufio.Reader) {
+// parentCheckEvery is how often the proxy asks whether the ssh that started it is still there.
+const parentCheckEvery = 30 * time.Second
+
+// parentWatch ends the proxy when gone reports true, checked every `every`. A nil gone watches nothing.
+type parentWatch struct {
+	gone  func() bool
+	every time.Duration
+}
+
+// watchParent is the parent ssh of this process: the pid at start, asked about again each parentCheckEvery.
+func watchParent() parentWatch {
+	ppid := os.Getppid()
+	return parentWatch{gone: func() bool { return !pidAlive(ppid) }, every: parentCheckEvery}
+}
+
+// stdinDrain is how long the stream may keep answering after ssh closed its end, so the last bytes still reach ssh.
+var stdinDrain = 5 * time.Second
+
+// joinStdio is the whole of the proxy's work: stdin to the stream, the stream to stdout. It returns when EITHER
+// direction ends or the parent ssh is gone, and closes the stream so the other copy stops: an orphaned proxy would
+// otherwise wait on a far side that may never speak again.
+func joinStdio(stdin io.Reader, stdout io.Writer, conn net.Conn, br *bufio.Reader, w parentWatch) {
+	inDone := make(chan struct{})
+	outDone := make(chan struct{})
 	go func() {
+		defer close(inDone)
 		_, _ = io.CopyBuffer(conn, stdin, make([]byte, 32<<10))
-		// ssh closed its end. Finish writing, and keep reading until the far end finishes.
 		if cw, ok := conn.(interface{ CloseWrite() error }); ok {
 			_ = cw.CloseWrite()
 		}
 	}()
-	_, _ = io.CopyBuffer(stdout, br, make([]byte, 32<<10))
+	go func() {
+		defer close(outDone)
+		_, _ = io.CopyBuffer(stdout, br, make([]byte, 32<<10))
+	}()
+	defer conn.Close()
+	var gone <-chan time.Time
+	if w.gone != nil && w.every > 0 {
+		t := time.NewTicker(w.every)
+		defer t.Stop()
+		gone = t.C
+	}
+	var drain <-chan time.Time
+	in := (<-chan struct{})(inDone)
+	for {
+		select {
+		case <-outDone:
+			return
+		case <-in:
+			in = nil
+			drain = time.After(stdinDrain)
+		case <-drain:
+			return
+		case <-gone:
+			if w.gone() {
+				return
+			}
+		}
+	}
 }

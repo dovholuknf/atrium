@@ -666,7 +666,7 @@ function sshFact(r) {
 function sshConfigBlock(room, platform) {
   const win = /^win/i.test(platform || "");
   return `Host ${room}\n  ProxyCommand ${win ? '"atrium.exe"' : "atrium"} ssh-proxy %n\n` +
-    `  HostKeyAlias ${room}.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n`;
+    `  HostKeyAlias ${room}.atrium\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  CheckHostIP no\n`;
 }
 
 // copySshConfig puts that block on the clipboard, and the button says so for a moment.

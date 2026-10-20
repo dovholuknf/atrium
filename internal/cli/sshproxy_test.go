@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"net"
@@ -158,5 +159,54 @@ func TestHubDoorsHonourTheFlagTheEnvAndTheDefault(t *testing.T) {
 	t.Setenv("ATRIUM_BOARD_URL", "http://localhost:7778")
 	if _, alt := hubDoors(""); alt != "" {
 		t.Fatalf("the default board needs no second try, got %q", alt)
+	}
+}
+
+func joinT(t *testing.T, stdin io.Reader, w parentWatch) (net.Conn, <-chan struct{}) {
+	t.Helper()
+	near, far := net.Pipe()
+	t.Cleanup(func() { near.Close(); far.Close() })
+	done := make(chan struct{})
+	go func() {
+		joinStdio(stdin, io.Discard, near, bufio.NewReader(near), w)
+		close(done)
+	}()
+	return far, done
+}
+
+func mustReturn(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("joinStdio did not return")
+	}
+}
+
+func TestJoinStdioReturnsWhenStdinHitsEOF(t *testing.T) {
+	old := stdinDrain
+	stdinDrain = time.Millisecond
+	t.Cleanup(func() { stdinDrain = old })
+	_, done := joinT(t, strings.NewReader(""), parentWatch{})
+	mustReturn(t, done)
+}
+
+func TestJoinStdioReturnsWhenTheStreamCloses(t *testing.T) {
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.Close() })
+	far, done := joinT(t, pr, parentWatch{})
+	far.Close()
+	mustReturn(t, done)
+}
+
+func TestJoinStdioReturnsWhenTheParentIsGone(t *testing.T) {
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.Close() })
+	var calls atomic.Int64
+	w := parentWatch{every: time.Millisecond, gone: func() bool { return calls.Add(1) >= 3 }}
+	_, done := joinT(t, pr, w)
+	mustReturn(t, done)
+	if calls.Load() < 3 {
+		t.Fatalf("the parent was asked %d times", calls.Load())
 	}
 }

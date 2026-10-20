@@ -1,0 +1,2 @@
+`atrium ssh-proxy` now exits when ssh is done with it. It returns when either side of the stream ends and when the ssh that started it is gone (checked every 30 s), so orphaned proxies no longer live for days. The generated ssh Host block adds `ServerAliveCountMax 3` beside `ServerAliveInterval 30`, so ssh drops a dead connection in about 90 s. Run `atrium ssh config add` again to update existing blocks. Item: bug-ssh-proxy-lives-forever.
+Docs: none

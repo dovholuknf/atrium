@@ -45,7 +45,7 @@ func backups(t *testing.T, h string) []string {
 
 func TestBlockIsTheWindowsQuotedFormOnWindowsAndPlainElsewhere(t *testing.T) {
 	win := Block("sg3", exeWin, "windows")
-	want := "Host sg3.atrium\n  ProxyCommand \"" + exeWin + "\" ssh-proxy %n\n  HostKeyAlias sg3.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n"
+	want := "Host sg3.atrium\n  ProxyCommand \"" + exeWin + "\" ssh-proxy %n\n  HostKeyAlias sg3.atrium\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  CheckHostIP no\n"
 	if win != want {
 		t.Fatalf("windows block:\n%s", win)
 	}
@@ -299,5 +299,14 @@ func TestBareHostLineGainsTheSuffix(t *testing.T) {
 	b.text = want
 	if got := migrateHostName(b); got != want {
 		t.Fatalf("second pass changed it: %q", got)
+	}
+}
+
+func TestTheBlockCarriesBothKeepaliveLines(t *testing.T) {
+	b := Block("sg3", "/usr/bin/atrium", "linux")
+	for _, l := range []string{"  ServerAliveInterval 30\n", "  ServerAliveCountMax 3\n"} {
+		if !strings.Contains(b, l) {
+			t.Fatalf("block lacks %q:\n%s", l, b)
+		}
 	}
 }

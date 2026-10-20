@@ -71,6 +71,7 @@ func BlockHubUser(room, exe, goos, hub, user string) string {
 		"  ProxyCommand " + ProxyCommandHub(exe, goos, hub) + "\n" +
 		"  HostKeyAlias " + room + Suffix + "\n" +
 		"  ServerAliveInterval 30\n" +
+		"  ServerAliveCountMax 3\n" +
 		"  CheckHostIP no\n"
 }
 
