@@ -71,7 +71,12 @@ type prView struct {
 	// StageNote is one short line about a stage that did not do its work while the review carried on, such as a panel
 	// with no reviewer to run. It is not the row's state. It is read from review.json.
 	StageNote string `json:"stage_note,omitempty"`
+	// RunLog is the tail of run.log while the run is going, which the board reads as the steps and how long each took.
+	RunLog string `json:"run_log,omitempty"`
 }
+
+// prLiveLogTail is how much of run.log a live row carries.
+const prLiveLogTail = 4 << 10
 
 // readPRStageNote is the note a step left in review.json, panel first.
 func readPRStageNote(dir string) string {
@@ -96,6 +101,9 @@ func readPRStageNote(dir string) string {
 // viewPRDisk is viewPR with the walker card's disk.
 func (s *Server) viewPRDisk(p *store.PRReview) prView {
 	v := viewPR(p)
+	if p.State == store.PRFetching || p.State == store.PRRunning {
+		v.RunLog = tailLog(s.st.ReviewsRoot(), p.RunDir, prLiveLogTail)
+	}
 	if p.WalkerTask != "" {
 		v.DiskBytes = s.cardDisk(p.WalkerTask)
 	}

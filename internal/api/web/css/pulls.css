@@ -81,6 +81,16 @@
   .pull-stage.q { color: var(--wait); }
   .pull-stage.e { color: var(--danger); }
 
+  /* The steps of a live run: the last few lines of run.log, the one it is on last, with a spinner and its seconds. */
+  .pull-steps { margin-top: 5px; font: var(--fs-xs)/1.5 var(--mono); }
+  .pull-steps .was { color: var(--dim); overflow-wrap: anywhere; }
+  .pull-steps .now { color: var(--head); display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+  .pull-steps .bad { color: var(--danger); }
+  .pull-el { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .pull-spin { width: 9px; height: 9px; flex: none; border-radius: 50%; border: 2px solid var(--stroke-dim);
+    border-top-color: var(--teal); animation: pull-spin .9s linear infinite; }
+  @keyframes pull-spin { to { transform: rotate(360deg); } }
+
   /* The verdict pill: uppercase and tinted, never a solid fill, so only the primary button is solid. */
   .pull-state {
     font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 5px;

@@ -443,6 +443,25 @@ func (pr *prRun) step(name string, fn func() error) error {
 	return err
 }
 
+// prViewDiffer is a forge that reads the pull request and its diff in one question.
+type prViewDiffer interface {
+	ViewDiff(ctx context.Context, ref forge.Ref) (*forge.PR, []byte, error)
+}
+
+type prDiffAns struct {
+	diff []byte
+	err  error
+}
+
+// timed logs the start of a sub-step of step and answers the function that logs its end with the seconds it took.
+func (pr *prRun) timed(step, start string) func(end string) {
+	t0 := time.Now()
+	pr.logf("%s: %s", step, start)
+	return func(end string) { pr.logf("%s: %s (%.1fs)", step, end, time.Since(t0).Seconds()) }
+}
+
+// logf appends a line to run.log and publishes the row, which carries the log's tail, so the board shows each line as it
+// is written.
 func (pr *prRun) logf(format string, a ...any) {
 	if pr.ctx.Err() != nil {
 		return
@@ -452,8 +471,11 @@ func (pr *prRun) logf(format string, a ...any) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
-	f.WriteString(line)
+	_, werr := f.WriteString(line)
+	f.Close()
+	if werr == nil {
+		pr.r.publish(pr.id)
+	}
 }
 
 func (pr *prRun) saveReview() {
@@ -594,7 +616,16 @@ func (pr *prRun) fetch() error {
 		return err
 	}
 	ref := pr.ref()
-	v, err := f.View(pr.ctx, ref)
+	var v *forge.PR
+	var diff []byte
+	var diffAns chan prDiffAns
+	done := pr.timed("fetch", "asking the forge")
+	if vd, ok := f.(prViewDiffer); ok {
+		v, diff, err = vd.ViewDiff(pr.ctx, ref)
+	} else {
+		v, err = f.View(pr.ctx, ref)
+	}
+	done("forge answered")
 	if err != nil {
 		if pr.r.onAccess != nil {
 			pr.r.onAccess(f.Kind(), err)
@@ -620,23 +651,38 @@ func (pr *prRun) fetch() error {
 		return err
 	}
 	pr.files = v.Files
-	diff, err := f.Diff(pr.ctx, ref)
-	if err != nil {
-		if pr.r.onAccess != nil {
-			pr.r.onAccess(f.Kind(), err)
-		}
-		return err
-	}
-	if err := pr.write("pr.diff", diff); err != nil {
-		return err
+	if _, ok := f.(prViewDiffer); !ok {
+		// The diff is read while the head is fetched, so the two cost the longer of them.
+		diffAns = make(chan prDiffAns, 1)
+		go func() {
+			done := pr.timed("fetch", "reading the diff")
+			d, err := f.Diff(pr.ctx, ref)
+			done("diff read")
+			diffAns <- prDiffAns{d, err}
+		}()
 	}
 	if err := pr.fetchSource(f.FetchSpec(ref), v.Head); err != nil {
 		return err
 	}
+	if diffAns != nil {
+		a := <-diffAns
+		if a.err != nil {
+			if pr.r.onAccess != nil {
+				pr.r.onAccess(f.Kind(), a.err)
+			}
+			return a.err
+		}
+		diff = a.diff
+	}
+	if err := pr.write("pr.diff", diff); err != nil {
+		return err
+	}
+	done = pr.timed("fetch", "writing the bundle")
 	bundle := pr.bundle(v, string(diff))
 	if err := pr.write("bundle.md", []byte(bundle)); err != nil {
 		return err
 	}
+	done("bundle written")
 	pr.mu.Lock()
 	pr.review.Head = strings.ToLower(v.Head)
 	pr.mu.Unlock()
@@ -699,22 +745,34 @@ func (pr *prRun) fetchSource(spec forge.FetchSpec, head string) error {
 		if pr.r.hubSource == nil {
 			return errors.New("this room has no way to read the hub's store")
 		}
+		opened := pr.timed("fetch", "opening the hub's store")
 		url, done, err := pr.r.hubSource(pr.ctx, spec.Hub)
 		if err != nil {
 			return err
 		}
 		defer done()
+		opened("hub's store open")
 		remote, fetch = url, []string{"fetch", "-q", "--no-tags", "origin", spec.Refspec}
 	}
-	for _, args := range [][]string{
+	for i, args := range [][]string{
 		{"init", "-q"},
 		{"remote", "add", "origin", remote},
 		fetch,
 		{"checkout", "-q", "--detach", "FETCH_HEAD"},
 	} {
+		var end func(string)
+		switch i {
+		case 2:
+			end = pr.timed("fetch", "fetching the head into the source folder")
+		case 3:
+			end = pr.timed("fetch", "making the worktree")
+		}
 		if _, err := pr.r.run(pr.ctx, prCmd{Name: "git", Args: args, Dir: src, Timeout: prGitTimeout,
 			Limit: prJSONLimit}); err != nil {
 			return err
+		}
+		if end != nil {
+			end([]string{"", "", "head fetched", "worktree made"}[i])
 		}
 	}
 	out, err := pr.r.run(pr.ctx, prCmd{Name: "git", Args: []string{"rev-parse", "HEAD"}, Dir: src,
@@ -882,7 +940,9 @@ func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*f
 	}
 	spec := forkSpec{Exe: pr.harness.Exe(), Dir: pr.workDir, Env: pr.env,
 		Args: append(append([]string{"-p"}, args...), pr.common...), Stdin: []byte(prompt), Timeout: prForkTimeout}
+	answered := pr.timed(step, "launching the agent "+label)
 	out, runErr := pr.r.fork(pr.ctx, spec)
+	answered("agent " + label + " answered")
 	if pr.ctx.Err() != nil {
 		return nil, errStopped
 	}
@@ -1006,6 +1066,7 @@ func (pr *prRun) prime() error {
 	if have != "" && pr.review.Steps["prime"] != nil && pr.review.Steps["prime"].Done {
 		return nil
 	}
+	prepared := pr.timed("prime", "reading the bundle and preparing the agent")
 	bundle, err := os.ReadFile(filepath.Join(pr.dir, "bundle.md"))
 	if err != nil {
 		return err
@@ -1013,6 +1074,7 @@ func (pr *prRun) prime() error {
 	if err := pr.forkCommon(); err != nil {
 		return err
 	}
+	prepared("agent prepared")
 	prompt := "You are about to review a pull request with others. The bundle below is the whole pull request: " +
 		"a summary, the diff, and each changed file in full at the head. The repository at the head is at " +
 		pr.srcAbs + ", read only: name files by paths under it. Read the bundle, do not use any tool, and answer with the single word ok.\n\n" +

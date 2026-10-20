@@ -4,7 +4,8 @@
 // run, written by the daemon. This file holds the rows it was told about and draws them, and decides nothing.
 //
 // LIVE THE WAY THE REST OF THE BOARD IS: the rows are read once at load and again when the event stream reopens,
-// and a `pr` event carries the whole row, which replaces the one held. No timer. ONE RENDER FUNCTION draws a row
+// and a `pr` event carries the whole row, which replaces the one held. The one timer counts up the seconds of the step a
+// live run is on, and runs only while one is drawn. ONE RENDER FUNCTION draws a row
 // whether it came from the list answer or from an event (`pullRowHTML`).
 //
 // THE NAV COUNT is the rows waiting on the operator, ready plus failed and not archived, recounted from the held
@@ -267,7 +268,7 @@ function pullNote(r) {
   const q = pullQuestion(r);
   if (q) return { cls: " q", text: q };
   if (r.state === "failed" && r.run_error) return { cls: " e", text: r.run_error.replace(/^\s*[a-z]+\s*:\s*/i, "") };
-  if (r.state === "running" && r.run_state) return { cls: "", text: r.run_state };
+  if (r.state === "running" && r.run_state && !r.run_log) return { cls: "", text: r.run_state };
   if (r.stage_note) return { cls: "", text: r.stage_note };
   return null;
 }
@@ -326,6 +327,61 @@ function pullBtn(act, id, label, tip, cls) {
     (tip ? ' data-tip="' + esc(tip) + '"' : "") + ">" + esc(label) + "</button>";
 }
 
+// WHAT A LIVE RUN IS DOING, from the tail of run.log the row carries while it is fetching or running. A line is
+// `HH:MM:SS text` in UTC. `X start` and `X end 0.12` are the steps and `X error why` is a failure, and any other line is a
+// sub-step the runner said, such as `fetch: forge answered (3.1s)`.
+const PULL_STEPS_SHOWN = 6;
+
+function pullLogLines(r) {
+  const out = [];
+  String(r.run_log || "").split("\n").forEach(l => {
+    const m = /^(\d\d):(\d\d):(\d\d) (.+)$/.exec(l);
+    if (!m) return;
+    const d = new Date();
+    d.setUTCHours(+m[1], +m[2], +m[3], 0);
+    let at = d.getTime();
+    if (at > Date.now() + 60000) at -= 86400000;
+    let text = m[4], cls = "";
+    let x;
+    if ((x = /^(\w+) start$/.exec(text))) text = x[1] + ": starting";
+    else if ((x = /^(\w+) end ([\d.]+)$/.exec(text))) text = x[1] + ": done" + (+x[2] > 0 ? " ($" + x[2] + ")" : "");
+    else if ((x = /^(\w+) (?:error|failed) (.*)$/.exec(text))) { text = x[1] + ": " + x[2]; cls = " bad"; }
+    out.push({ at, text, cls });
+  });
+  return out;
+}
+
+function pullElapsed(at) {
+  const s = Math.max(0, Math.floor((Date.now() - at) / 1000));
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+}
+
+function pullStepsHTML(r) {
+  if (r.state !== "fetching" && r.state !== "running") return "";
+  const lines = pullLogLines(r).slice(-PULL_STEPS_SHOWN);
+  if (!lines.length) {
+    return '<div class="pull-steps" role="status"><div class="now"><span class="pull-spin" aria-hidden="true"></span>starting&hellip;</div></div>';
+  }
+  const last = lines.length - 1;
+  return '<div class="pull-steps" role="status">' + lines.map((l, i) => i < last
+    ? '<div class="was' + l.cls + '">' + esc(l.text) + "</div>"
+    : '<div class="now' + l.cls + '"><span class="pull-spin" aria-hidden="true"></span>' + esc(l.text) +
+      ' <span class="pull-el" data-at="' + l.at + '">' + esc(pullElapsed(l.at)) + "</span></div>").join("") + "</div>";
+}
+
+// The elapsed time of the line a run is on counts up while one is drawn, and the timer stops when none is.
+let pullsElTimer = 0;
+
+function pullsElTick() {
+  const els = document.querySelectorAll("#pulls-list .pull-el");
+  if (!els.length) {
+    clearInterval(pullsElTimer);
+    pullsElTimer = 0;
+    return;
+  }
+  els.forEach(el => { el.textContent = pullElapsed(+el.dataset.at); });
+}
+
 // One card. The same markup for a list answer and an event.
 function pullRowHTML(r) {
   const title = r.title || r.url || "";
@@ -356,6 +412,7 @@ function pullRowHTML(r) {
       (progress ? '<div class="pull-progress">' + esc(progress) + "</div>" : "") +
       (second ? '<div class="pull-second">' + esc(second) + "</div>" : "") +
       (note ? '<div class="pull-stage' + note.cls + '">' + esc(note.text) + "</div>" : "") +
+      pullStepsHTML(r) +
       (closed ? "" : '<div class="pull-strip">' + strip + "</div>") +
     "</div>" +
     '<div class="pull-side">' +
@@ -455,6 +512,7 @@ function pullsPaintRows() {
     return rs.length ? pullsGroupHTML(g[0], g[1], rs) : "";
   }).join("");
   if (anchor && typeof restoreScrollAnchor === "function") restoreScrollAnchor(list, ".pull", anchor);
+  if (!pullsElTimer && list.querySelector(".pull-el")) pullsElTimer = setInterval(pullsElTick, 1000);
 }
 
 // ── acting ──────────────────────────────────────────────

@@ -192,6 +192,7 @@
   "presence": 2061,
   "pulls": 16009,
   "pullsAbsent": 1152,
+  "pullsLiveSteps": 1500,
   "pullsPage": 4000,
   "pullsPasteOpening": 3000,
   "pullsDrawer": 6709,

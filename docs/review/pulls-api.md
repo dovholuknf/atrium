@@ -54,6 +54,7 @@ One shape, used by the list, the detail, the POST answers and the SSE event.
 | `head7` | string | the first 7 characters of `head`, `""` when `head` is |
 | `state` | string | one of `queued fetching running ready failed aborted`, below |
 | `run_state` | string | the step in progress: `fetch prime panel verify critics merge second settle write`, else `""` |
+| `run_log` | string | the tail (last 4KB) of the run's log while `state` is `fetching` or `running`, else `""`. Each step logs what it is doing, then `step: end (X.Xs)` |
 | `run_error` | string | `""` unless `state` is `failed`, then `<step>: <first line of why>` |
 | `cost_usd` | number | what the run has cost so far, from the forks' recorded usage. `0` before any |
 | `started_at` | string | RFC3339 UTC, when the runner began. `""` before |

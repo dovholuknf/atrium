@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // A room attached to a hub never runs a forge CLI and never fetches from a forge host. It asks the hub, which runs
@@ -95,11 +96,13 @@ type Remote struct {
 	mu   sync.Mutex
 	kind string
 	seen map[Ref]HubPR
+	// fetched is the last view of each pull request that fetched its head.
+	fetched map[Ref]fetchedView
 }
 
 // NewRemote is a Remote over call.
 func NewRemote(call func(ctx context.Context, path string, in, out any) error) *Remote {
-	return &Remote{Call: call, seen: map[Ref]HubPR{}}
+	return &Remote{Call: call, seen: map[Ref]HubPR{}, fetched: map[Ref]fetchedView{}}
 }
 
 // Hub is the kind a Remote names before the hub has said which forge it ran.
@@ -137,16 +140,68 @@ func (r *Remote) pr(ctx context.Context, ref Ref, in HubAsk) (HubPR, error) {
 	return out, nil
 }
 
+// viewReuse is how long a view that fetched the head is taken as still true. The open verb reads and fetches, and the
+// runner it starts asks again a moment later for the same head.
+const viewReuse = 60 * time.Second
+
+type fetchedView struct {
+	ans HubPR
+	at  time.Time
+}
+
+// reuse is a copy of the view of ref that fetched its head less than viewReuse ago, with FetchSpec pointed at it again.
+func (r *Remote) reuse(ref Ref) (*PR, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	got, ok := r.fetched[ref]
+	if !ok || got.ans.PR == nil || time.Since(got.at) > viewReuse {
+		return nil, false
+	}
+	r.seen[ref] = got.ans
+	cp := *got.ans.PR
+	return &cp, true
+}
+
 // View asks the hub to read the pull request and fetch its head into the hub's store, so FetchSpec names a ref
 // that is there.
 func (r *Remote) View(ctx context.Context, ref Ref) (*PR, error) {
+	if pr, ok := r.reuse(ref); ok {
+		return pr, nil
+	}
 	in := ask(ref)
 	in.Fetch = true
 	out, err := r.pr(ctx, ref, in)
 	if err != nil {
 		return nil, err
 	}
+	r.keep(ref, out)
 	return out.PR, nil
+}
+
+func (r *Remote) keep(ref Ref, out HubPR) {
+	r.mu.Lock()
+	out.Diff = nil
+	r.fetched[ref] = fetchedView{ans: out, at: time.Now()}
+	r.mu.Unlock()
+}
+
+// ViewDiff is View and Diff in one question to the hub, which reads the pull request once for both.
+func (r *Remote) ViewDiff(ctx context.Context, ref Ref) (*PR, []byte, error) {
+	if pr, ok := r.reuse(ref); ok {
+		diff, err := r.Diff(ctx, ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		return pr, diff, nil
+	}
+	in := ask(ref)
+	in.Fetch, in.Diff = true, true
+	out, err := r.pr(ctx, ref, in)
+	if err != nil {
+		return nil, nil, err
+	}
+	r.keep(ref, out)
+	return out.PR, out.Diff, nil
 }
 
 // Peek asks the hub to read the pull request and fetch nothing, for a question that needs no code.

@@ -1,6 +1,6 @@
 // pulls: pull requests: the page, the drawer, the panel, moving one.
 //
-// Units: pullsPasteOpening, pulls, pullsPanelStage, pullsPage, pullsAbsent, pullsDrawer, prMove.
+// Units: pullsLiveSteps, pullsPasteOpening, pulls, pullsPanelStage, pullsPage, pullsAbsent, pullsDrawer, prMove.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/pulls.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1121,7 +1121,99 @@ async function pullsPasteOpeningSection(browser, base) {
   if (!bad) console.log("pullsPasteOpening ok");
 }
 
+// ── a live run says what it is doing ─────────────────────
+// A fetching or running row carries the tail of run.log, and the board draws the last lines with the seconds of the one the
+// run is on. An event moves them without a read, and a run that ends takes them away. PLSHOT=/dir writes the picture and
+// PLBEFORE=1 draws the rows without the steps, as the board did before them.
+async function pullsLiveStepsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const clock = ms => new Date(Date.now() - ms).toISOString().slice(11, 19);
+  const line = (ago, text) => clock(ago) + " " + text + "\n";
+  const row = (id, extra) => Object.assign({
+    id, url: "https://github.com/openziti/ziti-sdk-c/pull/1186", host: "github.com", org: "openziti", repo: "ziti-sdk-c", org_repo: "openziti/ziti-sdk-c",
+    number: 1186, title: "title of " + id, why: "", head: "", head7: "abc1234", state: "fetching", run_state: "fetch", run_error: "",
+    cost_usd: 0, started_at: "", ready_at: "", created_at: "2026-10-20T15:02:00Z", archived_at: "", run_dir: "",
+    second: { state: "none", summary: "", error: "" }, author: "ekoby", run_log: "",
+    findings: { high: 0, med: 0, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 0 }, walker_task: ""
+  }, extra);
+  const st = { rows: [
+    row("pr_fetch", { number: 1186, created_at: "2026-10-20T15:04:00Z", run_log:
+      line(52000, "fetch start") + line(51000, "fetch: asking the forge") + line(47000, "fetch: forge answered (4.1s)") +
+      line(46000, "fetch: opening the hub's store") + line(46000, "fetch: hub's store open (0.0s)") +
+      line(45000, "fetch: fetching the head into the source folder") }),
+    row("pr_prime", { number: 1187, state: "running", run_state: "prime", created_at: "2026-10-20T15:03:00Z", run_log:
+      line(90000, "fetch start") + line(60000, "fetch end 0.00") + line(60000, "prime start") +
+      line(59000, "prime: reading the bundle and preparing the agent") + line(58000, "prime: agent prepared (0.4s)") +
+      line(58000, "prime: launching the agent prime") }),
+    row("pr_new", { number: 1188, created_at: "2026-10-20T15:05:00Z" }),
+    row("pr_bad", { number: 1189, state: "failed", run_state: "", created_at: "2026-10-20T15:01:00Z", run_error: "fetch: gh pr view: could not resolve to a PullRequest" })
+  ] };
+  const emit = r => {
+    const i = st.rows.findIndex(x => x.id === r.id);
+    if (i >= 0) st.rows[i] = r;
+    openStreams.forEach(s => { try { s.write("event: pr\ndata: " + JSON.stringify({ pr: r }) + "\n\n"); } catch (e) {} });
+  };
+  let gets = 0;
+  await ctx.route(/\/v1\/prs(\/|\?|$)/, route => {
+    gets++;
+    json(route, 200, { prs: st.rows, counts: {}, nav_count: 1 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) });
+    await p.evaluate(() => switchView("pulls"));
+    await p.waitForFunction(() => document.querySelectorAll("#pulls-list .pull").length === 4, null, { timeout: slow(10000) });
+    if (process.env.PLBEFORE) {
+      await p.evaluate(() => { pullStepsHTML = () => ""; pullsPaint(); });
+      if (process.env.PLSHOT) await p.screenshot({ path: process.env.PLSHOT });
+      return;
+    }
+    const sel = id => '#pulls-list .pull[data-id="' + id + '"] .pull-steps';
+    const texts = (id, cls) => p.evaluate(([s, c]) => [...document.querySelectorAll(s + " " + c)].map(e => e.textContent.trim()), [sel(id), cls]);
+    let was = await texts("pr_fetch", ".was"), now = await texts("pr_fetch", ".now");
+    if (was.length !== 5 || was[4] !== "fetch: hub's store open (0.0s)") fail("pullsLiveSteps: the earlier lines are " + JSON.stringify(was));
+    if (!/^fetch: fetching the head into the source folder \d+s$/.test(now[0] || "")) fail("pullsLiveSteps: the line it is on is " + JSON.stringify(now));
+    if (was[0] !== "fetch: starting") fail("pullsLiveSteps: a start line is not said as a step: " + was[0]);
+    if ((await texts("pr_prime", ".was"))[1] !== "fetch: done") fail("pullsLiveSteps: an end line is not said as done: " + (await texts("pr_prime", ".was"))[1]);
+    if (!/^prime: launching the agent prime (\d+m )?\d+s$/.test((await texts("pr_prime", ".now"))[0] || "")) fail("pullsLiveSteps: a running row does not say it is launching the agent");
+    if (!/^starting/.test((await texts("pr_new", ".now"))[0] || "")) fail("pullsLiveSteps: a row with no log yet says " + JSON.stringify(await texts("pr_new", ".now")));
+    if (await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_bad"] .pull-steps'))) fail("pullsLiveSteps: a failed row draws steps");
+    const failedNote = await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_bad"] .pull-stage').textContent);
+    const failedPill = await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_bad"] .pull-state').textContent);
+    if (failedNote !== "gh pr view: could not resolve to a PullRequest" || !/^failed at /.test(failedPill)) fail("pullsLiveSteps: a failure says " + failedPill + " / " + failedNote);
+    const secs = () => p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_fetch"] .pull-el').textContent);
+    const first = await secs();
+    await p.waitForFunction(f => document.querySelector('#pulls-list .pull[data-id="pr_fetch"] .pull-el').textContent !== f, first, { timeout: slow(4000) })
+      .catch(() => fail("pullsLiveSteps: the seconds did not count up from " + first));
+    if (process.env.PLSHOT) await p.screenshot({ path: process.env.PLSHOT });
+    for (let i = 0; i < 50 && !openStreams.length && !openStreams.size; i++) await new Promise(r => setTimeout(r, 100));
+    const before = gets;
+    emit(Object.assign({}, st.rows[0], { run_log: st.rows[0].run_log + line(0, "fetch: head fetched (44.0s)") + line(0, "fetch: making the worktree") }));
+    await p.waitForFunction(() => /making the worktree/.test(document.querySelector('#pulls-list .pull[data-id="pr_fetch"] .pull-steps .now').textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsLiveSteps: an event did not move the line"));
+    was = await texts("pr_fetch", ".was");
+    if (was.length !== 5 || was[4] !== "fetch: head fetched (44.0s)") fail("pullsLiveSteps: the old line is not history: " + JSON.stringify(was));
+    if (gets !== before) fail("pullsLiveSteps: an event caused a read");
+    emit(Object.assign({}, st.rows[1], { state: "failed", run_state: "", run_error: "prime: claude exited 1", run_log: "" }));
+    await p.waitForFunction(() => !document.querySelector('#pulls-list .pull[data-id="pr_prime"] .pull-steps'), null, { timeout: slow(5000) })
+      .catch(() => fail("pullsLiveSteps: a failed run kept its steps"));
+    if ((await p.evaluate(() => document.querySelector('#pulls-list .pull[data-id="pr_prime"] .pull-stage').textContent)) !== "claude exited 1") fail("pullsLiveSteps: the failure is not the first line of why");
+    emit(Object.assign({}, st.rows[0], { state: "failed", run_error: "fetch: no", run_log: "" }));
+    emit(Object.assign({}, st.rows[2], { state: "failed", run_error: "fetch: no", run_log: "" }));
+    await p.waitForFunction(() => !document.querySelector("#pulls-list .pull-el"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => !pullsElTimer, null, { timeout: slow(4000) }).catch(() => fail("pullsLiveSteps: the timer kept running with no live row"));
+    if (errors.length) fail("pullsLiveSteps: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pullsLiveSteps ok");
+}
+
 const units = [
+  { name: "pullsLiveSteps", run: ({ browser, base }) => pullsLiveStepsSection(browser, base) },
   { name: "pullsPasteOpening", run: ({ browser, base }) => pullsPasteOpeningSection(browser, base) },
   { name: "pulls", run: ({ browser, base }) => pullsSection(browser, base) },
   { name: "pullsPanelStage", run: ({ browser, base }) => pullsPanelStageSection(browser, base) },
@@ -1130,7 +1222,7 @@ const units = [
   { name: "pullsDrawer", run: ({ browser, base }) => pullsDrawerSection(browser, base) },
   { name: "prMove", run: ({ browser, base }) => prMoveSection(browser, base) },
 ];
-const sections = { pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
+const sections = { pullsLiveSteps: pullsLiveStepsSection, pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
