@@ -8406,7 +8406,7 @@ async function sshBadgeSection(browser, base) {
     }
     await p.locator(".ssh-copy").click();
     let clip = await p.evaluate(() => window.__clip);
-    const win = 'Host alpha\n  ProxyCommand "atrium.exe" ssh-proxy %n\n  HostKeyAlias alpha.atrium\n  ServerAliveInterval 30\n  CheckHostIP no\n';
+    const win = 'Host alpha\n  ProxyCommand "atrium.exe" ssh-proxy %n\n  HostKeyAlias alpha.atrium\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n  CheckHostIP no\n';
     if (clip.length !== 1 || clip[0] !== win) fail("the Windows copy is wrong: " + JSON.stringify(clip));
     await ctx.close();
 
