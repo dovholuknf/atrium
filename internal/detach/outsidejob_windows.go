@@ -5,6 +5,7 @@ package detach
 import (
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 // A process WMI creates is WmiPrvSE's child, in no job of ours, which is the only way out of a job that forbids breakaway.
 func startOutsideJob(exe string, args []string, log string) (*os.Process, error) {
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", outsideJobScript())
+	nowindow.Hide(cmd)
 	cmd.Env = append(os.Environ(), "ATRIUM_DETACH_CMD="+outsideJobCommandLine(exe, args, log))
 	got, err := cmd.Output()
 	if err != nil {

@@ -3,6 +3,7 @@ package sshwizard
 import (
 	"context"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"os"
 	"os/exec"
 	"os/user"
@@ -113,7 +114,9 @@ type LocalMachine struct {
 }
 
 func (m LocalMachine) Run(ctx context.Context, name string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	nowindow.Hide(cmd)
+	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
@@ -150,7 +153,9 @@ func (m LocalMachine) Account() Account {
 		a.Elevated = os.Geteuid() == 0
 	} else {
 		// `net session` needs an elevated token and changes nothing.
-		a.Elevated = exec.Command("net", "session").Run() == nil
+		net := exec.Command("net", "session")
+		nowindow.Hide(net)
+		a.Elevated = net.Run() == nil
 	}
 	return a
 }

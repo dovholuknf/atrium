@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,7 @@ func (e OSEnv) Git(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
+	nowindow.Hide(cmd)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()

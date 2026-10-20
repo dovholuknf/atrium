@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"io"
 	"net/http"
 	"net/url"
@@ -137,6 +138,7 @@ func (c *capped) Write(p []byte) (int, error) {
 // Run implements Runner.
 func (ExecRunner) Run(ctx context.Context, dir, name string, args ...string) (Result, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	nowindow.Hide(cmd)
 	cmd.Dir = dir
 	var so, se capped
 	cmd.Stdout, cmd.Stderr = &so, &se

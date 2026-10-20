@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"net"
 	"os"
 	"os/exec"
@@ -332,6 +333,7 @@ func (OSEnv) Addrs() []string {
 
 func (OSEnv) Keyscan(ctx context.Context, host string, port int) (string, error) {
 	cmd := exec.CommandContext(ctx, "ssh-keyscan", "-T", "3", "-p", fmt.Sprint(port), host)
+	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -345,7 +347,9 @@ func (OSEnv) ListenerOwner(ctx context.Context, addr string, port int) string {
 	script := fmt.Sprintf("Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue | "+
 		"Where-Object { $_.LocalAddress -eq '%s' } | Select-Object -First 1 -ExpandProperty OwningProcess | "+
 		"ForEach-Object { (Get-Process -Id $_ -ErrorAction SilentlyContinue).ProcessName }", port, addr)
-	out, err := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	nowindow.Hide(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
