@@ -1,0 +1,1 @@
+The `settingsOnce` board unit no longer fails when the event stream opens after the held settings read has answered. It now waits for the stream to be live before releasing the read (settingsonce-two-reads).

@@ -121,6 +121,8 @@ async function settingsOnceSection(browser, base) {
     const roomsBy = Date.now() + 15000;
     while (!roomsLanded && Date.now() < roomsBy) await sp.waitForTimeout(10);
     if (!roomsLanded) fail("the hub's room list never reached the page.");
+    // The stream opening re-reads settings, so it has to open inside the held read too.
+    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
     await sp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     release();
     const skinBy = Date.now() + 15000;
