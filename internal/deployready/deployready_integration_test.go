@@ -30,6 +30,98 @@ func newRepo(t *testing.T) *repo {
 	return r
 }
 
+type template struct {
+	once sync.Once
+	dir  string
+	base string
+	file string
+	body string
+}
+
+var (
+	plainBase = &template{file: "internal/a.go", body: "a"}
+	mergeBase = &template{file: "internal/hubstore/c.go", body: "base\n"}
+)
+
+func (tp *template) build() {
+	dir, err := os.MkdirTemp("", "deployready-template-")
+	if err != nil {
+		panic(err)
+	}
+	run := func(args ...string) string {
+		full := append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+			"-c", "core.autocrlf=false"}, args...)
+		cmd := exec.Command("git", full...)
+		cmd.Dir = dir
+		cmd.Env = gitsync.CleanEnv()
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			panic(fmt.Sprintf("git %s: %v\n%s", strings.Join(args, " "), err, out))
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-q", "--template=", "-b", "claude/main")
+	p := filepath.Join(dir, filepath.FromSlash(tp.file))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(p, []byte(tp.body), 0o644); err != nil {
+		panic(err)
+	}
+	run("add", "-A")
+	run("commit", "-q", "-m", "base")
+	tp.base = run("rev-parse", "HEAD")
+	tp.dir = dir
+}
+
+func (tp *template) cleanup() {
+	if tp.dir != "" {
+		_ = os.RemoveAll(tp.dir)
+	}
+}
+
+// newRepoAt copies a repo built once, so a test starts from a real base commit without running git for it.
+func newRepoAt(t *testing.T, tp *template) (*repo, string) {
+	t.Helper()
+	tp.once.Do(tp.build)
+	r := &repo{t: t, dir: t.TempDir()}
+	err := filepath.WalkDir(tp.dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(tp.dir, p)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(r.dir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, b, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r, tp.base
+}
+
+func (r *repo) head() string {
+	r.t.Helper()
+	b, err := os.ReadFile(filepath.Join(r.dir, ".git", "HEAD"))
+	if err == nil {
+		if ref, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "ref: "); ok {
+			if sha, err := os.ReadFile(filepath.Join(r.dir, ".git", filepath.FromSlash(ref))); err == nil {
+				return strings.TrimSpace(string(sha))
+			}
+		}
+	}
+	return r.git("rev-parse", "HEAD")
+}
+
 func (r *repo) git(args ...string) string {
 	r.t.Helper()
 	full := append([]string{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
@@ -63,7 +155,7 @@ func (r *repo) commit(msg string, files map[string]string) string {
 	}
 	r.git("add", "-A")
 	r.git("commit", "-q", "-m", msg)
-	return r.git("rev-parse", "HEAD")
+	return r.head()
 }
 
 // review commits a review file carrying the given trailers.
@@ -146,8 +238,7 @@ func TestNothingLandedIsCurrent(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	rep := r.checker().Check(context.Background(), base)
 	wantState(t, rep, StateCurrent)
 
@@ -161,8 +252,7 @@ func TestNothingLandedIsCurrent(t *testing.T) {
 
 func TestCodeWithoutVerdictBlocksAndNamesTheCommit(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("change the hub", map[string]string{"internal/hubstore/a.go": "b"})
 	r.commit("docs", map[string]string{"docs/x.md": "x"})
 	rep := r.checker().Check(context.Background(), base)
@@ -181,8 +271,7 @@ func TestCodeWithoutVerdictBlocksAndNamesTheCommit(t *testing.T) {
 
 func TestVerdictByRangeMakesItReady(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	tip := r.commit("two", map[string]string{"scripts/live/x.ps1": "2"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+tip)
@@ -198,8 +287,7 @@ func TestVerdictByRangeMakesItReady(t *testing.T) {
 
 func TestVerdictByRangeCoversOnlyTheRange(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	one := r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	r.commit("two", map[string]string{"internal/hubstore/b.go": "2"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+one)
@@ -215,8 +303,7 @@ func TestSingleCommitVerdict(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	one := r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+one)
 	wantState(t, r.checker().Check(context.Background(), base), StateReady)
@@ -227,8 +314,7 @@ func TestRoomSideNeedsARoomVerdict(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("room side", map[string]string{"internal/daemon/d.go": "d"})
 	r.review("hub", "Atrium-Verdict: hub-ok "+code)
 	rep := r.checker().Check(context.Background(), base)
@@ -246,8 +332,7 @@ func TestRoomVerdictAloneIsNotAHubVerdict(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("room side", map[string]string{"internal/daemon/d.go": "d"})
 	r.review("room", "Atrium-Verdict: room-ok "+code)
 	rep := r.checker().Check(context.Background(), base)
@@ -264,8 +349,7 @@ func TestVerdictSurvivesARebase(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	r.git("checkout", "-q", "-b", "feature")
 	f1 := r.commit("f1", map[string]string{"internal/hubstore/f1.go": "1"})
 	f2 := r.commit("f2", map[string]string{"internal/hubstore/f2.go": "2"})
@@ -286,8 +370,7 @@ func TestVerdictDoesNotSurviveAnAlteredPatch(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	r.git("checkout", "-q", "-b", "feature")
 	f1 := r.commit("f1", map[string]string{"internal/hubstore/f1.go": "reviewed"})
 	r.git("checkout", "-q", "claude/main")
@@ -308,8 +391,7 @@ func TestNewestVerdictWins(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 
 	r.review("one", "Atrium-Verdict: hold "+code)
@@ -335,8 +417,7 @@ func TestHoldThenHubOkOnlyStillHoldsTheRoom(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("room side", map[string]string{"internal/daemon/d.go": "d"})
 	r.review("one", "Atrium-Verdict: hold "+code)
 	r.review("two", "Atrium-Verdict: hub-ok "+code)
@@ -354,8 +435,7 @@ func TestConditionalOKCountsAsOK(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	r.commit("Review: OK, low to follow, given the gate\n\nAtrium-Verdict: hub-ok "+code,
 		map[string]string{"docs/backlog/rt/r-new-review-cond.md": "ok, low to follow"})
@@ -367,8 +447,7 @@ func TestVerdictFoldedIntoACodeCommitIsRefused(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("code\n\nAtrium-Verdict: hub-ok HEAD", map[string]string{"internal/hubstore/a.go": "1"})
 	rep := r.checker().Check(context.Background(), base)
 	wantState(t, rep, StateBlocked)
@@ -387,8 +466,7 @@ func TestVerdictOnAnUnknownRangeIsIgnoredWithANote(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	r.review("rt", "Atrium-Verdict: hub-ok deadbeef..cafebabe")
 	rep := r.checker().Check(context.Background(), base)
@@ -405,8 +483,7 @@ func TestRangeIsFirstParentOnly(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	r.git("checkout", "-q", "-b", "feature")
 	r.commit("f1", map[string]string{"internal/hubstore/f1.go": "1"})
 	r.git("checkout", "-q", "claude/main")
@@ -431,8 +508,7 @@ func TestMergeNeedsAVerdictOnlyForItsResolution(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
+	r, base := newRepoAt(t, mergeBase)
 	r.git("checkout", "-q", "-b", "side")
 	side := r.commit("side", map[string]string{"internal/hubstore/c.go": "side\n"})
 	r.git("checkout", "-q", "claude/main")
@@ -462,8 +538,7 @@ func TestCleanMergeIsNotCode(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
+	r, base := newRepoAt(t, mergeBase)
 	r.git("checkout", "-q", "-b", "side")
 	side := r.commit("side", map[string]string{"internal/hubstore/s.go": "s\n"})
 	r.git("checkout", "-q", "claude/main")
@@ -479,8 +554,7 @@ func TestCleanMergeIsNotCode(t *testing.T) {
 
 func TestInstalledBuildProblems(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, _ := newRepoAt(t, plainBase)
 	c := r.checker()
 
 	rep := c.Check(context.Background(), "")
@@ -502,8 +576,7 @@ func TestInstalledBuildProblems(t *testing.T) {
 
 func TestMissingBranchIsUnknown(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	c := r.checker()
 	c.Branch = "nope"
 	wantState(t, c.Check(context.Background(), base), StateUnknown)
@@ -514,8 +587,7 @@ func TestSignatureMovesWithTheAnswer(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	c := r.checker()
 	before := c.Check(context.Background(), base)
@@ -564,8 +636,7 @@ func (g *countGit) count() int {
 }
 
 func TestSlowGitEndsAtTheContextBoundAsUnknown(t *testing.T) {
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	g := &countGit{inner: gitsync.NewRunner(), hang: true}
 	c := &Checker{Git: g, Dir: r.dir, Branch: "claude/main"}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -583,8 +654,7 @@ func TestSecondPassReadsAlmostNothingAndAgrees(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	var tips []string
 	for i := 0; i < 6; i++ {
 		file := fmt.Sprintf("internal/hubstore/%d.go", i)
@@ -628,8 +698,7 @@ func (g *failMergeGit) GitInput(ctx context.Context, dir string, in []byte, args
 // resolvedMergeRepo is a repo whose newest commit is a merge that resolved a conflict. Returns the base.
 func resolvedMergeRepo(t *testing.T) (*repo, string) {
 	t.Helper()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
+	r, base := newRepoAt(t, mergeBase)
 	r.git("checkout", "-q", "-b", "side")
 	side := r.commit("side", map[string]string{"internal/hubstore/c.go": "side\n"})
 	r.git("checkout", "-q", "claude/main")
@@ -682,8 +751,7 @@ func TestVerdictRangeCutAtTheLimitIsReportedInTheNotes(t *testing.T) {
 		t.Skip("slow: git subprocesses on throwaway repositories")
 	}
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	var shas []string
 	for i := 0; i < 4; i++ {
 		shas = append(shas, r.commit(fmt.Sprintf("code %d", i), map[string]string{fmt.Sprintf("internal/hubstore/%d.go", i): "x"}))
@@ -706,8 +774,7 @@ func TestVerdictRangeCutAtTheLimitIsReportedInTheNotes(t *testing.T) {
 
 func TestTooManyCommitsSinceInstalledIsUnknownNotAWalk(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	for i := 0; i < 4; i++ {
 		r.commit(fmt.Sprintf("code %d", i), map[string]string{fmt.Sprintf("internal/hubstore/%d.go", i): "x"})
 	}

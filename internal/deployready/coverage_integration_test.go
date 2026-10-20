@@ -11,8 +11,7 @@ import (
 
 func TestCoverageCountsOnlyWorkAndSaysWhatIsCleared(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	one := r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	tip := r.commit("two", map[string]string{"internal/hubstore/b.go": "2"})
 	c := r.checker()
@@ -29,8 +28,7 @@ func TestCoverageCountsOnlyWorkAndSaysWhatIsCleared(t *testing.T) {
 
 func TestCoverageReadsVerdictsOnAnItemBranch(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	r.git("checkout", "-q", "-b", "claude/item")
 	tip := r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+tip)
@@ -48,8 +46,7 @@ func TestCoverageReadsVerdictsOnAnItemBranch(t *testing.T) {
 
 func TestSinceCountsWorkNotReviews(t *testing.T) {
 	t.Parallel()
-	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r, base := newRepoAt(t, plainBase)
 	c := r.checker()
 	if n, err := c.Since(context.Background(), base, base); err != nil || n != 0 {
 		t.Fatalf("same commit: %d %v", n, err)

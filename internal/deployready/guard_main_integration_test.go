@@ -13,6 +13,8 @@ import (
 func TestMain(m *testing.M) {
 	dir := testguard.Git("")
 	code := m.Run()
+	plainBase.cleanup()
+	mergeBase.cleanup()
 	if dir != "" {
 		_ = os.RemoveAll(dir)
 	}
