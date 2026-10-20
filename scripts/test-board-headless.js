@@ -19074,6 +19074,51 @@ async function termSortStartedSection(browser, base) {
   if (!bad) console.log("termSortStarted ok");
 }
 
+// Sorted by activity, a card that is working right now leads its group, in a group the operator made as well as in
+// no grouping at all. The card starts idle and becomes working by an activity event, as it does on a live board.
+async function termActivityWorkingFirstSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { switchView("terms"); localStorage.removeItem("atrium.termSort"); });
+    const out = await p.evaluate(async () => {
+      const now = Date.now();
+      const card = (id, ago) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: ["discourse"], created_at: "2026-10-01T10:00:00Z",
+        last_activity_at: new Date(now - ago * 1000).toISOString(), activity: { what: "idle" } });
+      const cards = [card("discourse-6148", 5), card("discourse-6036", 20), card("discourse-6173", 40),
+        card("discourse-6190", 600), card("discourse-6001", 900)];
+      boardCards = async () => cards;
+      const order = () => [...document.querySelectorAll("#term-list .card.tab")].map(c => c.dataset.id);
+      const res = {};
+      setTermSortMode("activity");
+      setGrouping({ on: true, mode: "custom", picked: true, groups: ["discourse"] }, "terms");
+      await renderTermList();
+      res.idle = order();
+      const live = cards.find(c => c.id === "discourse-6190");
+      live.activity = { what: "tool" };
+      live.last_activity_at = new Date().toISOString();
+      await renderTermList();
+      res.custom = order();
+      setGroupMode("off", "terms");
+      await renderTermList();
+      res.flat = order();
+      setGroupMode("custom", "terms");
+      return res;
+    });
+    if (out.idle[0] !== "discourse-6148") fail("termActivityWorkingFirst: idle cards are not newest activity first: " + out.idle.join());
+    if (out.custom[0] !== "discourse-6190") fail("termActivityWorkingFirst: the working card does not lead its custom group: " + out.custom.join());
+    if (out.flat[0] !== "discourse-6190") fail("termActivityWorkingFirst: the working card does not lead the ungrouped list: " + out.flat.join());
+    if (errors.length) fail("termActivityWorkingFirst: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termActivityWorkingFirst ok");
+}
+
 // A spawned card is drawn under its parent's row, under every sort and group mode. An orphan stays a row.
 async function childUnderParentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -23693,7 +23738,7 @@ async function main() {
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
@@ -25838,6 +25883,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     // termLastRead is off while the new-since divider is (js/lastread.js, LR_OFF).
     // await unit("termLastRead", () => termLastReadSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
+    await unit("termActivityWorkingFirst", () => termActivityWorkingFirstSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("boardUsage", bu("boardUsage"));

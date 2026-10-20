@@ -1526,7 +1526,8 @@ function termFlatGroupsHTML(list, g, folded) {
     const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
     if (off) return head;
     const rows = by.get(name);
-    if (mine) rows.sort(byRank);
+    // `by activity` is a sort the operator asked for on purpose, and hand order would bury a working card under it.
+    if (mine && !sortByActivity) rows.sort(byRank);
     // `untagged` in custom mode is where a row is dragged to take it OUT of
     // the group it came from. See `wireUngroupDrop`.
     const out = g.handOrdered && name === UNTAGGED ? ` data-ungroup="1"` : "";
