@@ -383,7 +383,7 @@ call log under it. Keep the two logs beside the change: they are its evidence, t
 
 The sharded run uses one and a half shards per core, and a unit that fails in the shards and passes alone fails the
 run by policy (`LOAD` in the report) unless it is on `scripts/flaky-suite.json`. A listed unit that fails its first
-try and passes the retry is a pass that is never read as clean: the flaky job gives its board units one retry, the row
+try and passes the retry is a pass that is never read as clean: the flaky board jobs give their units one retry, the row
 reads `PASSED ON RETRY (slow or stalled, first try failed)`, a block lists the unit with its first-try error and both
 timings, and the job stays green. CI also puts those units in `summary.md`, a warning annotation, the run rollup and
 the `passed on retry` column of the flake ledger, so a repeat offender stays visible. A unit that fails both tries
@@ -408,9 +408,11 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
 # The flaky suite: how a test enters and leaves
 
 `scripts/flaky-suite.json` lists every test known to fail now and then. CI runs them first and alone
-(`bash scripts/ci.sh --group flaky`, one job per platform), with one retry for a board unit and none for a go
-test, and every other step skips them, so each
-test runs in exactly one place. Every other job waits for all three flaky jobs and is skipped when one is red, so one failing flaky test stops the run.
+(three jobs per platform: `bash scripts/ci.sh --group flaky-go`, which needs no node, and `flaky-board-1` and
+`flaky-board-2`, which need no Go and split the board units and the flaky check scripts by weight, each half run on one
+shard), with one retry for a board unit and none for a go test, and every other step skips them, so each test runs in
+exactly one place. Every other job waits for all the flaky jobs and is skipped when one is red, so one failing flaky
+test stops the run.
 
 - **Enters** the first time it fails in CI and is not listed, whether or not a fix names it. The ledger
   (`node scripts/ci-flake-ledger.js report --window 20`) shows which. Add an entry with its kind

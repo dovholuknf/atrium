@@ -32,17 +32,21 @@ set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$here"
 
-all_steps="machine toolchain flaky gofmt go-vet go-build go-test go-race time-guard govulncheck board board-visual skins contrast opencode release parse powershell ps-tests clean-tree"
+all_steps="machine toolchain flaky-go flaky-board gofmt go-vet go-build go-test go-race time-guard govulncheck board board-visual skins contrast opencode release parse powershell ps-tests clean-tree"
 
 # GROUPS. The workflow runs one job per group and platform, so the Go tests, the Go checks and the board run side by
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
 #
-# THE FLAKY SUITE RUNS FIRST. scripts/flaky-suite.json lists every test known to fail now and then, and the flaky group
-# runs only those, with no quarantine: a failure fails the job, and a board unit gets one retry (a go test gets none), so
+# THE FLAKY SUITE RUNS FIRST. scripts/flaky-suite.json lists every test known to fail now and then, and the flaky groups
+# run only those, with no quarantine: a failure fails the job, and a board unit gets one retry (a go test gets none), so
 # a listed unit that fails and then passes is marked PASSED ON RETRY and does not fail the job. Every other step skips
-# them, so a test runs in exactly one place, and the workflow starts the other jobs after this one (`needs: flaky`) so
-# the bad tests answer fast and alone.
+# them, so a test runs in exactly one place, and the workflow starts the other jobs after these (`needs` on every
+# flaky job) so the bad tests answer fast and alone.
+#
+# THE FLAKY SUITE IS THREE JOBS. flaky-go is the flaky go tests: it needs Go and no node. flaky-board-1 and flaky-board-2
+# are the flaky board units and the flaky check scripts (they drive playwright) in two halves by weight (board_units
+# says how), each half on one shard so no unit loads another: they need node and no Go. flaky-board is both halves in one.
 #
 # THE GO TESTS ARE TWO JOBS ON WINDOWS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
 # wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the
@@ -58,10 +62,11 @@ all_steps="machine toolchain flaky gofmt go-vet go-build go-test go-race time-gu
 # THE MERGED GROUPS use fewer runners. go-checks-visual is go-checks and board-visual in one job, go-all is go-test,
 # go-checks and board-visual in one. board-visual never fails the exit status (soft_nfail), so merging it hides no
 # go-checks failure and no go-checks failure hides it.
-group_list="flaky go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual"
+group_list="flaky-go flaky-board flaky-board-1 flaky-board-2 go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual"
 group_steps() {
   case "$1" in
-    flaky) echo "flaky,clean-tree" ;;
+    flaky-go) echo "flaky-go,clean-tree" ;;
+    flaky-board|flaky-board-1|flaky-board-2) echo "flaky-board,clean-tree" ;;
     go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     go-checks-visual) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,board-visual,clean-tree" ;;
@@ -170,7 +175,9 @@ linux_job_only() {
 # the suite no longer has is an error, so the list cannot rot.
 #
 # `board_units gating-1` and `gating-2` are the gating units in two halves of about equal time, for the two board
-# jobs: the harness's pin groups stay whole, and each goes, longest first, to the half with less so far, weighed by
+# jobs (`flaky-1` and `flaky-2` are the flaky board units the same way, and `flaky-scripts-1` and `-2` the flaky check
+# scripts that go with each, weighed at a measured 113 s unless the weight file has "script:<name>"): the harness's pin
+# groups stay whole, and each goes, longest first, to the half with less so far, weighed by
 # scripts/board-suite-weights.json (a unit it lacks weighs the median). The same arithmetic as test-board-sharded.js
 # and deterministic, so the two jobs never both run a unit and never both leave one out.
 board_units() {
@@ -184,12 +191,15 @@ board_units() {
       .map(l => l.replace(/#.*/, "").trim()).filter(Boolean);
     const gone = visual.filter(u => !all.includes(u));
     if (gone.length) { process.stderr.write("board-visual-units.txt names units the suite lacks: " + gone.join(" ") + "\n"); process.exit(1); }
-    const flaky = JSON.parse(fs.readFileSync("scripts/flaky-suite.json", "utf8")).entries
-      .filter(e => e.kind === "board").map(e => e.name);
+    const entries = JSON.parse(fs.readFileSync("scripts/flaky-suite.json", "utf8")).entries;
+    const flaky = entries.filter(e => e.kind === "board").map(e => e.name);
     const which = process.argv[1];
-    let want = which === "visual" ? visual.filter(u => !flaky.includes(u))
+    const isFlaky = /^flaky(-scripts)?(-[12])?$/.test(which);
+    const scripts = isFlaky ? entries.filter(e => e.kind === "script").map(e => e.name) : [];
+    let want = isFlaky ? all.filter(u => flaky.includes(u))
+      : which === "visual" ? visual.filter(u => !flaky.includes(u))
       : all.filter(u => !visual.includes(u) && !flaky.includes(u));
-    const half = (which.match(/^gating-([12])$/) || [])[1];
+    const half = (which.match(/^(?:gating|flaky|flaky-scripts)-([12])$/) || [])[1];
     if (half) {
       const ms = (JSON.parse(fs.readFileSync("scripts/board-suite-weights.json", "utf8")).ms) || {};
       const known = Object.values(ms).filter(x => x > 0).sort((a, b) => a - b);
@@ -198,6 +208,7 @@ board_units() {
       const pinOf = new Map();
       for (const [g, p] of Object.entries(list.pins || {})) for (const u of p.units) pinOf.set(u, g);
       const groups = [], byPin = new Map();
+      for (const n of scripts) groups.push({ units: [], scripts: [n], weight: ms["script:" + n] > 0 ? ms["script:" + n] : 113000 });
       for (const u of want) {
         const g = pinOf.get(u);
         if (!g) { groups.push({ units: [u], weight: w(u) }); continue; }
@@ -208,12 +219,14 @@ board_units() {
       for (const g of groups.slice().sort((a, b) => b.weight - a.weight)) {
         const b = bins[0].weight <= bins[1].weight ? bins[0] : bins[1];
         b.units.push(...g.units); b.weight += g.weight;
+        if (g.scripts) b.scripts = (b.scripts || []).concat(g.scripts);
       }
       const at = new Map(all.map((u, i) => [u, i]));
       want = bins[half - 1].units.sort((a, b) => at.get(a) - at.get(b));
-      process.stderr.write("gating-" + half + ": " + want.length + " units, " + Math.round(bins[half - 1].weight / 1000) + " s by the weight file\n");
+      scripts.splice(0, scripts.length, ...(bins[half - 1].scripts || []));
+      process.stderr.write(which + ": " + want.length + " units, " + scripts.length + " scripts, " + Math.round(bins[half - 1].weight / 1000) + " s by the weight file\n");
     }
-    process.stdout.write(want.join(","));
+    process.stdout.write(/^flaky-scripts/.test(which) ? scripts.join(",") : want.join(","));
   ' "$1"
 }
 # What the headless browser on this machine is, for reading a board unit that passes elsewhere and fails here.
@@ -380,10 +393,14 @@ have_go="$(go version 2>/dev/null | sed -n 's/^go version go\([0-9.]*\).*/\1/p')
 want_node=22
 have_node="$(node --version 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p')"
 tool_bad=0
+case "$group" in flaky-board|flaky-board-*) ;; *)
 if [ "$have_go" != "$want_go" ]; then
   echo "go is '${have_go:-missing}', go.mod says $want_go" >&2; tool_bad=1
-fi
-if [ -z "$have_node" ]; then
+fi ;;
+esac
+if [ "$group" = flaky-go ]; then
+  :
+elif [ -z "$have_node" ]; then
   echo "node is missing. CI needs node $want_node for the board checks." >&2; tool_bad=1
 elif [ "$have_node" != "$want_node" ]; then
   echo "node is major $have_node, CI uses $want_node" >&2; tool_bad=1
@@ -401,7 +418,7 @@ else
   echo "ok: go $have_go, node $have_node"
 fi
 # The headless board tests need playwright and its browser. Installed here, so a fresh machine needs nothing else.
-if { want board || want board-visual || want flaky; } && command -v npm >/dev/null 2>&1; then
+if { want board || want board-visual || want flaky-board; } && command -v npm >/dev/null 2>&1; then
   if [ -f package-lock.json ]; then
     check "npm ci" npm ci --no-audit --no-fund
   else
@@ -412,10 +429,8 @@ if { want board || want board-visual || want flaky; } && command -v npm >/dev/nu
   check "playwright browser" npx --no-install playwright install $deps chromium
 fi
 
-if step flaky "the flaky suite"; then
-  # Only the tests on scripts/flaky-suite.json, no quarantine: a failure here fails the job. A board unit gets one retry,
-  # alone, and a pass on it is marked PASSED ON RETRY.
-  # The names are checked first because an empty -run would run everything.
+if step flaky-go "the flaky go tests"; then
+  # No retry. The names are checked first because an empty -run would run everything.
   if check "flaky suite names" node scripts/flaky-suite.js check; then
     flaky_n=0; flaky_bad=0
     flaky_pkgs="$(node scripts/flaky-suite.js go-pkgs)"
@@ -432,10 +447,19 @@ if step flaky "the flaky suite"; then
       if [ -f "$artefacts/go-flaky/go-test.counts" ]; then
         read -r n_ran n_failed < "$artefacts/go-flaky/go-test.counts"
         flaky_n=$((flaky_n + n_ran)); flaky_bad=$((flaky_bad + n_failed))
-        while IFS=$'	' read -r _ name err; do [ -n "$name" ] && note_failing flaky "$name" "$err"; done < "$artefacts/go-flaky/go-test.failing.tsv"
+        while IFS=$'	' read -r _ name err; do [ -n "$name" ] && note_failing flaky-go "$name" "$err"; done < "$artefacts/go-flaky/go-test.failing.tsv"
       fi
+      note_counts "$flaky_n" "$flaky_bad"
     fi
-    flaky_units="$(node scripts/flaky-suite.js board-units)"
+  fi
+fi
+
+if step flaky-board "the flaky board units and scripts"; then
+  # A board unit gets one retry, alone, and a pass on it is marked PASSED ON RETRY. A check script gets none.
+  if check "flaky suite names" node scripts/flaky-suite.js check; then
+    flaky_n=0; flaky_bad=0
+    flaky_units="$(board_units "flaky${part:+-$part}")"
+    flaky_scripts=",$(board_units "flaky-scripts${part:+-$part}"),"
     if [ -n "$flaky_units" ]; then
       # One shard: the units run one after another, so none of them runs under another's load.
       shards=1
@@ -446,15 +470,16 @@ if step flaky "the flaky suite"; then
       }
       board_env_probe flaky-env.txt
       check "flaky board units" flaky_board_run
-      board_report flaky "$board_log"
+      board_report flaky-board "$board_log"
       flaky_n=$((flaky_n + cur_ran)); flaky_bad=$((flaky_bad + cur_failed))
       note_counts "$flaky_n" "$flaky_bad"
     fi
-    while IFS=$'\t' read -r script_name script_path; do
+    while IFS=$'	' read -r script_name script_path; do
       [ -n "$script_name" ] || continue
+      case "$flaky_scripts" in *",$script_name,"*) ;; *) continue ;; esac
       flaky_n=$((flaky_n + 1))
       if ! check "flaky script $script_name" node "$script_path"; then
-        flaky_bad=$((flaky_bad + 1)); note_failing flaky "$script_name" "(script) $script_path failed"
+        flaky_bad=$((flaky_bad + 1)); note_failing flaky-board "$script_name" "(script) $script_path failed"
       fi
       note_counts "$flaky_n" "$flaky_bad"
     done < <(node scripts/flaky-suite.js scripts)

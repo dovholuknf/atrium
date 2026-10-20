@@ -12,7 +12,7 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   matter of course.
 - **A board unit on `flaky-suite.json` that fails its shard and passes alone on the retry is a PASS, marked and never
   clean.** `test-board-sharded.js` exits 0 and prints `PASSED ON RETRY (slow or stalled, first try failed)` with the
-  first-try error and both timings, and the flaky job gives its board units that one retry. `ci.sh` writes
+  first-try error and both timings, and the flaky board jobs give their units that one retry. `ci.sh` writes
   `retried.tsv` and a summary section, `ci-rollup.js` and `ci-flake-ledger.js` list it. An unlisted unit that passes
   on retry is `LOAD` and still fails the run. Go has no rerun, and a unit that fails both tries still fails.
   `test-board-sharded-retry.js` pins it.
@@ -25,7 +25,8 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   one step and `--list` names them. `--group` runs one workflow job's steps: `go-test-1` and `go-test-2` are the Go
   suite in two halves (daemon cut by test name), `board-1` and `board-2` the gating board units in two halves by
   `board-suite-weights.json`, `go-checks` the rest including the small checks, which run once on the linux job.
-  `go-test` and `board` are each whole. `go-checks-visual` and `go-all` merge go-checks, board-visual and (go-all)
+  `go-test` and `board` are each whole. The flaky suite is `flaky-go` (Go, no node) and `flaky-board-1` and
+  `flaky-board-2` (node and playwright, no Go): the flaky board units and check scripts in two halves by weight. `go-checks-visual` and `go-all` merge go-checks, board-visual and (go-all)
   the whole go-test into one job, to use fewer runners. A `board-visual` failure is recorded but never fails the exit
   status. `ci-linux.sh` runs it in docker as a non-root user with no pwsh.
 - **CI ends by checking the tree is as it was.** A test that rewrites a tracked file or leaves a new one fails it.

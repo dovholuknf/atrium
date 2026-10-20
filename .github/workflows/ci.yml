@@ -23,62 +23,81 @@ permissions:
   contents: read
 
 jobs:
-  # THE FLAKY SUITE FIRST, ONE JOB PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then, and
-  # `ci.sh --group flaky` runs only those. Every other job waits for all three flaky jobs (`needs`) and does not run when
-  # one is red, so a failing flaky test stops the run before the rest starts.
+  # THE FLAKY SUITE FIRST, THREE JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
+  # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board-1` and `flaky-board-2` run the board units
+  # and check scripts in halves and need no Go. Every other job waits for all the flaky jobs (`needs`) and does not run
+  # when one is red, so a failing flaky test stops the run before the rest starts.
   flaky-ubuntu:
-    name: check (ubuntu-latest, flaky)
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [flaky-go, flaky-board-1, flaky-board-2]
+    name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/ci-run
         with:
-          group: flaky
+          group: ${{ matrix.group }}
+          go: ${{ !startsWith(matrix.group, 'flaky-board') }}
+          node: ${{ matrix.group != 'flaky-go' }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ci-ubuntu-latest-flaky-attempt-${{ github.run_attempt }}
+          name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
 
   flaky-macos:
-    name: check (macos-latest, flaky)
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [flaky-go, flaky-board-1, flaky-board-2]
+    name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/ci-run
         with:
-          group: flaky
+          group: ${{ matrix.group }}
+          go: ${{ !startsWith(matrix.group, 'flaky-board') }}
+          node: ${{ matrix.group != 'flaky-go' }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ci-macos-latest-flaky-attempt-${{ github.run_attempt }}
+          name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
 
   flaky-windows:
-    name: check (windows-latest, flaky)
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [flaky-go, flaky-board-1, flaky-board-2]
+    name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/ci-run
         with:
-          group: flaky
+          group: ${{ matrix.group }}
+          go: ${{ !startsWith(matrix.group, 'flaky-board') }}
+          node: ${{ matrix.group != 'flaky-go' }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ci-windows-latest-flaky-attempt-${{ github.run_attempt }}
+          name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore

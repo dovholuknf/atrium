@@ -6,16 +6,24 @@ inputs:
   group:
     description: the ci.sh group to run
     required: true
+  go:
+    description: install Go. ci.sh --group flaky-board-N needs none
+    default: "true"
+  node:
+    description: install node. ci.sh --group flaky-go needs none
+    default: "true"
 runs:
   using: composite
   steps:
     - uses: actions/setup-go@v5
+      if: inputs.go == 'true'
       with:
         go-version-file: go.mod
         cache: true
 
     # ci.sh stops when node is not major 22, so this version is the one it checks.
     - uses: actions/setup-node@v4
+      if: inputs.node == 'true'
       with:
         node-version: "22"
 
