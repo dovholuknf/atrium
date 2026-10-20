@@ -6,6 +6,8 @@ import (
 	"bufio"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,16 +17,20 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const jobHelperEnv = "ATRIUM_DETACH_JOB_HELPER"
+const (
+	jobHelperEnv = "ATRIUM_DETACH_JOB_HELPER"
+	jobLogEnv    = "ATRIUM_DETACH_JOB_LOG"
+)
 
-func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJob(t *testing.T) {
+func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJobThatBindsIt(t *testing.T) {
 	requireWMI(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
+	log := filepath.Join(t.TempDir(), "child.log")
 	cmd := exec.Command(exe, "-test.run=^TestJobHelperProcess$")
-	cmd.Env = append(os.Environ(), jobHelperEnv+"=1")
+	cmd.Env = append(os.Environ(), jobHelperEnv+"=1", jobLogEnv+"="+log)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -59,20 +65,43 @@ func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJob(t *testing
 	if strings.HasPrefix(got, "err:") {
 		t.Fatal(strings.TrimPrefix(got, "err:"))
 	}
-	pid, err := strconv.Atoi(got)
+	pidStr, inHelper, _ := strings.Cut(got, " ")
+	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
 		t.Fatalf("the helper answered %q", got)
 	}
 	if p, err := os.FindProcess(pid); err == nil {
 		t.Cleanup(func() { _ = p.Kill() })
 	}
-	in, err := InJob(pid)
-	if err != nil {
-		t.Fatal(err)
+	if inHelper != "false" {
+		t.Fatalf("pid %d, started from a process in a job that refuses breakaway, is in that job (%q)", pid, got)
 	}
-	if in {
-		t.Fatalf("pid %d, started from a process in a job that refuses breakaway, is inside a job", pid)
+	deadline := time.Now().Add(20 * time.Second)
+	var report string
+	for {
+		data, _ := os.ReadFile(log)
+		if i := strings.Index(string(data), "JOB "); i >= 0 && strings.Contains(string(data)[i:], "\n") {
+			report = strings.TrimSpace(string(data)[i:])
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the child never reported its job, its log has %q", data)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
+	t.Log(report)
+	if strings.Contains(report, "limits=true") {
+		t.Fatalf("pid %d is in a job that ends or limits it: %s", pid, report)
+	}
+}
+
+func TestJobReportProcess(t *testing.T) {
+	if !slices.Contains(os.Args, "-test.run=^TestJobReportProcess$") {
+		t.Skip("started by the test above")
+	}
+	in, _, detail := SelfJob()
+	os.Stdout.WriteString("JOB in=" + strconv.FormatBool(in) + " " + detail + "\n")
+	time.Sleep(30 * time.Second)
 }
 
 func TestJobHelperProcess(t *testing.T) {
@@ -96,9 +125,23 @@ func TestJobHelperProcess(t *testing.T) {
 	if in, _ := selfInJob(); !in {
 		t.Fatal("the helper is in no job after assigning itself to one")
 	}
-	p, err := Start(`C:\Windows\System32\PING.EXE`, []string{"-n", "30", "127.0.0.1"}, "")
+	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout.WriteString("CHILD=" + strconv.Itoa(p.Pid) + "\n")
+	p, err := Start(exe, []string{"-test.run=^TestJobReportProcess$"}, os.Getenv(jobLogEnv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(p.Pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+	var inHelper int32
+	proc := windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
+	if r, _, err := proc.Call(uintptr(h), uintptr(job), uintptr(unsafe.Pointer(&inHelper))); r == 0 {
+		t.Fatal(err)
+	}
+	os.Stdout.WriteString("CHILD=" + strconv.Itoa(p.Pid) + " " + strconv.FormatBool(inHelper != 0) + "\n")
 }

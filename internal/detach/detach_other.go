@@ -35,3 +35,5 @@ func StartOutsideJob(string, []string, string) (*os.Process, error) {
 }
 
 func InJob(int) (bool, error) { return false, nil }
+
+func SelfJob() (bool, bool, string) { return false, false, "not applicable" }
