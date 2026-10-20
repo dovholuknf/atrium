@@ -27,6 +27,7 @@ function chatMark() {
     const on = !!chatId && row.dataset.id === chatId;
     if (row.classList.contains("on") !== on) row.classList.toggle("on", on);
   }
+  requestAnimationFrame(placeTabBridge);
   const t = chatCard(chatId);
   const title = document.getElementById("chat-title");
   if (title) title.textContent = chatId ? (t ? (t.display_title || terminalLabel(t) || chatId) : chatId) : "pick a session";
@@ -54,6 +55,12 @@ function chatSelect(id) {
 }
 
 // Called by switchView on every switch. Lends the list in, or puts it back where the terminals tab keeps it.
+function chatBridges(into) {
+  const first = document.getElementById("tab-bridge");
+  if (!first) return;
+  into.append(first, ...first.parentNode.querySelectorAll(".tabbridge.extra"));
+}
+
 function chatView(on) {
   const list = document.getElementById("term-list");
   const layout = document.getElementById("chat-layout");
@@ -63,6 +70,7 @@ function chatView(on) {
     // The terminals' grip comes along, so the list is dragged here with the same handle and the same stored width.
     const grip = document.getElementById("term-grip");
     layout.prepend(list, grip);
+    chatBridges(layout);
     layout.style.setProperty("--termw", clampTermW(termListW) + "px");
     list.classList.add("in-chat");
     chatSelect(chatId);
@@ -72,6 +80,7 @@ function chatView(on) {
     const grip = document.getElementById("term-grip");
     document.getElementById("term-rail").after(list);
     list.after(grip);
+    chatBridges(document.getElementById("term-layout"));
     const f = document.getElementById("chat-frame");
     if (f) f.remove();
     // Rows were marked for the chat; the terminals tab draws its own.

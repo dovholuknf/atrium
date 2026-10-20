@@ -11786,7 +11786,7 @@ async function mComposeImagesSection(browser) {
 
   await mk(["a.png", "b.txt"]);
   if (up.n !== 1) fail(tag + up.n + " uploads for two files");
-  if ((await val()).trim() !== "/w/a.png /w/b.txt") fail(tag + "text " + JSON.stringify(await val()));
+  if ((await val()).trim() !== "") fail(tag + "text " + JSON.stringify(await val()));
   const c = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({
     thumb: !!x.querySelector("img.mc-thumb"), glyph: !!x.querySelector(".mc-glyph"), name: x.querySelector(".mc-fname").textContent })));
   if (c.length !== 2 || !c[0].thumb || !c[1].glyph) fail(tag + "chips " + JSON.stringify(c));
@@ -11795,7 +11795,7 @@ async function mComposeImagesSection(browser) {
 
   // The X removes its own path only.
   await p.tap("#m-compose .mc-file:nth-child(1) .mc-fx");
-  if ((await val()).trim() !== "/w/b.txt") fail(tag + "after remove " + JSON.stringify(await val()));
+  if ((await val()).trim() !== "") fail(tag + "after remove " + JSON.stringify(await val()));
   if ((await p.evaluate(() => window.__revoked)) < 1) fail(tag + "the thumbnail was not revoked");
 
   // A failed upload shows its reason and inserts nothing.
@@ -11818,7 +11818,7 @@ async function mComposeImagesSection(browser) {
     t.dispatchEvent(e);
     return e.defaultPrevented;
   });
-  await p.waitForFunction(() => document.querySelector("#m-compose .mc-box").value.includes("/w/pasted.png"), null, { timeout: slow(5000) });
+  await p.waitForSelector('#m-compose .mc-file[data-state="ok"]:last-child', { timeout: slow(5000) });
   await p.waitForTimeout(200);
   if (!took || up.n !== n0 + 1) fail(tag + "the paste uploaded " + (up.n - n0) + " times");
 
@@ -11827,6 +11827,7 @@ async function mComposeImagesSection(browser) {
   await p.waitForTimeout(300);
   if (await p.evaluate(() => document.querySelectorAll("#m-compose .mc-file").length)) fail(tag + "chips after a send");
   if (calls.message.length !== 1) fail(tag + "sends " + calls.message.length);
+  if (!/\/w\/b\.txt/.test(calls.message[0].body.text) || !/\/w\/pasted\.png/.test(calls.message[0].body.text)) fail(tag + "the paths did not leave with the message: " + JSON.stringify(calls.message[0].body));
   await ctx.close();
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
@@ -25623,6 +25624,8 @@ async function main() {
     await unit("cleanCopy", () => cleanCopySection(browser, base));
     await unit("cleanCopyTwo", () => cleanCopyTwoSection(browser, base));
     await unit("chatTab", bu("chatTab"));
+    await unit("chatBridge", bu("chatBridge"));
+    await unit("chatPaste", bu("chatPaste"));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));
     await unit("crossedPane", () => crossedPaneSection(browser, base));

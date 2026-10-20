@@ -1,6 +1,6 @@
 // chat: the chat tab and the chatter tab.
 //
-// Units: chatter, chatterTab, chatTab.
+// Units: chatter, chatterTab, chatTab, chatBridge, chatPaste.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/chat.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -397,12 +397,150 @@ async function chatTabSection(browser, base) {
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
+async function chatOpen(browser, base, uploads) {
+  landCard("chat-a", { supervised: true, status: "running", display_title: "chat a", created_at: "2026-09-19T12:00:00Z" });
+  landCard("chat-b", { supervised: true, status: "running", display_title: "chat b", created_at: "2026-09-19T12:05:00Z" });
+  mock.landList = [mock.LAND["chat-a"], mock.LAND["chat-b"]];
+  mock.landPerms = [];
+  const errors = [];
+  const sent = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ source: "transcript", more: false, replies: [] }) }));
+  await ctx.route("**/v1/tasks/*/message", route => {
+    sent.push(JSON.parse(route.request().postData() || "{}"));
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) });
+  });
+  await ctx.route("**/v1/tasks/*/files", route => {
+    uploads.n = (uploads.n || 0) + 1;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ paths: [".atrium/incoming/shot.png"] }) });
+  });
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  return { ctx, p, errors, sent };
+}
+
+async function chatBridgeSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const tag = "chatBridge: ";
+  const { ctx, p, errors } = await chatOpen(browser, base, {});
+  try {
+    const geometry = async view => p.evaluate(v => {
+      const lay = document.getElementById(v === "chat" ? "chat-layout" : "term-layout");
+      const pane = document.getElementById(v === "chat" ? "chat-pane" : "term-pane");
+      const row = document.querySelector('#term-list .card.tab.on[data-id]');
+      const b = [...document.querySelectorAll(".tabbridge")].find(x => !x.hidden && lay.contains(x));
+      if (!row || !b) return { row: !!row, bridge: !!b, bridged: lay.classList.contains("bridged") };
+      const r = row.getBoundingClientRect(), br = b.getBoundingClientRect(), pr = pane.getBoundingClientRect();
+      return {
+        bridged: lay.classList.contains("bridged"), rowRight: getComputedStyle(row).borderRightColor,
+        rowRadius: getComputedStyle(row).borderTopRightRadius, fromRow: Math.abs(br.left - (r.right - 2)),
+        toPane: Math.abs(br.right - (pr.left + (parseFloat(getComputedStyle(pane).borderLeftWidth) || 1))),
+        level: Math.abs((br.top + br.bottom) / 2 - (r.top + r.bottom) / 2),
+      };
+    }, view);
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector("#term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await p.click('#term-list .card.tab[data-id="chat-a"]');
+    await p.waitForFunction(() => termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });
+    await until(async () => (await geometry("terms")).bridged && (await geometry("terms")).fromRow !== undefined, 5000, "the terminals bridge");
+    const want = await geometry("terms");
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    await until(async () => (await geometry("chat")).fromRow !== undefined, 5000, "the chat bridge").catch(() => {});
+    await settleStyle(p);
+    const got = await geometry("chat");
+    if (process.env.CHAT_SHOTS) {
+      fs.mkdirSync(process.env.CHAT_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHAT_SHOTS, "chat-bridge-" + (process.env.CHAT_SHOT_TAG || "after") + ".png") });
+    }
+    if (!got.bridged || got.fromRow === undefined) { fail(tag + "the selected row has no bridge: " + JSON.stringify(got)); return; }
+    if (got.rowRight !== want.rowRight || got.rowRadius !== want.rowRadius) fail(tag + "the row is not drawn as the terminals' attached row: " + JSON.stringify({ got, want }));
+    if (got.fromRow > 1.5 || got.toPane > 1.5 || got.level > 1.5) fail(tag + "the bridge does not join the row to the pane: " + JSON.stringify(got));
+    await p.click("#chat-to-term");
+    await p.waitForFunction(() => !document.getElementById("terms").hidden && termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });
+    const back = await until(async () => (await geometry("terms")).fromRow !== undefined, 5000, "the terminals bridge again").then(() => true, () => false);
+    if (!back) fail(tag + "the terminals bridge did not come back: " + JSON.stringify(await geometry("terms")));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
+async function chatPasteSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const tag = "chatPaste: ";
+  const uploads = {};
+  const { ctx, p, errors, sent } = await chatOpen(browser, base, uploads);
+  try {
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await p.click('#chat-layout #term-list .card.tab[data-id="chat-a"]');
+    await p.waitForSelector('#chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
+    const fr = await (await p.$('#chat-frame-host iframe[data-card="chat-a"]')).contentFrame();
+    await fr.waitForSelector("#m-compose textarea", { timeout: slow(10000) });
+    await fr.evaluate(() => {
+      const t = document.querySelector("#m-compose .mc-box");
+      const b = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([b], "pasted.png", { type: "image/png" }));
+      t.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await fr.waitForSelector('#m-compose .mc-file[data-state="ok"] img.mc-thumb', { timeout: slow(5000) });
+    const box = await fr.$eval("#m-compose .mc-box", t => t.value);
+    if (/incoming|\.png/.test(box)) fail(tag + "the input shows the path: " + JSON.stringify(box));
+    if (await fr.$eval("#m-compose .mc-send", b => b.disabled)) fail(tag + "send is disabled with an attachment");
+    if (process.env.CHAT_SHOTS) {
+      fs.mkdirSync(process.env.CHAT_SHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.CHAT_SHOTS, "chat-paste-" + (process.env.CHAT_SHOT_TAG || "after") + ".png") });
+    }
+    await fr.click("#m-compose .mc-send");
+    await until(async () => sent.length > 0, 5000, "the send");
+    if (!/\.atrium\/incoming\/shot\.png/.test(sent[0].text || "")) fail(tag + "the path did not reach the agent: " + JSON.stringify(sent));
+    if (await fr.$$eval("#m-compose .mc-file", x => x.length)) fail(tag + "the chip outlived the send");
+
+    await fr.evaluate(() => {
+      const b = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([b], "again.png", { type: "image/png" }));
+      document.querySelector("#m-compose .mc-box").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await fr.waitForSelector('#m-compose .mc-file[data-state="ok"]', { timeout: slow(5000) });
+    await fr.click("#m-compose .mc-file .mc-fx");
+    if (await fr.$$eval("#m-compose .mc-file", x => x.length)) fail(tag + "the chip did not go");
+    if (!await fr.$eval("#m-compose .mc-send", b => b.disabled)) fail(tag + "send stayed enabled after the attachment was removed");
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
 const units = [
+  { name: "chatBridge", run: ({ browser, base }) => chatBridgeSection(browser, base) },
+  { name: "chatPaste", run: ({ browser, base }) => chatPasteSection(browser, base) },
   { name: "chatter", run: ({ browser, base }) => chatterSection(browser, base) },
   { name: "chatterTab", run: ({ browser, base }) => chatterTabSection(browser, base) },
   { name: "chatTab", run: ({ browser, base }) => chatTabSection(browser, base) },
 ];
-const sections = { chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
+const sections = { chatBridge: chatBridgeSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

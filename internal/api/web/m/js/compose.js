@@ -24,11 +24,12 @@
 // A DRAFT per card lives in localStorage and is cleared only by a send the daemon accepted. Every storage
 // access is wrapped, because a private window throws.
 //
-// ATTACHED FILES (u-028). `attach(files)` uploads a batch in ONE request, puts the returned paths in the box at the
-// caret and shows one chip per file above it: a thumbnail for an image (an object URL of the local File, revoked
-// when the chip goes), a glyph and the name for anything else. The chip says "uploading" while the request is in
-// flight and shows the reason when it fails, and a failure inserts no path. The chip's X removes the chip and the
-// exact span of text its path was inserted as, tracked through later edits of the text around it. A paste that
+// ATTACHED FILES (u-028). `attach(files)` uploads a batch in ONE request and shows one chip per file above the box: a
+// thumbnail for an image (an object URL of the local File, revoked when the chip goes), a glyph and the name for
+// anything else. The chip says "uploading" while the request is in flight and shows the reason when it fails. The
+// compact bar puts the returned paths in its box at the caret, and the chip's X removes the exact span of text its path
+// was inserted as, tracked through later edits. Everywhere else the path stays on the chip and is appended to the
+// message when it is sent, so the box shows the thumbnail and no path, and the X only drops the chip. A paste that
 // carries an image and no text goes through the same `attach`. Upload computes its own destination server side
 // and takes no path, so nothing here can aim it anywhere.
 //
@@ -220,7 +221,7 @@
 
     const state = {
       quick, el: root, host, id: cardId, offs, sending: 0, pasteOK: null, ta, refresh: () => refresh(),
-      atts: [], uploading: 0, last: "", opts, files, cmts: []
+      atts: [], uploading: 0, last: "", opts, files, cmts: [], hide: !opts.compact
     };
     cur = state;
 
@@ -236,7 +237,7 @@
     const refresh = () => {
       // Not while a file is still going up: the message would leave without its path.
       // The terminal's bar waits for its files. The phone page lets the message go and waits for them itself.
-      send.disabled = opts.compact ? !ta.value.trim() || state.uploading > 0 : !ta.value.trim() && !state.atts.some(a => a.status === "up") && !state.cmts.length;
+      send.disabled = opts.compact ? !ta.value.trim() || state.uploading > 0 : !ta.value.trim() && !state.atts.some(a => a.status === "up" || (state.hide && a.status === "ok")) && !state.cmts.length;
       writeDraft(cardId, ta.value);
       grow(ta, maxLines);
     };
@@ -330,7 +331,8 @@
       // Review comments (the file viewer's tapped lines) are chips that go in this one message, each as a header, the quoted
       // diff line and then what was typed.
       const cm = state.cmts.slice();
-      if (!text && !held.length && !cm.length) return;
+      const all = state.atts.slice();
+      if (!text && !held.length && !cm.length && !(state.hide && all.some(a => a.status === "ok"))) return;
       const key = cardId + ":" + (++sendSeq);
       const typed = text;
       state.cmts = [];
@@ -348,15 +350,16 @@
       say("busy", held.length ? "sending when the upload finishes" : "sending");
       refresh();
       ta.focus({ preventScroll: true });
-      tell("m-send", { id: cardId, key, text: typed || (cm.length ? cm.length + " review comment" + (cm.length > 1 ? "s" : "") : held.map(a => a.name).join(" ")), state: "pending" });
+      const names = (state.hide ? all.filter(a => a.status !== "err") : held).map(a => a.name).join(" ");
+      tell("m-send", { id: cardId, key, text: typed || (cm.length ? cm.length + " review comment" + (cm.length > 1 ? "s" : "") : names), state: "pending" });
       let ok = false, why = "";
       try {
-        if (held.length) {
+        if (held.length || (state.hide && all.length)) {
           await Promise.all(held.map(a => a.batch));
           // A file whose chip was taken off while it went up is not part of the message.
           const bad = held.filter(a => a.status !== "ok" && a.status !== "gone");
           if (bad.length) { why = bad.map(a => a.name + " did not upload: " + (a.err || "failed")).join("; "); throw new Error(why); }
-          const add = held.filter(a => a.status === "ok").map(a => a.path).filter(pth => typed.indexOf(pth) < 0);
+          const add = (state.hide ? all : held).filter(a => a.status === "ok").map(a => a.path).filter(pth => typed.indexOf(pth) < 0);
           text = (typed + " " + add.join(" ")).trim();
         }
         if (cm.length) text = quoteAll(cm) + (text ? "\n" + text : "");
@@ -403,6 +406,7 @@
           for (const a of settled.slice().reverse()) {
             state.atts.push(a);
             state.files.insertBefore(a.el, state.files.firstChild);
+            if (state.hide) continue;
             const at = a.path ? ta.value.indexOf(a.path) : -1;
             a.broken = at < 0;
             if (at >= 0) { a.start = at; a.end = at + a.path.length; }
@@ -511,6 +515,7 @@
 
   // Paths put in the box, each remembered by position so its chip's X can take it out again.
   function landAtts(state, landed) {
+    if (state.hide) return;
     let at = place(state, landed.map(a => a.path).join(" "));
     for (const a of landed) { a.start = at; a.end = at + a.path.length; at = a.end + 1; }
   }
@@ -636,6 +641,7 @@
     revoke(a);
     a.el.remove();
     state.files.classList.toggle("on", state.atts.length > 0);
+    if (state.hide) { state.refresh(); return; }
     if (!a.path) return;
     const ta = state.ta;
     const v = ta.value;

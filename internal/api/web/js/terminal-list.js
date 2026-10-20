@@ -404,9 +404,17 @@ function applyTermList() {
 // on. With one bridge, the first copy got it and the second was a tab that
 // stopped short of the pane. `#tab-bridge` is the first, and the rest are
 // copies of it made here and kept beside it.
+function bridgeSides() {
+  const chat = typeof chatLent !== "undefined" && chatLent;
+  return chat
+    ? { chat, lay: document.getElementById("chat-layout"), pane: document.getElementById("chat-pane"), live: !!chatId }
+    : { chat, lay: document.getElementById("term-layout"), pane: document.getElementById("term-pane"), live: !!term };
+}
+
 function placeTabBridge() {
   const first = document.getElementById("tab-bridge");
   if (!first) return;
+  const side = bridgeSides();
   // A shut group holding the attached row stands in for it: its heading is the tab.
   // So does a collapsed parent row holding it as a hidden child.
   const cards = [...document.querySelectorAll("#term-list .card.on, #term-list .tgroup.carries, #term-list .card.carries")];
@@ -421,8 +429,8 @@ function placeTabBridge() {
   // The pane wears the attached row's frame, so the row, the bridge and the
   // pane are one outline of one width. Both copies are framed alike, so the
   // first speaks for them. Set before the bridges, which reach across it.
-  const pane = document.getElementById("term-pane");
-  const fw = cards.length && term ? getComputedStyle(cards[0]).getPropertyValue("--framew").trim() : "";
+  const pane = side.pane;
+  const fw = cards.length && side.live ? getComputedStyle(cards[0]).getPropertyValue("--framew").trim() : "";
   if (pane) {
     if (fw) {
       pane.style.setProperty("--framew", fw);
@@ -433,19 +441,20 @@ function placeTabBridge() {
     }
   }
   bridges.forEach((b, i) => {
-    if (i < cards.length) placeOneBridge(b, cards[i]);
+    if (i < cards.length) placeOneBridge(b, cards[i], side);
     else b.hidden = true;
   });
 }
 
 const FUNNEL_FLARE = 7;
 
-function placeOneBridge(bridge, card) {
-  const lay = document.getElementById("term-layout");
+function placeOneBridge(bridge, card, side) {
+  side = side || bridgeSides();
+  const lay = side.lay;
   if (lay) lay.classList.add("bridged");
   // Nothing attached, or the list is not beside the terminal to begin with.
   // In `off` the list floats OVER the pane, so there is no gutter to cross.
-  if (!lay || !card || termListMode === "off" || !term) { bridge.hidden = true; return; }
+  if (!lay || !card || (termListMode === "off" && !side.chat) || !side.live) { bridge.hidden = true; return; }
 
   const l = lay.getBoundingClientRect();
   const c = card.getBoundingClientRect();
@@ -472,7 +481,7 @@ function placeOneBridge(bridge, card) {
   // nothing on the other end of it.
   if (c.bottom <= lr.top + 2 || c.top >= lr.bottom - 2) { bridge.hidden = true; return; }
 
-  const pane = document.getElementById("term-pane");
+  const pane = side.pane;
   const p = pane ? pane.getBoundingClientRect() : { left: lr.right };
   // From just inside the card's right edge to the inside of the pane's left
   // border, so it overlaps both and no seam shows at either end.
