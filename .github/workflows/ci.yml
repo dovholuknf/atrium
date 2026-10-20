@@ -36,16 +36,6 @@ jobs:
         with:
           group: flaky
 
-      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
-      - name: summary
-        if: always()
-        shell: bash
-        env:
-          JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-ubuntu-latest-flaky-attempt-${{ github.run_attempt }}
-        run: |
-          echo "- check (ubuntu-latest, flaky): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
-
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
@@ -65,16 +55,6 @@ jobs:
         with:
           group: flaky
 
-      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
-      - name: summary
-        if: always()
-        shell: bash
-        env:
-          JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-macos-latest-flaky-attempt-${{ github.run_attempt }}
-        run: |
-          echo "- check (macos-latest, flaky): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
-
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
@@ -93,16 +73,6 @@ jobs:
       - uses: ./.github/actions/ci-run
         with:
           group: flaky
-
-      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
-      - name: summary
-        if: always()
-        shell: bash
-        env:
-          JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-windows-latest-flaky-attempt-${{ github.run_attempt }}
-        run: |
-          echo "- check (windows-latest, flaky): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
@@ -139,16 +109,6 @@ jobs:
         with:
           group: ${{ matrix.group }}
 
-      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
-      - name: summary
-        if: always()
-        shell: bash
-        env:
-          JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
-        run: |
-          echo "- check (ubuntu-latest, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
-
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
@@ -173,16 +133,6 @@ jobs:
         with:
           group: ${{ matrix.group }}
 
-      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
-      - name: summary
-        if: always()
-        shell: bash
-        env:
-          JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
-        run: |
-          echo "- check (macos-latest, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
-
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
         if: always()
@@ -206,16 +156,6 @@ jobs:
       - uses: ./.github/actions/ci-run
         with:
           group: ${{ matrix.group }}
-
-      # One line on the run's page. The full summary.md rides in the artifact, so the rollup is not buried under 12 of them.
-      - name: summary
-        if: always()
-        shell: bash
-        env:
-          JOB_STATUS: ${{ job.status }}
-          ARTIFACT: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
-        run: |
-          echo "- check (windows-latest, ${{ matrix.group }}): $JOB_STATUS, full report in artifact \`$ARTIFACT\` (summary.md)" >> "$GITHUB_STEP_SUMMARY" || true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
