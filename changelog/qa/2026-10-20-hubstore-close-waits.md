@@ -1,0 +1,1 @@
+The hub's store now waits for calls in flight when it closes, and a call after Close answers `ErrClosed` instead of halting the store. Work the hub starts after an item push is waited for at shutdown (hubstore-close-waits).

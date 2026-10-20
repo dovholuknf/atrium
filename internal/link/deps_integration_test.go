@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
@@ -78,6 +79,7 @@ func newDepsFix(t *testing.T) *depsFix {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { x.proxy.WaitWork(10 * time.Second) })
 	f.st = st
 	x.proxy.SetAuditLog(f.audit)
 	x.proxy.SetDeps(st, f.c1)

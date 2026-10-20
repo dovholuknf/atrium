@@ -297,11 +297,11 @@ func (p *Proxy) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, f
 	// phone's switch.
 	// A repeat of a known endpoint is the phone renaming itself, which must not buzz it.
 	if added {
-		go func() {
+		p.goWork(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*pushSendTimeout)
 			defer cancel()
 			x.Test(ctx, id)
-		}()
+		})
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})

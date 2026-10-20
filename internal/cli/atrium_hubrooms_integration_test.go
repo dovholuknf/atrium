@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -13,10 +14,12 @@ import (
 // read the halt as "this hub has no room called X", so every room was let go and none could come back. A room the
 // hub knew before the halt stays attached and may reattach. One it never knew is still refused.
 func TestAHaltedHubKeepsTheRoomsItKnew(t *testing.T) {
-	store, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
+	path := filepath.Join(t.TempDir(), "hub.db")
+	store, err := hubstore.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { store.Close() })
 	if _, err := store.Add("sparta", hubstore.TransportDirect); err != nil {
 		t.Fatal(err)
 	}
@@ -29,9 +32,9 @@ func TestAHaltedHubKeepsTheRoomsItKnew(t *testing.T) {
 	}
 
 	// The database going away under a running hub. The next call halts the store.
-	store.Close()
+	breakRoomTable(t, path)
 	if _, err := store.Rooms(); err == nil {
-		t.Fatal("a closed store still answered")
+		t.Fatal("a broken store still answered")
 	}
 	if halted, _ := store.Halted(); !halted {
 		t.Fatal("the store did not halt")
@@ -43,5 +46,17 @@ func TestAHaltedHubKeepsTheRoomsItKnew(t *testing.T) {
 	}
 	if err := rooms.attaching("athens", "h", "v"); err == nil {
 		t.Fatal("a halted hub let in a room it never knew")
+	}
+}
+
+func breakRoomTable(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("ALTER TABLE room RENAME TO room_gone"); err != nil {
+		t.Fatal(err)
 	}
 }

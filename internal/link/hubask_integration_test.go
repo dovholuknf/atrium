@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -72,6 +73,7 @@ func TestARoomSessionsBacklogToolReachesTheHubOverTheLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { x.proxy.WaitWork(10 * time.Second) })
 	x.proxy.SetBacklog(st)
 
 	// The hub's own board files the row, as the orchestrator on the hub machine would.

@@ -48,6 +48,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/dblock"
@@ -64,6 +65,10 @@ const TimeFormat = "2006-01-02T15:04:05.000Z"
 
 // ErrHalted is returned by every call once the store has halted.
 var ErrHalted = errors.New("the hub's store is halted")
+
+// ErrClosed is returned by every call after Close. A call that arrives once the hub has released the store is late,
+// not a failure, and halting over it would report a clean stop as a broken database.
+var ErrClosed = errors.New("the hub's store is closed")
 
 // ErrNoSuchRoom is what a lookup for a room nobody added comes back as.
 var ErrNoSuchRoom = errors.New("no room by that name")
@@ -89,6 +94,11 @@ type Store struct {
 
 	mu        sync.RWMutex
 	haltCause error
+
+	// closed is set by Close. See ErrClosed.
+	closed atomic.Bool
+	// inflight is the calls running an operation. Close waits for it to reach zero so no connection outlives it.
+	inflight atomic.Int64
 
 	// OnHalt is called once, from the goroutine that hit the failure. The hub
 	// uses it to stop accepting rooms and to say on the board what broke. It
@@ -288,11 +298,28 @@ func integrity(db *sql.DB) error {
 		strings.Join(said, "; "))
 }
 
-// Close releases the database.
+// Close releases the database once the calls already running have finished.
 func (s *Store) Close() error {
+	s.closed.Store(true)
+	s.waitInflight()
 	err := s.db.Close()
 	s.lock.Release()
 	return err
+}
+
+// closeWait bounds Close's wait for calls in flight. Each is bounded by busy_timeout, so this is never reached.
+const closeWait = 10 * time.Second
+
+// waitInflight lets the calls that were mid-operation when Close set the flag finish, so db.Close finds the one
+// connection free and the file is released when Close returns.
+func (s *Store) waitInflight() {
+	deadline := time.Now().Add(closeWait)
+	for s.inflight.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if n := s.inflight.Load(); n != 0 {
+		log.Printf("[hub] store: close: %d call(s) still running after %v", n, closeWait)
+	}
 }
 
 // Halted reports whether the store has halted, and why.
@@ -351,15 +378,29 @@ const (
 // guard runs one database operation, retrying contention and halting on
 // anything else. Every method in this package goes through it.
 func (s *Store) guard(op func() error) error {
+	if s.closed.Load() {
+		return ErrClosed
+	}
 	if halted, cause := s.Halted(); halted {
 		return fmt.Errorf("%w: %v", ErrHalted, cause)
+	}
+	run := func() error {
+		s.inflight.Add(1)
+		defer s.inflight.Add(-1)
+		if s.closed.Load() {
+			return ErrClosed
+		}
+		return op()
 	}
 	delay := retryBase
 	var err error
 	for attempt := 0; attempt < retryAttempts; attempt++ {
-		err = op()
+		err = run()
 		if err == nil {
 			return nil
+		}
+		if errors.Is(err, ErrClosed) {
+			return err
 		}
 		// ERRORS THAT ARE ANSWERS, not failures. A lookup that found nothing, a
 		// name already taken, a join string already spent: all of them are the
@@ -376,6 +417,10 @@ func (s *Store) guard(op func() error) error {
 		// a query on that context answers "context canceled". Halting on it took every room down once (f-001).
 		if abandoned(err) {
 			return err
+		}
+		// Closed while this call was in flight. Late, not broken. See ErrClosed.
+		if s.closed.Load() {
+			return ErrClosed
 		}
 		if !transient(err) {
 			s.halt(err)

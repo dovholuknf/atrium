@@ -294,13 +294,38 @@ func (p *Proxy) refreshWorkSoon(st *hubstore.Store, id string) {
 	if id == "" {
 		return
 	}
-	go func() {
+	p.goWork(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		if _, err := p.refreshWork(ctx, st, id, true); err == nil {
 			p.backlogEvent("item", map[string]string{"id": id, "work": "1"})
 		}
+	})
+}
+
+// goWork runs fn on a goroutine WaitWork can wait for.
+func (p *Proxy) goWork(fn func()) {
+	p.work.Add(1)
+	go func() {
+		defer p.work.Done()
+		fn()
 	}()
+}
+
+// WaitWork waits up to limit for the goroutines goWork started, and says whether they all finished. The hub's store
+// closes after it, and a call still running then would hold the database file.
+func (p *Proxy) WaitWork(limit time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		p.work.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(limit):
+		return false
+	}
 }
 
 func newFactRef() string {

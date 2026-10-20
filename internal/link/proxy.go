@@ -47,6 +47,9 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// work is the goroutines that read or write the hub's store off a request's path. WaitWork waits for them
+	// before the store closes.
+	work sync.WaitGroup
 	// hostname is the machine the hub runs on, spelled the way a room spells its own `Host`: both come from
 	// os.Hostname. A test gives it a name of its own.
 	hostname func() (string, error)

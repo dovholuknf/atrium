@@ -404,6 +404,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	proxy = link.NewProxy(h, assets, id, nil)
+	defer proxy.WaitWork(15 * time.Second)
 	// ONE BOARD VIEW PER WORKER WORKTREE, at <name>.localhost. See link/views.go.
 	if len(f.views) > 0 {
 		for _, bad := range proxy.SetBoardViews(f.views, api.BoardID) {

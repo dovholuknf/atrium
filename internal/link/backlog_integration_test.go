@@ -27,6 +27,7 @@ func newBacklogRig(t *testing.T) *backlogRig {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { p.WaitWork(10 * time.Second) })
 	p.SetBacklog(st)
 	x := &backlogRig{p: p, feed: &sub{ch: make(chan Event, 16)}}
 	p.feeds.mu.Lock()
