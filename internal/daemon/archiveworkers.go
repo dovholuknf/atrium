@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // The one-time tidy: archive the done WORKER cards that piled up before merged
@@ -34,15 +37,23 @@ type ArchiveWorkersResult struct {
 	Kept     int              `json:"kept"`
 }
 
-// ArchiveWorkers archives every done worker card with no live runner.
-func (d *Daemon) ArchiveWorkers(dryRun bool) (*ArchiveWorkersResult, error) {
+// SettingArchiveWorkersAfter is how long a done worker card stays before the sweep archives it, in seconds.
+const SettingArchiveWorkersAfter = store.SettingArchiveWorkersAfter
+
+// ArchiveWorkersDefaultAfter applies when the setting was never written.
+const ArchiveWorkersDefaultAfter = 24 * time.Hour
+
+// doneWorkers is the one selection the sweep and `archive-workers` share, so the two cannot disagree. take is the
+// done worker cards to archive, kept the ones that matched but are held back (pinned, a fixture, a live runner).
+// A positive olderThan also holds back a card that finished more recently than that, uncounted.
+func (d *Daemon) doneWorkers(olderThan time.Duration) (take []*store.Task, kept int, err error) {
 	tasks, err := d.st.List("done")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	fixtures, err := d.st.Fixtures()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	fixtureCards := map[string]bool{}
 	for _, f := range fixtures {
@@ -50,18 +61,76 @@ func (d *Daemon) ArchiveWorkers(dryRun bool) (*ArchiveWorkersResult, error) {
 			fixtureCards[f.TaskID] = true
 		}
 	}
-	res := &ArchiveWorkersResult{DryRun: dryRun, Archived: []ArchivedWorker{}}
+	cutoff := time.Now().Add(-olderThan)
 	for _, t := range tasks {
 		switch {
 		case !hasTag(t.Tags, OriginAgentTag), !d.isWorker(t):
 			continue
+		case olderThan > 0 && t.LastActivityAt.After(cutoff):
+			continue
 		case t.Pinned, fixtureCards[t.ID]:
-			res.Kept++
+			kept++
 			continue
 		case d.sup.get(t.ID) != nil:
-			res.Kept++
+			kept++
 			continue
 		}
+		take = append(take, t)
+	}
+	return take, kept, nil
+}
+
+// archiveWorkersAfter reads the age, and whether the sweep archives done workers at all. A read failure answers off.
+func (d *Daemon) archiveWorkersAfter() (time.Duration, bool) {
+	v, err := d.st.Setting(SettingArchiveWorkersAfter)
+	if err != nil {
+		return 0, false
+	}
+	switch strings.TrimSpace(v) {
+	case "":
+		return ArchiveWorkersDefaultAfter, true
+	case "off":
+		return 0, false
+	}
+	secs, err := time.ParseDuration(strings.TrimSpace(v) + "s")
+	if err != nil || secs <= 0 {
+		return 0, false
+	}
+	return secs, true
+}
+
+// sweepDoneWorkers archives done worker cards that finished longer ago than the configured age.
+func (d *Daemon) sweepDoneWorkers() error {
+	after, ok := d.archiveWorkersAfter()
+	if !ok {
+		return nil
+	}
+	take, _, err := d.doneWorkers(after)
+	if err != nil {
+		return err
+	}
+	n := 0
+	for _, t := range take {
+		if err := d.st.ArchiveCulled(t.ID, "archived: a finished worker, past its time on the board"); err != nil {
+			return fmt.Errorf("archiving %s: %w", t.DisplayTitle(), err)
+		}
+		n++
+	}
+	if n > 0 {
+		log.Printf("[atrium] archived %d done worker card(s) older than %s", n, after)
+		d.ap.Broadcast("task-removed", nil)
+	}
+	return nil
+}
+
+// ArchiveWorkers archives every done worker card with no live runner.
+func (d *Daemon) ArchiveWorkers(dryRun bool) (*ArchiveWorkersResult, error) {
+	take, kept, err := d.doneWorkers(0)
+	if err != nil {
+		return nil, err
+	}
+	res := &ArchiveWorkersResult{DryRun: dryRun, Archived: []ArchivedWorker{}, Kept: kept}
+	for _, t := range take {
 		if !dryRun {
 			if err := d.st.ArchiveCulled(t.ID, "archived: a finished worker, tidied in one go"); err != nil {
 				return res, fmt.Errorf("archiving %s: %w", t.DisplayTitle(), err)

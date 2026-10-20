@@ -39,6 +39,9 @@ const SettingEscalateTurnAfter = "escalate_turn_after"
 const (
 	SettingSweepDead  = "sweep_dead_after"
 	SettingPruneAfter = "prune_after"
+	// SettingArchiveWorkersAfter is how long a done worker card stays on the board, in seconds. `off` disables it, and
+	// unset means a day. See daemon/archiveworkers.go.
+	SettingArchiveWorkersAfter = "archive_workers_after"
 	// SettingMergedCullGrace is how long a worker whose branch merged stays
 	// before the room culls it, in seconds. `off` disables the mark and the
 	// cull, and unset means a day: see DefaultMergedCullGrace. See daemon/mergedcull.go.

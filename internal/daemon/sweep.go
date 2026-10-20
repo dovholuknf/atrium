@@ -23,6 +23,9 @@ import (
 // finished", and a board that deleted what you filed the moment you filed it
 // would make filing pointless. Only `dead` sweeps, because only `dead` is
 // atrium's own conclusion rather than yours.
+//
+// The one exception is a done WORKER card, a throwaway an agent launched: it
+// is archived after a day by sweepDoneWorkers, in archiveworkers.go.
 
 // SweepDeadAfter is how long a dead card stays before it is deleted.
 //

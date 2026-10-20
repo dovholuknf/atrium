@@ -252,6 +252,9 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.sweepDead(); err != nil {
 			log.Printf("[atrium] sweeping dead cards: %v", err)
 		}
+		if err := d.sweepDoneWorkers(); err != nil {
+			log.Printf("[atrium] archiving done workers: %v", err)
+		}
 		// And deleting the ones old enough that nobody is going to read them.
 		// Off unless configured, because this one destroys the record rather
 		// than moving it off a screen.
