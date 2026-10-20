@@ -68,7 +68,7 @@ func (k *keepalive) coldCheck(t *store.Task, card *store.KeepaliveCard, warming 
 	if now.Before(refreshDueAt(expiry)) || !now.Before(expiry) {
 		return
 	}
-	if k.coldDone(t.ID, r.At) {
+	if k.coldDone(t.ID, r.At) || k.coldSpent(t.ID) {
 		return
 	}
 	err = k.cold(t)
@@ -78,6 +78,11 @@ func (k *keepalive) coldCheck(t *store.Task, card *store.KeepaliveCard, warming 
 	k.mu.Lock()
 	k.cooled[t.ID] = r.At
 	k.mu.Unlock()
+	if err == nil {
+		if serr := k.st.SetSetting(coldSpentKey(t.ID), k.now().Format(time.RFC3339Nano)); serr != nil {
+			log.Printf("[atrium] could not record the cold handoff as spent on %s: %v", t.ID, serr)
+		}
+	}
 	ev := map[string]any{
 		"by": coldHandoffBy, "reason": coldHandoffReason, "started": err == nil,
 		"reply_at": r.At.Format(time.RFC3339Nano), "expires_at": expiry.Format(time.RFC3339Nano),
@@ -93,6 +98,30 @@ func (k *keepalive) coldCheck(t *store.Task, card *store.KeepaliveCard, warming 
 		log.Printf("[atrium] could not record the cold handoff on %s: %v", t.ID, err)
 	}
 	k.broadcast("keepalive", map[string]any{"task_id": t.ID, "cold_handoff": err == nil})
+}
+
+// coldSpentKey is the setting that holds a card's cold handoff as used. One handoff per human turn: only a turn the
+// operator or a peer started puts it back, never atrium's own continuation after the clear, nor a keep-alive ping.
+func coldSpentKey(taskID string) string { return "cold_handoff_spent:" + taskID }
+
+// coldSpent says the card was cold-handed-off and no turn of a person's has come since. A read failure answers
+// spent, so a store that cannot be read cannot start a loop.
+func (k *keepalive) coldSpent(taskID string) bool {
+	v, err := k.st.Setting(coldSpentKey(taskID))
+	return err != nil || v != ""
+}
+
+// coldRearm lets the card be handed off again, on a turn a person or a peer started.
+func (k *keepalive) coldRearm(taskID string) {
+	if k == nil {
+		return
+	}
+	if v, err := k.st.Setting(coldSpentKey(taskID)); err != nil || v == "" {
+		return
+	}
+	if err := k.st.SetSetting(coldSpentKey(taskID), ""); err != nil {
+		log.Printf("[atrium] could not re-arm the cold handoff on %s: %v", taskID, err)
+	}
 }
 
 // coldDone says a handoff was already made for the reply the card's last turn ended on. A new turn moves the

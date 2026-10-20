@@ -163,6 +163,7 @@ func (d *Daemon) letThrough(taskID, line string) (int, error) {
 			run.peerSent = time.Now()
 			run.peerKeySeq = run.keySeq
 			run.peerCause = causeOfBanner(e.banner)
+			run.peerBanner = e.banner
 			run.typeMu.Unlock()
 		}
 		if err := d.markDelivered(taskID, "terminal", []string{e.msgID}); err != nil {

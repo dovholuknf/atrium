@@ -848,6 +848,8 @@ type runner struct {
 	// peerCause is what that submission was, a say or a wake, for the usage
 	// record. See usage.go.
 	peerCause string
+	// peerBanner is the banner that submission carried.
+	peerBanner string
 	// onKey is called after every operator keystroke is recorded, outside
 	// typeMu. It is how a deferred peer message learns the operator is back at
 	// the keyboard and re-arms its retry to the front of the backoff. Nil when
@@ -1419,6 +1421,7 @@ func (r *runner) inject(banner, body string, ok func() bool, force bool) (bool, 
 		r.peerSent = time.Now()
 		r.peerKeySeq = r.keySeq
 		r.peerCause = causeOfBanner(banner)
+		r.peerBanner = banner
 		r.typeMu.Unlock()
 	}
 	return true, nil
@@ -1433,6 +1436,21 @@ func (r *runner) peerPromptCause(at time.Time) string {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
 	return r.peerCause
+}
+
+// promptWasOwn reports whether a prompt arriving now is a turn atrium started for itself: the new-context cycle,
+// a restart wake or wrap, or an unexpected-exit notice.
+func (r *runner) promptWasOwn(at time.Time) bool {
+	if !r.promptWasPeer(at) {
+		return false
+	}
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	switch r.peerBanner {
+	case newContextLabel, wakeLabel, wrapLabel, exitLabel:
+		return true
+	}
+	return false
 }
 
 // promptWasPeer reports whether a prompt arriving now is the peer message

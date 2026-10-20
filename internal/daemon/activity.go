@@ -877,6 +877,9 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		}
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
+		if run := d.sup.get(taskID); run == nil || !run.promptWasOwn(time.Now()) {
+			d.ka.coldRearm(taskID)
+		}
 		d.usage.prompted(taskID, cause)
 		d.itemTurnStarted(taskID, cause == store.UsageOperator)
 		if cause == store.UsageOperator {
