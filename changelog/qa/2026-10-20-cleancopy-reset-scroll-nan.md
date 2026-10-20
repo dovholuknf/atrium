@@ -1,0 +1,1 @@
+A terminal reset no longer leaves xterm's scroll position NaN, which made the WebGL renderer throw "reading 'loadCell'" on every row. The reattach path and the `cleanCopy` unit reset through `resetTerm`, and `cleanCopy` joins the flaky suite after failing on macos board-1 in run 39378882455 (cleancopy-reset-scroll-nan).

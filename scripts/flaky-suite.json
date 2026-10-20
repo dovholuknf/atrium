@@ -44,6 +44,7 @@
   {"kind": "board", "name": "growlPopout", "reason": "failed on macos in run 39317080811: the board still thought the card was popped out after the window closed, passes alone"},
   {"kind": "go", "package": "internal/link", "name": "TestAChunkedPostGoesThroughForwarderLinkAndCgi", "reason": "failed on macos in run 39371685645: lstat objects/maintenance.lock vanished while the git-fixture template was copied, receive-pack auto maintenance after the push, cause INFERRED"},
   {"kind": "board", "name": "mOpenQ", "reason": "failed on macos board-2 in run 39377047040, passed on retry: the back tap hit a sheet still off screen, no frame ran for 5 s. Wait for the sheet to settle added, cause of the stall INFERRED."},
-  {"kind": "board", "name": "mStickBottom", "reason": "failed on macos board-2 in run 39377047040 at 390, passed on retry: no scroll event and no frame for 3 s after scrollTop was set. Wait for the event added, cause of the stall INFERRED."}
+  {"kind": "board", "name": "mStickBottom", "reason": "failed on macos board-2 in run 39377047040 at 390, passed on retry: no scroll event and no frame for 3 s after scrollTop was set. Wait for the event added, cause of the stall INFERRED."},
+  {"kind": "board", "name": "cleanCopy", "reason": "failed on macos board-1 in run 39378882455, passed on retry: loadCell of undefined in the WebGL renderer after a reset while a scroll event was pending. Fixed in resetTerm, reproduced locally."}
  ]
 }

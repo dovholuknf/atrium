@@ -1384,6 +1384,13 @@ function openTerm(task) {
   swMark("openTerm-end");
 }
 
+// xterm's reset zeroes the viewport's row height until its next animation frame, and a scroll event landing first reads
+// 0 / 0 as the new top row, leaves `ydisp` NaN and makes the WebGL renderer throw on every row. Syncing now closes that gap.
+function resetTerm(t) {
+  t.reset();
+  try { t._core.viewport.syncScrollArea(true); } catch (e) {}
+}
+
 // Every copy of a terminal selection comes through here: ctrl-c, ctrl-insert and copy on select.
 //
 // CLEAN COPY. What a terminal selection holds is Claude Code's render of a reply: an indent, a `│`/`▎` bar on a quote,

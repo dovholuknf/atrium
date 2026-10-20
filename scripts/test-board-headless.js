@@ -7884,7 +7884,7 @@ async function cleanCopySection(browser, base) {
     const select = async (out, lines) => {
       await p.evaluate(([out, lines]) => {
         window.__clip = [];
-        term.reset();
+        resetTerm(term);
         termSock.onmessage({ data: out });
         term.selectLines(lines[0], lines[1]);
       }, [out, lines]);
@@ -7923,7 +7923,7 @@ async function cleanCopySection(browser, base) {
       copyOnSelect = false;
       window.__clip = [];
       term.clearSelection();
-      term.reset();
+      resetTerm(term);
       termSock.onmessage({ data: out });
     }, [shown]);
     await p.waitForTimeout(200);
@@ -7983,7 +7983,7 @@ async function cleanCopySection(browser, base) {
     mode = "slow";
     await p.evaluate(([out]) => {
       window.__clip = [];
-      term.reset();
+      resetTerm(term);
       termSock.onmessage({ data: out });
     }, [shown]);
     await p.waitForFunction(() => term.buffer.active.getLine(3).translateToString().trim() !== "");
