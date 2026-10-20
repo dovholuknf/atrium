@@ -151,6 +151,33 @@ function pointer(page, mobile) {
   };
 }
 
+// A click that lands before the drawer takes pointers goes to the list under it, so the effect is confirmed, and the drawer
+// reopened, before it is believed.
+async function clickConfirmed(page, mobile, sel, want, tag) {
+  const btn = `.fdrawer.open ${sel}`;
+  const isOpen = () => page.evaluate(() => [...document.querySelectorAll(".fdrawer.open")].some(e => e.offsetParent !== null));
+  const cls = () => page.evaluate(s => { const e = document.querySelector(s); return e ? e.className : null; }, btn);
+  const took = c => c !== null && /(^|\s)on(\s|$)/.test(c) === (want === "on");
+  for (let i = 0; i < 3; i++) {
+    if (!(await isOpen())) {
+      const p = await linePoint(page);
+      await pointer(page, mobile).click(p.x, p.y);
+      if (!(await until(isOpen, v => v, 1000))) continue;
+    }
+    const b = await still(async () => {
+      const r = await page.locator(btn).first().boundingBox();
+      return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    if (!b) continue;
+    const hit = () => page.evaluate(([x, y, s]) => { const t = document.elementFromPoint(x, y), e = document.querySelector(s); return !!(t && e && e.contains(t)); }, [b.x, b.y, btn]);
+    await until(hit, v => v, 1000);
+    await pointer(page, mobile).click(b.x, b.y);
+    if (took(await until(cls, took, 1000))) return true;
+  }
+  check(false, `${tag}: ${sel} took no click in 3 tries (class="${await cls()}")`);
+  return false;
+}
+
 const state = page => page.evaluate(() => {
   const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
   if (!h) return null;
@@ -308,12 +335,7 @@ async function steps(browser, width, mobile, tabName) {
   if (T.view === "terms") check(covers, `${tag} 3: it is over the list, not beside it`);
 
   // 4: a chip ----------------------------------------------------------------------------------------------
-  const chip = page.locator(`.fdrawer.open .seg button[data-v="${T.chip.v}"]`).first();
-  const chipAt = await still(async () => {
-    const r = await chip.boundingBox();
-    return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  await mouse.click(chipAt.x, chipAt.y);
+  await clickConfirmed(page, mobile, `.seg button[data-v="${T.chip.v}"]`, tabName === "board" ? "off" : "on", `${tag} 4`);
   s = await state(page);
   check(s && s.open, `${tag} 4: a click inside the drawer leaves it open`);
   const n = await page.$eval(`.fdrawer.open .seg button[data-v="${T.chip.v}"] .pillcount`, e => e.textContent);
@@ -422,21 +444,15 @@ async function steps(browser, width, mobile, tabName) {
 async function keeps(browser, width, mobile) {
   const tag = `${width}px`;
   const { ctx, page } = await open(browser, width, mobile);
-  const press = async (view, sel) => {
+  const press = async (view, sel, want = "on") => {
     await goto(page, view);
-    const p = await linePoint(page);
-    await pointer(page, mobile).click(p.x, p.y);
-    const b = await still(async () => {
-      const r = await page.locator(`.fdrawer.open ${sel}`).first().boundingBox();
-      return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    });
-    await pointer(page, mobile).click(b.x, b.y);
+    await clickConfirmed(page, mobile, sel, want, `${tag} 7 ${view}`);
   };
   await press("stack", '#stack-sort button[data-sort="name"]');
   await press("stack", '#stack-seg button[data-v="finished"]');
   await press("stack", '#stack-group button[data-group="off"]');
   await press("board", '#board-sort button[data-sort="manual"]');
-  await press("board", '#board-seg button[data-v="done"]');
+  await press("board", '#board-seg button[data-v="done"]', "off");
   await press("board", '#board-group button[data-group="tag"]');
   await press("terms", '#term-sort button:nth-child(3)');
   await press("terms", '#term-show button[data-v="dead"]');

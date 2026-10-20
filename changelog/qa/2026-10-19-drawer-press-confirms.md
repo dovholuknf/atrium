@@ -1,0 +1,1 @@
+The drawer check now confirms each button click took: it waits until the button can be hit, clicks, waits for the button to show the state it asked for, and reopens the drawer and clicks again, up to three tries, before it fails with the selector and its class list (check-board-drawer.js, step 4 chip and every step 7 press).
