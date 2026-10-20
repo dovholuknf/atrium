@@ -233,6 +233,8 @@ jobs:
     needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
     if: always()
     runs-on: ubuntu-latest
+    outputs:
+      results: ${{ join(needs.*.result, ' ') }}
     permissions:
       contents: read
       actions: read
@@ -245,18 +247,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" || true
 
-  # Tells the hub when this run finished, green or red, for now. It needs every other job, rollup last, so it starts when
-  # they are done. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks the conclusion from the jobs' results and builds
-  # the body from this run's own context, and the ziti-hook action only carries it to the hub over ziti.
+  # Tells the hub when this run finished, green or red, for now. It needs only rollup, which needs every other job and
+  # hands on their results, so the graph reads rollup then notify. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks
+  # the conclusion from the jobs' results and builds the body from this run's own context, and the ziti-hook action
+  # only carries it to the hub over ziti.
   notify:
-    needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows, rollup]
+    needs: [rollup]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - id: body
         env:
-          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+          NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
         run: |
           path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS")
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
