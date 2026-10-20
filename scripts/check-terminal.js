@@ -639,7 +639,7 @@ if (/\btermReplayed\b/.test(html)) {
     fail("termSock.onopen does not read termReplayed before flipping it, so it cannot tell " +
       "a reconnect from a first attach and either resets always or never.");
   }
-  if (!/if \(reattach && term\)/.test(openHandler) || !/term\.reset\(\)/.test(openHandler)) {
+  if (!/if \(reattach && term\)/.test(openHandler) || !/\b(?:term\.reset|resetTerm)\(/.test(openHandler)) {
     fail("termSock.onopen does not reset the terminal on a reconnect, so the daemon's full " +
       "scrollback replay lands under the pre-restart content as a second copy.");
   }
