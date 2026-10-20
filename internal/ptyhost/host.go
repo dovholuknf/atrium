@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -102,6 +103,7 @@ type hpty struct {
 	p               pty.Pty
 	cmd             *pty.Cmd
 	closer          *closeOnce
+	tree            *tree
 
 	lastWrite atomic.Int64 // unix nanos of the last drained chunk
 	drained   chan struct{}
@@ -204,6 +206,7 @@ func (h *Host) Close() {
 		p.mu.Unlock()
 		if !gone && p.cmd != nil && p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
+			p.tree.kill()
 		}
 		_ = p.closer.Close()
 	}
@@ -544,7 +547,7 @@ func (c *client) spawn(q *Request) {
 		h.logf("could not raise a runner's priority: %v", err)
 	}
 	p := &hpty{runID: newRunID(), id: q.ID, kind: q.Kind, pid: cmd.Process.Pid, started: time.Now(),
-		p: pt, cmd: cmd, drained: make(chan struct{}), rg: newRing(ringN, cols, rows), subs: map[*client]struct{}{}}
+		p: pt, cmd: cmd, tree: newTree(cmd.Process.Pid), drained: make(chan struct{}), rg: newRing(ringN, cols, rows), subs: map[*client]struct{}{}}
 	p.closer = newCloser(pt.Close)
 	p.lastWrite.Store(time.Now().UnixNano())
 	h.mu.Lock()
@@ -716,8 +719,12 @@ func (c *client) signal(q *Request, p *hpty) {
 	switch q.Sig {
 	case SigTerm:
 		err = termProcess(p.cmd.Process)
+		if runtime.GOOS == "windows" {
+			p.tree.kill()
+		}
 	case SigKill:
 		err = p.cmd.Process.Kill()
+		p.tree.kill()
 	default:
 		c.fail(q, "sig must be %q or %q", SigTerm, SigKill)
 		return
@@ -752,6 +759,7 @@ func (c *client) collect(q *Request, p *hpty) {
 	}
 	h.mu.Unlock()
 	_ = p.closer.Close()
+	p.tree.kill()
 	h.logf("%s collected", p.runID)
 	c.reply(q, Reply{OK: true})
 }

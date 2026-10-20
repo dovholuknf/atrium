@@ -1991,6 +1991,7 @@ func (d *Daemon) Kill(taskID string) error {
 	proc, err := os.FindProcess(t.PID)
 	if err != nil {
 		gone = true
+	} else if killTree(t.PID); false {
 	} else if err := proc.Kill(); err != nil {
 		if !processAlive(t.PID) {
 			gone = true

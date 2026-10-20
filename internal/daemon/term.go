@@ -92,6 +92,7 @@ func (t *localTerm) Kill() error {
 	if t.cmd == nil || t.cmd.Process == nil {
 		return nil
 	}
+	killTree(t.cmd.Process.Pid)
 	return t.cmd.Process.Kill()
 }
 

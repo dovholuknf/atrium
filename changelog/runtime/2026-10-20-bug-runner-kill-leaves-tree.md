@@ -1,0 +1,1 @@
+- Killing a runner now ends the processes it started too (node, MCP servers, ssh, shells), through a job object on Windows and the process group elsewhere. bug-runner-kill-leaves-tree.

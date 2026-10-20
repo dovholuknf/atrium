@@ -3,6 +3,7 @@ package ptyhost
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 //
 //	echo                  prints READY, then GOT:<line> for each line typed. `quit` exits 0, `exit7` exits 7
 //	tick                  prints T000001, T000002 ... every 10ms. `quit` exits 0
+//	parent <pidfile>      starts a `sleeper` child, writes its pid to <pidfile>, then behaves like echo
 //	burst <kb>            writes <kb> KB at once, then behaves like echo
 //	burstgo <kb>          prints READY, waits for one byte, then writes <kb> KB and behaves like echo
 //	burstexit <kb> <code> writes <kb> KB and exits at once with <code>
@@ -60,6 +62,15 @@ func runnerMain(args []string) {
 	case "burst":
 		out(kb(atoi(1)))
 		echoLoop(out)
+	case "parent":
+		ch := exec.Command(os.Args[0], "__runner", "sleeper")
+		if err := ch.Start(); err != nil {
+			os.Exit(4)
+		}
+		_ = os.WriteFile(args[1], []byte(strconv.Itoa(ch.Process.Pid)), 0o600)
+		echoLoop(out)
+	case "sleeper":
+		time.Sleep(10 * time.Minute)
 	case "tick":
 		go echoLoop(out)
 		for i := 1; ; i++ {
