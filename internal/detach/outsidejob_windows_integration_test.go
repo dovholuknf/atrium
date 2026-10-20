@@ -13,16 +13,11 @@ import (
 )
 
 func TestStartOutsideJobAnswersTheProgramAndWritesItsLog(t *testing.T) {
-	if _, err := exec.LookPath("powershell.exe"); err != nil {
-		t.Skipf("no powershell.exe on PATH: %v", err)
-	}
+	requireWMI(t)
 	log := filepath.Join(t.TempDir(), "out.log")
 	since := time.Now()
 	p, err := startOutsideJob(`C:\Windows\System32\PING.EXE`, []string{"-n", "30", "127.0.0.1"}, log)
 	if err != nil {
-		if strings.Contains(err.Error(), "exit status 3") {
-			t.Skipf("WMI refused to create a process here: %v", err)
-		}
 		t.Fatal(err)
 	}
 	t.Logf("started after %s", time.Since(since))
@@ -48,9 +43,7 @@ func TestStartOutsideJobAnswersTheProgramAndWritesItsLog(t *testing.T) {
 }
 
 func TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog(t *testing.T) {
-	if _, err := exec.LookPath("powershell.exe"); err != nil {
-		t.Skipf("no powershell.exe on PATH: %v", err)
-	}
+	requireWMI(t)
 	log := filepath.Join(t.TempDir(), "held.log")
 	f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -66,9 +59,6 @@ func TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a held log was opened by cmd after all, in %s", took)
 	}
-	if strings.Contains(err.Error(), "exit status 3") {
-		t.Skipf("WMI refused to create a process here: %v", err)
-	}
 	if !strings.Contains(err.Error(), "cannot open the log") {
 		t.Fatalf("the error does not name the cause: %v", err)
 	}
@@ -76,4 +66,19 @@ func TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog(t *testing.T) {
 	if took > 4*time.Second {
 		t.Fatalf("took %s to notice cmd was gone", took)
 	}
+}
+
+func requireWMI(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath(powershellPath()); err != nil {
+		t.Fatalf("no powershell.exe to drive WMI with: %v", err)
+	}
+	probe, err := startOutsideJob(`C:\Windows\System32\PING.EXE`, []string{"-n", "30", "127.0.0.1"}, "")
+	if err != nil {
+		if strings.Contains(err.Error(), "exit status 3") {
+			t.Skipf("WMI refuses Win32_Process.Create for this user, so nothing can start outside a job here: %v", err)
+		}
+		t.Fatalf("the WMI start failed: %v", err)
+	}
+	_ = probe.Kill()
 }

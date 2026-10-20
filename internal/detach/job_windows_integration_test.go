@@ -18,9 +18,7 @@ import (
 const jobHelperEnv = "ATRIUM_DETACH_JOB_HELPER"
 
 func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJob(t *testing.T) {
-	if _, err := exec.LookPath("powershell.exe"); err != nil {
-		t.Skipf("no powershell.exe on PATH: %v", err)
-	}
+	requireWMI(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -45,8 +43,8 @@ func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJob(t *testing
 				pidCh <- rest
 				return
 			}
-			if rest, ok := strings.CutPrefix(sc.Text(), "SKIP="); ok {
-				pidCh <- "skip:" + rest
+			if rest, ok := strings.CutPrefix(sc.Text(), "ERR="); ok {
+				pidCh <- "err:" + rest
 				return
 			}
 		}
@@ -58,8 +56,8 @@ func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJob(t *testing
 	case <-time.After(60 * time.Second):
 		t.Fatal("the helper never reported a child")
 	}
-	if strings.HasPrefix(got, "skip:") {
-		t.Skip(strings.TrimPrefix(got, "skip:"))
+	if strings.HasPrefix(got, "err:") {
+		t.Fatal(strings.TrimPrefix(got, "err:"))
 	}
 	pid, err := strconv.Atoi(got)
 	if err != nil {
@@ -92,17 +90,11 @@ func TestJobHelperProcess(t *testing.T) {
 	}
 	cur, _ := windows.GetCurrentProcess()
 	if err := windows.AssignProcessToJobObject(job, cur); err != nil {
-		os.Stdout.WriteString("SKIP=cannot put the helper in a job here: " + err.Error() + "\n")
+		os.Stdout.WriteString("ERR=cannot put the helper in a job here: " + err.Error() + "\n")
 		return
 	}
 	if in, _ := selfInJob(); !in {
 		t.Fatal("the helper is in no job after assigning itself to one")
-	}
-	if probe, err := startOutsideJob(`C:\Windows\System32\PING.EXE`, []string{"-n", "1", "127.0.0.1"}, ""); err != nil {
-		os.Stdout.WriteString("SKIP=WMI cannot create a process here: " + err.Error() + "\n")
-		return
-	} else {
-		_ = probe.Kill()
 	}
 	p, err := Start(`C:\Windows\System32\PING.EXE`, []string{"-n", "30", "127.0.0.1"}, "")
 	if err != nil {

@@ -40,8 +40,50 @@ func newTree(pid int) *tree {
 		_ = windows.CloseHandle(job)
 		return t
 	}
+	adoptDescendants(job, pid)
 	t.job = job
 	return t
+}
+
+// adoptDescendants moves what the runner started before it was in the job into it, since a job only catches children
+// created after the assignment.
+func adoptDescendants(job windows.Handle, root int) {
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return
+	}
+	defer windows.CloseHandle(snap)
+	parents := map[uint32]uint32{}
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	for err := windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		parents[e.ProcessID] = e.ParentProcessID
+	}
+	for pid := range parents {
+		if pid == uint32(root) || !descendsFrom(parents, pid, uint32(root)) {
+			continue
+		}
+		h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
+		if err != nil {
+			continue
+		}
+		_ = windows.AssignProcessToJobObject(job, h)
+		_ = windows.CloseHandle(h)
+	}
+}
+
+func descendsFrom(parents map[uint32]uint32, pid, root uint32) bool {
+	for range len(parents) {
+		pp, ok := parents[pid]
+		if !ok || pp == 0 {
+			return false
+		}
+		if pp == root {
+			return true
+		}
+		pid = pp
+	}
+	return false
 }
 
 // kill ends the whole tree and releases the job. It does not wait.

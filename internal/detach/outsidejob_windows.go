@@ -13,9 +13,20 @@ import (
 	"strings"
 )
 
+// powershellPath is the system copy, so a PATH without powershell.exe does not turn the WMI start off.
+func powershellPath() string {
+	if root := os.Getenv("SystemRoot"); root != "" {
+		p := filepath.Join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return "powershell.exe"
+}
+
 // A process WMI creates is WmiPrvSE's child, in no job of ours, which is the only way out of a job that forbids breakaway.
 func startOutsideJob(exe string, args []string, log string) (*os.Process, error) {
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", outsideJobScript())
+	cmd := exec.Command(powershellPath(), "-NoProfile", "-NonInteractive", "-Command", outsideJobScript())
 	nowindow.Hide(cmd)
 	cmd.Env = append(os.Environ(), "ATRIUM_DETACH_CMD="+outsideJobCommandLine(exe, args, log))
 	got, err := cmd.Output()
