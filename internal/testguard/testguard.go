@@ -114,14 +114,16 @@ func Git(under string) string {
 const gitMarker = "TESTGUARD_GIT"
 
 // writeGitConfig writes the config a test's git reads, as .gitconfig in home, and answers its path. The hooks
-// directory beside it is empty on purpose.
+// directory beside it is empty on purpose. Auto maintenance is off because receive-pack runs it after the client has
+// its answer and git unsets GIT_CONFIG_PARAMETERS for it, so only a config file reaches it.
 func writeGitConfig(home string) string {
 	hooks := filepath.Join(home, "no-hooks")
 	_ = os.MkdirAll(hooks, 0o755)
 	cfg := filepath.Join(home, ".gitconfig")
 	body := "[user]\n\tname = Atrium Test\n\temail = test@atrium.invalid\n" +
 		"[core]\n\thooksPath = " + filepath.ToSlash(hooks) + "\n" +
-		"[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n"
+		"[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n" +
+		"[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"
 	_ = os.WriteFile(cfg, []byte(body), 0o644)
 	return cfg
 }
