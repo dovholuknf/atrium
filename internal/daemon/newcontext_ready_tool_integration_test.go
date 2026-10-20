@@ -117,7 +117,7 @@ func TestTheCycleStopsAskingAfterThreeAsks(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "three asks", func() bool { return strings.Count(f.written(), limitPrompt) >= maxLimitAsks })
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond) // wait: proving a fourth ask never comes, so there is no condition to spin on
 	if n := strings.Count(f.written(), limitPrompt); n != maxLimitAsks {
 		t.Fatalf("asked %d times", n)
 	}
