@@ -21,6 +21,7 @@ function chatCard(id) {
 }
 
 function chatMark() {
+  chatPrune();
   const list = document.getElementById("term-list");
   if (!list || !chatLent) return;
   for (const row of list.querySelectorAll(".card.tab[data-id]")) {
@@ -33,6 +34,32 @@ function chatMark() {
   if (title) title.textContent = chatId ? (t ? (t.display_title || terminalLabel(t) || chatId) : chatId) : "pick a session";
 }
 
+const CHAT_FRAMES_MAX = 4;
+// Card id to its frame, least recently shown first. The phone page opens the card named in its address once, on load, so
+// a frame is kept per card rather than rebuilt: booting the whole phone page is what made a switch slow.
+const chatFrames = new Map();
+let chatScope = "";
+
+function chatDrop(id) {
+  const f = chatFrames.get(id);
+  if (f) f.remove();
+  chatFrames.delete(id);
+}
+
+function chatScopeNow() { return typeof roomNow === "function" ? roomNow() || "" : ""; }
+
+function chatTell(f) {
+  try { f.contentWindow.postMessage({ atriumChatPark: f.hidden }, location.origin); } catch (e) {}
+}
+
+function chatShow() {
+  for (const [id, f] of chatFrames) {
+    const on = chatLent && id === chatId;
+    if (f.hidden === on) { f.hidden = !on; chatTell(f); }
+    if (on) f.id = "chat-frame"; else f.removeAttribute("id");
+  }
+}
+
 function chatSelect(id) {
   chatId = id || "";
   try { if (chatId) localStorage.setItem(CHAT_KEY, chatId); } catch (e) {}
@@ -40,18 +67,36 @@ function chatSelect(id) {
   const empty = document.getElementById("chat-empty");
   document.getElementById("chat-to-term").disabled = !chatId;
   if (empty) empty.hidden = !!chatId;
-  // A fresh frame for each card: the phone page opens the card named in its address once, on load.
-  const old = host.querySelector("iframe");
-  if (old) old.remove();
-  if (chatId) {
-    const f = document.createElement("iframe");
-    f.id = "chat-frame";
-    f.setAttribute("aria-label", "conversation");
-    f.dataset.card = chatId;
-    f.src = "/m/?chat=1#term=" + encodeURIComponent(chatId);
-    host.append(f);
+  const scope = chatScopeNow();
+  if (scope !== chatScope) {
+    for (const k of [...chatFrames.keys()]) chatDrop(k);
+    chatScope = scope;
   }
+  if (chatId) {
+    const kept = chatFrames.get(chatId);
+    if (kept) {
+      chatFrames.delete(chatId);
+      chatFrames.set(chatId, kept);
+    } else {
+      const f = document.createElement("iframe");
+      f.setAttribute("aria-label", "conversation");
+      f.dataset.card = chatId;
+      f.hidden = true;
+      f.addEventListener("load", () => chatTell(f));
+      f.src = "/m/?chat=1#term=" + encodeURIComponent(chatId);
+      host.append(f);
+      chatFrames.set(chatId, f);
+      while (chatFrames.size > CHAT_FRAMES_MAX) chatDrop(chatFrames.keys().next().value);
+    }
+  }
+  chatShow();
   chatMark();
+}
+
+function chatPrune() {
+  const all = typeof lastTasks !== "undefined" ? lastTasks : [];
+  if (!all.length) return;
+  for (const id of [...chatFrames.keys()]) if (id !== chatId && !all.some(t => t.id === id)) chatDrop(id);
 }
 
 // Called by switchView on every switch. Lends the list in, or puts it back where the terminals tab keeps it.
@@ -81,8 +126,7 @@ function chatView(on) {
     document.getElementById("term-rail").after(list);
     list.after(grip);
     chatBridges(document.getElementById("term-layout"));
-    const f = document.getElementById("chat-frame");
-    if (f) f.remove();
+    chatShow();
     // Rows were marked for the chat; the terminals tab draws its own.
     renderTermList();
   }

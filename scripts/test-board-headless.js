@@ -25626,6 +25626,10 @@ async function main() {
     await unit("chatTab", bu("chatTab"));
     await unit("chatBridge", bu("chatBridge"));
     await unit("chatPaste", bu("chatPaste"));
+    await unit("chatKeep", bu("chatKeep"));
+    await unit("chatCap", bu("chatCap"));
+    await unit("chatFast", bu("chatFast"));
+    if (process.env.CHAT_MEASURE) await unit("chatMeasure", bu("chatMeasure"));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
     await unit("carryLink", () => carryLinkSection(browser, base));
     await unit("crossedPane", () => crossedPaneSection(browser, base));

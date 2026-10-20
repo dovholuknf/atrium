@@ -116,7 +116,7 @@
     "chat": {
       "file": "scripts/board-tests/chat.js",
       "page": "the chat tab and the chatter tab",
-      "units": ["chatBridge", "chatPaste", "chatTab", "chatter", "chatterTab"],
+      "units": ["chatBridge", "chatCap", "chatFast", "chatKeep", "chatPaste", "chatTab", "chatter", "chatterTab"],
       "sources": ["internal/api/web/js/chat.js", "internal/api/web/js/terminal-list.js", "internal/api/web/js/chatter.js", "internal/api/web/css/chat.css"],
       "tests": [],
       "checks": []

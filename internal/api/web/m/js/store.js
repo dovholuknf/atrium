@@ -214,8 +214,12 @@
     }
     tasksSoon();
   }
+  // The chat tab keeps a frame per card and hides the ones not shown. A hidden frame holds no stream, so the browser's
+  // handful of connections to this host are not spent on pages nobody is looking at.
+  let parked = false;
   function connect() {
     clearTimeout(retryTimer);
+    if (parked) return;
     if (es) { try { es.close(); } catch (e) {} es = null; }
     const src = new EventSource(eventsURL());
     es = src;
@@ -257,17 +261,29 @@
 
   // The safety resync, and a page coming back to the front reads everything again.
   setInterval(() => {
-    if (document.visibilityState !== "visible") return;
+    if (document.visibilityState !== "visible" || parked) return;
     tasksSoon(0);
     permsSoon(0);
   }, RESYNC_MS);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
+    if (document.visibilityState !== "visible" || parked) return;
     if (!es) { attempt = 0; connect(); }
     tasksSoon(0);
     permsSoon(0);
   });
   window.addEventListener("online", () => { if (!live) { attempt = 0; connect(); } });
+  window.addEventListener("message", e => {
+    if (e.source !== window.parent || e.origin !== location.origin || !e.data || typeof e.data.atriumChatPark !== "boolean") return;
+    if (parked === e.data.atriumChatPark) return;
+    parked = e.data.atriumChatPark;
+    if (parked) {
+      clearTimeout(retryTimer);
+      if (es) { try { es.close(); } catch (err) {} es = null; }
+      return;
+    }
+    attempt = 0;
+    connect();
+  });
 
   function on(kind, fn) {
     const set = subs[kind];
@@ -327,6 +343,13 @@
     },
     roomOf,
     bareId,
+    // A card read alone, put in place when the list has not been read yet, so a page named for one card need not wait for
+    // all of them.
+    seed(row) {
+      if (!row || !row.id || cards.has(row.id)) return;
+      cards.set(row.id, row);
+      mark("cards");
+    },
     // Reads the cards now, for a caller that has just changed one.
     refresh() { tasksSoon(0); },
     on(kind, fn) { return on(kind, fn); },

@@ -1009,6 +1009,9 @@
     if (hm && !shapeOf(location.pathname)) {
       const id = dec(hm[1]);
       try { history.replaceState({ mcard: id, direct: true }, "", "/m/"); } catch (e) {}
+      if (!window.mStore.card(id) && !window.mNet.loaded()) {
+        try { window.mNet.seed(await window.mNet.api("/v1/tasks/" + enc(id))); } catch (e) {}
+      }
       whenHeld(id, () => open(id, true));
       return;
     }

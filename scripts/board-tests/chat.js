@@ -1,6 +1,6 @@
 // chat: the chat tab and the chatter tab.
 //
-// Units: chatter, chatterTab, chatTab, chatBridge, chatPaste.
+// Units: chatter, chatterTab, chatTab, chatBridge, chatPaste, chatKeep, chatCap, chatFast.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/chat.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -383,13 +383,13 @@ async function chatTabSection(browser, base) {
     await p.click("#chat-to-term");
     await p.waitForFunction(() => !document.getElementById("terms").hidden && termTask && termTask.id === "chat-a", null, { timeout: slow(10000) });
     if (await p.evaluate(() => !document.getElementById("term-layout").contains(document.getElementById("term-list")))) fail(tag + "the list was not given back to the terminals view");
-    if (await p.evaluate(() => !!document.querySelector("#chat-frame"))) fail(tag + "the conversation frame outlived the chat view");
+    if (await p.evaluate(() => !!document.querySelector("#chat-frame-host iframe:not([hidden])"))) fail(tag + "a conversation frame shows outside the chat view");
     await p.click("#t-chat");
     await p.waitForSelector('#chat:not([hidden]) #chat-frame-host iframe[data-card="chat-a"]', { timeout: slow(5000) });
     // another row switches the conversation
     await p.click('#chat-layout #term-list .card.tab[data-id="chat-b"]');
     await p.waitForSelector('#chat-frame-host iframe[data-card="chat-b"]', { timeout: slow(5000) });
-    if (await p.evaluate(() => document.querySelectorAll("#chat-frame-host iframe").length) !== 1) fail(tag + "more than one conversation frame");
+    if (await p.evaluate(() => document.querySelectorAll("#chat-frame-host iframe:not([hidden])").length) !== 1) fail(tag + "more than one conversation frame showing");
   } finally {
     await ctx.close();
     mock.tasksMode = was;
@@ -397,10 +397,9 @@ async function chatTabSection(browser, base) {
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
-async function chatOpen(browser, base, uploads) {
-  landCard("chat-a", { supervised: true, status: "running", display_title: "chat a", created_at: "2026-09-19T12:00:00Z" });
-  landCard("chat-b", { supervised: true, status: "running", display_title: "chat b", created_at: "2026-09-19T12:05:00Z" });
-  mock.landList = [mock.LAND["chat-a"], mock.LAND["chat-b"]];
+async function chatOpen(browser, base, uploads, ids = ["chat-a", "chat-b"]) {
+  ids.forEach((id, i) => landCard(id, { supervised: true, status: "running", display_title: id.replace("-", " "), created_at: new Date(Date.UTC(2026, 8, 19, 12, i)).toISOString() }));
+  mock.landList = ids.map(id => mock.LAND[id]);
   mock.landPerms = [];
   const errors = [];
   const sent = [];
@@ -533,14 +532,164 @@ async function chatPasteSection(browser, base) {
   if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
+const chatRow = id => '#chat-layout #term-list .card.tab[data-id="' + id + '"]';
+const chatFrameSel = id => '#chat-frame-host iframe[data-card="' + id + '"]';
+
+async function chatPick(p, id) {
+  await p.click(chatRow(id));
+  await p.waitForSelector(chatFrameSel(id) + ":not([hidden])", { timeout: slow(5000) });
+}
+
+async function chatKeepSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const tag = "chatKeep: ";
+  const { ctx, p, errors } = await chatOpen(browser, base, {});
+  const loads = {};
+  p.on("request", r => {
+    const m = /\/m\/\?chat=1$/.exec(r.url());
+    if (m && r.resourceType() === "document" && r.frame() !== p.mainFrame()) loads.n = (loads.n || 0) + 1;
+  });
+  try {
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await chatPick(p, "chat-a");
+    await p.evaluate(() => { window.__chatA = document.querySelector('#chat-frame-host iframe[data-card="chat-a"]'); });
+    const same = id => p.evaluate(i => window.__chatA === document.querySelector('#chat-frame-host iframe[data-card="' + i + '"]'), id);
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForFunction(() => !document.getElementById("terms").hidden, null, { timeout: slow(5000) });
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector(chatFrameSel("chat-a") + ":not([hidden])", { timeout: slow(5000) });
+    if (!await same("chat-a")) fail(tag + "Chat, Terminals, Chat built a new frame for chat-a");
+    await chatPick(p, "chat-b");
+    if (!await p.evaluate(() => document.querySelector('#chat-frame-host iframe[data-card="chat-a"]').hidden)) fail(tag + "chat-a's frame shows beside chat-b's");
+    await chatPick(p, "chat-a");
+    if (!await same("chat-a")) fail(tag + "chat-a, chat-b, chat-a built a new frame for chat-a");
+    const shown = await p.evaluate(() => [...document.querySelectorAll("#chat-frame-host iframe")].filter(f => !f.hidden).map(f => f.dataset.card));
+    if (shown.join() !== "chat-a") fail(tag + "the shown frames are " + JSON.stringify(shown));
+    await p.waitForTimeout(500);
+    if (loads.n !== 2) fail(tag + "the phone page was loaded " + loads.n + " times for two cards, not 2");
+    const title = await p.evaluate(() => document.getElementById("chat-title").textContent);
+    if (title !== "chat a") fail(tag + "the chat title is " + JSON.stringify(title) + " for chat-a");
+    const on = await p.evaluate(() => document.querySelector('#term-list .card.tab.on[data-id]').dataset.id);
+    if (on !== "chat-a") fail(tag + "the marked row is " + on);
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
+async function chatCapSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const tag = "chatCap: ";
+  const ids = ["chat-a", "chat-b", "chat-c", "chat-d", "chat-e"];
+  const { ctx, p, errors } = await chatOpen(browser, base, {}, ids);
+  const held = () => p.evaluate(() => [...document.querySelectorAll("#chat-frame-host iframe")].map(f => f.dataset.card).sort().join());
+  try {
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    for (const id of ["chat-a", "chat-b", "chat-c", "chat-d"]) await chatPick(p, id);
+    if (await held() !== "chat-a,chat-b,chat-c,chat-d") fail(tag + "four cards hold " + await held());
+    await chatPick(p, "chat-a");
+    await chatPick(p, "chat-e");
+    if (await held() !== "chat-a,chat-c,chat-d,chat-e") fail(tag + "the fifth card did not drop the least recently used, held: " + await held());
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
+async function chatFastSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const tag = "chatFast: ";
+  const { ctx, p, errors } = await chatOpen(browser, base, {});
+  const hold = { ms: 0 };
+  await ctx.route("**/v1/tasks", async route => {
+    if (hold.ms && route.request().frame().parentFrame()) await new Promise(r => setTimeout(r, hold.ms));
+    await route.fallback();
+  });
+  await ctx.route("**/v1/tasks/chat-a", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(mock.LAND["chat-a"]) }));
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: "first reply", truncated: false }] }) }));
+  try {
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    hold.ms = slow(8000);
+    await p.click(chatRow("chat-a"));
+    await p.waitForSelector(chatFrameSel("chat-a"), { timeout: slow(5000) });
+    const fr = await (await p.$(chatFrameSel("chat-a"))).contentFrame();
+    await fr.waitForSelector("#m-replies .reply", { timeout: slow(4000) }).catch(() => fail(tag + "the replies were not drawn while the full list was still pending"));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
+// CHAT_MEASURE=<cards> adds a unit that times click to replies drawn on a mocked board of that many cards, and prints
+// one JSON line per kind of switch. CHAT_MEASURE_LIST_MS holds back the phone page's list read by that long, which is
+// what 6 MB costs on a real link. It asserts nothing.
+async function chatMeasureSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const n = Number(process.env.CHAT_MEASURE) || 800;
+  const ids = Array.from({ length: n }, (_, i) => "land-" + i);
+  const { ctx, p } = await chatOpen(browser, base, {}, ids);
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    source: "transcript", more: false, replies: [{ at: "2026-10-15T10:00:00Z", text: "a reply", truncated: false }] }) }));
+  const lagMs = Number(process.env.CHAT_MEASURE_LIST_MS) || 0;
+  if (lagMs) {
+    await ctx.route("**/v1/tasks", async route => {
+      if (route.request().frame().parentFrame()) await new Promise(r => setTimeout(r, lagMs));
+      await route.fallback();
+    });
+  }
+  const drawn = id => p.waitForFunction(i => {
+    const f = document.querySelector("#chat-frame-host iframe:not([hidden])");
+    const d = f && f.dataset.card === i && f.contentDocument;
+    const r = d && d.querySelector("#m-replies .reply");
+    return !!(r && r.offsetParent);
+  }, id, { timeout: 30000, polling: "raf" });
+  const time = async fn => { const t = Date.now(); await fn(); return Date.now() - t; };
+  const row = id => p.evaluate(i => { document.querySelector('#chat-layout #term-list .card.tab[data-id="' + i + '"]').click(); }, id);
+  const out = { cards: n, first: [], backToCard: [], backToTab: [] };
+  try {
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    for (let i = 0; i < 3; i++) out.first.push(await time(async () => { await row(ids[i]); await drawn(ids[i]); }));
+    for (let i = 0; i < 2; i++) {
+      out.backToCard.push(await time(async () => { await row(ids[i]); await drawn(ids[i]); }));
+      await row(ids[2]);
+      await drawn(ids[2]);
+    }
+    for (let i = 0; i < 3; i++) {
+      await p.click('.tab[data-view="terms"]');
+      await p.waitForFunction(() => !document.getElementById("terms").hidden);
+      out.backToTab.push(await time(async () => { await p.click('.tab[data-view="chat"]'); await drawn(ids[2]); }));
+    }
+    console.log("CHAT-MEASURE " + JSON.stringify(out));
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+}
+
 const units = [
+  ...(process.env.CHAT_MEASURE ? [{ name: "chatMeasure", run: ({ browser, base }) => chatMeasureSection(browser, base) }] : []),
+  { name: "chatKeep", run: ({ browser, base }) => chatKeepSection(browser, base) },
+  { name: "chatCap", run: ({ browser, base }) => chatCapSection(browser, base) },
+  { name: "chatFast", run: ({ browser, base }) => chatFastSection(browser, base) },
   { name: "chatBridge", run: ({ browser, base }) => chatBridgeSection(browser, base) },
   { name: "chatPaste", run: ({ browser, base }) => chatPasteSection(browser, base) },
   { name: "chatter", run: ({ browser, base }) => chatterSection(browser, base) },
   { name: "chatterTab", run: ({ browser, base }) => chatterTabSection(browser, base) },
   { name: "chatTab", run: ({ browser, base }) => chatTabSection(browser, base) },
 ];
-const sections = { chatBridge: chatBridgeSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
+const sections = { ...(process.env.CHAT_MEASURE ? { chatMeasure: chatMeasureSection } : {}), chatKeep: chatKeepSection, chatCap: chatCapSection, chatFast: chatFastSection, chatBridge: chatBridgeSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
