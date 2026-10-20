@@ -5494,6 +5494,92 @@ async function termProbeStormSection(browser, base) {
   }
 }
 
+// ── a pane that changes height refits the terminal (bug-terminal-last-row-cut-off) ──
+// The grid is pinned to rows * cell, so measuring it saw no change when only the pane's height moved, and the fit
+// itself counted the pane's 6px padding as room. Either left the last row under the hint bar. Growing the hint bar and
+// resizing the window must each leave the last row's bottom at or above the hint bar's top.
+async function termFitHeightSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termFitHeight", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await p.waitForSelector("#t-screen .xterm-screen", { timeout: slow(10000) });
+    await p.waitForFunction(() => term._core._renderService.dimensions.css.cell.height > 0 && term.rows > 0, null, { timeout: slow(10000) });
+    const gap = () => p.evaluate(() => {
+      const hint = document.querySelector(".term-help").getBoundingClientRect();
+      const screen = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const cell = term._core._renderService.dimensions.css.cell.height;
+      return { lastBottom: screen.top + term.rows * cell, hintTop: hint.top, rows: term.rows };
+    });
+    let feed = "\x1b[2J\x1b[H";
+    for (let i = 1; i <= 80; i++) feed += "row " + i + " the quick brown fox\r\n";
+    await termWrite(p, feed);
+    const fits = async (what) => {
+      try {
+        await p.waitForFunction(() => {
+          const hint = document.querySelector(".term-help").getBoundingClientRect();
+          const screen = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+          const cell = term._core._renderService.dimensions.css.cell.height;
+          return screen.top + term.rows * cell <= hint.top + 0.5;
+        }, null, { timeout: slow(3000) });
+      } catch (e) {
+        const c = await gap();
+        fail("after " + what + " the last row ends at " + c.lastBottom.toFixed(1) + " but the hint bar starts at " + c.hintTop.toFixed(1) + " (" + c.rows + " rows)");
+      }
+      if (process.env.TERMFIT_SHOTS) {
+        const hint = await p.locator(".term-help").boundingBox();
+        await p.screenshot({ path: require("path").join(process.env.TERMFIT_SHOTS, what.replace(/ /g, "-") + ".png"),
+          clip: { x: 0, y: Math.max(0, hint.y - 140), width: 900, height: 140 + hint.height + 4 } });
+      }
+    };
+    await fits("attach");
+    const rows0 = (await gap()).rows;
+
+    await p.evaluate(() => { document.querySelector(".term-help").style.minHeight = "120px"; });
+    await fits("the hint bar grew");
+    const rows1 = (await gap()).rows;
+    if (!(rows1 < rows0)) fail("a taller hint bar left the grid at " + rows1 + " rows, was " + rows0);
+
+    await p.evaluate(() => { document.querySelector(".term-help").style.minHeight = ""; });
+    await p.waitForFunction(n => term.rows >= n, rows0, { timeout: slow(3000) }).catch(() => {});
+    await fits("the hint bar shrank");
+    const rows2 = (await gap()).rows;
+    if (rows2 !== rows0) fail("a hint bar back to its height left the grid at " + rows2 + " rows, was " + rows0);
+
+    await p.setViewportSize({ width: 1280, height: 520 });
+    await fits("the window shrank");
+    const rows3 = (await gap()).rows;
+    if (!(rows3 < rows0)) fail("a shorter window left the grid at " + rows3 + " rows, was " + rows0);
+    await p.setViewportSize({ width: 1280, height: 900 });
+    await fits("the window grew back");
+    if (errors.length) fail("the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── "messages waiting, clear the line" (u-018) ────────────────────────────
 // The notice shows only while the operator's own line holds queued peer messages, is driven by the card list
 // (no timer, no request), and never takes focus or moves the grid.
@@ -23453,7 +23539,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -25503,6 +25589,7 @@ async function main() {
     await unit("markdownTab", () => markdownTabSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
     await unit("termProbeStorm", () => termProbeStormSection(browser, base));
+    await unit("termFitHeight", () => termFitHeightSection(browser, base));
     await unit("roomsSetup", bu("roomsSetup"));
     await unit("readTabSize", bu("readTabSize"));
     await unit("readWidthSkin", bu("readWidthSkin"));

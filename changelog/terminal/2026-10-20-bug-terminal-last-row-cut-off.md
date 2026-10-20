@@ -1,0 +1,1 @@
+The terminal's last row, the input line, is no longer cut off at the bottom of the pane. The pane refits when only its height changes, and no longer counts its own padding as room. bug-terminal-last-row-cut-off

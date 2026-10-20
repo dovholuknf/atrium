@@ -2289,6 +2289,7 @@ function fitTerm() {
   if (!term || !termFit) return;
   const dims = termFit.proposeDimensions();
   if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) return;
+  dims.rows = rowsInPane(dims.rows);
   termFitCols = dims.cols;
   termFitRows = dims.rows;
   // A phone draws the pty's exact grid, not what its box fits. See `termPhone`.
@@ -2312,6 +2313,19 @@ function fitTerm() {
     term.resize(cols, rows);
   }
   markWide();
+}
+
+// The fit addon takes the pane's border-box height as the room, so `#t-screen`'s own padding is counted as rows and the
+// last row ends below the pane's clip. The rows are the ones that fit in the pane's content box.
+function rowsInPane(rows) {
+  const host = document.getElementById("t-screen");
+  if (!host || !(host.clientHeight > 0) || typeof getComputedStyle !== "function") return rows;
+  let cell = 0;
+  try { cell = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
+  if (!(cell > 0)) return rows;
+  const st = getComputedStyle(host);
+  const room = host.clientHeight - (parseFloat(st.paddingTop) || 0) - (parseFloat(st.paddingBottom) || 0);
+  return Math.max(1, Math.min(rows, Math.floor(room / cell + 0.001)));
 }
 
 // The rows to draw for a fit of `fit` rows: the pty's whenever the daemon has said one (t-003c). Rows follow the
@@ -2603,12 +2617,18 @@ function sizeTermHost() {
 // room flip it is that reflow that leaves the cursor misplaced. So skip the fit
 // when the element is the size it was at the last one.
 //
+// The box is the one the fit addon measures, the parent of `.xterm`. `.xterm`'s
+// own height is pinned to rows * cell by `sizeTermHost`, so measuring it never
+// sees the pane grow or shrink in height and the last row ends up under the
+// hint bar.
+//
 // The mark is kept ON THE TERM INSTANCE, so a freshly opened terminal (which has
 // no mark yet) always fits once, and a terminal switch does not inherit the old
 // one's box. Returns true when there is nothing to do.
 function paneBoxUnchanged() {
   if (!term || !term.element) return false;
-  const box = term.element.clientWidth + "x" + term.element.clientHeight;
+  const pane = term.element.parentElement || term.element;
+  const box = pane.clientWidth + "x" + pane.clientHeight;
   if (term._atriumBox === box) return true;
   term._atriumBox = box;
   return false;
