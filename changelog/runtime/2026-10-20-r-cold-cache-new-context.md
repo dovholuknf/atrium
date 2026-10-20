@@ -1,0 +1,1 @@
+﻿- A card whose cache atrium is no longer warming (keep-alive stopped at break-even, off, or not covering it) now hands off and clears just before its cache expires, using the ordinary new-context cycle, once per idle stretch. A room setting and a per-card menu item switch it off. r-cold-cache-new-context.

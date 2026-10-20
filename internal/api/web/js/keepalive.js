@@ -322,6 +322,23 @@ function keepaliveMenuItem(t, refresh) {
   };
 }
 
+// The card menu's cold handoff switch, beside the keep-alive one. A card's own override, "off" or unset.
+function coldHandoffMenuItem(t, refresh) {
+  if (!t.keepalive) return null;
+  const on = String((t.overrides || {}).cold_handoff || "").toLowerCase() !== "off";
+  return {
+    label: "hand off when its cache goes cold", on,
+    help: "When atrium is no longer keeping this card's cache warm and the cache is about to expire, atrium " +
+      "has the session write its handoff and clears its context while the cache is still warm, so the next " +
+      "turn starts small. The same as the handoff / clear context item, started for you. Once per idle stretch.",
+    act: async () => {
+      const overrides = { cold_handoff: on ? "off" : "" };
+      const res = await patchTask(t.id, { overrides });
+      if (res) refresh();
+    }
+  };
+}
+
 async function setCardKeepalive(id, on) {
   try {
     await api(`/v1/tasks/${id}/keepalive`, {
@@ -341,6 +358,8 @@ async function setCardKeepalive(id, on) {
 function paintKeepaliveSettings(s) {
   const el = document.getElementById("s-keepalive");
   if (el) el.checked = s.cache_keepalive_default !== false;
+  const cold = document.getElementById("s-cold-handoff");
+  if (cold) cold.checked = s.cache_cold_handoff !== false;
   const spend = document.getElementById("s-keepalive-spend");
   if (spend) {
     const n = s.cache_keepalive_week_refreshes || 0;
@@ -372,6 +391,24 @@ async function saveKeepaliveDefault() {
   toast("saved", el.checked
     ? "new Claude cards start with their cache kept warm. cards already open keep their own switch"
     : "new Claude cards start with keep-alive off. cards already open keep their own switch");
+}
+
+async function saveColdHandoff() {
+  const el = document.getElementById("s-cold-handoff");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ cache_cold_handoff: !!el.checked })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  if (typeof afterMachineSave === "function") afterMachineSave();
+  toast("saved", el.checked
+    ? "a card whose cache is going cold hands off and clears while the cache is still warm"
+    : "a card whose cache goes cold is left as it is");
 }
 
 async function clearKeepaliveSuspension() {

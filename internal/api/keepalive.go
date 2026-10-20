@@ -47,6 +47,7 @@ var errKeepaliveBody = errors.New(`the keep-alive switch takes {"on": true} or {
 func keepaliveSettingsView(st *store.Store, out map[string]any) {
 	out["cache_keepalive_default"] = st.KeepaliveDefaultOn()
 	out["cache_keepalive_suspended"] = st.KeepaliveSuspended()
+	out["cache_cold_handoff"] = st.ColdHandoffOn()
 	// The week's dollar figure is not sent (item 37b), only the count.
 	if _, n, err := st.KeepaliveSpendSince(time.Now().UTC().Add(-7 * 24 * time.Hour)); err == nil {
 		out["cache_keepalive_week_refreshes"] = n

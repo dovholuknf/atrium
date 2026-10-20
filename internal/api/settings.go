@@ -345,6 +345,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Whether a NEW Claude card starts with the cache keep-alive on. Never
 		// applied to a card that already exists. See keepalive.go.
 		KeepaliveDefault *bool `json:"cache_keepalive_default"`
+		// Whether a card whose cache is no longer being warmed hands off and clears just before it goes cold.
+		ColdHandoff *bool `json:"cache_cold_handoff"`
 		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
 		UsageCacheReads *bool `json:"usage_cache_reads"`
 		// When the weekly limit resets: weekday, time and time zone. One per board. See usageweek.go.
@@ -887,6 +889,12 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 
 	if body.KeepaliveDefault != nil {
 		if err := s.st.SetKeepaliveDefault(*body.KeepaliveDefault); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.ColdHandoff != nil {
+		if err := s.st.SetColdHandoff(*body.ColdHandoff); err != nil {
 			s.fail(w, err)
 			return
 		}

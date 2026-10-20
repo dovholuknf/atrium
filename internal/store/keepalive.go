@@ -89,6 +89,28 @@ func (s *Store) SetKeepaliveDefault(on bool) error {
 	return s.SetSetting(SettingKeepaliveDefault, v)
 }
 
+// SettingColdHandoff is whether a card whose cache is no longer being warmed starts a new context just before
+// the cache expires. `off` turns it off. Anything else, unset included, is on.
+const SettingColdHandoff = "cache_cold_handoff"
+
+// ColdHandoffOn reports whether the room hands off a card whose cache is going cold. A read failure answers on.
+func (s *Store) ColdHandoffOn() bool {
+	v, err := s.Setting(SettingColdHandoff)
+	if err != nil {
+		return true
+	}
+	return !strings.EqualFold(strings.TrimSpace(v), "off")
+}
+
+// SetColdHandoff writes the room's switch for the cold handoff.
+func (s *Store) SetColdHandoff(on bool) error {
+	v := "off"
+	if on {
+		v = "on"
+	}
+	return s.SetSetting(SettingColdHandoff, v)
+}
+
 // KeepaliveSuspended returns why keep-alive is suspended, or "" when it is not.
 // A read failure answers suspended: refusing to spend is the safe way to be
 // wrong about this.

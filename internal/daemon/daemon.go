@@ -703,6 +703,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ctx = newContextSizes()
 	d.ka.holding = d.nctx.holding
 	d.ka.deployHeld = d.deployHeld
+	d.ka.cold = d.coldHandoff
 	d.ka.session = d.ctx.sessionOf
 	d.acProbe = newAutocompactProbe(func(exe string) (string, error) { return d.hk.helpRunner(exe) })
 	api.ContextSizeOf = d.contextSizeFor

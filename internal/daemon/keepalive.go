@@ -582,8 +582,13 @@ type keepalive struct {
 	// deployHeld says the card is held for a room deploy, which ends its runner
 	// and resumes it cold, so a refresh buys nothing. Nil in a test with no daemon.
 	deployHeld func(taskID string) bool
+	// cold starts the new-context cycle on a card whose cache is going cold. Nil in a test that has no daemon.
+	// See keepalive_cold.go.
+	cold func(t *store.Task) error
 
 	mu sync.Mutex
+	// cooled is the last reply a card was handed off on, per card.
+	cooled map[string]time.Time
 	// lastMissCard is the card of the room's most recent attempt when that
 	// attempt was a miss, for "two misses on different cards in a row".
 	lastMissCard string
@@ -622,6 +627,7 @@ func newKeepalive(st *store.Store) *keepalive {
 		why:        map[string]string{},
 		inFlight:   map[string]bool{},
 		unsaved:    map[string]unsavedRefresh{},
+		cooled:     map[string]time.Time{},
 		record:     st.AddKeepaliveRefresh,
 		spent:      st.AddSessionUsage,
 	}
@@ -943,15 +949,18 @@ func (k *keepalive) tick(ctx context.Context) {
 		// two cards, which says the cache is not holding for a reason a turn does
 		// not fix, and a refresh after it spends real money. A person clears it.
 		if k.st.KeepaliveSuspended() != "" {
+			k.coldCheck(t, card, false)
 			continue
 		}
 		v := k.decide(t, card)
 		k.mu.Lock()
+		holding := false
 		if u, held := k.unsaved[t.ID]; held {
 			if !k.now().Before(u.until) || (v.reply != nil && v.reply.At.After(u.at)) {
 				delete(k.unsaved, t.ID)
 			} else if v.act != "skip" || v.why == "not due" {
 				v = verdict{act: "skip", why: u.why}
+				holding = true
 			}
 		}
 		k.why[t.ID] = v.why
@@ -960,11 +969,14 @@ func (k *keepalive) tick(ctx context.Context) {
 		switch v.act {
 		case "break-even":
 			k.stop(t, store.KeepaliveBreakEven, v)
+			k.coldCheck(t, card, false)
 		case "refresh":
 			if busy {
 				continue
 			}
 			k.refresh(ctx, t, v)
+		default:
+			k.coldCheck(t, card, holding || v.why == "not due")
 		}
 		if k.st.KeepaliveSuspended() != "" {
 			return

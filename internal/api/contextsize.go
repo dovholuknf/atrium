@@ -19,6 +19,10 @@ const OverrideContextLimitK = "context_limit_k"
 // OverrideContextCycle is the card's own switch: "off" stops atrium cycling it. Empty means on.
 const OverrideContextCycle = "context_cycle"
 
+// OverrideColdHandoff is the card's own switch for the cold handoff: "off" stops atrium handing it off as its
+// cache goes cold. Empty means the room's switch decides.
+const OverrideColdHandoff = "cold_handoff"
+
 // The layers a context limit can come from, named on the row so the board can say which.
 const (
 	LimitFromCard    = "card"

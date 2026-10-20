@@ -1923,6 +1923,14 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			}
 			body.Overrides[OverrideContextCycle] = clean
 		}
+		if v, ok := body.Overrides[OverrideColdHandoff]; ok {
+			clean, err := store.CheckContextCycleText(v)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, fmt.Errorf("cold_handoff is off, or empty for on, not %q", v))
+				return
+			}
+			body.Overrides[OverrideColdHandoff] = clean
+		}
 		if err := s.st.SetOverrides(id, body.Overrides); err != nil {
 			s.fail(w, err)
 			return
