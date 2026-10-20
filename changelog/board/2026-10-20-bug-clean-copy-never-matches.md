@@ -1,0 +1,1 @@
+"Copy clean" works again on a card whose terminal reattached after a room restart: the reattach reset left xterm's scroll position NaN, so every selection read as a blank line and matched no reply. (bug-clean-copy-never-matches)

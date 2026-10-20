@@ -3948,7 +3948,7 @@ async function termLastReadSection(browser, base) {
       return out.join("\r\n");
     });
     await p.evaluate(async full => {
-      term.reset();
+      resetTerm(term);
       term.write(full);
       await __idle(300);
       window.dispatchEvent(new Event("focus"));
@@ -3961,7 +3961,7 @@ async function termLastReadSection(browser, base) {
       window.dispatchEvent(new Event("blur"));
       __say("lr-a", __lines(0, 4, "gone"));
       await __idle();
-      term.reset();
+      resetTerm(term);
       term.write(__lines(0, 80, "a different history"));
       await __idle(300);
       window.dispatchEvent(new Event("focus"));
@@ -7943,6 +7943,29 @@ async function cleanCopySection(browser, base) {
     if (dragSel.clip.length) fail("cleanCopy: a drag copied with copy on select off: " + JSON.stringify(dragSel.clip));
     if (!await btn()) fail("cleanCopy: no 'copy clean' button after a mouse drag with copy on select off");
     await p.evaluate(() => { copyOnSelect = true; term.clearSelection(); });
+
+    // 1c. A reattach while scrolled back resets the terminal and the viewport together, so a selection made after it reads text.
+    const rs = await p.evaluate(([out]) => {
+      window.__clip = [];
+      term.clearSelection();
+      term.write("filler\r\n".repeat(80));
+      return new Promise(done => term.write("", () => {
+        term.scrollLines(-5);
+        setTimeout(() => {
+          termSock.onopen({});
+          const top = document.querySelector("#t-screen .xterm-viewport").scrollTop;
+          termSock.onmessage({ data: out });
+          done({ top, ydisp: term._core.buffer.ydisp });
+        }, 50);
+      }));
+    }, [shown]);
+    if (rs.top !== 0 || Number.isNaN(rs.ydisp)) fail("cleanCopy: a reattach left the viewport out of step with the reset terminal: " + JSON.stringify(rs));
+    const re = await select(shown, [2, 3]);
+    if (!re.btn) fail("cleanCopy: no 'copy clean' button after a reattach");
+    await p.click("#cc-btn");
+    await p.waitForTimeout(100);
+    const reClip = await p.evaluate(() => window.__clip.slice());
+    if (reClip[reClip.length - 1] !== want) fail("cleanCopy: after a reattach the button copied " + JSON.stringify(reClip) + ", not " + JSON.stringify(want));
 
     // 2. Gone when the selection clears, on scroll and on Escape.
     await select(shown, [2, 3]);
