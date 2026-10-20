@@ -59,8 +59,12 @@ func adoptDescendants(job windows.Handle, root int) {
 	for err := windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
 		parents[e.ProcessID] = e.ParentProcessID
 	}
+	created := map[uint32]uint64{}
 	for pid := range parents {
-		if pid == uint32(root) || !descendsFrom(parents, pid, uint32(root)) {
+		created[pid] = createdAt(pid)
+	}
+	for pid := range parents {
+		if pid == uint32(root) || !descendsFrom(parents, created, pid, uint32(root)) {
 			continue
 		}
 		h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
@@ -72,10 +76,26 @@ func adoptDescendants(job windows.Handle, root int) {
 	}
 }
 
-func descendsFrom(parents map[uint32]uint32, pid, root uint32) bool {
+// createdAt is a process's creation time, 0 when it cannot be read.
+func createdAt(pid uint32) uint64 {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return 0
+	}
+	defer windows.CloseHandle(h)
+	var c, x, k, u windows.Filetime
+	if err := windows.GetProcessTimes(h, &c, &x, &k, &u); err != nil {
+		return 0
+	}
+	return uint64(c.HighDateTime)<<32 | uint64(c.LowDateTime)
+}
+
+// descendsFrom follows parent ids up to root, and refuses a link whose child is older than its parent: pids are reused,
+// so that child is an orphan of a dead process that had the same number.
+func descendsFrom(parents map[uint32]uint32, created map[uint32]uint64, pid, root uint32) bool {
 	for range len(parents) {
 		pp, ok := parents[pid]
-		if !ok || pp == 0 {
+		if !ok || pp == 0 || created[pid] == 0 || created[pp] == 0 || created[pid] < created[pp] {
 			return false
 		}
 		if pp == root {
