@@ -245,6 +245,15 @@ const parentCheckEvery = 30 * time.Second
 type parentWatch struct {
 	gone  func() bool
 	every time.Duration
+	drain time.Duration
+}
+
+// drainFor is the stdin drain this watch asks for, stdinDrain when it names none.
+func (w parentWatch) drainFor() time.Duration {
+	if w.drain > 0 {
+		return w.drain
+	}
+	return stdinDrain
 }
 
 // watchParent is the parent ssh of this process: the pid at start, asked about again each parentCheckEvery.
@@ -254,7 +263,7 @@ func watchParent() parentWatch {
 }
 
 // stdinDrain is how long the stream may keep answering after ssh closed its end, so the last bytes still reach ssh.
-var stdinDrain = 5 * time.Second
+const stdinDrain = 5 * time.Second
 
 // joinStdio is the whole of the proxy's work: stdin to the stream, the stream to stdout. It returns when EITHER
 // direction ends or the parent ssh is gone, and closes the stream so the other copy stops: an orphaned proxy would
@@ -288,7 +297,7 @@ func joinStdio(stdin io.Reader, stdout io.Writer, conn net.Conn, br *bufio.Reade
 			return
 		case <-in:
 			in = nil
-			drain = time.After(stdinDrain)
+			drain = time.After(w.drainFor())
 		case <-drain:
 			return
 		case <-gone:

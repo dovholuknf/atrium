@@ -11,6 +11,20 @@ import (
 	"time"
 )
 
+func pollUntil(limit time.Duration, cond func() bool) bool {
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(limit)
+	for !cond() {
+		select {
+		case <-tick.C:
+		case <-deadline:
+			return cond()
+		}
+	}
+	return true
+}
+
 func TestKillEndsTheRunnersChildren(t *testing.T) {
 	for _, sig := range []string{SigKill, SigTerm} {
 		t.Run(sig, func(t *testing.T) {

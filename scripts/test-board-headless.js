@@ -7963,7 +7963,7 @@ async function cleanCopySection(browser, base) {
     const re = await select(shown, [2, 3]);
     if (!re.btn) fail("cleanCopy: no 'copy clean' button after a reattach");
     await p.click("#cc-btn");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(w => window.__clip.length && window.__clip[window.__clip.length - 1] === w, want, { timeout: slow(5000) }).catch(() => {});
     const reClip = await p.evaluate(() => window.__clip.slice());
     if (reClip[reClip.length - 1] !== want) fail("cleanCopy: after a reattach the button copied " + JSON.stringify(reClip) + ", not " + JSON.stringify(want));
 
@@ -8628,7 +8628,7 @@ async function coldHandoffSection(browser, base) {
       fail("the cold handoff toast says the wrong thing: " + JSON.stringify(got.text));
     }
     if (got.flashed < 1) fail("the card's row did not take the frost flash.");
-    await kp.waitForTimeout(500);
+    await kp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     await shot("cold-handoff-after-1280.png");
     const row = await kp.evaluate(() => {
       const box = document.createElement("div");
@@ -26991,21 +26991,21 @@ async function growlTrayRowSection(browser, base) {
     const q = GR("c", "question", 1);
     await h.say([]);
     await h.say([q]);
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => toastLog().length > 0, null, { timeout: slow(5000) });
     await p.evaluate(() => openToastLog());
     const row = "#toastlog-list .tlrow:not(.pinned)";
     const task = await p.getAttribute(row, "data-task");
     if (task !== q.card) fail("growlTrayRow: the growler's row carried card " + JSON.stringify(task) + ", not " + q.card);
     const landed = () => p.evaluate(() => window.__landed.slice());
     await p.click(row + " .tlwhen");
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__landed.length > 0, null, { timeout: slow(5000) });
     let l = await landed();
     if (l.length !== 1 || l[0][0] !== q.card) fail("growlTrayRow: a click on the row landed " + JSON.stringify(l));
     await p.evaluate(() => openToastLog());
     await p.click(row + " .tlcopy");
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__clip.length > 0, null, { timeout: slow(5000) });
     await p.click(row + ' .tlremind[data-remind="menu"]');
-    await p.waitForTimeout(200);
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     l = await landed();
     if (l.length !== 1) fail("growlTrayRow: the copy or remind-me button navigated: " + JSON.stringify(l));
     if ((await p.evaluate(() => window.__clip.length)) !== 1) fail("growlTrayRow: the copy button did not copy");

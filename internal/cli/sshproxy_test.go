@@ -184,10 +184,7 @@ func mustReturn(t *testing.T, done <-chan struct{}) {
 }
 
 func TestJoinStdioReturnsWhenStdinHitsEOF(t *testing.T) {
-	old := stdinDrain
-	stdinDrain = time.Millisecond
-	t.Cleanup(func() { stdinDrain = old })
-	_, done := joinT(t, strings.NewReader(""), parentWatch{})
+	_, done := joinT(t, strings.NewReader(""), parentWatch{drain: time.Millisecond})
 	mustReturn(t, done)
 }
 
