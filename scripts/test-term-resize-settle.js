@@ -114,6 +114,7 @@ if (harness.sent.length !== 0) {
 // window sends still says 80, or the pty could never narrow again.
 const wideSrc = lift("function fitTerm(", "\n}") + "\n" +
   lift("function ptyRowsFor(", "\n}") + "\n" +
+  lift("function rowsInPane(", "\n}") + "\n" +
   lift("function applyPtySize(", "\n}") + "\n" +
   lift("function markWide(", "\n}") + "\n" +
   lift("function tallClip(", "\n}") + "\n" +
