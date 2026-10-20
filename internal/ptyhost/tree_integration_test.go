@@ -33,14 +33,12 @@ func TestKillEndsTheRunnersChildren(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "child.pid")
 			sp := spawnT(t, c, "tree-"+sig, KindRunner, 0, "parent", pidFile)
 			var child int
-			deadline := time.Now().Add(20 * time.Second)
-			for child == 0 && time.Now().Before(deadline) {
+			if !pollUntil(20*time.Second, func() bool {
 				if b, err := os.ReadFile(pidFile); err == nil {
 					child, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 				}
-				time.Sleep(20 * time.Millisecond)
-			}
-			if child == 0 {
+				return child != 0
+			}) {
 				t.Fatal("the runner never started its child")
 			}
 			t.Cleanup(func() {
@@ -54,11 +52,7 @@ func TestKillEndsTheRunnersChildren(t *testing.T) {
 			if err := c.Signal(sp.RunID, sig); err != nil {
 				t.Fatal(err)
 			}
-			end := time.Now().Add(10 * time.Second)
-			for pidAlive(child) && time.Now().Before(end) {
-				time.Sleep(20 * time.Millisecond)
-			}
-			if pidAlive(child) {
+			if !pollUntil(10*time.Second, func() bool { return !pidAlive(child) }) {
 				t.Fatalf("child %d outlived its runner's %s", child, sig)
 			}
 		})
