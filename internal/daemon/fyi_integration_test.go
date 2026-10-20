@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,30 @@ func TestParseKindDefaultsToNeedsAndNeverErrors(t *testing.T) {
 			t.Errorf("parseKind(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+func holdingPairAs(t *testing.T, d *Daemon, tag, suffix string) (launcher, worker *store.Task) {
+	t.Helper()
+	launcher = peerCard(t, d, "orchestrator-"+suffix)
+	worker = peerCard(t, d, "worker-"+suffix)
+	if err := d.st.SetTags(worker.ID, []string{"sdk", OriginAgentTag}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetLineage(worker.ID, launcher.WireName, launcher.ID); err != nil {
+		t.Fatal(err)
+	}
+	prompt(t, d, worker.ID)
+	if err := d.st.SetTags(launcher.ID, []string{tag}); err != nil {
+		t.Fatal(err)
+	}
+	worker, err := d.st.Get(worker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made, err := d.st.CreateWorkItem(worker, store.NewWorkItem{Brief: "hold test"}); err != nil || !made {
+		t.Fatalf("work item: %v %v", made, err)
+	}
+	return launcher, worker
 }
 
 func sayKind(t *testing.T, d *Daemon, to *store.Task, from, kind string) *httptest.ResponseRecorder {
@@ -88,10 +113,10 @@ func TestAnFYIReportIsQueuedForTurnEndForBothTags(t *testing.T) {
 
 func TestANeedsReportIsTypedAsToday(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{"", "needs", "gibberish"} {
-		d := testDaemon(t)
-		launcher, _ := holdingPair(t, d, OrchestratorTag)
-		rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, Kind: kind,
+	d := testDaemon(t)
+	for i, kind := range []string{"", "needs", "gibberish"} {
+		launcher, worker := holdingPairAs(t, d, OrchestratorTag, strconv.Itoa(i))
+		rec, _ := finishWith(t, d, FinishRequest{Agent: worker.WireName, Status: ReportDone, Kind: kind,
 			NoCommit: "research only", Recap: "the matrix is written up"})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
@@ -127,15 +152,18 @@ func TestABlockedFYIReportIsStillNeeds(t *testing.T) {
 // Neither may sit unseen as a held notice, whatever it was labelled.
 func TestADoneOrAskingFYIReportIsForcedToNeeds(t *testing.T) {
 	t.Parallel()
+	d := testDaemon(t)
+	n := 0
 	for name, in := range map[string]FinishRequest{
-		"done": {Agent: "worker", Status: ReportDone, Kind: "fyi", NoCommit: "research only",
+		"done": {Status: ReportDone, Kind: "fyi", NoCommit: "research only",
 			Recap: "the matrix is written up"},
-		"progress with an ask": {Agent: "worker", Status: ReportProgress, Kind: "fyi",
+		"progress with an ask": {Status: ReportProgress, Kind: "fyi",
 			Recap: "the matrix is written up", Ask: "which table, from clint"},
 	} {
 		for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
-			d := testDaemon(t)
-			launcher, _ := holdingPair(t, d, tag)
+			n++
+			launcher, worker := holdingPairAs(t, d, tag, strconv.Itoa(n))
+			in.Agent = worker.WireName
 			rec, _ := finishWith(t, d, in)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("%s %s: report answered %d: %s", name, tag, rec.Code, rec.Body)
@@ -187,9 +215,9 @@ func TestAnFYIReportStillCountsAsTheWorkersReport(t *testing.T) {
 
 func TestAnFYISayIsQueuedForTurnEndForBothTags(t *testing.T) {
 	t.Parallel()
-	for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
-		d := testDaemon(t)
-		launcher, worker := holdingPair(t, d, tag)
+	d := testDaemon(t)
+	for i, tag := range []string{HoldNoticesTag, OrchestratorTag} {
+		launcher, worker := holdingPairAs(t, d, tag, strconv.Itoa(i))
 
 		rec := sayKind(t, d, launcher, worker.WireName, "fyi")
 		if rec.Code != http.StatusOK {
