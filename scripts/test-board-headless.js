@@ -4441,7 +4441,7 @@ async function pasteBigSection(browser, base) {
 // ── a card dragged in the list is not text for the terminal ───────────────
 // Reordering a card in the Terminals list and letting go over the open terminal must send nothing, while text dragged
 // in from outside the board is still a paste.
-async function dragNotTypedSection(browser, base) {
+async function termDragNotTypedSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
   landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
@@ -4468,7 +4468,7 @@ async function dragNotTypedSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await attachRetry(p, { unit: "dragNotTyped", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await attachRetry(p, { unit: "termDragNotTyped", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector("#term-list .card.tab:not(.kid)", { timeout: slow(15000) });
 
@@ -4486,7 +4486,7 @@ async function dragNotTypedSection(browser, base) {
       return { id: card.dataset.id, invited: over.defaultPrevented, dropping };
     });
     if (dropped.invited || dropped.dropping) {
-      fail("dragNotTyped: the terminal offered a drop target for a card from the list: " + JSON.stringify(dropped));
+      fail("termDragNotTyped: the terminal offered a drop target for a card from the list: " + JSON.stringify(dropped));
     }
 
     await p.evaluate(() => {
@@ -4495,15 +4495,15 @@ async function dragNotTypedSection(browser, base) {
       document.getElementById("t-screen").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
     });
     await p.waitForFunction(() => window.__frames.some(f => f.includes("from-elsewhere")), null, { timeout: slow(5000), polling: 10 })
-      .catch(() => fail("dragNotTyped: text dropped from outside the board no longer pastes"));
+      .catch(() => fail("termDragNotTyped: text dropped from outside the board no longer pastes"));
     const frames = await p.evaluate(() => window.__frames.slice());
     if (frames.some(f => f.includes(dropped.id))) {
-      fail("dragNotTyped: a card dragged in the list and dropped on the terminal typed its id: " + JSON.stringify(frames));
+      fail("termDragNotTyped: a card dragged in the list and dropped on the terminal typed its id: " + JSON.stringify(frames));
     }
   } finally {
     await ctx.close();
   }
-  if (errors.length) fail("dragNotTyped: the page threw: " + errors.join(" | "));
+  if (errors.length) fail("termDragNotTyped: the page threw: " + errors.join(" | "));
   mock.landList = []; mock.landPerms = [];
   mock.tasksMode = was;
 }
@@ -23456,7 +23456,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, dragNotTyped: dragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -25361,7 +25361,7 @@ async function main() {
     await unit("resumeSpinner", () => resumeSpinnerSection(browser, base));
     await unit("pasteSpinner", () => pasteSpinnerSection(browser, base));
     await unit("pasteBig", () => pasteBigSection(browser, base));
-    await unit("dragNotTyped", () => dragNotTypedSection(browser, base));
+    await unit("termDragNotTyped", () => termDragNotTypedSection(browser, base));
     await unit("pasteLands", () => pasteLandsSection(browser, base));
     await unit("pasteEmpty", () => pasteEmptySection(browser, base));
     await unit("pasteBusy", () => pasteBusySection(browser, base));
