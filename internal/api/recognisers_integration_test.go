@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,7 +16,19 @@ import (
 
 func recogniserServer(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "atrium.db"))
+	template, err := migrated.path()
+	if err != nil {
+		t.Fatalf("building the migrated template: %v", err)
+	}
+	b, err := os.ReadFile(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "atrium.db")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

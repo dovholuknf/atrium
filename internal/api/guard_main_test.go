@@ -2,9 +2,11 @@ package api
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/testguard"
 )
 
@@ -15,6 +17,9 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	if upstreamRepo.dir != "" {
 		_ = os.RemoveAll(upstreamRepo.dir)
+	}
+	if migrated.dir != "" {
+		_ = os.RemoveAll(migrated.dir)
 	}
 	if dir != "" {
 		_ = os.RemoveAll(dir)
@@ -29,4 +34,29 @@ type upstreamFixture struct {
 	once sync.Once
 	dir  string
 	err  error
+}
+
+// migrated is one empty, already-migrated database, built on the first ask and copied per test. TestMain removes its folder.
+var migrated migratedFixture
+
+type migratedFixture struct {
+	once sync.Once
+	dir  string
+	err  error
+}
+
+func (m *migratedFixture) path() (string, error) {
+	m.once.Do(func() {
+		m.dir, m.err = os.MkdirTemp("", "atrium-api-template-")
+		if m.err != nil {
+			return
+		}
+		st, err := store.Open(filepath.ToSlash(filepath.Join(m.dir, "atrium.db")))
+		if err != nil {
+			m.err = err
+			return
+		}
+		m.err = st.Close()
+	})
+	return filepath.Join(m.dir, "atrium.db"), m.err
 }
