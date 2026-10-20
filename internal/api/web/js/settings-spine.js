@@ -747,6 +747,14 @@ function timelineHTML(events) {
       rows.push(cycleRow(e, p));
       return;
     }
+    if (e.kind === "notified" && p.by === "cache-cold") {
+      const text = p.started ? "handed off before its cache went cold" : "cache handoff not started: " + (p.error || "");
+      rows.push(evRow({
+        cls: "key cold-handoff", verdict: "❄ cache handoff", vcls: p.started ? "" : "no", at: evTime(e),
+        by: "cache going cold", text: esc(text), title: esc(text)
+      }));
+      return;
+    }
     const detail = p.text || p.content || p.command
       || (p.from ? `${p.from} to ${p.to}` : "")
       || (p.decision ? `${p.decision}: ${p.reason || ""}` : "");

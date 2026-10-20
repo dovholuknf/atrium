@@ -97,7 +97,7 @@ func (k *keepalive) coldCheck(t *store.Task, card *store.KeepaliveCard, warming 
 	if err := k.st.AppendEvent(t.ID, store.EventNotified, ev); err != nil {
 		log.Printf("[atrium] could not record the cold handoff on %s: %v", t.ID, err)
 	}
-	k.broadcast("keepalive", map[string]any{"task_id": t.ID, "cold_handoff": err == nil})
+	k.broadcast("keepalive", map[string]any{"task_id": t.ID, "title": t.DisplayTitle(), "cold_handoff": err == nil})
 }
 
 // coldSpentKey is the setting that holds a card's cold handoff as used. One handoff per human turn: only a turn the

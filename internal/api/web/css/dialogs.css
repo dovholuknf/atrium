@@ -835,3 +835,22 @@
     vertical-align: -1px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: currentColor;
     animation: cs-turn .8s linear infinite; }
 
+  .toast.cold-handoff {
+    background: linear-gradient(115deg, #0b2a3d 0%, #1b5f86 38%, #8fd8f2 50%, #1b5f86 62%, #0b2a3d 100%);
+    background-size: 240% 100%;
+    border: 1px solid #9fe3ff; border-left: 4px solid #e6faff;
+    box-shadow: 0 0 22px rgba(120,210,255,.55), 0 18px 40px rgba(var(--shadow-rgb),.7);
+    animation: toastin .22s ease-out, coldshimmer 2.4s ease-in-out 1;
+  }
+  .toast.cold-handoff b, .toast.cold-handoff span { color: #effbff; text-shadow: 0 0 8px rgba(160,230,255,.7); }
+  @keyframes coldshimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .card.cold-flash, .stackrow.cold-flash { animation: coldflash 2.4s ease-out 1; }
+  @keyframes coldflash {
+    0%, 100% { box-shadow: var(--shadow-card); }
+    20%, 60% { box-shadow: 0 0 0 2px #9fe3ff, 0 0 24px 4px rgba(120,210,255,.65); background-color: rgba(143,216,242,.16); }
+  }
+  .evr.cold-handoff .c-verdict { color: #8fd8f2; }
+  @media (prefers-reduced-motion: reduce) {
+    .toast.cold-handoff { animation: none; background-size: 100% 100%; }
+    .card.cold-flash, .stackrow.cold-flash { animation: none; box-shadow: 0 0 0 2px #9fe3ff; }
+  }

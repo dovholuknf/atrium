@@ -1,1 +1,2 @@
 ﻿- A card whose cache atrium is no longer warming (keep-alive stopped at break-even, off, or not covering it) now hands off and clears just before its cache expires, using the ordinary new-context cycle, once per idle stretch. A room setting and a per-card menu item switch it off. r-cold-cache-new-context.
+- A cold handoff happens once per turn a person or a peer starts, never again off atrium's own continuation, and the board announces it with a frost-styled toast, a row flash and a timeline mark. r-cold-cache-new-context.

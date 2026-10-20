@@ -430,6 +430,7 @@ async function clearKeepaliveSuspension() {
 function onKeepaliveEvent(e) {
   let d;
   try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+  if (d.cold_handoff) onColdHandoff(d);
   if (d.toast) {
     const title = d.suspended ? "keep-alive suspended" : "keep-alive stopped";
     // Clicking it lands on the card, the same way a card's own alerts do.
@@ -443,4 +444,41 @@ function onKeepaliveEvent(e) {
       if (s && typeof pastePrefs !== "undefined") { pastePrefs = s; kaRepaint(); }
     }).catch(() => {});
   }
+}
+
+// A COLD HANDOFF, told so it cannot be mistaken for any other toast: frost-blue, a snowflake, a shimmer. The toast
+// goes through `alerting.notify`, so it is a toast with the board in front and the desktop's notification without.
+const COLD_KIND = "cold-handoff";
+const COLD_MARK = "❄";
+
+function coldHandoffText(d) {
+  return `${d.title || "a card"} handed off before its cache went cold`;
+}
+
+// Only a toast raised for a cold handoff takes the class, found by the kind `notify` sets for the length of its call.
+const rawToastCold = toast;
+// eslint-disable-next-line no-func-assign
+toast = function (title, body, goTo, key, taskFor) {
+  const el = rawToastCold(title, body, goTo, key, taskFor);
+  if (logKind === COLD_KIND && el && el.classList) el.classList.add("cold-handoff");
+  return el;
+};
+
+function flashColdRows(id) {
+  document.querySelectorAll(`.card[data-id="${CSS.escape(id)}"], .stackrow[data-id="${CSS.escape(id)}"]`).forEach(el => {
+    el.classList.remove("cold-flash");
+    void el.offsetWidth;
+    el.classList.add("cold-flash");
+    setTimeout(() => el.classList.remove("cold-flash"), 2600);
+  });
+}
+
+function onColdHandoff(d) {
+  const id = d.task_id || "";
+  if (typeof alerting !== "undefined" && alerting.notify) {
+    alerting.notify(COLD_MARK + " cache handoff", coldHandoffText(d), "", "", "", id, "", "", { kind: COLD_KIND });
+  } else {
+    toast(COLD_MARK + " cache handoff", coldHandoffText(d), "", "", id);
+  }
+  if (id) flashColdRows(id);
 }

@@ -8595,6 +8595,59 @@ async function keepaliveSection(browser, base) {
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
 }
 
+// A COLD HANDOFF ON THE BOARD. The `keepalive` event with cold_handoff raises a toast of its own look, flashes the
+// card's rows, and the card's timeline names the event. See js/keepalive.js.
+async function coldHandoffSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const kp = await ctx.newPage();
+  const errors = [];
+  kp.on("pageerror", e => errors.push(String(e)));
+  const was = mock.tasksMode;
+  mock.tasksMode = "keepalive";
+  mock.kaWrites = [];
+  const shot = async name => {
+    const dir = process.env.COLD_SHOTS;
+    if (dir) await kp.screenshot({ path: require("path").join(dir, name) });
+  };
+  try {
+    await kp.goto(base, { waitUntil: "domcontentloaded" });
+    await kp.waitForFunction(() => typeof onColdHandoff === "function",
+      null, { timeout: slow(15000) });
+    await kp.evaluate(() => { document.querySelectorAll("#toasts .toast").forEach(t => t.remove()); });
+    await shot("cold-handoff-before-1280.png");
+    const payload = JSON.stringify({ task_id: "ka-warm", title: "warm card", cold_handoff: true });
+    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + payload + "\n\n"); } catch (e) {} });
+    await kp.waitForSelector("#toasts .toast.cold-handoff", { timeout: slow(5000) })
+      .catch(() => fail("a cold handoff on the stream raised no cold-handoff toast."));
+    const got = await kp.evaluate(() => {
+      const t = document.querySelector("#toasts .toast.cold-handoff");
+      return { text: t ? t.textContent : "", flashed: document.querySelectorAll(".cold-flash[data-id=\"ka-warm\"]").length,
+        plain: document.querySelectorAll("#toasts .toast:not(.cold-handoff)").length };
+    });
+    if (!/❄ cache handoff/.test(got.text) || !/warm card handed off before its cache went cold/.test(got.text)) {
+      fail("the cold handoff toast says the wrong thing: " + JSON.stringify(got.text));
+    }
+    if (got.flashed < 1) fail("the card's row did not take the frost flash.");
+    await kp.waitForTimeout(500);
+    await shot("cold-handoff-after-1280.png");
+    const row = await kp.evaluate(() => {
+      const box = document.createElement("div");
+      box.innerHTML = timelineHTML([{ kind: "notified", at: "2026-10-20T09:00:00Z",
+        payload: { by: "cache-cold", reason: "cache going cold", started: true } }]);
+      const r = box.querySelector(".evr.cold-handoff");
+      return r ? r.textContent : "";
+    });
+    if (!/❄ cache handoff/.test(row)) fail("the timeline does not show a cache handoff: " + JSON.stringify(row));
+    await kp.evaluate(() => { document.querySelectorAll("#toasts .toast").forEach(t => t.remove()); toast("plain", "ordinary"); });
+    const ordinary = await kp.evaluate(() => document.querySelector("#toasts .toast:last-child").classList.contains("cold-handoff"));
+    if (ordinary) fail("an ordinary toast took the cold handoff look.");
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("the cold handoff page threw: " + errors.join(" | "));
+}
+
 // ── the history view paints rows ──────────────────────────────────────
 async function historySection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -23272,7 +23325,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -25196,6 +25249,7 @@ async function main() {
     await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
     await unit("keepalive", () => keepaliveSection(browser, base));
+    await unit("coldHandoff", () => coldHandoffSection(browser, base));
     await unit("idlePark", () => idleParkSection(browser, base));
     await unit("sshBadge", () => sshBadgeSection(browser, base));
     await unit("loginNeeded", bu("loginNeeded"));

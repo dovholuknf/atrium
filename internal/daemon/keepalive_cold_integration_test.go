@@ -172,8 +172,13 @@ func TestColdHandoffOncePerColdEvent(t *testing.T) {
 	f.now = f.now.Add(2 * time.Hour)
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
+	if n.Load() != 1 {
+		t.Fatalf("cycles = %d, want 1: a turn atrium started does not re-arm", n.Load())
+	}
+	f.k.coldRearm(f.task.ID)
+	f.tick()
 	if n.Load() != 2 {
-		t.Fatalf("cycles = %d, want 2 after a new turn went cold", n.Load())
+		t.Fatalf("cycles = %d, want 2 after a typed turn went cold", n.Load())
 	}
 }
 
@@ -194,5 +199,39 @@ func TestColdHandoffBusyCycleIsRetried(t *testing.T) {
 	f.tick()
 	if calls.Load() != 2 || len(f.coldEvents()) != 1 {
 		t.Fatalf("calls = %d events = %d, want 2 and 1", calls.Load(), len(f.coldEvents()))
+	}
+}
+
+func TestColdHandoffSurvivesARoomRestartAndWaitsForAPerson(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	n := f.coldCounter()
+	f.st.SetKeepaliveState(f.task.ID, store.KeepaliveOff)
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+	f.tick()
+	if n.Load() != 1 {
+		t.Fatalf("cycles = %d, want 1", n.Load())
+	}
+	f.k.cooled = map[string]time.Time{}
+	for i := 0; i < 3; i++ {
+		f.now = f.now.Add(3 * time.Hour)
+		f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
+		f.tick()
+	}
+	if n.Load() != 1 {
+		t.Fatalf("cycles = %d, want 1: the continuation grew context and idled out, which is not a person", n.Load())
+	}
+	f.k.coldRearm(f.task.ID)
+	f.now = f.now.Add(3 * time.Hour)
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
+	f.tick()
+	if n.Load() != 2 {
+		t.Fatalf("cycles = %d, want 2 after a person's turn", n.Load())
+	}
+	f.now = f.now.Add(3 * time.Hour)
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
+	f.tick()
+	if n.Load() != 2 {
+		t.Fatalf("cycles = %d, want 2: the second handoff spent it again", n.Load())
 	}
 }
