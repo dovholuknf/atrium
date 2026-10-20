@@ -87,7 +87,7 @@ func TestDetachStartedInAJobThatRefusesBreakawayLeavesTheChildInNoJobThatBindsIt
 		if time.Now().After(deadline) {
 			t.Fatalf("the child never reported its job, its log has %q", data)
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond) // wait: poll for the child's log, which has no event to wait on
 	}
 	t.Log(report)
 	if strings.Contains(report, "limits=true") {
@@ -101,7 +101,7 @@ func TestJobReportProcess(t *testing.T) {
 	}
 	in, _, detail := SelfJob()
 	os.Stdout.WriteString("JOB in=" + strconv.FormatBool(in) + " " + detail + "\n")
-	time.Sleep(30 * time.Second)
+	time.Sleep(30 * time.Second) // wait: keeps the child alive until the test kills it
 }
 
 func TestJobHelperProcess(t *testing.T) {
