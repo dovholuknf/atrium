@@ -55,6 +55,7 @@ function recordToLog(title, body, goTo, key, taskFor, growl) {
   const sig = kind + " " + title + " " + (body || "");
   if (last && last.sig === sig) {
     if (growl) last.growl = growl;
+    if (taskFor) last.taskFor = taskFor;
     last.n = (last.n || 1) + 1;
     last.at = Date.now();
   } else {

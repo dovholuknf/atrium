@@ -1,0 +1,1 @@
+A row in the bell's tray for a question, a permission or a "ready" now opens that card's terminal on click, for a card on any room. The copy and "remind me" buttons keep their own action. (u-tray-row-opens-card)

@@ -23281,7 +23281,7 @@ async function main() {
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection,
       mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, arrivedOnce: arrivedOnceSection, popoutNotify: popoutNotifySection, 
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       
@@ -25238,6 +25238,7 @@ async function main() {
     await unit("growlPopout", () => growlPopoutSection(browser, base));
     await unit("growlOff", () => growlOffSection(browser, base));
     await unit("growlRemind", () => growlRemindSection(browser, base));
+    await unit("growlTrayRow", () => growlTrayRowSection(browser, base));
     // ── card urls: a card has an address made of names ──
     await unit("cardUrlTable", () => cardUrlTableSection(browser, base));
     await unit("cardUrlClash", () => cardUrlClashSection(browser, base));
@@ -26917,6 +26918,46 @@ async function growlRemindSection(browser, base) {
     if (h.errors.length) fail("growlRemind: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlRemind ok");
+}
+
+async function growlTrayRowSection(browser, base) {
+  growlBoard.off = true;
+  let h;
+  try { h = await growlBoard(browser, base, true, GROWL_STUBS); } finally { growlBoard.off = false; }
+  const { p } = h;
+  try {
+    await p.evaluate(() => {
+      localStorage.removeItem("atrium.toastlog");
+      paintToastLogBadge();
+      window.__landed = [];
+      landOnAlert = (t, g, k) => { window.__landed.push([t, g, k]); };
+      window.__clip = [];
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: t => { window.__clip.push(t); return Promise.resolve(); } } });
+    });
+    const q = GR("c", "question", 1);
+    await h.say([]);
+    await h.say([q]);
+    await p.waitForTimeout(300);
+    await p.evaluate(() => openToastLog());
+    const row = "#toastlog-list .tlrow:not(.pinned)";
+    const task = await p.getAttribute(row, "data-task");
+    if (task !== q.card) fail("growlTrayRow: the growler's row carried card " + JSON.stringify(task) + ", not " + q.card);
+    const landed = () => p.evaluate(() => window.__landed.slice());
+    await p.click(row + " .tlwhen");
+    await p.waitForTimeout(200);
+    let l = await landed();
+    if (l.length !== 1 || l[0][0] !== q.card) fail("growlTrayRow: a click on the row landed " + JSON.stringify(l));
+    await p.evaluate(() => openToastLog());
+    await p.click(row + " .tlcopy");
+    await p.waitForTimeout(200);
+    await p.click(row + ' .tlremind[data-remind="menu"]');
+    await p.waitForTimeout(200);
+    l = await landed();
+    if (l.length !== 1) fail("growlTrayRow: the copy or remind-me button navigated: " + JSON.stringify(l));
+    if ((await p.evaluate(() => window.__clip.length)) !== 1) fail("growlTrayRow: the copy button did not copy");
+    if (h.errors.length) fail("growlTrayRow: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlTrayRow ok");
 }
 
 async function growlQuietSection(browser, base) {

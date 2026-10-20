@@ -200,7 +200,7 @@ function growlLog(what, g, extra) {
   if (!growlOnce(what + "|" + g.id + "|" + g.raised_at + "|" + (extra || ""))) return;
   // The title alone. `what` is this file's name for the event, and the bell is read by a person: the tray said
   // "growler: ziti-fips/fix-fips asked 2 questions". It stays in the key above, so a raise and a reminder are two lines.
-  if (typeof recordToLog === "function") recordToLog(g.title, g.body || "", "", null, null, g.id);
+  if (typeof recordToLog === "function") recordToLog(g.title, g.body || "", "", null, growlCard(g), g.id);
 }
 
 // The card in the form the board's own list uses: `room~id` once two rooms are attached, bare before.
