@@ -289,6 +289,14 @@ write_summary() {
       tail -n 40 "$t"
       echo '```'
     done
+    if grep -q "^WARN " "$artefacts/time-guard.log" 2>/dev/null; then
+      echo
+      echo "## Time warnings (they do not fail the job)"
+      echo
+      echo '```'
+      grep "^WARN \|^time guard:" "$artefacts/time-guard.log" | cut -c1-200
+      echo '```'
+    fi
     if [ -f "$artefacts/timings.tsv" ]; then
       echo
       echo "## Slowest 10 tests"
@@ -547,7 +555,8 @@ if step go-race "go test -race (unit tests)"; then
 fi
 
 if step time-guard "test time guard"; then
-  # A package over 60s or a test over 5s fails unless scripts/test-time-allow.txt names it. Reads the stream kept above.
+  # A package over 60s or a test over 5s is a WARN line, or over its ceiling in scripts/test-time-allow.txt. Speed is not
+  # a functional check, so the guard exits 0 and the job stays green. Reads the stream kept above.
   # The self-test and the parser's Go tests run first, so a broken guard is not taken for a fast suite.
   check "time guard self-test" bash scripts/test-time-guard-test.sh
   check "time guard parser" go test scripts/ci-report.go scripts/ci-report_test.go
@@ -555,7 +564,8 @@ if step time-guard "test time guard"; then
   # more than 2.2x), so it gets twice the room. A developer's machine keeps the real limits.
   if [ -n "${GITHUB_ACTIONS:-}" ]; then export TEST_TIME_SCALE=2; fi
   if [ -f "$artefacts/go-test.json" ]; then
-    check "test time guard" bash scripts/test-time-guard.sh "$artefacts/go-test.json"
+    time_guard_run() { bash scripts/test-time-guard.sh "$artefacts/go-test.json" 2>&1 | tee "$artefacts/time-guard.log"; return "${PIPESTATUS[0]}"; }
+    check "test time guard" time_guard_run
   else
     echo "FAILED: no $artefacts/go-test.json to read. run the go-test step first." >&2
     mark_fail

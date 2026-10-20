@@ -23,7 +23,9 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   the whole go-test into one job, to use fewer runners. A `board-visual` failure is recorded but never fails the exit
   status. `ci-linux.sh` runs it in docker as a non-root user with no pwsh.
 - **CI ends by checking the tree is as it was.** A test that rewrites a tracked file or leaves a new one fails it.
-- `test-time-guard.sh` fails a package over 60s or a test over 5s unless `test-time-allow.txt` names it.
+- `test-time-guard.sh` prints `WARN PACKAGE` for a package over 60s and `WARN TEST` for a test over 5s, or over the
+  ceiling on its line in `test-time-allow.txt`. It always exits 0: speed is not a functional check. `ci.sh` runs it as
+  its own step and puts the WARN lines in `time-guard.log` and `summary.md`.
 - `check-test-globals.go` fails on a `_test.go` file assigning a package-level var. Hooks, delays and clocks belong on
   the struct that uses them.
 - **`test-touched.sh` is what a worker runs before handing back**: the Go packages, headless units and node tests

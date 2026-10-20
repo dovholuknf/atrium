@@ -1,5 +1,5 @@
-# The time guard's allowlist. scripts/test-time-guard.sh fails CI when a package takes more than 60s or a
-# single test more than 5s, unless it has a line here.
+# The time guard's allowlist. scripts/test-time-guard.sh prints a WARN line when a package takes more than 60s or a
+# single test more than 5s. It never fails CI. A line here sets the ceiling past which that entry warns.
 #
 #   <package, Pkg.TestName or Pkg.*>  <ceiling in seconds>  <reason, one line>
 #

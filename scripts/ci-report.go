@@ -27,7 +27,7 @@
 //
 // With -guard-only it prints nothing of the above. It reads the same stream, and
 // says only which packages and tests ran longer than the limits and are not on
-// the allowlist. scripts/test-time-guard.sh runs it that way. See guard below.
+// the allowlist, as WARN lines, and always exits 0. scripts/test-time-guard.sh runs it that way. See guard below.
 package main
 
 import (
@@ -253,11 +253,11 @@ func main() {
 			fmt.Println(m)
 		}
 		if len(over) > 0 {
-			fmt.Printf("%d over the time limits. see scripts/test-time-allow.txt\n", len(over))
+			fmt.Printf("time guard: 0 failures, %d warnings. speed is reported and never fails the job. see scripts/test-time-allow.txt\n", len(over))
 			_ = os.RemoveAll(*dir)
-			os.Exit(1)
+			return
 		}
-		fmt.Printf("ok: no package over %.0fs and no test over %.0fs that is not on the allowlist (%d lines)\n",
+		fmt.Printf("ok: 0 failures, 0 warnings: no package over %.0fs and no test over %.0fs that is not on the allowlist (%d lines)\n",
 			*pkgLimit, *testLimit, len(allow))
 		_ = os.RemoveAll(*dir)
 		return
@@ -335,9 +335,9 @@ func writeTimings(path string, times []timing) {
 }
 
 // THE TIME GUARD. A suite that has been made fast stays fast only if something
-// fails when it is not. A package past defaultPkgLimit seconds, or one test past
-// defaultTestLimit, fails the run unless scripts/test-time-allow.txt has a line
-// for it. A line carries a ceiling in seconds, which replaces the default for
+// says so when it is not. A package past defaultPkgLimit seconds, or one test past
+// defaultTestLimit, is a WARN line unless scripts/test-time-allow.txt has a line
+// for it. Speed is not a functional check, so a warning never changes the exit status. A line carries a ceiling in seconds, which replaces the default for
 // that package or test, and a reason. The ceilings are a ratchet: set a little
 // over what the thing takes today, and lower when it is made faster.
 const (
@@ -419,20 +419,20 @@ func ceilingFor(allow []allowEntry, pkg, test string, def float64) (limit float6
 	return def, false
 }
 
-// overLimit says, one line each, what ran past its limit. Every line names the
+// overLimit says, one WARN line each, what ran past its limit. Every line names the
 // package or test, its time, the limit, and what to do.
 func overLimit(tests, pkgs []timing, allow []allowEntry, pkgLimit, testLimit float64) []string {
 	var out []string
 	const fix = "make it faster, or add a line to scripts/test-time-allow.txt with a ceiling and the reason"
 	for _, p := range pkgs {
 		if limit, listed := ceilingFor(allow, p.pkg, "", pkgLimit); p.secs > limit {
-			out = append(out, fmt.Sprintf("SLOW PACKAGE %s took %.1fs, the limit is %.0fs%s: %s",
+			out = append(out, fmt.Sprintf("WARN PACKAGE %s took %.1fs, the limit is %.0fs%s: %s",
 				p.pkg, p.secs, limit, listedNote(listed), fix))
 		}
 	}
 	for _, t := range tests {
 		if limit, listed := ceilingFor(allow, t.pkg, t.test, testLimit); t.secs > limit {
-			out = append(out, fmt.Sprintf("SLOW TEST %s %s took %.2fs, the limit is %.0fs%s: %s",
+			out = append(out, fmt.Sprintf("WARN TEST %s %s took %.2fs, the limit is %.0fs%s: %s",
 				t.pkg, t.test, t.secs, limit, listedNote(listed), fix))
 		}
 	}

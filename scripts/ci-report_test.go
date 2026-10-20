@@ -59,13 +59,13 @@ func TestOverLimit(t *testing.T) {
 	}
 	got := strings.Join(overLimit(tests, pkgs, allow, 60, 5), "\n")
 	for _, want := range []string{
-		"SLOW TEST m/internal/x TestOver took 5.10s, the limit is 5s:",
-		"SLOW TEST m/internal/x TestSlow/sub2 took 10.50s, the limit is 10s (its allowlist ceiling)",
-		"SLOW TEST m/internal/w TestAnythingElse took 21.00s, the limit is 20s",
-		"SLOW TEST m/internal/notx TestSlow took 9.00s, the limit is 5s:",
-		"SLOW PACKAGE m/internal/slow took 121.0s, the limit is 120s",
-		"SLOW PACKAGE m/internal/other took 60.1s, the limit is 60s:",
-		"SLOW PACKAGE m/internal/xslow took 61.0s, the limit is 60s:",
+		"WARN TEST m/internal/x TestOver took 5.10s, the limit is 5s:",
+		"WARN TEST m/internal/x TestSlow/sub2 took 10.50s, the limit is 10s (its allowlist ceiling)",
+		"WARN TEST m/internal/w TestAnythingElse took 21.00s, the limit is 20s",
+		"WARN TEST m/internal/notx TestSlow took 9.00s, the limit is 5s:",
+		"WARN PACKAGE m/internal/slow took 121.0s, the limit is 120s",
+		"WARN PACKAGE m/internal/other took 60.1s, the limit is 60s:",
+		"WARN PACKAGE m/internal/xslow took 61.0s, the limit is 60s:",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
