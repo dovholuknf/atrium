@@ -80,6 +80,17 @@ function logNotification(title, body, goTo, key, taskFor) {
   recordToLog(title, body, goTo, key, taskFor);
 }
 
+function trayIsOpen() {
+  const dlg = document.getElementById("toastlog");
+  return !!dlg && dlg.open;
+}
+
+// Opening the tray takes down what is on screen as seen, and what waited its turn. A hub gate toast is sticky and stays.
+function dismissToasts() {
+  toastQueue.length = 0;
+  document.querySelectorAll("#toasts .toast:not(.sticky)").forEach(el => el.dismiss && el.dismiss());
+}
+
 // The real one, held before it is replaced.
 const rawToast = toast;
 
@@ -89,6 +100,7 @@ toast = function (title, body, goTo, key, taskFor) {
   // screen is still in the list. The list is the durable half and the toast is
   // the interruption.
   recordToLog(title, body, goTo, key, taskFor);
+  if (trayIsOpen()) { openToastLog(); return phoneToastStub; }
   // A phone nudges the bell instead of drawing a box over the terminal. See js/phone-bell.js.
   if (phoneToasts()) { nudgeBell("bell"); return phoneToastStub; }
   return rawToast(title, body, goTo, key, taskFor);
@@ -259,7 +271,7 @@ function openToastLog() {
   try { localStorage.setItem(TOASTLOG_KEY + ".seen", String(Date.now())); } catch (e) {}
   // `showModal` on an open dialog throws.
   const dlg = document.getElementById("toastlog");
-  if (!dlg.open) dlg.showModal();
+  if (!dlg.open) { dismissToasts(); dlg.showModal(); }
   const hdr = document.querySelector("header");
   dlg.style.setProperty("--tray-top", (hdr ? Math.max(0, Math.round(hdr.getBoundingClientRect().bottom)) : 0) + "px");
   paintToastLogBadge();
