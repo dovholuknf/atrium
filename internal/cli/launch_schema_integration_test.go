@@ -36,12 +36,8 @@ func TestEveryLaunchArgTheRoomReadsIsAdvertisedByStdioControl(t *testing.T) {
 			continue
 		}
 		seen++
-		m, _ := tl.InputSchema.(map[string]any)
-		props, _ := m["properties"].(map[string]any)
-		for _, arg := range daemonLaunchArgs() {
-			if _, ok := props[arg]; !ok {
-				t.Errorf("%s does not advertise %q, which the room reads", tl.Name, arg)
-			}
+		for _, arg := range missingLaunchArgs(tl.InputSchema, daemonLaunchArgs()) {
+			t.Errorf("%s does not advertise %q, which the room reads", tl.Name, arg)
 		}
 	}
 	if seen != 2 {

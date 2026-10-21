@@ -73,6 +73,7 @@ func newControl() *cobra.Command {
 				// thing to install and it can never be a version behind.
 				return runRestart(db, delay)
 			}
+			go warnIfControlOlderThanRoom(cmd.ErrOrStderr())
 			return controlServer().Run(cmd.Context(), &mcp.StdioTransport{})
 		},
 	}

@@ -399,6 +399,48 @@ function Test-RoomServes([int]$Tries = 3) {
   return $false
 }
 
+# Install-Control puts the same build beside atrium.exe as atrium-control.exe, the copy `atrium control` runs from. An
+# MCP client holds it open for as long as a session lives, so it is swapped as atrium.exe is: stage, rename the old one
+# aside, rename the new one in. Best effort, because a deploy that already put the room's binary in place must not fail
+# on it, and the control server says itself when it is older than its room. Returns $true when it is in place.
+function Install-Control([string]$From = $AtriumNew) {
+  $ctl = Join-Path $AtriumBinDir 'atrium-control.exe'
+  $next = Join-Path $AtriumBinDir 'atrium-control.next.exe'
+  $aside = Join-Path $AtriumBinDir "atrium-control.old-$(Get-Date -Format yyyyMMddHHmmss).exe"
+  if (-not (Test-Path $From)) { Say "WARNING: no build at $From for atrium-control.exe"; return $false }
+  Invoke-Step "copy $From -> $next (staged, nothing has it open)" { Copy-Item $From $next -Force }
+  if ($WhatIf) {
+    Say "WHATIF: rename $ctl -> $aside"
+    Say "WHATIF: rename $next -> $ctl"
+    return $true
+  }
+  if (Test-Path $ctl) {
+    $moved = $false
+    for ($i = 0; $i -lt 20 -and -not $moved; $i++) {
+      try { Rename-Item $ctl $aside -ErrorAction Stop; $moved = $true } catch { Start-Sleep -Milliseconds 400 }
+    }
+    if (-not $moved) {
+      Remove-Item $next -Force -ErrorAction SilentlyContinue
+      Say "WARNING: could not rename $ctl aside. atrium-control.exe is left as it was"
+      return $false
+    }
+  }
+  $placed = $false
+  for ($i = 0; $i -lt 20 -and -not $placed; $i++) {
+    try { Rename-Item $next (Split-Path $ctl -Leaf) -ErrorAction Stop; $placed = $true }
+    catch { Start-Sleep -Milliseconds 400 }
+  }
+  if (-not $placed) {
+    if (Test-Path $aside) { Rename-Item $aside (Split-Path $ctl -Leaf) -ErrorAction SilentlyContinue }
+    Say "WARNING: could not rename $next into place. the old atrium-control.exe is back"
+    return $false
+  }
+  Say "renamed $ctl -> $aside, and $next -> $ctl"
+  Get-ChildItem (Join-Path $AtriumBinDir 'atrium-control.old-*.exe') | Sort-Object LastWriteTime -Descending |
+    Select-Object -Skip 3 | ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+  return $true
+}
+
 # Install-Atrium stages the new build and swaps it in with two renames. Returns $true when it is in place.
 #
 # Retries each rename, because a hook starting at that instant can hold the name for a moment. The file moved aside is
@@ -434,6 +476,7 @@ function Install-Atrium([string]$From = $AtriumNew) {
   # Best effort: an aside file something still runs cannot be deleted, and is left for next time.
   Get-ChildItem (Join-Path $AtriumBinDir 'atrium.old-*.exe') | Sort-Object LastWriteTime -Descending |
     Select-Object -Skip 3 | ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+  $null = Install-Control $From
   return $true
 }
 
