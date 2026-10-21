@@ -11,25 +11,22 @@ import (
 	"testing"
 )
 
-func denied(t *testing.T, dir string) {
-	t.Helper()
-	orig := evalSymlinks
-	t.Cleanup(func() { evalSymlinks = orig })
-	evalSymlinks = func(p string) (string, error) {
+func denied(dir string) func(string) (string, error) {
+	return func(p string) (string, error) {
 		if strings.EqualFold(p, dir) {
 			return "", &fs.PathError{Op: "CreateFile", Path: p, Err: fs.ErrPermission}
 		}
-		return orig(p)
+		return filepath.EvalSymlinks(p)
 	}
 }
 
 func TestADeniedAncestorIsWalkedPastLikeAMissingOne(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "work", "cards")
-	denied(t, filepath.Join(base, "work"))
+	eval := denied(filepath.Join(base, "work"))
 	home := filepath.Join(root, "second-room-hooks")
 
-	got, err := Contained(root, home)
+	got, err := containedWith(eval, root, home)
 	if err != nil {
 		t.Fatalf("a home under a root whose ancestor is denied was refused: %v", err)
 	}
@@ -42,14 +39,14 @@ func TestADeniedAncestorIsWalkedPastLikeAMissingOne(t *testing.T) {
 func TestADeniedAncestorStillRefusesAPathOutsideTheRoot(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "work", "cards")
-	denied(t, filepath.Join(base, "work"))
+	eval := denied(filepath.Join(base, "work"))
 
 	for _, p := range []string{
 		filepath.Join(base, "work", "cards-evil", "x"),
 		filepath.Join(root, "..", "other"),
 		filepath.Join(base, "elsewhere"),
 	} {
-		if _, err := Contained(root, p); !errors.Is(err, ErrOutside) {
+		if _, err := containedWith(eval, root, p); !errors.Is(err, ErrOutside) {
 			t.Fatalf("%s: err %v, want ErrOutside", p, err)
 		}
 	}
@@ -61,10 +58,10 @@ func TestADeniedDirectoryUnderTheRootIsRefused(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	denied(t, dir)
+	eval := denied(dir)
 
 	for _, p := range []string{dir, filepath.Join(dir, "link"), filepath.Join(dir, "link", "secret")} {
-		if _, err := Contained(root, p); err == nil {
+		if _, err := containedWith(eval, root, p); err == nil {
 			t.Fatalf("%s: a denied directory under the root was walked past", p)
 		}
 	}

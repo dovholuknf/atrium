@@ -20,8 +20,6 @@ import (
 	"unicode"
 )
 
-var evalSymlinks = filepath.EvalSymlinks
-
 // ErrOutside is returned when a path resolves outside its root.
 var ErrOutside = errors.New("that path is outside where this card is allowed to reach")
 
@@ -49,6 +47,10 @@ var ErrOutside = errors.New("that path is outside where this card is allowed to 
 // missed, because the obvious implementation calls EvalSymlinks on the whole
 // path and returns an error that reads like a permission problem.
 func Contained(root, path string) (string, error) {
+	return containedWith(filepath.EvalSymlinks, root, path)
+}
+
+func containedWith(evalSymlinks func(string) (string, error), root, path string) (string, error) {
 	root = strings.TrimSpace(root)
 	path = strings.TrimSpace(path)
 	if root == "" {
@@ -62,7 +64,7 @@ func Contained(root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	realRoot, err := resolve(absRoot, func(string) bool { return true })
+	realRoot, err := resolve(evalSymlinks, absRoot, func(string) bool { return true })
 	if err != nil {
 		return "", err
 	}
@@ -75,7 +77,7 @@ func Contained(root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	realTarget, err := resolve(absTarget, func(cur string) bool { return within(cur, realRoot) })
+	realTarget, err := resolve(evalSymlinks, absTarget, func(cur string) bool { return within(cur, realRoot) })
 	if err != nil {
 		return "", err
 	}
@@ -122,7 +124,7 @@ func min(a, b int) int {
 // A directory the process may not read (V:/work on a per-logon drive) answers access denied the same
 // way, but only where skipDenied says so: below the root a denied directory may still be traversed, so a link in it
 // would go unseen, and that fails closed.
-func resolve(path string, skipDenied func(cur string) bool) (string, error) {
+func resolve(evalSymlinks func(string) (string, error), path string, skipDenied func(cur string) bool) (string, error) {
 	rest := ""
 	cur := path
 	for {
