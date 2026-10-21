@@ -37,6 +37,7 @@
   {"kind": "board", "name": "phoneShare", "reason": "failed on macos and windows go-checks-visual in run 39526534987: the terminals output is 69.8% of the viewport, under 70%. Both OSes, so likely a layout change, cause not traced."},
   {"kind": "board", "name": "phoneKeyboard", "reason": "failed on ubuntu go-all board-visual in run 39528943629: with the keyboard up the cursor row (511-527) is not above the key bar (top 493). Cause not traced."},
   {"kind": "go", "package": "internal/api", "name": "TestPublishTaskCoalescesABurstToTheLatestState", "reason": "failed on macos go-test in run 39528943629 (taskevent_integration_test.go:245): wanted one event per card (2), got 3. Cause not traced."},
+  {"kind": "go", "package": "internal/gitsync", "name": "TestASeededMainFollowsItsForge", "reason": "failed on windows go-test-1 in run 39618825311 (storeforge_integration_test.go:317): fetch main served an older tip than the forge's. Cause not traced."},
   {"kind": "board", "name": "termFitHeight", "reason": "failed on macos board-1 in run 39533414281, passed on retry: after the hint bar grew the last row ends at 754.5 but the bar starts at 759.0. Cause not traced."},
  {"kind": "board", "name": "changeReq", "reason": "failed on ubuntu in run 39032382613: passed on retry. Load evidence, cause not traced."},
  {"kind": "board", "name": "pasteLands", "reason": "failed on macos in run 39042049947: passed on retry. Load evidence, cause not traced."},
