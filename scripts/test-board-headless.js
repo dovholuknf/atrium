@@ -6696,7 +6696,8 @@ async function phoneShareSection(browser, base) {
     const r = await share(p);
     console.log("phoneShare " + tag + ": output is " + (r.share * 100).toFixed(1) + "% of the viewport (" + Math.round(r.h) + " of " + Math.round(r.vv) + "px)");
     // The terminals tab carries the filter strip's line above the pane (js/filter-drawer.js), which the pop-out does not.
-    const floor = tag === "popout" ? 0.75 : 0.70;
+    // Rows fit the pane's content box, so its padding is not drawn into and a row can drop out.
+    const floor = tag === "popout" ? 0.75 : 0.68;
     if (r.share < floor) fail("phoneShare " + tag + ": the output is " + (r.share * 100).toFixed(1) + "% of the viewport, under " + floor * 100 + "%");
   };
   const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false;
