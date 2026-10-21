@@ -12,12 +12,15 @@ package safepath
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"unicode"
 )
+
+var evalSymlinks = filepath.EvalSymlinks
 
 // ErrOutside is returned when a path resolves outside its root.
 var ErrOutside = errors.New("that path is outside where this card is allowed to reach")
@@ -115,18 +118,21 @@ func min(a, b int) int {
 // path fails. Walking up to the longest existing ancestor and resolving THAT
 // is what makes a not-yet-existing path checkable: whatever directory will
 // hold the new file does exist, and that is the thing worth resolving.
+//
+// A directory the process may not read (V:/work on a per-logon drive) answers access denied the same
+// way, and is walked past the same way: the nearest ancestor that does resolve is what gets compared.
 func resolve(path string) (string, error) {
 	rest := ""
 	cur := path
 	for {
-		real, err := filepath.EvalSymlinks(cur)
+		real, err := evalSymlinks(cur)
 		if err == nil {
 			if rest == "" {
 				return real, nil
 			}
 			return filepath.Join(real, rest), nil
 		}
-		if !os.IsNotExist(err) {
+		if !os.IsNotExist(err) && !errors.Is(err, fs.ErrPermission) {
 			return "", err
 		}
 		parent := filepath.Dir(cur)
