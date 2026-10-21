@@ -22,6 +22,7 @@ New-Item -ItemType Directory $Base | Out-Null
 try {
   Check 'in a job the route is wmi' ((Get-StartRoute $true) -eq 'wmi')
   Check 'outside any job the route is breakaway' ((Get-StartRoute $false) -eq 'breakaway')
+  Check 'a job that could not be read is treated as a job' ((Get-StartRoute $null) -eq 'wmi')
 
   $env:ATRIUM_HOSTS = 'a.example,b.example'
   $env:ATRIUM_PCT = '50%'

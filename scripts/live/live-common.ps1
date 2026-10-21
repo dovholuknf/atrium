@@ -621,7 +621,7 @@ function Test-ProcessInJob([int]$ProcId) {
 # Get-StartRoute picks how a detached process is started. A caller already inside a job goes straight to WMI, the one
 # start that is in no job of ours: CreateProcess with breakaway only escapes the innermost job. Outside any job the
 # cheaper breakaway start is enough.
-function Get-StartRoute([bool]$InJob) { if ($InJob) { 'wmi' } else { 'breakaway' } }
+function Get-StartRoute($InJob) { if ($InJob -or $null -eq $InJob) { 'wmi' } else { 'breakaway' } }
 
 # Start-Wmi starts a command line through Win32_Process Create: WmiPrvSE is its parent, so it is in no job of ours and
 # survives the terminal that ran the script. Hidden. Returns the pid, throws when WMI refuses.
@@ -648,7 +648,7 @@ function New-LaunchScript([string]$Path, [string]$Command) {
 # Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
 # when the result is still in one. Returns the pid of the cmd that runs it. Throws only when neither route could start it.
 function Start-Jobless([string]$Command, [string]$Tag) {
-  $route = Get-StartRoute ([bool](Test-ProcessInJob $PID))
+  $route = Get-StartRoute (Test-ProcessInJob $PID)
   $procId = $null
   if ($route -eq 'wmi') {
     try {

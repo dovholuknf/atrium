@@ -543,6 +543,47 @@ func TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard(t *testing.T) 
 	_ = r.tm().Kill()
 }
 
+func TestARunnerLaunchedAfterAFailedDialStillGoesToTheHostOnceItIsUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	t.Parallel()
+	dir, err := os.MkdirTemp("", "ht")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	d := daemonAt(t, dir)
+	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
+	sh, args := someShell(t)
+
+	first := cardAt(t, d, "before-host", t.TempDir())
+	if _, err := d.spawnPTY(first.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.sup.get(first.ID); r == nil || hostOf(r) != nil {
+		t.Fatalf("want the first runner in process while there is no host, got %+v", r)
+	} else {
+		t.Cleanup(func() { _ = r.tm().Kill() })
+	}
+
+	h, err := ptyhost.Listen(dir, ptyhost.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { h.Close() })
+
+	second := cardAt(t, d, "after-host", t.TempDir())
+	if _, err := d.spawnPTY(second.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	r := d.sup.get(second.ID)
+	if r == nil || hostOf(r) == nil {
+		t.Fatalf("a runner launched with the host up is not in it: %+v", r)
+	}
+	_ = r.tm().Kill()
+}
+
 func TestWaitForHostDoesNothingWithTheSettingOff(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

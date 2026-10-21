@@ -188,6 +188,10 @@ func (d *Daemon) connectHost(dir, addr string, takeover, start bool, so ptyhost.
 // repeat.
 func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []string, cwd string, env []string,
 	cols, rows int) (t term, ok bool, err error) {
+	// A launch always tries: a failure remembered from another launch must not put this runner in the room.
+	d.ph.mu.Lock()
+	d.ph.failAt = time.Time{}
+	d.ph.mu.Unlock()
 	cl, addr, err := d.hostClient(false, true)
 	if err != nil {
 		d.hostFallback(taskID, kind, name, "there is no host: "+err.Error())
