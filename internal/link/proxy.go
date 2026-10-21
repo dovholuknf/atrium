@@ -624,6 +624,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			`run atrium stop on the machine the room is on."}`)
 		return
 	}
+	// OVERLAY SETUP AND TEARDOWN ARE FOR THE MACHINE THEY RUN ON. The room checks the caller's address, and through
+	// a link every caller is the hub, so the room's own gate cannot see who is asking. Refused here as with shutdown.
+	if strings.HasPrefix(r.URL.Path, "/v1/overlays/") &&
+		(strings.HasSuffix(r.URL.Path, "/setup") || strings.HasSuffix(r.URL.Path, "/teardown")) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"error":"set up overlays from the machine they are for"}`)
+		return
+	}
 	// GIT SYNC IS BETWEEN THE HUB AND ITS ROOMS, NOT THE BOARD. A room serves its claude/*
 	// branches and takes sync requests at /v1/git/, and the hub reaches them through
 	// Hub.Transport, never through this proxy. Forwarding them would let anybody who can

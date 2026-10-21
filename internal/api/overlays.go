@@ -2,8 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // The board's side of reaching atrium from elsewhere.
@@ -70,6 +73,10 @@ func (s *Server) stopOverlay(w http.ResponseWriter, r *http.Request) {
 // that says what went wrong, and a red box with no next step is how somebody
 // gives up.
 func (s *Server) setupOverlay(w http.ResponseWriter, r *http.Request) {
+	if !edge.LocalOperator(r) {
+		writeErr(w, http.StatusForbidden, errors.New("set up overlays from the machine they are for"+edge.ProxyNote(r)))
+		return
+	}
 	if s.SetupOverlay == nil {
 		writeErr(w, http.StatusNotImplemented, errNoOverlays)
 		return
@@ -84,6 +91,10 @@ func (s *Server) setupOverlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) teardownOverlay(w http.ResponseWriter, r *http.Request) {
+	if !edge.LocalOperator(r) {
+		writeErr(w, http.StatusForbidden, errors.New("set up overlays from the machine they are for"+edge.ProxyNote(r)))
+		return
+	}
 	if s.TeardownOverlay == nil {
 		writeErr(w, http.StatusNotImplemented, errNoOverlays)
 		return
