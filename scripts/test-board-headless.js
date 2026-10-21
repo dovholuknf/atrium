@@ -26002,6 +26002,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mBell", () => mBellSection(browser));
     await unit("mAgentIdle", () => mAgentIdleSection(browser));
     await unit("greyMeansDead", () => greyMeansDeadSection(browser, base));
+    await unit("termListPatch", () => termListPatchSection(browser, base));
     await unit("noResumeButton", () => noResumeButtonSection(browser, base));
     await unit("phoneRedirect", () => phoneRedirectSection(browser, base));
     await unit("gearTermList", () => gearTermListSection(browser, base));
@@ -26638,6 +26639,71 @@ async function greyMeansDeadSection(browser, base) {
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("greyMeansDead ok");
+}
+
+async function termListPatchSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e && e.message || e)));
+  const tag = "termListPatch: ";
+  try {
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForTimeout(1000);
+    const out = await p.evaluate(async () => {
+      const mk = (id, repo, over) => Object.assign({ id, title: id, display_title: id, status: "running", wire_name: "w/" + id,
+        tags: [], worktree: "/g/github/o/" + repo + "-" + id, repo: "o/" + repo, runner: "claude", supervised: true, pid: 0, seen: {},
+        activity: {}, created_at: "2026-10-13T10:00:00Z" }, over);
+      const cards = [];
+      for (let i = 0; i < 24; i++) {
+        cards.push(mk("c" + i, "r" + (i % 4), { pinned: i < 3, rank: i, last_activity_at: new Date(Date.now() - (i + 1) * 60000).toISOString() }));
+      }
+      boardCards = async () => cards.map(c => Object.assign({}, c));
+      const host = document.getElementById("term-list");
+      const rows = () => [...host.querySelectorAll(".card.tab[data-id]")];
+      const scenarios = {};
+      for (const mode of ["name", "activity"]) {
+        setTermSortMode(mode);
+        cards[11].activity = { what: "tool", tool: "Bash", at: new Date().toISOString() };
+        cards[11].last_activity_at = new Date().toISOString();
+        await renderTermList();
+        const pool = [...rows(), ...host.querySelectorAll(".tgroup, .tnest")];
+        pool.forEach((n, i) => { n.__tag = i; });
+        const mut = [];
+        const mo = new MutationObserver(r => mut.push(...r));
+        mo.observe(host, { childList: true, subtree: true, attributes: true, characterData: true });
+        cards[11].activity = {};
+        cards[11].last_activity_at = new Date(Date.now() - 3600000).toISOString();
+        const t0 = performance.now();
+        await renderTermList();
+        const ms = performance.now() - t0;
+        await Promise.resolve();
+        mo.disconnect();
+        const after = [...rows(), ...host.querySelectorAll(".tgroup, .tnest")];
+        const moved = new Set(mut.filter(r => r.type === "childList").flatMap(r => [...r.addedNodes])
+          .filter(n => n.nodeType === 1 && n.dataset && n.dataset.id).map(n => n.dataset.id));
+        const touchedRows = new Set(mut.map(r => {
+          const e = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+          const row = e && e.closest(".card.tab[data-id]");
+          return row ? row.dataset.id : "";
+        }).filter(Boolean));
+        scenarios[mode] = { moved: moved.size, lost: pool.filter(n => !host.contains(n)).length,
+          fresh: after.filter(n => n.__tag === undefined).length, mutations: mut.length, touchedRows: [...touchedRows],
+          ms: Math.round(ms * 10) / 10 };
+      }
+      return scenarios;
+    });
+    for (const mode of Object.keys(out)) {
+      const s = out[mode];
+      console.log("termListPatch " + mode + " " + JSON.stringify(s));
+      if (s.lost || s.fresh) fail(tag + mode + ": one card's update replaced " + s.lost + " nodes and built " + s.fresh + " new ones");
+      if (s.moved > 1) fail(tag + mode + ": one card changing re-inserted " + s.moved + " rows");
+      if (s.mutations > 6) fail(tag + mode + ": one card changing wrote " + s.mutations + " mutations into the list");
+      if (s.touchedRows.some(id => id !== "c11")) fail(tag + mode + ": rows other than c11 were written: " + s.touchedRows.join(","));
+    }
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termListPatch ok");
 }
 
 async function mAgentIdleSection(browser) {

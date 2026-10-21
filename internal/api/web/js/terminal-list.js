@@ -1128,7 +1128,7 @@ function termRow(t, deep, kid) {
            // a click: there is nothing to attach to, so it offers to start
            // the session again where it was.
            termCold(t) && !keptOpen ? " cold" : keptOpen ? " kept" : ""}${wear.cls}${newCardClass(t)}"
-         data-id="${t.id}"
+         data-id="${t.id}"${kid ? "" : ` draggable="true"`}
          data-tip="${esc(hover + (termCold(t) ? (t.parked_at ? "\nparked after sitting idle. resume it from the right-click menu"
            : "\nthis one has exited. resume it from the right-click menu") +
            (keptOpen ? "\nthe filter would hide it, but it is open in the pane, so it stays until you switch away" : "")
@@ -2231,7 +2231,6 @@ let termDragEl = null;
 // the terminal's paste handler already taught this file about.
 function wireTermDrag(host) {
   host.querySelectorAll(".card.tab:not(.kid)").forEach(el => {
-    el.draggable = true;
     el.ondragstart = e => {
       termDragID = el.dataset.id;
       termDragEl = el;

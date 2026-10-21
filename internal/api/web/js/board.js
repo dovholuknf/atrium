@@ -139,6 +139,12 @@ function morphChildren(parent, source) {
     if (k && !keyed.has(k)) keyed.set(k, n);
   }
 
+  // A node that is re-inserted restarts its CSS animations and loses its hover, so a reorder moves as few as it can.
+  // The keyed rows already in the wanted order stay where they are (the longest increasing run of old positions) and
+  // only the rest are moved. Without it one row sinking from first to last re-inserted every row it passed.
+  const stay = keptInOrder(parent, source, keyed);
+  const claimed = new Set();
+
   // `cursor` is where the next child belongs. Everything before it is done.
   let cursor = parent.firstChild;
   let want = source.firstChild;
@@ -171,26 +177,67 @@ function morphChildren(parent, source) {
     }
 
     if (mine) {
-      if (mine !== cursor) { parent.insertBefore(mine, cursor); changed = true; }
+      claimed.add(mine);
+      if (mine !== cursor) {
+        // Nodes between the cursor and a node that stays are keyed ones moving elsewhere or going stale: stepped over.
+        if (stay.has(mine) && onlyKeyedBetween(cursor, mine)) cursor = mine;
+        else { parent.insertBefore(mine, cursor); changed = true; }
+      }
       if (morphNode(mine, want)) changed = true;
-      cursor = mine.nextSibling;
+      if (mine === cursor) cursor = mine.nextSibling;
     } else {
       // New. Adopted from the parsed copy rather than cloned, since the copy
       // is thrown away either way.
+      claimed.add(want);
       parent.insertBefore(want, cursor);
       changed = true;
     }
     want = after;
   }
 
-  // Whatever the cursor never reached is gone.
-  while (cursor) {
-    const stale = cursor;
-    cursor = cursor.nextSibling;
-    parent.removeChild(stale);
-    changed = true;
+  // Whatever was never claimed is gone.
+  for (let n = parent.firstChild; n;) {
+    const next = n.nextSibling;
+    if (!claimed.has(n)) { parent.removeChild(n); changed = true; }
+    n = next;
   }
   return changed;
+}
+
+// The keyed children already on the page that can stay where they are: of those the new markup still wants, the
+// longest run whose old positions already run in the wanted order.
+function keptInOrder(parent, source, keyed) {
+  const at = new Map();
+  let i = 0;
+  for (let n = parent.firstChild; n; n = n.nextSibling) at.set(n, i++);
+  const seen = new Set();
+  const nodes = [];
+  for (let w = source.firstChild; w; w = w.nextSibling) {
+    const k = morphKey(w);
+    const n = k && !seen.has(k) ? keyed.get(k) : null;
+    if (!n) continue;
+    seen.add(k);
+    nodes.push(n);
+  }
+  const tails = [], prev = new Array(nodes.length).fill(-1);
+  for (let j = 0; j < nodes.length; j++) {
+    const v = at.get(nodes[j]);
+    let lo = 0, hi = tails.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (at.get(nodes[tails[mid]]) < v) lo = mid + 1; else hi = mid; }
+    if (lo > 0) prev[j] = tails[lo - 1];
+    tails[lo] = j;
+  }
+  const out = new Set();
+  for (let j = tails.length ? tails[tails.length - 1] : -1; j >= 0; j = prev[j]) out.add(nodes[j]);
+  return out;
+}
+
+// Whitespace between rows is unkeyed too and is drawn again whenever it is skipped, which costs nothing to see.
+function onlyKeyedBetween(from, to) {
+  for (let n = from; n && n !== to; n = n.nextSibling) {
+    if (!morphKey(n) && !(n.nodeType === 3 && !n.nodeValue.trim())) return false;
+  }
+  return !!from;
 }
 
 // What makes two nodes THE SAME NODE across a repaint.
