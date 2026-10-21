@@ -94,7 +94,8 @@ function composeNoEntry(n) {
   if (!held) return;
   const say = document.getElementById("t-nodev-say");
   say.textContent = "step " + n.n + "/" + n.of + ": " + (n.step === "wake" ? "waking it to read the handoff" : n.label);
-  say.title = say.textContent;
+  say.dataset.tip = say.textContent;
+  say.setAttribute("aria-label", say.textContent);
 }
 
 // The bar under the terminal while the card is in a cycle: what step it is on and the button that ends it.

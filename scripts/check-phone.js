@@ -24,8 +24,10 @@ function fail(msg) {
 }
 
 // The phone block, as text, so the rules below can ask what is in it.
-const phoneAt = html.indexOf("@media (max-width: 480px)");
-const phone = phoneAt < 0 ? "" : html.slice(phoneAt, html.indexOf("\n  }", phoneAt));
+let phone = "";
+for (let at = html.indexOf("@media (max-width: 480px)"); at >= 0; at = html.indexOf("@media (max-width: 480px)", at + 1)) {
+  phone += html.slice(at, html.indexOf("\n  }", at)) + "\n";
+}
 if (!phone) {
   fail("there is no `@media (max-width: 480px)` block. The phone layout is the " +
     "whole of backlog item 11 and it lives in one block.");
