@@ -2441,6 +2441,39 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS card_scratch_card ON card_scratch (card)`,
 		},
 	},
+	{
+		// THE REVIEW A CARD HOLDS AND ITS FINDINGS. See store/card_review.go.
+		name: "0112_card_review",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS card_review (
+				card       TEXT PRIMARY KEY,
+				base       TEXT NOT NULL,
+				merge_base TEXT NOT NULL DEFAULT '',
+				files      TEXT NOT NULL DEFAULT '[]',
+				created_at TEXT NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS card_finding (
+				card       TEXT NOT NULL,
+				num        INTEGER NOT NULL,
+				cat        TEXT NOT NULL,
+				kind       TEXT NOT NULL DEFAULT '',
+				origin     TEXT NOT NULL DEFAULT '',
+				site       TEXT NOT NULL DEFAULT '',
+				title      TEXT NOT NULL DEFAULT '',
+				edits      TEXT NOT NULL DEFAULT '[]',
+				note       TEXT NOT NULL DEFAULT '',
+				footer     TEXT NOT NULL DEFAULT '',
+				diff       TEXT NOT NULL DEFAULT '',
+				base_diff  TEXT NOT NULL DEFAULT '',
+				lines      INTEGER NOT NULL DEFAULT 0,
+				grp        TEXT NOT NULL DEFAULT 'single' CHECK (grp IN ('single','batch')),
+				state      TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('waiting','queued','applied','kept','withdrawn','vetoed')),
+				reason     TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (card, num)
+			)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

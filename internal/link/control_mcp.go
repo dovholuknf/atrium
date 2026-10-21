@@ -147,7 +147,7 @@ func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *
 // class. See ctlclass.go, which says why this is tidiness and not a boundary.
 func (c *controlMCP) handler() http.Handler {
 	servers := map[ctlClass]*mcp.Server{}
-	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident, classWorkerItem} {
+	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident, classWorkerItem, classWorkerReview} {
 		servers[class] = c.server(class)
 	}
 	return mcp.NewStreamableHTTPHandler(
@@ -419,6 +419,9 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"Use this rather than a script against the API. A card on ANOTHER ROOM is `name@room`, `alias@room` " +
 			"or `room~id`, as `atrium_say` takes it.",
 	}, audited(c, "ctl-close", describeClose, c.closeHandler))
+
+	addTool(s, class, &mcp.Tool{Name: "atrium_review", Description: reviewToolDesc},
+		audited(c, "ctl-review", describeReview, c.reviewHandler))
 
 	addTool(s, class, &mcp.Tool{
 		Name: "restart_atrium",
@@ -1637,7 +1640,7 @@ type launchInput struct {
 	// Room launches on another room. The worker's reports come back across.
 	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. its reports and notices still reach you, as your-handle@your-room"`
 	// Kind is what sort of session this is. Empty is an ordinary worker.
-	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise"`
+	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise. review starts a slop review of the branch checked out in cwd (or repo and branch): atrium writes the review rules into BRIEF.md, tags the card atrium:review, serves it atrium_review and does not nudge it. base names the branch it measures against, default claude/main. it is still a worker and still names an item"`
 	// Scratch lets the launch start outside a git checkout.
 	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
 	// Item is the backlog item the worker is on, REQUIRED. See WorkTagPrefix and work_launch.go.
@@ -1930,6 +1933,9 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// The prompt ends with the one line of the worker contract a launch prompt
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
 	// those steps, and the worker stops without a word.
+	if isReview(in.Kind) && strings.TrimSpace(in.Prompt) == "" {
+		in.Prompt = "Run the review described in your brief."
+	}
 	prompt := WithReportLine(in.Prompt, hasTag(tags, ResidentTag) || hasTag(tags, DirectorTag))
 	if o := strings.TrimSpace(in.ItemOwner); o != "" && in.Isolated {
 		tags = append(tags, ItemOwnerTag+o)
@@ -1949,6 +1955,11 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		// belongs in the operator's interview group. It does not count against the launch cap either.
 		tags = slices.DeleteFunc(tags, func(t string) bool { return strings.TrimSpace(t) == SubagentTag })
 		tags = append(tags, InterviewTag)
+	}
+	if isReview(in.Kind) {
+		// base names what the review measures against here, so it is not where a new branch starts
+		brief = reviewBrief(in.Base, in.Brief)
+		tags = append(tags, ReviewTag)
 	}
 	if wid := WorkOfTags(tags); wid != "" && brief != "" && !isInterview(in.Kind) && in.Task == nil {
 		brief = WithItemBrief(brief, ItemBrief(ctx, func(ctx context.Context, method, path string, body, out any) error {
@@ -1973,7 +1984,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if in.Branch != "" {
 		reqBody["branch"] = strings.TrimSpace(in.Branch)
 	}
-	if in.Base != "" {
+	if in.Base != "" && !isReview(in.Kind) {
 		reqBody["base"] = strings.TrimSpace(in.Base)
 	}
 	if in.Home {

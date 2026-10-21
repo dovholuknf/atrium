@@ -37,10 +37,10 @@ func interviewBrief(callerBrief string) string {
 // checkKind refuses a `kind` atrium_launch does not know. Empty is an ordinary launch.
 func checkKind(kind string) error {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "", KindInterview:
+	case "", KindInterview, KindReview:
 		return nil
 	}
-	return &refusedError{fmt.Sprintf("kind %q is not one atrium knows. the kind there is: %s", kind, KindInterview)}
+	return &refusedError{fmt.Sprintf("kind %q is not one atrium knows. the kinds there are: %s, %s", kind, KindInterview, KindReview)}
 }
 
 func isInterview(kind string) bool {

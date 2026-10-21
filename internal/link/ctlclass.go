@@ -38,6 +38,8 @@ const (
 	// classWorkerItem is the worker set of an item: no say, no peers, no task and no report, and the done and blocked
 	// words that name no launcher. See ItemTag.
 	classWorkerItem
+	// classWorkerReview is the worker set and atrium_review, for a card tagged ReviewTag.
+	classWorkerReview
 )
 
 // workerTools is the whole of the worker set, by name.
@@ -87,6 +89,12 @@ var itemWithheld = map[string]bool{
 
 // inClass reports whether a tool is served to a class.
 func inClass(name string, class ctlClass) bool {
+	if name == "atrium_review" {
+		return class == classWorkerReview
+	}
+	if class == classWorkerReview {
+		return workerTools[name]
+	}
 	if class == classWorkerItem {
 		return workerTools[name] && !itemWithheld[name]
 	}
@@ -197,6 +205,9 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctlCl
 	}
 	if hasTag(best.Tags, ItemTag) && hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
 		return classWorkerItem, true
+	}
+	if hasTag(best.Tags, ReviewTag) && !hasTag(best.Tags, DirectorTag) {
+		return classWorkerReview, true
 	}
 	resident := hasTag(best.Tags, ResidentTag) || hasTag(best.Tags, DirectorTag) || hasTag(best.Tags, "atrium:orchestrator")
 	if hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {

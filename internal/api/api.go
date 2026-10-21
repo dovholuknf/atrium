@@ -683,6 +683,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/checkouts", s.listCheckouts)
 	mux.HandleFunc("POST /v1/checkouts/clone", s.cloneCheckout)
 	// A card's inventory, and its disk. See resources.go.
+	mux.HandleFunc("GET /v1/tasks/{id}/atrium-review", s.getReview)
+	mux.HandleFunc("POST /v1/tasks/{id}/atrium-review", s.postReview)
 	mux.HandleFunc("GET /v1/tasks/{id}/resources", s.getResources)
 	mux.HandleFunc("POST /v1/tasks/{id}/resources/measure", s.measureResourcesNow)
 	// Ports handed out and processes recorded, as inventory. See cardports.go.
@@ -1134,7 +1136,7 @@ type view struct {
 	// notices carries them, and only while there are some. A read is an
 	// `atrium_task` with `notices` by the card itself. See internal/daemon/a2a.go.
 	HeldNotices int `json:"held_notices,omitempty"`
-	// Owed is how many workers owe this card an answer (the row's `📬 N owed`), OwedSince when the
+	// Owed is how many workers owe this card an answer (the row's `ðŸ“¬ N owed`), OwedSince when the
 	// oldest opened, and OwedNoLauncher that an item on this row is its own, with no launcher to
 	// keep it. Open items only: reading the notices does not change them.
 	Owed           int    `json:"owed,omitempty"`
@@ -1735,7 +1737,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		norm := store.NormalizeStatus(*body.Status)
 		body.Status = &norm
 	}
-	// One read up front so the ordering log lines below can say old→new, and
+	// One read up front so the ordering log lines below can say oldâ†’new, and
 	// so a card this room does not hold is a 404 that says so, not the store's
 	// "sql: no rows" from whichever write below tried first.
 	before, err := s.st.Get(id)

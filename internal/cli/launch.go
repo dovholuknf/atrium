@@ -55,6 +55,8 @@ type launchOpts struct {
 	step string
 	// lean and superlean start a claude runner without the operator's setup. See docs/runtime/superlean-design.md.
 	lean, superlean bool
+	// kind is what sort of session to start. Only review is known here.
+	kind string
 }
 
 func newLaunch() *cobra.Command {
@@ -137,6 +139,9 @@ func newLaunch() *cobra.Command {
 	c.Flags().BoolVar(&o.superlean, "superlean", false,
 		"start a claude runner superlean: lean, and only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, "+
 			"no mercurius, and a one paragraph worker prompt. for a bounded change. implies --lean. claude only")
+	c.Flags().StringVar(&o.kind, "kind", "",
+		"review starts a slop review of the branch in the directory: atrium writes the review rules into BRIEF.md and tags "+
+			"the card atrium:review. --base is then the branch to measure against (default claude/main)")
 	c.Flags().BoolVar(&o.quiet, "quiet", false, "print only the card id")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -231,6 +236,19 @@ func launchBody(o launchOpts, cwd string) error {
 		"theme":       o.theme,
 		"if_running":  o.ifRunning,
 		"report_to":   o.reportTo,
+	}
+	switch strings.ToLower(strings.TrimSpace(o.kind)) {
+	case "":
+	case link.KindReview:
+		fields["brief"] = link.ReviewBrief(o.base, "")
+		fields["base"] = ""
+		if strings.TrimSpace(o.prompt) == "" {
+			fields["prompt"] = "Run the review described in your brief."
+		}
+		o.tags = append(append([]string{}, o.tags...), link.ReviewTag)
+		fields["tags"] = o.tags
+	default:
+		return fmt.Errorf("--kind %q is not one atrium knows. the kind there is: %s", o.kind, link.KindReview)
 	}
 	// EVERY NEW LAUNCH NAMES AN ITEM, refused before anything is posted. A resume or a launch onto a card that exists
 	// is the same work continuing, so it names none.

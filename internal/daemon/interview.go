@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/api"
 )
 
 // InterviewTag marks a card launched with `kind: "interview"`. The interviewer's turn ends are its QUESTIONS to a
@@ -11,6 +13,10 @@ import (
 // launch-idle notice for it. It also gets the interviewer's system prompt, in place of the worker's. The hub puts it on
 // (link.InterviewTag), and a test keeps the two equal.
 const InterviewTag = "atrium:interview"
+
+// ReviewTag marks a card launched with `kind: "review"`. Its turn ends are the human's to answer in the review view or
+// in chat, so atrium never nudges it for stopping without a report and never raises the launch-idle notice for it.
+const ReviewTag = api.ReviewTag
 
 // DefaultInterviewModel is the model an interview gets when the launch names none and worker_policy sets no
 // interview_model.

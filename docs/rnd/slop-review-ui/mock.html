@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>slop review mock</title>
+<style>
+:root{--bg:#0f1115;--panel:#161a21;--line:#262c36;--fg:#d7dde6;--dim:#8a94a3;--add:#12341f;--addfg:#7ee2a0;--del:#3a1518;--delfg:#ff9aa2;--acc:#6aa6ff;--warn:#e5b45a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 system-ui,Segoe UI,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{display:flex;gap:12px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+header b{font-size:14px}.tabs span{padding:4px 10px;border-radius:6px;color:var(--dim);cursor:pointer}.tabs .on{background:#223049;color:var(--fg)}
+.meta{margin-left:auto;color:var(--dim)}
+main{flex:1;display:flex;min-height:0}
+nav{width:270px;border-right:1px solid var(--line);overflow:auto;background:var(--panel)}
+nav h3{margin:10px 12px 4px;font-size:11px;letter-spacing:.06em;color:var(--dim);text-transform:uppercase}
+nav .f{display:flex;gap:8px;padding:6px 12px;align-items:baseline;cursor:pointer}
+nav .f.cur{background:#1d2533;border-left:3px solid var(--acc);padding-left:9px}
+.cat{font:11px ui-monospace,Consolas,monospace;padding:1px 5px;border-radius:4px;background:#263042;color:#a9c3ff;min-width:58px;text-align:center}
+.st{margin-left:auto;font-size:11px;color:var(--dim)}.st.ok{color:var(--addfg)}.st.no{color:var(--delfg)}
+.f .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+section{flex:1;display:flex;flex-direction:column;min-width:0}
+.site{padding:8px 16px;border-bottom:1px solid var(--line);color:var(--dim);display:flex;gap:10px}
+.site a{color:var(--acc);text-decoration:none;font-family:ui-monospace,Consolas,monospace}
+.diff{flex:1;overflow:auto;margin:0;padding:10px 0;font:12.5px/1.5 ui-monospace,Consolas,monospace}
+.diff div{padding:0 16px;white-space:pre}.diff .h{color:#8fb3ff;background:#18202d}.diff .a{background:var(--add);color:var(--addfg)}.diff .d{background:var(--del);color:var(--delfg)}
+.note{padding:8px 16px;border-top:1px solid var(--line);color:var(--dim)}
+.foot{border-top:1px solid var(--line);background:var(--panel);padding:10px 16px}
+.foot pre{margin:0 0 10px;font:13px/1.5 ui-monospace,Consolas,monospace;color:var(--fg)}
+.foot pre i{color:var(--warn);font-style:normal}
+.row{display:flex;gap:8px;align-items:center}
+button{background:#223049;color:var(--fg);border:1px solid #33425e;border-radius:6px;padding:6px 14px;font:inherit;cursor:pointer}
+button.go{background:#1f5132;border-color:#2d7a4b}button.stop{background:#4a1f24;border-color:#7a2d36}
+input{flex:1;background:#0c0e12;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;font:inherit}
+.k{color:var(--dim);font-size:11px;margin-left:6px}
+</style></head><body>
+<header><b>fix-fips</b><span class="tabs"><span>chat</span><span>terminal</span><span class="on">review</span></span>
+<span class="meta">against merge-base with main · 19 files · 3 auto-applied · 4 of 11</span></header>
+<main>
+<nav>
+<h3>Applied for veto (3)</h3>
+<div class="f"><span class="cat">DRY</span><span class="t">duplicate e2ee_guard</span><span class="st ok">applied</span></div>
+<div class="f"><span class="cat">DEAD</span><span class="t">tls_is_fips unused</span><span class="st ok">applied</span></div>
+<div class="f"><span class="cat">CHURN</span><span class="t">log line recased</span><span class="st ok">applied</span></div>
+<h3>One at a time (11)</h3>
+<div class="f"><span class="cat">SCOPE</span><span class="t">restrict in auth.c</span><span class="st ok">applied</span></div>
+<div class="f"><span class="cat">CHURN</span><span class="t">#include string.h</span><span class="st no">withdrawn</span></div>
+<div class="f"><span class="cat">HYGIENE</span><span class="t">tls_with_ca in .h</span><span class="st ok">kept</span></div>
+<div class="f cur"><span class="cat">DRY</span><span class="t">conn_inbound fail blocks</span><span class="st">waiting</span></div>
+<div class="f"><span class="cat">COMMENT</span><span class="t">hold comment</span><span class="st">queued</span></div>
+<div class="f"><span class="cat">TEST&nbsp;SCOPE</span><span class="t">5 test files</span><span class="st">queued</span></div>
+<div class="f"><span class="cat">SIMPLIFY</span><span class="t">new_tls_e2ee</span><span class="st">queued</span></div>
+</nav>
+<section>
+<div class="site"><a href="#">library/connect.c:982</a><span>code · net new vs base · page 1 of 1</span></div>
+<pre class="diff"><div class="h">@@ -975,14 +975,9 @@ static int conn_inbound_data_msg(ziti_connection conn, message *msg)</div><div>     if (conn-&gt;encrypted) {</div><div class="d">-        if (crypto_decrypt(conn, msg) != 0) {</div><div class="d">-            CONN_LOG(ERROR, "e2ee decrypt failed");</div><div class="d">-            conn-&gt;state = Disconnected;</div><div class="d">-            free_tls_contexts(conn);</div><div class="d">-            return ZITI_CRYPTO_FAIL;</div><div class="d">-        }</div><div class="a">+        if (crypto_decrypt(conn, msg) != 0)</div><div class="a">+            return e2ee_failed(conn, "decrypt");</div><div>     }</div><div>     if (conn-&gt;state == Closed) {</div><div class="d">-        CONN_LOG(ERROR, "e2ee read after close");</div><div class="d">-        conn-&gt;state = Disconnected;</div><div class="d">-        free_tls_contexts(conn);</div><div class="d">-        return ZITI_CRYPTO_FAIL;</div><div class="a">+        return e2ee_failed(conn, "read after close");</div><div>     }</div></pre>
+<div class="note">Uses e2ee_failed, applied in the previous finding.</div>
+<div class="foot">
+<pre><i>CHANGE DRY  :</i> the two failure blocks are the same four lines
+<i>SUMMARY     :</i> Call e2ee_failed from both. Apply?</pre>
+<div class="row"><button class="go">Yes, apply</button><button class="stop">No</button><button>Why?</button><input placeholder="or say something else to the session"><span class="k">y / n / ?</span></div>
+</div>
+</section>
+</main></body></html>
