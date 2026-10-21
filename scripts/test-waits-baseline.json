@@ -20,7 +20,6 @@
   "internal/daemon/conpty_claude_repro_integration_test.go": 7,
   "internal/daemon/conpty_scroll_repro_integration_test.go": 16,
   "internal/daemon/contextcycle_integration_test.go": 5,
-  "internal/daemon/cursor_refit_integration_test.go": 5,
   "internal/daemon/daemon_integration_test.go": 2,
   "internal/daemon/decideby_integration_test.go": 1,
   "internal/daemon/finish_end_delivery_integration_test.go": 2,

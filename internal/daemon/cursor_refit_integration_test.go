@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -38,11 +39,13 @@ func attachKeptOpen(t *testing.T, wsURL string, cols, rows int) *keptOpenViewer 
 	return v
 }
 
-// The move `textWithCursor` appends: an absolute `CSI row;col H` to the
-// session's cursor, as the last thing in the replay. Its presence is what "the
-// cursor was restored" means.
+// The move `textWithCursor` appends as the last of the replay, ahead of any later size frame.
 func hasCursorMove(s string) bool {
-	return regexp.MustCompile(`\x1b\[\d+;\d+H$`).MatchString(s)
+	return regexp.MustCompile(`\x1b\[\d+;\d+H(\{"t":"size"[^}]*\})*$`).MatchString(s)
+}
+
+func sizeFrame(cols, rows int) string {
+	return fmt.Sprintf(`{"t":"size","cols":%d,"rows":%d}`, cols, rows)
 }
 
 func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
@@ -58,52 +61,37 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 	t.Cleanup(srv.Close)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/tasks/refit/attach"
 
-	// The small viewer binds the pty at 140x20.
 	small := attachKeptOpen(t, wsURL, 140, 20)
-	// The height waits out the hold (item 74), so wait for the pty to take it.
-	// Otherwise it lands after the large viewer's replay and buries the cursor.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if s := f.resized(); len(s) > 0 && s[len(s)-1] == (viewport{140, 20}) {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	time.Sleep(100 * time.Millisecond)
+	// The height waits out the hold (item 74): it must land before the large replay or it buries the cursor.
+	hostWait(t, 10*time.Second, "the pty to take the small viewer's size", func() bool {
+		s := f.resized()
+		return len(s) > 0 && s[len(s)-1] == (viewport{140, 20})
+	})
 
-	// The large viewer attaches. Its initial replay restores the cursor, which is
-	// the attach fix working: this is the baseline the re-fit is measured against.
 	large := attachKeptOpen(t, wsURL, 200, 30)
-	time.Sleep(500 * time.Millisecond)
+	hostWait(t, 10*time.Second, "both viewers to be told 200x20", func() bool {
+		return strings.Contains(large.seen(), sizeFrame(200, 20)) && strings.Contains(small.seen(), sizeFrame(200, 20))
+	})
 	if !hasCursorMove(large.seen()) {
 		t.Fatalf("the initial attach did not restore the cursor: %q", large.seen())
 	}
 	before := len(small.seen())
 	ptyMovesBefore := len(f.resized())
 
-	// NON-BINDING RE-FIT: the small viewer re-fits, but 200 is still the widest
-	// and 20 still the shortest, so the pty does not move. No SIGWINCH, no
-	// repaint, nothing sent. The board re-attaches to cover exactly this.
+	// Non-binding: 200 is still the widest, so the pty does not move and nothing is sent.
 	small.resize(t, 130, 20)
-	time.Sleep(500 * time.Millisecond)
-	if delta := small.seen()[before:]; delta != "" {
-		t.Fatalf("a non-binding re-fit sent bytes it should not have: %q", delta)
-	}
-	if moves := len(f.resized()); moves != ptyMovesBefore {
+
+	// Binding: the large viewer is the widest, so the pty moves and every viewer is told.
+	large.resize(t, 180, 28)
+	hostWait(t, 10*time.Second, "the pty to take the binding re-fit", func() bool {
+		sizes := f.resized()
+		return len(sizes) > 0 && sizes[len(sizes)-1] == (viewport{180, 20}) &&
+			strings.Contains(small.seen()[before:], sizeFrame(180, 20))
+	})
+	if moves := len(f.resized()); moves != ptyMovesBefore+1 {
 		t.Fatalf("a non-binding re-fit moved the pty: %+v", f.resized())
 	}
-
-	// BINDING RE-FIT: the large viewer re-fits narrower, and it IS the widest,
-	// so the pty moves. A real runner would get SIGWINCH here and repaint, which
-	// is how a binding viewer's cursor is carried without a re-attach.
-	large.resize(t, 180, 28)
-	time.Sleep(400 * time.Millisecond)
-	sizes := f.resized()
-	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{180, 20}) {
-		t.Fatalf("a binding re-fit did not move the pty: %+v", sizes)
-	}
-	// And every viewer is told, so the narrower one draws the new width.
-	if !strings.Contains(small.seen(), `{"t":"size","cols":180,"rows":20}`) {
-		t.Fatalf("the narrower viewer was not told the pty's new size: %q", small.seen()[before:])
+	if delta := small.seen()[before:]; delta != sizeFrame(180, 20) {
+		t.Fatalf("the narrower viewer got more than the new size: %q", delta)
 	}
 }

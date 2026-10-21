@@ -26,6 +26,10 @@ func TestASayReachesAnIdleRunnerAfterADeployRestartWithoutForce(t *testing.T) {
 	if _, err := d1.spawnPTY(task.ID, sh, append(args, "echo started; sleep 120"), t.TempDir(), os.Environ()); err != nil {
 		t.Fatal(err)
 	}
+	hostWait(t, 30*time.Second, "the runner's first output", func() bool {
+		r1 := d1.sup.get(task.ID)
+		return r1 != nil && ringHas(r1, "started")
+	})
 	if err := d1.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +42,7 @@ func TestASayReachesAnIdleRunnerAfterADeployRestartWithoutForce(t *testing.T) {
 		t.Fatalf("the run was not reattached: %+v", r2)
 	}
 	t.Cleanup(func() { d2.pending.stopAll() })
+	hostWait(t, 30*time.Second, "the replayed output", func() bool { return ringHas(r2, "started") })
 	_, _ = r2.buf.Write([]byte(realIdleFrame))
 	r2.lastOut.Store(time.Now().Add(-time.Minute).UnixNano())
 
@@ -52,7 +57,7 @@ func TestASayReachesAnIdleRunnerAfterADeployRestartWithoutForce(t *testing.T) {
 	if !r2.peerGateOpen() {
 		t.Fatal("the gate stayed shut on a reattached idle runner")
 	}
-	hostWait(t, 10*time.Second, "both held says to be typed", func() bool {
+	hostWait(t, 30*time.Second, "both held says to be typed", func() bool {
 		p, err := d2.st.PendingMessages(task.ID)
 		return err == nil && len(p) == 0
 	})
