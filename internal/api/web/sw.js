@@ -175,6 +175,16 @@ function isSolo(url) {
   return (p[1] === "alias" && p.length === 3) || (p[1] === "room" && p.length === 4)
 }
 
+// Whether a window is the board: the root, its index, or a board scoped to one room. A doc page, the phone page and a
+// popped-out terminal are not.
+function isBoard(url) {
+  if (soloCard(url)) return false
+  const p = pathOf(url)
+  if (p === "" || p === "/index.html") return true
+  const parts = p.split("/")
+  return parts[1] === "room" && parts.length === 3
+}
+
 // Bring an existing window forward rather than piling up new ones, and land
 // the click where `landOnAlert` says.
 //
@@ -191,7 +201,8 @@ async function openBoard(origin, goTo, taskFor, key, path) {
     await solo.focus()
     return
   }
-  const board = mine.find(c => !isSolo(c.url))
+  const boards = mine.filter(c => isBoard(c.url))
+  const board = boards.find(c => c.focused) || boards[0]
   if (board) {
     await board.focus()
     board.postMessage({ type: "goTo", view: goTo || "", taskFor: taskFor || "", key: key || "" })

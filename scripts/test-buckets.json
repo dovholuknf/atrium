@@ -20,7 +20,7 @@
         "internal/api/web/css/chrome.css",
         "internal/api/web/css/dialogs.css"
       ],
-      "tests": [],
+      "tests": ["scripts/test-sw-openboard.js"],
       "checks": ["scripts/check-contrast.js", "scripts/check-header-still.js"]
     },
     "terminals": {
