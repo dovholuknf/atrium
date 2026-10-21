@@ -893,7 +893,19 @@ async function transportChipsSection(browser, base) {
         const lum = c => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
         const host = document.getElementById("tp-probe");
         const under = chan(getComputedStyle(host).backgroundColor);
+        const flatOver = (c, bgc) => { const b = chan(bgc), a = b.length > 3 ? b[3] : 1; return [0, 1, 2].map(i => b[i] * a + under[i] * (1 - a)); };
+        const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+        const marks = [...host.querySelectorAll(".chip.tp-zrok:not(.warn), .chip.tp-ziti:not(.warn)")].map(c => {
+          const bg = flatOver(c, getComputedStyle(c).backgroundColor);
+          if (c.classList.contains("tp-zrok")) {
+            const fill = getComputedStyle(c.querySelector("svg path")).fill;
+            return { mark: "zrok", fill, ratio: ratio(chan(fill), bg) };
+          }
+          const ring = getComputedStyle(c.querySelector("svg circle")).stroke;
+          return { mark: "ziti", fill: "ring " + ring, ratio: ratio(chan(ring), bg) };
+        });
         return {
+          marks,
           light: lum(under) > 0.4,
           chips: [...host.querySelectorAll(".chip.tp-ziti:not(.warn), .chip.tp-mtls:not(.warn), .chip.tp-zrok:not(.warn)")].map(c => {
             const cs = getComputedStyle(c);
@@ -909,6 +921,10 @@ async function transportChipsSection(browser, base) {
       if (new Set(probe.chips.map(c => c.color)).size !== 3) fail("skin " + name + " collapsed the transport colours: " + JSON.stringify(probe.chips));
       for (const c of probe.chips) {
         if (c.ratio < 4.5) fail("skin " + name + " " + c.cls + " reads " + c.ratio.toFixed(2) + ":1, under 4.5:1");
+      }
+      if (probe.marks.length !== 2) fail("skin " + name + " drew " + probe.marks.length + " marks to check, expected zrok and ziti");
+      for (const m of probe.marks) {
+        if (m.ratio < 3) fail("skin " + name + " " + m.mark + " mark (" + m.fill + ") reads " + m.ratio.toFixed(2) + ":1, under 3:1");
       }
       if (probe.light) lights.push(name);
       if (shots) {
@@ -1294,7 +1310,7 @@ async function zrokLogoSection(browser, base) {
     });
     const [zr, zi, zfb] = got.sizes;
     for (const z of [zr, zfb]) {
-      if (!/zrlogo/.test(z.cls || "") || !(z.h >= z.fs - 1 && z.h <= z.fs + 4) || !/rgb\(155, ?243, ?22\)/.test(z.fill || "")) {
+      if (!/zrlogo/.test(z.cls || "") || !(z.h >= z.fs - 1 && z.h <= z.fs + 4) || !z.fill || z.fill === "none") {
         fail("zrok badge lacks the rocket: " + JSON.stringify(z));
       }
     }
@@ -1834,6 +1850,37 @@ async function roomsMachineSection(browser, base) {
 
     // All five fields: two sparklines, the figures, a gap where the samples are null.
     const full = await feed("full");
+    if (process.env.SPARK_SHOTS) {
+      fs.mkdirSync(process.env.SPARK_SHOTS, { recursive: true });
+      for (const w of [140, 260]) {
+        await p.evaluate(w => document.querySelectorAll("#rooms-menu .rtile .rd-band.machine").forEach(b => { b.style.width = w + "px"; }), w);
+        const band = p.locator('#rooms-menu .rtile[data-room="sg3"] .rd-band.machine');
+        await band.screenshot({ path: path.join(process.env.SPARK_SHOTS, "machine-band-" + w + ".png") });
+        await p.evaluate(() => document.querySelectorAll("#rooms-menu .rtile .rd-band.machine").forEach(b => { b.style.width = ""; }));
+      }
+    }
+    for (const w of [110, 140, 180, 260, 420]) {
+      const bad = await p.evaluate(w => {
+        const out = [];
+        for (const band of document.querySelectorAll("#rooms-menu .rtile .rd-band.machine")) {
+          band.style.width = w + "px";
+          const edge = band.getBoundingClientRect().right;
+          for (const sp of band.querySelectorAll(".rd-spark")) {
+            const r = sp.getBoundingClientRect().right;
+            if (r > edge + 0.5) out.push(sp.getAttribute("class") + " " + r.toFixed(1) + ">" + edge.toFixed(1));
+          }
+          for (const fig of band.querySelectorAll(".rd-rate > span")) {
+            if (fig.scrollWidth > fig.clientWidth + 1 || fig.getBoundingClientRect().right > edge + 0.5) out.push("figure clipped: " + fig.textContent.trim());
+          }
+          for (const row of band.querySelectorAll(".rd-rate")) {
+            if (row.scrollWidth > row.clientWidth + 1) out.push("row " + row.textContent.trim().slice(0, 12) + " " + row.scrollWidth + ">" + row.clientWidth);
+          }
+          band.style.width = "";
+        }
+        return out;
+      }, w);
+      if (bad.length) fail("roomsMachine: a sparkline runs past its box at " + w + "px: " + bad.join("; "));
+    }
     const g3 = full.machine.sg3;
     has("sg3 did not draw a cpu and a mem sparkline", g3.sparks.join(",") === "cpu,mem", g3);
     has("sg3 cpu and mem figures", /cpu 62%/.test(g3.text) && /mem 66%/.test(g3.text) && /21\/32 GB used/.test(g3.text), g3.text);

@@ -318,6 +318,10 @@
     background: rgba(var(--tp-rgb),.14); border-color: rgba(var(--tp-rgb),.38);
     color: color-mix(in srgb, rgb(var(--tp-rgb)) 40%, var(--head));
   }
+  /* Mark fills are decided by skin here, mixed toward --head; the ziti ring is there because its blue end sinks into
+     dark skins. */
+  .chip.tp svg.zrlogo path { fill: color-mix(in srgb, #9BF316 45%, var(--head)); }
+  .chip.tp svg.zlogo:not(.zrlogo) circle { stroke: color-mix(in srgb, var(--head) 70%, var(--bg-1)); stroke-width: 7; }
   .chip.tp.warn { background: var(--warn-bg); border-color: var(--warn-stroke); color: var(--warn); }
   /* A resume in flight: see `resumeOpening` in js/card-menu.js. Pulsed once when a second resume points at it. */
   .chip.opening { display: inline-flex; align-items: center; background: var(--chip-accent); color: var(--chip-accent-text); }

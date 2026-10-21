@@ -267,7 +267,7 @@
   .rd-kinds .off { color: var(--dimmest); text-decoration: line-through; }
 
   /* Sparklines: a polyline and a faint fill under it, stretched to the band, the stroke kept at one width. */
-  .rd-spark { flex: 1 1 auto; min-width: 2.5rem; height: 1.25rem; display: block; overflow: visible; }
+  .rd-spark { flex: 1 1 auto; min-width: 0; height: 1.25rem; display: block; overflow: visible; }
   .rd-spark.none { height: 1px; background: var(--hairline); align-self: center; }
   .rd-spark polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
   .rd-spark .area { stroke: none; opacity: .14; }
@@ -337,7 +337,6 @@
   @media (max-width: 640px) {
     .rt-bands { grid-template-columns: minmax(0, 1fr); }
     .rd-band { flex-direction: column; }
-    .rd-spark { min-width: 5rem; }
   }
 
   /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.

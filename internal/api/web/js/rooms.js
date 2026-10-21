@@ -520,7 +520,7 @@ const ZROK_MARK = {
 // zrokLogo is the rocket as a transport badge mark, at the same size as the ziti one.
 function zrokLogo() {
   return `<svg class="zlogo zrlogo" viewBox="${ZROK_MARK.viewBox}" aria-hidden="true">` +
-    `<path fill="${ZROK_MARK.fill}" d="${ZROK_MARK.d}"/></svg>`;
+    `<path d="${ZROK_MARK.d}"/></svg>`;
 }
 
 function transportBadge(t, fallback) {
