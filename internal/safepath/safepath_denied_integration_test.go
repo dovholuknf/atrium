@@ -5,17 +5,18 @@ package safepath
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func deniedBelow(t *testing.T, open string) {
+func denied(t *testing.T, dir string) {
 	t.Helper()
 	orig := evalSymlinks
 	t.Cleanup(func() { evalSymlinks = orig })
 	evalSymlinks = func(p string) (string, error) {
-		if len(p) > len(open) && strings.EqualFold(p[:len(open)], open) {
+		if strings.EqualFold(p, dir) {
 			return "", &fs.PathError{Op: "CreateFile", Path: p, Err: fs.ErrPermission}
 		}
 		return orig(p)
@@ -25,7 +26,7 @@ func deniedBelow(t *testing.T, open string) {
 func TestADeniedAncestorIsWalkedPastLikeAMissingOne(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "work", "cards")
-	deniedBelow(t, base+string(filepath.Separator)+"work")
+	denied(t, filepath.Join(base, "work"))
 	home := filepath.Join(root, "second-room-hooks")
 
 	got, err := Contained(root, home)
@@ -41,7 +42,7 @@ func TestADeniedAncestorIsWalkedPastLikeAMissingOne(t *testing.T) {
 func TestADeniedAncestorStillRefusesAPathOutsideTheRoot(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "work", "cards")
-	deniedBelow(t, base+string(filepath.Separator)+"work")
+	denied(t, filepath.Join(base, "work"))
 
 	for _, p := range []string{
 		filepath.Join(base, "work", "cards-evil", "x"),
@@ -50,6 +51,21 @@ func TestADeniedAncestorStillRefusesAPathOutsideTheRoot(t *testing.T) {
 	} {
 		if _, err := Contained(root, p); !errors.Is(err, ErrOutside) {
 			t.Fatalf("%s: err %v, want ErrOutside", p, err)
+		}
+	}
+}
+
+func TestADeniedDirectoryUnderTheRootIsRefused(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "denied")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	denied(t, dir)
+
+	for _, p := range []string{dir, filepath.Join(dir, "link"), filepath.Join(dir, "link", "secret")} {
+		if _, err := Contained(root, p); err == nil {
+			t.Fatalf("%s: a denied directory under the root was walked past", p)
 		}
 	}
 }

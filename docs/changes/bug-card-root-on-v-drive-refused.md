@@ -14,3 +14,10 @@
 1. With the same card root, ask for a file path with `..` out of the root, or in a sibling such as `cards-evil`.
 
 **Expected:** answered 403 as before.
+
+### @LETTER@3. Denied under the root
+
+1. Under the card, make a folder the room's account cannot list and put a link in it to a folder outside the card.
+
+**Expected:** a download or upload through that link is refused 403. Only the card root and its ancestors are walked past when denied.
+

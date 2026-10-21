@@ -62,7 +62,7 @@ func Contained(root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	realRoot, err := resolve(absRoot)
+	realRoot, err := resolve(absRoot, func(string) bool { return true })
 	if err != nil {
 		return "", err
 	}
@@ -75,7 +75,7 @@ func Contained(root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	realTarget, err := resolve(absTarget)
+	realTarget, err := resolve(absTarget, func(cur string) bool { return within(cur, realRoot) })
 	if err != nil {
 		return "", err
 	}
@@ -120,8 +120,9 @@ func min(a, b int) int {
 // hold the new file does exist, and that is the thing worth resolving.
 //
 // A directory the process may not read (V:/work on a per-logon drive) answers access denied the same
-// way, and is walked past the same way: the nearest ancestor that does resolve is what gets compared.
-func resolve(path string) (string, error) {
+// way, but only where skipDenied says so: below the root a denied directory may still be traversed, so a link in it
+// would go unseen, and that fails closed.
+func resolve(path string, skipDenied func(cur string) bool) (string, error) {
 	rest := ""
 	cur := path
 	for {
@@ -132,7 +133,8 @@ func resolve(path string) (string, error) {
 			}
 			return filepath.Join(real, rest), nil
 		}
-		if !os.IsNotExist(err) && !errors.Is(err, fs.ErrPermission) {
+		denied := errors.Is(err, fs.ErrPermission)
+		if !os.IsNotExist(err) && !(denied && skipDenied(cur)) {
 			return "", err
 		}
 		parent := filepath.Dir(cur)
