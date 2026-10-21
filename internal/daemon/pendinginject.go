@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,9 @@ import (
 // hooks still deliver it, so a restart costs the on-screen retry and nothing
 // that was said. The board signal it raises is a fact about now, which
 // docs/runtime/activity-design.md says is never written down.
+
+// heldStuckAfter is how long a say may stay held before the card is flagged and its sender told, once.
+const heldStuckAfter = 5 * time.Minute
 
 // backoffSteps is how long to wait before each retry, widening so the warnings
 // that ride them thin out. Past the last it holds at four hours, so a message is
@@ -86,6 +91,7 @@ type heldTell struct {
 	entries []pendingMsg
 	step    int
 	timer   *time.Timer
+	stuck   *time.Timer
 	since   time.Time
 }
 
@@ -177,6 +183,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		reset := func() { pi.reset(taskID) }
 		run.onKey.Store(&reset)
 		ht.timer = time.AfterFunc(pi.d.hk.backoffSteps[0], func() { pi.attempt(taskID) })
+		ht.stuck = time.AfterFunc(pi.d.hk.stuckAfter, func() { pi.flagStuck(taskID) })
 	}
 	pi.mu.Unlock()
 	// The live board signal: this card is holding a message. Named by the first
@@ -561,6 +568,9 @@ func (pi *pendingInjector) drop(taskID string) {
 		if ht.timer != nil {
 			ht.timer.Stop()
 		}
+		if ht.stuck != nil {
+			ht.stuck.Stop()
+		}
 		delete(pi.by, taskID)
 	}
 	pi.d.act.clearHeld(taskID)
@@ -661,6 +671,68 @@ func (pi *pendingInjector) stopAll() {
 		}
 		delete(pi.by, id)
 	}
+}
+
+// flagStuck is the one notice for a hold that has gone past stuckAfter: the card is marked, the timeline says so, and
+// each local sender with a message still held is told once. The message stays queued and every retry goes on.
+func (pi *pendingInjector) flagStuck(taskID string) {
+	pi.mu.Lock()
+	ht := pi.by[taskID]
+	if ht == nil || len(ht.entries) == 0 {
+		pi.mu.Unlock()
+		return
+	}
+	entries := append([]pendingMsg(nil), ht.entries...)
+	pi.mu.Unlock()
+	if !pi.d.act.markHeldStuck(taskID) {
+		return
+	}
+	t, err := pi.d.st.Get(taskID)
+	if err != nil {
+		return
+	}
+	who := orDefault(t.WireName, t.ID)
+	why := pi.heldFor(taskID, entries[0])
+	if err := pi.d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+		"by": "held-stuck", "text": "a say has been held for over " + pi.d.hk.stuckAfter.String() + " (" + why + ")",
+	}); err != nil {
+		log.Printf("[atrium] could not record a stuck hold on %s: %v", taskID, err)
+	}
+	log.Printf("[atrium] %s: a say has been held over %s, held for %q", who, pi.d.hk.stuckAfter, why)
+	pi.d.publishTask(taskID)
+	told := map[string]bool{}
+	for _, e := range entries {
+		if e.from == "" || told[e.from] || strings.Contains(e.from, "@") {
+			continue
+		}
+		told[e.from] = true
+		sender, err := pi.d.st.GetByWireName(pi.d.st.Qualify(e.from))
+		if err != nil {
+			continue
+		}
+		text := fmt.Sprintf("your say to %s has not been typed after %s and is still queued: %s. It is delivered at "+
+			"that session's next tool call or turn end. If you launched it, say it again with force=true.",
+			who, pi.d.hk.stuckAfter, heldReason(why))
+		if _, _, err := pi.d.deliverPeerWhenID(sender, "atrium", text, store.PromptFYI, true); err != nil {
+			log.Printf("[atrium] could not tell %s that its say to %s is stuck: %v", e.from, who, err)
+		}
+	}
+}
+
+func heldReason(why string) string {
+	switch why {
+	case HeldForLine:
+		return "atrium cannot tell the line is empty"
+	case HeldForTurn:
+		return "it is waiting for the turn to end"
+	case HeldForDialog:
+		return "a dialog is open"
+	case HeldForNewContext:
+		return "a new-context cycle owns the terminal"
+	case HeldForDeploy:
+		return "a room deploy is holding it"
+	}
+	return "the terminal is not taking it"
 }
 
 // warn tells the board a held message is still waiting and why, once per tick.

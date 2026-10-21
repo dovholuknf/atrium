@@ -73,6 +73,8 @@ type RelaySay struct {
 	// Wake resumes a parked target so the message can be delivered. A held row carries no wake,
 	// so a say that asks for one is refused, not held, when the hub cannot be reached.
 	Wake bool
+	// Force asks the target room to type past a line it cannot read. The target room decides who may.
+	Force bool
 }
 
 // RelayResult is what the hub said. OK false is a refusal, with Code and
@@ -202,7 +204,7 @@ type sayIn struct {
 	Wake bool `json:"wake"`
 	// Kind is `fyi` or `needs`. See fyi.go. Carried to another room too.
 	Kind string `json:"kind"`
-	// Force types now when the typing gate cannot say the line is clear. This room only. See forcesay.go.
+	// Force types now when the typing gate cannot say the line is clear. Carried to another room, whose own rule decides. See forcesay.go.
 	Force bool `json:"force"`
 }
 
@@ -229,11 +231,7 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if other := d.otherRoom(room); other != "" {
-		if in.Force {
-			writeJSONCode(w, http.StatusBadRequest, errBody("force types into a terminal on this room only, so it cannot go to "+in.To))
-			return
-		}
-		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake)
+		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake, in.Force)
 		writeJSONCode(w, code, body)
 		return
 	}
@@ -291,7 +289,7 @@ func (d *Daemon) localTargetVia(name string) (*store.Task, string) {
 }
 
 // sayAcross relays one message to `name` on `room`, and answers the sender.
-func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, kind string, reply, wake bool) (int, map[string]any) {
+func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, kind string, reply, wake, force bool) (int, map[string]any) {
 	text = strings.TrimSpace(text)
 	// The relay carries no reply flag, so an fyi that asks for one goes as the ordinary say.
 	kind = promptKind(kind, reply)
@@ -333,7 +331,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when, ki
 	// when it lands. See docs/runtime/say-lifecycle-design.md.
 	rec := store.Say{FromWire: wire, FromTask: d.senderTask(from), ToInput: to, ToWire: to, Via: "remote",
 		Room: room, Door: "say", When: whenWord(when == WhenDone), ReplyWant: reply}
-	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when, Kind: kind, Wake: wake})
+	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when, Kind: kind, Wake: wake, Force: force})
 	switch {
 	case errors.Is(err, ErrRelayOld):
 		return http.StatusBadGateway, errBody(err.Error())
@@ -726,7 +724,7 @@ func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from,
 	room, handle, code, note := d.findEverywhere(ctx, name)
 	switch {
 	case room != "":
-		c, body := d.sayAcross(ctx, from, handle, room, text, when, kind, reply, wake)
+		c, body := d.sayAcross(ctx, from, handle, room, text, when, kind, reply, wake, false)
 		if c < 400 {
 			// SAID, because the sender typed a bare name and should learn where it went.
 			routed := fmt.Sprintf("%q is not on this room. it went to %s on room %s, the one card that answers to it.",

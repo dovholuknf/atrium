@@ -37,7 +37,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 		if ans, ok := c.reachable(ctx, target); !ok {
 			return ans
 		}
-		return c.deliverAs(ctx, target, req.To, sender+"@"+from, req.Text, req.When, req.Kind, req.Wake)
+		return c.deliverAs(ctx, target, req.To, sender+"@"+from, req.Text, req.When, req.Kind, req.Wake, req.Force)
 	case RelayCard, RelayExit:
 		target := strings.TrimSpace(req.Room)
 		if target == "" || equalFold(target, from) {
@@ -131,22 +131,25 @@ func (c *controlMCP) reachable(ctx context.Context, room string) (RelayAnswer, b
 // parked is delivered to as it would be without wake. A resume that fails answers an error
 // and delivers nothing, and one that may have happened and was not answered (502, 503, 504)
 // is unconfirmed below, never sent again.
-func (c *controlMCP) deliverAs(ctx context.Context, room, to, fromWire, text, when, kind string, wake bool) RelayAnswer {
+func (c *controlMCP) deliverAs(ctx context.Context, room, to, fromWire, text, when, kind string, wake, force bool) RelayAnswer {
 	id, handle, err := c.resolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
 	}
-	return c.postSay(ctx, room, id, handle, fromWire, text, when, kind, wake)
+	return c.postSay(ctx, room, id, handle, fromWire, text, when, kind, wake, force)
 }
 
 // postSay is the post half of deliverAs, for a caller that has already resolved the card.
-func (c *controlMCP) postSay(ctx context.Context, room, id, handle, fromWire, text, when, kind string, wake bool) RelayAnswer {
+func (c *controlMCP) postSay(ctx context.Context, room, id, handle, fromWire, text, when, kind string, wake, force bool) RelayAnswer {
 	body := map[string]any{"text": text, "from": fromWire}
 	if w := strings.TrimSpace(when); w != "" {
 		body["when"] = w
 	}
 	if wake {
 		body["wake"] = true
+	}
+	if force {
+		body["force"] = true
 	}
 	if k := strings.TrimSpace(kind); k != "" {
 		body["kind"] = k
@@ -291,6 +294,9 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 	if in.Wake {
 		body["wake"] = true
 	}
+	if in.Force {
+		body["force"] = true
+	}
 	if k := strings.TrimSpace(in.Kind); k != "" {
 		body["kind"] = k
 	}
@@ -310,7 +316,7 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		if ans, ok := c.reachable(ctx, target); !ok {
 			return nil, out, errors.New(ans.Error)
 		}
-		ans := c.deliverAs(ctx, target, name, me+"@"+room, in.Text, in.When, in.Kind, in.Wake)
+		ans := c.deliverAs(ctx, target, name, me+"@"+room, in.Text, in.When, in.Kind, in.Wake, in.Force)
 		if !ans.OK {
 			return nil, out, errors.New(ans.Error)
 		}

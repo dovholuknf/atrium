@@ -76,7 +76,7 @@ func splitMovedTo(s string) (room, id string, ok bool) {
 // writes the sender's answer. `forwarded` tells the sender the new address, so a
 // script that holds the old one can learn it.
 func (d *Daemon) forwardMoved(ctx context.Context, w http.ResponseWriter, from string, end movedEnd, text, when, kind string, reply, wake bool) {
-	code, body := d.sayAcross(ctx, from, end.ID, end.Room, text, when, kind, reply, wake)
+	code, body := d.sayAcross(ctx, from, end.ID, end.Room, text, when, kind, reply, wake, false)
 	if code < 400 {
 		body["forwarded"] = "moved to " + end.Room + "~" + end.ID
 		body["note"] = "forwarded: moved to " + end.Room + "~" + end.ID

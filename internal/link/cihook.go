@@ -655,7 +655,7 @@ func (d proxyCIDeliverer) Send(ctx context.Context, t CITarget, from, text, kind
 	if c == nil {
 		return CIAnswer{State: hubstore.CIPending, Detail: "the hub's control server is not up"}
 	}
-	ans := c.postSay(ctx, t.Room, t.ID, t.Handle, from, text, "", kind, wake)
+	ans := c.postSay(ctx, t.Room, t.ID, t.Handle, from, text, "", kind, wake, false)
 	switch {
 	case ans.OK && ans.Delivered == "parked":
 		return CIAnswer{State: hubstore.CIPending, Detail: "the session is parked and the route does not wake it"}

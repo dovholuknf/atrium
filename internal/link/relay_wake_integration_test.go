@@ -189,3 +189,17 @@ func TestAHubSideSayReadsA503FromTheSendersRoomAsUnconfirmed(t *testing.T) {
 		t.Fatalf("out = %+v, err = %v", out, err)
 	}
 }
+
+func TestAForcedSayCarriesForceToTheRoomItIsFor(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+		To: "atrium-87300", Text: "carry on", Force: true})
+	if err != nil || !ans.OK {
+		t.Fatalf("answer = %+v, %v", ans, err)
+	}
+	if got := x.sg4.messages(); len(got) != 1 || got[0]["force"] != "true" {
+		t.Fatalf("sg4 got %+v, want force true", got)
+	}
+}

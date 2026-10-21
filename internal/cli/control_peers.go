@@ -444,7 +444,7 @@ type SayInput struct {
 	// Kind is `fyi` or `needs`. See internal/daemon/fyi.go.
 	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices is typed at the end of its turn instead of mid-turn"`
 	// Force types now when the typing gate cannot read the line. See internal/daemon/forcesay.go.
-	Force bool `json:"force,omitempty" jsonschema:"true to type it NOW when the gate holds it only because it cannot READ that session's line, as after a room restart. allowed to the operator and to the target's launcher, refused for any other session. never typed past a line atrium knows is part written, or a key pressed in the last two seconds, and refused with the reason (never queued) while a dialog or a new-context cycle owns the terminal. this room only"`
+	Force bool `json:"force,omitempty" jsonschema:"true to type it NOW when the gate holds it only because it cannot READ that session's line, as after a room restart. allowed to the operator and to the target's launcher, on this room or another, refused for any other session. never typed past a line atrium knows is part written, or a key pressed in the last two seconds, and refused with the reason (never queued) while a dialog or a new-context cycle owns the terminal"`
 }
 
 type SayOutput struct {

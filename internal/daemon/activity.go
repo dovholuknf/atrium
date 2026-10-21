@@ -148,6 +148,9 @@ type Activity struct {
 	// `!`, which is kept for a message held against what its sender asked for.
 	// Decided here and not on the board, so there is one rule. See heldPeer.quiet.
 	HeldQuiet bool `json:"held_quiet,omitempty"`
+	// HeldStuck is a hold that has outlasted heldStuckAfter without being typed, whatever holds it. See
+	// pendingInjector.flagStuck.
+	HeldStuck bool `json:"held_stuck,omitempty"`
 	// HeldEscalateMin is escalate_held_after in minutes, set on a turn wait: a `when: done` message goes in when the
 	// turn ends or after this long, whichever is first, and the board's tip says so. See escalate.go.
 	HeldEscalateMin int `json:"held_escalate_min,omitempty"`
@@ -231,6 +234,7 @@ type heldPeer struct {
 	// shownQuiet is what the board was last told, so the change from quiet to
 	// overdue publishes once. See setHeld.
 	shownQuiet bool
+	stuck      bool
 }
 
 // heldTurnPatience is how long a message may wait for a turn before its mark
@@ -412,6 +416,7 @@ func (a *activityTracker) withHeld(taskID string, out *Activity) *Activity {
 	out.HeldCount = h.count
 	out.HeldTurn = h.turn
 	out.HeldQuiet = h.quiet(a.now())
+	out.HeldStuck = h.stuck
 	return out
 }
 
@@ -442,6 +447,19 @@ func (a *activityTracker) setHeld(taskID string, r heldPeer) bool {
 	h.shownQuiet = quiet
 	a.held[taskID] = h
 	return changed
+}
+
+// markHeldStuck sets the stuck flag on a held card, reporting whether it was new.
+func (a *activityTracker) markHeldStuck(taskID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	h, ok := a.held[taskID]
+	if !ok || h.stuck {
+		return false
+	}
+	h.stuck = true
+	a.held[taskID] = h
+	return true
 }
 
 // clearHeld says nothing is waiting any more, because it landed, was delivered

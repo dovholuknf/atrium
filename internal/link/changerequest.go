@@ -644,7 +644,7 @@ func (p *Proxy) crTell(owner hubstore.CRParty, text string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c.deliverAs(ctx, owner.Room, owner.Card, "atrium-hub@hub", text, "", "fyi", false)
+	c.deliverAs(ctx, owner.Room, owner.Card, "atrium-hub@hub", text, "", "fyi", false, false)
 }
 
 // crOwner is the live card that owns the source branch: the push log's owner for a branch pushed to the hub, the

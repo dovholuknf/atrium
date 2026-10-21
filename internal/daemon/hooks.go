@@ -75,6 +75,7 @@ type hooks struct {
 	commitOnHub   func(d *Daemon, task *store.Task, sha string) bool
 	healthHalted  func(d *Daemon) (bool, error)
 	backoffSteps  []time.Duration
+	stuckAfter    time.Duration
 	OrphanGrace   time.Duration
 	RelayKeep     time.Duration
 	listMax       int
@@ -132,6 +133,7 @@ func defaultHooks() hooks {
 		commitOnHub:           commitOnHub,
 		healthHalted:          healthHalted,
 		backoffSteps:          append([]time.Duration(nil), backoffSteps...),
+		stuckAfter:            heldStuckAfter,
 		OrphanGrace:           OrphanGrace,
 		RelayKeep:             RelayKeep,
 		listMax:               listMax,

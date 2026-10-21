@@ -67,6 +67,24 @@ func framePromptEmpty(tail []byte, cols, rows int) bool {
 	return idle && typed == ""
 }
 
+// frameHasInterrupt is whether any of the last rows of the screen carries the hint a working runner draws.
+func frameHasInterrupt(tail []byte, cols, rows int) bool {
+	sc := newScreenSized(cols, rows)
+	sc.apply(tail)
+	var lines []string
+	for _, ln := range strings.Split(frameText(sc), "\n") {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			lines = append(lines, ln)
+		}
+	}
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-12; i-- {
+		if strings.Contains(lines[i], frameInterrupt) {
+			return true
+		}
+	}
+	return false
+}
+
 // frameText is the live grid as text, one line per row. The second cell of a wide
 // character holds contCh and is skipped, as writeRow does, so the character
 // appears once.

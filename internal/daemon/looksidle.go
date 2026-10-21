@@ -95,6 +95,7 @@ func (r *runner) lastOutputAt() time.Time {
 // and a badge that claims idleness from a guess about somebody else's screen
 // is worse than none.
 func (d *Daemon) watchLooksIdle(now time.Time) error {
+	d.trustReattachedLines(now)
 	tasks, err := d.st.List(store.StatusRunning)
 	if err != nil {
 		return err
@@ -107,7 +108,6 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 		if run == nil {
 			continue
 		}
-		d.trustReattachedLine(run, now)
 		if _, on := d.act.looksIdleMark(t.ID); on {
 			continue
 		}
@@ -128,32 +128,71 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 	return nil
 }
 
-// trustReattachedLine reads the screen of a runner picked up from the pty host whose typed line is unsure
-// only because of the restart. A settled idle prompt with nothing on the input line proves the line empty
-// without a keystroke, and a Stop hook lost while the room was down would otherwise hold every typed
-// prompt and queued say until a human pressed Enter. A line with anything on it stays unsure.
+// reattachQuiet and reattachQuietOther are how long a reattached runner's terminal must have been silent before its
+// screen is trusted to say the line is empty. Claude's frame is read exactly, so a few seconds is enough. Anything
+// else has no confirmed idle signature, so it waits longer and is read for the one thing every runner draws while it
+// works, an interrupt hint.
+var (
+	reattachQuiet      = envDuration("ATRIUM_REATTACH_QUIET", 5*time.Second)
+	reattachQuietOther = envDuration("ATRIUM_REATTACH_QUIET_OTHER", 30*time.Second)
+)
+
+// trustReattachedLines is trustReattachedLine for every supervised runner, in whatever column its card sits in: an
+// idle worker is needs-input or done, never running, and it is the one a say must reach.
+func (d *Daemon) trustReattachedLines(now time.Time) {
+	for _, run := range d.sup.all() {
+		d.trustReattachedLine(run, now)
+	}
+}
+
+// trustReattachedLine reads the screen of a runner picked up from the pty host whose typed line is unsure only
+// because of the restart. A quiet terminal with nothing on its input line proves the line empty without a keystroke,
+// and a Stop hook lost while the room was down would otherwise hold every typed prompt and queued say until a human
+// pressed Enter. A line with anything on it, a key typed since the reattach, a dialog and a runner mid-turn all stay
+// unsure.
 func (d *Daemon) trustReattachedLine(run *runner, now time.Time) {
-	if !run.reattached.Load() || now.Sub(run.lastOutputAt()) < LooksIdleAfter || run.buf == nil ||
-		d.act.dialogOpen(run.taskID) || d.act.onSubagents(run.taskID) {
+	if !run.reattached.Load() || run.buf == nil || d.act.dialogOpen(run.taskID) || d.act.onSubagents(run.taskID) {
 		return
 	}
 	run.typeMu.Lock()
-	unsure := run.line.unsure == reattachLineKey
+	unsure := run.line.unsure == reattachLineKey && run.keySeq == 0
 	run.typeMu.Unlock()
 	if !unsure {
 		return
 	}
+	t, err := d.st.Get(run.taskID)
+	if err != nil {
+		return
+	}
+	claude := strings.EqualFold(t.Runner, "claude")
+	need := reattachQuietOther
+	if claude {
+		need = reattachQuiet
+	}
+	if now.Sub(run.lastOutputAt()) < need {
+		return
+	}
 	cols, rows := run.buf.CurrentSize()
-	if !framePromptEmpty(run.buf.Tail(frameTailBytes), cols, rows) {
+	tail := run.buf.Tail(frameTailBytes)
+	if claude {
+		if !framePromptEmpty(tail, cols, rows) {
+			return
+		}
+	} else if d.act.midTurn(run.taskID) || frameHasInterrupt(tail, cols, rows) {
 		return
 	}
 	run.typeMu.Lock()
-	defer run.typeMu.Unlock()
-	if run.line.unsure != reattachLineKey {
+	if run.line.unsure != reattachLineKey || run.keySeq != 0 {
+		run.typeMu.Unlock()
 		return
 	}
 	run.line.clear()
-	log.Printf("[atrium] %s: reattached, and the screen shows an empty prompt, so the line is taken as empty", run.taskID)
+	run.typeMu.Unlock()
+	log.Printf("[atrium] %s: reattached and quiet for %s, and the screen shows no work in progress, so the line is taken as empty",
+		run.taskID, need)
+	if d.pending != nil {
+		d.pending.reset(run.taskID)
+	}
 }
 
 // flagLooksIdle sets the badge, arms the runner to take it down again, and logs.
