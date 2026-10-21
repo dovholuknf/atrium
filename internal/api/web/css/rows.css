@@ -610,6 +610,8 @@
     text-align: left; cursor: pointer; text-transform: uppercase; letter-spacing: .04em;
   }
   .bl-sort:hover, .bl-sort.on { color: var(--head); }
+  .bl-group { display: flex; gap: var(--sp-3); align-items: baseline; padding: 10px 0 4px; font: 600 var(--fs-xs)/1.4 var(--sans); color: var(--head); text-transform: uppercase; letter-spacing: .04em; }
+  .bl-group .gn { color: var(--dim); font-weight: 400; }
   .bl-prio {
     font: var(--fs-xs)/1.4 var(--mono); color: var(--dim); background: rgba(var(--sink-rgb),.6);
     border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: 1px 4px; cursor: pointer;

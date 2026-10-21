@@ -25745,7 +25745,7 @@ async function main() {
 
       // ── the backlog tab is hub-only, read-only and filters by the hub ─────
       // Shown once the hub probe answers, like the audit tab. Opening it lists the open items (the done one is
-      // left out), the built status is drawn, the report is there, and ticking `open only` off brings the done one
+      // left out), the in-progress status is drawn, the report is there, and ticking `open only` off brings the done one
       // back from the hub. See js/backlog.js.
       await hub.waitForFunction(() => {
         const tab = document.querySelector('.tab[data-view="backlog"]');
@@ -25757,12 +25757,12 @@ async function main() {
       const backlog = await hub.evaluate(() => ({
         ids: [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id),
         built: !!document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when') &&
-          document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when').textContent === "built",
+          document.querySelector('#backlog-items .aud-row[data-id="f-003"] .aud-when').textContent === "in-progress",
         report: document.querySelector("#backlog-reports .aud-row").textContent.includes("f-003 built"),
         writes: document.querySelectorAll("#backlog textarea").length
       }));
       if (backlog.ids.join() !== "f-003,f-new-x" || !backlog.built || !backlog.report || backlog.writes) {
-        fail("the backlog tab did not draw the open items, the built status and the report read-only: " +
+        fail("the backlog tab did not draw the open items, the in-progress status and the report read-only: " +
           JSON.stringify(backlog));
       }
       // The items for the human live on the items tab now, not here. See itemsViewSection.
@@ -25777,17 +25777,16 @@ async function main() {
       await hub.evaluate(() => document.querySelector('#backlog-prios button[data-prio="low"]').click());
       if ((await ids()) !== "f-003") fail("the low chip left " + await ids());
       await hub.evaluate(() => document.querySelector('#backlog-prios button[data-prio="low"]').click());
-      await hub.evaluate(() => { backlogSort = null; paintBacklog(); });
-      await hub.evaluate(() => { const c = document.getElementById("backlog-open"); c.checked = false; c.dispatchEvent(new Event("change")); });
+      await hub.evaluate(() => { backlogSort = null; paintBacklog(); toggleBacklogShow(""); });
       await hub.waitForFunction(() => document.querySelectorAll("#backlog-items .aud-row[data-id]").length === 3, null,
         { timeout: slow(15000) });
-      await hub.evaluate(() => { const d = document.getElementById("backlog-dept"); d.value = "runtime"; d.dispatchEvent(new Event("change")); });
+      await hub.fill("#backlog-q", "#runtime");
       await hub.waitForFunction(() => [...document.querySelectorAll("#backlog-items .aud-row[data-id]")].map(r => r.dataset.id).join() === "r-037",
         null, { timeout: slow(15000) });
       if (hubErrors.length) {
         fail("the hub page threw uncaught errors after the backlog tab: " + hubErrors.join(" | "));
       }
-      await hub.evaluate(() => { document.getElementById("backlog-dept").value = ""; document.getElementById("backlog-open").checked = true; switchView("audit"); });
+      await hub.evaluate(() => { fdSetSearch("backlog", ""); toggleBacklogShow(""); toggleBacklogShow("open"); toggleBacklogShow("in-progress"); switchView("audit"); });
 
       // ── the audit pane filters by room ────────────────────────────────────
       // Picking a room narrows the feed to that machine. The two sgg lines stay
@@ -26500,7 +26499,10 @@ async function main() {
     await unit("backlogSort", bu("backlogSort"));
     await unit("backlogPrios", bu("backlogPrios"));
     await unit("backlogPriority", bu("backlogPriority"));
-    await unit("backlogFilters", bu("backlogFilters"));
+    await unit("backlogBar", bu("backlogBar"));
+    await unit("backlogSearch", bu("backlogSearch"));
+    await unit("backlogShow", bu("backlogShow"));
+    await unit("backlogGroup", bu("backlogGroup"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
     await unit("interviewTop", bu("interviewTop"));

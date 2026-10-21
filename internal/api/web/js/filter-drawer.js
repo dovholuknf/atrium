@@ -39,6 +39,13 @@ const FD_TABS = {
     repaint: () => renderTermList()
   }
 };
+FD_TABS.backlog = {
+  host: "fd-backlog", q: "backlog-q", match: "backlog-match",
+  placeholder: "id, title, dept or body. #dept for one dept",
+  rows: [["show", "backlog-show", "seg multi"], ["priority", "backlog-prios", "seg multi"], ["dept", "backlog-depts", "seg multi"],
+    ["sort by", "backlog-sort", "seg"], ["group", "backlog-group", "seg"]],
+  repaint: () => paintBacklog()
+};
 const FD_NARROW = "(max-width: 520px)";
 // How far a drag has to carry the drawer, as a fraction of its height, for it to stay open when let go.
 const FD_SNAP = 1 / 3;

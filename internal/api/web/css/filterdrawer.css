@@ -137,7 +137,7 @@
   }
   body.term-phone .fdrawer.fstrip, body.term-phone #terms > .fdrawer.fstrip { margin-top: 0; }
   /* The strip reaches past the stack's box into main's padding, so the stack must not clip it. The list scrolls itself. */
-  main > #stack { overflow: visible; }
+  main > #stack, main > #backlog { overflow: visible; }
 
   /* INLINE: the row fits on the line, so the panel sits on it in place of the summary and there is no drawer or caret. */
   .fdrawer.inline .fline { cursor: default; }

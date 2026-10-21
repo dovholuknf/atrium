@@ -855,7 +855,7 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x").searchParams;
     if (url.startsWith("/_hub/backlog")) {
       let items = [
-        { id: "f-003", dept: "fabric", title: "An inventory of resources", status: "built", priority: "low" },
+        { id: "f-003", dept: "fabric", title: "An inventory of resources", status: "in-progress", priority: "low" },
         { id: "f-new-x", dept: "fabric", title: "Open work", status: "open" },
         { id: "r-037", dept: "runtime", title: "Finished work", status: "done" }
       ];
