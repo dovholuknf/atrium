@@ -22923,62 +22923,77 @@ async function emptyGroupsSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof boardCards === "function" && typeof renderTermList === "function" && typeof paintStack === "function" && lastTasks.length > 0, null, { timeout: slow(15000) });
+    const arrange = () => p.evaluate(() => {
+      window.egTags = ["work"];
+      const card = tags => ({ id: "busy", status: "running", supervised: true, pinned: false, title: "busy", display_title: "busy", tags,
+        worktree: "/r/busy", created_at: "2026-09-30T10:00:00Z", last_activity_at: new Date().toISOString() });
+      boardCards = async () => [card(window.egTags)];
+      for (const v of ["stack", "terms"]) setGrouping({ mode: "custom", groups: ["atrium:interview", "pull-request", "work"] }, v);
+      setStackShow(new Set());
+    });
+    const listed = tab => p.evaluate(async tab => {
+      switchView(tab);
+      if (tab === "stack") await paintStack(); else await renderTermList();
+      const root = document.querySelector(tab === "stack" ? "#stack-list" : "#term-list");
+      if (tab === "terms") return [...root.querySelectorAll("[data-ghead]")].map(e => e.dataset.ghead).join(",");
+      return [...root.querySelectorAll(".gname")].map(e => e.textContent.trim()).join(",");
+    }, tab);
+    await arrange();
     const shots = process.env.EG_SHOTS;
     if (shots) {
-      await p.waitForFunction(() => lastTasks.length > 0, null, { timeout: slow(15000) });
-      const tabs = [["stack", "paintStackShow"], ["board", "paintBoardShow"], ["terms", "paintTermShow"]];
       for (const w of (process.env.EG_WIDTHS || "1400,390").split(",").map(Number)) {
         await p.setViewportSize({ width: w, height: 800 });
-        for (const [tab, paint] of tabs) {
+        for (const tab of ["stack", "terms"]) {
           for (const state of ["on", "off"]) {
-            await p.evaluate(([tab, paint, state, noOpen]) => {
-              switchView(tab);
+            await p.evaluate(([tab, state]) => {
               if (typeof emptyGroupsOn === "function" && emptyGroupsOn(tab) !== (state === "on")) toggleEmptyGroups(tab);
-              window[paint]();
-              if (!noOpen) fdSet(tab, true);
-            }, [tab, paint, state, !!process.env.EG_NOOPEN]);
+            }, [tab, state]);
+            await listed(tab);
+            await p.evaluate(([tab, open]) => { if (open) fdSet(tab, true); }, [tab, !process.env.EG_NOOPEN]);
             await p.waitForTimeout(300);
-            await p.screenshot({ path: shots + "-" + tab + "-" + state + "-" + w + ".png", clip: { x: 0, y: 0, width: w, height: 330 } });
+            await p.screenshot({ path: shots + "-" + tab + "-" + state + "-" + w + ".png", clip: { x: 0, y: 0, width: w, height: 460 } });
           }
         }
       }
       return;
     }
-    await p.waitForFunction(() => typeof seedGroups === "function" && typeof emptyGroupsChip === "function" && lastTasks.length > 0, null, { timeout: slow(15000) });
-    const names = view => p.evaluate(view => {
-      const m = new Map([["live", [{}]]]);
-      seedGroups(m, { view, always: ["atrium:interview", "pull-request"] });
-      return [...m.keys()].join(",");
-    }, view);
-    const full = "live,atrium:interview,pull-request";
-    for (const v of ["stack", "board", "terms"]) {
-      if ((await names(v)) !== full) fail("emptyGroups: " + v + " does not list its empty groups by default: " + await names(v));
-    }
-    await p.evaluate(() => { switchView("stack"); paintStackShow(); });
-    const chip = id => p.evaluate(id => {
+    const chip = (id, tab) => p.evaluate(([id, tab]) => {
+      switchView(tab);
       const b = document.querySelector("#" + id + " button[data-v=emptygroups]");
       return b ? b.classList.contains("on") : null;
-    }, id);
-    if ((await chip("stack-seg")) !== true) fail("emptyGroups: the stack SHOW row has no chip, or it is off by default");
-    await p.evaluate(() => { switchView("board"); paintBoardShow(); });
-    if ((await chip("board-seg")) !== true) fail("emptyGroups: the board SHOW row has no chip, or it is off by default");
-    await p.evaluate(() => { switchView("terms"); paintTermShow(); });
-    if ((await chip("term-show")) !== true) fail("emptyGroups: the terminals SHOW row has no chip, or it is off by default");
+    }, [id, tab]);
+    const click = tab => p.evaluate(tab => document.querySelector("#" + { stack: "stack-seg", terms: "term-show" }[tab] + " button[data-v=emptygroups]").click(), tab);
+    const full = "atrium:interview,pull-request,work";
 
-    await p.evaluate(() => document.querySelector("#term-show button[data-v=emptygroups]").click());
-    if ((await chip("term-show")) !== false) fail("emptyGroups: the chip did not go off when clicked");
-    if ((await names("terms")) !== "live") fail("emptyGroups: off still lists empty groups: " + await names("terms"));
-    if ((await names("stack")) !== full || (await names("board")) !== full) fail("emptyGroups: the setting leaked into another tab");
+    if ((await chip("stack-seg", "stack")) !== true) fail("emptyGroups: the stack SHOW row has no chip, or it is off by default");
+    if ((await chip("term-show", "terms")) !== true) fail("emptyGroups: the terminals SHOW row has no chip, or it is off by default");
+    if ((await chip("board-seg", "board")) !== true) fail("emptyGroups: the board SHOW row has no chip, or it is off by default");
+    for (const tab of ["stack", "terms"]) {
+      if ((await listed(tab)) !== full) fail("emptyGroups: " + tab + " does not list its empty groups by default: " + await listed(tab));
+    }
 
-    const landed = await p.evaluate(() => {
-      const m = new Map([["live", [{}]], ["pull-request", [{}]]]);
-      seedGroups(m, { view: "terms", always: ["atrium:interview", "pull-request"] });
-      return [...m.keys()].join(",");
-    });
-    if (landed !== "live,pull-request") fail("emptyGroups: a group with a card left when off, or an empty one stayed: " + landed);
+    await listed("terms");
+    await click("terms");
+    if ((await chip("term-show", "terms")) !== false) fail("emptyGroups: the chip did not go off when clicked");
+    if ((await listed("terms")) !== "work") fail("emptyGroups: off still lists empty groups on the terminals tab: " + await listed("terms"));
+    if ((await listed("stack")) !== full) fail("emptyGroups: the terminals setting leaked into the stack: " + await listed("stack"));
 
-    await p.evaluate(() => document.querySelector("#term-show button[data-v=emptygroups]").click());
-    if ((await names("terms")) !== full) fail("emptyGroups: on again did not bring the empty groups back: " + await names("terms"));
+    await click("stack");
+    if ((await listed("stack")) !== "work") fail("emptyGroups: off still lists empty groups on the stack: " + await listed("stack"));
+
+    await p.evaluate(() => { window.egTags = ["work", "atrium:interview"]; });
+    if ((await listed("terms")) !== "atrium:interview,work") fail("emptyGroups: a group a card landed in did not come back: " + await listed("terms"));
+    if ((await listed("stack")) !== "atrium:interview,work") fail("emptyGroups: a stack group a card landed in did not come back: " + await listed("stack"));
+    await p.evaluate(() => { window.egTags = ["work"]; });
+    if ((await listed("terms")) !== "work") fail("emptyGroups: a group that emptied live did not go: " + await listed("terms"));
+    if ((await listed("stack")) !== "work") fail("emptyGroups: a stack group that emptied live did not go: " + await listed("stack"));
+
+    await click("terms");
+    await click("stack");
+    for (const tab of ["stack", "terms"]) {
+      if ((await listed(tab)) !== full) fail("emptyGroups: on again did not bring the empty groups back on " + tab + ": " + await listed(tab));
+    }
     if (errors.length) fail("emptyGroups: page errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
