@@ -120,19 +120,17 @@ needs `atrium rooms token <name>` and a rejoin. A killed or abandoned hub leaves
 
 ## Adding a zrok room to the LIVE hub
 
-The live hub is started by `scripts/live/live-common.ps1`. It passes `--transport direct[,ziti],zrok` when the hub
-machine has a zrok environment (`~/.zrok2/environment.json`, written by `zrok enable`), the same guard the ziti identity
-has. The flag SEEDS the gear's "Room link over zrok" row to on: it binds a private share on its own, with no service or
-identity to set. Turning it off or on in the gear (from the hub's machine) takes effect with no restart, and the first
-change made there replaces the seed. A hub whose machine has no zrok environment gets no flag and the row stays off.
+`scripts/live/live-common.ps1` passes NO zrok flag, and a deploy never turns zrok on because a file exists. The gear's
+"Room link over zrok" row is on the hub always, off until the operator turns it on, and the hub's stored transport
+settings decide from then on, as they do for ziti. `--transport ...,zrok` would seed the row for a throwaway hub.
 
 1. **(clint)** On the hub machine, once: `zrok enable <account token>`, then `zrok status`.
-2. Deploy as usual. `install-live-scripts.ps1` copies the new `live-common.ps1`, and the hub restart starts it with zrok
-   named. The hub log says `reserved a private zrok share` once, the first time, and writes `zrok-share` in the hub
-   directory. Every later deploy reuses that share. Check the gear: Transports shows "Room link over zrok" as `bound`.
-3. **(clint)** On the hub machine, add the room: `atrium rooms add claudevm --transport zrok --atrium-dir <hub dir>`.
-   It prints one join line, good once for an hour.
+2. **(clint)** From the hub machine, open the gear, "expose the board", and press `turn on` on "Room link over zrok".
+   The row reads `bound`, the hub log says `reserved a private zrok share` once, and `zrok-share` appears in the hub
+   directory. The setting is stored, so every later deploy rebinds the same share.
+3. **(clint)** Add the room: `atrium rooms add claudevm --transport zrok --atrium-dir <hub dir>`. It prints one join
+   line, good once for an hour.
 4. **(clint)** On claudevm, run `zrok enable <account token>`, then `atrium room join <the line>` and `atrium room`.
 5. The Rooms view shows claudevm on `zrok`. Deploy once more and watch it reattach with no new string.
 
-Do not start zrok on the live hub from a worker. Steps 1, 3 and 4 are the operator's.
+Do not start zrok on the live hub from a worker. Steps 1 to 4 are the operator's.

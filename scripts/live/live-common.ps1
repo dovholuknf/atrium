@@ -77,19 +77,11 @@ $HubArgs += @('--board-views', 'D:\worktrees')
 # m1mini and sg3 attach over ziti only. The identity is enrolled outside the repo and never committed. Only added while
 # it is there, and a controller that is down leaves the hub up on direct. See docs/changes/f-hub-transport-settings.md.
 $HubZitiIdentity = 'C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json'
-$HubTransports = 'direct'
 if (Test-Path $HubZitiIdentity) {
-  $HubTransports += ',ziti'
-  $HubArgs += @('--atrium-identity', $HubZitiIdentity, '--atrium-service', 'atrium-hub')
+  $HubArgs += @('--transport', 'direct,ziti', '--atrium-identity', $HubZitiIdentity, '--atrium-service', 'atrium-hub')
   $HubArgs += @('--board-transport', 'ziti', '--board-service', 'atrium-board')
   $HubArgs += @('--ci-hook-service', 'ziti-hook')
 }
-# The room link over zrok private seeds the same way, and only on a machine with a zrok environment (`zrok enable`
-# writes it). The hub reuses the share it saved in zrok-share across restarts, so a deploy does not cut a zrok room
-# off. See docs/fabric/room-over-zrok.md.
-$HubZrokEnv = Join-Path $env:USERPROFILE '.zrok2\environment.json'
-if (Test-Path $HubZrokEnv) { $HubTransports += ',zrok' }
-if ($HubTransports -ne 'direct') { $HubArgs += @('--transport', $HubTransports) }
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.

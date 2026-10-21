@@ -1117,9 +1117,12 @@ async function hubTransportsSection(browser, base) {
     const zrokBox = await p.evaluate(() => ({ inputs: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] input').length,
       apply: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] .ht-apply').length }));
     if (zrokBox.inputs || zrokBox.apply) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrokBox));
+    const zrokShot = async n => { if (process.env.HT_SHOTS) { fs.mkdirSync(process.env.HT_SHOTS, { recursive: true }); await p.locator('#s-ht-list [data-name="room-zrok"]').screenshot({ path: path.join(process.env.HT_SHOTS, n) }); } };
+    await zrokShot("zrok-row-before.png");
     await p.click('#s-ht-list [data-name="room-zrok"] .ht-switch');
     await p.waitForFunction(() => /turn off/.test(document.querySelector('#s-ht-list [data-name="room-zrok"] .ht-switch').textContent),
       null, { timeout: slow(5000) }).catch(() => fail(tag + "turning zrok on did not show."));
+    await zrokShot("zrok-row-after.png");
     const zp = st.puts.find(x => x.name === "room-zrok");
     if (!zp || zp.on !== true || "service" in zp || "identity" in zp) fail(tag + "the zrok PUT was " + JSON.stringify(zp));
     st.puts.length = 0;
