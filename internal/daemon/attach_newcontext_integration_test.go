@@ -80,7 +80,7 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 	if !seen["in-done:p1"] || !seen["in-refused:"] {
 		t.Fatalf("want in-done:p1 and in-refused:, got %v", seen)
 	}
-	if w := f.written(); strings.Contains(w, "held-bytes") || strings.Contains(w, "") {
+	if w := f.written(); strings.Contains(w, "held-bytes") || strings.Contains(w, "\x03") {
 		t.Fatalf("typing reached the pty during a new context: %q", w)
 	}
 
