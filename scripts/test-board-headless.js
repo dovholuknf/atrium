@@ -25813,6 +25813,7 @@ async function main() {
     await unit("transportChips", bu("transportChips"));
     await unit("pathBadges", bu("pathBadges"));
     await unit("transportToggle", bu("transportToggle"));
+    await unit("hubTransports", bu("hubTransports"));
     await unit("zitiLogo", bu("zitiLogo"));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));

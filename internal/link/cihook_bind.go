@@ -28,11 +28,17 @@ const (
 	CIListenerKind = "ci-hook"
 )
 
-// CIBinder binds the ziti-hook service and keeps trying. A controller that is down at start leaves the hub up without
-// the hook, and a missed webhook is not recoverable by the sender, so unlike the board it never gives up.
+// CIBinder binds a ziti service and keeps trying. A controller that is down at start leaves the hub up without the
+// hook, and a missed webhook is not recoverable by the sender, so unlike the board it never gives up. The hub's
+// transports (hubtransports.go) run the board's and the room link's binds through the same loop.
 type CIBinder struct {
 	Listen  func() (net.Listener, error)
 	Handler http.Handler
+	// Serve, when set, takes the listener in place of an http server over Handler. It returns when the listener dies,
+	// or when ctx ends.
+	Serve func(ctx context.Context, ln net.Listener) error
+	// Name is the audit prefix, name-up and name-down. Empty is ci-hook.
+	Name string
 	// State records the listener row: up, or down with why.
 	State func(up bool, err error)
 	Audit func(kind, detail string)
@@ -78,15 +84,23 @@ func (b *CIBinder) Run(ctx context.Context) {
 	if wait == nil {
 		wait = waitTimer
 	}
+	name := b.Name
+	if name == "" {
+		name = "ci-hook"
+	}
 	delay := first
 	downSaid, upSaid := false, false
 	for ctx.Err() == nil {
 		ln, err := b.Listen()
+		if err == nil && ctx.Err() != nil {
+			_ = ln.Close()
+			return
+		}
 		if err == nil {
 			b.state(true, nil)
 			if !upSaid {
 				upSaid = true
-				b.audit("ci-hook-up", "the ci hook is listening")
+				b.audit(name+"-up", name+" is listening")
 			}
 			delay = first
 			began := time.Now()
@@ -98,10 +112,13 @@ func (b *CIBinder) Run(ctx context.Context) {
 				downSaid = false
 			}
 		}
+		if ctx.Err() != nil {
+			return
+		}
 		b.state(false, err)
 		if !downSaid {
 			downSaid, upSaid = true, false
-			b.audit("ci-hook-down", err.Error())
+			b.audit(name+"-down", err.Error())
 		}
 		if !wait(ctx, delay) {
 			return
@@ -113,6 +130,14 @@ func (b *CIBinder) Run(ctx context.Context) {
 }
 
 func (b *CIBinder) serve(ctx context.Context, ln net.Listener) error {
+	if b.Serve != nil {
+		err := b.Serve(ctx, ln)
+		_ = ln.Close()
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			err = errors.New("the listener closed")
+		}
+		return err
+	}
 	srv := &http.Server{
 		Handler:           b.Handler,
 		ReadHeaderTimeout: 10 * time.Second,

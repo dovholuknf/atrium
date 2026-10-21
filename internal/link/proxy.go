@@ -130,6 +130,8 @@ type Proxy struct {
 
 	// ci is the hub's CI hook. Nil until SetCIHook wires it, and a hub without one answers /_hub/ci-hook 404.
 	ci *CIHook
+	// transports is the hub's ziti binds, switchable from the gear. See hubtransports.go.
+	transports *HubTransports
 	// ev is the hub's event hook. Nil until SetEvents wires it, and a hub without one answers /_hub/events 404.
 	ev *EventHook
 
@@ -1736,6 +1738,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveLaunchCaps(w, r)
 	case "hosts":
 		p.serveHosts(w, r)
+	case "transports":
+		p.serveTransports(w, r)
 	case "deploy-owner":
 		p.serveDeployOwner(w, r)
 	case "deploy-ready", "deploy-ready/deploy":

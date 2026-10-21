@@ -1896,6 +1896,7 @@ function connect() {
     if (typeof paintRooms === "function") paintRooms();
     loadGlobalAuto();
     if (typeof loadHubHosts === "function") loadHubHosts();
+    if (typeof loadHubTransports === "function") loadHubTransports();
     // Assume the daemon is coming up until it says otherwise.
     //
     // The tasks and the health poll are two requests that do not arrive in a

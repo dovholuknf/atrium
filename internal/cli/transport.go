@@ -58,7 +58,13 @@ type hubSide struct {
 	// set, when not nil, is every path this side offers right now, asked again at each welcome and on a
 	// timer. Direct has one: its addresses move with the machine. Nil means `path` alone.
 	set func() []link.Path
+	// enabled, when not nil, says whether the side is bound now. A side that is not is left out of the paths and of
+	// overlay(). service, when not nil, is the service the side is bound to now.
+	enabled func() bool
+	service func() string
 }
+
+func (s *hubSide) on() bool { return s.enabled == nil || s.enabled() }
 
 // openHub prepares one side of one transport.
 //
@@ -214,9 +220,11 @@ func (s hubSet) release() {
 
 // says names where rooms dial in, every transport.
 func (s hubSet) says() string {
-	out := make([]string, len(s.sides))
-	for i, side := range s.sides {
-		out[i] = side.says
+	var out []string
+	for _, side := range s.sides {
+		if side.on() {
+			out = append(out, side.says)
+		}
 	}
 	return strings.Join(out, ", and ")
 }
@@ -225,7 +233,7 @@ func (s hubSet) says() string {
 // on the old, certificate-less path.
 func (s hubSet) overlay() bool {
 	for _, side := range s.sides {
-		if side.kind != "direct" {
+		if side.kind != "direct" && side.on() {
 			return true
 		}
 	}
@@ -247,7 +255,7 @@ func (s hubSet) auth() func(net.Conn) bool {
 func (s hubSet) paths(order []string) []link.Path {
 	var out []link.Path
 	for _, side := range s.sides {
-		if side.kind == "zrok" {
+		if side.kind == "zrok" || !side.on() {
 			continue
 		}
 		if side.set != nil {
@@ -257,6 +265,9 @@ func (s hubSet) paths(order []string) []link.Path {
 			}
 		}
 		p := side.path
+		if side.service != nil {
+			p.Service = side.service()
+		}
 		p.Share, p.Identity, p.From = "", "", ""
 		out = append(out, p)
 	}
@@ -294,6 +305,18 @@ func overlayListen(inner func() (net.Listener, error), d link.Direct, transport 
 			return nil, err
 		}
 		return link.MixedListener(ln, cfg, transport), nil
+	}
+}
+
+// roomZitiListen binds the room link's ziti service with a fresh context per call, for the hub's transport switch.
+func roomZitiListen(keys link.Keys, spend func(string) (string, error)) func(service, identity string) (net.Listener, error) {
+	return func(service, identity string) (net.Listener, error) {
+		d, err := overlayDirect(keys, spend)
+		if err != nil {
+			return nil, err
+		}
+		z := &link.Ziti{Identity: identity, Service: service}
+		return overlayListen(z.Listen, d, "ziti")()
 	}
 }
 

@@ -112,4 +112,5 @@ against and the operator chose on purpose.
 | `setupwatch.go` / `predates.go` | whether rooms are set up alike, and a room too old for a route |
 | `views.go` | a board tree per worker worktree at `<name>.localhost` |
 | `hosts.go` | the extra names the hub answers to |
+| `hubtransports.go` / `cihook_bind.go` | the hub's ziti binds (board, room link, CI hook) as settings, and the loop that keeps one bound |
 | `contextlimits.go` / `workerpolicy.go` / `inputlag*.go` / `mincolssetting.go` | hub-owned settings passed to every room |

@@ -72,18 +72,9 @@ $HubArgs += @('--board', (Join-Path $Repo 'internal\api\web'))
 # One board view per worker worktree under D:\worktrees, at http://<worktree-folder>.localhost:7778/, so several UI changes
 # are live side by side. See docs/rnd/board-views-design.md.
 $HubArgs += @('--board-views', 'D:\worktrees')
-# Rooms reach the hub over direct first and the OpenZiti service atrium-hub second, on clint's OCI network. m1mini and
-# sg3 cannot reach 7779 and attach over ziti only. The identity is enrolled outside the repo and never committed. Only
-# added while it is there, so a machine without it starts the hub on direct as before, and a ziti controller that is down
-# leaves the hub up on direct (a later transport that cannot listen is left out). See docs/changes/room-transport-order.md.
-$HubZitiIdentity = 'C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json'
-$HubZitiService  = 'atrium-hub'
-if (Test-Path $HubZitiIdentity) {
-  $HubArgs += @('--transport', 'direct,ziti', '--atrium-identity', $HubZitiIdentity, '--atrium-service', $HubZitiService)
-  # The board on the same identity, as the ziti service atrium-board (intercept atrium.ziti:80), so clint's phone
-  # reaches it with Ziti Mobile Edge and no zrok. Dial policy: #atrium-board-clients. clint 2026-10-16.
-  $HubArgs += @('--board-transport', 'ziti', '--board-service', 'atrium-board')
-}
+# The hub's ziti transports (the room link on atrium-hub, the board on atrium-board, the CI hook) are settings now, set in
+# the gear and kept in the hub's store, so no flag turns them on here. The operator seeds them once from the gear. A flag
+# would only seed a value, and the first change in the gear replaces it.
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.

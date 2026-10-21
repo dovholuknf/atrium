@@ -198,15 +198,52 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	defer set.release()
+
+	// THE HUB'S ZITI TRANSPORTS, each a switch in the gear. A flag seeds one. See link/hubtransports.go.
+	var h *link.Hub
+	ht := &link.HubTransports{
+		Store:            store,
+		IdentityFallback: f.identity,
+		CheckIdentity:    func(p string) error { _, err := os.Stat(p); return err },
+		Audit:            func(kind, detail string) { proxy.RecordAudit("", kind, detail) },
+	}
+	order, _ := link.ParseOrder(transport)
+	zitiNamed := false
+	for _, k := range order {
+		zitiNamed = zitiNamed || k == "ziti"
+	}
+	var zitiSide *hubSide
+	for _, s := range set.sides {
+		if s.kind == "ziti" {
+			zitiSide = s
+		}
+	}
+	if zitiSide == nil {
+		d, err := overlayDirect(keys, nil)
+		if err == nil {
+			z := &link.Ziti{Identity: zitiIdentity, Service: service}
+			zitiSide = &hubSide{
+				kind: "ziti", path: link.Path{Transport: "ziti", Service: service},
+				enrol: d.ServeEnrolment, auth: link.OverlayAuthenticated,
+				release: z.Close, says: "the ziti service " + service,
+			}
+			set.sides = append(set.sides, zitiSide)
+		} else {
+			log.Printf("[hub] the room link cannot be offered over ziti: %v", err)
+		}
+	}
 	// A LATER TRANSPORT THAT CANNOT LISTEN IS LEFT OUT, NOT FATAL. The first is
 	// what join strings are minted for and still refuses to start without. A
 	// ziti controller that is down when the hub restarts must not keep the hub
 	// down for the rooms that reach it directly. A side left out is not told to
 	// rooms either, since nothing answers on it.
 	var lns []net.Listener
-	var kept []*hubSide
+	var lnVia []string
 	var sideStates []link.ListenerState
 	for i, s := range set.sides {
+		if s.kind == "ziti" && i > 0 {
+			continue
+		}
 		ln, err := s.listen()
 		if err != nil {
 			if i == 0 {
@@ -214,15 +251,43 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			}
 			sideStates = append(sideStates, link.ListenerState{Kind: s.kind, LastError: err.Error()})
 			log.Printf("[hub] not listening for rooms over %s, the hub runs without it: %v", s.kind, err)
+			s.enabled = func() bool { return false }
 			continue
 		}
 		defer ln.Close()
 		log.Printf("[hub] listening for rooms over %s: %s", s.kind, s.says)
 		sideStates = append(sideStates, link.ListenerState{Kind: s.kind, Up: true})
 		lns = append(lns, ln)
-		kept = append(kept, s)
+		lnVia = append(lnVia, s.kind)
 	}
-	set.sides = kept
+	if zitiSide != nil && zitiSide != set.sides[0] {
+		z := zitiSide
+		var seed link.TransportSeed
+		if zitiNamed {
+			on := true
+			seed = link.TransportSeed{On: &on, Service: service, Identity: f.identity}
+		}
+		ht.Add(link.TransportItem{
+			Name: link.TransportRoomZiti, Label: "Room link over ziti", Kind: "ziti", DefaultService: service,
+			Listen: roomZitiListen(keys, func(secret string) (string, error) {
+				r, err := store.Spend(secret)
+				if err != nil {
+					return "", err
+				}
+				roomsChanged()
+				return r.Name, nil
+			}),
+			Serve: func(ctx context.Context, ln net.Listener) error { return h.ServeVia(ctx, ln, "ziti") },
+			Refuse: func() string {
+				if rooms := h.OnlyVia("ziti"); len(rooms) > 0 {
+					return "refused: " + strings.Join(rooms, ", ") + " reaches this hub only over ziti"
+				}
+				return ""
+			},
+		}, seed)
+		z.enabled = func() bool { on, _ := ht.Effective(link.TransportRoomZiti); return on }
+		z.service = func() string { _, svc := ht.Effective(link.TransportRoomZiti); return svc }
+	}
 	side := set.primary()
 	side.says = set.says()
 
@@ -242,7 +307,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			"a room it did not know is refused. the agents on every room are unaffected and keep running")
 	}
 
-	h := link.NewHub(link.Timings{})
+	h = link.NewHub(link.Timings{})
+	ht.Hub = h
 	for _, s := range sideStates {
 		var why error
 		if s.LastError != "" {
@@ -307,7 +373,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	h.Enrol = side.enrol
 	// Every room proves who it is with a certificate this hub signed.
-	h.Authenticated = set.auth()
+	h.Authenticated = func(c net.Conn) bool { return set.auth()(c) }
 	// WHAT ROOMS ARE TOLD, in the order the store holds, read at every attach so
 	// `atrium rooms transports` needs no restart.
 	h.Paths = func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }
@@ -520,7 +586,32 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetPush(link.NewPush(store, notifier))
 	proxy.SetGrowler(growler)
 	growler.Start(ctx)
-	startCIHook(ctx, f.ciHookService, zitiIdentity, store, h, proxy)
+	startCIHook(ctx, f.ciHookService, store, ht, proxy)
+	var boardSeed link.TransportSeed
+	if strings.TrimSpace(boardTransport) == "ziti" {
+		on := true
+		boardSeed = link.TransportSeed{On: &on, Service: boardService}
+	}
+	ht.Add(link.TransportItem{
+		Name: link.TransportBoardZiti, Label: "Board over ziti", Kind: "board-ziti", DefaultService: "atrium-board",
+		Listen: func(svc, identity string) (net.Listener, error) {
+			return (&link.Ziti{Identity: identity, Service: svc}).ListenService(svc)
+		},
+		Serve: func(ctx context.Context, ln net.Listener) error {
+			_, svc := ht.Effective(link.TransportBoardZiti)
+			srv := &http.Server{
+				Handler:           zitiBoardEdge(edge.MarkReach(proxy, edge.ReachOverlay), svc),
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+			go func() {
+				<-ctx.Done()
+				_ = srv.Close()
+			}()
+			return srv.Serve(ln)
+		},
+	}, boardSeed)
+	proxy.SetTransports(ht)
+	ht.Start(ctx)
 
 	// A room attaching is synced and collected, off the attach path. The timers stop and the
 	// git children are cancelled within ten seconds of the hub stopping.
@@ -569,7 +660,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 				log.Printf("[hub] the room listener over %s stopped: %v", via, err)
 				h.SetListener(via, false, err)
 			}
-		}(ln, set.sides[i].kind)
+		}(ln, lnVia[i])
 	}
 
 	// SNAPSHOTS OF ITS OWN STORE, because a halt on a corrupt database
@@ -665,28 +756,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			serveBoardOn(ctx, shareLn, edge.Named(edge.MarkReach(proxy, reach), bs.Address), "zrok share")
 
 		case "ziti":
-			// The headless equivalent of the panel's OpenZiti toggle. The
-			// hub binds a ziti service and answers the board on it, so a
-			// phone running the ziti tunneler reaches it with no port open
-			// on this machine. Who may reach it is a policy on that network,
-			// which is why a ziti board needs no login the way a public zrok
-			// share does. The service must already exist with a bind policy
-			// this identity satisfies: link.Ziti.Listen says so plainly if
-			// it does not, rather than failing opaquely. See the design's
-			// OpenZiti precondition.
-			z := &link.Ziti{Identity: zitiIdentity, Service: boardService}
-			shareLn, err := z.Listen()
-			if err != nil {
-				log.Printf("[hub] could not bind the board to the ziti service %q, "+
-					"serving loopback only: %v", boardService, err)
-				break
-			}
-			defer z.Close()
-			log.Printf("[hub] serving the board on the ziti service %q", boardService)
-			proxy.RecordAudit("", "board-share-opened",
-				"the board is on the ziti service "+boardService)
-			serveBoardOn(ctx, shareLn, zitiBoardEdge(edge.MarkReach(proxy, edge.ReachOverlay), boardService), "ziti service")
-
+			// bound by the board-ziti transport, which this flag seeds
 		default:
 			return fmt.Errorf("no board transport called %q. one of: zrok, ziti", bt)
 		}

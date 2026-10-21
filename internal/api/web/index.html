@@ -77,6 +77,7 @@
 <link rel="stylesheet" href="/css/hubpush.css">
 <link rel="stylesheet" href="/css/topnav.css">
 <link rel="stylesheet" href="/css/hubhosts.css">
+<link rel="stylesheet" href="/css/hubtransports.css">
 <link rel="stylesheet" href="/css/chat.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
@@ -1899,6 +1900,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">These are the HUB's names. Rooms do not read them. A wildcard is safe only for a
         domain one operator controls: a dynamic DNS domain is refused, and shows above as ignored with its reason.
         Applied from the next request, no restart.</span>
+    </div>
+
+    <!-- The hub's ziti transports: the board, the room link and the CI hook. Hidden until the hub answers. See
+         js/hubtransports.js. -->
+    <div class="field" id="s-ht-row" hidden>
+      <span class="eyebrow">hub ziti transports</span>
+      <div id="s-ht-list"></div>
+      <span class="hintline" id="s-ht-ro" hidden>Set on the hub's machine.</span>
+      <span class="hintline" id="s-ht-msg"></span>
+      <span class="hintline">Turning one off closes its listener at once. The room link is refused while a room reaches
+        the hub only over it. A flag given at start only seeds a value: the first change here replaces it.</span>
     </div>
 
     <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
@@ -3882,6 +3894,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/hubnotify.js"></script>
 <script src="/js/hubpush.js"></script>
 <script src="/js/hubhosts.js"></script>
+<script src="/js/hubtransports.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/homes.js"></script>
 <script src="/js/terminal.js"></script>

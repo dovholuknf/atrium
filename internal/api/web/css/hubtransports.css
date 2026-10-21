@@ -1,0 +1,7 @@
+/* The hub's ziti transports row in the settings gear. See js/hubtransports.js. */
+  #s-ht-row[hidden], #s-ht-row [hidden] { display: none; }
+  #s-ht-row .ht-item { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+  #s-ht-row .ht-state { font-size: var(--fs-sm); color: var(--dim); }
+  #s-ht-row .ht-failing { color: var(--warn); }
+  #s-ht-row .ht-item input { width: 18ch; box-sizing: border-box; font: var(--fs-sm)/1.5 var(--mono); }
+  #s-ht-row .ht-item .hintline { flex-basis: 100%; }

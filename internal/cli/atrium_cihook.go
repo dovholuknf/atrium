@@ -12,24 +12,25 @@ import (
 
 // startCIHook wires the hub's CI hook: the loopback route and the delivery worker always, the ziti-hook bind only when a
 // service is named. See docs/fabric/ci-hook-design.md.
-func startCIHook(ctx context.Context, service, identity string, store *hubstore.Store, h *link.Hub, proxy *link.Proxy) {
+func startCIHook(ctx context.Context, service string, store *hubstore.Store, ht *link.HubTransports, proxy *link.Proxy) {
 	hook := link.NewCIHook(store, proxy.Deliverer(), func(kind, detail string) { proxy.RecordAudit("", kind, detail) })
 	proxy.SetCIHook(hook)
 	events := proxy.NewEventHook(store, "land@"+defaultRoomName(), func(kind, detail string) { proxy.RecordAudit("", kind, detail) })
 	hook.SetEvents(events)
 	proxy.SetEvents(events)
 	go hook.Run(ctx)
-	if service == "" {
-		return
+	var seed link.TransportSeed
+	if service != "" {
+		on := true
+		seed = link.TransportSeed{On: &on, Service: service}
 	}
-	z := &link.Ziti{Identity: identity, Service: service}
-	b := &link.CIBinder{
-		Listen:  func() (net.Listener, error) { return z.ListenService(service) },
+	ht.Add(link.TransportItem{
+		Name: link.TransportCIHook, Label: "CI hook", Kind: link.CIListenerKind, DefaultService: "ziti-hook",
+		Listen: func(svc, identity string) (net.Listener, error) {
+			return (&link.Ziti{Identity: identity, Service: svc}).ListenService(svc)
+		},
 		Handler: hook,
-		State:   func(up bool, err error) { h.SetListener(link.CIListenerKind, up, err) },
-		Audit:   func(kind, detail string) { proxy.RecordAudit("", kind, detail) },
-	}
-	go b.Run(ctx)
+	}, seed)
 }
 
 // newCIHookCmd is `atrium ci-hook`.

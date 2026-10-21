@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, zitiLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
+// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1054,6 +1054,110 @@ async function transportToggleSection(browser, base) {
   }
 }
 
+// hubTransports: the gear lists the hub's ziti transports (the board, the room link, the CI hook) with a state, a
+// service and an identity each. Turning one on or off PUTs {name, on, service, identity} to /_hub/transports, a flag
+// seed is named, a 409 refusal is shown as the hub said it, and a 403 makes the row read-only.
+// HT_SHOTS=dir writes the row before (no section) and after.
+async function hubTransportsSection(browser, base) {
+  const tag = "hubTransports: ";
+  const open = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const st = { puts: [], gets: 0, on: false };
+    const view = () => ({ transports: [
+      { name: "board-ziti", label: "Board over ziti", kind: "board-ziti", on: st.on, state: st.on ? "bound" : "off", service: "atrium-board",
+        default_service: "atrium-board", identity: "", identity_used: "/ids/hub.json", seeded: ["on"], switchable: true },
+      { name: "room-ziti", label: "Room link over ziti", kind: "ziti", on: true, state: "failing", last_error: "controller unreachable",
+        service: "atrium-hub", default_service: "atrium-hub", identity: "", identity_used: "/ids/hub.json", switchable: true },
+      { name: "ci-hook", label: "CI hook", kind: "ci-hook", on: false, state: "off", service: "ziti-hook", default_service: "ziti-hook",
+        identity: "", identity_used: "/ids/hub.json", switchable: true },
+    ] });
+    await ctx.route("**/_hub/transports", route => {
+      const req = route.request();
+      if (mode === "none") return route.fulfill({ status: 404, body: "" });
+      if (req.method() === "PUT") {
+        if (mode === "remote") return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "only from the hub's machine" }) });
+        const b = JSON.parse(req.postData());
+        st.puts.push(b);
+        if (b.name === "room-ziti") {
+          return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "refused: m1mini reaches this hub only over ziti" }) });
+        }
+        if (b.name === "board-ziti") st.on = !!b.on;
+      } else st.gets++;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(view()) });
+    });
+    const errors = [];
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    await p.waitForFunction(() => new Promise(r => requestAnimationFrame(() => r(!!document.getElementById("gear").onclick))),
+      null, { timeout: slow(20000), polling: 10 });
+    return { ctx, p, st, errors };
+  };
+  const showPane = async p => {
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+  };
+  let h = await open("hub");
+  try {
+    const { p, st } = h;
+    await showPane(p);
+    await p.waitForFunction(() => !document.getElementById("s-ht-row").hidden, null, { timeout: slow(10000) });
+    const a = await p.evaluate(() => [...document.querySelectorAll("#s-ht-list .ht-item")].map(r => ({
+      name: r.dataset.name, text: r.textContent.replace(/\s+/g, " "), btn: r.querySelector(".ht-switch").textContent })));
+    if (a.map(x => x.name).join("|") !== "board-ziti|room-ziti|ci-hook") fail(tag + "the rows were " + JSON.stringify(a));
+    if (!/set by flag: on/.test(a[0].text)) fail(tag + "a seeded value is not named: " + a[0].text);
+    if (!/failing: controller unreachable/.test(a[1].text)) fail(tag + "a failing transport shows no reason: " + a[1].text);
+    if (a[0].btn !== "turn on" || a[1].btn !== "turn off") fail(tag + "the switches read " + JSON.stringify(a.map(x => x.btn)));
+
+    const shots = process.env.HT_SHOTS || "";
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.evaluate(() => { document.getElementById("s-ht-row").style.display = "none"; });
+      await p.locator("#settings").screenshot({ path: path.join(shots, "hub-transports-before.png") });
+      await p.evaluate(() => { document.getElementById("s-ht-row").style.display = ""; document.getElementById("s-ht-row").scrollIntoView(); });
+      await p.locator("#settings").screenshot({ path: path.join(shots, "hub-transports-after.png") });
+    }
+
+    await p.click('#s-ht-list [data-name="board-ziti"] .ht-switch');
+    await p.waitForFunction(() => /turn off/.test(document.querySelector('#s-ht-list [data-name="board-ziti"] .ht-switch').textContent),
+      null, { timeout: slow(5000) }).catch(() => fail(tag + "turning the board on did not show."));
+    if (!st.puts[0] || st.puts[0].name !== "board-ziti" || st.puts[0].on !== true || st.puts[0].service !== "atrium-board") {
+      fail(tag + "turn on PUT " + JSON.stringify(st.puts));
+    }
+    await p.click('#s-ht-list [data-name="room-ziti"] .ht-switch');
+    await p.waitForFunction(() => /reaches this hub only over ziti/.test(document.getElementById("s-ht-msg").textContent),
+      null, { timeout: slow(5000) }).catch(() => fail(tag + "the hub's refusal was not shown."));
+    const gets = st.gets;
+    await p.evaluate(() => document.getElementById("settings").close());
+    await showPane(p);
+    await p.waitForTimeout(400);
+    if (st.gets <= gets) fail(tag + "opening the gear did not read the transports again.");
+    if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+  } finally { await h.ctx.close(); }
+
+  h = await open("remote");
+  try {
+    const { p } = h;
+    await showPane(p);
+    await p.waitForFunction(() => !document.getElementById("s-ht-row").hidden, null, { timeout: slow(10000) });
+    await p.click('#s-ht-list [data-name="board-ziti"] .ht-switch');
+    await p.waitForFunction(() => !document.getElementById("s-ht-ro").hidden, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a 403 did not make the row read-only."));
+    const r = await p.evaluate(() => ({ switches: document.querySelectorAll("#s-ht-list .ht-switch").length,
+      said: document.getElementById("s-ht-ro").textContent }));
+    if (r.switches || !/hub's machine/.test(r.said)) fail(tag + "the read-only row is wrong: " + JSON.stringify(r));
+  } finally { await h.ctx.close(); }
+
+  h = await open("none");
+  try {
+    const { p } = h;
+    await showPane(p);
+    await p.waitForTimeout(600);
+    if (!(await p.evaluate(() => document.getElementById("s-ht-row").hidden))) fail(tag + "the row shows with no hub.");
+  } finally { await h.ctx.close(); }
+}
+
 // zitiLogo: a ziti transport badge wears the vendored OpenZiti mark (an inline gradient disc, no fetch) in place of
 // the ring glyph, at the badge's text height, with its own gradient id per badge; mTLS and zrok keep their icons.
 // On the demo rooms page the ziti rooms' cards carry it. ZITI_LOGO_SHOTS=dir writes the rooms page.
@@ -1805,6 +1909,7 @@ const units = [
   { name: "transportChips", run: ({ browser, base }) => transportChipsSection(browser, base) },
   { name: "pathBadges", run: ({ browser, base }) => pathBadgesSection(browser, base) },
   { name: "transportToggle", run: ({ browser, base }) => transportToggleSection(browser, base) },
+  { name: "hubTransports", run: ({ browser, base }) => hubTransportsSection(browser, base) },
   { name: "zitiLogo", run: ({ browser, base }) => zitiLogoSection(browser, base) },
   { name: "pollsGone", run: ({ browser, base }) => pollsGoneSection(browser, base) },
   { name: "findingsProbe", run: ({ browser, base }) => findingsProbeSection(browser, base) },
@@ -1815,7 +1920,7 @@ const units = [
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
+const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

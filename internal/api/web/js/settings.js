@@ -9,6 +9,7 @@ document.getElementById("gear").onclick = () => {
   if (typeof loadGrowlLadder === "function") loadGrowlLadder();
   if (typeof loadHubPush === "function") loadHubPush();
   if (typeof loadHubHosts === "function") loadHubHosts();
+  if (typeof loadHubTransports === "function") loadHubTransports();
   // Every field that saves itself, wired once. Here rather than at load
   // because the panes are cut up at runtime and this is the moment they are
   // all certain to exist. See `wireSelfSaving`.

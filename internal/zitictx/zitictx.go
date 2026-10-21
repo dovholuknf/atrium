@@ -172,6 +172,17 @@ func Relogin(identity string) error {
 	return relogin(c)
 }
 
+// Close ends the context for one identity, which frees it to be built again from the file. A context that does not
+// exist is not an error. Callers that still hold the old one find its listeners and dials dead.
+func Close(identity string) {
+	mu.Lock()
+	c, ok := open[keyOf(identity)]
+	mu.Unlock()
+	if ok {
+		c.Close()
+	}
+}
+
 // CloseAll closes every context, for the process that is stopping.
 func CloseAll() {
 	mu.Lock()
