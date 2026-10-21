@@ -818,14 +818,27 @@ function Test-RoomBackOnHub([string]$Name, [datetime]$After, [string]$Commit = '
   return $true
 }
 
+# Get-RoomSshUser is the ssh login a room needs when it is not the caller's own, or '' to let ssh choose. The hub's room
+# record wins when it carries ssh_user, then room-ssh.json beside this script. One place, so no script lists users.
+function Get-RoomSshUser([string]$Name, $HubRoom = $null, [string]$File = '') {
+  if (-not $File) { $File = Join-Path $PSScriptRoot 'room-ssh.json' }
+  if ($HubRoom -and $HubRoom.ssh_user) { return [string]$HubRoom.ssh_user }
+  if (-not (Test-Path $File)) { return '' }
+  $e = (Get-Content -Raw $File | ConvertFrom-Json).$Name
+  if ($e -and $e.user) { return [string]$e.user }
+  return ''
+}
+
 # Resolve-SshRoute finds the ssh name that reaches a room: the bare name first, then "<name>.atrium", which rides the
-# hub and still works when the bare name does not resolve or times out. $Probe is called with one candidate and returns
-# an object with Code and TimedOut. The result carries the candidate that answered (Host, empty when none did), the
-# answers seen in order (Results) and what was Tried, so the caller keeps to one route for every later call.
-function Resolve-SshRoute([string]$Name, [scriptblock]$Probe) {
+# hub and still works when the bare name does not resolve or times out. With $User each candidate is "<user>@<name>".
+# $Probe is called with one candidate and returns an object with Code, TimedOut and optionally Out. The result carries
+# the candidate that answered (Host, empty when none did), the answers seen in order (Results) and what was Tried, so
+# the caller keeps to one route for every later call.
+function Resolve-SshRoute([string]$Name, [scriptblock]$Probe, [string]$User = '') {
   $tried = @()
   $results = @()
-  foreach ($cand in @($Name, "$Name.atrium")) {
+  $at = if ($User) { "$User@" } else { '' }
+  foreach ($cand in @("$at$Name", "$at$Name.atrium")) {
     $tried += $cand
     $r = & $Probe $cand
     $results += $r
@@ -834,6 +847,15 @@ function Resolve-SshRoute([string]$Name, [scriptblock]$Probe) {
     }
   }
   return [pscustomobject]@{ Host = ''; Tried = $tried; Results = $results }
+}
+
+# Get-SshFailure words a route that found no host. A host that answered and refused the key is not offline.
+function Get-SshFailure($Route, [string]$User = '') {
+  $who = if ($User) { $User } else { $env:USERNAME }
+  if (@($Route.Results | Where-Object { $_.Out -match 'Permission denied' }).Count -gt 0) {
+    return "failed - ssh refused as $who, the host answered and rejected the key"
+  }
+  return 'failed - offline, ssh could not connect by any route'
 }
 
 # The swap stops the room, and over "<room>.atrium" the ssh session rides that room, so it can die mid-swap. On mac

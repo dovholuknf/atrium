@@ -15,7 +15,8 @@
 # THE RESULT is one line per room, printed last and logged:
 #
 #   hub: success
-#   sgg: failed - offline, ssh could not connect
+#   sgg: failed - offline, ssh could not connect by any route
+#   sgg: failed - ssh refused as claude, the host answered and rejected the key
 #
 # Run from an atrium card, the same lines are said to that card when the deploy ends, so the card that asked for it
 # hears the result with nothing to read. -ReportTo <card>@<room> names another card.
@@ -149,10 +150,10 @@ function Invoke-SshOnce([string]$Label, [string[]]$SshArgs, [int]$Cap) {
   if ($r.TimedOut) { Say "$Label hung past ${Cap}s, killed. not retried" }
   $r
 }
-# A dead bare name must cost seconds, not a minute, before the .atrium route is tried: one short connect, no retry.
-$bareOpts = @('-o', 'ConnectTimeout=5', '-o', 'BatchMode=yes')
-$bareCap = 10
-$readOpts = @('-o', 'ConnectTimeout=8', '-o', 'BatchMode=yes')
+# A cold connect to sgg takes about 10s, so the connect allows 25s. The bare try is one connect, no retry.
+$bareOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
+$bareCap = 35
+$readOpts = @('-o', 'ConnectTimeout=25', '-o', 'BatchMode=yes')
 # Over <room>.atrium the ssh session rides the room being stopped. On mac the swap runs detached (nohup) and writes to a
 # file, and the hub is waited on, reading the file whenever ssh answers. On Windows it runs in the session, which survives
 # the drop (sg3), and a dropped session is no verdict: the hub decides.
@@ -245,17 +246,19 @@ function Show-RoomLog([string]$Name) {
 foreach ($name in $remoteNames) {
   if ($want -notcontains $name) { continue }
   $r = $remote[$name]
+  $hubRoom = try { (Invoke-RestMethod $HubRooms -TimeoutSec 3).rooms | Where-Object { $_.name -eq $name } | Select-Object -First 1 } catch { $null }
+  $sshUser = Get-RoomSshUser $name $hubRoom
   $route = Resolve-SshRoute $name {
     param($h)
-    if ($h -eq $name) { return Invoke-Capped $ssh ($bareOpts + @($h, 'echo ok')) $bareCap }
+    if (-not $h.EndsWith('.atrium')) { return Invoke-Capped $ssh ($bareOpts + @($h, 'echo ok')) $bareCap }
     Invoke-Ssh "ssh $h probe" @($h, 'echo ok') $probeCap
-  }
+  } $sshUser
   if (-not $route.Host) {
-    if (@($route.Results | Where-Object { $_.TimedOut }).Count -gt 0) {
+    if (@($route.Results | Where-Object { $_.TimedOut }).Count -gt 0 -and (Get-SshFailure $route $sshUser) -notmatch 'refused') {
       $results[$name] = Get-HungMsg 'ssh probe' $probeCap; Say "${name}: probe hung ($($route.Tried -join ', '))"; continue
     }
-    $results[$name] = 'failed - offline, ssh could not connect by any route'
-    Say "${name}: offline, no route answered ($($route.Tried -join ', '))"
+    $results[$name] = Get-SshFailure $route $sshUser
+    Say "${name}: $($results[$name] -replace '^failed - ', ''), no route answered ($($route.Tried -join ', '))"
     continue
   }
   $sshHost = $route.Host

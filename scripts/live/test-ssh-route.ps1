@@ -8,7 +8,7 @@ function Check([string]$What, [bool]$Ok) {
 }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Resolve-SshRoute', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'Invoke-WindowsSwap') {
+foreach ($n in 'Resolve-SshRoute', 'Get-RoomSshUser', 'Get-SshFailure', 'ConvertTo-Base64Utf8', 'New-DetachedCommand', 'Read-DetachedCommand', 'Wait-SwapDone', 'Invoke-WindowsSwap') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -47,6 +47,24 @@ Check 'bare works: .atrium is never called' (($script:calls -join ',') -eq 'sgg'
 Reset @{ 'sg3' = 'hang'; 'sg3.atrium' = 'hang' }
 $r = Resolve-SshRoute 'sg3' $probe
 Check 'both hang: no host and the hang is visible in the results' ($r.Host -eq '' -and @($r.Results | Where-Object { $_.TimedOut }).Count -eq 2)
+
+Reset @{ 'localai@sgg' = 255; 'localai@sgg.atrium' = 0 }
+$r = Resolve-SshRoute 'sgg' $probe 'localai'
+Check 'a user is put on every candidate and the answering one is kept' ($r.Host -eq 'localai@sgg.atrium' -and ($script:calls -join ',') -eq 'localai@sgg,localai@sgg.atrium')
+
+$tmp = Join-Path ([IO.Path]::GetTempPath()) "room-ssh-$PID.json"
+'{ "sgg": { "user": "localai" } }' | Set-Content $tmp
+Check 'user read from the file' ((Get-RoomSshUser 'sgg' $null $tmp) -eq 'localai')
+Check 'no entry means no user' ((Get-RoomSshUser 'sg3' $null $tmp) -eq '')
+Check 'the hub record wins over the file' ((Get-RoomSshUser 'sgg' ([pscustomobject]@{ ssh_user = 'bob' }) $tmp) -eq 'bob')
+Remove-Item $tmp
+Check 'the shipped file names sgg as localai' ((Get-RoomSshUser 'sgg' $null (Join-Path $PSScriptRoot 'room-ssh.json')) -eq 'localai')
+
+$denied = { param($h) [pscustomobject]@{ Code = 255; TimedOut = $false; Out = "${h}: Permission denied (publickey)." } }
+$r = Resolve-SshRoute 'sgg' $denied 'claude'
+Check 'refused key says refused as the user, not offline' ((Get-SshFailure $r 'claude') -eq 'failed - ssh refused as claude, the host answered and rejected the key')
+$r = Resolve-SshRoute 'm1mini' { param($h) [pscustomobject]@{ Code = 255; TimedOut = $false; Out = 'Could not resolve hostname' } }
+Check 'no answer is still offline' ((Get-SshFailure $r) -match '^failed - offline')
 
 # The swap runs detached, so an ssh session that dies mid-swap does not decide anything: the hub does.
 $script:polls = 0
