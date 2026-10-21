@@ -174,10 +174,6 @@ func TestGitPushIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 	if _, err := d.GitPush("no-such-card", "fix/x"); err == nil {
 		t.Fatal("pushed for a card that is not there")
 	}
-	// Launched with no token on this room: refused with the reason.
-	if _, err := d.GitPush(task.ID, "fix/x"); err == nil || !strings.Contains(err.Error(), "holds no git token") {
-		t.Fatalf("no token: %v", err)
-	}
 	if err := d.st.SetSetting(store.SettingGitPush, "none"); err != nil {
 		t.Fatal(err)
 	}
@@ -372,5 +368,37 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 	third.restoreHubGit()
 	if _, ok := third.hubGit.cards.Check(tok); ok {
 		t.Fatal("a revoked token came back after a restart")
+	}
+}
+
+func TestTheRoomPushesForAReattachedCardWithoutReplacingItsToken(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	task := plainTask(t, d, "reattached-pusher")
+	env := map[string]string{}
+	d.hubGitEnv(task.ID, false, nil, env)
+	runner := strings.TrimPrefix(env["GIT_CONFIG_VALUE_0"], gitsync.HeaderCardToken+": ")
+
+	again := &Daemon{hk: *testHooks(), st: d.st}
+	again.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
+	again.restoreHubGit()
+	ct := again.hubGit.cards.(*gitsync.CardTokens)
+	room, err := ct.RoomToken(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room == runner {
+		t.Fatal("the room's token is the runner's")
+	}
+	if id, ok := ct.Check(room); !ok || id != task.ID {
+		t.Fatal("the room's own token was refused")
+	}
+	if id, ok := ct.Check(runner); !ok || id != task.ID {
+		t.Fatal("minting the room's token replaced the runner's")
+	}
+	other, _ := ct.RoomToken("someone-else")
+	if _, ok := (&gitsync.CardTokens{}).Check(other); ok {
+		t.Fatal("a token from another start was accepted")
 	}
 }

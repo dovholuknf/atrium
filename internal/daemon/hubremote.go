@@ -299,7 +299,7 @@ func (d *Daemon) restoreHubGit() {
 // GitPush is atrium_git_push: the push `git push hub <branch>` is, run by the room in the card's own directory
 // with no shell, under the same rules. A plain branch only. The clone's hub remote has to push to this room's
 // forwarder after every rewrite (gitsync.PushToHub), the room's git.push has to be `hub`, and a card that runs
-// outside code, or whose token this room does not hold (it was launched before the room last started), is refused.
+// outside codeis refused. The push uses the room's own token for the card, so a runner kept through a restart can ask for it.
 func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	t, err := d.st.Get(taskID)
 	if err != nil || t == nil {
@@ -315,11 +315,13 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 		return nil, fmt.Errorf("this card runs code that is not the room's own, so it does not push")
 	}
 	base := d.HubRemoteBase()
-	d.hubGit.mu.Lock()
-	tok := d.hubGit.issued[t.ID].tok
-	d.hubGit.mu.Unlock()
-	if base == "" || tok == "" {
-		return nil, fmt.Errorf("this room holds no git token for that card. it was launched before the room last started, or without one. relaunch it")
+	ct, _ := d.hubGit.cards.(*gitsync.CardTokens)
+	if base == "" || ct == nil {
+		return nil, fmt.Errorf("this room has no hub remote to push to")
+	}
+	tok, err := ct.RoomToken(t.ID)
+	if err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(t.Worktree) == "" {
 		return nil, fmt.Errorf("that card has no directory to push from")

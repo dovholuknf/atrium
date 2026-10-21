@@ -38,8 +38,9 @@ type CardTokens struct {
 	// card that ended, was paused or was culled loses its token even if nobody called Revoke.
 	Live func(card string) bool
 
-	mu sync.Mutex
-	by map[string][sha256.Size]byte
+	mu   sync.Mutex
+	by   map[string][sha256.Size]byte
+	room [32]byte
 }
 
 // Mint implements CardAuth.
@@ -92,6 +93,28 @@ func (c *CardTokens) RestoreHash(card, hash string) bool {
 	return true
 }
 
+// RoomToken is a token for the card that only this process holds: the room pushes with it for atrium_git_push, so the
+// runner's own token is neither needed nor replaced. It is made fresh at each start and is never stored or given out.
+func (c *CardTokens) RoomToken(card string) (string, error) {
+	if !ValidCardID(card) {
+		return "", errNotACard
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.room == ([32]byte{}) {
+		if _, err := rand.Read(c.room[:]); err != nil {
+			return "", err
+		}
+	}
+	return card + "." + hex.EncodeToString(c.room[:]), nil
+}
+
+func (c *CardTokens) isRoom(secret []byte) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.room != ([32]byte{}) && subtle.ConstantTimeCompare(secret, c.room[:]) == 1
+}
+
 // Check implements CardAuth.
 func (c *CardTokens) Check(token string) (string, bool) {
 	i := strings.LastIndexByte(token, '.')
@@ -107,6 +130,12 @@ func (c *CardTokens) Check(token string) (string, bool) {
 	c.mu.Lock()
 	want, found := c.by[card]
 	c.mu.Unlock()
+	if c.isRoom(secret) {
+		if c.Live != nil && !c.Live(card) {
+			return "", false
+		}
+		return card, true
+	}
 	// Compared even when the card is unknown, so the time taken does not say whether a card exists.
 	ok := subtle.ConstantTimeCompare(got[:], want[:]) == 1 && found
 	if !ok {
