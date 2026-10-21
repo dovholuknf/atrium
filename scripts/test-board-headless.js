@@ -20377,7 +20377,7 @@ async function termRowBleedSection(browser, base) {
 // The view controls sit on the line when the whole row fits beside the search box, and in the drawer when it would wrap.
 // Shots: VIEWBAR_SHOTS names a directory, VIEWBAR_TAG says before or after.
 async function cardViewBarInlineSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const ctx = await browser.newContext({ viewport: { width: 1900, height: 800 } });
   const p = await ctx.newPage();
   const errors = [];
   p.on("pageerror", e => errors.push(e.message));
@@ -20406,13 +20406,13 @@ async function cardViewBarInlineSection(browser, base) {
     await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const wide = await state();
     if (!wide.inline || !wide.onLine || wide.caret || wide.summary || wide.inert || wide.rows < 4 || !wide.oneLine || !wide.inside) {
-      fail("viewbar 1500: the controls are not on the line with no caret: " + JSON.stringify(wide));
+      fail("viewbar 1900: the controls are not on the line with no caret: " + JSON.stringify(wide));
     }
-    await shot("1500");
+    await shot("1900");
     await p.evaluate(() => document.querySelector("#term-show button").click());
     await p.evaluate(() => document.querySelector("#fd-terms .fline").click());
     const clicked = await state();
-    if (clicked.open || !clicked.onLine) fail("viewbar 1500: pressing a pill or the line opened a drawer: " + JSON.stringify(clicked));
+    if (clicked.open || !clicked.onLine) fail("viewbar 1900: pressing a pill or the line opened a drawer: " + JSON.stringify(clicked));
     await p.evaluate(() => document.querySelector("#term-show button").click());
 
     await p.setViewportSize({ width: 900, height: 800 });
@@ -20425,7 +20425,7 @@ async function cardViewBarInlineSection(browser, base) {
     if (!open) fail("viewbar 900: the line did not open the drawer");
     await p.keyboard.press("Escape");
 
-    await p.setViewportSize({ width: 1500, height: 800 });
+    await p.setViewportSize({ width: 1900, height: 800 });
     await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const back = await state();
     if (!back.inline || back.caret) fail("viewbar: widening the window did not put the row back on the line: " + JSON.stringify(back));
