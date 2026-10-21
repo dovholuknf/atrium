@@ -1897,15 +1897,16 @@ const followScrollFor = 1200;
 function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
   if (!quiet && typeof composeGate === "function" && composeGate(d, pasted)) return;
+  if (!quiet) {
+    phoneFollow();
+    if (term) term.scrollToBottom();
+    followScrollUntil = Date.now() + followScrollFor;
+  }
   if (!quiet && typeof composeLineFeed === "function") composeLineFeed(d, pasted);
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
   if (pasted && !quiet) { sendPaste(d); return; }
   send({ t: "in", d });
-  if (quiet) return;
-  if (!pasted && typeof composeNoteTyped === "function") composeNoteTyped(d);
-  phoneFollow();
-  if (term) term.scrollToBottom();
-  followScrollUntil = Date.now() + followScrollFor;
+  if (!quiet && !pasted && typeof composeNoteTyped === "function") composeNoteTyped(d);
 }
 
 // ── a paste, while it is on its way ─────────────────────
