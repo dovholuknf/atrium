@@ -695,6 +695,11 @@ type LaunchInput struct {
 	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, no mercurius, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. claude only, never an interview. default false"`
 	// Room launches on another room, as the hub's atrium_launch does.
 	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. cwd is then a path on that room's machine and brief is written there. its reports and notices still reach you, as your-handle@your-room"`
+	// Scratch, Lean, MCP and Theme are the hub's atrium_launch fields of the same name, for a launch on this room.
+	Scratch bool     `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
+	Lean    *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. false starts it with the operator's whole setup"`
+	MCP     []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
+	Theme   string   `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
 }
 
 type LaunchOutput struct {
@@ -841,6 +846,18 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	}
 	if in.Superlean {
 		req["superlean"] = true
+	}
+	if in.Scratch {
+		req["scratch"] = true
+	}
+	if in.Lean != nil {
+		req["lean"] = *in.Lean
+	}
+	if len(in.MCP) > 0 {
+		req["mcp"] = in.MCP
+	}
+	if t := strings.TrimSpace(in.Theme); t != "" {
+		req["theme"] = t
 	}
 	if atriumHome {
 		delete(req, "cwd")
