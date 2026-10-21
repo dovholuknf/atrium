@@ -42,7 +42,6 @@ func fakeRepo(t *testing.T) (repo, wt string) {
 }
 
 func TestOriginSlugRefusesWhatIsNotAForge(t *testing.T) {
-	dir := t.TempDir()
 	for body, want := range map[string]string{
 		"[remote \"origin\"]\n\turl = https://github.com/o/r.git\n":     "github/o/r",
 		"[remote \"origin\"]\n\turl = https://tok@github.com/o/r.git\n": "",
@@ -50,9 +49,13 @@ func TestOriginSlugRefusesWhatIsNotAForge(t *testing.T) {
 		"[remote \"origin\"]\n\turl = https://git.example.com/o/r\n":    "git.example.com/o/r",
 		"[remote \"origin\"]\n\turl = /some/local/path\n":               "",
 	} {
-		p := filepath.Join(dir, "config")
-		write(t, p, body)
-		if got := originSlug(p); got != want {
+		readFile := func(path string) ([]byte, error) {
+			if path != "config" {
+				t.Fatalf("read path %q, want config", path)
+			}
+			return []byte(body), nil
+		}
+		if got := originSlugWithReadFile("config", readFile); got != want {
 			t.Errorf("%q: got %q want %q", strings.TrimSpace(body), got, want)
 		}
 	}

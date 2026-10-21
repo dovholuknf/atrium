@@ -136,10 +136,12 @@ func headBranchOf(gitdir string) string {
 	return strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "ref:")), "refs/heads/")
 }
 
-// originSlug reads origin's url out of a git config file and names it as the hub does, host/org/repo. A url with a
-// credential in it, or a host that is not a plain forge, is "" and the checkout is listed without a slug.
 func originSlug(config string) string {
-	raw, err := os.ReadFile(config)
+	return originSlugWithReadFile(config, os.ReadFile)
+}
+
+func originSlugWithReadFile(config string, readFile func(string) ([]byte, error)) string {
+	raw, err := readFile(config)
 	if err != nil {
 		return ""
 	}
