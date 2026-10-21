@@ -128,12 +128,12 @@ func TestASayHeldPastFiveMinutesIsFlaggedOnTheCardAndTheSenderToldOnce(t *testin
 		if a := d.act.get(bob.ID); a != nil && a.HeldStuck {
 			break
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: poll step under the 5 s deadline
 	}
 	if a := d.act.get(bob.ID); a == nil || !a.HeldStuck {
 		t.Fatalf("the card was not flagged: %+v", a)
 	}
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond) // wait: absence of a second sender notice has no event to wait on
 	told := 0
 	pending, _ := d.st.PendingMessages(alice.ID)
 	for _, m := range pending {

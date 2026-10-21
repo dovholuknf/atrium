@@ -54,7 +54,7 @@ func TestGuardHookBuiltin(t *testing.T) {
 		want  string
 	}{
 		{"Agent", map[string]any{"subagent_type": "general-purpose"}, "deny"},
-		{"Bash", map[string]any{"command": "echo a; echo b"}, "deny"},
+		{"Bash", map[string]any{"command": "git -C /x status"}, "deny"},
 		{"Bash", map[string]any{"command": "echo hi 2>&1"}, ""},
 		{"Read", map[string]any{"file_path": "D:/w/x"}, ""},
 	} {
