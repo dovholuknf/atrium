@@ -398,6 +398,10 @@ func TestTheRoomPushesForAReattachedCardWithoutReplacingItsToken(t *testing.T) {
 		t.Fatal("minting the room's token replaced the runner's")
 	}
 	other, _ := ct.RoomToken("someone-else")
+	forged := "another-card" + other[strings.LastIndexByte(other, '.'):]
+	if _, ok := ct.Check(forged); ok {
+		t.Fatal("a room token for one card opened another")
+	}
 	if _, ok := (&gitsync.CardTokens{}).Check(other); ok {
 		t.Fatal("a token from another start was accepted")
 	}

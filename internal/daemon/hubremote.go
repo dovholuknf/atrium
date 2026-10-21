@@ -219,9 +219,11 @@ func (d *Daemon) hubGitEnv(card string, outside bool, harness map[string]string,
 	d.hubGit.issued[card] = issuedToken{tok: tok, at: now}
 	d.hubGit.mu.Unlock()
 	if d.st != nil {
-		if _, hash, ok := gitsync.TokenHash(tok); !ok {
-		} else if err := d.st.SaveGitToken(card, hash, now); err != nil {
-			log.Printf("atrium: could not keep the git token for %s: %v", card, err)
+		_, hash, ok := gitsync.TokenHash(tok)
+		if ok {
+			if err := d.st.SaveGitToken(card, hash, now); err != nil {
+				log.Printf("atrium: could not keep the git token for %s: %v", card, err)
+			}
 		}
 	}
 	n := 0
@@ -299,7 +301,7 @@ func (d *Daemon) restoreHubGit() {
 // GitPush is atrium_git_push: the push `git push hub <branch>` is, run by the room in the card's own directory
 // with no shell, under the same rules. A plain branch only. The clone's hub remote has to push to this room's
 // forwarder after every rewrite (gitsync.PushToHub), the room's git.push has to be `hub`, and a card that runs
-// outside codeis refused. The push uses the room's own token for the card, so a runner kept through a restart can ask for it.
+// outside code is refused. The push uses the room's own token for the card, so a runner kept through a restart can ask for it.
 func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	t, err := d.st.Get(taskID)
 	if err != nil || t == nil {

@@ -1,6 +1,7 @@
 package gitsync
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -38,9 +39,9 @@ type CardTokens struct {
 	// card that ended, was paused or was culled loses its token even if nobody called Revoke.
 	Live func(card string) bool
 
-	mu   sync.Mutex
-	by   map[string][sha256.Size]byte
-	room [32]byte
+	mu      sync.Mutex
+	by      map[string][sha256.Size]byte
+	roomKey [32]byte
 }
 
 // Mint implements CardAuth.
@@ -99,20 +100,37 @@ func (c *CardTokens) RoomToken(card string) (string, error) {
 	if !ValidCardID(card) {
 		return "", errNotACard
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.room == ([32]byte{}) {
-		if _, err := rand.Read(c.room[:]); err != nil {
-			return "", err
-		}
+	if err := c.ensureKey(); err != nil {
+		return "", err
 	}
-	return card + "." + hex.EncodeToString(c.room[:]), nil
+	return card + "." + hex.EncodeToString(c.roomSecret(card)), nil
 }
 
-func (c *CardTokens) isRoom(secret []byte) bool {
+func (c *CardTokens) ensureKey() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.room != ([32]byte{}) && subtle.ConstantTimeCompare(secret, c.room[:]) == 1
+	if c.roomKey == ([32]byte{}) {
+		_, err := rand.Read(c.roomKey[:])
+		return err
+	}
+	return nil
+}
+
+// roomSecret is HMAC-SHA256(room key, card), so a leaked room token opens that one card only.
+func (c *CardTokens) roomSecret(card string) []byte {
+	c.mu.Lock()
+	key := c.roomKey
+	c.mu.Unlock()
+	m := hmac.New(sha256.New, key[:])
+	m.Write([]byte(card))
+	return m.Sum(nil)
+}
+
+func (c *CardTokens) isRoom(card string, secret []byte) bool {
+	c.mu.Lock()
+	set := c.roomKey != ([32]byte{})
+	c.mu.Unlock()
+	return set && subtle.ConstantTimeCompare(secret, c.roomSecret(card)) == 1
 }
 
 // Check implements CardAuth.
@@ -130,7 +148,7 @@ func (c *CardTokens) Check(token string) (string, bool) {
 	c.mu.Lock()
 	want, found := c.by[card]
 	c.mu.Unlock()
-	if c.isRoom(secret) {
+	if c.isRoom(card, secret) {
 		if c.Live != nil && !c.Live(card) {
 			return "", false
 		}
