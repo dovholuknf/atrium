@@ -138,3 +138,20 @@
   body.term-phone .fdrawer.fstrip, body.term-phone #terms > .fdrawer.fstrip { margin-top: 0; }
   /* The strip reaches past the stack's box into main's padding, so the stack must not clip it. The list scrolls itself. */
   main > #stack { overflow: visible; }
+
+  /* INLINE: the row fits on the line, so the panel sits on it in place of the summary and there is no drawer or caret. */
+  .fdrawer.inline .fline { cursor: default; }
+  .fdrawer.inline .fsum, .fdrawer.inline .filtersbtn, .fdrawer.inline .fhandle { display: none; }
+  .fdrawer.fstrip.inline .fpanel, .fdrawer.inline .fpanel {
+    position: static; flex: 1 1 0; min-width: 0; max-height: none; overflow: hidden; flex-wrap: nowrap; gap: 0 var(--sp-4);
+    padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none;
+    visibility: visible; opacity: 1; transform: none; transition: none;
+  }
+  .fdrawer.inline .frow { flex: none; max-width: none; }
+  .fdrawer.inline .frow .seg { flex-wrap: nowrap; }
+  .fdrawer.inline .fline .fq { flex: 0 1 160px; }
+  .fdrawer.inline .fpanel { gap: 0 var(--sp-3); }
+  .fdrawer.inline .frow { gap: var(--sp-2); }
+  .fdrawer.inline .frow .barlabel { min-width: 0; }
+  .fdrawer.inline .fpanel .seg button { padding: 5px 8px; }
+  .fdrawer.inline .fline .fq { flex: 0 1 120px; min-width: 100px; }

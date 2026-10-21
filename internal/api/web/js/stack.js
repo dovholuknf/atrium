@@ -517,6 +517,10 @@ function stackSectionHTML(label, scope, hue, rows) {
   </details>`;
 }
 
+function stackLeadHTML(t, w) {
+  return `<b${cardLeadTip(t, "stack")}>${w ? "<span class=\"pulse\"></span>" : ""}${esc(cardLead(t, "stack").main)}</b>`;
+}
+
 function stackRow(t) {
   const w = isWaiting(t);
   const dark = isOutOfContact(t);
@@ -532,7 +536,7 @@ function stackRow(t) {
     <div class="wait ${w ? "" : "quiet"}" data-tip="${esc(bigNumberMeans(t))}"
       >${ago(cardSecs(bigNumber(t)))}</div>
     <div class="who">
-      <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
+      ${stackLeadHTML(t, w)}
       <span>${esc(t.worktree || "no directory")}</span>
       ${askLine(t)}
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}

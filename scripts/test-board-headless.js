@@ -17478,7 +17478,7 @@ async function controlsCompactSection(browser, base) {
         }, tab);
         if (got.hidden) continue;
         if (process.env.DRAWER_SHOTS && tab === "stack") await p.screenshot({ path: process.env.DRAWER_SHOTS + "/drawer-" + v.w + ".png", clip: { x: 0, y: 0, width: v.w, height: Math.min(v.h, 260) } });
-        if (got.labels !== { stack: "show|sort by|group", board: "show|sort|group", terms: "show|sort by|group" }[tab]) fail(tag + "rows changed: " + got.labels);
+        if (got.labels !== { stack: "show|sort by|group|label", board: "show|sort|group|label", terms: "show|sort by|group|label" }[tab]) fail(tag + "rows changed: " + got.labels);
         if (got.overflowX > 0) fail(tag + "the drawer scrolls sideways: " + JSON.stringify(got));
         if (!v.phone && got.handleH > 14) fail(tag + "the drag handle is " + got.handleH + "px, not a few: " + JSON.stringify(got));
         if (!v.phone && got.band > 6) fail(tag + "an empty band of " + got.band + "px sits above the handle: " + JSON.stringify(got));
@@ -20372,6 +20372,129 @@ async function termRowBleedSection(browser, base) {
     if (errors.length) fail("termRowBleed: page errors: " + errors.join(" | "));
   } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("termRowBleed ok");
+}
+
+// The view controls sit on the line when the whole row fits beside the search box, and in the drawer when it would wrap.
+// Shots: VIEWBAR_SHOTS names a directory, VIEWBAR_TAG says before or after.
+async function cardViewBarInlineSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const state = () => p.evaluate(() => {
+    const h = document.getElementById("fd-terms");
+    const panel = h.querySelector(".fpanel");
+    const vis = el => !!el && el.getClientRects().length > 0;
+    return {
+      inline: h.classList.contains("inline"), onLine: panel.parentElement === h.querySelector(".fline"),
+      caret: vis(h.querySelector(".filtersbtn")), summary: vis(h.querySelector(".fsum")), inert: panel.inert,
+      open: h.classList.contains("open"),
+      rows: [...panel.querySelectorAll(".frow .barlabel")].filter(vis).length,
+      oneLine: new Set([...panel.querySelectorAll(".frow")].map(r => Math.round(r.getBoundingClientRect().top))).size === 1,
+      inside: panel.getBoundingClientRect().right <= h.querySelector(".fline").getBoundingClientRect().right + 1
+    };
+  });
+  const shot = async name => {
+    if (!process.env.VIEWBAR_SHOTS) return;
+    await p.screenshot({ path: require("path").join(process.env.VIEWBAR_SHOTS, "viewbar-" + name + "-" + (process.env.VIEWBAR_TAG || "after") + ".png"),
+      clip: { x: 0, y: 0, width: p.viewportSize().width, height: 260 } });
+  };
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof fdFitInline === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForTimeout(400);
+    const wide = await state();
+    if (!wide.inline || !wide.onLine || wide.caret || wide.summary || wide.inert || wide.rows < 4 || !wide.oneLine || !wide.inside) {
+      fail("viewbar 1500: the controls are not on the line with no caret: " + JSON.stringify(wide));
+    }
+    await shot("1500");
+    await p.evaluate(() => document.querySelector("#term-show button").click());
+    await p.evaluate(() => document.querySelector("#fd-terms .fline").click());
+    const clicked = await state();
+    if (clicked.open || !clicked.onLine) fail("viewbar 1500: pressing a pill or the line opened a drawer: " + JSON.stringify(clicked));
+    await p.evaluate(() => document.querySelector("#term-show button").click());
+
+    await p.setViewportSize({ width: 900, height: 800 });
+    await p.waitForTimeout(400);
+    const mid = await state();
+    if (mid.inline || mid.onLine || !mid.caret || !mid.summary || !mid.inert) fail("viewbar 900: the row would wrap, so the drawer and caret were expected: " + JSON.stringify(mid));
+    await shot("900");
+    await p.click("#fd-terms .fline .fsum");
+    const open = await p.evaluate(() => { const h = document.getElementById("fd-terms"); return h.classList.contains("open") && !h.querySelector(".fpanel").inert; });
+    if (!open) fail("viewbar 900: the line did not open the drawer");
+    await p.keyboard.press("Escape");
+
+    await p.setViewportSize({ width: 1500, height: 800 });
+    await p.waitForTimeout(400);
+    const back = await state();
+    if (!back.inline || back.caret) fail("viewbar: widening the window did not put the row back on the line: " + JSON.stringify(back));
+
+    await p.setViewportSize({ width: 390, height: 800 });
+    await p.waitForTimeout(400);
+    const phone = await state();
+    if (phone.inline || phone.onLine) fail("viewbar 390: a phone keeps the drawer: " + JSON.stringify(phone));
+    if (errors.length) fail("viewbar: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("cardViewBarInline ok");
+}
+
+// LABEL: a card's main line is its title or its alias, kept per tab, with the title in the tooltip when the alias leads.
+async function cardLabelAliasSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1500, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setCardLabel === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      Object.keys(localStorage).filter(k => k.startsWith("atrium.grouping")).forEach(k => localStorage.removeItem(k));
+      const card = (id, alias) => ({ id, status: "running", supervised: true, pinned: false, title: "title " + id, display_title: "title " + id,
+        alias, tags: [], worktree: "/w/" + id, created_at: new Date().toISOString() });
+      window.__cards = [card("a1", "ryan"), card("a2", "")];
+      boardCards = async () => window.__cards;
+      switchView("terms");
+    });
+    await p.evaluate(() => renderTermList());
+    const rowText = () => p.evaluate(() => [...document.querySelectorAll("#term-list .card.tab")].map(r => ({
+      id: r.dataset.id, text: r.textContent, tip: r.getAttribute("data-tip") || "" })));
+    const seg = id => p.evaluate(id => [...document.querySelectorAll("#" + id + " button")].map(b => b.textContent.trim() + (b.classList.contains("on") ? "*" : "")).join(","), id);
+    if (await seg("term-label") !== "title*,alias") fail("label: the terminals drawer lacks a title/alias pill pair: " + await seg("term-label"));
+    let rows = await rowText();
+    const a1 = rows.find(r => r.id === "a1");
+    if (!a1 || !a1.text.includes("title a1") || a1.text.includes("ryan")) fail("label: title mode did not lead with the title: " + JSON.stringify(rows));
+
+    await p.evaluate(() => document.querySelector('#term-label button[data-label="alias"]').click());
+    await p.waitForTimeout(200);
+    rows = await rowText();
+    const al = rows.find(r => r.id === "a1"), no = rows.find(r => r.id === "a2");
+    if (!al || !al.text.includes("ryan") || al.text.includes("title a1")) fail("label: alias mode did not lead with the alias: " + JSON.stringify(al));
+    if (!al || !al.tip.includes("title a1")) fail("label: the title is not in the row's tooltip: " + JSON.stringify(al));
+    if (!no || !no.text.includes("title a2")) fail("label: a card with no alias did not fall back to its title: " + JSON.stringify(no));
+    if (await seg("term-label") !== "title,alias*") fail("label: the alias pill is not lit: " + await seg("term-label"));
+
+    const others = await p.evaluate(() => ["stack", "board", "terms"].map(t => t + "=" + groupingPrefs(t).label).join(" "));
+    if (others !== "stack=title board=title terms=alias") fail("label: the choice leaked to another tab: " + others);
+    const stored = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping.terms")).label);
+    if (stored !== "alias") fail("label: the choice is not stored under the tab's own key: " + stored);
+
+    await p.evaluate(() => { switchView("stack"); setCardLabel("alias", "stack"); });
+    const stackHtml = await p.evaluate(() => stackRow(window.__cards[0]));
+    if (!/<b[^>]*data-tip="title a1"[^>]*>ryan<\/b>/.test(stackHtml.replace(/\s+/g, " "))) fail("label: the stack row does not lead with the alias: " + stackHtml.slice(0, 400));
+    const boardLead = await p.evaluate(() => { setCardLabel("alias", "board"); return window.__cards.map(t => cardLead(t, "board")); });
+    if (boardLead[0].main !== "ryan" || boardLead[1].main !== "title a2") fail("label: the board lead is wrong: " + JSON.stringify(boardLead));
+    await p.evaluate(() => setCardLabel("title", "stack"));
+    const split = await p.evaluate(() => ["stack", "board", "terms"].map(t => groupingPrefs(t).label).join(","));
+    if (split !== "title,alias,alias") fail("label: the tabs do not keep their own: " + split);
+
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setCardLabel === "function", null, { timeout: slow(15000) });
+    const kept = await p.evaluate(() => ["stack", "board", "terms"].map(t => groupingPrefs(t).label).join(","));
+    if (kept !== "title,alias,alias") fail("label: the choice did not survive a reload: " + kept);
+    if (errors.length) fail("label: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("cardLabelAlias ok");
 }
 
 // The list's box after the tray went: the filter drawer's line sits above the list and the pane, so the list holds only
@@ -24464,7 +24587,7 @@ async function main() {
     if (!trayShut.line || !/^\d+ shown · /.test(trayShut.sum) || !trayShut.search || !trayShut.panelShut) {
       fail("the line under the title bar does not say what the strip is set to, with a search box and a shut drawer: " + JSON.stringify(trayShut));
     }
-    if (trayShut.rows !== "show|sort by|group") {
+    if (trayShut.rows !== "show|sort by|group|label") {
       fail("the terminals drawer does not have show, sort by and group rows: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
@@ -26118,6 +26241,8 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("pausedDead", () => pausedDeadSection(browser, base));
     await unit("hiddenEveryLevel", () => hiddenEveryLevelSection(browser, base));
     await unit("termsDrawerPush", () => termsDrawerPushSection(browser, base));
+    await unit("cardViewBarInline", () => cardViewBarInlineSection(browser, base));
+    await unit("cardLabelAlias", () => cardLabelAliasSection(browser, base));
     await unit("kidCounts", bu("kidCounts"));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));

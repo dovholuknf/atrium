@@ -870,9 +870,9 @@ function cardHTML(t, wearAs) {
     oncontextmenu="cardMenu(event, '${t.id}')">
     ${ctxLine(t)}
     <div class="card-line">
-      <div class="title">${
+      <div class="title"${cardLeadTip(t, "board")}>${
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
-        cardMark(t, state)}${esc(t.display_title)}</div>
+        cardMark(t, state)}${esc(cardLead(t, "board").main)}</div>
       <div class="chips">
       ${subsBadgeHTML(boardSubBadge.get(t.id))}
       ${openingChip(t)}
@@ -1153,7 +1153,7 @@ const GROUPING_KEY = "atrium.grouping";
 // `mode` is what a group IS: a project read out of the path, or a tag you
 // applied. `by` and `order` stay the escape hatch for anyone who wants
 // something neither of those describes.
-const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, hues: {}, groups: [], made: {} };
+const GROUPING_DEFAULTS = { on: true, mode: "project", by: "", order: "", orderBy: "", picked: false, label: "title", hues: {}, groups: [], made: {} };
 
 // A card with no tags still has to land somewhere when grouping by tag, and
 // "" would sort it in with a group whose name is empty.
@@ -1166,7 +1166,7 @@ const UNTAGGED = "untagged";
 // MIGRATION IS A FALLBACK, NOT A COPY. A tab with nothing of its own yet reads the view fields the shared key held before
 // the split, so nobody loses a setting, and the old key is never cleared. The first change on a tab writes its own copy.
 const GROUP_VIEWS = ["board", "stack", "terms"];
-const GROUP_VIEW_FIELDS = ["on", "mode", "by", "order", "orderBy", "picked"];
+const GROUP_VIEW_FIELDS = ["on", "mode", "by", "order", "orderBy", "picked", "label"];
 const GROUP_VIEW_NAMES = { board: "board", stack: "stack", terms: "terminals" };
 
 function groupViewKey(view) { return GROUPING_KEY + "." + view; }

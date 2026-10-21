@@ -17,23 +17,25 @@
 //   - Esc closes it and puts focus back where it was. In the search box Esc clears the text, then leaves the box.
 //   - ctrl-/ does nothing while a terminal has focus, so it never takes a key from xterm.
 //   - On a phone the drawer follows a finger dragged down from the line, and only from the line.
+//   - When the whole row of controls fits on the line beside the search box, the drawer is not there: the panel sits on the
+//     line in place of the summary, with no caret. It comes back when the row would wrap (`fdFitInline`).
 const FD_TABS = {
   stack: {
     host: "fd-stack", q: "stack-q", match: "stack-match",
     placeholder: "name, path, runner or tag. #tag for one tag",
-    rows: [["show", "stack-seg", "seg multi"], ["sort by", "stack-sort", "seg"], ["group", "stack-group", "seg groupseg"]],
+    rows: [["show", "stack-seg", "seg multi"], ["sort by", "stack-sort", "seg"], ["group", "stack-group", "seg groupseg"], ["label", "stack-label", "seg"]],
     repaint: () => paintStack()
   },
   board: {
     host: "board-bar", q: "board-q", match: "board-match",
     placeholder: "name, path, runner or tag. #tag for one tag",
-    rows: [["show", "board-seg", "seg multi"], ["sort", "board-sort", "seg"], ["group", "board-group", "seg groupseg"]],
+    rows: [["show", "board-seg", "seg multi"], ["sort", "board-sort", "seg"], ["group", "board-group", "seg groupseg"], ["label", "board-label", "seg"]],
     repaint: () => repaintLists()
   },
   terms: {
     host: "fd-terms", q: "term-q", match: "term-match",
     placeholder: "name, path or tag. #tag for one tag",
-    rows: [["show", "term-show", "seg multi"], ["sort by", "term-sort", "seg"], ["group", "term-drawer-group", "seg groupseg"]],
+    rows: [["show", "term-show", "seg multi"], ["sort by", "term-sort", "seg"], ["group", "term-drawer-group", "seg groupseg"], ["label", "term-label", "seg"]],
     repaint: () => renderTermList()
   }
 };
@@ -119,7 +121,7 @@ function fdMount(tab) {
   const line = host.querySelector(".fline");
   line.addEventListener("pointerdown", () => { fdState[tab].prev = document.activeElement; }, true);
   line.addEventListener("click", e => {
-    if (e.target.closest(".fq, .foldall")) return;
+    if (e.target.closest(".fq, .foldall, .fpanel") || host.classList.contains("inline")) return;
     if (e.detail === 0) return;   // no key opens it
     if (Date.now() - fdDraggedAt < 400) return;
     fdSet(tab, !fdIsOpen(tab));
@@ -128,12 +130,44 @@ function fdMount(tab) {
   host.querySelector(".fhandle").addEventListener("click", () => fdSet(tab, false, true));
   fdWirePanel(tab, host.querySelector(".fpanel"));
   fdWireDrag(tab, host);
+  if (typeof ResizeObserver === "function") new ResizeObserver(() => fdFitInline(tab)).observe(host);
 }
+
+// THE ROW ON THE LINE, WHEN IT FITS. The panel is moved onto the line, in place of the summary, and measured with its rows
+// held to one line: if what it holds is no wider than the room it was given it stays there and the drawer is gone, and
+// if not it goes back under the line. The measure is skipped while nothing it depends on (the line's width, the pills'
+// words and counts) has changed, so a poll does not move the panel about. An open drawer is left alone until it is shut.
+function fdFitInline(tab, force) {
+  const host = fdHost(tab);
+  const st = fdState[tab];
+  if (!host || !st || st.open || !host.offsetParent) return;
+  const line = host.querySelector(".fline");
+  const panel = host.querySelector(".fpanel");
+  const narrow = window.matchMedia(FD_NARROW).matches;
+  const sig = line.clientWidth + "|" + narrow + "|" + panel.textContent;
+  if (st.fit === sig && !force) return;
+  st.fit = sig;
+  const was = host.classList.contains("inline");
+  let fits = false;
+  if (!narrow) {
+    host.classList.add("inline");
+    line.querySelector(".fsum").after(panel);
+    fits = panel.scrollWidth <= panel.clientWidth + 1;
+  }
+  panel.inert = !fits;
+  if (!fits) {
+    host.classList.remove("inline");
+    host.querySelector(".fwrap").appendChild(panel);
+  }
+  if (fits !== was && tab === "terms" && !fdOverlay(tab)) fdRefitTerms(host);
+}
+window.addEventListener("resize", () => Object.keys(FD_TABS).forEach(t => fdFitInline(t)));
 
 function fdSet(tab, open, restore) {
   const host = fdHost(tab);
   const st = fdState[tab];
   if (!host || !st || st.open === !!open) return;
+  if (open && host.classList.contains("inline")) return;
   if (open) fdCloseAll(tab);
   st.open = !!open;
   const panel = host.querySelector(".fpanel");
@@ -189,6 +223,8 @@ function fdStatus(tab, s) {
   const mt = s.match || "";
   if (m.textContent !== mt) m.textContent = mt;
   fdFitSummary(host);
+  fdPaintLabel(tab);
+  fdFitInline(tab);
 }
 
 // On a narrow screen the summary is dropped when it does not fit, so the search box keeps the line.
@@ -378,7 +414,7 @@ function cardMatchesText(t, q) {
     const want = q.slice(1).trim();
     return want ? (t.tags || []).includes(want) : true;
   }
-  return (t.display_title + " " + (t.worktree || "") + " " + (t.runner || "") + " " +
+  return (t.display_title + " " + (t.alias || "") + " " + (t.worktree || "") + " " + (t.runner || "") + " " +
     (t.why || "") + " " + (t.ask || "") + " " +
     (t.tags || []).join(" ")).toLowerCase().includes(q);
 }
@@ -431,6 +467,40 @@ function groupWords(p) {
   const mode = usesCode(p) ? "code" : (p.mode || "project");
   return FD_GROUP_WORDS[mode] || "by " + mode;
 }
+
+// THE LABEL: what a card's main line says. `title` is the card's title, `alias` is its alias with the title falling back
+// for a card that has none. Kept per tab beside the group (`groupingPrefs`), so each tab has its own.
+const FD_LABELS = [
+  ["title", "title", "each card's main line shows its title"],
+  ["alias", "alias", "each card's main line shows its alias, or its title when it has none. the title moves to the tooltip"]
+];
+function fdLabelMode(tab) {
+  return typeof groupingPrefs === "function" && groupingPrefs(tab).label === "alias" ? "alias" : "title";
+}
+function fdPaintLabel(tab) {
+  const el = document.getElementById({ stack: "stack-label", board: "board-label", terms: "term-label" }[tab]);
+  if (!el) return;
+  const mode = fdLabelMode(tab);
+  setHTML(el, FD_LABELS.map(([v, label, tip]) =>
+    `<button class="${v === mode ? "on" : ""}" data-label="${v}" onclick="setCardLabel('${v}', '${tab}')" data-tip="${esc(tip)}">${esc(label)}</button>`).join(""));
+}
+function setCardLabel(mode, tab) {
+  if (fdLabelMode(tab) === mode) return;
+  setGrouping({ label: mode }, tab);
+  fdPaintLabel(tab);
+  FD_TABS[tab].repaint();
+}
+// `main` is the line a card leads with on `tab`, and `other` the title it displaced, which the row's tooltip carries.
+function cardLead(t, tab) {
+  const title = String((t && t.display_title) || "").trim();
+  const alias = fdLabelMode(tab) === "alias" ? String((t && t.alias) || "").trim() : "";
+  return alias ? { main: alias, other: title } : { main: title, other: "" };
+}
+function cardLeadTip(t, tab) {
+  const l = cardLead(t, tab);
+  return l.other ? ` data-tip="${esc(l.other)}"` : "";
+}
+prefLive("atrium.grouping.*", () => Object.keys(FD_TABS).forEach(t => { fdPaintLabel(t); FD_TABS[t].repaint(); }));
 
 // One chip's state in a stored list, for the three tabs' show rows.
 function fdChip(label, on, onclick, tip, v) {

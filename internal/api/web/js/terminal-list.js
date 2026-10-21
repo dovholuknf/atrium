@@ -1101,11 +1101,12 @@ function termRow(t, deep, kid) {
   // and the address is a dim second line under it. A card with no name of its own
   // has only the address to show, and then that is the single line it draws.
   const path = (deep ? leaf : full) || "";
-  const named = String((t && t.display_title) || "").trim();
+  const lead = cardLead(t, "terms");
+  const named = lead.main;
   const primary = (named || path) + tail;
   const secondary = named ? path : "";
   // The hover keeps the whole address and the name whatever the row had room to draw.
-  const hover = named ? named + " · " + full + tail : full + tail;
+  const hover = named ? (lead.other ? named + " · " + lead.other : named) + " · " + full + tail : full + tail;
   // KEPT AGAINST THE FILTER. The open pane is never hidden (see `termKept`), so with the chip for its kind off, a cold
   // row still listed is this one. Grey means the filter would take the row out, and this one is not going anywhere,
   // so it is NOT drawn grey. It wears a chip that says it is kept and why.
