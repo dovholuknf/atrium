@@ -509,6 +509,20 @@ function zitiLogo() {
     `</svg>`;
 }
 
+// ZROK_MARK is the zrok rocket, the one copy: overlays.js builds its own mark from it. Source: github.com/openziti/zrok,
+// the project's logo SVG (Apache-2.0 licence, the repo's LICENSE), the rocket path traced unchanged in its own green.
+const ZROK_MARK = {
+  viewBox: "41.62 64.03 125.8 166.27",
+  fill: "#9BF316",
+  d: "m 104.52059,64.027974 c 0,0 -12.300998,16.684095 -17.163248,24.964306 -4.8623,8.28022 -7.86765,12.84754 -10.59501,26.3339 -2.72736,13.48636 -1.27406,42.21319 -1.27406,42.21319 l -18.58752,20.04004 -15.280273,49.9615 40.422833,-6.79427 a 22.714797,11.567473 0 0 0 22.320548,9.54731 22.714797,11.567473 0 0 0 22.32712,-9.55945 l 40.72649,6.84277 -15.28027,-49.95979 -18.58916,-20.04001 c 0,0 1.45496,-28.72857 -1.2724,-42.21493 -2.72736,-13.48636 -5.73437,-18.05368 -10.59667,-26.3339 -4.8608,-8.277646 -17.14905,-24.947062 -17.15668,-24.957378 z m -0.0151,14.741718 c 0.52421,0.860497 14.76063,18.300498 18.34492,32.586238 3.65093,14.55125 3.25036,30.16797 2.29067,46.75483 -0.68395,11.82081 -5.48912,37.13724 -8.2384,50.97445 a 22.714797,11.567473 0 0 0 -12.54073,-1.9254 22.714797,11.567473 0 0 0 -12.237098,1.84921 c -2.75047,-13.84452 -7.55003,-39.12307 -8.23343,-50.93462 -0.95969,-16.58687 -1.36026,-32.20531 2.29067,-46.75656 3.57561,-14.25109 17.733538,-31.579359 18.323398,-32.548148 z m -27.999198,95.069708 6.36686,35.53319 -30.30472,9.08328 10.94985,-35.7998 z m 56.021568,0.0351 12.988,8.81667 10.9482,35.80155 -30.30311,-9.08504 z",
+};
+
+// zrokLogo is the rocket as a transport badge mark, at the same size as the ziti one.
+function zrokLogo() {
+  return `<svg class="zlogo zrlogo" viewBox="${ZROK_MARK.viewBox}" aria-hidden="true">` +
+    `<path fill="${ZROK_MARK.fill}" d="${ZROK_MARK.d}"/></svg>`;
+}
+
 function transportBadge(t, fallback) {
   const svg = d => `<svg viewBox="0 0 12 12" aria-hidden="true">${d}</svg>`;
   const icons = {
@@ -516,8 +530,8 @@ function transportBadge(t, fallback) {
     mtls: svg('<rect x="2.5" y="5.5" width="7" height="5" rx="1"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"/>'),
     // the OpenZiti mark: an overlay service
     ziti: zitiLogo(),
-    // two arrows: a share
-    zrok: svg('<path d="M2 4.5h6.5M6.5 2.5l2 2-2 2M10 7.5H3.5M5.5 5.5l-2 2 2 2"/>'),
+    // the zrok rocket: a private share
+    zrok: zrokLogo(),
   };
   const marks = {
     direct: ["mTLS", "a direct connection, over mutual TLS", "mtls"],

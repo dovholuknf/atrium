@@ -25815,6 +25815,7 @@ async function main() {
     await unit("transportToggle", bu("transportToggle"));
     await unit("hubTransports", bu("hubTransports"));
     await unit("zitiLogo", bu("zitiLogo"));
+    await unit("zrokLogo", bu("zrokLogo"));
     await unit("phoneView", () => phoneViewSection(browser, base));
     await unit("heldLine", () => heldLineSection(browser, base));
     await unit("u016", () => u016Section(browser, base));

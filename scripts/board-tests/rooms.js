@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
+// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -1193,12 +1193,81 @@ async function zitiLogoSection(browser, base) {
       if (!z.logo || !(z.h >= z.fs - 1 && z.h <= z.fs + 4) || !/^url\(/.test(z.fill || "")) fail("ziti badge lacks the logo: " + JSON.stringify(z));
     }
     if (z1.gid === z2.gid) fail("two ziti badges share a gradient id: " + z1.gid);
-    if (mtls.logo || zrok.logo) fail("mTLS or zrok wears the ziti logo: " + JSON.stringify([mtls, zrok]));
+    if (mtls.logo || (zrok.logo && zrok.gid)) fail("mTLS or zrok wears the ziti logo: " + JSON.stringify([mtls, zrok]));
     if (fetched.length) fail("the logo was fetched: " + fetched.join(", "));
     const shots = process.env.ZITI_LOGO_SHOTS || "";
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.evaluate(() => { document.getElementById("zl-probe").remove(); openRooms(); });
+      await p.waitForTimeout(600);
+      await p.screenshot({ path: path.join(shots, "rooms-page.png") });
+    }
+    if (errors.length) fail("page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// zrokLogo: a zrok transport badge wears the vendored rocket at the ziti logo's size, in its own green, with the state
+// chips beside it, and overlays.js draws its mark from the same path. ZROK_LOGO_SHOTS=dir writes the screenshots.
+async function zrokLogoSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  const fetched = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  p.on("request", r => { if (/zrok|logo/i.test(r.url()) && /\.(svg|png)/i.test(r.url())) fetched.push(r.url()); });
+  await p.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof transportBadge === "function" && !document.getElementById("rooms").hidden,
+      null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "zr-probe";
+      host.style.cssText = "position:fixed;left:20px;top:20px;z-index:99999;display:flex;gap:10px;";
+      host.innerHTML = [["zrok"], ["ziti"], ["zrok", true]].map(a => transportBadge(a[0], a[1])).join("");
+      document.body.appendChild(host);
+      const sizes = [...host.children].map(c => {
+        const s = c.querySelector("svg");
+        const r = s.getBoundingClientRect();
+        return { cls: s.getAttribute("class"), w: r.width, h: r.height, fs: parseFloat(getComputedStyle(c).fontSize),
+          fill: s.querySelector("path") && getComputedStyle(s.querySelector("path")).fill,
+          tip: c.getAttribute("data-tip"), text: c.textContent.trim() };
+      });
+      const chips = document.createElement("div");
+      chips.id = "zr-chips";
+      chips.style.cssText = "position:fixed;left:20px;top:60px;z-index:99999;display:flex;gap:10px;";
+      chips.innerHTML = pathBadges([{ kind: "zrok", state: "on", addr: "private share" }], "r1") +
+        pathBadges([{ kind: "zrok", state: "up", rtt_ms: 40 }], "r1") +
+        pathBadges([{ kind: "zrok", state: "off" }], "r1") +
+        pathBadges([{ kind: "zrok", state: "down", last_error: "share not found", hammering: true }], "r1");
+      document.body.appendChild(chips);
+      const states = [...chips.querySelectorAll(".pth")].map(c => ({ cls: c.className, tip: c.getAttribute("data-tip") }));
+      const overlay = typeof OVERLAY_MARKS === "object" && OVERLAY_MARKS.zrok;
+      return { sizes, states, shared: !!overlay && overlay.includes(ZROK_MARK.d) && overlay.includes(ZROK_MARK.viewBox) };
+    });
+    const [zr, zi, zfb] = got.sizes;
+    for (const z of [zr, zfb]) {
+      if (!/zrlogo/.test(z.cls || "") || !(z.h >= z.fs - 1 && z.h <= z.fs + 4) || !/rgb\(155, ?243, ?22\)/.test(z.fill || "")) {
+        fail("zrok badge lacks the rocket: " + JSON.stringify(z));
+      }
+    }
+    if (zr.h !== zi.h || zr.w !== zi.w) fail("zrok mark is not the ziti mark's size: " + JSON.stringify([zr, zi]));
+    if (zr.text !== "zrok" || !/private zrok share/.test(zr.tip)) fail("zrok badge text or tip: " + JSON.stringify(zr));
+    if (!/first choice/.test(zfb.tip) || !/fallback/.test(zfb.text)) fail("zrok fallback tip: " + JSON.stringify(zfb));
+    if (!got.shared) fail("overlays.js does not draw its zrok mark from ZROK_MARK");
+    const want = ["pth-on", "pth-up", "pth-off", "pth-down"];
+    got.states.forEach((s, i) => {
+      if (!s.cls.includes(want[i])) fail("zrok state chip " + i + " is not " + want[i] + ": " + JSON.stringify(s));
+    });
+    if (!/hot/.test(got.states[3].cls) || !/share not found/.test(got.states[3].tip)) fail("failing chip: " + JSON.stringify(got.states[3]));
+    if (fetched.length) fail("the logo was fetched: " + fetched.join(", "));
+    const shots = process.env.ZROK_LOGO_SHOTS || "";
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "probe.png"), clip: { x: 0, y: 0, width: 700, height: 100 } });
+      await p.evaluate(() => { document.getElementById("zr-probe").remove(); document.getElementById("zr-chips").remove(); openRooms(); });
       await p.waitForTimeout(600);
       await p.screenshot({ path: path.join(shots, "rooms-page.png") });
     }
@@ -1911,6 +1980,7 @@ const units = [
   { name: "transportToggle", run: ({ browser, base }) => transportToggleSection(browser, base) },
   { name: "hubTransports", run: ({ browser, base }) => hubTransportsSection(browser, base) },
   { name: "zitiLogo", run: ({ browser, base }) => zitiLogoSection(browser, base) },
+  { name: "zrokLogo", run: ({ browser, base }) => zrokLogoSection(browser, base) },
   { name: "pollsGone", run: ({ browser, base }) => pollsGoneSection(browser, base) },
   { name: "findingsProbe", run: ({ browser, base }) => findingsProbeSection(browser, base) },
   { name: "roomsMachine", run: ({ browser, base }) => roomsMachineSection(browser, base) },
@@ -1920,7 +1990,7 @@ const units = [
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
+const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

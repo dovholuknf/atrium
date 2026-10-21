@@ -255,7 +255,7 @@
       "file": "scripts/board-tests/rooms.js",
       "page": "rooms, the hub gate, the restart menu, transports, the down page",
       "units": [
-        "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "loginNeeded", "findingsProbe"
+        "atriumDown", "hubGate", "rooms*", "restart*", "pollsGone", "recogniserRepo", "transportChips", "pathBadges", "transportToggle", "hubTransports", "zitiLogo", "zrokLogo", "loginNeeded", "findingsProbe"
       ],
       "sources": [
         "internal/api/web/js/rooms.js",

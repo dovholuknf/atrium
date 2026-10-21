@@ -280,7 +280,7 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 			}
 		case "zrok":
 			if p.Share == "" {
-				skipped = append(skipped, "zrok: no share token on this room")
+				skipped = append(skipped, "zrok: no share token on this room. `atrium room transports zrok --token <share token>`")
 				continue
 			}
 		}

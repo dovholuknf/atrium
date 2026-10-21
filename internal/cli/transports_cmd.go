@@ -211,6 +211,35 @@ func roomTransportsLocalCmd() *cobra.Command {
 	ziti.Flags().StringVar(&identity, "identity", "", "an enrolled identity .json, or a JWT or a path to one")
 	ziti.Flags().StringVar(&service, "service", "", "the ziti service the hub binds, default "+link.DefaultZitiService)
 
+	var token string
+	zrok := &cobra.Command{
+		Use:   "zrok --token <share token>",
+		Short: "Give this room the private zrok share to reach its hub with",
+		Long: "The token is the one the hub printed when it started over zrok, and is what a zrok join string\n" +
+			"carries. This machine needs `zrok enable` run as well. The token is kept in transports.json.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			keys := keysOf()
+			tr, err := keys.Transports()
+			if err != nil {
+				return err
+			}
+			t := strings.TrimSpace(token)
+			if t == "" {
+				return errors.New("--token is the hub's private zrok share token")
+			}
+			p := tr.Local("zrok")
+			p.Share = t
+			tr.SetLocal(p)
+			if err := keys.SaveTransports(tr); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "zrok: "+describePath(p))
+			return nil
+		},
+	}
+	zrok.Flags().StringVar(&token, "token", "", "the hub's private zrok share token")
+
 	var addr string
 	direct := &cobra.Command{
 		Use:   "direct --addr <host:port>",
@@ -238,8 +267,8 @@ func roomTransportsLocalCmd() *cobra.Command {
 	}
 	direct.Flags().StringVar(&addr, "addr", "", "the hub's host:port")
 
-	c.AddCommand(order, ziti, direct)
-	for _, x := range []*cobra.Command{c, order, ziti, direct} {
+	c.AddCommand(order, ziti, zrok, direct)
+	for _, x := range []*cobra.Command{c, order, ziti, zrok, direct} {
 		x.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	}
 	return c
