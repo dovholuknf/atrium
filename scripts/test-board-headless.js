@@ -20403,7 +20403,7 @@ async function cardViewBarInlineSection(browser, base) {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof fdFitInline === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
     await p.evaluate(() => switchView("terms"));
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const wide = await state();
     if (!wide.inline || !wide.onLine || wide.caret || wide.summary || wide.inert || wide.rows < 4 || !wide.oneLine || !wide.inside) {
       fail("viewbar 1500: the controls are not on the line with no caret: " + JSON.stringify(wide));
@@ -20416,7 +20416,7 @@ async function cardViewBarInlineSection(browser, base) {
     await p.evaluate(() => document.querySelector("#term-show button").click());
 
     await p.setViewportSize({ width: 900, height: 800 });
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const mid = await state();
     if (mid.inline || mid.onLine || !mid.caret || !mid.summary || !mid.inert) fail("viewbar 900: the row would wrap, so the drawer and caret were expected: " + JSON.stringify(mid));
     await shot("900");
@@ -20426,12 +20426,12 @@ async function cardViewBarInlineSection(browser, base) {
     await p.keyboard.press("Escape");
 
     await p.setViewportSize({ width: 1500, height: 800 });
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const back = await state();
     if (!back.inline || back.caret) fail("viewbar: widening the window did not put the row back on the line: " + JSON.stringify(back));
 
     await p.setViewportSize({ width: 390, height: 800 });
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const phone = await state();
     if (phone.inline || phone.onLine) fail("viewbar 390: a phone keeps the drawer: " + JSON.stringify(phone));
     if (errors.length) fail("viewbar: page errors: " + errors.join(" | "));
@@ -20466,7 +20466,7 @@ async function cardLabelAliasSection(browser, base) {
     if (!a1 || !a1.text.includes("title a1") || a1.text.includes("ryan")) fail("label: title mode did not lead with the title: " + JSON.stringify(rows));
 
     await p.evaluate(() => document.querySelector('#term-label button[data-label="alias"]').click());
-    await p.waitForTimeout(200);
+    await p.waitForTimeout(200); // wait: settle for a render with no event to wait on
     rows = await rowText();
     const al = rows.find(r => r.id === "a1"), no = rows.find(r => r.id === "a2");
     if (!al || !al.text.includes("ryan") || al.text.includes("title a1")) fail("label: alias mode did not lead with the alias: " + JSON.stringify(al));
