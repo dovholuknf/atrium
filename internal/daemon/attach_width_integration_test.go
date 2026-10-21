@@ -76,7 +76,11 @@ func attachVia(t *testing.T, h http.Handler, path string, cols, rows int) string
 	var got strings.Builder
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		read, stop := context.WithTimeout(ctx, 300*time.Millisecond)
+		wait := 300 * time.Millisecond
+		if got.Len() == 0 {
+			wait = time.Until(deadline)
+		}
+		read, stop := context.WithTimeout(ctx, wait)
 		_, data, err := c.Read(read)
 		stop()
 		if err != nil {
