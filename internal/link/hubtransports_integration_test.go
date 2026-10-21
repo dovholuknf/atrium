@@ -76,13 +76,14 @@ type transportRig struct {
 	front  *httptest.Server
 	board  *fakeBinds
 	ci     *fakeBinds
+	zrok   *fakeBinds
 	closed []string
 	mu     sync.Mutex
 }
 
 func newTransportRig(t *testing.T, seeds map[string]TransportSeed) *transportRig {
 	t.Helper()
-	x := &transportRig{t: t, st: &fakeSettings{m: map[string]string{}}, board: &fakeBinds{}, ci: &fakeBinds{}}
+	x := &transportRig{t: t, st: &fakeSettings{m: map[string]string{}}, board: &fakeBinds{}, ci: &fakeBinds{}, zrok: &fakeBinds{}}
 	x.hub = NewHub(Timings{})
 	x.p = NewProxy(x.hub, nil, "", nil)
 	x.tr = &HubTransports{
@@ -99,6 +100,8 @@ func newTransportRig(t *testing.T, seeds map[string]TransportSeed) *transportRig
 		DefaultService: "atrium-board", Listen: x.board.listen, Handler: ok}, seeds[TransportBoardZiti])
 	x.tr.Add(TransportItem{Name: TransportCIHook, Label: "the CI hook over ziti", Kind: CIListenerKind,
 		DefaultService: "ziti-hook", Listen: x.ci.listen, Handler: ok}, seeds[TransportCIHook])
+	x.tr.Add(TransportItem{Name: TransportRoomZrok, Label: "the room link over zrok", Kind: "zrok",
+		NoIdentity: true, Listen: x.zrok.listen, Handler: ok}, seeds[TransportRoomZrok])
 	x.p.SetTransports(x.tr)
 	x.front = httptest.NewServer(x.p)
 	t.Cleanup(x.front.Close)
@@ -315,5 +318,32 @@ func TestOnlyTheLocalOperatorSwitchesATransport(t *testing.T) {
 	}
 	if code, _ := x.put(`{"name":"nope","on":true}`); code != http.StatusNotFound {
 		t.Fatalf("an unknown transport answered %d", code)
+	}
+}
+
+func TestTheZrokRoomLinkSwitchesWithNoIdentityAndTouchesNoZitiContext(t *testing.T) {
+	x := newTransportRig(t, map[string]TransportSeed{TransportRoomZrok: {On: boolp(true)}})
+	waitUntil(t, "zrok bound", func() bool { return x.zrok.binds() == 1 })
+	v := x.view(TransportRoomZrok)
+	if v["no_service"] != true || v["seeded"] == nil {
+		t.Fatalf("the zrok row reads %v, want no_service and a seeded on", v)
+	}
+	if code, got := x.put(`{"name":"room-zrok","on":false}`); code != http.StatusOK {
+		t.Fatalf("zrok off answered %d %v", code, got)
+	}
+	if x.view(TransportRoomZrok)["state"] != "off" {
+		t.Fatal("zrok did not turn off")
+	}
+	if code, _ := x.put(`{"name":"room-zrok","on":true,"service":"x"}`); code != http.StatusBadRequest {
+		t.Fatalf("a service for a zrok share answered %d, want 400", code)
+	}
+	if code, got := x.put(`{"name":"room-zrok","on":true}`); code != http.StatusOK {
+		t.Fatalf("zrok on answered %d %v", code, got)
+	}
+	waitUntil(t, "zrok rebound", func() bool { return x.zrok.binds() == 2 })
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if len(x.closed) != 0 {
+		t.Fatalf("a ziti context was closed for a zrok share: %v", x.closed)
 	}
 }

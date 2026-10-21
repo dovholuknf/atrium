@@ -213,6 +213,28 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			zitiSide = s
 		}
 	}
+	var zrokSide *hubSide
+	for _, s := range set.sides {
+		if s.kind == "zrok" {
+			zrokSide = s
+		}
+	}
+	spendRoom := func(secret string) (string, error) {
+		r, err := store.Spend(secret)
+		if err != nil {
+			return "", err
+		}
+		roomsChanged()
+		return r.Name, nil
+	}
+	if zrokSide == nil {
+		if s, err := newZrokHub(keys, spendRoom, nil); err == nil {
+			zrokSide = s
+			set.sides = append(set.sides, zrokSide)
+		} else {
+			log.Printf("[hub] the room link cannot be offered over zrok: %v", err)
+		}
+	}
 	if zitiSide == nil {
 		d, err := overlayDirect(keys, nil)
 		if err == nil {
@@ -277,6 +299,21 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		}, roomZitiSeed(transport, service, f.identity))
 		z.enabled = func() bool { on, _ := ht.Effective(link.TransportRoomZiti); return on }
 		z.service = func() string { _, svc := ht.Effective(link.TransportRoomZiti); return svc }
+	}
+	if zrokSide != nil && zrokSide != set.sides[0] {
+		z := zrokSide
+		ht.Add(link.TransportItem{
+			Name: link.TransportRoomZrok, Label: "Room link over zrok", Kind: "zrok", NoIdentity: true,
+			Listen: func(_, _ string) (net.Listener, error) { return z.listen() },
+			Serve:  func(ctx context.Context, ln net.Listener) error { return h.ServeVia(ctx, ln, "zrok") },
+			Refuse: func() string {
+				if rooms := h.OnlyVia("zrok"); len(rooms) > 0 {
+					return "refused: " + strings.Join(rooms, ", ") + " reaches this hub only over zrok"
+				}
+				return ""
+			},
+		}, roomZrokSeed(transport))
+		z.enabled = func() bool { on, _ := ht.Effective(link.TransportRoomZrok); return on }
 	}
 	side := set.primary()
 	side.says = set.says()

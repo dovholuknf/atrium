@@ -48,6 +48,7 @@ const (
 	TransportBoardZiti = "board-ziti"
 	TransportRoomZiti  = "room-ziti"
 	TransportCIHook    = "ci-hook"
+	TransportRoomZrok  = "room-zrok"
 )
 
 // ErrUnknownTransport is Set's answer for a name the hub has no such item for.
@@ -82,6 +83,8 @@ type TransportItem struct {
 	Refuse func() string
 	// Locked says why this cannot be switched at all, empty when it can.
 	Locked string
+	// NoIdentity marks an item that binds no ziti service and uses no identity file: a zrok share.
+	NoIdentity bool
 }
 
 // TransportView is one item as the gear shows it.
@@ -100,6 +103,7 @@ type TransportView struct {
 	Seeded         []string  `json:"seeded,omitempty"`
 	Locked         string    `json:"locked,omitempty"`
 	Switchable     bool      `json:"switchable"`
+	NoService      bool      `json:"no_service,omitempty"`
 }
 
 type htItem struct {
@@ -202,6 +206,9 @@ func (t *HubTransports) Start(ctx context.Context) {
 
 // identityFor is the identity an item binds with: its own, the hub's, or another item's.
 func (t *HubTransports) identityFor(h *htItem) string {
+	if h.NoIdentity {
+		return ""
+	}
 	if h.identity != "" {
 		return h.identity
 	}
@@ -301,7 +308,7 @@ func (t *HubTransports) view(h *htItem) TransportView {
 	h.smu.Unlock()
 	v := TransportView{Name: h.Name, Label: h.Label, Kind: h.Kind, On: h.on, Service: h.service,
 		DefaultService: h.DefaultService, Identity: h.identity, IdentityUsed: t.identityFor(h), Locked: h.Locked,
-		Switchable: h.Locked == "", Since: since}
+		Switchable: h.Locked == "", Since: since, NoService: h.NoIdentity}
 	switch {
 	case !h.on:
 		v.State = "off"
@@ -344,6 +351,9 @@ func (t *HubTransports) Set(name string, on *bool, service, identity *string) (T
 	if h.Locked != "" {
 		return t.view(h), errors.New("refused: " + h.Locked)
 	}
+	if h.NoIdentity && (service != nil || identity != nil) {
+		return t.view(h), errors.New("a zrok share has no service or identity to set")
+	}
 	newOn, newSvc, newID := h.on, h.service, h.identity
 	if on != nil {
 		newOn = *on
@@ -367,7 +377,7 @@ func (t *HubTransports) Set(name string, on *bool, service, identity *string) (T
 			return t.view(h), errors.New(why)
 		}
 	}
-	if newOn && (!h.on || changedBind) {
+	if newOn && (!h.on || changedBind) && !h.NoIdentity {
 		use := newID
 		if use == "" {
 			use = t.identityFor(h)
@@ -401,7 +411,7 @@ func (t *HubTransports) Set(name string, on *bool, service, identity *string) (T
 	if newOn && (!wasOn || changedBind) {
 		t.start(h)
 	}
-	if wasOn && (!newOn || !sameIdentity(oldIdentity, t.identityFor(h))) && !t.inUse(oldIdentity, h) {
+	if oldIdentity != "" && wasOn && (!newOn || !sameIdentity(oldIdentity, t.identityFor(h))) && !t.inUse(oldIdentity, h) {
 		closeIdentity := t.CloseIdentity
 		if closeIdentity == nil {
 			closeIdentity = zitictx.Close
@@ -412,7 +422,7 @@ func (t *HubTransports) Set(name string, on *bool, service, identity *string) (T
 	case wasOn && !newOn:
 		t.audit("hub-transport-off", name+" turned off from the settings")
 	case newOn && !wasOn:
-		t.audit("hub-transport-on", name+" turned on from the settings, service "+newSvc)
+		t.audit("hub-transport-on", name+" turned on from the settings"+serviceNote(newSvc))
 	case changedBind:
 		t.audit("hub-transport-set", name+" now binds service "+newSvc)
 	}
@@ -508,4 +518,11 @@ func (p *Proxy) serveTransports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"transports": t.View()})
+}
+
+func serviceNote(svc string) string {
+	if svc == "" {
+		return ""
+	}
+	return ", service " + svc
 }

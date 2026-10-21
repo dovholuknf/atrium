@@ -11,6 +11,7 @@ import (
 
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
+	"github.com/openziti/zrok/v2/rest_client_zrok/metadata"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 )
 
@@ -45,20 +46,86 @@ import (
 // credential. That is the same line `docs/fabric/overlays.md` draws, and it is why the
 // hub says what to run rather than trying to do it.
 
+// ZrokAPI is what this file asks of zrok. The real one is the SDK on this machine's environment, and a test hands in
+// a fake so no controller is needed.
+type ZrokAPI interface {
+	// Exists says whether a share is still on the environment. An error is "could not tell", never "gone".
+	Exists(token string) (bool, error)
+	Create() (string, error)
+	Delete(token string) error
+	Listen(token string) (net.Listener, error)
+	Dial(token string) (net.Conn, error)
+}
+
 // Zrok reaches a hub over a private zrok share.
 type Zrok struct {
 	// Token is the private share token. The hub learns it by creating the
 	// share; a room is given it in the join string.
 	Token string
+	// API, when set, stands in for the SDK.
+	API ZrokAPI
 
 	once sync.Once
 	root env_core.Root
 	err  error
-	// share is kept so the hub can release it on the way out. Empty on a room,
-	// which created nothing and must delete nothing.
-	share *zroksdk.Share
 	// gate backs dials off after a failure. See dialgate.go.
 	gate dialGate
+	mu   sync.Mutex
+}
+
+type sdkZrok struct{ root env_core.Root }
+
+func (s sdkZrok) Exists(token string) (bool, error) {
+	_, err := zroksdk.GetShareDetail(s.root, token)
+	if err == nil {
+		return true, nil
+	}
+	var gone *metadata.GetShareDetailNotFound
+	if errors.As(err, &gone) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s sdkZrok) Create() (string, error) {
+	shr, err := zroksdk.CreateShare(s.root, &zroksdk.ShareRequest{
+		// TCP TUNNEL, NOT PROXY, and the difference is the point.
+		//
+		// `proxy` is zrok's HTTP backend: it terminates HTTP and forwards
+		// requests, which would put a parser between the hub and the room and
+		// break the one property this whole design rests on, that nothing is
+		// translated. A tunnel carries bytes, so a websocket is a websocket.
+		BackendMode: zroksdk.TcpTunnelBackendMode,
+		ShareMode:   zroksdk.PrivateShareMode,
+		// Names the share on the account. Nothing dials it: this process
+		// answers the listener itself.
+		Target: "atrium-hub",
+	})
+	if err != nil {
+		return "", err
+	}
+	return shr.Token, nil
+}
+
+func (s sdkZrok) Delete(token string) error {
+	return zroksdk.DeleteShare(s.root, &zroksdk.Share{Token: token})
+}
+
+func (s sdkZrok) Listen(token string) (net.Listener, error) {
+	return zroksdk.NewListener(token, s.root)
+}
+
+func (s sdkZrok) Dial(token string) (net.Conn, error) { return zroksdk.NewDialer(token, s.root) }
+
+func (z *Zrok) api() (ZrokAPI, error) {
+	if z.API != nil {
+		return z.API, nil
+	}
+	root, err := z.environmentRoot()
+	if err != nil {
+		return nil, err
+	}
+	return sdkZrok{root}, nil
 }
 
 // Describe is what to log. THE TOKEN IS NOT PRINTED: on a private share it is
@@ -83,66 +150,75 @@ func (z *Zrok) environmentRoot() (env_core.Root, error) {
 	return z.root, z.err
 }
 
-// Share creates the private share and answers with its token.
+// Share answers with the private share's token: the saved one when it is still on the environment, a new one only
+// when it is gone.
 //
-// The hub's side, and the only thing in this file that reaches a network before
-// anybody connects. Called before `Listen`.
-func (z *Zrok) Share() (string, error) {
-	root, err := z.environmentRoot()
+// The hub's side, and the only thing in this file that reaches a network before anybody connects. Called before
+// `Listen`. A SHARE IS REUSED BECAUSE A ROOM'S JOIN STRING CARRIES ITS TOKEN: a new share on every hub start would cut
+// every zrok room off at each deploy. When zrok cannot say whether the saved share is there, that is an error and
+// nothing is reserved, since a second share would orphan the first.
+func (z *Zrok) Share(saved string) (string, error) {
+	api, err := z.api()
 	if err != nil {
 		return "", err
 	}
-	shr, err := zroksdk.CreateShare(root, &zroksdk.ShareRequest{
-		// TCP TUNNEL, NOT PROXY, and the difference is the point.
-		//
-		// `proxy` is zrok's HTTP backend: it terminates HTTP and forwards
-		// requests, which would put a parser between the hub and the room and
-		// break the one property this whole design rests on, that nothing is
-		// translated. A tunnel carries bytes, so a websocket is a websocket.
-		BackendMode: zroksdk.TcpTunnelBackendMode,
-		ShareMode:   zroksdk.PrivateShareMode,
-		// Names the share on the account. Nothing dials it: this process
-		// answers the listener itself.
-		Target: "atrium-hub",
-	})
+	saved = strings.TrimSpace(saved)
+	if saved != "" {
+		ok, err := api.Exists(saved)
+		if err != nil {
+			return "", fmt.Errorf("could not ask zrok whether the share this hub saved is still there: %w", err)
+		}
+		if ok {
+			z.setToken(saved)
+			return saved, nil
+		}
+	}
+	token, err := api.Create()
 	if err != nil {
 		return "", fmt.Errorf("could not create a private zrok share: %w", err)
 	}
-	z.share = shr
-	z.Token = shr.Token
-	return shr.Token, nil
+	z.setToken(token)
+	return token, nil
+}
+
+func (z *Zrok) setToken(t string) {
+	z.mu.Lock()
+	z.Token = t
+	z.mu.Unlock()
+}
+
+// Reserved is the share this hub is on, empty before Share has answered.
+func (z *Zrok) Reserved() string {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return z.Token
 }
 
 // Listen answers the share, which is the hub's side.
 func (z *Zrok) Listen() (net.Listener, error) {
-	root, err := z.environmentRoot()
+	api, err := z.api()
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(z.Token) == "" {
+	token := z.Reserved()
+	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("no share to listen on. call Share first")
 	}
-	ln, err := zroksdk.NewListener(z.Token, root)
+	ln, err := api.Listen(token)
 	if err != nil {
-		// The share exists and nothing is answering it, so it goes rather than
-		// lingering on the account as a dead entry somebody has to clean up.
-		z.Release()
-		return nil, fmt.Errorf("the share was created but nothing could answer it: %w", err)
+		return nil, fmt.Errorf("the share exists and nothing could answer it: %w", err)
 	}
 	return ln, nil
 }
 
-// Release deletes a share the hub created.
-//
-// A STOPPED HUB MUST NOT LEAVE ONE BEHIND. A private share nothing answers is a
-// dead entry on the account, and starting again would make a second, so an
-// evening of restarts would leave a list somebody has to tidy by hand.
-func (z *Zrok) Release() {
-	if z.share == nil || z.root == nil {
-		return
+// Retire deletes a share from the environment. It is the only way a hub's share ends: a stopped hub leaves it for the
+// next start to reuse. See `atrium rooms retire-share`.
+func (z *Zrok) Retire(token string) error {
+	api, err := z.api()
+	if err != nil {
+		return err
 	}
-	_ = zroksdk.DeleteShare(z.root, z.share)
-	z.share = nil
+	return api.Delete(token)
 }
 
 // Dial opens one connection, which is the room's side.
@@ -151,14 +227,14 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("the zrok controller is not answering. not dialling again for %s",
 			wait.Round(time.Second))
 	}
-	root, err := z.environmentRoot()
+	api, err := z.api()
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(z.Token) == "" {
 		return nil, errors.New("no share token. the join string carries it")
 	}
-	conn, err := zroksdk.NewDialer(z.Token, root)
+	conn, err := api.Dial(z.Token)
 	if err != nil {
 		z.gate.failed()
 		return nil, fmt.Errorf("could not reach that private share. "+
@@ -171,8 +247,8 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 // Hammering says dials to zrok are failing fast. Shown on the room's row.
 func (z *Zrok) Hammering() bool { return z.gate.hammering() }
 
-// Close lets go of a share this process made. A room made none, so for a room it does nothing.
-func (z *Zrok) Close() { z.Release() }
+// Close does nothing: a share outlives the process that answers it.
+func (z *Zrok) Close() {}
 
 // ZrokAuthenticated is `Hub.Authenticated` for this transport.
 //

@@ -1062,7 +1062,7 @@ async function hubTransportsSection(browser, base) {
   const tag = "hubTransports: ";
   const open = async (mode) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-    const st = { puts: [], gets: 0, on: false };
+    const st = { puts: [], gets: 0, on: false, zrok: false };
     const view = () => ({ transports: [
       { name: "board-ziti", label: "Board over ziti", kind: "board-ziti", on: st.on, state: st.on ? "bound" : "off", service: "atrium-board",
         default_service: "atrium-board", identity: "", identity_used: "/ids/hub.json", seeded: ["on"], switchable: true },
@@ -1070,6 +1070,8 @@ async function hubTransportsSection(browser, base) {
         service: "atrium-hub", default_service: "atrium-hub", identity: "", identity_used: "/ids/hub.json", switchable: true },
       { name: "ci-hook", label: "CI hook", kind: "ci-hook", on: false, state: "off", service: "ziti-hook", default_service: "ziti-hook",
         identity: "", identity_used: "/ids/hub.json", switchable: true },
+      { name: "room-zrok", label: "Room link over zrok", kind: "zrok", on: st.zrok, state: st.zrok ? "bound" : "off", service: "",
+        default_service: "", identity: "", identity_used: "", seeded: ["on"], switchable: true, no_service: true },
     ] });
     await ctx.route("**/_hub/transports", route => {
       const req = route.request();
@@ -1082,6 +1084,7 @@ async function hubTransportsSection(browser, base) {
           return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "refused: m1mini reaches this hub only over ziti" }) });
         }
         if (b.name === "board-ziti") st.on = !!b.on;
+        if (b.name === "room-zrok") st.zrok = !!b.on;
       } else st.gets++;
       return route.fulfill({ contentType: "application/json", body: JSON.stringify(view()) });
     });
@@ -1105,10 +1108,21 @@ async function hubTransportsSection(browser, base) {
     await p.waitForFunction(() => !document.getElementById("s-ht-row").hidden, null, { timeout: slow(10000) });
     const a = await p.evaluate(() => [...document.querySelectorAll("#s-ht-list .ht-item")].map(r => ({
       name: r.dataset.name, text: r.textContent.replace(/\s+/g, " "), btn: r.querySelector(".ht-switch").textContent })));
-    if (a.map(x => x.name).join("|") !== "board-ziti|room-ziti|ci-hook") fail(tag + "the rows were " + JSON.stringify(a));
+    if (a.map(x => x.name).join("|") !== "board-ziti|room-ziti|ci-hook|room-zrok") fail(tag + "the rows were " + JSON.stringify(a));
     if (!/set by flag: on/.test(a[0].text)) fail(tag + "a seeded value is not named: " + a[0].text);
     if (!/failing: controller unreachable/.test(a[1].text)) fail(tag + "a failing transport shows no reason: " + a[1].text);
     if (a[0].btn !== "turn on" || a[1].btn !== "turn off") fail(tag + "the switches read " + JSON.stringify(a.map(x => x.btn)));
+
+    if (!/set by flag: on/.test(a[3].text) || a[3].btn !== "turn on") fail(tag + "the zrok row reads " + a[3].text + " / " + a[3].btn);
+    const zrokBox = await p.evaluate(() => ({ inputs: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] input').length,
+      apply: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] .ht-apply').length }));
+    if (zrokBox.inputs || zrokBox.apply) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrokBox));
+    await p.click('#s-ht-list [data-name="room-zrok"] .ht-switch');
+    await p.waitForFunction(() => /turn off/.test(document.querySelector('#s-ht-list [data-name="room-zrok"] .ht-switch').textContent),
+      null, { timeout: slow(5000) }).catch(() => fail(tag + "turning zrok on did not show."));
+    const zp = st.puts.find(x => x.name === "room-zrok");
+    if (!zp || zp.on !== true || "service" in zp || "identity" in zp) fail(tag + "the zrok PUT was " + JSON.stringify(zp));
+    st.puts.length = 0;
 
     const shots = process.env.HT_SHOTS || "";
     if (shots) {

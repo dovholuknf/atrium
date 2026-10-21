@@ -1,7 +1,8 @@
-// ── the hub's ziti transports, a row in the gear ─────────────────────────────
+// ── the hub's transports, a row in the gear ─────────────────────────────
 //
 // The board, the room link and the CI hook each bind a ziti service on the hub. `GET /_hub/transports` answers
-// {transports: [{name, label, on, state, last_error, service, identity, seeded, locked, switchable}]}. `PUT` takes
+// {transports: [{name, label, on, state, last_error, service, identity, seeded, locked, switchable, no_service}]}.
+// A zrok share (no_service) has no service or identity, so its row is a state and a switch. `PUT` takes
 // {name, on, service, identity}: 403 from any machine but the hub's own, and then the row is read-only and says where
 // to set it. 409 is a refusal, shown as the hub said it.
 //
@@ -34,6 +35,7 @@ function htPaint(list) {
     row.dataset.name = t.name;
     htText(row, "strong", t.label || t.name);
     htText(row, "span", htStateText(t), "ht-state ht-" + t.state);
+    const bare = !!t.no_service;
     const svc = document.createElement("input");
     svc.type = "text";
     svc.className = "ht-service";
@@ -41,7 +43,7 @@ function htPaint(list) {
     svc.placeholder = t.default_service || "service";
     svc.spellcheck = false;
     svc.disabled = htReadOnly || !t.switchable;
-    row.appendChild(svc);
+    if (!bare) row.appendChild(svc);
     const id = document.createElement("input");
     id.type = "text";
     id.className = "ht-identity";
@@ -49,19 +51,22 @@ function htPaint(list) {
     id.placeholder = t.identity_used || "identity file";
     id.spellcheck = false;
     id.disabled = htReadOnly || !t.switchable;
-    row.appendChild(id);
+    if (!bare) row.appendChild(id);
     if (!htReadOnly && t.switchable) {
-      const apply = document.createElement("button");
-      apply.type = "button";
-      apply.className = "ht-apply";
-      apply.textContent = "apply";
-      apply.onclick = () => putHubTransport({ name: t.name, service: svc.value, identity: id.value });
-      row.appendChild(apply);
+      if (!bare) {
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.className = "ht-apply";
+        apply.textContent = "apply";
+        apply.onclick = () => putHubTransport({ name: t.name, service: svc.value, identity: id.value });
+        row.appendChild(apply);
+      }
       const sw = document.createElement("button");
       sw.type = "button";
       sw.className = "ht-switch";
       sw.textContent = t.on ? "turn off" : "turn on";
-      sw.onclick = () => putHubTransport({ name: t.name, on: !t.on, service: svc.value, identity: id.value });
+      sw.onclick = () => putHubTransport(bare ? { name: t.name, on: !t.on }
+        : { name: t.name, on: !t.on, service: svc.value, identity: id.value });
       row.appendChild(sw);
     }
     if (t.locked) htText(row, "div", t.locked, "hintline");

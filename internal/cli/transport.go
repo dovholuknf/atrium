@@ -128,34 +128,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 		}, nil
 
 	case "zrok":
-		z := &link.Zrok{}
-		d, err := overlayDirect(keys, spend)
-		if err != nil {
-			return nil, err
-		}
-		shareToken, err := z.Share()
-		if err != nil {
-			return nil, err
-		}
-		// WRITTEN DOWN FOR `atrium rooms token`, which runs beside this hub and
-		// cannot reserve the share itself. See zrokShareFile.
-		if err := writeZrokShare(keys, shareToken); err != nil {
-			log.Printf("[hub] could not write the share down for `rooms token`: %v", err)
-		}
-		return &hubSide{
-			kind: "zrok", path: link.Path{Transport: "zrok"},
-			listen: overlayListen(z.Listen, d, "zrok"),
-			enrol:  d.ServeEnrolment,
-			auth:   link.OverlayAuthenticated,
-			joinString: func(name, secret string) (string, error) {
-				return keys.MintProvenOverlayToken("zrok", name, "", shareToken, secret)
-			},
-			release: func() {
-				clearZrokShare(keys)
-				z.Release()
-			},
-			says: "a private zrok share",
-		}, nil
+		return newZrokHub(keys, spend, nil)
 	}
 	return nil, fmt.Errorf("no transport called %q. one of: %s",
 		kind, strings.Join(transports, ", "))
@@ -320,16 +293,76 @@ func roomZitiListen(keys link.Keys, spend func(string) (string, error)) func(ser
 	}
 }
 
-// zrokShareFile is where a hub running over zrok writes the private share it
-// reserved, so `atrium rooms token` can mint a zrok join string from beside it.
+// zrokHub is the hub's side of the room link over a private zrok share.
 //
-// THE HUB'S OWN SHARE, not somebody else's credential. The hub made it and
-// releases it on the way out, and this file goes with it. It sits in the hub's
-// key directory, 0600, beside the CA key that is already the more valuable
-// secret there. A hub that was killed rather than stopped leaves it naming a
-// share that may be gone, and a join string minted from that fails at dial.
-func zrokShareFile(keys link.Keys) string { return filepath.Join(keys.Dir, "zrok-share") }
+// THE SHARE OUTLIVES THE HUB. Its token is in every zrok join string, so a hub that reserved a new share at each
+// start would cut every zrok room off at each deploy. `listen` asks zrok whether the share written in `zrok-share`
+// is still there, uses it when it is, and reserves a new one only when it is gone. A clean stop deletes nothing. The
+// share ends with `atrium rooms retire-share`.
+type zrokHub struct {
+	keys link.Keys
+	z    *link.Zrok
+	d    link.Direct
+}
 
+func newZrokHub(keys link.Keys, spend func(string) (string, error), api link.ZrokAPI) (*hubSide, error) {
+	d, err := overlayDirect(keys, spend)
+	if err != nil {
+		return nil, err
+	}
+	h := &zrokHub{keys: keys, z: &link.Zrok{API: api}, d: d}
+	return &hubSide{
+		kind: "zrok", path: link.Path{Transport: "zrok"},
+		listen: h.listen,
+		enrol:  d.ServeEnrolment,
+		auth:   link.OverlayAuthenticated,
+		joinString: func(name, secret string) (string, error) {
+			token := h.z.Reserved()
+			if token == "" {
+				return "", errors.New("this hub has not reserved its zrok share yet")
+			}
+			return keys.MintProvenOverlayToken("zrok", name, "", token, secret)
+		},
+		release: func() {},
+		says:    "a private zrok share",
+	}, nil
+}
+
+func (h *zrokHub) listen() (net.Listener, error) {
+	saved, _ := readZrokShare(h.keys)
+	token, err := h.z.Share(saved)
+	if err != nil {
+		return nil, err
+	}
+	if token != saved {
+		log.Printf("[hub] reserved a private zrok share. rooms joined over the old one need `rooms token`")
+	}
+	if err := writeZrokShare(h.keys, token); err != nil {
+		log.Printf("[hub] could not write the share down for `rooms token`: %v", err)
+	}
+	return overlayListen(h.z.Listen, h.d, "zrok")()
+}
+
+// retireZrokShare deletes the share this hub saved and forgets it, so the next hub start reserves a new one.
+func retireZrokShare(keys link.Keys, api link.ZrokAPI) (string, error) {
+	token, err := readZrokShare(keys)
+	if err != nil {
+		return "", err
+	}
+	if err := (&link.Zrok{API: api}).Retire(token); err != nil {
+		return "", fmt.Errorf("could not delete the share: %w", err)
+	}
+	clearZrokShare(keys)
+	return token, nil
+}
+
+// zrokShareFile is where a hub over zrok writes the private share it reserved, so it is found again after a restart
+// and `atrium rooms token` can mint a zrok join string from beside it.
+//
+// THE HUB'S OWN SHARE, not somebody else's credential. It sits in the hub's key directory, 0600, beside the CA key
+// that is already the more valuable secret there. A share deleted outside atrium leaves it naming one that is gone:
+// the next hub start sees that and reserves a new one.
+func zrokShareFile(keys link.Keys) string { return filepath.Join(keys.Dir, "zrok-share") }
 func writeZrokShare(keys link.Keys, token string) error {
 	if err := os.MkdirAll(keys.Dir, 0o700); err != nil {
 		return err
@@ -529,6 +562,17 @@ func samePaths(a, b []link.Path) bool {
 func onSeed(service, identity string) link.TransportSeed {
 	on := true
 	return link.TransportSeed{On: &on, Service: service, Identity: identity}
+}
+
+// roomZrokSeed is what --transport says of the room link's zrok: on when it names zrok.
+func roomZrokSeed(transport string) link.TransportSeed {
+	order, _ := link.ParseOrder(transport)
+	for _, k := range order {
+		if k == "zrok" {
+			return onSeed("", "")
+		}
+	}
+	return link.TransportSeed{}
 }
 
 // roomZitiSeed is what --transport says of the room link's ziti: on when it names ziti.

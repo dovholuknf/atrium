@@ -44,7 +44,7 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 	}
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
 		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix),
-		roomSpecCmd(prefix), roomLockCmd(prefix), roomTransportsCmd(prefix))
+		roomSpecCmd(prefix), roomLockCmd(prefix), roomTransportsCmd(prefix), roomRetireShareCmd(prefix))
 	return c
 }
 
@@ -331,6 +331,26 @@ func roomTokenCmd(prefix string) *cobra.Command {
 	c.Flags().StringVar(&advertise, "link-advertise", "",
 		"the host:port a room dials this hub at (required when --link binds wide)")
 	c.Flags().StringVar(&service, "service", "atrium-hub", "the ziti service, with --transport ziti")
+	return c
+}
+
+// roomRetireShareCmd deletes the hub's zrok share, the one way it ends. A hub stopping leaves it for the next start.
+func roomRetireShareCmd(prefix string) *cobra.Command {
+	var f hubStoreFlags
+	c := &cobra.Command{
+		Use:   "retire-share",
+		Short: "Delete the hub's private zrok share. Every zrok room needs a new join string after",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if _, err := retireZrokShare(f.keys(), nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "deleted the zrok share. the next hub start over zrok reserves a new one, "+
+				"and each zrok room needs `rooms token`")
+			return nil
+		},
+	}
+	f.bind(c, prefix)
 	return c
 }
 

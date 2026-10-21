@@ -401,7 +401,7 @@
     "mcp/resources": {"package": "./internal/link", "sources": ["internal/link/resources_mcp.go"], "tests": ["internal/link/resources_*test.go"]},
     "mcp/ci": {"package": "./internal/link", "sources": ["internal/link/ci_door.go"], "tests": []},
     "mcp/worktrees": {"package": "./internal/link", "sources": ["internal/link/worktrees_mcp.go"], "tests": ["internal/link/worktrees_mcp_*test.go"]},
-    "hub/transport": {"package": "./internal/link", "sources": ["internal/link/dialgate.go", "internal/link/transportoff.go", "internal/link/transport_mcp.go"], "tests": ["internal/link/dialgate_*test.go", "internal/link/transportoff_*test.go"]},
+    "hub/transport": {"package": "./internal/link", "sources": ["internal/link/dialgate.go", "internal/link/transportoff.go", "internal/link/transport_mcp.go"], "tests": ["internal/link/dialgate_*test.go", "internal/link/transportoff_*test.go", "internal/link/zrok_*test.go"]},
     "agent": {"package": "./internal/daemon", "sources": ["internal/daemon/*.go"], "tests": ["internal/daemon/*_test.go"]},
     "store": {"package": "./internal/store", "sources": ["internal/store/*.go"], "tests": ["internal/store/*_test.go"]},
     "hubstore": {"package": "./internal/hubstore", "sources": ["internal/hubstore/*.go"], "tests": ["internal/hubstore/*_test.go"]},
