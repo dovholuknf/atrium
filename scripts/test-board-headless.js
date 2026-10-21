@@ -9322,6 +9322,10 @@ async function blockerMarkSection(browser, base) {
     if (!pin.attach) fail("the pinned blocker offers no attach.");
     if (!/waiting for a login/.test(pin.text)) fail("the pinned blocker does not say why: " + pin.text);
     if (!pin.bell) fail("the bell is not red while a card is blocked.");
+    const stale = await sp.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow.blocker:not(.pinned)")].map(r => ({ text: r.textContent, resolved: r.classList.contains("resolved"), note: (r.querySelector(".tlresolved") || {}).textContent || "" })));
+    const trustRow = stale.find(r => /asking whether to trust/.test(r.text)), loginRow = stale.find(r => /waiting for a login/.test(r.text));
+    if (!trustRow || !trustRow.resolved || trustRow.note !== "resolved: it moved on") fail("an older blocker row for a different prompt is not resolved: " + JSON.stringify(stale));
+    if (!loginRow || loginRow.resolved) fail("the blocker row matching the card's current prompt is shown as resolved: " + JSON.stringify(stale));
     if (process.env.BLOCK_SHOTS) { require("fs").mkdirSync(process.env.BLOCK_SHOTS, { recursive: true }); await sp.mouse.move(5, 890); await sp.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) }); await sp.screenshot({ path: process.env.BLOCK_SHOTS + "/tray-blocked-live.png" }); }
 
     // A log line whose TITLE says it is blocked, from anything but a blocker,

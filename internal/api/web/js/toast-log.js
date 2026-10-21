@@ -208,7 +208,7 @@ function openToastLog() {
         // alert did rather than as two disconnected strings.
         const clip = t.title + (t.body ? "\n" + t.body : "");
         const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
-        const gone = t.kind === "blocker" && t.taskFor ? blockerGone(t.taskFor) : "";
+        const gone = t.kind === "blocker" && t.taskFor ? blockerGone(t.taskFor, t.body) : "";
         return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}${gone ? " resolved" : ""}"${
           gone ? ` data-gone="${esc(gone)}"` : ""}${
           t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
@@ -286,12 +286,13 @@ function openToastLog() {
 }
 
 // Why a logged blocker no longer needs anyone, or "" while its card is still held at the prompt.
-function blockerGone(taskFor) {
+function blockerGone(taskFor, body) {
   if (typeof lastTasks === "undefined" || !tasksLoaded) return "";
   const c = lastTasks.find(x => sameCard(x.id, taskFor));
   if (!c) return "the card has exited";
   if (over(c)) return "the card has exited";
-  return isBlocker(c) ? "" : "it is running now";
+  if (!isBlocker(c)) return "it is running now";
+  return (body || "").startsWith(blockerReason(c)) ? "" : "it moved on";
 }
 
 // The poll has new cards: a question answered elsewhere stops asking in an open tray. Not while the flyout is on.
