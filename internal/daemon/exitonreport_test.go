@@ -72,3 +72,24 @@ func TestAnUnresolvedAgentLauncherStillGetsItsWorkerExited(t *testing.T) {
 		}
 	}
 }
+
+func TestAWorkLifetimeCardIsExitedWhoeverLaunchedIt(t *testing.T) {
+	t.Parallel()
+	d := &Daemon{}
+	for _, tc := range []struct {
+		name string
+		task *store.Task
+		exit bool
+	}{
+		{"work by the operator", &store.Task{SpawnedBy: store.HumanLauncher, Lifetime: store.LifetimeWork}, true},
+		{"work with no launcher", &store.Task{Lifetime: store.LifetimeWork}, true},
+		{"work resident", &store.Task{Lifetime: store.LifetimeWork, Tags: []string{ResidentTag}}, false},
+		{"work orchestrator", &store.Task{Lifetime: store.LifetimeWork, Tags: []string{OrchestratorTag}}, false},
+		{"work keep-open", &store.Task{Lifetime: store.LifetimeWork, Tags: []string{KeepOpenTag}}, false},
+		{"no lifetime by the operator", &store.Task{SpawnedBy: store.HumanLauncher}, false},
+	} {
+		if got := d.exitsOnReport(tc.task, FinishRequest{Status: ReportDone}); got != tc.exit {
+			t.Errorf("%s: exits = %v, want %v", tc.name, got, tc.exit)
+		}
+	}
+}

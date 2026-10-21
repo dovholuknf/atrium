@@ -35,6 +35,9 @@ var stopAfterReport = func(d *Daemon, taskID string) error { return d.StopRunner
 // exitsOnReport says whether this report ends the card's runner. A done report that carries an ask is a question
 // in a done report's clothes: the launcher's answer has to reach a running card, so it stays.
 //
+// A card launched with lifetime `work` exits whoever launched it, since a launch through the hub's HTTP API is
+// recorded as the operator's.
+//
 // Residents are exempt by the tags they already wear: a director, the orchestrator, and a card that opted in to
 // parking when idle or to holding notices. A resident an agent launched with none of those tags is exited on its
 // first done report, and the launcher puts one of them on it to prevent that.
@@ -42,7 +45,7 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 	if task == nil || (in.Status != "" && in.Status != ReportDone) || strings.TrimSpace(in.Ask) != "" {
 		return false
 	}
-	if strings.TrimSpace(task.SpawnedByID) == "" && !launchedByAnAgent(task) {
+	if task.Lifetime != store.LifetimeWork && strings.TrimSpace(task.SpawnedByID) == "" && !launchedByAnAgent(task) {
 		return false
 	}
 	for _, tag := range []string{ResidentTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {

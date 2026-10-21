@@ -12,3 +12,7 @@ tool call of its own.
 
 ### @LETTER@3. Resident stays
 Launch with resident true. Its done leaves the runner up.
+
+### @LETTER@4. A hub-launched work card exits
+POST /v1/launch with lifetime work and no spawning session, then a done report. The runner exits. Without a lifetime,
+launched by a person from the board, it stays.
