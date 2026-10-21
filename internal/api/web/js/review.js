@@ -103,7 +103,7 @@ function reviewDraw() {
   for (const [g, label] of groups) {
     const rows = fs.filter(f => (f.group === "batch") === (g === "batch"));
     if (!rows.length) continue;
-    rail.append(reviewEl("h3", "", label + " (" + rows.length + ")"));
+    rail.append(reviewEl("div", "rv-h", label + " (" + rows.length + ")"));
     for (const f of rows) {
       const row = reviewEl("div", "rv-f" + (f.num === reviewCur ? " cur" : ""));
       row.dataset.num = String(f.num);

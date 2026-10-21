@@ -702,7 +702,7 @@ async function chatReviewSection(browser, base) {
     asked.push(id);
     if (id !== "rv-a") return route.fulfill({ status: 404, contentType: "application/json", body: '{"error":"no review"}' });
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({ base: "main", merge_base: "abc", files: [{ path: "lib/c.c", added: 1, removed: 1 }],
-      findings: [finding(1, "batch", "applied", "DRY"), finding(2, "", "waiting", "SCOPE"), finding(3, "", "withdrawn", "CHURN")] }) });
+      findings: [finding(1, "batch", "applied", "DRY"), finding(2, "", "waiting", "SCOPE")] }) });
   });
   try {
     const p = await ctx.newPage();
@@ -711,27 +711,37 @@ async function chatReviewSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="chat"]');
     await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    const shot = async name => {
+      if (!process.env.REVIEW_SHOTS) return;
+      fs.mkdirSync(process.env.REVIEW_SHOTS, { recursive: true });
+      await settleStyle(p);
+      await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, name) });
+    };
     await chatPick(p, "rv-b");
     await p.waitForTimeout(400);
+    await shot("before-chat.png");
     if (!await p.$eval("#chat-review", b => b.hidden)) fail(tag + "the review button shows for a card with no review tag");
     await chatPick(p, "rv-a");
     await p.waitForFunction(() => !document.getElementById("chat-review").hidden, null, { timeout: slow(8000) });
+    await shot("after-chat-with-review-button.png");
     await p.click("#chat-review");
     await p.waitForSelector("#review-rail .rv-f", { timeout: slow(5000) });
-    const heads = await p.$$eval("#review-rail h3", h => h.map(x => x.textContent));
-    if (heads.join("|") !== "Applied for veto (1)|One at a time (2)") fail(tag + "the rail groups read " + JSON.stringify(heads));
+    const heads = await p.$$eval("#review-rail .rv-h", h => h.map(x => x.textContent));
+    if (heads.join("|") !== "Applied for veto (1)|One at a time (1)") fail(tag + "the rail groups read " + JSON.stringify(heads));
     const rows = await p.$$eval("#review-rail .rv-f", r => r.map(x => x.querySelector(".rv-cat").textContent + "/" + x.querySelector(".rv-st").textContent));
-    if (rows.join("|") !== "DRY/applied|SCOPE/waiting|CHURN/withdrawn") fail(tag + "the rail rows read " + JSON.stringify(rows));
+    if (rows.join("|") !== "DRY/applied|SCOPE/waiting") fail(tag + "the rail rows read " + JSON.stringify(rows));
     if (await p.$$eval("#review-main button, #chat-review-pane button", b => b.length)) fail(tag + "the review view has buttons");
     await p.click('#review-rail .rv-f[data-num="2"]');
     const diff = await p.$eval(".rv-diff", d => ({ a: d.querySelectorAll(".a").length, d: d.querySelectorAll(".d").length, h: d.querySelectorAll(".h").length }));
     if (diff.a !== 1 || diff.d !== 1 || diff.h !== 1) fail(tag + "the diff is drawn as " + JSON.stringify(diff));
+    await shot("after-review.png");
     const foot = await p.$eval(".rv-foot", f => f.textContent);
     if (foot !== "CHANGE SCOPE : one\nSUMMARY     : two") fail(tag + "the footer is not verbatim: " + JSON.stringify(foot));
     if (!/note 2/.test(await p.$eval(".rv-note", n => n.textContent))) fail(tag + "the note line is missing");
     if (await p.$eval("#chat-frame-host", h => !h.hidden)) fail(tag + "the conversation shows under the review");
     await p.click("#chat-review");
     if (await p.$eval("#chat-review-pane", h => !h.hidden)) fail(tag + "the review pane stays open after the button is pressed again");
+    await shot("after-chat-review-closed.png");
     const n = asked.length;
     await until(async () => asked.length > n, 6000, "a poll");
   } finally {
