@@ -214,6 +214,9 @@ jobs:
     needs: [rollup]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - id: body
