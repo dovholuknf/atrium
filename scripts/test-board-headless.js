@@ -22951,7 +22951,7 @@ async function emptyGroupsSection(browser, base) {
             }, [tab, state]);
             await listed(tab);
             await p.evaluate(([tab, open]) => { if (open) fdSet(tab, true); }, [tab, !process.env.EG_NOOPEN]);
-            await p.waitForTimeout(300);
+            await p.waitForTimeout(300); // wait: screenshots only, the drawer has no settle event
             await p.screenshot({ path: shots + "-" + tab + "-" + state + "-" + w + ".png", clip: { x: 0, y: 0, width: w, height: 460 } });
           }
         }
