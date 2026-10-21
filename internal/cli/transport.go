@@ -525,3 +525,35 @@ func samePaths(a, b []link.Path) bool {
 	}
 	return true
 }
+
+func onSeed(service, identity string) link.TransportSeed {
+	on := true
+	return link.TransportSeed{On: &on, Service: service, Identity: identity}
+}
+
+// roomZitiSeed is what --transport says of the room link's ziti: on when it names ziti.
+func roomZitiSeed(transport, service, identity string) link.TransportSeed {
+	order, _ := link.ParseOrder(transport)
+	for _, k := range order {
+		if k == "ziti" {
+			return onSeed(service, identity)
+		}
+	}
+	return link.TransportSeed{}
+}
+
+// boardZitiSeed is what --board-transport says of the board's ziti.
+func boardZitiSeed(boardTransport, service string) link.TransportSeed {
+	if strings.TrimSpace(boardTransport) == "ziti" {
+		return onSeed(service, "")
+	}
+	return link.TransportSeed{}
+}
+
+// ciHookSeed is what --ci-hook-service says of the CI hook.
+func ciHookSeed(service string) link.TransportSeed {
+	if strings.TrimSpace(service) != "" {
+		return onSeed(service, "")
+	}
+	return link.TransportSeed{}
+}

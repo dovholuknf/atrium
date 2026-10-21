@@ -207,11 +207,6 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		CheckIdentity:    func(p string) error { _, err := os.Stat(p); return err },
 		Audit:            func(kind, detail string) { proxy.RecordAudit("", kind, detail) },
 	}
-	order, _ := link.ParseOrder(transport)
-	zitiNamed := false
-	for _, k := range order {
-		zitiNamed = zitiNamed || k == "ziti"
-	}
 	var zitiSide *hubSide
 	for _, s := range set.sides {
 		if s.kind == "ziti" {
@@ -262,11 +257,6 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	if zitiSide != nil && zitiSide != set.sides[0] {
 		z := zitiSide
-		var seed link.TransportSeed
-		if zitiNamed {
-			on := true
-			seed = link.TransportSeed{On: &on, Service: service, Identity: f.identity}
-		}
 		ht.Add(link.TransportItem{
 			Name: link.TransportRoomZiti, Label: "Room link over ziti", Kind: "ziti", DefaultService: service,
 			Listen: roomZitiListen(keys, func(secret string) (string, error) {
@@ -284,7 +274,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 				}
 				return ""
 			},
-		}, seed)
+		}, roomZitiSeed(transport, service, f.identity))
 		z.enabled = func() bool { on, _ := ht.Effective(link.TransportRoomZiti); return on }
 		z.service = func() string { _, svc := ht.Effective(link.TransportRoomZiti); return svc }
 	}
@@ -587,11 +577,6 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetGrowler(growler)
 	growler.Start(ctx)
 	startCIHook(ctx, f.ciHookService, store, ht, proxy)
-	var boardSeed link.TransportSeed
-	if strings.TrimSpace(boardTransport) == "ziti" {
-		on := true
-		boardSeed = link.TransportSeed{On: &on, Service: boardService}
-	}
 	ht.Add(link.TransportItem{
 		Name: link.TransportBoardZiti, Label: "Board over ziti", Kind: "board-ziti", DefaultService: "atrium-board",
 		Listen: func(svc, identity string) (net.Listener, error) {
@@ -609,7 +594,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			}()
 			return srv.Serve(ln)
 		},
-	}, boardSeed)
+	}, boardZitiSeed(boardTransport, boardService))
 	proxy.SetTransports(ht)
 	ht.Start(ctx)
 

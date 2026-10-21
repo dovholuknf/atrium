@@ -19,18 +19,13 @@ func startCIHook(ctx context.Context, service string, store *hubstore.Store, ht 
 	hook.SetEvents(events)
 	proxy.SetEvents(events)
 	go hook.Run(ctx)
-	var seed link.TransportSeed
-	if service != "" {
-		on := true
-		seed = link.TransportSeed{On: &on, Service: service}
-	}
 	ht.Add(link.TransportItem{
 		Name: link.TransportCIHook, Label: "CI hook", Kind: link.CIListenerKind, DefaultService: "ziti-hook",
 		Listen: func(svc, identity string) (net.Listener, error) {
 			return (&link.Ziti{Identity: identity, Service: svc}).ListenService(svc)
 		},
 		Handler: hook,
-	}, seed)
+	}, ciHookSeed(service))
 }
 
 // newCIHookCmd is `atrium ci-hook`.

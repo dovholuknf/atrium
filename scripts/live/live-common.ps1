@@ -72,9 +72,16 @@ $HubArgs += @('--board', (Join-Path $Repo 'internal\api\web'))
 # One board view per worker worktree under D:\worktrees, at http://<worktree-folder>.localhost:7778/, so several UI changes
 # are live side by side. See docs/rnd/board-views-design.md.
 $HubArgs += @('--board-views', 'D:\worktrees')
-# The hub's ziti transports (the room link on atrium-hub, the board on atrium-board, the CI hook) are settings now, set in
-# the gear and kept in the hub's store, so no flag turns them on here. The operator seeds them once from the gear. A flag
-# would only seed a value, and the first change in the gear replaces it.
+# The hub's ziti transports are settings in the gear, and these flags SEED them: a flag wins for that run, and the first
+# change made in the gear replaces it. They stay here so a hub with no stored settings still binds all three, since
+# m1mini and sg3 attach over ziti only. The identity is enrolled outside the repo and never committed. Only added while
+# it is there, and a controller that is down leaves the hub up on direct. See docs/changes/f-hub-transport-settings.md.
+$HubZitiIdentity = 'C:\Users\claude\.ziti\identities\atrium\atrium-hub-sg4.json'
+if (Test-Path $HubZitiIdentity) {
+  $HubArgs += @('--transport', 'direct,ziti', '--atrium-identity', $HubZitiIdentity, '--atrium-service', 'atrium-hub')
+  $HubArgs += @('--board-transport', 'ziti', '--board-service', 'atrium-board')
+  $HubArgs += @('--ci-hook-service', 'ziti-hook')
+}
 $RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.
