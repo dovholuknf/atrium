@@ -482,6 +482,8 @@ const PEEK_DRAWER_KEY = "atrium.peekDrawers";
 const PEEK_DRAWERS_OPEN = { need: true };
 // recap and context are always open (no toggle); chatter starts folded every time and is never kept.
 const PEEK_DRAWERS_FIXED = { recap: true, ctx: true }, PEEK_DRAWERS_FORGET = { chatter: true };
+// A forgotten drawer opened while the usage read was out stays open when the box is drawn again.
+let peekHeldOpen = "";
 function peekDrawerState() {
   let o = {};
   try { o = JSON.parse(localStorage.getItem(PEEK_DRAWER_KEY) || "{}") || {}; } catch (e) {}
@@ -489,7 +491,7 @@ function peekDrawerState() {
 }
 function peekDrawerOpen(key) {
   if (PEEK_DRAWERS_FIXED[key]) return true;
-  if (PEEK_DRAWERS_FORGET[key]) return false;
+  if (PEEK_DRAWERS_FORGET[key]) return peekHeldOpen === key;
   const v = peekDrawerState()[key];
   return typeof v === "boolean" ? v : !!PEEK_DRAWERS_OPEN[key];
 }
@@ -655,10 +657,12 @@ async function peekFill(box, id, still) {
   }
   if (!still()) return;
   box.classList.remove("loading");
+  peekHeldOpen = box.querySelector('.peek-drawer[data-key="chatter"].open') ? "chatter" : "";
   box.innerHTML = peekBody(peekCard(id) || t, v);
   peekDocs(box, id);
   peekChatter(box, id, chat);
   peekDrawers(box);
+  peekHeldOpen = "";
   peekActions(box, id);
   peekRecap(box);
 }

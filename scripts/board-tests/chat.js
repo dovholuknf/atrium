@@ -38,6 +38,9 @@ async function chatterSection(browser, base) {
     const page = all.slice(at, at + 20);
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ says: page, more: at + 20 < all.length }) });
   });
+  let releaseUsage;
+  const usageGate = new Promise(r => { releaseUsage = r; });
+  await ctx.route("**/v1/tasks/*/usage*", async route => { await usageGate; await route.fallback(); });
   await dp.addInitScript(() => {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   });
@@ -48,7 +51,7 @@ async function chatterSection(browser, base) {
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
     await dp.evaluate(() => {
       for (let n = document.getElementById("t-expando"); n; n = n.parentElement) n.hidden = false;
-      lastTasks = lastTasks.concat([{ id: "me-1", title: "me", wire_name: "me", status: "running" },
+      lastTasks = lastTasks.concat([{ id: "me-1", title: "me", wire_name: "me", status: "running", resume_id: "r-me-1" },
         { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
       document.getElementById("t-drawer").classList.add("open");
       termDrawerOpen = true;
@@ -57,6 +60,8 @@ async function chatterSection(browser, base) {
     // The chatter is a drawer, folded until it is opened (the same one the peek has).
     await dp.waitForSelector('#t-drawer-body .peek-drawer[data-key="chatter"]:not([hidden]) > .peek-dh', { timeout: slow(8000) });
     await dp.click('#t-drawer-body .peek-drawer[data-key="chatter"] > .peek-dh');
+    releaseUsage();
+    await dp.waitForSelector("#t-drawer-body:not(.loading)", { timeout: slow(8000) });
     await dp.waitForSelector("#t-drawer-body .chat-row", { timeout: slow(8000) });
     await dp.evaluate(() => termDrawerFit());
     let rows = await dp.$$eval("#t-drawer-body .chat-row", r => r.length);
