@@ -145,7 +145,8 @@ function paintStackShow() {
         data-tip="${esc(c.label)}: click to add or remove"
         >${esc(c.label)} <i class="pillcount"></i></button>`).join("") +
     fdChip("subagents", stackSubsOn(), "toggleStackSubs()",
-      "a subagent is not a row of its own: its parent's row says how many it has. one that needs you still shows", "subagents");
+      "a subagent is not a row of its own: its parent's row says how many it has. one that needs you still shows", "subagents") +
+    emptyGroupsChip("stack");
 }
 
 // Activity by default. This is the "what has been going on" view, and the

@@ -74,7 +74,7 @@
       "units": [
         "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "minion*", "boardMinionHidden", "stackMinionHidden", "laneFold",
         "nest*", "untaggedSort", "stackPinnedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors",
-        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "revealChip", "topNav", "trayHead", "trayToast",
+        "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "revealChip", "topNav", "trayHead", "trayToast", "emptyGroups",
         "termsDrawerPush", "linkBoard", "linkReuse", "arrivedOnce", "controlsCompact", "closeOneDialog"
       ],
       "sources": [

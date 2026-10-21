@@ -1703,8 +1703,33 @@ function byRank(a, b) {
   return (a.rank || 0) - (b.rank || 0) || cardTieBreak(a, b);
 }
 
-// Adds the groups a grouper wants drawn whether or not a card is in them.
+// THE EMPTY GROUPS CHIP of a tab's SHOW row. On is today's behavior and the default, so what is stored is the off. Kept
+// per tab like the other chips, so hiding them on the stack leaves the terminals as they were.
+const EMPTY_GROUPS_KEY = "atrium.emptygroups";
+const EMPTY_GROUPS_TIP = "on: groups with no cards are listed, with a 0. off: they are left out, and one comes back when a card lands in it";
+function emptyGroupsOn(view) {
+  try { return localStorage.getItem(EMPTY_GROUPS_KEY + "." + view) !== "off"; } catch (e) { return true; }
+}
+function emptyGroupsChip(view) {
+  return fdChip("empty groups", emptyGroupsOn(view), "toggleEmptyGroups('" + view + "')", EMPTY_GROUPS_TIP, "emptygroups");
+}
+function toggleEmptyGroups(view) {
+  try {
+    if (emptyGroupsOn(view)) localStorage.setItem(EMPTY_GROUPS_KEY + "." + view, "off");
+    else localStorage.removeItem(EMPTY_GROUPS_KEY + "." + view);
+  } catch (e) {}
+  repaintEmptyGroups(view);
+}
+function repaintEmptyGroups(view) {
+  const paint = { stack: "paintStackShow", board: "paintBoardShow", terms: "paintTermShow" }[view];
+  if (paint && typeof window[paint] === "function") window[paint]();
+  if (FD_TABS[view]) FD_TABS[view].repaint();
+}
+prefLive([EMPTY_GROUPS_KEY + ".*"], k => repaintEmptyGroups(String(k || "").slice(EMPTY_GROUPS_KEY.length + 1)));
+
+// Adds the groups a grouper wants drawn whether or not a card is in them, unless the tab's chip says to leave them out.
 function seedGroups(byName, g) {
+  if (g && g.view && !emptyGroupsOn(g.view)) return;
   for (const name of (g && g.always) || []) {
     if (!byName.has(name)) byName.set(name, []);
   }
@@ -2108,7 +2133,8 @@ function paintBoardShow() {
   setHTML(el, BOARD_COLUMNS.map(c => fdChip(c.label, on.has(c.id), `toggleBoardShow('${esc(c.id)}')`,
     c.label + ": click to show or hide this column", c.id)).join("") +
     fdChip("subagents", boardSubsOn(), "toggleBoardSubs()",
-      "a subagent is not a card of its own: its parent's card says how many it has. one that needs you still shows", "subagents"));
+      "a subagent is not a card of its own: its parent's card says how many it has. one that needs you still shows", "subagents") +
+    emptyGroupsChip("board"));
   boardPillCounts();
 }
 // The chips' counts, written onto the pills by `paintBoardCounts` as each render learns them and kept here so a repaint

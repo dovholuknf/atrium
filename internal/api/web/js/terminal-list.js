@@ -180,7 +180,8 @@ function paintTermShow() {
     fdChip("subagents", on.has("subagents"), "toggleTermShow('subagents')",
       "off: a parent's subagents are folded under it, with a count. a count and a ! chip say what needs you. on: parents start open", "subagents") +
     fdChip("minions", on.has("minions"), "toggleTermShow('minions')",
-      "off: the throwaway sessions an item launched are left out of every list, here, on the board and in the stack. one that needs you still shows. on: they are listed", "minions");
+      "off: the throwaway sessions an item launched are left out of every list, here, on the board and in the stack. one that needs you still shows. on: they are listed", "minions") +
+    emptyGroupsChip("terms");
 }
 prefLive([TERM_SHOW_KEY + "*"], () => { paintTermShow(); renderTermList(); repaintMinionViews(); });
 

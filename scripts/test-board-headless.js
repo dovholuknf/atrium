@@ -22916,6 +22916,76 @@ async function trayHeadSection(browser, base) {
   if (!bad) console.log("trayHead ok");
 }
 
+async function emptyGroupsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    const shots = process.env.EG_SHOTS;
+    if (shots) {
+      await p.waitForFunction(() => lastTasks.length > 0, null, { timeout: slow(15000) });
+      const tabs = [["stack", "paintStackShow"], ["board", "paintBoardShow"], ["terms", "paintTermShow"]];
+      for (const w of (process.env.EG_WIDTHS || "1400,390").split(",").map(Number)) {
+        await p.setViewportSize({ width: w, height: 800 });
+        for (const [tab, paint] of tabs) {
+          for (const state of ["on", "off"]) {
+            await p.evaluate(([tab, paint, state, noOpen]) => {
+              switchView(tab);
+              if (typeof emptyGroupsOn === "function" && emptyGroupsOn(tab) !== (state === "on")) toggleEmptyGroups(tab);
+              window[paint]();
+              if (!noOpen) fdSet(tab, true);
+            }, [tab, paint, state, !!process.env.EG_NOOPEN]);
+            await p.waitForTimeout(300);
+            await p.screenshot({ path: shots + "-" + tab + "-" + state + "-" + w + ".png", clip: { x: 0, y: 0, width: w, height: 330 } });
+          }
+        }
+      }
+      return;
+    }
+    await p.waitForFunction(() => typeof seedGroups === "function" && typeof emptyGroupsChip === "function" && lastTasks.length > 0, null, { timeout: slow(15000) });
+    const names = view => p.evaluate(view => {
+      const m = new Map([["live", [{}]]]);
+      seedGroups(m, { view, always: ["atrium:interview", "pull-request"] });
+      return [...m.keys()].join(",");
+    }, view);
+    const full = "live,atrium:interview,pull-request";
+    for (const v of ["stack", "board", "terms"]) {
+      if ((await names(v)) !== full) fail("emptyGroups: " + v + " does not list its empty groups by default: " + await names(v));
+    }
+    await p.evaluate(() => { switchView("stack"); paintStackShow(); });
+    const chip = id => p.evaluate(id => {
+      const b = document.querySelector("#" + id + " button[data-v=emptygroups]");
+      return b ? b.classList.contains("on") : null;
+    }, id);
+    if ((await chip("stack-seg")) !== true) fail("emptyGroups: the stack SHOW row has no chip, or it is off by default");
+    await p.evaluate(() => { switchView("board"); paintBoardShow(); });
+    if ((await chip("board-seg")) !== true) fail("emptyGroups: the board SHOW row has no chip, or it is off by default");
+    await p.evaluate(() => { switchView("terms"); paintTermShow(); });
+    if ((await chip("term-show")) !== true) fail("emptyGroups: the terminals SHOW row has no chip, or it is off by default");
+
+    await p.evaluate(() => document.querySelector("#term-show button[data-v=emptygroups]").click());
+    if ((await chip("term-show")) !== false) fail("emptyGroups: the chip did not go off when clicked");
+    if ((await names("terms")) !== "live") fail("emptyGroups: off still lists empty groups: " + await names("terms"));
+    if ((await names("stack")) !== full || (await names("board")) !== full) fail("emptyGroups: the setting leaked into another tab");
+
+    const landed = await p.evaluate(() => {
+      const m = new Map([["live", [{}]], ["pull-request", [{}]]]);
+      seedGroups(m, { view: "terms", always: ["atrium:interview", "pull-request"] });
+      return [...m.keys()].join(",");
+    });
+    if (landed !== "live,pull-request") fail("emptyGroups: a group with a card left when off, or an empty one stayed: " + landed);
+
+    await p.evaluate(() => document.querySelector("#term-show button[data-v=emptygroups]").click());
+    if ((await names("terms")) !== full) fail("emptyGroups: on again did not bring the empty groups back: " + await names("terms"));
+    if (errors.length) fail("emptyGroups: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("emptyGroups ok");
+}
+
 async function trayToastSection(browser, base) {
   const shots = process.env.BACK_SHOTS;
   if (shots) require("fs").mkdirSync(require("path").dirname(shots + "-x"), { recursive: true });
@@ -24361,7 +24431,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, trayHead: trayHeadSection,
+      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection, ciGrowl: ciGrowlSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection, popoutRaise: popoutRaiseSection,
@@ -24374,7 +24444,7 @@ async function main() {
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -26391,6 +26461,7 @@ async function main() {
     await unit("mChangeReq", () => mChangeReqSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("trayToast", () => trayToastSection(browser, base));
+    await unit("emptyGroups", () => emptyGroupsSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileMenu", () => fileMenuSection(browser, base));
     await unit("markdownTab", () => markdownTabSection(browser, base));
@@ -26473,6 +26544,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("mChangesReal", () => mChangesRealSection(browser));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("trayToast", () => trayToastSection(browser, base));
+    await unit("emptyGroups", () => emptyGroupsSection(browser, base));
     await unit("mHomeLive", () => mHomeLiveSection(browser));
     await unit("soundPhone", () => soundPhoneSection(browser, base));
     await unit("boardDocs", () => boardDocsSection(browser, base));
