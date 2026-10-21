@@ -6406,18 +6406,20 @@ async function cardRowChipsSection(browser, base) {
         const chips = [...card.querySelectorAll(".card-line > .chips > .chip")];
         const over = [];
         for (const c of chips) for (const t of titles) {
-          const a = r(c), b = r(t);
+          const box = r(c.parentElement), cr = r(c), a = { left: Math.max(cr.left, box.left), right: Math.min(cr.right, box.right), top: cr.top, bottom: cr.bottom }, b = r(t);
           if (a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5)
             over.push(c.className + " over " + t.className);
         }
         const outside = chips.filter(c => r(c).left < k.left - 0.5 || r(c).right > k.right + 0.5).map(c => c.className);
         const name = card.querySelector(".tname");
-        return { id: card.dataset.id, n: chips.length, titles: titles.length, over, outside, nameW: r(name).width };
+        const ti = r(card.querySelector(".title")), cs = getComputedStyle(card), inner = k.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        return { id: card.dataset.id, share: ti.width / inner, n: chips.length, titles: titles.length, over, outside, nameW: r(name).width };
       }));
       for (const c of m) {
         if (!c.titles || !c.n) fail("cardRowChips " + w + "px " + c.id + ": nothing to measure " + JSON.stringify(c));
         if (c.over.length) fail("cardRowChips " + w + "px " + c.id + ": " + c.over.join(", "));
         if (c.outside.length) fail("cardRowChips " + w + "px " + c.id + ": chips outside the row: " + c.outside.join(", "));
+        if (w === 400 && c.share < 0.5) fail("cardRowChips " + w + "px " + c.id + ": the title keeps " + Math.round(c.share * 100) + "% of the row");
         if (c.nameW < 40) fail("cardRowChips " + w + "px " + c.id + ": the name has no room: " + c.nameW);
       }
       if (shots) {

@@ -286,8 +286,8 @@
      way instead, which it can afford to, since it is already truncating. */
   /* THE CHIPS TAKE THEIR OWN WIDTH and the title ellipsizes before them. They used to shrink with the title while no
      chip inside could, so the box got narrower than what it held and, justified to the end, the overflow ran out the
-     left edge and drew over the name. The cap keeps a floor for the name, and the cycle chip below is what gives. */
-  .term-list .card .card-line > .chips { flex: 0 0 auto; max-width: calc(100% - 6.5rem); min-width: 0; overflow: visible; flex-wrap: nowrap; }
+     left edge and drew over the name. The name wins: the chips take at most 45% of the row and clip inside it, the cycle chip giving first. */
+  .term-list .card .card-line > .chips { flex: 0 0 auto; max-width: 45%; min-width: 0; overflow: hidden; flex-wrap: nowrap; }
   /* The room chip never shrinks, it tells two rooms apart. The title gives way first, then the cycle chip. */
   .term-list .card .card-line > .chips .chip.room { flex: none; overflow: visible; text-overflow: clip; }
   .term-list .card .card-line > .chips .chip.cycle { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
