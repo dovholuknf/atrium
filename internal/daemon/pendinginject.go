@@ -199,6 +199,10 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		pi.by[taskID] = ht
 	}
 	ht.entries = append(ht.entries, m)
+	// An attempt that already took its snapshot would widen the backoff past this entry.
+	if cur := pi.running[taskID]; cur != nil {
+		cur.again = true
+	}
 	oldest := ht.entries[0]
 	if first {
 		// A keystroke on this terminal re-arms the backoff to the front, so an
@@ -418,7 +422,8 @@ func (pi *pendingInjector) try(taskID string) {
 	// A card in a new-context cycle holds everything until its wake prompt has
 	// been typed. Reschedule quietly at the same interval: releaseHeld re-arms
 	// the retry to the front when the cycle ends.
-	if pi.d.holdingMessages(taskID) {
+	holding := pi.d.holdingMessages(taskID)
+	if holding {
 		if !pi.d.frozenForMove(taskID) {
 			kept := entries[:0:0]
 			for _, e := range entries {
@@ -432,7 +437,8 @@ func (pi *pendingInjector) try(taskID string) {
 	if pi.betweenHoldChecks != nil {
 		pi.betweenHoldChecks()
 	}
-	if pi.d.holdingMessages(taskID) && len(entries) == 0 || pi.d.frozenForMove(taskID) {
+	// One read of the hold: a second that saw it lift would drain the emptied list and widen the backoff past the release.
+	if holding && len(entries) == 0 || pi.d.frozenForMove(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
 			ht.timer.Reset(pi.d.hk.backoffSteps[step])
