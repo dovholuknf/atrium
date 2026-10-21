@@ -4,6 +4,7 @@
 //   ROOT=<checkout>  the tree whose board is drawn (default: this one). Point it at an older checkout for a "before".
 //   OUT=<dir>        where the PNGs go (default docs/changes)
 //   NAME=<prefix>    PNG name prefix (default backlog-priority-after)
+//   WIDTH, HEIGHT    viewport (default 1200x560). DRAWER=1 opens the view bar drawer first
 //   STEPS=1          also shoot the page sorted by a header and filtered by a chip (needs the new page)
 //
 // It serves the concatenated board from board-source.js, as scripts/check-new-card-row.js does. The hub answers from
@@ -75,7 +76,7 @@ const server = http.createServer((req, res) => {
   fs.mkdirSync(OUT, { recursive: true });
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1200, height: 560 } });
+  const page = await browser.newPage({ viewport: { width: +(process.env.WIDTH||1200), height: +(process.env.HEIGHT||560) } });
   const errors = [];
   page.on("pageerror", e => errors.push(String(e)));
   await page.goto("http://127.0.0.1:" + server.address().port + "/");
@@ -85,6 +86,7 @@ const server = http.createServer((req, res) => {
   const ids = () => page.$$eval("#backlog-items .aud-row[data-id]", rows => rows.map(r => r.dataset.id));
   await page.waitForTimeout(300);
   console.log("order", (await ids()).join(" "));
+  if (process.env.DRAWER) { await page.evaluate(() => fdSet("backlog", true)); await page.waitForTimeout(300); }
   if (process.env.STEPS) {
     await page.screenshot({ path: path.join(OUT, NAME + ".png") });
     await page.click('button[data-sort="dept"]');
