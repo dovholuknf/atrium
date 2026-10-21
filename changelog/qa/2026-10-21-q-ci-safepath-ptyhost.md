@@ -1,0 +1,1 @@
+A denied ancestor of a card root is now walked past when the temp dir resolves to another spelling (macOS /private, Windows 8.3 names), and the pty host start test no longer lets the host idle out before a slow start finishes (q-ci-safepath-ptyhost).
