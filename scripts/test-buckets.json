@@ -30,7 +30,7 @@
         "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "coldHandoff", "keepMemory",
         "idle*", "looksIdle", "joined*", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
         "bridge", "collapsedBridge", "groupBridge", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
-        "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks"
+        "newContextSse", "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks"
       ],
       "sources": [
         "internal/api/web/js/term*.js",

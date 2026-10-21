@@ -16,6 +16,26 @@ function composeNoteTyped(d) {
   if (typeof d === "string" && d.length && !/[\x00-\x1f\x7f]/.test(d)) composeLast = { d, at: Date.now() };
 }
 
+// What the board has typed into the card's prompt since the last Enter, so a cycle that starts under it can keep the line.
+let composeLine = "";
+// The board sees only what it sent, so an arrow key or a mouse report leaves this alone and a part-written line is a guess.
+function composeLineFeed(d, pasted) {
+  if (typeof d !== "string" || !d.length) return;
+  if (pasted) { composeLine += d; return; }
+  if (d === "\x7f") { composeLine = composeLine.slice(0, -1); return; }
+  if (d === "\r" || d === "\x03" || d === "\x15") { composeLine = ""; return; }
+  if (!/[\x00-\x1f\x7f]/.test(d)) composeLine += d;
+}
+
+// When each card's whole row last arrived by the stream, so a list read that began before it cannot take the hold away.
+const composeSeenAt = new Map();
+// The open card's cycle, from a list read that began at `startedAt`. A newer stream row wins.
+function composeFromList(row, startedAt) {
+  if (!row || typeof termTask === "undefined" || !termTask) return;
+  if ((composeSeenAt.get(row.id) || 0) > startedAt) return;
+  termTask.new_context = row.new_context;
+}
+
 function composeOpen() { const b = document.getElementById("t-ctxbox"); return !!b && !b.hidden; }
 
 // The room refused typing for the card on screen. A shell terminal is never held, so this is for a card only.
@@ -118,9 +138,17 @@ function composeBar(task) {
 // terminal's input line unsubmitted, the same as composeFree after its DELETE.
 function composeFollow(row) {
   if (!row || !row.id || typeof termTask === "undefined" || !termTask || !sameCard(row.id, termTask.id)) return;
+  const was = composeHeld(termTask.new_context);
+  composeSeenAt.set(row.id, Date.now());
   termTask.new_context = row.new_context;
   composeBar(termTask);
   const n = row.new_context;
+  if (!was && composeHeld(n) && composeLine && termKind !== "shell") {
+    const seed = composeLine;
+    composeLine = "";
+    composeRefused();
+    document.getElementById("t-ctxbox-in").value = seed;
+  }
   if ((n && n.step !== "failed") || !composeOpen()) return;
   const ta = document.getElementById("t-ctxbox-in");
   const text = ta ? ta.value : "";

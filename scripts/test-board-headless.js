@@ -24416,6 +24416,63 @@ async function notifyTrayFillSection(browser, base) {
   }
 }
 
+// newContextSse: a new context that arrives on the task stream with no poll holds typing at once, keeps what the human had
+// on the line in the compose box, and a list read that began before the stream row cannot lift the hold.
+async function newContextSseSection(browser, base) {
+  const shots = process.env.NCSSE_SHOTS || "";
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof composeFollow === "function" && typeof onTaskEvent === "function" && typeof sendInput === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const frames = [];
+      window.send = m => { frames.push(m.d); };
+      termTask = { id: "c-sse", new_context: null };
+      termKind = "runner";
+      sendInput("i thought rooms w");
+      const before = frames.length;
+      const readFrom = Date.now() - 50;
+      onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "running",
+        new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } }) });
+      const held = { sign: !document.getElementById("t-nodev").hidden, box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
+      sendInput("more");
+      const dropped = frames.length === before;
+      (typeof composeFromList === "function" ? composeFromList : r => { termTask.new_context = r.new_context; })({ id: "c-sse", new_context: null }, readFrom);
+      const stillHeld = composeHeld(termTask.new_context);
+      const typed = [];
+      const realSend = window.sendInput;
+      window.sendInput = t => { typed.push(t); };
+      onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "idle" }) });
+      window.sendInput = realSend;
+      return { before, held, dropped, stillHeld, typed, after: { box: composeOpen(), sign: !document.getElementById("t-nodev").hidden } };
+    });
+    if (shots) {
+      await p.evaluate(() => {
+        termTask = { id: "c-sse", new_context: null }; composeClose();
+        composeLine = "i thought rooms w";
+        composeFollow({ id: "c-sse", row: 1, new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
+        for (let e = document.getElementById("t-ctxbox"); e && e !== document.body; e = e.parentElement) {
+          e.hidden = e.id === "t-ctxbox" ? e.hidden : false;
+          if (getComputedStyle(e).display === "none") e.style.display = "block";
+        }
+        document.getElementById("t-ctxbox").scrollIntoView({ block: "center" });
+      });
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, process.env.NCSSE_NAME || "after.png") });
+    }
+    if (!got.held.sign || !got.held.box) fail("newContextSse: the stream row did not engage the gate: " + JSON.stringify(got.held));
+    if (got.held.text !== "i thought rooms w") fail("newContextSse: the line the human had was not kept: " + JSON.stringify(got.held));
+    if (!got.dropped) fail("newContextSse: a key reached the terminal under the hold");
+    if (!got.stillHeld) fail("newContextSse: a list read from before the stream row lifted the hold");
+    if (JSON.stringify(got.typed) !== JSON.stringify(["i thought rooms w"])) fail("newContextSse: the line was not handed back after the cycle: " + JSON.stringify(got.typed));
+    if (got.after.box || got.after.sign) fail("newContextSse: the hold stayed up after the cycle: " + JSON.stringify(got.after));
+    if (errors.length) fail("newContextSse: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
@@ -26540,6 +26597,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termsDrawerPush", () => termsDrawerPushSection(browser, base));
     await unit("cardViewBarInline", () => cardViewBarInlineSection(browser, base));
     await unit("cardLabelAlias", () => cardLabelAliasSection(browser, base));
+    await unit("newContextSse", () => newContextSseSection(browser, base));
     await unit("kidCounts", bu("kidCounts"));
     await unit("termHeaderSize", () => termHeaderSizeSection(browser, base));
     await unit("popupFit", () => popupFitSection(browser, base));

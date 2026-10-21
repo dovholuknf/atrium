@@ -1864,6 +1864,7 @@ async function renderTermList() {
   // finding a second place to call it from.
   applyTermList();
   let all = [];
+  const readFrom = Date.now();
   try { all = await boardCards(); } catch (e) { return; }
   // The header's count, from the list that just loaded. The terminals view is
   // the one you are most likely to be on while something is working, and it is
@@ -1873,8 +1874,8 @@ async function renderTermList() {
   // ended, left the bar saying "1/3: waiting for atrium ready" until the next switch.
   const open = termTask && all.find(t => t.id === termTask.id);
   if (open) {
-    termTask.new_context = open.new_context;
-    if (typeof composeBar === "function") composeBar(open);
+    if (typeof composeFromList === "function") composeFromList(open, readFrom); else termTask.new_context = open.new_context;
+    if (typeof composeBar === "function") composeBar(termTask);
   }
   // AND THE BOARD'S COPY OF THE LIST. `renderBoard` and `renderStack` both set
   // this and only one of the three runs per poll, so on the terminals view it

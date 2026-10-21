@@ -49,7 +49,8 @@ func (d *Daemon) cycleLimit(t *store.Task) int64 {
 
 // cycleCheck starts a cycle on a card past its limit, or pokes the one already on it. A failed chip holds the
 // trigger off until it is dismissed, rerun or the clear is proven, so a broken cycle is not started again on
-// every tick.
+// every tick. A part-written line or a key in the last few seconds holds the start off, the same gate a peer's message
+// waits on, and the next tick asks again.
 func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	if cur := d.nctx.get(t.ID); cur != nil {
 		if cur.step != NewContextFailed {
@@ -62,6 +63,9 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	}
 	limit := d.cycleLimit(t)
 	if limit <= 0 || tokens < limit {
+		return
+	}
+	if run := d.sup.get(t.ID); run != nil && !run.peerGateOpen() {
 		return
 	}
 	d.startCycle(t, tokens, limit)

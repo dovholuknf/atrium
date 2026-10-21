@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -402,4 +403,32 @@ func TestAFixtureCardCycles(t *testing.T) {
 	}
 	watch(t, d)
 	until(t, "the limit prompt on a fixture card", func() bool { return prompts(f) == 1 })
+}
+
+func TestTheCycleWaitsForTheHumansLineAndQuiet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := cycleCard(t, d, 250_000)
+	id := task.ID
+	run := d.sup.get(id)
+	run.noteOperatorTyped([]byte("i thought rooms w"))
+
+	statuslines(d, id, 10)
+	if d.newContextFor(id) != nil || prompts(f) != 0 {
+		t.Fatalf("the cycle started over a part-written line: %v", d.newContextFor(id))
+	}
+
+	run.noteOperatorTyped(bytes.Repeat([]byte{0x7f}, 17))
+	statuslines(d, id, 3)
+	if d.newContextFor(id) != nil {
+		t.Fatalf("the cycle started a moment after the last key: %v", d.newContextFor(id))
+	}
+
+	until(t, "the cycle once the line is empty and quiet", func() bool {
+		d.cycleOnStatusline(id)
+		return d.newContextFor(id) != nil
+	})
 }
