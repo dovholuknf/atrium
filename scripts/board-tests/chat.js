@@ -718,7 +718,7 @@ async function chatReviewSection(browser, base) {
       await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, name) });
     };
     await chatPick(p, "rv-b");
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: lets the picked card paint before the screenshot only
     await shot("before-chat.png");
     if (!await p.$eval("#chat-review", b => b.hidden)) fail(tag + "the review button shows for a card with no review tag");
     await chatPick(p, "rv-a");

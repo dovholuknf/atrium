@@ -375,7 +375,7 @@ func waitFor(t *testing.T, ok func() bool) {
 		if ok() {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: poll under the 10 s deadline
 	}
 	t.Fatal("timed out waiting")
 }
