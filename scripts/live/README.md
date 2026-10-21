@@ -43,7 +43,7 @@ After you log in again:
 pwsh -File C:\Users\claude\.atrium2\scripts\start-atrium.ps1
 ```
 
-It starts the hub, then claude-sg4 (sg4-control only with -Control -IKnowItKillsMyShell), and leaves alone any of them that is already running. Then open
+It starts the hub, then claude-sg4 (sg4-control too unless -NoControl), and leaves alone any of them that is already running. Then open
 http://127.0.0.1:7778 and resume the cards you want back. The orchestrator is on sg4-control.
 
 Both scripts take `-WhatIf`, which says what they would do and does nothing.
@@ -52,7 +52,7 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 
 | Script | What it does |
 | --- | --- |
-| `start-atrium.ps1` | Hub, claude-sg4, and sg4-control only with both `-Control` and `-IKnowItKillsMyShell`. |
+| `start-atrium.ps1` | Hub, claude-sg4 and sg4-control, which exits 1 if sg4-control does not answer on 7791. `-NoControl` skips it. |
 | `stop-atrium.ps1` | claude-sg4, hub. sg4-control too, first, only with both `-Control` and `-IKnowItKillsMyShell`. |
 | `start-atrium-hub.ps1` | The hub alone. |
 | `start-atrium-room.ps1` | The claude-sg4 room alone, when the hub is up and the room is not. |

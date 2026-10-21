@@ -92,10 +92,18 @@ foreach ($rooms in 'hub', 'm1mini', 'sg3', 'sgg', 'sg3,m1mini', 'm1mini,hub') {
   $r = Run 'atrium-deploy.ps1' @('-NoBuild', '-Rooms', $rooms) $roomShell
   Check "atrium-deploy -Rooms $rooms runs under a room, nothing local to stop" ($r.Out -notmatch 'not under atrium')
 }
-foreach ($s in 'atrium-deploy.ps1', 'stop-atrium.ps1', 'start-atrium.ps1') {
+foreach ($s in 'atrium-deploy.ps1', 'stop-atrium.ps1') {
   $r = Run $s @('-Control') '[]'
   Check "$s -Control alone refuses" ($r.Code -eq 1 -and $r.Out -match 'IKnowItKillsMyShell')
 }
+$r = Run 'start-atrium.ps1' @() '[]'
+Check 'start-atrium starts sg4-control by default' ($r.Out -match 'START-CONTROL.*WHATIF: start sg4-control')
+$r = Run 'start-atrium.ps1' @('-NoControl') '[]'
+Check 'start-atrium -NoControl skips sg4-control' ($r.Out -notmatch 'START-CONTROL')
+$r = Run 'start-atrium.ps1' @('-Control') '[]'
+Check 'start-atrium -Control alone is not refused' ($r.Out -notmatch 'refusing')
+$ctl = Get-Content (Join-Path $PSScriptRoot 'start-atrium-control.ps1') -Raw
+Check 'start-atrium-control exits 1 when it does not answer' ($ctl -match 'did not answer[\s\S]*exit 1')
 
 
 # --- the job object: a parent that has exited breaks the ancestor walk, but the job still holds the process ---

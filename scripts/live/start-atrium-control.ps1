@@ -62,5 +62,9 @@ if (-not $WhatIf) {
   $up = $false
   for ($i = 0; $i -lt 30 -and -not $up; $i++) { $up = Test-Up $CtlHealth; if (-not $up) { Start-Sleep 1 } }
   if ($up) { Say "sg4-control up at http://127.0.0.1:7791" }
-  else { Say 'sg4-control did not answer in 30s. last lines of room.err:'; Get-Content (Join-Path $CtlDir 'room.err') -Tail 20 }
+  else {
+    Say 'sg4-control did not answer in 30s. last lines of room.err:'
+    Get-Content (Join-Path $CtlDir 'room.err') -Tail 20
+    exit 1
+  }
 }
