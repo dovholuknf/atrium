@@ -22,6 +22,7 @@ import (
 
 // PermissionRequest is the JSON shape POST'd by the claude PreToolUse hook.
 type PermissionRequest struct {
+	Runner  string `json:"runner,omitempty"`
 	Agent   string `json:"agent"`
 	Command string `json:"command"`
 	// NameSource is "dir" when Agent was made up from the directory, so
@@ -78,6 +79,7 @@ type PermissionResponse struct {
 // AutoDecision is the permission chain's answer to a request that never
 // reaches a human: a replay, a message, a paused card, a rule, auto mode.
 type AutoDecision struct {
+	Command  string
 	Decision string
 	Reason   string
 }
@@ -138,9 +140,7 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 		at:      time.Now(),
 		reply:   make(chan permissionDecision, 1),
 	}
-	// The chain answers without ever reaching the human when it can. This is
-	// the whole point of deciding something "forever": the request is recorded
-	// for the history, then answered, and no card or banner appears.
+	// Automatic answers still need durable history without showing a human prompt.
 	storeID, auto, err := d.onPermRequest(in)
 	if err != nil {
 		log.Printf("[atrium] record permission from %s: %v", in.Agent, err)
@@ -148,7 +148,7 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 	}
 	if auto != nil {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(PermissionResponse{Decision: auto.Decision, Reason: auto.Reason})
+		_ = json.NewEncoder(w).Encode(PermissionResponse{Decision: auto.Decision, Reason: auto.Reason, Command: auto.Command})
 		return
 	}
 	pp.storeID = storeID
@@ -159,8 +159,7 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 	pw.pending[pp.id] = pp
 	pw.mu.Unlock()
 
-	// Block until a human decides or the client gives up. No internal timeout:
-	// the hook side has its own deadline if it cares.
+	// Only the caller owns the deadline because a human may take minutes.
 	w.Header().Set("Content-Type", "application/json")
 	select {
 	case dec := <-pp.reply:
@@ -168,8 +167,7 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 			Decision: dec.Decision, Reason: dec.Reason, Command: dec.Command,
 		})
 	case <-r.Context().Done():
-		// Caller disconnected. Clean up so the entry does not linger as a
-		// phantom, which is what lets the orphan reaper see it has gone.
+		// Removing a disconnected caller lets the orphan reaper see that it has gone.
 		pw.mu.Lock()
 		delete(pw.pending, pp.id)
 		pw.mu.Unlock()

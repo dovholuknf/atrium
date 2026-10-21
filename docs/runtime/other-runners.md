@@ -74,25 +74,12 @@ block twice in a row is doing its job on codex without a line changing.
 So `atrium turn --event end` is wired for codex and carries the same warning it carries for claude. It is
 offered by name and "install all" does not sweep it in.
 
-### The permission gate works too, on `PreToolUse`
+### Native permissions
 
-Codex reads the same output shape claude does. A probe hook that printed
-
-```json
-{"hookSpecificOutput":{"hookEventName":"PreToolUse",
-  "permissionDecision":"deny","permissionDecisionReason":"atrium denied this"}}
-```
-
-got `Command blocked by PreToolUse hook: atrium denied this` and the call did not run.
-
-Atrium's gate is `atrium-perm-hook.ps1` in the operator's own dotfiles, not something atrium writes, so nothing
-here installs it. What this establishes is that pointing that same script at codex's `PreToolUse` gates codex
-sessions with no change to the script. The board's own list still will not write it, for the reason it never
-writes it for claude: it decides what runs.
-
-Codex also has a `PermissionRequest` event, which is the narrower gate `docs/rnd/hook-coverage-spike.md` recommends
-moving to. It is not offered, because atrium does nothing with it yet and a switch that reports success and
-changes nothing is worse than no switch.
+The original 0.153.2 probe verified a PreToolUse denial. Atrium now installs the narrower `PermissionRequest`
+hook and translates its distinct native decision format. See [Codex parity](codex-parity.md) for the 0.159.0
+investigation, installation commands, remaining gaps and test coverage. Native permission requests do not run
+for already-permitted commands, so this does not gate every tool call.
 
 ### The quoting, which is the one place codex is not claude
 
@@ -145,7 +132,6 @@ is the operator's to write.
 ### What is still not wired for codex, and why
 
 - **`PostCompact`** and **`Interrupt`**. No atrium subcommand means either one.
-- **`PermissionRequest`**. See above.
 - **`turn_id`**. Recorded here, read by nothing.
 - **`PreCompact`** is wired and has not been seen to fire. Filling a context to make it happen costs more than
   the fact is worth. The subcommand behind it reads `trigger` and records the moment either way.

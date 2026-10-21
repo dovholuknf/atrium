@@ -76,29 +76,7 @@ var Claude = Target{
 	Wanted: WantedHooks,
 }
 
-// Codex, in $CODEX_HOME/hooks.json.
-//
-// The events are Codex's own names and they line up with Claude Code's almost
-// exactly, which is why the atrium subcommands behind them are unchanged: a
-// SessionStart is a session starting whoever asked.
-//
-// Codex fires twelve: PreCompact, PostCompact, SessionStart, SessionEnd,
-// SubagentStart, SubagentStop, PreToolUse, PostToolUse, UserPromptSubmit,
-// Stop, PermissionRequest and Interrupt. Four are not offered here.
-//
-// `PermissionRequest` is the gate, and atrium's gate is a script in the
-// operator's own dotfiles rather than anything atrium writes. It works on
-// codex unchanged, on `PreToolUse`, which is where it already sits: codex
-// reads the same `hookSpecificOutput.permissionDecision` shape and blocks the
-// call. See `docs/runtime/other-runners.md`.
-//
-// `PostCompact` and `Interrupt` have no atrium subcommand behind them, and
-// offering a hook atrium does nothing with is a switch that reports success
-// and changes nothing.
-//
-// Codex has no `Notification` and no `PostToolUseFailure`, so those two lines
-// of the claude set have no codex row and the board says so rather than
-// showing eight of ten.
+// Codex, in $CODEX_HOME/hooks.json. Native approvals use their own output protocol.
 var Codex = Target{
 	ID:    "codex",
 	Label: "codex",
@@ -108,6 +86,11 @@ var Codex = Target{
 	ProgramUnquoted: true,
 	Named:           true,
 	Wanted: []HookEvent{
+		{Hook: "PermissionRequest", Event: permissionEvent, Sub: "hook", Arg: "permission",
+			Why:     "a native approval waits on the board until you answer it",
+			Timeout: gateTimeout,
+			Warn: "routes native Codex approvals through atrium. unreachable atrium falls back to " +
+				"Codex's approval prompt. command edits are denied with instructions to retry."},
 		{Hook: "SessionStart", Event: "session-start", Sub: "session", Arg: "start",
 			Why: "a card appears when a session opens, before it does anything"},
 		{Hook: "SessionEnd", Event: "session-end", Sub: "session", Arg: "end",

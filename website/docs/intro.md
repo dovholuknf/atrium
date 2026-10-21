@@ -20,7 +20,7 @@ loopback, and reaching it from somewhere else is a job for an overlay such as zr
 | Cards, live activity, history | The reporting hooks. The board writes them for claude and codex with one button. |
 | Supervised terminals in the browser | Nothing more. Launch from the board. Any runner works, including a shell. |
 | Messages to a running session | Supervised terminals, or the reporting hooks. |
-| The permission gate, rules, auto mode | A `PreToolUse` gate hook you add. See [Hooks](./hooks.md#the-permission-gate). |
+| Permission gate, rules, auto mode | The installed [permission hook](./hooks.md#the-permission-gate). |
 | One board over many machines or accounts | A room on each machine, joined to one hub. See [Rooms](./rooms.md). |
 
 ## The name

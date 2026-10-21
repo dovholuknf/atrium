@@ -1,0 +1,14 @@
+{
+  "session_id": "01a16011-d718-71c2-b604-041718a0004e",
+  "turn_id": "01a16013-26ac-70f1-beca-1f89a7e05725",
+  "transcript_path": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/codex-home/sessions/2026/10/21/rollout-2026-10-21T16-05-44-01a16011-d718-71c2-b604-041718a0004e.jsonl",
+  "cwd": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch",
+  "hook_event_name": "PermissionRequest",
+  "model": "gpt-6.1-sol",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "printf approved > ../api-approved.marker",
+    "description": "Allow Atrium API approval smoke marker?"
+  }
+}

@@ -34,7 +34,8 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium join` / `atrium leave` | Put the session you are in on the board and gate it, or take it off, with no restart. |
 | `atrium launch` | Put a directory on the board and start a runner in it. For scripts that make worktrees. |
 | `atrium open <url>` | Fill the launch dialog from an issue or pull request URL. |
-| `atrium hook install` / `atrium hook status` | Write atrium's hooks into your Claude Code settings, or say which are there. |
+| `atrium hook install [--runner codex]` | Install Claude or Codex hooks. |
+| `atrium hook status` | Inspect Claude hooks. |
 | `atrium hook`, `atrium session`, `atrium turn` | The hook entry points. Wired for you. |
 | `atrium replay [file]` | Render a captured terminal stream the way an attach would. |
 | `atrium task <who>` | One card, named by handle, alias, `name@room` or id. |

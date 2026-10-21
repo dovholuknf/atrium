@@ -21,7 +21,7 @@ What a runner gets depends on what it offers, never on a list atrium keeps of fa
 | The runner has | Atrium gives it |
 | --- | --- |
 | a terminal | a card, a supervised terminal you reach from any browser, messages typed in when your line is free |
-| hooks | a live badge, a card the moment the session starts, and the permission gate on every tool call |
+| hooks | a live badge, a card when the session starts, and a permission gate at the runner's approval points |
 | a resume id | the same conversation back after a restart, on the same card |
 | none of the above | still a card and a terminal, and whatever you type on the card |
 

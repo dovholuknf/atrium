@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: How a session reports to atrium, what the board wires for you, and the permission gate you add yourself.
+description: How a session reports to atrium and how the installed hooks route permission requests.
 ---
 
 # Hooks
@@ -18,7 +18,8 @@ missing. Atrium writes the entries into your own settings file, `~/.claude/setti
 | --- | --- |
 | `SessionStart` | A card appears when a session opens, before it does anything. |
 | `SessionEnd` | The card goes to finished when the session closes. |
-| `PreToolUse` | Which tool the session is running right now. |
+| `PreToolUse` | Tool activity, plus the installed Claude permission gate. |
+| `PermissionRequest` | Codex native approvals wait for an answer on the board. |
 | `PostToolUse`, `PostToolUseFailure` | When that tool finished, so the card stops claiming it. |
 | `UserPromptSubmit` | You answered, so the card leaves ready. |
 | `SubagentStart`, `SubagentStop` | The subagent count on the card. |
@@ -42,8 +43,21 @@ each message once. That is why "install all" leaves it out and the board asks fo
 
 ## The permission gate
 
-The gate is a `PreToolUse` hook that you add. The board does not write it, because it decides what runs on your
-machine. It posts each tool call to atrium's agent port and blocks until atrium answers.
+The installer writes Claude's gate under `PreToolUse` and Codex's under `PermissionRequest`. Both post to the
+room's agent port and wait for its permission chain. Claude's gate runs on eligible tool calls. Codex's gate
+runs only when Codex itself needs approval, so already-permitted calls do not consult Atrium rules.
+
+For Codex, run `atrium hook install --runner codex`. Add `--event turn-end` in a separate invocation to opt into
+Stop and queued-message delivery at turn end. Restart Codex and review the hook definitions with `/hooks`.
+Codex skips untrusted hooks. Keep native approvals enabled, for example with
+`codex --ask-for-approval on-request --sandbox workspace-write`.
+
+A native Codex approval cannot rewrite tool input. If you edit a command on the board, the hook denies the
+original call and tells the model to retry with the approved edit. Missing room or malformed responses leave
+Codex's own approval flow in control. There is no terminal prompt detection or answer typing.
+
+The manual script below remains a Claude PreToolUse example. Avoid installing it alongside the installed gate,
+which would ask the same question twice. Codex PermissionRequest uses a different output format.
 
 ### The contract
 

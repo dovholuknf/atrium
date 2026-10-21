@@ -930,11 +930,12 @@ func observedFor(agent string) store.Observed {
 
 func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, error) {
 	obs := observedFor(req.Agent)
-	// The hook reports the runner's own pid and working directory. The pid is
-	// what makes free liveness checks possible.
+	if req.Runner != "" {
+		obs.Runner = req.Runner
+	}
+	// The runner pid enables OS liveness checks without asking the agent.
 	obs.PID = req.PID
-	// A nested `claude` inherits the parent's name, and its own pid must not
-	// replace the parent's on the card. The request is still answered in full.
+	// A nested session inherits the name but must not replace the owning runner pid.
 	if req.PID > 0 {
 		if t, err := d.st.GetByWireName(req.Agent); err == nil && !d.ownsSession(t, req.PID) {
 			log.Printf("[atrium] permission for %s from pid %d, which is not its runner "+
@@ -948,9 +949,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	}
 	task, created, err := d.st.Register(obs)
 	if errors.Is(err, store.ErrStaleName) {
-		// A directory name only a finished card holds. A gated call must
-		// still land on a card, or the board has nowhere to ask and the hook
-		// fails open, so this falls back to matching as a told name.
+		// A stale directory name must still land on a card so the human can answer its request.
 		log.Printf("[atrium] permission from %q: name is only held by a finished card, matching it anyway", req.Agent)
 		obs.NameSource = ""
 		task, created, err = d.st.Register(obs)
@@ -962,38 +961,14 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		d.defaultAlias(task.ID, "")
 	}
 	tool, command := req.Tool, req.Command
-	// A permission request is a tool starting, so it doubles as an activity
-	// report. A gated session therefore shows live activity with no activity
-	// hook wired up, at no cost: this call is already being made.
+	// Permission requests also report activity when the separate activity hook is absent.
 	d.act.set(task.ID, ActivityTool, tool)
-	// This card has a hook that carries messages in. Written once per card.
 	if task.ToolHookSeenAt == nil {
 		if err := d.st.SawHook(task.ID, store.HookTool); err != nil {
 			return "", nil, err
 		}
 	}
-	// A `Task` call used to be counted here as a subagent starting. It is not
-	// any more, and removing it fixes two things rather than one.
-	//
-	// It DOUBLE COUNTED. `SubagentStart` is wired now and reports the same
-	// subagent through the activity path, so a gated session with both showed
-	// two for every one.
-	//
-	// It also LEAKED. Nothing decremented it: the count went up when the tool
-	// call was requested, including when the request was then refused, and
-	// only `SubagentStop` ever brings a count down. A denied Task call left a
-	// subagent on the card that had never existed and would never end.
-	//
-	// Inferring a subagent from a tool name was the right thing to do when
-	// there was no hook that said so. There is one now.
-	// The key makes a retry the same question rather than a new one. A daemon
-	// that crashed between recording a decision and answering would otherwise
-	// ask twice, and the second answer would be given against a situation that
-	// had moved on. Empty means the store treats this as distinct.
-	// The runner's own id for this attempt beats a hash of the command, which
-	// cannot tell a retry from the same command run tomorrow. When one is sent
-	// the request is deduplicated exactly and the replay window does not
-	// apply. A hook that sends only a hash keeps the window.
+	// An exact tool id distinguishes retries from later identical commands, while an empty key always asks again.
 	key := req.DedupKey
 	if id := strings.TrimSpace(req.ToolUseID); id != "" {
 		key = store.ExactKey(id)
@@ -1003,23 +978,17 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		return "", nil, err
 	}
 	if decided {
-		// Recorded, because a replay reaches an agent as a real answer and
-		// the log is what the gate is justified by. Without this a refusal
-		// arrives with nothing anywhere saying it happened, which is the one
-		// thing that log exists to prevent.
+		// A replay needs an audit event because it reaches the agent as a real answer.
 		if err := d.st.AppendEvent(task.ID, store.EventPermDecided, map[string]any{
 			"id": p.ID, "decision": p.Decision, "reason": p.Reason,
 			"by": "replay", "tool": tool, "command": command,
 		}); err != nil {
 			log.Printf("[atrium] could not record a replayed decision: %v", err)
 		}
-		return p.ID, &AutoDecision{Decision: p.Decision, Reason: p.Reason}, nil
+		return p.ID, &AutoDecision{Decision: p.Decision, Reason: p.Reason, Command: p.Command}, nil
 	}
 
-	// Anything queued for this session rides the next tool call, which is how a
-	// message reaches a session that is working. The call is refused in order
-	// to carry the text, and the banner says so, or the model reads a delivery
-	// as a judgement on its command.
+	// Queued messages precede policy and carry attribution so delivery is not mistaken for a refusal on merit.
 	msgs, merr := d.takeMessages(task.ID, "permission")
 	if merr == nil && len(msgs) > 0 {
 		reason := messageBanner(msgs, true)
@@ -1030,9 +999,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
-	// A paused card is a standing no. Putting work down has to answer for that
-	// work, or the agent asks, gets nothing, and freezes behind a card nobody
-	// is looking at any more.
+	// A paused card must answer for its work or requests would freeze behind a card nobody is watching.
 	if task.Status == store.StatusPaused {
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", shelvedReason, "paused"); err != nil {
 			return "", nil, err
@@ -1040,10 +1007,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		return p.ID, &AutoDecision{Decision: "block", Reason: shelvedReason}, nil
 	}
 
-	// A room deploy hold refuses every held card's next call, so every agent is
-	// idle with nothing in flight when the room restarts. After paused, whose own
-	// no is more specific, and before rules and auto mode, which it overrides. See
-	// roomhold.go.
+	// A deploy hold overrides rules and auto mode so held agents park before the room restarts.
 	if h := d.deployHold(); h.Holds(task.ID) {
 		reason := d.deployRefusal(h)
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, DecidedByDeployHold); err != nil {
@@ -1052,21 +1016,13 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
-	// A standing rule short-circuits the human entirely. The request is still
-	// recorded and resolved, so the history shows what ran and which rule let
-	// it through, but nothing is ever shown to be clicked.
+	// Standing rules retain durable history even when no human prompt appears.
 	rule, err := d.st.MatchRule(tool, command, task.Worktree)
 	if err != nil {
 		return "", nil, err
 	}
 	if rule != nil {
-		// DecidePermissionBy writes the audit event, carrying what answered
-		// this in `by`. A second one here would show every rule decision
-		// twice.
-		//
-		// What is recorded as the decider is the rule's pattern, and an MCP rule's
-		// pattern is always `*`, which names nothing. Its tool is what says which
-		// rule this was.
+		// A rule already writes its audit event, and MCP wildcard patterns need the tool name to identify the rule.
 		by := rule.Prefix
 		if mcprule.Is(rule.Tool) && rule.Prefix == mcprule.AnyInput {
 			by = rule.Tool
@@ -1077,27 +1033,9 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		return p.ID, &AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil
 	}
 
-	// Auto mode: stop asking, keep recording.
-	//
-	// Last, after messages, shelving and standing rules. Auto mode stops new
-	// questions; it does not discard answers already given, so a never rule and
-	// a paused card both still block. What it lets through goes to the same
-	// audit log as every other decision, marked auto, and the review reads it.
-	//
-	// Global auto is the same thing for every session at once, including ones
-	// that do not exist yet. It is recorded under its own name rather than as
-	// `auto`, because "I turned this session loose" and "I turned the whole
-	// board loose" are different answers to give six hours later.
-	//
-	// A deadline is read here rather than enforced by a timer. This is the
-	// only moment auto mode means anything, so it is the only moment worth
-	// asking the clock, and a check made here cannot be missed by a restart.
-	//
-	// A card whose deadline has passed has its flag turned off on the way
-	// through, so the badge on the board stops claiming something that stopped
-	// being true. Lazy on purpose: the state that matters is the answer this
-	// request gets, and the write is bookkeeping that follows it.
+	// Auto mode comes last so messages and prior refusals win, with expiry checked here to survive restarts.
 	at := time.Now().UTC()
+	// Lazy expiry also clears the badge so it cannot keep claiming auto mode is active.
 	if task.AutoExpired(at) {
 		if err := d.st.SetAutoApprove(task.ID, false); err != nil {
 			log.Printf("[atrium] clearing expired auto mode on %s: %v", task.ID, err)
@@ -1108,6 +1046,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			d.publishTask(task.ID)
 		}
 	}
+	// Global auto has its own decider so the audit distinguishes board-wide approval from a session choice.
 	if global := d.st.GlobalAuto(); task.AutoOn(at) || global {
 		by, reason := "auto", autoReason
 		if global && !task.AutoOn(at) {

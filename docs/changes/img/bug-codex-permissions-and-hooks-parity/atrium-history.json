@@ -1,0 +1,46 @@
+{
+  "permissions": [
+    {
+      "id": "01a16013-3119-7923-bb03-1767e6df28fa",
+      "task_id": "01a16011-dc12-745d-a92b-8c4cc0d57399",
+      "tool": "Bash",
+      "command": "printf approved > ../api-approved.marker",
+      "requested_at": "2026-10-21T20:07:12.921Z",
+      "decided_at": "2026-10-21T20:07:12.967Z",
+      "decision": "approve",
+      "reason": "board-wide auto mode: approved by the hub without asking, and recorded",
+      "dedup_key": "",
+      "decided_by": "global-auto",
+      "agent": "atrium/claude/bug-codex-permissions-and-hooks-smoke/.smoke/scratch",
+      "worktree": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch"
+    },
+    {
+      "id": "01a16012-0f07-7626-a7e0-0b4ddce490f8",
+      "task_id": "01a16011-dc12-745d-a92b-8c4cc0d57399",
+      "tool": "Bash",
+      "command": "printf approved > ../approved-hook-proof.marker",
+      "requested_at": "2026-10-21T20:05:58.663Z",
+      "decided_at": "2026-10-21T20:05:58.664Z",
+      "decision": "approve",
+      "reason": "global auto mode: every session is approved without asking, and recorded",
+      "dedup_key": "",
+      "decided_by": "global-auto",
+      "agent": "atrium/claude/bug-codex-permissions-and-hooks-smoke/.smoke/scratch",
+      "worktree": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch"
+    },
+    {
+      "id": "01a1600b-f823-7a29-9632-4703f378905c",
+      "task_id": "01a1600b-ebab-7e19-91f4-0358c3c152b5",
+      "tool": "Bash",
+      "command": "printf approved > ../approved-direct-163.marker",
+      "requested_at": "2026-10-21T19:59:19.587Z",
+      "decided_at": "2026-10-21T19:59:19.588Z",
+      "decision": "approve",
+      "reason": "global auto mode: every session is approved without asking, and recorded",
+      "dedup_key": "",
+      "decided_by": "global-auto",
+      "agent": "atrium/claude/bug-codex-permissions-and-hooks-smoke/.smoke/scratch",
+      "worktree": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch"
+    }
+  ]
+}

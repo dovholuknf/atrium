@@ -1,0 +1,64 @@
+{
+  "rules_at_creation": [
+    {
+      "id": "01a16018-a514-7e73-8e0f-33c00b4100f1",
+      "tool": "Bash",
+      "prefix": "echo atrium-smoke-deny-5c092d22a",
+      "decision": "block",
+      "reason": "Atrium scoped native smoke deny 5c092d22a",
+      "scope": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch",
+      "kind": "command",
+      "created_at": "2026-10-21T20:13:10.292Z",
+      "hits": 0
+    },
+    {
+      "id": "01a16018-a517-7dbf-8b73-cb0adef88464",
+      "tool": "Bash",
+      "prefix": "echo atrium-smoke-allow-5c092d22a",
+      "decision": "approve",
+      "reason": "Atrium scoped native smoke allow 5c092d22a",
+      "scope": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch",
+      "kind": "command",
+      "created_at": "2026-10-21T20:13:10.295Z",
+      "hits": 0
+    }
+  ],
+  "hits_asserted_before_delete": {
+    "01a16018-a514-7e73-8e0f-33c00b4100f1": 1,
+    "01a16018-a517-7dbf-8b73-cb0adef88464": 1
+  },
+  "permissions": [
+    {
+      "id": "01a16018-e194-7a5c-ae30-158f714974a2",
+      "task_id": "01a16018-cdb1-76b2-a3df-300533cb98cc",
+      "tool": "Bash",
+      "command": "echo atrium-smoke-allow-5c092d22a",
+      "requested_at": "2026-10-21T20:13:25.78Z",
+      "decided_at": "2026-10-21T20:13:25.781Z",
+      "decision": "approve",
+      "reason": "Atrium scoped native smoke allow 5c092d22a",
+      "dedup_key": "",
+      "decided_by": "echo atrium-smoke-allow-5c092d22a",
+      "agent": "atrium/claude/bug-codex-permissions-and-hooks-smoke/.smoke/scratch",
+      "worktree": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch"
+    },
+    {
+      "id": "01a16018-d8a4-75f3-9029-69f50affe51a",
+      "task_id": "01a16018-cdb1-76b2-a3df-300533cb98cc",
+      "tool": "Bash",
+      "command": "echo atrium-smoke-deny-5c092d22a",
+      "requested_at": "2026-10-21T20:13:23.492Z",
+      "decided_at": "2026-10-21T20:13:23.494Z",
+      "decision": "block",
+      "reason": "Atrium scoped native smoke deny 5c092d22a",
+      "dedup_key": "",
+      "decided_by": "echo atrium-smoke-deny-5c092d22a",
+      "agent": "atrium/claude/bug-codex-permissions-and-hooks-smoke/.smoke/scratch",
+      "worktree": "/Users/claude/atrium/cards/codex-perms-hooks-smoke-byut11/work/.smoke/scratch"
+    }
+  ],
+  "rules_absent_after_delete": true,
+  "room_global_auto_before": true,
+  "room_global_auto_after": true,
+  "auto_settings_mutated": false
+}

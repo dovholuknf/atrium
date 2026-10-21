@@ -142,19 +142,16 @@ func newHook() *cobra.Command {
 		Long: "Posts one activity event to the daemon and exits. Meant to be registered in the " +
 			"runner's own hooks file, which the board can do for you from the runners tab.\n\n" +
 			"It never fails a session: whatever goes wrong, it exits 0 and says nothing.",
-		// Silenced because cobra would otherwise print usage on a bad flag,
-		// and this runs inside somebody's tool call.
+		// Hook flag errors must never interrupt a tool call.
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		// A flag this build does not know is a hooks file written by another
-		// atrium, and it still must not fail the tool call it rides on.
+		// Hooks written by another build may carry flags this one does not know.
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// The permission gate speaks Claude Code's PreToolUse contract on
-			// stdout, so it is its own path. See hook_permission.go.
+			// Permission decisions need their own stdout protocol rather than activity reporting.
 			if strings.EqualFold(strings.TrimSpace(event), permissionEvent) {
-				if out := permissionHook(hubURL, readStdin(), runnerPID); out != nil {
+				if out := permissionHookForRunner(hubURL, readStdin(), runnerPID, runner); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}
 				return nil
@@ -178,13 +175,7 @@ func newHook() *cobra.Command {
 				return nil
 			}
 			reportActivity(hubURL, event, name)
-			// Run at a prompt, silence is indistinguishable from a hang. Only
-			// when a human typed it: under Claude Code stdin is always a pipe,
-			// so a hook still prints nothing.
-			//
-			// It reports rather than asks. A hook has no terminal to ask into,
-			// and an address is only missing when nothing is running, which
-			// is answered by starting atrium and not by typing a URL.
+			// Explain an interactive invocation because silence looks like a hang, without prompting inside hooks.
 			if interactive() {
 				addr, source := hubAddressFrom(hubURL)
 				fmt.Fprintf(cmd.OutOrStdout(),
@@ -201,11 +192,8 @@ func newHook() *cobra.Command {
 	c.Flags().StringVar(&allow, "allow", "", "lean-agents: the agent names a lean worker may start, comma separated")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
-	// Every command a Named target writes carries this. Without it here,
-	// codex's PreToolUse, PostToolUse and UserPromptSubmit all exited 1. The
-	// session hook is what records the runner, and activity finds the card by
-	// name, so the value is accepted and not sent.
-	c.Flags().StringVar(&runner, "runner", "", "which harness is reporting (accepted, not needed)")
+	// Activity finds the card by name, while permission registration also needs the harness identity.
+	c.Flags().StringVar(&runner, "runner", "", "which harness is reporting (default: $ATRIUM_RUNNER, then claude)")
 	c.AddCommand(newHookInstall(), newHookStatus())
 	return c
 }
@@ -216,24 +204,17 @@ func newHook() *cobra.Command {
 // board re-reads settings.json on every poll and would find this anyway. The
 // ping afterwards only removes the wait.
 func newHookInstall() *cobra.Command {
-	var event string
+	var event, runner string
 	c := &cobra.Command{
 		Use:   "install",
-		Short: "Register atrium's hooks in Claude Code's settings.json.",
-		Long: "Writes the hook entries into your own settings.json, keeping a copy of the old " +
+		Short: "Register atrium's hooks for a runner.",
+		Long: "Writes the hook entries into your runner configuration, keeping a copy of the old " +
 			"file first and leaving everything else in it alone.\n\n" +
-			"With no --event it writes all of them. With one, just that one, so they can be " +
+			"With no --event it writes the non-optional hooks. With one, just that one, so they can be " +
 			"added a few at a time.\n\n" +
 			"The board notices on its own: it reads the same file every few seconds.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// THE RUNNING DAEMON'S BINARY, NOT THIS ONE.
-			//
-			// This command is usually typed at a binary somebody just built,
-			// and it used to write that binary's path. The daemon runs from
-			// somewhere else, so the hooks pointed at a build directory and
-			// the board reported all six as pointing elsewhere, correctly,
-			// and rebuilding put it straight back. See
-			// `internal/claudeconf/whichexe.go`.
+			// The daemon identity prevents a fresh build from installing hooks against its temporary path.
 			exe := claudeconf.HookExe("")
 			if exe == "" {
 				return fmt.Errorf("cannot work out which atrium binary to write into your " +
@@ -244,13 +225,15 @@ func newHookInstall() *cobra.Command {
 			if strings.TrimSpace(event) != "" {
 				only = []string{strings.ToLower(strings.TrimSpace(event))}
 			}
-			rep, res, err := claudeconf.InstallOnly(exe, only)
+			target := claudeconf.TargetFor(runner)
+			if target.ID != runner {
+				return fmt.Errorf("unknown hook runner %q", runner)
+			}
+			rep, res, err := claudeconf.InstallOnlyTarget(target, exe, only)
 			if err != nil {
 				return err
 			}
-			// Tell a running board so the count moves now rather than on its
-			// next poll. Best effort, like every other thing atrium sends:
-			// the edit is already on disk and the board would find it anyway.
+			// The saved file is authoritative, so a failed board refresh must not fail installation.
 			if res.Changed {
 				pingHooksChanged()
 			}
@@ -277,10 +260,14 @@ func newHookInstall() *cobra.Command {
 				fmt.Fprintf(out, "%d still to go. run this again with --event, or use the board.\n",
 					rep.Missing)
 			}
+			if target.Trust != "" {
+				fmt.Fprintln(out, target.Trust)
+			}
 			fmt.Fprintln(out, "sessions already running keep their old settings until restarted.")
 			return nil
 		},
 	}
+	c.Flags().StringVar(&runner, "runner", "claude", "hook target: claude or codex")
 	c.Flags().StringVar(&event, "event", "",
 		"just this one: tool-start, tool-end, prompt, subagent-start or subagent-end")
 	return c

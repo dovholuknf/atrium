@@ -244,10 +244,9 @@ func TestBothGatesRegisteredIsReportedAndInstallDropsTheScript(t *testing.T) {
 	}
 }
 
-func TestTheCodexTargetHasNoGateRow(t *testing.T) {
-	for _, w := range Codex.Wanted {
-		if w.Event == permissionEvent {
-			t.Fatal("codex carries the permission row")
-		}
+func TestTheCodexTargetUsesNativeGate(t *testing.T) {
+	w, ok := eventForTarget(Codex, permissionEvent)
+	if !ok || w.Hook != "PermissionRequest" || w.Timeout != gateTimeout {
+		t.Fatalf("codex native gate: %+v, found %v", w, ok)
 	}
 }

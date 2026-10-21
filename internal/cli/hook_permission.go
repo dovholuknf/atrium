@@ -45,11 +45,12 @@ const permMaxDetails = 6000
 const defaultProbeTimeout = 2 * time.Second
 
 type permissionPayload struct {
-	ToolName  string          `json:"tool_name"`
-	ToolInput json.RawMessage `json:"tool_input"`
-	CWD       string          `json:"cwd"`
-	SessionID string          `json:"session_id"`
-	ToolUseID string          `json:"tool_use_id"`
+	HookEventName string          `json:"hook_event_name"`
+	ToolName      string          `json:"tool_name"`
+	ToolInput     json.RawMessage `json:"tool_input"`
+	CWD           string          `json:"cwd"`
+	SessionID     string          `json:"session_id"`
+	ToolUseID     string          `json:"tool_use_id"`
 }
 
 // runPermissionHook does the whole job and returns the bytes to print, or nil
@@ -63,6 +64,10 @@ func runPermissionHook(hubURL string, stdin []byte, pid int) []byte {
 // hot path: every tool call in every session runs it, and most of them have
 // nothing to do (gate off, no payload, a read-only tool, no gate on the room).
 func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
+	return permissionHookForRunner(hubURL, stdin, pidOf, "")
+}
+
+func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runner string) []byte {
 	gate := strings.ToLower(strings.TrimSpace(os.Getenv("ATRIUM_PERM_GATE")))
 	if gate == "off" {
 		return nil
@@ -77,7 +82,8 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 	if len(stdin) == 0 || json.Unmarshal(stdin, &in) != nil {
 		return nil
 	}
-	if permSkipTools[in.ToolName] {
+	native := in.HookEventName == "PermissionRequest"
+	if !native && permSkipTools[in.ToolName] {
 		return nil
 	}
 
@@ -97,17 +103,18 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 		_ = json.Unmarshal(in.ToolInput, &input)
 	}
 	summary := permSummary(input, in.ToolInput)
-	// The tool_use_id is the dedup key when there is one: the same across a
-	// retry of this attempt and different for an identical command run later.
-	// Without it, fall back to a hash, which the daemon replays for a couple
-	// of minutes only.
+	// Native requests without a tool id must stay distinct even when their commands match.
 	key := in.ToolUseID
-	if key == "" {
+	if key == "" && !native {
 		sum := sha256.Sum256([]byte(in.SessionID + "|" + agent + "|" + in.ToolName + "|" + summary))
 		key = hex.EncodeToString(sum[:12])
 	}
 
+	if native && runner == "" {
+		runner = "codex"
+	}
 	body, err := json.Marshal(map[string]any{
+		"runner":      whichRunner(runner),
 		"agent":       agent,
 		"name_source": nameSource,
 		"tool":        in.ToolName,
@@ -122,9 +129,18 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 		return nil
 	}
 
-	ans, ok := postPermission(base, body)
+	var ans permissionAnswer
+	if native {
+		ans, ok = postPermissionOnce(hookClient(permPostTimeout()), base, body)
+	} else {
+		ans, ok = postPermission(base, body)
+	}
 	if !ok {
 		return nil
+	}
+
+	if native {
+		return nativePermissionAnswer(ans, summary)
 	}
 
 	out := map[string]any{"hookEventName": "PreToolUse"}
@@ -141,14 +157,11 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 		reason = "via atrium hub"
 	}
 	out["permissionDecisionReason"] = reason
-	// A rewrite only applies to an approval: a block already carries its
-	// guidance in the reason.
 	if ans.Decision == "approve" && ans.Command != "" && ans.Command != summary {
 		if upd := editedInput(input, ans.Command); upd != nil {
 			out["updatedInput"] = upd
 		} else {
-			// Allowing without updatedInput would run the original call,
-			// the one the human changed.
+			// Without updatedInput the original command would run instead of the approved edit.
 			out["permissionDecision"] = "deny"
 			out["permissionDecisionReason"] = "the edit did not parse, nothing was run"
 		}
@@ -387,4 +400,33 @@ func editedInput(input map[string]any, edited string) map[string]any {
 		return parsed
 	}
 	return upd
+}
+
+func nativePermissionAnswer(ans permissionAnswer, summary string) []byte {
+	behavior := ""
+	switch ans.Decision {
+	case "approve":
+		behavior = "allow"
+	case "block":
+		behavior = "deny"
+	default:
+		return nil
+	}
+	reason := ans.Reason
+	if behavior == "allow" && ans.Command != "" && ans.Command != summary {
+		// PermissionRequest rejects updatedInput, so an edit must never approve the original call.
+		behavior = "deny"
+		reason = "atrium edited this request. retry with the edited input: " + ans.Command
+	}
+	decision := map[string]any{"behavior": behavior}
+	if behavior == "deny" {
+		if reason == "" {
+			reason = "blocked via atrium"
+		}
+		decision["message"] = reason
+	}
+	b, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName": "PermissionRequest", "decision": decision,
+	}})
+	return b
 }
