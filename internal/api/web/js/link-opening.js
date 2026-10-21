@@ -76,6 +76,7 @@ function linkOpeningFail(id, why, heldCard) {
   // A link another card holds says which: `go to card` is then the first button, the default.
   o.card = heldCard || "";
   linkOpeningPaint();
+  toast(o.name || o.url, o.error);
 }
 
 // The open answered with its card, or was dropped.

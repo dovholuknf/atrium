@@ -1107,7 +1107,7 @@ async function recogniseLink(known) {
   const opens = !!pastedOpenKind();
   const problem = opens ? "" : got.problem;
   if (problem) bits.push(problem);
-  if (opens) bits.push("launch makes its worktree");
+  if (opens) bits.push("go makes the worktree for you");
   note.textContent = bits.join(". ");
   // A missing worktree, a hole in a template or a broken fetch all read the
   // same way here: something to go and do before pressing launch.

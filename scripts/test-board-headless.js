@@ -19670,6 +19670,14 @@ async function quickPasteSection(browser, base) {
     st.calls.push(m + " " + p + " " + (req.postData() || ""));
     if (p === "/v1/open") {
       const url = JSON.parse(req.postData() || "{}").url || "";
+      (st.rooms = st.rooms || []).push(req.headers()["x-atrium-room"] || "");
+      if (/discourse\.group/.test(url)) {
+        if (st.holdD) await st.holdD;
+        if (st.openFail) return json(route, 400, { error: "could not clone github.com/openziti/ziti: boom",
+          code: "worktree_failed", step: "clone" });
+        return json(route, 201, { key: "discourse:openziti.discourse.group/4784", kind: "support", card: "t-q",
+          worktree: "/wt/discourse-4784", repo: "github.com/openziti/ziti", created: true, title: "discourse-4784" });
+      }
       if (st.hold && /pull\/14$/.test(url)) await st.hold;
       if (/pull\/13$/.test(url)) return json(route, 400, { error: "could not fetch the head of pull request 13: boom",
         code: "worktree_failed", step: "worktree" });
@@ -19689,6 +19697,11 @@ async function quickPasteSection(browser, base) {
         tags: ["zendesk"], branch: "zendesk-77", default_repo: "github.com/openziti/ziti",
         problem: "/wt/zendesk-77 is not here yet. make the worktree, then start it",
         vars: { host: "netfoundry.zendesk.com", num: "77" } });
+      if (/discourse\.group/.test(url)) return json(route, 200, { recogniser: "discourse-topic", label: "discourse topic", url,
+        host: "openziti.discourse.group", kind: "discourse", cwd: "/wt/discourse-4784", title: "discourse-4784",
+        prompt: "read the topic", tags: ["discourse", "support"], branch: "discourse-4784", default_repo: "github.com/openziti/ziti",
+        problem: "/wt/discourse-4784 is not here yet. make the worktree, then start it",
+        vars: { host: "openziti.discourse.group", num: "4784" } });
       if (/\/issues\//.test(url)) {
         const n = url.split("/").pop();
         return json(route, 200, { recogniser: "github-issue", label: "github issue", url, host: "github.com",
@@ -20017,6 +20030,85 @@ async function quickPasteSection(browser, base) {
       /nothing here knows/.test(document.getElementById("sw-open").textContent), null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: an unknown pasted link did not come back to the bar"));
     await p.evaluate(() => closeSwitcher());
+
+    // A DISCOURSE LINK ON ENTER OPENS A CARD AND FOCUSES IT, even when the room the dialog starts on has no runner
+    // (ctrl-k, bug-open-ticket-silent-noop). Never a parked row.
+    const dl = "https://openziti.discourse.group/t/upgrade-1-1-15-1-6-3/4784/11";
+    const dlBare = "https://openziti.discourse.group/t/4784";
+    const dlKey = "discourse:openziti.discourse.group/4784";
+    const pageRows = () => p.evaluate(() => document.querySelectorAll(".card.linkopen").length);
+    const bell = () => p.evaluate(() => toastLog().map(x => x.title + " " + x.body).join(" | "));
+    await p.evaluate(() => {
+      hubIsHub = true;
+      hubRooms = [{ name: "alpha" }, { name: "beta" }];
+      allHarnesses = [{ id: "h-b", enabled: true, found: true, room: "beta", label: "claude" }];
+      localStorage.setItem("atrium.launch.room", "alpha");
+      termTask = null;
+      localStorage.removeItem("atrium.toastlog");
+    });
+    st.rooms = [];
+    await paste(dl);
+    const dOpens = st.calls.filter(c => c.indexOf("POST /v1/open") === 0);
+    if (dOpens.length !== 1) fail("discourse: enter opened " + dOpens.length + " times: " + st.calls.join(" | "));
+    else if (st.rooms[0] !== "beta") fail("discourse: opened on '" + st.rooms[0] + "', the only room with a runner is beta");
+    await p.waitForFunction(() => termTask && termTask.id === "t-q", null, { timeout: slow(5000) })
+      .catch(() => fail("discourse: the opened card was not focused"));
+    if (await pageRows()) fail("discourse: a pending row was left behind");
+    await shot(p, "discourse-opened");
+
+    // the same topic twice, with and without the post number, is one open
+    st.holdD = new Promise(res => { st.releaseD = res; });
+    await p.evaluate(() => { termTask = null; lastTasks = []; });
+    st.rooms = [];
+    await paste(dl, false);
+    await paste(dlBare, false);
+    st.releaseD();
+    st.holdD = null;
+    await p.waitForFunction(() => termTask && termTask.id === "t-q", null, { timeout: slow(5000) })
+      .catch(() => fail("discourse: the double paste focused no card"));
+    await p.waitForTimeout(300);
+    const twice = st.rooms.length;
+    if (twice !== 1) fail("discourse: two pastes of one topic opened " + twice + " times");
+    if (await pageRows()) fail("discourse: the double paste left a row");
+
+    // a card already live for the topic is focused with no call at all
+    await p.evaluate(key => { termTask = null;
+      lastTasks = [{ id: "t-q", status: "running", title: "discourse-4784", tags: ["link:" + key] }]; }, dlKey);
+    st.calls = [];
+    await paste(dlBare);
+    if (st.calls.some(c => c.indexOf("POST /v1/open") === 0)) fail("discourse: a topic with a live card was opened again");
+    await p.waitForFunction(() => termTask && termTask.id === "t-q", null, { timeout: slow(5000) })
+      .catch(() => fail("discourse: the live card was not focused"));
+    await p.evaluate(() => { lastTasks = []; });
+
+    // a failed open says why on the card and in the bell
+    st.openFail = true;
+    await p.evaluate(() => localStorage.removeItem("atrium.toastlog"));
+    await paste(dl, false);
+    await p.waitForFunction(() => { const e = document.querySelector(".card.linkopen.failed");
+      return e && /boom/.test(e.textContent); }, null, { timeout: slow(5000) })
+      .catch(() => fail("discourse: a failed open showed no reason"));
+    if (!/boom/.test(await bell())) fail("discourse: a failed open did not ring the bell: " + await bell());
+    await shot(p, "discourse-failed");
+    st.openFail = false;
+    await p.evaluate(() => document.querySelectorAll("[data-linkopen]").forEach(e => e.remove()));
+    await p.evaluate(() => linkOpenings.clear());
+
+    // no runner on any room: the bar comes back with the reason in plain words, the bell has it, and no row is parked
+    await p.evaluate(() => { allHarnesses = []; });
+    await p.evaluate(() => { allHarnesses = [{ id: "h-off", enabled: true, found: false, room: "beta", label: "claude" }]; localStorage.removeItem("atrium.toastlog"); });
+    st.calls = [];
+    await paste(dl, false);
+    await p.waitForFunction(() => document.getElementById("switcher").open &&
+      /runner/.test(document.getElementById("sw-open").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("discourse: no runner anywhere said nothing in the bar"));
+    if (await pageRows()) fail("discourse: no runner left a parked row");
+    if (!/runner/.test(await bell())) fail("discourse: no runner did not ring the bell");
+    if (st.calls.some(c => c.indexOf("POST /v1/open") === 0)) fail("discourse: opened with no runner");
+    if (/launch makes/.test(await p.textContent("#sw-open"))) fail("discourse: the old words are back");
+    await shot(p, "discourse-no-runner");
+    await p.evaluate(() => closeSwitcher());
+    await p.evaluate(() => { hubIsHub = false; hubRooms = []; });
     // clean up when done: a marked card reaching done is offered the card's own close, once, with the mark taken off
     const cleaned = await p.evaluate(async () => {
       const asked = [], patched = [];

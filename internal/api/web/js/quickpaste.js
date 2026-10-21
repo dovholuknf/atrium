@@ -172,6 +172,58 @@ async function quickPasteFromClipboard(force) {
   }
 }
 
+// A link that cannot be started is said in the bar it came from and in the bell, and its row is taken down: a row left
+// sitting is what a pending open looked like, and nobody went back to it.
+function quickPasteStop(id, url, why) {
+  linkOpeningEnd(id);
+  toast("could not open that link", why);
+  openQuickPaste(url, why);
+}
+
+function quickPasteNoRunner() {
+  return "no runner is turned on and installed on any machine, so there is nowhere to start it. " +
+    "turn one on under rooms, runners, then paste the link again.";
+}
+
+// The card for a link that is already open: not done, not dead, carrying the link's tag.
+function liveCardFor(key) {
+  const tag = "link:" + String(key).toLowerCase();
+  return (lastTasks || []).find(t => t.status !== "done" && t.status !== "dead" &&
+    (t.tags || []).some(g => String(g).toLowerCase() === tag)) || null;
+}
+
+// The key the room files a link under (internal/store/linkkey.go), for the kinds that name a topic or an issue, so
+// `/t/slug/4784/11` and `/t/4784` are one. "" for the rest, which the room keeps apart by its own claim.
+function linkKeyOf(got) {
+  const kind = pastedOpenKind(got);
+  const v = got.vars || {};
+  const host = String(v.host || got.host || "").trim().toLowerCase();
+  const num = Number(v.num) || 0;
+  if (kind === "support") {
+    const row = String(got.kind || "").trim().toLowerCase();
+    return (/^[a-z][a-z0-9]{0,31}$/.test(row) ? row : "link") + ":" + host + "/" + num;
+  }
+  if (kind === "issue") return host + "/" + v.org + "/" + v.repo + "/i" + num;
+  return "";
+}
+
+// The machine a link starts on, and the dialog's room box and runner list moved to match, so a room with no runner
+// never decides the open. `want` first, then the room the dialog came up on, then any other with a runner that works.
+// null when no machine can start anything.
+function quickPasteRoom(want) {
+  const field = document.getElementById("l-room-field");
+  if (!field || field.hidden) return launchableHarnesses("").length ? "" : null;
+  const sel = document.getElementById("l-room");
+  const names = [want, sel.value].concat((typeof hubRooms === "undefined" ? [] : hubRooms).map(r => r.name));
+  const pick = names.find(n => n && launchableHarnesses(n).length);
+  if (!pick) return null;
+  if (sel.value !== pick) {
+    sel.value = pick;
+    refreshLaunchRunners(launchTarget && launchTarget.harness);
+  }
+  return pick;
+}
+
 // A LINK OPENS AS A CARD (u-005). Plain Enter, or a paste on the board, draws the card at once (js/link-opening.js),
 // fills the launch dialog in out of sight with the defaults it would have had, and opens the link: clone if needed,
 // worktree, card. A link that leaves something to fix fails on that card with the reason, and its `edit` is the way
@@ -210,14 +262,32 @@ async function quickPasteGo(url, edit) {
   const rk = got && got !== "none" ? pastedRepoKind(got) : null;
   if (rk) { await repoNewGo(id, rk, got); return; }
   if (got && got.title) linkOpeningName(id, got.title);
-  // Not read, or a link with something left to fix: said on the card, never by throwing the dialog up.
+  // Not read, or a link with something left to fix: said in the bar and the bell, never as a row left sitting.
   // A missing worktree is a problem the launch itself solves for every kind the open verb takes.
-  const go = document.getElementById("l-go");
-  if (!got || ((got.problem || got.fetch_error) && !pastedOpenKind()) || (go && go.disabled)) {
-    linkOpeningFail(id, note || "the link could not be read");
+  if (!got || ((got.problem || got.fetch_error) && !pastedOpenKind())) {
+    quickPasteStop(id, url, note || "the link could not be read");
     return;
   }
-  const room = await linkRoomFor(got);
+  const key = linkKeyOf(got) || url;
+  const dup = [...linkOpenings].find(([other, o]) => other !== id && o.key === key);
+  if (dup) {
+    linkOpeningEnd(id);
+    toast(got.title || key, "already opening, the card comes up when it is ready");
+    return;
+  }
+  linkOpenings.get(id).key = key;
+  const live = liveCardFor(key);
+  if (live) {
+    linkOpeningEnd(id);
+    toast(got.title || key, "already open, here is its card");
+    await linkOpeningGoto(live.id);
+    return;
+  }
+  const room = quickPasteRoom(await linkRoomFor(got));
+  if (room === null) {
+    quickPasteStop(id, url, quickPasteNoRunner());
+    return;
+  }
   await oneAtATime("quickpaste-open", async () => {
     try {
       await launchNow({ id, room });
