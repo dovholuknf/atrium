@@ -122,19 +122,19 @@ const TABS = {
     chip: { v: "running", count: byStatus("running").length, rowsAfter: null },
     sort: { id: "stack-sort", to: "name" },
     defaults: async page => ({ on: await chipsOn(page, "stack-seg") }),
-    wantDefault: ["needs-input"]
+    wantDefault: ["needs-input", "emptygroups"]
   },
   board: {
     view: "board", host: "board-bar", q: "board-q", rows: "#board .card[data-id]",
     chip: { v: "done", count: byStatus("done", "dead", "paused").length },
     sort: { id: "board-sort", to: "name" },
-    wantDefault: ["backlog", "needs-you", "working", "done"]
+    wantDefault: ["backlog", "needs-you", "working", "done", "emptygroups"]
   },
   terms: {
     view: "terms", host: "fd-terms", q: "term-q", rows: "#term-list .card.tab",
     chip: { v: "paused", count: byStatus("paused").length },
     sort: { id: "term-sort", to: "name" },
-    wantDefault: []
+    wantDefault: ["emptygroups"]
   }
 };
 
@@ -272,7 +272,7 @@ async function steps(browser, width, mobile, tabName) {
     wantChips = on;
   } else {
     const on = await chipsOn(page, "term-show");
-    check(on.length === 0, `${tag} 1: no terminals chip is on by default (${JSON.stringify(on)})`);
+    check(sameSet(on, T.wantDefault), `${tag} 1: only the empty groups chip is on by default (${JSON.stringify(on)})`);
     const rows = await page.$$eval("#term-list .card.tab", els => els.map(e => e.dataset.id));
     check(!rows.includes("s1") && !rows.includes("s2") && !rows.includes("k1"), `${tag} 1: no paused or dead rows (${rows.join(",")})`);
     check(await page.$$eval("#term-list .endedrow, #term-list .termended", e => e.length) === 0, `${tag} 1: no ended group`);
@@ -469,7 +469,7 @@ async function keeps(browser, width, mobile) {
   const want = {
     stack: "name / needs-input|finished / off",
     board: "manual / backlog|needs-you|working / tag",
-    terms: "started / dead / recency"
+    terms: "started / dead|emptygroups / recency"
   };
   const got = await read();
   check(got.stack.startsWith("name / ") && got.stack.endsWith(" / off") && got.stack.includes("finished") && got.stack.includes("needs-input"),
