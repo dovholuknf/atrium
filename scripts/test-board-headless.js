@@ -23029,7 +23029,7 @@ async function trayToastSection(browser, base) {
     if (shots) await p.screenshot({ path: shots + "-tray-toast-before.png" });
     await p.evaluate(() => openToastLog());
     await p.waitForFunction(() => document.getElementById("toastlog").open, null, { timeout: slow(5000) });
-    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running" || !a.effect.target.closest("#toasts, #toastlog")), null, { timeout: slow(5000) });
     await p.waitForFunction(() => {
       const t = document.querySelector("#toasts .toast"), d = document.getElementById("toastlog");
       return t && t.getBoundingClientRect().right <= d.getBoundingClientRect().left + 0.5;
@@ -23049,7 +23049,7 @@ async function trayToastSection(browser, base) {
     });
     if (row === null) fail("trayToast: the alert is not in the open tray");
     else if (!row) fail("trayToast: the alert in the open tray is not highlighted");
-    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running" || !a.effect.target.closest("#toasts, #toastlog")), null, { timeout: slow(5000) });
     await p.mouse.move(5, 890);
     if (shots) await p.screenshot({ path: shots + "-tray-toast-after.png" });
     await p.click("#toastlog [onclick*=clearToastLog], #toastlog button:has-text('clear')");
