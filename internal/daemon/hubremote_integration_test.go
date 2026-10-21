@@ -335,3 +335,35 @@ func TestAgentAddrIsKeptForASpecificBindAndMappedForAWildcard(t *testing.T) {
 		}
 	}
 }
+
+func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	task := plainTask(t, d, "reattached")
+	env := map[string]string{}
+	d.hubGitEnv(task.ID, false, nil, env)
+	header := env["GIT_CONFIG_VALUE_0"]
+	tok := strings.TrimPrefix(header, gitsync.HeaderCardToken+": ")
+	if tok == header || tok == "" {
+		t.Fatalf("launch put no token in the environment: %q", header)
+	}
+
+	again := &Daemon{hk: *testHooks(), st: d.st}
+	again.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
+	again.restoreHubGit()
+	if id, ok := again.hubGit.cards.Check(tok); !ok || id != task.ID {
+		t.Fatal("the restarted room refused the token the runner was launched with")
+	}
+	if again.hubGit.issued[task.ID].tok != tok {
+		t.Fatal("the restarted room does not hold the token it needs to push for the card")
+	}
+
+	again.revokeHubGit(task.ID, time.Time{})
+	third := &Daemon{hk: *testHooks(), st: d.st}
+	third.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
+	third.restoreHubGit()
+	if _, ok := third.hubGit.cards.Check(tok); ok {
+		t.Fatal("a revoked token came back after a restart")
+	}
+}

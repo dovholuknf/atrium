@@ -34,7 +34,7 @@ through the room's forwarder. Read the header of the file you are in, not only t
   read only from a Room caller and dropped unread on every other reach.
 - **The room's forwarder DELETES any card header the client sent and Sets its own.** A client must not choose its card.
   The card token authorizes the forwarder route and nothing else, and is never forwarded to the hub. Tokens live in
-  memory, so a card launched before a room restart must be relaunched to push.
+  the store, so a runner kept through a room restart keeps a good one.
 - **The token header is scoped to the forwarder's URL** with `http.<url>.extraHeader`. Never a bare
   `http.extraHeader`, which goes to every remote.
 - **What a room serves is its own configuration** (`ServedHide`). Protocol v0 only, so a want that is not an advertised

@@ -31,7 +31,8 @@ type CardAuth interface {
 // CardTokens is the in-memory CardAuth. A token is `<card id>.<256 random bits as hex>`. The room keeps only a
 // SHA-256 of the secret, so the table does not hold a usable credential, and the comparison is constant-time.
 //
-// Tokens do not survive a restart of the room: a card launched before it must be relaunched to push.
+// The room keeps each token it handed out in its store and gives it back through Restore at start, so a runner the pty
+// host kept through a restart still has a good one.
 type CardTokens struct {
 	// Live, when set, says whether a card may still use its token. The room answers from the card's status, so a
 	// card that ended, was paused or was culled loses its token even if nobody called Revoke.
@@ -58,6 +59,26 @@ func (c *CardTokens) Mint(card string) (string, error) {
 	c.by[card] = sha256.Sum256(secret[:])
 	c.mu.Unlock()
 	return tok, nil
+}
+
+// Restore puts back a token Mint made before a restart. It reports false for one that is malformed.
+func (c *CardTokens) Restore(token string) bool {
+	i := strings.LastIndexByte(token, '.')
+	if i < 0 {
+		return false
+	}
+	card := token[:i]
+	secret, err := hex.DecodeString(token[i+1:])
+	if err != nil || len(secret) != 32 || !ValidCardID(card) {
+		return false
+	}
+	c.mu.Lock()
+	if c.by == nil {
+		c.by = map[string][sha256.Size]byte{}
+	}
+	c.by[card] = sha256.Sum256(secret)
+	c.mu.Unlock()
+	return true
 }
 
 // Check implements CardAuth.

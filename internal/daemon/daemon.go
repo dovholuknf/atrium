@@ -414,6 +414,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		tune(&d.hk)
 	}
 	d.hubGit.cards = &gitsync.CardTokens{Live: d.cardLive}
+	d.restoreHubGit()
 	d.pending = newPendingInjector(d)
 	d.wake = newWakes()
 	d.holds = newHoldState()

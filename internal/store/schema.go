@@ -2415,6 +2415,18 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS card_home_card ON card_home (card)`,
 		},
 	},
+	{
+		// THE GIT TOKEN EACH CARD WAS LAUNCHED WITH, so a runner kept by the pty host still has a good one after the
+		// room restarts. See store/gittoken.go.
+		name: "0110_card_git_token",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS card_git_token (
+				card      TEXT PRIMARY KEY,
+				token     TEXT NOT NULL,
+				minted_at TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

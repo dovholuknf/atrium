@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -214,8 +215,14 @@ func (d *Daemon) hubGitEnv(card string, outside bool, harness map[string]string,
 	if d.hubGit.issued == nil {
 		d.hubGit.issued = map[string]issuedToken{}
 	}
-	d.hubGit.issued[card] = issuedToken{tok: tok, at: time.Now()}
+	now := time.Now()
+	d.hubGit.issued[card] = issuedToken{tok: tok, at: now}
 	d.hubGit.mu.Unlock()
+	if d.st != nil {
+		if err := d.st.SaveGitToken(card, tok, now); err != nil {
+			log.Printf("atrium: could not keep the git token for %s: %v", card, err)
+		}
+	}
 	n := 0
 	for k, v := range harness {
 		if strings.EqualFold(k, "GIT_CONFIG_COUNT") {
@@ -263,6 +270,35 @@ func (d *Daemon) revokeHubGit(card string, since time.Time) {
 		d.hubGit.cards.Revoke(card)
 	}
 	delete(d.hubGit.issued, card)
+	if d.st != nil {
+		d.st.DeleteGitToken(card)
+	}
+}
+
+// restoreHubGit puts back the tokens cards were launched with, so a runner the pty host kept through a room restart can
+// still fetch and push. A token whose card is gone is dropped.
+func (d *Daemon) restoreHubGit() {
+	ct, ok := d.hubGit.cards.(*gitsync.CardTokens)
+	if !ok || d.st == nil {
+		return
+	}
+	toks, err := d.st.GitTokens()
+	if err != nil {
+		log.Printf("atrium: could not read the kept git tokens: %v", err)
+		return
+	}
+	d.hubGit.mu.Lock()
+	defer d.hubGit.mu.Unlock()
+	if d.hubGit.issued == nil {
+		d.hubGit.issued = map[string]issuedToken{}
+	}
+	for _, g := range toks {
+		if t, err := d.st.Get(g.Card); err != nil || t == nil || !ct.Restore(g.Token) {
+			d.st.DeleteGitToken(g.Card)
+			continue
+		}
+		d.hubGit.issued[g.Card] = issuedToken{tok: g.Token, at: g.At}
+	}
 }
 
 // GitPush is atrium_git_push: the push `git push hub <branch>` is, run by the room in the card's own directory
