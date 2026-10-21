@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
@@ -37,10 +39,9 @@ import (
 // beside the database. One place for "what the last daemon left behind".
 const reopenFile = "reopen.json"
 
-// reopenGap is the pause between starting one and the next, and the reason is
-// the one `fixtureGap` gives: half a dozen runners resolving a harness and
-// opening a pty in the same instant is a stampede somebody watches.
-const reopenGap = 400 * time.Millisecond
+// reopenWorkers is how many cards are started at once. A fixed pause between cards cost 400ms each, ten
+// seconds for twenty-seven, so the stampede is bounded by a few workers instead.
+const reopenWorkers = 4
 
 // reopenRecord is what the last daemon had open.
 //
@@ -154,14 +155,9 @@ func (d *Daemon) reopenSaved() {
 	defer d.bootResumes.Clear()
 
 	log.Printf("[atrium] reopening %d terminal(s) that were open before the restart", len(wanted))
-	reopened := 0
-	for i, t := range wanted {
-		if i > 0 {
-			time.Sleep(reopenGap)
-		}
+	reopened := reopenEach(wanted, func(t *store.Task) error {
 		// The card is the launch spec, model and extras included. See reopenRequest.
-		req := d.reopenRequest(t)
-		_, err := d.Launch(req)
+		_, err := d.Launch(d.reopenRequest(t))
 		// Back, or never coming. Both end the wait on this card: a worktree
 		// that has gone would otherwise keep the board quiet until the
 		// backstop.
@@ -171,11 +167,35 @@ func (d *Daemon) reopenSaved() {
 			// been deleted, a harness that has been disabled, or a claude that
 			// is no longer on PATH must not stop the rest coming back.
 			log.Printf("[atrium] could not reopen %s: %v", t.ID, err)
-			continue
 		}
-		reopened++
-	}
+		return err
+	})
 	log.Printf("[atrium] reopened %d of %d terminal(s)", reopened, len(wanted))
+}
+
+// reopenEach runs start over every card with at most reopenWorkers in flight, in list order, and returns how many
+// succeeded.
+func reopenEach(wanted []*store.Task, start func(*store.Task) error) int {
+	var ok atomic.Int32
+	next := make(chan *store.Task)
+	var wg sync.WaitGroup
+	for i := 0; i < reopenWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range next {
+				if start(t) == nil {
+					ok.Add(1)
+				}
+			}
+		}()
+	}
+	for _, t := range wanted {
+		next <- t
+	}
+	close(next)
+	wg.Wait()
+	return int(ok.Load())
 }
 
 // reopenWanted is the filter, split out because it IS the decision.
