@@ -332,7 +332,7 @@ func (s *Store) refreshForge(ctx context.Context, ref Ref, dir string) {
 	sort.Strings(branches)
 	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), forgeRefreshWait)
 	defer cancel()
-	_, _ = s.forge.once(ctx, key, func() (string, error) {
+	_, err = s.forge.once(ctx, key, func() (string, error) {
 		helper := s.helper(ref)
 		got, def, err := s.forgeTips(run, ref, helper, main != "", branches)
 		if err != nil {
@@ -365,6 +365,11 @@ func (s *Store) refreshForge(ctx context.Context, ref Ref, dir string) {
 		}
 		return "", nil
 	})
+	// A refresh that fails is best effort, and the route then serves what it holds: the audit says it was this.
+	if err != nil {
+		err = errors.New(s.scrub(err.Error()))
+	}
+	s.h.auditFailure("", "git-store-forge-refresh", "forge-refresh:"+key, err)
 }
 
 // forgeDefault is the forge's default branch and its tip, from the forge's HEAD.

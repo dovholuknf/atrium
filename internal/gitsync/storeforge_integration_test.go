@@ -19,7 +19,8 @@ type forgeFix struct {
 	forge *forge
 	main  string
 	// down makes the forge one that cannot be reached.
-	down *atomic.Bool
+	down   *atomic.Bool
+	audits *auditLog
 }
 
 const forgeRepo = "github/o/r"
@@ -29,9 +30,10 @@ const forgeRepo = "github/o/r"
 func newForgeFix(t *testing.T) *forgeFix {
 	t.Helper()
 	f := newForge(t, "main")
-	x := &forgeFix{forge: f, down: &atomic.Bool{}}
+	x := &forgeFix{forge: f, down: &atomic.Bool{}, audits: &auditLog{}}
 	x.main = f.push(t, "main", "a.txt", "one", 1000)
 	x.recvFix = newRecv(t, func(h *Hub) {
+		h.Audit = x.audits.add
 		s := h.Store()
 		s.Protocols = "file"
 		s.Forge = func(ref Ref) string {
@@ -314,7 +316,7 @@ func TestASeededMainFollowsItsForge(t *testing.T) {
 	next := x.forgeMain(t, "b.txt", 2000)
 	x.stale()
 	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
-		t.Fatalf("fetch main = %q, %v, want the forge's %s", got, err, next)
+		t.Fatalf("fetch main = %q, %v, want the forge's %s, audit: %s", got, err, next, x.audits.text())
 	}
 	if got := x.refOn(forgeRepo, MainRef); got != next {
 		t.Fatalf("main = %s, want %s", got, next)
@@ -533,5 +535,50 @@ func TestForgeAdvertAddsPlainNamesThatNoBranchHas(t *testing.T) {
 	}
 	if junk := []byte("not an advert refs/forge/x"); string(forgeAdvert(junk)) != string(junk) {
 		t.Fatal("junk was changed")
+	}
+}
+
+type auditLog struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (a *auditLog) add(_, kind, detail string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lines = append(a.lines, kind+" "+detail)
+}
+
+func (a *auditLog) text() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return strings.Join(a.lines, "\n")
+}
+
+func TestARefreshThatFailsIsAuditedAndRecoveryToo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newForgeFix(t)
+	if _, err := x.h.Store().Init(bg, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	next := x.forgeMain(t, "b.txt", 2000)
+	x.down.Store(true)
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != x.main {
+		t.Fatalf("fetch main = %q, %v, want %s", got, err, x.main)
+	}
+	if !strings.Contains(x.audits.text(), "git-store-forge-refresh failed: ") {
+		t.Fatalf("audit = %q, want the failed refresh", x.audits.text())
+	}
+	x.down.Store(false)
+	x.stale()
+	if got, err := x.fetchHead(t, "main"); err != nil || got != next {
+		t.Fatalf("fetch main = %q, %v, want %s", got, err, next)
+	}
+	if !strings.Contains(x.audits.text(), "git-store-forge-refresh recovered") {
+		t.Fatalf("audit = %q, want the recovery", x.audits.text())
 	}
 }
