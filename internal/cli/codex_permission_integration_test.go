@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -123,7 +124,7 @@ func TestHookInstallSelectsCodexAndPrintsTrust(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Path != path || rep.Missing != 0 || !strings.Contains(out.String(), "trust") {
+	if rep.Path != filepath.ToSlash(path) || rep.Missing != 0 || !strings.Contains(out.String(), "trust") {
 		t.Fatalf("install: %+v, %s", rep, out.String())
 	}
 	for _, hook := range rep.Hooks {
