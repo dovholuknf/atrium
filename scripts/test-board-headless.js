@@ -1669,7 +1669,7 @@ async function roomsBackSection(browser, base) {
       p.on("pageerror", e => errors.push(String(e)));
       try {
         await p.goto(base, { waitUntil: "domcontentloaded" });
-        await p.waitForTimeout(2500);
+        await p.waitForFunction(() => { const b = document.getElementById("rooms-all"); return !!b && !b.hidden; }, null, { timeout: slow(5000) }).catch(() => {});
         const seen = await p.evaluate(() => {
           const b = document.getElementById("rooms-all");
           if (!b) return { found: false };
@@ -13230,7 +13230,7 @@ async function hearsSection(browser, base) {
     const p = await open(ctx2, false);
     const id = "c1";
     await p.evaluate(i => openTask(i), id);
-    await p.waitForTimeout(500);
+    await p.waitForFunction(i => typeof current !== "undefined" && current && current.id === i, id, { timeout: slow(10000) });
     if (!(await p.evaluate(() => document.getElementById("d-hears-field").hidden))) fail("hears: a board with no hub drew the line");
   } finally { await ctx2.close(); }
 }// ── the hub's notify command in the gear (u-030) ────────────────────────────

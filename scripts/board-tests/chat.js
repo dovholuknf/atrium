@@ -567,7 +567,7 @@ async function chatKeepSection(browser, base) {
     if (!await same("chat-a")) fail(tag + "chat-a, chat-b, chat-a built a new frame for chat-a");
     const shown = await p.evaluate(() => [...document.querySelectorAll("#chat-frame-host iframe")].filter(f => !f.hidden).map(f => f.dataset.card));
     if (shown.join() !== "chat-a") fail(tag + "the shown frames are " + JSON.stringify(shown));
-    await p.waitForTimeout(500);
+    await until(() => loads.n > 2, 500, "a third load").then(() => {}, () => {});
     if (loads.n !== 2) fail(tag + "the phone page was loaded " + loads.n + " times for two cards, not 2");
     const title = await p.evaluate(() => document.getElementById("chat-title").textContent);
     if (title !== "chat a") fail(tag + "the chat title is " + JSON.stringify(title) + " for chat-a");
@@ -609,7 +609,7 @@ async function chatFastSection(browser, base) {
   const { ctx, p, errors } = await chatOpen(browser, base, {});
   const hold = { ms: 0 };
   await ctx.route("**/v1/tasks", async route => {
-    if (hold.ms && route.request().frame().parentFrame()) await new Promise(r => setTimeout(r, hold.ms));
+    if (hold.ms && route.request().frame().parentFrame()) await new Promise(r => setTimeout(r, hold.ms)); // wait: the held answer is the latency under test
     await route.fallback();
   });
   await ctx.route("**/v1/tasks/chat-a", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(mock.LAND["chat-a"]) }));
@@ -644,7 +644,7 @@ async function chatMeasureSection(browser, base) {
   const lagMs = Number(process.env.CHAT_MEASURE_LIST_MS) || 0;
   if (lagMs) {
     await ctx.route("**/v1/tasks", async route => {
-      if (route.request().frame().parentFrame()) await new Promise(r => setTimeout(r, lagMs));
+      if (route.request().frame().parentFrame()) await new Promise(r => setTimeout(r, lagMs)); // wait: the injected list latency being measured
       await route.fallback();
     });
   }

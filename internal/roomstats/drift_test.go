@@ -26,7 +26,7 @@ func TestIdleProbeWakesFewTimesASecond(t *testing.T) {
 	d := &Drift{}
 	stop := make(chan struct{})
 	go d.Run(stop)
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) // wait: the window the probe is counted over
 	close(stop)
 	_, n, _ := d.Drain()
 	if n > 12 {

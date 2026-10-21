@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/pulls.js` runs just these units, the way the full run would.
 const path = require("path");
 const crypto = require("crypto");
-const { slow } = require("../lib/browser.js");
+const { slow, until } = require("../lib/browser.js");
 const { openStreams, mock, landCard } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { attachRetry, landContext } = require("../lib/helpers.js");
@@ -1086,13 +1086,12 @@ async function pullsPasteOpeningSection(browser, base) {
     await p.fill("#pulls-pop-url", "https://github.com/openziti/x/pull/972");
     await shot(p, "popover");
     await p.click("#pulls-pop-go");
-    await p.waitForTimeout(300);
-    await shot(p, "in-flight");
     await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
       .catch(() => fail("pullsPasteOpening: the popover paste drew no card"));
+    await shot(p, "in-flight");
     if (!await p.locator("#pulls-list .card.linkopen").isVisible()) fail("pullsPasteOpening: the card is not visible on the pulls page");
     if (!(await p.isHidden("#pulls-pop"))) fail("pullsPasteOpening: the popover stayed open while the open was in flight");
-    for (let i = 0; i < 50 && !opens.length; i++) await p.waitForTimeout(50);
+    await until(() => opens.length, 5000, "/v1/open was sent").catch(() => {});
     if (!opens.length || !/^op-/.test(opens[0].progress || "") || opens[0].url !== "https://github.com/openziti/x/pull/972")
       fail("pullsPasteOpening: /v1/open was sent " + JSON.stringify(opens));
     if (await p.evaluate(() => [...linkOpenings.keys()][0]) !== opens[0].progress) fail("pullsPasteOpening: the card is not keyed by the progress id");
@@ -1191,7 +1190,7 @@ async function pullsLiveStepsSection(browser, base) {
     await p.waitForFunction(f => document.querySelector('#pulls-list .pull[data-id="pr_fetch"] .pull-el').textContent !== f, first, { timeout: slow(4000) })
       .catch(() => fail("pullsLiveSteps: the seconds did not count up from " + first));
     if (process.env.PLSHOT) await p.screenshot({ path: process.env.PLSHOT });
-    for (let i = 0; i < 50 && !openStreams.length && !openStreams.size; i++) await new Promise(r => setTimeout(r, 100));
+    await until(() => openStreams.length || openStreams.size, 5000, "the pulls stream opened");
     const before = gets;
     emit(Object.assign({}, st.rows[0], { run_log: st.rows[0].run_log + line(0, "fetch: head fetched (44.0s)") + line(0, "fetch: making the worktree") }));
     await p.waitForFunction(() => /making the worktree/.test(document.querySelector('#pulls-list .pull[data-id="pr_fetch"] .pull-steps .now').textContent), null, { timeout: slow(5000) })

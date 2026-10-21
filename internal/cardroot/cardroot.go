@@ -18,17 +18,23 @@ const Setting = "card_root"
 // the home folder is C:, which is the one place agent work must not go.
 var ErrNone = errors.New("this room has no place for card homes. set card_root in its settings, or set WORKTREE_ROOT")
 
-var (
-	goos    = runtime.GOOS
-	homeDir = os.UserHomeDir
-)
+// Env is what the functions ask the machine: the home folder and the OS name.
+type Env struct {
+	GOOS    string
+	HomeDir func() (string, error)
+}
+
+var system = Env{GOOS: runtime.GOOS, HomeDir: os.UserHomeDir}
 
 // StateDir is where atrium keeps its own state: under WORKTREE_ROOT when it is set, else the home folder.
-func StateDir() string {
+func StateDir() string { return system.StateDir() }
+
+// StateDir is the package function against this Env.
+func (e Env) StateDir() string {
 	if root := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); root != "" {
 		return filepath.Join(root, "hub")
 	}
-	if home, err := homeDir(); err == nil {
+	if home, err := e.HomeDir(); err == nil {
 		return filepath.Join(home, ".atrium")
 	}
 	return ".atrium"
@@ -37,13 +43,16 @@ func StateDir() string {
 // Resolve is the card root for a stored setting: the setting when set, else atrium-cards under WORKTREE_ROOT, else
 // ~/atrium/cards off Windows. It is derived on every read and never written back. scmRoot is the effective
 // git.scm_root, "" when there is none. The result is refused by Check when it is not safe to remove folders in.
-func Resolve(set, scmRoot string) (string, error) {
+func Resolve(set, scmRoot string) (string, error) { return system.Resolve(set, scmRoot) }
+
+// Resolve is the package function against this Env.
+func (e Env) Resolve(set, scmRoot string) (string, error) {
 	root := strings.TrimSpace(set)
 	if root == "" {
 		if w := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); w != "" {
 			root = filepath.Join(w, "atrium-cards")
-		} else if goos != "windows" {
-			home, err := homeDir()
+		} else if e.GOOS != "windows" {
+			home, err := e.HomeDir()
 			if err != nil || home == "" {
 				return "", ErrNone
 			}
@@ -52,15 +61,20 @@ func Resolve(set, scmRoot string) (string, error) {
 			return "", ErrNone
 		}
 	}
-	return Check(root, StateDir(), scmRoot)
+	return e.Check(root, e.StateDir(), scmRoot)
 }
 
 // Check refuses a card root a home's removal could do harm in: a drive root, the home folder or an ancestor of it,
 // anything holding or inside the state directory, anything inside git.scm_root. It returns the absolute path.
 func Check(path, stateDir, scmRoot string) (string, error) {
+	return system.Check(path, stateDir, scmRoot)
+}
+
+// Check is the package function against this Env.
+func (e Env) Check(path, stateDir, scmRoot string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
-		if h, err := homeDir(); err == nil && h != "" {
+		if h, err := e.HomeDir(); err == nil && h != "" {
 			path = filepath.Join(h, path[1:])
 		}
 	}
@@ -77,7 +91,7 @@ func Check(path, stateDir, scmRoot string) (string, error) {
 	if filepath.Dir(abs) == abs {
 		return "", errors.New("card_root is a drive root. name a folder of its own for card homes")
 	}
-	if h, err := homeDir(); err == nil && h != "" && within(abs, h) {
+	if h, err := e.HomeDir(); err == nil && h != "" && within(abs, h) {
 		return "", fmt.Errorf("card_root %s is the home folder or holds it. name a folder of its own for card homes", abs)
 	}
 	if stateDir = strings.TrimSpace(stateDir); stateDir != "" && (within(abs, stateDir) || within(stateDir, abs)) {
