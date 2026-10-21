@@ -226,6 +226,7 @@ jobs:
           path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS")
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
+        continue-on-error: true
         with:
           transport: ziti
           url: http://ziti-hook.ziti/
