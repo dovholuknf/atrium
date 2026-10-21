@@ -580,6 +580,7 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 		// The reattach is this runner's session start as far as a restart wake can tell: no SessionStart hook is
 		// coming, and the wake would otherwise wait out wakeNoHook. The wake's own settle delay follows.
 		d.wakeSawSession(row.TaskID, "")
+		d.reholdPending(row.TaskID)
 	}
 	go func() {
 		chunk := make([]byte, 8192)

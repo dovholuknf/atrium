@@ -154,6 +154,29 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, wait
 	})
 }
 
+// reholdPending puts back in the injector what a restart took out of it. The held set is in memory, so a runner
+// reattached after a restart has queued rows and nobody typing them, and an idle one makes no hook call to carry them.
+// A card an after-restart wake is delivering to is left to that wake, which types every pending row in one turn.
+func (d *Daemon) reholdPending(taskID string) {
+	if d.pending == nil {
+		return
+	}
+	if wakes, err := d.st.RestartWakes(); err == nil {
+		for _, w := range wakes {
+			if w.TaskID == taskID {
+				return
+			}
+		}
+	}
+	pending, err := d.st.PendingMessages(taskID)
+	if err != nil {
+		return
+	}
+	for _, m := range pending {
+		d.deferPeerInjection(taskID, m.ID, m.FromPeer, m.Text, "", m.WaitTurn)
+	}
+}
+
 // hold registers a peer message that the gate would not take right now, and
 // starts it retrying.
 //
