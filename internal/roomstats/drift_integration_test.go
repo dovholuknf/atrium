@@ -29,7 +29,7 @@ func TestLoadedProcessDriftsMore(t *testing.T) {
 	prev := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(prev)
 
-	idle, n, ok := measure(600 * time.Millisecond)
+	idle, n, ok := measure(time.Second)
 	if !ok || n < 5 {
 		t.Fatalf("idle probe took %d samples", n)
 	}
@@ -57,7 +57,7 @@ func TestLoadedProcessDriftsMore(t *testing.T) {
 	// look with no sample is no reading rather than a failure.
 	var loaded time.Duration
 	for try := 0; try < 3 && loaded <= idle; try++ {
-		if p99, _, ok := measure(600 * time.Millisecond); ok {
+		if p99, _, ok := measure(time.Second); ok {
 			loaded = p99
 		}
 	}

@@ -17,11 +17,11 @@ type Latency struct {
 }
 
 // DriftInterval is how often the probe's timer is due.
-const DriftInterval = 20 * time.Millisecond
+const DriftInterval = 100 * time.Millisecond
 
-// driftCap bounds the samples kept between two ticks. Ten seconds at 20ms is
-// 500, so this only bites if the stats tick itself stalls.
-const driftCap = 2000
+// driftCap bounds the samples kept between two ticks. Ten seconds at 100ms is
+// 100, so this only bites if the stats tick itself stalls.
+const driftCap = 400
 
 // Drift is a probe that sleeps DriftInterval over and over and records how
 // late each wake was.

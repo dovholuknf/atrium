@@ -65,11 +65,8 @@ func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool
 		}
 	}
 	fixes := map[int]func(context.Context, *Run) (string, error){5: fixKey, 6: fixPublish, 7: fixInstall}
-	var r *Run
-	var rep Report
+	r, rep := pass(ctx, m, opt)
 	for _, n := range steps {
-		// Each pass is after the last fix, so a step reads what the one before it left.
-		r, rep = pass(ctx, m, opt)
 		if rep.Results[n-1].Status != Todo {
 			continue
 		}
@@ -79,11 +76,11 @@ func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool
 			a.Err = err.Error()
 		}
 		acts = append(acts, a)
+		// A pass is only repeated after a fix, so a settled room costs one.
+		r, rep = pass(ctx, m, opt)
 	}
-	_, rep = pass(ctx, m, opt)
 	return rep, acts
 }
-
 func fixKey(ctx context.Context, r *Run) (string, error) {
 	priv := keyPathFor(r.GOOS, r.M.Home())
 	pub := priv + ".pub"

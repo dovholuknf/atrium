@@ -250,3 +250,32 @@ func TestFixDropsWhatTheHubRelayedThatIsNotAKey(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncOfASettledRoomIsOnePass(t *testing.T) {
+	m := winMachine()
+	keygenMakes(m)
+	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4"), SSHOn: true})
+	m.sw.From = []string{"*"}
+	m.published = nil
+	Fix(context.Background(), m, Options{})
+	m.published = &Published{User: "claude", Port: 22, Fingerprint: fp("mine"), Enabled: true}
+	m.ranMu.Lock()
+	m.ran = nil
+	m.ranMu.Unlock()
+
+	_, acts := Sync(context.Background(), m, Options{}, 6, 7)
+	if len(acts) != 0 {
+		t.Fatalf("a settled room was changed: %+v", acts)
+	}
+	m.ranMu.Lock()
+	defer m.ranMu.Unlock()
+	n := 0
+	for _, l := range m.ran {
+		if strings.Contains(l, getService) {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("a settled room was checked %d times, want once: %v", n, m.ran)
+	}
+}
