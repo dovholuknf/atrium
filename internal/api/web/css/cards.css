@@ -303,9 +303,9 @@
   }
   .chip.warn { background: var(--warn-bg); color: var(--warn); }
   /* How a room reaches the hub (transportBadge in js/rooms.js). A colour per transport, spelled as channels so the
-     tint and the text derive from one triple. The light skins get a darker triple: the dark ones would wash out on
-     paper. A fallback ignores all of it and wears the warning colour, since "off its first choice" outranks
-     "which transport". */
+     tint and the text derive from one triple. The text mixes that triple toward the skin's own `--head`, so it darkens
+     on any light skin and lightens on any dark one, with no list of skins to keep. A fallback ignores all of it
+     and wears the warning colour, since "off its first choice" outranks "which transport". */
   .chip.tp { display: inline-flex; align-items: center; gap: 4px; }
   .chip.tp svg { width: 11px; height: 11px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6;
     stroke-linecap: round; stroke-linejoin: round; }
@@ -314,29 +314,9 @@
   .chip.tp-ziti { --tp-rgb: 177,140,255; }
   .chip.tp-mtls { --tp-rgb: 45,212,191; }
   .chip.tp-zrok { --tp-rgb: 74,222,128; }
-  :root[data-skin="paper"] .chip.tp-ziti,
-  :root[data-skin="daylight"] .chip.tp-ziti,
-  :root[data-skin="linen"] .chip.tp-ziti,
-  :root[data-skin="frost"] .chip.tp-ziti,
-  :root[data-skin="mint"] .chip.tp-ziti {
-    --tp-rgb: 107,58,200;
-  }
-  :root[data-skin="paper"] .chip.tp-mtls,
-  :root[data-skin="daylight"] .chip.tp-mtls,
-  :root[data-skin="linen"] .chip.tp-mtls,
-  :root[data-skin="frost"] .chip.tp-mtls,
-  :root[data-skin="mint"] .chip.tp-mtls {
-    --tp-rgb: 0,122,110;
-  }
-  :root[data-skin="paper"] .chip.tp-zrok,
-  :root[data-skin="daylight"] .chip.tp-zrok,
-  :root[data-skin="linen"] .chip.tp-zrok,
-  :root[data-skin="frost"] .chip.tp-zrok,
-  :root[data-skin="mint"] .chip.tp-zrok {
-    --tp-rgb: 22,128,60;
-  }
   .chip.tp-ziti, .chip.tp-mtls, .chip.tp-zrok {
-    background: rgba(var(--tp-rgb),.14); border-color: rgba(var(--tp-rgb),.38); color: rgb(var(--tp-rgb));
+    background: rgba(var(--tp-rgb),.14); border-color: rgba(var(--tp-rgb),.38);
+    color: color-mix(in srgb, rgb(var(--tp-rgb)) 40%, var(--head));
   }
   .chip.tp.warn { background: var(--warn-bg); border-color: var(--warn-stroke); color: var(--warn); }
   /* A resume in flight: see `resumeOpening` in js/card-menu.js. Pulsed once when a second resume points at it. */

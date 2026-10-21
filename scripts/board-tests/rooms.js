@@ -879,16 +879,44 @@ async function transportChipsSection(browser, base) {
     if (local.svg !== 0 || local.cls.includes("tp-")) fail("the local chip should stay plain: " + JSON.stringify(local));
 
     const shots = process.env.TRANSPORT_SHOTS || "";
-    for (const skin of ["", "paper"]) {
+    const css = fs.readFileSync(path.join(__dirname, "../../internal/api/web/css/themes.css"), "utf8");
+    const skins = [""].concat([...css.matchAll(/^ {2}:root\[data-skin="([a-z]+)"\] \{\s*$/gm)].map(m => m[1]));
+    const lights = [];
+    for (const skin of skins) {
       await p.evaluate(sk => applySkin(sk), skin);
-      const probe = await p.evaluate(() => [...document.querySelectorAll("#tp-probe .chip.tp-ziti:not(.warn), #tp-probe .chip.tp-mtls:not(.warn), #tp-probe .chip.tp-zrok:not(.warn)")]
-        .map(c => getComputedStyle(c).color));
-      if (new Set(probe).size !== 3) fail("skin " + (skin || "default") + " collapsed the transport colours: " + probe);
+      const probe = await p.evaluate(() => {
+        const chan = s => {
+          const v = s.match(/[\d.]+(?:e-?\d+)?/g).map(Number);
+          return s.startsWith("color(") ? v.map((x, i) => i < 3 ? x * 255 : x) : v;
+        };
+        const lin = v => (v /= 255) <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        const lum = c => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+        const host = document.getElementById("tp-probe");
+        const under = chan(getComputedStyle(host).backgroundColor);
+        return {
+          light: lum(under) > 0.4,
+          chips: [...host.querySelectorAll(".chip.tp-ziti:not(.warn), .chip.tp-mtls:not(.warn), .chip.tp-zrok:not(.warn)")].map(c => {
+            const cs = getComputedStyle(c);
+            const bg = chan(cs.backgroundColor), a = bg.length > 3 ? bg[3] : 1;
+            const flat = [0, 1, 2].map(i => bg[i] * a + under[i] * (1 - a));
+            const fg = chan(cs.color);
+            const hi = Math.max(lum(flat), lum(fg)), lo = Math.min(lum(flat), lum(fg));
+            return { color: cs.color, ratio: (hi + 0.05) / (lo + 0.05), cls: c.className };
+          }),
+        };
+      });
+      const name = skin || "default";
+      if (new Set(probe.chips.map(c => c.color)).size !== 3) fail("skin " + name + " collapsed the transport colours: " + JSON.stringify(probe.chips));
+      for (const c of probe.chips) {
+        if (c.ratio < 4.5) fail("skin " + name + " " + c.cls + " reads " + c.ratio.toFixed(2) + ":1, under 4.5:1");
+      }
+      if (probe.light) lights.push(name);
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
-        await p.locator("#tp-probe").screenshot({ path: path.join(shots, `transport-chips-${skin ? "light" : "dark"}.png`) });
+        await p.locator("#tp-probe").screenshot({ path: path.join(shots, `transport-chips-${name}.png`) });
       }
     }
+    if (lights.length < 4) fail("fewer than four light skins found, so the contrast check proved little: " + lights);
     if (errors.length) fail("page errors: " + errors.join("; "));
   } finally {
     await ctx.close();
