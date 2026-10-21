@@ -22891,10 +22891,10 @@ async function trayToastSection(browser, base) {
     if ((await ids()).join() !== "deploy is on the board") fail("trayToast: a toast did not show with the tray closed: " + (await ids()));
     if (shots) await p.screenshot({ path: shots + "-tray-toast-before.png" });
     await p.evaluate(() => openToastLog());
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => document.getElementById("toastlog").open && !document.querySelector("#toasts .toast"), null, { timeout: slow(5000) }).catch(() => {});
     if ((await ids()).length) fail("trayToast: a toast stayed up when the tray opened: " + (await ids()));
     await p.evaluate(() => toast("second alert", "while open"));
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toastlog .tlrow")].some(e => /second alert/.test(e.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if ((await ids()).length) fail("trayToast: an alert made a toast with the tray open: " + (await ids()));
     const row = await p.evaluate(() => {
       const r = [...document.querySelectorAll("#toastlog .tlrow")].find(e => /second alert/.test(e.textContent));
@@ -22902,9 +22902,10 @@ async function trayToastSection(browser, base) {
     });
     if (row === null) fail("trayToast: the alert is not in the open tray");
     else if (!row) fail("trayToast: the alert in the open tray is not highlighted");
+    await p.mouse.move(5, 890);
     if (shots) await p.screenshot({ path: shots + "-tray-toast-after.png" });
     await p.evaluate(() => document.getElementById("toastlog").close());
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => !document.getElementById("toastlog").open, null, { timeout: slow(5000) });
     if ((await ids()).length) fail("trayToast: closing the tray brought toasts back: " + (await ids()));
     await p.evaluate(() => toast("third alert", "after close"));
     if ((await ids()).join() !== "third alert") fail("trayToast: a new alert after close did not toast: " + (await ids()));
