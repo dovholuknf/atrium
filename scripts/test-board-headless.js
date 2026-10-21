@@ -16711,11 +16711,11 @@ async function mCardUploadSection(browser) {
       await p.waitForFunction(() => document.querySelector("#m-compose textarea").value !== "", null, { timeout: slow(3000) });
       const back = await chips();
       const text = await val();
-      if (back.length !== 2 || back.some(x => x.st !== "ok") || text.indexOf("/w/in/x.png") < 0 || text.indexOf("/w/in/y.txt") < 0) fail(tag + "after a failed send the chips did not come back: " + JSON.stringify(back) + " " + JSON.stringify(text));
+      if (back.length !== 2 || back.some(x => x.st !== "ok") || text !== "check") fail(tag + "after a failed send the chips did not come back: " + JSON.stringify(back) + " " + JSON.stringify(text));
       // and the X on a restored chip still takes its own path out
       await p.tap("#m-compose .mc-file:nth-child(1) .mc-fx");
-      const after = await val();
-      if (after.indexOf("/w/in/x.png") >= 0 || after.indexOf("/w/in/y.txt") < 0) fail(tag + "removing a restored chip: " + JSON.stringify(after));
+      const after = await val(), left = await chips();
+      if (after !== "check" || left.length !== 1 || left[0].name !== "y.txt") fail(tag + "removing a restored chip: " + JSON.stringify(after) + JSON.stringify(left));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
