@@ -218,6 +218,26 @@ func TestACardLosesItsTokenWhenItIsNoLongerRunning(t *testing.T) {
 	d.revokeHubGit(task.ID, time.Time{})
 }
 
+func TestAResumedDoneCardKeepsItsTokenWhileItsRunnerIsUp(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task := plainTask(t, d, "woken")
+	tok, err := d.hubGit.cards.Mint(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := d.hubGit.cards.Check(tok); ok {
+		t.Fatal("a done card with no runner kept its token")
+	}
+	typedRunner(t, d, task.ID)
+	if id, ok := d.hubGit.cards.Check(tok); !ok || id != task.ID {
+		t.Fatal("a resumed card's token was refused while its runner is up")
+	}
+}
+
 func TestTheForwarderRouteIsOnTheAgentListenerAndTheTokenOpensNothingElse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")

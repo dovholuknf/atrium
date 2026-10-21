@@ -1103,6 +1103,8 @@ func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, bo
 		Recorded     bool   `json:"recorded"`
 		Status       string `json:"status"`
 		LauncherTold Told   `json:"launcher_told"`
+		RunnerExits  bool   `json:"runner_exits"`
+		RunnerNote   string `json:"runner_note"`
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room, body, &res); err != nil {
 		return out, err
@@ -1118,6 +1120,10 @@ func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, bo
 		out.Note = QueuedNote
 	case !res.LauncherTold.Any():
 		out.Note = "recorded on your card. nobody launched you, so there was nobody else to tell."
+	}
+	if res.RunnerExits {
+		out.RunnerExits = true
+		out.Note = strings.TrimSpace(out.Note + " " + res.RunnerNote)
 	}
 	return out, nil
 }

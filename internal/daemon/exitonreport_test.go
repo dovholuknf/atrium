@@ -54,3 +54,21 @@ func TestMinionDirectorExitsOnDone(t *testing.T) {
 		t.Error("a done carrying an ask exited the minion")
 	}
 }
+
+func TestAnUnresolvedAgentLauncherStillGetsItsWorkerExited(t *testing.T) {
+	t.Parallel()
+	d := &Daemon{}
+	for _, tc := range []struct {
+		name string
+		task *store.Task
+		exit bool
+	}{
+		{"handle only", &store.Task{SpawnedBy: "saorch", Tags: []string{OriginAgentTag}}, true},
+		{"human launcher", &store.Task{SpawnedBy: store.HumanLauncher, Tags: []string{OriginAgentTag}}, false},
+		{"no launcher", &store.Task{Tags: []string{OriginAgentTag}}, false},
+	} {
+		if got := d.exitsOnReport(tc.task, FinishRequest{Status: ReportDone}); got != tc.exit {
+			t.Errorf("%s: exits = %v, want %v", tc.name, got, tc.exit)
+		}
+	}
+}

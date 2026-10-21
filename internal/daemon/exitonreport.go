@@ -42,7 +42,7 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 	if task == nil || (in.Status != "" && in.Status != ReportDone) || strings.TrimSpace(in.Ask) != "" {
 		return false
 	}
-	if strings.TrimSpace(task.SpawnedByID) == "" {
+	if strings.TrimSpace(task.SpawnedByID) == "" && !launchedByAnAgent(task) {
 		return false
 	}
 	for _, tag := range []string{ResidentTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
@@ -59,6 +59,13 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 		return false
 	}
 	return true
+}
+
+// launchedByAnAgent says whether a card has a launcher that is a session, even when the launcher's handle did not
+// resolve to a card id at launch, which leaves SpawnedByID empty.
+func launchedByAnAgent(t *store.Task) bool {
+	by := strings.TrimSpace(t.SpawnedBy)
+	return agentLaunched(t) && by != "" && by != store.HumanLauncher
 }
 
 // ResidentTag marks a card that stays open between tasks: a done or a blocked reports a task and never ends it. The
@@ -102,6 +109,10 @@ func isLinkCard(t *store.Task) bool {
 // reportTypedQuiet is how long since a person last typed into the card for it to be left to exit.
 var reportTypedQuiet = 2 * time.Minute
 
+// exitReportWhy is what a done report and the card's event say about the runner leaving.
+const exitReportWhy = "it reported done and was not launched resident. the card, worktree and branch stay, and its launcher " +
+	"can resume it with a say that passes wake"
+
 // exitAfterReport waits out the delay, then asks the runner to leave. Best effort like every hook: a failure is
 // logged and the report has already landed. An operator who typed into the terminal lately is left alone, by the
 // quiet period, reportTypedQuiet.
@@ -110,6 +121,9 @@ func (d *Daemon) exitAfterReport(taskID string) {
 	if run := d.sup.get(taskID); run != nil && run.typedWithin(reportTypedQuiet) {
 		log.Printf("[atrium] %s reported done and was typed in lately, so it keeps running", taskID)
 		return
+	}
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{"by": "exit-on-report", "why": exitReportWhy}); err != nil {
+		log.Printf("[atrium] could not record why %s exits after its report: %v", taskID, err)
 	}
 	if err := d.hk.stopAfterReport(d, taskID); err != nil {
 		log.Printf("[atrium] could not exit %s after its done report: %v", taskID, err)

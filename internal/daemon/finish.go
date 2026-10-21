@@ -515,7 +515,8 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	if res.Relayed {
 		told = "relayed"
 	}
-	if d.exitsOnReport(task, in) {
+	exits := d.exitsOnReport(task, in)
+	if exits {
 		go d.exitAfterReport(task.ID)
 	}
 
@@ -536,6 +537,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	out := map[string]any{
 		"ok": true, "recorded": true, "task_id": task.ID, "status": status,
 		"unverified": unverified, "launcher_told": told,
+	}
+	if exits {
+		out["runner_exits"], out["runner_note"] = true, "your runner exits in a few seconds: "+exitReportWhy+". stop now."
 	}
 	if res.Item != nil {
 		// Said back so a worker reads, in the same turn, that `done` handed

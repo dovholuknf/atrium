@@ -136,6 +136,7 @@ type EndOutput struct {
 	Status       string `json:"status"`
 	LauncherTold any    `json:"launcher_told"`
 	Note         string `json:"note,omitempty"`
+	RunnerExits  bool   `json:"runner_exits,omitempty"`
 }
 
 // CheckDoneSHA is why a commit id is refused, or "".

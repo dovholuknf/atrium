@@ -61,6 +61,36 @@ func TestASpawnedCardReportingDoneIsAskedToLeaveAfterTheLauncherHasTheReport(t *
 	}
 }
 
+// The done answers that the runner exits and why, and the card's history says the same.
+func TestADoneThatExitsTheRunnerSaysSoAndWhy(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	got := watchExits(t, d, launcher.ID, nil)
+
+	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research"})
+	if rec.Code != 200 {
+		t.Fatalf("finish answered %d: %s", rec.Code, rec.Body)
+	}
+	if out["runner_exits"] != true || !strings.Contains(out["runner_note"].(string), "reported done") {
+		t.Fatalf("the done did not say the runner exits and why: %v", out)
+	}
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the worker was never asked to leave")
+	}
+	evs, err := d.st.Events(worker.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		if strings.Contains(string(e.Payload), "exit-on-report") {
+			return
+		}
+	}
+	t.Fatal("the card has no event saying why its runner exited")
+}
+
 // A report that is not final leaves the card running.
 func TestAQuestionProgressOrBlockedReportLeavesTheCardRunning(t *testing.T) {
 	if testing.Short() {

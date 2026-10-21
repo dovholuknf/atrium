@@ -1,0 +1,3 @@
+A worker's done now says its runner is exiting and why, in the answer and on the card. A launcher whose handle did not
+resolve to a card still has its worker exited. A card woken by a say can fetch and push from the first moment
+(bug-done-workers-stay-alive).

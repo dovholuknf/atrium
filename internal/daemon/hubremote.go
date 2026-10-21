@@ -122,6 +122,10 @@ func (d *Daemon) cardLive(id string) bool {
 	if _, ok := d.hubGit.stashing.Load(id); ok {
 		return true
 	}
+	// A done card woken by a say keeps that status until it acts, and its first fetch comes before that.
+	if d.sup != nil && d.sup.get(id) != nil {
+		return true
+	}
 	t, err := d.st.Get(id)
 	if err != nil || t == nil {
 		return false
