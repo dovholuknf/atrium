@@ -234,10 +234,12 @@ func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
 		if _, err := st.AddAsk(card.ID, "q?", ""); err != nil {
 			t.Fatal(err)
 		}
-		got, _ := st.Get(card.ID)
+	}
+	got, _ := st.Get(card.ID)
+	got2, _ := st.Get(card2.ID)
+	for i := 0; i < 10; i++ {
 		srv.PublishTask(got)
 	}
-	got2, _ := st.Get(card2.ID)
 	srv.PublishTask(got2)
 
 	evs := readTaskEvents(resp, 3*taskCoalesce)
