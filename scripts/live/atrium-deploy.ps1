@@ -38,14 +38,29 @@ param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'DEPLOY'
 . "$PSScriptRoot\refuse-supervised.ps1"
-Assert-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell `
-  -Named:(($Rooms -split ',' | ForEach-Object { $_.Trim() }) -contains 'sg4-control')
 . "$PSScriptRoot\live-common.ps1"
-$LiveLog = Join-Path $Base 'atrium-deploy.log'
+$LiveLog = if ($env:ATRIUM_LIVE_LOG) { $env:ATRIUM_LIVE_LOG } else { Join-Path $Base 'atrium-deploy.log' }
+
+if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
+  $ReportTo = if ($env:ATRIUM_ROOM) { "$env:ATRIUM_TASK_ID@$env:ATRIUM_ROOM" } else { $env:ATRIUM_TASK_ID }
+}
+
+# Stop-Early ends a deploy that cannot begin. The detached child has no window, so what it says goes to the log and to
+# the card, or the deploy ends in silence.
+function Stop-Early([string]$Message) {
+  Say $Message
+  if ($Detached -and $ReportTo) { $null = Send-CardSay $ReportTo "atrium-deploy: $Message" }
+  exit 1
+}
+trap { if ($Detached) { Stop-Early "failed before its first step: $($_.Exception.Message)" }; break }
+
+$why = Test-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell `
+  -Named:(($Rooms -split ',' | ForEach-Object { $_.Trim() }) -contains 'sg4-control')
+if ($why) { Stop-Early "refusing: $why" }
 
 $remoteNames = 'sg3', 'm1mini', 'sgg'
 try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
-catch { Say "FATAL: $($_.Exception.Message)"; exit 1 }
+catch { Stop-Early "FATAL: $($_.Exception.Message)" }
 $local = @($want | Where-Object { $_ -in 'hub', 'claude-sg4', 'sg4-control' })
 # Only a deploy that stops something on this machine can end the shell it runs in. A deploy of only sg3, m1mini or sgg
 # stops nothing here, so it runs from any shell, a room's included.
@@ -53,16 +68,8 @@ $local = @($want | Where-Object { $_ -in 'hub', 'claude-sg4', 'sg4-control' })
 $localRooms = @($local | Where-Object { $_ -ne 'hub' })
 if ($localRooms.Count) { Assert-NotSupervised -Targets $localRooms }
 
-if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
-  $ReportTo = if ($env:ATRIUM_ROOM) { "$env:ATRIUM_TASK_ID@$env:ATRIUM_ROOM" } else { $env:ATRIUM_TASK_ID }
-}
-
 if ($env:ATRIUM_TASK_ID -and $local.Count -and -not $Detached -and -not $WhatIf) {
-  $argv = @('-NoProfile', '-File', $PSCommandPath, '-Rooms', ($want -join ','), '-Detached')
-  if ($ReportTo) { $argv += '-ReportTo', $ReportTo }
-  if ($NoBuild) { $argv += '-NoBuild' }
-  if ($Immediate) { $argv += '-Immediate' }
-  if ($KillRunners) { $argv += '-KillRunners' }
+  $argv = Get-DetachedArgv $PSCommandPath $want $ReportTo $PSBoundParameters
   Start-Process pwsh -ArgumentList $argv -WindowStyle Hidden
   Say "detached: deploying $($want -join ', '). the result is said to this card when it ends"
   exit 0
@@ -84,27 +91,7 @@ function Report {
   $lines | ForEach-Object { Say $_ }
   if (-not $ReportTo) { return }
   $text = "atrium-deploy$(if ($WhatIf) { ' (WhatIf)' }):`n" + ($lines -join "`n")
-  # The hub routes /v1/* to the room in X-Atrium-Room, and refuses a request that names none.
-  $card, $room = $ReportTo -split '@', 2
-  $headers = @{}
-  # A bare card id means the local room, which is where this script runs.
-  if (-not $room) { $room = 'sg4-control' }
-  $headers['X-Atrium-Room'] = $room
-  $body = @{ to = $card; from = 'atrium-deploy'; text = $text; kind = 'fyi'; wake = $true } | ConvertTo-Json -Compress
-  # Retried while the hub or the room is coming back. A 4xx is an answer, not an outage.
-  for ($i = 0; $i -lt 30; $i++) {
-    try {
-      $null = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:7778/v1/say' -ContentType 'application/json' `
-        -Headers $headers -Body $body -TimeoutSec 15
-      Say "result said to $ReportTo"
-      return
-    } catch {
-      $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-      if ($code -ge 400 -and $code -lt 500) { break }
-      Start-Sleep -Seconds 10
-    }
-  }
-  Say "could not say the result to ${ReportTo}: $($Error[0].Exception.Message)"
+  $null = Send-CardSay $ReportTo $text
 }
 
 # Test-Unheld answers whether a room that came back has lifted its deploy hold, within 30s. A room left held refuses

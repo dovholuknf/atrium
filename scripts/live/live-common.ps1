@@ -95,6 +95,47 @@ function Say($m) {
   $line | Tee-Object -FilePath $LiveLog -Append | Write-Host
 }
 
+# Send-CardSay says $Text to a card through the hub, which routes `card@room`, and answers whether it was heard. A bare
+# card id means the local room. Retried while the hub or the room is coming back: a 4xx is an answer, not an outage.
+# ATRIUM_LIVE_SAY_URL stands in for the hub's /v1/say, for tests.
+function Send-CardSay([string]$To, [string]$Text, [int]$Tries = 30, [int]$Delay = 10) {
+  $card, $room = $To -split '@', 2
+  if (-not $room) { $room = 'sg4-control' }
+  $uri = if ($env:ATRIUM_LIVE_SAY_URL) { $env:ATRIUM_LIVE_SAY_URL } else { 'http://127.0.0.1:7778/v1/say' }
+  $body = @{ to = $card; from = 'atrium-deploy'; text = $Text; kind = 'fyi'; wake = $true } | ConvertTo-Json -Compress
+  $last = ''
+  for ($i = 0; $i -lt $Tries; $i++) {
+    try {
+      $null = Invoke-RestMethod -Method Post -Uri $uri -ContentType 'application/json' `
+        -Headers @{ 'X-Atrium-Room' = $room } -Body $body -TimeoutSec 15
+      Say "result said to $To"
+      return $true
+    } catch {
+      $last = $_.Exception.Message
+      $code = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+      if ($code -ge 400 -and $code -lt 500) { break }
+      if ($i -lt $Tries - 1) { Start-Sleep -Seconds $Delay }
+    }
+  }
+  Say "could not say the result to ${To}: $last"
+  return $false
+}
+
+# Get-DetachedArgv is the argv of the hidden child that carries on a deploy after the card that started it ends its turn.
+# It forwards every parameter that was bound, so a switch added later is not dropped. -Rooms is the resolved list, and
+# -WhatIf is never forwarded: a dry run does not detach.
+function Get-DetachedArgv([string]$Script, [string[]]$Rooms, [string]$ReportTo, [hashtable]$Bound) {
+  $argv = @('-NoProfile', '-File', $Script, '-Rooms', ($Rooms -join ','), '-Detached')
+  if ($ReportTo) { $argv += '-ReportTo', $ReportTo }
+  foreach ($k in ($Bound.Keys | Sort-Object)) {
+    if ($k -in 'Rooms', 'ReportTo', 'Detached', 'WhatIf') { continue }
+    $v = $Bound[$k]
+    if ($v -is [switch]) { if ($v.IsPresent) { $argv += "-$k" } }
+    else { $argv += "-$k", [string]$v }
+  }
+  return $argv
+}
+
 # Wait-NewContextsDone holds a deploy while any card has a new context under way, the way the restart gate holds it
 # for a busy board. A restart cuts a clear off between its steps and leaves the card half cycled. Names each card
 # while it waits. Returns $true when none is left, $false when -MaxSeconds ran out, and $true when the hub does not
