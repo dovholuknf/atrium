@@ -78,6 +78,9 @@ func sameJSON(t *testing.T, a, b string) {
 	if err := json.Unmarshal([]byte(b), &y); err != nil {
 		t.Fatal(err)
 	}
+	// idle_seconds is read off the clock at each render, so two renders a second apart differ by design
+	delete(x, "idle_seconds")
+	delete(y, "idle_seconds")
 	ja, _ := json.Marshal(x)
 	jb, _ := json.Marshal(y)
 	if string(ja) != string(jb) {

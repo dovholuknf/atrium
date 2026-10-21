@@ -94,6 +94,10 @@ func (s *Server) measureResources(ctx context.Context, id string) {
 			continue
 		}
 		n := dirSize(ctx, filepath.FromSlash(dir))
+		// A close is freeing this tree: a count taken while it goes would overwrite the size the close recorded.
+		if _, busy := closing.Load(id); busy {
+			return
+		}
 		if err := s.st.SetResourceBytes(r.Card, r.Seq, n); err != nil {
 			log.Printf("[atrium api] measure %s %s: %v", id, dir, err)
 		}
