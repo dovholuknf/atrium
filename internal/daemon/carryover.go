@@ -581,6 +581,8 @@ func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int, all
 	prefix := make([]byte, 0, len(old)+len(carryDivider))
 	prefix = append(prefix, old...)
 	prefix = append(prefix, carryDivider...)
+	// Moves the saved run's rows into history, which a narrower width leaves alone. Rows still on the grid are cut.
+	prefix = append(prefix, "\x1b[2J\x1b[H"...)
 	if budget := max - len(live); (all || budget <= carryReplayMax) && len(prefix) > budget {
 		if budget <= len(carryDivider) {
 			return live, cuts, false, 0
@@ -733,6 +735,62 @@ func normSpace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// needsSettling is whether the file's one width cannot describe these bytes. A single width is replayed as drawn, which
+// keeps text a cursor-home repaint overwrote, so settling is only for what a single width gets wrong.
+func needsSettling(cuts []sizeCut, carried *carryover) bool {
+	for i, c := range cuts {
+		if c.cols != cuts[0].cols || (i == 0 && carried != nil && c.cols != carried.cols) {
+			return true
+		}
+	}
+	return false
+}
+
+// settleCarry is the ring's bytes as the rows they left on a screen, so the file holds no cursor moves.
+//
+// THE FILE RECORDS ONE WIDTH and a ring holds several. A repaint drawn for 120 columns erases and
+// rewrites by counting rows, and replayed at the file's one width the counts land on the wrong rows:
+// lines printed over each other, the old one left behind. Rendered here, at the width each run was
+// drawn at, what is saved is text that can be laid out at any width.
+func settleCarry(b []byte, cuts []sizeCut, rows int) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	if len(cuts) == 0 {
+		cuts = []sizeCut{{0, 0, 0}}
+	}
+	var out []byte
+	for i := 0; i < len(cuts); {
+		j := i + 1
+		for j < len(cuts) && cuts[j].cols == cuts[i].cols {
+			j++
+		}
+		end := len(b)
+		if j < len(cuts) {
+			end = minInt(maxInt(cuts[j].at, cuts[i].at), len(b))
+		}
+		start := minInt(cuts[i].at, end)
+		h := rows
+		if cuts[i].rows > 0 {
+			h = cuts[i].rows
+		}
+		within := make([]sizeCut, 0, j-i-1)
+		for _, c := range cuts[i+1 : j] {
+			within = append(within, sizeCut{c.at - start, c.cols, c.rows})
+		}
+		sc := newScreenSized(cuts[i].cols, h)
+		sc.applyCuts(b[start:end], within)
+		if text := sc.text(); text != "" {
+			if len(out) > 0 && !bytes.HasSuffix(out, []byte("\n")) {
+				out = append(out, '\r', '\n')
+			}
+			out = append(out, text...)
+		}
+		i = j
+	}
+	return out
+}
+
 // carryFrom is what this runner would have written out right now.
 //
 // The carried buffer is folded back in when the width still agrees, so
@@ -745,6 +803,12 @@ func (r *runner) carryFrom(max int) *carryover {
 		return nil
 	}
 	cols := r.buf.CurrentWidth()
+	r.mu.Lock()
+	carried := r.carried
+	r.mu.Unlock()
+	if carried != nil {
+		cols = carried.cols
+	}
 	// EVERYTHING RETAINED, the same as an attach.
 	//
 	// This used to keep only the run composed at the width being recorded, on
@@ -753,11 +817,15 @@ func (r *runner) carryFrom(max int) *carryover {
 	// width in the header against the width of the terminal then. What the
 	// refusal actually did was throw away every restart's scrollback for any
 	// session that had been resized, which is most of them.
-	live, _, wrapped := r.buf.Replay()
-
-	r.mu.Lock()
-	carried := r.carried
-	r.mu.Unlock()
+	live, liveCuts, liveRows, wrapped := r.buf.ReplayCuts()
+	if needsSettling(liveCuts, carried) {
+		live = settleCarry(live, liveCuts, liveRows)
+	}
+	if carried == nil {
+		for _, c := range liveCuts {
+			cols = maxInt(cols, c.cols)
+		}
+	}
 
 	// And whatever the LAST restart left, so scrollback survives a second one
 	// rather than only the one it was written for. Folded in whatever width it

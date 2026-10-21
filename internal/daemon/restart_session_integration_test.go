@@ -90,3 +90,32 @@ func TestRestartRunnerLeavesAStubbornRunnerUp(t *testing.T) {
 	}
 	_ = d.StopRunner(taskID)
 }
+
+// A RESTART TYPES ITS HARNESS'S EXIT KEYS AND NOTHING ELSE INTO THE OLD TERMINAL.
+//
+// The Ctrl-D, "Press Ctrl-D again to exit" and "Resume this session with: claude --resume" in the scrollback before
+// every restart marker are claude answering those two keys. `/clear` is typed only by a new-context cycle or by the
+// operator, never by a restart, and the resume that follows carries the card's own conversation id.
+func TestARestartTypesTwoControlDsAndNeverClear(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, _, err := d.st.Register(store.Observed{WireName: "exit-keys", Worktree: t.TempDir(), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFakePTY()
+	t.Cleanup(func() { f.Close() })
+	r := &runner{taskID: task.ID, pty: f, started: time.Now(), buf: newRing(1<<16, 80),
+		watchers: map[chan []byte]struct{}{}, done: make(chan struct{})}
+	d.sup.add(r)
+	d.hk.windDownKeyGap = 20 * time.Millisecond
+
+	_ = d.askExit(task.ID, 100*time.Millisecond)
+
+	if got := f.written(); got != "\x04\x04" {
+		t.Fatalf("a restart typed %q into the old terminal, want two control-d and nothing else", got)
+	}
+	if strings.Contains(f.written(), newContextClear) {
+		t.Fatal("a restart typed /clear")
+	}
+}
