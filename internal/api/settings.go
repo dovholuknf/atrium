@@ -56,6 +56,8 @@ func globalAutoView(s *Server) map[string]any {
 	for key, field := range map[string]string{
 		store.SettingSweepDead:  "sweep_dead_after",
 		store.SettingPruneAfter: "prune_after",
+		// Seconds a landed worker waits after its runner exits before it is pruned. Empty is 300.
+		store.SettingLandedReclaimGrace: "landed_reclaim_grace",
 		// How long a worker whose branch merged stays before it is culled.
 		// Empty is the default, a day. See store.DefaultMergedCullGrace.
 		store.SettingMergedCullGrace: "merged_cull_grace",
@@ -260,6 +262,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		PruneAfter *string `json:"prune_after"`
 		// Seconds a merged worker waits before it is culled, or `off`.
 		MergedCullGrace *string `json:"merged_cull_grace"`
+		// Seconds a landed worker waits after its runner exits before it is pruned, or `off`.
+		LandedReclaimGrace *string `json:"landed_reclaim_grace"`
 		// Minutes a room deploy hold may last before the room lifts it.
 		DeployHoldMax *string `json:"deploy_hold_max"`
 		// Minutes a `when: done` message waits for the turn to end before the next
@@ -463,14 +467,15 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		s.Broadcast("settings", globalAutoView(s))
 	}
 	for key, value := range map[string]*string{
-		store.SettingSweepDead:       body.SweepDead,
-		store.SettingPruneAfter:      body.PruneAfter,
-		store.SettingMergedCullGrace: body.MergedCullGrace,
+		store.SettingSweepDead:          body.SweepDead,
+		store.SettingPruneAfter:         body.PruneAfter,
+		store.SettingMergedCullGrace:    body.MergedCullGrace,
+		store.SettingLandedReclaimGrace: body.LandedReclaimGrace,
 	} {
 		if value == nil {
 			continue
 		}
-		if key == store.SettingMergedCullGrace && strings.TrimSpace(*value) == "" {
+		if (key == store.SettingMergedCullGrace || key == store.SettingLandedReclaimGrace) && strings.TrimSpace(*value) == "" {
 			if err := s.st.SetSetting(key, ""); err != nil {
 				writeErr(w, http.StatusBadRequest, err)
 				return

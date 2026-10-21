@@ -49,6 +49,11 @@ const (
 	// DefaultMergedCullGrace is what an unset or reset merged_cull_grace means, in seconds: a day. `off` opts a room out. A worker leaves when a human, or
 	// an agent on a human's word, exits it, or when its work landed and it sat idle that long.
 	DefaultMergedCullGrace = "86400"
+	// SettingLandedReclaimGrace is how long a landed worker waits after its runner exits before the room prunes its
+	// worktree and branch, in seconds. `off` disables it. See daemon/landed.go.
+	SettingLandedReclaimGrace = "landed_reclaim_grace"
+	// DefaultLandedReclaimGrace is five minutes.
+	DefaultLandedReclaimGrace = "300"
 	// SettingEscalateHeldAfter is how many minutes a `when: done` message waits for
 	// the turn to end before the next tool call carries it. Empty means fifteen. See
 	// daemon/escalate.go.

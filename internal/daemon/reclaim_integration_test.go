@@ -196,7 +196,11 @@ func TestCullNeverReclaimsWhatMustStay(t *testing.T) {
 		set  func(t *testing.T, d *Daemon, w *store.Task)
 		want string
 	}{
-		{"clints own card", []string{SubagentTag}, nil, "an agent did not launch it"},
+		{"clints own card", []string{SubagentTag}, func(t *testing.T, d *Daemon, w *store.Task) {
+			if err := d.st.SetLifetime(w.ID, "resident"); err != nil {
+				t.Fatal(err)
+			}
+		}, "an agent did not launch it"},
 		{"kept open", []string{OriginAgentTag, SubagentTag, KeepOpenTag}, nil, "stay open"},
 		{"an investigation", []string{OriginAgentTag, SubagentTag, InvestigationTag}, nil, "stay open"},
 		{"ended without finishing", []string{OriginAgentTag, SubagentTag}, func(t *testing.T, d *Daemon, w *store.Task) {

@@ -30,6 +30,56 @@ type landedState struct {
 	mu      sync.Mutex
 	kept    map[string]string
 	checked map[string]time.Time
+	exitAt  map[string]time.Time
+}
+
+// exited records when a card's runner went, which is when its prune grace starts.
+func (s *landedState) exited(id string, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.exitAt == nil {
+		s.exitAt = map[string]time.Time{}
+	}
+	s.exitAt[id] = at
+}
+
+func (s *landedState) exitedAt(id string) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exitAt[id]
+}
+
+// SettingLandedReclaimGrace is how long a landed worker waits after its runner exits before it is pruned. Seconds, or
+// `off`.
+const SettingLandedReclaimGrace = store.SettingLandedReclaimGrace
+
+// landedGrace is the prune grace, and whether pruning is on at all. merged_cull_grace `off` turns the whole of it off.
+func (d *Daemon) landedGrace() (time.Duration, bool) {
+	if _, on := d.mergedGrace(); !on {
+		return 0, false
+	}
+	v, err := d.st.Setting(SettingLandedReclaimGrace)
+	if err != nil {
+		return 0, false
+	}
+	v = strings.TrimSpace(v)
+	if v == "" {
+		v = store.DefaultLandedReclaimGrace
+	}
+	if v == "off" {
+		return 0, false
+	}
+	secs, err := time.ParseDuration(v + "s")
+	if err != nil || secs <= 0 {
+		return 0, false
+	}
+	return secs, true
+}
+
+// launchedWork says whether a card was launched as work: by an agent, or over /v1/launch as a work lifetime or an item,
+// whoever launched it. A card an operator started by hand is none of these.
+func launchedWork(t *store.Task) bool {
+	return t != nil && (agentLaunched(t) || t.Lifetime == store.LifetimeWork || isItem(t))
 }
 
 func (s *landedState) set(id, why string) bool {
@@ -50,13 +100,13 @@ func (s *landedState) set(id, why string) bool {
 }
 
 // due says whether a card's landing is read now, and stamps it.
-func (s *landedState) due(id string, now time.Time) bool {
+func (s *landedState) due(id string, now time.Time, every time.Duration) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.checked == nil {
 		s.checked = map[string]time.Time{}
 	}
-	if at, ok := s.checked[id]; ok && now.Sub(at) < landedRecheck {
+	if at, ok := s.checked[id]; ok && now.Sub(at) < every {
 		return false
 	}
 	s.checked[id] = now
@@ -141,7 +191,7 @@ func (d *Daemon) reclaimBlockIdle(t *store.Task) string {
 	switch {
 	case t == nil:
 		return "there is no card"
-	case !hasTag(t.Tags, OriginAgentTag):
+	case !launchedWork(t):
 		return "an agent did not launch it, so atrium never reclaims it"
 	case staysOpen(t):
 		return "it is tagged to stay open or is an investigation. take the tag off to reclaim it"
@@ -163,7 +213,7 @@ func (d *Daemon) reclaimBlockIdle(t *store.Task) string {
 
 // sweepLandedIdle reads the landing of each candidate worker and reclaims the idle ones. Off the tick: it runs git.
 func (d *Daemon) sweepLandedIdle() {
-	grace, on := d.mergedGrace()
+	grace, on := d.landedGrace()
 	if !on {
 		return
 	}
@@ -181,15 +231,22 @@ func (d *Daemon) landedPass(grace time.Duration, now time.Time) {
 	if err != nil {
 		return
 	}
+	every := grace / 2
+	if every < 30*time.Second {
+		every = 30 * time.Second
+	}
+	if every > landedRecheck {
+		every = landedRecheck
+	}
 	for _, t := range tasks {
-		if t.ArchivedAt != nil || !agentLaunched(t) || !d.isWorker(t) || strings.TrimSpace(t.Worktree) == "" {
+		if t.ArchivedAt != nil || !launchedWork(t) || !d.isWorker(t) || strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
 		if t.Status != store.StatusDone && t.Status != store.StatusNeedsInput {
 			d.landedSet(t.ID, "")
 			continue
 		}
-		if !d.landed.due(t.ID, now) || d.nctx.holding(t.ID) {
+		if !d.landed.due(t.ID, now, every) || d.nctx.holding(t.ID) {
 			continue
 		}
 		d.landedOne(t, grace, now)
@@ -206,30 +263,57 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 	if !hasDotGit(t.Worktree) {
 		return
 	}
+	idleSince := t.LastActivityAt
+	if at := d.landed.exitedAt(t.ID); at.After(idleSince) {
+		idleSince = at
+	}
 	plan, err := inspectCull(t.Worktree, DefaultCullInto)
 	if err != nil || !plan.merged {
-		d.landedSet(t.ID, "")
+		if err == nil && now.Sub(idleSince) >= grace {
+			d.keepLanded(t, "not pruned: "+plan.branch+" has commits not on "+DefaultCullInto)
+		} else {
+			d.landedSet(t.ID, "")
+		}
 		return
 	}
 	switch why := d.landedHeld(t, plan); {
 	case why != "":
-		d.landedSet(t.ID, "landed, kept: "+why)
+		d.keepLanded(t, "landed, kept: "+why)
 		return
-	case now.Sub(t.LastActivityAt) < grace || d.deployHeld(t.ID):
+	case now.Sub(idleSince) < grace || d.deployHeld(t.ID):
 		d.landedSet(t.ID, "")
 		return
 	}
 	res, err := d.cullProved(t.ID, DefaultCullInto, "", true)
 	if err != nil {
 		log.Printf("[atrium] not reclaiming landed %s: %v", t.DisplayTitle(), err)
-		d.landedSet(t.ID, "landed, kept: "+err.Error())
+		d.keepLanded(t, "landed, kept: "+err.Error())
 		return
 	}
 	d.landed.set(t.ID, "")
+	line := fmt.Sprintf("pruned %s: worktree removed=%v branch %s deleted=%v", t.Worktree, res.WorktreeRemoved,
+		res.Branch, res.BranchDeleted)
+	if res.Kept != "" {
+		line += ", kept: " + res.Kept
+	}
+	d.noteOnCard(t.ID, line)
 	d.publishTask(t.ID)
 	d.ap.Broadcast("task-removed", nil)
-	log.Printf("[atrium] reclaimed landed %s after %s idle: worktree removed=%v branch deleted=%v %s",
-		t.DisplayTitle(), grace, res.WorktreeRemoved, res.BranchDeleted, res.Kept)
+	log.Printf("[atrium] %s (%s) after %s idle", line, t.DisplayTitle(), grace)
+}
+
+// keepLanded says on the board, and once on the card, why a landed worker is not pruned.
+func (d *Daemon) keepLanded(t *store.Task, why string) {
+	if d.landed.set(t.ID, why) {
+		d.noteOnCard(t.ID, why)
+		d.publishTask(t.ID)
+	}
+}
+
+func (d *Daemon) noteOnCard(id, line string) {
+	if err := d.st.AppendEvent(id, store.EventNotified, map[string]any{"by": "prune", "text": line}); err != nil {
+		log.Printf("[atrium] could not note on %s: %v", id, err)
+	}
 }
 
 // landedHeld is why a landed worker is kept, or "".

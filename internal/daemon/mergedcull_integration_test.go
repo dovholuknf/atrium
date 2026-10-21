@@ -192,7 +192,10 @@ func TestACardWithoutAWorkerTagIsNeverMarked(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
-	mergedWorker(t, d, r, "sdk")
+	_, worker := mergedWorker(t, d, r, "sdk")
+	if err := d.st.SetLifetime(worker.ID, "resident"); err != nil {
+		t.Fatal(err)
+	}
 	if res := markedMerged(t, d, DefaultCullInto); len(res.Marked) != 0 {
 		t.Fatalf("a card with no origin was marked: %+v", res)
 	}

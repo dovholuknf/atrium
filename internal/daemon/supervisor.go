@@ -2487,6 +2487,7 @@ func (d *Daemon) awaitExit(r *runner) {
 	r.closePTY()
 	// Only if it is still this runner: a late exit must not remove a newer start's entry.
 	d.sup.removeRunner(r)
+	d.landed.exited(r.taskID, time.Now())
 	// The process is gone, so nothing it was doing is still true. That includes
 	// a message held for its terminal: the retry is dropped now rather than at a
 	// backoff tick hours out, and the message stays queued for a resumed

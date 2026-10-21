@@ -66,7 +66,7 @@ func (d *Daemon) reclaimBlock(t *store.Task) string {
 	switch {
 	case t == nil:
 		return "there is no card"
-	case !hasTag(t.Tags, OriginAgentTag):
+	case !launchedWork(t):
 		return "an agent did not launch it, so atrium never reclaims it"
 	case staysOpen(t):
 		return "it is tagged to stay open or is an investigation. take the tag off to reclaim it"

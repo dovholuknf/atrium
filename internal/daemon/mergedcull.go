@@ -68,7 +68,7 @@ func (d *Daemon) isWorker(t *store.Task) bool {
 	if t == nil || hasTag(t.Tags, DirectorTag) {
 		return false
 	}
-	if hasTag(t.Tags, SubagentTag) {
+	if hasTag(t.Tags, SubagentTag) || t.Lifetime == store.LifetimeWork || isItem(t) {
 		return true
 	}
 	if !hasTag(t.Tags, OriginAgentTag) {

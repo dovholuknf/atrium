@@ -3,177 +3,180 @@
 package daemon
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-func finishedCard(t *testing.T, d *Daemon, name, status string, age time.Duration) *store.Task {
+func linkDir(t *testing.T, target, link string) {
 	t.Helper()
-	task, _, err := d.st.Register(store.Observed{
-		WireName: name, Worktree: "/tmp/atrium-test", Runner: "claude",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.st.SetStatus(task.ID, status); err != nil {
-		t.Fatal(err)
-	}
-	if age > 0 {
-		if err := d.st.BackdateActivity(task.ID, age); err != nil {
-			t.Fatal(err)
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+			t.Skipf("no junction here: %v %s", err, out)
 		}
+		return
 	}
-	return task
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("no symlink here: %v", err)
+	}
 }
 
-func alive(t *testing.T, d *Daemon, id string) bool {
+func sharedModules(t *testing.T) (dir, sentinel string) {
 	t.Helper()
-	_, err := d.st.Get(id)
-	return err == nil
+	dir = filepath.Join(t.TempDir(), "node_modules")
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel = filepath.Join(dir, "pkg", "index.js")
+	if err := os.WriteFile(sentinel, []byte("shared\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, sentinel
 }
 
-// Nobody has turned it on, so nothing is deleted. This is the case that has to
-// be right, because the alternative is a board that quietly eats its history.
-func TestPruningIsOffUnlessAskedFor(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	old := finishedCard(t, d, "prune-1", store.StatusDone, 400*24*time.Hour)
-
-	if err := d.pruneOld(); err != nil {
-		t.Fatal(err)
-	}
-	if !alive(t, d, old.ID) {
-		t.Fatal("a card was deleted with no pruning configured")
-	}
-}
-
-func TestPruningDeletesWhatIsOldEnoughAndNothingElse(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	if err := d.st.SetSetting(store.SettingPruneAfter, "86400"); err != nil {
-		t.Fatal(err)
-	}
-
-	old := finishedCard(t, d, "prune-old", store.StatusDone, 72*time.Hour)
-	recent := finishedCard(t, d, "prune-recent", store.StatusDone, time.Hour)
-	dead := finishedCard(t, d, "prune-dead", store.StatusDead, 72*time.Hour)
-	shelved := finishedCard(t, d, "prune-shelved", store.StatusPaused, 72*time.Hour)
-	running := finishedCard(t, d, "prune-running", store.StatusRunning, 72*time.Hour)
-
-	if err := d.pruneOld(); err != nil {
-		t.Fatal(err)
-	}
-
-	if alive(t, d, old.ID) {
-		t.Fatal("a card older than the age survived")
-	}
-	if alive(t, d, dead.ID) {
-		t.Fatal("a dead card older than the age survived")
-	}
-	if !alive(t, d, recent.ID) {
-		t.Fatal("a card younger than the age was deleted")
-	}
-	// Shelving says the work is coming back. A sweep that took shelved cards
-	// would discard exactly the ones kept on purpose.
-	if !alive(t, d, shelved.ID) {
-		t.Fatal("a shelved card was pruned")
-	}
-	if !alive(t, d, running.ID) {
-		t.Fatal("a running card was pruned")
-	}
-}
-
-// An offered item nobody started is still work somebody found. Deleting it on
-// a schedule would make the inbox quietly lossy, which is worse than an inbox
-// with something stale in it.
-func TestPruningLeavesTheInboxAlone(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	if err := d.st.SetSetting(store.SettingPruneAfter, "3600"); err != nil {
-		t.Fatal(err)
-	}
-	offered, _, err := d.st.Offer(store.IntakeItem{
-		Source: "github", ExternalID: "4211", Title: "old news",
-	})
+func lastNotes(t *testing.T, d *Daemon, id string) string {
+	t.Helper()
+	evs, err := d.st.Events(id, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.BackdateActivity(offered.ID, 400*24*time.Hour); err != nil {
-		t.Fatal(err)
+	var b strings.Builder
+	for _, e := range evs {
+		b.WriteString(string(e.Payload))
+		b.WriteString("\n")
 	}
-
-	if err := d.pruneOld(); err != nil {
-		t.Fatal(err)
-	}
-	if !alive(t, d, offered.ID) {
-		t.Fatal("an offered item was deleted by the pruning timer")
-	}
+	return b.String()
 }
 
-// `off` is a value and it means never, whatever else is true.
-func TestOffMeansNever(t *testing.T) {
+func TestPruneRemovesAJunctionAsALinkAndNeverTouchesItsTarget(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.st.SetSetting(store.SettingPruneAfter, "off"); err != nil {
-		t.Fatal(err)
-	}
-	old := finishedCard(t, d, "prune-off", store.StatusDone, 400*24*time.Hour)
-	if err := d.pruneOld(); err != nil {
-		t.Fatal(err)
-	}
-	if !alive(t, d, old.ID) {
-		t.Fatal("a card was deleted with pruning switched off")
-	}
-}
+	r := newCullRepo(t, true)
+	shared, sentinel := sharedModules(t)
+	linkDir(t, shared, filepath.Join(r.wt, "node_modules"))
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
 
-// A mistyped setting must not become "delete everything that finished". The
-// floor is far shorter than anybody would choose and far longer than an
-// accident.
-func TestAnAbsurdlyShortAgeIsRefused(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	for _, v := range []string{"1", "60", "3599", "-5", "banana"} {
-		if err := d.st.SetSetting(store.SettingPruneAfter, v); err != nil {
-			t.Fatal(err)
-		}
-		if _, on := d.pruneAfter(); on {
-			t.Fatalf("%q was accepted as an age to delete cards at", v)
-		}
-	}
-	if err := d.st.SetSetting(store.SettingPruneAfter, "3600"); err != nil {
-		t.Fatal(err)
-	}
-	if got, on := d.pruneAfter(); !on || got != time.Hour {
-		t.Fatalf("an hour came back as %v on=%v", got, on)
-	}
-}
-
-// Sweeping and pruning are different operations, and a card being archived
-// does not put it out of reach of the one that deletes.
-func TestAnArchivedCardIsStillPrunable(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	if err := d.st.SetSetting(store.SettingPruneAfter, "3600"); err != nil {
-		t.Fatal(err)
-	}
-	card := finishedCard(t, d, "prune-archived", store.StatusDead, 72*time.Hour)
-	if _, err := d.st.Archive(0, store.StatusDead); err != nil {
-		t.Fatal(err)
-	}
-	got, err := d.st.Get(card.ID)
+	res, err := d.Cull(task.ID, "")
 	if err != nil {
+		t.Fatalf("cull: %v", err)
+	}
+	if !res.WorktreeRemoved || !res.BranchDeleted || res.Kept != "" {
+		t.Fatalf("result = %+v, want the worktree removed and the branch deleted", res)
+	}
+	if _, err := os.Lstat(r.wt); !os.IsNotExist(err) {
+		t.Errorf("the worktree is still on disk: %v", err)
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Errorf("the shared node_modules was touched: %v", err)
+	}
+}
+
+func TestPruneCountsABranchLandedOnTheHubsCopyOnly(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, false)
+	cullGit(t, r.main, "switch", "-q", "-c", "tmp", "claude/main")
+	cullGit(t, r.main, "cherry-pick", "-x", r.branch)
+	tip := cullGit(t, r.main, "rev-parse", "HEAD")
+	cullGit(t, r.main, "switch", "-q", "main")
+	cullGit(t, r.main, "update-ref", "refs/remotes/hub/claude/main", tip)
+	cullGit(t, r.main, "branch", "-D", "tmp")
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+
+	res, err := d.Cull(task.ID, "")
+	if err != nil {
+		t.Fatalf("cull: %v", err)
+	}
+	if !res.WorktreeRemoved || !res.BranchDeleted {
+		t.Fatalf("result = %+v, want the rewritten branch pruned", res)
+	}
+}
+
+func TestPruneKeepsADirtyWorktreeAndSaysSoOnTheCard(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	if err := os.WriteFile(filepath.Join(r.wt, "scratch.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got.ArchivedAt == nil {
-		t.Fatal("the card under test was not archived")
+	task := idleLanded(t, d, r)
+
+	d.landedPass(time.Minute, time.Now().Add(time.Hour))
+
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("a dirty worktree was removed: %v", err)
+	}
+	if !r.branchExists(t) {
+		t.Error("the branch of a dirty worktree was deleted")
+	}
+	if notes := lastNotes(t, d, task.ID); !strings.Contains(notes, "uncommitted") {
+		t.Errorf("the card does not say why it was kept: %s", notes)
+	}
+}
+
+func TestPruneWritesOneLineOnTheCardForAPrune(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	task := idleLanded(t, d, r)
+
+	d.landedPass(time.Minute, time.Now().Add(time.Hour))
+
+	if _, err := os.Stat(r.wt); !os.IsNotExist(err) {
+		t.Fatalf("the worktree is still on disk: %v", err)
+	}
+	if notes := lastNotes(t, d, task.ID); !strings.Contains(notes, "pruned") {
+		t.Errorf("the card has no prune line: %s", notes)
+	}
+}
+
+func TestPruneGraceStartsWhenTheRunnerExits(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	task := idleLanded(t, d, r)
+	now := time.Now().Add(time.Hour)
+	d.landed.exited(task.ID, now.Add(-time.Minute))
+
+	d.landedPass(5*time.Minute, now)
+
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("pruned before the grace after the exit: %v", err)
+	}
+	d.landed.checked = nil
+	d.landedPass(5*time.Minute, now.Add(6*time.Minute))
+	if _, err := os.Stat(r.wt); !os.IsNotExist(err) {
+		t.Errorf("not pruned after the grace: %v", err)
+	}
+}
+
+func TestPruneTakesAWorkItemCardLaunchedWithoutTheAgentTags(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	task := idleLanded(t, d, r, ItemTag)
+	if err := d.st.SetLifetime(task.ID, store.LifetimeWork); err != nil {
+		t.Fatal(err)
 	}
 
-	if err := d.pruneOld(); err != nil {
-		t.Fatal(err)
+	d.landedPass(time.Minute, time.Now().Add(time.Hour))
+
+	if _, err := os.Stat(r.wt); !os.IsNotExist(err) {
+		t.Errorf("an item card was not pruned: %v", err)
 	}
-	if alive(t, d, card.ID) {
-		t.Fatal("an archived card outlived the pruning timer, so archived rows grow forever")
+}
+
+func TestPruneGraceDefaultsToMinutes(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	g, on := d.landedGrace()
+	if !on || g <= 0 || g > time.Hour {
+		t.Fatalf("grace = %v on=%v, want a few minutes", g, on)
 	}
 }

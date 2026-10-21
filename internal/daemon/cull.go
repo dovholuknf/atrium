@@ -268,6 +268,21 @@ type cullPlan struct {
 	// brief is BRIEF.md sitting untracked in the worktree, removed before git
 	// removes the worktree so git does not refuse over it.
 	brief bool
+	// links are the shared dependency folders linked into the worktree root, which are removed as links and never
+	// followed.
+	links []string
+}
+
+// linkedDirs are the folders a worker's worktree may hold as a junction or symlink to a shared copy.
+var linkedDirs = []string{"node_modules"}
+
+// isLink says whether path is a symlink or a Windows junction, which Readlink reads where Lstat's mode may not.
+func isLink(path string) bool {
+	if _, err := os.Lstat(path); err != nil {
+		return false
+	}
+	_, err := os.Readlink(path)
+	return err == nil
 }
 
 // inspectCull reads the worktree's git state and refuses anything a cull must
@@ -326,7 +341,17 @@ func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 			return nil, err
 		}
 	}
-	status, err := gitIn(wt, "status", "--porcelain=v1", "--untracked-files=all")
+	statusArgs := []string{"status", "--porcelain=v1", "--untracked-files=all"}
+	for _, name := range linkedDirs {
+		if isLink(filepath.Join(wt, name)) {
+			p.links = append(p.links, name)
+			statusArgs = append(statusArgs, ":(exclude)"+name)
+		}
+	}
+	if len(p.links) > 0 {
+		statusArgs = append(statusArgs[:3], append([]string{"--", "."}, statusArgs[3:]...)...)
+	}
+	status, err := gitIn(wt, statusArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -409,6 +434,15 @@ func isAncestor(dir, commit, of string) (bool, error) {
 // removeWorktree removes atrium's BRIEF.md and then the worktree, without
 // `--force`, from the repository rather than from inside the worktree.
 func removeWorktree(p *cullPlan) error {
+	for _, name := range p.links {
+		link := filepath.Join(p.wt, name)
+		if !isLink(link) {
+			continue
+		}
+		if err := os.Remove(link); err != nil {
+			return fmt.Errorf("could not unlink %s, so the worktree was kept: %v", name, err)
+		}
+	}
 	if p.brief {
 		if err := os.Remove(filepath.Join(p.wt, briefFile)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("could not remove %s, so the worktree was kept: %v", briefFile, err)
