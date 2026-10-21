@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -41,7 +42,8 @@ func (f *changesFix) ok(query string) *ChangesView {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		f.t.Fatalf("changes%s answered %d", query, res.StatusCode)
+		body, _ := io.ReadAll(res.Body)
+		f.t.Fatalf("changes%s answered %d %s", query, res.StatusCode, body)
 	}
 	var v ChangesView
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {

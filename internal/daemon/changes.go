@@ -40,8 +40,8 @@ const (
 	// listMax bounds the file lists git prints, which are paths and counts and never hunks.
 	// patchMax is what is read of one patch: the total hunk bound, a file that would be cut anyway, and slack.
 	patchMax = changesHunksMax + changesFileMax + 64<<10
-	// argvMax is how many characters of paths go on one command line. Windows stops at 32767.
-	argvMax         = 12000
+	// argvMax is how many characters of paths go on one command line, each counted with its quotes and space. Windows stops at 32767.
+	argvMax         = 24000
 	changesBound    = 30 * time.Second
 	emptyTree       = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 	notAWorktree    = "this card's directory is not a git worktree"
@@ -379,12 +379,12 @@ func chunkPaths(paths []string) [][]string {
 	var cur []string
 	n := 0
 	for _, p := range paths {
-		if len(cur) > 0 && n+len(p)+1 > argvMax {
+		if len(cur) > 0 && n+len(p)+3 > argvMax {
 			out = append(out, cur)
 			cur, n = nil, 0
 		}
 		cur = append(cur, p)
-		n += len(p) + 1
+		n += len(p) + 3
 	}
 	if len(cur) > 0 {
 		out = append(out, cur)
