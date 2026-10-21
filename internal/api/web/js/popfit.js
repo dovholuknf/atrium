@@ -66,6 +66,8 @@ function popFit(el, anchor, o) {
       h = el.offsetHeight;
       top = below >= above ? r.bottom + gap : r.top - gap - h;
     } else top = down ? r.bottom + gap : r.top - gap - h;
+    // Content that grows after it opens must scroll in the room below its top, not in the whole window's height.
+    if (down && getComputedStyle(el).overflowY !== "visible") popCap(el, v.h - pad - Math.min(Math.max(top, pad), v.h));
   }
   left = Math.min(Math.max(left, pad), Math.max(pad, v.w - w - pad));
   top = Math.min(Math.max(top, pad), Math.max(pad, v.h - h - pad));

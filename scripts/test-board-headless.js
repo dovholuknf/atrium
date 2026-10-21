@@ -26366,6 +26366,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("quickPaste", () => quickPasteSection(browser, base));
     await unit("repoPaste", () => repoPasteSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
+    await unit("roomsMenuScroll", bu("roomsMenuScroll"));
     await unit("homesChips", bu("homesChips"));
     await unit("homesRoot", bu("homesRoot"));
     await unit("homesDisk", bu("homesDisk"));

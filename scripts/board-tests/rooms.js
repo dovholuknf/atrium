@@ -1,6 +1,6 @@
 // rooms: rooms, the hub gate, the restart menu, transports, the down page.
 //
-// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo.
+// Units: restartGate, restartStays, atriumDown, roomsDash, transportChips, pathBadges, transportToggle, hubTransports, zitiLogo, zrokLogo, pollsGone, findingsProbe, roomsMachine, loginNeeded, restartMenu, roomsSetup, hubGate, recogniserRepo, roomsMenuScroll.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/rooms.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -2062,6 +2062,48 @@ async function recogniserRepoSection(browser, base) {
   if (!bad) console.log("recogniserRepo ok");
 }
 
+// roomsMenuScroll: the rooms dropdown, scrolled to its end, shows the last tile whole above the window's bottom edge.
+async function roomsMenuScrollSection(browser, base) {
+  const shots = process.env.ROOMS_MENU_SHOTS || "";
+  const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  for (const [name, vw, vh] of [["desktop", 1280, 700], ["phone", 400, 700]]) {
+    const ctx = await browser.newContext({ viewport: { width: vw, height: vh } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.addInitScript(skip);
+    try {
+      await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
+        roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+      await p.evaluate(() => clearInterval(roomsDemoTimer));
+      await p.evaluate(() => { window.fullRooms = hubRooms; hubRooms = hubRooms.slice(0, 1); openRooms(); });
+      await p.waitForFunction(() => { const mn = document.getElementById("rooms-menu"); return !mn.hidden && !!mn.style.maxHeight && !!mn.style.top; }, null, { timeout: slow(5000) });
+      const m = await p.evaluate(() => {
+        const menu = document.getElementById("rooms-menu");
+        const more = [];
+        for (let i = 0; i < 6; i++) more.push(...window.fullRooms.map(r => ({ ...r, name: r.name + "-" + i })));
+        hubRooms = window.fullRooms.concat(more);
+        refreshRoomsMenu();
+        menu.scrollTop = menu.scrollHeight;
+        const mr = menu.getBoundingClientRect();
+        const last = [...menu.children].pop().getBoundingClientRect();
+        return { scrolls: menu.scrollHeight > menu.clientHeight + 1, atEnd: menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 1,
+          menuBottom: mr.bottom, lastBottom: last.bottom, vh: innerHeight };
+      });
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await p.screenshot({ path: path.join(shots, "rooms-menu-" + name + ".png") });
+      }
+      const tag = "roomsMenuScroll " + name + ": ";
+      if (!m.scrolls) fail(tag + "the menu did not need to scroll, so it proves nothing: " + JSON.stringify(m));
+      if (!m.atEnd) fail(tag + "the menu did not scroll to its end: " + JSON.stringify(m));
+      if (m.lastBottom > m.menuBottom + 0.5 || m.menuBottom > m.vh - 4) fail(tag + "the last tile is cut off at the end of the scroll: " + JSON.stringify(m));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  }
+}
+
 const units = [
   { name: "restartGate", run: ({ browser, base }) => restartGateSection(browser, base) },
   { name: "restartStays", run: ({ browser, base }) => restartStaysSection(browser, base) },
@@ -2081,8 +2123,9 @@ const units = [
   { name: "roomsSetup", run: ({ browser, base }) => roomsSetupSection(browser, base) },
   { name: "hubGate", run: ({ browser, base }) => hubGateSection(browser, base) },
   { name: "recogniserRepo", run: ({ browser, base }) => recogniserRepoSection(browser, base) },
+  { name: "roomsMenuScroll", run: ({ browser, base }) => roomsMenuScrollSection(browser, base) },
 ];
-const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection };
+const sections = { restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection, roomsDash: roomsDashSection, transportChips: transportChipsSection, pathBadges: pathBadgesSection, transportToggle: transportToggleSection, hubTransports: hubTransportsSection, zitiLogo: zitiLogoSection, zrokLogo: zrokLogoSection, pollsGone: pollsGoneSection, findingsProbe: findingsProbeSection, roomsMachine: roomsMachineSection, loginNeeded: loginNeededSection, restartMenu: restartMenuSection, roomsSetup: roomsSetupSection, hubGate: hubGateSection, recogniserRepo: recogniserRepoSection, roomsMenuScroll: roomsMenuScrollSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
