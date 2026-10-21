@@ -2652,6 +2652,7 @@ function onTermResize() {
   // After the fit, whatever it decided: the grid may have changed rows, or the
   // cell height may have moved under a font change with the rows the same.
   sizeTermHost();
+  phoneKeepSoon();
 
   const changed = term.cols !== wasCols || term.rows !== wasRows;
   noteScrollAct(changed ? "fit(changed)" : "fit(same)");
@@ -3323,6 +3324,7 @@ function phoneVVSoon() {
     const st = document.documentElement.style;
     st.setProperty("--vvh", Math.round(vv.height) + "px");
     st.setProperty("--vvt", Math.round(vv.offsetTop) + "px");
+    phoneKeepCursor();
   });
 }
 

@@ -7747,12 +7747,13 @@ async function phoneKeyboardSection(browser, base) {
       window.__kb = (px) => new Promise(res => {
         Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - px });
         Object.defineProperty(vv, "offsetTop", { configurable: true, get: () => 0 });
+        phoneKeepSoon();
         vv.dispatchEvent(new Event("resize"));
         requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(res, 150)));
       });
     });
     await p.waitForTimeout(200);
-    const st = () => p.evaluate(() => {
+    const st =() => p.evaluate(() => {
       const vv = window.visualViewport, host = document.getElementById("t-screen");
       const hb = host.getBoundingClientRect(), kb = document.getElementById("t-keys").getBoundingClientRect();
       const ch = term._core._renderService.dimensions.css.cell.height;
