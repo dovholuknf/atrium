@@ -26,6 +26,10 @@
   {"kind": "board", "name": "mOpenQ", "reason": "failed on macos board-2 in run 39377047040, passed on retry: the back tap hit a sheet still off screen, no frame ran for 5 s. Wait for the sheet to settle added, cause of the stall INFERRED."},
   {"kind": "board", "name": "mStickBottom", "reason": "failed on macos board-2 in run 39377047040 at 390, passed on retry: no scroll event and no frame for 3 s after scrollTop was set. Wait for the event added, cause of the stall INFERRED."},
   {"kind": "board", "name": "cleanCopy", "reason": "failed on macos board-1 in run 39378882455, passed on retry: loadCell of undefined in the WebGL renderer after a reset while a scroll event was pending. Fixed in resetTerm, reproduced locally."},
-  {"kind": "board", "name": "backlogPriority", "reason": "failed on windows board-2 in run 39460709547, passed on retry: after a refusal the select read high, not what the hub holds. Cause not traced."}
+  {"kind": "board", "name": "backlogPriority", "reason": "failed on windows board-2 in run 39460709547, passed on retry: after a refusal the select read high, not what the hub holds. Cause not traced."},
+  {"kind": "board", "name": "sshBadge", "reason": "failed on macos, ubuntu and windows board-2 in run 39460709547. Fixed by reading only, not proven."},
+  {"kind": "go", "package": "internal/daemon", "name": "TestQueuedTextGoesInOrderAfterTheWake", "reason": "panicked on windows go-test-2 in run 39482093881 at pendinginject.go:522 (entries[0] of an empty snapshot). Fixed in d2a0c2462, not rerun in CI."},
+  {"kind": "go", "package": "internal/daemon", "name": "TestOpencodeExecIsBoundedAgainstAChildHoldingStdout", "reason": "failed on macos in run 39416778560. Fixed by a worker, not rerun in CI."},
+  {"kind": "go", "package": "internal/link", "name": "TestAChunkedPostGoesThroughForwarderLinkAndCgi", "reason": "failed on macos in run 39371685645. Fixed by a worker, not rerun in CI."}
  ]
 }
