@@ -45,7 +45,7 @@ const DEFAULT_WEIGHT_MS = 8000;
 // Three quarters of the cores. Each shard is a node and a Chromium with its renderer, GPU and network processes, and a
 // section spends much of its time sleeping on a timer, so this fills a machine without throttling it. More shards
 // finish sooner and fail more waits that were set on an idle machine.
-// BOARD_SHARDS overrides it: CI sets one and a half times the cores, because a section is mostly a page waiting on a
+// BOARD_SHARDS overrides it: CI sets one per core, because a section is mostly a page waiting on a
 // timer. Measured on 4 pinned cores: 6 shards ran the suite in about 6 minutes.
 function defaultShards() {
   const forced = parseInt(process.env.BOARD_SHARDS || "", 10);

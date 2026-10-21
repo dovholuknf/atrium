@@ -381,7 +381,7 @@ call log under it. Keep the two logs beside the change: they are its evidence, t
 
 ## 5. Where the LOAD reds come from
 
-The sharded run uses one and a half shards per core, and a unit that fails in the shards and passes alone fails the
+The sharded run uses one shard per core, and a unit that fails in the shards and passes alone fails the
 run by policy (`LOAD` in the report) unless it is on `scripts/flaky-suite.json`. A listed unit that fails its first
 try and passes the retry is a pass that is never read as clean: the flaky board jobs give their units one retry, the row
 reads `PASSED ON RETRY (slow or stalled, first try failed)`, a block lists the unit with its first-try error and both

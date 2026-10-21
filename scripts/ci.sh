@@ -635,11 +635,11 @@ if step board "the board"; then
   # Includes the headless browser run. Any screenshots it takes go under build.claude/ and are not compared.
   # The whole suite, so it says so: check-board.sh refuses a full run without FULL_SUITE=1.
   # SHARDED: the serial headless run was 25 to 30 minutes per OS. test-board-sharded.js runs the same units as parallel
-  # shards (one and a half times the runner's cores, 2 to 16) and prints one merged report. ATRIUM_SUITE_LOCAL=1 keeps it on the
+  # shards (one per core of the runner, 2 to 16) and prints one merged report. ATRIUM_SUITE_LOCAL=1 keeps it on the
   # runner, never dispatched to another room.
   cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
   [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
-  shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
+  shards=$cores; [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
   board_log="$artefacts/board.log"
   # THE BOARD IS TWO RUNS. The units on scripts/board-visual-units.txt measure pixels and wait on timers, so a runner's
   # fonts or load fail them and no code change does. They run in the board-visual group, which never reddens the run.
@@ -660,7 +660,7 @@ if step board-visual "the board, pixel and timing units"; then
   # against the machine. CR_CONTRAST adds the colour and the background it measured to each contrast failure.
   cores="$( (nproc || sysctl -n hw.ncpu) 2>/dev/null)"
   [ -n "$cores" ] || cores="${NUMBER_OF_PROCESSORS:-4}"
-  shards=$(( cores * 3 / 2 )); [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
+  shards=$cores; [ "$shards" -ge 2 ] || shards=2; [ "$shards" -le 16 ] || shards=16
   board_log="$artefacts/board-visual.log"
   board_visual_run() {
     env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards" CR_CONTRAST=1 \

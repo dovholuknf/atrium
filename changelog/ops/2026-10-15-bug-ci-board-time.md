@@ -1,1 +1,1 @@
-﻿CI runs the headless board suite as parallel shards (1.5 shards per core) with one merged report, instead of one serial run. Measured locally: 31 minutes of unit time ran in about 5 to 6 minutes. bug-ci-board-time.
+﻿CI runs the headless board suite as parallel shards (one shard per core) with one merged report, instead of one serial run. Measured locally: 31 minutes of unit time ran in about 5 to 6 minutes. bug-ci-board-time.
