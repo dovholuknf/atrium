@@ -553,6 +553,14 @@ Exports honor whatever filter is applied.">?</span>
         <div class="termwait" id="t-wait" hidden>
           <span class="spin"></span><span id="t-wait-say"></span>
         </div>
+        <div class="termdead" id="t-dead" role="alertdialog" aria-labelledby="t-dead-title" hidden>
+          <div class="termdead-title" id="t-dead-title">this session is not running</div>
+          <div class="termdead-say" id="t-dead-say"></div>
+          <div class="termdead-foot">
+            <button class="go" id="t-dead-relaunch" type="button">Relaunch</button>
+            <button id="t-dead-new" type="button">Launch new</button>
+          </div>
+        </div>
         <div class="findbar" id="t-find" hidden>
           <!-- `type="search"` and the four ignore attributes are aimed at
                EXTENSIONS, not at the browser. A password manager or an email

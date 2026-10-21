@@ -918,6 +918,33 @@ function clearTermScreen(screen) {
   if (!screen.children.length) screen.textContent = "";
 }
 
+// WHICH CARD THE PANE IS SAYING IS NOT RUNNING, or empty. A card with no runner has nothing to attach to, so the pane
+// offers the two ways forward at once instead of dialling a socket that cannot open and calling the wait a reconnect.
+let termDeadFor = "";
+
+function deadPaneHide() {
+  termDeadFor = "";
+  const box = document.getElementById("t-dead");
+  if (box) box.hidden = true;
+}
+
+function deadPaneShow(task) {
+  const box = document.getElementById("t-dead");
+  if (!box) return;
+  termDeadFor = task.id;
+  termWait("");
+  const why = typeof cannotResumeCard === "function" ? cannotResumeCard(task) : "";
+  document.getElementById("t-dead-say").textContent = waitName(task) + " has no running process. Relaunch picks the " +
+    "same conversation up on this card, Launch new starts a fresh session in " + (task.worktree || "the same directory") + ".";
+  const again = document.getElementById("t-dead-relaunch");
+  again.disabled = !!why;
+  again.dataset.tip = why || "resume the same conversation on this card";
+  again.onclick = () => resumeCard(task.id, task, lastPlace(task.id));
+  const fresh = document.getElementById("t-dead-new");
+  fresh.onclick = () => launchRunnerHere(task.runner || "claude", task.worktree, null, task.room);
+  box.hidden = false;
+}
+
 function openTerm(task) {
   swMark("openTerm");
   if (typeof Terminal === "undefined") {
@@ -969,6 +996,7 @@ function openTerm(task) {
   // decorations were painted on a buffer that no longer exists.
   const findbar = document.getElementById("t-find");
   if (findbar) findbar.hidden = true;
+  deadPaneHide();
   termWait(typeof openingSay === "function" ? openingSay(task.id) : "");
   // A different card means the runner again. A shell belongs to the card it
   // was opened in, so carrying the choice across would either attach to the
@@ -1034,6 +1062,15 @@ function openTerm(task) {
   paintTermKind();
   // Whether this card holds findings to walk. See js/walk.js.
   if (typeof walkProbe === "function") walkProbe(task);
+
+  // NO RUNNER, NOTHING TO ATTACH TO. A resume in progress is the one exception: its card turns supervised when the
+  // runner is up, and the opening line is already saying so.
+  if (!task.supervised && !termOnly() && !(typeof openingState === "function" && openingState(task.id))) {
+    clearAttachInFlight(task.id);
+    clearTermScreen(document.getElementById("t-screen"));
+    deadPaneShow(task);
+    return;
+  }
 
   // KEPT ALREADY: show it. Nothing is built, dialled or replayed.
   const keptSlot = keepTake(task);

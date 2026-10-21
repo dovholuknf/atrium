@@ -22839,6 +22839,106 @@ async function switchPrewarmSection(browser, base) {
 // only refreshes it. With the read held: the pane is up (termTask, a Terminal) before it answers. A late answer that
 // differs updates the name without a new Terminal. A late answer after a switch is ignored. A failed read leaves the
 // pane open. A card the list does not hold waits for the read, as before.
+async function termDeadCardSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    window.__dc = { socks: [] };
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const id = /\/tasks\/([^/]+)\/attach/.exec(url)[1];
+      const s = { url, id, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, sent: [], send(m) { this.sent.push(m); }, close() { this.readyState = 3; } };
+      window.__dc.socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const was = mock.tasksMode;
+  const card = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, pinned: true, runner: "claude",
+    worktree: "/tmp/dc/" + id }, extra || {});
+  const launches = [];
+  try {
+    mock.wornTasks = [card("dc-dead", { supervised: false, resume_id: "conv-1", pid: 31032 }),
+      card("dc-dead2", { supervised: false, resume_id: "conv-2" }), card("dc-live", { supervised: true })];
+    mock.tasksMode = "worn";
+    await wp.route("**/v1/tasks/dc-*", route => {
+      const id = new URL(route.request().url()).pathname.split("/").pop();
+      const row = mock.wornTasks.find(t => t.id === id);
+      if (route.request().method() !== "GET" || !row) return route.fallback();
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row) });
+    });
+    await wp.route("**/v1/launch", async route => {
+      launches.push(JSON.parse(route.request().postData() || "{}"));
+      await route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify(card("dc-dead", { supervised: true })) });
+    });
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    const idle = ms => wp.waitForTimeout(ms);
+    const pane = () => wp.evaluate(() => {
+      const vis = id => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== "none"; };
+      const dead = document.getElementById("t-dead");
+      return { dead: vis("t-dead"), deadText: dead ? dead.textContent : "", wait: vis("t-wait"),
+        waitText: document.getElementById("t-wait-say").textContent,
+        buttons: dead ? Array.from(dead.querySelectorAll("button")).map(b => b.textContent.trim()) : [],
+        socks: window.__dc.socks.filter(s => s.id === "dc-dead").length };
+    });
+    const openDead = async (id) => {
+      await wp.evaluate(i => { attachTask(i); }, id || "dc-dead");
+      await idle(200);
+    };
+
+    await openDead();
+    let st = await pane();
+    if (!st.dead || !/not running/i.test(st.deadText)) fail("termDeadCard: a card with no runner did not say so at once (" + JSON.stringify(st) + ").");
+    if (st.buttons.join("|") !== "Relaunch|Launch new") fail("termDeadCard: the dialog's buttons were " + st.buttons.join("|") + ".");
+    if (st.wait || /reconnecting/.test(st.waitText + st.deadText)) fail("termDeadCard: a card with no runner said it was reconnecting (" + JSON.stringify(st) + ").");
+    if (st.socks) fail("termDeadCard: a card with no runner was dialled.");
+    await idle(1500);
+    st = await pane();
+    if (!st.dead || st.wait) fail("termDeadCard: the dialog changed after a wait (" + JSON.stringify(st) + ").");
+    if (process.env.DEADCARD_SHOTS) await wp.screenshot({ path: process.env.DEADCARD_SHOTS + "/after.png" });
+
+    await wp.evaluate(() => attachTask("dc-live"));
+    await idle(200);
+    st = await pane();
+    if (st.dead) fail("termDeadCard: a live card showed the dead dialog.");
+    await wp.evaluate(() => {
+      daemonAnswers = async () => false;
+      const s = window.__dc.socks.find(x => x.id === "dc-live");
+      s.readyState = 3; s.onclose({ code: 1006, reason: "" });
+    });
+    await idle(300);
+    st = await pane();
+    if (!st.wait || !/reconnecting/.test(st.waitText) || st.dead) fail("termDeadCard: a dropped socket on a live card did not say reconnecting (" + JSON.stringify(st) + ").");
+    if (process.env.DEADCARD_SHOTS) await wp.screenshot({ path: process.env.DEADCARD_SHOTS + "/dropped.png" });
+
+    await openDead();
+    await wp.click("#t-dead button.go");
+    await idle(300);
+    if (launches.length !== 1 || launches[0].task_id !== "dc-dead" || launches[0].resume !== "conv-1") {
+      fail("termDeadCard: Relaunch did not resume the same card (" + JSON.stringify(launches) + ").");
+    }
+
+    await openDead("dc-dead2");
+    await wp.click("#t-dead button:not(.go)");
+    await idle(300);
+    const fresh = launches.slice(1);
+    if (fresh.length !== 1 || fresh[0].resume || fresh[0].task_id || fresh[0].cwd !== "/tmp/dc/dc-dead2") {
+      fail("termDeadCard: Launch new was not a fresh session in the card's directory (" + JSON.stringify(fresh) + ").");
+    }
+    if (errors.length) fail("termDeadCard: page errors " + errors.join("; "));
+    if (!bad) console.log("termDeadCard ok");
+  } finally { mock.tasksMode = was; await ctx.close(); }
+}
+
 async function attachAtOnceSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const wp = await ctx.newPage();
@@ -23894,7 +23994,7 @@ async function main() {
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -24606,7 +24706,7 @@ async function main() {
     mock.loopListSupervised = false;
     await page.evaluate(async () => {
       const t = await api("/v1/tasks/loop1");
-      openTerm(t);
+      openTerm(Object.assign({}, t, { supervised: true }));
     });
 
     // A second of real time. On the broken code the counters run into the
@@ -24711,7 +24811,7 @@ async function main() {
       // nowhere.
       const fill = await fillPage.evaluate(async () => {
         const t = await api("/v1/tasks/t1");
-        openTerm(t);
+        openTerm(Object.assign({}, t, { supervised: true }));
         if (typeof term === "undefined" || !term) return { ok: false, why: "no terminal" };
         try { closeTerm = () => {}; } catch (e) {}
         try { clearTermPane = () => {}; } catch (e) {}
@@ -24800,7 +24900,7 @@ async function main() {
         const t = await api("/v1/tasks/t1");
         try { closeTerm = () => {}; } catch (e) {}
         try { clearTermPane = () => {}; } catch (e) {}
-        openTerm(t);
+        openTerm(Object.assign({}, t, { supervised: true }));
       });
       await floorPage.waitForSelector("#ask[open]", { timeout: slow(5000) }).catch(() => {});
       const seen = await floorPage.evaluate(() => ({
@@ -26065,6 +26165,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("burnReadout", bu("burnReadout"));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
+    await unit("termDeadCard", () => termDeadCardSection(browser, base));
     await unit("fileView", () => fileViewSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pinNow", () => pinNowSection(browser, base));

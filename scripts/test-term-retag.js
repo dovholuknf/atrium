@@ -64,6 +64,7 @@ const harness = new Function(`
   let resynced = 0;
   let termTask = null;
   let termKindFor = "";
+  let termDeadFor = "";
   function termOnly() { return false; }
   function keepReconcile() {}
   function fileViewPrune() {}

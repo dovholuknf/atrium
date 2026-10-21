@@ -457,6 +457,18 @@
     color: var(--head);
   }
   .termwait[hidden] { display: none; }
+  /* A card with no runner: the pane's own modal, centred, with the two ways forward. Board colours, because there
+     is no terminal to take a theme from. */
+  .termdead {
+    position: absolute; z-index: 36; left: 50%; top: 42%; transform: translate(-50%, -50%);
+    width: min(440px, 86%); padding: 22px 24px 18px; border-radius: var(--r-lg);
+    background: var(--shell-0); border: 1px solid var(--stroke); color: var(--body);
+    box-shadow: var(--shadow-pop); font-family: var(--sans);
+  }
+  .termdead[hidden] { display: none; }
+  .termdead-title { font-size: var(--fs-md); font-weight: 600; color: var(--head); margin-bottom: 8px; }
+  .termdead-say { font-size: var(--fs-base); line-height: 1.55; margin-bottom: 18px; overflow-wrap: anywhere; }
+  .termdead-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); }
   .termwait.slow .spin { display: none; }
   .termwait .spin {
     width: 13px; height: 13px; flex: none; border-radius: 50%;

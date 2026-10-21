@@ -376,6 +376,7 @@ function clearTermPane(switching) {
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;
+  deadPaneHide();
   sayWhetherFocused();
   if (typeof dbgFollow === "function") dbgFollow();
   if (typeof tcomposeSync === "function") tcomposeSync();

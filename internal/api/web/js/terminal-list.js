@@ -2604,6 +2604,10 @@ function reconcileAttached(tasks) {
   fileViewPrune(tasks);
   if (!termTask) return false;
   const live = tasks.find(t => t.supervised && bareId(t.id) === bareId(termTask.id));
+  if (termDeadFor) {
+    if (live) openTerm(live);
+    return false;
+  }
   if (live && live.id !== termTask.id) {
     retagTermId(live.id);
     // The room set just changed under an attached pane, which is what flipped the
