@@ -260,6 +260,8 @@ function openToastLog() {
   // `showModal` on an open dialog throws.
   const dlg = document.getElementById("toastlog");
   if (!dlg.open) dlg.showModal();
+  const hdr = document.querySelector("header");
+  dlg.style.setProperty("--tray-top", (hdr ? Math.max(0, Math.round(hdr.getBoundingClientRect().bottom)) : 0) + "px");
   paintToastLogBadge();
 }
 
