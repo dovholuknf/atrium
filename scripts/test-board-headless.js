@@ -9785,7 +9785,7 @@ async function peekOneHoverSection(browser, base) {
     const lq1 = await lq();
     if (lq1.lines > 3 || lq1.exp !== "click to expand" || lq1.scrolling) fail("onehover: a long question is not cut to 3 lines with a way to expand: " + JSON.stringify(lq1));
     await p.click(".peek.on .qa-exp");
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 300)); // wait: a click that must navigate nowhere has no event to wait on
     const lq2 = await lq();
     if (lq2.lines <= 3 || lq2.exp !== "show less" || lq2.scrolling || lq2.h <= lq1.h) fail("onehover: expanding a question did not grow the popup without scrolling: " + JSON.stringify(lq2));
     if (lq2.top < 0 || lq2.bottom > lq2.vh) fail("onehover: the expanded popup left the viewport: " + JSON.stringify(lq2));
