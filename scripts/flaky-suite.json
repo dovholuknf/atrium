@@ -88,6 +88,7 @@
  {"kind": "board", "name": "terminalTopGap", "reason": "failed on windows in run 39196543894: its own fixed timeout expired. Load evidence, cause not traced."},
  {"kind": "board", "name": "themeLab", "reason": "failed on windows in run 39196543894: its own fixed timeout expired. Load evidence, cause not traced."},
  {"kind": "go", "package": "internal/api", "name": "TestTaskEventEqualsListRow", "reason": "failed on macos go-test in run 39547317774 (taskevent_integration_test.go:126): event and list row differ. Cause not traced."},
- {"kind": "go", "package": "internal/api", "name": "TestCloseRemovesAnIgnoredDeepTreeAndCountsItsBytes", "reason": "failed on macos go-test in run 39561105581 (close_leftover_integration_test.go:59): the worktree row says 0 bytes, the ignored tree is 100000. Cause not traced."}
+ {"kind": "go", "package": "internal/api", "name": "TestCloseRemovesAnIgnoredDeepTreeAndCountsItsBytes", "reason": "failed on macos go-test in run 39561105581 (close_leftover_integration_test.go:59): the worktree row says 0 bytes, the ignored tree is 100000. Cause not traced."},
+ {"kind": "go", "package": "internal/daemon", "name": "TestChangesTurnWithHundredsOfPathsFitsTheCommandLine", "reason": "failed locally in test-touched on 10 packages at once (changes_integration_test.go:493, changes?turn answered 500 after 50 s), passes alone 3 of 3. Load evidence, cause not traced."}
  ]
 }
