@@ -1881,7 +1881,7 @@ async function renderTermList() {
   // card arriving reads it, and a stale list means a card that turned up while
   // you were watching a terminal is announced whenever you next look at the
   // board, or not at all.
-  lastTasks = all;
+  lastTasks = all; tasksLoaded = true;
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
   if (typeof cacheRefresh === "function") cacheRefresh(all);

@@ -1830,8 +1830,8 @@ async function pass(signal) {
         .map(t => Object.assign({}, t, {
           id: `${t.id}#${t.escalation.source}#${t.escalation.count}`, task_id: t.id
         })), t => ({
-        title: `${t.display_title} is BLOCKED: ${blockerReason(t)}`,
-        body: t.spawned_by ? `launched by ${t.spawned_by}` : (t.why || t.worktree || "")
+        title: `${t.display_title} is BLOCKED`,
+        body: blockerReason(t) + (t.spawned_by ? ` Launched by ${t.spawned_by}.` : "")
       }));
       paintToastLogBadge();
     }

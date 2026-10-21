@@ -57,10 +57,13 @@
   /* A blocker: red edge and tint, and the pinned ones stay above everything the log holds. */
   .tlrow.blocker, .tlrow.blocker.fresh { background: rgba(var(--danger-rgb),.10); box-shadow: inset 3px 0 0 var(--danger); }
   .tlrow.blocker .tlwhen, .tlrow.blocker .tlwhat b { color: var(--danger); }
+  .tlrow.blocker.resolved, .tlrow.blocker.resolved.fresh { background: none; box-shadow: none; opacity: .6; }
+  .tlrow.blocker.resolved .tlwhen, .tlrow.blocker.resolved .tlwhat b { color: var(--dim); }
+  .tlrow .tlresolved { color: var(--dim); font-style: italic; }
   .tlrow.pinned { position: sticky; top: 0; z-index: 1; background: var(--lift); }
   .tlrow.pinned.blocker { background-image: linear-gradient(rgba(var(--danger-rgb),.14), rgba(var(--danger-rgb),.14)); }
   #toastlog-open.blocked-now { color: var(--danger); }
-  .tlrow.fresh { box-shadow: inset 2px 0 0 var(--teal); }
+  .tlrow.fresh { box-shadow: inset 6px 0 0 var(--teal); }
   .tlwhen {
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
     font: var(--fs-xxs)/1.7 var(--mono);

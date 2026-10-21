@@ -9236,9 +9236,13 @@ async function stuckSection(browser, base) {
 // bell with an attach, and gone when the room clears `escalation`. The room half
 // does not exist yet, so the card is a fixture of the agreed contract.
 mock.blockerEsc = null;
+mock.blockerGone = false;
+mock.blockerOver = false;
 function blockerCards() {
   const launched = { supervised: true, tags: ["origin:agent"], spawned_by: "orchestrator" };
   const c = Object.assign({}, T1, launched, { id: "bl-card", display_title: "never started" });
+  if (mock.blockerGone) return [];
+  if (mock.blockerOver) c.status = "dead";
   if (mock.blockerEsc) c.escalation = Object.assign({ since: new Date(Date.now() - 2 * 60000).toISOString(), count: 1, minutes: 2 }, mock.blockerEsc);
   return [c];
 }
@@ -9286,7 +9290,7 @@ async function blockerMarkSection(browser, base) {
     if (!m) fail("a launch-prompt card on the stack has no blocker mark.");
     else {
       if (!m.bad || !m.svg || m.clock) fail("the blocker mark is not a red exclamation, or the clock is drawn too: " + JSON.stringify(m));
-      if (!/waiting at the folder-trust prompt/.test(m.tip) || /stopped without reporting/.test(m.tip)) fail("the blocker mark does not say what it waits at: " + m.tip);
+      if (!/asking whether to trust .*Atrium cannot answer it. Open the terminal and choose trust, or exit the card./.test(m.tip) || /stopped without reporting/.test(m.tip)) fail("the blocker mark does not say what it waits at: " + m.tip);
     }
     const there = await sp.evaluate(cards => {
       const on = html => { const b = document.createElement("div"); b.innerHTML = html; return !!b.querySelector(".chip.blocker"); };
@@ -9303,7 +9307,8 @@ async function blockerMarkSection(browser, base) {
     const reasons = await sp.evaluate(() => ["login", "update", "other"].map(p => blockerReason(
       { status: "running", escalation: { source: "launch-prompt", prompt: p, text: "T" } })).concat(
       blockerReason({ status: "running", escalation: { source: "launch-idle", text: "no activity since launch, 2 min" } })));
-    if (reasons.join("|") !== "waiting at a login|waiting at an update prompt|T|no activity since launch, 2 min") fail("blocker reasons: " + reasons.join("|"));
+    if (!/^Claude Code is waiting for a login. .*exit the card.$/.test(reasons[0]) || !/update prompt. .*exit the card.$/.test(reasons[1]) ||
+        !/^T. Open the terminal/.test(reasons[2]) || !/^Nothing has happened since it launched [(]2 min[)]/.test(reasons[3])) fail("blocker reasons: " + reasons.join("|"));
 
     // Pinned in the bell, red, with attach.
     await sp.evaluate(() => openToastLog());
@@ -9315,8 +9320,9 @@ async function blockerMarkSection(browser, base) {
     });
     if (!pin.pinned) fail("the blocker is not the pinned first row of the bell.");
     if (!pin.attach) fail("the pinned blocker offers no attach.");
-    if (!/waiting at a login/.test(pin.text)) fail("the pinned blocker does not say why: " + pin.text);
+    if (!/waiting for a login/.test(pin.text)) fail("the pinned blocker does not say why: " + pin.text);
     if (!pin.bell) fail("the bell is not red while a card is blocked.");
+    if (process.env.BLOCK_SHOTS) { require("fs").mkdirSync(process.env.BLOCK_SHOTS, { recursive: true }); await sp.mouse.move(5, 890); await sp.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) }); await sp.screenshot({ path: process.env.BLOCK_SHOTS + "/tray-blocked-live.png" }); }
 
     // A log line whose TITLE says it is blocked, from anything but a blocker,
     // is not painted red: the tint follows the stored kind.
@@ -9328,7 +9334,7 @@ async function blockerMarkSection(browser, base) {
     if (fake === null) fail("the look-alike titled log line is missing.");
     else if (fake) fail("a log line is painted red from its title, not its kind.");
     const real = await sp.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow:not(.pinned)")]
-      .some(x => /BLOCKED: waiting at a login/.test(x.textContent) && x.classList.contains("blocker")));
+      .some(x => /is BLOCKED/.test(x.textContent) && /waiting for a login/.test(x.textContent) && x.classList.contains("blocker")));
     if (!real) fail("a blocker's own log line is not red.");
 
     // Cleared by the room: gone from the card and from the bell's pin.
@@ -9337,10 +9343,40 @@ async function blockerMarkSection(browser, base) {
     await sp.evaluate(() => openToastLog());
     if (await mark()) fail("a cleared blocker still wears the mark.");
     if (await sp.evaluate(() => !!document.querySelector("#toastlog-list .tlrow.pinned"))) fail("a cleared blocker is still pinned.");
+    const resolvedRows = () => sp.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow.blocker:not(.pinned)")].map(r =>
+      ({ resolved: r.classList.contains("resolved"), note: (r.querySelector(".tlresolved") || {}).textContent || "", op: getComputedStyle(r).opacity })));
+    const run1 = await resolvedRows();
+    if (!run1.length || run1.some(r => !r.resolved || r.note !== "resolved: it is running now" || Number(r.op) > 0.7)) fail("a blocker row whose card moved on is not shown as resolved and dimmed: " + JSON.stringify(run1));
+    mock.blockerEsc = { source: "launch-prompt", prompt: "folder-trust", text: "x", count: 3 };
+    mock.blockerOver = true;
+    await settle();
+    await sp.evaluate(() => openToastLog());
+    const exited = await resolvedRows();
+    if (!exited.length || exited.some(r => !r.resolved || r.note !== "resolved: the card has exited")) fail("a blocker row whose card exited is not shown as resolved: " + JSON.stringify(exited));
+    if (process.env.BLOCK_SHOTS) { require("fs").mkdirSync(process.env.BLOCK_SHOTS, { recursive: true }); await sp.mouse.move(5, 890); await sp.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) }); await sp.screenshot({ path: process.env.BLOCK_SHOTS + "/tray-blocked-exited.png" }); }
+    const viewBefore = await sp.evaluate(() => document.querySelector("header nav .tab.on, header nav .tab.active, header nav .tab[aria-selected=true]")?.textContent || "");
+    await sp.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow.blocker:not(.pinned)")][0].click());
+    await new Promise(r => setTimeout(r, 300));
+    const after = await sp.evaluate(() => ({ open: document.getElementById("toastlog").open, note: document.querySelector("#toastlog-list .tlrow.blocker.resolved .tlresolved").textContent,
+      view: document.querySelector("header nav .tab.on, header nav .tab.active, header nav .tab[aria-selected=true]")?.textContent || "" }));
+    if (!after.open || !/this card has exited/.test(after.note) || after.view !== viewBefore) fail("clicking a row for an exited card navigated or said nothing: " + JSON.stringify({ after, viewBefore }));
+    mock.blockerOver = false;
+    mock.blockerGone = true;
+    await settle();
+    await sp.evaluate(() => openToastLog());
+    const gone = await resolvedRows();
+    if (!gone.length || gone.some(r => !r.resolved || !/exited/.test(r.note))) fail("a blocker row whose card is gone is not shown as resolved: " + JSON.stringify(gone));
+    await sp.evaluate(() => toast("a new alert", "lands highlighted while the tray is open"));
+    await sp.waitForFunction(() => [...document.querySelectorAll("#toastlog-list .tlrow.fresh")].some(r => /a new alert/.test(r.textContent)), null, { timeout: slow(5000) });
+    const edge = await sp.evaluate(() => { const r = [...document.querySelectorAll("#toastlog-list .tlrow.fresh")].find(r => /a new alert/.test(r.textContent)); return getComputedStyle(r).boxShadow; });
+    if (!/ 6px 0px 0px 0px/.test(edge) && !/inset.* 6px/.test(edge)) fail("the highlighted tray row's left edge is not 6px: " + edge);
+    if (process.env.BLOCK_SHOTS) { await sp.mouse.move(5, 890); await sp.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) }); await sp.screenshot({ path: process.env.BLOCK_SHOTS + "/tray-fresh-edge.png" }); }
   } finally {
     await ctx.close();
     mock.tasksMode = was;
     mock.blockerEsc = null;
+    mock.blockerOver = false;
+    mock.blockerGone = false;
   }
   if (errors.length) fail("the blocker page threw: " + errors.join(" | "));
 }

@@ -208,7 +208,9 @@ function openToastLog() {
         // alert did rather than as two disconnected strings.
         const clip = t.title + (t.body ? "\n" + t.body : "");
         const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
-        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}"${
+        const gone = t.kind === "blocker" && t.taskFor ? blockerGone(t.taskFor) : "";
+        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}${gone ? " resolved" : ""}"${
+          gone ? ` data-gone="${esc(gone)}"` : ""}${
           t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
           t.goTo ? ` data-goto="${esc(t.goTo)}"` : ""}${
           t.key ? ` data-key="${esc(t.key)}"` : ""}>
@@ -216,6 +218,7 @@ function openToastLog() {
           <div class="tlwhat">
             <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
             ${t.body ? `<span>${esc(t.body)}</span>` : ""}
+            ${gone ? `<span class="tlresolved">resolved: ${esc(gone)}</span>` : ""}
             ${questions(t)}
             ${(r => r ? `<span class="tlremits" data-growl="${esc(t.growl)}">${r}</span>` : "")(remind(t))}
           </div>
@@ -258,6 +261,11 @@ function openToastLog() {
     r.classList.add("clickable");
     r.onclick = async e => {
       if (e.target.closest(".peek-qa, .qa-fly")) return;
+      if (r.dataset.gone === "the card has exited") {
+        const note = r.querySelector(".tlresolved");
+        if (note) note.textContent = "this card has exited, there is nothing to open";
+        return;
+      }
       // Closes the tray along with anything else open, and refuses when a form
       // has unsaved edits. Refused means the row stays clickable rather than
       // the tray shutting on work somebody is in the middle of.
@@ -275,6 +283,15 @@ function openToastLog() {
   const hdr = document.querySelector("header");
   dlg.style.setProperty("--tray-top", (hdr ? Math.max(0, Math.round(hdr.getBoundingClientRect().bottom)) : 0) + "px");
   paintToastLogBadge();
+}
+
+// Why a logged blocker no longer needs anyone, or "" while its card is still held at the prompt.
+function blockerGone(taskFor) {
+  if (typeof lastTasks === "undefined" || !tasksLoaded) return "";
+  const c = lastTasks.find(x => sameCard(x.id, taskFor));
+  if (!c) return "the card has exited";
+  if (over(c)) return "the card has exited";
+  return isBlocker(c) ? "" : "it is running now";
 }
 
 // The poll has new cards: a question answered elsewhere stops asking in an open tray. Not while the flyout is on.

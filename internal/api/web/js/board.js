@@ -1802,6 +1802,7 @@ addEventListener("toggle", e => {
 // find the card it belongs to without re-fetching. Written by both, because
 // only one of them runs at a time and both need the same answer.
 let lastTasks = [];
+let tasksLoaded = false;
 
 // How many supervised sessions are mid-turn, in the header.
 //
@@ -1895,7 +1896,7 @@ async function renderBoard(signal) {
   // indicator, `lastTasks` and the new card note still see it: hiding is a view filter, never a loss.
   const shown = shownCards(everything);
   const live = shown.filter(t => !t.offline);
-  lastTasks = everything;
+  lastTasks = everything; tasksLoaded = true;
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
   // THE DRAWER'S FILTERS: the search text, and the subagents that roll up into their parent's card (`N subagents`).

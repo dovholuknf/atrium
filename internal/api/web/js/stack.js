@@ -229,7 +229,7 @@ async function renderStack(signal) {
   // laptop is three things to do when there are two.
   allStack = everything.filter(t => !t.offline);
   offlineStack = everything.filter(t => t.offline);
-  lastTasks = everything;
+  lastTasks = everything; tasksLoaded = true;
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
   if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
   if (typeof ulOnCards === "function") ulOnCards();
@@ -680,11 +680,14 @@ function isBlocker(t) {
 function blockerReason(t) {
   const e = t.escalation;
   if (e.source === "launch-prompt") {
-    if (e.prompt === "folder-trust") return "waiting at the folder-trust prompt";
-    if (e.prompt === "login") return "waiting at a login";
-    if (e.prompt === "update") return "waiting at an update prompt";
+    if (e.prompt === "folder-trust") return "Claude Code is asking whether to trust " + (t.worktree || "this folder") +
+      ". Atrium cannot answer it. Open the terminal and choose trust, or exit the card.";
+    if (e.prompt === "login") return "Claude Code is waiting for a login. Atrium cannot sign in for it. Open the terminal and sign in, or exit the card.";
+    if (e.prompt === "update") return "Claude Code is waiting at an update prompt. Open the terminal and answer it, or exit the card.";
   }
-  return e.text;
+  if (e.source === "launch-idle") return "Nothing has happened since it launched (" + e.text.replace(/^no activity since launch,? ?/, "") +
+    "). Open the terminal to see what it is waiting on, or exit the card.";
+  return e.text + ". Open the terminal to see what it is waiting on, or exit the card.";
 }
 
 // THE BLOCKER MARK, in red with an exclamation, where the stuck mark is a warn
