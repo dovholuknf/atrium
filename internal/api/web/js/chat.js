@@ -91,6 +91,7 @@ function chatSelect(id) {
   }
   chatShow();
   chatMark();
+  if (typeof reviewSelected === "function") reviewSelected(chatId);
 }
 
 function chatPrune() {
@@ -122,6 +123,7 @@ function chatView(on) {
     renderTermList();
   } else {
     list.classList.remove("in-chat");
+    if (typeof reviewStop === "function") reviewStop();
     const grip = document.getElementById("term-grip");
     document.getElementById("term-rail").after(list);
     list.after(grip);

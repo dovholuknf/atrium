@@ -79,6 +79,7 @@
 <link rel="stylesheet" href="/css/hubhosts.css">
 <link rel="stylesheet" href="/css/hubtransports.css">
 <link rel="stylesheet" href="/css/chat.css">
+<link rel="stylesheet" href="/css/review.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/m/compose.css">
@@ -897,10 +898,16 @@ Read-only. It says what happened, it does not change anything. Filter by room to
         <div class="chat-bar">
           <strong id="chat-title">pick a session</strong>
           <span class="grow"></span>
+          <button type="button" id="chat-review" hidden onclick="reviewToggle()"
+            data-tip="read this card's review">review</button>
           <button type="button" id="chat-to-term" disabled onclick="chatToTerminal()"
             data-tip="switch to this card's terminal">terminal</button>
         </div>
         <div class="chat-frame" id="chat-frame-host"><p class="chat-empty" id="chat-empty">Pick a session on the left to read and answer its conversation.</p></div>
+        <div id="chat-review-pane" hidden>
+          <div class="rv-meta" id="review-meta"></div>
+          <div class="rv-body"><nav id="review-rail"></nav><div id="review-main"></div></div>
+        </div>
       </section>
     </div>
   </div>
@@ -3854,6 +3861,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/audit.js"></script>
 <script src="/js/chatter.js"></script>
 <script src="/js/chat.js"></script>
+<script src="/js/review.js"></script>
 <script src="/js/hubrepos.js"></script>
 <script src="/js/backlog.js"></script>
 <script src="/js/items-mock.js"></script>

@@ -1,6 +1,6 @@
 // chat: the chat tab and the chatter tab.
 //
-// Units: chatter, chatterTab, chatTab, chatBridge, chatPaste, chatKeep, chatCap, chatFast.
+// Units: chatter, chatterTab, chatTab, chatBridge, chatPaste, chatKeep, chatCap, chatFast, chatReview.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/chat.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -683,7 +683,66 @@ async function chatMeasureSection(browser, base) {
   }
 }
 
+async function chatReviewSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const tag = "chatReview: ";
+  landCard("rv-a", { supervised: true, status: "running", display_title: "rv a", tags: ["atrium:review"], created_at: "2026-09-19T12:00:00Z" });
+  landCard("rv-b", { supervised: true, status: "running", display_title: "rv b", created_at: "2026-09-19T12:05:00Z" });
+  mock.landList = [mock.LAND["rv-a"], mock.LAND["rv-b"]];
+  mock.landPerms = [];
+  const errors = [];
+  const asked = [];
+  const ctx = await landContext(browser);
+  await ctx.route("**/v1/tasks/*/replies*", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ source: "transcript", more: false, replies: [] }) }));
+  const finding = (num, group, state, cat) => ({ num, cat, kind: "code", origin: "mine", site: "lib/c.c:" + num, title: "finding " + num, note: "note " + num,
+    footer: "CHANGE " + cat + " : one\nSUMMARY     : two", diff: "@@ -1,2 +1,2 @@\n ctx\n-old " + num + "\n+new " + num + "\n", base_diff: "", lines_vs_base: num, group, state, reason: "" });
+  await ctx.route("**/v1/tasks/*/atrium-review", route => {
+    const id = /tasks\/([^/]+)\//.exec(route.request().url())[1];
+    asked.push(id);
+    if (id !== "rv-a") return route.fulfill({ status: 404, contentType: "application/json", body: '{"error":"no review"}' });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ base: "main", merge_base: "abc", files: [{ path: "lib/c.c", added: 1, removed: 1 }],
+      findings: [finding(1, "batch", "applied", "DRY"), finding(2, "", "waiting", "SCOPE"), finding(3, "", "withdrawn", "CHURN")] }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.click('.tab[data-view="chat"]');
+    await p.waitForSelector("#chat:not([hidden]) #chat-layout > #term-list .card.tab[data-id]", { timeout: slow(10000) });
+    await chatPick(p, "rv-b");
+    await p.waitForTimeout(400);
+    if (!await p.$eval("#chat-review", b => b.hidden)) fail(tag + "the review button shows for a card with no review tag");
+    await chatPick(p, "rv-a");
+    await p.waitForFunction(() => !document.getElementById("chat-review").hidden, null, { timeout: slow(8000) });
+    await p.click("#chat-review");
+    await p.waitForSelector("#review-rail .rv-f", { timeout: slow(5000) });
+    const heads = await p.$$eval("#review-rail h3", h => h.map(x => x.textContent));
+    if (heads.join("|") !== "Applied for veto (1)|One at a time (2)") fail(tag + "the rail groups read " + JSON.stringify(heads));
+    const rows = await p.$$eval("#review-rail .rv-f", r => r.map(x => x.querySelector(".rv-cat").textContent + "/" + x.querySelector(".rv-st").textContent));
+    if (rows.join("|") !== "DRY/applied|SCOPE/waiting|CHURN/withdrawn") fail(tag + "the rail rows read " + JSON.stringify(rows));
+    if (await p.$$eval("#review-main button, #chat-review-pane button", b => b.length)) fail(tag + "the review view has buttons");
+    await p.click('#review-rail .rv-f[data-num="2"]');
+    const diff = await p.$eval(".rv-diff", d => ({ a: d.querySelectorAll(".a").length, d: d.querySelectorAll(".d").length, h: d.querySelectorAll(".h").length }));
+    if (diff.a !== 1 || diff.d !== 1 || diff.h !== 1) fail(tag + "the diff is drawn as " + JSON.stringify(diff));
+    const foot = await p.$eval(".rv-foot", f => f.textContent);
+    if (foot !== "CHANGE SCOPE : one\nSUMMARY     : two") fail(tag + "the footer is not verbatim: " + JSON.stringify(foot));
+    if (!/note 2/.test(await p.$eval(".rv-note", n => n.textContent))) fail(tag + "the note line is missing");
+    if (await p.$eval("#chat-frame-host", h => !h.hidden)) fail(tag + "the conversation shows under the review");
+    await p.click("#chat-review");
+    if (await p.$eval("#chat-review-pane", h => !h.hidden)) fail(tag + "the review pane stays open after the button is pressed again");
+    const n = asked.length;
+    await until(async () => asked.length > n, 6000, "a poll");
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
 const units = [
+  { name: "chatReview", run: ({ browser, base }) => chatReviewSection(browser, base) },
   ...(process.env.CHAT_MEASURE ? [{ name: "chatMeasure", run: ({ browser, base }) => chatMeasureSection(browser, base) }] : []),
   { name: "chatKeep", run: ({ browser, base }) => chatKeepSection(browser, base) },
   { name: "chatCap", run: ({ browser, base }) => chatCapSection(browser, base) },
@@ -694,7 +753,7 @@ const units = [
   { name: "chatterTab", run: ({ browser, base }) => chatterTabSection(browser, base) },
   { name: "chatTab", run: ({ browser, base }) => chatTabSection(browser, base) },
 ];
-const sections = { ...(process.env.CHAT_MEASURE ? { chatMeasure: chatMeasureSection } : {}), chatKeep: chatKeepSection, chatCap: chatCapSection, chatFast: chatFastSection, chatBridge: chatBridgeSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
+const sections = { chatReview: chatReviewSection, ...(process.env.CHAT_MEASURE ? { chatMeasure: chatMeasureSection } : {}), chatKeep: chatKeepSection, chatCap: chatCapSection, chatFast: chatFastSection, chatBridge: chatBridgeSection, chatPaste: chatPasteSection, chatter: chatterSection, chatterTab: chatterTabSection, chatTab: chatTabSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
