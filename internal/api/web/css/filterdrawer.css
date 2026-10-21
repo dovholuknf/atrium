@@ -19,7 +19,7 @@
   }
   .fsum[hidden] { display: none; }
   .fline .fq {
-    flex: 0 1 280px; min-width: 120px; cursor: text; user-select: text; -webkit-user-select: text; touch-action: manipulation;
+    flex: 0 1 320px; min-width: 120px; cursor: text; user-select: text; -webkit-user-select: text; touch-action: manipulation;
     font: var(--fs-sm)/1.4 var(--mono); color: var(--head);
     background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-sm); padding: 5px 10px;
@@ -103,7 +103,7 @@
   }
   .fdrawer.fstrip.open .fline { border-bottom-color: var(--stroke-dim); border-radius: 0; }
   .fstrip .fsum { flex: 0 1 auto; }
-  .fstrip .fline .fq { margin-left: auto; padding: 3px 10px; }
+  .fstrip .fline .fq { padding: 3px 10px; }
   .fstrip .filtersbtn {
     order: 0; min-height: 28px; min-width: 32px; padding: 0 6px; gap: 4px; justify-content: center;
     border: 0; background: transparent; color: var(--label);
@@ -113,6 +113,7 @@
   .fdrawer.fstrip.open .filtersbtn { border: 0; color: var(--head); }
   @media (hover: hover) { .fstrip .fline:hover .filtersbtn { color: var(--head); } }
   .fstrip .matchcount { order: 2; }
+  .fstrip .foldall { order: 3; }
   .fstrip .fq { order: 1; }
   .fstrip:not(.foverlay) .fwrap {
     position: static; display: grid; grid-template-rows: 0fr; overflow: hidden; pointer-events: none;
@@ -143,15 +144,14 @@
   .fdrawer.inline .fline { cursor: default; }
   .fdrawer.inline .fsum, .fdrawer.inline .filtersbtn, .fdrawer.inline .fhandle { display: none; }
   .fdrawer.fstrip.inline .fpanel, .fdrawer.inline .fpanel {
-    position: static; flex: 1 1 0; min-width: 0; max-height: none; overflow: clip; overflow-clip-margin: 3px; flex-wrap: nowrap; gap: 0 var(--sp-4);
+    position: static; flex: 0 1 auto; min-width: 0; max-height: none; overflow: clip; overflow-clip-margin: 3px; flex-wrap: nowrap; gap: 0 var(--sp-4);
     padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none;
     visibility: visible; opacity: 1; transform: none; transition: none;
   }
   .fdrawer.inline .frow { flex: none; max-width: none; }
   .fdrawer.inline .frow .seg { flex-wrap: nowrap; }
-  .fdrawer.inline .fline .fq { flex: 0 1 160px; }
   .fdrawer.inline .fpanel { gap: 0 var(--sp-3); }
   .fdrawer.inline .frow { gap: var(--sp-2); }
   .fdrawer.inline .frow .barlabel { min-width: 0; }
   .fdrawer.inline .fpanel .seg button { padding: 5px 8px; }
-  .fdrawer.inline .fline .fq { flex: 0 1 120px; min-width: 100px; }
+  .fdrawer.inline .fline .fq { flex: 0 0 300px; }

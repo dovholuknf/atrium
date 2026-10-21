@@ -20491,6 +20491,14 @@ async function cardViewBarInlineSection(browser, base) {
       inside: panel.getBoundingClientRect().right <= h.querySelector(".fline").getBoundingClientRect().right + 1
     };
   });
+  const search = () => p.evaluate(() => {
+    const h = document.getElementById("fd-terms");
+    const q = h.querySelector(".fq").getBoundingClientRect();
+    const rows = [...h.querySelectorAll(".fpanel .frow")].filter(r => r.getClientRects().length);
+    const label = rows.length ? rows[rows.length - 1].getBoundingClientRect() : null;
+    return { left: Math.round(q.left), width: Math.round(q.width), gap: label ? Math.round(q.left - label.right) : null,
+      lineRight: Math.round(h.querySelector(".fline").getBoundingClientRect().right) };
+  });
   const shot = async name => {
     if (!process.env.VIEWBAR_SHOTS) return;
     await p.screenshot({ path: require("path").join(process.env.VIEWBAR_SHOTS, "viewbar-" + name + "-" + (process.env.VIEWBAR_TAG || "after") + ".png"),
@@ -20505,6 +20513,8 @@ async function cardViewBarInlineSection(browser, base) {
     if (!wide.inline || !wide.onLine || wide.caret || wide.summary || wide.inert || wide.rows < 4 || !wide.oneLine || !wide.inside) {
       fail("viewbar 1900: the controls are not on the line with no caret: " + JSON.stringify(wide));
     }
+    const q1900 = await search();
+    if (q1900.width < 290 || q1900.gap < 0 || q1900.gap > 40) fail("viewbar 1900: the search box is not wide and right after the last row: " + JSON.stringify(q1900));
     await shot("1900");
     await p.evaluate(() => document.querySelector("#term-show button").click());
     await p.evaluate(() => document.querySelector("#fd-terms .fline").click());
@@ -20516,6 +20526,8 @@ async function cardViewBarInlineSection(browser, base) {
     await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     const mid = await state();
     if (mid.inline || mid.onLine || !mid.caret || !mid.summary || !mid.inert) fail("viewbar 900: the row would wrap, so the drawer and caret were expected: " + JSON.stringify(mid));
+    const q900 = await search();
+    if (q900.width < 230 || q900.left > q900.lineRight / 2) fail("viewbar 900: the search box is not wide and on the left half of the line: " + JSON.stringify(q900));
     await shot("900");
     await p.click("#fd-terms .fline .fsum");
     const open = await p.evaluate(() => { const h = document.getElementById("fd-terms"); return h.classList.contains("open") && !h.querySelector(".fpanel").inert; });
