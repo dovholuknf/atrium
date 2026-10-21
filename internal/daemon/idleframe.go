@@ -67,6 +67,78 @@ func framePromptEmpty(tail []byte, cols, rows int) bool {
 	return idle && typed == ""
 }
 
+// frameLineEmpty is a looser read than framePromptEmpty, for a runner whose line is only unsure because of a restart.
+// It asks for the prompt row under a rule and nothing typed on it, and no interrupt hint in the footer rows. Reply
+// text that happens to hold an ellipsis and a bracket, a status line taller than the box classifier allows, and the
+// dim suggestion Claude draws in an empty prompt all leave classifyScreenPrompt unsure, and none of them is a draft.
+func frameLineEmpty(tail []byte, cols, rows int) bool {
+	sc := newScreenSized(cols, rows)
+	sc.apply(tail)
+	type row struct {
+		text    string
+		restDim bool
+	}
+	var lines []row
+	for _, cells := range sc.cells {
+		var b strings.Builder
+		after, dim := false, true
+		for _, c := range cells {
+			if c.ch == contCh {
+				continue
+			}
+			ch := c.ch
+			if ch == 0 {
+				ch = ' '
+			}
+			if after && ch != ' ' && !sgrIsDim(c.sgr) {
+				dim = false
+			}
+			if ch == []rune(framePrompt)[0] {
+				after = true
+			}
+			b.WriteRune(ch)
+		}
+		if t := strings.TrimSpace(b.String()); t != "" {
+			lines = append(lines, row{t, dim})
+		}
+	}
+	n := len(lines)
+	for i := n - 1; i >= 0 && i >= n-6; i-- {
+		if strings.Contains(lines[i].text, frameInterrupt) {
+			return false
+		}
+	}
+	for i := n - 1; i >= 1 && i >= n-9; i-- {
+		if !strings.HasPrefix(lines[i].text, framePrompt) || !isRule(lines[i-1].text) {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimPrefix(lines[i].text, framePrompt)) == "" || lines[i].restDim
+	}
+	return false
+}
+
+// sgrIsDim is whether a cell's SGR sequence draws faint or bright black, the way a placeholder is drawn.
+func sgrIsDim(sgr string) bool {
+	s := strings.TrimSuffix(strings.TrimPrefix(sgr, "\x1b["), "m")
+	if s == sgr || s == "" {
+		return false
+	}
+	toks := strings.Split(s, ";")
+	for i := 0; i < len(toks); i++ {
+		switch toks[i] {
+		case "2", "90":
+			return true
+		case "38", "48":
+			if i+1 < len(toks) && toks[i+1] == "5" {
+				i += 2
+			} else {
+				i += 4
+			}
+		}
+	}
+	return false
+}
+
 // frameHasInterrupt is whether any of the last rows of the screen carries the hint a working runner draws.
 func frameHasInterrupt(tail []byte, cols, rows int) bool {
 	sc := newScreenSized(cols, rows)

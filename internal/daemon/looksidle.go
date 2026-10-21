@@ -175,7 +175,7 @@ func (d *Daemon) trustReattachedLine(run *runner, now time.Time) {
 	cols, rows := run.buf.CurrentSize()
 	tail := run.buf.Tail(frameTailBytes)
 	if claude {
-		if !framePromptEmpty(tail, cols, rows) {
+		if !framePromptEmpty(tail, cols, rows) && !frameLineEmpty(tail, cols, rows) {
 			return
 		}
 	} else if d.act.midTurn(run.taskID) || frameHasInterrupt(tail, cols, rows) {
