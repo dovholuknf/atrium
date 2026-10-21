@@ -35,7 +35,7 @@ func TestStartRunsADetachedHostFromACopy(t *testing.T) {
 	state, copies := t.TempDir(), t.TempDir()
 	since := time.Now()
 	p, err := Start(state, StartOptions{Exe: exe, CopyDir: copies,
-		Args: []string{"__host", state, "500ms"}})
+		Args: []string{"__host", state, "8s"}})
 	if err != nil {
 		t.Fatal(err)
 	}
