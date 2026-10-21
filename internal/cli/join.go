@@ -126,7 +126,7 @@ func hubAddressFrom(override string) (addr, source string) {
 	if v := recordedAgentAddr(); v != "" {
 		return v, "a running daemon"
 	}
-	return "http://localhost:7777", "the default, since no daemon has recorded one"
+	return "http://127.0.0.1:7777", "the default, since no daemon has recorded one"
 }
 
 // recordedAgentAddr reads the address the running daemon wrote down. Any

@@ -257,7 +257,7 @@ func turnEnded(hubURL, event, name, runner string) string {
 		return keepGoing
 	}
 
-	client := &http.Client{Timeout: turnTimeout}
+	client := hookClient(turnTimeout)
 	resp, err := client.Post(hubAddress(hubURL)+"/stop", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return keepGoing

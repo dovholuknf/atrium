@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,7 +185,7 @@ func reportSession(hubURL, event, name, runner string) sessionReport {
 		return out
 	}
 
-	client := &http.Client{Timeout: sessionTimeout}
+	client := hookClient(sessionTimeout)
 	resp, err := client.Post(hubAddress(hubURL)+"/session", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return out

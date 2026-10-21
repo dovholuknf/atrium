@@ -42,7 +42,7 @@ const permMaxDetails = 6000
 // defaultProbeTimeout is how long /gate may take. The POST below has no
 // deadline, so this probe is what stops one frozen room holding every gated
 // call on the machine.
-const defaultProbeTimeout = 3 * time.Second
+const defaultProbeTimeout = 2 * time.Second
 
 type permissionPayload struct {
 	ToolName  string          `json:"tool_name"`
@@ -164,7 +164,7 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 // takes a few seconds and the daemon upserts the request row by its dedup key before it waits, so asking again with
 // the same key is answered once by the new daemon. ATRIUM_PERM_RETRY_FOR and ATRIUM_PERM_RETRY_EVERY (durations)
 // shorten them, which is how a test does it without assigning a package variable.
-func permRetryFor() time.Duration { return envDuration("ATRIUM_PERM_RETRY_FOR", 30*time.Second) }
+func permRetryFor() time.Duration { return envDuration("ATRIUM_PERM_RETRY_FOR", 4*time.Second) }
 
 func permRetryEvery() time.Duration { return envDuration("ATRIUM_PERM_RETRY_EVERY", time.Second) }
 
@@ -186,7 +186,7 @@ type permissionAnswer struct {
 // are what a room on its way down or not yet migrated gives. After permRetryFor it gives up and the caller fails
 // open, recording an allow nowhere.
 func postPermission(base string, body []byte) (permissionAnswer, bool) {
-	client := &http.Client{Timeout: permPostTimeout()}
+	client := hookClient(permPostTimeout())
 	every := permRetryEvery()
 	deadline := time.Now().Add(permRetryFor())
 	for {
@@ -230,7 +230,7 @@ func probeGate(base, agent string) (joined, ok bool) {
 	}
 	// The client timeout covers the body too, so a daemon that sends headers
 	// and stalls is still cut off.
-	client := &http.Client{Timeout: timeout}
+	client := hookClient(timeout)
 	resp, err := client.Get(base + "/gate?agent=" + url.QueryEscape(agent))
 	if err != nil {
 		return false, false

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -292,7 +293,7 @@ func newHookInstall() *cobra.Command {
 // not a problem: the file is already written, and a board that starts later
 // reads it at that point.
 func pingHooksChanged() {
-	client := &http.Client{Timeout: hookTimeout}
+	client := hookClient(hookTimeout)
 	resp, err := client.Post(hubAddress("")+"/hooks-changed", "application/json", nil)
 	if err != nil {
 		return
@@ -442,7 +443,7 @@ func reportActivity(hubURL, event, name string) {
 		return
 	}
 
-	client := &http.Client{Timeout: hookTimeout}
+	client := hookClient(hookTimeout)
 	resp, err := client.Post(hubAddress(hubURL)+"/activity", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return
@@ -451,4 +452,17 @@ func reportActivity(hubURL, event, name string) {
 	// status is not checked because there is nothing to do about it.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 	resp.Body.Close()
+}
+
+// hookClient is the one client every hook posts with. The dial gets a second of its own so a connect that hangs
+// cannot spend the whole budget, and the overall timeout is the hard total.
+func hookClient(total time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: total,
+		Transport: &http.Transport{
+			DialContext:         (&net.Dialer{Timeout: time.Second}).DialContext,
+			TLSHandshakeTimeout: time.Second,
+			DisableKeepAlives:   true,
+		},
+	}
 }
