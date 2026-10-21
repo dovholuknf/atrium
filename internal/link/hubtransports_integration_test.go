@@ -53,7 +53,7 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 		if ok() {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // wait: poll step under one deadline
 	}
 	t.Fatalf("timed out waiting for %s", what)
 }

@@ -62,7 +62,7 @@ func TestLiveFlagsSeedAllThreeTransportsWithNoStoredSettings(t *testing.T) {
 		if n == 3 {
 			break
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: poll step under one deadline
 	}
 	mu.Lock()
 	defer mu.Unlock()

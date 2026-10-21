@@ -1131,7 +1131,7 @@ async function hubTransportsSection(browser, base) {
     const gets = st.gets;
     await p.evaluate(() => document.getElementById("settings").close());
     await showPane(p);
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: settle for a render with no event to wait on
     if (st.gets <= gets) fail(tag + "opening the gear did not read the transports again.");
     if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
   } finally { await h.ctx.close(); }
@@ -1153,7 +1153,7 @@ async function hubTransportsSection(browser, base) {
   try {
     const { p } = h;
     await showPane(p);
-    await p.waitForTimeout(600);
+    await p.waitForTimeout(600); // wait: settle for a render with no event to wait on
     if (!(await p.evaluate(() => document.getElementById("s-ht-row").hidden))) fail(tag + "the row shows with no hub.");
   } finally { await h.ctx.close(); }
 }
@@ -1268,7 +1268,7 @@ async function zrokLogoSection(browser, base) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "probe.png"), clip: { x: 0, y: 0, width: 700, height: 100 } });
       await p.evaluate(() => { document.getElementById("zr-probe").remove(); document.getElementById("zr-chips").remove(); openRooms(); });
-      await p.waitForTimeout(600);
+      await p.waitForTimeout(600); // wait: settle for a render with no event to wait on
       await p.screenshot({ path: path.join(shots, "rooms-page.png") });
     }
     if (errors.length) fail("page errors: " + errors.join("; "));

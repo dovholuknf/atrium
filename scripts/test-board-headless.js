@@ -20066,7 +20066,7 @@ async function quickPasteSection(browser, base) {
     st.holdD = null;
     await p.waitForFunction(() => termTask && termTask.id === "t-q", null, { timeout: slow(5000) })
       .catch(() => fail("discourse: the double paste focused no card"));
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: settle for a render with no event to wait on
     const twice = st.rooms.length;
     if (twice !== 1) fail("discourse: two pastes of one topic opened " + twice + " times");
     if (await pageRows()) fail("discourse: the double paste left a row");
@@ -22881,7 +22881,7 @@ async function termDeadCardSection(browser, base) {
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
     await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
-    const idle = ms => wp.waitForTimeout(ms);
+    const idle = ms => wp.waitForTimeout(ms); // wait: settle for a render with no event to wait on
     const pane = () => wp.evaluate(() => {
       const vis = id => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== "none"; };
       const dead = document.getElementById("t-dead");
@@ -26752,7 +26752,7 @@ async function termListPatchSection(browser, base) {
   const tag = "termListPatch: ";
   try {
     await p.goto(base + "/raw", { waitUntil: "load" });
-    await p.waitForTimeout(1000);
+    await p.waitForTimeout(1000); // wait: settle for a render with no event to wait on
     const out = await p.evaluate(async () => {
       const mk = (id, repo, over) => Object.assign({ id, title: id, display_title: id, status: "running", wire_name: "w/" + id,
         tags: [], worktree: "/g/github/o/" + repo + "-" + id, repo: "o/" + repo, runner: "claude", supervised: true, pid: 0, seen: {},
