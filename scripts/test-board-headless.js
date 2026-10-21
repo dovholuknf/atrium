@@ -24124,6 +24124,50 @@ const CR_FULL = "e40a3c2d00112233445566778899aabbccddeeff", CR_ZERO = "0".repeat
 const CR_SHAS = [["xyz", false], ["e40a3c2", false], [CR_FULL.slice(1), false], [CR_FULL + "0", false], [CR_FULL.replace("e", "g"), false], [CR_FULL.toUpperCase(), true], [CR_FULL, true], [CR_64, true], [CR_64.slice(1), false]];
 const text0 = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
 
+// notifyTrayFill: the bell's tray lists its rows to the panel's bottom edge, and the last row scrolls whole into view.
+async function notifyTrayFillSection(browser, base) {
+  const shots = process.env.TRAY_SHOTS || "";
+  for (const vh of [700, 1300]) {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: vh } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    try {
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof openToastLog === "function" && !!document.getElementById("toastlog-list"), null, { timeout: slow(15000) });
+      await p.evaluate(() => {
+        saveToastLog(Array.from({ length: 60 }, (_, i) => ({ title: "tray row " + i, body: "body " + i, at: Date.now() - i * 1000, sig: " r" + i })));
+        openToastLog();
+        const dlg = document.getElementById("toastlog");
+        if (!dlg.open) dlg.showModal();
+        return true;
+      });
+      await p.waitForFunction(() => getComputedStyle(document.getElementById("toastlog")).transform === "none", null, { timeout: slow(5000) });
+      const m = await p.evaluate(() => {
+        const dlg = document.getElementById("toastlog");
+        const list = document.getElementById("toastlog-list");
+        list.scrollTop = list.scrollHeight;
+        const pr = dlg.getBoundingClientRect(), lr = list.getBoundingClientRect();
+        const cs = getComputedStyle(dlg);
+        const rows = list.querySelectorAll(".tlrow");
+        const last = rows[rows.length - 1].getBoundingClientRect();
+        return { scrolls: list.scrollHeight > list.clientHeight + 1, panelInnerBottom: pr.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
+          listBottom: lr.bottom, lastBottom: last.bottom, panelBottom: pr.bottom, vh: innerHeight };
+      });
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await p.screenshot({ path: path.join(shots, "tray-" + vh + ".png") });
+      }
+      const tag = "notifyTrayFill at " + vh + ": ";
+      if (!m.scrolls) fail(tag + "the list did not need to scroll, so it proves nothing: " + JSON.stringify(m));
+      if (Math.abs(m.listBottom - m.panelInnerBottom) > 2) fail(tag + "the list ends short of the panel: " + JSON.stringify(m));
+      if (m.panelBottom > m.vh + 1) fail(tag + "the panel runs past the window bottom: " + JSON.stringify(m));
+      if (m.lastBottom > m.listBottom + 1) fail(tag + "the last row does not scroll fully into view: " + JSON.stringify(m));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  }
+}
+
 async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
@@ -26367,6 +26411,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("repoPaste", () => repoPasteSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
     await unit("roomsMenuScroll", bu("roomsMenuScroll"));
+    await unit("notifyTrayFill", () => notifyTrayFillSection(browser, base));
     await unit("homesChips", bu("homesChips"));
     await unit("homesRoot", bu("homesRoot"));
     await unit("homesDisk", bu("homesDisk"));
