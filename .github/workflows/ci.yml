@@ -23,11 +23,12 @@ permissions:
   contents: read
 
 jobs:
-  # THE FLAKY SUITE FIRST, THREE JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
+  # THE FLAKY SUITE LAST, THREE JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
   # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board-1` and `flaky-board-2` run the board units
-  # and check scripts in halves and need no Go. Every other job waits for all the flaky jobs (`needs`) and does not run
-  # when one is red, so a failing flaky test stops the run before the rest starts.
+  # and check scripts in halves and need no Go. Each flaky job waits for all three check jobs (`needs`) and is skipped
+  # when one is red, so the checks start at once and the flaky groups follow, never beside them, to spare runners.
   flaky-ubuntu:
+    needs: [check-ubuntu, check-macos, check-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +54,7 @@ jobs:
           if-no-files-found: ignore
 
   flaky-macos:
+    needs: [check-ubuntu, check-macos, check-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -78,6 +80,7 @@ jobs:
           if-no-files-found: ignore
 
   flaky-windows:
+    needs: [check-ubuntu, check-macos, check-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -114,7 +117,6 @@ jobs:
   # names the group. No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual
   # failure out of its own exit status.
   check-ubuntu:
-    needs: [flaky-ubuntu, flaky-macos, flaky-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -138,7 +140,6 @@ jobs:
           if-no-files-found: ignore
 
   check-macos:
-    needs: [flaky-ubuntu, flaky-macos, flaky-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -162,7 +163,6 @@ jobs:
           if-no-files-found: ignore
 
   check-windows:
-    needs: [flaky-ubuntu, flaky-macos, flaky-windows]
     strategy:
       fail-fast: false
       matrix:

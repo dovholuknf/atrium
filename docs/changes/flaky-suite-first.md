@@ -18,13 +18,13 @@
 
 **Expected:** the group is `flaky,clean-tree`. No test appears in two of go-test, board, board-visual and flaky.
 
-### @LETTER@3. The flaky job comes first on each platform
+### @LETTER@3. The flaky jobs wait for the checks
 
 1. Push a branch and open the run.
-2. Check that `check (<os>-latest, flaky)` starts before any other `check` job of that OS.
+2. Check that every `flaky-*` job starts only after all the `check` jobs end.
 3. Break one manifest test on purpose, push again.
 
-**Expected:** the flaky job of that OS is red, the other jobs of that OS still run and report, and `notify` fires.
+**Expected:** the checks run first, the flaky job is red, and `notify` fires.
 
 ### @LETTER@4. test-touched runs the flaky tests first
 

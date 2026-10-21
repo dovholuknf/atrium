@@ -38,11 +38,11 @@ all_steps="machine toolchain flaky-go flaky-board gofmt go-vet go-build go-test 
 # side and a run takes as long as its slowest group. time-guard reads go-test's stream, so they share a group, and each
 # group ends with clean-tree, which only looks at what that job did.
 #
-# THE FLAKY SUITE RUNS FIRST. scripts/flaky-suite.json lists every test known to fail now and then, and the flaky groups
+# THE FLAKY SUITE RUNS LAST. scripts/flaky-suite.json lists every test known to fail now and then, and the flaky groups
 # run only those, with no quarantine: a failure fails the job, and a board unit gets one retry (a go test gets none), so
 # a listed unit that fails and then passes is marked PASSED ON RETRY and does not fail the job. Every other step skips
-# them, so a test runs in exactly one place, and the workflow starts the other jobs after these (`needs` on every
-# flaky job) so the bad tests answer fast and alone.
+# them, so a test runs in exactly one place, and the workflow starts these after the check jobs (`needs` on every
+# flaky job) so the checks, which fail far more often, answer first and the two groups never share runners.
 #
 # THE FLAKY SUITE IS THREE JOBS. flaky-go is the flaky go tests: it needs Go and no node. flaky-board-1 and flaky-board-2
 # are the flaky board units and the flaky check scripts (they drive playwright) in two halves by weight (board_units
