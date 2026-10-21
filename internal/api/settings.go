@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/scratch"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -93,6 +94,7 @@ func globalAutoView(s *Server) map[string]any {
 		gitsync.SettingSCMRoot: "git_scm_root",
 		// Where every launched card's home goes. Read as stored: empty means the default, which is derived and never written.
 		cardroot.Setting:                "card_root",
+		store.SettingScratchRoot:        "scratch_root",
 		gitsync.SettingCredentialHelper: "git_credential_helper",
 		gitsync.SettingCredentialHosts:  "git_credential_hosts",
 		// A second address file, for callers running as another account.
@@ -294,8 +296,10 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		BrowseRoots *string `json:"browse_roots"`
 		// The scm folder, `<scm_root>/<host>/<owner>/<repo>`, and the credential helper
 		// for atrium's clones. Pointers, because clearing one is a request.
-		GitSCMRoot          *string `json:"git_scm_root"`
-		CardRoot            *string `json:"card_root"`
+		GitSCMRoot *string `json:"git_scm_root"`
+		CardRoot   *string `json:"card_root"`
+		// Where this room's cards put throwaway files. Empty means each card's own folder.
+		ScratchRoot         *string `json:"scratch_root"`
 		GitCredentialHelper *string `json:"git_credential_helper"`
 		GitCredentialHosts  *string `json:"git_credential_hosts"`
 		// Where to publish the address for other accounts, and clearing it
@@ -637,6 +641,21 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := s.st.SetSetting(cardroot.Setting, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.ScratchRoot != nil {
+		v := strings.TrimSpace(*body.ScratchRoot)
+		if v != "" {
+			abs, err := scratch.Check(v)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+			v = abs
+		}
+		if err := s.st.SetSetting(store.SettingScratchRoot, v); err != nil {
 			s.fail(w, err)
 			return
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,8 @@ func newSession() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"posted %q to %s/session as %q, runner pid %d\naddress came from %s\n",
 					event, addr, reported.agent, reported.pid, source)
+			} else if reported.context != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), sessionContext(reported.context))
 			}
 			return nil
 		},
@@ -114,8 +117,9 @@ func whichRunner(flag string) string {
 // sessionReport is what was sent, for the interactive line. Nothing on the hook
 // path reads it.
 type sessionReport struct {
-	agent string
-	pid   int
+	agent   string
+	pid     int
+	context string
 }
 
 func reportSession(hubURL, event, name, runner string) sessionReport {
@@ -190,8 +194,27 @@ func reportSession(hubURL, event, name, runner string) sessionReport {
 	if err != nil {
 		return out
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if event == "start" && whichRunner(runner) == "claude" {
+		var answer struct {
+			Context string `json:"context"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&answer) == nil {
+			out.context = answer.Context
+		}
+	}
 	return out
+}
+
+// sessionContext is what a SessionStart hook prints so the harness hands it to the model.
+func sessionContext(text string) string {
+	b, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName": "SessionStart", "additionalContext": text,
+	}})
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // hasTranscript reports whether a conversation has actually been written.

@@ -2427,6 +2427,20 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// THE SCRATCH FOLDER ATRIUM MADE FOR A CARD, one row each, so cull removes only what atrium made. See
+		// store/scratch.go.
+		name: "0111_card_scratch",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS card_scratch (
+				path       TEXT PRIMARY KEY,
+				card       TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				state      TEXT NOT NULL DEFAULT 'live' CHECK (state IN ('live','removed'))
+			)`,
+			`CREATE INDEX IF NOT EXISTS card_scratch_card ON card_scratch (card)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

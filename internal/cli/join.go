@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -175,9 +176,17 @@ func sessionEvent(hubURL, event, name, title, why string) error {
 		return fmt.Errorf("atrium refused the %s: %s", event, resp.Status)
 	}
 
+	var answer struct {
+		Context string `json:"context"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&answer)
+
 	switch event {
 	case "join":
 		fmt.Printf("joined atrium as %q. tool calls from this session are gated from now on.\n", agent)
+		if answer.Context != "" {
+			fmt.Println(answer.Context)
+		}
 	case "leave":
 		fmt.Printf("left atrium. %q is no longer gated, and its card is marked done.\n", agent)
 	}

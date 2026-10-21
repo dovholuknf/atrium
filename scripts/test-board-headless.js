@@ -10012,6 +10012,63 @@ async function peekKidsSection(browser, base) {
   }
 }
 
+// The details panel's SCRATCH row: a card the room gave a scratch folder shows it with a files link, the listing and each
+// download are read with root=scratch, and a card with none draws nothing. The gear's scratch root box is saved and filled.
+async function peekScratchSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const listed = [];
+  await ctx.route("**/v1/tasks/*/files/list*", route => {
+    listed.push(route.request().url());
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      path: "D:/tmp/hot-loop-01ABCDEF", root: "D:/tmp/hot-loop-01ABCDEF", parent: "", truncated: false,
+      entries: [{ name: "oidc-hot-loop.patch", path: "D:/tmp/hot-loop-01ABCDEF/oidc-hot-loop.patch", dir: false, size: 2048 }]
+    }) });
+  });
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof peekRows === "function" && typeof peekScratchHtml === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const root = document.createElement("div");
+      root.id = "shot-root";
+      root.className = "peek on";
+      root.style.cssText = "position:fixed;left:20px;top:20px;width:520px;z-index:99999;display:block";
+      root.innerHTML = '<div class="peek-body"></div>';
+      document.body.appendChild(root);
+      root.firstChild.innerHTML = peekRows({ id: "sg4~c1", status: "needs-input", recap: "Fixing the OIDC hot loop." });
+    });
+    if (process.env.PEEKSCRATCH_SHOTS) await p.locator("#shot-root").screenshot({ path: process.env.PEEKSCRATCH_SHOTS + "/before.png" });
+    await p.evaluate(() => {
+      document.querySelector("#shot-root .peek-body").innerHTML = peekRows({ id: "sg4~c1", status: "needs-input",
+        recap: "Fixing the OIDC hot loop.", scratch: "D:/tmp/hot-loop-01ABCDEF" });
+    });
+    if (process.env.PEEKSCRATCH_SHOTS) await p.locator("#shot-root").screenshot({ path: process.env.PEEKSCRATCH_SHOTS + "/scratch-row.png" });
+    const row = await p.evaluate(() => {
+      const s = document.querySelector("#shot-root .peek-sec.scratch");
+      return s ? { text: s.textContent.replace(/\s+/g, " ").trim(), none: peekRows({ id: "x", status: "idle" }).includes("scratch") } : null;
+    });
+    if (!row || !/scratch\s*D:\/tmp\/hot-loop-01ABCDEF/.test(row.text)) fail("peekScratch: the scratch folder is not in the details: " + JSON.stringify(row));
+    if (row && row.none) fail("peekScratch: a card with no scratch folder draws a row.");
+    await p.click("#shot-root .peek-scratch");
+    await p.waitForSelector("#shot-root .peek-sfile a", { timeout: slow(10000) });
+    if (!listed.length || !/root=scratch/.test(listed[0])) fail("peekScratch: the listing was not read with root=scratch: " + JSON.stringify(listed));
+    const href = await p.getAttribute("#shot-root .peek-sfile a", "href");
+    if (!/^\/v1\/tasks\/sg4~c1\/files\?root=scratch&path=/.test(href || "")) fail("peekScratch: the download link is " + href);
+    if (process.env.PEEKSCRATCH_SHOTS) await p.locator("#shot-root").screenshot({ path: process.env.PEEKSCRATCH_SHOTS + "/scratch-files.png" });
+    const box = await p.evaluate(() => {
+      fillCardRoot({ scratch_root: "D:\\tmp" });
+      const el = document.getElementById("s-scratchroot");
+      return el ? { value: el.value, saves: el.dataset.saves } : null;
+    });
+    if (!box || box.value !== "D:\\tmp" || box.saves !== "saveScratchRoot") fail("peekScratch: the gear's scratch root box: " + JSON.stringify(box));
+    if (errors.length) fail("peekScratch: page errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // ONE DETAILS RENDERER: the terminal's details drawer and the peek popup are the same function (peekFill), so for the same
 // card they draw the same sections in the same order with the same summaries, and the messages between agents list is a
 // folded drawer in both rather than a long open list in one. DETAILS_SHOTS=<dir> writes the drawer as a png.
@@ -24190,7 +24247,7 @@ async function main() {
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
-      history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
+      history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
@@ -26144,6 +26201,7 @@ async function main() {
     await unit("peekDrawers", () => peekDrawersSection(browser, base));
     await unit("peekStatusTruth", () => peekStatusTruthSection(browser, base));
     await unit("peekKids", () => peekKidsSection(browser, base));
+    await unit("peekScratch", () => peekScratchSection(browser, base));
     await unit("detailsOne", () => detailsOneSection(browser, base));
     await unit("peekHoverRest", () => peekHoverRestSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));

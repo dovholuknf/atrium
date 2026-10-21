@@ -1179,6 +1179,9 @@ type view struct {
 	*store.MergedView
 	// LandedKept is why a card whose work landed has not been reclaimed: a tag, a hold, a question, uncommitted changes.
 	LandedKept any `json:"landed_kept,omitempty"`
+	// Scratch is the folder the room tells this card to put throwaway files in: the one atrium made, else where the room's
+	// scratch_root would put it. Absent when the room has no scratch root.
+	Scratch string `json:"scratch,omitempty"`
 	// Row is always 1. It tells the board this payload is a whole list row, so a
 	// "task" event can be upserted without a re-fetch. Never omitted.
 	Row int `json:"row"`
@@ -1310,6 +1313,7 @@ func (s *Server) toView(t *store.Task) view {
 	if owed := s.owed(); owed != nil {
 		v.Owed, v.OwedSince, v.OwedNoLauncher = owed(t)
 	}
+	v.Scratch = s.scratchOf(t)
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
 	}

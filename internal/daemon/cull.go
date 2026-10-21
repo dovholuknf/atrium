@@ -84,9 +84,11 @@ type CullResult struct {
 	BytesFreed int64 `json:"bytes_freed"`
 	// BriefRemoved and ScratchRemoved say what became of the BRIEF.md atrium wrote and of a directory that was
 	// not a git worktree. See reclaim.go.
-	BriefRemoved   bool   `json:"brief_removed"`
-	ScratchRemoved bool   `json:"scratch_removed"`
-	Kept           string `json:"kept,omitempty"`
+	BriefRemoved   bool `json:"brief_removed"`
+	ScratchRemoved bool `json:"scratch_removed"`
+	// ScratchDirRemoved is the card's scratch_root folder, removed only when atrium made it.
+	ScratchDirRemoved bool   `json:"scratch_dir_removed,omitempty"`
+	Kept              string `json:"kept,omitempty"`
 }
 
 // Cull asks a merged worker to leave and removes its worktree and branch. See
@@ -226,6 +228,7 @@ func (d *Daemon) leaveForCull(t *store.Task, res *CullResult) error {
 func (d *Daemon) culled(t *store.Task, res *CullResult) *CullResult {
 	log.Printf("[atrium] culled %s: exited=%v worktree removed=%v branch %s deleted=%v %s",
 		t.DisplayTitle(), res.Exited, res.WorktreeRemoved, res.Branch, res.BranchDeleted, res.Kept)
+	res.ScratchDirRemoved = d.removeScratch(t)
 	if err := d.st.AcceptMerged(t.ID); err != nil {
 		log.Printf("[atrium] could not close %s as accepted: %v", t.DisplayTitle(), err)
 	}

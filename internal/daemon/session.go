@@ -152,7 +152,32 @@ func (d *Daemon) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"ok":true}`))
+	out := map[string]any{"ok": true}
+	if in.Event == "start" || in.Event == "join" {
+		if line := d.sessionScratchLine(in); line != "" {
+			out["context"] = line
+		}
+	}
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// sessionScratchLine is the line that tells a session that has just started where its throwaway files go. Best effort:
+// a session atrium cannot find gets nothing, and a nested session carrying a card's task id gets nothing either.
+func (d *Daemon) sessionScratchLine(in SessionEvent) string {
+	var t *store.Task
+	if in.TaskID != "" {
+		got, err := d.st.Get(in.TaskID)
+		if err != nil || !d.ownsSession(got, in.PID) {
+			return ""
+		}
+		t = got
+	} else if got, err := d.st.GetByWireName(in.Agent); err == nil {
+		t = got
+	}
+	if t == nil {
+		return ""
+	}
+	return d.scratchLine(t)
 }
 
 func (d *Daemon) onSession(in SessionEvent) error {

@@ -53,11 +53,15 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if strings.TrimSpace(task.Worktree) == "" {
+	root, inScratch, found := s.fileRoot(r, task)
+	if inScratch && !found {
+		writeErr(w, http.StatusNotFound, errors.New("this card has no scratch folder"))
+		return
+	}
+	if strings.TrimSpace(root) == "" {
 		writeErr(w, http.StatusBadRequest, errors.New("this card has no directory"))
 		return
 	}
-	root := filepath.FromSlash(task.Worktree)
 
 	// No path means the card's own directory, except that the interesting
 	// place is usually the one something just wrote to.

@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
+	"github.com/dovholuknf/atrium/internal/scratch"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1342,6 +1343,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		for k, v := range homeEnv(homeDir) {
 			atrium[k] = v
 		}
+	}
+	if dir := d.scratchFor(task, cwd); dir != "" {
+		atrium[scratch.Env] = dir
 	}
 	// THE CARD'S GIT TOKEN for the room's hub forwarder, scoped to the forwarder's URL. Nothing for a card that runs
 	// outside code. See hubGitEnv.

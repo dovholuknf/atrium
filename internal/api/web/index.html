@@ -2465,6 +2465,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         pass repo and branch so the room makes the folder, unless it says scratch. Launches from the board are never
         refused.</span>
     </div>
+    <div class="field">
+      <label class="eyebrow" for="s-scratchroot">scratch root</label>
+      <div class="picker">
+        <input id="s-scratchroot" spellcheck="false" data-saves="saveScratchRoot"
+          placeholder="empty means each card's own folder, for example D:\tmp">
+      </div>
+      <span class="hintline">Where this room's cards put throwaway files: patches, logs, downloads and notes. Each card gets
+        a folder of its own here, named in ATRIUM_SCRATCH and in the line a session starts with. An absolute path on this
+        machine, never a drive root. Cards already running are told at their next start.</span>
+    </div>
     <div class="field" id="rc-disk"></div>
     </section>
   </div>

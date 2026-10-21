@@ -282,7 +282,12 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if task.Worktree == "" {
+	root, inScratch, found := s.fileRoot(r, task)
+	if inScratch && !found {
+		writeErr(w, http.StatusNotFound, errors.New("this card has no scratch folder"))
+		return
+	}
+	if root == "" {
 		writeErr(w, http.StatusBadRequest, errors.New("this card has no directory"))
 		return
 	}
@@ -292,7 +297,7 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	real, err := safepath.Contained(filepath.FromSlash(task.Worktree), want)
+	real, err := safepath.Contained(root, want)
 	if err != nil {
 		// Everything OUTSIDE the card answers the same, whether or not it is
 		// there, so this cannot be used to find out what is on the machine.
@@ -337,7 +342,7 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 	// on the file that is really being read and not on the name it was asked for. A link
 	// `notes.md -> .env` passes containment and the filename above has lost its leading dot.
 	// See hubstore.SecretFileName and atrium_publish.
-	if rel, ok := realRelative(task.Worktree, real); ok {
+	if rel, ok := realRelative(filepath.ToSlash(root), real); ok {
 		w.Header().Set(RealPathHeader, url.PathEscape(rel))
 	}
 	http.ServeContent(w, r, "", fi.ModTime(), f)

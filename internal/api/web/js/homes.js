@@ -223,7 +223,14 @@ async function saveCardRootRequired() {
   if (el) await saveHousekeeping("card_root_required", !!el.checked);
 }
 
+async function saveScratchRoot() {
+  const el = document.getElementById("s-scratchroot");
+  if (el) await saveHousekeeping("scratch_root", el.value.trim());
+}
+
 function fillCardRoot(s) {
+  const sr = document.getElementById("s-scratchroot");
+  if (sr) sr.value = (s && s.scratch_root) || "";
   const req = document.getElementById("s-cardrootreq");
   if (req) req.checked = !!(s && s.card_root_required);
   const el = document.getElementById("s-cardroot");

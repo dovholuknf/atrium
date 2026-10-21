@@ -411,6 +411,7 @@
     "ptyhost": {"package": "./internal/ptyhost", "sources": ["internal/ptyhost/*.go"], "tests": ["internal/ptyhost/*_test.go"]},
     "cli": {"package": "./internal/cli", "sources": ["internal/cli/*.go"], "tests": ["internal/cli/*_test.go"]},
     "api/subscriptions": {"package": "./internal/api", "sources": ["internal/api/subscriptions.go"], "tests": ["internal/api/subscriptions_*test.go"]},
+    "api/scratch": {"package": "./internal/api", "sources": ["internal/api/scratch.go"], "tests": ["internal/api/scratch_*test.go"]},
     "api/rest": {"package": "./internal/api", "rest": true, "ceiling": 29, "sources": [], "tests": []},
     "hub/rest": {"package": "./internal/link", "rest": true, "ceiling": 29, "sources": [], "tests": []}
   }

@@ -223,9 +223,42 @@ function peekRows(t) {
   return (need.length ? `<div class="peek-sec need" data-drawer="need" data-label="needs you" data-sum="${esc(needSum)}">${need.join("")}</div>` : "") +
     peekKidsHtml(kids) +
     (t.lifetime ? `<div class="peek-sec">${row("lifetime", t.lifetime)}</div>` : "") +
+    peekScratchHtml(t) +
     (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
+
+// THE CARD'S SCRATCH FOLDER: where the room told it to put throwaway files, set by the room's scratch_root. Absent when the
+// room has none. "files" lists the folder and each file is a link to download it, both read with `?root=scratch`, which
+// the daemon resolves to the one folder it made for this card.
+function peekScratchHtml(t) {
+  if (!t || !t.scratch) return "";
+  return `<div class="peek-sec scratch"><div class="peek-row"><b>scratch</b><span>${esc(t.scratch)}</span></div>` +
+    `<div class="peek-row"><button type="button" class="peek-scratch link" data-id="${esc(t.id)}" data-tip="list the files in it">files</button></div>` +
+    `<div class="peek-scratch-list"></div></div>`;
+}
+async function peekScratchList(btn, path) {
+  const box = btn.closest(".peek-sec").querySelector(".peek-scratch-list");
+  const id = btn.dataset.id;
+  let res;
+  try {
+    res = await api(`/v1/tasks/${encodeURIComponent(id)}/files/list?root=scratch` + (path ? `&path=${encodeURIComponent(path)}` : ""));
+  } catch (e) {
+    box.textContent = e.message;
+    return;
+  }
+  const rows = (res.entries || []).map(e => e.dir
+    ? `<div class="peek-sfile"><button type="button" class="peek-sdir link" data-path="${esc(e.path)}">${esc(e.name)}/</button></div>`
+    : `<div class="peek-sfile"><a download href="/v1/tasks/${encodeURIComponent(id)}/files?root=scratch&path=${encodeURIComponent(e.path)}">${esc(e.name)}</a>` +
+      `<span>${typeof bytes === "function" ? esc(bytes(e.size)) : ""}</span></div>`);
+  const up = res.parent ? `<div class="peek-sfile"><button type="button" class="peek-sdir link" data-path="${esc(res.parent)}">..</button></div>` : "";
+  box.innerHTML = up + (rows.join("") || `<div class="peek-sfile">nothing here.</div>`);
+  box.querySelectorAll(".peek-sdir").forEach(b => { b.onclick = () => peekScratchList(btn, b.dataset.path); });
+}
+document.addEventListener("click", ev => {
+  const b = ev.target && ev.target.closest && ev.target.closest(".peek-scratch");
+  if (b) peekScratchList(b, "");
+});
 
 // THE CHILDREN SECTION: what the badges on the card's row mean. It is SHUT by default and its heading is the summary,
 // `children  40 · 3 need you · 1 running · 8 paused · 28 dead`, a part left out when it is zero. Open, it is one child per
