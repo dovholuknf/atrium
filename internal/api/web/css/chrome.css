@@ -119,6 +119,8 @@
     border: 1px solid var(--stroke-dim); background: var(--chip);
   }
   .rooms:hover { color: var(--head); border-color: var(--stroke); }
+  .rooms-all { font: 500 var(--fs-xl)/1 var(--mono); padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer; }
+  .rooms-all[hidden] { display: none; }
   .rooms .dot { background: var(--teal); box-shadow: 0 0 9px var(--teal); }
   /* Scoped to one room, which is a mode worth seeing from across the desk. */
   .rooms.scoped { color: var(--teal); border-color: var(--teal); }

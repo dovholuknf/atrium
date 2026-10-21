@@ -128,6 +128,9 @@ function paintRooms() {
   const el = document.getElementById("rooms");
   const conn = document.getElementById("conn");
   if (!el) return;
+  // Shown on the stored scope alone, so it survives a room that is gone and a hub read that failed.
+  const back = document.getElementById("rooms-all");
+  if (back) back.hidden = !roomNow();
   if (!hubIsHub) {
     el.hidden = true;
     if (conn) conn.hidden = false;

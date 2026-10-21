@@ -1644,6 +1644,64 @@ async function popoutTagFlipSection(browser, base) {
   }
 }
 
+// A BOARD SCOPED TO A ROOM THAT IS NOT THERE keeps a control back to every room.
+async function roomsBackSection(browser, base) {
+  const wasHub = mock.hubMode, wasSgg = mock.sggAttached;
+  const shots = process.env.BACK_SHOTS;
+  const cases = [
+    { name: "disconnected", hub: true },
+    { name: "hub-unreadable", hub: false },
+  ];
+  try {
+    for (const c of cases) {
+      mock.hubMode = c.hub;
+      mock.sggAttached = false;
+      const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
+      await ctx.addInitScript(() => {
+        try {
+          if (sessionStorage.getItem("seeded")) return;
+          sessionStorage.setItem("seeded", "1");
+          localStorage.setItem("atrium.room", "sgg");
+        } catch (e) {}
+      });
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      try {
+        await p.goto(base, { waitUntil: "domcontentloaded" });
+        await p.waitForTimeout(2500);
+        const seen = await p.evaluate(() => {
+          const b = document.getElementById("rooms-all");
+          if (!b) return { found: false };
+          const r = b.getBoundingClientRect();
+          const cs = getComputedStyle(b);
+          return { found: true, shown: !b.hidden && cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0,
+            text: b.textContent.trim() };
+        });
+        if (shots) {
+          require("fs").mkdirSync(shots, { recursive: true });
+          await p.screenshot({ path: require("path").join(shots, c.name + "-" + (process.env.BACK_SHOT_TAG || "after") + ".png"),
+            clip: { x: 0, y: 0, width: 1400, height: 400 } });
+        }
+        if (!seen.found || !seen.shown) {
+          fail("scoped to a room that is not attached (" + c.name + "): no visible #rooms-all control back to the hub board, " + JSON.stringify(seen));
+          continue;
+        }
+        if (!/all rooms/i.test(seen.text)) fail(c.name + ": the way back reads " + JSON.stringify(seen.text) + ", not all rooms");
+        await Promise.all([p.waitForEvent("load", { timeout: slow(15000) }), p.click("#rooms-all")]);
+        const left = await p.evaluate(() => localStorage.getItem("atrium.room"));
+        if (left) fail(c.name + ": the way back left the board scoped to " + JSON.stringify(left));
+        if (errors.length) fail("the room-back page threw: " + errors.join(" | "));
+      } finally {
+        await ctx.close();
+      }
+    }
+  } finally {
+    mock.hubMode = wasHub;
+    mock.sggAttached = wasSgg;
+  }
+}
+
 // AN IDLE BOARD IS NEAR IDLE, with a popped-out window and a second tab open.
 //
 // Nobody touches anything. A board polls every ten seconds and a popped-out
@@ -25225,6 +25283,8 @@ async function main() {
 
     // ── a persisted skin heals when a room attaches, with no reload ──────────
     await unit("skinHeal", bu("skinHeal"));
+
+    await unit("roomsBack", () => roomsBackSection(browser, base));
 
     // ── a write that names a card goes by the card, not writeRoom ──────────
     await unit("cardRoute", () => cardRouteSection(browser, base));

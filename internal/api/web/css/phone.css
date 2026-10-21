@@ -317,7 +317,7 @@
     body:not(.hdr-open) header .bar > #gauto { order: 3; }
     body:not(.hdr-open) header .bar > #toastlog-open { order: 4; }
     body:not(.hdr-open) header .bar > #hdr-toggle { order: 6; }
-    body:not(.hdr-open) header .bar > :is(.wordmark, .grow, #working, #sharing, .newagent, #sound, #gear, #rooms) {
+    body:not(.hdr-open) header .bar > :is(.wordmark, .grow, #working, #sharing, .newagent, #sound, #gear, #rooms, #rooms-all) {
       display: none;
     }
     body:not(.hdr-open) header .conn { gap: 4px; padding: 0 4px; min-height: 44px; }
