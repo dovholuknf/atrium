@@ -387,9 +387,9 @@ var gitCases = []gitCase{
 	{cmd: `git status`, repo: "main", expect: "allow", tool: "PowerShell"},
 
 	// ';' and '>' are Bash-tool ergonomics.
-	{cmd: `git status; git status`, repo: "claude", expect: "block", tool: "Bash"},
+	{cmd: `git status; git status`, repo: "claude", expect: "allow", tool: "Bash"},
 	{cmd: `git status; git status`, repo: "claude", expect: "allow", tool: "PowerShell"},
-	{cmd: `git log > out.txt`, repo: "claude", expect: "block", tool: "Bash"},
+	{cmd: `git log > out.txt`, repo: "claude", expect: "allow", tool: "Bash"},
 	{cmd: `git log > out.txt`, repo: "claude", expect: "allow", tool: "PowerShell"},
 
 	// --- atrium hub remote ---
@@ -540,12 +540,12 @@ var gitCases = []gitCase{
 	{cmd: "git checkout -b claude/n 2>&1", repo: "claude", expect: "allow", note: "2>&1"},
 	{cmd: "git branch claude/foo 2>&1", repo: "claude", expect: "allow", tool: "PowerShell", note: "2>&1"},
 	{cmd: "git push hub fix/x 2>&1", repo: "hub", expect: "allow", note: "2>&1"},
-	// 3. It refused git -C.
-	{cmd: "git -C {main} status", repo: "claude", expect: "allow", note: "git -C"},
-	{cmd: "git -C {main} log --oneline -5", repo: "claude", expect: "allow", tool: "PowerShell", note: "git -C"},
-	{cmd: "git -C {claude} commit -m x", repo: "main", expect: "allow", note: "git -C runs in that repo"},
+	// 3. git -C and --git-dir are refused, matching the ps1 gate.
+	{cmd: "git -C {main} status", repo: "claude", expect: "block", note: "git -C is blocked, as the ps1 gate does"},
+	{cmd: "git -C {main} log --oneline -5", repo: "claude", expect: "block", tool: "PowerShell", note: "git -C is blocked, as the ps1 gate does"},
+	{cmd: "git -C {claude} commit -m x", repo: "main", expect: "block", note: "git -C is blocked, as the ps1 gate does"},
 	{cmd: "git -C {main} commit -m x", repo: "claude", expect: "block", note: "git -C runs in that repo"},
-	{cmd: "git -C {hub} fetch hub", repo: "main", expect: "allow", note: "git -C is a directory change"},
+	{cmd: "git -C {hub} fetch hub", repo: "main", expect: "block", note: "git -C is blocked, as the ps1 gate does"},
 	{cmd: "git -C {evil-hub} fetch hub", repo: "hub", expect: "block", note: "git -C is a directory change"},
 	{cmd: "git --git-dir=x/.git commit -m y", repo: "claude", expect: "block", note: "--git-dir: repository unknown"},
 	// The Bash tool's own reading of a backslash path: bash removes the

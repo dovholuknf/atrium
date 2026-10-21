@@ -54,6 +54,13 @@
       "reason": "'git {name}' sets git configuration for one command, and configuration can run a program (core.pager, core.sshCommand, http.extraHeader...). Run the git command without it, or hand it to the user."
     },
     {
+      "id": "git-dir-option",
+      "check": "git-global-option",
+      "tools": ["shell"],
+      "params": {"options": ["-C", "--git-dir"]},
+      "reason": "'git {name}' points git at another repository. Run the git command in the directory it belongs to (cd there first), or hand it to the user."
+    },
+    {
       "id": "git-alias",
       "check": "git-alias",
       "tools": ["shell"],
@@ -126,18 +133,6 @@
       "tools": ["shell"],
       "params": {"names": ["docker"]},
       "reason": "Do not prefix inline env vars before docker (e.g. 'FOO=bar docker ...'). Pass env explicitly: 'docker run -e VAR=val', a compose block, or '--env-file'."
-    },
-    {
-      "id": "bash-semicolon",
-      "check": "semicolon",
-      "tools": ["Bash"],
-      "reason": "Do not chain multiple commands with ';'. Run one command at a time."
-    },
-    {
-      "id": "bash-redirect",
-      "check": "redirect-to-file",
-      "tools": ["Bash"],
-      "reason": "Use tee instead of > or >> for output redirection."
     },
     {
       "id": "cmake-preset",

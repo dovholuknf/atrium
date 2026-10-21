@@ -75,6 +75,7 @@ func (c *evalCtx) Gits() []*gitCall {
 			name, _, hasVal := strings.Cut(a, "=")
 			switch name {
 			case "-C":
+				g.bad = name
 				i++
 				if i < len(args) && !args[i].Dyn && g.dir != "" {
 					g.dir = r.path(g.dir, args[i].Lit, false)
@@ -90,7 +91,13 @@ func (c *evalCtx) Gits() []*gitCall {
 				if !hasVal && name != "--exec-path" {
 					i++
 				}
-			case "--git-dir", "--work-tree", "--namespace", "--super-prefix":
+			case "--git-dir":
+				g.bad = name
+				g.dir = ""
+				if !hasVal {
+					i++
+				}
+			case "--work-tree", "--namespace", "--super-prefix":
 				g.dir = ""
 				if !hasVal {
 					i++

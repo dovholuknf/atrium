@@ -80,6 +80,8 @@ var calls = []call{
 	{tool: "Task", subtype: "", want: "only-atrium-subagents"},
 	{tool: "Agent", subtype: "Explore", want: ""},
 	{tool: "Agent", subtype: "plan", want: ""},
+	{tool: "Agent", subtype: "my-reviewer", want: "only-atrium-subagents", note: "no agent file"},
+	{tool: "Agent", subtype: "../x", want: "only-atrium-subagents", note: "not a name"},
 	// co-author trailer
 	{tool: "Bash", cmd: `git commit -m "x
 
@@ -116,13 +118,18 @@ Co-Authored-By: someone"`, want: "no-coauthor"},
 	{tool: "Bash", cmd: `FOO=bar docker run x`, want: "docker-env-prefix"},
 	{tool: "Bash", cmd: `docker run -e FOO=bar x`, want: ""},
 	// semicolons and redirection, Bash tool only
-	{tool: "Bash", cmd: `echo a; echo b`, want: "bash-semicolon"},
+	{tool: "Bash", cmd: `git -C D:/proj status`, want: "git-dir-option"},
+	{tool: "Bash", cmd: `git --git-dir=x/.git status`, want: "git-dir-option"},
+	{tool: "Bash", cmd: `git --git-dir x/.git status`, want: "git-dir-option"},
+	{tool: "PowerShell", cmd: `git -C D:\proj log`, want: "git-dir-option"},
+	{tool: "Bash", cmd: `git status`, cwd: `D:\plain`, want: ""},
+	{tool: "Bash", cmd: `echo a; echo b`, want: ""},
 	{tool: "Bash", cmd: `sed -e 's/a/b/;s/c/d/' f.txt`, want: "", note: "; inside a sed expression"},
 	{tool: "Bash", cmd: `sed 's/x/y/;s/p/q/g' f.txt | head`, want: "", note: "; inside a sed expression"},
 	{tool: "Bash", cmd: `echo "a; b"`, want: "", note: "; inside quotes"},
-	{tool: "Bash", cmd: `ls > out.txt`, want: "bash-redirect"},
-	{tool: "Bash", cmd: `ls >> out.txt`, want: "bash-redirect"},
-	{tool: "Bash", cmd: `ls 2> err.txt`, want: "bash-redirect"},
+	{tool: "Bash", cmd: `ls > out.txt`, want: ""},
+	{tool: "Bash", cmd: `ls >> out.txt`, want: ""},
+	{tool: "Bash", cmd: `ls 2> err.txt`, want: ""},
 	{tool: "Bash", cmd: `ls nope 2>/dev/null`, want: "", note: "> redirection that writes no file"},
 	{tool: "Bash", cmd: `go vet ./... 2>&1 | tee out.txt`, want: "", note: "> redirection that writes no file"},
 	{tool: "Bash", cmd: `echo oops >&2`, want: "", note: "> redirection that writes no file"},
@@ -277,6 +284,24 @@ func TestParseSeesNestedCommands(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("%s %q: git push not seen", tc.sh, tc.src)
+		}
+	}
+}
+
+func TestUserAgentsDirExempt(t *testing.T) {
+	rules, _ := Builtin()
+	e := env0
+	e.dirs = map[string]bool{`C:\Users\claude\.claude\agents\my-reviewer.md`: false, `C:\Users\claude\.claude\agents\adir.md`: true}
+	e.vars = map[string]string{"USERPROFILE": "C:/Users/claude"}
+	cases := []struct{ sub, want string }{
+		{"my-reviewer", ""},
+		{"other", "only-atrium-subagents"},
+		{"adir", "only-atrium-subagents"},
+		{"general-purpose", "only-atrium-subagents"},
+	}
+	for _, c := range cases {
+		if d := rules.Evaluate(call{tool: "Agent", subtype: c.sub}.input(), e); d.Rule != c.want {
+			t.Errorf("subagent %q: want %q, got %q", c.sub, c.want, d.Rule)
 		}
 	}
 }

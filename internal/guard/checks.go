@@ -163,6 +163,9 @@ func checkSubagent(c *evalCtx, r *Rule) (bool, string) {
 	case "0", "off", "false", "no":
 		return false, ""
 	}
+	if userAgent(c.env, strings.TrimSpace(c.in.ToolInput.SubagentType)) {
+		return false, ""
+	}
 	return true, t
 }
 
@@ -432,4 +435,20 @@ func lineHasAny(line string, subs []string) bool {
 		}
 	}
 	return false
+}
+
+// userAgent says whether t names an agent defined in ~/.claude/agents.
+func userAgent(env Env, t string) bool {
+	if t == "" || strings.ContainsAny(t, `/\:`) || strings.Contains(t, "..") {
+		return false
+	}
+	home := env.Getenv("USERPROFILE")
+	if home == "" {
+		home = env.Getenv("HOME")
+	}
+	if home == "" {
+		return false
+	}
+	isDir, ok := env.Stat(strings.TrimRight(home, `/\`) + "/.claude/agents/" + t + ".md")
+	return ok && !isDir
 }
