@@ -1883,6 +1883,7 @@ async function renderTermList() {
   // board, or not at all.
   lastTasks = all;
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
+  if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
   if (typeof cacheRefresh === "function") cacheRefresh(all);
   newCardNote(all);
   // The bar's alias, when it changed under the open terminal. See js/alias.js.

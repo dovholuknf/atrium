@@ -165,6 +165,17 @@ function openToastLog() {
       ? GROWL_SNOOZES.map(s => `<button class="tlremind" data-remind="${s[1]}">${s[0]}</button>`).join("")
       : `<button class="tlremind" data-remind="menu">remind me</button>`;
   };
+  // A QUESTION ROW CARRIES THE PEEK'S NEEDS YOU CONTROL (`peekQuestionsHtml`, js/peek-answers.js), on a card's newest
+  // question row only. Drawn from the live card, so a question answered elsewhere reads as answered here.
+  const asked = new Set();
+  const questions = t => {
+    if (!t.taskFor || !/ asked (a question|\d+ questions)$/.test(t.title) || asked.has(t.taskFor)) return "";
+    asked.add(t.taskFor);
+    const card = typeof peekCard === "function" ? peekCard(t.taskFor) : null;
+    if (!card || typeof peekQuestionsHtml !== "function") return "";
+    const open = card.seen && card.seen.answered === false && (card.seen.open_questions || []).length;
+    return open ? `<div class="tlq">${peekQuestionsHtml(card)}</div>` : `<span class="tlans">answered</span>`;
+  };
   // BLOCKERS ARE PINNED ABOVE THE LOG, red, one row per card still blocked, and
   // gone when the room clears it. Built from the live cards rather than the log,
   // so a handled blocker leaves nothing pinned. The log keeps its own lines.
@@ -193,6 +204,7 @@ function openToastLog() {
           <div class="tlwhat">
             <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
             ${t.body ? `<span>${esc(t.body)}</span>` : ""}
+            ${questions(t)}
             ${(r => r ? `<span class="tlremits" data-growl="${esc(t.growl)}">${r}</span>` : "")(remind(t))}
           </div>
           <button class="tlcopy copybit" data-tip="copy this entry" aria-label="copy this entry"
@@ -232,7 +244,8 @@ function openToastLog() {
     const task = r.dataset.task, go = r.dataset.goto, key = r.dataset.key;
     if (!task && !go && !key) return;
     r.classList.add("clickable");
-    r.onclick = async () => {
+    r.onclick = async e => {
+      if (e.target.closest(".peek-qa, .qa-fly")) return;
       // Closes the tray along with anything else open, and refuses when a form
       // has unsaved edits. Refused means the row stays clickable rather than
       // the tray shutting on work somebody is in the middle of.
@@ -248,6 +261,13 @@ function openToastLog() {
   const dlg = document.getElementById("toastlog");
   if (!dlg.open) dlg.showModal();
   paintToastLogBadge();
+}
+
+// The poll has new cards: a question answered elsewhere stops asking in an open tray. Not while the flyout is on.
+function trayQuestionsMoved() {
+  const dlg = document.getElementById("toastlog");
+  if (!dlg || !dlg.open || !dlg.querySelector(".peek-qa") || document.querySelector(".qa-fly.on")) return;
+  openToastLog();
 }
 
 // Clearing is the last thing you do with the tray, so it closes it too.

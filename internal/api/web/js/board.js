@@ -1897,6 +1897,7 @@ async function renderBoard(signal) {
   const live = shown.filter(t => !t.offline);
   lastTasks = everything;
   if (typeof pullsTasksMoved === "function") pullsTasksMoved();
+  if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
   // THE DRAWER'S FILTERS: the search text, and the subagents that roll up into their parent's card (`N subagents`).
   // The rollup is worked out over every live card before the search, so a parent's badge does not move with what was
   // typed. The columns are filtered below, where they are drawn.

@@ -1,0 +1,1 @@
+A question row in the bell's tray now lists the card's open questions the way the hover panel's NEEDS YOU does, and each opens the same answer box, so a question can be answered from the tray. A question answered elsewhere reads as answered and stops asking. (f-tray-answer-questions)

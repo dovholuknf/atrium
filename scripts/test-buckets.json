@@ -199,7 +199,7 @@
         "internal/api/web/css/hubnotify.css",
         "internal/api/web/css/hubpush.css"
       ],
-      "tests": ["scripts/test-notify-reseed.js", "scripts/test-notify-rules.js"],
+      "tests": ["scripts/test-notify-reseed.js", "scripts/test-notify-rules.js", "scripts/test-tray-answers.js"],
       "checks": ["scripts/check-growl-ladder.js", "scripts/check-web-push.js"]
     },
     "homes": {

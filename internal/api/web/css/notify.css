@@ -86,6 +86,9 @@
   .tlrow .tlcopy:hover, .tlrow .tlcopy:focus-visible { opacity: 1; color: var(--teal); }
   .tlrow .tlcopy.copied { opacity: 1; color: var(--teal); }
   .tlrow .tlcopy.failed { opacity: 1; color: var(--danger); }
+  .tlrow .tlq { margin-top: 6px; }
+  .tlrow .tlq .peek-qrow { padding: 0; }
+  .tlrow .tlans { color: var(--teal); }
   .tlrow .tlremits { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .tlrow button.tlremind {
     background: none; color: var(--body); border: 1px solid var(--stroke); border-radius: var(--r-sm, 6px);

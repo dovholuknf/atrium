@@ -248,7 +248,12 @@ function qaFlyProgress() {
 // Beside the peek, on whichever side has room, else under it. Anything narrower is a sheet along the bottom (css).
 function qaFlyPlace() {
   const el = qaFlyEl();
-  const host = (peekEl && peekEl.classList.contains("on") ? peekEl : document.getElementById("t-drawer"));
+  const tray = document.getElementById("toastlog");
+  const inTray = !!(tray && tray.open);
+  // A modal dialog is in the top layer and makes the rest of the page inert, so the flyout goes inside it.
+  if (inTray && el.parentNode !== tray) tray.appendChild(el);
+  else if (!inTray && el.parentNode !== document.body) document.body.appendChild(el);
+  const host = inTray ? tray : (peekEl && peekEl.classList.contains("on") ? peekEl : document.getElementById("t-drawer"));
   const r = host ? host.getBoundingClientRect() : { left: innerWidth / 2 - 180, right: innerWidth / 2 + 180, top: 80, bottom: 200 };
   el.style.width = Math.min(360, innerWidth - 16) + "px";
   popFit(el, r, { axis: "x", gap: 10 });
@@ -301,6 +306,7 @@ function qaCloseFly() {
   const id = qaOn && qaOn.id;
   qaOn = null;
   if (id) qaRepaint(id);
+  if (typeof trayQuestionsMoved === "function") trayQuestionsMoved();
 }
 
 // Called by closePeek: the flyout goes with the peek, and its draft is written out.
