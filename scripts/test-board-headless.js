@@ -13229,8 +13229,9 @@ async function hearsSection(browser, base) {
   try {
     const p = await open(ctx2, false);
     const id = "c1";
+    const asked = p.waitForResponse(r => r.url().includes("/_hub/events/subs"), { timeout: slow(10000) });
     await p.evaluate(i => openTask(i), id);
-    await p.waitForFunction(i => typeof current !== "undefined" && current && current.id === i, id, { timeout: slow(10000) });
+    await asked;
     if (!(await p.evaluate(() => document.getElementById("d-hears-field").hidden))) fail("hears: a board with no hub drew the line");
   } finally { await ctx2.close(); }
 }// ── the hub's notify command in the gear (u-030) ────────────────────────────
