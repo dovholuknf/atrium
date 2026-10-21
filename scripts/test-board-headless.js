@@ -5350,6 +5350,116 @@ async function markdownTabSection(browser, base) {
   }
 }
 
+// ── a document shared publicly from the reader, and the page a shared link opens (f-share-doc-zrok-stage1) ──
+// The reader's button posts the path and the images it drew, shows the address with copy and stop, and a shared page
+// renders the same document from /doc.md and /f/<n> without asking /v1 for anything. DOCSHARE_SHOTS=dir writes PNGs.
+async function docShareSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const shots = process.env.DOCSHARE_SHOTS || "";
+  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
+  const doc = ["# Draft", "", "![a](img/a.png) ![b](img/b.png)", "", "[other](other.md) [site](https://example.org/)", "",
+    "| x | y |", "| - | - |", "| 1 | 2 |"].join("\n");
+  const png = Buffer.from("iVBORw0KGgo=", "base64");
+  const ctx = await landContext(browser);
+  try {
+    let shared = null, posted = null, deleted = null;
+    await ctx.route("**/files/view?*", route => route.fulfill({ status: 200,
+      contentType: /\.png/.test(route.request().url()) ? "image/png" : "text/plain; charset=utf-8",
+      body: /\.png/.test(route.request().url()) ? png : doc }));
+    await ctx.route("**/v1/tasks/land-live/docshare*", async route => {
+      const req = route.request();
+      if (req.method() === "POST") {
+        posted = JSON.parse(req.postData() || "{}");
+        shared = { id: "s1", address: "https://atrium-abc234.share.zrok.io/", path: posted.path,
+          expires_at: new Date(Date.now() + 7 * 86400000 + 3600000).toISOString() };
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shared) });
+      }
+      if (req.method() === "DELETE") {
+        deleted = req.url();
+        shared = null;
+        return route.fulfill({ status: 204, body: "" });
+      }
+      if (shared) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shared) });
+      return route.fulfill({ status: 404, contentType: "application/json", body: '{"error":"that document is not shared"}' });
+    });
+
+    const reader = await ctx.newPage();
+    reader.on("pageerror", e => errors.push(String(e)));
+    await reader.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+    await reader.waitForSelector("#md h1", { timeout: slow(8000) });
+    await reader.waitForFunction(() => !document.getElementById("share-doc").hidden, null, { timeout: slow(3000), polling: 10 });
+    if (await reader.textContent("#share-doc") !== "Share publicly") fail("the share button said " + await reader.textContent("#share-doc"));
+    if (!await reader.$eval("#share-box", e => e.hidden)) fail("the share box was open before a click");
+    const readerTags = await reader.evaluate(() => [...document.querySelectorAll("#md *")].map(e => e.tagName).join(","));
+    await reader.click("#share-doc");
+    await reader.waitForSelector("#share-box:not([hidden])", { timeout: slow(3000) });
+    if (!posted || posted.path !== "docs/plan.md") fail("the share posted " + JSON.stringify(posted));
+    if (JSON.stringify(posted.images) !== JSON.stringify(["docs/img/a.png", "docs/img/b.png"])) fail("the images sent were " + JSON.stringify(posted && posted.images));
+    if (await reader.inputValue("#share-url") !== "https://atrium-abc234.share.zrok.io/") fail("the box showed " + await reader.inputValue("#share-url"));
+    const note = await reader.textContent("#share-note");
+    if (!/public, anyone with this link, expires in 7 days/.test(note)) fail("the note said " + note);
+    if (await reader.textContent("#share-doc") !== "Shared") fail("the button did not read Shared");
+    await shot(reader, "reader-shared");
+    await reader.click("#share-copy");
+    await reader.click("#share-stop");
+    await reader.waitForSelector("#share-box[hidden]", { timeout: slow(3000), state: "attached" });
+    if (!deleted || !/docshare\?path=docs%2Fplan\.md$/.test(deleted)) fail("stop sent " + deleted);
+    if (await reader.textContent("#share-doc") !== "Share publicly") fail("the button did not go back after stop");
+
+    shared = { id: "s2", address: "https://atrium-old222.share.zrok.io/", path: "docs/plan.md",
+      expires_at: new Date(Date.now() + 3 * 86400000 + 3600000).toISOString() };
+    const again = await ctx.newPage();
+    await again.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
+    await again.waitForFunction(() => document.getElementById("share-doc").textContent === "Shared", null, { timeout: slow(5000), polling: 10 });
+    if (!await again.$eval("#share-box", e => e.hidden)) fail("an already shared document opened its box on load");
+    await again.click("#share-doc");
+    if (!/expires in 3 days/.test(await again.textContent("#share-note"))) fail("the existing share's note said " + await again.textContent("#share-note"));
+    await again.close();
+
+    const map = { path: "docs/plan.md", images: { "docs/img/a.png": 0 } };
+    const shareHtml = fs.readFileSync(path.join(WEB_ROOT, "share.html"), "utf8")
+      .replace("__SHARE_MAP__", JSON.stringify(map).replace(/&/g, "&amp;").replace(/"/g, "&quot;"));
+    const v1 = [];
+    const page = await ctx.newPage();
+    page.on("pageerror", e => errors.push(String(e)));
+    page.on("request", r => { if (/\/v1\//.test(r.url())) v1.push(r.url()); });
+    await ctx.route("**/shared-doc", route => route.fulfill({ status: 200, contentType: "text/html", body: shareHtml }));
+    await ctx.route("**/doc.md", route => route.fulfill({ status: 200, contentType: "text/plain", body: doc }));
+    await ctx.route("**/f/0", route => route.fulfill({ status: 200, contentType: "image/png", body: png }));
+    await page.goto(base + "/shared-doc", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#md h1", { timeout: slow(8000) });
+    await page.waitForFunction(() => document.querySelectorAll("#md table td").length >= 2, null, { timeout: slow(3000), polling: 10 });
+    const r = await page.evaluate(() => ({
+      imgs: [...document.querySelectorAll("#md img")].map(i => i.getAttribute("src")),
+      text: document.getElementById("md").textContent,
+      other: (() => { const a = [...document.querySelectorAll("#md a")].find(x => x.textContent === "other"); return a ? { href: a.getAttribute("href"), title: a.title } : null; })(),
+      site: (() => { const a = [...document.querySelectorAll("#md a")].find(x => x.textContent === "site"); return a ? a.getAttribute("href") : null; })(),
+      button: !!document.getElementById("share-doc"),
+      where: document.getElementById("where").textContent,
+      tags: [...document.querySelectorAll("#md *")].map(e => e.tagName).join(",")
+    }));
+    if (JSON.stringify(r.imgs) !== JSON.stringify(["/f/0"])) fail("a shared page's images were " + JSON.stringify(r.imgs));
+    if (!/\[image not shared: b\]/.test(r.text)) fail("an image outside the snapshot was not a placeholder: " + r.text);
+    if (!r.other || r.other.href !== null || r.other.title !== "not shared") fail("a link outside the snapshot was " + JSON.stringify(r.other));
+    if (r.site !== "https://example.org/") fail("an https link was lost: " + r.site);
+    if (r.button) fail("a shared page carries the share button");
+    if (r.where !== "docs/plan.md") fail("the shared page named " + r.where);
+    if (v1.length) fail("a shared page asked /v1: " + v1.join(" "));
+    const norm = s => s.replace(/IMG,/g, "").replace(/SPAN,/g, "");
+    if (norm(r.tags) !== norm(readerTags)) fail("a shared page rendered other elements than the reader:\n" + r.tags + "\n" + readerTags);
+    await shot(page, "shared-page");
+    if (errors.length) fail("the reader pages threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── a file link that was a miss comes back, and an image opens without asking (bug-term-file-links) ──
 // A path hovered before the file exists is a miss; the miss stands until its row changes, so the link appears once the file does.
 // A click on an image (or any file the editor cannot show) opens a tab at once, with no menu.
@@ -24544,7 +24654,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -26607,6 +26717,7 @@ async function main() {
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileMenu", () => fileMenuSection(browser, base));
     await unit("markdownTab", () => markdownTabSection(browser, base));
+    await unit("docShare", () => docShareSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
     await unit("termProbeStorm", () => termProbeStormSection(browser, base));
     await unit("termFitHeight", () => termFitHeightSection(browser, base));

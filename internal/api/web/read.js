@@ -22,8 +22,23 @@ function mdEscape(s) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// Where a card's file is streamed from.
+// A page served by a public document share carries the snapshot's path and image map on its body, and asks nothing of /v1.
+const SHARE = (() => {
+  const b = typeof document !== "undefined" ? document.body : null;
+  if (!b || b.dataset.source !== "share") return null;
+  try { return JSON.parse(b.dataset.share || "{}"); } catch (e) { return {}; }
+})();
+
+// The images the last render drew, as card paths, which "Share publicly" sends so the room copies exactly those.
+let readImages = [];
+
+// Where a card's file is streamed from. In a shared page: the snapshot's own address for it, or "" when it is not in it.
 function viewURL(id, path) {
+  if (SHARE) {
+    const imgs = SHARE.images || {};
+    if (Object.prototype.hasOwnProperty.call(imgs, path)) return "/f/" + imgs[path];
+    return path === SHARE.path ? "/doc.md" : "";
+  }
   return "/v1/tasks/" + encodeURIComponent(id) + "/files/view?path=" + encodeURIComponent(path);
 }
 
@@ -75,10 +90,22 @@ function renderMarkdown(text, id, path) {
     } else {
       const [p] = ref.split("#");
       const to = resolveRel(path, decodeURIComponentSafe(p.split("?")[0]));
+      if (SHARE) {
+        const u = viewURL(id, to);
+        if (u && to !== SHARE.path) {
+          a.setAttribute("href", u);
+          a.target = "_blank"; a.rel = "noopener noreferrer";
+        } else {
+          a.removeAttribute("href");
+          a.title = "not shared";
+        }
+        continue;
+      }
       a.setAttribute("href", isMarkdown(to) ? "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(to) : viewURL(id, to));
       a.target = "_blank"; a.rel = "noopener noreferrer";
     }
   }
+  readImages = [];
   for (const im of box.querySelectorAll("img")) {
     const ref = im.getAttribute("src") || "";
     const sc = refScheme(ref);
@@ -90,7 +117,16 @@ function renderMarkdown(text, id, path) {
       im.replaceWith(s);
       continue;
     }
-    im.setAttribute("src", viewURL(id, resolveRel(path, decodeURIComponentSafe(ref.split(/[?#]/)[0]))));
+    const to = resolveRel(path, decodeURIComponentSafe(ref.split(/[?#]/)[0]));
+    const u = viewURL(id, to);
+    if (SHARE && !u) {
+      const s = box.ownerDocument.createElement("span");
+      s.textContent = "[image not shared: " + (im.getAttribute("alt") || ref) + "]";
+      im.replaceWith(s);
+      continue;
+    }
+    if (readImages.indexOf(to) < 0) readImages.push(to);
+    im.setAttribute("src", u);
   }
   return box.innerHTML;
 }
@@ -102,15 +138,15 @@ function readMain() {
   // first one separates them and the rest belongs to the file.
   const frag = decodeURIComponent(location.hash.slice(1));
   const cut = frag.indexOf("/");
-  const id = cut < 0 ? "" : decodeURIComponent(frag.slice(0, cut));
-  const path = cut < 0 ? "" : decodeURIComponent(frag.slice(cut + 1));
+  const id = SHARE ? "" : cut < 0 ? "" : decodeURIComponent(frag.slice(0, cut));
+  const path = SHARE ? String(SHARE.path || "") : cut < 0 ? "" : decodeURIComponent(frag.slice(cut + 1));
 
   const where = document.getElementById("where");
   const what = document.getElementById("what");
   const text = document.getElementById("text");
   const md = document.getElementById("md");
 
-  if (!id || !path) {
+  if ((!SHARE && !id) || !path) {
     where.textContent = "nothing to read";
     text.className = "oops";
     text.textContent = "This address names no file.";
@@ -131,6 +167,7 @@ function readMain() {
         md.hidden = false;
         // The sanitised string, and the only innerHTML on this page.
         md.innerHTML = renderMarkdown(body, id, path);
+        if (!SHARE) shareMain(id, path);
       } else {
         // textContent, never innerHTML.
         text.textContent = body;
@@ -140,6 +177,81 @@ function readMain() {
       text.className = "oops";
       text.textContent = "Could not read it: " + e.message;
     });
+}
+
+// SHARE PUBLICLY. One click makes a snapshot of this document and the images just drawn, and shows the address.
+function shareExpiry(iso) {
+  const ms = Date.parse(iso) - Date.now();
+  if (!(ms > 0)) return "expired";
+  const days = Math.floor(ms / 86400000);
+  if (days >= 1) return "expires in " + days + (days === 1 ? " day" : " days");
+  const hours = Math.max(1, Math.floor(ms / 3600000));
+  return "expires in " + hours + (hours === 1 ? " hour" : " hours");
+}
+
+function shareMain(id, path) {
+  const btn = document.getElementById("share-doc");
+  const box = document.getElementById("share-box");
+  const err = document.getElementById("share-err");
+  if (!btn || !box) return;
+  const base = "/v1/tasks/" + encodeURIComponent(id) + "/docshare";
+  let sharing = false;
+  const fail = (msg) => { err.hidden = !msg; err.textContent = msg || ""; };
+  const show = (s) => {
+    document.getElementById("share-url").value = s.address;
+    document.getElementById("share-note").textContent = "public, anyone with this link, " + shareExpiry(s.expires_at);
+    box.hidden = false;
+    btn.textContent = "Shared";
+    btn.disabled = false;
+    fail("");
+  };
+  const reasonOf = async (r) => {
+    let m = "";
+    try { m = (await r.text()).trim(); } catch (e) {}
+    try { const j = JSON.parse(m); if (j && j.error) m = j.error; } catch (e) {}
+    return m || r.statusText || "it did not work";
+  };
+  btn.hidden = false;
+  btn.onclick = async () => {
+    if (!box.hidden) { box.hidden = true; return; }
+    if (sharing) return;
+    if (btn.textContent === "Shared") { box.hidden = false; return; }
+    sharing = true;
+    btn.disabled = true;
+    fail("");
+    try {
+      const r = await fetch(base, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: path, images: readImages.slice() }) });
+      if (!r.ok) throw new Error(await reasonOf(r));
+      show(await r.json());
+    } catch (e) {
+      btn.disabled = false;
+      fail("Could not share it: " + e.message);
+    } finally {
+      sharing = false;
+    }
+  };
+  document.getElementById("share-copy").onclick = () => {
+    const inp = document.getElementById("share-url");
+    const done = () => { document.getElementById("share-copy").textContent = "Copied"; };
+    inp.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done, () => {});
+  };
+  document.getElementById("share-stop").onclick = async () => {
+    try {
+      const r = await fetch(base + "?path=" + encodeURIComponent(path), { method: "DELETE" });
+      if (!r.ok && r.status !== 404) throw new Error(await reasonOf(r));
+      box.hidden = true;
+      btn.textContent = "Share publicly";
+      document.getElementById("share-copy").textContent = "Copy";
+      fail("");
+    } catch (e) {
+      fail("Could not stop it: " + e.message);
+    }
+  };
+  fetch(base + "?path=" + encodeURIComponent(path)).then(r => r.ok ? r.json() : null).then(s => {
+    if (s && s.address) { show(s); box.hidden = true; }
+  }).catch(() => {});
 }
 
 if (document.getElementById("md")) {

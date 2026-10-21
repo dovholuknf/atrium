@@ -219,6 +219,8 @@ type Daemon struct {
 	// `docs/fabric/overlays.md` for why an address that dies with the daemon was the
 	// wrong answer.
 	guests guestShares
+	// docs holds the documents shared publicly, one share each. See docshare.go.
+	docs docShares
 
 	// rooms holds the other machines reporting into this hub. In memory and
 	// nowhere else: a room's cards are that room's state, and a second durable
@@ -567,6 +569,11 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.ShareCard = d.ShareCard
 	d.ap.StopCardShare = d.StopCardShare
 	d.ap.GuestShares = d.GuestShares
+	d.ap.MakeDocShare = d.MakeDocShare
+	d.ap.DocShareOf = d.DocShareOf
+	d.ap.StopDocShare = d.StopDocShare
+	d.ap.StopDocShareFor = d.StopDocShareFor
+	d.ap.DocShares = d.DocShares
 	// The secret is NEVER sent back, only whether there is one. This board is
 	// itself something people open and screenshot.
 	d.ap.AuthConfig = func() any {
@@ -1329,6 +1336,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// back up rather than the link going dead. Anything whose runner is
 		// not up yet is left to `EnsureCardShare`, on the path a runner takes.
 		d.RestoreCardShares()
+		d.RestoreDocShares()
 		// And whatever is recorded against cards that have since been pruned,
 		// which nothing else can see: the board draws cards, and the card is
 		// what went. Only names atrium reserved and recorded, never anything

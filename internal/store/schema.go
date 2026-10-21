@@ -2474,6 +2474,27 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// ONE DOCUMENT SHARED PUBLICLY, a snapshot with its own folder. See store/docshares.go.
+		name: "0113_doc_share",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS doc_share (
+				id         TEXT PRIMARY KEY,
+				task_id    TEXT NOT NULL,
+				path       TEXT NOT NULL,
+				namespace  TEXT NOT NULL,
+				name       TEXT NOT NULL,
+				token      TEXT NOT NULL DEFAULT '',
+				address    TEXT NOT NULL DEFAULT '',
+				dir        TEXT NOT NULL,
+				wanted     INTEGER NOT NULL DEFAULT 1 CHECK (wanted IN (0, 1)),
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				expires_at TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS doc_share_task ON doc_share (task_id)`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

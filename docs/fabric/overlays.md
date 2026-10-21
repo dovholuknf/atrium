@@ -322,6 +322,20 @@ sweep joins the share table against `task` and releases what is left over. It ne
 deletes what it does not recognise. This machine's zrok account is not atrium's, and a sweep that worked from
 the account rather than from its own records would eventually release somebody else's share.
 
+## Sharing one document
+
+The reader's "Share publicly" button makes a SNAPSHOT of one markdown file and the images the page drew, and puts it
+on its own zrok public share, run by the room the card is on with the embedded SDK. The snapshot is a folder atrium
+wrote under `<data dir>/docshares/<id>/`, so the public listener never reads the card's worktree. Its handler is a fixed
+list (`/`, `/read.js`, `/vendor/marked.js`, `/vendor/purify.js`, `/css/tokens.css`, `/css/themes.css`, `/doc.md`,
+`/f/<n>`) and everything else is 404, so the board, `/v1` and the rest of the card are not reachable through it.
+
+The name is `atrium-` plus 12 random characters in the `public` namespace, reserved so it survives a restart. A share
+lives seven days by default and 30 at most, at most 20 are live per room, and one document of one card has one share.
+It survives a restart and the card going away, and the room's reaper tick stops it at expiry: unbind, release the name,
+delete the folder and the row. A document or image that is named or holds something that looks like a secret is
+refused, which is a speed bump and not a guarantee. `docs/changes/f-share-doc-zrok-stage1.md` has the test plan.
+
 ## Adding another one
 
 `OVERLAY_UI` in the board describes the fields and `overlayViews` describes the panel. A third overlay is an

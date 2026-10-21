@@ -98,6 +98,20 @@
   .md table { border-collapse: collapse; } .md th, .md td { border: 1px solid var(--stroke-dim); padding: 4px 10px; }
   .md img { max-width: 100%; }
   .oops { padding: 18px; color: var(--warn); }
+  .sharebtn, .sharebox button {
+    height: 24px; padding: 0 10px; border: 1px solid var(--stroke-dim); background: var(--chip);
+    color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
+  }
+  .sharebtn:hover, .sharebox button:hover { background: var(--lift); color: var(--head); }
+  .sharebtn:disabled { opacity: .6; cursor: default; }
+  .sharebox {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 18px;
+    border-bottom: 1px solid var(--stroke-dim); background: var(--shell-0); color: var(--dim); font-size: var(--fs-sm);
+  }
+  .sharebox input {
+    flex: 1 1 18rem; min-width: 0; height: 24px; padding: 0 8px; border: 1px solid var(--stroke-dim);
+    background: var(--chip); color: var(--head); border-radius: var(--r-sm); font: var(--fs-sm) var(--mono);
+  }
 </style>
 </head>
 <body>
@@ -112,7 +126,15 @@
     <button type="button" data-width="wide" aria-label="wide column">Wide</button>
     <button type="button" data-width="full" aria-label="the whole window">Full</button>
   </span>
-  <select id="skin" aria-label="skin for this page only"></select></header>
+  <select id="skin" aria-label="skin for this page only"></select>
+  <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button></header>
+<div id="share-box" class="sharebox" hidden>
+  <input id="share-url" type="text" readonly aria-label="public address">
+  <button id="share-copy" type="button">Copy</button>
+  <span id="share-note"></span>
+  <button id="share-stop" type="button">Stop</button>
+</div>
+<div id="share-err" class="oops" hidden></div>
 <pre id="text"></pre>
 <article id="md" class="md" hidden></article>
 <script src="/vendor/marked.js"></script>

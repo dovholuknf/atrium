@@ -237,11 +237,15 @@ func (s *Server) zrokAccount(w http.ResponseWriter, r *http.Request) {
 // meant to hand over one terminal.
 
 func (s *Server) listGuestShares(w http.ResponseWriter, r *http.Request) {
+	docs := any([]any{})
+	if s.DocShares != nil {
+		docs = s.DocShares()
+	}
 	if s.GuestShares == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"shares": []any{}})
+		writeJSON(w, http.StatusOK, map[string]any{"shares": []any{}, "docs": docs})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"shares": s.GuestShares()})
+	writeJSON(w, http.StatusOK, map[string]any{"shares": s.GuestShares(), "docs": docs})
 }
 
 func (s *Server) shareCard(w http.ResponseWriter, r *http.Request) {

@@ -385,6 +385,13 @@ type Server struct {
 	StopCardShare func(taskID string) error
 	GuestShares   func() any
 
+	// One document from a card on its own public share. See `internal/daemon/docshare.go`.
+	MakeDocShare    func(taskID string, req DocShareRequest) (any, error)
+	DocShareOf      func(taskID, path string) any
+	StopDocShare    func(id string) error
+	StopDocShareFor func(taskID, path string) error
+	DocShares       func() any
+
 	// BuildExport hands back this atrium's configuration as something a
 	// repository can hold, or REFUSES and says why. Refusing is the interesting
 	// case: it means something in the configuration looks like a credential,
@@ -592,6 +599,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/config/export", s.exportConfig)
 	mux.HandleFunc("POST /v1/config/import", s.importConfig)
 	mux.HandleFunc("GET /v1/shares", s.listGuestShares)
+	mux.HandleFunc("POST /v1/tasks/{id}/docshare", s.makeDocShare)
+	mux.HandleFunc("GET /v1/tasks/{id}/docshare", s.getDocShare)
+	mux.HandleFunc("DELETE /v1/tasks/{id}/docshare", s.stopDocShareFor)
+	mux.HandleFunc("DELETE /v1/docshares/{id}", s.stopDocShare)
 	mux.HandleFunc("POST /v1/tasks/{id}/share", s.shareCard)
 	mux.HandleFunc("DELETE /v1/tasks/{id}/share", s.unshareCard)
 	if s.ReserveName != nil {

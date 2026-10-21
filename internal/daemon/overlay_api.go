@@ -439,6 +439,7 @@ func (d *Daemon) closeOverlays() {
 	// left behind is an address that answers nothing and has to be cleared out
 	// by hand later.
 	d.stopAllGuestShares()
+	d.stopAllDocShares()
 }
 
 // whoMayOpenIt is the last sentence of an overlay's blurb, and it has to be

@@ -47,6 +47,12 @@ var viewImageTypes = map[string]string{
 	".avif": "image/avif",
 }
 
+// ViewImageType is the content type of an image extension the reader may serve, or false.
+func ViewImageType(ext string) (string, bool) {
+	ct, ok := viewImageTypes[strings.ToLower(ext)]
+	return ct, ok
+}
+
 func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {
 	task, err := s.st.Get(r.PathValue("id"))
 	if err != nil {
