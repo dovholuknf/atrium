@@ -139,7 +139,7 @@ async function landSection(browser, base) {
 
     // 6. A toast about nothing: nowhere, and the dialog under it stays.
     await reset(p);
-    await p.evaluate(() => { document.getElementById("toastlog").showModal(); toast("land nowhere", "copied"); });
+    await p.evaluate(() => { toast("land nowhere", "copied"); document.getElementById("toastlog").showModal(); });
     await clickToast(p, "land nowhere");
     await frames(p, 3);
     at = await landedAt(p);
