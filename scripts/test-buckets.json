@@ -181,7 +181,7 @@
       "page": "growls, questions, notifications, toasts, held lines, auto permission",
       "units": [
         "growl*", "ciGrowl", "askAgain", "alertKinds", "questionsClick", "quietDoer", "popoutNotify", "notify*", "sayEnter", "sayWhen",
-        "toast*", "hears", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip", "heldEnvelope", "cycleChip"
+        "toast*", "hears", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip", "heldEnvelope", "cycleChip", "cardRowChips"
       ],
       "sources": [
         "internal/api/web/js/growl.js",

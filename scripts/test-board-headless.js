@@ -6372,6 +6372,66 @@ async function cycleChipSection(browser, base) {
   if (errors.length) fail("cycleChip: the page threw: " + errors.join(" | "));
 }
 
+async function cardRowChipsSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const shots = process.env.ROW_CHIPS_SHOTS || "";
+  const tag = process.env.ROW_CHIPS_TAG || "after";
+  const errors = [];
+  try {
+    const title = "ziti-hook: zero trust webhook from GitHub";
+    landCard("a~land-rowchips", { supervised: true, display_title: title, cwd: "C:/Users/claude/git/atrium-minion:claude/ziti-hook",
+      seen: { unseen: true, turn_ended_at: "2026-10-21T09:00:00.000Z", questions_at: "2026-10-21T09:00:00.000Z", answered: false,
+        open_questions: ["ship it?"] },
+      new_context: { step: "limit", n: 1, of: 3, label: "waiting for the limit ack" } });
+    landCard("b~land-rowchips", { supervised: true, display_title: title, cwd: "C:/Users/claude/git/atrium-minion:claude/ziti-hook-b",
+      seen: { unseen: true, turn_ended_at: "2026-10-21T09:00:00.000Z", questions_at: "2026-10-21T09:00:00.000Z", answered: false,
+        open_questions: ["ship it?"] } });
+    mock.landList = [mock.LAND["a~land-rowchips"], mock.LAND["b~land-rowchips"]];
+    mock.landPerms = [];
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector(".term-list .card .chip.cycle", { state: "attached", timeout: slow(15000) });
+    for (const w of [270, 400]) {
+      await p.evaluate(px => document.getElementById("term-layout").style.setProperty("--termw", px + "px"), w);
+      await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const m = await p.evaluate(() => [...document.querySelectorAll(".term-list .card.tab")].map(card => {
+        const r = (e) => e.getBoundingClientRect();
+        const k = r(card);
+        const titles = [...card.querySelectorAll(".tname, .tpath")].filter(e => r(e).width > 0);
+        const chips = [...card.querySelectorAll(".card-line > .chips > .chip")];
+        const over = [];
+        for (const c of chips) for (const t of titles) {
+          const a = r(c), b = r(t);
+          if (a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5)
+            over.push(c.className + " over " + t.className);
+        }
+        const outside = chips.filter(c => r(c).left < k.left - 0.5 || r(c).right > k.right + 0.5).map(c => c.className);
+        const name = card.querySelector(".tname");
+        return { id: card.dataset.id, n: chips.length, titles: titles.length, over, outside, nameW: r(name).width };
+      }));
+      for (const c of m) {
+        if (!c.titles || !c.n) fail("cardRowChips " + w + "px " + c.id + ": nothing to measure " + JSON.stringify(c));
+        if (c.over.length) fail("cardRowChips " + w + "px " + c.id + ": " + c.over.join(", "));
+        if (c.outside.length) fail("cardRowChips " + w + "px " + c.id + ": chips outside the row: " + c.outside.join(", "));
+        if (c.nameW < 40) fail("cardRowChips " + w + "px " + c.id + ": the name has no room: " + c.nameW);
+      }
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await p.locator(".term-list").first().screenshot({ path: path.join(shots, `row-chips-${w}-${tag}.png`) });
+      }
+    }
+    await ctx.close();
+  } finally {
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("cardRowChips: the page threw: " + errors.join(" | "));
+}
+
 // ── u-021: the phone board header is one slim row behind a chevron ─────────
 async function phoneHeaderSection(browser, base) {
   const was = mock.tasksMode;
@@ -25823,6 +25883,7 @@ async function main() {
     await unit("mailChip", () => mailChipSection(browser, base));
     await unit("heldEnvelope", () => heldEnvelopeSection(browser, base));
     await unit("cycleChip", () => cycleChipSection(browser, base));
+    await unit("cardRowChips", () => cardRowChipsSection(browser, base));
     await unit("phoneFocus", () => phoneFocusSection(browser, base));
     await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
     await unit("phoneShare", () => phoneShareSection(browser, base));
