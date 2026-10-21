@@ -53,25 +53,20 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 	}
 	send(attachIn{T: "resize", Cols: 120, Rows: 30})
 
-	gen, ok := d.nctx.begin("nc-input", "HANDOFF.x.md", "")
+	_, ok := d.nctx.begin("nc-input", "HANDOFF.x.md", "")
 	if !ok {
 		t.Fatal("could not begin a new context")
 	}
-	// Waiting on the agent holds nothing: the key reaches the terminal.
-	send(attachIn{T: "in", D: "waiting-bytes", ID: "p0"})
+	// The cycle is waiting on the agent and the gate already holds: the key is refused and the ctrl-c button too.
+	send(attachIn{T: "signal", S: "int"})
 	select {
 	case fr := <-frames:
-		if fr != "in-done:p0" {
-			t.Fatalf("want in-done:p0 while the cycle only waits, got %q", fr)
+		if fr != "in-refused:" {
+			t.Fatalf("want in-refused: for the held ctrl-c, got %q", fr)
 		}
 	case <-ctx.Done():
-		t.Fatal("no ack while the cycle waits")
+		t.Fatal("the held ctrl-c was not refused")
 	}
-	if w := f.written(); !strings.Contains(w, "waiting-bytes") {
-		t.Fatalf("typing did not reach the pty while the cycle waited: %q", w)
-	}
-	// Only atrium's own write refuses it.
-	d.nctx.setTyping("nc-input", gen, true)
 	send(attachIn{T: "in", D: "held-bytes", ID: "p1"})
 	seen := map[string]bool{}
 	for len(seen) < 2 {
@@ -85,7 +80,7 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 	if !seen["in-done:p1"] || !seen["in-refused:"] {
 		t.Fatalf("want in-done:p1 and in-refused:, got %v", seen)
 	}
-	if w := f.written(); strings.Contains(w, "held-bytes") {
+	if w := f.written(); strings.Contains(w, "held-bytes") || strings.Contains(w, "") {
 		t.Fatalf("typing reached the pty during a new context: %q", w)
 	}
 

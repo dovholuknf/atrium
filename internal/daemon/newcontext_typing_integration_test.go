@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// Every waiting step lets a person type. Only atrium's own write refuses it.
-func TestTypingIsHeldOnlyWhileAtriumTypes(t *testing.T) {
+// Typing is held for the whole cycle, every waiting step included.
+func TestTypingIsHeldForTheWholeCycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
@@ -23,15 +23,12 @@ func TestTypingIsHeldOnlyWhileAtriumTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	// The limit step, waiting for atrium ready: nothing is being typed.
-	until(t, "the write to end", func() bool { return !d.nctx.typingHeld(id) })
 	for i := 0; i < 5; i++ {
-		if d.nctx.typingHeld(id) {
-			t.Fatal("typing held while waiting for atrium ready")
+		if !d.nctx.typingHeld(id) {
+			t.Fatal("typing not held while waiting for atrium ready")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// Atrium's own write.
 	gen := d.nctx.get(id).gen
 	d.nctx.setTyping(id, gen, true)
 	if !d.nctx.typingHeld(id) {
@@ -44,15 +41,17 @@ func TestTypingIsHeldOnlyWhileAtriumTypes(t *testing.T) {
 
 	// The clear and wake steps waiting on the card or the new session.
 	finishCycle(t, d, id, dir, f)
-	until(t, "the clear to end", func() bool { return !d.nctx.typingHeld(id) })
-	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["step"] != NewContextClear {
-		t.Fatalf("not waiting on the new session: %v", d.newContextFor(id))
+	until(t, "the clear step", func() bool {
+		v, _ := d.newContextFor(id).(map[string]any)
+		return v != nil && v["step"] == NewContextClear
+	})
+	if !d.nctx.typingHeld(id) {
+		t.Fatal("typing not held while waiting for the new session")
 	}
-	if d.nctx.typingHeld(id) {
-		t.Fatal("typing held while waiting for the new session")
+	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["held"] != true {
+		t.Fatalf("the card does not say typing is held: %v", d.newContextFor(id))
 	}
-	// A stale run cannot leave the flag on for the next one.
-	if d.nctx.setTyping(id, gen+99, true) || d.nctx.typingHeld(id) {
+	if d.nctx.setTyping(id, gen+99, true) {
 		t.Fatal("another run's write set the flag")
 	}
 }

@@ -361,8 +361,8 @@ type newContext struct {
 	// abandoned marks a failed chip seeded at startup from the journal. A
 	// SessionStart cannot clear it: see sessionStarted.
 	abandoned bool
-	// typing is set while atrium's own write to the terminal is under way. It is
-	// the only time board typing is refused. See typingHeld.
+	// typing is set while atrium's own write to the terminal is under way, and says
+	// so on the card. Board typing is refused for the whole cycle. See typingHeld.
 	typing bool
 }
 
@@ -616,6 +616,7 @@ func (d *Daemon) newContextFor(taskID string) any {
 	v := newContextView(cur)
 	if cur.step != NewContextFailed {
 		v["typing"] = cur.typing && !cur.capOnly
+		v["held"] = !cur.capOnly
 		if cur.typing {
 			v["label"] = "atrium is typing into the terminal"
 		}

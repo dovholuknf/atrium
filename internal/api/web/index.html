@@ -612,6 +612,12 @@ Exports honor whatever filter is applied.">?</span>
              dropped. It opens on the first one, seeded with it, and the text is queued on the card and typed when
              the cycle ends. The button is the way out: it stops the cycle and gives the terminal back. See
              js/compose.js. -->
+        <div class="term-nodev" id="t-nodev" role="status" hidden>
+          <span class="nodev-sign" aria-hidden="true">&#9940;</span>
+          <span id="t-nodev-say"></span>
+          <button type="button" tabindex="-1" onclick="composeStop()"
+            data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
+        </div>
         <div class="pastebox" id="t-ctxbox" hidden role="dialog" aria-label="message to send when the new context is ready">
           <div class="pastebox-say">starting a new context, this is sent when it is ready</div>
           <textarea id="t-ctxbox-in" spellcheck="false" autocomplete="off"></textarea>

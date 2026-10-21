@@ -38,11 +38,9 @@ func (n *newContexts) beginCaptureOnly(taskID, file, conv string) (uint64, bool)
 	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv, capOnly: true})
 }
 
-// typingHeld reports whether board typing is refused: atrium itself is typing into
-// the terminal right now (the limit prompt, `/clear`, the wake). Waiting on the
-// agent holds nothing, so a person can type while the cycle waits, and the way out
-// never depends on a step finishing. The flag is set around the write alone and
-// goes with the run when it ends or is dismissed.
+// typingHeld reports whether board typing is refused: for the whole cycle, from the moment it is claimed, because
+// a key typed while it waits lands between its steps and in the context about to be cleared. The way out never
+// depends on a step finishing: "let me type" ends the run. A failed run and the idle parking's capture hold nothing.
 func (n *newContexts) typingHeld(taskID string) bool {
 	if n == nil {
 		return false
@@ -50,7 +48,7 @@ func (n *newContexts) typingHeld(taskID string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
-	return cur != nil && cur.typing && cur.step != NewContextFailed && !cur.capOnly
+	return cur != nil && cur.step != NewContextFailed && !cur.capOnly
 }
 
 // setWaiting puts what a step waits on on the card's chip, or takes it off with "". It reports whether the text

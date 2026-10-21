@@ -468,6 +468,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
 				if strings.EqualFold(in.S, "int") {
+					if !shell && d.nctx.typingHeld(taskID) {
+						if msg, err := json.Marshal(attachInRefused{T: "in-refused", Why: "input is refused during a new context"}); err == nil {
+							_ = c.Write(ctx, websocket.MessageText, msg)
+						}
+						continue
+					}
 					run.noteOperatorTyped([]byte{0x03})
 					_ = run.writeOperatorInput([]byte{0x03})
 				}

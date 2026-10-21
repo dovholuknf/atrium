@@ -1,6 +1,6 @@
 // ── typing while atrium is typing ───────────────────────
 //
-// While a new context is typing into a card's terminal itself, the room drops what the board types and says
+// For the whole of a new context the room drops what the board types into the card's terminal, and says
 // `in-refused`. Dropping it silently lost keystrokes, so the first refused key opens this box over the terminal,
 // seeded with that key. Enter queues the text on the card as an ordinary message, which the room holds for the
 // cycle and types, submitted once, when it ends. Escape discards it.
@@ -82,11 +82,23 @@ async function composeFree() {
   if (typeof refresh === "function") refresh();
 }
 
+// The do-not-enter sign over the terminal for as long as the room refuses its keys: the whole cycle, from its first
+// step. The idle parking's capture and a failed cycle hold nothing, so they draw none.
+function composeNoEntry(n) {
+  const el = document.getElementById("t-nodev");
+  if (!el) return;
+  const held = !!n && n.step !== "failed" && n.step !== "capture";
+  el.hidden = !held;
+  if (!held) return;
+  document.getElementById("t-nodev-say").textContent = "typing is held for the new context, step " + n.n + "/" + n.of + ": " + n.label;
+}
+
 // The bar under the terminal while the card is in a cycle: what step it is on and the button that ends it.
 function composeBar(task) {
   const bar = document.getElementById("t-ncbar");
   if (!bar) return;
   const n = task && task.new_context;
+  composeNoEntry(n);
   if (!n || n.step === "failed") { bar.hidden = true; return; }
   const q = Number(n.queued) || 0;
   document.getElementById("t-ncbar-say").textContent = "new context " + n.n + "/" + n.of + ": " + n.label +
@@ -121,6 +133,7 @@ async function composeStop() {
   }
   const bar = document.getElementById("t-ncbar");
   if (bar) bar.hidden = true;
+  composeNoEntry(null);
   if (term) term.focus();
   if (typeof refresh === "function") refresh();
 }

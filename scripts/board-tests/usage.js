@@ -575,6 +575,27 @@ async function contextCycleSection(browser, base) {
     });
     if (ncbar.hidden || !/1 message queued/.test(ncbar.text) || !/let me type/.test(ncbar.text))
       fail("the terminal bar has no way out: " + JSON.stringify(ncbar));
+    // THE DO-NOT-ENTER SIGN is up from the cycle's first step to its end, and gone for a failed cycle and a capture.
+    const sign = step => wp.evaluate(step => {
+      composeBar({ new_context: step === "none" ? null : { step, n: 1, of: 3, label: "waiting for atrium ready" } });
+      const el = document.getElementById("t-nodev");
+      return !!el && !el.hidden ? el.textContent.replace(/\s+/g, " ").trim() : "";
+    }, step);
+    const upAt = await sign("limit");
+    if (!/typing is held for the new context, step 1\/3/.test(upAt) || !/let me type/.test(upAt)) fail("no do-not-enter sign on the cycle's first step: " + JSON.stringify(upAt));
+    if (process.env.NODEV_SHOTS) {
+      fs.mkdirSync(process.env.NODEV_SHOTS, { recursive: true });
+      await wp.evaluate(() => {
+        for (let e = document.getElementById("t-nodev"); e && e !== document.body; e = e.parentElement) {
+          e.hidden = e.id === "t-nodev" ? e.hidden : false;
+          if (getComputedStyle(e).display === "none") e.style.display = "block";
+        }
+      });
+      await wp.screenshot({ path: path.join(process.env.NODEV_SHOTS, process.env.NODEV_NAME || "nodev.png") });
+    }
+    for (const step of ["clear", "wake"]) if (!(await sign(step))) fail("no do-not-enter sign on the " + step + " step");
+    for (const step of ["failed", "capture", "none"]) if (await sign(step)) fail("a do-not-enter sign on a " + step + " cycle");
+    await sign("limit");
     const composed = [], freed = [];
     await wp.route("**/v1/tasks/ll-cycle/message", async route => {
       composed.push(JSON.parse(route.request().postData() || "{}"));
@@ -622,6 +643,10 @@ async function contextCycleSection(browser, base) {
     await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
     if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
+    await sign("limit");
+    await wp.evaluate(() => document.querySelector("#t-nodev button").click());
+    await wp.waitForFunction(() => document.getElementById("t-nodev").hidden, null, { timeout: slow(5000) });
+    if (freed.length !== 2) fail("'let me type' on the do-not-enter sign did not dismiss the cycle.");
     // THE END FRAME TAKES THE STRIP AND THE BOX AWAY (r-new-context-strip-stuck-at-1of3). The bar followed only the list
     // pass, so a window that never ran it kept "1/3" and "let me type" after the cycle ended.
     const endFrame = await wp.evaluate(() => {
@@ -648,7 +673,7 @@ async function contextCycleSection(browser, base) {
       document.querySelector("#t-ncbar button").click();
     });
     await wp.waitForFunction(() => document.getElementById("t-ncbar").hidden, null, { timeout: slow(5000) });
-    if (freed.length !== 2) fail("the bar's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    if (freed.length !== 3) fail("the bar's 'let me type' did not cancel a cycle that never ends: " + freed.length);
     await wp.evaluate(() => { termTask = null; });
 
     // The details: the switch on, no own limit, and a line naming the limit in force and where from.

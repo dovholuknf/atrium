@@ -25,8 +25,8 @@ func dismissCycle(t *testing.T, d *Daemon, id string) {
 	}
 }
 
-// The agent never acks, so the cycle sits on the limit step for good. Typing is not
-// held meanwhile, and "let me type" ends the cycle, sends the queued text and leaves
+// The agent never acks, so the cycle sits on the limit step for good. Typing is held
+// meanwhile, and "let me type" ends the cycle, sends the queued text and leaves
 // the card free.
 func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 	if testing.Short() {
@@ -42,13 +42,11 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	// Stuck: no ack comes and the run does not move. Given time, still not held.
-	until(t, "the write to end", func() bool { return !d.nctx.typingHeld(id) })
 	d.act.set(id, ActivityThinking, "")
 	for i := 0; i < 5; i++ {
 		time.Sleep(10 * time.Millisecond)
-		if d.nctx.typingHeld(id) {
-			t.Fatal("typing held while the cycle waits for an ack that never comes")
+		if !d.nctx.typingHeld(id) {
+			t.Fatal("typing not held while the cycle waits for an ack that never comes")
 		}
 	}
 	sayViaMessage(t, d, "alice", id, "WEDGEDQUEUE")
