@@ -69,6 +69,8 @@
 
   /* The board and the terminals have their own sort and group rows, which are a pair or a few modes each. */
   .fpanel .seg button { position: relative; }
+  /* The same chip padding as on the line, so the wider fallback fonts still keep four rows on one line at 2360px. */
+  @media (min-width: 521px) { .fpanel .seg button { padding: 5px 8px; } .fpanel { column-gap: var(--sp-3); } }
 
   /* A subagent roll-up badge on a parent's card or row: `3 subagents`. */
   .chip.subs { white-space: nowrap; }
