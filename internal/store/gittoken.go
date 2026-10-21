@@ -2,20 +2,21 @@ package store
 
 import "time"
 
-// GitToken is the git token a card was launched with and when it was minted.
+// GitToken is what the room keeps of a card's git token: the card and a SHA-256 of the secret, never the token.
 type GitToken struct {
-	Card  string
-	Token string
-	At    time.Time
+	Card string
+	Hash string
+	At   time.Time
 }
 
-// SaveGitToken keeps a card's token so it outlives a room restart. The runner it was handed to may be kept by the pty host.
-func (s *Store) SaveGitToken(card, token string, at time.Time) error {
+// SaveGitToken keeps the hash of a card's token so the forwarder still knows it after a room restart. The runner it was
+// handed to may be kept by the pty host.
+func (s *Store) SaveGitToken(card, hash string, at time.Time) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(
-			`INSERT INTO card_git_token (card, token, minted_at) VALUES (?, ?, ?)
-			 ON CONFLICT(card) DO UPDATE SET token = excluded.token, minted_at = excluded.minted_at`,
-			card, token, ts(at))
+			`INSERT INTO card_git_token (card, token_hash, minted_at) VALUES (?, ?, ?)
+			 ON CONFLICT(card) DO UPDATE SET token_hash = excluded.token_hash, minted_at = excluded.minted_at`,
+			card, hash, ts(at))
 		return err
 	})
 }
@@ -28,12 +29,12 @@ func (s *Store) DeleteGitToken(card string) error {
 	})
 }
 
-// GitTokens lists every token kept.
+// GitTokens lists every token hash kept.
 func (s *Store) GitTokens() ([]GitToken, error) {
 	var out []GitToken
 	err := s.guard(func() error {
 		out = nil
-		rows, err := s.db.Query(`SELECT card, token, minted_at FROM card_git_token`)
+		rows, err := s.db.Query(`SELECT card, token_hash, minted_at FROM card_git_token`)
 		if err != nil {
 			return err
 		}
@@ -41,7 +42,7 @@ func (s *Store) GitTokens() ([]GitToken, error) {
 		for rows.Next() {
 			var g GitToken
 			var at string
-			if err := rows.Scan(&g.Card, &g.Token, &at); err != nil {
+			if err := rows.Scan(&g.Card, &g.Hash, &at); err != nil {
 				return err
 			}
 			g.At, _ = parseTS(at)

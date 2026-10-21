@@ -31,8 +31,8 @@ type CardAuth interface {
 // CardTokens is the in-memory CardAuth. A token is `<card id>.<256 random bits as hex>`. The room keeps only a
 // SHA-256 of the secret, so the table does not hold a usable credential, and the comparison is constant-time.
 //
-// The room keeps each token it handed out in its store and gives it back through Restore at start, so a runner the pty
-// host kept through a restart still has a good one.
+// The room keeps the hash of each secret it handed out in its store and gives it back through RestoreHash at start, so a
+// runner the pty host kept through a restart still has a good token.
 type CardTokens struct {
 	// Live, when set, says whether a card may still use its token. The room answers from the card's status, so a
 	// card that ended, was paused or was culled loses its token even if nobody called Revoke.
@@ -61,22 +61,33 @@ func (c *CardTokens) Mint(card string) (string, error) {
 	return tok, nil
 }
 
-// Restore puts back a token Mint made before a restart. It reports false for one that is malformed.
-func (c *CardTokens) Restore(token string) bool {
+// TokenHash is the card and the hex SHA-256 of the secret in a token, what the room may keep. ok is false for a malformed
+// token.
+func TokenHash(token string) (card, hash string, ok bool) {
 	i := strings.LastIndexByte(token, '.')
 	if i < 0 {
-		return false
+		return "", "", false
 	}
-	card := token[:i]
+	card = token[:i]
 	secret, err := hex.DecodeString(token[i+1:])
 	if err != nil || len(secret) != 32 || !ValidCardID(card) {
+		return "", "", false
+	}
+	sum := sha256.Sum256(secret)
+	return card, hex.EncodeToString(sum[:]), true
+}
+
+// RestoreHash puts back the hash of a token Mint made before a restart. It reports false for one that is malformed.
+func (c *CardTokens) RestoreHash(card, hash string) bool {
+	sum, err := hex.DecodeString(hash)
+	if err != nil || len(sum) != sha256.Size || !ValidCardID(card) {
 		return false
 	}
 	c.mu.Lock()
 	if c.by == nil {
 		c.by = map[string][sha256.Size]byte{}
 	}
-	c.by[card] = sha256.Sum256(secret)
+	c.by[card] = [sha256.Size]byte(sum)
 	c.mu.Unlock()
 	return true
 }

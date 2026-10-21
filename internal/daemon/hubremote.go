@@ -219,7 +219,8 @@ func (d *Daemon) hubGitEnv(card string, outside bool, harness map[string]string,
 	d.hubGit.issued[card] = issuedToken{tok: tok, at: now}
 	d.hubGit.mu.Unlock()
 	if d.st != nil {
-		if err := d.st.SaveGitToken(card, tok, now); err != nil {
+		if _, hash, ok := gitsync.TokenHash(tok); !ok {
+		} else if err := d.st.SaveGitToken(card, hash, now); err != nil {
 			log.Printf("atrium: could not keep the git token for %s: %v", card, err)
 		}
 	}
@@ -276,7 +277,8 @@ func (d *Daemon) revokeHubGit(card string, since time.Time) {
 }
 
 // restoreHubGit puts back the tokens cards were launched with, so a runner the pty host kept through a room restart can
-// still fetch and push. A token whose card is gone is dropped.
+// still fetch. Only the hash is kept, so `issued` (the clear token atrium_git_push sends) is not restored: GitPush for
+// such a card is refused until it is relaunched. A token whose card is gone is dropped.
 func (d *Daemon) restoreHubGit() {
 	ct, ok := d.hubGit.cards.(*gitsync.CardTokens)
 	if !ok || d.st == nil {
@@ -287,17 +289,10 @@ func (d *Daemon) restoreHubGit() {
 		log.Printf("atrium: could not read the kept git tokens: %v", err)
 		return
 	}
-	d.hubGit.mu.Lock()
-	defer d.hubGit.mu.Unlock()
-	if d.hubGit.issued == nil {
-		d.hubGit.issued = map[string]issuedToken{}
-	}
 	for _, g := range toks {
-		if t, err := d.st.Get(g.Card); err != nil || t == nil || !ct.Restore(g.Token) {
+		if t, err := d.st.Get(g.Card); err != nil || t == nil || !ct.RestoreHash(g.Card, g.Hash) {
 			d.st.DeleteGitToken(g.Card)
-			continue
 		}
-		d.hubGit.issued[g.Card] = issuedToken{tok: g.Token, at: g.At}
 	}
 }
 

@@ -355,8 +355,15 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 	if id, ok := again.hubGit.cards.Check(tok); !ok || id != task.ID {
 		t.Fatal("the restarted room refused the token the runner was launched with")
 	}
-	if again.hubGit.issued[task.ID].tok != tok {
-		t.Fatal("the restarted room does not hold the token it needs to push for the card")
+	if again.hubGit.issued[task.ID].tok != "" {
+		t.Fatal("the clear token was restored from the store")
+	}
+	toks, err := d.st.GitTokens()
+	if err != nil || len(toks) != 1 {
+		t.Fatalf("kept tokens: %v %v", toks, err)
+	}
+	if strings.Contains(toks[0].Hash, tok[strings.LastIndexByte(tok, '.')+1:]) {
+		t.Fatal("the table holds the secret")
 	}
 
 	again.revokeHubGit(task.ID, time.Time{})

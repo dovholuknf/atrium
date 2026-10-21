@@ -2416,13 +2416,13 @@ var migrations = []struct {
 		},
 	},
 	{
-		// THE GIT TOKEN EACH CARD WAS LAUNCHED WITH, so a runner kept by the pty host still has a good one after the
+		// THE SHA-256 OF THE GIT TOKEN EACH CARD WAS LAUNCHED WITH, so a runner kept by the pty host still has a good one after the
 		// room restarts. See store/gittoken.go.
 		name: "0110_card_git_token",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS card_git_token (
 				card      TEXT PRIMARY KEY,
-				token     TEXT NOT NULL,
+				token_hash TEXT NOT NULL,
 				minted_at TEXT NOT NULL
 			)`,
 		},
