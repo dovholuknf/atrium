@@ -24473,6 +24473,64 @@ async function newContextSseSection(browser, base) {
   } finally { await ctx.close(); }
 }
 
+// keepaliveMark: a fully cold cache puts a snowflake on the title in the board card, the stack row, the terminals
+// list and the open card view, with the chip's words as its tooltip. Warm and "no cache yet" cards carry none.
+async function keepaliveMarkSection(browser, base) {
+  const shots = process.env.KA_MARK_SHOTS || "";
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof cardHTML === "function" && typeof termRow === "function" && typeof stackRow === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(() => {
+      const base = { status: "idle", runner: "claude", worktree: "/tmp/one", rank: 1, tags: [], seen: {}, activity: {} };
+      const ka = (state, wu) => ({ state, refreshes: 0, warm_until: wu });
+      const cards = [
+        { id: "k-cold", name: "cold", keepalive: ka("on", new Date(Date.now() - 20 * 60000).toISOString()) },
+        { id: "k-offcold", name: "off and cold", keepalive: ka("off", "") },
+        { id: "k-warm", name: "warm", keepalive: ka("on", new Date(Date.now() + 30 * 60000).toISOString()) },
+        { id: "k-none", name: "no cache", keepalive: ka("on", "") },
+      ].map(c => Object.assign({}, base, c, { display_title: c.name }));
+      const host = document.createElement("div");
+      host.id = "ka-host";
+      host.style.cssText = "position:fixed;left:0;top:0;width:1000px;z-index:99999;background:var(--bg-1, #111);padding:8px";
+      host.innerHTML = cards.map(c => cardHTML(c) + stackRow(c) + termRow(c)).join("");
+      document.body.appendChild(host);
+      const out = {};
+      for (const c of cards) {
+        const marks = [...host.querySelectorAll('.kamark[data-cid="' + c.id + '"]')];
+        out[c.id] = { n: marks.length, shown: marks.filter(m => m.classList.contains("on") && getComputedStyle(m).display !== "none").length,
+          tip: marks.map(m => m.getAttribute("data-tip") || "")[0] || "" };
+      }
+      const title = document.getElementById("t-cold");
+      out.view = {};
+      if (title) for (const c of cards) {
+        paintTermChips(c);
+        const m = title.querySelector(".kamark.on");
+        out.view[c.id] = !!m && getComputedStyle(m).display !== "none";
+      }
+      return out;
+    });
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      if (process.env.KA_MARK_HIDE) await p.addStyleTag({ content: ".kamark { display: none !important; }" });
+      await p.locator("#ka-host").screenshot({ path: path.join(shots, process.env.KA_MARK_NAME || "marks.png") });
+    }
+    for (const id of ["k-cold", "k-offcold"]) {
+      if (got[id].shown !== 3) fail("keepaliveMark: " + id + " shows the snowflake on " + got[id].shown + " of the board card, stack row and terminals list: " + JSON.stringify(got[id]));
+      if (!/cache has expired|cold/.test(got[id].tip)) fail("keepaliveMark: " + id + " tooltip is not the chip's words: " + got[id].tip);
+      if (!got.view[id]) fail("keepaliveMark: " + id + " shows no snowflake on the open card view's title");
+    }
+    for (const id of ["k-warm", "k-none"]) {
+      if (got[id].shown !== 0) fail("keepaliveMark: " + id + " shows a snowflake: " + JSON.stringify(got[id]));
+      if (got.view[id]) fail("keepaliveMark: " + id + " shows a snowflake on the open card view's title");
+    }
+    if (errors.length) fail("keepaliveMark: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 async function main() {
   if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
@@ -26426,6 +26484,7 @@ async function main() {
     await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
     await unit("keepalive", () => keepaliveSection(browser, base));
+    await unit("keepaliveMark", () => keepaliveMarkSection(browser, base));
     await unit("coldHandoff", () => coldHandoffSection(browser, base));
     await unit("idlePark", () => idleParkSection(browser, base));
     await unit("sshBadge", () => sshBadgeSection(browser, base));

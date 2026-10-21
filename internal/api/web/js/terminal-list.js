@@ -1146,7 +1146,7 @@ function termRow(t, deep, kid) {
             aria-label="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             data-tip="${t.pinned ? "always here. click to unpin" : "keep this here"}"
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
-            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
+            >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}<span
             class="tstack"><span
             class="tname${secondary ? "" : " aspath"}"
             >${esc(primary)}</span>${

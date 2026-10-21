@@ -230,6 +230,20 @@ function keepaliveChip(t) {
     data-tip="${esc(m.full + ". " + tip)}"><span class="cfull">${esc(m.full)}</span></span>`;
 }
 
+// The snowflake on a card's title when its cache is fully cold, with the chip's own words as its tooltip. It reads
+// `kaModel`, so the chip and the mark cannot disagree. Warm, stopped and "no cache yet" draw an empty span, which
+// `kaRepaint` fills when the cache goes cold.
+function kaTitleMark(t) {
+  if (!t || !t.keepalive || over(t) || t.archived_at) return "";
+  KA_SEEN.set(t.id, t);
+  kaSchedule();
+  const m = kaModel(t, kaNow());
+  if (!m) return "";
+  if (m.cls !== "cold" && m.cls !== "off cold") return `<span class="kamark" data-cid="${esc(t.id)}"></span>`;
+  const tip = m.full + ". " + m.tip.join(". ");
+  return `<span class="kamark on" data-cid="${esc(t.id)}" role="img" aria-label="${esc(tip)}" data-tip="${esc(tip)}">❄</span>`;
+}
+
 // ── keeping the words true without a fetch ───────────────────────────────────
 //
 // ONE timeout, for the soonest moment a drawn card's words change, re-armed after
@@ -281,9 +295,21 @@ function kaRepaint() {
   });
 }
 
+function kaRepaintMarks() {
+  document.querySelectorAll(".kamark[data-cid]").forEach(el => {
+    const t = KA_SEEN.get(el.dataset.cid);
+    if (!t) return;
+    const tpl = document.createElement("template");
+    tpl.innerHTML = kaTitleMark(t).trim();
+    const fresh = tpl.content.firstElementChild;
+    if (fresh && fresh.outerHTML !== el.outerHTML) el.replaceWith(fresh);
+  });
+}
+
 function kaTick() {
   kaTimer = 0;
   kaRepaint();
+  kaRepaintMarks();
   kaArm();
 }
 
@@ -298,6 +324,7 @@ function cacheRefresh(cards) {
     head.insertAdjacentHTML("afterbegin", keepaliveChip(mine));
   }
   kaRepaint();
+  kaRepaintMarks();
   kaArm();
 }
 

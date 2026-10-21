@@ -520,7 +520,7 @@ function stackSectionHTML(label, scope, hue, rows) {
 }
 
 function stackLeadHTML(t, w) {
-  return `<b${cardLeadTip(t, "stack")}>${w ? "<span class=\"pulse\"></span>" : ""}${esc(cardLead(t, "stack").main)}</b>`;
+  return `<b${cardLeadTip(t, "stack")}>${w ? "<span class=\"pulse\"></span>" : ""}${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}${esc(cardLead(t, "stack").main)}</b>`;
 }
 
 function stackRow(t) {

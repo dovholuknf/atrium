@@ -872,7 +872,7 @@ function cardHTML(t, wearAs) {
     <div class="card-line">
       <div class="title"${cardLeadTip(t, "board")}>${
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
-        cardMark(t, state)}${esc(cardLead(t, "board").main)}</div>
+        cardMark(t, state)}${typeof kaTitleMark === "function" ? kaTitleMark(t) : ""}${esc(cardLead(t, "board").main)}</div>
       <div class="chips">
       ${subsBadgeHTML(boardSubBadge.get(t.id))}
       ${openingChip(t)}

@@ -609,6 +609,8 @@ function paintTermChips(task) {
   if (!homeChips && typeof loadHomes === "function") {
     loadHomes().then(() => { if (homeOf(task)) paintTermChips(task); });
   }
+  const cold = document.getElementById("t-cold");
+  if (cold) cold.innerHTML = typeof kaTitleMark === "function" ? kaTitleMark(task) : "";
   document.getElementById("t-chips").innerHTML =
     // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
     // the id's tag and answers "" with a single room attached, so this draws

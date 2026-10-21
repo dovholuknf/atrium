@@ -398,6 +398,8 @@
     background: transparent; border: 2px solid rgba(150,150,150,.5); opacity: 1;
   }
   .chip.cache .cfull { display: none; }
+  .kamark { display: none; }
+  .kamark.on { display: inline; margin-right: 4px; color: rgb(120,160,210); cursor: default; }
   .chip.cache.kept { background: var(--teal); border-color: var(--teal); }
   .chip.cache.warm { border-color: var(--teal); }
   .chip.cache.cold { background: rgb(120,140,170); border-color: rgb(120,140,170); }
