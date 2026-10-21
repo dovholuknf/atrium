@@ -85,7 +85,7 @@ function trayIsOpen() {
   return !!dlg && dlg.open;
 }
 
-// Opening the tray takes down what is on screen as seen, and what waited its turn. A hub gate toast is sticky and stays.
+// The tray's clear takes down the toasts on screen and the ones waiting. A hub gate toast is sticky and stays.
 function dismissToasts() {
   toastQueue.length = 0;
   document.querySelectorAll("#toasts .toast:not(.sticky)").forEach(el => el.dismiss && el.dismiss());
@@ -271,7 +271,7 @@ function openToastLog() {
   try { localStorage.setItem(TOASTLOG_KEY + ".seen", String(Date.now())); } catch (e) {}
   // `showModal` on an open dialog throws.
   const dlg = document.getElementById("toastlog");
-  if (!dlg.open) { dismissToasts(); dlg.showModal(); }
+  if (!dlg.open) dlg.showModal();
   const hdr = document.querySelector("header");
   dlg.style.setProperty("--tray-top", (hdr ? Math.max(0, Math.round(hdr.getBoundingClientRect().bottom)) : 0) + "px");
   paintToastLogBadge();
@@ -286,6 +286,7 @@ function trayQuestionsMoved() {
 
 // Clearing is the last thing you do with the tray, so it closes it too.
 function clearToastLog() {
+  dismissToasts();
   saveToastLog([]);
   setHTML(document.getElementById("toastlog-list"), "");
   document.getElementById("toastlog").close();

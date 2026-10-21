@@ -22891,24 +22891,35 @@ async function trayToastSection(browser, base) {
     if ((await ids()).join() !== "deploy is on the board") fail("trayToast: a toast did not show with the tray closed: " + (await ids()));
     if (shots) await p.screenshot({ path: shots + "-tray-toast-before.png" });
     await p.evaluate(() => openToastLog());
-    await p.waitForFunction(() => document.getElementById("toastlog").open && !document.querySelector("#toasts .toast"), null, { timeout: slow(5000) }).catch(() => {});
-    if ((await ids()).length) fail("trayToast: a toast stayed up when the tray opened: " + (await ids()));
+    await p.waitForFunction(() => document.getElementById("toastlog").open, null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) });
+    await p.waitForFunction(() => {
+      const t = document.querySelector("#toasts .toast"), d = document.getElementById("toastlog");
+      return t && t.getBoundingClientRect().right <= d.getBoundingClientRect().left + 0.5;
+    }, null, { timeout: slow(5000) }).catch(() => {});
+    const geo = await p.evaluate(() => {
+      const t = document.querySelector("#toasts .toast"), d = document.getElementById("toastlog");
+      return t ? { toastRight: t.getBoundingClientRect().right, trayLeft: d.getBoundingClientRect().left } : null;
+    });
+    if (!geo) fail("trayToast: opening the tray took the toast down");
+    else if (geo.toastRight > geo.trayLeft + 0.5) fail("trayToast: the toast covers the tray: " + JSON.stringify(geo));
     await p.evaluate(() => toast("second alert", "while open"));
     await p.waitForFunction(() => [...document.querySelectorAll("#toastlog .tlrow")].some(e => /second alert/.test(e.textContent)), null, { timeout: slow(5000) }).catch(() => {});
-    if ((await ids()).length) fail("trayToast: an alert made a toast with the tray open: " + (await ids()));
+    if ((await ids()).join() !== "deploy is on the board") fail("trayToast: an alert made a toast with the tray open: " + (await ids()));
     const row = await p.evaluate(() => {
       const r = [...document.querySelectorAll("#toastlog .tlrow")].find(e => /second alert/.test(e.textContent));
       return r ? r.classList.contains("fresh") : null;
     });
     if (row === null) fail("trayToast: the alert is not in the open tray");
     else if (!row) fail("trayToast: the alert in the open tray is not highlighted");
+    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) });
     await p.mouse.move(5, 890);
     if (shots) await p.screenshot({ path: shots + "-tray-toast-after.png" });
-    await p.evaluate(() => document.getElementById("toastlog").close());
-    await p.waitForFunction(() => !document.getElementById("toastlog").open, null, { timeout: slow(5000) });
-    if ((await ids()).length) fail("trayToast: closing the tray brought toasts back: " + (await ids()));
-    await p.evaluate(() => toast("third alert", "after close"));
-    if ((await ids()).join() !== "third alert") fail("trayToast: a new alert after close did not toast: " + (await ids()));
+    await p.click("#toastlog [onclick*=clearToastLog], #toastlog button:has-text('clear')");
+    await p.waitForFunction(() => !document.getElementById("toastlog").open && !document.querySelector("#toasts .toast"), null, { timeout: slow(5000) });
+    if (await p.evaluate(() => toastLog().length)) fail("trayToast: clear left entries in the list");
+    await p.evaluate(() => toast("third alert", "after clear"));
+    if ((await ids()).join() !== "third alert") fail("trayToast: a new alert after clear did not toast: " + (await ids()));
     if (errors.length) fail("trayToast: page errors: " + errors.join(" | "));
   } finally {
     await ctx.close();

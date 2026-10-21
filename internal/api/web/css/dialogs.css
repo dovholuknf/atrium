@@ -156,6 +156,11 @@
     --toast-dy: -14px;
   }
   #toasts:empty { display: none; }
+  /* An open tray owns the right edge, so the stack sits just left of it. On a screen too narrow for both it stays on the
+     floor width and overlaps. */
+  #toastlog[open] #toasts, #toastlog[open] #toasts.top {
+    right: min(calc(min(420px, 92vw) + 12px), calc(100vw - 252px));
+  }
   #toasts .toast { pointer-events: auto; }
   .toast {
     display: flex; align-items: flex-start; gap: var(--sp-4); cursor: pointer;
