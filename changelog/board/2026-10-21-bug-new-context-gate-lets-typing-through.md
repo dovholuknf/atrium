@@ -1,0 +1,1 @@
+The new-context hold now drops keys in the board itself, so typing cannot reach the terminal while the modal is up and the first one opens the compose box. The modal is three lines at one width on every step, fits a phone, and "let me type" lives only there, no longer in the bottom strip. Item bug-new-context-gate-lets-typing-through-and-modal-layout.

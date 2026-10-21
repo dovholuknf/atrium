@@ -573,8 +573,8 @@ async function contextCycleSection(browser, base) {
       const b = document.getElementById("t-ncbar");
       return { hidden: b.hidden, text: b.textContent.replace(/\s+/g, " ") };
     });
-    if (ncbar.hidden || !/1 message queued/.test(ncbar.text) || !/let me type/.test(ncbar.text))
-      fail("the terminal bar has no way out: " + JSON.stringify(ncbar));
+    if (ncbar.hidden || !/1 message queued/.test(ncbar.text) || /let me type/.test(ncbar.text))
+      fail("the terminal bar is missing its count or still carries the button: " + JSON.stringify(ncbar));
     // THE DO-NOT-ENTER SIGN is up from the cycle's first step to its end, and gone for a failed cycle and a capture.
     const sign = step => wp.evaluate(step => {
       composeBar({ new_context: step === "none" ? null : { step, n: 1, of: 3, label: "waiting for atrium ready" } });
@@ -582,17 +582,42 @@ async function contextCycleSection(browser, base) {
       return !!el && !el.hidden ? el.textContent.replace(/\s+/g, " ").trim() : "";
     }, step);
     const upAt = await sign("limit");
-    if (!/typing is held for the new context, step 1\/3/.test(upAt) || !/let me type/.test(upAt)) fail("no do-not-enter sign on the cycle's first step: " + JSON.stringify(upAt));
+    if (!/typing is held for the new context step 1\/3: waiting for atrium ready let me type$/.test(upAt)) fail("no do-not-enter sign on the cycle's first step: " + JSON.stringify(upAt));
     if (process.env.NODEV_SHOTS) {
       fs.mkdirSync(process.env.NODEV_SHOTS, { recursive: true });
-      await wp.evaluate(() => {
-        for (let e = document.getElementById("t-nodev"); e && e !== document.body; e = e.parentElement) {
-          e.hidden = e.id === "t-nodev" ? e.hidden : false;
-          if (getComputedStyle(e).display === "none") e.style.display = "block";
-        }
-      });
-      await wp.screenshot({ path: path.join(process.env.NODEV_SHOTS, process.env.NODEV_NAME || "nodev.png") });
+      const name = process.env.NODEV_NAME || "nodev";
+      for (const [w, h] of [[1400, 900], [390, 844]]) for (const step of ["limit", "clear", "wake"]) {
+        await wp.setViewportSize({ width: w, height: h });
+        await sign(step);
+        await wp.evaluate(() => {
+          for (let e = document.getElementById("t-nodev"); e && e !== document.body; e = e.parentElement) {
+            e.hidden = e.id === "t-nodev" ? e.hidden : false;
+            if (getComputedStyle(e).display === "none") e.style.display = "block";
+          }
+        });
+        await wp.evaluate(() => document.getElementById("t-nodev").scrollIntoView({ block: "center" }));
+        await wp.screenshot({ path: path.join(process.env.NODEV_SHOTS, name + "-" + step + "-" + w + ".png") });
+      }
+      process.exit(0);
     }
+    const gate = await wp.evaluate(() => {
+      const realSend = window.send, frames = [];
+      window.send = m => { frames.push(m); };
+      termTask = { id: "ll-cycle", new_context: { step: "wake", n: 3, of: 3, label: "waking it to read x" } };
+      termKind = "runner";
+      sendInput("asdf");
+      const held = { frames: frames.slice(), box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
+      composeClose();
+      sendInput("[I", true);
+      const quiet = frames.length;
+      termTask.new_context = null;
+      sendInput("after");
+      window.send = realSend;
+      return { held, quiet, frames };
+    });
+    if (gate.held.frames.length || !gate.held.box || gate.held.text !== "asdf") fail("keys reached the terminal while the new context held typing: " + JSON.stringify(gate.held));
+    if (gate.quiet !== 1) fail("a focus report was dropped by the hold: " + JSON.stringify(gate));
+    if (gate.frames.length !== 2 || gate.frames[1].d !== "after") fail("typing did not pass once the hold ended: " + JSON.stringify(gate.frames));
     for (const step of ["clear", "wake"]) if (!(await sign(step))) fail("no do-not-enter sign on the " + step + " step");
     for (const step of ["failed", "capture", "none"]) if (await sign(step)) fail("a do-not-enter sign on a " + step + " cycle");
     await sign("limit");
@@ -670,10 +695,10 @@ async function contextCycleSection(browser, base) {
     // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
     await wp.evaluate(() => {
       composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
-      document.querySelector("#t-ncbar button").click();
+      document.querySelector("#t-nodev button").click();
     });
     await wp.waitForFunction(() => document.getElementById("t-ncbar").hidden, null, { timeout: slow(5000) });
-    if (freed.length !== 3) fail("the bar's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    if (freed.length !== 3) fail("the modal's 'let me type' did not cancel a cycle that never ends: " + freed.length);
     await wp.evaluate(() => { termTask = null; });
 
     // The details: the switch on, no own limit, and a line naming the limit in force and where from.

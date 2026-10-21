@@ -84,13 +84,17 @@ async function composeFree() {
 
 // The do-not-enter sign over the terminal for as long as the room refuses its keys: the whole cycle, from its first
 // step. The idle parking's capture and a failed cycle hold nothing, so they draw none.
+function composeHeld(n) { return !!n && n.step !== "failed" && n.step !== "capture"; }
+
 function composeNoEntry(n) {
   const el = document.getElementById("t-nodev");
   if (!el) return;
-  const held = !!n && n.step !== "failed" && n.step !== "capture";
+  const held = composeHeld(n);
   el.hidden = !held;
   if (!held) return;
-  document.getElementById("t-nodev-say").textContent = "typing is held for the new context, step " + n.n + "/" + n.of + ": " + n.label;
+  const say = document.getElementById("t-nodev-say");
+  say.textContent = "step " + n.n + "/" + n.of + ": " + (n.step === "wake" ? "waking it to read the handoff" : n.label);
+  say.title = say.textContent;
 }
 
 // The bar under the terminal while the card is in a cycle: what step it is on and the button that ends it.
@@ -131,6 +135,7 @@ async function composeStop() {
     toast("could not stop the new context", e.message);
     return;
   }
+  termTask.new_context = null;
   const bar = document.getElementById("t-ncbar");
   if (bar) bar.hidden = true;
   composeNoEntry(null);
@@ -148,4 +153,13 @@ function composeWire() {
     // Enter queues and Shift+Enter is a newline, as in the card's say box. Ctrl+Enter queues too.
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); composeSend(); }
   });
+}
+
+// Keys are dropped here while the new context holds typing, so a room that has not caught up cannot let them through.
+// The first one opens the compose box seeded with it, the same as a key the room refused.
+function composeGate(d, pasted) {
+  if (typeof termTask === "undefined" || !termTask || termKind === "shell" || !composeHeld(termTask.new_context)) return false;
+  if (!pasted) composeNoteTyped(d);
+  composeRefused();
+  return true;
 }

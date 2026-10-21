@@ -613,8 +613,8 @@ Exports honor whatever filter is applied.">?</span>
              the cycle ends. The button is the way out: it stops the cycle and gives the terminal back. See
              js/compose.js. -->
         <div class="term-nodev" id="t-nodev" role="status" hidden>
-          <span class="nodev-sign" aria-hidden="true">&#9940;</span>
-          <span id="t-nodev-say"></span>
+          <div class="nodev-line"><span class="nodev-sign" aria-hidden="true">&#9940;</span><span>typing is held for the new context</span></div>
+          <div class="nodev-line" id="t-nodev-say"></div>
           <button type="button" tabindex="-1" onclick="composeStop()"
             data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
         </div>
@@ -718,8 +718,6 @@ Exports honor whatever filter is applied.">?</span>
         <!-- The way out of a new context, always on screen while one is under way. See js/compose.js. -->
         <div class="term-ncbar" id="t-ncbar" role="status" hidden>
           <span id="t-ncbar-say"></span>
-          <button type="button" tabindex="-1" onclick="composeStop()"
-            data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
         </div>
         <!-- Keep the shortcut strip to one line, listing keys and actions. The
              line, or its expando, opens the drawer above it. -->

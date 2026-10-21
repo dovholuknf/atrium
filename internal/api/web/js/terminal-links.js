@@ -1896,6 +1896,7 @@ const followScrollFor = 1200;
 // `sendBigPaste`.
 function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
+  if (!quiet && typeof composeGate === "function" && composeGate(d, pasted)) return;
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
   if (pasted && !quiet) { sendPaste(d); return; }
   send({ t: "in", d });
