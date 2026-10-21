@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -132,6 +133,9 @@ func TestOpenATicketWithNoRepoMakesAScratchFolderThatCloseRemoves(t *testing.T) 
 	if err := oh.srv.st.SetSetting(gitsync.SettingSCMRoot, scm); err != nil {
 		t.Fatal(err)
 	}
+	if err := oh.srv.st.SetSetting(cardroot.Setting, scm+"/cards"); err != nil {
+		t.Fatal(err)
+	}
 	oh.defaultRepo = "github.com/o/r"
 	rec := post(t, oh.h, "/v1/open", map[string]any{"url": "https://acme.zendesk.com/agent/tickets/9", "repo": "none"})
 	var out map[string]any
@@ -160,6 +164,9 @@ func TestOpenATicketWithNoRepoAndNoSCMRootSaysWhy(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	oh := newOpenHarness(t, &fakeForge{})
+	if err := oh.srv.st.SetSetting(cardroot.Setting, home); err != nil {
+		t.Fatal(err)
+	}
 	code, out := oh.open(t, "https://acme.zendesk.com/agent/tickets/9")
 	if code != 422 || out["code"] != "no_scm_root" || out["step"] != "worktree" || !strings.Contains(out["error"].(string), "git.scm_root") {
 		t.Errorf("%d %v", code, out)
