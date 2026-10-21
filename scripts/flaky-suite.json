@@ -103,6 +103,10 @@
  {"kind": "board", "name": "cycleChip", "reason": "failed on ubuntu, macos and windows board-1 in run 39586804799: the chip runs past the card. Deterministic after the Terminals chips pick."},
  {"kind": "board", "name": "terminalsOneLine", "reason": "failed on ubuntu and macos go-checks-visual in run 39586804799 at 270px: chips run past the card. Deterministic after the Terminals chips pick."},
  {"kind": "board", "name": "hears", "reason": "failed on ubuntu, macos and windows board-1 in run 39586804799: page.waitForFunction timed out at test-board-headless.js:13233 in hearsSection. Cause not traced."},
- {"kind": "board", "name": "mCardUpload", "reason": "failed on ubuntu, macos and windows board-2 in run 39586804799 at 390 and 412: after a failed send the chips did not come back. Cause not traced."}
+ {"kind": "board", "name": "mCardUpload", "reason": "failed on ubuntu, macos and windows board-2 in run 39586804799 at 390 and 412: after a failed send the chips did not come back. Cause not traced."},
+  {"kind": "board", "name": "land", "reason": "failed on ubuntu, macos and windows board-1 in run 39655795174 and again on retry: the toast land nowhere never rendered (0 matches). Cause not traced."},
+  {"kind": "go", "package": "internal/ptyhost", "name": "TestStartRunsADetachedHostFromACopy", "reason": "failed on windows go-test-1 in run 39655795174 (channel_integration_test.go:42): started after 2.03 s. Cause INFERRED as a loaded runner."},
+  {"kind": "go", "package": "internal/safepath", "name": "TestADeniedAncestorIsWalkedPastLikeAMissingOne", "reason": "failed on macos and windows go-test in run 39655795174: permission denied on an ancestor where the walk-past was expected. Cause not traced."},
+  {"kind": "go", "package": "internal/safepath", "name": "TestADeniedAncestorStillRefusesAPathOutsideTheRoot", "reason": "failed on macos and windows go-test in run 39655795174: permission denied where ErrOutside was wanted. Cause not traced."}
  ]
 }
