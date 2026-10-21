@@ -66,3 +66,25 @@ func TestADeniedDirectoryUnderTheRootIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestADeniedAncestorIsWalkedPastWhenTheRootResolvesToAnotherSpelling(t *testing.T) {
+	real := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	eval := func(p string) (string, error) {
+		if strings.EqualFold(p, filepath.Join(alias, "work")) {
+			return "", &fs.PathError{Op: "CreateFile", Path: p, Err: fs.ErrPermission}
+		}
+		if rel, err := filepath.Rel(alias, p); err == nil && !strings.HasPrefix(rel, "..") {
+			p = filepath.Join(real, rel)
+		}
+		return filepath.EvalSymlinks(p)
+	}
+	root := filepath.Join(alias, "work", "cards")
+
+	if _, err := containedWith(eval, root, filepath.Join(root, "home")); err != nil {
+		t.Fatalf("a home under a root whose ancestor is denied was refused: %v", err)
+	}
+	if _, err := containedWith(eval, root, filepath.Join(alias, "work", "cards-evil", "x")); !errors.Is(err, ErrOutside) {
+		t.Fatalf("err %v, want ErrOutside", err)
+	}
+}

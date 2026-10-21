@@ -77,7 +77,10 @@ func containedWith(evalSymlinks func(string) (string, error), root, path string)
 	if err != nil {
 		return "", err
 	}
-	realTarget, err := resolve(evalSymlinks, absTarget, func(cur string) bool { return within(cur, realRoot) })
+	realTarget, err := resolve(evalSymlinks, absTarget, func(cur string) bool {
+		// the root as spelled too: an ancestor is unresolved, and a symlinked or 8.3 temp dir resolves to another spelling
+		return within(cur, realRoot) || within(cur, absRoot)
+	})
 	if err != nil {
 		return "", err
 	}
