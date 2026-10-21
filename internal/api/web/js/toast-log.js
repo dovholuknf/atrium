@@ -207,6 +207,7 @@ function openToastLog() {
         // toast, so pasting into a bug report or a chat message reads as the
         // alert did rather than as two disconnected strings.
         const clip = t.title + (t.body ? "\n" + t.body : "");
+        const qs = questions(t);
         const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
         const gone = t.kind === "blocker" && t.taskFor ? blockerGone(t.taskFor, t.body) : "";
         return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}${gone ? " resolved" : ""}"${
@@ -217,9 +218,9 @@ function openToastLog() {
           <div class="tlwhen">${esc(shortWhen(t.at))}</div>
           <div class="tlwhat">
             <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
-            ${t.body ? `<span>${esc(t.body)}</span>` : ""}
+            ${t.body && !/class="peek-qa"/.test(qs) ? `<span>${esc(t.body)}</span>` : ""}
             ${gone ? `<span class="tlresolved">resolved: ${esc(gone)}</span>` : ""}
-            ${questions(t)}
+            ${qs}
             ${(r => r ? `<span class="tlremits" data-growl="${esc(t.growl)}">${r}</span>` : "")(remind(t))}
           </div>
           <button class="tlcopy copybit" data-tip="copy this entry" aria-label="copy this entry"

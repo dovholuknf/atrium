@@ -19,7 +19,7 @@
     top: var(--tray-top, 0px); margin: 0 0 0 auto; padding: 0;
     border-radius: 0; border-right: 0;
     border-left: 1px solid var(--stroke-dim);
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; overflow: visible;
     animation: trayin .16s ease-out;
   }
   /* From off the right edge, so it reads as arriving from where it lives rather than fading in over the

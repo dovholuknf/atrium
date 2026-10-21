@@ -253,10 +253,34 @@ function qaFlyPlace() {
   // A modal dialog is in the top layer and makes the rest of the page inert, so the flyout goes inside it.
   if (inTray && el.parentNode !== tray) tray.appendChild(el);
   else if (!inTray && el.parentNode !== document.body) document.body.appendChild(el);
+  if (inTray) {
+    qaFlyAtTray(el, tray);
+    return;
+  }
+  el.classList.remove("intray");
+  el.style.clipPath = "";
   const host = inTray ? tray : (peekEl && peekEl.classList.contains("on") ? peekEl : document.getElementById("t-drawer"));
   const r = host ? host.getBoundingClientRect() : { left: innerWidth / 2 - 180, right: innerWidth / 2 + 180, top: 80, bottom: 200 };
   el.style.width = Math.min(360, innerWidth - 16) + "px";
   popFit(el, r, { axis: "x", gap: 10 });
+}
+
+// In the tray the drawer is the tray's own: flush against its left edge, its top on the question that was clicked and
+// clamped inside the tray's height, wiped out from that edge. The tray closing closes it.
+function qaFlyAtTray(el, tray) {
+  if (!tray.dataset.qaDrawer) {
+    tray.dataset.qaDrawer = "1";
+    tray.addEventListener("close", () => { if (qaOn) qaCloseFly(); });
+  }
+  const t = tray.getBoundingClientRect();
+  const w = Math.max(220, Math.min(360, Math.round(t.left) - 8));
+  el.classList.add("intray");
+  el.style.width = w + "px";
+  el.style.left = Math.round(t.left - w) + "px";
+  const q = qaOn && tray.querySelector(`.peek-qa[data-id="${CSS.escape(qaOn.id)}"] .qa-q[data-gi="${qaOn.gi}"][data-qi="${qaOn.qi}"]`);
+  const want = q ? q.getBoundingClientRect().top : t.top;
+  const h = el.offsetHeight;
+  el.style.top = Math.round(Math.min(Math.max(want, t.top), Math.max(t.top, t.bottom - h))) + "px";
 }
 
 function qaFlyGo(n) {

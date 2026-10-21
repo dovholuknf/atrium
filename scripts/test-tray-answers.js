@@ -79,7 +79,7 @@ const server = http.createServer((req, res) => {
   const p = await ctx.newPage();
   p.on("pageerror", e => fail("page error: " + e));
   const shots = process.env.TRAY_SHOTS || "";
-  const tag = process.env.TRAY_BEFORE === "1" ? "before" : "after";
+  const tag = (process.env.TRAY_BEFORE === "1" ? "before" : "after") + (process.env.TRAY_SKIN ? "-" + process.env.TRAY_SKIN : "");
   const shoot = async name => { if (shots) { await p.waitForTimeout(350); await p.screenshot({ path: `${shots}/tray-${name}-${tag}.png` }); } };
   const refresh = async () => { await p.evaluate(() => runRefresh()); await p.waitForTimeout(250); };
   const row = id => `.tlrow[data-task="${id}"]`;
@@ -87,6 +87,7 @@ const server = http.createServer((req, res) => {
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector('.card[data-id="t~one"], .stackrow[data-id="t~one"]', { state: "attached", timeout: 15000 });
+    if (process.env.TRAY_SKIN) await p.evaluate(k => document.documentElement.setAttribute("data-skin", k), process.env.TRAY_SKIN);
     await refresh();
     await p.evaluate(() => {
       recordToLog("discourse-4784 asked 2 questions", "Install jq with winget now?", "", null, "t~two", "g2");
@@ -98,6 +99,9 @@ const server = http.createServer((req, res) => {
     await shoot("rows");
     if (process.env.TRAY_BEFORE === "1") { await browser.close(); server.close(); process.exit(bad ? 1 : 0); }
 
+    const once = async (id, q) => (await p.innerText(row(id))).split(q).length - 1;
+    if (await once("t~one", "Will you land claude/main now?") !== 1) fail("the one-question row should print its question once");
+    if (await once("t~two", "Install jq with winget now?") !== 1) fail("the two-question row should print its first question once");
     if (await p.locator(row("t~one") + " .peek-qa .qa-q").count() !== 1) fail("the one-question row should list its question");
     if (await p.locator(row("t~two") + " .peek-qa .qa-q").count() !== 2) fail("the two-question row should list both");
 
@@ -108,6 +112,15 @@ const server = http.createServer((req, res) => {
     await p.fill(".qa-fly textarea", "yes");
     await p.click('.qa-fly [data-step="1"]');
     await p.fill(".qa-fly textarea", "no, keep it");
+    const geo = await p.evaluate(() => {
+      const r = el => el.getBoundingClientRect();
+      const tray = r(document.getElementById("toastlog")), fly = r(document.querySelector(".qa-fly"));
+      const q = r(document.querySelector('.tlrow[data-task="t~two"] .qa-q[data-qi="' + qaOn.qi + '"]'));
+      return { tray: [tray.left, tray.top, tray.bottom], fly: [fly.left, fly.right, fly.top, fly.bottom], q: q.top };
+    });
+    if (Math.abs(geo.fly[1] - geo.tray[0]) > 1) fail("the drawer is not flush with the tray's left edge: " + JSON.stringify(geo));
+    if (geo.fly[2] < geo.tray[1] - 1 || geo.fly[3] > geo.tray[2] + 1) fail("the drawer is outside the tray's height band: " + JSON.stringify(geo));
+    if (Math.abs(geo.fly[2] - geo.q) > 1 && geo.fly[3] < geo.tray[2] - 1) fail("the drawer's top is not on the clicked question: " + JSON.stringify(geo));
     await shoot("flyout");
     if (!await p.locator(".qa-fly .qa-b.send:visible").count()) fail("every question answered, the flyout should offer to send");
     await p.click(".qa-fly .qa-b.send");
@@ -119,6 +132,9 @@ const server = http.createServer((req, res) => {
     if (await p.locator(row("t~two") + " .qa-q").count()) fail("an answered row stops asking");
     await shoot("answered");
 
+    await p.evaluate(() => document.getElementById("toastlog").close());
+    if (await p.evaluate(() => !!document.querySelector(".qa-fly.on"))) fail("the drawer stayed open after the tray closed");
+    await p.evaluate(() => openToastLog());
     byId("t~one").seen = { unseen: false, answered: true, questions_at: AT };
     await refresh();
     if (!/answered/.test(await p.innerText(row("t~one")))) fail("a question answered elsewhere should read answered in an open tray");
