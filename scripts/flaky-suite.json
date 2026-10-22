@@ -13,6 +13,7 @@
   {"kind": "board", "name": "trayToast", "reason": "failed on windows board-1 in run 39664964243 and on both retries: page.waitForFunction timed out at 5000 ms in trayToastSection. Cause not traced."},
   {"kind": "board", "name": "cacheChip", "reason": "failed on all three OS board-1 in run 39700828350 and on retry: the tooltip lacks the raw why: undefined (snowflake pick)."},
   {"kind": "go", "package": "internal/daemon", "name": "TestRestartRunnerOnAMissingCardSaysSo", "reason": "failed on windows go-test-2 in run 39704005124: the daemon Run had not returned 30s after cancel (daemon_integration_test.go:98). Cause not traced."},
-  {"kind": "board", "name": "mPictures", "reason": "failed on macos board-1 in run 39704976949: page.tap timed out at 5000 ms on #m-replies .md-img (test-board-headless.js:19063). Retry log shows it passing. Cause not traced."}
+  {"kind": "board", "name": "mPictures", "reason": "failed on macos board-1 in run 39704976949: page.tap timed out at 5000 ms on #m-replies .md-img (test-board-headless.js:19063). Retry log shows it passing. Cause not traced."},
+  {"kind": "board", "name": "mCompose", "reason": "failed in run 39715013378 job check (macos-latest, board-1): mCompose 412: gemini not joined: {\"id\":\"c1\",\"body\":{\"text\":\"line a\\nline b\",\"when\":\"immediate\"}}"}
  ]
 }
