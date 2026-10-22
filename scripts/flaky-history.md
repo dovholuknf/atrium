@@ -145,3 +145,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39777843263 | unifiedCard | REMOVE | yes | 15 |
 | 2026-10-22 | 39782236333 | idleRate | REMOVE | yes | 15 |
 | 2026-10-22 | 39782236333 | u016 | REMOVE | yes | 15 |
+| 2026-10-22 | 39788990401 | TestADroppedCallerLosesItsStreamsAndOthersKeepThem | REMOVE | yes | 15 |
