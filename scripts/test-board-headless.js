@@ -1805,9 +1805,11 @@ async function idleRateSection(browser, base) {
         fail("a room that stopped answering queued " + most + " board fetches (" + where +
           "): a held read is keeping its slot instead of timing out.");
       }
-      await fakeTick(board, 5000);
-      const after = await Promise.all(pages.map(p => p.evaluate(() => apiInflight + apiQueue.length)));
-      if (after.some(n => n > 0)) fail("the board still had fetches out 5s after the room answered: " + after.join(" "));
+      for (const p of pages) {
+        await fakeWait(p, () => apiInflight + apiQueue.length === 0, null, 5000).catch(async () => {
+          fail(p.__who + " still had fetches out 5s after the room answered: " + await p.evaluate(() => apiInflight + apiQueue.length));
+        });
+      }
     }
     if (errors.length) fail("the idle-rate pages threw: " + errors.join(" | "));
   } finally {
