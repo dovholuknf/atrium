@@ -149,3 +149,5 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39796757733 | termFitHeight | REMOVE | yes | 15 |
 | 2026-10-22 | 39796757733 | mResume | REMOVE | yes | >57 |
 | 2026-10-22 | 39810943290 | TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard | ADD | no | 0 |
+| 2026-10-22 | 39814914601 | growlOnIt | REMOVE | yes | 15 |
+| 2026-10-22 | 39814909117 | TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog | ADD | no | 1 |
