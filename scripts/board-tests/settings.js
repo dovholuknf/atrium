@@ -413,7 +413,8 @@ async function themePreviewSection(browser, base) {
     }
     await p.evaluate(() => history.replaceState(history.state, "", location.pathname + location.search));
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // The reload restores the terms view (atrium.view), so the stack list is hidden and can only be attached.
+    await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: slow(15000) });
     // Let the view switch finish. `switchView` clears `on` from every `.tab`,
