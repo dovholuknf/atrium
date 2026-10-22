@@ -19060,6 +19060,15 @@ async function mPicturesSection(browser) {
       .catch(() => fail(tag + "not every picture was drawn"));
     if ((await p.evaluate(() => window.__revoked)) !== 0) fail(tag + "a picture still on screen was revoked");
     await p.evaluate(() => document.querySelector("#m-replies .md-img").scrollIntoView());
+    // the note becomes a picture when it loads, which resizes the button, so tap only once it has settled
+    await p.waitForFunction(() => {
+      const b = document.querySelector("#m-replies .md-img"), i = b && b.querySelector("img");
+      if (!i || b.dataset.state !== "ready" || !i.complete || !i.naturalWidth) return false;
+      const r = b.getBoundingClientRect(), k = r.left + "," + r.top + "," + r.width + "," + r.height;
+      const same = window.__picRect === k;
+      window.__picRect = k;
+      return same;
+    }, null, { timeout: slow(15000), polling: "raf" }).catch(() => fail(tag + "the first picture did not settle"));
     await p.tap("#m-replies .md-img");
     await p.waitForFunction(() => { const i = document.querySelector(".md-lightbox img"); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: slow(3000) })
       .catch(() => fail(tag + "the first picture does not enlarge"));
