@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,14 +18,30 @@ import (
 type countingListener struct {
 	net.Listener
 	accepted atomic.Int32
+	mu       sync.Mutex
+	conns    []net.Conn
 }
 
 func (c *countingListener) Accept() (net.Conn, error) {
 	conn, err := c.Listener.Accept()
 	if err == nil {
 		c.accepted.Add(1)
+		c.mu.Lock()
+		c.conns = append(c.conns, conn)
+		c.mu.Unlock()
 	}
 	return conn, err
+}
+
+// cut closes every TCP connection the hub has accepted, as a network that drops them does.
+func (c *countingListener) cut() {
+	c.mu.Lock()
+	all := c.conns
+	c.conns = nil
+	c.mu.Unlock()
+	for _, conn := range all {
+		_ = conn.Close()
+	}
 }
 
 type muxRig struct {
