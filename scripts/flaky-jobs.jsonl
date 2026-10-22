@@ -86,3 +86,4 @@
 {"run":"39714618119","date":"2026-10-22T03:02:02Z","sha":"a42b42be3","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39715013378","date":"2026-10-22T03:06:16Z","sha":"4199d0014","job":119616580114,"name":"check (macos-latest, board-1)","tests":["mCompose"],"retried":[],"errors":{"mCompose":"mCompose 412: gemini not joined: {\"id\":\"c1\",\"body\":{\"text\":\"line a\\nline b\",\"when\":\"immediate\"}}"}}
 {"run":"39716960241","date":"2026-10-22T03:27:48Z","sha":"42cb7ba60","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39718988038","date":"2026-10-22T03:49:50Z","sha":"94cbd7d8e","job":119629469683,"name":"check (macos-latest, go-test)","tests":["TestAStreamReopenedRightAfterACloseStillStreams"],"retried":[],"errors":{"TestAStreamReopenedRightAfterACloseStillStreams":"events_integration_test.go:544: no \"task\" event arrived"}}

@@ -118,3 +118,5 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-21 | - | mCardUpload | REMOVE | yes | 27 |
 | 2026-10-21 | - | TestHookInstallSelectsCodexAndPrintsTrust | REMOVE | yes | >30 |
 | 2026-10-22 | 39715013378 | mCompose | ADD | no | 0 |
+| 2026-10-22 | 39718988038 | TestAStreamReopenedRightAfterACloseStillStreams | ADD | no | 0 |
+| 2026-10-22 | 39718988038 | chatter | REMOVE | yes | 15 |
