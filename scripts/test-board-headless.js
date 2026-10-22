@@ -28967,6 +28967,8 @@ async function growlOnItSection(browser, base) {
     await pop.goto(base + "/#term=c", { waitUntil: "domcontentloaded" });
     await pop.waitForFunction(() => typeof alerting !== "undefined" && typeof growlDraw === "function" &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await pop.waitForFunction(() => typeof soloTask !== "undefined" && soloTask && termTask === soloTask && term, null, { timeout: slow(15000) })
+      .catch(() => fail("growlOnIt: the pop-out never attached its own terminal."));
     await pop.evaluate(() => { term = new Proxy({}, { get: (_, k) => k === "element" ? null : () => {} }); termTask = { id: "c" }; window.dispatchEvent(new Event("focus")); });
     await p.waitForFunction(() => focusedElsewhere.watch === "c", null, { timeout: slow(5000) })
       .catch(() => fail("growlOnIt: the board never heard the pop-out's focus on card c."));
