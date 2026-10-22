@@ -24,6 +24,11 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   fix is to move the test into an integration file, not to raise the number.
 - **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the
   time of a test is never a reason to run the suite again.
+- **A manual dispatch can run one os and one suite.** `scripts/ci-select.sh --os all|ubuntu|macos|windows --suite
+  all|go|ui` picks the groups, the workflow's `select` job calls it and each job's `if:` and matrix read its outputs.
+  Groups named `flaky-board*` or `board*` are ui, every other group is go (`go-checks-visual` included). A push runs
+  all. `ci-notify.sh --expected-skipped N` does not count the N jobs the selection skipped as red, any other skip is
+  still red. Example: `gh workflow run ci.yml --ref main -f os=windows -f suite=ui`. `test-ci-select.js` pins it.
 - **`ci.sh` holds all of CI's logic.** `.github/workflows/ci.yml` only checks out, installs Go and node, and calls it.
   It runs on Linux, macOS and Windows with Git Bash, so nothing in it may assume a tool Git Bash lacks. `--only` runs
   one step and `--list` names them. `--group` runs one workflow job's steps: `go-test-1` and `go-test-2` are the Go

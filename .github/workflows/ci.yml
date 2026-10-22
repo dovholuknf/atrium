@@ -18,6 +18,17 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      os:
+        description: which os to run
+        type: choice
+        options: [all, ubuntu, macos, windows]
+        default: all
+      suite:
+        description: which suite to run, go or ui (the playwright board)
+        type: choice
+        options: [all, go, ui]
+        default: all
 
 permissions:
   contents: read
@@ -27,17 +38,39 @@ env:
   FLAKY_REPEAT: 5
 
 jobs:
+  # Which jobs and groups a dispatch runs, from its os and suite inputs. scripts/ci-select.sh decides, a push runs all.
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      flaky_ubuntu: ${{ steps.pick.outputs.flaky_ubuntu }}
+      flaky_macos: ${{ steps.pick.outputs.flaky_macos }}
+      flaky_windows: ${{ steps.pick.outputs.flaky_windows }}
+      check_ubuntu: ${{ steps.pick.outputs.check_ubuntu }}
+      check_macos: ${{ steps.pick.outputs.check_macos }}
+      check_windows: ${{ steps.pick.outputs.check_windows }}
+      skipped: ${{ steps.pick.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        shell: bash
+        env:
+          PICK_OS: ${{ inputs.os }}
+          PICK_SUITE: ${{ inputs.suite }}
+        run: bash scripts/ci-select.sh --os "$PICK_OS" --suite "$PICK_SUITE" >> "$GITHUB_OUTPUT"
+
   # THE FLAKY SUITE FIRST, TWO JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
   # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board` runs the board units and check scripts
   # and needs no Go. The flaky jobs have no `needs` and start at once, so the tests most likely
   # to fail answer first and fast. Each platform's check job waits for that platform's flaky job (`needs`) and is skipped
   # when a flaky group is red, so a red flaky group stops the checks from burning runner time and the flaky and check
-  # groups never run beside each other on a platform. The rollup and notify read a skipped check as red.
+  # groups never run beside each other on a platform. The rollup and notify read a skipped check as red, except the jobs a dispatch left out on purpose.
   flaky-ubuntu:
+    needs: [select]
+    if: needs.select.outputs.flaky_ubuntu != '[]'
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go]
+        group: ${{ fromJSON(needs.select.outputs.flaky_ubuntu) }}
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
     steps:
@@ -59,10 +92,12 @@ jobs:
           if-no-files-found: ignore
 
   flaky-macos:
+    needs: [select]
+    if: needs.select.outputs.flaky_macos != '[]'
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go, flaky-board]
+        group: ${{ fromJSON(needs.select.outputs.flaky_macos) }}
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
@@ -84,10 +119,12 @@ jobs:
           if-no-files-found: ignore
 
   flaky-windows:
+    needs: [select]
+    if: needs.select.outputs.flaky_windows != '[]'
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go, flaky-board]
+        group: ${{ fromJSON(needs.select.outputs.flaky_windows) }}
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
@@ -122,11 +159,12 @@ jobs:
   # names the group. No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual
   # failure out of its own exit status.
   check-ubuntu:
-    needs: [flaky-ubuntu]
+    needs: [select, flaky-ubuntu]
+    if: ${{ !cancelled() && needs.flaky-ubuntu.result != 'failure' && needs.select.outputs.check_ubuntu != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        group: [go-all, board-1, board-2]
+        group: ${{ fromJSON(needs.select.outputs.check_ubuntu) }}
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
     steps:
@@ -146,11 +184,12 @@ jobs:
           if-no-files-found: ignore
 
   check-macos:
-    needs: [flaky-macos]
+    needs: [select, flaky-macos]
+    if: ${{ !cancelled() && needs.flaky-macos.result != 'failure' && needs.select.outputs.check_macos != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        group: [go-test, go-checks-visual, board-1, board-2]
+        group: ${{ fromJSON(needs.select.outputs.check_macos) }}
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
@@ -170,11 +209,12 @@ jobs:
           if-no-files-found: ignore
 
   check-windows:
-    needs: [flaky-windows]
+    needs: [select, flaky-windows]
+    if: ${{ !cancelled() && needs.flaky-windows.result != 'failure' && needs.select.outputs.check_windows != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        group: [go-test-1, go-test-2, go-checks-visual, board-1, board-2]
+        group: ${{ fromJSON(needs.select.outputs.check_windows) }}
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
@@ -197,7 +237,7 @@ jobs:
   # failed in the last 10 runs on main. THERE IS NO LOGIC HERE: `scripts/ci-rollup.js` does it all and is best effort, so
   # this job cannot fail the run. The notify job waits on it, so the run's summary exists before the hub is told.
   rollup:
-    needs: [flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
+    needs: [select, flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
     if: always()
     runs-on: ubuntu-latest
     outputs:
@@ -226,7 +266,7 @@ jobs:
   # the conclusion from the jobs' results and builds the body from this run's own context, and the ziti-hook action
   # only carries it to the hub over ziti.
   notify:
-    needs: [rollup]
+    needs: [select, rollup]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -237,8 +277,9 @@ jobs:
       - id: body
         env:
           NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
+          EXPECTED_SKIPPED: ${{ needs.select.outputs.skipped }}
         run: |
-          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS")
+          path=$(bash scripts/ci-notify.sh --needs "$NEEDS_RESULTS" --expected-skipped "$EXPECTED_SKIPPED")
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         continue-on-error: true

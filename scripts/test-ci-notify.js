@@ -114,6 +114,26 @@ function sh(args, env) {
   r = await sh([runEvent, "--out", out, "--url", url, "--secret", "wrong"]);
   if (r.code !== 1) fail("a refused post exited " + r.code + ", wanted 1");
 
+  const conclusionOf = async (needs, extra) => {
+    const f = path.join(tmp, "needs.json");
+    const res = await sh(["--needs", needs, ...extra, "--out", f]);
+    return res.code === 0 ? JSON.parse(fs.readFileSync(f, "utf8")).workflow_run.conclusion : "exit " + res.code;
+  };
+  const cases = [
+    ["success success", [], "success"],
+    ["success skipped", [], "failure"],
+    ["success skipped skipped", ["--expected-skipped", "2"], "success"],
+    ["success skipped skipped", ["--expected-skipped", "1"], "failure"],
+    ["failure skipped", ["--expected-skipped", "1"], "failure"],
+    ["cancelled skipped", ["--expected-skipped", "1"], "cancelled"],
+  ];
+  for (const [needs, extra, want] of cases) {
+    const got = await conclusionOf(needs, extra);
+    if (got !== want) fail("--needs '" + needs + "' " + extra.join(" ") + " gave " + got + ", wanted " + want);
+  }
+  r = await sh(["--needs", "success", "--expected-skipped", "x"]);
+  if (r.code !== 2) fail("a bad --expected-skipped exited " + r.code + ", wanted 2");
+
   srv.close();
   fs.rmSync(tmp, { recursive: true, force: true });
   if (bad) {
