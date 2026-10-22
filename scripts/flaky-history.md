@@ -138,3 +138,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39732458356 | TestRestartRunnerOnAMissingCardSaysSo | REMOVE | yes | 15 |
 | 2026-10-22 | 39735289836 | termFitHeight | ADD | yes | 0 |
 | 2026-10-22 | 39735289836 | mPictures | REMOVE | yes | 15 |
+| 2026-10-22 | 39741130323 | cardViewBarInline | REMOVE | yes | 15 |
