@@ -56,6 +56,13 @@
 // `direct.go` is mutual TLS over TCP and is what ships first. OpenZiti and zrok
 // both hand back precisely those two types, so each is a file in this package
 // rather than a change to anything above it. See `docs/archive/hub-room-plan.md`.
+//
+// ONE SESSION PER ROOM, on every transport. A Dial is a stream on a session the
+// transport opened once and opens again only when it dies: a yamux stream on one
+// mutual TLS connection (`mux.go`), or a circuit on the process's one ziti
+// context (`internal/zitictx`), for zrok as for ziti. A transport that builds a
+// session per Dial leaks sockets at the rate a room redials. See
+// `docs/fabric/one-session-per-room.md`.
 package link
 
 import (
@@ -73,7 +80,8 @@ const Version = 1
 // that needs more than this is doing something the design does not want.
 type Dialer interface {
 	// Dial opens one connection to the hub. It is called for the control
-	// connection and again for every data connection.
+	// connection and again for every data connection. It is a stream on the
+	// transport's one session, never a session of its own.
 	Dial(ctx context.Context) (net.Conn, error)
 	// Describe is what to log and show on the board. No secrets.
 	Describe() string
