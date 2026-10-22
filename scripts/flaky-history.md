@@ -134,3 +134,5 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39729860399 | TestADroppedCallerLosesItsStreamsAndOthersKeepThem | ADD | no | 0 |
 | 2026-10-22 | 39729860399 | TestEveryExecStartIsHiddenOrListed | REMOVE | yes | 15 |
 | 2026-10-22 | 39729860399 | cacheChip | REMOVE | yes | 15 |
+| 2026-10-22 | 39732458356 | growlOnIt | ADD | no | 0 |
+| 2026-10-22 | 39732458356 | TestRestartRunnerOnAMissingCardSaysSo | REMOVE | yes | 15 |
