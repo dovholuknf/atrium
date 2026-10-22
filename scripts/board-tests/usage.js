@@ -251,7 +251,7 @@ async function cacheChipSection(browser, base) {
       const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, text: e.innerText.trim() };
     }).filter(d => d.w > 16 || d.h > 16 || d.text));
     if (dot.length) fail("cacheChip: chips are not dots " + JSON.stringify(dot));
-    const tip = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-warm"]').dataset.tip);
+    const tip = await p.evaluate(() => document.querySelector('#stack-list .chip.cache[data-cid="cc-warm"]').dataset.tip);
     if (!/not idle/.test(tip) || !/busy/.test(tip)) fail("cacheChip: the tooltip lacks the raw why: " + tip);
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "u-032-stack-1400x900.png") }); }
 
