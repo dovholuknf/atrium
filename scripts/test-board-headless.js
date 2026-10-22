@@ -27386,8 +27386,8 @@ async function mResumeSection(browser) {
     st.send("task", st.tasks[0]);
     await p.waitForTimeout(300);
     st.launchGate = null;
-    await p.evaluate(() => { RESUME_BOUND_MS = 400; window.mResume.resume("shelf-1"); });
-    await p.waitForSelector(sel + " .opening:not(.slow)", { timeout: slow(5000) });
+    const first = await p.evaluate(() => { RESUME_BOUND_MS = 400; window.mResume.resume("shelf-1"); return openingState("shelf-1").state; });
+    if (first !== "opening") fail(tag + "the resume was " + first + " straight after it started");
     await p.waitForSelector(sel + " .opening.slow", { timeout: slow(5000) });
     const slowSay = await p.$eval(sel + " .why", e => e.textContent.trim());
     if (!/no output after/.test(slowSay)) fail(tag + "the bound did not give the reason: " + slowSay);
