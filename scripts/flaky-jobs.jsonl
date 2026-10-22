@@ -100,3 +100,4 @@
 {"run":"39741130323","date":"2026-10-22T07:31:54Z","sha":"77eef28d3","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39744389407","date":"2026-10-22T07:59:13Z","sha":"77eef28d3","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39747756384","date":"2026-10-22T08:26:33Z","sha":"77eef28d3","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39766570536","date":"2026-10-22T10:54:17Z","sha":"f04081c63","job":119783384739,"name":"check (macos-latest, flaky-board)","tests":["growlOnIt"],"retried":["growlOnIt"],"errors":{"growlOnIt":"the pop-out never attached its own terminal."}}
