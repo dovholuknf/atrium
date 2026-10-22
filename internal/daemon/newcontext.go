@@ -364,6 +364,8 @@ type newContext struct {
 	// typing is set while atrium's own write to the terminal is under way, and says
 	// so on the card. Board typing is refused for the whole cycle. See typingHeld.
 	typing bool
+	// wake overrides the wake prompt when the session asked for the clear itself (clearcontext.go).
+	wake string
 }
 
 type newContexts struct {
@@ -798,7 +800,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		return
 	}
 	// Recorded at the claim, so a setting changed mid-cycle cannot split the three uses.
-	file, start, by := cur.file, cur.step, newContextBy
+	file, start, by, wake := cur.file, cur.step, newContextBy, cur.wake
 	// What reached the card in its latest turn is in the context about to be cleared, and the model is told to write
 	// a handoff, not to act on it. Handed back once the wake is typed. See contextlog.go.
 	carried := d.itemMissed(taskID, d.takeInContext(taskID))
@@ -902,7 +904,11 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	// A turn in progress is waited out: the new session may already be taking a turn
 	// on something else (r-016, @ui).
-	if err := d.ncType(taskID, gen, newContextLabel, d.newContextWakeFor(taskID, file), d.hk.ncTiming.captureEnd); err != nil {
+	wakeText := wake
+	if wakeText == "" {
+		wakeText = d.newContextWakeFor(taskID, file)
+	}
+	if err := d.ncType(taskID, gen, newContextLabel, wakeText, d.hk.ncTiming.captureEnd); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
@@ -1345,6 +1351,21 @@ func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 		d.releaseHeld(id)
 		ncJSON(w, http.StatusOK, map[string]any{"card": id, "cleared": gone})
 	case http.MethodPost:
+		var in struct {
+			Handoff *string `json:"handoff"`
+		}
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in)
+		if in.Handoff != nil {
+			task, _ := d.st.Get(id)
+			path, code, err := d.ClearContext(task, *in.Handoff)
+			if err != nil {
+				writeJSONErr(w, code, err)
+				return
+			}
+			ncJSON(w, http.StatusAccepted, map[string]any{"card": id, "started": true, "queued": true, "path": path,
+				"message": ClearContextLine, "new_context": d.newContextFor(id)})
+			return
+		}
 		switch err := d.StartNewContext(id); {
 		case errors.Is(err, errNoTerminal), errors.Is(err, errNewContextBusy), isSharedErr(err):
 			writeJSONErr(w, http.StatusConflict, err)

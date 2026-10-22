@@ -141,3 +141,37 @@ func postReady(hubURL, name string, handoff *string) (readyAnswer, error) {
 	}
 	return answer, nil
 }
+
+type ClearContextInput struct {
+	Handoff string `json:"handoff" jsonschema:"the handoff as markdown: what you are doing and why, what is done and left, decisions and their reasons, branches, commits and files, how to check the work. at most 256 KB"`
+}
+
+func clearContextHandler(_ context.Context, _ *mcp.CallToolRequest, in ClearContextInput) (*mcp.CallToolResult, ReadyOutput, error) {
+	out := ReadyOutput{}
+	if strings.TrimSpace(in.Handoff) == "" {
+		return nil, out, fmt.Errorf("the handoff is empty: write what a fresh session needs to carry on")
+	}
+	if strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")) == "" && os.Getenv("ATRIUM_TASK_ID") == "" {
+		return nil, out, fmt.Errorf("this session has no ATRIUM_AGENT_NAME to mean itself by, so atrium cannot tell which card to clear")
+	}
+	answer, err := postClearContext(in.Handoff)
+	if err != nil {
+		return nil, out, err
+	}
+	out.Ok, out.Path, out.Message = true, answer.Path, answer.Message
+	return nil, out, nil
+}
+
+func postClearContext(handoff string) (readyAnswer, error) {
+	var answer readyAnswer
+	who := os.Getenv("ATRIUM_TASK_ID")
+	if who == "" {
+		who = os.Getenv("ATRIUM_AGENT_NAME")
+	}
+	got, err := callCard("", http.MethodPost, who, "new-context", map[string]any{"handoff": handoff})
+	if err != nil {
+		return answer, err
+	}
+	_ = json.Unmarshal(got.body, &answer)
+	return answer, nil
+}
