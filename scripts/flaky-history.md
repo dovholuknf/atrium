@@ -153,3 +153,11 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39814909117 | TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog | ADD | no | 1 |
 | 2026-10-22 | 39816184242 | growlPopout | ADD | yes | 0 |
 | 2026-10-22 | 39836241253 | termFitHeight | ADD | yes | 0 |
+| 2026-10-22 | 39842064645 | heldLine | ADD | no | 0 |
+| 2026-10-22 | 39842064645 | phoneFocus | ADD | yes | 0 |
+| 2026-10-22 | 39842064645 | phoneFollow | ADD | yes | 0 |
+| 2026-10-22 | 39842064645 | phoneKeyboard | ADD | yes | 0 |
+| 2026-10-22 | 39842064645 | phonePan | ADD | yes | 0 |
+| 2026-10-22 | 39842064645 | phoneShare | ADD | yes | 0 |
+| 2026-10-22 | 39842064645 | phoneTap | ADD | no | 0 |
+| 2026-10-22 | 39842064645 | phoneView | ADD | no | 0 |
