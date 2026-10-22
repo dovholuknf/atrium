@@ -7,7 +7,7 @@ inputs:
     description: the ci.sh group to run
     required: true
   go:
-    description: install Go. ci.sh --group flaky-board-N needs none
+    description: install Go. ci.sh --group flaky-board needs none
     default: "true"
   node:
     description: install node. ci.sh --group flaky-go needs none

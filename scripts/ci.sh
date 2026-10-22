@@ -45,9 +45,9 @@ all_steps="machine toolchain flaky-go flaky-board gofmt go-vet go-build go-test 
 # check jobs wait on that platform's flaky job, so the tests known to fail answer fast and the two groups never share
 # runners.
 #
-# THE FLAKY SUITE IS THREE JOBS. flaky-go is the flaky go tests: it needs Go and no node. flaky-board-1 and flaky-board-2
-# are the flaky board units and the flaky check scripts (they drive playwright) in two halves by weight (board_units
-# says how), each half on one shard so no unit loads another: they need node and no Go. flaky-board is both halves in one.
+# THE FLAKY SUITE IS TWO JOBS PER PLATFORM. flaky-go is the flaky go tests: it needs Go and no node. flaky-board is the
+# flaky board units and the flaky check scripts (they drive playwright) on one shard so no unit loads another: it needs
+# node and no Go. flaky-board-1 and flaky-board-2 are its two halves by weight (board_units says how), kept for local runs.
 #
 # THE GO TESTS ARE TWO JOBS ON WINDOWS. go-test-1 and go-test-2 are the go-test step over half the suite each, split by
 # wall time (the go-test step says how), so a run waits on half of internal/daemon and not all of it. go-test is the

@@ -23,9 +23,9 @@ permissions:
   contents: read
 
 jobs:
-  # THE FLAKY SUITE FIRST, THREE JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
-  # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board-1` and `flaky-board-2` run the board units
-  # and check scripts in halves and need no Go. The flaky jobs have no `needs` and start at once, so the tests most likely
+  # THE FLAKY SUITE FIRST, TWO JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
+  # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board` runs the board units and check scripts
+  # and needs no Go. The flaky jobs have no `needs` and start at once, so the tests most likely
   # to fail answer first and fast. Each platform's check job waits for that platform's flaky job (`needs`) and is skipped
   # when a flaky group is red, so a red flaky group stops the checks from burning runner time and the flaky and check
   # groups never run beside each other on a platform. The rollup and notify read a skipped check as red.
@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go, flaky-board-1, flaky-board-2]
+        group: [flaky-go, flaky-board]
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
     steps:
@@ -58,7 +58,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go, flaky-board-1, flaky-board-2]
+        group: [flaky-go, flaky-board]
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
@@ -83,7 +83,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go, flaky-board-1, flaky-board-2]
+        group: [flaky-go, flaky-board]
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
