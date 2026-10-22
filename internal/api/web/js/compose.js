@@ -102,9 +102,9 @@ async function composeFree() {
   if (typeof refresh === "function") refresh();
 }
 
-// The do-not-enter sign over the terminal for as long as the room refuses its keys: the whole cycle, from its first
-// step. The idle parking's capture and a failed cycle hold nothing, so they draw none.
-function composeHeld(n) { return !!n && n.step !== "failed" && n.step !== "capture"; }
+// The do-not-enter sign over the terminal for as long as the room refuses its keys: from the moment the cycle finds
+// the input line clear (`held`). The idle parking's capture and a failed cycle hold nothing, so they draw none.
+function composeHeld(n) { return !!n && n.held !== false && n.step !== "failed" && n.step !== "capture"; }
 
 function composeNoEntry(n) {
   const el = document.getElementById("t-nodev");

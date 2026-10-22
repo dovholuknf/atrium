@@ -364,6 +364,9 @@ type newContext struct {
 	// typing is set while atrium's own write to the terminal is under way, and says
 	// so on the card. Board typing is refused for the whole cycle. See typingHeld.
 	typing bool
+	// armed is set once the operator's line gate has been open since the claim. Until then the cycle holds
+	// nothing, so keys already typed are never shut behind it. See ncArm.
+	armed bool
 }
 
 type newContexts struct {
@@ -590,7 +593,7 @@ func (n *newContexts) holdsInput(taskID string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
-	if cur == nil || cur.step == NewContextFailed {
+	if cur == nil || cur.step == NewContextFailed || !cur.armed {
 		return false
 	}
 	return cur.step != NewContextLimit || cur.prompted > 0 || cur.acked || cur.typing
@@ -616,8 +619,10 @@ func (d *Daemon) newContextFor(taskID string) any {
 	v := newContextView(cur)
 	if cur.step != NewContextFailed {
 		v["typing"] = cur.typing && !cur.capOnly
-		v["held"] = !cur.capOnly
-		if cur.typing {
+		v["held"] = cur.armed && !cur.capOnly
+		if !cur.armed {
+			v["label"] = "waiting for your line to clear"
+		} else if cur.typing {
 			v["label"] = "atrium is typing into the terminal"
 		}
 		// What the operator composed while a write was under way waits as an ordinary
@@ -859,6 +864,13 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		d.publishTask(taskID)
 	}
 
+	if start != NewContextLimit {
+		if err := d.ncAwaitArm(taskID, gen, d.hk.ncTiming.ackWait); err != nil {
+			fail("waiting for the input line to clear", err)
+			return
+		}
+	}
+
 	// 2. `/clear`, between turns, then the new session's SessionStart. The agent ran
 	// `ready` inside a turn, and a `/clear` typed mid-turn is not a slash command.
 	if start != NewContextWake {
@@ -931,6 +943,9 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 		// A turn in progress is never typed into because the bound passed: the
 		// cycle just ends and the held input goes at the next clear line.
 		if since := time.Since(cur.since); since > d.hk.ncTiming.ackWait {
+			if !cur.armed {
+				return fmt.Errorf("the input line did not clear for %s, nothing was held", since.Round(time.Minute))
+			}
 			return fmt.Errorf("input was held for %s waiting for atrium ready, released",
 				since.Round(time.Minute))
 		}
@@ -941,7 +956,9 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 				}
 			}
 		}
-		if d.cyclePromptDue(taskID, cur) {
+		if !cur.armed {
+			d.ncArm(taskID, gen)
+		} else if d.cyclePromptDue(taskID, cur) {
 			if err := d.cyclePrompt(taskID, gen, cur.file); err != nil {
 				return err
 			}
@@ -1048,6 +1065,9 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 // step that stopped it and why. The idle parking runs this alone, with no clear
 // after it, so a card is asked to write its handoff without losing its context.
 func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, error) {
+	if err := d.ncAwaitArm(taskID, gen, d.hk.ncTiming.captureEnd); err != nil {
+		return "waiting for the input line to clear", err
+	}
 	started := time.Now()
 	token := captureToken(gen)
 	// NOTHING IS TYPED WHILE THE CARD IS RUNNING (r-022). `ncType` waits for the
@@ -1128,6 +1148,33 @@ func (d *Daemon) atIdlePrompt(taskID string) bool {
 	cols, rows := run.buf.CurrentSize()
 	idle, _ := classifyFrame(run.buf.Tail(frameTailBytes), cols, rows)
 	return idle
+}
+
+// ncArm arms gen's run if the operator's line gate is open now, and reports whether it is armed. Judged under the
+// input lock, so an operator key already written has closed the gate first.
+func (d *Daemon) ncArm(taskID string, gen uint64) bool {
+	run := d.sup.get(taskID)
+	if run == nil {
+		return false
+	}
+	armed, changed := false, false
+	run.pasteMu.Lock()
+	if run.peerGateOpen() {
+		armed, changed = d.nctx.arm(taskID, gen)
+	}
+	run.pasteMu.Unlock()
+	if changed {
+		log.Printf("[atrium] new context on %s: the input line is clear, holding input", taskID)
+		d.publishTask(taskID)
+	}
+	return armed
+}
+
+// ncAwaitArm waits for ncArm, up to limit.
+func (d *Daemon) ncAwaitArm(taskID string, gen uint64, limit time.Duration) error {
+	return d.ncWait(taskID, gen, limit, "the input line to clear", func() (bool, error) {
+		return d.ncArm(taskID, gen), nil
+	})
 }
 
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or

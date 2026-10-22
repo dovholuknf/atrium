@@ -38,7 +38,7 @@ func (n *newContexts) beginCaptureOnly(taskID, file, conv string) (uint64, bool)
 	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv, capOnly: true})
 }
 
-// typingHeld reports whether board typing is refused: for the whole cycle, from the moment it is claimed, because
+// typingHeld reports whether board typing is refused: for the whole cycle, from the moment it is armed, because
 // a key typed while it waits lands between its steps and in the context about to be cleared. The way out never
 // depends on a step finishing: "let me type" ends the run. A failed run and the idle parking's capture hold nothing.
 func (n *newContexts) typingHeld(taskID string) bool {
@@ -48,7 +48,20 @@ func (n *newContexts) typingHeld(taskID string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
-	return cur != nil && cur.step != NewContextFailed && !cur.capOnly
+	return cur != nil && cur.step != NewContextFailed && !cur.capOnly && cur.armed
+}
+
+// arm marks gen's run as holding input. It reports whether the run is armed, and whether this call armed it.
+func (n *newContexts) arm(taskID string, gen uint64) (armed, changed bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	if cur == nil || cur.gen != gen || cur.step == NewContextFailed {
+		return false, false
+	}
+	changed = !cur.armed
+	cur.armed = true
+	return true, changed
 }
 
 // setWaiting puts what a step waits on on the card's chip, or takes it off with "". It reports whether the text

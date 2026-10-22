@@ -227,7 +227,7 @@ func TestACycleWhoseLimitPromptWasNotTypedHoldsNothing(t *testing.T) {
 	d := testDaemon(t)
 	id := "cycler-untyped"
 	d.nctx.mu.Lock()
-	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now()}
+	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now(), armed: true}
 	d.nctx.mu.Unlock()
 	if d.holdingMessages(id) || d.holdingFrom(id, "alice") {
 		t.Fatal("a cycle that has typed nothing held messages")
@@ -237,5 +237,36 @@ func TestACycleWhoseLimitPromptWasNotTypedHoldsNothing(t *testing.T) {
 	d.nctx.mu.Unlock()
 	if !d.holdingMessages(id) || !d.holdingFrom(id, "alice") || d.holdingFrom(id, "") {
 		t.Fatal("after the prompt the cycle should hold a peer's message and never the operator's")
+	}
+}
+
+func TestABoardCycleWaitsForThePartTypedLineBeforeItHolds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := ncCard(t, d)
+	id := task.ID
+	run := d.sup.get(id)
+	run.noteOperatorTyped([]byte("sure. you can move them"))
+
+	if err := d.StartNewContext(id); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	v, _ := d.newContextFor(id).(map[string]any)
+	if d.nctx.typingHeld(id) || d.holdingMessages(id) || v["held"] != false || strings.Contains(f.written(), limitPrompt) {
+		t.Fatalf("the cycle held input over a part-typed line: %v", v)
+	}
+
+	run.noteOperatorTyped([]byte(strings.Repeat("\x7f", len("sure. you can move them"))))
+	run.typeMu.Lock()
+	run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	run.typeMu.Unlock()
+	until(t, "the hold once the line is clear", func() bool { return d.nctx.typingHeld(id) })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	if v, _ := d.newContextFor(id).(map[string]any); v["held"] != true {
+		t.Fatalf("an armed cycle does not say it holds: %v", v)
 	}
 }

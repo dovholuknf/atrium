@@ -583,6 +583,17 @@ async function contextCycleSection(browser, base) {
     }, step);
     const upAt = await sign("limit");
     if (!/typing is held for the new context step 1\/3: waiting for atrium ready let me type$/.test(upAt)) fail("no do-not-enter sign on the cycle's first step: " + JSON.stringify(upAt));
+    const unarmed = await wp.evaluate(() => {
+      composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for your line to clear", held: false } });
+      const was = termTask, kind = termKind;
+      termTask = { id: "ll-cycle", new_context: { step: "limit", held: false } };
+      termKind = "runner";
+      const gated = composeGate("x");
+      termTask = was;
+      termKind = kind;
+      return { sign: !document.getElementById("t-nodev").hidden, gated };
+    });
+    if (unarmed.sign || unarmed.gated) fail("typing is held before the cycle found the line clear: " + JSON.stringify(unarmed));
     if (process.env.NODEV_SHOTS) {
       fs.mkdirSync(process.env.NODEV_SHOTS, { recursive: true });
       const name = process.env.NODEV_NAME || "nodev";

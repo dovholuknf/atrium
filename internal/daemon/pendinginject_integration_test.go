@@ -275,7 +275,7 @@ func TestStillBlockedNoteUsesTheEntryHeldUnderTheLock(t *testing.T) {
 	if err := d.st.SetPeerTyping(id, true); err != nil {
 		t.Fatal(err)
 	}
-	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now(), prompted: 1}
+	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now(), prompted: 1, armed: true}
 	sayViaMessage(t, d, "alice", id, "HELDTEXT")
 	d.pending.mu.Lock()
 	if ht := d.pending.by[id]; ht != nil && ht.timer != nil {
