@@ -562,12 +562,15 @@ async function atriumDownSection(browser, base) {
       if (planned.title !== "atrium is restarting" || /not running/.test(planned.text)) {
         fail("a reload during a planned restart showed " + JSON.stringify(planned.title) + ": " + planned.text);
       }
+      await sp.addInitScript(() => {
+        new MutationObserver(list => {
+          for (const m of list) if (m.target.id === "hubrestart" && m.target.open) window.coverWasUp = true;
+        }).observe(document, { attributes: true, attributeFilter: ["open"], subtree: true });
+      });
       mock.gateBoot = "boot-z";
       mock.hubAway = false;
-      const back = await sp.waitForFunction(() => {
-        const d = document.getElementById("hubrestart");
-        return d && d.open;
-      }, null, { timeout: slow(15000), polling: 50 }).then(() => true, () => false);
+      const back = await sp.waitForFunction(() => window.coverWasUp === true, null, { timeout: slow(15000) })
+        .then(() => true, () => false);
       if (!back) fail("the board after a restart-time reload did not put the restart cover back.");
       await sp.waitForFunction(() => !document.getElementById("hubrestart").open &&
         !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
