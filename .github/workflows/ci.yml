@@ -13,7 +13,7 @@
 
 name: ci
 
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('ci {0} {1}', inputs.os, inputs.suite) || github.event_name == 'push' && github.event.head_commit.message || 'ci' }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name && format('ci {0}', inputs.name) || format('ci {0} {1}', inputs.os, inputs.suite)) || github.event_name == 'push' && github.event.head_commit.message || 'ci' }}
 
 on:
   push:
@@ -31,6 +31,11 @@ on:
         type: choice
         options: [all, go, ui]
         default: all
+      name:
+        description: optional label for the run title
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
