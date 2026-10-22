@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/openziti/sdk-golang/ziti"
@@ -133,8 +134,16 @@ func build(who, key string, cfg *ziti.Config) (*counted, error) {
 
 // SharedFile is the process's one context for an identity file, built the first time and handed to every caller after.
 // Its Close does nothing.
-func SharedFile(who, identity string) (ziti.Context, error) {
+func SharedFile(who, identity string) (ziti.Context, error) { return SharedFileLane(who, identity, "") }
+
+// SharedFileLane is SharedFile for one lane of an identity: a second context of its own, with its own router
+// connections, so traffic on one lane never queues behind the other's. "" is the identity's main context. A lane is
+// built at most once, as the main one is.
+func SharedFileLane(who, identity, lane string) (ziti.Context, error) {
 	key := keyOf(identity)
+	if lane != "" {
+		key += laneSep + lane
+	}
 	mu.Lock()
 	if c, ok := open[key]; ok {
 		mu.Unlock()
@@ -161,26 +170,41 @@ func SharedFile(who, identity string) (ziti.Context, error) {
 	return shared{c}, nil
 }
 
-// Relogin authenticates an identity's context again, in place. A context that does not exist yet is not built.
+// laneSep joins an identity's key and a lane's name.
+const laneSep = "#lane="
+
+// Relogin authenticates an identity's contexts again, every lane, in place. A context that does not exist yet is not
+// built.
 func Relogin(identity string) error {
-	mu.Lock()
-	c, ok := open[keyOf(identity)]
-	mu.Unlock()
-	if !ok {
-		return nil
+	var first error
+	for _, c := range lanes(identity) {
+		if err := relogin(c); err != nil && first == nil {
+			first = err
+		}
 	}
-	return relogin(c)
+	return first
 }
 
 // Close ends the context for one identity, which frees it to be built again from the file. A context that does not
 // exist is not an error. Callers that still hold the old one find its listeners and dials dead.
 func Close(identity string) {
-	mu.Lock()
-	c, ok := open[keyOf(identity)]
-	mu.Unlock()
-	if ok {
+	for _, c := range lanes(identity) {
 		c.Close()
 	}
+}
+
+// lanes is every context built for an identity, its main one and each lane.
+func lanes(identity string) []*counted {
+	key := keyOf(identity)
+	mu.Lock()
+	defer mu.Unlock()
+	var cs []*counted
+	for k, c := range open {
+		if k == key || strings.HasPrefix(k, key+laneSep) {
+			cs = append(cs, c)
+		}
+	}
+	return cs
 }
 
 // CloseAll closes every context, for the process that is stopping.

@@ -277,8 +277,12 @@ var (
 	muxClients = map[string]*muxClient{}
 )
 
-func muxFor(d Direct) *muxClient {
+// muxFor is the room's session to one hub address on one lane: control, or everything else.
+func muxFor(d Direct, control bool) *muxClient {
 	key := d.Addr + "|" + d.Keys.Dir
+	if control {
+		key += "|control"
+	}
 	muxMu.Lock()
 	defer muxMu.Unlock()
 	c, ok := muxClients[key]

@@ -18,10 +18,12 @@ first, then `docs/fabric/hub-and-rooms.md`.
 - **A transport supplies a `net.Listener` on the hub and something that returns a `net.Conn` on the room.** Nothing
   more. `direct.go` is mutual TLS over TCP on one port, and the first frame decides enrol, control or data. `ziti.go`
   and `zrok.go` are the overlays, and zrok is private shares only. There is no public mode on purpose.
-- **One session per room, on every transport** (`docs/fabric/one-session-per-room.md`). A `Dial` is a stream on a
-  session opened once and reopened only when it dies: a yamux stream on one mutual TLS connection (`mux.go`), or a
-  circuit on the process's one ziti context from `internal/zitictx`, for zrok as for ziti. Never build a session or a
-  ziti context per Dial, and never call `zroksdk.NewDialer`: each leaks sockets at the rate a room redials.
+- **Two lanes per room, on every transport** (`docs/fabric/one-session-per-room.md`). Control rides its own session
+  and everything else shares the other, each opened once and reopened only when it dies. A `Dial` is a stream on the
+  lane its context names (`lane.go`): a yamux stream on a mutual TLS connection (`mux.go`), or a circuit on a ziti
+  context from `internal/zitictx`, for zrok as for ziti. Never put control back on the data lane, because a beat then
+  queues behind a git fetch and the hub evicts a live room. Never build a session or a ziti context per Dial, and
+  never call `zroksdk.NewDialer`: each leaks sockets at the rate a room redials.
 - **A room's name comes from the hub-signed certificate**, on direct and inside an overlay alike (`overlaytls.go`).
   The overlay decides who may reach the hub, not which room is calling. Rooms that joined an overlay before this keep
   attaching beside it, marked unproven, until `atrium rooms legacy refuse`.

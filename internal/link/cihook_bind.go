@@ -163,7 +163,7 @@ func (b *CIBinder) serve(ctx context.Context, ln net.Listener) error {
 
 // ListenService binds another service with the same identity, and so the same ziti context as the link and the board.
 func (z *Ziti) ListenService(name string) (net.Listener, error) {
-	ctx, err := z.context()
+	ctx, err := z.context(false)
 	if err != nil {
 		return nil, err
 	}

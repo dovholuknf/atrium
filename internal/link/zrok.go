@@ -124,8 +124,10 @@ func (s sdkZrok) Delete(token string) error {
 	return zroksdk.DeleteShare(s.root, &zroksdk.Share{Token: token})
 }
 
-func (s sdkZrok) context() (ziti.Context, error) {
-	c, err := zitictx.SharedFile("zrok", s.identity)
+func (s sdkZrok) context() (ziti.Context, error) { return s.laneContext("") }
+
+func (s sdkZrok) laneContext(lane string) (ziti.Context, error) {
+	c, err := zitictx.SharedFileLane("zrok", s.identity, lane)
 	if err != nil {
 		return nil, fmt.Errorf("could not use this zrok environment's identity: %w", err)
 	}
@@ -149,7 +151,21 @@ func (s sdkZrok) Dial(token string) (net.Conn, error) {
 	return c.DialWithOptions(token, &ziti.DialOptions{ConnectTimeout: zrokConnectTimeout})
 }
 
-// Reset logs the shared context in again. Nothing is built.
+// zrokControl is a ZrokAPI with a control lane of its own.
+type zrokControl interface {
+	DialControl(token string) (net.Conn, error)
+}
+
+// DialControl dials the share on the identity's control lane, a context of its own. See lane.go.
+func (s sdkZrok) DialControl(token string) (net.Conn, error) {
+	c, err := s.laneContext("control")
+	if err != nil {
+		return nil, err
+	}
+	return c.DialWithOptions(token, &ziti.DialOptions{ConnectTimeout: zrokConnectTimeout})
+}
+
+// Reset logs the shared contexts in again, both lanes. Nothing is built.
 func (s sdkZrok) Reset() { _ = zitictx.Relogin(s.identity) }
 
 func (z *Zrok) api() (ZrokAPI, error) {
@@ -279,9 +295,13 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 		c   net.Conn
 		err error
 	}
+	dial := api.Dial
+	if cd, ok := api.(zrokControl); ok && onControlLane(ctx) {
+		dial = cd.DialControl
+	}
 	ch := make(chan res, 1)
 	go func() {
-		c, err := api.Dial(z.Token)
+		c, err := dial(z.Token)
 		ch <- res{c, err}
 	}()
 	select {

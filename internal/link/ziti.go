@@ -57,9 +57,13 @@ type Ziti struct {
 	// (internal/zitictx), opened by the first dial and never closed while the process runs. Reset logs it in again
 	// rather than building another, since every context left behind keeps its own refresh loop.
 	//
-	// mu guards the pointer and nothing else. It is never held across a dial.
+	// The control connection has a context of its own (ctl), the identity's control lane, so its beats never queue
+	// behind bulk circuits on the same router connections. See lane.go.
+	//
+	// mu guards the pointers and nothing else. It is never held across a dial.
 	mu  sync.Mutex
 	ctx zitiConn
+	ctl zitiConn
 	// newCtx builds one. Nil means the SDK, through internal/zitictx.
 	newCtx func() (zitiConn, error)
 	// gate backs dials off after a failure. See dialgate.go.
@@ -81,7 +85,7 @@ func (z *Ziti) Describe() string {
 	return "ziti:" + z.Service
 }
 
-func (z *Ziti) build() (zitiConn, error) {
+func (z *Ziti) build(control bool) (zitiConn, error) {
 	if z.newCtx != nil {
 		return z.newCtx()
 	}
@@ -93,25 +97,33 @@ func (z *Ziti) build() (zitiConn, error) {
 	if strings.TrimSpace(z.Service) == "" {
 		return nil, errors.New("no ziti service named. --service is which service to use")
 	}
-	c, err := zitictx.SharedFile("link", id)
+	lane := ""
+	if control {
+		lane = "control"
+	}
+	c, err := zitictx.SharedFileLane("link", id, lane)
 	if err != nil {
 		return nil, fmt.Errorf("could not use that identity: %w", err)
 	}
 	return c, nil
 }
 
-// context returns the live context, building one when there is none.
-func (z *Ziti) context() (zitiConn, error) {
+// context returns the live context for a lane, building one when there is none.
+func (z *Ziti) context(control bool) (zitiConn, error) {
 	z.mu.Lock()
 	defer z.mu.Unlock()
-	if z.ctx != nil {
-		return z.ctx, nil
+	p := &z.ctx
+	if control {
+		p = &z.ctl
 	}
-	c, err := z.build()
+	if *p != nil {
+		return *p, nil
+	}
+	c, err := z.build(control)
 	if err != nil {
 		return nil, err
 	}
-	z.ctx = c
+	*p = c
 	return c, nil
 }
 
@@ -119,10 +131,12 @@ func (z *Ziti) context() (zitiConn, error) {
 // failures, when the context's session is the likelier fault. Nothing is closed and nothing is built.
 func (z *Ziti) Reset() {
 	z.mu.Lock()
-	c := z.ctx
+	cs := []zitiConn{z.ctx, z.ctl}
 	z.mu.Unlock()
-	if r, ok := c.(interface{ Relogin() error }); ok {
-		go func() { _ = r.Relogin() }()
+	for _, c := range cs {
+		if r, ok := c.(interface{ Relogin() error }); ok {
+			go func() { _ = r.Relogin() }()
+		}
 	}
 }
 
@@ -132,7 +146,7 @@ func (z *Ziti) Reset() {
 // itself, so there is no address on this machine for anything to reach and no
 // tunneler in the middle.
 func (z *Ziti) Listen() (net.Listener, error) {
-	ctx, err := z.context()
+	ctx, err := z.context(false)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +164,7 @@ func (z *Ziti) Dial(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("the ziti controller is not answering. not dialling again for %s",
 			wait.Round(time.Second))
 	}
-	zc, err := z.context()
+	zc, err := z.context(onControlLane(ctx))
 	if err != nil {
 		z.gate.failed()
 		return nil, err

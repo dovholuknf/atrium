@@ -226,7 +226,7 @@ func (d Direct) ServeEnrolment(conn net.Conn, br *bufio.Reader) (string, error) 
 // time.
 func (d Direct) Dial(ctx context.Context) (net.Conn, error) {
 	if d.Mutual() {
-		c, err := muxFor(d).open(ctx, d)
+		c, err := muxFor(d, onControlLane(ctx)).open(ctx, d)
 		if !errors.Is(err, errMuxRefused) {
 			return c, err
 		}

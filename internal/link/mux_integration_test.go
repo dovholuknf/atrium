@@ -17,6 +17,8 @@ import (
 
 type countingListener struct {
 	net.Listener
+	// rate, when set, is how many bytes a second each accepted connection carries each way.
+	rate     int
 	accepted atomic.Int32
 	mu       sync.Mutex
 	conns    []net.Conn
@@ -24,6 +26,9 @@ type countingListener struct {
 
 func (c *countingListener) Accept() (net.Conn, error) {
 	conn, err := c.Listener.Accept()
+	if err == nil && c.rate > 0 {
+		conn = &throttled{Conn: conn, rate: c.rate}
+	}
 	if err == nil {
 		c.accepted.Add(1)
 		c.mu.Lock()
@@ -56,6 +61,12 @@ type muxRig struct {
 // as a hub from before it does. dial, when set, is the room's dialer instead of the room's Direct.
 func newMuxRig(t *testing.T, old bool, dial func(Direct) Dialer) *muxRig {
 	t.Helper()
+	return newMuxRigAt(t, old, dial, 0, nil)
+}
+
+// newMuxRigAt is newMuxRig over connections that carry rate bytes a second each way, with handler as the room's.
+func newMuxRigAt(t *testing.T, old bool, dial func(Direct) Dialer, rate int, handler http.Handler) *muxRig {
+	t.Helper()
 	hk := hubKeys(t)
 	cfg, err := Direct{Keys: hk}.ServerTLS()
 	if err != nil {
@@ -65,7 +76,7 @@ func newMuxRig(t *testing.T, old bool, dial func(Direct) Dialer) *muxRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &muxRig{tcp: &countingListener{Listener: raw}}
+	r := &muxRig{tcp: &countingListener{Listener: raw, rate: rate}}
 	var ln net.Listener = tls.NewListener(r.tcp, cfg)
 	if !old {
 		r.mux = newMuxListener(ln)
@@ -92,17 +103,18 @@ func newMuxRig(t *testing.T, old bool, dial func(Direct) Dialer) *muxRig {
 	ctx, stop := context.WithCancel(context.Background())
 	go func() { _ = r.hub.Serve(ctx, ln) }()
 	r.room = Direct{Addr: raw.Addr().String(), Keys: rk}
+	if handler == nil {
+		handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	}
 	var d Dialer = r.room
 	if dial != nil {
 		d = dial(r.room)
 	}
 	room := &Room{
-		Name: "not-what-the-certificate-says",
-		Dial: d,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("ok"))
-		}),
-		T: Timings{Beat: 200 * time.Millisecond, Warm: 2, Backoff: 50 * time.Millisecond},
+		Name:    "not-what-the-certificate-says",
+		Dial:    d,
+		Handler: handler,
+		T:       Timings{Beat: 200 * time.Millisecond, Warm: 2, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool { return r.hub.Has("testroom") })
@@ -141,14 +153,14 @@ func TestADirectRoomRidesOneConnectionNamedByItsCertificate(t *testing.T) {
 		}
 		_ = c.Close()
 	}
-	if n := r.tcp.accepted.Load(); n != 1 {
-		t.Fatalf("the hub accepted %d TCP connections from one room, want 1", n)
+	if n := r.tcp.accepted.Load(); n != 2 {
+		t.Fatalf("the hub accepted %d TCP connections from one room, want 2: control and the rest", n)
 	}
-	if n := r.mux.Sessions(); n != 1 {
-		t.Fatalf("the hub holds %d sessions, want 1", n)
+	if n := r.mux.Sessions(); n != 2 {
+		t.Fatalf("the hub holds %d sessions, want 2", n)
 	}
-	if n := muxFor(r.room).Opened(); n != 1 {
-		t.Fatalf("the room opened %d sessions, want 1", n)
+	if d, c := muxFor(r.room, false).Opened(), muxFor(r.room, true).Opened(); d != 1 || c != 1 {
+		t.Fatalf("the room opened %d data and %d control sessions, want 1 and 1", d, c)
 	}
 }
 
@@ -158,7 +170,7 @@ func TestARoomOnAHubWithoutTheMuxDialsAConnectionEach(t *testing.T) {
 	if n := r.tcp.accepted.Load(); n < 3 {
 		t.Fatalf("the old hub accepted %d connections, want one per dial", n)
 	}
-	if muxFor(r.room).Opened() != 0 || !muxFor(r.room).refusedRecently() {
+	if muxFor(r.room, false).Opened() != 0 || !muxFor(r.room, false).refusedRecently() {
 		t.Fatal("the room did not fall back after the old hub refused the mux")
 	}
 }

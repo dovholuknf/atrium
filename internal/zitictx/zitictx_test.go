@@ -101,3 +101,28 @@ func TestCloseAllClosesAndFreesTheKey(t *testing.T) {
 		t.Fatalf("live %d closed %d", Live(), (*built)[0].closed.Load())
 	}
 }
+
+func TestALaneIsOneMoreContextAndReloginAndCloseReachIt(t *testing.T) {
+	built := fakeSDK(t)
+	for i := 0; i < 5; i++ {
+		if _, err := SharedFile("test", "a.json"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := SharedFileLane("test", "a.json", "control"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(*built) != 2 || Live() != 2 {
+		t.Fatalf("built %d, live %d, want 2 and 2", len(*built), Live())
+	}
+	if err := Relogin("a.json"); err != nil {
+		t.Fatal(err)
+	}
+	if (*built)[0].reauth.Load() != 1 || (*built)[1].reauth.Load() != 1 {
+		t.Fatal("relogin did not reach both lanes")
+	}
+	Close("a.json")
+	if Live() != 0 {
+		t.Fatalf("live %d after Close, want 0", Live())
+	}
+}

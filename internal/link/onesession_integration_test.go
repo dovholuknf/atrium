@@ -23,7 +23,8 @@ func TestEveryTransportHoldsOneSessionAcrossDialsClosesAndReconnects(t *testing.
 			if k > 0 {
 				r.tcp.cut()
 				waitFor(t, 10*time.Second, func() bool {
-					return muxFor(r.room).Opened() == k+1 && r.hub.Has("testroom")
+					return muxFor(r.room, false).Opened() == k+1 && muxFor(r.room, true).Opened() == k+1 &&
+						r.hub.Has("testroom")
 				})
 			}
 			for i := 0; i < flatDials; i++ {
@@ -35,12 +36,14 @@ func TestEveryTransportHoldsOneSessionAcrossDialsClosesAndReconnects(t *testing.
 			}
 			r.get(t, 10)
 		}
-		waitFor(t, 5*time.Second, func() bool { return r.mux.Sessions() == 1 })
-		if n, want := r.tcp.accepted.Load(), int32(1+flatReconnects); n != want {
+		waitFor(t, 5*time.Second, func() bool { return r.mux.Sessions() == 2 })
+		if n, want := r.tcp.accepted.Load(), int32(2*(1+flatReconnects)); n != want {
 			t.Fatalf("the hub accepted %d TCP connections over %d reconnects, want %d", n, flatReconnects, want)
 		}
-		if n := muxFor(r.room).Opened(); n != 1+flatReconnects {
-			t.Fatalf("the room opened %d sessions, want %d", n, 1+flatReconnects)
+		for _, control := range []bool{false, true} {
+			if n := muxFor(r.room, control).Opened(); n != 1+flatReconnects {
+				t.Fatalf("the room opened %d sessions on lane control=%v, want %d", n, control, 1+flatReconnects)
+			}
 		}
 	})
 
@@ -78,15 +81,19 @@ func flatOverlay(t *testing.T, reg *zitiReg, mk func() Dialer) {
 				_ = c.Close()
 			}
 			if i%50 == 0 {
+				if c, err := l.Dial(controlLane(context.Background())); err == nil {
+					_ = c.Close()
+				}
 				l.Reset()
 			}
 		}
 		l.Close()
 	}
-	if reg.built.Load() != 1 || zitictx.Live() != 1 || reg.closed.Load() != 0 {
-		t.Fatalf("built %d, live %d, closed %d, want 1, 1 and 0", reg.built.Load(), zitictx.Live(), reg.closed.Load())
+	if reg.built.Load() != 2 || zitictx.Live() != 2 || reg.closed.Load() != 0 {
+		t.Fatalf("built %d, live %d, closed %d, want 2 (data and control), 2 and 0", reg.built.Load(), zitictx.Live(),
+			reg.closed.Load())
 	}
-	if n, want := reg.dialed.Load(), int32((1+flatReconnects)*flatDials); n != want {
+	if n, want := reg.dialed.Load(), int32((1+flatReconnects)*(flatDials+flatDials/50)); n != want {
 		t.Fatalf("dialed %d circuits, want %d", n, want)
 	}
 }
