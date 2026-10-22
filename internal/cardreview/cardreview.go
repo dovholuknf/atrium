@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -82,6 +83,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	nowindow.Hide(cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
