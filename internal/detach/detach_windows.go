@@ -40,6 +40,9 @@ func Start(exe string, args []string, log string) (*os.Process, error) {
 		}
 		return cmd.Process, nil
 	}
+	if _, err := exec.LookPath(exe); err != nil {
+		return nil, err
+	}
 	tried := false
 	if in, _ := selfInJob(); in {
 		tried = true
