@@ -161,3 +161,11 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39842064645 | phoneShare | ADD | yes | 0 |
 | 2026-10-22 | 39842064645 | phoneTap | ADD | no | 0 |
 | 2026-10-22 | 39842064645 | phoneView | ADD | no | 0 |
+| 2026-10-22 | 39843505547 | heldLine | ADD | yes | 1 |
+| 2026-10-22 | 39843505547 | phoneFocus | ADD | yes | 0 |
+| 2026-10-22 | 39843505547 | phoneFollow | ADD | yes | 0 |
+| 2026-10-22 | 39843505547 | phoneKeyboard | ADD | yes | 0 |
+| 2026-10-22 | 39843505547 | phonePan | ADD | yes | 0 |
+| 2026-10-22 | 39843505547 | phoneShare | ADD | yes | 0 |
+| 2026-10-22 | 39843505547 | phoneTap | ADD | yes | 0 |
+| 2026-10-22 | 39843505547 | phoneView | ADD | yes | 0 |
