@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/zitictx"
+	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	"github.com/openziti/zrok/v2/rest_client_zrok/metadata"
@@ -34,9 +36,12 @@ import (
 //	hub   creates the share and LISTENS on it
 //	room  holds the token and DIALS it
 //
-// `zroksdk.NewListener` and `zroksdk.NewDialer` hand back a `net.Listener` and
-// a `net.Conn`, which is the whole interface this package asks a transport for.
-// That is why this file is short.
+// A private share is a ziti service named by its token, so both sides use the
+// process's ONE ziti context for the zrok environment's identity
+// (internal/zitictx) and listen or dial the token on it. NOT `zroksdk.NewDialer`:
+// it builds a context per call and never closes it, and each context keeps a
+// TLS connection to every edge router. A room redialling on that once held
+// sixteen thousand sockets. See docs/fabric/one-session-per-room.md.
 //
 // ── what it costs to set up ──────────────────────────────
 //
@@ -65,15 +70,23 @@ type Zrok struct {
 	// API, when set, stands in for the SDK.
 	API ZrokAPI
 
-	once sync.Once
-	root env_core.Root
-	err  error
+	once     sync.Once
+	root     env_core.Root
+	identity string
+	err      error
 	// gate backs dials off after a failure. See dialgate.go.
 	gate dialGate
 	mu   sync.Mutex
 }
 
-type sdkZrok struct{ root env_core.Root }
+type sdkZrok struct {
+	root env_core.Root
+	// identity is the environment's ziti identity file, the key of its one shared context.
+	identity string
+}
+
+// zrokConnectTimeout is what zroksdk.NewDialer and NewListener pass.
+const zrokConnectTimeout = 30 * time.Second
 
 func (s sdkZrok) Exists(token string) (bool, error) {
 	_, err := zroksdk.GetShareDetail(s.root, token)
@@ -111,11 +124,33 @@ func (s sdkZrok) Delete(token string) error {
 	return zroksdk.DeleteShare(s.root, &zroksdk.Share{Token: token})
 }
 
-func (s sdkZrok) Listen(token string) (net.Listener, error) {
-	return zroksdk.NewListener(token, s.root)
+func (s sdkZrok) context() (ziti.Context, error) {
+	c, err := zitictx.SharedFile("zrok", s.identity)
+	if err != nil {
+		return nil, fmt.Errorf("could not use this zrok environment's identity: %w", err)
+	}
+	return c, nil
 }
 
-func (s sdkZrok) Dial(token string) (net.Conn, error) { return zroksdk.NewDialer(token, s.root) }
+func (s sdkZrok) Listen(token string) (net.Listener, error) {
+	c, err := s.context()
+	if err != nil {
+		return nil, err
+	}
+	return c.ListenWithOptions(token, &ziti.ListenOptions{
+		ConnectTimeout: zrokConnectTimeout, WaitForNEstablishedListeners: 1})
+}
+
+func (s sdkZrok) Dial(token string) (net.Conn, error) {
+	c, err := s.context()
+	if err != nil {
+		return nil, err
+	}
+	return c.DialWithOptions(token, &ziti.DialOptions{ConnectTimeout: zrokConnectTimeout})
+}
+
+// Reset logs the shared context in again. Nothing is built.
+func (s sdkZrok) Reset() { _ = zitictx.Relogin(s.identity) }
 
 func (z *Zrok) api() (ZrokAPI, error) {
 	if z.API != nil {
@@ -125,7 +160,7 @@ func (z *Zrok) api() (ZrokAPI, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sdkZrok{root}, nil
+	return sdkZrok{root: root, identity: z.identity}, nil
 }
 
 // Describe is what to log. THE TOKEN IS NOT PRINTED: on a private share it is
@@ -145,7 +180,12 @@ func (z *Zrok) environmentRoot() (env_core.Root, error) {
 				"run `zrok enable <your account token>` first")
 			return
 		}
-		z.root = root
+		id, err := root.ZitiIdentityNamed(root.EnvironmentIdentityName())
+		if err != nil {
+			z.err = fmt.Errorf("could not find this zrok environment's identity: %w", err)
+			return
+		}
+		z.root, z.identity = root, id
 	})
 	return z.root, z.err
 }
@@ -221,7 +261,7 @@ func (z *Zrok) Retire(token string) error {
 	return api.Delete(token)
 }
 
-// Dial opens one connection, which is the room's side.
+// Dial opens one connection, which is the room's side: a circuit on the process's one context.
 func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 	if wait, ok := z.gate.allow(); !ok {
 		return nil, fmt.Errorf("the zrok controller is not answering. not dialling again for %s",
@@ -234,14 +274,46 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 	if strings.TrimSpace(z.Token) == "" {
 		return nil, errors.New("no share token. the join string carries it")
 	}
-	conn, err := api.Dial(z.Token)
-	if err != nil {
-		z.gate.failed()
-		return nil, fmt.Errorf("could not reach that private share. "+
-			"is the hub running, and has this account been granted access: %w", err)
+	// The SDK's Dial takes no context, so it runs beside one.
+	type res struct {
+		c   net.Conn
+		err error
 	}
-	z.gate.worked()
-	return conn, nil
+	ch := make(chan res, 1)
+	go func() {
+		c, err := api.Dial(z.Token)
+		ch <- res{c, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			z.gate.failed()
+			return nil, fmt.Errorf("could not reach that private share. "+
+				"is the hub running, and has this account been granted access: %w", r.err)
+		}
+		z.gate.worked()
+		return r.c, nil
+	case <-ctx.Done():
+		z.gate.failed()
+		go func() {
+			if r := <-ch; r.c != nil {
+				_ = r.c.Close()
+			}
+		}()
+		return nil, fmt.Errorf("the zrok dial did not finish: %w", ctx.Err())
+	}
+}
+
+// Reset logs the process's context for the zrok identity in again, beside any dial in flight, as Ziti.Reset does.
+// Nothing is closed and nothing is built.
+func (z *Zrok) Reset() {
+	api, err := z.api()
+	if err != nil {
+		return
+	}
+	if r, ok := api.(resetter); ok {
+		go r.Reset()
+	}
 }
 
 // Hammering says dials to zrok are failing fast. Shown on the room's row.
