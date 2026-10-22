@@ -553,7 +553,11 @@ async function unifiedCardSection(browser, base) {
     // 111 finished: capped, with a more row, and not wider than a quiet column.
     mock.tasksMode = "unifiedMany";
     await p.evaluate(async () => { await loadCards(); renderBoard(); });
-    await p.waitForSelector('#board [data-column="done"] .card', { timeout: slow(10000) });
+    await p.waitForFunction(() => {
+      const col = document.querySelector('#board [data-column="done"]');
+      const n = col && col.querySelector(".col-head .n");
+      return n && n.textContent === "111" && col.querySelectorAll(".card").length > 5 && col.querySelector(".more");
+    }, null, { timeout: slow(10000) });
     const m = await p.evaluate(() => {
       const col = document.querySelector('#board [data-column="done"]');
       return { n: col.querySelectorAll(".card").length, more: (col.querySelector(".more") || {}).textContent || "",
