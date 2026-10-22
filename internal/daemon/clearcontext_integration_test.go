@@ -3,8 +3,11 @@
 package daemon
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -79,5 +82,67 @@ func TestClearContextRefusesWhileACycleIsUnderWay(t *testing.T) {
 	}
 	if _, code, err := d.ClearContext(task, string(handoffBody)); err == nil || code != http.StatusConflict {
 		t.Fatalf("a second call got %d, %v", code, err)
+	}
+}
+
+func postHandoff(d *Daemon, id, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+id+"/new-context", strings.NewReader(body))
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	d.handleNewContext(rec, req)
+	return rec
+}
+
+func TestNewContextEndpointWithAHandoffBodyQueuesTheClear(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := ncCard(t, d)
+
+	if rec := postHandoff(d, task.ID, `{"handoff":"  "}`); rec.Code != http.StatusConflict {
+		t.Fatalf("an empty handoff answered %d: %s", rec.Code, rec.Body)
+	}
+	body, _ := json.Marshal(map[string]string{"handoff": string(handoffBody)})
+	rec := postHandoff(d, task.ID, string(body))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || out["queued"] != true || out["path"] != d.handoffPath(task) {
+		t.Fatalf("answered %v, %v", out, err)
+	}
+	if got, err := os.ReadFile(d.handoffPath(task)); err != nil || string(got) != string(handoffBody) {
+		t.Fatalf("the handoff file holds %q, %v", got, err)
+	}
+	ncTurnEnds(d, task.ID)
+	until(t, "/clear", func() bool {
+		return strings.Contains(f.written(), "/clear")
+	})
+}
+
+func TestAResidentCardCyclesByToolAndStaysOpen(t *testing.T) {
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := ncCard(t, d)
+	if err := d.st.SetTags(task.ID, []string{ResidentTag}); err != nil {
+		t.Fatal(err)
+	}
+	rec := postHandoff(d, task.ID, `{"handoff":`+strconv.Quote(string(handoffBody))+`}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body)
+	}
+	ncTurnEnds(d, task.ID)
+	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
+	d.wake.sawSession(task.ID, time.Now())
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), "cleared at your own request") })
+	until(t, "the chip to go", func() bool { return d.newContextFor(task.ID) == nil })
+	got, err := d.st.Get(task.ID)
+	if err != nil || got == nil {
+		t.Fatalf("the card is gone: %v", err)
+	}
+	if got.Status == store.StatusDead || got.Status == store.StatusDone {
+		t.Fatalf("the card was closed: %s", got.Status)
+	}
+	if d.sup.get(task.ID) == nil {
+		t.Fatal("the card's terminal was closed")
 	}
 }
