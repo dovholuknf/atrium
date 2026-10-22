@@ -127,6 +127,12 @@ const fdoc = require("./ci-rollup").failingDoc({ run: "500", apiJobs: [{ id: 1, 
 if (fdoc.jobs[0].tests.join() !== "TestPlain,TestSteady,TestWobble") fail("failing-tests lists each test once: " + fdoc.jobs[0].tests);
 if (fdoc.jobs[0].passes.TestWobble.failed !== 2 || fdoc.jobs[0].passes.TestWobble.of !== 5) fail("failing-tests carries the pass count: " + JSON.stringify(fdoc.jobs[0].passes));
 
+const unlistedLog = ["x", "FAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (1). These fail the run. Fix the wait, or list it with its reason:", "  mResume", "    first try: mResume: the unit threw: Timeout 5000ms exceeded.", "      Call log:", "", "195 of 196 units passed, 1 passed only on retry (failing the run).", ""].join("\n");
+job("600", "ci-windows-latest-board-1-attempt-1", [["board", "mResume", "mResume: the unit threw: Timeout 5000ms exceeded."]], null, unlistedLog);
+const cur600 = require("./ci-rollup").readRun(path.join(tmp, "runs", "600"));
+const doc600 = require("./ci-rollup").failingDoc({ run: "600", apiJobs: [{ id: 5, name: "check (ubuntu-latest, go-all)", conclusion: "success" }], current: cur600 });
+if (doc600.jobs.length !== 1 || doc600.jobs[0].name !== "check (windows-latest, board-1)" || doc600.jobs[0].tests.join() !== "mResume") fail("a failure the job list missed is recorded from the artifact: " + JSON.stringify(doc600));
+
 fs.rmSync(tmp, { recursive: true, force: true });
 if (bad) process.exit(1);
 console.log("ok");

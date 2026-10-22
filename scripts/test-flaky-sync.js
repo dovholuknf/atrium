@@ -84,6 +84,11 @@ eq(rows3[1].tests, [NO_TEST], "a failed job with no test named is recorded as su
 eq(rows3[1].sha, "123456789", "the job list gives the sha");
 eq(rows3.length, 2, "a passing job gets no row");
 
+const p5 = world([row(500, ["TestKept"])]);
+sync("501", { ...p5, deps: deps({ download: () => ({ run: "501", date: "d", sha: "s", jobs: [] }), gh: () => JSON.stringify({ id: 7, name: "check (windows-latest, board-1)", conclusion: "failure", started_at: "2026-10-29T00:00:00Z", head_sha: "123456789abc", run_attempt: 1 }), fallback: () => ({ tests: ["mResume"], errors: {}, retried: [] }) }) });
+const rows5 = fs.readFileSync(p5.store, "utf8").split(String.fromCharCode(10)).filter(Boolean).map((l) => JSON.parse(l));
+eq([rows5.length, rows5[1].tests], [2, ["mResume"]], "an artifact with no jobs does not hide a failed job");
+
 const p4 = world([row(400, ["TestKept"])]);
 const before = fs.readFileSync(p4.suite, "utf8");
 sync("401", { ...p4, dryRun: true, deps: deps({ download: () => ({ run: "401", date: "d", sha: "s", jobs: [{ id: 1, name: "n", tests: ["TestNew"] }] }) }) });
@@ -107,6 +112,7 @@ const doc = failingDoc({
 eq(doc, { run: "5", date: "2026-10-30T00:00:00Z", sha: "012345678", jobs: [
   { id: 1, name: "check (ubuntu-latest, board-1)", tests: ["land"], retried: ["core2"], errors: { land: "toast missing" } },
   { id: 2, name: "check (ubuntu-latest, board-2)", tests: [], retried: [], errors: {} },
+  { id: 0, name: "check (macos-latest, board-1)", tests: ["other"], retried: [], errors: { other: "y" } },
 ] }, "the rollup artifact names each failed job with its tests, retried and first errors");
 
 fs.rmSync(tmp, { recursive: true, force: true });

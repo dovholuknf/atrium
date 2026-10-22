@@ -182,13 +182,14 @@ function fallbackTests(deps, job) {
 
 function collect(runId, deps) {
   let doc = deps.download(runId);
-  if (!doc) {
+  const stub = doc && !(doc.jobs || []).length ? doc : null;
+  if (stub || !doc) {
     const text = deps.gh(['api', '--paginate', `repos/${REPO}/actions/runs/${runId}/jobs?per_page=100&filter=latest`, '--jq', '.jobs[] | {id,name,conclusion,started_at,head_sha,run_attempt}']);
     const jobs = text.split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
     doc = {
       run: String(runId),
-      date: jobs.map((j) => j.started_at).filter(Boolean).sort()[0] || '',
-      sha: String((jobs[0] || {}).head_sha || '').slice(0, 9),
+      date: jobs.map((j) => j.started_at).filter(Boolean).sort()[0] || (stub && stub.date) || '',
+      sha: String((jobs[0] || {}).head_sha || '').slice(0, 9) || (stub && stub.sha) || '',
       jobs: jobs.filter((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out').map((j) => ({ id: j.id, name: j.name, run_attempt: j.run_attempt, tests: [], retried: [], errors: {} })),
     };
   }

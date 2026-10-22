@@ -144,8 +144,15 @@ const jobKey = (name) => (/^check \((\w+)-latest, (.+)\)$/.exec(name) || []).sli
 
 function failingDoc({ run, runInfo = {}, apiJobs = [], current }) {
   const mine = (j) => (f) => `${f.os}/${f.job}` === jobKey(j.name);
-  const jobs = apiJobs
-    .filter((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out')
+  const failed = apiJobs.filter((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out');
+  const listed = new Set(failed.map((j) => jobKey(j.name)));
+  for (const f of current.failures) {
+    const k = `${f.os}/${f.job}`;
+    if (listed.has(k) || f.unit.startsWith('step: ') || f.unit.startsWith('(')) continue;
+    listed.add(k);
+    failed.push({ id: 0, name: `check (${f.os}-latest, ${f.job})` });
+  }
+  const jobs = failed
     .map((j) => {
       const fails = current.failures.filter(mine(j)).filter((f) => !f.unit.startsWith('step: ') && !f.unit.startsWith('('));
       const errors = {};
