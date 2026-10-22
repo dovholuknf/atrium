@@ -5711,6 +5711,8 @@ async function termFitHeightSection(browser, base) {
           const hint = document.querySelector(".term-help").getBoundingClientRect();
           const screen = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
           const cell = term._core._renderService.dimensions.css.cell.height;
+          const pane = term.element.parentElement;
+          if (term._atriumBox !== pane.clientWidth + "x" + pane.clientHeight) return false;
           return screen.top + term.rows * cell <= hint.top + 0.5;
         }, null, { timeout: slow(3000) });
       } catch (e) {
@@ -5732,7 +5734,6 @@ async function termFitHeightSection(browser, base) {
     if (!(rows1 < rows0)) fail("a taller hint bar left the grid at " + rows1 + " rows, was " + rows0);
 
     await p.evaluate(() => { document.querySelector(".term-help").style.minHeight = ""; });
-    await p.waitForFunction(n => term.rows >= n, rows0, { timeout: slow(3000) }).catch(() => {});
     await fits("the hint bar shrank");
     const rows2 = (await gap()).rows;
     if (rows2 !== rows0) fail("a hint bar back to its height left the grid at " + rows2 + " rows, was " + rows0);
