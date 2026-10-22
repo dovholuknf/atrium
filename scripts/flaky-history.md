@@ -141,3 +141,5 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39741130323 | cardViewBarInline | REMOVE | yes | 15 |
 | 2026-10-22 | 39767999312 | mCompose | REMOVE | yes | 15 |
 | 2026-10-22 | 39773587014 | TestAStreamReopenedRightAfterACloseStillStreams | REMOVE | yes | 15 |
+| 2026-10-22 | 39777843263 | atriumDown | REMOVE | yes | 15 |
+| 2026-10-22 | 39777843263 | unifiedCard | REMOVE | yes | 15 |
