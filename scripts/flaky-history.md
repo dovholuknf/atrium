@@ -152,3 +152,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39814914601 | growlOnIt | REMOVE | yes | 15 |
 | 2026-10-22 | 39814909117 | TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog | ADD | no | 1 |
 | 2026-10-22 | 39816184242 | growlPopout | ADD | yes | 0 |
+| 2026-10-22 | 39836241253 | termFitHeight | ADD | yes | 0 |
