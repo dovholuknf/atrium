@@ -6256,6 +6256,7 @@ async function u016Section(browser, base) {
 
       // long presses (u-016b)
       {
+        if (phone) await p.waitForFunction(() => matchMedia("(pointer: coarse)").matches, null, { timeout: slow(5000) });
         const ctxm = await p.evaluate(() => {
           let pasted = 0;
           const real = window.pasteIntoTerm;
