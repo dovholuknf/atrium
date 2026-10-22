@@ -1,0 +1,1 @@
+The ubuntu CI jobs now run in a prebuilt image with Go, node and the playwright browser baked in, so a slow apt mirror no longer holds every ubuntu check, and `flaky-board` is back on ubuntu (q-ubuntu-ci-image).

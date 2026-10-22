@@ -443,7 +443,13 @@ if { want board || want board-visual || want flaky-board; } && command -v npm >/
   fi
   deps=""
   if [ "$os" = linux ] && [ -n "${CI:-}" ]; then deps="--with-deps"; fi
-  check "playwright browser" npx --no-install playwright install $deps chromium
+  have_browser=1
+  while read -r dir; do [ -d "$dir" ] || have_browser=0; done < <(npx --no-install playwright install --dry-run chromium 2>/dev/null | sed -n 's/^ *Install location: *//p')
+  if [ "$have_browser" = 1 ]; then
+    echo "ok: playwright browser already installed"
+  else
+    check "playwright browser" npx --no-install playwright install $deps chromium
+  fi
 fi
 
 if step flaky-go "the flaky go tests"; then

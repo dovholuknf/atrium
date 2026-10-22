@@ -73,6 +73,7 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.flaky_ubuntu) }}
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
+    container: ghcr.io/dovholuknf/atrium-ci:1
     steps:
       - uses: actions/checkout@v4
 
@@ -167,6 +168,7 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_ubuntu) }}
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
+    container: ghcr.io/dovholuknf/atrium-ci:1
     steps:
       - uses: actions/checkout@v4
 
