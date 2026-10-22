@@ -131,3 +131,6 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39722221154 | TestADeniedAncestorStillRefusesAPathOutsideTheRoot | REMOVE | yes | 15 |
 | 2026-10-22 | 39724665562 | controlsCompact | REMOVE | yes | 15 |
 | 2026-10-22 | 39724665562 | trayToast | REMOVE | yes | 15 |
+| 2026-10-22 | 39729860399 | TestADroppedCallerLosesItsStreamsAndOthersKeepThem | ADD | no | 0 |
+| 2026-10-22 | 39729860399 | TestEveryExecStartIsHiddenOrListed | REMOVE | yes | 15 |
+| 2026-10-22 | 39729860399 | cacheChip | REMOVE | yes | 15 |

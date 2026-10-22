@@ -2,8 +2,6 @@
  "note": "Every known-flaky test, in one place. CI runs these first and alone (ci.sh --group flaky, a failure fails the job, a board unit gets one retry and a pass on it is marked PASSED ON RETRY, a go test gets none) and every other step skips them. kind is go (package is the import path under the module, name is the test function) board (name is the headless unit) or script (a check script run once, by its path). A test enters the first time it fails in CI and is not listed and leaves after 30 quiet runs: docs/troubleshooting-tests.md. test-board-sharded.js reads the board entries for its retry labels. scripts/check-flaky-suite.js fails when a name no longer exists.",
  "entries": [
   {"kind": "board", "name": "cardViewBarInline", "reason": "failed on ubuntu and macos board-1 in run 39613843297, retry failed too, passed on windows: the controls are not on the line at 1500 px. New unit from the view bar pick, not traced."},
- {"kind": "go", "package": "internal/nowindow", "name": "TestEveryExecStartIsHiddenOrListed", "reason": "failed on every OS in run 39586804799 (spawn_guard_test.go:102): internal/daemon/launch.go:launchCore line 1460 starts a process not hidden and not in visibleOnPurpose. Deterministic after the orchestrator picks."},
-  {"kind": "board", "name": "cacheChip", "reason": "failed on all three OS board-1 in run 39700828350 and on retry: the tooltip lacks the raw why: undefined (snowflake pick)."},
   {"kind": "go", "package": "internal/daemon", "name": "TestRestartRunnerOnAMissingCardSaysSo", "reason": "failed on windows go-test-2 in run 39704005124: the daemon Run had not returned 30s after cancel (daemon_integration_test.go:98). Cause not traced."},
   {"kind": "board", "name": "mPictures", "reason": "failed on macos board-1 in run 39704976949: page.tap timed out at 5000 ms on #m-replies .md-img (test-board-headless.js:19063). Retry log shows it passing. Cause not traced."},
   {"kind": "board", "name": "mCompose", "reason": "failed in run 39715013378 job check (macos-latest, board-1): mCompose 412: gemini not joined: {\"id\":\"c1\",\"body\":{\"text\":\"line a\\nline b\",\"when\":\"immediate\"}}"},
@@ -11,6 +9,7 @@
   {"kind": "board", "name": "atriumDown", "reason": "failed in run 39721269229 job check (windows-latest, board-1): the board after a restart-time reload did not put the restart cover back."},
   {"kind": "board", "name": "unifiedCard", "reason": "failed in run 39721269229 job check (macos-latest, board-1): done draws 5 cards, want 6 to 12"},
   {"kind": "board", "name": "idleRate", "reason": "failed in run 39722221154 job check (ubuntu-latest, board-2): the board still had fetches out 5s after the room answered: 0 2 0"},
-  {"kind": "board", "name": "u016", "reason": "failed in run 39722221154 job check (macos-latest, board-1): u016 landscape: a long press on the grid was not swallowed, or pasted: {\"prevented\":true,\"pasted\":1}"}
+  {"kind": "board", "name": "u016", "reason": "failed in run 39722221154 job check (macos-latest, board-1): u016 landscape: a long press on the grid was not swallowed, or pasted: {\"prevented\":true,\"pasted\":1}"},
+  {"kind": "go", "package": "internal/link", "name": "TestADroppedCallerLosesItsStreamsAndOthersKeepThem", "reason": "failed in run 39729860399 job check (windows-latest, go-test-2): stream_integration_test.go:359: rename C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\TestADroppedCallerLosesItsStreamsAndOthersKeepThem3133496415\\003\\remote_access.json.4193639615 C:\\Users\\RUNNER~1\\AppData\\Loc"}
  ]
 }
