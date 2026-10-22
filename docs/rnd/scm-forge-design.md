@@ -159,7 +159,7 @@ turns `feature/x` into `feature-x`, so the directory is predictable.
 1. finds the provider and refuses with a sentence if worktrees are off.
 2. asks the hub's forge for the PR, so a missing or logged-out login on the hub answers its own sentence first.
 3. when the repo is not a checkout on this room, gets the code through the scm clone path. That path asks the hub to
-   hold the repository, clones the hub's copy, and keeps a guarded `origin` set to the forge's https URL. A private
+   hold the repository, clones the hub's copy, and keeps `origin` set to the forge's https URL. A private
    repo the hub cannot read fails with a sentence that names the hub's login.
 4. fetches the head the hub fetched into its store, from `refs/atrium/pr/<N>` there into `refs/atrium/pr/<N>` here,
    then runs `git worktree add` at the destination, creating the branch at the fetched head.

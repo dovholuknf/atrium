@@ -139,7 +139,7 @@ func TestGitCloneDeniedLeavesTheCloneAlone(t *testing.T) {
 }
 
 // A pasted link has no card to ask on, so the clone the operator made is adopted on the spot (u-005 decision 6): the
-// hub remote goes in, origin's push is guarded, the adoption is written into the clone, and nothing is asked.
+// hub remote goes in, the adoption is written into the clone, and nothing is asked.
 func TestPRWorktreeAdoptsAnOperatorsCloneWithoutAsking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: git subprocesses")
@@ -179,7 +179,7 @@ func TestPRWorktreeAdoptsAnOperatorsCloneWithoutAsking(t *testing.T) {
 	if got := git("config", "atrium.adopted"); got != "yes" {
 		t.Fatalf("atrium.adopted = %q", got)
 	}
-	if got := git("config", "remote.origin.pushurl"); got != gitsync.OriginPushURL {
+	if got := git("config", "remote.origin.pushurl"); got != "" {
 		t.Fatalf("origin pushurl = %q", got)
 	}
 	if perms, _ := d.st.PendingPermissions(); len(perms) != 0 {

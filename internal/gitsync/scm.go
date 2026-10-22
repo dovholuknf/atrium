@@ -13,7 +13,7 @@ import (
 )
 
 // Clones in the operator's scm folder: `<git.scm_root>/<host>/<owner>/<repo>`, made by
-// `atrium_git_clone {url}`. See docs/fabric/hub-forge-design.md section 5.2 and wall 2 of 5.3.
+// `atrium_git_clone {url}`. See docs/fabric/hub-forge-design.md section 5.2.
 //
 // WHAT IS NOT HERE. The `hub` remote's URL is the room's stable forwarder, which another item
 // builds. This file reaches it through SCM.HubURL, and hubremote.go holds the one function that
@@ -41,10 +41,6 @@ const SettingCredentialHelper = "git.credential_helper"
 // repository atrium has no credential for and a wrong name look the same from here, and git's
 // own words may carry a URL.
 const CloneFailed = "that repo doesn't exist, check it, and if it is private have the operator clone it. Atrium can't."
-
-// OriginPushURL is the push URL set on `origin` of a clone atrium made, so a push to the forge
-// fails on a scheme nothing serves, whatever a script does to avoid a hook.
-const OriginPushURL = "atrium-refused://origin-push"
 
 // Config keys atrium keeps in a clone's own .git/config.
 const (
@@ -125,8 +121,8 @@ type SCM struct {
 
 	// From, when set, is where a room attached to a hub clones from instead of the forge: the hub's copy of the
 	// repository, through a loopback to the link (HubLoopback). done closes it. The clone's origin is then set to the
-	// forge's https URL, so the push guard and the origin check read it as any other clone, and the room never
-	// fetched from the forge. See docs/rnd/scm-forge-design.md, Built.
+	// forge's https URL, so the origin check reads it as any other clone, and the room never fetched from the forge.
+	// See docs/rnd/scm-forge-design.md, Built.
 	From func(ctx context.Context, r Ref) (src string, done func(), err error)
 
 	// source is the URL git clones from. It is unexported, so only this package's tests set it:
@@ -302,8 +298,8 @@ func (c *SCM) Clone(ctx context.Context, rawURL string) (SCMResult, error) {
 			return SCMResult{}, errors.New(CloneFailed)
 		}
 	}
-	if err := c.guard(ctx, dest, true); err != nil {
-		return SCMResult{}, err
+	if _, err := g.Git(ctx, dest, "config", cfgMade, "made"); err != nil {
+		return SCMResult{}, errors.New("could not mark the clone: " + firstLine(err))
 	}
 	res := SCMResult{Path: filepath.ToSlash(dest), State: "cloned"}
 	c.hub(ctx, ref, dest, &res)
@@ -332,9 +328,8 @@ func (c *SCM) existing(ctx context.Context, ref Ref, dest string) (SCMResult, er
 			return SCMResult{}, errors.New("could not record the operator's yes in the clone: " + firstLine(err))
 		}
 	}
-	// Wall 2 goes on an operator's clone with the same yes, and on atrium's own as it was made.
-	if err := c.guard(ctx, dest, false); err != nil {
-		return SCMResult{}, err
+	if err := dropRetiredOriginPushURL(ctx, g, dest); err != nil {
+		return SCMResult{}, errors.New("could not remove atrium's old guard from origin: " + firstLine(err))
 	}
 	c.hub(ctx, ref, dest, &res)
 	return res, nil
@@ -346,19 +341,4 @@ func (c *SCM) cfg(ctx context.Context, dir, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(out)
-}
-
-// guard is wall 2: origin can be fetched from and cannot be pushed to. `made` also marks the
-// clone as atrium's.
-func (c *SCM) guard(ctx context.Context, dir string, made bool) error {
-	g := c.runner()
-	if made {
-		if _, err := g.Git(ctx, dir, "config", cfgMade, "made"); err != nil {
-			return errors.New("could not mark the clone: " + firstLine(err))
-		}
-	}
-	if _, err := g.Git(ctx, dir, "config", "remote.origin.pushurl", OriginPushURL); err != nil {
-		return errors.New("could not set the push guard on origin: " + firstLine(err))
-	}
-	return nil
 }

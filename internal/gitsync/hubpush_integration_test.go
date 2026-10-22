@@ -118,7 +118,7 @@ func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T)
 		t.Fatalf("a hub that points elsewhere was not refused: %v\n%s", err, out)
 	}
 
-	note := ensureRemotes(bg, Default, clone, f.repoURL(hubRepo), false)
+	note := ensureRemotes(bg, Default, clone, f.repoURL(hubRepo))
 	if !strings.Contains(note, "was left alone, so atrium's is `atrium-hub`") {
 		t.Fatalf("the report: %q", note)
 	}
@@ -137,7 +137,7 @@ func TestAHubRemotePointingElsewhereIsLeftAloneAndAtriumHubIsAdded(t *testing.T)
 	}
 }
 
-func TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones(t *testing.T) {
+func TestEnsureRemotesAddsHubFollowsAPortChangeAndLeavesOriginAlone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
 	}
@@ -154,46 +154,50 @@ func TestEnsureRemotesAddsHubFollowsAPortChangeAndGuardsOriginOnAtriumMadeClones
 	u1 := "http://127.0.0.1:7777/git/hub/github/o/r.git"
 	u2 := "http://127.0.0.1:50001/git/hub/github/o/r.git"
 
-	made := mk()
-	if note := ensureRemotes(bg, Default, made, u1, true); note != "" {
-		t.Fatalf("a made clone had something to say: %q", note)
+	c := mk()
+	if note := ensureRemotes(bg, Default, c, u1); note != "" {
+		t.Fatalf("a clone had something to say: %q", note)
 	}
-	if got := git(t, made, "remote", "get-url", "hub"); got != u1 {
+	if got := git(t, c, "remote", "get-url", "hub"); got != u1 {
 		t.Fatalf("hub is %s", got)
 	}
-	if got := git(t, made, "config", "remote.origin.pushurl"); got != OriginPushURL {
-		t.Fatalf("origin pushurl is %q", got)
-	}
-	// A script on the clone pushing to origin fails on the pushurl, and the forge is untouched.
-	out, err := Default.Git(bg, made, "push", "origin", "main")
-	if err == nil {
-		t.Fatalf("git push origin worked on an atrium-made clone:\n%s", out)
-	}
-	if e := err.(*Error); !strings.Contains(e.Stderr, "atrium-refused") {
-		t.Fatalf("failed, but not on the pushurl: %s", e.Stderr)
-	}
-	if got := git(t, remote, "for-each-ref"); got != "" {
-		t.Fatalf("the forge got a push:\n%s", got)
+	if out, err := Default.Git(bg, c, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatalf("origin was given a pushurl: %s", out)
 	}
 	// The agent port moved: atrium's own remote follows, and it is not "elsewhere".
-	if note := ensureRemotes(bg, Default, made, u2, true); note != "" {
+	if note := ensureRemotes(bg, Default, c, u2); note != "" {
 		t.Fatalf("a port change was reported: %q", note)
 	}
-	if got := git(t, made, "remote", "get-url", "hub"); got != u2 {
+	if got := git(t, c, "remote", "get-url", "hub"); got != u2 {
 		t.Fatalf("hub is %s after the port moved", got)
 	}
+}
 
-	// An operator's clone: hub added, origin NOT touched, and the report says why.
-	theirs := mk()
-	note := ensureRemotes(bg, Default, theirs, u1, false)
-	if !strings.Contains(note, "origin is not guarded") || !strings.Contains(note, "operator's yes") {
-		t.Fatalf("the report: %q", note)
+func TestEnsureRemotesDropsTheRetiredOriginGuardAndKeepsTheOperatorsPushURL(t *testing.T) {
+	t.Parallel()
+	u := "http://127.0.0.1:7777/git/hub/github/o/r.git"
+	old := t.TempDir()
+	git(t, old, "init", "-q", "-b", "main")
+	git(t, old, "remote", "add", "origin", t.TempDir())
+	git(t, old, "config", cfgMade, "made")
+	git(t, old, "config", "remote.origin.pushurl", retiredOriginPushURL)
+	if note := ensureRemotes(bg, Default, old, u); note != "" {
+		t.Fatalf("the clone had something to say: %q", note)
 	}
-	if out, err := Default.Git(bg, theirs, "config", "--get", "remote.origin.pushurl"); err == nil {
-		t.Fatalf("an existing clone's origin was changed: %s", out)
+	if out, err := Default.Git(bg, old, "config", "--get-all", "remote.origin.pushurl"); err == nil {
+		t.Fatalf("the retired guard is still there: %s", out)
 	}
-	if got := git(t, theirs, "remote", "get-url", "hub"); got != u1 {
-		t.Fatalf("hub is %s", got)
+
+	mine := t.TempDir()
+	git(t, mine, "init", "-q", "-b", "main")
+	git(t, mine, "remote", "add", "origin", t.TempDir())
+	git(t, mine, "config", "remote.origin.pushurl", "git@github.com:me/r.git")
+	git(t, mine, "config", "--add", "remote.origin.pushurl", "atrium-refused://origin-push-not-quite")
+	if note := ensureRemotes(bg, Default, mine, u); note != "" {
+		t.Fatalf("the clone had something to say: %q", note)
+	}
+	if got := git(t, mine, "config", "--get-all", "remote.origin.pushurl"); got != "git@github.com:me/r.git\natrium-refused://origin-push-not-quite" {
+		t.Fatalf("the operator's pushurls are %q", got)
 	}
 }
 
@@ -203,23 +207,15 @@ func TestEnsureRemotesLeavesARoomGitCloneAloneAndSilent(t *testing.T) {
 	c := t.TempDir()
 	git(t, c, "init", "-q", "-b", "main")
 	git(t, c, "config", cfgMade, "made")
-	if note := ensureRemotes(bg, Default, c, "http://127.0.0.1:7777/git/hub/github/o/r.git", false); note != "" {
+	if note := ensureRemotes(bg, Default, c, "http://127.0.0.1:7777/git/hub/github/o/r.git"); note != "" {
 		t.Fatalf("a room-git clone had something to say: %q", note)
 	}
 	if out, err := Default.Git(bg, c, "config", "--get", "remote.origin.pushurl"); err == nil {
 		t.Fatalf("a pushurl was made for an origin that is not there: %s", out)
 	}
-	// With an origin and the marker, it is guarded like any clone atrium made.
-	git(t, c, "remote", "add", "origin", t.TempDir())
-	if note := ensureRemotes(bg, Default, c, "http://127.0.0.1:7777/git/hub/github/o/r.git", false); note != "" {
-		t.Fatalf("a marked clone with an origin had something to say: %q", note)
-	}
-	if got := git(t, c, "config", "remote.origin.pushurl"); got != OriginPushURL {
-		t.Fatalf("origin pushurl is %q", got)
-	}
 }
 
-func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
+func TestSyncAddsTheHubRemoteAndDropsTheRetiredOriginGuard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
 	}
@@ -235,13 +231,17 @@ func TestSyncAddsTheHubRemoteAndGuardsTheOriginOfACloneItMade(t *testing.T) {
 	if got := git(t, clone, "remote", "get-url", "hub"); got != "http://127.0.0.1:7777/git/hub/github/o/r.git" {
 		t.Fatalf("hub is %s", got)
 	}
-	if got := git(t, clone, "config", "remote.origin.pushurl"); got != OriginPushURL {
-		t.Fatalf("origin pushurl %q", got)
+	if out, err := Default.Git(bg, clone, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatalf("origin was given a pushurl: %s", out)
 	}
-	// Syncing again, now an existing clone, keeps what it made and says nothing.
+	// A clone that still carries the old guard loses it on the next sync, and the sync says nothing.
+	git(t, clone, "config", "remote.origin.pushurl", retiredOriginPushURL)
 	r = sy.Sync(bg, repo, false, hubFor(s))
 	if r.State != StateOK || r.Remote != "" {
 		t.Fatalf("%+v", r)
+	}
+	if out, err := Default.Git(bg, clone, "config", "--get", "remote.origin.pushurl"); err == nil {
+		t.Fatalf("the retired guard survived a sync: %s", out)
 	}
 }
 

@@ -87,29 +87,33 @@ func TestCloneMakesTheCloneAtHostOwnerRepo(t *testing.T) {
 	}
 }
 
-func TestCloneOfAtriumsOwnPushToOriginFailsOnTheGuardURL(t *testing.T) {
+func TestCloneOfAtriumsOwnHasNoOriginPushURLAndLosesTheRetiredOne(t *testing.T) {
 	t.Parallel()
 	c, _ := newSCM(t)
 	res, err := c.Clone(context.Background(), "https://github.com/acme/widget")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(gitT(t, res.Path, "config", "remote.origin.pushurl")); got != OriginPushURL {
-		t.Fatalf("pushurl = %q", got)
+	if out, _ := exec.Command("git", "-C", res.Path, "config", "remote.origin.pushurl").Output(); len(out) != 0 {
+		t.Fatalf("pushurl = %s", out)
 	}
-	gitT(t, res.Path, "branch", "x")
-	cmd := exec.Command("git", "push", "origin", "x")
-	cmd.Dir = res.Path
-	cmd.Env = CleanEnv()
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("a push to origin worked:\n%s", out)
+	if got := strings.TrimSpace(gitT(t, res.Path, "config", cfgMade)); got != "made" {
+		t.Fatalf("%s = %q", cfgMade, got)
 	}
-	if !strings.Contains(string(out), "atrium-refused") {
-		t.Fatalf("the push failed, but not on the guard URL:\n%s", out)
+	gitT(t, res.Path, "config", "remote.origin.pushurl", retiredOriginPushURL)
+	if _, err := c.Clone(context.Background(), "https://github.com/acme/widget"); err != nil {
+		t.Fatal(err)
 	}
-	// And fetching from origin still works.
-	gitT(t, res.Path, "fetch", "origin")
+	if out, _ := exec.Command("git", "-C", res.Path, "config", "remote.origin.pushurl").Output(); len(out) != 0 {
+		t.Fatalf("the retired guard survived: %s", out)
+	}
+	gitT(t, res.Path, "config", "remote.origin.pushurl", "git@github.com:acme/widget.git")
+	if _, err := c.Clone(context.Background(), "https://github.com/acme/widget"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(gitT(t, res.Path, "config", "remote.origin.pushurl")); got != "git@github.com:acme/widget.git" {
+		t.Fatalf("the operator's pushurl = %q", got)
+	}
 }
 
 func TestFailedCloneAnswersTheExactSentence(t *testing.T) {
@@ -237,8 +241,8 @@ func TestAnOperatorsCloneIsUntouchedUntilOneYes(t *testing.T) {
 	if err != nil || res.State != "existing" || res.Hub != "hub" {
 		t.Fatalf("after the yes: %+v %v", res, err)
 	}
-	if got := strings.TrimSpace(gitT(t, d, "config", "remote.origin.pushurl")); got != OriginPushURL {
-		t.Fatalf("pushurl after the yes = %q", got)
+	if out, _ := exec.Command("git", "-C", d, "config", "remote.origin.pushurl").Output(); len(out) != 0 {
+		t.Fatalf("pushurl set after the yes: %s", out)
 	}
 	// ONE yes: it is remembered in the clone, so there is no second question.
 	c.Yes = func(context.Context, string) error { t.Fatal("asked a second time"); return nil }

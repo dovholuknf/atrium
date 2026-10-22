@@ -120,7 +120,6 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		return failed("no git root is set on this room")
 	}
 	clone := filepath.Join(root, filepath.FromSlash(name))
-	madeHere := false
 	if _, err := os.Stat(filepath.Join(clone, ".git")); err != nil {
 		if !os.IsNotExist(err) {
 			return failed(err.Error())
@@ -134,7 +133,6 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		if _, err := g.Git(ctx, clone, "init", "--quiet"); err != nil {
 			return failed(firstLine(err))
 		}
-		madeHere = true
 	}
 
 	// A SECOND GUARD, beside the hub skipping its own machine's room. A clone that already has
@@ -143,7 +141,7 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 	if msg := originMismatch(ctx, g, clone, name); msg != "" {
 		return failed(msg)
 	}
-	remote := s.remotes(ctx, g, clone, name, madeHere)
+	remote := s.remotes(ctx, g, clone, name)
 	res := s.fetch(ctx, g, clone, name, hub)
 	if remote != "" {
 		res.Remote = remote
@@ -157,8 +155,8 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 	return res
 }
 
-// remotes puts the hub remote, and the origin guard, on the clone. Nothing when the room has no forwarder URL.
-func (s *Syncer) remotes(ctx context.Context, g *Runner, clone, name string, madeHere bool) string {
+// remotes puts the hub remote on the clone. Nothing when the room has no forwarder URL.
+func (s *Syncer) remotes(ctx context.Context, g *Runner, clone, name string) string {
 	if s.HubRemote == nil {
 		return ""
 	}
@@ -170,7 +168,7 @@ func (s *Syncer) remotes(ctx context.Context, g *Runner, clone, name string, mad
 	if u == "" {
 		return ""
 	}
-	return ensureRemotes(ctx, g, clone, u, madeHere)
+	return ensureRemotes(ctx, g, clone, u)
 }
 
 func (s *Syncer) fetch(ctx context.Context, g *Runner, clone, name string, hub func() (http.RoundTripper, error)) Result {

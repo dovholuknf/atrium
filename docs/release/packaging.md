@@ -805,7 +805,7 @@ user's Path. A zip that does not match is never unpacked, and nothing is pinned 
 rerun finds git and says `ok`. macOS and Linux still print the install command (`xcode-select --install`, or the
 package manager), because those need sudo. `-Remove` leaves MinGit, since a git is useful to the account on its own.
 The clone `init` makes carries `atrium.clone=made` in its config, so the room's git sync knows atrium made it and does
-not ask the operator about guarding `origin` (the clone has no origin: it is filled by push).
+not ask the operator before adding its remotes (the clone has no origin: it is filled by push).
 
 **Toolchain.** Before the join and the start, provision runs `room-toolchain.ps1 -Tools git,pwsh,go,node` on the remote: go at the
 go.mod version, Git for Windows (PortableGit, with bash), pwsh 7 and node, in the remote user's home with no admin, so a

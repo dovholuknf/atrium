@@ -82,7 +82,7 @@ through the room's forwarder. Read the header of the file you are in, not only t
 | `forward.go` | a loopback listener that lives for one git command |
 | `hubremote.go` / `hubpush.go` / `cardtoken.go` | the room's stable forwarder to the store, and the card token |
 | `identity.go` | who is on the other end of a request to the store |
-| `clonerem.go` | the `hub` remote, and `remote.origin.pushurl` on a clone atrium made |
+| `clonerem.go` | the `hub` remote, and removing the retired `remote.origin.pushurl` guard |
 | `served.go` | what a room offers a reader the hub passes through |
 | `pass.go` | a fetch passed through the hub to the room that has the work, with its limits and deadlines |
 | `lookup.go` / `lookup_commit.go` | `atrium_git_url`: which source has a branch, which branch has a commit |

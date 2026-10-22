@@ -90,7 +90,7 @@ func (s *Server) makePRWorktree(w http.ResponseWriter, r *http.Request) {
 //   - A same-repo PR is checked out on its real head branch, a fork PR on `pr-<N>`.
 //   - A worktree already on that branch is the answer (`existed: true`).
 //   - A provider with no checkout of the repo does not refuse. The code comes through the scm clone path, which
-//     clones with its `hub` remote and a guarded `origin`, and a repo it cannot clone answers gitsync.CloneFailed.
+//     clones with its `hub` remote, and a repo it cannot clone answers gitsync.CloneFailed.
 //   - NO PROVIDER ROW IS NEEDED. With p nil the repo is the scm clone and the worktree goes under the scm folder's
 //     `worktrees/<host>/<org>/<repo>/<branch>`, so a pasted link works on a room nobody set a provider up on.
 //

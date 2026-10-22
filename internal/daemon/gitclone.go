@@ -141,8 +141,8 @@ func (d *Daemon) prWorktreeHas(url string) bool {
 	return err == nil
 }
 
-// prWorktreeClone is the scm clone path for a pull request's worktree: the clone with its `hub` remote and `origin`
-// push guarded, the same as atrium_git_clone.
+// prWorktreeClone is the scm clone path for a pull request's worktree: the clone with its `hub` remote, the same as
+// atrium_git_clone.
 //
 // A CLONE THE OPERATOR MADE IS ADOPTED WITHOUT A QUESTION, the way gwt hangs its worktrees off whatever clone is
 // there. A pasted link has no card to ask on, and a question with nowhere to answer it was a dead end that sent the
@@ -151,8 +151,7 @@ func (d *Daemon) prWorktreeHas(url string) bool {
 func (d *Daemon) prWorktreeClone(ctx context.Context, url string) (gitsync.SCMResult, error) {
 	s := d.scm(nil)
 	s.Yes = func(_ context.Context, clone string) error {
-		log.Printf("[atrium scm] adopting the operator's clone at %s for a pasted link: atrium's hub remote goes in "+
-			"and origin's push url is guarded", filepath.ToSlash(clone))
+		log.Printf("[atrium scm] adopting the operator's clone at %s for a pasted link: atrium's hub remote goes in", filepath.ToSlash(clone))
 		return nil
 	}
 	return s.Clone(ctx, url)
