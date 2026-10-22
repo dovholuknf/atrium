@@ -9066,6 +9066,7 @@ async function coldHandoffSection(browser, base) {
     await kp.goto(base, { waitUntil: "domcontentloaded" });
     await kp.waitForFunction(() => typeof onColdHandoff === "function",
       null, { timeout: slow(15000) });
+    await kp.waitForSelector("#conn.live", { timeout: slow(15000) });
     await kp.evaluate(() => { document.querySelectorAll("#toasts .toast").forEach(t => t.remove()); });
     await shot("cold-handoff-before-1280.png");
     const payload = JSON.stringify({ task_id: "ka-warm", title: "warm card", cold_handoff: true });
