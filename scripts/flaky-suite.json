@@ -6,6 +6,8 @@
   {"kind": "board", "name": "growlPopout", "reason": "failed in run 39816184242 job check (windows-latest, board-2): the board still thinks the card is popped out after the window closed."},
   {"kind": "board", "name": "termFitHeight", "reason": "failed in run 39836241253 job check (macos-latest, board-2): after attach the last row ends at 830.5 but the hint bar starts at 846.3 (34 rows)"},
   {"kind": "go", "package": "internal/api", "name": "TestPublishTaskCoalescesABurstToTheLatestState", "reason": "failed in run 39856777708 job check (macos-latest, go-test): taskevent_integration_test.go:250: want one event per card (2), got 1"},
-  {"kind": "board", "name": "pollsGone", "reason": "failed in run 39856777708 job check (windows-latest, board-1): page.click Timeout 5000ms exceeded on #t-walk at rooms.js:683"}
+  {"kind": "board", "name": "pollsGone", "reason": "failed in run 39856777708 job check (windows-latest, board-1): page.click Timeout 5000ms exceeded on #t-walk at rooms.js:683"},
+  {"kind": "board", "name": "mOlder", "reason": "failed in run 39859020140 job check (ubuntu-latest, board-2)"},
+  {"kind": "board", "name": "soundPhone", "reason": "failed in run 39859020140 job check (windows-latest, board-2)"}
  ]
 }
