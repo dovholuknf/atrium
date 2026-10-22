@@ -19,3 +19,7 @@ js/items-data.js:out\.title = wk\.title # data, not a tooltip
 # The phone board loads no styled tooltips, so data-tip would show nothing there.
 m/js/items.js:i\.title = s\.name # phone page has no styled tooltips
 m/js/items.js:this card has ended and was removed # phone page has no styled tooltips
+# The share page is standalone and loads no tooltips.js, so data-tip would show nothing there.
+share.html:class="zoom" # share page has no styled tooltips
+# The reader runs on read.html and share.html, neither of which loads tooltips.js.
+read.js:a\.title = "not shared" # reader pages have no styled tooltips
