@@ -53,7 +53,7 @@ func testTune(hk *hooks) {
 
 // testNew is New with testTune applied, for a test that builds its own daemon.
 func testNew(opts Options) (*Daemon, error) {
-	d, err := newWith(opts, testTune)
+	d, err := testNewAutoUnwritten(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,17 @@ func testNew(opts Options) (*Daemon, error) {
 	return d, nil
 }
 
-func testNewAutoUnwritten(opts Options) (*Daemon, error) { return newWith(opts, testTune) }
+func testNewAutoUnwritten(opts Options) (*Daemon, error) {
+	d, err := newWith(opts, testTune)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.st.NoSync(); err != nil {
+		_ = d.Close()
+		return nil, err
+	}
+	return d, nil
+}
 
 // testHooks is the hooks of a test that has no daemon. Each call is its own copy.
 func testHooks() *hooks {

@@ -833,6 +833,12 @@ func (s *Store) Close() error {
 	return err
 }
 
+// NoSync turns off fsync for a store a test throws away, so closing it does not wait on a slow disk's flush.
+func (s *Store) NoSync() error {
+	_, err := s.db.Exec("PRAGMA synchronous = OFF")
+	return err
+}
+
 // Halted reports whether the store has halted, and why.
 func (s *Store) Halted() (bool, error) {
 	s.mu.RLock()
