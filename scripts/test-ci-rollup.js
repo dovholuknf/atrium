@@ -113,6 +113,20 @@ if (!/^::warning title=ci rollup unavailable::/m.test(bogus.stdout) || /::error/
 const bogus2 = spawnSync("node", [script, "--repo", "a/b", "--run", "1", "--summary", sumFile], { encoding: "utf8", env: { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "" } });
 if (bogus2.status !== 0 || /^## /m.test(bogus2.stdout) || !fs.readFileSync(sumFile, "utf8").endsWith("no token\n")) fail("failure with --summary: " + bogus2.stdout);
 
+const rep = (unit, pass) => ["flaky-go", unit, `[pass ${pass}/5] x_test.go:1: nope`];
+job("500", "ci-ubuntu-latest-flaky-go-attempt-1", [rep("TestWobble", 2), rep("TestWobble", 4), rep("TestSteady", 4), ["flaky-go", "TestPlain", "no tag"]]);
+const repeated = run(["--local", path.join(runs, "500"), "--run", "500"]);
+if (!/: 3 failing units/.test(repeated)) fail("a test failing in 2 passes is one unit:\n" + repeated);
+if (!/\| TestWobble \(failed 2 of 5 passes\) \| x_test\.go:1: nope |/.test(repeated)) fail("pass count and tag stripped from the error:\n" + repeated);
+if (!/\| TestSteady \(failed 1 of 5 passes\) \|/.test(repeated)) fail("one failed pass:\n" + repeated);
+if (!/\| TestPlain \| no tag \|/.test(repeated)) fail("an untagged row is unchanged:\n" + repeated);
+const { jobFailures } = require("./ci-failures");
+const rows500 = jobFailures(path.join(runs, "500", "ci-ubuntu-latest-flaky-go-attempt-1"));
+if (rows500.length !== 4 || rows500[0].pass !== 2 || rows500[0].of !== 5) fail("rows keep their pass: " + JSON.stringify(rows500));
+const fdoc = require("./ci-rollup").failingDoc({ run: "500", apiJobs: [{ id: 1, name: "check (ubuntu-latest, flaky-go)", conclusion: "failure" }], current: { failures: rows500.map((f) => ({ ...f, job: "flaky-go" })), retried: [] } });
+if (fdoc.jobs[0].tests.join() !== "TestPlain,TestSteady,TestWobble") fail("failing-tests lists each test once: " + fdoc.jobs[0].tests);
+if (fdoc.jobs[0].passes.TestWobble.failed !== 2 || fdoc.jobs[0].passes.TestWobble.of !== 5) fail("failing-tests carries the pass count: " + JSON.stringify(fdoc.jobs[0].passes));
+
 fs.rmSync(tmp, { recursive: true, force: true });
 if (bad) process.exit(1);
 console.log("ok");

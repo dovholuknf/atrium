@@ -20,6 +20,10 @@
 # THE REPORT. build.claude/ci/summary.md says what ran, how long each step took, which tests failed with the end of
 # their output, the slowest tests, and the line that reproduces the run. The workflow copies it to the run's summary.
 #
+# FLAKY_REPEAT=N runs the test steps of flaky-go and flaky-board (and flaky-board-1|2) N times in a row, 1 when unset, and
+# ci.yml sets it once for the three flaky jobs. Every pass runs even after one fails, each failing row carries "[pass i/N]",
+# and a failure in any pass fails the job. The clean-tree, toolchain and install steps are not repeated.
+#
 # A flaky test is a failure. There is no rerun and no quarantine list. The one exception is the board's pixel and
 # timing units on scripts/board-visual-units.txt: the board-visual step runs them and a failure there is reported but
 # never fails the exit status, in whichever group it runs. They are run and reported, never dropped.
@@ -137,7 +141,19 @@ failing_tsv="$artefacts/failing.tsv"
 # What a step counts, for the Steps table: tests run and tests failed. A step that runs no tests leaves both as "-".
 # Each failed test also goes to failing.tsv as step, name, first error line, which the summary lists under its own heading.
 note_counts() { cur_ran="$1"; cur_failed="$2"; }
-note_failing() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$failing_tsv"; }
+note_failing() { printf '%s\t%s\t%s\n' "$1" "$2" "${pass_tag:-}$3" >> "$failing_tsv"; }
+# FLAKY_REPEAT passes of each flaky group's test steps, 1 when unset. pass_tag prefixes every failing row of a pass.
+flaky_repeat="${FLAKY_REPEAT:-1}"
+case "$flaky_repeat" in ''|*[!0-9]*|0) echo "FLAKY_REPEAT must be a whole number of 1 or more, not '$flaky_repeat'" >&2; exit 2 ;; esac
+pass_tag=""; pass_sfx=""
+# flaky_pass <i>: the log header of a pass, and the tag and file suffix it uses. Only a repeated run says "pass".
+flaky_pass() {
+  pass_tag=""; pass_sfx=""
+  [ "$flaky_repeat" -gt 1 ] || return 0
+  pass_tag="[pass $1/$flaky_repeat] "
+  [ "$1" -gt 1 ] && pass_sfx="-p$1"
+  echo; echo "--- flaky pass $1 of $flaky_repeat  [$(date -u +%H:%M:%S)]"
+}
 # A board unit that failed in its shard and passed on retry: a pass, never a clean one. retried.tsv is step, unit, first
 # error line, both timings, and the summary lists it under its own heading.
 retried_tsv="$artefacts/retried.tsv"
@@ -437,20 +453,25 @@ if step flaky-go "the flaky go tests"; then
     flaky_pkgs="$(node scripts/flaky-suite.js go-pkgs)"
     flaky_re="$(node scripts/flaky-suite.js go-regex)"
     if [ -n "$flaky_re" ]; then
-      mkdir -p "$artefacts/go-flaky"
-      bash scripts/test.sh full -json -timeout 20m -p "$cpus" -run "$flaky_re" $flaky_pkgs 2>&1         | tee "$artefacts/go-flaky/stream.json" | go run scripts/ci-report.go -dir "$artefacts/go-flaky"
-      codes=("${PIPESTATUS[@]}")
-      if [ "${codes[0]}" != 0 ] || [ "${codes[2]}" != 0 ]; then
-        echo "FAILED: flaky go tests" >&2; mark_fail
-      else
-        echo "ok: flaky go tests"
-      fi
-      if [ -f "$artefacts/go-flaky/go-test.counts" ]; then
-        read -r n_ran n_failed < "$artefacts/go-flaky/go-test.counts"
-        flaky_n=$((flaky_n + n_ran)); flaky_bad=$((flaky_bad + n_failed))
-        while IFS=$'	' read -r _ name err; do [ -n "$name" ] && note_failing flaky-go "$name" "$err"; done < "$artefacts/go-flaky/go-test.failing.tsv"
-      fi
-      note_counts "$flaky_n" "$flaky_bad"
+      for ((pass = 1; pass <= flaky_repeat; pass++)); do
+        flaky_pass "$pass"
+        gdir="$artefacts/go-flaky$pass_sfx"
+        mkdir -p "$gdir"
+        bash scripts/test.sh full -json -timeout 20m -p "$cpus" -run "$flaky_re" $flaky_pkgs 2>&1         | tee "$gdir/stream.json" | go run scripts/ci-report.go -dir "$gdir"
+        codes=("${PIPESTATUS[@]}")
+        if [ "${codes[0]}" != 0 ] || [ "${codes[2]}" != 0 ]; then
+          echo "FAILED: flaky go tests${pass_tag:+ ${pass_tag% }}" >&2; mark_fail
+        else
+          echo "ok: flaky go tests${pass_tag:+ ${pass_tag% }}"
+        fi
+        if [ -f "$gdir/go-test.counts" ]; then
+          read -r n_ran n_failed < "$gdir/go-test.counts"
+          flaky_n=$((flaky_n + n_ran)); flaky_bad=$((flaky_bad + n_failed))
+          while IFS=$'	' read -r _ name err; do [ -n "$name" ] && note_failing flaky-go "$name" "$err"; done < "$gdir/go-test.failing.tsv"
+        fi
+        note_counts "$flaky_n" "$flaky_bad"
+      done
+      pass_tag=""
     fi
   fi
 fi
@@ -461,29 +482,34 @@ if step flaky-board "the flaky board units and scripts"; then
     flaky_n=0; flaky_bad=0
     flaky_units="$(board_units "flaky${part:+-$part}")"
     flaky_scripts=",$(board_units "flaky-scripts${part:+-$part}"),"
-    if [ -n "$flaky_units" ]; then
-      # One shard: the units run one after another, so none of them runs under another's load.
-      shards=1
-      board_log="$artefacts/flaky-board.log"
-      flaky_board_run() {
-        env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards"           node scripts/test-board-sharded.js --local --units "$flaky_units" 2>&1 | tee "$board_log"
-        return "${PIPESTATUS[0]}"
-      }
-      board_env_probe flaky-env.txt
-      check "flaky board units" flaky_board_run
-      board_report flaky-board "$board_log"
-      flaky_n=$((flaky_n + cur_ran)); flaky_bad=$((flaky_bad + cur_failed))
-      note_counts "$flaky_n" "$flaky_bad"
-    fi
-    while IFS=$'	' read -r script_name script_path; do
-      [ -n "$script_name" ] || continue
-      case "$flaky_scripts" in *",$script_name,"*) ;; *) continue ;; esac
-      flaky_n=$((flaky_n + 1))
-      if ! check "flaky script $script_name" node "$script_path"; then
-        flaky_bad=$((flaky_bad + 1)); note_failing flaky-board "$script_name" "(script) $script_path failed"
+    flaky_script_list="$(node scripts/flaky-suite.js scripts)"
+    shards=1
+    if [ -n "$flaky_units" ]; then board_env_probe flaky-env.txt; fi
+    for ((pass = 1; pass <= flaky_repeat; pass++)); do
+      flaky_pass "$pass"
+      if [ -n "$flaky_units" ]; then
+        # One shard: the units run one after another, so none of them runs under another's load.
+        board_log="$artefacts/flaky-board$pass_sfx.log"
+        flaky_board_run() {
+          env FULL_SUITE=1 ATRIUM_SUITE_LOCAL=1 BOARD_SHARDS="$shards"           node scripts/test-board-sharded.js --local --units "$flaky_units" 2>&1 | tee "$board_log"
+          return "${PIPESTATUS[0]}"
+        }
+        check "flaky board units${pass_tag:+ ${pass_tag% }}" flaky_board_run
+        board_report flaky-board "$board_log"
+        flaky_n=$((flaky_n + cur_ran)); flaky_bad=$((flaky_bad + cur_failed))
+        note_counts "$flaky_n" "$flaky_bad"
       fi
-      note_counts "$flaky_n" "$flaky_bad"
-    done < <(node scripts/flaky-suite.js scripts)
+      while IFS=$'	' read -r script_name script_path; do
+        [ -n "$script_name" ] || continue
+        case "$flaky_scripts" in *",$script_name,"*) ;; *) continue ;; esac
+        flaky_n=$((flaky_n + 1))
+        if ! check "flaky script $script_name${pass_tag:+ ${pass_tag% }}" node "$script_path"; then
+          flaky_bad=$((flaky_bad + 1)); note_failing flaky-board "$script_name" "(script) $script_path failed"
+        fi
+        note_counts "$flaky_n" "$flaky_bad"
+      done <<< "$flaky_script_list"
+    done
+    pass_tag=""
   fi
 fi
 

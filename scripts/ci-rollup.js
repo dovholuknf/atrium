@@ -67,6 +67,8 @@ function retryText(r) {
   return 'no retry';
 }
 
+const unitText = (r) => (r.passesFailed ? `${r.unit} (failed ${r.passesFailed} of ${r.of} passes)` : r.unit);
+
 const escData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 const escProp = (s) => escData(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
 const clip = (s) => { s = String(s).replace(/\s+/g, ' '); return s.length > MAX_MESSAGE ? s.slice(0, MAX_MESSAGE - 3) + '...' : s; };
@@ -83,7 +85,7 @@ function annotate({ run, jobs, rows, retried, missing }) {
   const rank = (r) => (r.isNew ? 0 : r.retried ? 1 : 2);
   const ordered = rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r);
   const lines = [
-    ...ordered.map((r) => `::error title=${escProp(r.unit)}::${escData(clip(`${r.os} ${r.job}: ${r.error} | retry: ${retryText(r)} | history: ${r.history}`))}`),
+    ...ordered.map((r) => `::error title=${escProp(r.unit)}::${escData(clip(`${r.os} ${r.job}: ${r.passesFailed ? `failed ${r.passesFailed} of ${r.of} passes: ` : ''}${r.error} | retry: ${retryText(r)} | history: ${r.history}`))}`),
     ...retried.map(warn),
   ];
   const cut = lines.length > MAX_ANNOTATIONS - 1;
@@ -125,7 +127,7 @@ function render({ run, jobs, rows, retried, missing, history, note }) {
     out.push('| os | job | unit | first error | retry | history |', '|---|---|---|---|---|---|');
     const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 160);
     for (const r of rows.slice(0, MAX_ROWS)) {
-      out.push(`| ${r.os} | ${r.job} | ${cell(r.unit)} | ${cell(r.error)} | ${retryText(r)} | ${r.history} |`);
+      out.push(`| ${r.os} | ${r.job} | ${cell(unitText(r))} | ${cell(r.error)} | ${retryText(r)} | ${r.history} |`);
     }
     if (rows.length > MAX_ROWS) out.push('', `and ${rows.length - MAX_ROWS} more`);
     out.push('');
@@ -148,20 +150,31 @@ function failingDoc({ run, runInfo = {}, apiJobs = [], current }) {
       const fails = current.failures.filter(mine(j)).filter((f) => !f.unit.startsWith('step: ') && !f.unit.startsWith('('));
       const errors = {};
       for (const f of fails) if (f.error && !errors[f.unit]) errors[f.unit] = f.error.slice(0, 200);
+      const passes = {};
+      for (const f of fails) if (f.of) (passes[f.unit] = passes[f.unit] || new Set()).add(f.pass);
+      for (const u of Object.keys(passes)) passes[u] = { failed: passes[u].size, of: fails.find((f) => f.unit === u).of };
       const retried = [...new Set(current.retried.filter(mine(j)).map((f) => f.unit))].sort(byName);
-      return { id: j.id, name: j.name, tests: [...new Set(fails.map((f) => f.unit))].sort(byName), retried, errors };
+      return { id: j.id, name: j.name, tests: [...new Set(fails.map((f) => f.unit))].sort(byName), retried, errors, ...(Object.keys(passes).length ? { passes } : {}) };
     });
   return { run: String(run), date: runInfo.created_at || '', sha: String(runInfo.head_sha || '').slice(0, 9), jobs };
 }
 
 function build({ run, current, histRuns, jobsWithoutArtifacts = [], note }) {
   const history = histRuns.map((h) => ({ id: h.id, known: h.known, keys: new Set(h.failures.map(unitKey)), rkeys: new Set((h.retried || []).map(unitKey)) }));
+  const passesFailed = new Map();
+  for (const f of current.failures) {
+    if (!f.of) continue;
+    const k = `${f.os}|${f.job}|${f.unit}`;
+    if (!passesFailed.has(k)) passesFailed.set(k, new Set());
+    passesFailed.get(k).add(f.pass);
+  }
   const dedupe = (list) => {
     const seen = new Set();
     return list.filter((f) => {
       const k = `${f.os}|${f.job}|${f.unit}`;
       if (seen.has(k)) return false;
       seen.add(k);
+      if (passesFailed.has(k)) f.passesFailed = passesFailed.get(k).size;
       return true;
     });
   };

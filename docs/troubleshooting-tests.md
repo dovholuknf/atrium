@@ -436,3 +436,13 @@ test that failed in the window and is not an entry, removes an entry that did no
 artifact, which the script downloads, and it falls back to the job list, `CI_ARTIFACTS` and the job log when that is
 missing. A `check: ...` name (a check script, not a test) is logged and never added, and a failed job that names no test
 is stored as `(step failed, no test named in the log)` and left out of the window.
+
+## Each flaky group runs five times in a row
+
+`FLAKY_REPEAT` in `.github/workflows/ci.yml` (5, set once at workflow level) makes `scripts/ci.sh` run the test steps of
+`flaky-go` and `flaky-board` that many times, and 1 when it is unset, so a local run is unchanged. Every pass runs even
+after one fails, a failure in any pass fails the job, and each pass prints `--- flaky pass i of N` in the log. Failing
+rows in `failing.tsv` carry `[pass i/N]`, and a pass after the first writes `go-flaky-pN/` and `flaky-board-pN.log`.
+`ci-rollup.js` counts a test once however many passes it failed in and shows `(failed 2 of 5 passes)`, and the
+`failing-tests` artifact lists it once, with the counts under `passes`. The toolchain, install and clean-tree steps do
+not repeat.

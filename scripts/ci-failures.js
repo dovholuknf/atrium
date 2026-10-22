@@ -17,7 +17,10 @@ function jobFailures(dir) {
   const ft = path.join(dir, 'failing.tsv');
   const rows = fs.existsSync(ft) ? parseTsv(ft) : [];
   for (const r of rows) {
-    const [grp, a, b = ''] = r;
+    const [grp, a, b0 = ''] = r;
+    const pm = /^\[pass (\d+)\/(\d+)\] /.exec(b0);
+    const b = pm ? b0.slice(pm[0].length) : b0;
+    const n = out.length;
     if (grp === 'go-test' || grp === 'go-race') {
       const mm = /^(\S+)\s+(Test\S*)$/.exec(a);
       const pkg = (mm ? mm[1] : a.split(/\s+/)[0]).replace(MODULE, '');
@@ -26,6 +29,7 @@ function jobFailures(dir) {
       const cm = /^([^:]+):\s*(.*)$/.exec(b);
       out.push({ os, group: grp, unit: `check: ${cm ? cm[1] : b}`, error: (cm ? cm[2] : b).trim() });
     } else out.push({ os, group: grp, unit: a, error: b.replace(/^\S+:\s*/, '').trim() });
+    if (pm) for (const f of out.slice(n)) { f.pass = Number(pm[1]); f.of = Number(pm[2]); }
   }
   const st = path.join(dir, 'steps.tsv');
   if (!rows.length && fs.existsSync(st)) {

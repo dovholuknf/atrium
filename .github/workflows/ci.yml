@@ -22,6 +22,10 @@ on:
 permissions:
   contents: read
 
+# How many times in a row each flaky group runs. Only the flaky jobs read it, via scripts/ci.sh.
+env:
+  FLAKY_REPEAT: 5
+
 jobs:
   # THE FLAKY SUITE FIRST, TWO JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
   # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board` runs the board units and check scripts
