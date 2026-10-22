@@ -493,7 +493,9 @@ async function atriumDownSection(browser, base) {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     const ready = await sp.waitForFunction(async () => {
       if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return false;
-      return !!(await caches.match("/down.html"));
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg || !reg.active || reg.active.state !== "activated" || reg.installing || reg.waiting) return false;
+      return !!(await (await caches.open("atrium-down")).match("/down.html"));
     }, null, { timeout: slow(15000), polling: 250 }).then(() => true, () => false);
     if (!ready) {
       fail("the service worker did not take the page and keep down.html.");
