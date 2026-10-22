@@ -2639,7 +2639,7 @@ function paneBoxUnchanged() {
 
 // A cell that is measured again (a web font landing after the first fit) moves the rows with the pane's box unchanged.
 function refitOnCellChange(t) {
-  let last = 0;
+  let last = 0, font = t.options.fontSize;
   const cellH = () => { try { return t._core._renderService.dimensions.css.cell.height; } catch (e) { return 0; } };
   last = cellH();
   try {
@@ -2647,6 +2647,8 @@ function refitOnCellChange(t) {
       const h = cellH();
       if (!h || h === last) return;
       last = h;
+      // A font change is the phone's own zoom and fit, so it must not fit again from inside itself.
+      if (t.options.fontSize !== font) { font = t.options.fontSize; return; }
       if (t !== term) return;
       t._atriumBox = null;
       onTermResize();
