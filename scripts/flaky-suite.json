@@ -9,6 +9,8 @@
   {"kind": "board", "name": "pollsGone", "reason": "failed in run 39856777708 job check (windows-latest, board-1): page.click Timeout 5000ms exceeded on #t-walk at rooms.js:683"},
   {"kind": "board", "name": "mOlder", "reason": "failed in run 39859020140 job check (ubuntu-latest, board-2)"},
   {"kind": "board", "name": "soundPhone", "reason": "failed in run 39859020140 job check (windows-latest, board-2)"},
-  {"kind": "board", "name": "coldHandoff", "reason": "failed in run 39860953838 job check (windows-latest, board-1): a cold handoff on the stream raised no cold-handoff toast."}
+  {"kind": "board", "name": "coldHandoff", "reason": "failed in run 39860953838 job check (windows-latest, board-1): a cold handoff on the stream raised no cold-handoff toast."},
+  {"kind": "board", "name": "atriumDown", "reason": "failed in run 39867364909 job check (windows-latest, board-1): a reload with atrium down did not load a page: page.reload: net::ERR_EMPTY_RESPONSE"},
+  {"kind": "board", "name": "themePreview", "reason": "failed in run 39867364909 job check (windows-latest, board-1): page.waitForSelector timed out after 15000ms on #stack-list .stackrow (settings.js:416)"}
  ]
 }
