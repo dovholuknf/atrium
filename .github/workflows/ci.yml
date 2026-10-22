@@ -23,12 +23,13 @@ permissions:
   contents: read
 
 jobs:
-  # THE FLAKY SUITE LAST, THREE JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
+  # THE FLAKY SUITE FIRST, THREE JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
   # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board-1` and `flaky-board-2` run the board units
-  # and check scripts in halves and need no Go. Each flaky job waits for all three check jobs (`needs`) and is skipped
-  # when one is red, so the checks start at once and the flaky groups follow, never beside them, to spare runners.
+  # and check scripts in halves and need no Go. The flaky jobs have no `needs` and start at once, so the tests most likely
+  # to fail answer first and fast. Each platform's check job waits for that platform's flaky job (`needs`) and is skipped
+  # when a flaky group is red, so a red flaky group stops the checks from burning runner time and the flaky and check
+  # groups never run beside each other on a platform. The rollup and notify read a skipped check as red.
   flaky-ubuntu:
-    needs: [check-ubuntu, check-macos, check-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -54,7 +55,6 @@ jobs:
           if-no-files-found: ignore
 
   flaky-macos:
-    needs: [check-ubuntu, check-macos, check-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +80,6 @@ jobs:
           if-no-files-found: ignore
 
   flaky-windows:
-    needs: [check-ubuntu, check-macos, check-windows]
     strategy:
       fail-fast: false
       matrix:
@@ -108,6 +107,8 @@ jobs:
   # ALL THREE PLATFORMS, and Windows is not the afterthought. It is atrium's primary platform: ConPTY, the rename-aside
   # binary swap, the logon task, and every path rule are Windows behaviour, and a Linux-only matrix builds none of it.
   #
+  # Each waits for its own platform's flaky job, so a platform's checks start only once its flaky groups are green.
+  #
   # `fail-fast: false` so one platform failing still reports the other. The interesting case is exactly when they
   # disagree, and cancelling the second job hides which way.
   #
@@ -117,6 +118,7 @@ jobs:
   # names the group. No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual
   # failure out of its own exit status.
   check-ubuntu:
+    needs: [flaky-ubuntu]
     strategy:
       fail-fast: false
       matrix:
@@ -140,6 +142,7 @@ jobs:
           if-no-files-found: ignore
 
   check-macos:
+    needs: [flaky-macos]
     strategy:
       fail-fast: false
       matrix:
@@ -163,6 +166,7 @@ jobs:
           if-no-files-found: ignore
 
   check-windows:
+    needs: [flaky-windows]
     strategy:
       fail-fast: false
       matrix:

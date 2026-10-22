@@ -407,12 +407,13 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
 
 # The flaky suite: how a test enters and leaves
 
-`scripts/flaky-suite.json` lists every test known to fail now and then. CI runs them last and alone
+`scripts/flaky-suite.json` lists every test known to fail now and then. CI runs them first and alone
 (three jobs per platform: `bash scripts/ci.sh --group flaky-go`, which needs no node, and `flaky-board-1` and
 `flaky-board-2`, which need no Go and split the board units and the flaky check scripts by weight, each half run on one
 shard), with one retry for a board unit and none for a go test, and every other step skips them, so each test runs in
-exactly one place. Each flaky job waits for all the check jobs and is skipped when one is red, so a failing check
-stops the flaky groups and the rollup still reads red.
+exactly one place. The flaky jobs start at once with no `needs`, and each platform's check jobs wait for that platform's
+flaky job and are skipped when a flaky group is red, so a failing flaky test answers first and stops the checks, and the
+rollup still reads red.
 
 - **Enters** the first time it fails in CI and is not listed, whether or not a fix names it. The ledger
   (`node scripts/ci-flake-ledger.js report --window 20`) shows which. Add an entry with its kind
