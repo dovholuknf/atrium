@@ -1,0 +1,1 @@
+The inline view bar search box can shrink to 160px before the controls fall back to the drawer, and the cardViewBarInline unit runs at 2360px, which the row needs once it has grown (q-ci-viewbar-1900-ubuntu).

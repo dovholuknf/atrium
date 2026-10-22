@@ -156,4 +156,4 @@
   .fdrawer.inline .frow { gap: var(--sp-2); }
   .fdrawer.inline .frow .barlabel { min-width: 0; }
   .fdrawer.inline .fpanel .seg button { padding: 5px 8px; }
-  .fdrawer.inline .fline .fq { flex: 0 0 300px; }
+  .fdrawer.inline .fline .fq { flex: 0 1000 300px; min-width: 160px; }
