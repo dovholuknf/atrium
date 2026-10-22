@@ -1,7 +1,6 @@
 # The room link on direct TCP: one connection per room
 
-Backlog item `f-link-one-conn-direct`. Status: built differently, see `one-session-per-room.md`. The mux sits in
-`Direct.Dial` rather than on the attachment, so every transport keeps the one Dial interface.
+Backlog item `f-link-one-conn-direct`. Status: designed, not built.
 
 Observed 2026-10-17: sg3 on OpenZiti holds one router socket, and the SDK carries every link connection as a stream
 inside it. sgg on direct TCP holds 12 sockets to hub `:7779`, because the direct transport opens one TLS connection per

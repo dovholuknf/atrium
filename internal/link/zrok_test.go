@@ -4,11 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
-	"sync/atomic"
 	"testing"
-	"time"
-
-	"github.com/dovholuknf/atrium/internal/zitictx"
 )
 
 type fakeZrok struct {
@@ -103,31 +99,5 @@ func TestARoomDialsTheTokenItWasGiven(t *testing.T) {
 	}
 	if len(api.dialed) != 2 || api.dialed[0] != hubTok || api.dialed[1] != hubTok {
 		t.Fatalf("the room dialled %v, want %s twice", api.dialed, hubTok)
-	}
-}
-
-func TestZrokDialsAndResetsShareOneProcessContext(t *testing.T) {
-	reg := fakeSDK(t)
-	var hour atomic.Int64
-	api := sdkZrok{identity: "zrok-env.json"}
-	for i := 0; i < 20; i++ {
-		z := &Zrok{Token: "tok", API: api}
-		z.gate.now = func() time.Time { return time.Unix(hour.Add(3600), 0) }
-		l := NewLadder([]Rung{{Path: Path{Transport: "zrok"}, Dial: z}})
-		for j := 0; j < 10; j++ {
-			_, _ = l.Dial(context.Background())
-			l.Reset()
-		}
-		l.Close()
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for reg.relogins.Load() < 200 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond) // wait: poll tick inside the deadline above
-	}
-	if reg.built.Load() != 1 || zitictx.Live() != 1 || reg.closed.Load() != 0 {
-		t.Fatalf("built %d, live %d, closed %d, want 1, 1 and 0", reg.built.Load(), zitictx.Live(), reg.closed.Load())
-	}
-	if reg.dialed.Load() != 200 || reg.relogins.Load() != 200 {
-		t.Fatalf("dialed %d, relogins %d, want 200 and 200", reg.dialed.Load(), reg.relogins.Load())
 	}
 }

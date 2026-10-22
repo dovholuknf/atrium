@@ -234,11 +234,3 @@ the launcher notice pulled the orchestrator in, which stopped a card instead of 
 
 Interview closed, clint said "work resumes". One Opus worker on m1mini, branch claude/r-context-cycle. Nothing
 deploys without clint's yes.
-
-## Clearing by tool
-
-`atrium_clear_context` takes a `handoff` and posts it to `POST /v1/tasks/<id>/new-context` for the caller's own card.
-The room writes the handoff to the cycle's handoff path (`handoffPath`), stores it on the card, and starts the cycle
-already past the ack, so no limit prompt is typed. The call answers at once. When the turn ends the cycle types `/clear`
-and then a wake that names the card's BRIEF.md and the handoff's absolute path. Refused with the reason when the runner
-is not claude, atrium does not own the terminal, a cycle is under way, or the handoff is empty.

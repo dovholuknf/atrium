@@ -57,9 +57,8 @@ func (c *sdkCtx) Dial(string) (edge.Conn, error) {
 	c.reg.dialed.Add(1)
 	return nil, errors.New("fake: no route")
 }
-func (c *sdkCtx) DialWithOptions(s string, _ *ziti.DialOptions) (edge.Conn, error) { return c.Dial(s) }
-func (c *sdkCtx) Reauthenticate() error                                            { c.reg.relogins.Add(1); return nil }
-func (c *sdkCtx) Close()                                                           { c.reg.closed.Add(1) }
+func (c *sdkCtx) Reauthenticate() error { c.reg.relogins.Add(1); return nil }
+func (c *sdkCtx) Close()                { c.reg.closed.Add(1) }
 
 func fakeSDK(t *testing.T) *zitiReg {
 	t.Helper()

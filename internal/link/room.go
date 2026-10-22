@@ -237,14 +237,13 @@ func (r *Room) Run(ctx context.Context) error {
 func (r *Room) attach(ctx context.Context) error {
 	var conn net.Conn
 	var err error
-	laneCtx := controlLane(ctx)
 	cl, climbs := r.Dial.(climber)
 	if climbs {
 		// MORE THAN ONE TRANSPORT. Walked from the best down, each bounded by
 		// DialWait, and every later connection follows the one that answered.
-		conn, err = cl.Climb(laneCtx, r.T.DialWait)
+		conn, err = cl.Climb(ctx, r.T.DialWait)
 	} else {
-		dialCtx, cancel := context.WithTimeout(laneCtx, r.T.DialWait)
+		dialCtx, cancel := context.WithTimeout(ctx, r.T.DialWait)
 		conn, err = r.Dial.Dial(dialCtx)
 		cancel()
 	}

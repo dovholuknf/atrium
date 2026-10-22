@@ -1,1 +1,0 @@
-A phone no longer overflows the stack when the cell height changes: the refit on a measured cell ignores a change the font itself made, so a zoom or fit does not fit again from inside itself (q-phone-stack-overflow).

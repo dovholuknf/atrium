@@ -124,17 +124,6 @@ func addPeerTools(s *mcp.Server) {
 	}, readyHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "atrium_clear_context",
-		Description: "Clear your own context: write a handoff, clear, reload.\n\n" +
-			"Pass `handoff`: everything a fresh session needs to carry on, as markdown. Atrium writes it to a file for " +
-			"your card and answers at once. When your turn ends it types /clear into your terminal, then tells the new " +
-			"session to re-read BRIEF.md and the handoff at its absolute path. End your turn after the call: nothing is " +
-			"typed mid-turn.\n\n" +
-			"Refused with the reason when atrium does not own your terminal, your runner is not claude, a context " +
-			"cycle is already under way on your card or the text is empty.",
-	}, clearContextHandler)
-
-	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
 		Description: "Start a new agent in a directory, on its own card, supervised by atrium.\n\n" +
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +
