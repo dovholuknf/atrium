@@ -13,6 +13,8 @@
 
 name: ci
 
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('ci {0} {1}', inputs.os, inputs.suite) || github.event_name == 'push' && github.event.head_commit.message || 'ci' }}
+
 on:
   push:
     branches: ["**"]
