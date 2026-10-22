@@ -83,6 +83,8 @@ jobs:
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
+      env:
+        USER: runner
     steps:
       - uses: actions/checkout@v4
 
@@ -180,6 +182,8 @@ jobs:
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
+      env:
+        USER: runner
     steps:
       - uses: actions/checkout@v4
 
