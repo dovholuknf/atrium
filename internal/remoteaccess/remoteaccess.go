@@ -181,12 +181,24 @@ func Save(dir string, s State) error {
 		werr = os.Chmod(tmp, 0o600)
 	}
 	if werr == nil {
-		werr = os.Rename(tmp, Path(dir))
+		werr = renameRetrying(tmp, Path(dir))
 	}
 	if werr != nil {
 		os.Remove(tmp)
 	}
 	return werr
+}
+
+// renameRetrying retries a refusal because Windows denies a replace while a reader of the switch has it open.
+func renameRetrying(tmp, target string) error {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = os.Rename(tmp, target); err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(i+1) * 20 * time.Millisecond)
+	}
+	return err
 }
 
 // Allows says whether caller may open the room's sshd: the switch is on and the list holds * or the name.
