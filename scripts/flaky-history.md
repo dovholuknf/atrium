@@ -123,3 +123,9 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39721269229 | atriumDown | ADD | yes | 0 |
 | 2026-10-22 | 39721269229 | unifiedCard | ADD | no | 0 |
 | 2026-10-22 | 39721269229 | TestStartRunsADetachedHostFromACopy | REMOVE | yes | 15 |
+| 2026-10-22 | 39722221154 | idleRate | ADD | yes | 0 |
+| 2026-10-22 | 39722221154 | u016 | ADD | yes | 0 |
+| 2026-10-22 | 39722221154 | core2 | REMOVE | yes | 15 |
+| 2026-10-22 | 39722221154 | land | REMOVE | yes | 15 |
+| 2026-10-22 | 39722221154 | TestADeniedAncestorIsWalkedPastLikeAMissingOne | REMOVE | yes | 15 |
+| 2026-10-22 | 39722221154 | TestADeniedAncestorStillRefusesAPathOutsideTheRoot | REMOVE | yes | 15 |
