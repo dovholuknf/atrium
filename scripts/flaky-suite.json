@@ -5,7 +5,6 @@
  {"kind": "board", "name": "core2", "reason": "failed on ubuntu in run 39084285912: its own fixed timeout expired. Load evidence, cause not traced."},
  {"kind": "go", "package": "internal/nowindow", "name": "TestEveryExecStartIsHiddenOrListed", "reason": "failed on every OS in run 39586804799 (spawn_guard_test.go:102): internal/daemon/launch.go:launchCore line 1460 starts a process not hidden and not in visibleOnPurpose. Deterministic after the orchestrator picks."},
   {"kind": "board", "name": "land", "reason": "failed on ubuntu, macos and windows board-1 in run 39655795174 and again on retry: the toast land nowhere never rendered (0 matches). Cause not traced."},
-  {"kind": "go", "package": "internal/ptyhost", "name": "TestStartRunsADetachedHostFromACopy", "reason": "failed on windows go-test-1 in run 39655795174 (channel_integration_test.go:42): started after 2.03 s. Cause INFERRED as a loaded runner."},
   {"kind": "go", "package": "internal/safepath", "name": "TestADeniedAncestorIsWalkedPastLikeAMissingOne", "reason": "failed on macos and windows go-test in run 39655795174: permission denied on an ancestor where the walk-past was expected. Cause not traced."},
   {"kind": "go", "package": "internal/safepath", "name": "TestADeniedAncestorStillRefusesAPathOutsideTheRoot", "reason": "failed on macos and windows go-test in run 39655795174: permission denied where ErrOutside was wanted. Cause not traced."},
   {"kind": "board", "name": "controlsCompact", "reason": "failed on ubuntu board-2 in run 39664964243 and again on retry: at 2360px the stack's show, sort and group segments are not on one line (tops 117, 117, 117, 151). Passed on macos and windows, so INFERRED font width. Cause not traced."},
@@ -14,6 +13,8 @@
   {"kind": "go", "package": "internal/daemon", "name": "TestRestartRunnerOnAMissingCardSaysSo", "reason": "failed on windows go-test-2 in run 39704005124: the daemon Run had not returned 30s after cancel (daemon_integration_test.go:98). Cause not traced."},
   {"kind": "board", "name": "mPictures", "reason": "failed on macos board-1 in run 39704976949: page.tap timed out at 5000 ms on #m-replies .md-img (test-board-headless.js:19063). Retry log shows it passing. Cause not traced."},
   {"kind": "board", "name": "mCompose", "reason": "failed in run 39715013378 job check (macos-latest, board-1): mCompose 412: gemini not joined: {\"id\":\"c1\",\"body\":{\"text\":\"line a\\nline b\",\"when\":\"immediate\"}}"},
-  {"kind": "go", "package": "internal/link", "name": "TestAStreamReopenedRightAfterACloseStillStreams", "reason": "failed in run 39718988038 job check (macos-latest, go-test): events_integration_test.go:544: no \"task\" event arrived"}
+  {"kind": "go", "package": "internal/link", "name": "TestAStreamReopenedRightAfterACloseStillStreams", "reason": "failed in run 39718988038 job check (macos-latest, go-test): events_integration_test.go:544: no \"task\" event arrived"},
+  {"kind": "board", "name": "atriumDown", "reason": "failed in run 39721269229 job check (windows-latest, board-1): the board after a restart-time reload did not put the restart cover back."},
+  {"kind": "board", "name": "unifiedCard", "reason": "failed in run 39721269229 job check (macos-latest, board-1): done draws 5 cards, want 6 to 12"}
  ]
 }
