@@ -68,7 +68,8 @@ type Direct struct {
 
 // ── the hub's side ───────────────────────────────────────
 
-// Listen brings up the hub's port.
+// Listen brings up the hub's port. A room that asks for the mux has its streams accepted here as connections of their
+// own, and one that does not is served as it always was (`mux.go`).
 func (d Direct) Listen() (net.Listener, error) {
 	cfg, err := d.ServerTLS()
 	if err != nil {
@@ -78,7 +79,7 @@ func (d Direct) Listen() (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return tls.NewListener(ln, cfg), nil
+	return newMuxListener(tls.NewListener(ln, cfg)), nil
 }
 
 // ServerTLS is the hub's side of the handshake, and the ONE place it is built.
@@ -145,8 +146,13 @@ func init() {
 	}
 }
 
+// tlsState is a TLS connection, or a stream riding on one (`mux.go`).
+type tlsState interface {
+	ConnectionState() tls.ConnectionState
+}
+
 func peerCert(c net.Conn) *x509.Certificate {
-	tc, ok := c.(*tls.Conn)
+	tc, ok := c.(tlsState)
 	if !ok {
 		return nil
 	}
@@ -160,7 +166,7 @@ func peerCert(c net.Conn) *x509.Certificate {
 // DirectAuthenticated reports whether a connection presented a client
 // certificate. Wired into `Hub.Authenticated` by whoever builds the hub.
 func DirectAuthenticated(c net.Conn) bool {
-	tc, ok := c.(*tls.Conn)
+	tc, ok := c.(tlsState)
 	if !ok {
 		return false
 	}
@@ -215,8 +221,21 @@ func (d Direct) ServeEnrolment(conn net.Conn, br *bufio.Reader) (string, error) 
 
 // ── the room's side ──────────────────────────────────────
 
-// Dial opens one connection to the hub.
+// Dial opens one connection to the hub: a stream on this room's one session to it, opened by the first dial and again
+// only when it dies. A room without a certificate, and one whose hub does not take the mux, dials a connection each
+// time.
 func (d Direct) Dial(ctx context.Context) (net.Conn, error) {
+	if d.Mutual() {
+		c, err := muxFor(d).open(ctx, d)
+		if !errors.Is(err, errMuxRefused) {
+			return c, err
+		}
+	}
+	return d.dialTLS(ctx)
+}
+
+// dialTLS is one TLS connection of its own.
+func (d Direct) dialTLS(ctx context.Context) (*tls.Conn, error) {
 	cfg, err := d.clientTLS()
 	if err != nil {
 		return nil, err
@@ -226,7 +245,7 @@ func (d Direct) Dial(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return conn, nil
+	return conn.(*tls.Conn), nil
 }
 
 // Describe is what to log. The address, and nothing secret.

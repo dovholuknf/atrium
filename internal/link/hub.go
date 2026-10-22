@@ -325,6 +325,11 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 				Error: "joining has to run inside TLS. update this room to a build that has it"})
 			return
 		}
+		// A room inside a session has a certificate already, and joining never happens on one (mux.go).
+		if onMuxStream(conn) {
+			_ = writeJSON(conn, welcome{OK: false, Error: "a room that holds a certificate does not join again"})
+			return
+		}
 		if h.Enrol == nil {
 			_ = writeJSON(conn, welcome{OK: false,
 				Error: "this hub does not enrol rooms. who may connect is decided by its transport"})
