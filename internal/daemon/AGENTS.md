@@ -4,6 +4,9 @@ The room. Wires the store and the API together, owns the hooks, launching, and s
 purpose: one for the human, one for agents. As `atrium room` they are `:7781` (the room's own board, the hub's board
 is `:7778`) and `:7777`. The older `atrium daemon` single process serves its board on `:7778`.
 
+A room keeps two listeners on purpose. When the store halts the agent listener closes and stays closed, so runners
+park on connection-refused and burn nothing, while the board stays up to say what broke.
+
 ## The permission chain: order is critical
 
 `onPermRequest` in `daemon.go`. Each step can answer and stop. **Reordering changes what the tool means**, so
@@ -37,9 +40,14 @@ do not do it without reading why each one sits where it does.
    terminals live in a separate pty host process (`internal/ptyhost`) and survive a room restart.
 6. **A source is a suggestion, never durable state.** Intake cannot halt anything. A failing source is reported
    on its own row and retried on its next tick, its output is bounded WHILE being read rather than after, and
-   three consecutive failures switch it off with the reason attached.
+   three consecutive failures switch it off with the reason attached. A run that could not land everything is
+   recorded as a failure, because items already offered are deduplicated on the next tick and the thing that must
+   not happen is a row claiming success while the inbox is short.
 7. **`/finish` follows the hook posture.** An agent atrium has never heard of gets `ok` and nothing recorded,
    because failing there would mean a session could fail at the moment it tried to end tidily.
+8. **Files never leave a card.** Upload computes its own destination and accepts no path, download resolves one
+   through `internal/safepath`, and everything outside a card answers `403` whether or not it exists. The rule
+   lives in `internal/api/AGENTS.md`.
 
 ## Supervision: two maps, and keeping them apart is the design
 
