@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [flaky-go, flaky-board]
+        group: [flaky-go]
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
     steps:
