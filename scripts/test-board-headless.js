@@ -12292,17 +12292,14 @@ async function mComposeSection(browser) {
     // Multi-line: kept for a paste runner (claude), joined with spaces for gemini, and the hint says so.
     mode.message = "terminal";
     await type("line a\nline b");
-    await p.tap(btn);
-    await p.waitForFunction((n) => true, 0);
-    await p.waitForTimeout(150);
+    await Promise.all([p.waitForResponse(r => /\/message$/.test(r.url())), p.tap(btn)]);
     if (calls.message[calls.message.length - 1].body.text !== "line a\nline b") fail(tag + "claude multi-line changed: " + JSON.stringify(calls.message[calls.message.length - 1]));
     await mount("c2");
     await p.waitForTimeout(100);
     await type("line a\nline b");
     if (!/joined with spaces/.test(await noteText())) fail(tag + "no join hint: " + await noteText());
-    await p.tap(btn);
-    await p.waitForTimeout(200);
-    const last = calls.message[calls.message.length - 1];
+    await Promise.all([p.waitForResponse(r => /\/message$/.test(r.url())), p.tap(btn)]);
+    const last =calls.message[calls.message.length - 1];
     if (last.id !== "c2" || last.body.text !== "line a line b") fail(tag + "gemini not joined: " + JSON.stringify(last));
 
     // Drafts: per card, survive remount and reload, and a throwing localStorage does not break it.
