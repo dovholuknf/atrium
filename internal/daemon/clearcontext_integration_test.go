@@ -37,7 +37,7 @@ func TestClearContextWritesTheHandoffAndClearsWhenTheTurnEnds(t *testing.T) {
 	ncTurnEnds(d, task.ID)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 	d.wake.sawSession(task.ID, time.Now())
-	until(t, "the wake", func() bool { return strings.Contains(f.written(), "read the handoff at "+path) })
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), "read the handoff at "+strings.ReplaceAll(path, "\\", "/")) })
 	if w := f.written(); !strings.Contains(w, "re-read "+strings.ReplaceAll(dir, "\\", "/")+"/BRIEF.md") {
 		t.Fatalf("the wake does not name the brief: %q", w)
 	}
