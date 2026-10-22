@@ -202,13 +202,12 @@ func (f *feeds) addWith(room string, everywhere bool) *sub {
 func (f *feeds) drop(s *sub) {
 	f.mu.Lock()
 	delete(f.subs, s)
-	last := len(f.subs) == 0
-	stop := f.stop
+	if len(f.subs) == 0 && f.stop != nil {
+		// Under the lock, so a client arriving next sees this run as over and replaces its pumps.
+		f.stop()
+	}
 	f.mu.Unlock()
 	s.shut()
-	if last && stop != nil {
-		stop()
-	}
 }
 
 // reconcile keeps one pump running per attached room.
