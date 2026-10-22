@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // powershellPath is the system copy, so a PATH without powershell.exe does not turn the WMI start off.
@@ -42,12 +44,28 @@ func startOutsideJob(exe string, args []string, log string) (*os.Process, error)
 	if err != nil || pid <= 0 {
 		return nil, fmt.Errorf("start outside the job through WMI: no pid in %q", got)
 	}
-	p, err := os.FindProcess(pid)
+	p, err := holdProcess(pid)
 	if err != nil {
 		return nil, fmt.Errorf("start outside the job through WMI: %s started as pid %d and had ended before it could be held: %w",
 			filepath.Base(exe), pid, err)
 	}
 	return p, nil
+}
+
+// A process still being set up answers OpenProcess with access denied, so only that is retried, and only briefly.
+func holdProcess(pid int) (*os.Process, error) {
+	var err error
+	for i := 0; i < 20; i++ {
+		var p *os.Process
+		if p, err = os.FindProcess(pid); err == nil {
+			return p, nil
+		}
+		if !errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return nil, err
 }
 
 // cmd.exe, because WMI hands the child no handles and the redirect is the only way its output reaches a log.
