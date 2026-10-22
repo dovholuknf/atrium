@@ -114,3 +114,4 @@
 {"run":"39800566375","date":"2026-10-22T14:59:22Z","sha":"daf37b721","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39804725544","date":"2026-10-22T15:25:43Z","sha":"daf37b721","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39809366526","date":"2026-10-22T15:55:30Z","sha":"fdf14e160","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39810943290","date":"2026-10-22T16:05:32Z","sha":"fdf14e160","job":119938428321,"name":"check (windows-latest, go-test-1)","tests":["TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard"],"retried":[],"errors":{"TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard":"hostterm_integration_test.go:519: the wait for a host that never comes ran 16.2360915s past its bound"}}

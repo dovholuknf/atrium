@@ -148,3 +148,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39788990401 | TestADroppedCallerLosesItsStreamsAndOthersKeepThem | REMOVE | yes | 15 |
 | 2026-10-22 | 39796757733 | termFitHeight | REMOVE | yes | 15 |
 | 2026-10-22 | 39796757733 | mResume | REMOVE | yes | >57 |
+| 2026-10-22 | 39810943290 | TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard | ADD | no | 0 |
