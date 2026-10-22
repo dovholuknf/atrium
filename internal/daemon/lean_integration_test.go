@@ -236,6 +236,7 @@ func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 	}
 	hk := testHooks()
 	hk.noPollHookCommand = func() string { return "" }
+	hk.nowHookCommand = func() string { return "" }
 	raw, err = leanSettings(nil, "", nil, hk)
 	if err != nil || !strings.Contains(raw, `"hooks":{}`) {
 		t.Fatalf("no user settings should still build, got %s %v", raw, err)

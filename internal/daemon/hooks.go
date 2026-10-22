@@ -40,7 +40,7 @@ type hooks struct {
 	leanAgentsHookCommand func(agents []string) string
 	noPollHookCommand     func() string
 	nowHookCommand        func() string
-	stopHookCommand      func() string
+	stopHookCommand       func() string
 
 	// Preflight.
 	preflightLook     func(string) (string, error)
