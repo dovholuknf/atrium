@@ -48,7 +48,7 @@ Each row is one flag over today's worker, as `/context` totals or as the API num
 |---|---|---|---|
 | `--strict-mcp-config --mcp-config` with atrium-control and mercurius | every other server in the config | servers not named in `mcp` | yes. Dropping mercurius too saves 36 tokens. clint asked to keep it |
 | `--setting-sources project,local` | skills 5.8k, agents 2.3k, global CLAUDE.md 1.0k. System tools grow 5.9k, net -3.3k | user hooks, permissions and env, restored by `--settings` below | yes |
-| `--settings <filtered user settings>` | the operator's SessionStart and UserPromptSubmit hooks, status line, output style, attribution text | tab title and state scripts, the filler-guard reminder | yes |
+| `--settings <filtered user settings>` | the operator's SessionStart and UserPromptSubmit hooks, status line, output style, attribution text | tab title and state scripts, the filler-guard reminder. atrium adds back one `now:` line per prompt | yes |
 | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` | 4.3k: MEMORY.md and its instructions | the operator's memory index | yes |
 | `--disallowedTools` (22 tools) | Agent 1.1k, Skill and built-in skills 2.0k, deferred names 10k | subagents, workflows, crons, plan mode, AskUserQuestion, worktree tools | yes |
 | `--append-system-prompt` | adds ~0.2k | nothing. It carries the worker rules | yes |
@@ -113,7 +113,8 @@ room restart.
 - Custom agent types and the Agent tool, so no subagents. Workflows, crons, remote triggers, plan mode,
   AskUserQuestion and the worktree tools.
 - The status line, the output style, and the operator's SessionStart and UserPromptSubmit hooks: session bootstrap,
-  tab title and state, the filler-guard reminder, the layout snapshot.
+  tab title and state, the filler-guard reminder, the layout snapshot. The `now:` line stays, printed by atrium's own
+  `hook --event now`.
 - Every MCP server other than atrium-control and mercurius, unless named in `mcp`.
 
 It keeps the permissions, the env, every PreToolUse, PostToolUse, Stop, SessionEnd, Notification, Subagent and
@@ -165,3 +166,18 @@ cannot be removed.
 dot-dot or leading dot), `lean: false` with either field, and a runner that is not claude. The card keeps the lists as
 `atrium:agent:<name>` and `atrium:skill:<name>` tags, so a restart, a resume and the keep-alive fork rebuild the same
 flags, with no column. A room older than the fields is named in the launch warning.
+
+## The time line and Explore for directors
+
+Lean launches now run directors too, and two things the drop took away matter to them.
+
+**The `now:` line.** The operator's UserPromptSubmit hook printed `now: 2026-10-22 Thu 08:38 EDT` and a long style
+reminder, and lean drops it. `leanSettings` adds atrium's own UserPromptSubmit hook, `atrium hook --event now`
+(`internal/cli/hook_now.go`), which prints that one line and nothing else. It reads no input and cannot fail, and it
+is the one UserPromptSubmit hook that prints into the context of a lean session, so it stays one line: it is paid on
+every prompt.
+
+**Explore without a file.** `lean_agents: ["Explore"]` (or `atrium launch --lean-agents Explore`) keeps the `Agent` tool
+out of `--disallowedTools`, denies every other built-in as `Agent(<name>)`, writes no plugin, and records
+`atrium:agent:Explore` on the card so a resume keeps it. `Plan` works the same way. The guard rule
+`only-atrium-subagents` refuses any other subagent type.

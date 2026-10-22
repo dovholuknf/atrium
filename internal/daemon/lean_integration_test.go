@@ -161,7 +161,9 @@ func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 
 func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T) {
 	t.Parallel()
-	raw, err := leanSettings([]byte(leanTestSettings), "", nil, testHooks())
+	hk := testHooks()
+	hk.nowHookCommand = func() string { return "" }
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil, hk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,6 +274,35 @@ func TestWithoutLeanTagsKeepsTheRest(t *testing.T) {
 	}
 	if _, cut = withoutLeanTags([]string{"docs"}); cut {
 		t.Fatal("a card that was never lean has nothing to take out")
+	}
+}
+
+func TestLeanSettingsPrintsOnlyTheTimeLineOnEachPrompt(t *testing.T) {
+	hk := testHooks()
+	hk.nowHookCommand = func() string { return "C:/a/atrium.exe hook --event now" }
+	raw, err := leanSettings([]byte(leanTestSettings), "", nil, hk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Hooks map[string][]struct {
+			Hooks []struct{ Command string }
+		}
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var cmds []string
+	for _, e := range doc.Hooks["UserPromptSubmit"] {
+		for _, h := range e.Hooks {
+			cmds = append(cmds, h.Command)
+		}
+	}
+	if len(cmds) != 1 || cmds[0] != "C:/a/atrium.exe hook --event now" {
+		t.Fatalf("want only the time line on UserPromptSubmit, got %q in %s", cmds, raw)
+	}
+	if strings.Contains(raw, "filler-guard") {
+		t.Fatalf("the operator's prompt hook should stay dropped: %s", raw)
 	}
 }
 

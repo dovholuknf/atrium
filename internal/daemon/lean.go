@@ -593,6 +593,16 @@ func leanSettings(user []byte, stopHook string, agents []string, hk *hooks) (str
 			"hooks":   []any{map[string]any{"type": "command", "command": cmd}},
 		})
 	}
+	// The time line, one per prompt, in place of the operator's own prompt hooks that were dropped above.
+	if hk.nowHookCommand != nil {
+		if cmd := hk.nowHookCommand(); cmd != "" {
+			ups, _ := hooks["UserPromptSubmit"].([]any)
+			hooks["UserPromptSubmit"] = append(ups, map[string]any{
+				"matcher": "",
+				"hooks":   []any{map[string]any{"type": "command", "command": cmd}},
+			})
+		}
+	}
 	// The agent allowlist. The deny rules cover the built-ins Claude Code ships, and
 	// this covers a type no rule names, such as a project's own agent, and says
 	// which agents are allowed when it refuses.
@@ -618,6 +628,16 @@ var leanAgentsHookCommand = func(agents []string) string {
 		return ""
 	}
 	return exe + " hook --event lean-agents --allow " + strings.Join(agents, ",")
+}
+
+// nowHookCommand is the command of the UserPromptSubmit hook that prints the `now:` line, or empty when there is no
+// binary to run. A variable so a test can say what it wants.
+var nowHookCommand = func() string {
+	exe := claudeconf.HookExe("")
+	if exe == "" {
+		return ""
+	}
+	return exe + " hook --event now"
 }
 
 // noPollHookCommand is the command of the no-poll PreToolUse hook, or empty when

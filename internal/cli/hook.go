@@ -162,6 +162,10 @@ func newHook() *cobra.Command {
 				}
 				return nil
 			}
+			if strings.EqualFold(strings.TrimSpace(event), nowEvent) {
+				fmt.Fprintln(cmd.OutOrStdout(), nowLine(time.Now()))
+				return nil
+			}
 			if strings.EqualFold(strings.TrimSpace(event), leanAgentsEvent) {
 				if out := leanAgentsHook(readStdin(), allow); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))

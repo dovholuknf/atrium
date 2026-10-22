@@ -39,7 +39,8 @@ type hooks struct {
 	leanPluginRoot        string
 	leanAgentsHookCommand func(agents []string) string
 	noPollHookCommand     func() string
-	stopHookCommand       func() string
+	nowHookCommand        func() string
+	stopHookCommand      func() string
 
 	// Preflight.
 	preflightLook     func(string) (string, error)
@@ -106,6 +107,7 @@ func defaultHooks() hooks {
 		userSkillsDir:         userSkillsDir,
 		leanAgentsHookCommand: leanAgentsHookCommand,
 		noPollHookCommand:     noPollHookCommand,
+		nowHookCommand:        nowHookCommand,
 		stopHookCommand:       stopHookCommand,
 		preflightLook:         preflightLook,
 		preflightRun:          preflightRun,

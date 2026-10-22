@@ -57,6 +57,8 @@ type launchOpts struct {
 	lean, superlean bool
 	// kind is what sort of session to start. Only review is known here.
 	kind string
+	// leanAgents are the subagents a lean session may start. See daemon.leanKit.
+	leanAgents []string
 }
 
 func newLaunch() *cobra.Command {
@@ -139,6 +141,10 @@ func newLaunch() *cobra.Command {
 	c.Flags().BoolVar(&o.superlean, "superlean", false,
 		"start a claude runner superlean: lean, and only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, "+
 			"no mercurius, and a one paragraph worker prompt. for a bounded change. implies --lean. claude only")
+	c.Flags().StringSliceVar(&o.leanAgents, "lean-agents", nil,
+		"subagents a lean claude session may start, comma separated. Explore and Plan are Claude Code's own and need no file, "+
+			"any other name is a file in ~/.claude/agents on the room, started as atrium:<name>. keeps the Agent tool and only "+
+			"these. implies --lean. the card keeps the list")
 	c.Flags().StringVar(&o.kind, "kind", "",
 		"review starts a slop review of the branch in the directory: atrium writes the review rules into BRIEF.md and tags "+
 			"the card atrium:review. --base is then the branch to measure against (default claude/main)")
@@ -280,6 +286,9 @@ func launchBody(o launchOpts, cwd string) error {
 	}
 	if o.superlean {
 		fields["superlean"] = true
+	}
+	if len(o.leanAgents) > 0 {
+		fields["lean_agents"] = o.leanAgents
 	}
 	if o.isolated {
 		fields["item"] = true
