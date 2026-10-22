@@ -1185,6 +1185,7 @@ function openTerm(task) {
   lrInit(term);
   clInit(term);
   term.open(screen);
+  refitOnCellChange(term);
   term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
   phoneInputMode();
   // Before anything can write to it, so the trace starts at the first byte.

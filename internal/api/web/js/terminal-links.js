@@ -2637,6 +2637,23 @@ function paneBoxUnchanged() {
   return false;
 }
 
+// A cell that is measured again (a web font landing after the first fit) moves the rows with the pane's box unchanged.
+function refitOnCellChange(t) {
+  let last = 0;
+  const cellH = () => { try { return t._core._renderService.dimensions.css.cell.height; } catch (e) { return 0; } };
+  last = cellH();
+  try {
+    t._core._renderService.onDimensionsChange(() => {
+      const h = cellH();
+      if (!h || h === last) return;
+      last = h;
+      if (t !== term) return;
+      t._atriumBox = null;
+      onTermResize();
+    });
+  } catch (e) {}
+}
+
 function onTermResize() {
   // The bridge is placed either way. It spans the gap between the list and
   // the pane, and that gap moves whenever anything else does, attached
