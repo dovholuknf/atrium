@@ -28850,7 +28850,7 @@ async function growlPopoutSection(browser, base) {
 
     // Closing the pop-out hands the reminders back to the board, even with its switch left off.
     await pop.evaluate(() => setNotifyOff(true));
-    await pop.evaluate(() => dispatchEvent(new Event("pagehide")));
+    await pop.evaluate(() => { soloYielded = true; dispatchEvent(new Event("pagehide")); });
     await board.waitForFunction(() => !poppedOut("alpha~land-live"), null, { timeout: slow(8000), polling: 10 })
       .catch(() => fail("growlPopout: the board still thinks the card is popped out after the window closed."));
     await pop.close();

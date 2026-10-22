@@ -1,0 +1,1 @@
+The growlPopout board unit silences the pop-out page before its closing signal, so a roll call answer cannot re-claim the card and leave the board thinking it is still popped out (q-growl-popout-still-popped).
