@@ -16,6 +16,10 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   `retried.tsv` and a summary section, `ci-rollup.js` and `ci-flake-ledger.js` list it. An unlisted unit that passes
   on retry is `LOAD` and still fails the run. Go has no rerun, and a unit that fails both tries still fails.
   `test-board-sharded-retry.js` pins it.
+- **`flaky-sync.js <run id>` keeps `flaky-suite.json` to the tests that failed in the last 15 main runs.** It records the
+  run's failed jobs in `flaky-jobs.jsonl` (from the `failing-tests` artifact `ci-rollup.js` uploads, else the job list and
+  logs), adds and removes entries by text edit, and logs each move in `flaky-history.md`. `--dry-run` writes nothing, and
+  `test-flaky-sync.js` pins it.
 - **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms. The
   fix is to move the test into an integration file, not to raise the number.
 - **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the

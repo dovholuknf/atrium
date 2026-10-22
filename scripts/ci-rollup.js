@@ -2,7 +2,8 @@
 'use strict';
 // A run-level rollup of every failing unit across the matrix, for the run's summary page.
 //   ci-rollup.js --local RUN_DIR [--history DIR] [--run ID] [--out FILE] [--summary FILE]
-//   ci-rollup.js --repo OWNER/NAME --run ID [--token T] [--branch main] [--out FILE] [--summary FILE]
+//   ci-rollup.js --repo OWNER/NAME --run ID [--token T] [--branch main] [--out FILE] [--summary FILE] [--failing-json FILE]
+// --failing-json writes the run's failed jobs and their failing tests, the artifact scripts/flaky-sync.js reads.
 // The table goes to --out (written) or --summary (appended), else stdout. Workflow commands for the run page's
 // Annotations block go to stdout.
 // RUN_DIR and each DIR/<run-id> hold one folder per job, named ci-<os>-latest-<group>-attempt-<n>, as ci.sh left them.
@@ -136,6 +137,23 @@ function render({ run, jobs, rows, retried, missing, history, note }) {
   return out.join('\n');
 }
 
+const byName = (a, b) => a.localeCompare(b);
+const jobKey = (name) => (/^check \((\w+)-latest, (.+)\)$/.exec(name) || []).slice(1).join('/');
+
+function failingDoc({ run, runInfo = {}, apiJobs = [], current }) {
+  const mine = (j) => (f) => `${f.os}/${f.job}` === jobKey(j.name);
+  const jobs = apiJobs
+    .filter((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out')
+    .map((j) => {
+      const fails = current.failures.filter(mine(j)).filter((f) => !f.unit.startsWith('step: ') && !f.unit.startsWith('('));
+      const errors = {};
+      for (const f of fails) if (f.error && !errors[f.unit]) errors[f.unit] = f.error.slice(0, 200);
+      const retried = [...new Set(current.retried.filter(mine(j)).map((f) => f.unit))].sort(byName);
+      return { id: j.id, name: j.name, tests: [...new Set(fails.map((f) => f.unit))].sort(byName), retried, errors };
+    });
+  return { run: String(run), date: runInfo.created_at || '', sha: String(runInfo.head_sha || '').slice(0, 9), jobs };
+}
+
 function build({ run, current, histRuns, jobsWithoutArtifacts = [], note }) {
   const history = histRuns.map((h) => ({ id: h.id, known: h.known, keys: new Set(h.failures.map(unitKey)), rkeys: new Set((h.retried || []).map(unitKey)) }));
   const dedupe = (list) => {
@@ -152,7 +170,7 @@ function build({ run, current, histRuns, jobsWithoutArtifacts = [], note }) {
   const retried = ago(dedupe(current.retried || []), history).sort((a, b) => (b.failed - a.failed) || (a.os + a.job + a.unit < b.os + b.job + b.unit ? -1 : 1));
   const missing = jobsWithoutArtifacts.map((j) => `${j}: failed and left no artifact, so its units are not listed`);
   const ctx = { run, jobs: current.jobs, rows: withHistory, retried, missing, history, note };
-  return { summary: render(ctx), commands: annotate(ctx) };
+  return { summary: render(ctx), commands: annotate(ctx), current };
 }
 
 function local(opts) {
@@ -210,8 +228,16 @@ async function remote(opts) {
   const current = readRun(curDir);
 
   let jobsWithoutArtifacts = [];
+  let apiJobs = [];
+  let runInfo = {};
+  try {
+    runInfo = await (await api(`actions/runs/${opts.run}`)).json();
+  } catch (e) {
+    console.error(`ci-rollup: run: ${e.message}`);
+  }
   try {
     const jobs = (await (await api(`actions/runs/${opts.run}/jobs?per_page=100&filter=latest`)).json()).jobs || [];
+    apiJobs = jobs;
     const have = new Set(current.jobs.map((j) => `${j.os}-latest, ${j.job}`));
     jobsWithoutArtifacts = jobs
       .filter((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out')
@@ -239,7 +265,9 @@ async function remote(opts) {
     console.error(`ci-rollup: history: ${e.message}`);
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  return build({ run: opts.run, current, histRuns, jobsWithoutArtifacts });
+  const built = build({ run: opts.run, current, histRuns, jobsWithoutArtifacts });
+  built.failing = failingDoc({ run: opts.run, runInfo, apiJobs, current });
+  return built;
 }
 
 function unzip(zip, to) {
@@ -266,14 +294,15 @@ function parse(argv) {
   return o;
 }
 
-module.exports = { build, readRun, local, escData, escProp };
+module.exports = { build, readRun, local, failingDoc, escData, escProp };
 
 if (require.main === module) {
   (async () => {
     try {
       const opts = parse(process.argv.slice(2));
-      const { summary, commands } = opts.local ? local(opts) : await remote(opts);
+      const { summary, commands, failing } = opts.local ? local(opts) : await remote(opts);
       emit(opts, summary);
+      if (opts['failing-json'] && failing) fs.writeFileSync(opts['failing-json'], JSON.stringify(failing, null, 1) + '\n');
       process.stdout.write(commands.join('\n') + '\n');
     } catch (e) {
       console.error(`ci-rollup: ${e.message}`);

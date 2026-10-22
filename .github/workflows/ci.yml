@@ -208,7 +208,14 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" || true
+        run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" --failing-json failing-tests.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failing-tests
+          path: failing-tests.json
+          retention-days: 90
+          if-no-files-found: ignore
 
   # Tells the hub when this run finished, green or red, for now. It needs only rollup, which needs every other job and
   # hands on their results, so the graph reads rollup then notify. THERE IS NO LOGIC HERE: `scripts/ci-notify.sh` picks

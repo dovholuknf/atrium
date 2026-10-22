@@ -425,3 +425,14 @@ rollup still reads red.
 - `scripts/test-touched.sh` runs a touched manifest test ahead of the rest of its plan.
 - A manifest board unit that is also on `board-visual-units.txt` runs in the flaky job and fails it. That is the point
   of the move, and the unit is not run in board-visual.
+
+## The suite follows the last 15 runs on its own
+
+`scripts/flaky-suite.json` is the tests that failed in the 15 newest main runs of `scripts/flaky-jobs.jsonl`, and nothing
+else. After a main run finishes, `node scripts/flaky-sync.js <run id>` appends that run's failed jobs to the store, adds a
+test that failed in the window and is not an entry, removes an entry that did not, and logs each move in
+`scripts/flaky-history.md` with whether the test was listed before and how many runs have passed since it last failed.
+`--dry-run` prints the moves and writes nothing. `ci-rollup.js` uploads the run's failing tests as the `failing-tests`
+artifact, which the script downloads, and it falls back to the job list, `CI_ARTIFACTS` and the job log when that is
+missing. A `check: ...` name (a check script, not a test) is logged and never added, and a failed job that names no test
+is stored as `(step failed, no test named in the log)` and left out of the window.
