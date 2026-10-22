@@ -4,6 +4,8 @@
   {"kind": "go", "package": "internal/daemon", "name": "TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard", "reason": "failed in run 39810943290 job check (windows-latest, go-test-1): hostterm_integration_test.go:519: the wait for a host that never comes ran 16.2360915s past its bound"},
   {"kind": "go", "package": "internal/detach", "name": "TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog", "reason": "failed in run 39814909117 job check (windows-latest, go-test-2): outsidejob_windows_integration_test.go:46: the WMI start failed: start outside the job through WMI: PING.EXE started as pid 6692 and had ended before it could be held: OpenProcess: Access is denied."},
   {"kind": "board", "name": "growlPopout", "reason": "failed in run 39816184242 job check (windows-latest, board-2): the board still thinks the card is popped out after the window closed."},
-  {"kind": "board", "name": "termFitHeight", "reason": "failed in run 39836241253 job check (macos-latest, board-2): after attach the last row ends at 830.5 but the hint bar starts at 846.3 (34 rows)"}
+  {"kind": "board", "name": "termFitHeight", "reason": "failed in run 39836241253 job check (macos-latest, board-2): after attach the last row ends at 830.5 but the hint bar starts at 846.3 (34 rows)"},
+  {"kind": "go", "package": "internal/api", "name": "TestPublishTaskCoalescesABurstToTheLatestState", "reason": "failed in run 39856777708 job check (macos-latest, go-test): taskevent_integration_test.go:250: want one event per card (2), got 1"},
+  {"kind": "board", "name": "pollsGone", "reason": "failed in run 39856777708 job check (windows-latest, board-1): page.click Timeout 5000ms exceeded on #t-walk at rooms.js:683"}
  ]
 }
