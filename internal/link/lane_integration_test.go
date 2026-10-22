@@ -23,7 +23,7 @@ type throttled struct {
 }
 
 func (c *throttled) pace(n int) {
-	time.Sleep(time.Duration(n) * time.Second / time.Duration(c.rate))
+	time.Sleep(time.Duration(n) * time.Second / time.Duration(c.rate)) // wait: simulates the uplink rate
 }
 
 func (c *throttled) Read(b []byte) (int, error) {

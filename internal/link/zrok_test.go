@@ -122,7 +122,7 @@ func TestZrokDialsAndResetsShareOneProcessContext(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for reg.relogins.Load() < 200 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) // wait: poll tick inside the deadline above
 	}
 	if reg.built.Load() != 1 || zitictx.Live() != 1 || reg.closed.Load() != 0 {
 		t.Fatalf("built %d, live %d, closed %d, want 1, 1 and 0", reg.built.Load(), zitictx.Live(), reg.closed.Load())
