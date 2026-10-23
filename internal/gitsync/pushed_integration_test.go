@@ -29,14 +29,9 @@ func pushedFixture(t *testing.T) (*pushedFix, map[string]string) {
 	x.seedMain(hubRepo)
 	sha := map[string]string{}
 	sha["first"] = x.branch("fix/x", "x.txt")
-	x.must(x.push(x.card, hubRepo, "fix/x:refs/heads/fix/x"))
-	sha["later"] = x.grow("fix/x", "y.txt")
-	// The hub takes the later commit under another name, then fix/x goes back in the work repository so the
-	// following commits are built on `first` again.
-	x.must(x.push(x.card, hubRepo, "fix/x:refs/heads/fix/ahead"))
-	git(t, x.work, "branch", "-q", "-f", "fix/x", sha["first"])
+	sha["later"] = x.branchOff("fix/ahead", sha["first"], "y.txt")
 	sha["rival"] = x.branch("fix/rival", "r.txt")
-	x.must(x.push(x.card, hubRepo, "fix/rival:refs/heads/fix/rival"))
+	x.must(x.push(x.card, hubRepo, "fix/x:refs/heads/fix/x", "fix/ahead:refs/heads/fix/ahead", "fix/rival:refs/heads/fix/rival"))
 	sha["local"] = x.grow("fix/x", "z.txt")
 	return x, sha
 }
