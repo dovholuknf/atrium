@@ -1,24 +1,30 @@
 version: 2
+multi-ecosystem-groups:
+  all:
+    schedule:
+      interval: weekly
+    pull-request-branch-name:
+      separator: "-"
 updates:
   - package-ecosystem: github-actions
     directories:
       - /
       - /.github/actions/ci-run
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: all
   - package-ecosystem: gomod
     directories:
       - /
       - /website
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: all
   - package-ecosystem: npm
     directories:
       - /
       - /website
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: all
   - package-ecosystem: docker
     directory: /.github/ci-image
-    schedule:
-      interval: weekly
+    patterns: ["*"]
+    multi-ecosystem-group: all
