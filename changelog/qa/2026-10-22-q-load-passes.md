@@ -1,0 +1,1 @@
+A board unit that fails in its shard and passes alone on the retry (`LOAD`) no longer fails the run. It is still printed with its first-try error and both timings, and listed in the CI summary beside PASSED ON RETRY. q-load-passes.

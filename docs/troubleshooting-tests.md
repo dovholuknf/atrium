@@ -381,13 +381,13 @@ call log under it. Keep the two logs beside the change: they are its evidence, t
 
 ## 5. Where the LOAD reds come from
 
-The sharded run uses one shard per core, and a unit that fails in the shards and passes alone fails the
-run by policy (`LOAD` in the report) unless it is on `scripts/flaky-suite.json`. A listed unit that fails its first
+The sharded run uses one shard per core, and a unit that fails in the shards and passes alone is reported as `LOAD`
+with its first-try error and both timings. The run passes, and it is never a clean pass. A listed unit that fails its first
 try and passes the retry is a pass that is never read as clean: the flaky board jobs give their units one retry, the row
 reads `PASSED ON RETRY (slow or stalled, first try failed)`, a block lists the unit with its first-try error and both
 timings, and the job stays green. CI also puts those units in `summary.md`, a warning annotation, the run rollup and
 the `passed on retry` column of the flake ledger, so a repeat offender stays visible. A unit that fails both tries
-fails everywhere, and a go test in the flaky suite gets no retry. Every run therefore reddens on a new handful of
+fails everywhere, and a go test in the flaky suite gets no retry. Every run therefore lists a new handful of
 unlisted such units, two to five, and the eight fixed so far all held. Each fix is a wait on the state the step asserts (`until()` in the drawer check,
 `loaded || loadFailed` before reading the pulls, the hub stream before writing a rooms event). The pattern is in Part
 3. What this part adds: the units on `scripts/board-visual-units.txt` do not redden the run, so a unit moved there

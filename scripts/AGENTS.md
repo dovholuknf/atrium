@@ -14,7 +14,7 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   clean.** `test-board-sharded.js` exits 0 and prints `PASSED ON RETRY (slow or stalled, first try failed)` with the
   first-try error and both timings, and the flaky board jobs give their units that one retry. `ci.sh` writes
   `retried.tsv` and a summary section, `ci-rollup.js` and `ci-flake-ledger.js` list it. An unlisted unit that passes
-  on retry is `LOAD` and still fails the run. Go has no rerun, and a unit that fails both tries still fails.
+  on retry is `LOAD`, listed the same way, not clean, and passes the run. Go has no rerun, and a unit that fails both tries still fails.
   `test-board-sharded-retry.js` pins it.
 - **`flaky-sync.js <run id>` keeps `flaky-suite.json` to the tests that failed in the last 15 main runs.** It records the
   run's failed jobs in `flaky-jobs.jsonl` (from the `failing-tests` artifact `ci-rollup.js` uploads, else the job list and

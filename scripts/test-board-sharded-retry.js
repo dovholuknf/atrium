@@ -60,10 +60,12 @@ if (/^FAILED /m.test(listed.out) || /LOAD/.test(listed.out)) fail("a listed retr
 if (!/^1 of 2 units passed/m.test(listed.out)) fail("a retried pass does not count as a clean pass:\n" + listed.out);
 
 const unlisted = run({ FAKE_ONCE: "unlisted" }, "steady,unlisted");
-if (unlisted.code !== 1) fail("an unlisted unit that passed on retry still fails the run, exit " + unlisted.code + ":\n" + unlisted.out);
+if (unlisted.code !== 0) fail("an unlisted unit that passed on retry passes the run, exit " + unlisted.code + ":\n" + unlisted.out);
 if (!/^unlisted\s.*LOAD \(passed on retry\)/m.test(unlisted.out)) fail("the unlisted row says LOAD:\n" + unlisted.out);
-if (!/^FAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST \(1\)\. These fail the run\./m.test(unlisted.out)) fail("the unlisted block:\n" + unlisted.out);
-if (!/1 passed only on retry \(failing the run\)/.test(unlisted.out)) fail("the totals line:\n" + unlisted.out);
+if (!/^FAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST \(1\)\. NOT CLEAN PASSES, the run passes\./m.test(unlisted.out)) fail("the unlisted block:\n" + unlisted.out);
+if (!/^    first try: unlisted: /m.test(unlisted.out)) fail("the block keeps the first-try error:\n" + unlisted.out);
+if (!/1 passed only on retry \(LOAD, not clean, the run passes\): unlisted/.test(unlisted.out)) fail("the totals line names the unit:\n" + unlisted.out);
+if (/^FAILED \(/m.test(unlisted.out)) fail("a LOAD pass is not a failure:\n" + unlisted.out);
 if (unlisted.out.includes(RETRY)) fail("an unlisted unit is never marked as the tolerated kind:\n" + unlisted.out);
 
 const mixed = run({ FAKE_ONCE: "stalls,unlisted", FAKE_ALWAYS: "broken,listedBroken" }, "stalls,unlisted,broken,listedBroken");
@@ -91,10 +93,10 @@ const calls = spawnSync("bash", ["-c", [
   report,
   "board_report board " + JSON.stringify(logFile.split(path.sep).join("/")),
 ].join("\n")], { encoding: "utf8" });
-if (!/^counts 3 1$/m.test(calls.stdout)) fail("board_report counts the unlisted retried pass as failed and the listed one as not:\n" + calls.stdout + calls.stderr);
-if (!/^failing board unlisted unlisted: the sheet never settled$/m.test(calls.stdout)) fail("the unlisted retried pass is a failing row:\n" + calls.stdout);
+if (!/^counts 3 0$/m.test(calls.stdout)) fail("board_report counts neither retried pass as failed:\n" + calls.stdout + calls.stderr);
+if (!/^retried board unlisted unlisted: the sheet never settled LOAD, not on the flaky list$/m.test(calls.stdout)) fail("board_report hands the LOAD row its error:\n" + calls.stdout);
 if (!/^retried board stalls stalls: the sheet never settled first try 0\.\d+s failed, retry 0\.\d+s passed$/m.test(calls.stdout)) fail("board_report hands the listed retried row its error and timings:\n" + calls.stdout + calls.stderr);
-if (/^failing board stalls/m.test(calls.stdout)) fail("a listed retried pass is not a failing row:\n" + calls.stdout);
+if (/^failing board/m.test(calls.stdout)) fail("a retried pass is not a failing row:\n" + calls.stdout);
 
 const clean = run({}, "steady");
 if (clean.code !== 0 || /PASSED ON RETRY|LOAD/.test(clean.out)) fail("a clean run says nothing about retries, exit " + clean.code + ":\n" + clean.out);

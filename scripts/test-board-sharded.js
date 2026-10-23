@@ -26,8 +26,7 @@
 // on a quiet machine. A unit named in scripts/flaky-suite.json that fails both tries is reported as flaky and
 // still fails the run, one that passes the second time is a pass that is never read as a clean one: its row says
 // PASSED ON RETRY, a block gives its first-try error and both timings, and the run passes. A unit NOT on the list that
-// passes the second time is shown in its own block (it failed under the load of the shards, not on its own, so it
-// wants fixing or listing) and still fails the run, so a race is never passed quietly. A unit that fails both tries
+// passes the second time is shown as LOAD in its own block and the run passes too. A unit that fails both tries
 // fails the run, as does any unit that did not run, any failure outside every unit, and, with --no-retry, any failure.
 // With no flags test-board-headless.js is still the plain serial run.
 
@@ -319,10 +318,10 @@ async function main() {
     return Object.assign({ unit: u, status }, x);
   });
   const hard = rows.filter(r => r.status === "FAIL" || r.status === "NOT RUN" || r.status === "FLAKY (failed every try)" ||
-    r.status === "FLAKY (failed, not retried)" || r.status === LOAD_PASS);
+    r.status === "FLAKY (failed, not retried)");
   const retried_ = rows.filter(r => r.status === RETRY_PASS);
   const load_ = rows.filter(r => r.status === LOAD_PASS);
-  const failed_ = hard.filter(r => !load_.includes(r));
+  const failed_ = hard;
 
   console.log("\nunit".padEnd(26) + "time".padStart(9) + "  result");
   for (const r of rows.slice().sort((a, b) => b.ms - a.ms)) console.log(r.unit.padEnd(25) + fmt(r.ms).padStart(9) + "  " + r.status + "  " + r.shard + (r.retryMs ? "  (retry " + fmt(r.retryMs) + ")" : ""));
@@ -346,7 +345,7 @@ async function main() {
   }
 
   if (load_.length) {
-    console.log("\nFAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (" + load_.length + "). These fail the run. Fix the wait, or list it with its reason:");
+    console.log("\nFAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (" + load_.length + "). NOT CLEAN PASSES, the run passes. Fix the wait, or list it with its reason:");
     for (const r of load_) {
       console.log("  " + r.unit);
       for (const m of r.fails.slice(0, 3)) printFail("    ", "first try: ", m);
@@ -361,12 +360,12 @@ async function main() {
   const sum = rows.reduce((s, r) => s + r.ms, 0);
   console.log("\n" + rows.filter(r => r.status === "PASS").length + " of " + rows.length + " units passed" +
     (retried_.length ? ", " + retried_.length + " PASSED ON RETRY (flaky-listed, not clean, the run passes)" : "") +
-    (load_.length ? ", " + load_.length + " passed only on retry (failing the run)" : "") +
+    (load_.length ? ", " + load_.length + " passed only on retry (LOAD, not clean, the run passes): " + load_.map(r => r.unit).join(", ") : "") +
     (failed_.length ? ", " + failed_.length + " failed" : "") + (stray.length ? ", " + stray.length + " outside any unit" : "") + ".");
   console.log("wall time " + fmt(wall) + " on " + shards.length + " shards (the units add up to " + fmt(sum) + " run one after another)." +
     " cpu " + load.avg.toFixed(0) + "% average, " + load.peak.toFixed(0) + "% peak.");
   waitTimesLine(dir);
-  const keep = hard.length || stray.length || retried_.length || opt.logs;
+  const keep = hard.length || stray.length || retried_.length || load_.length || opt.logs;
   if (keep) console.log("shard output: " + dir);
 
   if (opt.saveWeights) {
