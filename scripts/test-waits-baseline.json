@@ -3,7 +3,7 @@
   "internal/api/cardsarchive_integration_test.go": 1,
   "internal/api/open_integration_test.go": 1,
   "internal/api/taskevent_integration_test.go": 5,
-  "internal/cli/advertiseset_test.go": 2,
+  "internal/cli/advertiseset_test.go": 1,
   "internal/cli/control_launch_timeout_integration_test.go": 2,
   "internal/cli/fakerunner_integration_test.go": 3,
   "internal/cli/mcp_relay_integration_test.go": 1,
@@ -130,5 +130,5 @@
   "scripts/board-tests/rooms.js": 18,
   "scripts/board-tests/settings.js": 18,
   "scripts/board-tests/usage.js": 29,
-  "scripts/test-board-headless.js": 635
+  "scripts/test-board-headless.js": 607
 }
