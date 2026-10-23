@@ -1,26 +1,26 @@
 version: 2
 multi-ecosystem-groups:
-  all:
+  weekly-deps:
     schedule:
       interval: weekly
-    pull-request-branch-name:
-      separator: "-"
+    commit-message:
+      prefix: "deps"
 updates:
   - package-ecosystem: github-actions
     directories:
       - /
       - /.github/actions/ci-run
     patterns: ["*"]
-    multi-ecosystem-group: all
+    multi-ecosystem-group: weekly-deps
   - package-ecosystem: gomod
     directories:
       - /
       - /website
     patterns: ["*"]
-    multi-ecosystem-group: all
+    multi-ecosystem-group: weekly-deps
   - package-ecosystem: npm
     directories:
       - /
       - /website
     patterns: ["*"]
-    multi-ecosystem-group: all
+    multi-ecosystem-group: weekly-deps
