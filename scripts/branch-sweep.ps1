@@ -10,8 +10,9 @@
 # and the long-lived claude/* branches, are kept. Local only: nothing here fetches, pushes or names a remote.
 #
 # -Worktrees looks at each worktree on a claude/* branch that cherry finds fully on claude/main. It is kept when it has
-# uncommitted changes, untracked files outside build.claude/ and node_modules/, is the main checkout, or is one of
-# $keepWorktrees (matched on the directory name, with or without an atrium- prefix, or on the branch claude/<name>).
+# uncommitted changes, untracked files outside build.claude/ and node_modules/ other than a root BRIEF.md, is the main
+# checkout, is one of $keepWorktrees (matched on the directory name, with or without an atrium- prefix, or on the branch
+# claude/<name>), or is one of $keepWorktreePaths.
 param(
     [string]$Repo = 'D:\git\github\dovholuknf\atrium',
     [string]$Base = 'claude/main',
@@ -23,6 +24,7 @@ $ErrorActionPreference = 'Stop'
 
 $protected = @('claude/main', 'claude/orch', 'claude/qa', 'claude/rnd', 'claude/orch-premerge')
 $keepWorktrees = @('orch-land', 'branch-sweep', 'atrium-root-design')
+$keepWorktreePaths = @('D:/worktrees/claude/atrium/file-links-view')
 
 function Invoke-Git {
     $out = & git -C $Repo @args 2>&1
@@ -57,8 +59,10 @@ if ($Worktrees) {
         $leaf = Split-Path -Leaf $w.Path
         $short = $w.Branch.Substring(7)
         $reason = $null
+        $w | Add-Member -NotePropertyName Force -NotePropertyValue $false
         if ($w.Main) { $reason = 'main checkout' }
         elseif ($keepWorktrees | Where-Object { $leaf -eq $_ -or $leaf -eq "atrium-$_" -or $short -eq $_ }) { $reason = 'named keep' }
+        elseif ($keepWorktreePaths -contains $w.Path.Replace('\', '/').TrimEnd('/')) { $reason = 'named keep' }
         elseif ($w.Prunable -or -not (Test-Path -LiteralPath $w.Path)) { $reason = 'path missing' }
         else {
             $status = & git -C $w.Path status --porcelain --untracked-files=normal 2>&1
@@ -67,6 +71,9 @@ if ($Worktrees) {
                 $changed = @($status | Where-Object { $_ -notlike '`?`? *' }).Count
                 $untracked = @($status | Where-Object { $_ -like '`?`? *' } | ForEach-Object { $_.Substring(3).Trim('"') } |
                     Where-Object { $_ -notlike 'build.claude/*' -and $_ -notmatch '(^|/)node_modules/' })
+                # git worktree remove refuses any untracked file, so a lone BRIEF.md needs --force.
+                if ($untracked -contains 'BRIEF.md') { $w.Force = $true }
+                $untracked = @($untracked | Where-Object { $_ -ne 'BRIEF.md' })
                 if ($changed -gt 0) { $reason = "$changed uncommitted change(s)" }
                 elseif ($untracked.Count -gt 0) { $reason = "$($untracked.Count) untracked file(s): $(($untracked | Select-Object -First 3) -join ', ')" }
             }
@@ -75,7 +82,7 @@ if ($Worktrees) {
             "$($w.Path) [$($w.Branch)] keep: $reason"
             $kept++
         } else {
-            "$($w.Path) [$($w.Branch)] remove"
+            "$($w.Path) [$($w.Branch)] remove$(if ($w.Force) { ' (untracked BRIEF.md)' })"
             $toRemove += $w
         }
     }
@@ -90,7 +97,7 @@ if ($Worktrees) {
 
     $failed = 0
     foreach ($w in $toRemove) {
-        & git -C $Repo worktree remove $w.Path
+        if ($w.Force) { & git -C $Repo worktree remove --force $w.Path } else { & git -C $Repo worktree remove $w.Path }
         if ($LASTEXITCODE -ne 0) { $failed++; continue }
         & git -C $Repo branch -D $w.Branch
         if ($LASTEXITCODE -ne 0) { $failed++ }
