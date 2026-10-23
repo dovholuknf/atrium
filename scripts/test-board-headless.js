@@ -1482,11 +1482,11 @@ async function tooltipSection(browser, base) {
   try {
     await tp.goto(base, { waitUntil: "domcontentloaded" });
     await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await tp.waitForTimeout(500);
+    await frames(tp, 3);
 
     for (const skin of ["harbour", "daylight"]) {
       await tp.evaluate(s => applySkin(s), skin);
-      await tp.waitForTimeout(300);
+      await settleStyle(tp);
       const w = await want();
       const t = await hover("header #gear", "the header's gear button");
       if (t && (t.bg !== w.bg || t.color !== w.color || t.font !== w.font)) {
@@ -1505,10 +1505,13 @@ async function tooltipSection(browser, base) {
     const onCard = async (sel, what) => {
       if (!(await mark(sel))) { fail("no " + what + " with a data-tip to hover (" + sel + ")."); return; }
       await tp.mouse.move(2, 890);
-      await tp.waitForTimeout(100);
+      await frames(tp, 2);
+      await fakePause(tp);
       await tp.hover("[data-tipprobe]");
-      await tp.waitForTimeout(800);
-      if ((await tipNow()).on) fail("hovering " + what + " brought up its tooltip, not only the card's details.");
+      await tp.clock.runFor(800);
+      const up = (await tipNow()).on;
+      await tp.clock.resume();
+      if (up) fail("hovering " + what + " brought up its tooltip, not only the card's details.");
       await tp.mouse.move(700, 890);
       await tp.evaluate(() => closePeek());
     };
@@ -1520,15 +1523,18 @@ async function tooltipSection(browser, base) {
 
     // A click on a button is not keyboard focus, and does not pin its tooltip up.
     await mark("header #sound");
+    await fakePause(tp);
     await tp.click("[data-tipprobe]");
-    await tp.waitForTimeout(700);
-    if ((await tipNow()).on) fail("clicking the sound button left its tooltip up.");
+    await tp.clock.runFor(700);
+    const pinned = (await tipNow()).on;
+    await tp.clock.resume();
+    if (pinned) fail("clicking the sound button left its tooltip up.");
     await tp.click("[data-tipprobe]");
     // Keyboard focus shows it at once.
     await tp.mouse.move(700, 890);
     await tp.keyboard.press("Shift");
     await tp.evaluate(() => document.getElementById("gear").focus());
-    await tp.waitForTimeout(50);
+    await frames(tp, 2);
     const kb = await tipNow();
     if (!kb.on || kb.text !== "sound settings") fail("keyboard focus on the gear did not show its tooltip: " +
       JSON.stringify(kb));
@@ -1536,7 +1542,7 @@ async function tooltipSection(browser, base) {
 
     await tp.click('.tab[data-view="terms"]');
     await tp.waitForSelector("#term-list .card.tab", { timeout: slow(15000) });
-    await tp.waitForTimeout(300);
+    await frames(tp, 3);
     await onCard("#term-list .card.tab [data-tip]", "a row on the terminals pane");
     await tp.mouse.move(700, 890);
 
@@ -1544,7 +1550,7 @@ async function tooltipSection(browser, base) {
     const left = [];
     for (const v of ["stack", "board", "terms", "history", "runners", "perms"]) {
       await tp.click('.tab[data-view="' + v + '"]').catch(() => {});
-      await tp.waitForTimeout(400);
+      await frames(tp, 4);
       left.push(...await tp.evaluate(v => [...document.querySelectorAll("[title]")]
         .map(e => v + ": <" + e.tagName.toLowerCase() + " class=\"" + e.className + "\" title=\"" +
           e.getAttribute("title") + "\">"), v));
