@@ -17,9 +17,15 @@ it and send it yourself.
 ## Out of a session
 
 - **Browse** the card's directory from the file drawer, and take one file or the whole tree as a zip.
-- **Click a path** the agent printed. It opens in atrium's editor in the browser you are sitting at. Escape closes
-  the editor, then the drawer.
-- **open there** starts your editor on the machine atrium runs on, when `editor_command` is set. **open in a
+- **Hover a path** the agent printed for its name and size. A path outside the card says so, and the board never
+  asks the room about it.
+- **Click a path.** A picture, an SVG or a PDF opens in atrium's viewer, a tab in the browser you are sitting at. A
+  text file offers the viewer (markdown rendered, JSON indented, HTML as source), atrium's editor, and **open
+  externally**.
+- **open externally** opens a picture, a PDF or a text document with the default app of the machine the room runs
+  on, not the one with the browser. A program or a script is refused, because its default app runs it. The viewer
+  has the same button.
+- **open in the editor** starts your editor on the machine atrium runs on, when `editor_command` is set. **open in a
   terminal** opens a terminal window there, when `terminal_command` is set. Both are off until you set them, and
   neither runs through a shell.
 

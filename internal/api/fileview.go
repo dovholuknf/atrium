@@ -27,6 +27,7 @@ import (
 //
 //   - an image is served as its own image type, and only the raster ones. SVG is
 //     a document that can carry script and is NOT an image here.
+//   - a PDF is served as a PDF, for the browser's own viewer.
 //   - EVERYTHING ELSE is text/plain, including .html, .svg and .md. A browser
 //     shows it as text and runs nothing. Markdown is rendered by the page in
 //     `read.html`, from these same text bytes, after sanitising.
@@ -68,8 +69,7 @@ func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("say which file, with ?path="))
 		return
 	}
-	// Containment first, exactly as download does it, with the same single
-	// answer for "outside" and "not there".
+	// One answer for "outside" and "not there", as download gives.
 	real, err := safepath.Contained(filepath.FromSlash(task.Worktree), want)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
@@ -91,16 +91,21 @@ func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	// By the extension of what the path RESOLVED to, so a link called
-	// `pic.png` pointing at `page.html` is served as the text it is.
+	// By the RESOLVED path's extension, so a `pic.png` link to `page.html` is served as text.
 	ct := "text/plain; charset=utf-8"
-	if t, ok := viewImageTypes[strings.ToLower(filepath.Ext(real))]; ok {
+	ext := strings.ToLower(filepath.Ext(real))
+	if t, ok := viewImageTypes[ext]; ok {
 		ct = t
 	}
 	h := w.Header()
-	h.Set("Content-Type", ct)
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "sandbox")
+	if ext == ".pdf" {
+		// No sandbox: a browser will not run its PDF viewer in a sandboxed document.
+		ct = "application/pdf"
+	} else {
+		h.Set("Content-Security-Policy", "sandbox")
+	}
+	h.Set("Content-Type", ct)
 	h.Set("Content-Disposition", `inline; filename="`+safepath.SafeName(path.Base(filepath.ToSlash(real)))+`"`)
 	h.Set("Cache-Control", "no-store")
 	if rel, ok := realRelative(task.Worktree, real); ok {

@@ -154,3 +154,24 @@ func TestAViewCannotReachAnotherCardsFile(t *testing.T) {
 		t.Fatalf("answered %d", w.Code)
 	}
 }
+
+// A PDF is served as one, for the browser's viewer, which will not run in a sandboxed document.
+func TestAViewServesAPDFAsAPDF(t *testing.T) {
+	t.Parallel()
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	if err := os.WriteFile(filepath.Join(work, "spec.PDF"), []byte("%PDF-1.4"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.viewFile(w, viewReq(task.ID, "spec.PDF"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("served as %q", got)
+	}
+	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("a PDF may be sniffed")
+	}
+}

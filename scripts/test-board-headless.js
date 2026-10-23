@@ -5028,7 +5028,7 @@ async function crossedPaneSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── hovering a file path underlines it and shows no tip; a click opens the menu ──
+// ── hovering a file path underlines it and tips its name; a click opens the menu ──
 async function linkTipSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -5063,12 +5063,6 @@ async function linkTipSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "linkTip", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => new Promise(res => term.write("see src/alpha.go here\r\nsrc/beta.go\r\n", res)));
-    await p.evaluate(() => {
-      window.__tipLog = [];
-      const t = document.getElementById("tip");
-      new MutationObserver(() => window.__tipLog.push(t.classList.contains("on"))).observe(t,
-        { attributes: true, attributeFilter: ["class"] });
-    });
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();
     const cell = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
@@ -5082,22 +5076,24 @@ async function linkTipSection(browser, base) {
     await p.mouse.move(...at(40, 5));
     await p.mouse.move(...at(8, 0), { steps: 3 });
     if (!await underlined()) { fail("hovering a path in the terminal did not underline it, so this proves nothing"); return; }
-    const deadline = Date.now() + 600;
+    const deadline = Date.now() + slow(3000);
     while (Date.now() < deadline && !(await tipOn())) await new Promise(r => setTimeout(r, 10));
-    if (await tipOn()) fail("hovering a file path showed a tip");
-    await shot(p, "hover-underlined");
+    const tipText = () => p.evaluate(() => document.getElementById("tip").textContent);
+    if (!await tipOn()) fail("hovering a file path showed no tip");
+    else if (!/src\/alpha\.go/.test(await tipText())) fail("the file tip does not name the file: " + await tipText());
+    await shot(p, "hover-tip");
 
     await p.mouse.move(...at(3, 1), { steps: 2 });
     if (!await underlined()) fail("hovering a second path did not underline it");
-    if (await tipOn()) fail("hovering a second file path showed a tip");
+    const next = Date.now() + slow(3000);
+    while (Date.now() < next && !/src\/beta\.go/.test(await tipText())) await new Promise(r => setTimeout(r, 10));
+    if (!/src\/beta\.go/.test(await tipText())) fail("hovering a second file path did not show its tip: " + await tipText());
 
     await p.mouse.click(...at(3, 1));
     const menu = await p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
       { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
     if (!menu) fail("clicking a file path did not open the menu");
     await shot(p, "click-menu");
-    const log = await p.evaluate(() => window.__tipLog.slice());
-    if (log.includes(true)) fail("the tip element went on during a hover and click: " + JSON.stringify(log));
     if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -5214,7 +5210,7 @@ async function backtickPathLinksSection(browser, base) {
 }
 
 // ── a file link asks where to open (u-file-open-outside) ──
-// The menu offers atrium's editor, a tab, and, only when that room has an editor_command, the machine it opens on.
+// The menu offers the viewer, atrium's editor, the room's default app for a document, and the editor_command when set.
 // It needs no terminal: fileLinkMenu is called for the card the pane would hold. FILEMENU_SHOTS=dir writes the PNGs.
 async function fileMenuSection(browser, base) {
   const was = mock.tasksMode;
@@ -5264,21 +5260,21 @@ async function fileMenuSection(browser, base) {
     const same = (got, want) => JSON.stringify(got) === JSON.stringify(want);
 
     let got = await ask("docs/plan.md");
-    const want = ["open rendered", "open in atrium's editor", "open on sg4"];
+    const want = ["open rendered", "open in atrium's editor", "open externally, on sg4", "open in the editor on sg4"];
     if (!same(got, want)) fail("the file menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
     await shot(p, "menu-md");
     if (!settingsRooms.includes("sg4")) fail("the card's room was not the one asked for its editor_command: " + JSON.stringify(settingsRooms));
-    await choose("open on sg4");
+    await choose("open in the editor on sg4");
     await until(() => opened.length > 0);
-    if (!same(opened, ["docs/plan.md"])) fail("open on sg4 sent " + JSON.stringify(opened));
+    if (!same(opened, ["docs/plan.md"])) fail("open in the editor on sg4 sent " + JSON.stringify(opened));
 
     await ask("docs/plan.md");
     await choose("open rendered");
     await until(async () => (await tabs()).length > 0);
 
     got = await ask("src/beta.go");
-    const wantGo = ["open in atrium's editor", "open in a tab", "open on sg4"];
+    const wantGo = ["open in a tab", "open in atrium's editor", "open in the editor on sg4"];
     if (!same(got, wantGo)) fail("a .go menu offered " + JSON.stringify(got));
     if (!await p.locator("#cardmenu button", { hasText: "open in a tab" }).locator("svg.out").count()) fail("open in a tab has no icon");
     await shot(p, "menu-go");
@@ -5286,11 +5282,11 @@ async function fileMenuSection(browser, base) {
     await until(async () => (await tabs()).length > 1);
     const opens = await tabs();
     if (opens[0] !== "/read.html#land-live/docs%2Fplan.md") fail("a .md tab opened " + opens[0]);
-    if (opens[1] !== "/v1/tasks/land-live/files/view?path=src%2Fbeta.go") fail("a .go tab opened " + opens[1]);
+    if (opens[1] !== "/read.html#land-live/src%2Fbeta.go") fail("a .go tab opened " + opens[1]);
 
     editorCommand = "";
     got = await ask("docs/plan.md");
-    if (!same(got, want.slice(0, 2))) fail("with no editor_command the menu offered " + JSON.stringify(got));
+    if (!same(got, want.slice(0, 3))) fail("with no editor_command the menu offered " + JSON.stringify(got));
     await p.keyboard.press("Escape");
     if (errors.length) fail("the file menu page threw uncaught errors: " + errors.join(" | "));
   } finally {
@@ -5344,7 +5340,7 @@ async function markdownTabSection(browser, base) {
     if (r.scripts || r.handlers) fail("markdown left a script or an event handler: " + JSON.stringify(r));
     if (r.hrefs.some(h => /javascript:/i.test(h || ""))) fail("a javascript: link survived: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fother.md")) fail("a relative .md link did not stay in the tab: " + JSON.stringify(r.hrefs));
-    if (!r.hrefs.includes("/v1/tasks/land-live/files/view?path=docs%2Fdata%2Fa.txt")) fail("a relative file link did not go to the view route: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.includes("/read.html#land-live/docs%2Fdata%2Fa.txt")) fail("a relative file link did not go to the viewer: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
     if (JSON.stringify(r.imgs) !== JSON.stringify(["/v1/tasks/land-live/files/view?path=docs%2Fimg%2Fp.png"])) fail("images were " + JSON.stringify(r.imgs));
     if (tabReqs.some(u => /evil\.test/.test(u))) fail("a remote image was fetched");
@@ -5561,8 +5557,188 @@ async function termLinkLateSection(browser, base) {
     await shot(p, "image-click");
     if (await menuOn()) fail("clicking an image showed the menu");
     const tabs = await p.evaluate(() => window.__tabs);
-    const want = "/v1/tasks/land-live/files/view?path=.atrium%2Fincoming%2Fshot.png";
+    const want = "/read.html#land-live/.atrium%2Fincoming%2Fshot.png";
     if (tabs.length !== 1 || tabs[0] !== want) fail("an image click opened " + JSON.stringify(tabs) + ", want " + want);
+    if (errors.length) fail("the page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── terminal file links: an outside path tips without asking, the viewer shows by type, open externally (u-file-links-hover-view-external) ──
+// 1. An absolute path outside the card is a link whose tip says so, and is never sent to the room. One inside is asked.
+// 2. read.html shows a png as the image, an md rendered, an svg as an image that ran nothing, json indented, a pdf in
+//    a frame and a zip as a download, and its Open externally button posts files/launch.
+// 3. The link menu's "open externally, on sg4" posts files/launch, and a .go file is not offered it.
+// FILELINKSVIEW_SHOTS=dir writes the PNGs.
+async function fileLinksViewSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  const root = "D:/worktrees/github/openziti/ziti-doc/blog-add-by-url";
+  landCard("land-live", { supervised: true, room: "sg4", worktree: root, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const shots = process.env.FILELINKSVIEW_SHOTS || "";
+  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
+  const asked = [], launched = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__tabs = [];
+    window.open = (u) => { window.__tabs.push(u); return null; };
+  });
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    asked.push(...paths);
+    const found = paths.filter(p => /\.(md|txt|go)$/.test(p))
+      .map(p => ({ path: p, rel: p.replace(/\\/g, "/").replace(/^.*blog-add-by-url\//, ""), size: 10, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  await ctx.route("**/files/launch", route => {
+    launched.push({ url: new URL(route.request().url()).pathname, path: JSON.parse(route.request().postData() || "{}").path });
+    route.fulfill({ status: 200, contentType: "application/json", body: "{\"ok\":true}" });
+  });
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+  const bodies = {
+    png: ["image/png", png],
+    md: ["text/plain; charset=utf-8", "# Hello viewer\n\nsome *text*"],
+    svg: ["text/plain; charset=utf-8", "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"20\" onload=\"window.__pwn=1\"><rect width=\"10\" height=\"20\" fill=\"red\"/></svg>"],
+    json: ["text/plain; charset=utf-8", "{\"a\":1,\"b\":[2]}"],
+    pdf: ["application/pdf", "%PDF-1.4\n%%EOF\n"]
+  };
+  await ctx.route("**/files/view?*", route => {
+    const p = new URL(route.request().url()).searchParams.get("path") || "";
+    const b = bodies[(p.split(".").pop() || "").toLowerCase()];
+    if (!b) return route.fulfill({ status: 404, body: "no such file" });
+    route.fulfill({ status: 200, contentType: b[0], headers: { "X-Content-Type-Options": "nosniff" }, body: b[1] });
+  });
+  try {
+    // 1. the terminal.
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "fileLinksView", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await p.waitForTimeout(300);
+    const outsideWin = "D:\\worktrees\\github\\openziti-test-kitchen\\ziti-tv\\2026-oct-22\\socials.txt";
+    const insideWin = "D:\\worktrees\\github\\openziti\\ziti-doc\\blog-add-by-url\\README.md";
+    const outsideBash = "/d/worktrees/github/other/x.md";
+    const rows = ["- " + outsideWin + ":", "inside " + insideWin + " ok", outsideBash + " and docs/plan.md"];
+    await p.evaluate(r => new Promise(res => term.write("\x1b[2J\x1b[H" + r.join("\r\n") + "\r\n", res)), rows);
+    const linksOn = y => p.evaluate(y => new Promise(res => {
+      provideFileLinks(term, termTask.id, y, links => {
+        const row = term.buffer.active.getLine(y - 1).translateToString(false);
+        res((links || []).map(l => row.slice(l.range.start.x - 1, l.range.end.x)));
+      });
+    }), y);
+    const got = [await linksOn(1), await linksOn(2), await linksOn(3)];
+    if (!got[0].includes(outsideWin)) fail("an outside Windows path was not a link: " + JSON.stringify(got[0]));
+    if (!got[1].includes(insideWin)) fail("an inside absolute path was not a link: " + JSON.stringify(got[1]));
+    if (!got[2].includes(outsideBash) || !got[2].includes("docs/plan.md")) fail("row 3 linked " + JSON.stringify(got[2]));
+    if (asked.some(a => /openziti-test-kitchen|\/d\/worktrees\/github\/other/.test(a))) fail("an outside path was sent to the room: " + JSON.stringify(asked));
+    if (!asked.includes(insideWin) || !asked.includes("docs/plan.md")) fail("an inside path was not asked: " + JSON.stringify(asked));
+
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const tipFor = async (col, r, want) => {
+      await p.mouse.move(...at(60, 8));
+      await p.mouse.move(...at(col, r), { steps: 3 });
+      const end = Date.now() + slow(3000);
+      let t = "";
+      while (Date.now() < end) {
+        t = await p.evaluate(() => { const e = document.getElementById("tip"); return e.classList.contains("on") ? e.textContent : ""; });
+        if (want.test(t)) return t;
+        await new Promise(res => setTimeout(res, 20));
+      }
+      return t;
+    };
+    let t = await tipFor(12, 0, /outside this card/);
+    if (!/outside this card, the board cannot open it/.test(t) || !t.includes("socials.txt")) fail("the outside path's tip was " + JSON.stringify(t));
+    await shot(p, "1-outside-tip");
+    await p.mouse.click(...at(12, 0));
+    await p.waitForTimeout(300);
+    if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on") || window.__tabs.length > 0)) fail("clicking an outside path opened something");
+    t = await tipFor(20, 1, /README\.md/);
+    if (!/README\.md/.test(t) || /outside/.test(t)) fail("the inside path's tip was " + JSON.stringify(t));
+    await shot(p, "1-inside-tip");
+
+    // 3. the menu.
+    const menuUp = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
+      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+    const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
+    await p.keyboard.press("Escape");
+    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "docs/plan.md", dir: false }); });
+    if (!await menuUp(true)) fail("the menu did not open for an md");
+    let menu = await items();
+    if (!menu.includes("open externally, on sg4")) fail("an md menu offered no open externally: " + JSON.stringify(menu));
+    if (menu[0] !== "open rendered") fail("the viewer is not first: " + JSON.stringify(menu));
+    await shot(p, "3-menu");
+    await p.locator("#cardmenu button", { hasText: "open externally, on sg4" }).click();
+    const until = async cond => { const end = Date.now() + slow(3000); while (Date.now() < end && !cond()) await new Promise(r => setTimeout(r, 10)); };
+    await until(() => launched.length > 0);
+    if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/land-live/files/launch", path: "docs/plan.md" }])) fail("open externally sent " + JSON.stringify(launched));
+    await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "src/a.go", dir: false }); });
+    if (!await menuUp(true)) fail("the menu did not open for a .go");
+    menu = await items();
+    if (menu.some(m => /externally/.test(m))) fail("a .go file was offered open externally: " + JSON.stringify(menu));
+    await p.keyboard.press("Escape");
+    await p.close();
+
+    // 2. the viewer, one page per file.
+    const view = async (rel, ready) => {
+      const v = await ctx.newPage();
+      v.on("pageerror", e => errors.push(rel + ": " + String(e)));
+      await v.goto(base + "/read.html#sg4~land-live/" + encodeURIComponent(rel), { waitUntil: "domcontentloaded" });
+      const ok = await v.waitForFunction(ready, null, { timeout: slow(8000), polling: 20 }).then(() => true, () => false);
+      if (!ok) fail("the viewer did not show " + rel + ": " + await v.evaluate(() => document.body.innerText.slice(0, 300)));
+      return v;
+    };
+    let v = await view(".atrium/incoming/shot.png", () => { const i = document.getElementById("pic"); return !i.hidden && i.complete && i.naturalWidth === 1; });
+    if (await v.evaluate(() => !document.getElementById("text").hidden)) fail("a png left the text box showing");
+    await shot(v, "2-png");
+    await v.close();
+    v = await view("docs/plan.md", () => { const h = document.querySelector("#md h1"); return !!h && h.textContent === "Hello viewer"; });
+    await shot(v, "2-md");
+    await v.close();
+    v = await view("art/logo.svg", () => { const i = document.getElementById("pic"); return !i.hidden && i.complete && i.naturalWidth === 10; });
+    if (!await v.evaluate(() => /^blob:/.test(document.getElementById("pic").src))) fail("an svg was not drawn from a blob");
+    if (await v.evaluate(() => window.__pwn !== undefined)) fail("an svg ran its script");
+    await v.close();
+    v = await view("data/x.json", () => /\n  "a": 1,/.test(document.getElementById("text").textContent));
+    await v.close();
+    v = await view("spec/doc.pdf", () => { const f = document.getElementById("pdf"); return !f.hidden && /files\/view\?path=spec%2Fdoc\.pdf$/.test(f.src); });
+    await v.close();
+    v = await view("out/bundle.zip", () => !!document.querySelector("#text a[href*='/files?path=out%2Fbundle.zip']"));
+    if (await v.evaluate(() => !document.getElementById("open-ext").hidden)) fail("a zip was offered open externally");
+    await v.close();
+    launched.length = 0;
+    v = await view("docs/plan.md", () => !document.getElementById("open-ext").hidden);
+    const label = await v.evaluate(() => document.getElementById("open-ext").textContent);
+    if (label !== "Open externally, on sg4") fail("the viewer's button says " + JSON.stringify(label));
+    await v.click("#open-ext");
+    await v.waitForFunction(() => !document.getElementById("ext-note").hidden, null, { timeout: slow(3000) }).catch(() => {});
+    const note = await v.evaluate(() => document.getElementById("ext-note").textContent);
+    if (!/sg4's machine, not in this browser/.test(note)) fail("the viewer's note said " + JSON.stringify(note));
+    if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/sg4~land-live/files/launch", path: "docs/plan.md" }])) fail("the viewer's button sent " + JSON.stringify(launched));
+    await shot(v, "2-open-ext");
+    await v.close();
     if (errors.length) fail("the page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
@@ -24840,7 +25016,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -26906,6 +27082,7 @@ async function main() {
     await unit("markdownTab", () => markdownTabSection(browser, base));
     await unit("docShare", () => docShareSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));
+    await unit("fileLinksView", () => fileLinksViewSection(browser, base));
     await unit("termProbeStorm", () => termProbeStormSection(browser, base));
     await unit("termFitHeight", () => termFitHeightSection(browser, base));
     await unit("roomsSetup", bu("roomsSetup"));

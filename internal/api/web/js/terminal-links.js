@@ -84,26 +84,21 @@ function useFileLinks(t, task) {
 // shape: the answer for the whole row is fetched in one request the first time
 // the pointer crosses it, and never again.
 async function provideFileLinks(t, id, y, done) {
-  // The pane may have moved to another card while this was in flight, and a
-  // link that opens a file from the previous card is worse than no link.
-  //
-  // BY BARE ID, and then by the id the pane holds NOW. A room flip respells the card in place
-  // (`retagTermId`), and this provider was registered with the old spelling for the terminal's whole life, so
-  // comparing it whole left every path on a card that had flipped plain text for good.
+  // By bare id: a room flip respells the card in place and this provider keeps the old spelling.
   if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
   id = termTask.id;
   const line = logicalLine(t, y);
   if (!line) { done(undefined); return; }
 
   const known = probeKnown(id);
-  const spans = [], ask = [];
+  const root = termTask.worktree || "";
+  const spans = [], ask = [], outside = [];
   for (const c of fileCandidates(line.text)) {
     const start = cellAt(line, c.start), end = cellAt(line, c.end - 1);
-    // Only what is on the row being asked about. The line is joined across
-    // wraps so a path broken over two rows is still whole, but a joined line
-    // can be thousands of characters and probing all of it would ask about
-    // words nobody is pointing at.
+    // Only this row: a joined line can be thousands of characters.
     if (y < start.y || y > end.y) continue;
+    // Never sent to the room: files never leave a card, so the board learns nothing about what is outside it.
+    if (outsideCard(c.token, root)) { outside.push(outsideLink({ start, end }, c.token)); continue; }
     spans.push({ token: c.token, range: { start, end } });
     if (!probeFresh(known, c.token, line.text) && !ask.includes(c.token)) ask.push(c.token);
   }
@@ -116,7 +111,7 @@ async function provideFileLinks(t, id, y, done) {
   if (ask.length) await Promise.all(ask.map(tok => probePending.get(pendKey(tok))));
   if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
 
-  const links = [];
+  const links = outside;
   for (const s of spans) {
     const hit = probeHit(probeKnown(id), s.token);
     if (hit) links.push(fileLink(id, s.range, hit));
@@ -159,59 +154,66 @@ function fileLink(id, range, hit) {
     range,
     text: hit.rel,
     activate: (ev) => {
-      // LEFT BUTTON ONLY. xterm calls `activate` for any button, so a right
-      // click on a path opened the editor AND then the menu that right click
-      // was for, which is one gesture doing two things and only one of them
-      // asked for. Returning without `preventDefault` lets the browser's own
-      // menu through, which is where copy lives, and is the same rule the card
-      // menu follows when there is a selection.
-      //
-      // `button` is 0 for left, 1 for middle, 2 for right. A synthetic event
-      // with no button reads as 0, which is the right default: something that
-      // went out of its way to activate a link meant to open it.
+      // Left button only: xterm activates for any button, and a right click is the browser's menu, where copy lives.
       if (ev && ev.button) return;
-      // A DRAG THAT SELECTED TEXT IS NOT A CLICK ON A LINK.
-      //
-      // Dragging across a path to copy it ends in a `click` on whatever was
-      // under the pointer, and xterm calls `activate` for that. So selecting a
-      // filename opened it in the editor, which is the one thing you were not
-      // asking for: you were copying the name.
-      //
-      // `term.hasSelection()` and not `getSelection()`. The terminal draws on a
-      // canvas and keeps its own selection, so the document knows nothing about
-      // it and the board's `isSelecting` is false here however much is
-      // highlighted on screen.
-      //
-      // No `preventDefault` on this path, for the same reason the right button
-      // gets none: whatever the browser would have done with a click that ended
-      // a selection is better than opening a file.
+      // A drag that selected text ends in a click, and was a copy. The terminal keeps its own selection.
       if (term && term.hasSelection && term.hasSelection()) return;
       ev.preventDefault();
       linkTipHide();
       hideTip();
-      // A directory has one place to go. So does a file the editor cannot show
-      // (an image, any binary): a tab, at once. A text file asks, because there are three.
       if (hit.dir) openFromTerminal(id, hit);
-      else if (notEditable(hit.rel)) openFileTabFor(id, hit.rel);
+      else if (viewAtOnce(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
     },
-    hover: hit.dir ? (ev) => {
-      const text = hit.rel + "/\nopens the file browser here";
-      const same = linkTip.path === hit.rel;
-      clearTimeout(linkTip.timer);
-      linkTip.timer = 0;
-      // The SAME path asked for again inside the grace is a repaint, not the
-      // pointer moving. A tip already up is left alone. One not up yet starts
-      // its delay again below, which only a pointer move sets off.
-      if (same && tipEl.classList.contains("on") && tipEl.textContent === linkTip.text) return;
-      // A different path replaces the old tip at once rather than after the grace.
-      if (!same) hideTip();
-      linkTip.path = hit.rel;
-      linkTip.text = text;
-      tipSoon(() => placeTip(pointerAnchor(ev), text));
-    } : undefined,
-    leave: hit.dir ? () => linkTipLeave() : undefined
+    hover: (ev) => linkTipShow(ev, hit.rel, fileLinkTip(hit)),
+    leave: () => linkTipLeave()
   };
+}
+
+function fileLinkTip(hit) {
+  if (hit.dir) return hit.rel + "/\nopens the file browser here";
+  const name = hit.rel + (hit.size ? "  (" + bytes(hit.size) + ")" : "");
+  return name + (viewAtOnce(hit.rel) ? "\nclick to view it in atrium" : "\nclick to view, edit or open it");
+}
+
+// A path that names somewhere outside the card. Its link opens nothing and says why.
+function outsideLink(range, tok) {
+  return {
+    range,
+    text: tok,
+    activate: () => {},
+    hover: (ev) => linkTipShow(ev, tok, tok + "\noutside this card, the board cannot open it"),
+    leave: () => linkTipLeave()
+  };
+}
+
+// Whether `tok` is an absolute path that is not under the card's directory, judged from the spelling alone. A
+// relative path, `~/x` and anything not absolute is left to the probe.
+function outsideCard(tok, root) {
+  if (!root) return false;
+  const norm = s => String(s).replace(/\\/g, "/").replace(/\/+$/, "");
+  const dir = norm(root);
+  const win = /^[A-Za-z]:\//.test(dir + "/");
+  let p = norm(tok);
+  if (win && /^\/[A-Za-z]\//.test(p)) p = p[1] + ":" + p.slice(2);
+  const abs = /^[A-Za-z]:\/[^/]/.test(p) || /^\/\/[^/]+\/[^/]/.test(p) || /^\/[^/]+\/[^/]/.test(p);
+  if (!abs) return false;
+  const fold = s => win ? s.toLowerCase() : s;
+  const a = fold(p), d = fold(dir);
+  return a !== d && !a.startsWith(d + "/");
+}
+
+function linkTipShow(ev, key, text) {
+  const same = linkTip.path === key;
+  clearTimeout(linkTip.timer);
+  linkTip.timer = 0;
+  // The same path again inside the grace is a repaint, not the pointer moving.
+  if (same && tipEl.classList.contains("on") && tipEl.textContent === linkTip.text) return;
+  // A different path replaces the old tip at once.
+  if (!same) hideTip();
+  linkTip.path = key;
+  linkTip.text = text;
+  tipSoon(() => placeTip(pointerAnchor(ev), text));
 }
 
 // THE TIP OUTLIVES A REPAINT OF ITS ROW.
@@ -248,20 +250,25 @@ document.getElementById("t-screen").addEventListener("mouseleave", linkTipHide);
 const binaryExt = /\.(png|jpe?g|gif|webp|bmp|ico|tiff?|avif|heic|pdf|zip|gz|tgz|bz2|xz|7z|rar|tar|exe|dll|so|dylib|bin|o|a|class|jar|wasm|mp3|mp4|m4a|wav|ogg|mov|avi|mkv|webm|woff2?|ttf|otf|eot|docx?|xlsx?|pptx?|db|sqlite3?)$/i;
 function notEditable(rel) { return binaryExt.test(rel || ""); }
 
-// A clicked file asks where it should open, and the answer is one of three.
+// What a click opens in the viewer without asking: an SVG is text, but it is read as a picture.
+function viewAtOnce(rel) { return notEditable(rel) || /\.svg$/i.test(rel || ""); }
+
+// What `files/launch` will hand to the room's default app. The same list as `launchTypes` in filelaunch.go.
+const launchExt = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg|pdf|md|markdown|txt|log|csv|json|html?)$/i;
+function launchable(rel) { return launchExt.test(rel || ""); }
+
+// A clicked file asks where it should open.
 //
-//   open rendered        a markdown file only, and first: the same tab as below, named for what it shows.
-//   in atrium's editor   here, in this browser, in the drawer. Always offered.
-//   in a tab             here, in a new browser tab, streamed from the room that
-//                        holds the card. Always offered, and the only way to read a
-//                        markdown file rendered.
-//   open on <machine>    `files/open`, which runs the operator's `editor_command` on
-//                        the machine the file is on. Offered ONLY when that room has
-//                        one set, and named for the machine, because over a share it
-//                        is not the machine in front of you. There is no default.
+//   open rendered / open in a tab   atrium's viewer, in a new browser tab, streamed from the room that holds the
+//                                   card. First and always offered. Markdown is rendered there.
+//   in atrium's editor              here, in this browser, in the drawer. Not for a binary.
+//   open externally, on <machine>   `files/launch`, the room's DEFAULT APP for the file, on the room's machine.
+//                                   Only for a document or a picture: a program's default app is to run it.
+//   open in the editor on <machine> `files/open`, which runs the operator's `editor_command` on the machine the
+//                                   file is on. Offered ONLY when that room has one set. There is no default.
 //
-// The room's own setting decides, not the board's: a card on another room is
-// opened by that room's command, and asked of that room.
+// Both of the last two are named for the machine because over a share it is not the machine in front of you. The
+// room's own setting decides, not the board's: a card on another room is opened by that room's command.
 async function fileLinkMenu(ev, id, hit) {
   const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
   const where = (termTask && termTask.id === id && termTask.room) || "";
@@ -273,15 +280,18 @@ async function fileLinkMenu(ev, id, hit) {
     cmd = (typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.editor_command) || "";
   }
   if (!termTask || termTask.id !== id) return;
-  // Only the tab renders markdown, so for a markdown file the tab is offered first and says so. The
-  // editor shows the source.
   const md = !hit.dir && /\.(md|markdown)$/i.test(hit.rel);
-  const editor = { label: "open in atrium's editor", act: () => openFromTerminal(id, hit) };
-  const tab = { label: md ? "open rendered" : "open in a tab", out: true, act: () => openFileTabFor(id, hit.rel) };
-  const items = md ? [tab, editor] : [editor, tab];
+  const items = [{ label: md ? "open rendered" : "open in a tab", out: true, act: () => openFileTabFor(id, hit.rel) }];
+  if (!notEditable(hit.rel)) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
+  if (launchable(hit.rel)) {
+    items.push({
+      label: "open externally, on " + (where || "the room's machine"),
+      act: () => launchOnRoom(id, hit.rel, where)
+    });
+  }
   if (cmd) {
     items.push({
-      label: where ? "open on " + where : "open where the file is",
+      label: where ? "open in the editor on " + where : "open in the editor where the file is",
       act: () => openOnDaemon(id, hit.rel)
     });
   }

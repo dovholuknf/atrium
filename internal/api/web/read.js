@@ -13,8 +13,7 @@
 //
 // Links and images are rewritten AFTER sanitising, on the DOM, so what is
 // rewritten is what is shown. A relative target resolves against the document's
-// folder to the same card: another .md opens in this page, anything else at the
-// view route. Remote images are not loaded.
+// folder to the same card and opens in this viewer. Remote images are not loaded.
 
 // `mdEscape` is the renderer's answer for raw HTML.
 function mdEscape(s) {
@@ -43,6 +42,53 @@ function viewURL(id, path) {
 }
 
 function isMarkdown(path) { return /\.(md|markdown)$/i.test(path); }
+
+// How the viewer shows a file, by its name. The image list is the view route's `viewImageTypes`.
+function readKind(path) {
+  if (/\.(png|jpe?g|gif|webp|bmp|ico|avif)$/i.test(path)) return "image";
+  if (/\.svg$/i.test(path)) return "svg";
+  if (/\.pdf$/i.test(path)) return "pdf";
+  if (/\.json$/i.test(path)) return "json";
+  if (/\.(tiff?|heic|zip|gz|tgz|bz2|xz|7z|rar|tar|exe|dll|so|dylib|bin|o|a|class|jar|wasm|mp3|mp4|m4a|wav|ogg|mov|avi|mkv|webm|woff2?|ttf|otf|eot|docx?|xlsx?|pptx?|db|sqlite3?)$/i.test(path)) return "binary";
+  return "text";
+}
+
+// What `files/launch` opens with the default app. The same list as `launchTypes` in filelaunch.go.
+function readLaunchable(path) { return /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg|pdf|md|markdown|txt|log|csv|json|html?)$/i.test(path); }
+
+// OPEN EXTERNALLY hands the file to the default app of the ROOM's machine, which is named, because over a share
+// it is not this one.
+function extMain(id, path) {
+  const btn = document.getElementById("open-ext");
+  const note = document.getElementById("ext-note");
+  if (!btn || !readLaunchable(path)) return;
+  const cut = id.indexOf("~");
+  const room = cut > 0 ? id.slice(0, cut) : "";
+  const on = room ? room + "'s machine" : "the room's machine";
+  btn.hidden = false;
+  btn.title = "Opens it with the default app on " + on + ", not in this browser.";
+  btn.textContent = "Open externally, on " + (room || "the room's machine");
+  btn.onclick = async () => {
+    btn.disabled = true;
+    let msg = "";
+    try {
+      const r = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files/launch", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: path })
+      });
+      if (!r.ok) {
+        let m = (await r.text()).trim();
+        try { const j = JSON.parse(m); if (j && j.error) m = j.error; } catch (e) {}
+        throw new Error(m || r.statusText);
+      }
+      msg = "Opened with the default app on " + on + ", not in this browser.";
+    } catch (e) {
+      msg = "Could not open it: " + e.message;
+    }
+    btn.disabled = false;
+    note.textContent = msg;
+    note.hidden = false;
+  };
+}
 
 // A relative reference against the folder of `from`, as a card path. The result is
 // never trusted: containment is the daemon's and a `..` past the top is refused there.
@@ -73,9 +119,7 @@ function renderMarkdown(text, id, path) {
     FORBID_ATTR: ["style", "srcset", "formaction"],
     ALLOW_DATA_ATTR: false
   });
-  // An INERT document, not a div in this page: an element built in the live
-  // document starts loading its image the moment it has a src, which would fetch
-  // a remote picture before it is rewritten away.
+  // An inert document: an img in the live page fetches a remote picture before it is rewritten away.
   const box = new DOMParser().parseFromString("<!doctype html><body>" + clean, "text/html").body;
   for (const a of box.querySelectorAll("a[href]")) {
     const ref = a.getAttribute("href");
@@ -101,7 +145,7 @@ function renderMarkdown(text, id, path) {
         }
         continue;
       }
-      a.setAttribute("href", isMarkdown(to) ? "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(to) : viewURL(id, to));
+      a.setAttribute("href", "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(to));
       a.target = "_blank"; a.rel = "noopener noreferrer";
     }
   }
@@ -134,8 +178,7 @@ function renderMarkdown(text, id, path) {
 function decodeURIComponentSafe(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 
 function readMain() {
-  // `id/path`, where the id cannot contain a slash and a path can, so the
-  // first one separates them and the rest belongs to the file.
+  // The id cannot hold a slash and a path can, so the first slash separates them.
   const frag = decodeURIComponent(location.hash.slice(1));
   const cut = frag.indexOf("/");
   const id = SHARE ? "" : cut < 0 ? "" : decodeURIComponent(frag.slice(0, cut));
@@ -154,6 +197,34 @@ function readMain() {
   }
   where.textContent = path;
   document.title = path.split("/").pop() + " — atrium";
+  if (!SHARE) extMain(id, path);
+  const kind = readKind(path);
+  const oops = msg => { text.className = "oops"; text.textContent = msg; };
+  if (kind === "image") {
+    const pic = document.getElementById("pic");
+    pic.alt = path;
+    pic.onload = () => { what.textContent = pic.naturalWidth + " × " + pic.naturalHeight; };
+    pic.onerror = () => { pic.hidden = true; text.hidden = false; oops("Could not show it as a picture."); };
+    text.hidden = true;
+    pic.hidden = false;
+    pic.src = viewURL(id, path);
+    return;
+  }
+  if (kind === "pdf") {
+    text.hidden = true;
+    const f = document.getElementById("pdf");
+    f.hidden = false;
+    f.src = viewURL(id, path);
+    return;
+  }
+  if (kind === "binary") {
+    oops("atrium shows pictures, PDFs and text, and this is none of them. ");
+    const a = document.createElement("a");
+    a.href = "/v1/tasks/" + encodeURIComponent(id) + "/files?path=" + encodeURIComponent(path);
+    a.textContent = "Download it";
+    text.appendChild(a);
+    return;
+  }
   fetch(viewURL(id, path))
     .then(async r => {
       if (!r.ok) throw new Error((await r.text()) || r.statusText);
@@ -162,7 +233,19 @@ function readMain() {
     .then(body => {
       const lines = body.split("\n").length;
       what.textContent = lines + (lines === 1 ? " line" : " lines");
-      if (isMarkdown(path)) {
+      if (kind === "svg") {
+        // An image never runs the script an SVG can carry, and a blob keeps it off the view route's text type.
+        const pic = document.getElementById("pic");
+        pic.alt = path;
+        pic.onerror = () => { pic.hidden = true; text.hidden = false; oops("Could not draw this SVG."); };
+        text.hidden = true;
+        pic.hidden = false;
+        pic.src = URL.createObjectURL(new Blob([body], { type: "image/svg+xml" }));
+      } else if (kind === "json") {
+        let shown = body;
+        try { shown = JSON.stringify(JSON.parse(body), null, 2); } catch (e) {}
+        text.textContent = shown;
+      } else if (isMarkdown(path)) {
         text.hidden = true;
         md.hidden = false;
         // The sanitised string, and the only innerHTML on this page.

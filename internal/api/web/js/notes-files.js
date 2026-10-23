@@ -560,16 +560,10 @@ function paintEditorElsewhere() {
 
 // Where a file is read in a tab.
 //
-// Markdown goes to `read.html`, which renders it. Everything else goes straight to
-// the hub's view route, which streams the bytes as text/plain or a raster image,
-// with no download prompt and never as a document: `downloadFile` is an attachment
-// on purpose, and an HTML or SVG file an agent wrote must not run on this origin.
-// See `fileview.go`.
+// Every file goes to `read.html`, atrium's viewer, which shows it by its type from the bytes of the view route.
+// An HTML or SVG file an agent wrote must not run on this origin: see `fileview.go` and `read.js`.
 function fileTabURL(id, path) {
-  if (/\.(md|markdown)$/i.test(path)) {
-    return "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(path);
-  }
-  return "/v1/tasks/" + encodeURIComponent(id) + "/files/view?path=" + encodeURIComponent(path);
+  return "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(path);
 }
 
 function openFileTabFor(id, path) {
@@ -723,6 +717,20 @@ async function openOnDaemon(id, path) {
     return;
   }
   toast("opening", path.split(/[\\/]/).pop() + " on the machine running this session");
+}
+
+// Opens a file with the default app of the ROOM's machine, which over a share is not the one in front of you.
+async function launchOnRoom(id, path, where) {
+  try {
+    await api(`/v1/tasks/${id}/files/launch`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path })
+    });
+  } catch (e) {
+    toast("could not open it", e.message);
+    return;
+  }
+  toast("opened externally", path.split(/[\\/]/).pop() + " on " + (where || "the room's machine") + ", not in this browser");
 }
 
 function filesUp() {

@@ -17,10 +17,11 @@
   ── what it reads, and why not the file's own bytes ───────
 
   The bytes come from `/v1/tasks/<id>/files/view`, which streams the card's file
-  as text/plain (or a raster image) with nosniff and a sandbox CSP, so an HTML or
-  SVG file an agent wrote is never served as itself on the board's origin. Plain
-  text and images are opened at that address directly. Only markdown comes here,
-  because it is the one thing that needs turning into a page.
+  as text/plain, a raster image or a PDF, with nosniff, so an HTML or SVG file an
+  agent wrote is never served as itself on the board's origin. This page shows it
+  by type: a picture as an image, an SVG as an image made from a blob (an image
+  runs no script), a PDF in the browser's own viewer, markdown rendered, JSON
+  indented, and everything else as text, HTML included.
 
   ── the markdown is not trusted ──────────────────────────
 
@@ -37,7 +38,7 @@
   act of opening the tab.
 -->
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
   /* THE TEXT SIZE is this page's own, in px, set from read.js off a key of its own. Browser zoom is per origin
      and would take the board with it. */
@@ -98,6 +99,9 @@
   .md table { border-collapse: collapse; } .md th, .md td { border: 1px solid var(--stroke-dim); padding: 4px 10px; }
   .md img { max-width: 100%; }
   .oops { padding: 18px; color: var(--warn); }
+  .oops a { color: var(--head); }
+  .pic { display: block; max-width: calc(100% - 36px); margin: 18px auto; background: var(--shell-0); }
+  .pdf { display: block; width: 100%; height: calc(100vh - 56px); border: 0; }
   .sharebtn, .sharebox button {
     height: 24px; padding: 0 10px; border: 1px solid var(--stroke-dim); background: var(--chip);
     color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
@@ -127,7 +131,9 @@
     <button type="button" data-width="full" aria-label="the whole window">Full</button>
   </span>
   <select id="skin" aria-label="skin for this page only"></select>
-  <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button></header>
+  <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button>
+  <button id="open-ext" type="button" class="sharebtn" hidden>Open externally</button></header>
+<div id="ext-note" class="sharebox" hidden></div>
 <div id="share-box" class="sharebox" hidden>
   <input id="share-url" type="text" readonly aria-label="public address">
   <button id="share-copy" type="button">Copy</button>
@@ -137,6 +143,8 @@
 <div id="share-err" class="oops" hidden></div>
 <pre id="text"></pre>
 <article id="md" class="md" hidden></article>
+<img id="pic" class="pic" alt="" hidden>
+<iframe id="pdf" class="pdf" title="the PDF" hidden></iframe>
 <script src="/vendor/marked.js"></script>
 <script src="/vendor/purify.js"></script>
 <script src="/read.js"></script>
