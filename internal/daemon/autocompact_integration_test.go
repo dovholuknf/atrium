@@ -4,10 +4,12 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -159,7 +161,21 @@ func fakeClaude(t *testing.T, help string) string {
 	if err := os.WriteFile(p, []byte("#!/bin/sh\ncat <<'EOF'\n"+help+"\nEOF\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	execable(t, p)
 	return p
+}
+
+// A fork in a parallel test can hold the write fd until it execs, so the first exec of a new script may get ETXTBSY.
+func execable(t *testing.T, p string) {
+	t.Helper()
+	for i := 0; i < 1000; i++ {
+		err := exec.Command(p, "--help").Run()
+		if err == nil || !strings.Contains(err.Error(), "text file busy") {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("%s stayed busy", p)
 }
 
 func TestARunnerThatListsTheFlagTakesIt(t *testing.T) {
