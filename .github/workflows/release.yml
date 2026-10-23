@@ -45,14 +45,14 @@ jobs:
       ATRIUM_VERSION: ${{ inputs.version || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The whole history and every tag. cut-release.sh checks that the tag
           # exists and points at HEAD, and a shallow clone with no tags cannot
           # answer either question.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -73,7 +73,7 @@ jobs:
       # check a hash without downloading a release. When it did not, it is the
       # only copy of what was built, including the scoop manifest, which is the
       # file a human has to carry to the bucket repository by hand.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: atrium-${{ env.ATRIUM_VERSION }}
