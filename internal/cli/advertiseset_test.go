@@ -50,13 +50,16 @@ func TestAdvertiseSetKeepsAnExplicitListInOrder(t *testing.T) {
 func TestWatchPathsPushesOnlyWhenTheListChanged(t *testing.T) {
 	var addr atomic.Value
 	addr.Store("a:1")
-	var pushed atomic.Int32
+	var pushed, reads atomic.Int32
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	go watchPaths(ctx, time.Millisecond, func() []link.Path {
+		reads.Add(1)
 		return []link.Path{{Transport: "direct", Addr: addr.Load().(string)}}
 	}, func() { pushed.Add(1) })
-	time.Sleep(3 * time.Millisecond)
+	for i := 0; i < 200 && reads.Load() < 3; i++ {
+		time.Sleep(time.Millisecond) // wait: the watcher must have read its baseline and ticked before the change
+	}
 	if n := pushed.Load(); n != 0 {
 		t.Fatalf("pushed %d times with nothing changed", n)
 	}
