@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -155,22 +156,42 @@ func (x *recvFix) run(dir string, w who, args ...string) (string, error) {
 	return out, err
 }
 
+// importCommit makes one commit on refs/heads/name with a single fast-import, off `from`, and answers its sha.
+func importCommit(t *testing.T, dir, name, from, file, body string) string {
+	t.Helper()
+	marks := filepath.Join(t.TempDir(), "marks")
+	var s strings.Builder
+	fmt.Fprintf(&s, "commit refs/heads/%s\nmark :1\ncommitter t <t@t> %d +0000\ndata %d\n%s\n", name, time.Now().Unix(), len(body), body)
+	fmt.Fprintf(&s, "from %s\nM 100644 inline %s\ndata %d\n%s\n", from, file, len(body), body)
+	cmd := exec.Command("git", "-C", dir, "fast-import", "--quiet", "--force", "--export-marks="+marks)
+	cmd.Env = CleanEnv()
+	cmd.Stdin = strings.NewReader(s.String())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fast-import: %v %s", err, out)
+	}
+	b, err := os.ReadFile(marks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Fields(string(b))[1]
+}
+
 // branch makes a commit on a new branch of the work repository, off main, and answers its sha.
 func (x *recvFix) branch(name, file string) string {
 	x.t.Helper()
-	git(x.t, x.work, "switch", "-q", "-C", name, "main")
-	sha := commit(x.t, x.work, file, name+file)
-	git(x.t, x.work, "switch", "-q", "main")
-	return sha
+	return importCommit(x.t, x.work, name, "refs/heads/main", file, name+file)
+}
+
+// branchOff is branch off any committish, replacing the branch when it exists.
+func (x *recvFix) branchOff(name, from, file string) string {
+	x.t.Helper()
+	return importCommit(x.t, x.work, name, from, file, name+file)
 }
 
 // grow adds a commit to a branch of the work repository.
 func (x *recvFix) grow(name, file string) string {
 	x.t.Helper()
-	git(x.t, x.work, "switch", "-q", name)
-	sha := commit(x.t, x.work, file, name+file)
-	git(x.t, x.work, "switch", "-q", "main")
-	return sha
+	return importCommit(x.t, x.work, name, "refs/heads/"+name+"^0", file, name+file)
 }
 
 func (x *recvFix) push(w who, name string, refspecs ...string) (string, error) {
@@ -887,14 +908,16 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 	card := roomCard("sg4", "C1")
 
 	git(t, x.work, "tag", "v1", "main")
-	for name, spec := range map[string]string{
-		"a tag":      "refs/tags/v1:refs/tags/v1",
-		"notes":      "main:refs/notes/x",
-		"stash":      "main:refs/stash",
-		"remote ref": "main:refs/remotes/origin/x",
+	mainSHA := x.refOn(hubRepo, MainRef)
+	if out, err := x.push(card, hubRepo, "refs/tags/v1:refs/tags/v1"); err == nil {
+		t.Fatalf("a tag was taken:\n%s", out)
+	}
+	for name, ref := range map[string]string{
+		"notes":      "refs/notes/x",
+		"stash":      "refs/stash",
+		"remote ref": "refs/remotes/origin/x",
 	} {
-		out, err := x.push(card, hubRepo, spec)
-		if err == nil {
+		if _, out := x.rawPush(card, hubRepo, Update{zeroSHA, mainSHA, ref}); !strings.Contains(out, "ng ") {
 			t.Fatalf("%s was taken:\n%s", name, out)
 		}
 		if got := x.refsOn(hubRepo); got != before {
@@ -902,10 +925,16 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 		}
 	}
 	// A card deletes a branch it pushed, and no other: not another card's, not main, not claude/main, not a tag.
-	if out, err := x.push(roomCard("sg4", "C2"), hubRepo, ":refs/heads/fix/x"); err == nil {
+	fixX := x.refOn(hubRepo, "refs/heads/fix/x")
+	if _, out := x.rawPush(roomCard("sg4", "C2"), hubRepo, Update{fixX, zeroSHA, "refs/heads/fix/x"}); !strings.Contains(out, "ng ") {
 		t.Fatalf("a card deleted a branch another card pushed:\n%s", out)
 	}
-	for _, spec := range []string{":refs/heads/main", ":refs/heads/claude/main", ":refs/tags/v1"} {
+	for _, w := range []who{roomCard("sg4", "C1"), operator} {
+		if _, out := x.rawPush(w, hubRepo, Update{mainSHA, zeroSHA, MainRef}); !strings.Contains(out, "ng ") {
+			t.Fatalf("main was deleted by %+v:\n%s", w, out)
+		}
+	}
+	for _, spec := range []string{":refs/heads/claude/main", ":refs/tags/v1"} {
 		for _, w := range []who{roomCard("sg4", "C1"), operator} {
 			if out, err := x.push(w, hubRepo, spec); err == nil {
 				t.Fatalf("%s was deleted by %+v:\n%s", spec, w, out)
@@ -913,7 +942,7 @@ func TestDeleteTagNotesAndStashFromACardAreRefusedAndNothingMoves(t *testing.T) 
 		}
 	}
 	// Its own branch that is not claude/* stays: a card deletes only the claude/* branches it pushed.
-	if out, err := x.push(card, hubRepo, ":refs/heads/fix/x"); err == nil {
+	if _, out := x.rawPush(card, hubRepo, Update{fixX, zeroSHA, "refs/heads/fix/x"}); !strings.Contains(out, "ng ") {
 		t.Fatalf("a card deleted a branch outside claude/*:\n%s", out)
 	}
 	x.must(x.push(card, hubRepo, "fix/x:refs/heads/claude/x"))
@@ -972,9 +1001,7 @@ func TestAMultiRefPushWithOneBadRefMovesNothing(t *testing.T) {
 	before = x.refsOn(hubRepo)
 	x.branch("fix/new", "n.txt")
 	// A rewrite of fix/ok with different content, by --force, alongside a new branch that is fine.
-	git(t, x.work, "switch", "-q", "-C", "fix/ok", main)
-	commit(t, x.work, "rewrite.txt", "rewrite")
-	git(t, x.work, "switch", "-q", "main")
+	x.branchOff("fix/ok", main, "rewrite.txt")
 	out, err = x.push(roomCard("sg4", "C2"), hubRepo, "--force", "fix/new:refs/heads/fix/new", "fix/ok:refs/heads/fix/ok")
 	if err == nil {
 		t.Fatalf("a push with a rewrite in it was taken:\n%s", out)
