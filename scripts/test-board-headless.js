@@ -5983,7 +5983,7 @@ async function phoneViewSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "phoneView", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     return p;
   };
   const resizes = (p) => p.evaluate(() => window.__sent.filter(x => /"t":"resize"/.test(x)));
@@ -6074,7 +6074,7 @@ async function phoneViewSection(browser, base) {
       route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
     });
     await p.evaluate(() => { phoneSetFont(14); termSock.onmessage({ data: "\x1b[2J\x1b[Hsee src/alpha.go here\r\n" }); });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     const cell = await p.evaluate(() => { const c = term._core._renderService.dimensions.css.cell; return { w: c.w || c.width, h: c.height }; });
     const sbox = await p.locator("#t-screen .xterm-screen").boundingBox();
     await p.mouse.move(sbox.x + cell.w * 12, sbox.y + cell.h * 0.5, { steps: 3 });
@@ -6083,7 +6083,7 @@ async function phoneViewSection(browser, base) {
 
     // the keyboard covers the prompt: the cursor row is scrolled clear of it, nothing resizes
     await p.evaluate(() => { termSock.onmessage({ data: "\x1b[2J\x1b[" + term.rows + ";1Hprompt" }); });
-    await p.waitForTimeout(200);
+    await frames(p, 3);
     const kb = await p.evaluate(() => {
       const host = document.getElementById("t-screen");
       const box = host.getBoundingClientRect();
@@ -6119,7 +6119,7 @@ async function phoneViewSection(browser, base) {
     if ((await phoneFocusSent) > 0) fail("twoWindowSize: a phone view sent a focus frame");
     await dp.evaluate(() => { window.__sent.length = 0; });
     await dp.setViewportSize({ width: 1200, height: 700 });
-    await dp.waitForTimeout(700);
+    await dp.waitForFunction(() => window.__sent.some(x => /"t":"resize"/.test(x)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await resizes(dp)).length) fail("phoneView: a desktop window resize sent no resize");
     if (await dp.evaluate(() => getComputedStyle(document.getElementById("t-keys")).display) !== "none")
       fail("phoneView: the key bar shows on a desktop");
