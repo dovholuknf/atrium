@@ -18745,8 +18745,10 @@ async function phoneBootSection(browser, base) {
           return route.continue();
         });
         try {
+          const booted = p.waitForResponse(r => /^\/v1\/tasks(\/rnd)?$/.test(new URL(r.url()).pathname), { timeout: slow(15000) });
           await p.goto(base + at, { waitUntil: "load" });
-          await p.waitForTimeout(1200);
+          await booted;
+          await frames(p, 2);
           const solo = at !== "/raw";
           if (!solo) {
             const h = await p.evaluate(() => { const e = document.querySelector("header"); const r = e && e.getBoundingClientRect(); return r ? { h: r.height, vis: getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).display !== "none" } : null; });
@@ -18754,8 +18756,8 @@ async function phoneBootSection(browser, base) {
             continue;
           }
           await cuSolo(p, "land-a");
-          const way = await p.evaluate(() => { const e = document.querySelector(".cu-way.float .cu-all"); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
-          if (!way) fail(tag + "no way out is shown");
+          await p.waitForFunction(() => { const e = document.querySelector(".cu-way.float .cu-all"); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }, null, { timeout: slow(5000) })
+            .catch(() => fail(tag + "no way out is shown"));
           await p.tap("#t-tray-handle");
           await p.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) });
           await p.tap("#t-pick");
