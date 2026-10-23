@@ -23,3 +23,9 @@ m/js/items.js:this card has ended and was removed # phone page has no styled too
 share.html:class="zoom" # share page has no styled tooltips
 # The reader runs on read.html and share.html, neither of which loads tooltips.js.
 read.js:a\.title = "not shared" # reader pages have no styled tooltips
+# A <select> option's own tooltip for the full session title, which data-tip cannot reach.
+js/terminal.js:o\.title = t # native option tooltip
+# The read page does not load tooltips.js, so data-tip would show nothing there.
+read.js:btn\.title = "Opens it # read page has no styled tooltips
+# An iframe title is its accessible name for screen readers, not a tooltip.
+read.html:id="pdf" # iframe title is for screen readers

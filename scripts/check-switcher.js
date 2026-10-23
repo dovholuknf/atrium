@@ -81,7 +81,8 @@ if (swAt < 0) {
     "the half of this feature that is not just a list.");
 } else {
   const body = html.slice(swAt, swAt + 2400);
-  if (!/type: "solo-release"/.test(body) || !/type: "solo-claim"/.test(body)) {
+  // The claim goes through soloClaim, the one place that adds the window's mute state.
+  if (!/type: "solo-release"/.test(body) || !/soloClaim\(id\)/.test(body)) {
     fail("soloSwitch does not both release the old claim and claim the new card. Skipping the " +
       "release leaves the board believing a card is popped out in a window that has moved on.");
   }

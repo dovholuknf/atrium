@@ -1,0 +1,1 @@
+The board check scripts pass again: the switcher check accepts the claim made through soloClaim, and the title check allows the dead-session option tooltip, the read page's open-externally button and the PDF iframe's accessible title (q-board-checks-d63bdf7).
