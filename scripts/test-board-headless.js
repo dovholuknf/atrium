@@ -23433,6 +23433,17 @@ async function termDeadCardSection(browser, base) {
       if (route.request().method() !== "GET" || !row) return route.fallback();
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row) });
     });
+    const longTitle = "[atrium] new context: read C:\\Users\\claude\\AppData\\Local\\Temp\\atrium\\handoff-" + "x".repeat(80);
+    const convs = {
+      "dc-dead": [{ id: "conv-0", title: longTitle, at: "2026-10-20T23:48:00Z", bytes: 260000 },
+        { id: "conv-1", title: "the current one", at: "2026-10-20T10:12:00Z", bytes: 1800000, current: true },
+        { id: "conv-old", title: "an older one", at: "2026-10-17T11:15:00Z", bytes: 9800000 }],
+      "dc-dead2": [{ id: "conv-2", title: "the only one", at: "2026-10-20T10:12:00Z", bytes: 100, current: true }],
+    };
+    await wp.route("**/v1/tasks/dc-*/sessions", route => {
+      const id = new URL(route.request().url()).pathname.split("/").slice(-2)[0];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sessions: convs[id] || [] }) });
+    });
     await wp.route("**/v1/launch", async route => {
       launches.push(JSON.parse(route.request().postData() || "{}"));
       await route.fulfill({ status: 200, contentType: "application/json",
@@ -23459,7 +23470,9 @@ async function termDeadCardSection(browser, base) {
     await openDead();
     let st = await pane();
     if (!st.dead || !/not running/i.test(st.deadText)) fail("termDeadCard: a card with no runner did not say so at once (" + JSON.stringify(st) + ").");
-    if (st.buttons.join("|") !== "Relaunch|Launch new") fail("termDeadCard: the dialog's buttons were " + st.buttons.join("|") + ".");
+    if (st.buttons.join("|") !== "Resume|Launch new|Cancel") fail("termDeadCard: the dialog's buttons were " + st.buttons.join("|") + ".");
+    const tips = await wp.evaluate(() => document.getElementById("t-dead-resume").dataset.tip || "");
+    if (/relaunch/i.test(st.deadText + tips) || !/resume/i.test(st.deadText)) fail("termDeadCard: the pane did not say resume (" + st.deadText + " / " + tips + ").");
     if (st.wait || /reconnecting/.test(st.waitText + st.deadText)) fail("termDeadCard: a card with no runner said it was reconnecting (" + JSON.stringify(st) + ").");
     if (st.socks) fail("termDeadCard: a card with no runner was dialled.");
     await idle(1500);
@@ -23482,14 +23495,35 @@ async function termDeadCardSection(browser, base) {
     if (process.env.DEADCARD_SHOTS) await wp.screenshot({ path: process.env.DEADCARD_SHOTS + "/dropped.png" });
 
     await openDead();
-    await wp.click("#t-dead button.go");
+    await wp.waitForSelector("#t-dead-pick", { state: "visible", timeout: slow(5000) });
+    const pick = await wp.evaluate(() => {
+      const sel = document.getElementById("t-dead-pick"), box = document.getElementById("t-dead").getBoundingClientRect();
+      const r = sel.getBoundingClientRect();
+      return { value: sel.value, labels: Array.from(sel.options).map(o => o.textContent), inside: r.right <= box.right + 0.5 };
+    });
+    if (pick.value !== "conv-1") fail("termDeadCard: the dropdown did not preselect current (" + JSON.stringify(pick) + ").");
+    if (pick.labels.length !== 3 || !/current$/.test(pick.labels[1])) fail("termDeadCard: current was not marked (" + JSON.stringify(pick.labels) + ").");
+    if (!/…/.test(pick.labels[0]) || pick.labels[0].length > 90) fail("termDeadCard: a long title was not cut (" + pick.labels[0] + ").");
+    if (!pick.inside) fail("termDeadCard: the dropdown overflowed the pane.");
+    await wp.evaluate(() => { window.__asked = 0; const real = askUser; askUser = o => { window.__asked++; return real(o); }; });
+    await wp.selectOption("#t-dead-pick", "conv-old");
+    await wp.click("#t-dead-resume");
     await idle(300);
-    if (launches.length !== 1 || launches[0].task_id !== "dc-dead" || launches[0].resume !== "conv-1") {
-      fail("termDeadCard: Relaunch did not resume the same card (" + JSON.stringify(launches) + ").");
+    if (launches.length !== 1 || launches[0].task_id !== "dc-dead" || launches[0].resume !== "conv-old") {
+      fail("termDeadCard: Resume did not resume the picked conversation on the same card (" + JSON.stringify(launches) + ").");
     }
+    if (await wp.evaluate(() => window.__asked)) fail("termDeadCard: Resume opened the which-conversation dialog.");
 
     await openDead("dc-dead2");
-    await wp.click("#t-dead button:not(.go)");
+    await idle(200);
+    if (await wp.evaluate(() => !document.getElementById("t-dead-pick").hidden)) fail("termDeadCard: one conversation drew a dropdown.");
+    await wp.click("#t-dead-cancel");
+    await idle(200);
+    st = await pane();
+    if (st.dead || await wp.evaluate(() => !!termTask)) fail("termDeadCard: Cancel did not dismiss the pane (" + JSON.stringify(st) + ").");
+
+    await openDead("dc-dead2");
+    await wp.click("#t-dead-new");
     await idle(300);
     const fresh = launches.slice(1);
     if (fresh.length !== 1 || fresh[0].resume || fresh[0].task_id || fresh[0].cwd !== "/tmp/dc/dc-dead2") {

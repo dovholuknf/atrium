@@ -471,6 +471,12 @@
   .termdead[hidden] { display: none; }
   .termdead-title { font-size: var(--fs-md); font-weight: 600; color: var(--head); margin-bottom: 8px; }
   .termdead-say { font-size: var(--fs-base); line-height: 1.55; margin-bottom: 18px; overflow-wrap: anywhere; }
+  .termdead-pick {
+    display: block; width: 100%; max-width: 100%; margin: -6px 0 18px; padding: 6px 8px;
+    border-radius: var(--r-sm); border: 1px solid var(--stroke); background: var(--shell-1); color: var(--body);
+    font: inherit; font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .termdead-pick[hidden] { display: none; }
   .termdead-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); }
   .termwait.slow .spin { display: none; }
   .termwait .spin {

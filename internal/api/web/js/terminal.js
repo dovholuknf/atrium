@@ -936,15 +936,48 @@ function deadPaneShow(task) {
   termDeadFor = task.id;
   termWait("");
   const why = typeof cannotResumeCard === "function" ? cannotResumeCard(task) : "";
-  document.getElementById("t-dead-say").textContent = waitName(task) + " has no running process. Relaunch picks the " +
-    "same conversation up on this card, Launch new starts a fresh session in " + (task.worktree || "the same directory") + ".";
-  const again = document.getElementById("t-dead-relaunch");
+  document.getElementById("t-dead-say").textContent = waitName(task) + " has no running process. Resume picks a " +
+    "conversation up on this card, Launch new starts a fresh session in " + (task.worktree || "the same directory") + ".";
+  const sel = document.getElementById("t-dead-pick");
+  sel.hidden = true;
+  sel.textContent = "";
+  const listed = why ? Promise.resolve([]) : deadPaneSessions(task, sel);
+  const again = document.getElementById("t-dead-resume");
   again.disabled = !!why;
-  again.dataset.tip = why || "resume the same conversation on this card";
-  again.onclick = () => resumeCard(task.id, task, lastPlace(task.id));
+  again.dataset.tip = why || "resume the picked conversation on this card";
+  // Never empty, so resumeCard does not open its own "which conversation?" dialog over this pane.
+  again.onclick = async () => {
+    const list = await listed;
+    const pick = (!sel.hidden && sel.value) || (list[0] && list[0].id) || task.resume_id || "";
+    resumeCard(task.id, task, lastPlace(task.id), pick || undefined);
+  };
   const fresh = document.getElementById("t-dead-new");
   fresh.onclick = () => launchRunnerHere(task.runner || "claude", task.worktree, null, task.room);
+  document.getElementById("t-dead-cancel").onclick = () => forgetTerm();
   box.hidden = false;
+}
+
+const deadPickTitleMax = 48;
+
+// The conversations pickSession offers, as a select on the pane. One or none is no choice, so no select.
+async function deadPaneSessions(task, sel) {
+  let list = [];
+  try { list = (await api(`/v1/tasks/${task.id}/sessions`)).sessions || []; } catch (e) { return []; }
+  if (termDeadFor !== task.id || list.length <= 1) return list;
+  const cur = list.find(s => s.current) || list[0];
+  sel.textContent = "";
+  for (const s of list) {
+    const o = document.createElement("option");
+    const t = String(s.title || s.id);
+    o.value = s.id;
+    o.title = t;
+    o.textContent = (t.length > deadPickTitleMax ? t.slice(0, deadPickTitleMax - 1) + "…" : t) +
+      `  ·  ${firstSeen(s.at)}  ·  ${bytes(s.bytes)}` + (s.current ? "  ·  current" : "");
+    sel.appendChild(o);
+  }
+  sel.value = cur.id;
+  sel.hidden = false;
+  return list;
 }
 
 function openTerm(task) {

@@ -558,9 +558,11 @@ Exports honor whatever filter is applied.">?</span>
         <div class="termdead" id="t-dead" role="alertdialog" aria-labelledby="t-dead-title" hidden>
           <div class="termdead-title" id="t-dead-title">this session is not running</div>
           <div class="termdead-say" id="t-dead-say"></div>
+          <select class="termdead-pick" id="t-dead-pick" aria-label="which conversation to resume" hidden></select>
           <div class="termdead-foot">
-            <button class="go" id="t-dead-relaunch" type="button">Relaunch</button>
+            <button class="go" id="t-dead-resume" type="button">Resume</button>
             <button id="t-dead-new" type="button">Launch new</button>
+            <button id="t-dead-cancel" type="button">Cancel</button>
           </div>
         </div>
         <div class="findbar" id="t-find" hidden>
