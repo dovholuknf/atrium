@@ -13,6 +13,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { jobFailures, retryPassed, retriedRows } = require('./ci-failures');
+const { parseJobName, staticName } = require('./ci-jobname');
 
 const MAX_ROWS = 30;
 const MAX_ANNOTATIONS = 10;
@@ -140,7 +141,7 @@ function render({ run, jobs, rows, retried, missing, history, note }) {
 }
 
 const byName = (a, b) => a.localeCompare(b);
-const jobKey = (name) => (/^check \((\w+)-latest, (.+)\)$/.exec(name) || []).slice(1).join('/');
+const jobKey = (name) => { const p = parseJobName(name); return p ? `${p.os}/${p.group}` : ''; };
 
 function failingDoc({ run, runInfo = {}, apiJobs = [], current }) {
   const mine = (j) => (f) => `${f.os}/${f.job}` === jobKey(j.name);
@@ -150,7 +151,7 @@ function failingDoc({ run, runInfo = {}, apiJobs = [], current }) {
     const k = `${f.os}/${f.job}`;
     if (listed.has(k) || f.unit.startsWith('step: ') || f.unit.startsWith('(')) continue;
     listed.add(k);
-    failed.push({ id: 0, name: `check (${f.os}-latest, ${f.job})` });
+    failed.push({ id: 0, name: staticName(f.os, f.job) || `check (${f.os}-latest, ${f.job})` });
   }
   const jobs = failed
     .map((j) => {
@@ -261,7 +262,7 @@ async function remote(opts) {
     const have = new Set(current.jobs.map((j) => `${j.os}-latest, ${j.job}`));
     jobsWithoutArtifacts = jobs
       .filter((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out')
-      .map((j) => ({ name: j.name, key: (/^check \((.+)\)$/.exec(j.name) || [])[1] }))
+      .map((j) => { const p = parseJobName(j.name); return { name: j.name, key: p ? `${p.os}-latest, ${p.group}` : '' }; })
       .filter((j) => j.key && !have.has(j.key))
       .map((j) => j.name);
   } catch (e) {

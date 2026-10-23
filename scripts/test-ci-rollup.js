@@ -120,10 +120,17 @@ if (!/: 3 failing units/.test(repeated)) fail("a test failing in 2 passes is one
 if (!/\| TestWobble \(failed 2 of 5 passes\) \| x_test\.go:1: nope |/.test(repeated)) fail("pass count and tag stripped from the error:\n" + repeated);
 if (!/\| TestSteady \(failed 1 of 5 passes\) \|/.test(repeated)) fail("one failed pass:\n" + repeated);
 if (!/\| TestPlain \| no tag \|/.test(repeated)) fail("an untagged row is unchanged:\n" + repeated);
+const { parseJobName, staticName } = require("./ci-jobname");
+for (const [n, os, g] of [["flaky-linux-go", "ubuntu", "flaky-go"], ["flaky-linux-playwright", "ubuntu", "flaky-board"], ["flaky-macos-go", "macos", "flaky-go"], ["flaky-macos-playwright", "macos", "flaky-board"], ["flaky-windows-go", "windows", "flaky-go"], ["flaky-windows-playwright", "windows", "flaky-board"], ["check (windows-latest, board-1)", "windows", "board-1"], ["check (ubuntu-latest, flaky-go)", "ubuntu", "flaky-go"]]) {
+  const p = parseJobName(n);
+  if (!p || p.os !== os || p.group !== g) fail("job name " + n + " parsed as " + JSON.stringify(p));
+  if (n.startsWith("flaky-") && staticName(os, g) !== n) fail("static name for " + os + "/" + g + " is " + staticName(os, g));
+}
+if (parseJobName("rollup") || parseJobName("select")) fail("a job with no group parsed");
 const { jobFailures } = require("./ci-failures");
 const rows500 = jobFailures(path.join(runs, "500", "ci-ubuntu-latest-flaky-go-attempt-1"));
 if (rows500.length !== 4 || rows500[0].pass !== 2 || rows500[0].of !== 5) fail("rows keep their pass: " + JSON.stringify(rows500));
-const fdoc = require("./ci-rollup").failingDoc({ run: "500", apiJobs: [{ id: 1, name: "check (ubuntu-latest, flaky-go)", conclusion: "failure" }], current: { failures: rows500.map((f) => ({ ...f, job: "flaky-go" })), retried: [] } });
+const fdoc = require("./ci-rollup").failingDoc({ run: "500", apiJobs: [{ id: 1, name: "flaky-linux-go", conclusion: "failure" }], current: { failures: rows500.map((f) => ({ ...f, job: "flaky-go" })), retried: [] } });
 if (fdoc.jobs[0].tests.join() !== "TestPlain,TestSteady,TestWobble") fail("failing-tests lists each test once: " + fdoc.jobs[0].tests);
 if (fdoc.jobs[0].passes.TestWobble.failed !== 2 || fdoc.jobs[0].passes.TestWobble.of !== 5) fail("failing-tests carries the pass count: " + JSON.stringify(fdoc.jobs[0].passes));
 

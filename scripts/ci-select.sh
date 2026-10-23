@@ -3,11 +3,12 @@
 #
 #   ci-select.sh [--os all|ubuntu|macos|windows] [--suite all|go|ui]
 #
-# Prints one `name=value` line per job to stdout, the format $GITHUB_OUTPUT takes: flaky_<os> and check_<os> are the JSON
-# array of groups that job runs, `[]` when the selection skips it, and `skipped` counts the jobs left at `[]`.
+# Prints one `name=value` line per job to stdout, the format $GITHUB_OUTPUT takes: flaky_<linux|macos|windows>_<go|playwright>
+# is true or false for that one job, check_<os> is the JSON array of groups that job runs, `[]` when the selection skips it,
+# and `skipped` counts the jobs left false or `[]`. flaky_linux_playwright is always false, ubuntu runs no flaky board group.
 # A group is ui when its name starts with flaky-board or board, every other group is go. go-checks-visual is go: it is
 # the go checks, and its board-visual part never fails the job. No flags is all and all, which is every push and pull
-# request. An empty scripts/flaky-suite.json prints flaky_<os>=[] for every platform, which skips the flaky jobs.
+# request. An empty scripts/flaky-suite.json turns every flaky job false.
 set -euo pipefail
 
 os=all; suite=all
@@ -15,7 +16,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --os) [ $# -ge 2 ] || { echo "--os needs a value" >&2; exit 2; }; os="${2:-all}"; shift 2 ;;
     --suite) [ $# -ge 2 ] || { echo "--suite needs a value" >&2; exit 2; }; suite="${2:-all}"; shift 2 ;;
-    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument $1. see --help" >&2; exit 2 ;;
   esac
 done
@@ -34,18 +35,29 @@ check_macos="go-test go-checks-visual board-1 board-2"
 check_windows="go-test-1 go-test-2 go-checks-visual build-board-1 board-2"
 
 skipped=0
-for kind in flaky check; do
-  for p in ubuntu macos windows; do
-    var="${kind}_${p}"
-    json=""
-    if [ "$os" = all ] || [ "$os" = "$p" ]; then
-      for g in ${!var}; do
-        case "$g" in flaky-board*|board*) side=ui ;; *) side=go ;; esac
-        if [ "$suite" = all ] || [ "$suite" = "$side" ]; then json="${json:+$json,}\"$g\""; fi
-      done
-    fi
-    [ -n "$json" ] || skipped=$((skipped + 1))
-    echo "$var=[$json]"
+for p in ubuntu macos windows; do
+  case "$p" in ubuntu) label=linux ;; *) label="$p" ;; esac
+  var="flaky_$p"
+  for side in go playwright; do
+    group=flaky-go; [ "$side" = go ] || group=flaky-board
+    flag=false
+    case " ${!var} " in *" $group "*)
+      if { [ "$os" = all ] || [ "$os" = "$p" ]; } && { [ "$suite" = all ] || [ "$suite" = "$([ "$side" = go ] && echo go || echo ui)" ]; }; then flag=true; fi ;;
+    esac
+    [ "$flag" = true ] || skipped=$((skipped + 1))
+    echo "flaky_${label}_$side=$flag"
   done
+done
+for p in ubuntu macos windows; do
+  var="check_$p"
+  json=""
+  if [ "$os" = all ] || [ "$os" = "$p" ]; then
+    for g in ${!var}; do
+      case "$g" in board*) side=ui ;; *) side=go ;; esac
+      if [ "$suite" = all ] || [ "$suite" = "$side" ]; then json="${json:+$json,}\"$g\""; fi
+    done
+  fi
+  [ -n "$json" ] || skipped=$((skipped + 1))
+  echo "$var=[$json]"
 done
 echo "skipped=$skipped"

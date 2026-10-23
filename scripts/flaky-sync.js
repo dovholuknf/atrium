@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { parseJobName } = require('./ci-jobname');
 
 const REPO = 'dovholuknf/atrium';
 const WINDOW = 15;
@@ -158,11 +159,11 @@ function defaultDeps() {
 }
 
 function fallbackTests(deps, job) {
-  const m = /^check \((\w+)-latest, (.+)\)$/.exec(job.name);
+  const m = parseJobName(job.name);
   const attempt = job.run_attempt || 1;
   const run = job.run;
   if (m && deps.artifacts) {
-    const dir = path.join(deps.artifacts, String(run), `ci-${m[1]}-latest-${m[2]}-attempt-${attempt}`);
+    const dir = path.join(deps.artifacts, String(run), `ci-${m.os}-latest-${m.group}-attempt-${attempt}`);
     if (fs.existsSync(dir)) {
       const { jobFailures, retriedRows } = require('./ci-failures');
       const fails = jobFailures(dir).filter((f) => !f.unit.startsWith('step: ') && !f.unit.startsWith('('));

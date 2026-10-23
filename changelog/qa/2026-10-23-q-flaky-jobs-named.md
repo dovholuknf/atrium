@@ -1,0 +1,1 @@
+The flaky jobs in ci are six plain, static names: flaky-linux-go, flaky-linux-playwright, flaky-macos-go, flaky-macos-playwright, flaky-windows-go and flaky-windows-playwright, no longer matrix jobs named like the check jobs (q-flaky-jobs-named).

@@ -49,9 +49,12 @@ jobs:
   select:
     runs-on: ubuntu-latest
     outputs:
-      flaky_ubuntu: ${{ steps.pick.outputs.flaky_ubuntu }}
-      flaky_macos: ${{ steps.pick.outputs.flaky_macos }}
-      flaky_windows: ${{ steps.pick.outputs.flaky_windows }}
+      flaky_linux_go: ${{ steps.pick.outputs.flaky_linux_go }}
+      flaky_linux_playwright: ${{ steps.pick.outputs.flaky_linux_playwright }}
+      flaky_macos_go: ${{ steps.pick.outputs.flaky_macos_go }}
+      flaky_macos_playwright: ${{ steps.pick.outputs.flaky_macos_playwright }}
+      flaky_windows_go: ${{ steps.pick.outputs.flaky_windows_go }}
+      flaky_windows_playwright: ${{ steps.pick.outputs.flaky_windows_playwright }}
       check_ubuntu: ${{ steps.pick.outputs.check_ubuntu }}
       check_macos: ${{ steps.pick.outputs.check_macos }}
       check_windows: ${{ steps.pick.outputs.check_windows }}
@@ -65,20 +68,16 @@ jobs:
           PICK_SUITE: ${{ inputs.suite }}
         run: bash scripts/ci-select.sh --os "$PICK_OS" --suite "$PICK_SUITE" >> "$GITHUB_OUTPUT"
 
-  # THE FLAKY SUITE FIRST, TWO JOBS PER PLATFORM. scripts/flaky-suite.json lists the tests known to fail now and then.
+  # THE FLAKY SUITE FIRST, TWO JOBS PER PLATFORM, each with a plain static name. scripts/flaky-suite.json lists the tests known to fail now and then.
   # `ci.sh --group flaky-go` runs the go ones and needs no node, `flaky-board` runs the board units and check scripts
   # and needs no Go. The flaky jobs have no `needs` and start at once, so the tests most likely
-  # to fail answer first and fast. Each platform's check job waits for that platform's flaky job (`needs`) and is skipped
+  # to fail answer first and fast. Each platform's check job waits for that platform's flaky jobs (`needs`) and is skipped
   # when a flaky group is red, so a red flaky group stops the checks from burning runner time and the flaky and check
   # groups never run beside each other on a platform. The rollup and notify read a skipped check as red, except the jobs a dispatch left out on purpose.
-  flaky-ubuntu:
+  flaky-linux-go:
     needs: [select]
-    if: needs.select.outputs.flaky_ubuntu != '[]'
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.select.outputs.flaky_ubuntu) }}
-    name: check (ubuntu-latest, ${{ matrix.group }})
+    if: needs.select.outputs.flaky_linux_go == 'true'
+    name: flaky-linux-go
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
@@ -90,69 +89,135 @@ jobs:
 
       - uses: ./.github/actions/ci-run
         with:
-          group: ${{ matrix.group }}
-          go: ${{ !startsWith(matrix.group, 'flaky-board') }}
-          node: ${{ matrix.group != 'flaky-go' }}
+          group: flaky-go
+          go: true
+          node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          name: ci-ubuntu-latest-flaky-go-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
 
-  flaky-macos:
+  flaky-linux-playwright:
     needs: [select]
-    if: needs.select.outputs.flaky_macos != '[]'
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.select.outputs.flaky_macos) }}
-    name: check (macos-latest, ${{ matrix.group }})
+    if: needs.select.outputs.flaky_linux_playwright == 'true'
+    name: flaky-linux-playwright
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dovholuknf/atrium-ci:1
+      options: --user 1001 --init
+      env:
+        USER: runner
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: flaky-board
+          go: false
+          node: true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ci-ubuntu-latest-flaky-board-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  flaky-macos-go:
+    needs: [select]
+    if: needs.select.outputs.flaky_macos_go == 'true'
+    name: flaky-macos-go
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
 
       - uses: ./.github/actions/ci-run
         with:
-          group: ${{ matrix.group }}
-          go: ${{ !startsWith(matrix.group, 'flaky-board') }}
-          node: ${{ matrix.group != 'flaky-go' }}
+          group: flaky-go
+          go: true
+          node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          name: ci-macos-latest-flaky-go-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
 
-  flaky-windows:
+  flaky-macos-playwright:
     needs: [select]
-    if: needs.select.outputs.flaky_windows != '[]'
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.select.outputs.flaky_windows) }}
-    name: check (windows-latest, ${{ matrix.group }})
+    if: needs.select.outputs.flaky_macos_playwright == 'true'
+    name: flaky-macos-playwright
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: flaky-board
+          go: false
+          node: true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ci-macos-latest-flaky-board-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  flaky-windows-go:
+    needs: [select]
+    if: needs.select.outputs.flaky_windows_go == 'true'
+    name: flaky-windows-go
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
 
       - uses: ./.github/actions/ci-run
         with:
-          group: ${{ matrix.group }}
-          go: ${{ !startsWith(matrix.group, 'flaky-board') }}
-          node: ${{ matrix.group != 'flaky-go' }}
+          group: flaky-go
+          go: true
+          node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
+          name: ci-windows-latest-flaky-go-attempt-${{ github.run_attempt }}
+          path: build.claude/ci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  flaky-windows-playwright:
+    needs: [select]
+    if: needs.select.outputs.flaky_windows_playwright == 'true'
+    name: flaky-windows-playwright
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/ci-run
+        with:
+          group: flaky-board
+          go: false
+          node: true
+
+      # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ci-windows-latest-flaky-board-attempt-${{ github.run_attempt }}
           path: build.claude/ci/
           retention-days: 14
           if-no-files-found: ignore
@@ -171,8 +236,8 @@ jobs:
   # names the group. No continue-on-error: board-visual shares jobs with go-checks, so ci.sh keeps a board-visual
   # failure out of its own exit status.
   check-ubuntu:
-    needs: [select, flaky-ubuntu]
-    if: ${{ !cancelled() && needs.flaky-ubuntu.result != 'failure' && needs.select.outputs.check_ubuntu != '[]' }}
+    needs: [select, flaky-linux-go, flaky-linux-playwright]
+    if: ${{ !cancelled() && needs.flaky-linux-go.result != 'failure' && needs.flaky-linux-playwright.result != 'failure' && needs.select.outputs.check_ubuntu != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -202,8 +267,8 @@ jobs:
           if-no-files-found: ignore
 
   check-macos:
-    needs: [select, flaky-macos]
-    if: ${{ !cancelled() && needs.flaky-macos.result != 'failure' && needs.select.outputs.check_macos != '[]' }}
+    needs: [select, flaky-macos-go, flaky-macos-playwright]
+    if: ${{ !cancelled() && needs.flaky-macos-go.result != 'failure' && needs.flaky-macos-playwright.result != 'failure' && needs.select.outputs.check_macos != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -228,8 +293,8 @@ jobs:
           if-no-files-found: ignore
 
   check-windows:
-    needs: [select, flaky-windows]
-    if: ${{ !cancelled() && needs.flaky-windows.result != 'failure' && needs.select.outputs.check_windows != '[]' }}
+    needs: [select, flaky-windows-go, flaky-windows-playwright]
+    if: ${{ !cancelled() && needs.flaky-windows-go.result != 'failure' && needs.flaky-windows-playwright.result != 'failure' && needs.select.outputs.check_windows != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -257,7 +322,7 @@ jobs:
   # failed in the last 10 runs on main. THERE IS NO LOGIC HERE: `scripts/ci-rollup.js` does it all and is best effort, so
   # this job cannot fail the run. The notify job waits on it, so the run's summary exists before the hub is told.
   rollup:
-    needs: [select, flaky-ubuntu, flaky-macos, flaky-windows, check-ubuntu, check-macos, check-windows]
+    needs: [select, flaky-linux-go, flaky-linux-playwright, flaky-macos-go, flaky-macos-playwright, flaky-windows-go, flaky-windows-playwright, check-ubuntu, check-macos, check-windows]
     if: always()
     runs-on: ubuntu-latest
     outputs:
