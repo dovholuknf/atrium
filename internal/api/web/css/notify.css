@@ -44,7 +44,8 @@
   #toastlog .dlg-head > button { flex: none; white-space: nowrap; padding: 5px 8px; font-size: var(--fs-sm); }
   /* `.dlg-body` caps itself at 78vh for a form, which left the list ending short of the panel it sits in. */
   #toastlog .dlg-body { flex: 1 1 auto; min-height: 0; max-height: none; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-  .toastlog { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  /* Never sideways. `overflow-y: auto` alone computes `overflow-x` to auto, so one unbroken path scrolled the list. */
+  .toastlog { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
   .tlrow {
     display: flex; gap: 10px; padding: 8px 10px;
     border-bottom: 1px solid var(--hairline);
@@ -68,9 +69,10 @@
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
     font: var(--fs-xxs)/1.7 var(--mono);
   }
+  /* A Windows path or a run URL has no break opportunity, so it breaks anywhere rather than run past the row. */
   .tlwhat {
     display: flex; flex-direction: column; gap: 2px; min-width: 0;
-    flex: 1 1 auto;
+    flex: 1 1 0; overflow-wrap: anywhere;
   }
   .tlwhat b { color: var(--head); font-size: var(--fs-sm); font-weight: 600; }
   .tlwhat span { color: var(--body); font-size: var(--fs-xs); line-height: 1.5; }

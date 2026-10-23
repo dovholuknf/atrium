@@ -24549,6 +24549,52 @@ async function notifyTrayFillSection(browser, base) {
   }
 }
 
+// notifyTrayWrap: a long Windows path or run URL in a notice wraps inside its row, the tray never scrolls sideways, and
+// the list is the one thing in it that scrolls.
+async function notifyTrayWrapSection(browser, base) {
+  const shots = process.env.TRAY_SHOTS || "";
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openToastLog === "function" && !!document.getElementById("toastlog-list"), null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const long = [
+        "it is asked to write C:\Users\claude\AppData\Local\Temp\atrium\handoffs\01a14609-e8bf-7bf5-b44f-6fbb8fc9d8db-and-then-some-more.md and run atrium ready",
+        "Delivering to qa (fyi). https://github.com/dovholuknf/atrium/actions/runs/39945929638000000000/job/1122334455667788",
+      ];
+      saveToastLog(Array.from({ length: 40 }, (_, i) => ({ title: i % 3 ? "row " + i : "C:\Users\claude\AppData\Local\Temp\atrium\a-very-long-unbroken-title-" + i,
+        body: long[i % 2], at: Date.now() - i * 1000, sig: " w" + i })));
+      openToastLog();
+      const dlg = document.getElementById("toastlog");
+      if (!dlg.open) dlg.showModal();
+    });
+    await p.waitForFunction(() => getComputedStyle(document.getElementById("toastlog")).transform === "none", null, { timeout: slow(5000) });
+    const m = await p.evaluate(() => {
+      const dlg = document.getElementById("toastlog");
+      const list = document.getElementById("toastlog-list");
+      const scrollers = [dlg, ...dlg.querySelectorAll("*")].filter(e => {
+        const cs = getComputedStyle(e);
+        return (/(auto|scroll)/.test(cs.overflowY) && e.scrollHeight > e.clientHeight + 1) ||
+          (/(auto|scroll)/.test(cs.overflowX) && e.scrollWidth > e.clientWidth + 1);
+      }).map(e => e.id || e.className);
+      return { listSide: list.scrollWidth - list.clientWidth, dlgSide: dlg.scrollWidth - dlg.clientWidth,
+        dlgDown: dlg.scrollHeight - dlg.clientHeight, listDown: list.scrollHeight - list.clientHeight, scrollers };
+    });
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "tray-wrap.png") });
+    }
+    const tag = "notifyTrayWrap: ";
+    if (m.listDown <= 1) fail(tag + "the list did not need to scroll, so it proves nothing: " + JSON.stringify(m));
+    if (m.listSide > 1 || m.dlgSide > 1) fail(tag + "the tray scrolls sideways: " + JSON.stringify(m));
+    if (m.scrollers.length !== 1 || m.scrollers[0] !== "toastlog-list") fail(tag + "something other than the list scrolls: " + JSON.stringify(m));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+}
+
 // newContextSse: a new context that arrives on the task stream with no poll holds typing at once, keeps what the human had
 // on the line in the compose box, and a list read that began before the stream row cannot lift the hold.
 async function newContextSseSection(browser, base) {
@@ -26918,6 +26964,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("recogniserRepo", bu("recogniserRepo"));
     await unit("roomsMenuScroll", bu("roomsMenuScroll"));
     await unit("notifyTrayFill", () => notifyTrayFillSection(browser, base));
+    await unit("notifyTrayWrap", () => notifyTrayWrapSection(browser, base));
     await unit("homesChips", bu("homesChips"));
     await unit("homesRoot", bu("homesRoot"));
     await unit("homesDisk", bu("homesDisk"));
