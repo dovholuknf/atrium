@@ -73,7 +73,7 @@ jobs:
       # check a hash without downloading a release. When it did not, it is the
       # only copy of what was built, including the scoop manifest, which is the
       # file a human has to carry to the bucket repository by hand.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: atrium-${{ env.ATRIUM_VERSION }}

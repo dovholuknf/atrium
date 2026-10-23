@@ -95,7 +95,7 @@ jobs:
           node: ${{ matrix.group != 'flaky-go' }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -122,7 +122,7 @@ jobs:
           node: ${{ matrix.group != 'flaky-go' }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -149,7 +149,7 @@ jobs:
           node: ${{ matrix.group != 'flaky-go' }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -193,7 +193,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -219,7 +219,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -245,7 +245,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -273,7 +273,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" --failing-json failing-tests.json || true
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: failing-tests
