@@ -383,7 +383,8 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	}
 	// A caller's own --tools in args wins: two on one command line leave the answer to Claude Code's parser.
 	if kit.Superlean && !hasToolsFlag(kept) {
-		out = append(out, "--tools", strings.Join(superleanTools(kit), ","))
+		// One token: a bare `--tools` is variadic and takes the opening prompt after it as one more tool.
+		out = append(out, "--tools="+strings.Join(superleanTools(kit), ","))
 	}
 	if kit.needsPlugin() {
 		dir, err := leanPluginDir(kit, hk)

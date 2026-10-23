@@ -50,6 +50,9 @@ func flagValue(t *testing.T, args []string, flag string) string {
 		if a == flag && i+1 < len(args) {
 			return args[i+1]
 		}
+		if v, ok := strings.CutPrefix(a, flag+"="); ok {
+			return v
+		}
 	}
 	t.Fatalf("%s not in %q", flag, args)
 	return ""

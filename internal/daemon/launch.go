@@ -389,6 +389,39 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 	return next, logged, nil
 }
 
+// claudeTakesMany are Claude Code's options that take every argument after them up to the next option. Written
+// `--x=<value>` they take only that one.
+var claudeTakesMany = map[string]bool{
+	"--add-dir": true, "--allowedtools": true, "--allowed-tools": true, "--betas": true, "--disallowedtools": true,
+	"--disallowed-tools": true, "--file": true, "--mcp-config": true, "--tools": true,
+}
+
+// claudeTakesMaybe are its options with an optional value, which take the argument right after them.
+var claudeTakesMaybe = map[string]bool{
+	"--cloud": true, "-d": true, "--debug": true, "--from-pr": true, "--prompt-suggestions": true,
+	"--remote-control": true, "-r": true, "--resume": true, "--teleport": true, "-w": true, "--worktree": true,
+}
+
+// promptTakenBy is the option of a claude argv that would read its last argument, the opening prompt, as a value
+// of its own, or "" when the prompt stays the prompt.
+func promptTakenBy(args []string) string {
+	for i := len(args) - 2; i >= 0; i-- {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") || a == "-" {
+			continue
+		}
+		if a == "--" || strings.Contains(a, "=") {
+			return ""
+		}
+		name := strings.ToLower(a)
+		if claudeTakesMany[name] || (claudeTakesMaybe[name] && i == len(args)-2) {
+			return a
+		}
+		return ""
+	}
+	return ""
+}
+
 // withMapped appends one convenience field (model or effort) in the shape the
 // harness row declares, or refuses when the row has no shape for it. The
 // placeholder is the field's own name in braces.
@@ -1201,6 +1234,13 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
+	}
+	if wanted != "" && isClaude(h) && strings.Join(h.PromptArgs, " ") == "{prompt}" {
+		if flag := promptTakenBy(args); flag != "" {
+			return nil, fmt.Errorf("the opening prompt would never reach %s: %s takes the argument after it as its "+
+				"own value, so the session would open at an empty prompt. write it as %s=<value>, or put another "+
+				"flag after it", h.Label, flag, flag)
+		}
 	}
 	// retag writes req.Tags even when it came out empty, which is a lean card
 	// whose only tag was the lean one.
