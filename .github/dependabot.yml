@@ -24,7 +24,3 @@ updates:
       - /website
     patterns: ["*"]
     multi-ecosystem-group: all
-  - package-ecosystem: docker
-    directory: /.github/ci-image
-    patterns: ["*"]
-    multi-ecosystem-group: all
