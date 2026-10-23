@@ -153,14 +153,22 @@ func newForge(t *testing.T, branch string) *forge {
 		t.Fatal(err)
 	}
 	git(t, f.work, "init", "-q", "-b", branch)
+	alt := filepath.Join(f.dir, "objects", "info")
+	if err := os.MkdirAll(alt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(alt, "alternates"), []byte(filepath.ToSlash(filepath.Join(f.work, ".git", "objects"))+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return f
 }
 
 func (f *forge) push(t *testing.T, branch, file, body string, at int64) string {
 	t.Helper()
 	commitAt(t, f.work, file, body, at)
-	git(t, f.work, "push", "-q", f.dir, "HEAD:refs/heads/"+branch)
-	return git(t, f.work, "rev-parse", "HEAD")
+	sha := git(t, f.work, "rev-parse", "HEAD")
+	git(t, f.dir, "update-ref", "refs/heads/"+branch, sha)
+	return sha
 }
 
 // commitAt is commit with a committer time, so the order of branches and `main.at` are fixed.
