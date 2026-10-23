@@ -209,9 +209,9 @@ func (d *Daemon) markIfMerged(w *store.WorkItem, into string, branches []string,
 	if !plan.merged {
 		return fail("branch " + plan.branch + " is not merged into " + into)
 	}
-	sha, err := gitIn(plan.common, "--git-dir="+plan.common, "rev-parse", "--verify", "-q", "refs/heads/"+plan.branch)
-	if err != nil {
-		return fail(err.Error())
+	sha := plan.head
+	if sha == "" {
+		return fail("could not read branch " + plan.branch)
 	}
 	at := time.Now().Add(grace)
 	marked, err := d.st.MarkMerged(w.TaskID, into, sha, plan.branch, at)

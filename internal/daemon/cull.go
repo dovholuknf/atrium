@@ -102,12 +102,13 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 // on exactly it, because the proof was made where the area branch lives. Empty
 // means the proof is made here, against a branch of this repository.
 func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
-	return d.cullProved(taskID, into, tip, false)
+	return d.cullProved(taskID, into, tip, false, nil)
 }
 
 // cullProved is CullProved, and with idle the card need not have reported done: the sweep reclaims a landed worker that
-// sat at needs-input. See landed.go.
-func (d *Daemon) cullProved(taskID, into, tip string, idle bool) (*CullResult, error) {
+// sat at needs-input. See landed.go. A prior plan of the same worktree lends its git dir and its proof while the refs
+// are unchanged.
+func (d *Daemon) cullProved(taskID, into, tip string, idle bool, prior *cullPlan) (*CullResult, error) {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return nil, err
@@ -154,7 +155,7 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool) (*CullResult, e
 	}
 
 	res := &CullResult{Card: taskID, Into: into, Worktree: t.Worktree}
-	plan, err := inspectCullProved(t.Worktree, into, tip)
+	plan, err := inspectCullFrom(t.Worktree, into, tip, prior)
 	if err != nil {
 		return nil, fmt.Errorf("%s was not culled: %w", t.DisplayTitle(), err)
 	}
@@ -173,7 +174,7 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool) (*CullResult, e
 	}
 
 	// Again, after the exit: a runner writes on its way out.
-	plan, err = inspectCullProved(t.Worktree, into, tip)
+	plan, err = inspectCullFrom(t.Worktree, into, tip, plan)
 	if err != nil {
 		res.Kept = "the worktree could not be read after the exit: " + err.Error()
 		return d.culled(t, res), nil
@@ -274,6 +275,11 @@ type cullPlan struct {
 	// links are the shared dependency folders linked into the worktree root, which are removed as links and never
 	// followed.
 	links []string
+	// head is the branch's commit and refs the commits of every ref the proof read, so a later look at the same refs
+	// can keep the proof. by is the ref that proved the branch landed.
+	head string
+	refs map[string]string
+	by   string
 }
 
 // linkedDirs are the folders a worker's worktree may hold as a junction or symlink to a shared copy.
@@ -298,22 +304,34 @@ func inspectCull(wt, into string) (*cullPlan, error) { return inspectCullProved(
 // worktree is sitting on exactly that commit, and `moved` names the commit it is
 // on when it is not.
 func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
+	return inspectCullFrom(wt, into, tip, nil)
+}
+
+// inspectCullFrom is inspectCullProved that takes the git dir from prior, a plan of the same worktree, and keeps its
+// merge proof when every ref the proof read is still on the commit it was.
+func inspectCullFrom(wt, into, tip string, prior *cullPlan) (*cullPlan, error) {
 	wt = filepath.FromSlash(wt)
 	if fi, err := os.Stat(wt); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("its directory %s is not there, so atrium cannot check its branch", wt)
 	}
 	p := &cullPlan{wt: wt}
-	gitDir, err := gitIn(wt, "rev-parse", "--path-format=absolute", "--git-dir")
-	if err != nil {
-		return nil, fmt.Errorf("%s is not a git worktree: %w", wt, err)
+	if prior != nil && prior.wt == wt && prior.common != "" {
+		p.common = prior.common
+	} else {
+		dirs, err := gitIn(wt, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+		if err != nil {
+			return nil, fmt.Errorf("%s is not a git worktree: %w", wt, err)
+		}
+		lines := strings.Split(dirs, "\n")
+		if len(lines) != 2 {
+			return nil, fmt.Errorf("%s is not a git worktree: git named its directories as %q", wt, dirs)
+		}
+		p.common = strings.TrimSpace(lines[1])
+		if filepath.Clean(strings.TrimSpace(lines[0])) == filepath.Clean(p.common) {
+			return nil, fmt.Errorf("%s is the repository's main checkout, not a worktree of its own", wt)
+		}
 	}
-	p.common, err = gitIn(wt, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err != nil {
-		return nil, err
-	}
-	if filepath.Clean(gitDir) == filepath.Clean(p.common) {
-		return nil, fmt.Errorf("%s is the repository's main checkout, not a worktree of its own", wt)
-	}
+	var err error
 	p.branch, err = gitIn(wt, "symbolic-ref", "--short", "-q", "HEAD")
 	if err != nil || p.branch == "" {
 		return nil, fmt.Errorf("%s is not on a branch", wt)
@@ -326,22 +344,32 @@ func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 		if err != nil {
 			return nil, err
 		}
-		head, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+p.branch)
-		if err != nil {
-			return nil, fmt.Errorf("could not read branch %s: %w", p.branch, err)
+		refs, err := readRefs(wt, "refs/heads/"+p.branch)
+		if err != nil || refs["refs/heads/"+p.branch] == "" {
+			return nil, fmt.Errorf("could not read branch %s: %s", p.branch, errOr(err, "it is not there"))
 		}
-		if head == p.tip {
+		p.head = refs["refs/heads/"+p.branch]
+		if p.head == p.tip {
 			p.merged = true
 		} else {
-			p.moved = head
+			p.moved = p.head
 		}
 	} else {
-		if _, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+into); err != nil {
-			return nil, fmt.Errorf("there is no branch %s to check it against", into)
-		}
-		p.merged, err = landedInto(wt, p.branch, into)
+		p.refs, err = readRefs(wt, landedNames(p.branch, into)...)
 		if err != nil {
 			return nil, err
+		}
+		if p.refs["refs/heads/"+into] == "" {
+			return nil, fmt.Errorf("there is no branch %s to check it against", into)
+		}
+		p.head = p.refs["refs/heads/"+p.branch]
+		if prior != nil && prior.merged && prior.branch == p.branch && sameRefs(prior.refs, p.refs) {
+			p.merged, p.by = true, prior.by
+		} else {
+			p.merged, p.by, err = landedWith(wt, p.branch, into, p.refs)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	statusArgs := []string{"status", "--porcelain=v1", "--untracked-files=all"}
@@ -491,11 +519,11 @@ func deleteMergedBranch(p *cullPlan, into string) error {
 	if p.tip != "" {
 		// Nothing here to check `into` against. The branch has to still be the
 		// commit the proof was made for.
-		var head string
-		head, err = gitIn(p.common, "--git-dir="+p.common, "rev-parse", "--verify", "-q", "refs/heads/"+p.branch)
-		merged = err == nil && head == p.tip
+		var refs map[string]string
+		refs, err = readRefs(p.common, "refs/heads/"+p.branch)
+		merged = err == nil && refs["refs/heads/"+p.branch] == p.tip
 	} else {
-		merged, err = landedInto(p.common, p.branch, into)
+		merged, err = stillLanded(p, into)
 	}
 	if err != nil || !merged {
 		return fmt.Errorf("the worktree was removed and branch %s kept, because it no longer "+
@@ -505,6 +533,59 @@ func deleteMergedBranch(p *cullPlan, into string) error {
 		return fmt.Errorf("the worktree was removed and git kept branch %s: %v", p.branch, err)
 	}
 	return nil
+}
+
+// stillLanded reads the refs again, and keeps the plan's proof only when none of them moved.
+func stillLanded(p *cullPlan, into string) (bool, error) {
+	refs, err := readRefs(p.common, landedNames(p.branch, into)...)
+	if err != nil {
+		return false, err
+	}
+	if p.merged && sameRefs(p.refs, refs) {
+		return true, nil
+	}
+	merged, _, err := landedWith(p.common, p.branch, into, refs)
+	return merged, err
+}
+
+// readRefs gives the commit each named ref is on in one git call, leaving out a ref that is missing or not a commit.
+func readRefs(dir string, names ...string) (map[string]string, error) {
+	args := append([]string{"for-each-ref", "--format=%(refname) %(objecttype) %(objectname)"}, names...)
+	out, err := gitIn(dir, args...)
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	refs := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 3 && f[1] == "commit" && want[f[0]] {
+			refs[f[0]] = f[2]
+		}
+	}
+	return refs, nil
+}
+
+func sameRefs(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+func errOr(err error, def string) string {
+	if err != nil {
+		return err.Error()
+	}
+	return def
 }
 
 // gitIn runs git in dir and returns its trimmed output, or git's own reason.

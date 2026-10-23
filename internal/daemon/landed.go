@@ -123,44 +123,54 @@ func (d *Daemon) landedKeptFor(id string) any {
 	return nil
 }
 
-// landedRefs are the refs a branch is proved landed against: `into`, and for claude/main the hub's copy and origin/main.
-func landedRefs(dir, into string) []string {
-	cands := []string{"refs/heads/" + into}
+// landedNames are the refs a branch is proved landed against, after its own: `into`, and for claude/main the hub's copy
+// and origin/main.
+func landedNames(branch, into string) []string {
+	names := []string{"refs/heads/" + branch, "refs/heads/" + into}
 	if strings.EqualFold(into, DefaultCullInto) {
-		cands = append(cands, "refs/remotes/hub/claude/main", "refs/remotes/origin/main")
+		names = append(names, "refs/remotes/hub/claude/main", "refs/remotes/origin/main")
 	}
-	var out []string
-	for _, r := range cands {
-		if _, err := gitIn(dir, "rev-parse", "--verify", "-q", r+"^{commit}"); err == nil {
-			out = append(out, r)
-		}
-	}
-	return out
+	return names
 }
 
 // landedInto says whether every commit of branch is on `into`: by ancestry, or by patch id (subjects alone are not
 // enough to delete on). dir is any checkout or git dir of the repository.
 func landedInto(dir, branch, into string) (bool, error) {
-	refs := landedRefs(dir, into)
+	refs, err := readRefs(dir, landedNames(branch, into)...)
+	if err != nil {
+		return false, err
+	}
+	merged, _, err := landedWith(dir, branch, into, refs)
+	return merged, err
+}
+
+// landedWith is landedInto over refs already read, and says which ref proved it.
+func landedWith(dir, branch, into string, have map[string]string) (bool, string, error) {
+	var refs []string
+	for _, r := range landedNames(branch, into)[1:] {
+		if have[r] != "" {
+			refs = append(refs, r)
+		}
+	}
 	if len(refs) == 0 {
-		return false, nil
+		return false, "", nil
 	}
 	head := "refs/heads/" + branch
+	tip := have[head]
+	if tip == "" {
+		return false, "", fmt.Errorf("branch %s is not there", branch)
+	}
 	for _, ref := range refs {
 		ok, err := isAncestor(dir, head, ref)
 		if err != nil {
 			if ref == "refs/heads/"+into {
-				return false, err
+				return false, "", err
 			}
 			continue
 		}
 		if ok {
-			return true, nil
+			return true, ref, nil
 		}
-	}
-	tip, err := gitIn(dir, "rev-parse", "--verify", "-q", head+"^{commit}")
-	if err != nil {
-		return false, err
 	}
 	run := gitsync.NewRunner()
 	defer run.Stop(time.Second)
@@ -170,10 +180,10 @@ func landedInto(dir, branch, into string) (bool, error) {
 	for _, ref := range refs {
 		got, err := gitsyncLanded(ctx, run, dir, ref, tip)
 		if err == nil && got {
-			return true, nil
+			return true, ref, nil
 		}
 	}
-	return false, nil
+	return false, "", nil
 }
 
 func gitsyncLanded(ctx context.Context, run *gitsync.Runner, dir, ref, tip string) (bool, error) {
@@ -284,7 +294,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 		d.landedSet(t.ID, "")
 		return
 	}
-	res, err := d.cullProved(t.ID, DefaultCullInto, "", true)
+	res, err := d.cullProved(t.ID, DefaultCullInto, "", true, plan)
 	if err != nil {
 		log.Printf("[atrium] not reclaiming landed %s: %v", t.DisplayTitle(), err)
 		d.keepLanded(t, "landed, kept: "+err.Error())
