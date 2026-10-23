@@ -173,7 +173,7 @@ func execable(t *testing.T, p string) {
 		if err == nil || !strings.Contains(err.Error(), "text file busy") {
 			return
 		}
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) // wait: ETXTBSY clears once the forked child execs
 	}
 	t.Fatalf("%s stayed busy", p)
 }
