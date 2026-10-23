@@ -181,3 +181,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | graduated by clint 2026-10-22 | atriumDown | REMOVE | yes | 0 |
 | 2026-10-22 | graduated by clint 2026-10-22 | themePreview | REMOVE | yes | 0 |
 | 2026-10-22 | graduated by clint 2026-10-22 | TestWatchPathsPushesOnlyWhenTheListChanged | REMOVE | yes | 0 |
+| 2026-10-23 | 39952983819 | TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy | ADD | no | 0 |
