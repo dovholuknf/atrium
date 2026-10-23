@@ -29,9 +29,9 @@ flaky_macos="flaky-go flaky-board"
 flaky_windows="flaky-go flaky-board"
 flaky_entries="$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).entries.length))' "${FLAKY_SUITE_FILE:-$(dirname "$0")/flaky-suite.json}")"
 if [ "$flaky_entries" = 0 ]; then flaky_ubuntu=""; flaky_macos=""; flaky_windows=""; fi
-check_ubuntu="go-all board-1 board-2"
+check_ubuntu="go-all board-1-visual race-board-2"
 check_macos="go-test go-checks-visual board-1 board-2"
-check_windows="go-test-1 go-test-2 go-checks-visual board-1 board-2"
+check_windows="go-test-1 go-test-2 go-checks-visual build-board-1 board-2"
 
 skipped=0
 for kind in flaky check; do

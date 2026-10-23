@@ -16,6 +16,7 @@
 # THE TOOLCHAIN IS CHECKED, NOT INSTALLED. Go must be the version go.mod names and node must be major 22, or the run
 # stops before it checks anything (CI_ALLOW_TOOLCHAIN=1 turns that into a loud warning, for a machine that cannot have
 # them). A missing node is a failure: a skipped check that reads as green is worse than a red one.
+# The board groups (board, board-*) need no Go and the job does not install it. go-test groups call node for the flaky list.
 #
 # THE REPORT. build.claude/ci/summary.md says what ran, how long each step took, which tests failed with the end of
 # their output, the slowest tests, and the line that reproduces the run. The workflow copies it to the run's summary.
@@ -67,22 +68,26 @@ all_steps="machine toolchain flaky-go flaky-board gofmt go-vet go-build go-test 
 # THE MERGED GROUPS use fewer runners. go-checks-visual is go-checks and board-visual in one job, go-all is go-test,
 # go-checks and board-visual in one. board-visual never fails the exit status (soft_nfail), so merging it hides no
 # go-checks failure and no go-checks failure hides it.
-group_list="flaky-go flaky-board flaky-board-1 flaky-board-2 go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual"
+group_list="flaky-go flaky-board flaky-board-1 flaky-board-2 go-all go-test go-test-1 go-test-2 go-checks go-checks-visual board board-1 board-2 board-visual board-1-visual build-board-1 race-board-2"
 group_steps() {
   case "$1" in
     flaky-go) echo "flaky-go,clean-tree" ;;
     flaky-board|flaky-board-1|flaky-board-2) echo "flaky-board,clean-tree" ;;
-    go-test|go-test-1|go-test-2) echo "go-build,go-test,time-guard,clean-tree" ;;
+    go-test) echo "go-build,go-test,time-guard,clean-tree" ;;
+    go-test-1|go-test-2) echo "go-test,time-guard,clean-tree" ;;
     go-checks) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     go-checks-visual) echo "gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,board-visual,clean-tree" ;;
-    go-all) echo "go-build,go-test,time-guard,gofmt,go-vet,go-race,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,board-visual,clean-tree" ;;
+    go-all) echo "go-build,go-test,time-guard,gofmt,go-vet,govulncheck,skins,contrast,opencode,release,parse,powershell,ps-tests,clean-tree" ;;
     board-visual) echo "board-visual,clean-tree" ;;
     board|board-1|board-2) echo "board,clean-tree" ;;
+    board-1-visual) echo "board,board-visual,clean-tree" ;;
+    build-board-1) echo "go-build,board,clean-tree" ;;
+    race-board-2) echo "go-race,board,clean-tree" ;;
     *) return 1 ;;
   esac
 }
 # A group name ending in -1 or -2 picks that part of a step that has parts. Empty is the whole step.
-part_of() { case "$1" in *-1) echo 1 ;; *-2) echo 2 ;; esac; }
+part_of() { case "$1" in *-1|*-1-visual) echo 1 ;; *-2) echo 2 ;; esac; }
 
 only=""; group=""; part=""
 while [ $# -gt 0 ]; do
@@ -411,7 +416,7 @@ have_go="$(go version 2>/dev/null | sed -n 's/^go version go\([0-9.]*\).*/\1/p')
 want_node=22
 have_node="$(node --version 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p')"
 tool_bad=0
-case "$group" in flaky-board|flaky-board-*) ;; *)
+case "$group" in flaky-board|flaky-board-*|board|board-*) ;; *)
 if [ "$have_go" != "$want_go" ]; then
   echo "go is '${have_go:-missing}', go.mod says $want_go" >&2; tool_bad=1
 fi ;;

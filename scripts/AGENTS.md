@@ -41,6 +41,8 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   `go-test` and `board` are each whole. The flaky suite is `flaky-go` (Go, no node) and `flaky-board`
   (node and playwright, no Go): the flaky board units and check scripts in one job. `go-checks-visual` and `go-all` merge go-checks, board-visual and (go-all)
   the whole go-test into one job, to use fewer runners. A `board-visual` failure is recorded but never fails the exit
+  status. The board groups install no Go. `board-1-visual` is board-1 plus board-visual, `race-board-2` is board-2 plus
+  go-race, `build-board-1` is board-1 plus go-build: they balance the ubuntu and windows jobs, and the last two install Go.
   status. `ci-linux.sh` runs it in docker as a non-root user with no pwsh.
 - **CI ends by checking the tree is as it was.** A test that rewrites a tracked file or leaves a new one fails it.
 - `test-time-guard.sh` prints `WARN PACKAGE` for a package over 60s and `WARN TEST` for a test over 5s, or over the

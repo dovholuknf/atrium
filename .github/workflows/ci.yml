@@ -190,6 +190,7 @@ jobs:
       - uses: ./.github/actions/ci-run
         with:
           group: ${{ matrix.group }}
+          go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
@@ -215,6 +216,7 @@ jobs:
       - uses: ./.github/actions/ci-run
         with:
           group: ${{ matrix.group }}
+          go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
@@ -240,6 +242,7 @@ jobs:
       - uses: ./.github/actions/ci-run
         with:
           group: ${{ matrix.group }}
+          go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
       - uses: actions/upload-artifact@v4
