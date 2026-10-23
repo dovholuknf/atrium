@@ -5295,6 +5295,153 @@ async function fileMenuSection(browser, base) {
   }
 }
 
+// ── an html link offers rendered and raw, and the menu closes on a wheel or a key in the terminal (u-file-menu-html) ──
+// Output scrolling the terminal leaves the menu open. FILEMENUHTML_SHOTS=dir writes the PNG.
+async function fileMenuHTMLSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const shots = process.env.FILEMENUHTML_SHOTS || "";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__tabs = [];
+    window.open = (u) => { window.__tabs.push(u); return null; };
+  });
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
+    const menuState = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
+      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+    const ask = async rel => {
+      await p.evaluate(rel => { fileLinkMenu({ clientX: 100, clientY: 100 }, "land-live", { rel, dir: false }); }, rel);
+      return menuState(true);
+    };
+    const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
+
+    if (!await ask("out/topology.html")) { fail("fileLinkMenu for an html file did not open the menu"); return; }
+    const got = await items();
+    const want = ["open rendered", "open raw in a tab", "open in atrium's editor", "open externally, on sg4"];
+    if (JSON.stringify(got) !== JSON.stringify(want)) fail("an html menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
+    const rendered = p.locator("#cardmenu button", { hasText: "open rendered" });
+    if (!await rendered.getAttribute("data-tip")) fail("open rendered carries no data-tip");
+    if (await p.locator("#cardmenu [title]").count()) fail("the file menu carries a native title tooltip");
+    if (shots) await p.screenshot({ path: path.join(shots, "menu-html.png") });
+    await rendered.click();
+    await menuState(false);
+    await ask("out/topology.html");
+    await p.locator("#cardmenu button", { hasText: "open raw in a tab" }).click();
+    await menuState(false);
+    const tabs = await p.evaluate(() => window.__tabs);
+    const wantTabs = ["/read.html?render#land-live/out%2Ftopology.html", "/read.html#land-live/out%2Ftopology.html"];
+    if (JSON.stringify(tabs) !== JSON.stringify(wantTabs)) fail("the html entries opened " + JSON.stringify(tabs));
+
+    const fire = kind => p.evaluate(kind => {
+      const at = document.querySelector("#t-screen");
+      const target = at.firstElementChild || at;
+      const ev = kind === "wheel" ? new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true })
+        : kind === "key" ? new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true })
+        : new Event("scroll");
+      target.dispatchEvent(ev);
+    }, kind);
+    await ask("src/a.go");
+    await fire("scroll");
+    await p.waitForTimeout(150); // wait: negative check, output scrolling must leave the menu open
+    if (!await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on"))) fail("terminal output scrolling closed the file menu");
+    await fire("wheel");
+    if (!await menuState(false)) fail("a wheel over the terminal did not close the file menu");
+    await ask("src/a.go");
+    await fire("key");
+    if (!await menuState(false)) fail("a key typed in the terminal did not close the file menu");
+    if (errors.length) fail("the html file menu page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── an html tab is its source, or rendered in a sandbox that runs and loads nothing (u-file-menu-html) ──
+// HTMLTAB_SHOTS=dir writes the PNGs.
+async function htmlTabSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const shots = process.env.HTMLTAB_SHOTS || "";
+  const ctx = await landContext(browser);
+  const hostile = "<!DOCTYPE html><html lang=en><head><style>h1{color:rgb(1,2,3)}</style></head><body><h1>Topology</h1>" +
+    "<script>window.__ran = 1; try { parent.__pwn = 1 } catch (e) {} try { localStorage.setItem('pwn', '1') } catch (e) {}</script>" +
+    "<img src=x onerror=\"parent.__pwn = 2\"><img src=\"http://evil.test/x.png\"><img src=\"/v1/tasks/land-live/files/view?path=secret.png\">" +
+    "<form action=\"/v1/tasks/land-live/kill\" method=post><button>go</button></form></body></html>";
+  const reqs = [];
+  await ctx.route("**/files/view?*", route => {
+    const p = new URL(route.request().url()).searchParams.get("path") || "";
+    if (p !== "out/topology.html") { reqs.push(route.request().url()); return route.fulfill({ status: 404, body: "no" }); }
+    route.fulfill({ status: 200, contentType: "text/plain; charset=utf-8",
+      headers: { "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" }, body: hostile });
+  });
+  try {
+    const v = await ctx.newPage();
+    v.on("pageerror", e => errors.push(String(e)));
+    await ctx.route("http://evil.test/**", route => { reqs.push(route.request().url()); route.abort(); });
+    await v.goto(base + "/read.html?render#land-live/out%2Ftopology.html", { waitUntil: "domcontentloaded" });
+    await v.waitForFunction(() => { const f = document.getElementById("html"); return !!f && !f.hidden; }, null, { timeout: slow(8000), polling: 20 })
+      .catch(() => fail("the rendered html frame never showed"));
+    const st = await v.evaluate(() => {
+      const f = document.getElementById("html");
+      return { sandbox: f.getAttribute("sandbox"), csp: /Content-Security-Policy[^>]*default-src 'none'/.test(f.srcdoc),
+        reach: (() => { try { return !!f.contentDocument; } catch (e) { return false; } })(),
+        text: !document.getElementById("text").hidden, btn: document.getElementById("html-mode").textContent,
+        titled: document.querySelectorAll("#html-mode[title], #html[title]").length };
+    });
+    if (st.sandbox !== "") fail("the html frame's sandbox is " + JSON.stringify(st.sandbox) + ", want empty");
+    if (!st.csp) fail("the rendered html carries no policy of its own");
+    if (st.reach) fail("the board can reach into the rendered frame, so it is not an opaque origin");
+    if (st.text) fail("the source showed beside the rendered page");
+    if (st.btn !== "Show the source") fail("the toggle said " + JSON.stringify(st.btn));
+    if (st.titled) fail("the html controls carry a native title tooltip");
+    const frame = v.frames().find(f => f.url() === "about:srcdoc");
+    const h1 = frame ? await frame.locator("h1").textContent({ timeout: slow(3000) }).catch(() => "") : "";
+    if (h1 !== "Topology") fail("the rendered frame drew " + JSON.stringify(h1));
+    await v.waitForTimeout(200); // wait: negative check, nothing in the page may run or load
+    if (await v.evaluate(() => window.__pwn !== undefined || localStorage.getItem("pwn") !== null)) fail("the rendered html reached the viewer");
+    if (frame && await frame.evaluate(() => window.__ran).catch(() => undefined) !== undefined) fail("a script in the rendered html ran");
+    if (reqs.length) fail("the rendered html loaded " + JSON.stringify(reqs));
+    if (shots) await v.screenshot({ path: path.join(shots, "html-rendered.png") });
+
+    await v.click("#html-mode");
+    const raw = await v.evaluate(() => ({ text: document.getElementById("text").textContent,
+      frame: document.getElementById("html").hidden, url: location.search, btn: document.getElementById("html-mode").textContent }));
+    if (!raw.frame || raw.text !== hostile) fail("the source view showed " + JSON.stringify(raw.text.slice(0, 80)));
+    if (raw.url !== "" || raw.btn !== "Show it rendered") fail("after showing the source the address was " + JSON.stringify(raw.url) + " and the toggle " + JSON.stringify(raw.btn));
+    if (shots) await v.screenshot({ path: path.join(shots, "html-source.png") });
+    await v.close();
+
+    const r = await ctx.newPage();
+    r.on("pageerror", e => errors.push(String(e)));
+    await r.goto(base + "/read.html#land-live/out%2Ftopology.html", { waitUntil: "domcontentloaded" });
+    await r.waitForFunction(() => document.getElementById("text").textContent.includes("Topology"), null, { timeout: slow(8000), polling: 20 })
+      .catch(() => fail("the raw html tab never showed the source"));
+    if (await r.evaluate(() => !!document.getElementById("html"))) fail("a raw html tab drew the page");
+    await r.close();
+    // The harness's own init script runs in the sandboxed frame too, and its refusal is the sandbox working.
+    const thrown = errors.filter(e => !/lacks the 'allow-same-origin' flag/.test(e));
+    if (thrown.length) fail("the html tab threw: " + thrown.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── a markdown tab renders hostile markdown inert (u-file-open-outside) ──
 // Script, an onerror image, a javascript: link and raw HTML must all arrive inert. MARKDOWNTAB_SHOTS=dir writes the PNG.
 async function markdownTabSection(browser, base) {
@@ -25009,7 +25156,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -27072,6 +27219,8 @@ async function main() {
     await unit("emptyGroups", () => emptyGroupsSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileMenu", () => fileMenuSection(browser, base));
+    await unit("fileMenuHTML", () => fileMenuHTMLSection(browser, base));
+    await unit("htmlTab", () => htmlTabSection(browser, base));
     await unit("markdownTab", () => markdownTabSection(browser, base));
     await unit("docShare", () => docShareSection(browser, base));
     await unit("termLinkLate", () => termLinkLateSection(browser, base));

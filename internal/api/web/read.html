@@ -21,7 +21,8 @@
   agent wrote is never served as itself on the board's origin. This page shows it
   by type: a picture as an image, an SVG as an image made from a blob (an image
   runs no script), a PDF in the browser's own viewer, markdown rendered, JSON
-  indented, and everything else as text, HTML included.
+  indented, and everything else as text. An HTML file is its source, or on
+  request (`?render`) drawn in a frame with an empty sandbox: see `read.js`.
 
   ── the markdown is not trusted ──────────────────────────
 
@@ -102,6 +103,8 @@
   .oops a { color: var(--head); }
   .pic { display: block; max-width: calc(100% - 36px); margin: 18px auto; background: var(--shell-0); }
   .pdf { display: block; width: 100%; height: calc(100vh - 56px); border: 0; }
+  /* A page with no background of its own is drawn on white, as a browser would draw it, above the grid on body::before. */
+  .page { position: relative; z-index: 1; background: #fff; }
   .sharebtn, .sharebox button {
     height: 24px; padding: 0 10px; border: 1px solid var(--stroke-dim); background: var(--chip);
     color: var(--label); border-radius: var(--r-sm); font: var(--fs-base) var(--sans); cursor: pointer;
@@ -132,6 +135,7 @@
   </span>
   <select id="skin" aria-label="skin for this page only"></select>
   <button id="share-doc" type="button" class="sharebtn" hidden>Share publicly</button>
+  <button id="html-mode" type="button" class="sharebtn" hidden>Show it rendered</button>
   <button id="open-ext" type="button" class="sharebtn" hidden>Open externally</button></header>
 <div id="ext-note" class="sharebox" hidden></div>
 <div id="share-box" class="sharebox" hidden>

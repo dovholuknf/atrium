@@ -260,7 +260,8 @@ function launchable(rel) { return launchExt.test(rel || ""); }
 // A clicked file asks where it should open.
 //
 //   open rendered / open in a tab   atrium's viewer, in a new browser tab, streamed from the room that holds the
-//                                   card. First and always offered. Markdown is rendered there.
+//                                   card. First and always offered. Markdown is rendered there. HTML is offered
+//                                   both ways: drawn in a sandboxed frame, and as its source.
 //   in atrium's editor              here, in this browser, in the drawer. Not for a binary.
 //   open externally, on <machine>   `files/launch`, the room's DEFAULT APP for the file, on the room's machine.
 //                                   Only for a document or a picture: a program's default app is to run it.
@@ -281,7 +282,13 @@ async function fileLinkMenu(ev, id, hit) {
   }
   if (!termTask || termTask.id !== id) return;
   const md = !hit.dir && /\.(md|markdown)$/i.test(hit.rel);
-  const items = [{ label: md ? "open rendered" : "open in a tab", out: true, act: () => openFileTabFor(id, hit.rel) }];
+  const html = !hit.dir && /\.html?$/i.test(hit.rel);
+  const items = [{ label: md ? "open rendered" : html ? "open raw in a tab" : "open in a tab", out: true,
+    act: () => openFileTabFor(id, hit.rel) }];
+  if (html) {
+    items.unshift({ label: "open rendered", out: true, act: () => openFileTabFor(id, hit.rel, true),
+      tip: "drawn in a sandbox: no script runs and nothing outside the file loads" });
+  }
   if (!notEditable(hit.rel)) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
   if (launchable(hit.rel)) {
     items.push({

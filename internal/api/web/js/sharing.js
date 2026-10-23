@@ -726,6 +726,13 @@ window.addEventListener("scroll", e => {
   closeCardMenu();
 }, true);
 
+// A wheel, a swipe or a key in the terminal is the person moving on, unlike output scrolling it.
+for (const kind of ["wheel", "touchmove", "keydown"]) {
+  document.getElementById("t-screen").addEventListener(kind, () => {
+    if (cardMenuEl.classList.contains("on")) closeCardMenu();
+  }, { capture: true, passive: true });
+}
+
 // Did this event come from inside the terminal's own scrolling area.
 function fromTerminal(e) {
   const t = e.target;

@@ -54,6 +54,8 @@
   "dropdownsInstant": 3065,
   "eventDriven": 9034,
   "fileMenu": 2500,
+  "fileMenuHTML": 2500,
+  "htmlTab": 2000,
   "markdownTab": 2000,
   "fileView": 3730,
   "foldStill": 6647,

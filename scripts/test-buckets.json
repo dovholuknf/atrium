@@ -232,7 +232,7 @@
     },
     "docs-files": {
       "page": "docs, files, the reader, change requests",
-      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileMenu", "fileLinksView", "markdownTab", "docShare", "coverPoll", "coverSteps"],
+      "units": ["boardDocs", "boardFiles", "docsPage", "fileView", "fileMenu", "fileMenuHTML", "htmlTab", "fileLinksView", "markdownTab", "docShare", "coverPoll", "coverSteps"],
       "sources": [
         "internal/api/web/js/notes-files.js",
         "internal/api/web/js/terminal-links.js",

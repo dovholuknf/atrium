@@ -562,12 +562,13 @@ function paintEditorElsewhere() {
 //
 // Every file goes to `read.html`, atrium's viewer, which shows it by its type from the bytes of the view route.
 // An HTML or SVG file an agent wrote must not run on this origin: see `fileview.go` and `read.js`.
-function fileTabURL(id, path) {
-  return "/read.html#" + encodeURIComponent(id) + "/" + encodeURIComponent(path);
+// `render` asks for an HTML file drawn in a sandboxed frame rather than shown as its source.
+function fileTabURL(id, path, render) {
+  return "/read.html" + (render ? "?render" : "") + "#" + encodeURIComponent(id) + "/" + encodeURIComponent(path);
 }
 
-function openFileTabFor(id, path) {
-  window.open(fileTabURL(id, path), "_blank", "noopener");
+function openFileTabFor(id, path, render) {
+  window.open(fileTabURL(id, path, render), "_blank", "noopener");
 }
 
 // openFileTab reads the editor's file in a browser tab, served by atrium.

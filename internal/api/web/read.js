@@ -43,6 +43,45 @@ function viewURL(id, path) {
 
 function isMarkdown(path) { return /\.(md|markdown)$/i.test(path); }
 
+function isHTML(path) { return /\.html?$/i.test(path); }
+
+// Beside the empty sandbox, so a rendered page cannot even ask the room for another of the card's files.
+const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
+
+function sandboxedHTML(body) {
+  const meta = '<meta http-equiv="Content-Security-Policy" content="' + HTML_CSP + '">';
+  // After the doctype, so a standards-mode page stays one.
+  const m = /^﻿?\s*<!doctype[^>]*>/i.exec(body);
+  return m ? m[0] + meta + body.slice(m[0].length) : meta + body;
+}
+
+// The source and the rendered page, one at a time, with `?render` in the address saying which.
+function htmlMain(body) {
+  const text = document.getElementById("text");
+  const btn = document.getElementById("html-mode");
+  // Made here rather than in the markup, with the sandbox set before it has anything to load.
+  const frame = document.createElement("iframe");
+  frame.id = "html";
+  frame.className = "pdf page";
+  frame.setAttribute("sandbox", "");
+  frame.setAttribute("aria-label", "the page, rendered");
+  frame.hidden = true;
+  text.textContent = body;
+  const show = render => {
+    if (render && !frame.srcdoc) {
+      frame.srcdoc = sandboxedHTML(body);
+      text.after(frame);
+    }
+    frame.hidden = !render;
+    text.hidden = render;
+    btn.textContent = render ? "Show the source" : "Show it rendered";
+    history.replaceState(null, "", (render ? "?render" : location.pathname) + location.hash);
+  };
+  btn.hidden = false;
+  btn.onclick = () => show(frame.hidden);
+  show(/(^|&)render(=|&|$)/.test(location.search.slice(1)));
+}
+
 // How the viewer shows a file, by its name. The image list is the view route's `viewImageTypes`.
 function readKind(path) {
   if (/\.(png|jpe?g|gif|webp|bmp|ico|avif)$/i.test(path)) return "image";
@@ -251,6 +290,8 @@ function readMain() {
         // The sanitised string, and the only innerHTML on this page.
         md.innerHTML = renderMarkdown(body, id, path);
         if (!SHARE) shareMain(id, path);
+      } else if (isHTML(path) && !SHARE) {
+        htmlMain(body);
       } else {
         // textContent, never innerHTML.
         text.textContent = body;

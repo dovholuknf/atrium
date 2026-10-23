@@ -30,7 +30,8 @@ import (
 //   - a PDF is served as a PDF, for the browser's own viewer.
 //   - EVERYTHING ELSE is text/plain, including .html, .svg and .md. A browser
 //     shows it as text and runs nothing. Markdown is rendered by the page in
-//     `read.html`, from these same text bytes, after sanitising.
+//     `read.html`, from these same text bytes, after sanitising, and HTML is
+//     drawn there on request in a frame with an empty sandbox.
 //   - `nosniff`, so a browser does not decide a text/plain body is HTML.
 //   - `Content-Security-Policy: sandbox`, so if some browser did treat it as a
 //     document it would be in an opaque origin with scripts off.

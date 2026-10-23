@@ -20,8 +20,10 @@ it and send it yourself.
 - **Hover a path** the agent printed for its name and size. A path outside the card says so, and the board never
   asks the room about it.
 - **Click a path.** A picture, an SVG or a PDF opens in atrium's viewer, a tab in the browser you are sitting at. A
-  text file offers the viewer (markdown rendered, JSON indented, HTML as source), atrium's editor, and **open
-  externally**.
+  text file offers the viewer (markdown rendered, JSON indented), atrium's editor, and **open externally**. An HTML
+  file offers **open rendered** and **open raw in a tab**. Rendered draws it in a sandboxed frame where no script
+  runs and nothing outside the file loads, and the viewer's button switches between the two.
+- The link menu closes when you scroll the terminal or type into it. Output scrolling past leaves it open.
 - **open externally** opens a picture, a PDF or a text document with the default app of the machine the room runs
   on, not the one with the browser. A program or a script is refused, because its default app runs it. The viewer
   has the same button.
