@@ -17,7 +17,7 @@ run-name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name && format
 
 on:
   push:
-    branches: ["**"]
+    branches: ["**", "!dependabot/**"]
   pull_request:
   workflow_dispatch:
     inputs:
