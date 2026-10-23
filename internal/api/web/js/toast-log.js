@@ -196,7 +196,7 @@ function openToastLog() {
       <div class="tlwhen">BLOCKED</div>
       <div class="tlwhat">
         <b>${esc(t.display_title || t.id)}</b>
-        <span>${esc(blockerReason(t))}</span>
+        <span class="tlbody" data-tip="${esc(blockerReason(t))}">${esc(blockerReason(t))}</span>
         ${t.supervised && !t.offline ? `<span class="tlremits"><button class="tlremind tlattach" data-attach="${esc(t.id)}">attach</button></span>` : ""}
       </div>
     </div>`).join("");
@@ -217,8 +217,8 @@ function openToastLog() {
           t.key ? ` data-key="${esc(t.key)}"` : ""}>
           <div class="tlwhen">${esc(shortWhen(t.at))}</div>
           <div class="tlwhat">
-            <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
-            ${t.body && !/class="peek-qa"/.test(qs) ? `<span>${esc(t.body)}</span>` : ""}
+            <b class="tlbody" data-tip="${esc(t.title)}">${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
+            ${t.body && !/class="peek-qa"/.test(qs) ? `<span class="tlbody" data-tip="${esc(t.body)}">${esc(t.body)}</span>` : ""}
             ${gone ? `<span class="tlresolved">resolved: ${esc(gone)}</span>` : ""}
             ${qs}
             ${(r => r ? `<span class="tlremits" data-growl="${esc(t.growl)}">${r}</span>` : "")(remind(t))}

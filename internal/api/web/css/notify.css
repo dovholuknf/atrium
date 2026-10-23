@@ -69,11 +69,12 @@
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
     font: var(--fs-xxs)/1.7 var(--mono);
   }
-  /* A Windows path or a run URL has no break opportunity, so it breaks anywhere rather than run past the row. */
   .tlwhat {
     display: flex; flex-direction: column; gap: 2px; min-width: 0;
     flex: 1 1 0; overflow-wrap: anywhere;
   }
+  /* One line each, cut with an ellipsis. The tip and the copy button carry the whole text. */
+  .tlwhat .tlbody { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tlwhat b { color: var(--head); font-size: var(--fs-sm); font-weight: 600; }
   .tlwhat span { color: var(--body); font-size: var(--fs-xs); line-height: 1.5; }
   .tltimes { color: var(--dim); font-weight: 400; }

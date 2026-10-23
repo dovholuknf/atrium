@@ -24549,8 +24549,8 @@ async function notifyTrayFillSection(browser, base) {
   }
 }
 
-// notifyTrayWrap: a long Windows path or run URL in a notice wraps inside its row, the tray never scrolls sideways, and
-// the list is the one thing in it that scrolls.
+// notifyTrayWrap: a long Windows path or run URL in a notice is cut to one line with an ellipsis and a tip, the tray
+// never scrolls sideways, and the list is the one thing in it that scrolls.
 async function notifyTrayWrapSection(browser, base) {
   const shots = process.env.TRAY_SHOTS || "";
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -24580,8 +24580,13 @@ async function notifyTrayWrapSection(browser, base) {
         return (/(auto|scroll)/.test(cs.overflowY) && e.scrollHeight > e.clientHeight + 1) ||
           (/(auto|scroll)/.test(cs.overflowX) && e.scrollWidth > e.clientWidth + 1);
       }).map(e => e.id || e.className);
+      const bodies = [...list.querySelectorAll(".tlbody")];
+      const lines = bodies.filter(e => e.clientHeight > 1.6 * parseFloat(getComputedStyle(e).lineHeight || "16")).length;
+      const cut = bodies.filter(e => e.scrollWidth > e.clientWidth && getComputedStyle(e).textOverflow === "ellipsis").length;
+      const tipped = bodies.filter(e => e.dataset.tip && e.dataset.tip.length >= e.textContent.trim().length).length;
       return { listSide: list.scrollWidth - list.clientWidth, dlgSide: dlg.scrollWidth - dlg.clientWidth,
-        dlgDown: dlg.scrollHeight - dlg.clientHeight, listDown: list.scrollHeight - list.clientHeight, scrollers };
+        dlgDown: dlg.scrollHeight - dlg.clientHeight, listDown: list.scrollHeight - list.clientHeight, scrollers,
+        bodies: bodies.length, lines, cut, tipped };
     });
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
@@ -24591,6 +24596,9 @@ async function notifyTrayWrapSection(browser, base) {
     if (m.listDown <= 1) fail(tag + "the list did not need to scroll, so it proves nothing: " + JSON.stringify(m));
     if (m.listSide > 1 || m.dlgSide > 1) fail(tag + "the tray scrolls sideways: " + JSON.stringify(m));
     if (m.scrollers.length !== 1 || m.scrollers[0] !== "toastlog-list") fail(tag + "something other than the list scrolls: " + JSON.stringify(m));
+    if (!m.bodies || m.lines) fail(tag + "a title or body takes more than one line: " + JSON.stringify(m));
+    if (!m.cut) fail(tag + "no long line was cut with an ellipsis: " + JSON.stringify(m));
+    if (m.tipped !== m.bodies) fail(tag + "a cut line has no tip with its whole text: " + JSON.stringify(m));
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
 }
