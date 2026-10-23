@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -68,13 +69,16 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 	}
 	ctx, cancel := context.WithTimeout(ctx, closeGitWait)
 	defer cancel()
-	has := func(ref string) bool {
-		_, err := gitIn(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-		return err == nil
+	tips := []string{"refs/heads/" + branch, "refs/remotes/hub/" + branch, "refs/remotes/atrium-hub/" + branch}
+	bases := []string{"refs/heads/claude/main", "refs/remotes/hub/claude/main", "refs/remotes/atrium-hub/claude/main",
+		"refs/heads/hub-main"}
+	if pr {
+		bases = append(bases, "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master")
 	}
+	have := commitRefs(ctx, dir, append(slices.Clone(tips), bases...))
 	tip := ""
-	for _, ref := range []string{"refs/heads/" + branch, "refs/remotes/hub/" + branch, "refs/remotes/atrium-hub/" + branch} {
-		if has(ref) {
+	for _, ref := range tips {
+		if have[ref] {
 			tip = ref
 			break
 		}
@@ -82,13 +86,8 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 	if tip == "" {
 		return false
 	}
-	bases := []string{"refs/heads/claude/main", "refs/remotes/hub/claude/main", "refs/remotes/atrium-hub/claude/main",
-		"refs/heads/hub-main"}
-	if pr {
-		bases = append(bases, "refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master")
-	}
 	for _, base := range bases {
-		if !has(base) {
+		if !have[base] {
 			continue
 		}
 		if _, err := gitIn(ctx, dir, "merge-base", "--is-ancestor", tip, base); err == nil {
@@ -96,6 +95,21 @@ func hubBranchMerged(ctx context.Context, dir, branch string, pr bool) bool {
 		}
 	}
 	return false
+}
+
+// commitRefs says which of the named refs exist and are commits, in one git call. A clone that cannot be read has none.
+func commitRefs(ctx context.Context, dir string, names []string) map[string]bool {
+	out, err := gitIn(ctx, dir, append([]string{"for-each-ref", "--format=%(refname) %(objecttype)"}, names...)...)
+	have := map[string]bool{}
+	if err != nil {
+		return have
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) == 2 && f[1] == "commit" && slices.Contains(names, f[0]) {
+			have[f[0]] = true
+		}
+	}
+	return have
 }
 
 // hubBranchNote is what a preview says of a hub-branch row.
