@@ -45,7 +45,7 @@ jobs:
       ATRIUM_VERSION: ${{ inputs.version || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The whole history and every tag. cut-release.sh checks that the tag
           # exists and points at HEAD, and a shallow clone with no tags cannot

@@ -57,7 +57,7 @@ jobs:
       check_windows: ${{ steps.pick.outputs.check_windows }}
       skipped: ${{ steps.pick.outputs.skipped }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: pick
         shell: bash
         env:
@@ -86,7 +86,7 @@ jobs:
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -113,7 +113,7 @@ jobs:
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -140,7 +140,7 @@ jobs:
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -185,7 +185,7 @@ jobs:
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -211,7 +211,7 @@ jobs:
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -237,7 +237,7 @@ jobs:
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -266,7 +266,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: rollup
         continue-on-error: true
         shell: bash
@@ -293,7 +293,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: body
         env:
           NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
