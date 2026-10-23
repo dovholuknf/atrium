@@ -1074,6 +1074,53 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS event_delivery_event ON event_delivery (event_ref)`,
 		},
 	},
+	{
+		// THE MERGE QUEUE. A request is never deleted, so the table is the history. See merge.go and
+		// docs/rnd/merge-queue.md.
+		name: "0034_merge_queue",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS merge_request (
+				n              INTEGER PRIMARY KEY,
+				repo           TEXT NOT NULL,
+				branch         TEXT NOT NULL,
+				sha            TEXT NOT NULL,
+				requester      TEXT NOT NULL DEFAULT '',
+				requester_room TEXT NOT NULL DEFAULT '',
+				launcher       TEXT NOT NULL DEFAULT '',
+				launcher_room  TEXT NOT NULL DEFAULT '',
+				state          TEXT NOT NULL DEFAULT 'queued'
+				                 CHECK (state IN ('queued','merging','testing','conflict','landed','red','refused','cancelled')),
+				head           INTEGER NOT NULL DEFAULT 0,
+				continues      INTEGER NOT NULL DEFAULT 0,
+				retries        INTEGER NOT NULL DEFAULT 0,
+				base           TEXT NOT NULL DEFAULT '',
+				candidate      TEXT NOT NULL DEFAULT '',
+				landed         TEXT NOT NULL DEFAULT '',
+				room           TEXT NOT NULL DEFAULT '',
+				merger         TEXT NOT NULL DEFAULT '',
+				reason         TEXT NOT NULL DEFAULT '',
+				failing        TEXT NOT NULL DEFAULT '',
+				output         TEXT NOT NULL DEFAULT '',
+				land_n         INTEGER NOT NULL DEFAULT 0,
+				asked_at       TEXT NOT NULL,
+				started_at     TEXT NOT NULL DEFAULT '',
+				tested_at      TEXT NOT NULL DEFAULT '',
+				ended_at       TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS merge_request_open ON merge_request (repo, state)`,
+			`CREATE INDEX IF NOT EXISTS merge_request_branch ON merge_request (repo, branch)`,
+			`CREATE TABLE IF NOT EXISTS merge_land (
+				n            INTEGER PRIMARY KEY,
+				repo         TEXT NOT NULL,
+				commit_sha   TEXT NOT NULL,
+				main_before  TEXT NOT NULL,
+				claude_before TEXT NOT NULL,
+				requests     TEXT NOT NULL DEFAULT '',
+				by           TEXT NOT NULL DEFAULT '',
+				at           TEXT NOT NULL
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

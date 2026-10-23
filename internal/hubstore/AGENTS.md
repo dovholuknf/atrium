@@ -89,6 +89,7 @@ kept in tiers: everything from the last hour, hourly for a day, daily for a week
 | `task.go` | the tasks of an item: rows, every transition, learnings. `docs/runtime/item-tasks-design.md` |
 | `changerequest.go` | change requests between rooms |
 | `flow.go` / `flow_epoch.go` | the merge flow's roles, stages, checks and epochs. `docs/design/merge-flow.md` |
+| `merge.go` | the merge queue: requests, their states and output, the merge room. `docs/rnd/merge-queue.md` |
 | `gitpush.go` | the push log behind `gitsync.PushLog` |
 | `docs.go` / `docs_secrets.go` | hub documents and the secret checks every way in passes |
 | `files.go` | the hub file drop |
