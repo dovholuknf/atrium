@@ -176,3 +176,4 @@
 {"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120598069886,"name":"check (macos-latest, board-1)","tests":["check: titles"],"retried":[]}
 {"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120598069894,"name":"check (macos-latest, board-2)","tests":["notifyTrayWrap"],"retried":[],"errors":{"notifyTrayWrap":"the tray scrolls sideways: {\"listSide\":0,\"dlgSide\":472,\"dlgDown\":1007,\"listDown\":1633,\"scrollers\":[\"toastlog-list\"],\"bodies\":80,\"lines\":0,\"cut\":54,\"tipped\":80}"}}
 {"run":"40009264735","date":"2026-10-23T19:10:17Z","sha":"fdcd52796","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"40011679778","date":"2026-10-23T19:28:28Z","sha":"c4d1cc6c0","job":0,"name":"(no failed job)","tests":[],"retried":[]}
