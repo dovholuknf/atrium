@@ -117,11 +117,11 @@ func TestNoAckNeverClears(t *testing.T) {
 	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 300_000)
 	id := task.ID
-	if err := os.WriteFile(d.handoffPath(task), handoffBody, 0o644); err != nil {
-		t.Fatal(err)
-	}
 	statuslines(d, id, 1)
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
+	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	deadline := time.Now().Add(d.hk.ncTiming.captureEnd + d.hk.ncTiming.clearWait)
 	for time.Now().Before(deadline) {
 		midTurn(d, id)
@@ -146,10 +146,10 @@ func TestAckThenClearThenWake(t *testing.T) {
 	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 220_000)
 	id := task.ID
-	path := d.handoffPath(task)
 	midTurn(d, id)
 	statuslines(d, id, 1)
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
+	path := cycleFile(d, id)
 
 	// The agent writes its handoff and runs `atrium ready`, inside its turn.
 	text := "## doing\nthe context cycle\n## left\nthe board\n"
@@ -300,10 +300,10 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	// Decoded, since a Windows path's backslashes are escaped in the JSON.
 	var refusal struct{ Error string }
 	_ = json.Unmarshal(rec.Body.Bytes(), &refusal)
-	if rec.Code != http.StatusConflict || !strings.Contains(refusal.Error, d.handoffPath(task)) {
+	if rec.Code != http.StatusConflict || !strings.Contains(refusal.Error, cycleFile(d, id)) {
 		t.Fatalf("ready with no file answered %d %s", rec.Code, rec.Body)
 	}
-	if err := os.WriteFile(d.handoffPath(task), []byte("  \n"), 0o644); err != nil {
+	if err := os.WriteFile(cycleFile(d, id), []byte("  \n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if rec := post(); rec.Code != http.StatusConflict {
@@ -313,7 +313,7 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	if step(d, id) != NewContextLimit || strings.Contains(f.written(), "/clear") {
 		t.Fatalf("a refused ack moved the cycle: %v", d.newContextFor(id))
 	}
-	if err := os.WriteFile(d.handoffPath(task), handoffBody, 0o644); err != nil {
+	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if rec := post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), ReadyLine) {

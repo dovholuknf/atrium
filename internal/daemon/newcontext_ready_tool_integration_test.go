@@ -30,7 +30,7 @@ func TestReadyWithTextWritesTheHandoffAndCompletesTheCycle(t *testing.T) {
 	if out["stored"] != true {
 		t.Fatalf("the handoff was not stored on the card: %v", out)
 	}
-	got, err := os.ReadFile(d.handoffPath(task))
+	got, err := os.ReadFile(cycleFile(d, task.ID))
 	if err != nil || string(got) != text {
 		t.Fatalf("the handoff file holds %q, %v", got, err)
 	}

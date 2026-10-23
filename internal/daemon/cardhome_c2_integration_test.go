@@ -5,6 +5,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -208,7 +209,7 @@ func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 		t.Fatalf("handoff at %s", got)
 	}
 	path, err := d.prepareHandoff(task)
-	if err != nil || path != d.handoffPath(task) {
+	if err != nil || filepath.Dir(path) != dd.Meta || !regexp.MustCompile(`^handoff-\d{14}\.md$`).MatchString(filepath.Base(path)) {
 		t.Fatalf("prepare: %q %v", path, err)
 	}
 }

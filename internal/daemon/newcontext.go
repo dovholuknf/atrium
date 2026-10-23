@@ -250,13 +250,20 @@ func (d *Daemon) handoffPath(t *store.Task) string {
 	return filepath.Join(dir, t.ID+".md")
 }
 
-// prepareHandoff is handoffPath with its directory made, so the agent can write there.
+// prepareHandoff is handoffPath stamped with the time, with its directory made, so the agent can write there.
+// A new name each cycle, since an agent that overwrites must read the old file first.
 func (d *Daemon) prepareHandoff(t *store.Task) (string, error) {
-	path := d.handoffPath(t)
+	path := stampHandoff(d.handoffPath(t), time.Now())
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", fmt.Errorf("could not make the handoff directory %s: %w", filepath.Dir(path), err)
 	}
 	return path, nil
+}
+
+// stampHandoff puts the time before the extension: <card-id>-20261022233412.md.
+func stampHandoff(path string, now time.Time) string {
+	ext := filepath.Ext(path)
+	return strings.TrimSuffix(path, ext) + "-" + now.Format("20060102150405") + ext
 }
 
 // ncTimings is how long each step waits, and how often it looks. Fields of the daemon's hooks so a

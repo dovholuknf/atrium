@@ -61,9 +61,12 @@ func TestNewContextUsesOnePathThroughTheCycle(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
-	first := filepath.Join(dir, task.ID+".md")
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
+	}
+	first := cycleFile(d, task.ID)
+	if filepath.Dir(first) != dir {
+		t.Fatalf("the handoff %s is not in the room's directory %s", first, dir)
 	}
 	other := t.TempDir()
 	if err := d.st.SetSetting(store.SettingContextHandoffDir, other); err != nil {

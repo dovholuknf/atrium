@@ -66,10 +66,18 @@ func ncCard(t *testing.T, d *Daemon) (*store.Task, *fakePTY, string) {
 // limitPrompt is the start of the limit prompt, to look for in what was typed.
 const limitPrompt = "you are at context limit."
 
+// cycleFile is the handoff file the card's cycle asked for.
+func cycleFile(d *Daemon, id string) string {
+	if c := d.nctx.get(id); c != nil {
+		return c.file
+	}
+	return ""
+}
+
 // ncAck is the agent writing its handoff and running `atrium ready`.
 func ncAck(t *testing.T, d *Daemon, task *store.Task) {
 	t.Helper()
-	if err := os.WriteFile(d.handoffPath(task), handoffBody, 0o644); err != nil {
+	if err := os.WriteFile(cycleFile(d, task.ID), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := d.ready(task); err != nil {
@@ -126,10 +134,12 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
-	path := filepath.Join(dir, id+".md")
-
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
+	}
+	path := cycleFile(d, id)
+	if filepath.Dir(path) != dir || !strings.HasPrefix(filepath.Base(path), id+"-") {
+		t.Fatalf("the handoff is at %s, want %s-<time>.md in %s", path, id, dir)
 	}
 	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["step"] != NewContextLimit || v["file"] != path {
 		t.Fatalf("the card does not show the limit step on its handoff: %v", d.newContextFor(id))
@@ -212,7 +222,7 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 	if r := failedWith(d, task.ID); !strings.Contains(r, "/clear") {
 		t.Fatalf("the reason does not name the step: %q", r)
 	}
-	if strings.Contains(f.written(), newContextWake(d.handoffPath(task))) {
+	if strings.Contains(f.written(), newContextWake(cycleFile(d, task.ID))) {
 		t.Fatalf("woke a session that never started: %q", f.written())
 	}
 }
@@ -228,7 +238,7 @@ func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
 	d.wake.sawSession(task.ID, time.Now().Add(-time.Minute))
 	ncToClear(t, d, task, f)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
-	if strings.Contains(f.written(), newContextWake(d.handoffPath(task))) {
+	if strings.Contains(f.written(), newContextWake(cycleFile(d, task.ID))) {
 		t.Fatalf("took an old SessionStart for the new session: %q", f.written())
 	}
 }
@@ -293,7 +303,7 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 		t.Fatalf("the rerun did not resume at the wake: %v", d.newContextFor(task.ID))
 	}
 	d.wake.sawSession(task.ID, time.Now())
-	until(t, "the wake", func() bool { return strings.Contains(f.written(), newContextWake(d.handoffPath(task))) })
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), newContextWake(cycleFile(d, task.ID))) })
 	if strings.Count(f.written(), limitPrompt) != prompts {
 		t.Fatalf("a resumed cycle asked for its handoff again: %q", f.written())
 	}
