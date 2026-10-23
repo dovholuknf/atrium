@@ -1,0 +1,1 @@
+The slowest board units wait on what they check, not on a fixed sleep: phoneBoot, the contrast pass of changeReq and mChangeReq, mPull, phoneView, phoneRedirect, tooltip and mDocs run 1 to 10 seconds faster and assert the same things (q-slow-board-units).
