@@ -20479,12 +20479,23 @@ async function quickPasteSection(browser, base) {
       return e ? e.textContent : ""; }, heldBody.progress);
     if (!/fetching the head/.test(pending) || !/review zrok#14/.test(pending))
       fail("quickPaste: the opening card said " + JSON.stringify(pending));
+    // it floats in the lower left over the board and leaves every list where it was
+    const dock = await p.evaluate(() => {
+      const e = document.querySelector(".card.linkopen"), r = e && e.getBoundingClientRect();
+      const host = e && e.parentElement;
+      return e && { host: host.id, fixed: getComputedStyle(host).position, left: r.left, gap: innerHeight - r.bottom,
+        inList: !!document.querySelector("#board .card.linkopen, #term-list .card.linkopen, #pulls-list .card.linkopen") };
+    });
+    if (!dock || dock.host !== "linkopen-dock" || dock.fixed !== "fixed" || dock.left > 40 || dock.gap < 0 || dock.gap > 40)
+      fail("quickPaste: the opening card is not floating in the lower left: " + JSON.stringify(dock));
+    else if (dock.inList) fail("quickPaste: the opening card was put into a list");
     if (await p.evaluate(open("launch"))) fail("quickPaste: a slow open showed the launch dialog");
     if (await p.evaluate(() => !!document.getElementById("open-progress"))) fail("quickPaste: the old strip is back");
     await shot(p, "opening-card");
     release();
     await p.waitForFunction(() => !document.querySelector(".card.linkopen"),
       null, { timeout: slow(5000) }).catch(() => fail("quickPaste: the opening card stayed after the open ended"));
+    if (await p.evaluate(() => !!document.getElementById("linkopen-dock"))) fail("quickPaste: the dock stayed with nothing in it");
     st.hold = null;
 
     // an open that fails stays as its card with the reason, and no dialog comes up
@@ -20495,24 +20506,6 @@ async function quickPasteSection(browser, base) {
     if (await p.evaluate(open("launch"))) fail("quickPaste: a failed open showed the launch dialog");
     await shot(p, "failed-card");
 
-    // a crowded terminals list does not squeeze the card to its borders: it sits above the groups at its own height
-    const crowd = await p.evaluate(() => {
-      const host = document.getElementById("term-list");
-      const card = host && host.querySelector(".card.linkopen.failed");
-      if (!card) return null;
-      // the empty list draws no scroll box, so make the one a populated list has, holding the card and more than fits
-      let list = host.querySelector(".termscroll");
-      if (!list) { list = document.createElement("div"); list.className = "termscroll"; host.appendChild(list); }
-      list.prepend(card);
-      list.insertAdjacentHTML("beforeend", '<div class="tgroup" style="flex:none;height:2000px"></div>');
-      return { h: card.getBoundingClientRect().height, natural: card.scrollHeight };
-    });
-    if (!crowd) fail("quickPaste: no failed card to crowd");
-    else if (crowd.h < crowd.natural - 1)
-      fail("quickPaste: a crowded list squeezed the failed card to " + crowd.h + "px of " + crowd.natural + "px");
-    await shot(p, "failed-card-crowded");
-    await p.evaluate(() => { const l = document.querySelector("#term-list .termscroll");
-      if (l) { l.querySelectorAll(".tgroup").forEach(g => g.remove()); } });
     // an ordinary failure offers no go-to, and a refusal that names the holding card makes it the first button
     if (await p.evaluate(() => !!document.querySelector('.card.linkopen.failed [data-op-act="goto"]')))
       fail("quickPaste: a failure that names no card offered go to card");

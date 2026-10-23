@@ -1089,7 +1089,8 @@ async function pullsPasteOpeningSection(browser, base) {
     await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
       .catch(() => fail("pullsPasteOpening: the popover paste drew no card"));
     await shot(p, "in-flight");
-    if (!await p.locator("#pulls-list .card.linkopen").isVisible()) fail("pullsPasteOpening: the card is not visible on the pulls page");
+    if (!await p.locator("#linkopen-dock .card.linkopen").isVisible()) fail("pullsPasteOpening: the card is not visible on the pulls page");
+    if (await p.evaluate(() => !!document.querySelector("#pulls-list .card.linkopen"))) fail("pullsPasteOpening: the card went into the pulls list");
     if (!(await p.isHidden("#pulls-pop"))) fail("pullsPasteOpening: the popover stayed open while the open was in flight");
     await until(() => opens.length, 5000, "/v1/open was sent").catch(() => {});
     if (!opens.length || !/^op-/.test(opens[0].progress || "") || opens[0].url !== "https://github.com/openziti/x/pull/972")

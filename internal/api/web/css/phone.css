@@ -216,6 +216,7 @@
     .dlg-body { padding: 14px; }
     .subhead { font-size: var(--fs-base); }
     #toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
+    #linkopen-dock { left: 8px; bottom: 8px; width: calc(100vw - 16px); }
     #held { font-size: var(--fs-base); padding: 7px 12px; }
   }
 

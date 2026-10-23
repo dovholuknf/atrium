@@ -2,9 +2,9 @@
 //
 // A PASTED LINK IS A CARD FROM THE MOMENT IT IS PASTED. Opening one takes as long as a forge read, maybe a clone, a
 // fetch and a worktree, and the card itself is only made at the end of that on the room (internal/api/open.go). Until
-// then this draws it: a card at the top of `running` on the board and at the top of the terminals list, carrying the
-// link's name and the step the room says it is on (`open-progress`, see internal/api/openprogress.go). It replaced a
-// line floating over the board, which said the step and nothing about what it was for, and lingered.
+// then this draws it: a card floating in the lower left over whatever view is up, carrying the link's name and the step
+// the room says it is on (`open-progress`, see internal/api/openprogress.go). It used to sit at the top of the card
+// list, which pushed every card down while the open ran and back up when it ended.
 //
 // A FAILED OPEN STAYS AS THE CARD, with the reason on it, instead of throwing the launch dialog up. `edit` opens the
 // dialog filled in (the shift-enter path), `again` repeats the open, `dismiss` drops it. Nothing here is stored: it is
@@ -110,18 +110,16 @@ function linkOpeningHTML(id, o) {
   </div>`;
 }
 
-// Drawn into whatever the board and the list drew last, so both renderers call this after their own write.
+// One dock on the body, outside every list, so no card moves when an opening comes or goes.
 function linkOpeningPaint() {
-  document.querySelectorAll("[data-linkopen]").forEach(el => el.remove());
-  if (!linkOpenings.size) return;
-  const html = [...linkOpenings].map(([id, o]) => linkOpeningHTML(id, o)).join("");
-  const col = document.querySelector('#board section[data-column="running"] .cards') ||
-    document.querySelector("#board section .cards");
-  if (col) col.insertAdjacentHTML("afterbegin", html);
-  const list = document.querySelector("#term-list .termscroll") || document.getElementById("term-list");
-  if (list) list.insertAdjacentHTML("afterbegin", html);
-  const prs = document.getElementById("pulls-list");
-  if (prs) prs.insertAdjacentHTML("afterbegin", html);
+  let dock = document.getElementById("linkopen-dock");
+  if (!linkOpenings.size) { if (dock) dock.remove(); return; }
+  if (!dock) {
+    dock = document.createElement("div");
+    dock.id = "linkopen-dock";
+    document.body.appendChild(dock);
+  }
+  setHTML(dock, [...linkOpenings].map(([id, o]) => linkOpeningHTML(id, o)).join(""));
 }
 
 document.addEventListener("click", e => {

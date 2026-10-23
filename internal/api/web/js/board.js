@@ -2074,8 +2074,6 @@ async function renderBoard(signal) {
   // markup, so it comes back with the card. The listeners this used to attach
   // on every redraw were the drag ones, and there are none.
   setHTML(document.getElementById("board"), html);
-  // A link still being opened is drawn over what was just written (js/link-opening.js).
-  if (typeof linkOpeningPaint === "function") linkOpeningPaint();
 
   // Reported after the render, so a broken function shows an error and a board
   // drawn with the defaults rather than a blank page.
