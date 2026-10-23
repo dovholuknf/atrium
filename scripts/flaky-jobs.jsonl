@@ -158,3 +158,14 @@
 {"run":"39966120940","date":"2026-10-23T14:01:41Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39968364279","date":"2026-10-23T14:17:31Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39974195262","date":"2026-10-23T14:58:21Z","sha":"48eed0a9a","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"40002490636","date":"2026-10-23T18:20:34Z","sha":"c3936ba46","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585925766,"name":"check (ubuntu-latest, go-all)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585925841,"name":"check (ubuntu-latest, race-board-2)","tests":["check: titles"],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585925910,"name":"check (macos-latest, board-1)","tests":["check: titles"],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585925921,"name":"check (ubuntu-latest, board-1-visual)","tests":["phoneNudge"],"retried":[],"errors":{"phoneNudge":"the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"}}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585925924,"name":"check (macos-latest, go-test)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585926041,"name":"check (windows-latest, build-board-1)","tests":["check: titles"],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585926287,"name":"check (windows-latest, board-2)","tests":["check: titles"],"retried":["atriumDown"]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585926290,"name":"check (macos-latest, board-2)","tests":["check: titles"],"retried":[]}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":0,"name":"check (macos-latest, go-checks-visual)","tests":["phoneNudge"],"retried":[],"errors":{"phoneNudge":"the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"}}
+{"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":0,"name":"check (windows-latest, go-checks-visual)","tests":["phoneNudge"],"retried":[],"errors":{"phoneNudge":"the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"}}
