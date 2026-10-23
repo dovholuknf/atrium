@@ -16349,13 +16349,14 @@ async function mDocsSection(browser) {
     try {
       const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
-      await p.waitForTimeout(600);
+      await until(() => hub.log.some(r => r.path === "/_hub/docs/settings"), 5000, "the board never asked for the documents settings");
+      await frames(p, 3);
       if (await p.$eval("#m-docs-btn", e => !e.hidden)) fail("mDocs: the documents door shows with no hub documents");
       await p.tap("#m-seg-all");
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="dc-1"]');
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-      await p.waitForTimeout(500);
+      await frames(p, 3);
       if (await p.$eval("#m-card-docs", e => !e.hidden)) fail("mDocs: the card line shows with no hub documents");
       // a bare /d/tmp is a path in text on a board with no documents, not a link to a document that is not there
       if (await p.$('#m-replies a[href^="/d/"]')) fail("mDocs: a bare /d/ path became a document link on a board with no documents");
