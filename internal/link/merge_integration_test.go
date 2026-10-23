@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
@@ -256,4 +257,34 @@ func (x *mergeFix) boardURL(t *testing.T) string {
 	srv := httptest.NewServer(x.p)
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
+	x := newMergeFix(t)
+	x.branch(t, "baz", "baz.txt", "baz")
+	_, m := x.ask(t, "claude/baz", "w1@sg4")
+	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
+	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, To: hubstore.MergeConflict, Reason: "conflicts in baz.txt"}))
+
+	brief := mergerBrief(m, gitsync.MergeResult{Conflicts: []string{"baz.txt"}})
+	nb := MergerBranch(m.N)
+	if !strings.Contains(brief, "- baz.txt") || !strings.Contains(brief, "branch "+nb+" and of "+strconv.FormatInt(m.N, 10)) {
+		t.Fatalf("brief:\n%s", brief)
+	}
+
+	sha := x.branch(t, "merge-"+strconv.FormatInt(m.N, 10), "baz.txt", "merged")
+	if code, b := x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": "claude/baz", "by": "m1@sg4", "of": m.N})); code != 400 {
+		t.Fatalf("of from the wrong branch: %d %s", code, b)
+	}
+	code, b := x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": nb, "by": "m1@sg4", "of": m.N}))
+	var out struct{ Request hubstore.MergeRequest }
+	if code != 201 || json.Unmarshal([]byte(b), &out) != nil || out.Request.Continues != m.N {
+		t.Fatalf("of: %d %s", code, b)
+	}
+	c := out.Request
+	must(x.st.MergeMove(hubstore.MergeStep{N: c.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
+	x.p.mergeEnd(context.Background(), x.st, hubstore.MergeStep{N: c.N, From: hubstore.MergeMerging, To: hubstore.MergeLanded, Landed: sha})
+	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeLanded || got.Landed != sha {
+		t.Fatalf("the conflict lands through its merger: %+v", got)
+	}
 }

@@ -36,6 +36,7 @@ type mergeInput struct {
 	SHA    string `json:"sha,omitempty" jsonschema:"for request: the tip you pushed. default: your worktree's HEAD"`
 	N      int64  `json:"n,omitempty" jsonschema:"the request number, for show and cancel"`
 	All    bool   `json:"all,omitempty" jsonschema:"for list: up to 500, not 50"`
+	Of     int64  `json:"of,omitempty" jsonschema:"for request by a merger: the request in conflict it merged"`
 }
 
 type mergeOutput struct {
@@ -99,7 +100,7 @@ func (d MergeDoor) Handle(ctx context.Context, req *mcp.CallToolRequest, in merg
 		if d.By != nil {
 			by = d.By(req)
 		}
-		err := d.Call(ctx, http.MethodPost, "/_hub/merge", map[string]any{"repo": repo, "branch": branch, "sha": sha, "by": by}, &out)
+		err := d.Call(ctx, http.MethodPost, "/_hub/merge", map[string]any{"repo": repo, "branch": branch, "sha": sha, "by": by, "of": in.Of}, &out)
 		if err == nil && out.Request != nil {
 			out.Note = fmt.Sprintf("request %d is %s. you will be told how it ends", out.Request.N, out.Request.State)
 		}
