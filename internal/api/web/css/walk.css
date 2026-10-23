@@ -8,18 +8,27 @@
     --sev-nit: var(--dim);
   }
 
-  /* A row holding the drawer and the ONE terminal. The terminal keeps the flex it always had. */
-  .term-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+  /* The drawer never takes width from the terminal: a narrower pane is a pty resize, and the runner redraws its whole
+     screen for one. It lies over the terminal's right edge, or over the card list's column (`.in-list`, `walkPlace`).
+     The z-index stays under the held line and the paste box. */
+  .term-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; position: relative; }
   .term-body > #t-screen { flex: 1 1 0; }
 
   .walk {
-    position: relative; flex: 0 0 auto; width: min(58%, 760px); min-width: 320px;
+    position: absolute; top: 0; right: 0; bottom: 0; z-index: 4; width: min(58%, 760px); min-width: 320px;
+    max-width: 100%; box-sizing: border-box;
     display: flex; flex-direction: column; min-height: 0;
     container-type: inline-size;
-    background: rgba(var(--shell0-rgb),.92); color: var(--body);
-    border-right: 1px solid var(--stroke-dim); outline: none;
+    background: rgb(var(--shell0-rgb)); color: var(--body);
+    border-left: 1px solid var(--stroke-dim); outline: none;
+    box-shadow: -12px 0 28px rgba(var(--shadow-rgb),.35);
   }
   .walk[hidden] { display: none; }
+  .walk.in-list {
+    right: auto; bottom: auto; min-width: 0; max-width: none; z-index: 41;
+    border-left: none; border-radius: var(--r-md); box-shadow: none;
+  }
+  .walk.in-list .walk-grip { display: none; }
   .walk-head {
     display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto;
     padding: var(--vs-2) var(--sp-4); border-bottom: 1px solid var(--stroke-dim);
@@ -29,7 +38,7 @@
   .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
   .walk-body { flex: 1 1 auto; min-height: 0; display: flex; }
   .walk-grip {
-    all: unset; position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
+    all: unset; position: absolute; top: 0; left: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
   }
   .walk-grip:hover, .walk-grip:focus-visible { background: rgba(var(--teal-rgb),.25); }
 
@@ -49,8 +58,9 @@
   .walk-bar i.done, .wk-mini i.done { background: var(--seg); }
 
   /* The rail. */
+  /* `display: block` undoes chrome.css's bare `nav` rule, which lays the rows side by side. */
   .walk-rail {
-    flex: 0 0 auto; width: 15em; max-width: 45%; overflow-y: auto; padding: var(--vs-1) 0;
+    display: block; flex: 0 0 auto; width: 15em; max-width: 45%; overflow-y: auto; padding: var(--vs-1) 0;
     border-right: 1px solid var(--stroke-dim); background: rgba(var(--sink-rgb),.35);
   }
   .wk-row {

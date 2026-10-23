@@ -11898,6 +11898,100 @@ async function walkContextSection(browser, base) {
   console.log("walkContext: ok");
 }
 
+// u-review-walk-no-resize: opening and closing the walk never moves the terminal. A list at 380px takes the drawer in
+// its column, the default 260px list gets it over the terminal's right edge. Either way the grid, the pane's box and
+// the frames sent are what they were, so the runner never redraws for a resize. WALK_SHOTS=<dir> writes PNGs.
+async function walkNoResizeSection(browser, base) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walknr-"));
+  const id = "land-wnr";
+  const d = path.join(tmp, id);
+  fs.mkdirSync(path.join(d, "findings"), { recursive: true });
+  fs.writeFileSync(path.join(d, "findings", "01-med-a.go-L3.txt"), "MED pkg/a.go line 3: x\n\nUse the other name.\n");
+  fs.writeFileSync(path.join(d, "findings", "02-low-b.go-L9.txt"), "LOW pkg/b.go line 9: y\n\nA nit.\n");
+  mock.walkDirs[id] = d;
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [landCard(id, { supervised: true, worktree: "/walk/nr" })];
+  mock.landPerms = [];
+  const errors = [];
+  const shotDir = process.env.WALK_SHOTS || "";
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__sent = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send(x) { window.__sent.push(x); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const look = p => p.evaluate(() => {
+    const r = document.getElementById("t-screen").getBoundingClientRect();
+    const w = document.getElementById("walk-drawer");
+    const wr = w.getBoundingClientRect();
+    return { cols: term.cols, rows: term.rows, box: [r.left, r.top, r.width, r.height].map(Math.round).join(),
+      inList: w.classList.contains("in-list"), walk: { left: Math.round(wr.left), right: Math.round(wr.right) },
+      bodyRight: Math.round(document.querySelector(".term-body").getBoundingClientRect().right), screenLeft: Math.round(r.left),
+      sent: window.__sent.map(x => { try { return JSON.parse(x); } catch (e) { return {}; } }).filter(x => x.t === "resize") };
+  });
+  try {
+    for (const lay of [{ name: "list", w: 380 }, { name: "overlay", w: 260 }]) {
+      const nm = "walkNoResize " + lay.name + ": ";
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.addInitScript(w => localStorage.setItem("atrium.termlist.w", String(w)), lay.w);
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(x => {
+        if (document.querySelector('#stack-list .stackrow[data-id="' + x + '"]')) return true;
+        const t = Date.now();
+        if (!refreshInFlight && !refreshTimer && t - (window.__nudged || 0) > 500) { window.__nudged = t; refreshSoon(); }
+        return false;
+      }, id, { timeout: slow(15000), polling: 10 });
+      await attachRetry(p, { unit: "walkNoResize", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
+      await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+      // wait: the attach's own fit and its settled resize have to be over before the baseline is taken.
+      await p.waitForTimeout(600);
+      await p.evaluate(() => { window.__sent = []; });
+      const before = await look(p);
+      await p.click("#t-walk");
+      await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
+      // wait: a resize is sent resizeSettleMs (250) after the fit moves, so its absence is only seen after that.
+      await p.waitForTimeout(600);
+      const open = await look(p);
+      if (shotDir) { fs.mkdirSync(shotDir, { recursive: true }); await p.screenshot({ path: path.join(shotDir, "walk-" + lay.name + ".png") }); }
+      if (open.inList !== (lay.name === "list")) fail(nm + "the drawer opened in the wrong place: " + JSON.stringify(open));
+      if (lay.name === "list" && open.walk.right > open.screenLeft) fail(nm + "the drawer in the list's column covers the terminal: " + JSON.stringify(open));
+      if (lay.name === "overlay" && Math.abs(open.walk.right - open.bodyRight) > 1) fail(nm + "the overlay is not on the terminal's right edge: " + JSON.stringify(open));
+      if (open.cols !== before.cols || open.rows !== before.rows) fail(nm + "opening the walk moved the grid from " + before.cols + "x" + before.rows + " to " + open.cols + "x" + open.rows);
+      if (open.box !== before.box) fail(nm + "opening the walk moved the terminal's box from " + before.box + " to " + open.box);
+      if (open.sent.length) fail(nm + "opening the walk sent a resize: " + JSON.stringify(open.sent));
+      const tops = await p.$$eval("#walk-rail .wk-row", els => els.map(e => Math.round(e.getBoundingClientRect().top)));
+      if (!(tops.length === 2 && tops[1] > tops[0])) fail(nm + "the rail's rows are not stacked: " + JSON.stringify(tops));
+      await p.click("#walk-drawer .walk-head .icon");
+      // wait: as above, the absence of a settled resize after the close.
+      await p.waitForTimeout(600);
+      const shut = await look(p);
+      if (shut.cols !== before.cols || shut.rows !== before.rows) fail(nm + "closing the walk moved the grid to " + shut.cols + "x" + shut.rows);
+      if (shut.box !== before.box) fail(nm + "closing the walk moved the terminal's box to " + shut.box);
+      if (shut.sent.length) fail(nm + "closing the walk sent a resize: " + JSON.stringify(shut.sent));
+      if (await p.evaluate(() => document.getElementById("walk-drawer").parentElement.className) !== "term-body") fail(nm + "the closed drawer did not go back beside the terminal");
+      await p.evaluate(() => localStorage.removeItem("atrium.term"));
+      await p.close();
+    }
+  } finally {
+    await ctx.close();
+    mock.tasksMode = was;
+    mock.landList = [];
+    delete mock.walkDirs[id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walkNoResize: the page threw: " + errors.join(" | "));
+  console.log("walkNoResize: ok");
+}
+
 // u-006: a URL clicked in a terminal opens into a NAMED window, one per pull
 // request, so a review walk keeps one tab. window.open is stubbed to record the
 // name, since a real popup is awkward headless.
@@ -25320,7 +25414,7 @@ async function main() {
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -27163,6 +27257,7 @@ async function main() {
     await unit("questionsClick", () => questionsClickSection(browser, base));
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
+    await unit("walkNoResize", () => walkNoResizeSection(browser, base));
     await unit("linkReuse", () => linkReuseSection(browser, base));
     await unit("linkBoard", () => linkBoardSection(browser, base));
     await unit("usageCacheReads", bu("usageCacheReads"));

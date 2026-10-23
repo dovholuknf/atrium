@@ -163,8 +163,8 @@ function raiseToasts() {
 //
 // Just under the terminal's bar and inside the pane's right edge, rather than
 // the window's top corner, which is the header's. Anything floating over the
-// top of the pane (the paste indicator, the find bar) pushes it further down,
-// so the stack never covers them.
+// top of the pane (the paste indicator, the find bar, the walk drawer's head)
+// pushes it further down, so the stack never covers them.
 //
 // A class and two variables, not a new element or a rebuilt stack, so a view
 // switch with toasts up moves them without replaying their entrance.
@@ -179,7 +179,7 @@ function placeToasts() {
   if (!onTerm) return;
   const r = pane.getBoundingClientRect();
   let below = r.top;
-  pane.querySelectorAll(".term-bar, #t-pasting, #t-find").forEach(el => {
+  pane.querySelectorAll(".term-bar, #t-pasting, #t-find, #walk-drawer .walk-head").forEach(el => {
     if (el.hidden) return;
     const b = el.getBoundingClientRect();
     if (b.height) below = Math.max(below, b.bottom);

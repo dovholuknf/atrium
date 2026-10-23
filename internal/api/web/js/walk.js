@@ -36,6 +36,8 @@ const dock = {
 // A card is a tenant's when its probe says so. Called from `openTerm` for every attach.
 // Cards whose probe failed (a 404 for a card this room does not hold). Asked once, not on every attach.
 const walkProbeFailed = new Set();
+const WALK_LIST_MIN = 320;
+let walkHome = null;
 async function walkProbe(task) {
   dockReset();
   const btn = document.getElementById("t-walk");
@@ -68,7 +70,7 @@ function dockReset() {
   dock.conflict = null;
   walkSheet(false);
   const drawer = document.getElementById("walk-drawer");
-  if (drawer) drawer.hidden = true;
+  if (drawer) { drawer.hidden = true; walkPlace(); }
   const btn = document.getElementById("t-walk");
   if (btn) { btn.hidden = true; btn.classList.remove("go"); }
   const mini = document.getElementById("t-walk-bar");
@@ -89,9 +91,9 @@ async function dockOpen() {
   dock.want = dock.taskId;
   drawer.hidden = false;
   walkApplyWidth();
+  walkPlace();
   const btn = document.getElementById("t-walk");
   if (btn) btn.classList.add("go");
-  if (typeof onTermResize === "function") onTermResize();
   await dock.tenant.opened(dock);
   await dockLoad();
   drawer.focus({ preventScroll: true });
@@ -103,10 +105,9 @@ function dockClose() {
   clearTimeout(dock.timer);
   dock.timer = 0;
   walkSheet(false);
-  if (drawer) drawer.hidden = true;
+  if (drawer) { drawer.hidden = true; walkPlace(); }
   const btn = document.getElementById("t-walk");
   if (btn) btn.classList.remove("go");
-  if (typeof onTermResize === "function") onTermResize();
   if (typeof term !== "undefined" && term) term.focus();
 }
 function walkClose() { dock.want = ""; dockClose(); }
@@ -972,14 +973,50 @@ function walkApplyWidth() {
   d.style.width = w ? w + "px" : "";
 }
 
+// Where the open drawer lies. Never beside the terminal: a pane that loses width is a pty resize, and the runner
+// redraws its whole conversation for one. The list's column when it shows at 320px or more, else over the
+// terminal's right edge. A narrow window keeps phone.css's stack, which never sends a resize either.
+function walkListSpot() {
+  const lay = document.getElementById("term-layout");
+  const list = document.getElementById("term-list");
+  if (!lay || !list || list.parentElement !== lay) return null;
+  if (window.matchMedia("(max-width: 900px)").matches || lay.classList.contains("tl-off")) return null;
+  if (getComputedStyle(list).display === "none" || list.offsetWidth < WALK_LIST_MIN) return null;
+  return { lay, list };
+}
+
+function walkPlace() {
+  const d = document.getElementById("walk-drawer");
+  if (!d || !walkHome) return;
+  const spot = d.hidden ? null : walkListSpot();
+  const to = spot ? spot.lay : walkHome;
+  if (d.parentElement !== to) {
+    const had = d.contains(document.activeElement);
+    if (spot) to.appendChild(d);
+    else to.insertBefore(d, to.firstChild);
+    if (had) d.focus({ preventScroll: true });
+  }
+  d.classList.toggle("in-list", !!spot);
+  if (spot) {
+    const l = spot.list;
+    Object.assign(d.style, { left: l.offsetLeft + "px", top: l.offsetTop + "px",
+      width: l.offsetWidth + "px", height: l.offsetHeight + "px" });
+  } else {
+    Object.assign(d.style, { left: "", top: "", height: "" });
+    walkApplyWidth();
+  }
+  if (typeof placeToasts === "function") placeToasts();
+}
+
 function walkGripDown(e) {
   const grip = e.currentTarget;
   const d = document.getElementById("walk-drawer");
   if (!d) return;
   const x0 = e.clientX, w0 = d.getBoundingClientRect().width;
+  const room = d.parentElement ? d.parentElement.clientWidth : window.innerWidth;
   grip.setPointerCapture(e.pointerId);
   const move = ev => {
-    const w = Math.max(320, Math.min(w0 + ev.clientX - x0, window.innerWidth - 360));
+    const w = Math.max(320, Math.min(w0 + x0 - ev.clientX, room));
     d.style.width = w + "px";
   };
   const up = () => {
@@ -987,7 +1024,6 @@ function walkGripDown(e) {
     grip.removeEventListener("pointerup", up);
     grip.removeEventListener("pointercancel", up);
     try { localStorage.setItem("atrium.walk.w", String(Math.round(d.getBoundingClientRect().width))); } catch (e2) {}
-    if (typeof onTermResize === "function") onTermResize();
   };
   grip.addEventListener("pointermove", move);
   grip.addEventListener("pointerup", up);
@@ -997,6 +1033,13 @@ function walkGripDown(e) {
 (function walkWire() {
   const drawer = document.getElementById("walk-drawer");
   if (!drawer) return;
+  walkHome = drawer.parentElement;
+  const replace =() => { if (dock.open) walkPlace(); };
+  addEventListener("resize", replace);
+  const lay = document.getElementById("term-layout");
+  const list = document.getElementById("term-list");
+  if (window.ResizeObserver && list) new ResizeObserver(replace).observe(list);
+  if (lay) new MutationObserver(replace).observe(lay, { attributes: true, attributeFilter: ["class"] });
   drawer.addEventListener("keydown", walkKeydown);
   drawer.addEventListener("click", e => {
     const el = e.target.closest("[data-act],[data-i],[data-more],[data-ev]");
