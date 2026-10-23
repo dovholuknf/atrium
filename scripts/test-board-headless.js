@@ -16169,7 +16169,7 @@ async function mPullSection(browser) {
       await p.tap('#m-list .row[data-id="' + id + '"]');
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
       await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
-      await p.waitForTimeout(600);
+      await frames(p, 3);
       await p.evaluate(() => { window.__pullMarker = 1; });
       loads = 0;
     };
@@ -16184,7 +16184,7 @@ async function mPullSection(browser) {
     if (oCard !== "none") fail(tag + "behind a card the page should not pull: " + oCard);
     // from mid-thread: the thread scrolls up under the finger and nothing reloads
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.scrollTop = 500; });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     await drag(200, 300, 520, 12);
     await p.waitForTimeout(700);
     if (!(await kept()) || loads) fail(tag + "a pull from mid-thread reloaded the page");
@@ -16195,16 +16195,16 @@ async function mPullSection(browser) {
     if (!(await kept()) || loads) fail(tag + "a pull from the composer reloaded the page");
     await p.evaluate(() => window.mViewer.open("pl-2", "/w/card/a.txt"));
     await p.waitForFunction(() => window.mViewer.isOpen(), null, { timeout: slow(5000) });
-    await p.waitForTimeout(500);
+    await frames(p, 3);
     await drag(200, 200, 420, 12);
     await p.waitForTimeout(700);
     if (!(await kept()) || loads) fail(tag + "a pull from the viewer reloaded the page");
     if (!(await p.evaluate(() => window.mViewer.isOpen()))) fail(tag + "a pull closed the viewer");
     await p.evaluate(() => window.mViewer.close && window.mViewer.close());
     // a short pull at the top does nothing, and the spinner goes away
-    await p.waitForTimeout(400);
+    await frames(p, 3);
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    await p.waitForTimeout(200);
+    await frames(p, 3);
     await drag(200, 200, 240, 4);
     await p.waitForTimeout(600);
     if (!(await kept()) || loads) fail(tag + "a short pull reloaded the page");
@@ -16217,7 +16217,7 @@ async function mPullSection(browser) {
     await p.tap("#m-compose .mc-send");
     await p.waitForFunction(() => /sending/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    await p.waitForTimeout(500);
+    await frames(p, 3);
     const at0 = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
     if (at0 !== 0) fail(tag + "the thread was not at its top for the in-flight case: " + at0);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
@@ -16229,7 +16229,7 @@ async function mPullSection(browser) {
     release();
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    await p.waitForTimeout(500);
+    await frames(p, 3);
     // a pull at the very top shows a spinner and reloads
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
     for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
