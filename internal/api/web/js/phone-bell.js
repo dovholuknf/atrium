@@ -50,11 +50,14 @@ function nudgeBell(which) {
   sel.forEach(s => nudgeEl(document.querySelector(s)));
 }
 
-// The header's bell has a box, or it does not. A popped-out window's bar bell counts as one.
+// The header's bell has a box, or it does not. A popped-out window's bar bell counts as one while the bar is out.
 function headerBellShown() {
+  const cl = document.body.classList;
+  // a phone's terminal bar slides in from above only with the tray open, so its bell is out of reach until then
+  const barOut = !cl.contains("term-phone") || cl.contains("tray-open");
   return ["toastlog-open", "t-bell"].some(id => {
     const b = document.getElementById(id);
-    return !!(b && b.getClientRects().length);
+    return !!(b && b.getClientRects().length && (id !== "t-bell" || barOut));
   });
 }
 
