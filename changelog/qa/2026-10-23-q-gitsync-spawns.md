@@ -1,0 +1,1 @@
+The slow gitsync tests start fewer git processes: history is seeded with one fast-import, refusals decided before git are sent as raw pushes, and the fake forge moves a branch with update-ref (q-gitsync-spawns).
