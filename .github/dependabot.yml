@@ -1,26 +1,26 @@
 version: 2
 multi-ecosystem-groups:
-  weekly-deps:
+  weekly:
     schedule:
       interval: weekly
     commit-message:
-      prefix: "deps"
+      prefix: "dependabot dep updates"
 updates:
   - package-ecosystem: github-actions
     directories:
       - /
       - /.github/actions/ci-run
     patterns: ["*"]
-    multi-ecosystem-group: weekly-deps
+    multi-ecosystem-group: weekly
   - package-ecosystem: gomod
     directories:
       - /
       - /website
     patterns: ["*"]
-    multi-ecosystem-group: weekly-deps
+    multi-ecosystem-group: weekly
   - package-ecosystem: npm
     directories:
       - /
       - /website
     patterns: ["*"]
-    multi-ecosystem-group: weekly-deps
+    multi-ecosystem-group: weekly
