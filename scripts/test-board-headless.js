@@ -24091,7 +24091,7 @@ async function crInkCheck(p, skins, sels, width, before) {
   const bad = [];
   // A blanked element's children that set their own colour (a label, a <b>) stay drawn, and when the text wraps (a wider font)
   // the range's box reaches under them, so their ink reads as the background. Blank the whole subtree.
-  await p.addStyleTag({ content: "[data-crk], [data-crk] * { color: transparent !important; }" });
+  await p.addStyleTag({ content: "[data-crk], [data-crk] * { color: transparent !important; } *, *::before, *::after { transition: none !important; animation: none !important; }" });
     for (const skin of skins) {
       await p.evaluate(s => { if (s) document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); }, skin);
       if (before) await before(skin);
@@ -24150,7 +24150,9 @@ async function crInkBatch(p, sels, width) {
     return { s, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), c: getComputedStyle(kill).color, kill };
   }).filter(Boolean).map(b => { b.kill.dataset.crk = "1"; b.kill.style.transition = "none"; b.kill.style.color = "transparent"; delete b.kill; return b; }), { sels, width });
   if (!boxes.length) return new Set();
-  const png = await p.screenshot();
+  const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+  const png = await p.screenshot({ clip: { x: x0, y: y0, width: Math.max(...boxes.map(b => b.x + b.w)) - x0, height: Math.max(...boxes.map(b => b.y + b.h)) - y0 } });
+  for (const b of boxes) { b.x -= x0; b.y -= y0; }
   await p.evaluate(() => { document.querySelectorAll("[data-crk]").forEach(k => { k.style.color = ""; k.style.transition = ""; delete k.dataset.crk; }); });
   const ok = await p.evaluate(async ({ b64, boxes }) => {
     const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
