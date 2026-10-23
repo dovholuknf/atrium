@@ -254,7 +254,7 @@ func TestABoardCycleWaitsForThePartTypedLineBeforeItHolds(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: negative check, the cycle must not hold
 	v, _ := d.newContextFor(id).(map[string]any)
 	if d.nctx.typingHeld(id) || d.holdingMessages(id) || v["held"] != false || strings.Contains(f.written(), limitPrompt) {
 		t.Fatalf("the cycle held input over a part-typed line: %v", v)

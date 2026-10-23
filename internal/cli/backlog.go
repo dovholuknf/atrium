@@ -23,8 +23,8 @@ import (
 // not its machine, and no --board-addr was named, it is asked again through this room's link (POST /v1/hub/ask), the
 // route atrium_backlog takes. See internal/link/backlog.go and internal/link/hubask.go.
 
-// backlogHubAddr is a var so a test can put a fake hub board where the default would be.
-var backlogHubAddr = defaultBoardAddr
+// backlogHubAddr is the hub's board, where ATRIUM_BACKLOG_BOARD puts a fake one for a test.
+func backlogHubAddr() string { return orDefault(os.Getenv("ATRIUM_BACKLOG_BOARD"), defaultBoardAddr()) }
 
 type hubAnswer struct {
 	code int

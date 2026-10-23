@@ -5086,7 +5086,7 @@ async function linkTipSection(browser, base) {
     await p.mouse.move(...at(3, 1), { steps: 2 });
     if (!await underlined()) fail("hovering a second path did not underline it");
     const next = Date.now() + slow(3000);
-    while (Date.now() < next && !/src\/beta\.go/.test(await tipText())) await new Promise(r => setTimeout(r, 10));
+    while (Date.now() < next && !/src\/beta\.go/.test(await tipText())) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
     if (!/src\/beta\.go/.test(await tipText())) fail("hovering a second file path did not show its tip: " + await tipText());
 
     await p.mouse.click(...at(3, 1));
@@ -5632,7 +5632,7 @@ async function fileLinksViewSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "fileLinksView", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: let the attached terminal settle before the first hover
     const outsideWin = "D:\\worktrees\\github\\openziti-test-kitchen\\ziti-tv\\2026-oct-22\\socials.txt";
     const insideWin = "D:\\worktrees\\github\\openziti\\ziti-doc\\blog-add-by-url\\README.md";
     const outsideBash = "/d/worktrees/github/other/x.md";
@@ -5673,7 +5673,7 @@ async function fileLinksViewSection(browser, base) {
     if (!/outside this card, the board cannot open it/.test(t) || !t.includes("socials.txt")) fail("the outside path's tip was " + JSON.stringify(t));
     await shot(p, "1-outside-tip");
     await p.mouse.click(...at(12, 0));
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: negative check, nothing may open after a click
     if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on") || window.__tabs.length > 0)) fail("clicking an outside path opened something");
     t = await tipFor(20, 1, /README\.md/);
     if (!/README\.md/.test(t) || /outside/.test(t)) fail("the inside path's tip was " + JSON.stringify(t));
@@ -5691,7 +5691,7 @@ async function fileLinksViewSection(browser, base) {
     if (menu[0] !== "open rendered") fail("the viewer is not first: " + JSON.stringify(menu));
     await shot(p, "3-menu");
     await p.locator("#cardmenu button", { hasText: "open externally, on sg4" }).click();
-    const until = async cond => { const end = Date.now() + slow(3000); while (Date.now() < end && !cond()) await new Promise(r => setTimeout(r, 10)); };
+    const until = async cond => { const end = Date.now() + slow(3000); while (Date.now() < end && !cond()) await new Promise(r => setTimeout(r, 10)); }; // wait: poll step of a deadline loop
     await until(() => launched.length > 0);
     if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/land-live/files/launch", path: "docs/plan.md" }])) fail("open externally sent " + JSON.stringify(launched));
     await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "src/a.go", dir: false }); });
@@ -14202,7 +14202,7 @@ async function popoutBellSection(browser, base) {
     await p.goto(base + hash, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof alerting !== "undefined" && typeof windowMuted === "function", null,
       { timeout: slow(15000) });
-    await p.waitForTimeout(800);
+    await p.waitForTimeout(800); // wait: let the popped-out page settle its own timers
     return p;
   };
   const shown = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; }, sel);
@@ -14361,7 +14361,7 @@ async function windowMuteSection(browser, base) {
     // Unmuted, the same notice is shown once across the three windows, in the one in front.
     await popA.evaluate(() => setWindowOff(false));
     await fire(board, "wm once");
-    await board.waitForTimeout(300);
+    await board.waitForTimeout(300); // wait: negative check, a notice must not appear a second time
     t = await total("wm once");
     if (t.note !== 0 || t.toast !== 1 || (await said(popA, "wm once")).toast !== 1) {
       fail("windowMute: one notice was not shown exactly once, in the window in front: " + JSON.stringify(t));
@@ -14374,7 +14374,7 @@ async function windowMuteSection(browser, base) {
     }
     if (await popA.evaluate(() => windowIsOff())) fail("windowMute: popA followed the board's own switch.");
     await fire(board, "wm board muted");
-    await board.waitForTimeout(300);
+    await board.waitForTimeout(300); // wait: negative check, a muted board must stay quiet
     t = await total("wm board muted");
     if (t.note || t.toast) fail("windowMute: a muted board still raised a notice: " + JSON.stringify(t));
     await fire(popA, "wm a mine", "land-live");

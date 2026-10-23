@@ -51,17 +51,13 @@ func fakeHubBoard(t *testing.T, status int, reply string) *int {
 		_, _ = w.Write([]byte(reply))
 	}))
 	t.Cleanup(srv.Close)
-	old := backlogHubAddr
-	backlogHubAddr = func() string { return strings.TrimPrefix(srv.URL, "http://") }
-	t.Cleanup(func() { backlogHubAddr = old })
+	t.Setenv("ATRIUM_BACKLOG_BOARD", strings.TrimPrefix(srv.URL, "http://"))
 	return &n
 }
 
 func noHubBoard(t *testing.T) {
 	t.Helper()
-	old := backlogHubAddr
-	backlogHubAddr = func() string { return "127.0.0.1:1" }
-	t.Cleanup(func() { backlogHubAddr = old })
+	t.Setenv("ATRIUM_BACKLOG_BOARD", "127.0.0.1:1")
 }
 
 func runHuman(t *testing.T, args ...string) (string, error) {
