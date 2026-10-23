@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/openziti/sdk-golang v1.2.8
-	github.com/openziti/zrok/v2 v2.0.4
+	github.com/openziti/zrok/v2 v2.0.8
 	github.com/spf13/cobra v1.10.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.57.0
