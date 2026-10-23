@@ -169,3 +169,9 @@
 {"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":120585926290,"name":"check (macos-latest, board-2)","tests":["check: titles"],"retried":[]}
 {"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":0,"name":"check (macos-latest, go-checks-visual)","tests":["phoneNudge"],"retried":[],"errors":{"phoneNudge":"the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"}}
 {"run":"40003618550","date":"2026-10-23T18:28:51Z","sha":"cc58eb533","job":0,"name":"check (windows-latest, go-checks-visual)","tests":["phoneNudge"],"retried":[],"errors":{"phoneNudge":"the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"}}
+{"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120596825322,"name":"check (ubuntu-latest, race-board-2)","tests":["check: titles"],"retried":[]}
+{"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120596825358,"name":"check (ubuntu-latest, board-1-visual)","tests":["check: titles"],"retried":[]}
+{"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120597960176,"name":"check (windows-latest, build-board-1)","tests":["check: titles"],"retried":[]}
+{"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120597960359,"name":"check (windows-latest, board-2)","tests":["check: titles"],"retried":[]}
+{"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120598069886,"name":"check (macos-latest, board-1)","tests":["check: titles"],"retried":[]}
+{"run":"40006641660","date":"2026-10-23T18:50:47Z","sha":"d63bdf7ba","job":120598069894,"name":"check (macos-latest, board-2)","tests":["notifyTrayWrap"],"retried":[],"errors":{"notifyTrayWrap":"the tray scrolls sideways: {\"listSide\":0,\"dlgSide\":472,\"dlgDown\":1007,\"listDown\":1633,\"scrollers\":[\"toastlog-list\"],\"bodies\":80,\"lines\":0,\"cut\":54,\"tipped\":80}"}}

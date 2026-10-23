@@ -184,3 +184,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-23 | 39952983819 | TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy | ADD | no | 0 |
 | 2026-10-23 | 40003618550 | atriumDown | ADD | yes | 0 |
 | 2026-10-23 | 40003618550 | phoneNudge | ADD | yes | 0 |
+| 2026-10-23 | 40006641660 | notifyTrayWrap | ADD | no | 0 |

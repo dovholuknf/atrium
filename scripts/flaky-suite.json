@@ -3,6 +3,7 @@
  "since": 39968364279,
  "entries": [
   {"kind": "board", "name": "atriumDown", "reason": "failed in run 40003618550 job check (windows-latest, board-2)"},
-  {"kind": "board", "name": "phoneNudge", "reason": "failed in run 40003618550 job check (windows-latest, go-checks-visual): the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"}
+  {"kind": "board", "name": "phoneNudge", "reason": "failed in run 40003618550 job check (windows-latest, go-checks-visual): the pop-out has no corner badge with a count {\"boxes\":0,\"n\":\"1\",\"shown\":false}"},
+  {"kind": "board", "name": "notifyTrayWrap", "reason": "failed in run 40006641660 job check (macos-latest, board-2): the tray scrolls sideways: {\"listSide\":0,\"dlgSide\":472,\"dlgDown\":1007,\"listDown\":1633,\"scrollers\":[\"toastlog-list\"],\"bodies\":80,\"lines\":0,\"cut\":54,\"tipped\":80}"}
  ]
 }
