@@ -11,6 +11,7 @@
   {"kind": "board", "name": "soundPhone", "reason": "failed in run 39859020140 job check (windows-latest, board-2)"},
   {"kind": "board", "name": "coldHandoff", "reason": "failed in run 39860953838 job check (windows-latest, board-1): a cold handoff on the stream raised no cold-handoff toast."},
   {"kind": "board", "name": "atriumDown", "reason": "failed in run 39867364909 job check (windows-latest, board-1): a reload with atrium down did not load a page: page.reload: net::ERR_EMPTY_RESPONSE"},
-  {"kind": "board", "name": "themePreview", "reason": "failed in run 39867364909 job check (windows-latest, board-1): page.waitForSelector timed out after 15000ms on #stack-list .stackrow (settings.js:416)"}
+  {"kind": "board", "name": "themePreview", "reason": "failed in run 39867364909 job check (windows-latest, board-1): page.waitForSelector timed out after 15000ms on #stack-list .stackrow (settings.js:416)"},
+  {"kind": "go", "package": "internal/cli", "name": "TestWatchPathsPushesOnlyWhenTheListChanged", "reason": "failed in run 39877287632 job check (ubuntu-latest, go-all): advertiseset_test.go:68: pushed 0 times after one change, want 1"}
  ]
 }
