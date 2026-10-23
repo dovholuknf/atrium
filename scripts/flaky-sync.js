@@ -4,7 +4,7 @@
 // the 15 newest runs of the store, nothing else, and log every move in scripts/flaky-history.md.
 //   node scripts/flaky-sync.js <run id> [--dry-run]
 // The run's failures come from its failing-tests artifact (ci-rollup.js writes it), else from the job list with each failed
-// job's artifact folder under CI_ARTIFACTS, else from the job log. scripts/flaky-jobs.jsonl holds one line per failed job
+// job's artifact folder under CI_ARTIFACTS, else from the job log. Rows of a run id up to `since` in the JSON are ignored. scripts/flaky-jobs.jsonl holds one line per failed job
 // (a run with none gets one line of its own, so green runs age the window). The JSON is edited by text, never rewritten.
 const fs = require('fs');
 const os = require('os');
@@ -227,7 +227,9 @@ function sync(runId, opts = {}) {
     if (!dry) fs.appendFileSync(storeFile, fresh.map((r) => JSON.stringify(r)).join('\n') + '\n');
   }
   const suiteText = fs.readFileSync(suiteFile, 'utf8');
-  const entries = JSON.parse(suiteText).entries;
+  const parsed = JSON.parse(suiteText);
+  const entries = parsed.entries;
+  if (parsed.since) rows = rows.filter((r) => BigInt(r.run) > BigInt(parsed.since));
   const p = plan(rows, entries);
   const historyText = fs.existsSync(historyFile) ? fs.readFileSync(historyFile, 'utf8') : HISTORY_HEAD;
   const date = (rows.find((r) => String(r.run) === String(runId)) || {}).date || '';

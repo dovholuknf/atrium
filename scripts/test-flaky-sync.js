@@ -115,6 +115,27 @@ eq(doc, { run: "5", date: "2026-10-30T00:00:00Z", sha: "012345678", jobs: [
   { id: 0, name: "check (macos-latest, board-1)", tests: ["other"], retried: [], errors: { other: "y" } },
 ] }, "the rollup artifact names each failed job with its tests, retried and first errors");
 
+const EMPTY = ['{', ' "note": "n",', ' "entries": [', ' ]', '}', ''].join("\n");
+const pe = world([row(600, ["TestNew", "newBoard"])]);
+fs.writeFileSync(pe.suite, EMPTY);
+const selectWith = (suite) => require("child_process").spawnSync("bash", [path.join(__dirname, "ci-select.sh")], { encoding: "utf8", env: { ...process.env, FLAKY_SUITE_FILE: suite } }).stdout;
+eq(selectWith(pe.suite).includes("flaky_ubuntu=[]"), true, "an empty suite selects no flaky jobs");
+r = sync("601", { ...pe, deps: deps({ download: () => ({ run: "601", date: "2026-10-30T00:00:00Z", sha: "abc", jobs: [] }) }) });
+eq([r.added.map((a) => a.name), r.removed.length, r.unchanged], [["newBoard", "TestNew"], 0, 0], "with an empty list a failing test is ADDed");
+text = fs.readFileSync(pe.suite, "utf8");
+eq(JSON.parse(text).entries.map((e) => e.name), ["newBoard", "TestNew"], "the file is valid JSON with the new entries");
+eq(selectWith(pe.suite).includes('flaky_ubuntu=["flaky-go"]'), true, "the next select turns the flaky jobs on");
+const pz = world([row(700, [])]);
+fs.writeFileSync(pz.suite, EMPTY);
+sync("701", { ...pz, deps: deps({ download: () => ({ run: "701", date: "2026-10-30T00:00:00Z", sha: "abc", jobs: [] }) }) });
+eq(fs.readFileSync(pz.suite, "utf8"), EMPTY, "an empty list with nothing failing is left as it was");
+
+const ps = world([row(800, ["TestNew"]), row(805, ["newBoard"])]);
+fs.writeFileSync(ps.suite, ['{', ' "note": "n",', ' "since": 802,', ' "entries": [', ' ]', '}', ''].join("\n"));
+sync("806", { ...ps, deps: deps({ download: () => ({ run: "806", date: "2026-10-30T00:00:00Z", sha: "abc", jobs: [] }) }) });
+eq(JSON.parse(fs.readFileSync(ps.suite, "utf8")).entries.map((e) => e.name), ["newBoard"], "a failure at or below since stays out, one in a newer run is added");
+eq(JSON.parse(fs.readFileSync(ps.suite, "utf8")).since, 802, "since is kept");
+
 fs.rmSync(tmp, { recursive: true, force: true });
 if (bad) { console.error(bad + " failure(s)"); process.exit(1); }
 console.log("flaky-sync: ok");

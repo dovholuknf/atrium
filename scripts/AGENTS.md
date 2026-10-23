@@ -20,6 +20,10 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   run's failed jobs in `flaky-jobs.jsonl` (from the `failing-tests` artifact `ci-rollup.js` uploads, else the job list and
   logs), adds and removes entries by text edit, and logs each move in `flaky-history.md`. `--dry-run` writes nothing, and
   `test-flaky-sync.js` pins it.
+- **`flaky-suite.json` is empty until a test fails in CI, and the flaky jobs run only while it has entries.** With no
+  entries `ci-select.sh` prints `flaky_<os>=[]` for every platform (`FLAKY_SUITE_FILE` points it at another file), `ci.yml`
+  skips the three flaky jobs, and the check jobs still start because a skipped need is not `failure`. `flaky-sync.js`
+  adding an entry turns them on again. `test-ci-select.js` and `test-flaky-sync.js` pin both cases.
 - **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms. The
   fix is to move the test into an integration file, not to raise the number.
 - **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the

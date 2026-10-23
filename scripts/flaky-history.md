@@ -169,3 +169,15 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-22 | 39843505547 | phoneShare | ADD | yes | 0 |
 | 2026-10-22 | 39843505547 | phoneTap | ADD | yes | 0 |
 | 2026-10-22 | 39843505547 | phoneView | ADD | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | TestStartOutsideJobSaysWhenCmdCannotOpenAHeldLog | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | growlPopout | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | termFitHeight | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | TestPublishTaskCoalescesABurstToTheLatestState | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | pollsGone | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | mOlder | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | soundPhone | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | coldHandoff | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | atriumDown | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | themePreview | REMOVE | yes | 0 |
+| 2026-10-22 | graduated by clint 2026-10-22 | TestWatchPathsPushesOnlyWhenTheListChanged | REMOVE | yes | 0 |

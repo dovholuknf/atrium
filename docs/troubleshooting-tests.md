@@ -407,6 +407,11 @@ is one nobody will fix, and a unit split into single-purpose halves fails on the
 
 # The flaky suite: how a test enters and leaves
 
+The list is empty until a test fails in CI (clint graduated all 12 entries on 2026-10-22, logged in `scripts/flaky-history.md`).
+While it is empty `scripts/ci-select.sh` prints `flaky_<os>=[]`, the flaky jobs are skipped, the check jobs still run (a
+skipped need is not `failure`) and every test runs in the normal suites. A test that fails is added by
+`scripts/flaky-sync.js`, and the next run starts the flaky jobs again. The rest of this section describes a list with entries.
+
 `scripts/flaky-suite.json` lists every test known to fail now and then. CI runs them first and alone
 (two jobs per platform: `bash scripts/ci.sh --group flaky-go`, which needs no node, and `flaky-board`, which needs no
 Go and runs the board units and the flaky check scripts on one shard), with one retry for a board unit and none for a go test, and every other step skips them, so each test runs in
@@ -418,8 +423,8 @@ rollup still reads red.
   (`node scripts/ci-flake-ledger.js report --window 20`) shows which. Add an entry with its kind
   (`go` with the package, or `board`), its name and a one-line reason. A fix entry is a commit subject that names the
   test, not proof that it held.
-- **Leaves** after 30 quiet runs, counted in the ledger with the entry in place. Remove the entry in the same change
-  that records the count.
+- **Leaves** when it has no failure in the 15 newest runs, or when clint graduates it by hand: remove the entry and log
+  the move in `scripts/flaky-history.md`.
 - **A typo fails loudly.** `node scripts/flaky-suite.js check` runs in the `go-build` step and at the start of the
   flaky step, and fails on a name that no longer exists, since an empty `-run` would run everything.
 - `scripts/test-touched.sh` runs a touched manifest test ahead of the rest of its plan.
