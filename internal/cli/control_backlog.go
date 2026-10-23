@@ -36,4 +36,13 @@ func addBacklogTools(s *mcp.Server) {
 	link.AddRoomItemTools(s, call, me, room)
 	// And atrium_publish, which every worker prompt names. See link/docs_mcp.go.
 	link.AddRoomPublishTool(s, call, me)
+	// And atrium_merge, from the session's own worktree. See link/merge_mcp.go.
+	link.AddRoomMergeTool(s, link.MergeDoor{
+		Call: call,
+		By:   func(*mcp.CallToolRequest) string { return me },
+		Here: func(ctx context.Context) (string, string, string, error) {
+			dir, _ := os.Getwd()
+			return mergeHere(ctx, dir)
+		},
+	})
 }

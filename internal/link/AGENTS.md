@@ -105,7 +105,7 @@ against and the operator chose on purpose.
 | `git.go` / `git_hub.go` / `git_store.go` / `git_url.go` | the git kind, the hub's git side, the store on the board, the lookup |
 | `tasks.go` / `tasks_launch.go` | the tasks of an item: the owner's routes, a room's report of one, and the scheduler that starts the next. `docs/runtime/item-tasks-design.md` |
 | `backlog.go` / `changerequest.go` / `deps.go` / `flow*.go` | the hub's backlog, change requests, gates and merge flow |
-| `merge.go` | the merge queue: asking, the runner that merges in the store and hands the candidate to the merge room, the verdict, the land, telling. `docs/rnd/merge-queue.md` |
+| `merge.go` / `merge_mcp.go` | the merge queue and `atrium_merge`: asking, the runner that merges in the store and hands the candidate to the merge room, the verdict, the land, telling. `docs/rnd/merge-queue.md` |
 | `docs_api.go` / `files_api.go` | hub documents and the file drop. The hub's own, never proxied |
 | `notify.go` / `notifyapi.go` / `push.go` / `pushapi.go` / `webpush.go` | the notify trigger, its command sink, Web Push |
 | `growl.go` | what waits on a human, on every screen |

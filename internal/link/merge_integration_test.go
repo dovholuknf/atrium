@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
@@ -219,4 +221,39 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func TestMergeToolAsksForTheWorktreesBranch(t *testing.T) {
+	x := newMergeFix(t)
+	sha := x.branch(t, "door", "door.txt", "door")
+	d := MergeDoor{
+		Call: func(ctx context.Context, method, path string, body, out any) error {
+			return (&controlMCP{board: x.boardURL(t), client: http.DefaultClient}).ask(ctx, method, path, "", body, out)
+		},
+		By: func(*mcp.CallToolRequest) string { return "w1@sg4" },
+		Here: func(context.Context) (string, string, string, error) {
+			return boardRepo, "claude/door", sha, nil
+		},
+	}
+	_, out, err := d.Handle(context.Background(), nil, mergeInput{Action: "request"})
+	if err != nil || out.Request == nil || out.Request.Branch != "claude/door" || out.Request.Requester != "w1" {
+		t.Fatalf("request: %+v %v", out, err)
+	}
+	if _, out, err = d.Handle(context.Background(), nil, mergeInput{Action: "list"}); err != nil || len(out.Requests) != 1 {
+		t.Fatalf("list: %+v %v", out, err)
+	}
+	if _, out, err = d.Handle(context.Background(), nil, mergeInput{Action: "cancel", N: out.Requests[0].N}); err != nil ||
+		out.Request.State != hubstore.MergeCancelled {
+		t.Fatalf("cancel: %+v %v", out, err)
+	}
+	if _, _, err = d.Handle(context.Background(), nil, mergeInput{Action: "land"}); err == nil {
+		t.Fatal("land is not an action of the tool")
+	}
+}
+
+func (x *mergeFix) boardURL(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	return srv.URL
 }

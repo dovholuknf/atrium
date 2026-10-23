@@ -34,7 +34,7 @@ func TestStdioControlServesEveryToolTheLeanPromptsName(t *testing.T) {
 	for _, tl := range res.Tools {
 		have[tl.Name] = true
 	}
-	want := append(daemon.PromptToolNames(), "atrium_publish")
+	want := append(daemon.PromptToolNames(), "atrium_publish", "atrium_merge")
 	for _, name := range want {
 		if !have[name] {
 			t.Errorf("stdio control lacks %s", name)

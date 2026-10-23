@@ -188,7 +188,9 @@ func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubsto
 		return
 	}
 	agent, room := mergeWho(in.By, in.Room)
-	if agent == "" || room == "" {
+	if in.By == "" && in.Room == "" {
+		agent = "operator"
+	} else if agent == "" || room == "" {
 		crFail(w, http.StatusBadRequest, "a merge is asked by a card: by is <card>@<room>")
 		return
 	}
@@ -213,7 +215,9 @@ func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubsto
 		return
 	}
 	ask := hubstore.MergeAsk{Repo: in.Repo, Branch: in.Branch, SHA: tip, Requester: agent, RequesterRoom: room}
-	ask.Launcher, ask.LauncherRoom = p.mergeLauncher(r.Context(), room, agent)
+	if room != "" {
+		ask.Launcher, ask.LauncherRoom = p.mergeLauncher(r.Context(), room, agent)
+	}
 	m, existing, err := st.MergeAsked(ask)
 	if err != nil {
 		ffail(w, err)

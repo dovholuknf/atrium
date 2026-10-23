@@ -78,6 +78,8 @@ var workerTools = map[string]bool{
 	"atrium_close": true,
 	// And the ones that file what a run cost and what slowed it, for the work ledger. See backlog_mcp.go.
 	"atrium_reports": true,
+	// And the ones that land their branch, through the merge queue. See merge_mcp.go.
+	"atrium_merge": true,
 }
 
 // itemWithheld is what an item worker loses from the worker set: every way to talk to anything but the tool that ends

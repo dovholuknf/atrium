@@ -99,4 +99,5 @@ database. This package is where they meet:
 | `ptyhost.go` | `atrium ptyhost`. See `internal/ptyhost` |
 | `replay.go` / `termattach*.go` | rendering a captured stream, and a card's terminal in this terminal |
 | `roomdb.go` / `ledger.go` / `usage.go` | offline database compaction, the work ledger, usage backfill |
+| `merge.go` | `atrium merge`: asking the hub's merge queue for this worktree's branch, the list, show, cancel, the merge room |
 | `version.go` | the version, stamped by the linker |
