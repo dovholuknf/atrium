@@ -1,7 +1,6 @@
 {
  "note": "Every known-flaky test, in one place. `since` is a run id: flaky-sync ignores store rows of that run or older, so a graduated test is not re-added by an old failure. The list is empty until a test fails in CI: scripts/flaky-sync.js then adds it, and the flaky jobs run only while this list has entries (ci-select.sh prints flaky_<os>=[] when it is empty, and every test runs in the normal suites). When it has entries, CI runs them first and alone (ci.sh --group flaky, a failure fails the job, a board unit gets one retry and a pass on it is marked PASSED ON RETRY, a go test gets none) and every other step skips them. kind is go (package is the import path under the module, name is the test function) board (name is the headless unit) or script (a check script run once, by its path). docs/troubleshooting-tests.md has the rules. test-board-sharded.js reads the board entries for its retry labels. scripts/flaky-suite.js check fails when a name no longer exists.",
- "since": 39892667474,
+ "since": 39968364279,
  "entries": [
-  {"kind": "go", "package": "internal/daemon", "name": "TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy", "reason": "failed in run 39952983819 job check (ubuntu-latest, go-all): autocompact_integration_test.go:182: a claude without --autocompact was given it"}
  ]
 }

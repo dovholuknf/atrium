@@ -152,3 +152,8 @@
 {"run":"39952983819","date":"2026-10-23T12:23:46Z","sha":"f692fcf6d","job":120411894518,"name":"check (ubuntu-latest, go-all)","tests":["TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy"],"retried":[],"errors":{"TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy":"autocompact_integration_test.go:182: a claude without --autocompact was given it"}}
 {"run":"39953423118","date":"2026-10-23T12:27:20Z","sha":"75c5d33ee","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"39953607901","date":"2026-10-23T12:30:42Z","sha":"30aeadf14","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39960356864","date":"2026-10-23T13:20:20Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39961995572","date":"2026-10-23T13:32:05Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39964022399","date":"2026-10-23T13:46:41Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39966120940","date":"2026-10-23T14:01:41Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"39968364279","date":"2026-10-23T14:17:31Z","sha":"0375878b1","job":0,"name":"(no failed job)","tests":[],"retried":[]}
