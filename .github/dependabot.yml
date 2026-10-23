@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/ci-run
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directories:
+      - /
+      - /website
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directories:
+      - /
+      - /website
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /.github/ci-image
+    schedule:
+      interval: weekly
