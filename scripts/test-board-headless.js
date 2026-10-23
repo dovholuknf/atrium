@@ -22186,7 +22186,7 @@ async function phoneRedirectSection(browser, base) {
       return route.continue();
     });
     await p.goto(base + at, { waitUntil: "load" });
-    await p.waitForTimeout(400);
+    await frames(p, 3);
     const u = new URL(p.url());
     return { ctx, p, errors, where: u.pathname + u.hash, search: u.search };
   };
@@ -22234,17 +22234,17 @@ async function phoneRedirectSection(browser, base) {
       const a = await ctx.newPage();
       await route(a);
       await a.goto(base + "/", { waitUntil: "load" });
-      await a.waitForTimeout(300);
+      await frames(a, 3);
       if (new URL(a.url()).pathname !== "/m/") fail("phoneRedirect: an old localStorage opt-out was obeyed");
       if (await a.evaluate(() => localStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: the old localStorage opt-out was not removed");
       await a.evaluate(() => sessionStorage.setItem("atrium.m.desktop", "1"));
       await a.goto(base + "/", { waitUntil: "load" });
-      await a.waitForTimeout(300);
+      await frames(a, 3);
       if (new URL(a.url()).pathname !== "/") fail("phoneRedirect: the tab's own opt-out was not kept");
       const b = await ctx.newPage();
       await route(b);
       await b.goto(base + "/", { waitUntil: "load" });
-      await b.waitForTimeout(300);
+      await frames(b, 3);
       if (new URL(b.url()).pathname !== "/m/") fail("phoneRedirect: a new tab did not go to /m after another tab opted out");
       await ctx.close();
     }
@@ -22293,7 +22293,7 @@ async function phoneRedirectSection(browser, base) {
       await parent.goto(base + "/raw", { waitUntil: "load" });
       const [pop] = await Promise.all([ctx.waitForEvent("page"), parent.evaluate(b => window.open(b + "/?why=1"), base)]);
       await pop.waitForLoadState("load");
-      await pop.waitForTimeout(300);
+      await frames(pop, 3);
       const said = await pop.evaluate(() => (document.getElementById("redirect-why") || {}).textContent || "");
       if (!/^redirect: not redirected, this window has an opener/.test(said)) fail("phoneRedirect: a window with an opener said " + JSON.stringify(said));
       if (new URL(pop.url()).pathname !== "/") fail("phoneRedirect: a window with an opener was sent to " + pop.url());
@@ -22322,7 +22322,7 @@ async function phoneRedirectSection(browser, base) {
     if (new URL(p.url()).pathname !== "/m/") fail("phoneRedirect: /m left itself for " + p.url());
     await p.tap("#m-desktop");
     await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) }).catch(() => fail("phoneRedirect: the desktop board link did not leave /m"));
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: a bounce back lands after the path settles
     if (new URL(p.url()).pathname !== "/") fail("phoneRedirect: the desktop board link bounced back to " + p.url());
     if ((await p.evaluate(() => sessionStorage.getItem("atrium.m.desktop"))) !== "1") fail("phoneRedirect: the link did not set the opt-out");
     // a card the board knew only by id opens on /m from the fragment
