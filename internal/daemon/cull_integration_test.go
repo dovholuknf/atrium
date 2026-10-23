@@ -43,19 +43,23 @@ func newCullRepo(t *testing.T, merged bool) cullRepo {
 		t.Fatal(err)
 	}
 	cullGit(t, r.main, "init", "-q", "-b", "main")
-	cullGit(t, r.main, "commit", "-q", "--allow-empty", "-m", "root")
-	cullGit(t, r.main, "branch", "claude/main")
-	cullGit(t, r.main, "worktree", "add", "-q", "-b", r.branch, r.wt, "claude/main")
-	if err := os.WriteFile(filepath.Join(r.wt, "work.txt"), []byte("done\n"), 0o644); err != nil {
-		t.Fatal(err)
+	stream := "commit refs/heads/main\ncommitter t <t@t> 1 +0000\ndata 4\nroot\n\n" +
+		"commit refs/heads/" + r.branch + "\ncommitter t <t@t> 2 +0000\ndata 8\nthe work\nfrom refs/heads/main\n" +
+		"M 100644 inline work.txt\ndata 5\ndone\n\n"
+	claudeMain := "main"
+	if merged {
+		claudeMain = r.branch
 	}
-	cullGit(t, r.wt, "add", "work.txt")
-	cullGit(t, r.wt, "commit", "-q", "-m", "the work")
+	stream += "reset refs/heads/claude/main\nfrom refs/heads/" + claudeMain + "\n\n"
+	fi := exec.Command("git", "fast-import", "--quiet")
+	fi.Dir = r.main
+	fi.Stdin = strings.NewReader(stream)
+	if out, err := fi.CombinedOutput(); err != nil {
+		t.Fatalf("git fast-import: %v\n%s", err, out)
+	}
+	cullGit(t, r.main, "worktree", "add", "-q", r.wt, r.branch)
 	if err := os.WriteFile(filepath.Join(r.wt, briefFile), []byte("brief\n"), 0o644); err != nil {
 		t.Fatal(err)
-	}
-	if merged {
-		cullGit(t, r.main, "branch", "-f", "claude/main", r.branch)
 	}
 	return r
 }

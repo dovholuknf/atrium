@@ -49,6 +49,7 @@ func receipt(turns, denials int, subtype string, read, write int64) []byte {
 func newKAFix(t *testing.T) *kaFix {
 	t.Helper()
 	dir := t.TempDir()
+	seedMigratedDB(t, filepath.Join(dir, "atrium.db"))
 	st, err := store.Open(filepath.ToSlash(filepath.Join(dir, "atrium.db")))
 	if err != nil {
 		t.Fatal(err)

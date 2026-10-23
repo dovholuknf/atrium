@@ -5,6 +5,8 @@ package api
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,19 +34,14 @@ func TestCloseDeletesAMergedHubBranchAndAsksAboutAnUnmergedOne(t *testing.T) {
 	oh, card, wt, _ := openForClose(t)
 	ctx := context.Background()
 	// claude/done is at HEAD, which claude/main has, so it is merged. claude/wip has a commit claude/main lacks.
-	if _, err := gitIn(ctx, wt, "branch", "claude/main", "HEAD"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := gitIn(ctx, wt, "branch", "claude/done", "HEAD"); err != nil {
-		t.Fatal(err)
-	}
-	// Made with commit-tree so the worktree's own HEAD does not move and the worktree is not asked about.
-	sha, err := gitIn(ctx, wt, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "wip")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := gitIn(ctx, wt, "branch", "claude/wip", strings.TrimSpace(sha)); err != nil {
-		t.Fatal(err)
+	// One fast-import makes all three refs, so the worktree's own HEAD does not move.
+	stream := "reset refs/heads/claude/main\nfrom HEAD\n\nreset refs/heads/claude/done\nfrom HEAD\n\n" +
+		"commit refs/heads/claude/wip\ncommitter t <t@t> 1 +0000\ndata 4\nwip\nfrom HEAD\n\n"
+	fi := exec.CommandContext(ctx, "git", "fast-import", "--quiet")
+	fi.Dir = filepath.FromSlash(wt)
+	fi.Stdin = strings.NewReader(stream)
+	if out, err := fi.CombinedOutput(); err != nil {
+		t.Fatalf("git fast-import: %v\n%s", err, out)
 	}
 	for _, b := range []string{"claude/done", "claude/wip"} {
 		if _, err := oh.srv.st.AddResource(card, store.ResHubBranch, b, "github/o/r"); err != nil {
