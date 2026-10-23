@@ -170,3 +170,17 @@ func TestSetMergeRoomTakesOnlyARoomTheHubHas(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMergeSetMergerOnlyOnAConflict(t *testing.T) {
+	s := open(t)
+	a := mqAsk(t, s, "claude/a", "aaaaaaa1")
+	if _, err := s.MergeSetMerger(a.N, "m1@sg4"); !errors.Is(err, ErrMergeMove) {
+		t.Fatalf("queued: %v", err)
+	}
+	s.MergeMove(MergeStep{N: a.N, To: MergeMerging})
+	s.MergeMove(MergeStep{N: a.N, To: MergeConflict, Reason: "conflicts in x"})
+	m, err := s.MergeSetMerger(a.N, "m1@sg4")
+	if err != nil || m.Merger != "m1@sg4" || m.State != MergeConflict {
+		t.Fatalf("set: %+v %v", m, err)
+	}
+}

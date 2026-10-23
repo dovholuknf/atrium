@@ -198,7 +198,7 @@ func TestMergeQueueConflictAndAMovedMainAreNotLanded(t *testing.T) {
 	_, m := x.ask(t, "claude/baz", "w1@sg4")
 	x.p.mergeStart(context.Background(), x.st, x.g.Store(), m, "sg4")
 	got := must(x.st.MergeGet(m.N))
-	if got.State != hubstore.MergeConflict || !strings.Contains(got.Reason, "main.txt") {
+	if got.State != hubstore.MergeRefused || !strings.Contains(got.Reason, "main.txt") || !strings.Contains(got.Reason, "no merger could start") {
 		t.Fatalf("conflict: %+v", got)
 	}
 

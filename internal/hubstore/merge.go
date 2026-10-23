@@ -465,3 +465,25 @@ func MergeRepoName(name string) string {
 	}
 	return name
 }
+
+// MergeSetMerger records the merger card of a request in conflict.
+func (s *Store) MergeSetMerger(n int64, merger string) (MergeRequest, error) {
+	if why := CRText("merger", merger, backlogByMax, false); why != "" {
+		return MergeRequest{}, refuse(errors.New(why))
+	}
+	var out MergeRequest
+	err := s.tx(func(t *sql.Tx) error {
+		res, err := t.Exec(`UPDATE merge_request SET merger = ? WHERE n = ? AND state = ?`, merger, n, MergeConflict)
+		if err != nil {
+			return err
+		}
+		if k, err := res.RowsAffected(); err != nil {
+			return err
+		} else if k == 0 {
+			return refuse(fmt.Errorf("%w: request %d is not in conflict", ErrMergeMove, n))
+		}
+		out, err = scanMerge(t.QueryRow(`SELECT `+mergeCols+` FROM merge_request WHERE n = ?`, n))
+		return err
+	})
+	return out, err
+}

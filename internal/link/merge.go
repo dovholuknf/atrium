@@ -177,7 +177,10 @@ func (p *Proxy) mergeList(w http.ResponseWriter, r *http.Request, st *hubstore.S
 // mergeAskRoute queues a request. The branch has to be on the hub at the sha asked, so "push first" is said here and
 // not after the request waited its turn.
 func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
-	var in struct{ Repo, Branch, SHA, By, Room string }
+	var in struct {
+		Repo, Branch, SHA, By, Room string
+		Of                          int64
+	}
 	if err := crDecode(r, &in); err != nil {
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
 		return
@@ -214,7 +217,18 @@ func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubsto
 		crFail(w, http.StatusBadRequest, fmt.Sprintf("the hub's %s is at %s, not %s. push again, then ask again", in.Branch, shortHex(tip), shortHex(sha)))
 		return
 	}
-	ask := hubstore.MergeAsk{Repo: in.Repo, Branch: in.Branch, SHA: tip, Requester: agent, RequesterRoom: room}
+	if in.Of != 0 {
+		of, err := st.MergeGet(in.Of)
+		switch {
+		case err != nil && !errors.Is(err, hubstore.ErrMergeNotFound):
+			ffail(w, err)
+			return
+		case err != nil || of.State != hubstore.MergeConflict || in.Branch != MergerBranch(in.Of):
+			crFail(w, http.StatusBadRequest, fmt.Sprintf("of names a request in conflict, asked for from its merger's branch %s", MergerBranch(in.Of)))
+			return
+		}
+	}
+	ask := hubstore.MergeAsk{Repo: in.Repo, Branch: in.Branch, SHA: tip, Requester: agent, RequesterRoom: room, Continues: in.Of}
 	if room != "" {
 		ask.Launcher, ask.LauncherRoom = p.mergeLauncher(r.Context(), room, agent)
 	}
@@ -250,26 +264,28 @@ func shortHex(s string) string {
 	return s
 }
 
-// mergeLauncher is who launched the card, from its lineage on its room, as card and room. Nothing when it cannot be
-// read: the request still runs and the requester still hears.
-func (p *Proxy) mergeLauncher(ctx context.Context, room, agent string) (string, string) {
+// mergeCard is a card as the queue needs it: who it is, its tags and who launched it.
+type mergeCard struct {
+	ctlCard
+	SpawnedBy   string `json:"spawned_by"`
+	SpawnedByID string `json:"spawned_by_id"`
+}
+
+// mergeCardOf reads the card that answers to agent on room, nil when it cannot be read.
+func (p *Proxy) mergeCardOf(ctx context.Context, room, agent string) *mergeCard {
 	p.mu.Lock()
 	c := p.ctl
 	p.mu.Unlock()
-	if c == nil {
-		return "", ""
+	if c == nil || room == "" || agent == "" {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var body struct {
-		Tasks []struct {
-			ctlCard
-			SpawnedBy   string `json:"spawned_by"`
-			SpawnedByID string `json:"spawned_by_id"`
-		} `json:"tasks"`
+		Tasks []mergeCard `json:"tasks"`
 	}
 	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
-		return "", ""
+		return nil
 	}
 	cards := make([]ctlCard, len(body.Tasks))
 	for i := range body.Tasks {
@@ -277,29 +293,35 @@ func (p *Proxy) mergeLauncher(ctx context.Context, room, agent string) (string, 
 	}
 	best := pickCard(cards, agent)
 	if best == nil {
+		return nil
+	}
+	for i := range body.Tasks {
+		if body.Tasks[i].ID == best.ID {
+			return &body.Tasks[i]
+		}
+	}
+	return nil
+}
+
+// mergeLauncher is who launched the card, from its lineage on its room, as card and room. Nothing when it cannot be
+// read: the request still runs and the requester still hears.
+func (p *Proxy) mergeLauncher(ctx context.Context, room, agent string) (string, string) {
+	t := p.mergeCardOf(ctx, room, agent)
+	if t == nil || t.SpawnedBy == "" || strings.HasPrefix(t.SpawnedBy, "@") {
 		return "", ""
 	}
-	for _, t := range body.Tasks {
-		if t.ID != best.ID {
-			continue
-		}
-		if t.SpawnedBy == "" || strings.HasPrefix(t.SpawnedBy, "@") {
-			return "", ""
-		}
-		name, at, _ := strings.Cut(t.SpawnedBy, "@")
-		lroom := room
-		if at != "" {
-			lroom = at
-		}
-		if r, id := splitTag(t.SpawnedByID); id != "" {
-			if r != "" {
-				lroom = r
-			}
-			return id, strings.ToLower(lroom)
-		}
-		return name, strings.ToLower(lroom)
+	name, at, _ := strings.Cut(t.SpawnedBy, "@")
+	lroom := room
+	if at != "" {
+		lroom = at
 	}
-	return "", ""
+	if r, id := splitTag(t.SpawnedByID); id != "" {
+		if r != "" {
+			lroom = r
+		}
+		return id, strings.ToLower(lroom)
+	}
+	return name, strings.ToLower(lroom)
 }
 
 func (p *Proxy) mergeCancel(w http.ResponseWriter, r *http.Request, st *hubstore.Store, n int64) {
@@ -319,7 +341,8 @@ func (p *Proxy) mergeCancel(w http.ResponseWriter, r *http.Request, st *hubstore
 	}
 	if by := strings.TrimSpace(in.By); by != "" {
 		agent, room := mergeWho(by, "")
-		mine := room == m.RequesterRoom && agent == m.Requester || room == m.LauncherRoom && agent == m.Launcher
+		mine := room == m.RequesterRoom && agent == m.Requester || room == m.LauncherRoom && agent == m.Launcher ||
+			m.Merger != "" && strings.EqualFold(agent+"@"+room, m.Merger)
 		if !mine {
 			crFail(w, http.StatusForbidden, fmt.Sprintf("request %d is %s@%s's to cancel, or its launcher's", n, m.Requester, m.RequesterRoom))
 			return
@@ -329,7 +352,15 @@ func (p *Proxy) mergeCancel(w http.ResponseWriter, r *http.Request, st *hubstore
 	if who == "" {
 		who = "the operator"
 	}
-	out, err := st.MergeMove(hubstore.MergeStep{N: n, From: hubstore.MergeQueued, To: hubstore.MergeCancelled, Reason: "cancelled by " + who})
+	step := hubstore.MergeStep{N: n, From: hubstore.MergeQueued, To: hubstore.MergeCancelled, Reason: "cancelled by " + who}
+	if m.State == hubstore.MergeConflict {
+		step.From, step.To, step.Reason = hubstore.MergeConflict, hubstore.MergeRefused, cutReason(m.Reason+", given up by "+who)
+		out := p.mergeEnd(r.Context(), st, step)
+		p.RecordAudit(m.RequesterRoom, "merge-cancel", fmt.Sprintf("#%d by %s", n, who))
+		crJSON(w, http.StatusOK, out)
+		return
+	}
+	out, err := st.MergeMove(step)
 	if err != nil {
 		ffail(w, err)
 		return
@@ -489,9 +520,11 @@ func (p *Proxy) mergeStart(ctx context.Context, st *hubstore.Store, gs *gitsync.
 	case res.Already:
 		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeLanded, Base: res.Base,
 			Landed: res.Base, Reason: "claude/main has it already"})
+	case len(res.Conflicts) > 0 && m.Continues > 0:
+		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeRefused, Base: res.Base,
+			Reason: "the merger's branch does not merge either, " + mergeConflictWhy(res.Conflicts)})
 	case len(res.Conflicts) > 0:
-		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeConflict, Base: res.Base,
-			Reason: mergeConflictWhy(res.Conflicts)})
+		p.mergeConflict(ctx, st, m, res)
 	default:
 		m, err = st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeTesting, Base: res.Base,
 			Candidate: res.Candidate, Room: room})
@@ -507,12 +540,102 @@ func (p *Proxy) mergeStart(ctx context.Context, st *hubstore.Store, gs *gitsync.
 	}
 }
 
-func mergeConflictWhy(paths []string) string {
-	why := "conflicts in " + strings.Join(paths, ", ")
-	if len(why) > hubstore.MergeReasonMax {
-		why = why[:hubstore.MergeReasonMax-4] + " ..."
+// mergeConflict starts one slim merger for a request that did not merge, on the merge room, under the requester's
+// item and launched as the requester, so its ending reaches the card that asked. One merger per request, never
+// retried: a merger that cannot start refuses the request back to its requester.
+func (p *Proxy) mergeConflict(ctx context.Context, st *hubstore.Store, m hubstore.MergeRequest, res gitsync.MergeResult) {
+	why := mergeConflictWhy(res.Conflicts)
+	m, err := st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeConflict, Base: res.Base, Reason: why})
+	if err != nil {
+		log.Printf("[hub] merge %d: could not record the conflict: %v", m.N, err)
+		return
 	}
-	return why
+	p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
+	merger, err := p.mergeLaunchMerger(ctx, m, res)
+	if err != nil {
+		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeConflict, To: hubstore.MergeRefused,
+			Reason: cutReason(why + ", and no merger could start: " + err.Error() + ". merge claude/main into it, push, ask again")})
+		return
+	}
+	if m, err = st.MergeSetMerger(m.N, merger); err != nil {
+		log.Printf("[hub] merge %d: started %s and could not record it: %v", m.N, merger, err)
+	}
+	p.RecordAudit(m.Room, "merge-merger", fmt.Sprintf("#%d %s by %s", m.N, m.Branch, merger))
+	p.mergeTell(ctx, m)
+}
+
+func cutReason(s string) string {
+	if len(s) > hubstore.MergeReasonMax {
+		return s[:hubstore.MergeReasonMax-4] + " ..."
+	}
+	return s
+}
+
+// MergerBranch is the branch a merger of request n works on and asks to merge.
+func MergerBranch(n int64) string { return "claude/merge-" + strconv.FormatInt(n, 10) }
+
+func (p *Proxy) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest, res gitsync.MergeResult) (string, error) {
+	p.mu.Lock()
+	c := p.ctl
+	p.mu.Unlock()
+	if c == nil {
+		return "", errors.New("the hub has no control server to launch with")
+	}
+	card := p.mergeCardOf(ctx, m.RequesterRoom, m.Requester)
+	if card == nil {
+		return "", fmt.Errorf("the card that asked, %s@%s, cannot be read", m.Requester, m.RequesterRoom)
+	}
+	item := WorkOfTags(card.Tags)
+	if item == "" {
+		return "", fmt.Errorf("the card that asked, %s@%s, is on no backlog item", m.Requester, m.RequesterRoom)
+	}
+	spawnedBy, spawnedByID := card.Wire, card.ID
+	if m.RequesterRoom != m.Room {
+		spawnedBy, spawnedByID = card.Wire+"@"+m.RequesterRoom, tagFor(m.RequesterRoom, card.ID)
+	}
+	in := launchInput{
+		Title: fmt.Sprintf("%s merge #%d %s", item, m.N, m.Branch), Repo: m.Repo, Branch: MergerBranch(m.N),
+		Item: item, Superlean: true, Brief: mergerBrief(m, res), Prompt: "Read BRIEF.md and do what it says.",
+		Why:  fmt.Sprintf("merge request %d did not merge onto claude/main", m.N),
+		Tags: []string{"atrium:merger", "atrium:merge:" + strconv.FormatInt(m.N, 10)},
+	}
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	out, err := c.launchOnRoom(lctx, in, "claude", m.Room, m.RequesterRoom, spawnedBy, spawnedByID, "")
+	if err != nil {
+		return "", err
+	}
+	handle := out.Handle
+	if handle == "" {
+		_, handle = splitTag(out.Card)
+	}
+	return handle + "@" + m.Room, nil
+}
+
+// mergerBrief is the smallest brief that works: the request, the paths and the steps.
+func mergerBrief(m hubstore.MergeRequest, res gitsync.MergeResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Merge conflict, request %d\n\n", m.N)
+	fmt.Fprintf(&b, "The merge queue could not merge %s (at %s) onto claude/main (at %s) of %s. The conflicted paths:\n\n",
+		m.Branch, shortHex(m.SHA), shortHex(res.Base), m.Repo)
+	for _, path := range res.Conflicts {
+		fmt.Fprintf(&b, "- %s\n", path)
+	}
+	nb := MergerBranch(m.N)
+	fmt.Fprintf(&b, "\nYou are on %s, made from claude/main. Do this and nothing else:\n\n", nb)
+	fmt.Fprintf(&b, "1. `git fetch hub %s` then `git merge --no-edit FETCH_HEAD`.\n", m.Branch)
+	b.WriteString("2. Fix each conflict so that what both sides meant still holds. Read both sides' commits when in doubt. " +
+		"Commit the merge.\n")
+	b.WriteString("3. Run `bash scripts/test-touched.sh` and fix what it finds in the merge.\n")
+	fmt.Fprintf(&b, "4. `git push hub %s`, then call atrium_merge with action request, branch %s and of %d.\n", nb, nb, m.N)
+	b.WriteString("5. End with atrium_done naming the sha you pushed.\n\n")
+	fmt.Fprintf(&b, "If you cannot make it work, call atrium_merge with action cancel and n %d, then atrium_blocked with why. "+
+		"Never push claude/main or main.\n", m.N)
+	return b.String()
+}
+
+func mergeConflictWhy(paths []string) string {
+	return cutReason("conflicts in " + strings.Join(paths, ", "))
 }
 
 // mergeAgain queues a testing request again once, and refuses it the second time, so nothing makes the queue spin.
@@ -770,6 +893,9 @@ func mergeLine(m hubstore.MergeRequest) string {
 		}
 		return fmt.Sprintf("red: %s on claude/main failed %s. atrium merge show %d", m.Branch, failed, m.N)
 	case hubstore.MergeConflict:
+		if m.Merger != "" {
+			return fmt.Sprintf("conflict: %s does not merge onto claude/main, %s. %s is merging it (#%d)", m.Branch, m.Reason, m.Merger, m.N)
+		}
 		return fmt.Sprintf("conflict: %s does not merge onto claude/main, %s (#%d)", m.Branch, m.Reason, m.N)
 	default:
 		return fmt.Sprintf("%s: %s, %s (#%d)", m.State, m.Branch, m.Reason, m.N)
