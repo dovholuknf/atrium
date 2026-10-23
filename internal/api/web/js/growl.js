@@ -117,23 +117,13 @@ function growlHas(subject) {
   return !!subject && growlDrawn().some(g => g.subject && sameCard(g.subject, subject));
 }
 
-// A popped-out card's reminders belong to its pop-out, so its switch and mute hold them back and the board does not
-// ring in their place. This is the board's view of that: the card is popped out and its window is quiet, read off
-// the two per-card keys in the same localStorage.
+// A popped-out card's reminders belong to its pop-out, so that window's own switch holds them back and the board does
+// not ring in their place. This is the board's view of that, carried on the pop-out's claim.
 function growlMutedInPopout(g) {
   if (inPopout()) return false;
   const card = growlCard(g);
-  if (!card || !poppedOut(card)) return false;
-  const id = bareId(card);
-  try {
-    return localStorage.getItem(NOTIFY_OFF_CARD_KEY + id) === "1" ||
-      !!JSON.parse(localStorage.getItem(SOUND_CARD_KEY + id) || "{}").muted;
-  } catch (e) { return false; }
+  return !!card && poppedOut(card) && !!soloQuiet.get(card);
 }
-addEventListener("storage", e => {
-  if (!e.key || !(e.key.startsWith(NOTIFY_OFF_CARD_KEY) || e.key.startsWith(SOUND_CARD_KEY))) return;
-  if (growlSet.length) { growlDraw(); growlAttention(); }
-});
 
 // The hub's event. `remind` is an array of ids on a reminder tick, which U2 turns into sound.
 function onGrowlsEvent(e) {
@@ -858,8 +848,8 @@ function growlAttention() {
       }
     } catch (e) {}
   }
-  // A pop-out whose own switch is off keeps its title still.
-  if (n && !document.hasFocus() && !(inPopout() && popoutIsOff())) {
+  // A window whose own switch is off keeps its title still.
+  if (n && !document.hasFocus() && !windowMuted()) {
     if (!growlTick) { growlTick = setInterval(growlTitleStep, 1500); growlTitleStep(); }
   } else {
     growlStopTitle();

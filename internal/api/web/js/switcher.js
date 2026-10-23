@@ -412,7 +412,7 @@ async function soloSwitch(id) {
   window.name = "atrium-term-" + bareId(id);
   if (soloBus) {
     soloBus.postMessage({ type: "solo-release", task: was });
-    soloBus.postMessage({ type: "solo-claim", task: id });
+    soloClaim(id);
   }
   paintSoloTitle();
   openTerm(task);

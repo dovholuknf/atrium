@@ -63,7 +63,10 @@
   .tlrow .tlresolved { color: var(--dim); font-style: italic; }
   .tlrow.pinned { position: sticky; top: 0; z-index: 1; background: var(--lift); }
   .tlrow.pinned.blocker { background-image: linear-gradient(rgba(var(--danger-rgb),.14), rgba(var(--danger-rgb),.14)); }
-  #toastlog-open.blocked-now { color: var(--danger); }
+  :is(#toastlog-open, #t-bell).blocked-now { color: var(--danger); }
+  #t-bell { display: none; }
+  body.solo #t-bell { display: inline-flex; }
+  #toastlog-window[aria-pressed="true"] { color: var(--warn, #e0a53a); }
   .tlrow.fresh { box-shadow: inset 6px 0 0 var(--teal); }
   .tlwhen {
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
@@ -107,9 +110,9 @@
   @media (hover: none) { .tlrow .tlcopy { opacity: .65; } }
   /* The bell only carries a number when there is one to carry. A zero is a control reporting that it has
      nothing to report. */
-  #toastlog-open { position: relative; }
-  #toastlog-open .count:empty { display: none; }
-  #toastlog-open .count {
+  #toastlog-open, #t-bell { position: relative; }
+  :is(#toastlog-open, #t-bell) .count:empty { display: none; }
+  :is(#toastlog-open, #t-bell) .count {
     position: absolute; top: -2px; right: -2px;
     min-width: 14px; padding: 0 3px; border-radius: 7px;
     background: var(--teal); color: var(--bg-2);

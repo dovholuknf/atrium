@@ -188,7 +188,7 @@ already written. Ambiguous ones are in Open question 4.
 | `backlog` | no unit today. The backlog page has `js/backlog.js` and only `bootClean` covers it. A gap |
 | `pulls` | `pulls`, `pullsAbsent`, `pullsDrawer`, `pullsPanelStage`, `prMove` |
 | `hubrepos` | `hubRepos`, `hubReposFeed`, `hubReposLedger`, `hubReposShelf`, `hubReposTimelineDots` |
-| `growls` | `growl*`, `askAgain`, `alertKinds`, `questionsClick`, `quietDoer`, `popoutNotify`, `notify*`, `sayEnter`, `sayWhen`, `toast*`, `heldLine`, `heldLink`, `blockerMark`, `stuck`, `autoPerm`, `gauto`, `soundPhone` |
+| `growls` | `growl*`, `askAgain`, `alertKinds`, `questionsClick`, `quietDoer`, `popoutBell`, `windowMute`, `notify*`, `sayEnter`, `sayWhen`, `toast*`, `heldLine`, `heldLink`, `blockerMark`, `stuck`, `autoPerm`, `gauto`, `soundPhone` |
 | `usage` | `usage*`, `boardUsage`, `burnChart`, `burnReadout`, `cacheChip`, `contextCycle`, `contextSize`, `ctx*`, `turnLimits`, `clock` |
 | `docs-files` | `boardDocs`, `boardFiles`, `docsPage`, `fileView`, `fileOpenOutside`, `land`, `landThePlane`, `changeReq`, `coverPoll`, `coverSteps` |
 | `rooms` | `atriumDown`, `hubGate`, `rooms*`, `pollsGone`, `recogniserRepo`, `transportChips`, `zitiLogo` |

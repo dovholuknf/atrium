@@ -205,7 +205,9 @@ if (soloBus) {
       // whoever raised it. Not logged either.
       if (m.ready && termWatching(m.taskFor)) return;
       logKind = m.kind || "";
-      try { toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null); } finally { logKind = ""; }
+      // A muted window you are looking at never shows one: it is listed in the tray, and the raiser says nothing more.
+      const show = notifyHeld(m.goTo || "") ? recordToLog : toast;
+      try { show(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null); } finally { logKind = ""; }
       return;
     }
     // A POPPED-OUT WINDOW WAS ASKED TO GO SOMEWHERE ONLY THE BOARD CAN: an
@@ -235,7 +237,7 @@ if (soloBus) {
       // the holder is still there, which is the one question that answer is
       // asked to settle.
       if (m.type === "solo-who" && soloID && !soloYielded) {
-        soloBus.postMessage({ type: "solo-claim", task: soloID });
+        soloClaim(soloID);
       }
       if (m.task && !sameCard(m.task, soloID)) {
         if (m.type === "solo-claim") soloHeld.set(m.task, Date.now());
@@ -277,6 +279,7 @@ if (soloBus) {
     }
     if (m.type === "solo-claim" && m.task) {
       soloHeld.set(m.task, Date.now());
+      soloQuiet.set(m.task, !!m.quiet);
       if (typeof growlDraw === "function") growlDraw();
       // AND THE BOARD LETS GO OF IT.
       //
@@ -300,6 +303,7 @@ if (soloBus) {
     }
     if (m.type === "solo-release" && m.task) {
       soloHeld.delete(m.task);
+      soloQuiet.delete(m.task);
       // The HANDLE goes too, or the other half of `poppedOut` keeps saying yes.
       // A window that switched to another card is still open and still ours,
       // so the handle outlives the claim, and the board would go on refusing to
@@ -398,13 +402,7 @@ function notifyIsOff() {
   try { return localStorage.getItem(NOTIFY_OFF_KEY) === "1"; } catch (e) { return false; }
 }
 
-// A POPPED-OUT WINDOW HAS ITS OWN SWITCHES, keyed by the card it shows. The board
-// never reads these, so a toggle in a pop-out cannot change the board. Keyed by
-// card rather than window so closing and reopening the pop-out keeps the choice.
-// `termOnly` lives in solo.js, which loads after this file, so the hash and the
-// path are read here directly.
-const NOTIFY_OFF_CARD_KEY = "atrium.notify.off.card:";
-const SOUND_CARD_KEY = "atrium.sound.card:";
+// `termOnly` lives in solo.js, which loads after this file, so the hash and the path are read here directly.
 function inPopout() { return /^#term=/.test(location.hash) || cardUrlIsCard(); }
 // The bare id of this pop-out's card, read off the hash each time because the
 // switcher rewrites it when the window moves to another card.
@@ -413,40 +411,44 @@ function popoutCard() {
   if (!/^#term=/.test(location.hash)) return soloID ? bareId(soloID) : "";
   try { return bareId(decodeURIComponent(location.hash.slice("#term=".length))); } catch (e) { return ""; }
 }
-function popoutIsOff() {
-  const id = popoutCard();
-  if (!id) return false;
-  try { return localStorage.getItem(NOTIFY_OFF_CARD_KEY + id) === "1"; } catch (e) { return false; }
-}
-function popoutSoundMuted() {
-  const id = popoutCard();
-  if (!id) return false;
-  try { return !!JSON.parse(localStorage.getItem(SOUND_CARD_KEY + id) || "{}").muted; } catch (e) { return false; }
-}
 
-// THE ONE ANSWER to "is this window silent", for everything that alerts. The
-// board is silent when the board-wide switch is off. A pop-out is silent when
-// that OR its own card's switch is off, and says which in the drawer.
-function windowIsOff() { return notifyIsOff() || popoutIsOff(); }
-
-function setNotifyOff(off) {
-  // In a pop-out the toggle writes the card's key and never the board's.
-  const key = inPopout() ? (popoutCard() ? NOTIFY_OFF_CARD_KEY + popoutCard() : "") : NOTIFY_OFF_KEY;
+// THIS WINDOW'S OWN SWITCH, beside the board-wide one. In sessionStorage, so no other window reads it and a reload
+// keeps it. The value names the kind of window that set it, because a window opened by `window.open` starts with a
+// copy of its opener's sessionStorage, and a board muted for itself must not hand that to every pop-out it opens.
+const WINDOW_OFF_KEY = "atrium.notify.off.window";
+function windowKind() { return inPopout() ? "popout" : "board"; }
+function windowMuted() {
+  try { return sessionStorage.getItem(WINDOW_OFF_KEY) === windowKind(); } catch (e) { return false; }
+}
+function setWindowOff(off) {
   try {
-    if (key) {
-      if (off) localStorage.setItem(key, "1");
-      else localStorage.removeItem(key);
-    }
+    if (off) sessionStorage.setItem(WINDOW_OFF_KEY, windowKind());
+    else sessionStorage.removeItem(WINDOW_OFF_KEY);
+  } catch (e) {}
+  paintNotifyOff();
+  // The board's growler for this card says it is muted in its window, and it learns that from the claim.
+  if (inPopout() && soloID && !soloYielded) soloClaim(soloID);
+}
+function windowToggle() { setWindowOff(!windowMuted()); }
+
+// A pop-out's claim on its card, carrying whether the window is muted. The board keeps that beside the claim.
+function soloClaim(task) {
+  if (soloBus) soloBus.postMessage({ type: "solo-claim", task, quiet: windowMuted() });
+}
+const soloQuiet = new BareIdMap();
+
+// THE ONE ANSWER to "is this window silent", for everything that alerts: the board-wide switch or this window's own.
+function windowIsOff() { return notifyIsOff() || windowMuted(); }
+
+// The board-wide switch, the same from every window.
+function setNotifyOff(off) {
+  try {
+    if (off) localStorage.setItem(NOTIFY_OFF_KEY, "1");
+    else localStorage.removeItem(NOTIFY_OFF_KEY);
   } catch (e) {}
   paintNotifyOff();
 }
-
-// What the drawer's toggle does: a pop-out cannot flip the board-wide switch, so
-// with that one off the toggle is inert and says where to change it.
-function notifyToggle() {
-  if (inPopout() && notifyIsOff()) return;
-  setNotifyOff(!windowIsOff());
-}
+function notifyToggle() { setNotifyOff(!notifyIsOff()); }
 
 // Whether this alert is held back. A permission request is held too while the
 // constant above says so. `goTo` is how `notify` tells one apart.
@@ -456,54 +458,55 @@ function notifyHeld(goTo) {
   return true;
 }
 
-// The bell, the drawer's toggle and the gear's checkbox, all repainted from the
-// one stored answer. The tip and the aria-label are the same text.
+// The bells, the drawer's two switches and the gear's checkbox, all repainted from the stored answers. The tip and
+// the aria-label are the same text.
 function paintNotifyOff() {
   const boardOff = notifyIsOff();
-  const off = windowIsOff();
-  const popout = inPopout();
-  const bell = document.getElementById("toastlog-open");
-  if (bell) {
+  const mine = windowMuted();
+  const off = boardOff || mine;
+  const tip = (off ? "notifications are off" + (boardOff ? "" : " in this window") + ". click to see what arrived"
+    : "what the board has told you") + (typeof phoneBellAutoNote === "function" ? phoneBellAutoNote() : "");
+  ["toastlog-open", "t-bell"].forEach(id => {
+    const bell = document.getElementById(id);
+    if (!bell) return;
     const g = bell.querySelector(".glyph");
     if (g) g.textContent = off ? "\u{1F515}" : "\u{1F514}";
-    const tip = (off ? "notifications are off. click to see what arrived" : "what the board has told you") +
-      (typeof phoneBellAutoNote === "function" ? phoneBellAutoNote() : "");
     bell.dataset.tip = tip;
     bell.setAttribute("aria-label", tip);
     bell.classList.toggle("off", off);
-    if (typeof phoneBellPaint === "function") phoneBellPaint();
-  }
+  });
+  if (typeof phoneBellPaint === "function") phoneBellPaint();
   const t = document.getElementById("toastlog-toggle");
   if (t) {
-    t.textContent = off ? "turn on" : "turn off";
-    let tip = off
-      ? "notifications are off. turn them back on"
-      : "hold back toasts, desktop notifications and sound. what arrives is still listed here" +
+    t.textContent = boardOff ? "turn on" : "turn off";
+    const tt = boardOff
+      ? "notifications are off in every window. turn them back on"
+      : "hold back toasts, desktop notifications and sound in every window. what arrives is still listed here" +
         (NOTIFY_OFF_SILENCES_PERMISSIONS ? "" : ". permission requests still come through");
-    if (popout) {
-      t.textContent = boardOff ? "off for the board" : off ? "turn on" : "turn off";
-      t.disabled = boardOff;
-      tip = boardOff
-        ? "off for the whole board, change it on the board"
-        : off
-          ? "off for this window. turn it back on"
-          : "hold back this window's toasts, desktop notifications and sound. the board keeps its own settings";
-    }
-    t.dataset.tip = tip;
-    t.setAttribute("aria-label", tip);
+    t.dataset.tip = tt;
+    t.setAttribute("aria-label", tt);
+  }
+  const w = document.getElementById("toastlog-window");
+  if (w) {
+    w.textContent = mine ? "unmute this window" : "mute this window";
+    const wt = mine
+      ? "this window holds back its toasts, desktop notifications and sound. turn them back on here"
+      : "hold back toasts, desktop notifications and sound in this window only. every other window keeps its own";
+    w.dataset.tip = wt;
+    w.setAttribute("aria-label", wt);
+    w.setAttribute("aria-pressed", String(mine));
   }
   const scope = document.getElementById("toastlog-scope");
   if (scope) {
-    scope.hidden = !popout || !off;
-    scope.textContent = boardOff ? "off for the whole board, change it on the board" : "off for this window";
+    scope.hidden = !off;
+    scope.textContent = boardOff ? "off in every window" : "off in this window";
   }
   const c = document.getElementById("s-notifyoff");
   if (c) c.checked = boardOff;
 }
-// Another window of this browser flipped it. A pop-out hears the board's switch
-// and its own card's, and the board hears only its own.
+// Another window of this browser flipped the board-wide switch.
 window.addEventListener("storage", e => {
-  if (e.key === NOTIFY_OFF_KEY || (e.key && e.key.startsWith(NOTIFY_OFF_CARD_KEY))) paintNotifyOff();
+  if (e.key === NOTIFY_OFF_KEY || e.key === null) paintNotifyOff();
 });
 addEventListener("DOMContentLoaded", paintNotifyOff);
 
@@ -572,25 +575,20 @@ const alerting = (() => {
     return goTo === "perms" ? "permission" : goTo === "pulls" ? "pulls" : "system";
   }
 
-  // A pop-out mutes its own card and leaves the board's sound alone.
-  const muted = () => inPopout() ? popoutSoundMuted() : !!prefs.muted;
+  // Every window's. A window silences itself, sound included, with its own switch in the tray.
+  const muted = () => !!prefs.muted;
 
   const btn = document.getElementById("sound");
   const paint = () => {
     btn.classList.toggle("muted", muted());
     btn.innerHTML = muted() ? "&#128263;" : "&#9835;";
-    btn.dataset.tip = inPopout()
-      ? (muted() ? "muted for this window. click for sound" : "sound on. click to mute this window")
-      : (muted() ? "muted. click for sound" : "sound on. click to mute");
+    btn.dataset.tip = muted() ? "muted. click for sound" : "sound on. click to mute";
     btn.setAttribute("aria-label", btn.dataset.tip);
     // The same switch from the bell's drawer, which is where a phone reaches it with the header folded away.
     const dt = document.getElementById("toastlog-sound");
     if (dt) dt.textContent = muted() ? "sound off" : "sound on";
   };
   paint();
-  window.addEventListener("storage", e => {
-    if (e.key && e.key.startsWith(SOUND_CARD_KEY)) { paint(); paintAudioState(); }
-  });
   // The board's own sound prefs: mute, volume, the two sounds, expiry, debounce, stuck, quiet doers. `prefs` is read
   // once at load and by reference, so it is refilled in place rather than replaced.
   prefLive("atrium.sound", () => {
@@ -842,16 +840,8 @@ const alerting = (() => {
   }
 
   btn.onclick = () => {
-    if (inPopout()) {
-      const id = popoutCard();
-      if (id) {
-        try { localStorage.setItem(SOUND_CARD_KEY + id, JSON.stringify({ muted: !popoutSoundMuted() })); } catch (e) {}
-      }
-      paint();
-    } else {
-      prefs.muted = !prefs.muted;
-      save();
-    }
+    prefs.muted = !prefs.muted;
+    save();
     if (!muted()) {
       unlock();
       play("waiting");

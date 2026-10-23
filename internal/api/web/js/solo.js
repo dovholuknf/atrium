@@ -579,7 +579,7 @@ async function bootTerminalOnly() {
   // poll, which is nearly three times as long. The margin that stopped the two
   // chimes is still there.
   if (soloBus) {
-    soloBus.postMessage({ type: "solo-claim", task: soloID });
+    soloClaim(soloID);
     // `pagehide` rather than `unload`, which a browser is free to skip when it
     // freezes a page into the back/forward cache. A claim that is never
     // released would leave the board permanently silent about this card.
@@ -650,7 +650,7 @@ function paintSoloTitle() {
 const soloBeatMs = 5000;
 function soloClaimBeat() {
   if (soloBus && soloID && !soloYielded) {
-    soloBus.postMessage({ type: "solo-claim", task: soloID });
+    soloClaim(soloID);
   }
 }
 

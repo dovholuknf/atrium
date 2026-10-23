@@ -488,6 +488,9 @@ Exports honor whatever filter is applied.">?</span>
                A button for it was a decision offered where there was none.
                The cog is LAST because it is the only control here that opens
                something rather than doing something. -->
+          <!-- A popped-out window only (css/notify.css): its header is hidden, so the bell comes here. The same tray. -->
+          <button type="button" id="t-bell" class="icon" onclick="openToastLog()"
+            aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span></button>
           <button id="t-cog" class="icon" onclick="termSettings(event)"
             aria-label="how this terminal looks and behaves" data-tip="how this terminal looks and behaves">&#9881;</button>
         </div>
@@ -1302,6 +1305,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <span id="toastlog-scope" class="hintline" hidden></span>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
+    <button id="toastlog-window" onclick="windowToggle()" aria-pressed="false">mute this window</button>
     <button id="toastlog-sound" onclick="document.getElementById('sound').click()">sound on</button>
     <button id="toastlog-phone" onclick="try { sessionStorage.removeItem('atrium.m.desktop'); } catch (e) {} location.replace('/m/')">phone view</button>
     <button onclick="clearToastLog()">clear</button>

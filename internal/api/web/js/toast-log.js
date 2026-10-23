@@ -125,13 +125,17 @@ function paintToastLogBadge() {
   const list = toastLog();
   const seen = toastLogSeen();
   const unseen = list.filter(t => t.at > seen).length;
-  const btn = document.getElementById("toastlog-open");
-  if (!btn) return;
-  btn.classList.toggle("has", unseen > 0);
-  // Red for as long as a card is blocked, whether or not the log was opened.
-  btn.classList.toggle("blocked-now", (typeof lastTasks === "undefined" ? [] : lastTasks).some(isBlocker));
-  const n = btn.querySelector(".count");
-  if (n) n.textContent = unseen > 99 ? "99+" : (unseen || "");
+  const blocked = (typeof lastTasks === "undefined" ? [] : lastTasks).some(isBlocker);
+  // The header's bell, and the one a popped-out window carries on its terminal bar.
+  ["toastlog-open", "t-bell"].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.classList.toggle("has", unseen > 0);
+    // Red for as long as a card is blocked, whether or not the log was opened.
+    btn.classList.toggle("blocked-now", blocked);
+    const n = btn.querySelector(".count");
+    if (n) n.textContent = unseen > 99 ? "99+" : (unseen || "");
+  });
   if (typeof phoneBellPaint === "function") phoneBellPaint();
 }
 

@@ -41,3 +41,7 @@ you cannot get any other way.
 
 The bell keeps the last 200 things the board told you, newest first, with repeats folded and a copy icon on each
 row. A toast is gone in seconds, and the bell is where you find it again. **clear** empties it.
+
+**turn off** holds back toasts, desktop notifications and sound in every window, and what arrives is still listed.
+**mute this window** does the same for the window you are in and no other, and a reload keeps it. A popped-out
+terminal has its own bell on the terminal bar, opening the same tray.
