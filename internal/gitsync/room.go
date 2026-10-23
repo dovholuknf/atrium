@@ -35,6 +35,8 @@ type RoomHandler struct {
 	// named on the room. They are served beside claude/*, and read again on every request, so a card that ends
 	// stops being served at once. Nil serves claude/* alone.
 	Live func(name string) []string
+	// Merge runs the merge queue's tests on this room. Nil answers 404 for its routes.
+	Merge *MergeRunner
 }
 
 // Handler builds the mux.
@@ -42,6 +44,9 @@ func (h *RoomHandler) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/git/sync", h.sync)
 	mux.HandleFunc("GET /v1/git/status", h.status)
+	if h.Merge != nil {
+		h.Merge.mount(mux)
+	}
 	mux.Handle("/v1/git/", &Backend{
 		Prefix: "/v1/git",
 		Resolve: func(name string) (string, bool) {

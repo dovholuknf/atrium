@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/forge"
@@ -520,6 +522,17 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 		}
 		return room.GitTransport(), nil
 	}, Live: func(name string) []string { return liveBranches(d, name) }}
+	gh.Merge = &gitsync.MergeRunner{Root: sy.Root, Dir: filepath.Join(cardroot.StateDir(), "merge"), Hub: gh.Hub,
+		Report: func(ctx context.Context, rep gitsync.MergeReport) error {
+			body, err := json.Marshal(rep)
+			if err != nil {
+				return err
+			}
+			if code, _, msg := d.HubCall(ctx, http.MethodPost, "/_hub/merge/report", body); code != http.StatusOK {
+				return fmt.Errorf("%d: %s", code, msg)
+			}
+			return nil
+		}}
 	git, board := gh.Handler(), d.BoardHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/git/") {

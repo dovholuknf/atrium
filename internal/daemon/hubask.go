@@ -71,3 +71,8 @@ func (d *Daemon) hubCall(ctx context.Context, from, method, path string, body js
 	}
 	return http.StatusOK, res.Data, ""
 }
+
+// HubCall asks the hub one of the paths it serves a room, as this room and no card. See hubCall.
+func (d *Daemon) HubCall(ctx context.Context, method, path string, body json.RawMessage) (int, json.RawMessage, string) {
+	return d.hubCall(ctx, "", method, path, body)
+}
