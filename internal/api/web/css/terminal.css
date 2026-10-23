@@ -805,6 +805,13 @@
   .tl-limit { display: flex; align-items: center; gap: var(--sp-4); padding: 3px 12px; font-size: var(--fs-sm); }
   .tl-limit-text { flex: 1; min-width: 0; color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tl-limit-dismiss { flex: 0 0 auto; padding: 0 8px; min-height: 0; line-height: 1.5; font-size: var(--fs-sm); }
+  /* The merge queue: what wants a person, then one line of the queue. See js/merge.js. */
+  .term-merge { flex: 0 0 auto; border-bottom: 1px solid var(--stroke); }
+  .mq-row { display: flex; align-items: center; gap: var(--sp-4); padding: 3px 12px; font-size: var(--fs-sm); }
+  .mq-row.mq-red, .mq-row.mq-refused, .mq-row.mq-conflict, .mq-row.mq-held { background: rgba(var(--danger-rgb),.08); }
+  .mq-text { flex: 1; min-width: 0; color: var(--head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mq-row.mq-sum .mq-text { color: var(--dim); }
+  .mq-row button { flex: 0 0 auto; padding: 0 8px; min-height: 0; line-height: 1.5; font-size: var(--fs-sm); }
   .term-perm .who { flex: 1; min-width: 240px; }
   .term-perm b { display: block; color: var(--warn); font-size: var(--fs-base); }
   .term-perm code {

@@ -1995,6 +1995,9 @@ function connect() {
   es.addEventListener("backlog", () => {
     if (typeof onBacklogEvent === "function") onBacklogEvent();
   });
+  es.addEventListener("merge", () => {
+    if (typeof onMergeEvent === "function") onMergeEvent();
+  });
   es.addEventListener("item", () => {
     if (typeof onItemEvent === "function") onItemEvent();
   });

@@ -1363,6 +1363,7 @@ async function applyHubRooms(rooms, inv) {
   // The pulls rows offer `move` only while more than one room is attached.
   if (typeof pullsPaint === "function") pullsPaint();
   if (typeof paintBacklogTab === "function") paintBacklogTab();
+  if (typeof loadMerge === "function") loadMerge();
   if (typeof paintItemsTab === "function") paintItemsTab();
   // The chip repainted above; the OPEN dropdown has to as well, or a room that
   // just attached keeps reading "disconnected" in a menu the user left open.

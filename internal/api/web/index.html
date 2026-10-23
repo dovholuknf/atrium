@@ -405,6 +405,8 @@ Exports honor whatever filter is applied.">?</span>
     <div id="fd-terms"></div>
     <!-- Atrium text that caused more turns than its daily limit. See js/turn-limits.js. -->
     <div class="term-limits" id="term-limits" hidden></div>
+    <!-- The merge queue: what wants a person, and a link to the queue. Hub only. See js/merge.js. -->
+    <div class="term-merge" id="term-merge" hidden></div>
     <div class="term-layout" id="term-layout">
       <!-- The way back when the list is hidden. Before the list in the DOM so
            hovering it can reveal the list with a sibling selector, which keeps
@@ -1204,6 +1206,23 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button type="button" id="tabsdlg-reset">reset to default</button>
     <div class="grow"></div>
     <button type="button" id="tabsdlg-close" class="go">done</button>
+  </div>
+</dialog>
+
+<!-- The merge queue and its history, newest first. Hub only. See js/merge.js. -->
+<dialog id="mergedlg" class="wide">
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">hub</div><h2>merge queue</h2></div>
+  </div>
+  <div class="dlg-body">
+    <div id="mergedlg-list" class="mergedlg-list"></div>
+    <span class="hintline" id="mergedlg-using"></span>
+  </div>
+  <div class="dlg-foot">
+    <select id="mergedlg-room" aria-label="the room that runs the tests"></select>
+    <button type="button" data-mq="room">set the merge room</button>
+    <div class="grow"></div>
+    <button type="button" data-mq="close" class="go">done</button>
   </div>
 </dialog>
 
@@ -3935,6 +3954,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/turn-limits.js"></script>
+<script src="/js/merge.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>
