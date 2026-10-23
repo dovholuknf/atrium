@@ -24856,7 +24856,7 @@ async function notifyTrayWrapSection(browser, base) {
       const dlg = document.getElementById("toastlog");
       if (!dlg.open) dlg.showModal();
     });
-    await p.waitForFunction(() => getComputedStyle(document.getElementById("toastlog")).transform === "none", null, { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getElementById("toastlog").getAnimations().length === 0, null, { timeout: slow(5000) });
     const m = await p.evaluate(() => {
       const dlg = document.getElementById("toastlog");
       const list = document.getElementById("toastlog-list");
