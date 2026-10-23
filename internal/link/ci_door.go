@@ -69,15 +69,20 @@ func ciRepo(s string) (host, org, repo string, err error) {
 
 // Call is atrium_ci.
 func (d CIDoor) Call(ctx context.Context, req *mcp.CallToolRequest, in ciInput) (*mcp.CallToolResult, forge.HubCI, error) {
-	var out forge.HubCI
-	host, org, repo, err := ciRepo(in.Repo)
-	if err != nil {
-		return nil, out, err
-	}
-	out, err = d.Ask(ctx, req, forge.HubCIAsk{Host: host, Org: org, Repo: repo, Action: strings.TrimSpace(in.Action),
-		Branch: in.Branch, SHA: in.SHA, Limit: in.Limit, RunID: in.RunID, JobID: in.JobID, FailedOnly: in.FailedOnly,
-		Tail: in.Tail, Name: in.Name, File: in.File})
+	out, err := d.AskRepo(ctx, req, in.Repo, forge.HubCIAsk{Action: in.Action, Branch: in.Branch, SHA: in.SHA,
+		Limit: in.Limit, RunID: in.RunID, JobID: in.JobID, FailedOnly: in.FailedOnly, Tail: in.Tail, Name: in.Name,
+		File: in.File})
 	return nil, out, err
+}
+
+// AskRepo is one CI question about `repo`, said as atrium_ci takes it. `atrium ci` asks through it too.
+func (d CIDoor) AskRepo(ctx context.Context, req *mcp.CallToolRequest, repo string, a forge.HubCIAsk) (forge.HubCI, error) {
+	host, org, name, err := ciRepo(repo)
+	if err != nil {
+		return forge.HubCI{}, err
+	}
+	a.Host, a.Org, a.Repo, a.Action = host, org, name, strings.TrimSpace(a.Action)
+	return d.Ask(ctx, req, a)
 }
 
 // ciHandler is the hub's: the question goes to the hub's own forge route on the board.

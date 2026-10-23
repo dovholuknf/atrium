@@ -135,7 +135,8 @@ The main ones. `atrium --help` lists the rest.
 | `atrium room` | A room: the agents on this machine, attached to the hub it joined. `atrium room join <string>` joins one. |
 | `atrium rooms` | The hub's side of rooms: add one and print its join string, mint a fresh token, the git mirror. |
 | `atrium daemon` | The older single process: board, JSON API, SSE stream and agent listener, no hub. |
-| `atrium backlog` | The hub's backlog: list, show, file, status, import. |
+| `atrium backlog` | The hub's backlog: list, show, file, status, priority, import, from any room. |
+| `atrium ci` | A repository's CI, read through the hub as `atrium_ci` is. A log is written to a file and its path printed. |
 | `atrium stop` | Wind a daemon down. NOT the same as killing it: see "Resilience". |
 | `atrium join` / `leave` | Put the current session on the board, or take it off, without restarting it. |
 | `atrium hook --event <e>` | One activity event, posted and forgotten. Registered in `settings.json` by the board. |

@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,12 +19,46 @@ import (
 )
 
 // `atrium backlog` and `atrium reports`: the hub's backlog and director reports from a shell, over /_hub/backlog and
-// /_hub/reports. Reads work from anywhere the hub's board address reaches, writes only from the hub's machine, as the
-// routes say. See internal/link/backlog.go and docs/rnd/reports-channel-design.md.
+// /_hub/reports. A call goes to the hub's board first. Where that board is not here, or refuses a write because this is
+// not its machine, and no --board-addr was named, it is asked again through this room's link (POST /v1/hub/ask), the
+// route atrium_backlog takes. See internal/link/backlog.go and internal/link/hubask.go.
+
+// backlogHubAddr is a var so a test can put a fake hub board where the default would be.
+var backlogHubAddr = defaultBoardAddr
+
+type hubAnswer struct {
+	code int
+	msg  string
+}
+
+func (e *hubAnswer) Error() string { return e.msg }
+
+type hubUnreached struct{ err error }
+
+func (e *hubUnreached) Error() string { return e.err.Error() }
+func (e *hubUnreached) Unwrap() error { return e.err }
 
 // backlogCall is one request to the hub, answering the hub's own sentence on a refusal.
 func backlogCall(board, method, path string, body, out any) error {
-	addr := orDefault(board, defaultBoardAddr())
+	err := backlogDirect(orDefault(board, backlogHubAddr()), method, path, body, out)
+	var ha *hubAnswer
+	var un *hubUnreached
+	if board != "" || !(errors.As(err, &un) || errors.As(err, &ha) && ha.code == http.StatusForbidden) {
+		return err
+	}
+	by, _ := backlogFiler()
+	rerr := askFor(context.Background(), hubAskWait, http.MethodPost, "/v1/hub/ask",
+		map[string]any{"from": by, "method": method, "path": path, "body": body}, out)
+	if rerr == nil {
+		return nil
+	}
+	if olderRoom(rerr) {
+		rerr = errors.New("this room predates asking the hub's backlog for a shell. update the room")
+	}
+	return fmt.Errorf("%v, and this room could not ask the hub either: %v", err, rerr)
+}
+
+func backlogDirect(addr, method, path string, body, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		raw, _ := json.Marshal(body)
@@ -35,7 +71,7 @@ func backlogCall(board, method, path string, body, out any) error {
 	req.Header.Set("Content-Type", "application/json")
 	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		return fmt.Errorf("the hub is not answering at %s (is it running?): %w", addr, err)
+		return &hubUnreached{fmt.Errorf("the hub is not answering at %s (is it running?): %w", addr, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
@@ -49,7 +85,7 @@ func backlogCall(board, method, path string, body, out any) error {
 		case e.Error == "":
 			e.Error = res.Status
 		}
-		return fmt.Errorf("%s", e.Error)
+		return &hubAnswer{code: res.StatusCode, msg: e.Error}
 	}
 	return json.NewDecoder(res.Body).Decode(out)
 }
@@ -78,8 +114,8 @@ func backlogCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "backlog",
 		Short: "The hub's backlog: list, show, file, status, priority, import",
-		Long: "The backlog items every room reads and writes through the hub. Filing and changing a status work only\n" +
-			"from the machine the hub runs on.",
+		Long: "The backlog items every room reads and writes through the hub. On the hub's machine a call goes to its\n" +
+			"board, and on any other room through that room's link to its hub. --board-addr asks that board only.",
 	}
 	boardFlag(c, &board)
 	c.AddCommand(backlogListCmd(&board), backlogShowCmd(&board), backlogFileCmd(&board), backlogStatusCmd(&board),
@@ -237,8 +273,8 @@ func reportsCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "reports",
 		Short: "Director reports on the hub: list, read, add",
-		Long: "Reports a director left for another director or the orchestrator, readable from every room. Adding and\n" +
-			"marking one read work only from the machine the hub runs on.",
+		Long: "Reports a director left for another director or the orchestrator, read and written from every room, through\n" +
+			"the room's link to its hub when the hub runs elsewhere.",
 	}
 	boardFlag(c, &board)
 	c.AddCommand(reportsListCmd(&board), reportsReadCmd(&board), reportsAddCmd(&board))

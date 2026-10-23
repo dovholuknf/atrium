@@ -64,7 +64,7 @@ func newPeers() *cobra.Command {
 }
 
 func newTell() *cobra.Command {
-	var name, hubURL, when string
+	var name, hubURL, when, kind string
 	var wake bool
 	c := &cobra.Command{
 		Use:   "tell <handle or @alias> <message>",
@@ -76,7 +76,7 @@ func newTell() *cobra.Command {
 			"long tool call delays it. Otherwise it is queued until the line clears. This is not a " +
 			"conversation and there is no reply to wait for.\n\n" +
 			"`--when done` waits for that session's turn to end instead, for something that " +
-			"should not disturb it mid-thought.\n\n" +
+			"should not disturb it mid-thought. `--kind fyi` is news that asks for no answer.\n\n" +
 			"The message is labeled with who sent it, and the receiving session is told it " +
 			"came from a peer rather than from the human. Run `atrium peers` first if you do " +
 			"not know the handle. A card's alias, `sa89` or `@dotfiles`, works in its place.",
@@ -87,13 +87,15 @@ func newTell() *cobra.Command {
 			if strings.TrimSpace(text) == "" {
 				text = pipedRecap()
 			}
-			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text, when, wake)
+			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text, when, kind, wake)
 		}),
 	}
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
 	c.Flags().StringVar(&when, "when", "",
 		"immediate (the default): typed as soon as the line is empty, or carried by a hook mid-turn. done: wait for the turn to end")
+	c.Flags().StringVar(&kind, "kind", "",
+		"needs (the default): wants an answer or an action. fyi: news, which a session holding its notices reads at the end of its turn")
 	c.Flags().BoolVar(&wake, "wake", false,
 		"resume the target if it is parked (idle, no process) and deliver this. a cold start, so use it on purpose")
 	return c
@@ -354,7 +356,7 @@ type peerAnswer struct {
 // `verb` is what the caller was trying to do, so a handle that does not
 // resolve offers the list under the right heading rather than under a generic
 // one.
-func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string, wake bool) (*peerAnswer, error) {
+func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when, kind string, wake bool) (*peerAnswer, error) {
 	from := whoAmI(name)
 	if from == "" {
 		return nil, fmt.Errorf("could not work out which session this is. pass --name")
@@ -366,6 +368,13 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string,
 	fields := map[string]any{"from": from, "to": to, "text": text}
 	if when != "" {
 		fields["when"] = when
+	}
+	switch k := strings.ToLower(strings.TrimSpace(kind)); k {
+	case "":
+	case "fyi", "needs":
+		fields["kind"] = k
+	default:
+		return nil, fmt.Errorf("--kind is fyi or needs, not %q", kind)
 	}
 	if wake {
 		fields["wake"] = true
@@ -406,8 +415,8 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string,
 	return &answer, nil
 }
 
-func tellPeer(out io.Writer, hubURL, name, to, text, when string, wake bool) error {
-	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell", when, wake)
+func tellPeer(out io.Writer, hubURL, name, to, text, when, kind string, wake bool) error {
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell", when, kind, wake)
 	if err != nil {
 		return err
 	}
@@ -424,7 +433,7 @@ func tellPeer(out io.Writer, hubURL, name, to, text, when string, wake bool) err
 }
 
 func answerPeer(out io.Writer, hubURL, name, to, text string) error {
-	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer", "", false)
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer", "", "", false)
 	if err != nil {
 		return err
 	}

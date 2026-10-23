@@ -56,7 +56,7 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium ask [question]` | Stuck, and what would unstick it. `--continue` means still working. `--peer` asks a session. |
 | `atrium answer <handle> <answer>` | Reply to a peer's question, which also takes it off that card. |
 | `atrium peers` | The other sessions this one can address. |
-| `atrium tell <handle> <message>` | Say something to another session. Queued, never typed into a busy line. |
+| `atrium tell <handle> <message>` | Say something to another session. Queued, never typed into a busy line. `--kind fyi` is news that asks for no answer. |
 | `atrium ready` | The handoff is written, so atrium can clear this session's context. Asked for by the limit prompt. |
 
 ## atrium: hub and rooms
@@ -82,8 +82,9 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium rooms git` | Move code between the hub and its rooms: sync, collect, and which repositories. |
 | `atrium rooms legacy` | Whether a ziti or zrok room without a certificate may still attach. |
 | `atrium room get` / `set` | Read or set a room setting, such as `git_root`, in a stopped room's database. |
-| `atrium backlog` | The hub's backlog: `list`, `show`, `file`, `status`. |
-| `atrium reports` | Reports directors leave for each other on the hub: `list`, `read`, `add`. |
+| `atrium backlog` | The hub's backlog: `list`, `show`, `file`, `status`, `priority`, from any room. |
+| `atrium reports` | Reports directors leave for each other on the hub: `list`, `read`, `add`, from any room. |
+| `atrium ci` | A repository's CI, read through the hub: `runs`, `run`, `log`, `artifacts`, `artifact`. A log is written to a file and its path printed. |
 | `atrium resources init` | Write a starter `resources.md`, the inventory of machines agents may use. |
 
 `atrium run` flags include `--addr` for the board (loopback, default `127.0.0.1:7778`), `--link` for the room link
