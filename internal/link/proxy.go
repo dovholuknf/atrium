@@ -156,6 +156,8 @@ type Proxy struct {
 	ctl *controlMCP
 	// taskMu serialises the task scheduler. See tasks.go.
 	taskMu sync.Mutex
+	// merges is the merge queue's runner. See merge.go.
+	merges mergeQueue
 	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
 	// /_hub/deploy-ready 404. See deployready.go.
 	ready *deployReadyState
@@ -1705,6 +1707,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {
 		p.serveFlow(w, r, sub)
+		return
+	}
+	if sub == "merge" || strings.HasPrefix(sub, "merge/") {
+		p.serveMerge(w, r, sub)
 		return
 	}
 	if strings.HasPrefix(sub, "rooms/") {

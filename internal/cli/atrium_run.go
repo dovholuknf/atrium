@@ -661,6 +661,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	go proxy.RunGitSteps(ctx)
 	go proxy.RunEfficacy(ctx)
 	go proxy.RunTasks(ctx)
+	go proxy.RunMerges(ctx)
 	// WHAT AN ITEM'S CARDS SPENT, read from each room's usage export. See link/workusage.go.
 	go proxy.RunWorkUsage(ctx)
 	gitHub.Start(ctx, 10*time.Second)

@@ -48,7 +48,7 @@ var (
 
 var mergeMoves = map[string][]string{
 	MergeQueued:   {MergeMerging, MergeRefused, MergeCancelled},
-	MergeMerging:  {MergeTesting, MergeConflict, MergeRefused, MergeQueued},
+	MergeMerging:  {MergeTesting, MergeConflict, MergeLanded, MergeRefused, MergeQueued},
 	MergeTesting:  {MergeLanded, MergeRed, MergeRefused, MergeQueued},
 	MergeConflict: {MergeLanded, MergeRefused},
 }

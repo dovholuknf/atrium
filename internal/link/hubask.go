@@ -16,8 +16,9 @@ import (
 // hub asks its own board here, over loopback, exactly as its own control MCP does. Nothing new listens and the room
 // holds no credential it did not have.
 //
-// ONLY THE TWO ENDPOINTS, and not a general proxy: the path must be /_hub/backlog or /_hub/reports and what hangs off
-// them. `by` and `room` on a write are set here from the link, so a room cannot file an item as another room.
+// ONLY THESE ENDPOINTS, and not a general proxy: the path must be /_hub/backlog, /_hub/reports, /_hub/items or
+// /_hub/merge (less the merge room, which is the operator's) and what hangs off them. `by` and `room` on a write are
+// set here from the link, so a room cannot file an item as another room.
 
 // hubAskPath is whether a relayed path is one the room may ask. /_hub/backlog/follow is the hub's own card-to-item
 // bookkeeping and is left to the control MCP.
@@ -37,7 +38,10 @@ func hubAskPath(p string) bool {
 	if base == hubPublishPath || base == hubSubsPath {
 		return true
 	}
-	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items"} {
+	if base == "/_hub/merge/room" {
+		return false
+	}
+	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items", "/_hub/merge"} {
 		if base == root || strings.HasPrefix(base, root+"/") {
 			return true
 		}
@@ -52,7 +56,7 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays GET and POST only"}
 	}
 	if !hubAskPath(req.Path) {
-		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays the backlog, reports and items endpoints only"}
+		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays the backlog, reports, items and merge endpoints only"}
 	}
 	if base, _, _ := strings.Cut(req.Path, "?"); base == hubPublishPath {
 		return c.publishAsk(ctx, from, method, req)
@@ -71,7 +75,8 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 		// FROM THE LINK, never from the room's word. See above.
 		// `room` is only a field of a new row, and the endpoints refuse a field they do not know.
 		if base, _, _ := strings.Cut(req.Path, "?"); base == "/_hub/backlog" || base == "/_hub/reports" ||
-			base == "/_hub/items/sync" || base == "/_hub/items/tasks/sync" || base == hubSubsPath {
+			base == "/_hub/items/sync" || base == "/_hub/items/tasks/sync" || base == hubSubsPath ||
+			base == "/_hub/merge" || base == "/_hub/merge/report" {
 			m["room"] = from
 		} else if base == "/_hub/items" || (strings.HasPrefix(base, "/_hub/items/") && strings.HasSuffix(base, "/tasks")) {
 			// A submit names the room its POOL is on, which is the caller's to say. `by` is still the link's.
@@ -82,6 +87,9 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 			m["by"] = sender + "@" + from
 		} else {
 			delete(m, "by")
+			if strings.HasPrefix(req.Path, "/_hub/merge") {
+				m["by"] = "@" + from
+			}
 		}
 		body = m
 	}

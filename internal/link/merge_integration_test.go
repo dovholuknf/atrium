@@ -1,0 +1,222 @@
+//go:build integration && git
+
+package link
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/dovholuknf/atrium/internal/hubstore"
+)
+
+type mergeFix struct {
+	*pushFix
+	st  *hubstore.Store
+	url string
+}
+
+func newMergeFix(t *testing.T) *mergeFix {
+	t.Helper()
+	x := &mergeFix{pushFix: newPushFix(t)}
+	x.repo(t, boardRepo)
+	st, err := hubstore.Open(filepath.Join(x.tmp, "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	x.st = st
+	x.p.SetBacklog(st)
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	x.url = srv.URL + "/git/hub/" + boardRepo + ".git"
+	x.push(t, "main:refs/heads/claude/main")
+	return x
+}
+
+func (x *mergeFix) push(t *testing.T, spec string) {
+	t.Helper()
+	if out, err := gitAs(t, x.work, nil, "push", "-q", "-f", x.url, spec); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+// branch commits one file on a new branch off main and pushes it as claude/<name>.
+func (x *mergeFix) branch(t *testing.T, name, file, body string) string {
+	t.Helper()
+	gitRun(t, x.work, "checkout", "-q", "-B", name, "main")
+	sha := x.commit(t, file, body)
+	x.push(t, name+":refs/heads/claude/"+name)
+	gitRun(t, x.work, "checkout", "-q", "main")
+	return sha
+}
+
+func (x *mergeFix) ask(t *testing.T, branch, by string) (int, hubstore.MergeRequest) {
+	t.Helper()
+	req := httptest.NewRequest("POST", "http://127.0.0.1:7778/_hub/merge",
+		strings.NewReader(js(map[string]any{"repo": boardRepo, "branch": branch, "by": by})))
+	req.RemoteAddr = loopAddr
+	rec := httptest.NewRecorder()
+	x.p.ServeHTTP(rec, req)
+	var out struct{ Request hubstore.MergeRequest }
+	if rec.Code < 300 {
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rec.Code, out.Request
+}
+
+func (x *mergeFix) send(method, target, body string) (int, string) {
+	req := httptest.NewRequest(method, "http://127.0.0.1:7778"+target, strings.NewReader(body))
+	req.RemoteAddr = loopAddr
+	rec := httptest.NewRecorder()
+	x.p.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
+// testing puts request n where the merge room would have it: merged in the store and handed to sg4.
+func (x *mergeFix) testing(t *testing.T, n int64) hubstore.MergeRequest {
+	t.Helper()
+	m, err := x.st.MergeMove(hubstore.MergeStep{N: n, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := x.g.Store().MergeCandidate(context.Background(), m.Repo, m.Branch, m.SHA, n, "Merge")
+	if err != nil || res.Candidate == "" {
+		t.Fatalf("candidate: %+v %v", res, err)
+	}
+	m, err = x.st.MergeMove(hubstore.MergeStep{N: n, To: hubstore.MergeTesting, Base: res.Base, Candidate: res.Candidate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestMergeQueueAsksCancelsAndRefuses(t *testing.T) {
+	x := newMergeFix(t)
+	if code, _ := x.ask(t, "claude/nope", "w1@sg4"); code != http.StatusBadRequest {
+		t.Fatalf("an unpushed branch: %d", code)
+	}
+	x.branch(t, "foo", "foo.txt", "foo")
+	if code, _ := x.ask(t, "claude/foo", "@sg4"); code != http.StatusBadRequest {
+		t.Fatalf("no card: %d", code)
+	}
+	code, m := x.ask(t, "claude/foo", "w1@SG4")
+	if code != http.StatusCreated || m.State != hubstore.MergeQueued || m.Requester != "w1" || m.RequesterRoom != "sg4" {
+		t.Fatalf("ask: %d %+v", code, m)
+	}
+	if code, again := x.ask(t, "claude/foo", "w1@sg4"); code != http.StatusOK || again.N != m.N {
+		t.Fatalf("asked again: %d %+v", code, again)
+	}
+	x.p.mergeSchedule(context.Background())
+	code, body := x.send("GET", "/_hub/merge?open=1", "")
+	if code != 200 || !strings.Contains(body, "no merge room") || !strings.Contains(body, `"queued"`) {
+		t.Fatalf("held: %d %s", code, body)
+	}
+	cancel := "/_hub/merge/" + strconv.FormatInt(m.N, 10) + "/cancel"
+	if code, _ := x.send("POST", cancel, js(map[string]any{"by": "w2@sg4"})); code != http.StatusForbidden {
+		t.Fatalf("another card cancelled it: %d", code)
+	}
+	if code, body := x.send("POST", cancel, js(map[string]any{"by": "w1@sg4"})); code != 200 || !strings.Contains(body, `"cancelled"`) {
+		t.Fatalf("cancel: %d %s", code, body)
+	}
+	code, body = x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": "claude/foo", "by": "w1@sg4"}))
+	if code != http.StatusCreated {
+		t.Fatalf("asked after a cancel: %d %s", code, body)
+	}
+	req := httptest.NewRequest("POST", "http://127.0.0.1:7778/_hub/merge", strings.NewReader("{}"))
+	req.RemoteAddr = "203.0.113.9:4000"
+	rec := httptest.NewRecorder()
+	x.p.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("from afar: %d", rec.Code)
+	}
+}
+
+func TestMergeQueueLandsAGreenRefusesAWrongRoomAndKeepsARed(t *testing.T) {
+	x := newMergeFix(t)
+	x.branch(t, "foo", "foo.txt", "foo")
+	x.commit(t, "main.txt", "main moves on")
+	x.push(t, "main:refs/heads/claude/main")
+	_, m := x.ask(t, "claude/foo", "w1@sg4")
+	m = x.testing(t, m.N)
+	report := func(room, verdict string, extra map[string]any) (int, string) {
+		body := map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": verdict, "room": room}
+		for k, v := range extra {
+			body[k] = v
+		}
+		return x.send("POST", "/_hub/merge/report", js(body))
+	}
+	if code, _ := report("other", "green", nil); code != http.StatusForbidden {
+		t.Fatalf("another room's verdict: %d", code)
+	}
+	code, body := report("sg4", "green", map[string]any{"output": "ok\n"})
+	if code != 200 || !strings.Contains(body, `"landed"`) {
+		t.Fatalf("green: %d %s", code, body)
+	}
+	if got := x.refOn(t, "refs/heads/claude/main"); got != m.Candidate {
+		t.Fatalf("claude/main is %s, not %s", got, m.Candidate)
+	}
+	if got := x.refOn(t, "refs/heads/claude/foo"); got != "" {
+		t.Fatalf("claude/foo is still there at %s", got)
+	}
+	if got := x.refOn(t, "refs/atrium/merge/"+strconv.FormatInt(m.N, 10)); got != "" {
+		t.Fatalf("the candidate ref is still there")
+	}
+	if code, _ := report("sg4", "green", nil); code != http.StatusConflict {
+		t.Fatalf("a late verdict: %d", code)
+	}
+
+	x.branch(t, "bar", "bar.txt", "bar")
+	_, m = x.ask(t, "claude/bar", "w1@sg4")
+	m = x.testing(t, m.N)
+	code, body = report("sg4", "red", map[string]any{"failing": []string{"TestA"}, "output": "--- FAIL: TestA\n"})
+	if code != 200 || !strings.Contains(body, `"red"`) || !strings.Contains(body, "TestA") {
+		t.Fatalf("red: %d %s", code, body)
+	}
+	if got := x.refOn(t, "refs/heads/claude/bar"); got == "" {
+		t.Fatal("a red branch was deleted")
+	}
+	if got := mergeLine(must(x.st.MergeGet(m.N))); !strings.Contains(got, "failed TestA") {
+		t.Fatalf("told: %s", got)
+	}
+}
+
+func TestMergeQueueConflictAndAMovedMainAreNotLanded(t *testing.T) {
+	x := newMergeFix(t)
+	x.branch(t, "baz", "main.txt", "theirs")
+	x.commit(t, "main.txt", "ours")
+	x.push(t, "main:refs/heads/claude/main")
+	_, m := x.ask(t, "claude/baz", "w1@sg4")
+	x.p.mergeStart(context.Background(), x.st, x.g.Store(), m, "sg4")
+	got := must(x.st.MergeGet(m.N))
+	if got.State != hubstore.MergeConflict || !strings.Contains(got.Reason, "main.txt") {
+		t.Fatalf("conflict: %+v", got)
+	}
+
+	x.branch(t, "qux", "qux.txt", "qux")
+	_, m = x.ask(t, "claude/qux", "w1@sg4")
+	m = x.testing(t, m.N)
+	x.commit(t, "late.txt", "an operator push")
+	x.push(t, "main:refs/heads/claude/main")
+	body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "green", "room": "sg4"})
+	if code, b := x.send("POST", "/_hub/merge/report", body); code != 200 {
+		t.Fatalf("moved main: %d %s", code, b)
+	}
+	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeQueued || got.Retries != 1 {
+		t.Fatalf("queued again: %+v", got)
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}

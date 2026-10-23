@@ -220,6 +220,8 @@ type attached struct {
 	session  string
 	// git is whether this room said, in its hello, that it takes git syncs.
 	git bool
+	// local is a room that attached from the hub's own machine: a loopback address, or the hub's host name.
+	local bool
 	// via is the transport whose listener took the control connection, the hub's
 	// own observation. fallback is the room's word that it is not its first choice.
 	via      string
@@ -465,7 +467,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		name: name, version: hi.Version, host: hi.Host, commit: hi.Commit, session: session,
 		os: hi.OS, arch: hi.Arch, git: hi.Git,
 		since: time.Now(), control: conn,
-		unproven: unprovenOver(conn),
+		unproven: unprovenOver(conn), local: localConn(conn, hi.Host),
 		via:      via, fallback: hi.Fallback,
 		// Room for a burst plus the terminals a board is likely to hold open.
 		idle:     make(chan net.Conn, 64),
@@ -926,6 +928,8 @@ type Attached struct {
 	Proven bool `json:"proven"`
 	// Git is whether the room said it takes git syncs.
 	Git bool `json:"git,omitempty"`
+	// Local is a room on the hub's own machine, which the merge queue tests on when no merge room is set.
+	Local bool `json:"local,omitempty"`
 	// IdleCPU is the idle percent the room last reported on a beat. Nil for a room that does not send one.
 	IdleCPU *float64 `json:"idle_cpu,omitempty"`
 	// Setup is what the hub last read of this room's setup, nil before the first read. Filled by the proxy, never by
@@ -1023,7 +1027,7 @@ func (h *Hub) Rooms() []Attached {
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host, Commit: a.commit,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
-			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, IdleCPU: idle,
+			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git, Local: a.local, IdleCPU: idle,
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 			LoginNeeded: login,
 			Paths:       paths,
