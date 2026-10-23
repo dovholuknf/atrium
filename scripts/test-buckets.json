@@ -73,7 +73,7 @@
       "page": "the card list: groups, lanes, tabs, tooltips, the top nav and the filter drawer",
       "units": [
         "core", "core2", "history", "card*", "carryLink", "child*", "group*", "discreteGroup", "hidden*", "minion*", "boardMinionHidden", "stackMinionHidden", "laneFold",
-        "nest*", "untaggedSort", "stackPinnedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors",
+        "nest*", "untaggedSort", "stackPinnedSort", "newCard", "oneTooltip", "tooltip", "offCardActions", "hostLabelGroup", "repoColors", "workerCardColors",
         "shiftMenu", "borderColourLag", "backForward", "eventDriven", "foldStill", "revealFolds", "revealChip", "topNav", "trayHead", "trayToast", "emptyGroups",
         "termsDrawerPush", "linkBoard", "linkReuse", "arrivedOnce", "controlsCompact", "closeOneDialog"
       ],

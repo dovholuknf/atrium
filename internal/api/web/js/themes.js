@@ -234,13 +234,17 @@ function repoColorName(t) {
 // 5 hops. A child runs wherever its work is, often a scratch folder or a repo nobody coloured, and the hub's map would
 // leave it plain beside its parent. `launcher_id` is the bare id of a card on the same room, so it is paired with the
 // row's room.
+// A WORKER NEVER TAKES A LAUNCHER'S OWN THEME. That theme is how an orchestrator or a director is told apart, and a worker
+// wearing it read as a second orchestrator, but only on the launcher's room, since one on another room finds no launcher.
+// A worker still takes its launcher's repo colour.
 function launcherColor(t, mine) {
   const tasks = typeof lastTasks !== "undefined" ? lastTasks : [];
+  const worker = isSubagent(t);
   for (let at = t, hops = 0; at && at.launcher_id && hops < 5; hops++) {
     const room = roomOf(at.id);
     const up = tasks.find(x => bareId(x.id) === at.launcher_id && roomOf(x.id) === room);
     if (!up) return "";
-    if (themeNamed(up.theme)) return up.theme;
+    if (!worker && themeNamed(up.theme)) return up.theme;
     const key = repoKeyOf(up);
     if (key && mine.repos[key]) return mine.repos[key];
     at = up;

@@ -18884,6 +18884,162 @@ async function repoColorsSection(browser, base) {
   if (!bad) console.log("repoColors ok");
 }
 
+// A worker an orchestrator launched is drawn like every other worker, on the orchestrator's room and on another: the
+// orchestrator's own theme is its alone, and the room shows only through the chip. Then every room hue and the `new`
+// chip, on every card in the list, plain and worn in each theme, under every skin, read at 4.5:1.
+async function workerCardColorsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const tag = "workerCardColors: ";
+  await p.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.cardColors", "1");
+    localStorage.setItem("atrium.termWear.idle", "1");
+  });
+  const was = mock.tasksMode;
+  const row = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, theme: "", supervised: true,
+    pinned: true, status: "running", worktree: "/tmp/wc/" + id.replace("~", "-") }, extra);
+  const worker = ["atrium:subagent", "origin:agent"];
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof TERM_THEMES !== "undefined" && Object.keys(TERM_THEMES).length > 0, null,
+      { timeout: slow(15000) });
+    const themes = await p.evaluate(() => Object.keys(TERM_THEMES));
+    mock.wornTasks = [
+      row("sg4-control~ogorch", { display_title: "ogorch", theme: "nord", tags: ["atrium:orchestrator"] }),
+      row("sg4-control~wk-here", { display_title: "install-services-design", launcher_id: "ogorch", tags: worker }),
+      row("claude-sg4~wk-there", { display_title: "file-menu-html", launcher_id: "ogorch", tags: worker })
+    ].concat(themes.map(n => row("claude-sg4~th-" + n, { display_title: "themed " + n, theme: n })));
+    mock.tasksMode = "worn";
+    await p.click('.tab[data-view="terms"]');
+    await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
+    await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~wk-here"]', { state: "attached", timeout: slow(15000) });
+    if (process.env.WORKER_COLORS_SHOT) {
+      await p.evaluate(() => document.querySelectorAll("#term-list .card.tab").forEach(c => {
+        const chips = c.querySelector(".chips") || c.querySelector(".card-line");
+        const fresh = document.createElement("span");
+        fresh.className = "chip arrived"; fresh.textContent = "new";
+        chips.insertBefore(fresh, chips.firstChild);
+      }));
+      await p.evaluate(() => document.documentElement.setAttribute("data-skin", "paper"));
+      const clip = await p.evaluate(() => {
+        const els = ["sg4-control~ogorch", "sg4-control~wk-here", "claude-sg4~wk-there"]
+          .map(id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]'));
+        els[0].scrollIntoView({ block: "start" });
+        const rs = els.map(el => el.getBoundingClientRect());
+        const x = Math.min(...rs.map(r => r.left)), y = Math.min(...rs.map(r => r.top));
+        return { x, y, width: Math.max(...rs.map(r => r.right)) - x, height: Math.max(...rs.map(r => r.bottom)) - y };
+      });
+      await p.screenshot({ path: process.env.WORKER_COLORS_SHOT, clip });
+      await p.evaluate(() => { document.documentElement.removeAttribute("data-skin"); renderTermList(); });
+    }
+
+    const look = await p.evaluate(() => {
+      const one = id => {
+        const el = document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
+        return el ? { worn: el.classList.contains("worn"), bg: getComputedStyle(el).backgroundColor } : null;
+      };
+      return { orch: one("sg4-control~ogorch"), here: one("sg4-control~wk-here"), there: one("claude-sg4~wk-there"),
+        source: themeSource(lastTasks.find(t => t.id === "sg4-control~wk-here")) };
+    });
+    if (!look.orch || !look.here || !look.there) fail(tag + "a row is missing " + JSON.stringify(look));
+    else {
+      if (!look.orch.worn) fail(tag + "the orchestrator does not wear its own theme");
+      if (look.here.worn || look.source) fail(tag + "a worker on its orchestrator's room wears the orchestrator's theme");
+      if (look.here.bg === look.orch.bg) fail(tag + "a worker is painted like its orchestrator: " + look.here.bg);
+      if (look.here.bg !== look.there.bg) fail(tag + "workers on two rooms are painted apart: " + look.here.bg + " and " + look.there.bg);
+    }
+
+    // A worker still takes its launcher's repo colour, and a card that is no worker still takes the launcher's theme.
+    const inherit = await p.evaluate(() => {
+      const saved = lastTasks, savedColors = repoColors.get();
+      const boss = { id: "a~boss", theme: "nord", worktree: "/Users/me/git/github/openziti/ziti-console/x" };
+      const wk = { id: "a~wk", launcher_id: "boss", tags: ["atrium:subagent"], worktree: "C:/temp/wk" };
+      const doer = { id: "a~doer", launcher_id: "boss", tags: ["origin:agent"], worktree: "C:/temp/doer" };
+      lastTasks = [boss, wk, doer];
+      try {
+        repoColorsHave({ card_colors: { default: "", repos: { "github/openziti/ziti-console": "dracula" } } });
+        return { repo: themeSource(wk) === themeNamed("dracula"), doer: themeSource(doer) === themeNamed("nord") };
+      } finally { lastTasks = saved; repoColorsHave({ card_colors: savedColors }); }
+    });
+    if (!inherit.repo) fail(tag + "a worker lost its launcher's repo colour");
+    if (!inherit.doer) fail(tag + "a card that is no worker lost its launcher's theme");
+
+    await p.click('.tab[data-view="board"]');
+    await p.waitForSelector('.card:not(.tab)[data-id="sg4-control~wk-here"]', { state: "attached", timeout: slow(15000) });
+    const skins = [""].concat(await p.evaluate(async () => {
+      const css = await (await fetch("/css/themes.css")).text();
+      return [...new Set([...css.matchAll(/data-skin="([^"]+)"/g)].map(m => m[1]))];
+    }));
+    const low = [];
+    for (const sk of skins) {
+      await p.evaluate(s => s ? document.documentElement.setAttribute("data-skin", s)
+        : document.documentElement.removeAttribute("data-skin"), sk);
+      await p.waitForTimeout(60);
+      low.push(...await p.evaluate(skin => {
+        const parse = s => {
+          let m = /^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/.exec(s);
+          if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+          m = /^color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.]+))?\)$/.exec(s);
+          if (m) return { r: m[1] * 255, g: m[2] * 255, b: m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+          return null;
+        };
+        const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a),
+          b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+        const lum = c => [c.r, c.g, c.b].map(v => v / 255)
+          .map(s => s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4))
+          .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const ratio = (a, b) => { const la = lum(a), lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
+        // Every colour the chip can sit on: a card paints a gradient, so each of its opaque stops is a floor.
+        const surfaces = el => {
+          const layers = [];
+          let floor = [{ r: 255, g: 255, b: 255, a: 1 }];
+          for (let at = el; at; at = at.parentElement) {
+            const cs = getComputedStyle(at);
+            const stops = (cs.backgroundImage.match(/rgba?\([^)]*\)|color\(srgb[^)]*\)/g) || []).map(parse).filter(Boolean);
+            const solid = stops.filter(c => c.a >= 1);
+            if (solid.length) { layers.push(...stops.filter(c => c.a < 1 && c.a > 0)); floor = solid; break; }
+            const c = parse(cs.backgroundColor);
+            if (c && c.a > 0) { if (c.a >= 1) { floor = [c]; break; } layers.push(c); }
+          }
+          return floor.map(f => layers.slice().reverse().reduce((under, top) => over(top, under), f));
+        };
+        const hues = new Set();
+        for (let i = 0; i < 400; i++) hues.add(roomHue("room" + i));
+        const out = [];
+        for (const card of document.querySelectorAll('#term-list .card.tab[data-id], .card:not(.tab)[data-id*="~"]')) {
+          const chips = card.querySelector(".chips") || card.querySelector(".card-line");
+          const added = [...hues].map(h => {
+            const c = document.createElement("span");
+            c.className = "chip room"; c.style.setProperty("--rhue", String(h)); c.textContent = "room " + h;
+            return c;
+          });
+          const fresh = document.createElement("span");
+          fresh.className = "chip arrived"; fresh.textContent = "new";
+          added.push(fresh);
+          added.forEach(c => chips.appendChild(c));
+          for (const c of card.querySelectorAll(".chip.room, .chip.arrived")) {
+            const fg = parse(getComputedStyle(c).color);
+            const r = fg ? Math.min(...surfaces(c).map(under => ratio(over(fg, under), under))) : 0;
+            if (r < 4.5) out.push((skin || "default") + (card.closest("#term-list") ? " terminals " : " board ") + card.dataset.id + " " + c.textContent.trim() + " " + r.toFixed(2));
+          }
+          added.forEach(c => c.remove());
+        }
+        return out;
+      }, sk));
+    }
+    await p.evaluate(() => document.documentElement.removeAttribute("data-skin"));
+    if (low.length) fail(tag + low.length + " chips read under 4.5:1:\n  " + low.slice(0, 40).join("\n  "));
+    if (errors.length) fail(tag + "threw: " + errors.join(" | "));
+    if (!bad) console.log("workerCardColors ok, " + skins.length + " skins, " + themes.length + " themes");
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // Attaching a coloured card: the row, the bridge and the pane frame are the theme's colour on the first frame, not the
 // colour the row had before, faded across. `placeTabBridge` copies the row's computed border, so a row that fades its
 // border hands the bridge and the pane a colour from halfway through the fade.
@@ -25181,7 +25337,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, replies: repliesSection, repliesOf: repliesOfSection, repliesShots: repliesShotsSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection, mOpenQ: mOpenQSection, mChatThumbs: mChatThumbsSection, mCleanUpForeign: mCleanUpForeignSection,mGrowlStack: mGrowlStackSection,
-      discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      discreteGroup: discreteGroupSection, groupingPerView: groupingPerViewSection, repoColors: repoColorsSection, workerCardColors: workerCardColorsSection, borderColourLag: borderColourLagSection, minionPredicate: minionPredicateSection, minionNeedsYou: minionNeedsYouSection, minionReadyQuiet: minionReadyQuietSection, termMinionHidden: termMinionHiddenSection, boardMinionHidden: boardMinionHiddenSection, stackMinionHidden: stackMinionHiddenSection, phoneMinionHidden: phoneMinionHiddenSection, parkedStays: parkedStaysSection, noResumeButton: noResumeButtonSection, terminalsOneLine: terminalsOneLineSection, controlsCompact: controlsCompactSection, offCardActions: offCardActionsSection, termHeaderSize: termHeaderSizeSection, popupFit: popupFitSection, peekLaunch: peekLaunchSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -27234,6 +27390,7 @@ async function main() {
     await unit("groupingPerView", () => groupingPerViewSection(browser, base));
     await unit("stackPinnedSort", () => stackPinnedSortSection(browser, base));
     await unit("repoColors", () => repoColorsSection(browser, base));
+    await unit("workerCardColors", () => workerCardColorsSection(browser, base));
     await unit("themePicker", bu("themePicker"));
     await unit("themePickerShots", bu("themePickerShots"));
     await unit("borderColourLag", () => borderColourLagSection(browser, base));
