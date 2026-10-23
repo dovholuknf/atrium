@@ -21,6 +21,9 @@ first, then `docs/fabric/hub-and-rooms.md`.
 - **A room's name comes from the hub-signed certificate**, on direct and inside an overlay alike (`overlaytls.go`).
   The overlay decides who may reach the hub, not which room is calling. Rooms that joined an overlay before this keep
   attaching beside it, marked unproven, until `atrium rooms legacy refuse`.
+- **The room link is mutual TLS.** `atrium rooms add <name>` prints a one-time join string, and joining saves a
+  certificate the hub signs. The name in that certificate is the room's identity, and a room the hub has no record
+  of cannot attach.
 
 ## Scoped versus aggregate
 

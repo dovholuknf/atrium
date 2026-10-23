@@ -19,6 +19,7 @@ A new agent: `docs/agents.md`, `docs/how-atrium-works.md`, `docs/fabric/hub-and-
 | Doc | For | What it answers |
 | --- | --- | --- |
 | `agents.md` | an agent starting work on atrium | the bring-up, and which docs to trust |
+| `working-here.md` | an agent about to change, merge or land | the backlog and change notes, testing, branching and landing, the conventions |
 | `try-atrium.md` | a human who wants an agent to set atrium up | one prompt to paste into an agent that installs, wires and verifies atrium |
 | `how-atrium-works.md` | a contributor or an agent | the one architecture page: processes, ports, cards, hooks, the permission chain, state |
 | `fabric/hub-and-rooms.md` | a contributor or an agent | the hub, rooms, joining, ports, cross-room addressing, as built |
