@@ -25,16 +25,6 @@ func wslMachine() *fakeEnv {
 	}
 }
 
-func TestParseKeyscanReadsTheBannerAndTheKeys(t *testing.T) {
-	b, keys := ParseKeyscan("# 127.0.0.1:22 SSH-2.0-OpenSSH_8.9p1 Ubuntu-3\n127.0.0.1 " + keyLine("ssh-ed25519", "a") + "\n\n")
-	if b != "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3" || len(keys) != 1 || keys[0].Type != "ssh-ed25519" || keys[0].Fingerprint != fp("a") {
-		t.Fatalf("%q %+v", b, keys)
-	}
-	if _, keys := ParseKeyscan("garbage\nssh-ed25519 not*base64\n"); len(keys) != 0 {
-		t.Fatalf("garbage parsed as a key: %+v", keys)
-	}
-}
-
 func TestHostKeysReadThePubFilesAndSkipWhatIsNotAKey(t *testing.T) {
 	env := wslMachine()
 	env.files[`C:\ProgramData\ssh\ssh_host_rsa_key.pub`] = "not a key\n"

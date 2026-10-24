@@ -271,11 +271,43 @@ func TestSyncOfASettledRoomIsOnePass(t *testing.T) {
 	defer m.ranMu.Unlock()
 	n := 0
 	for _, l := range m.ran {
-		if strings.Contains(l, getService) {
+		if strings.Contains(l, "Get-LocalGroupMember") {
 			n++
 		}
 	}
 	if n != 1 {
 		t.Fatalf("a settled room was checked %d times, want once: %v", n, m.ran)
+	}
+}
+
+// THE TIMER NEVER SSHES AND NEVER SCANS. The self test, the reach of other rooms and the address scan answer only the
+// wizard's reader, and the room's own key still goes in its block.
+func TestSyncRunsNoSSHAndNoScan(t *testing.T) {
+	m := winMachine().withKey()
+	m.have["ssh"] = true
+	m.sw.On, m.sw.From = true, []string{"*"}
+	hubWith(m, PeerKey{Room: "sg4", Key: keyLine("ssh-ed25519", "sg4"), SSHOn: true, Online: true})
+	m.published = nil
+	rep, acts := Sync(context.Background(), m, Options{SelfTest: true}, 6, 7)
+	if len(acts) != 2 {
+		t.Fatalf("actions: %+v", acts)
+	}
+	m.ranMu.Lock()
+	defer m.ranMu.Unlock()
+	for _, l := range m.ran {
+		if strings.HasPrefix(l, "ssh ") || strings.Contains(l, getService) {
+			t.Fatalf("the sync ran %q", l)
+		}
+	}
+	if len(m.scanCalls) != 0 {
+		t.Fatalf("the sync scanned %v", m.scanCalls)
+	}
+	for _, n := range []int{2, 3, 8, 9, 10, 11} {
+		if stepOf(rep, n).Status != Skipped {
+			t.Fatalf("step %d was checked: %+v", n, stepOf(rep, n))
+		}
+	}
+	if got := m.fakeEnv.files[fxAuth]; !strings.Contains(got, "atrium:sg3") || !strings.Contains(got, "atrium:sg4") {
+		t.Fatalf("authorized_keys:\n%s", got)
 	}
 }

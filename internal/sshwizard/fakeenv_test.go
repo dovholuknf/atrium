@@ -24,15 +24,33 @@ type fakeEnv struct {
 }
 
 func (f *fakeEnv) GOOS() string { return f.goos }
-func (f *fakeEnv) Keyscan(_ context.Context, host string, port int) (string, error) {
+func (f *fakeEnv) Keyscan(_ context.Context, host string, port int) (Scan, error) {
 	k := fmt.Sprintf("%s:%d", host, port)
 	f.mu.Lock()
 	f.scanCalls = append(f.scanCalls, k)
 	f.mu.Unlock()
 	if out, ok := f.scans[k]; ok {
-		return out, nil
+		return parseScan(out), nil
 	}
-	return "", errors.New("connect: connection refused")
+	return Scan{}, errors.New("connect: connection refused")
+}
+
+// parseScan reads `# host banner` and `host type base64` lines, the text ssh-keyscan prints, which is how a fake says it.
+func parseScan(out string) Scan {
+	var sc Scan
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			if i := strings.Index(line, "SSH-"); i >= 0 && sc.Banner == "" {
+				sc.Banner = strings.TrimSpace(line[i:])
+			}
+			continue
+		}
+		if k, ok := parseKeyLine(line); ok {
+			sc.Keys = append(sc.Keys, k)
+		}
+	}
+	return sc
 }
 func (f *fakeEnv) Glob(pattern string) []string {
 	pre := pattern[:strings.Index(pattern, "*")]

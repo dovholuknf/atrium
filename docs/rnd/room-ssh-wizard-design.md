@@ -158,8 +158,8 @@ Each step names what it found and what it did. Windows, macOS and Linux differ o
    guessing from a process name.
    - Read this machine's sshd HOST KEY files, `%ProgramData%\ssh\ssh_host_*_key.pub` on Windows and
      `/etc/ssh/ssh_host_*_key.pub` elsewhere, which are public and readable by any user.
-   - Scan candidate addresses with `ssh-keyscan -p <port>` (it ships with the OpenSSH client on all three OSes): `127.0.0.1`,
-     `::1`, and each non-loopback address of the machine. Match what each address returns against the files.
+   - Read each candidate address's banner and host keys in Go (`golang.org/x/crypto/ssh`, stopping before auth):
+     `127.0.0.1`, `::1`, and each non-loopback address of the machine. Match what each address returns against the files.
    - An address whose key matches is this machine's sshd. A banner that names another system, such as
      `OpenSSH_8.9p1 Ubuntu`, or a key that matches no file, is the wrong sshd, and the step says so plainly: "127.0.0.1:22
      is WSL's sshd (wslrelay), not Windows'. 192.168.1.147:22 is this machine's." On Windows the step also names the
@@ -283,8 +283,8 @@ failure clint hit and touches no hub code, so it can be built and merged before 
      `internal/link/stream.go:505` dials it, `atrium room remote-access on --addr` and `status` print it plus the banner
      and host key fingerprint of what it reaches. Test beside `internal/link/stream_integration_test.go`: a listener on a
      second loopback address is dialled when `addr` names it.
-   - `internal/sshwizard/whichsshd.go`: `Probe(addr)` returns banner and host key through the machine's `ssh-keyscan`,
-     through an `Env` seam like `internal/guard/env.go` so a test can answer it. `HostKeys()` reads the `.pub` files,
+   - `internal/sshwizard/whichsshd.go`: `Probe(addr)` returns banner and host keys from a Go ssh handshake that stops
+     before auth, through an `Env` seam like `internal/guard/env.go` so a test can answer it. `HostKeys()` reads the `.pub` files,
      `Match` compares. Tests with a fake keyscan: matching key, an Ubuntu banner, no sshd.
    - `internal/sshwizard/steps.go`: the `Step` type and the eleven steps, each with a `Check` that reads only and a `Fix`
      that returns `needs-human` with its text. No `Fix` writes in this phase. Table tests, one per step per verdict, with
