@@ -119,7 +119,7 @@ func (s *Store) landedByItem(ctx context.Context, dir string, f LandFacts, workI
 		fm := forge()
 		known := false
 		if fm.Tip != "" {
-			known, _ = s.commitKnown(ctx, dir, fm.Tip)
+			known = s.knownCommit(ctx, dir, fm.Tip)
 		}
 		switch {
 		case known:
@@ -139,51 +139,11 @@ func (s *Store) landedByItem(ctx context.Context, dir string, f LandFacts, workI
 
 // addedChangelog is the first commit on ref's history that added the item's changelog entry, empty when there is none.
 func (s *Store) addedChangelog(ctx context.Context, dir, ref, workID string) (string, error) {
-	if _, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
-		if exitCode(err) == 1 {
-			return "", nil
-		}
+	x, err := s.landIndexAt(ctx, dir, ref)
+	if err != nil || x == nil {
 		return "", err
 	}
-	out, err := s.git(ctx, dir, "log", "--no-renames", "--diff-filter=A", "--name-only", "--format=commit %H", "--max-count=2000",
-		ref, "--", "changelog/*/*-"+workID+".md")
-	if err != nil {
-		return "", err
-	}
-	// Newest first, so the last match is the first to add it. `*-<id>.md` also matches `<date>-x-<id>.md`, which is another
-	// item's, so the name must be the date and then exactly the id.
-	var commit, found string
-	for _, l := range strings.Split(out, "\n") {
-		l = strings.TrimSpace(l)
-		if c, ok := strings.CutPrefix(l, "commit "); ok {
-			commit = c
-		} else if l != "" && changelogNamed(l, workID) {
-			found = commit
-		}
-	}
-	return found, nil
-}
-
-// changelogNamed is whether path is changelog/<dept>/<yyyy-mm-dd>-<workID>.md.
-func changelogNamed(path, workID string) bool {
-	parts := strings.Split(path, "/")
-	if len(parts) != 3 || parts[0] != "changelog" {
-		return false
-	}
-	rest, ok := strings.CutSuffix(parts[2], "-"+workID+".md")
-	if !ok || len(rest) != 10 {
-		return false
-	}
-	for i, c := range rest {
-		if i == 4 || i == 7 {
-			if c != '-' {
-				return false
-			}
-		} else if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
+	return x.added[workID], nil
 }
 
 // ancestorOfRef is isAncestor against a ref the repository may not have, which holds nothing.
@@ -222,15 +182,21 @@ func (s *Store) firstContaining(ctx context.Context, dir, sha, ref string) (stri
 // does not. Once the branch is on main that range is empty, so the commits that carry the item's changelog entry stand
 // in, which is how every change here names its item.
 func (s *Store) itemPaths(ctx context.Context, dir, sha, workID string) ([]string, error) {
-	if base, err := s.git(ctx, dir, "merge-base", sha, MainRef); err == nil {
-		if b := strings.TrimSpace(base); ValidSHA(b) && b != sha {
-			return s.pathsOf(ctx, dir, "--no-merges", sha, "^"+b)
+	if ValidSHA(sha) {
+		if base, err := s.git(ctx, dir, "merge-base", sha, MainRef); err == nil {
+			if b := strings.TrimSpace(base); ValidSHA(b) && b != sha {
+				return s.pathsOf(ctx, dir, "--no-merges", sha, "^"+b)
+			}
 		}
 	}
-	if workID == "" || strings.ContainsAny(workID, "*?[]\\ \n") {
+	if workID == "" {
 		return nil, nil
 	}
-	return s.pathsOf(ctx, dir, "--no-merges", ClaudeMainRef, "--", "changelog/*/*-"+workID+".md")
+	x, err := s.landIndexAt(ctx, dir, ClaudeMainRef)
+	if err != nil || x == nil {
+		return nil, err
+	}
+	return x.paths[workID], nil
 }
 
 // pathsOf lists the files changed by the commits `git log <args>` selects, each once.

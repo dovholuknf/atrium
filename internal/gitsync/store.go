@@ -76,6 +76,8 @@ type Store struct {
 	forge forgeState
 	// forgeMain is the last answer of the forge to "what is your main", per repository. See landfacts.go.
 	forgeMain forgeMainCache
+	// landIdx is every item's changelog entry per ref tip, and the tips. See landindex.go.
+	landIdx landIndexCache
 	// pages is the page-changed answers already read. See pagechanged.go.
 	pages pageChanges
 	// views is the snapshot GET /_hub/git/repos answers from. See viewcache.go.

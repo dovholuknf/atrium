@@ -63,6 +63,8 @@ through the room's forwarder. Read the header of the file you are in, not only t
 - **A Cygwin or MSYS git is refused on Windows.** It writes `/cygdrive` gitfiles Git for Windows cannot resolve.
 - **`git http-backend` runs through `cgi.go`, not `net/http/cgi`**, so the child goes through `nowindow.Hide` and the
   hub does not open a console window per fetch.
+- **The lifecycle reads every item's changelog entry from one `git log` per ref tip** (`landindex.go`), never a git
+  call per item, and not at all while the tip has not moved.
 - **The board's repo list and `/_hub/git/pushed` are read from snapshots** (`viewcache.go`, `pushedcache.go`). Do not
   compute them on the request. A process spawn is 50 to 100ms on Windows.
 - **A stash pushed by a close expires** after `git.stash_retention_days` (30 by default, 0 for never). One the push log
@@ -99,3 +101,4 @@ through the room's forwarder. Read the header of the file you are in, not only t
 | `pktline.go` / `refname.go` | just enough pkt-line, and the ref name allowlist |
 | `tree_*.go` | ending a git child and everything it started |
 | `viewcache.go` | the board's repository list, from a snapshot |
+| `landfacts.go` / `landindex.go` | an item's landing and pushing, and every changelog entry read once per ref tip |
