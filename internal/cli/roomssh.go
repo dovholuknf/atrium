@@ -279,6 +279,7 @@ func sshSyncOnce(ctx context.Context, dir string, shared link.Dialer) []sshwizar
 	if st.On {
 		steps = []int{6, 7}
 	}
+	// SelfTest keeps this room's own key in its block, as the wizard writes it. Sync never runs the self test itself.
 	_, acts := sshwizard.Sync(ctx, localSSHMachine(dir, shared), sshwizard.Options{SelfTest: true}, steps...)
 	return acts
 }

@@ -117,12 +117,13 @@ func Steps() []Step {
 
 // Check runs every step's check, in order, bounded at Bound, and changes nothing.
 func Check(ctx context.Context, m Machine, opt Options) Report {
-	_, rep := pass(ctx, m, opt)
+	_, rep := pass(ctx, m, opt, nil)
 	return rep
 }
 
-// pass is Check, and the Run it left behind with what the steps found, for the fix half to act on.
-func pass(ctx context.Context, m Machine, opt Options) (*Run, Report) {
+// pass is Check, and the Run it left behind with what the steps found, for the fix half to act on. only, when not nil,
+// names the steps to check, and every other step is reported skipped.
+func pass(ctx context.Context, m Machine, opt Options, only map[int]bool) (*Run, Report) {
 	ctx, cancel := context.WithTimeout(ctx, Bound)
 	defer cancel()
 	r := &Run{M: m, Opt: opt, GOOS: m.GOOS(), results: map[int]Result{}}
@@ -134,7 +135,10 @@ func pass(ctx context.Context, m Machine, opt Options) (*Run, Report) {
 	}
 	rep := Report{Room: r.Joined.Room, OS: r.GOOS}
 	for _, s := range Steps() {
-		res := r.run(ctx, s)
+		res := Result{N: s.N, Key: s.Key, Name: s.Name, Status: Skipped, Found: "not checked by this pass"}
+		if only == nil || only[s.N] {
+			res = r.run(ctx, s)
+		}
 		r.results[s.N] = res
 		rep.Results = append(rep.Results, res)
 	}

@@ -40,16 +40,39 @@ const FixBound = 60 * time.Second
 // Fix runs the checks, does the fixable steps in order, and checks again. It returns the report from after, and what
 // it did.
 func Fix(ctx context.Context, m Machine, opt Options) (Report, []Action) {
-	return fix(ctx, m, opt, []int{5, 6, 7}, true)
+	return fix(ctx, m, opt, []int{5, 6, 7}, true, nil)
 }
 
 // Sync is the part of Fix a room can do on its own, on a timer: it never makes a key and never saves a login user.
 // steps names which of 6 and 7 to do, so a room with its switch off can publish and leave authorized_keys alone.
+//
+// ONLY THOSE STEPS AND WHAT THEY NEED ARE CHECKED. The scan of every address, the self test and the ssh to every other
+// room answer the wizard's reader, and a timer that drops their answer must not run them each minute.
 func Sync(ctx context.Context, m Machine, opt Options, steps ...int) (Report, []Action) {
-	return fix(ctx, m, opt, steps, false)
+	return fix(ctx, m, opt, steps, false, needed(steps))
 }
 
-func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool) (Report, []Action) {
+// needed is steps and every step they need, followed through.
+func needed(steps []int) map[int]bool {
+	all := Steps()
+	out := map[int]bool{}
+	var add func(n int)
+	add = func(n int) {
+		if out[n] || n < 1 || n > len(all) {
+			return
+		}
+		out[n] = true
+		for _, d := range all[n-1].Needs {
+			add(d)
+		}
+	}
+	for _, n := range steps {
+		add(n)
+	}
+	return out
+}
+
+func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool, only map[int]bool) (Report, []Action) {
 	ctx, cancel := context.WithTimeout(ctx, FixBound)
 	defer cancel()
 	var acts []Action
@@ -65,7 +88,7 @@ func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool
 		}
 	}
 	fixes := map[int]func(context.Context, *Run) (string, error){5: fixKey, 6: fixPublish, 7: fixInstall}
-	r, rep := pass(ctx, m, opt)
+	r, rep := pass(ctx, m, opt, only)
 	for _, n := range steps {
 		if rep.Results[n-1].Status != Todo {
 			continue
@@ -77,7 +100,7 @@ func fix(ctx context.Context, m Machine, opt Options, steps []int, saveUser bool
 		}
 		acts = append(acts, a)
 		// A pass is only repeated after a fix, so a settled room costs one.
-		r, rep = pass(ctx, m, opt)
+		r, rep = pass(ctx, m, opt, only)
 	}
 	return rep, acts
 }

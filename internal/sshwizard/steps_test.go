@@ -508,9 +508,9 @@ func TestACheckChangesNothing(t *testing.T) {
 // slowMachine never answers until its context ends.
 type slowMachine struct{ *fakeMachine }
 
-func (s *slowMachine) Keyscan(ctx context.Context, host string, port int) (string, error) {
+func (s *slowMachine) Keyscan(ctx context.Context, host string, port int) (Scan, error) {
 	<-ctx.Done()
-	return "", ctx.Err()
+	return Scan{}, ctx.Err()
 }
 func (s *slowMachine) Run(ctx context.Context, name string, args ...string) (string, error) {
 	<-ctx.Done()
