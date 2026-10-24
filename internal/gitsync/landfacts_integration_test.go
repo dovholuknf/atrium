@@ -5,6 +5,8 @@ package gitsync
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -271,5 +273,78 @@ func TestLandFactsReadEveryItemAtOneTipFromOneLog(t *testing.T) {
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/main"))
 	if f, _ := st.LandFacts(bg, hubRepo, "", "-", "n-3", nil); !f.Pushed || f.PushedSHA != shas["n-3"] {
 		t.Fatalf("main moved and was not read again: %+v", f)
+	}
+}
+
+// PICKED BRANCHES ARE COMPARED BY PATCH ID ONCE PER TIP, and readers that ask together share one git. Five identical
+// `git log -p` of claude/main ran at once on the live hub, one per item.
+func TestLandFactsComparePatchesOncePerTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	st := x.h.Store()
+	names := []string{"fix/a", "fix/b", "fix/c", "fix/d"}
+	work := map[string]string{}
+	var refspecs []string
+	for _, n := range names {
+		work[n] = x.branch(n, strings.TrimPrefix(n, "fix/")+".go")
+		refspecs = append(refspecs, n+":refs/heads/"+n)
+	}
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, refspecs...))
+	git(t, x.work, "switch", "-q", "-C", "cm", "main")
+	picked := map[string]string{}
+	for _, n := range names {
+		git(t, x.work, "cherry-pick", work[n])
+		picked[n] = git(t, x.work, "rev-parse", "HEAD")
+	}
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	dir, _ := st.bareFor(hubRepo)
+	run := x.h.runner()
+
+	spec := git(t, x.work, "rev-parse", "main") + ".." + git(t, x.work, "rev-parse", "cm")
+	before := run.Spawned.Load()
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ids, err := st.patchIDs(bg, dir, spec); err != nil || len(ids) != len(names) {
+				t.Errorf("patch ids: %v %v", ids, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := run.Spawned.Load() - before; n != 2 {
+		t.Fatalf("five readers of one range ran %d git commands, want 2 (log and patch-id)", n)
+	}
+
+	pass := func() {
+		for i, n := range names {
+			f, err := st.LandFacts(bg, hubRepo, n, "", "f-"+strings.TrimPrefix(n, "fix/"), nil)
+			if err != nil || f.SHA != work[n] || !f.Landed || f.LandedSHA != picked[n] {
+				t.Fatalf("%d %s: %+v %v", i, n, f, err)
+			}
+		}
+	}
+	pass()
+	before = run.Spawned.Load()
+	pass()
+	if n := run.Spawned.Load() - before; n != 0 {
+		t.Fatalf("a pass where no tip moved ran %d git commands", n)
+	}
+
+	late := x.branch("fix/e", "e.go")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/e:refs/heads/fix/e"))
+	if f, _ := st.LandFacts(bg, hubRepo, "fix/e", "", "f-e", nil); f.SHA != late || f.Landed {
+		t.Fatalf("not picked yet: %+v", f)
+	}
+	git(t, x.work, "switch", "-q", "cm")
+	git(t, x.work, "cherry-pick", late)
+	again := git(t, x.work, "rev-parse", "HEAD")
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	if f, _ := st.LandFacts(bg, hubRepo, "fix/e", "", "f-e", nil); !f.Landed || f.LandedSHA != again {
+		t.Fatalf("claude/main moved and was not read again: %+v", f)
 	}
 }

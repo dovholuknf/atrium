@@ -57,17 +57,17 @@ func (s *Store) LandFacts(ctx context.Context, name, branch, sha, workID string,
 		if why := CheckPushBranch(branch); why != "" {
 			return f, refuse("%s", why)
 		}
-		tip, ok, err := s.tipOf(ctx, dir, branch)
+		tip, err := s.resolveTip(ctx, dir, headsPrefix+branch)
 		if err != nil {
 			return f, err
 		}
-		if ok {
+		if tip != "" {
 			sha = tip
 		}
 	}
 	known := false
 	if ValidSHA(sha) {
-		if known, err = s.commitKnown(ctx, dir, sha); err != nil {
+		if known, err = s.knownCommit(ctx, dir, sha); err != nil {
 			return f, err
 		}
 	}
@@ -119,7 +119,7 @@ func (s *Store) landedByItem(ctx context.Context, dir string, f LandFacts, workI
 		fm := forge()
 		known := false
 		if fm.Tip != "" {
-			known = s.knownCommit(ctx, dir, fm.Tip)
+			known, _ = s.knownCommit(ctx, dir, fm.Tip)
 		}
 		switch {
 		case known:
@@ -160,7 +160,21 @@ func (s *Store) ancestorOfRef(ctx context.Context, dir, sha, ref string) (bool, 
 // firstContaining is the first commit on ref's first-parent line that holds sha. When sha is on that line it is sha
 // (a fast-forward), and otherwise the merge that brought it in.
 func (s *Store) firstContaining(ctx context.Context, dir, sha, ref string) (string, error) {
-	out, err := s.git(ctx, dir, "rev-list", "--reverse", "--first-parent", "--ancestry-path", sha+".."+ref)
+	tip, err := s.resolveTip(ctx, dir, ref)
+	if err != nil {
+		return "", err
+	}
+	v, err := s.memo(ctx, "first\x00"+dir+"\x00"+sha+"\x00"+tip, tip != "", func() (any, error) {
+		return s.firstContainingAt(ctx, dir, sha, tip)
+	})
+	if err != nil {
+		return "", err
+	}
+	return v.(string), nil
+}
+
+func (s *Store) firstContainingAt(ctx context.Context, dir, sha, tip string) (string, error) {
+	out, err := s.git(ctx, dir, "rev-list", "--reverse", "--first-parent", "--ancestry-path", sha+".."+tip)
 	if err != nil {
 		return "", err
 	}
@@ -182,11 +196,20 @@ func (s *Store) firstContaining(ctx context.Context, dir, sha, ref string) (stri
 // does not. Once the branch is on main that range is empty, so the commits that carry the item's changelog entry stand
 // in, which is how every change here names its item.
 func (s *Store) itemPaths(ctx context.Context, dir, sha, workID string) ([]string, error) {
-	if ValidSHA(sha) {
-		if base, err := s.git(ctx, dir, "merge-base", sha, MainRef); err == nil {
-			if b := strings.TrimSpace(base); ValidSHA(b) && b != sha {
-				return s.pathsOf(ctx, dir, "--no-merges", sha, "^"+b)
+	if main, err := s.resolveTip(ctx, dir, MainRef); err == nil && main != "" && ValidSHA(sha) {
+		v, err := s.memo(ctx, "paths\x00"+dir+"\x00"+sha+"\x00"+main, true, func() (any, error) {
+			if base, err := s.git(ctx, dir, "merge-base", sha, main); err == nil {
+				if b := strings.TrimSpace(base); ValidSHA(b) && b != sha {
+					return s.pathsOf(ctx, dir, "--no-merges", sha, "^"+b)
+				}
 			}
+			return []string(nil), nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if p := v.([]string); p != nil {
+			return p, nil
 		}
 	}
 	if workID == "" {
@@ -287,7 +310,7 @@ func (s *Store) pushedToOrigin(ctx context.Context, dir, sha string, fm ForgeMai
 		}
 		return viaMirror(why)
 	}
-	if known, err := s.commitKnown(ctx, dir, fm.Tip); err != nil || !known {
+	if known, err := s.knownCommit(ctx, dir, fm.Tip); err != nil || !known {
 		return viaMirror("the mirror has not fetched the forge's main yet")
 	}
 	ok, c, err := s.carriedBy(ctx, dir, sha, fm.Tip)
@@ -302,12 +325,27 @@ func (s *Store) pushedToOrigin(ctx context.Context, dir, sha string, fm ForgeMai
 // commits sha has beyond its fork point with ref are matched, by `git patch-id --stable`, to the commits ref has beyond
 // it. Commits that change nothing have no patch id and are not asked for, but a branch of nothing else is not carried.
 func (s *Store) carriedBy(ctx context.Context, dir, sha, ref string) (bool, string, error) {
-	if _, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil {
-		if exitCode(err) == 1 {
-			return false, "", nil
-		}
+	tip, err := s.resolveTip(ctx, dir, ref)
+	if err != nil || tip == "" {
 		return false, "", err
 	}
+	v, err := s.memo(ctx, "carried\x00"+dir+"\x00"+sha+"\x00"+tip, true, func() (any, error) {
+		ok, c, err := s.carriedAt(ctx, dir, sha, tip)
+		return carried{ok, c}, err
+	})
+	if err != nil {
+		return false, "", err
+	}
+	c := v.(carried)
+	return c.ok, c.by, nil
+}
+
+type carried struct {
+	ok bool
+	by string
+}
+
+func (s *Store) carriedAt(ctx context.Context, dir, sha, ref string) (bool, string, error) {
 	if up, err := s.isAncestor(ctx, dir, sha, ref); err != nil || up {
 		return up, sha, err
 	}
@@ -348,6 +386,14 @@ type idCommit struct{ id, commit string }
 
 // patchIDs are the patch ids of the non-merge commits of a range, newest first, commits with no change left out.
 func (s *Store) patchIDs(ctx context.Context, dir, spec string) ([]idCommit, error) {
+	v, err := s.memo(ctx, "pid\x00"+dir+"\x00"+spec, true, func() (any, error) { return s.patchIDsOf(ctx, dir, spec) })
+	if err != nil {
+		return nil, err
+	}
+	return v.([]idCommit), nil
+}
+
+func (s *Store) patchIDsOf(ctx context.Context, dir, spec string) ([]idCommit, error) {
 	out, err := s.h.runner().GitCapped(ctx, dir, s.env(), 16<<20, "log", "-p", "--no-merges", "--no-renames",
 		"--max-count=500", "--format=commit %H", spec)
 	if err != nil {
@@ -378,9 +424,14 @@ func (s *Store) Contains(ctx context.Context, name, build, sha string) (contains
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	if known, err = s.commitKnown(ctx, dir, build); err != nil || !known {
+	if known, err = s.knownCommit(ctx, dir, build); err != nil || !known {
 		return false, false, err
 	}
-	contains, err = s.isAncestor(ctx, dir, sha, build)
-	return contains, true, err
+	v, err := s.memo(ctx, "anc\x00"+dir+"\x00"+sha+"\x00"+build, true, func() (any, error) {
+		return s.isAncestor(ctx, dir, sha, build)
+	})
+	if err != nil {
+		return false, true, err
+	}
+	return v.(bool), true, nil
 }
