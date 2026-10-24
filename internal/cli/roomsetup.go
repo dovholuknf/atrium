@@ -17,7 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/docshare"
 	"github.com/dovholuknf/atrium/internal/roomspec"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -326,7 +326,7 @@ func walkPack(base string, src *roomspec.PackSource) error {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
-		if hubstore.SecretFileName("agents/" + e.Name()) {
+		if docshare.SecretFileName("agents/" + e.Name()) {
 			src.Skipped = append(src.Skipped, "agents/"+e.Name())
 			continue
 		}
@@ -364,12 +364,12 @@ func walkPack(base string, src *roomspec.PackSource) error {
 				return nil
 			}
 			if d.IsDir() {
-				if hubstore.SecretFileName(rel + "/x") {
+				if docshare.SecretFileName(rel + "/x") {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if hubstore.SecretFileName(rel) {
+			if docshare.SecretFileName(rel) {
 				src.Skipped = append(src.Skipped, rel)
 				return nil
 			}

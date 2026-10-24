@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -1592,7 +1593,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 		// A launcher on another room, named by its tagged card, so a notice
 		// held for it reaches that card and not a later one with its handle.
-		if _, room, err := SplitAddress(by); err == nil && d.otherRoom(room) != "" {
+		if _, room, err := address.SplitAddress(by); err == nil && d.otherRoom(room) != "" {
 			if tag := strings.TrimSpace(req.SpawnedByID); strings.Contains(tag, "~") {
 				parentID = tag
 			}

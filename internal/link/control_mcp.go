@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -878,7 +879,7 @@ func (c *controlMCP) resolveCardStrict(ctx context.Context, room, who string) (s
 }
 
 func (c *controlMCP) resolveCardOpt(ctx context.Context, room, who string, strict bool) (scope, id, handle string, err error) {
-	name, target, err := SplitAddress(who)
+	name, target, err := address.SplitAddress(who)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -955,7 +956,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	// without keeps the aggregate list, where `room~id` already reaches
 	// anywhere. See docs/fabric/cross-room-say-design.md.
 	if room != "" {
-		name, target, err := SplitAddress(in.To)
+		name, target, err := address.SplitAddress(in.To)
 		if err != nil {
 			return nil, out, err
 		}

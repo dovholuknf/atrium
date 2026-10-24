@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/safepath"
 )
@@ -218,7 +219,7 @@ func TestFilesToolPutRefusesASecretNameOnTheResolvedTarget(t *testing.T) {
 	}
 	for _, p := range []string{".env", ".ENV", "notes.md"} {
 		_, err := h.put("r-031", putInput{Path: p})
-		if r := refusalOf(t, err); r.Status != 422 || r.Rule != hubstore.RuleFileName {
+		if r := refusalOf(t, err); r.Status != 422 || r.Rule != docshare.RuleFileName {
 			t.Errorf("%s: %+v", p, r)
 		}
 	}

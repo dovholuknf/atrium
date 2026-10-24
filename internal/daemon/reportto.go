@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -25,7 +26,7 @@ func (d *Daemon) resolveReportTo(req LaunchRequest, name string) (*store.Task, e
 		return nil, fmt.Errorf("report_to is for the board and `atrium launch --report-to`. " +
 			"a session's launch reports to the session that made it")
 	}
-	if n, room, err := SplitAddress(name); err == nil && (room != "" || strings.Contains(name, "~")) {
+	if n, room, err := address.SplitAddress(name); err == nil && (room != "" || strings.Contains(name, "~")) {
 		return nil, fmt.Errorf("%s is on another room (%s). report_to takes a card on this room for now, "+
 			"because a launcher is a local card", n, room)
 	}

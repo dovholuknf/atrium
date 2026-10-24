@@ -1,4 +1,4 @@
-package hubstore
+package docshare
 
 import (
 	"bytes"

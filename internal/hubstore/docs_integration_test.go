@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/docshare"
 )
 
 func docIn(title, name, body string) DocInput {
@@ -294,22 +296,22 @@ func TestCapsMustBePositive(t *testing.T) {
 func TestSecretContentIsRefusedWithTheRuleNamed(t *testing.T) {
 	type c struct{ rule, body string }
 	cases := []c{
-		{RulePEM, "notes\n-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"},
-		{RuleGitHub, "token ghp_" + strings.Repeat("a1", 20)},
-		{RuleGitHub, "github_pat_" + strings.Repeat("A", 30)},
-		{RuleAWS, "key AKIAIOSFODNN7EXAMPLE here"},
-		{RuleSlack, "slack xoxb-123456789012-abcdefghij"},
-		{RuleJWT, "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"},
-		{RuleZrok, "run: zrok enable ZcyXhMTX6HQe0"},
+		{docshare.RulePEM, "notes\n-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"},
+		{docshare.RuleGitHub, "token ghp_" + strings.Repeat("a1", 20)},
+		{docshare.RuleGitHub, "github_pat_" + strings.Repeat("A", 30)},
+		{docshare.RuleAWS, "key AKIAIOSFODNN7EXAMPLE here"},
+		{docshare.RuleSlack, "slack xoxb-123456789012-abcdefghij"},
+		{docshare.RuleJWT, "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"},
+		{docshare.RuleZrok, "run: zrok enable ZcyXhMTX6HQe0"},
 	}
 	// Every spelling of the zrok hint, since the pattern is case-insensitive.
 	for _, b := range []string{"ZROK ENABLE abcDEF123xyz", "Zrok Enable abcDEF123xyz", "ZROK_TOKEN=abcDEF123xyz",
 		"zRoK_account_token: abcDEF123xyz"} {
-		cases = append(cases, c{RuleZrok, b})
+		cases = append(cases, c{docshare.RuleZrok, b})
 	}
 	// Every Slack prefix the tokens come in.
 	for _, k := range "abeoprs" {
-		cases = append(cases, c{RuleSlack, "xox" + string(k) + "-123456789012-abcdefghij"})
+		cases = append(cases, c{docshare.RuleSlack, "xox" + string(k) + "-123456789012-abcdefghij"})
 	}
 	s := open(t)
 	for i, cs := range cases {
@@ -330,41 +332,6 @@ func TestSecretContentIsRefusedWithTheRuleNamed(t *testing.T) {
 	r := mustAdd(t, s, in)
 	if d, _ := s.DocGet(r.Slug); !d.Versions[0].Override {
 		t.Fatal("the override was not recorded")
-	}
-}
-
-// A SECRET FILE NAME IS REFUSED, case-insensitively, on the path it was resolved to.
-func TestSecretFileNames(t *testing.T) {
-	for _, n := range []string{".env", ".ENV", ".env.local", "deploy/.Env.prod", "prod.env", "server.PEM", "a/b/tls.key",
-		"id_rsa", "id_rsa.pub", "id_dsa", "ID_DSA.pub", ".htpasswd", ".HTPASSWD", "vault.kdbx", "Pass.KDBX",
-		".zrok/environment.json", "home/.zrok2/x", ".aws/credentials", ".AWS/config", ".kube/config", "a/.gnupg/pubring.kbx",
-		".docker/config.json", "x.p12", "x.pfx", ".npmrc", ".NETRC", "credentials", "Credentials.json",
-		".git/config", "sub/.git/hooks/x", ".ssh/known_hosts", "a/.SSH/id", "zrok-share", "room.json", "ca.key"} {
-		if !SecretFileName(n) {
-			t.Errorf("%q was allowed", n)
-		}
-	}
-	for _, n := range []string{"notes.md", "environment.md", "docs/key-ideas.md", "keyboard.txt", "awsome.md", "zrok-notes.md", "docker.md", "report.md", ".gitignore", "env.md", "git/readme.md"} {
-		if SecretFileName(n) {
-			t.Errorf("%q was refused", n)
-		}
-	}
-}
-
-// The Windows spellings of a secret name are refused, and the near misses are not.
-func TestSecretFileNamesWindowsForms(t *testing.T) {
-	for _, n := range []string{"key.pem.", "key.pem ", "key.pem...", "key.pem. . ", "a.pem::$DATA", "a.pem:alt",
-		".env:alt", ".env.", "sub/id_rsa.", `sub\key.pem.`, ".git./config", ".git::$INDEX_ALLOCATION/config",
-		".ssh /id", "x.key::$DATA", "ca.key. "} {
-		if !SecretFileName(n) {
-			t.Errorf("%q was allowed", n)
-		}
-	}
-	for _, n := range []string{"notes.md.", "notes.md ", "notes.md::$DATA", "notes.md:alt", "a.b.", "...", ":", "a:.pem.md",
-		"git./readme.md", "key.pem.md."} {
-		if SecretFileName(n) {
-			t.Errorf("%q was refused", n)
-		}
 	}
 }
 

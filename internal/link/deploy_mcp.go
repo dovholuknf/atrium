@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/edge"
 )
 
@@ -262,7 +263,7 @@ func (c *controlMCP) isOwner(ctx context.Context, req *mcp.CallToolRequest, owne
 	if me == "" || owner == "" {
 		return false
 	}
-	name, ownerRoom, err := SplitAddress(owner)
+	name, ownerRoom, err := address.SplitAddress(owner)
 	if err != nil {
 		return false
 	}
@@ -443,7 +444,7 @@ func (p *Proxy) serveDeployOwner(w http.ResponseWriter, r *http.Request) {
 		}
 		owner := strings.TrimPrefix(strings.TrimSpace(in.Owner), "@")
 		if owner != "" {
-			if _, _, err := SplitAddress(owner); err != nil {
+			if _, _, err := address.SplitAddress(owner); err != nil {
 				fail(http.StatusBadRequest, err.Error())
 				return
 			}

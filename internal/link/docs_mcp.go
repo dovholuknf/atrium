@@ -13,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
@@ -185,13 +186,13 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 			limit = set.Caps.Other
 		}
 		refuseName := func(msg string) error {
-			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: hubstore.RuleFileName,
+			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
 				Msg: msg + ". a document is readable by everyone past the board's password. this check is a " +
 					"speed bump and not a guarantee"}
 		}
 		// The name that was asked for is refused before the room is asked, so the answer does not hang on whether
 		// the file is there: `.Env` is `.env` on Windows and no file at all on Linux, and both are refused.
-		if hubstore.SecretFileName(in.Path) {
+		if docshare.SecretFileName(in.Path) {
 			return nil, out, refuseName("that file is refused by name (" + path.Base(strings.ReplaceAll(in.Path, `\`, "/")) + ")")
 		}
 		var rel string
@@ -199,7 +200,7 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 			return nil, out, err
 		}
 		// THE NAME CHECK on what the path resolved to, case-insensitively: a link defeats the one above.
-		if hubstore.SecretFileName(rel) {
+		if docshare.SecretFileName(rel) {
 			msg := "that file is refused by name (" + path.Base(rel) + ")"
 			if !strings.EqualFold(path.Base(rel), path.Base(strings.ReplaceAll(in.Path, `\`, "/"))) {
 				msg = fmt.Sprintf("%s is a link to %s, which is refused by name", in.Path, rel)

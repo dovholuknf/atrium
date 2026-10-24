@@ -21,7 +21,7 @@ import (
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/docshare"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -206,14 +206,14 @@ func (d *Daemon) writeDocSnapshot(worktree, rel string, images []string, dir str
 	if fi.Size() > docShareMaxDoc {
 		return docShareErr(http.StatusBadRequest, "that document is over %d MiB", docShareMaxDoc>>20)
 	}
-	if hubstore.SecretFileName(realRel(root, real, rel)) {
+	if docshare.SecretFileName(realRel(root, real, rel)) {
 		return docShareErr(http.StatusForbidden, "%s", docShareSpeedBump)
 	}
 	body, err := os.ReadFile(real)
 	if err != nil {
 		return docShareErr(http.StatusForbidden, "cannot read that")
 	}
-	if rule := hubstore.SecretContent(body); rule != "" {
+	if rule := docshare.SecretContent(body); rule != "" {
 		return docShareErr(http.StatusForbidden, "%s (%s)", docShareSpeedBump, rule)
 	}
 
@@ -247,7 +247,7 @@ func (d *Daemon) writeDocSnapshot(worktree, rel string, images []string, dir str
 		if err != nil || ifi.IsDir() {
 			return docShareErr(http.StatusNotFound, "no such image: %s", im)
 		}
-		if hubstore.SecretFileName(realRel(root, ireal, im)) {
+		if docshare.SecretFileName(realRel(root, ireal, im)) {
 			return docShareErr(http.StatusForbidden, "%s", docShareSpeedBump)
 		}
 		total += ifi.Size()
