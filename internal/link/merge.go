@@ -74,6 +74,9 @@ type mergeQueue struct {
 	launch []func()
 	// cardID is the id of the card that answers to agent on room, "" when none does. mergeCardOf when nil.
 	cardID func(ctx context.Context, room, agent string) string
+	// cardState is the status of the card that answers to agent on room, "" when none does, and false when the room
+	// could not be asked. mergeCardState when nil.
+	cardState func(ctx context.Context, room, agent string) (string, bool)
 }
 
 func (q *mergeQueue) hold(repo, why string) {
@@ -617,10 +620,78 @@ func (p *Proxy) RunMerges(ctx context.Context) {
 
 func (p *Proxy) mergeTick(ctx context.Context) {
 	p.merges.run.Lock()
-	defer p.mergeUnlock()
 	p.mergeRecover()
 	p.mergeWatch(ctx)
 	p.mergeScheduleLocked(ctx)
+	p.mergeUnlock()
+	p.mergeWatchMergers(ctx)
+}
+
+// mergeWatchMergers refuses a conflict whose merger is gone, exited, or ended with no request carrying it on, so a
+// merger that crashed or stopped leaves no conflict open with nobody on it.
+func (p *Proxy) mergeWatchMergers(ctx context.Context) {
+	st := p.backlogStore()
+	if st == nil {
+		return
+	}
+	open, err := st.MergeList(hubstore.MergeFilter{Open: true, Limit: 500})
+	if err != nil {
+		log.Printf("[hub] merge queue: could not read the open requests: %v", err)
+		return
+	}
+	carried := map[int64]bool{}
+	for _, m := range open {
+		if m.Continues > 0 {
+			carried[m.Continues] = true
+		}
+	}
+	for _, m := range open {
+		if m.State != hubstore.MergeConflict || m.Merger == "" || carried[m.N] {
+			continue
+		}
+		handle, room, _ := strings.Cut(m.Merger, "@")
+		status, ok := p.mergeCardState(ctx, room, handle)
+		why := ""
+		switch {
+		case !ok:
+		case status == "":
+			why = "its merger " + m.Merger + " is gone"
+		case status == "dead":
+			why = "its merger " + m.Merger + " exited"
+		case status == "done":
+			why = "its merger " + m.Merger + " ended without asking to merge"
+		}
+		if why == "" {
+			continue
+		}
+		log.Printf("[hub] merge %d: %s, refused", m.N, why)
+		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeConflict, To: hubstore.MergeRefused,
+			Reason: cutReason(m.Reason + ", and " + why + ". merge claude/main into it, push, ask again")})
+	}
+}
+
+func (p *Proxy) mergeCardState(ctx context.Context, room, agent string) (string, bool) {
+	if p.merges.cardState != nil {
+		return p.merges.cardState(ctx, room, agent)
+	}
+	p.mu.Lock()
+	c := p.ctl
+	p.mu.Unlock()
+	if c == nil || room == "" || agent == "" {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var body struct {
+		Tasks []ctlCard `json:"tasks"`
+	}
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+		return "", false
+	}
+	if best := pickCard(body.Tasks, agent); best != nil {
+		return best.Status, true
+	}
+	return "", true
 }
 
 // mergeRecover queues again, free, each request left merging. A merge is made under merges.run, so one seen merging
@@ -1074,6 +1145,9 @@ func (p *Proxy) mergeEnd(ctx context.Context, st *hubstore.Store, step hubstore.
 	if m.State != hubstore.MergeCancelled || step.From == hubstore.MergeTesting {
 		p.mergeTell(ctx, m)
 	}
+	if step.From == hubstore.MergeConflict && m.Merger != "" && m.State != hubstore.MergeLanded {
+		p.mergeTellMerger(ctx, m)
+	}
 	if m.Continues > 0 && m.State != hubstore.MergeConflict {
 		if of, err := st.MergeGet(m.Continues); err == nil && of.State == hubstore.MergeConflict {
 			next := hubstore.MergeStep{N: of.N, From: of.State, To: hubstore.MergeRefused,
@@ -1162,6 +1236,25 @@ func (p *Proxy) mergeTell(ctx context.Context, m hubstore.MergeRequest) {
 			}
 		}()
 	}
+}
+
+// mergeTellMerger tells the merger of m that its conflict ended without it, so it stops rather than ask for nothing.
+func (p *Proxy) mergeTellMerger(ctx context.Context, m hubstore.MergeRequest) {
+	p.mu.Lock()
+	c := p.ctl
+	p.mu.Unlock()
+	handle, room, _ := strings.Cut(m.Merger, "@")
+	if c == nil || handle == "" || room == "" {
+		return
+	}
+	text := fmt.Sprintf("request %d (%s) is %s: %s. stop merging it and end with atrium_done", m.N, m.Branch, m.State, m.Reason)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if ans := c.deliverAs(ctx, room, handle, mergeFrom, text, "", "fyi", false, false); !ans.OK {
+			log.Printf("[hub] merge %d: could not tell the merger %s: %s", m.N, m.Merger, ans.Error)
+		}
+	}()
 }
 
 // mergeLine is the one line a request's end is told in.

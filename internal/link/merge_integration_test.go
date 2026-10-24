@@ -325,6 +325,41 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 	}
 }
 
+func TestMergeAConflictWhoseMergerStoppedIsRefused(t *testing.T) {
+	x := newMergeFix(t)
+	states := map[string]string{"m1": "running", "m2": "done", "m3": "", "m5": "dead"}
+	x.p.merges.cardState = func(_ context.Context, room, agent string) (string, bool) {
+		st, ok := states[agent]
+		return st, ok
+	}
+	conflict := func(name, merger string) hubstore.MergeRequest {
+		t.Helper()
+		x.branch(t, name, name+".txt", name)
+		_, m := x.ask(t, "claude/"+name, "w1@sg4")
+		must(x.st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
+		must(x.st.MergeMove(hubstore.MergeStep{N: m.N, To: hubstore.MergeConflict, Reason: "conflicts in " + name + ".txt"}))
+		return must(x.st.MergeSetMerger(m.N, merger+"@sg4"))
+	}
+	working, ended, gone, unread, exited, carried := conflict("wa", "m1"), conflict("wb", "m2"), conflict("wc", "m3"),
+		conflict("wd", "m4"), conflict("we", "m5"), conflict("wf", "m2")
+	nb := "merge-" + strconv.FormatInt(carried.N, 10)
+	x.branch(t, nb, "wf.txt", "merged")
+	x.own(t, nb, "m2")
+	if code, b := x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": "claude/" + nb, "by": "m2@sg4", "of": carried.N})); code != 201 {
+		t.Fatalf("of: %d %s", code, b)
+	}
+	x.p.mergeWatchMergers(context.Background())
+	for _, c := range []struct {
+		m    hubstore.MergeRequest
+		want string
+	}{{working, ""}, {ended, "ended without asking"}, {gone, "is gone"}, {unread, ""}, {exited, "exited"}, {carried, ""}} {
+		got := must(x.st.MergeGet(c.m.N))
+		if c.want == "" && got.State != hubstore.MergeConflict || c.want != "" && (got.State != hubstore.MergeRefused || !strings.Contains(got.Reason, c.want)) {
+			t.Errorf("%s: %s %s", c.m.Branch, got.State, got.Reason)
+		}
+	}
+}
+
 func TestMergeLandPutsOneCommitOnMainAndLeavesClaudeMain(t *testing.T) {
 	x := newMergeFix(t)
 	x.push(t, "main:refs/heads/main")

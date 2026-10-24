@@ -130,8 +130,11 @@ merges `claude/main` into it, fixes the conflict, runs `test-touched.sh`, pushes
 other, so the merger never pushes `claude/main` and the gate stays shut. When it lands, request `n` becomes `landed`
 with the same sha and both branches are deleted.
 
-A merger that ends with `atrium_blocked`, or whose request comes back red, makes request `n` `refused` with its reason,
-and that goes back to the requester to fix, as the original item asked. One merger per request, never retried.
+A merger that gives up cancels request `n`, as its brief says, and that or a request of its that comes back red makes
+request `n` `refused` with its reason, which goes back to the requester to fix, as the original item asked. Each tick
+the hub also reads the merger's card: one that is gone, exited, or done with no open request carrying `n` on refuses
+`n` the same way. A merger that is only waiting (`atrium_blocked` without the cancel) is left, and the operator gives
+it up from the strip. Whenever `n` ends without it, the merger is told to stop. One merger per request, never retried.
 
 ## Deleting the branch
 
