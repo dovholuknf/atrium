@@ -62,6 +62,27 @@ func findGitBash(getenv func(string) string, lookPath func(string) (string, erro
 	return ""
 }
 
+// GitBash is the bash.exe a room runs a script with: where Claude Code looks, then a Git atrium installed itself.
+// Empty when there is none, and never a bash.exe that is only on PATH.
+func GitBash() string {
+	if p := findGitBash(os.Getenv, exec.LookPath, fileExists); p != "" {
+		return p
+	}
+	var tools []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		tools = append(tools, filepath.Join(home, ".local", "share", "atrium-tools", "git", "bin", "bash.exe"))
+	}
+	if la := os.Getenv("LOCALAPPDATA"); la != "" {
+		tools = append(tools, filepath.Join(la, "atrium-tools", "git", "bin", "bash.exe"))
+	}
+	for _, p := range tools {
+		if fileExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
 func fileExists(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && !st.IsDir()

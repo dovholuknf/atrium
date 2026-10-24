@@ -67,6 +67,21 @@ func TestMergeRunnerTestsTheCandidateAndNamesWhatFailed(t *testing.T) {
 	if rep.Verdict != VerdictGreen || !strings.Contains(rep.Output, "base "+r.Base) {
 		t.Fatalf("green: %+v", rep)
 	}
+	wt := filepath.Join(m.Dir, filepath.FromSlash(hubRepo))
+	hooked := filepath.Join(t.TempDir(), "hooked")
+	planted := map[string]string{
+		".git/hooks/post-checkout": "#!/bin/sh\necho x > '" + filepath.ToSlash(hooked) + "'\n",
+		".git/config":              "[core]\n\thooksPath = .git/hooks\n",
+		"node_modules/stray.js":    "stray",
+	}
+	for rel, body := range planted {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(wt, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wt, rel), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	git(t, x.work, "switch", "-q", "-C", "bad", "cm")
 	commit(t, x.work, "fail.txt", "fail")
@@ -79,6 +94,12 @@ func TestMergeRunnerTestsTheCandidateAndNamesWhatFailed(t *testing.T) {
 	if rep.Verdict != VerdictRed || len(rep.Failing) != 2 || rep.Failing[0] != "TestBroken" ||
 		rep.Failing[1] != "go test ./internal/x" {
 		t.Fatalf("red: %+v", rep)
+	}
+	if _, err := os.Stat(hooked); err == nil {
+		t.Fatal("a hook a run left in the merge repository ran")
+	}
+	if _, err := os.Stat(filepath.Join(wt, "node_modules", "stray.js")); err == nil {
+		t.Fatal("an ignored file a run left was kept")
 	}
 	rep = m.Run(bg, MergeJob{N: 1, Repo: hubRepo, Candidate: strings.Repeat("a", 40), Base: r.Base})
 	if rep.Verdict != VerdictCannot || !strings.Contains(rep.Reason, "candidate for run 1 is not") {

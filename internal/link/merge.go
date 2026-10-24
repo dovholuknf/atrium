@@ -1189,20 +1189,57 @@ func (p *Proxy) mergeTidy(ctx context.Context, repo, branch, sha string) {
 			continue
 		}
 		room := strings.ToLower(a.Name)
-		go func() {
-			var out struct {
-				Deleted bool   `json:"deleted"`
-				Kept    string `json:"kept"`
-			}
-			err := p.mergeRoomCall(context.Background(), room, http.MethodPost, "/v1/git/merge/prune",
-				gitsync.MergePrune{Repo: repo, Branch: branch, SHA: sha}, &out)
-			switch {
-			case err != nil:
-				log.Printf("[hub] merge: %s did not prune %s: %v", room, branch, err)
-			case !out.Deleted && out.Kept != "":
-				log.Printf("[hub] merge: %s kept %s: %s", room, branch, out.Kept)
-			}
-		}()
+		go p.mergePruneOn(context.Background(), room, repo, branch, sha)
+	}
+}
+
+// mergePruneOn asks room to delete its local branch that landed at sha. A branch it keeps is logged with the reason.
+func (p *Proxy) mergePruneOn(ctx context.Context, room, repo, branch, sha string) {
+	var out struct {
+		Deleted bool   `json:"deleted"`
+		Kept    string `json:"kept"`
+	}
+	err := p.mergeRoomCall(ctx, room, http.MethodPost, "/v1/git/merge/prune",
+		gitsync.MergePrune{Repo: repo, Branch: branch, SHA: sha}, &out)
+	switch {
+	case err != nil:
+		log.Printf("[hub] merge: %s did not prune %s: %v", room, branch, err)
+	case !out.Deleted && out.Kept != "":
+		log.Printf("[hub] merge: %s kept %s: %s", room, branch, out.Kept)
+	}
+}
+
+// mergePruneAge is how far back a room that attaches catches up on the branches that landed while it was away.
+const mergePruneAge = 14 * 24 * time.Hour
+
+// MergePruneRoom asks a room that just attached to delete its copies of the branches that landed lately, since a room
+// that was away when they landed was never asked. Off the attach path.
+func (p *Proxy) MergePruneRoom(room string) {
+	st := p.backlogStore()
+	if st == nil || p.hub == nil {
+		return
+	}
+	git := false
+	for _, a := range p.hub.Rooms() {
+		git = git || a.Git && strings.EqualFold(a.Name, room)
+	}
+	if !git {
+		return
+	}
+	ms, err := st.MergeList(hubstore.MergeFilter{Limit: 500})
+	if err != nil {
+		log.Printf("[hub] merge: could not read the landed branches for %s: %v", room, err)
+		return
+	}
+	since := time.Now().Add(-mergePruneAge)
+	for _, m := range ms {
+		if m.State != hubstore.MergeLanded || m.Candidate == "" {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339Nano, m.EndedAt); err != nil || at.Before(since) {
+			continue
+		}
+		p.mergePruneOn(context.Background(), strings.ToLower(room), m.Repo, m.Branch, m.SHA)
 	}
 }
 

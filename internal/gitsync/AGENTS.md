@@ -90,7 +90,7 @@ through the room's forwarder. Read the header of the file you are in, not only t
 | `storeforge.go` / `storepr.go` | forge branches and PR heads fetched into the store |
 | `flowepoch.go` / `flowfacts.go` | the merge flow's reset of claude/main, and whether a commit is in a branch |
 | `merge.go` | the merge queue: the candidate by `merge-tree`, the locked move of claude/main, deleting a landed branch |
-| `mergerun.go` | the room testing a candidate in its merge worktree, and pruning a landed local branch |
+| `mergerun.go` | the room testing a candidate in its own merge repository, and pruning a landed local branch |
 | `stashexpiry.go` | expiring a close's stash branches |
 | `scm.go` | clones in the operator's scm folder, and which hosts the credential helper may be asked about |
 | `locks.go` | removing stale lock files, only where the caller owns the ref |

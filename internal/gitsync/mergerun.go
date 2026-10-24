@@ -14,10 +14,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/claudeconf"
 )
 
 // The room's half of the merge queue: test one candidate the hub merged, and say how it went. See
@@ -27,8 +30,9 @@ import (
 //	GET  /v1/git/merge/status  ?n=, the last verdict of a run, from memory, for a hub that restarted mid-run
 //	POST /v1/git/merge/prune   {repo, branch, sha}, delete a landed local branch when it is safe to
 //
-// THE WORKTREE IS NOT A CARD. One per repository under Dir, detached at the candidate and cleaned before each run,
-// with ignored files (node_modules, build caches) kept. No session runs in it and nothing else writes it.
+// THE MERGE REPOSITORY IS NOT A CARD AND NOT A CLONE A PERSON WORKS IN. One per repository under Dir, fetched from the
+// hub, detached at the candidate and cleaned of every untracked and ignored file before each run, its .git config and
+// hooks wiped, with no hook or fsmonitor and an environment of an allowlist. No session runs in it.
 //
 // ONE RUN PER REPOSITORY. A newer run of the same repository ends the older one, since the hub only asks for a
 // second when it has given up on the first.
@@ -76,7 +80,7 @@ const MergeTestBound = 45 * time.Minute
 
 const mergeOutputKeep = 1 << 20
 
-// MergeRunner runs the tests. Root is where the room's clones live, Dir where the merge worktrees go, Hub the link's
+// MergeRunner runs the tests. Root is where the room's clones live, Dir where the merge repositories go, Hub the link's
 // transport to the hub's store, Report how a verdict reaches the hub.
 type MergeRunner struct {
 	Root   func() string
@@ -231,16 +235,8 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 	}
 	fail := func(format string, a ...any) MergeReport { return say(VerdictError, format, a...) }
 	cannot := func(format string, a ...any) MergeReport { return say(VerdictCannot, format, a...) }
-	root := ""
-	if m.Root != nil {
-		root = m.Root()
-	}
-	if root == "" || m.Dir == "" {
-		return cannot("this room has no git root or no merge directory")
-	}
-	clone := filepath.Join(root, filepath.FromSlash(j.Repo))
-	if st, err := os.Stat(filepath.Join(clone, ".git")); err != nil || !st.IsDir() {
-		return cannot("this room has no clone of %s at %s. sync it from the hub first", j.Repo, clone)
+	if m.Dir == "" {
+		return cannot("this room has no merge directory")
 	}
 	if m.Hub == nil {
 		return cannot("this room is not linked to a hub's git")
@@ -254,18 +250,24 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 		return cannot("%v", err)
 	}
 	defer stop()
-	g := m.runner()
+	wt := filepath.Join(m.Dir, filepath.FromSlash(j.Repo))
+	gitIn, err := m.repo(ctx, wt)
+	if err != nil {
+		return cannot("could not set up the merge repository %s: %v", wt, gitWhy(err))
+	}
 	ref := MergeRef(j.N)
-	if _, err := g.Git(ctx, clone, "fetch", "--no-tags", "--quiet", url, "+"+ref+":"+ref); err != nil {
+	if _, err := gitIn(ctx, "fetch", "--no-tags", "--quiet", url, "+"+ref+":"+ref); err != nil {
 		return cannot("could not fetch the candidate: %v", gitWhy(err))
 	}
-	defer func() { _, _ = g.Git(context.Background(), clone, "update-ref", "-d", ref) }()
-	if got, err := g.Git(ctx, clone, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil || strings.TrimSpace(got) != j.Candidate {
+	defer func() { _, _ = gitIn(context.Background(), "update-ref", "-d", ref) }()
+	if got, err := gitIn(ctx, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil || strings.TrimSpace(got) != j.Candidate {
 		return cannot("the hub's candidate for run %d is not %s", j.N, short(j.Candidate))
 	}
-	wt := filepath.Join(m.Dir, filepath.FromSlash(j.Repo))
-	if err := m.worktree(ctx, clone, wt, j.Candidate); err != nil {
-		return cannot("could not set up the merge worktree %s: %v", wt, gitWhy(err))
+	if _, err := gitIn(ctx, "checkout", "--quiet", "--detach", "--force", j.Candidate); err != nil {
+		return cannot("could not check out the candidate in %s: %v", wt, gitWhy(err))
+	}
+	if _, err := gitIn(ctx, "clean", "-ffdxq"); err != nil {
+		return cannot("could not clean %s: %v", wt, gitWhy(err))
 	}
 	out, code, err := m.test(ctx, wt, j.Base)
 	if err == nil && code != 0 && RedRerun(out) {
@@ -303,27 +305,36 @@ func gitWhy(err error) string {
 	return err.Error()
 }
 
-// worktree makes or resets the merge worktree at wt, detached at sha, with untracked files gone and ignored ones kept.
-func (m *MergeRunner) worktree(ctx context.Context, clone, wt, sha string) error {
-	g := m.runner()
-	if st, err := os.Stat(filepath.Join(wt, ".git")); err == nil && !st.IsDir() {
-		if _, err := g.Git(ctx, wt, "checkout", "--quiet", "--detach", "--force", sha); err != nil {
-			return err
-		}
-		_, err := g.Git(ctx, wt, "clean", "-fdq")
-		return err
-	}
-	_, _ = g.Git(ctx, clone, "worktree", "prune")
-	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
-		return err
-	}
-	if _, err := os.Stat(wt); err == nil {
+// repo makes the merge repository at wt, the room's own for merge runs and no clone a person works in, and answers
+// how to run git in it. What a run left in its .git (config, hooks, attributes) is wiped first, and no hook or
+// fsmonitor runs, so one branch cannot change how a later one is checked out or tested.
+func (m *MergeRunner) repo(ctx context.Context, wt string) (func(ctx context.Context, args ...string) (string, error), error) {
+	dot := filepath.Join(wt, ".git")
+	if st, err := os.Stat(dot); err != nil || !st.IsDir() {
 		if err := os.RemoveAll(wt); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	_, err := g.Git(ctx, clone, "worktree", "add", "--quiet", "--detach", wt, sha)
-	return err
+	for _, p := range []string{"config", "hooks", "info", "description"} {
+		if err := os.RemoveAll(filepath.Join(dot, p)); err != nil {
+			return nil, err
+		}
+	}
+	none := filepath.Join(m.Dir, ".no-hooks")
+	if err := os.RemoveAll(none); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(none, 0o755); err != nil {
+		return nil, err
+	}
+	g := m.runner()
+	safe := []string{"-c", "core.hooksPath=" + filepath.ToSlash(none), "-c", "core.fsmonitor=false", "-c", "init.templateDir="}
+	if _, err := g.Git(ctx, "", append(safe, "init", "--quiet", wt)...); err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, args ...string) (string, error) {
+		return g.Git(ctx, wt, append(safe, args...)...)
+	}, nil
 }
 
 func (m *MergeRunner) bash() string {
@@ -331,16 +342,28 @@ func (m *MergeRunner) bash() string {
 		return m.Bash
 	}
 	if runtime.GOOS == "windows" {
-		if git, err := exec.LookPath("git"); err == nil {
-			for _, rel := range []string{"../bin/bash.exe", "../../bin/bash.exe", "../usr/bin/bash.exe"} {
-				p := filepath.Clean(filepath.Join(filepath.Dir(git), rel))
-				if _, err := os.Stat(p); err == nil {
-					return p
-				}
-			}
-		}
+		return claudeconf.GitBash()
 	}
 	return "bash"
+}
+
+// mergeEnvKeep is the environment a merge run gets: what a toolchain needs to find itself, and no credential.
+var mergeEnvKeep = []string{"PATH", "PATHEXT", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USER", "USERNAME",
+	"LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMP", "TEMP", "TMPDIR", "SYSTEMROOT", "SYSTEMDRIVE",
+	"WINDIR", "COMSPEC", "OS", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
+	"PROGRAMW6432", "COMMONPROGRAMFILES", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "MSYSTEM", "GOPATH",
+	"GOROOT", "GOCACHE", "GOMODCACHE", "GOPROXY", "GOTOOLCHAIN", "GOFLAGS", "CGO_ENABLED", "NODE_PATH",
+	"PLAYWRIGHT_BROWSERS_PATH", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR"}
+
+func mergeEnv() []string {
+	var out []string
+	for _, kv := range CleanEnv() {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "GIT_TERMINAL_PROMPT" || slices.ContainsFunc(mergeEnvKeep, func(w string) bool { return strings.EqualFold(w, k) }) {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // test runs the script in wt against base, and answers its output, kept to the last MiB, and its exit code. An error
@@ -355,9 +378,13 @@ func (m *MergeRunner) test(ctx context.Context, wt, base string) (string, int, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, m.bash(), MergeScript, "--base", base)
+	bash := m.bash()
+	if bash == "" {
+		return "", 0, &cannotRun{"this room has no Git Bash to run " + MergeScript + " with. put a full Git on its PATH"}
+	}
+	cmd := exec.CommandContext(ctx, bash, MergeScript, "--base", base)
 	cmd.Dir = wt
-	cmd.Env = CleanEnv()
+	cmd.Env = mergeEnv()
 	prepareTree(cmd)
 	var buf tailBuffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
