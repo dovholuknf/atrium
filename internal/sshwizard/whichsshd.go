@@ -4,36 +4,40 @@
 // authorized_keys file, an ssh config or the room's switch. The fixes are a later step and live in their own file.
 //
 // WHICH SSHD ANSWERS IS DECIDED BY IDENTITY, NOT BY A PROCESS NAME. This machine's sshd has host key files that any
-// user can read. An address answers as this machine's sshd when ssh-keyscan returns one of those keys. A banner that
+// user can read. An address answers as this machine's sshd when the host key it offers is one of those keys. A banner that
 // names another system is only supporting text, because wslrelay (WSL's localhost forwarding) holds 127.0.0.1:22 on a
 // Windows machine and the Windows sshd holds only the wildcard bind, and the more specific bind wins.
 package sshwizard
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/nowindow"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // Env is everything the wizard asks of the machine, so a test can answer it. It is the seam internal/guard/env.go
 // uses, and every method only reads.
 type Env interface {
 	GOOS() string
-	// Keyscan runs `ssh-keyscan -p <port> <host>` and returns its output, stdout and stderr together. The key lines are
-	// on stdout and the `# host:port banner` line on stderr, and the parser reads both.
-	Keyscan(ctx context.Context, host string, port int) (string, error)
+	// Keyscan asks host:port for its version banner and each host key it offers, and logs in to nothing.
+	Keyscan(ctx context.Context, host string, port int) (Scan, error)
 	// Glob lists the files matching a pattern.
 	Glob(pattern string) []string
 	ReadFile(path string) ([]byte, error)
@@ -51,13 +55,19 @@ type HostKey struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
+// Scan is what one sshd said before authentication: its version banner and its host keys.
+type Scan struct {
+	Banner string
+	Keys   []HostKey
+}
+
 // Probe is what one address answered.
 type Probe struct {
 	Addr   string    `json:"addr"`
 	Port   int       `json:"port"`
 	Banner string    `json:"banner,omitempty"`
 	Keys   []HostKey `json:"keys,omitempty"`
-	// Err is why nothing answered: refused, timed out, or no ssh-keyscan on the machine.
+	// Err is why nothing answered: refused, timed out, or no host key offered.
 	Err string `json:"err,omitempty"`
 }
 
@@ -130,28 +140,6 @@ func parseKeyLine(line string) (HostKey, bool) {
 	return HostKey{}, false
 }
 
-// ParseKeyscan reads ssh-keyscan's output into a banner and the keys.
-func ParseKeyscan(out string) (banner string, keys []HostKey) {
-	sc := bufio.NewScanner(strings.NewReader(out))
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "#") {
-			// `# 127.0.0.1:22 SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.1`
-			if i := strings.Index(line, "SSH-"); i >= 0 && banner == "" {
-				banner = strings.TrimSpace(line[i:])
-			}
-			continue
-		}
-		if k, ok := parseKeyLine(line); ok {
-			keys = append(keys, k)
-		}
-	}
-	return banner, keys
-}
-
 // scanTimeout bounds one scan. The wizard's own bound is longer than a few of these.
 const scanTimeout = 4 * time.Second
 
@@ -160,8 +148,8 @@ func ProbeAddr(ctx context.Context, env Env, addr string, port int) Probe {
 	p := Probe{Addr: addr, Port: port}
 	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
 	defer cancel()
-	out, err := env.Keyscan(ctx, addr, port)
-	p.Banner, p.Keys = ParseKeyscan(out)
+	sc, err := env.Keyscan(ctx, addr, port)
+	p.Banner, p.Keys = sc.Banner, sc.Keys
 	if len(p.Keys) == 0 {
 		switch {
 		case err != nil:
@@ -331,11 +319,108 @@ func (OSEnv) Addrs() []string {
 	return out
 }
 
-func (OSEnv) Keyscan(ctx context.Context, host string, port int) (string, error) {
-	cmd := exec.CommandContext(ctx, "ssh-keyscan", "-T", "3", "-p", fmt.Sprint(port), host)
-	nowindow.Hide(cmd)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+// dialTimeout bounds one connection, as `ssh-keyscan -T 3` did.
+const dialTimeout = 3 * time.Second
+
+// hostKeyAlgos are asked for one per connection, because a server offers only the key of the algorithm agreed on.
+var hostKeyAlgos = []string{ssh.KeyAlgoED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoRSASHA512}
+
+var errGotHostKey = errors.New("host key read, stopping before authentication")
+
+// Keyscan connects once per host key algorithm, one after another so a probe never holds more than one of sshd's
+// unauthenticated slots, and stops at the first connection that gets no ssh banner.
+func (OSEnv) Keyscan(ctx context.Context, host string, port int) (Scan, error) {
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	var sc Scan
+	var first error
+	for _, algo := range hostKeyAlgos {
+		banner, key, err := hostKeyOnce(ctx, addr, algo)
+		if sc.Banner == "" {
+			sc.Banner = banner
+		}
+		if key != nil {
+			sc.Keys = append(sc.Keys, HostKey{Type: key.Type(), Fingerprint: Fingerprint(key.Marshal())})
+			continue
+		}
+		if first == nil {
+			first = err
+		}
+		if banner == "" || ctx.Err() != nil {
+			break
+		}
+	}
+	if len(sc.Keys) > 0 {
+		return sc, nil
+	}
+	return sc, first
+}
+
+func hostKeyOnce(ctx context.Context, addr, algo string) (string, ssh.PublicKey, error) {
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return "", nil, err
+	}
+	defer conn.Close()
+	if dl, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(dl)
+	}
+	defer context.AfterFunc(ctx, func() { conn.Close() })()
+	vc := &versionConn{Conn: conn}
+	var mu sync.Mutex
+	var key ssh.PublicKey
+	cfg := &ssh.ClientConfig{
+		User:              "atrium",
+		HostKeyAlgorithms: []string{algo},
+		HostKeyCallback: func(_ string, _ net.Addr, k ssh.PublicKey) error {
+			mu.Lock()
+			key = k
+			mu.Unlock()
+			return errGotHostKey
+		},
+		Timeout: dialTimeout,
+	}
+	if c, _, _, err2 := ssh.NewClientConn(vc, addr, cfg); err2 != nil {
+		err = err2
+	} else {
+		c.Close()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if key != nil {
+		err = nil
+	}
+	return vc.version(), key, err
+}
+
+// versionConn keeps the first bytes the server sends, which hold its `SSH-2.0-...` line.
+type versionConn struct {
+	net.Conn
+	mu   sync.Mutex
+	head []byte
+}
+
+func (v *versionConn) Read(b []byte) (int, error) {
+	n, err := v.Conn.Read(b)
+	v.mu.Lock()
+	if room := 1024 - len(v.head); room > 0 && n > 0 {
+		v.head = append(v.head, b[:min(n, room)]...)
+	}
+	v.mu.Unlock()
+	return n, err
+}
+
+func (v *versionConn) version() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for _, l := range bytes.Split(v.head, []byte("\n")) {
+		if bytes.HasPrefix(l, []byte("SSH-")) {
+			return strings.TrimSpace(string(l))
+		}
+	}
+	return ""
 }
 
 // ListenerOwner asks Windows for the owning process of a listener, which a standard user may read. Elsewhere it says
