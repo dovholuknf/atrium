@@ -45,8 +45,11 @@ worktrees and test runs across every machine, and two rooms testing in turn woul
 machine was asked. One configured room keeps the verdict reproducible and lets clint move it with one setting
 (`atrium merge room <name>`), for example to a faster build box. One room also makes "one at a time" hold for free.
 
-The room keeps one worktree per repository at `<data dir>/merge/<host>/<owner>/<repo>`, made from its clone under
-`git_root`, detached at the candidate and reset before every run. It is not a card and no session runs in it.
+The room keeps one dedicated repository per repository at `<data dir>/merge/<host>/<owner>/<repo>`, not a worktree of
+its clone, so a branch can never bring hooks or config into it. Each run wipes its hooks and `info`, points
+`core.hooksPath` at an empty directory, turns fsmonitor off, fetches the candidate from the hub, detaches at it and
+cleans the tree, and runs the tests with an allowlisted environment. It is not a card and no session runs in it. A
+room that attaches late prunes the branches landed in the last 14 days, so its clone does not keep them.
 
 ## The request, its states and its log
 
