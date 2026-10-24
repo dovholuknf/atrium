@@ -60,21 +60,14 @@ function mergeWhy(m) {
   return m.reason || "";
 }
 
-// mergeLandRows is a land not yet on main, with the push that puts it there, else Land now with its count. A
-// repository waits for its last land to be on main before it is offered another.
+// mergeLandRows is Land now with its count, for each repository with requests on claude/main no land carries.
 function mergeLandRows(q) {
-  const rows = [], waiting = new Set();
-  for (const l of q.pending || []) {
-    waiting.add(l.repo);
-    rows.push('<div class="mq-row mq-land"><span class="mq-text">land ' + l.n + " of " + esc(l.repo) +
-      " is not on main yet: " + esc(l.push) + '</span><button type="button" data-mq="copy" data-push="' + esc(l.push) +
-      '">copy the push</button></div>');
-  }
+  const rows = [];
   for (const [repo, n] of Object.entries(q.unlanded || {})) {
-    if (!n || waiting.has(repo)) continue;
+    if (!n) continue;
     rows.push('<div class="mq-row mq-land"><span class="mq-text">' + n + (n === 1 ? " request" : " requests") +
       " on claude/main of " + esc(repo) + ' since the last land</span><button type="button" class="go" data-mq="land" ' +
-      'data-repo="' + esc(repo) + '" data-tip="one commit of claude/main on main, signed as you. you push it">Land now (' +
+      'data-repo="' + esc(repo) + '" data-tip="one commit of claude/main on the hub\'s main, by you">Land now (' +
       n + ")</button></div>");
   }
   return rows;
@@ -121,7 +114,7 @@ async function loadMerge(force) {
     if (!res.ok) throw new Error(String(res.status));
     const body = await res.json();
     mergeQ = { at: mergeQ.at, requests: body.requests || [], held: body.held || {}, room: body.room || "", why: body.why || "",
-      unlanded: body.unlanded || {}, pending: body.pending || [] };
+      unlanded: body.unlanded || {} };
   } catch (e) {
     // A hub mid-restart is not a finding. The strip keeps what it had and the next event or draw asks again.
   }
@@ -222,10 +215,10 @@ document.addEventListener("click", e => {
       if (mergeDlgOpen() && n === mergeOpenN) { mergeOpenN = 0; paintMergeDlg(); } else openMergeDlg(n);
       break;
     case "dismiss": mergeDismiss(n); break;
-    case "land": mergePost("/_hub/merge/land", { repo: b.dataset.repo }); break;
-    case "copy":
-      navigator.clipboard.writeText(b.dataset.push || "").then(() => toast("the push is on the clipboard", ""),
-        () => toast("could not copy the push", b.dataset.push || ""));
+    case "land":
+      if (confirm("Land now: put claude/main of " + b.dataset.repo + " on the hub's main as one commit?")) {
+        mergePost("/_hub/merge/land", { repo: b.dataset.repo });
+      }
       break;
     case "cancel": mergePost("/_hub/merge/" + n + "/cancel", {}); break;
     case "room": {

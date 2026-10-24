@@ -286,9 +286,7 @@ func mergeRoomCmd(board *string) *cobra.Command {
 
 type mergeLandOut struct {
 	hubstore.MergeLand
-	Branch string `json:"branch"`
-	OnMain bool   `json:"on_main"`
-	Push   string `json:"push"`
+	OnMain bool `json:"on_main"`
 }
 
 func mergeLandCmd(board *string) *cobra.Command {
@@ -296,10 +294,10 @@ func mergeLandCmd(board *string) *cobra.Command {
 	var show bool
 	c := &cobra.Command{
 		Use:   "land",
-		Short: "Cut one commit of what landed on claude/main since the last land, for main. From the hub's machine only",
-		Long: "Makes one commit with claude/main's tree on main, signed as you with your git config, keeps it on the\n" +
-			"hub's land/<n> branch, and moves claude/main onto it. It prints the push that puts it on origin's main,\n" +
-			"which you run. The next land waits until this one is on main. --show says what a land would carry.",
+		Short: "Put claude/main on the hub's main as one commit. From the hub's machine only",
+		Long: "Makes one commit with claude/main's tree whose parent is the hub's main, by your global git identity and\n" +
+			"unsigned, and moves the hub's main onto it. claude/main is not moved. The hub never pushes to the forge:\n" +
+			"putting main there is your own push. --show says what a land would carry.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if repo == "" {
@@ -330,7 +328,7 @@ func mergeLandCmd(board *string) *cobra.Command {
 				for _, l := range info.Lands {
 					where := "on main"
 					if !l.OnMain {
-						where = "not on main yet: " + l.Push
+						where = "no longer on main"
 					}
 					fmt.Fprintf(w, "land %d %s, %d requests, %s\n", l.N, shortSHA(l.Commit), len(l.Requests), where)
 				}
@@ -340,9 +338,8 @@ func mergeLandCmd(board *string) *cobra.Command {
 			if err := backlogDirect(addr, http.MethodPost, "/_hub/merge/land", map[string]string{"repo": repo}, &l); err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "land %d: %s on %s, %d requests. claude/main is on it now\n", l.N, shortSHA(l.Commit), l.Branch,
-				len(l.Requests))
-			fmt.Fprintf(w, "put it on origin's main, from a clone of %s, with\n  %s\n", repo, l.Push)
+			fmt.Fprintf(w, "land %d: the hub's main is %s now, %d requests. claude/main is where it was\n", l.N,
+				shortSHA(l.Commit), len(l.Requests))
 			return nil
 		},
 	}

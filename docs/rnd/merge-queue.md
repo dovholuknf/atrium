@@ -90,6 +90,10 @@ request again without spending its retry and holds the repository with the reaso
 doubles from a minute to sixteen. A git failure in the hub's own merge does the same. Only `ErrRefused` refuses, and
 a merge cut short by the hub stopping is left for the next start. The hub logs each hand-off and each verdict.
 
+**Red is read the way the shepherd reads it.** A run that went over its time budget is run once more before it is
+red, and a failing test named in `docs/known-failing-tests.md` does not make it red: the request lands with the known
+failures named in its reason.
+
 `atrium merge --list` and the board read the same rows: newest first, the open ones on top.
 
 ## Asking: `atrium merge` and `atrium_merge`
@@ -138,27 +142,30 @@ worktree, is left and named in the request's log, and the room deletes it when t
 room that is not attached does it at its next sync, from the hub's list of landed branches. The one-time sweep of old
 branches is `o-branch-sweep`, not this.
 
-## Landing origin/main: "land now"
+## Landing main: "land now"
 
-Never automatic: no count, timer or idle trigger. A **Land now** button on the board and `atrium merge land` do the same
-thing, and both are operator-only (`edge.LocalOperator` on the hub's machine).
+Never automatic: no count, timer or idle trigger. A **Land now** button on the board, behind a confirmation, and
+`atrium merge land` do the same thing, and both are operator-only (`edge.LocalOperator` on the hub's machine).
 
 1. The queue is paused, so nothing lands on `claude/main` while the batch is cut. A land is refused while a request
-   is merging or testing, and while the last land is not on `main` yet.
-2. The batch is every `landed` request since the last land. One commit is made, its tree `claude/main`'s tree, its
-   parent hub `main` (the mirror of `origin/main`), its message one subject line (`internal/land` refuses a body),
-   authored as the operator from the operator's global git config and signed when that config signs.
-3. The commit is put on the hub's branch `land/<n>`, and the answer carries the one `git push` that puts it on
-   `origin`'s `main`. The operator runs it. The board shows the pending land with a button that copies it.
-4. `claude/main` is moved onto the commit, and its old tip is kept under `refs/atrium/lands/<n>` first, so no
-   commit becomes unreachable. Its tree is the same, so nothing is replayed. This is not the epoch move:
-   `EpochMove` checks that every commit is on the new tip as itself or as a cherry-pick, and a squash is neither.
-5. The queue resumes. The land is a row of its own (`merge_land`: when, by, the commit, the requests), and each
-   request in it shows `on main` beside its sha once the hub's `main` has the commit.
+   is merging or testing.
+2. The batch is every `landed` request since the last land that brought a commit. A request `claude/main` had already
+   carries nothing, so it is not counted and never holds the button up.
+3. One commit is made with `commit-tree`: its tree `claude/main`'s, its parent the hub's `main`, its message one
+   subject line (`internal/land` refuses a body), authored as the operator from the operator's global git config read
+   through `gitsync`'s runner. The hub does not sign it.
+4. The commit is written to the hub's `main` and to `refs/atrium/lands/<n>` in one `update-ref --stdin` transaction,
+   under the repository's lock and the mirror pass's lock. A `main` that already has `claude/main`'s tree is not
+   moved, and the land is recorded at `main`.
+5. A land is allowed only when `main` is under `claude/main` or is the commit of an earlier land. Anything else is a
+   `main` someone moved by hand, and a land would undo it.
+6. `claude/main` is not moved, so every branch cut from it keeps its merge base and the history stays as it was. Once
+   a land exists, the forge's copy of `main` no longer replaces the hub's `main` past a rewrite.
+7. The queue resumes. The land is a row of its own (`merge_land`: when, by, the commit, `main` and `claude/main`
+   before, the requests).
 
-**Atrium does not write to a forge.** The push was the recommendation, but the hub's rule is that it only reads a
-forge and no answer came to change it, so this is the fallback: the button and the CLI do steps 1, 2 and 4 and hand
-the operator the push. Making it the push later is step 3 alone.
+**Atrium does not write to a forge.** A land moves the hub's `main` only. Putting it on `origin` is the operator's own
+push, and neither the board nor the CLI offers one.
 
 ## The board
 
@@ -196,15 +203,14 @@ it), and `atrium_flow epoch_close` now needs the orchestrator instead.
 5. **Asking.** `atrium merge` and `atrium_merge`.
 6. **Conflicts.** The slim merger launch, `of`, the head of the queue, the merger's end.
 7. **The board.** The Terminals tab strip and the history dialog.
-8. **Land now.** `merge_land`, the batch commit, `land/<n>`, the move of `claude/main`, the button and
-   `atrium merge land`.
+8. **Land now.** `merge_land`, the batch commit onto the hub's `main`, the button and `atrium merge land`.
 9. **The merger role retired.** `isMerger` out, `RoleSet` refusing it, the docs and briefs.
 
 ## Open points, one recommendation each
 
 1. **Which room.** `merge_room`, else the hub's machine's room. Reason above.
-2. **The forge push on land now.** Push, operator-only, with the fallback above. Needs clint's yes, since it changes
-   a stated hub rule.
+2. **The forge push on land now.** Decided by clint: no push. A land moves the hub's `main` only, and the operator
+   pushes `main` to the forge.
 3. **claude/main moved while testing** (an operator push). Merge again and test again, once. A second move refuses the
    request, so a busy operator cannot make the queue spin.
 4. **Branch protection beyond `claude/*`.** None. A `main` or tag request is refused like a push to them.

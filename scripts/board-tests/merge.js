@@ -28,7 +28,7 @@ async function mergeStripSection(browser, base) {
   mock.hubMode = true;
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 800 } });
   const errors = [], posts = [];
-  let gets = 0, pending = [];
+  let gets = 0, didLand = false;
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(e.message));
@@ -38,13 +38,13 @@ async function mergeStripSection(browser, base) {
       const req = r.request(), u = new URL(req.url());
       if (req.method() === "POST") {
         posts.push(u.pathname + " " + (req.postData() || ""));
-        if (u.pathname === "/_hub/merge/land") pending = [{ n: 1, repo: "github.com/o/r", push: "take land 1 to main" }];
+        if (u.pathname === "/_hub/merge/land") didLand = true;
         return json(r, { ok: true });
       }
       if (u.pathname === "/_hub/merge/7") return json(r, Object.assign(REQUESTS()[2], { output: "--- FAIL: TestA\nboom" }));
       gets++;
       return json(r, { requests: REQUESTS(), held: { "github.com/o/other": "no room is attached" }, room: "sg4",
-        why: "the hub's own room", unlanded: pending.length ? {} : { "github.com/o/r": 2 }, pending });
+        why: "the hub's own room", unlanded: didLand ? {} : { "github.com/o/r": 2 } });
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.evaluate(() => switchView("terms"));
@@ -65,11 +65,15 @@ async function mergeStripSection(browser, base) {
     got = await rows();
     if (got.some(t => t.startsWith("#7"))) fail("mergeStrip: dismiss left the red line");
 
+    p.once("dialog", d => d.dismiss());
     await p.click('#term-merge [data-mq="land"]');
-    await p.waitForFunction(() => /^land 1 of github.com\/o\/r is not on main yet: take land 1 to main$/.test(document.querySelector("#term-merge .mq-text").textContent),
-      null, { timeout: slow(5000) });
+    await p.waitForTimeout(200);
+    if (posts.length) fail("mergeStrip: Land now posted without a yes: " + JSON.stringify(posts));
+    p.once("dialog", d => d.accept());
+    await p.click('#term-merge [data-mq="land"]');
+    await p.waitForFunction(() => !document.querySelector('#term-merge [data-mq="land"]'), null, { timeout: slow(5000) });
     if (posts[0] !== '/_hub/merge/land {"repo":"github.com/o/r"}') fail("mergeStrip: Land now posted " + JSON.stringify(posts));
-    if (await p.evaluate(() => !!document.querySelector('#term-merge [data-mq="land"]'))) fail("mergeStrip: Land now is offered while the last land is not on main");
+    if (await p.evaluate(() => /push|not on main/.test(document.getElementById("term-merge").textContent))) fail("mergeStrip: the strip offers a push");
     posts.length = 0;
     got = await rows();
     if (got.some(t => t.startsWith("#7"))) fail("mergeStrip: dismiss left the red line");

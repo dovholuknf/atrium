@@ -440,7 +440,7 @@ func (s *Store) followMain(ctx context.Context, ref Ref, dir, def string) {
 	}
 	how := "fast-forward"
 	if _, err := s.git(ctx, dir, "merge-base", "--is-ancestor", cur, next); err != nil {
-		if !s.mainIsSeed(ctx, ref) {
+		if !s.mainIsSeed(ctx, ref, dir) {
 			s.h.audit("", "git-store-forge-main-kept", fmt.Sprintf("%s main %s, forge %s", ref.Name(), short(cur), short(next)))
 			return
 		}
@@ -455,10 +455,13 @@ func (s *Store) followMain(ctx context.Context, ref Ref, dir, def string) {
 	s.h.audit("", "git-store-forge-main", fmt.Sprintf("%s main %s..%s (%s)", ref.Name(), short(cur), short(next), how))
 }
 
-// mainIsSeed says whether main has only ever been the forge's: the push log has no operator push of it. With no push
-// log it cannot be told, and main is taken as pushed work.
-func (s *Store) mainIsSeed(ctx context.Context, ref Ref) bool {
+// mainIsSeed says whether main has only ever been the forge's: no land wrote it and the push log has no operator push
+// of it. With no push log it cannot be told, and main is taken as pushed work.
+func (s *Store) mainIsSeed(ctx context.Context, ref Ref, dir string) bool {
 	if s.h.PushLog == nil {
+		return false
+	}
+	if out, err := s.git(ctx, dir, "for-each-ref", "--count=1", "--format=%(refname)", LandRefPrefix); err != nil || strings.TrimSpace(out) != "" {
 		return false
 	}
 	_, pushed, err := s.h.PushLog.LastOperatorPush(ctx, ref.Name(), MainRef)

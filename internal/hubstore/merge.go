@@ -495,14 +495,15 @@ type MergeLand struct {
 	At           string  `json:"at"`
 }
 
-// MergeUnlanded is every landed request of a repository that no land carries yet, oldest first.
+// MergeUnlanded is every landed request of a repository that no land carries yet, oldest first. One claude/main had
+// already brought nothing, so it is not one.
 func (s *Store) MergeUnlanded(repo string) ([]MergeRequest, error) {
 	repo = MergeRepoName(repo)
 	out := []MergeRequest{}
 	err := s.guard(func() error {
 		out = []MergeRequest{}
 		rows, err := s.db.Query(`SELECT `+mergeCols+` FROM merge_request WHERE repo = ? AND state = ? AND land_n = 0
-			ORDER BY n`, repo, MergeLanded)
+			AND candidate != '' ORDER BY n`, repo, MergeLanded)
 		if err != nil {
 			return err
 		}
@@ -520,7 +521,7 @@ func (s *Store) MergeUnlanded(repo string) ([]MergeRequest, error) {
 	return out, err
 }
 
-// MergeLandNext is the number the next land gets, so its branch can be named before it is recorded.
+// MergeLandNext is the number the next land gets, so its ref can be named before it is recorded.
 func (s *Store) MergeLandNext() (int64, error) {
 	var top int64
 	err := s.guard(func() error {
@@ -602,8 +603,8 @@ func (s *Store) MergeUnlandedCounts() (map[string]int, error) {
 	out := map[string]int{}
 	err := s.guard(func() error {
 		out = map[string]int{}
-		rows, err := s.db.Query(`SELECT repo, COUNT(*) FROM merge_request WHERE state = ? AND land_n = 0 GROUP BY repo`,
-			MergeLanded)
+		rows, err := s.db.Query(`SELECT repo, COUNT(*) FROM merge_request WHERE state = ? AND land_n = 0 AND candidate != ''
+			GROUP BY repo`, MergeLanded)
 		if err != nil {
 			return err
 		}

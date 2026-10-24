@@ -38,9 +38,10 @@ with "the merge queue is the merger now: atrium merge".
 ### @LETTER@5. Land now
 
 1. With at least one landed request, open the Terminals tab and press **Land now** (or run `atrium merge land`).
-2. Press it again before the push is run.
+   Answer no to the confirmation once, then yes.
+2. Land a second branch on `claude/main` and press **Land now** again.
 
-**Expected:** the hub has `land/<n>` with one commit on `main`, its tree `claude/main`'s, its message one line, signed
-when the operator's git config signs. `claude/main` is that commit, and the old tip is under `refs/atrium/lands/<n>`.
-The board shows the pending land with a button that copies the push. The second press is refused until the push is
-run and the hub's `main` has the commit.
+**Expected:** answering no posts nothing. After yes the hub's `main` is one new commit whose parent is the old `main`,
+its tree `claude/main`'s, its message one line, authored as the operator and unsigned, and `refs/atrium/lands/<n>`
+is that commit. `claude/main` did not move, and no `land/<n>` branch exists. Neither the board nor the CLI shows a push
+command. The second land is a commit on top of the first.

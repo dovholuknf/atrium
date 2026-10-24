@@ -23,7 +23,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/land"
 )
 
 // The merge queue's hub half. See docs/rnd/merge-queue.md, internal/hubstore/merge.go for the rows and
@@ -67,8 +66,8 @@ type mergeQueue struct {
 	stalls  map[string]mergeStall
 	// now is the clock the watch ages a run by, time.Now when nil.
 	now func() time.Time
-	// sign is the land's identity and signer, operatorSign when nil.
-	sign func() (land.Identity, land.Signer, error)
+	// author is who a land is by, operatorAuthor when nil.
+	author func(ctx context.Context) (gitsync.LandAuthor, error)
 	// cardID is the id of the card that answers to agent on room, "" when none does. mergeCardOf when nil.
 	cardID func(ctx context.Context, room, agent string) string
 }
@@ -253,13 +252,13 @@ func (p *Proxy) mergeList(w http.ResponseWriter, r *http.Request, st *hubstore.S
 		return
 	}
 	room, why := p.mergeRoomPick(st)
-	unlanded, pending, err := p.mergeLandState(r, st)
+	unlanded, err := st.MergeUnlandedCounts()
 	if err != nil {
 		ffail(w, err)
 		return
 	}
 	crJSON(w, http.StatusOK, map[string]any{"requests": ms, "held": p.merges.holds(), "room": room, "why": why,
-		"unlanded": unlanded, "pending": pending})
+		"unlanded": unlanded})
 }
 
 // mergeAskRoute queues a request. The branch has to be on the hub at the sha asked, so "push first" is said here and

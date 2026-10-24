@@ -116,42 +116,53 @@ func TestMergeCandidateRefusesWhatWasNotPushed(t *testing.T) {
 	}
 }
 
-func TestMergeLandCutPutsClaudeMainsTreeOnMainAndKeepsTheOldTip(t *testing.T) {
+func TestMergeLandCutPutsClaudeMainsTreeOnMainAndLeavesClaudeMain(t *testing.T) {
 	x := mergeRig(t)
 	st := x.h.Store()
+	dir, _ := st.Path(hubRepo)
+	at := func(f, rev string) string {
+		return strings.TrimSpace(must(Default.Git(bg, dir, "log", "-1", "--format="+f, rev)))
+	}
+	by := LandAuthor{Name: "o", Email: "o@o"}
 	main := x.refOn(hubRepo, MainRef)
-	body := func(tree, parent string) ([]byte, error) {
-		return []byte("tree " + tree + "\nparent " + parent + "\nauthor o <o@o> 1700000000 +0000\n" +
-			"committer o <o@o> 1700000000 +0000\n\nland 1\n"), nil
+	c, err := st.MergeLandCut(bg, hubRepo, 1, by, "Land 1: #1 a")
+	if err != nil || c.Moved || c.Commit != main || x.refOn(hubRepo, MainRef) != main || x.refOn(hubRepo, LandRefPrefix+"1") != main {
+		t.Fatalf("main has claude/main's tree already: %+v %v", c, err)
 	}
-	if _, err := st.MergeLandCut(bg, hubRepo, 1, "", body); !errors.Is(err, ErrRefused) {
-		t.Fatalf("nothing to land: %v", err)
-	}
+
 	git(t, x.work, "switch", "-q", "cm")
 	commit(t, x.work, "a.txt", "a")
 	old := commit(t, x.work, "b.txt", "b")
 	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
-
-	c, err := st.MergeLandCut(bg, hubRepo, 1, "", body)
-	if err != nil || c.MainBefore != main || c.ClaudeBefore != old || c.Branch != "land/1" {
+	c, err = st.MergeLandCut(bg, hubRepo, 2, by, "Land 2: #2 b")
+	if err != nil || !c.Moved || c.MainBefore != main || c.ClaudeBefore != old {
 		t.Fatalf("cut: %+v %v", c, err)
 	}
-	dir, _ := st.Path(hubRepo)
-	tree := func(rev string) string {
-		return strings.TrimSpace(must(Default.Git(bg, dir, "rev-parse", rev+"^{tree}")))
+	if at("%T", c.Commit) != at("%T", old) || at("%P", c.Commit) != main || at("%an <%ae>|%B", c.Commit) != "o <o@o>|Land 2: #2 b" {
+		t.Fatalf("the land commit: %s %s", at("%P", c.Commit), at("%an <%ae>|%B", c.Commit))
 	}
-	if tree(c.Commit) != tree(old) || strings.TrimSpace(must(Default.Git(bg, dir, "rev-parse", c.Commit+"^"))) != main {
-		t.Fatal("the land commit is not claude/main's tree on main")
-	}
-	if x.refOn(hubRepo, ClaudeMainRef) != c.Commit || x.refOn(hubRepo, headsPrefix+"land/1") != c.Commit ||
-		x.refOn(hubRepo, LandRefPrefix+"1") != old {
+	if x.refOn(hubRepo, MainRef) != c.Commit || x.refOn(hubRepo, ClaudeMainRef) != old || x.refOn(hubRepo, LandRefPrefix+"2") != c.Commit {
 		t.Fatalf("refs: %s", x.refsOn(hubRepo))
 	}
-	if on, err := st.OnMain(bg, hubRepo, c.Commit); err != nil || on {
-		t.Fatalf("on main before the push: %v %v", on, err)
+	if strings.Contains(x.refsOn(hubRepo), "refs/heads/land/") {
+		t.Fatalf("a land branch: %s", x.refsOn(hubRepo))
 	}
-	if _, err := st.MergeLandCut(bg, hubRepo, 2, c.Commit, body); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "not on main") {
-		t.Fatalf("the last land not pushed: %v", err)
+	if strings.Contains(must(Default.Git(bg, dir, "cat-file", "-p", c.Commit)), "gpgsig") {
+		t.Fatal("the land is signed")
+	}
+
+	commit(t, x.work, "c.txt", "c")
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	next, err := st.MergeLandCut(bg, hubRepo, 3, by, "Land 3: #3 c")
+	if err != nil || !next.Moved || at("%P", next.Commit) != c.Commit || x.refOn(hubRepo, MainRef) != next.Commit {
+		t.Fatalf("a land onto the last land: %+v %v", next, err)
+	}
+
+	env := []string{"GIT_AUTHOR_NAME=s", "GIT_AUTHOR_EMAIL=s@s", "GIT_COMMITTER_NAME=s", "GIT_COMMITTER_EMAIL=s@s"}
+	stray := strings.TrimSpace(must(Default.GitEnv(bg, dir, env, "commit-tree", next.Commit+"^{tree}", "-p", next.Commit, "-m", "stray")))
+	must(Default.Git(bg, dir, "update-ref", MainRef, stray))
+	if _, err := st.MergeLandCut(bg, hubRepo, 4, by, "Land 4"); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "neither") {
+		t.Fatalf("main moved by hand: %v", err)
 	}
 }
 

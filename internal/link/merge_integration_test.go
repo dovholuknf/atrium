@@ -17,7 +17,6 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/land"
 )
 
 type mergeFix struct {
@@ -324,10 +323,12 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 	}
 }
 
-func TestMergeLandCutsOneCommitAndWaitsForItOnMain(t *testing.T) {
+func TestMergeLandPutsOneCommitOnMainAndLeavesClaudeMain(t *testing.T) {
 	x := newMergeFix(t)
 	x.push(t, "main:refs/heads/main")
-	x.p.merges.sign = func() (land.Identity, land.Signer, error) { return land.Identity{Name: "o", Email: "o@o"}, nil, nil }
+	x.p.merges.author = func(context.Context) (gitsync.LandAuthor, error) {
+		return gitsync.LandAuthor{Name: "o", Email: "o@o"}, nil
+	}
 	green := func(name string) hubstore.MergeRequest {
 		t.Helper()
 		x.branch(t, name, name+".txt", name)
@@ -342,25 +343,32 @@ func TestMergeLandCutsOneCommitAndWaitsForItOnMain(t *testing.T) {
 	if code, b := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo})); code != 400 || !strings.Contains(b, "nothing has landed") {
 		t.Fatalf("an empty land: %d %s", code, b)
 	}
+	x.branch(t, "in", "in.txt", "in")
+	_, in := x.ask(t, "claude/in", "w1@sg4")
+	must(x.st.MergeMove(hubstore.MergeStep{N: in.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
+	base := x.refOn(t, "refs/heads/claude/main")
+	must(x.st.MergeMove(hubstore.MergeStep{N: in.N, From: hubstore.MergeMerging, To: hubstore.MergeLanded, Base: base, Landed: base}))
+	if code, b := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo})); code != 400 || !strings.Contains(b, "nothing has landed") {
+		t.Fatalf("an already-in request is a land: %d %s", code, b)
+	}
 	a, b := green("la"), green("lb")
 	claude := x.refOn(t, "refs/heads/claude/main")
-	if code, body := x.send("GET", "/_hub/merge", ""); code != 200 || !strings.Contains(body, `"unlanded":{"`+boardRepo+`":2}`) {
-		t.Fatalf("the count: %d %s", code, body)
+	main := x.refOn(t, "refs/heads/main")
+	if code, body := x.send("GET", "/_hub/merge", ""); code != 200 || !strings.Contains(body, `"unlanded":{"`+boardRepo+`":2}`) ||
+		strings.Contains(body, "pending") || strings.Contains(body, "push") {
+		t.Fatalf("the list: %d %s", code, body)
 	}
 	if code, body := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo, "by": "w1@sg4"})); code != 403 {
 		t.Fatalf("a card lands: %d %s", code, body)
 	}
 	code, body := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo}))
-	var l struct {
-		hubstore.MergeLand
-		Branch, Push string
-	}
-	if code != 201 || json.Unmarshal([]byte(body), &l) != nil || l.Branch != "land/1" || len(l.Requests) != 2 ||
-		!strings.Contains(l.Push, "land/1 && ") || !strings.HasSuffix(l.Push, " FETCH_HEAD:main") {
+	var l mergeLandOut
+	if code != 201 || json.Unmarshal([]byte(body), &l) != nil || len(l.Requests) != 2 || !l.OnMain || l.MainBefore != main ||
+		l.ClaudeBefore != claude || strings.Contains(body, "push") {
 		t.Fatalf("land: %d %s", code, body)
 	}
-	if x.refOn(t, "refs/heads/claude/main") != l.Commit || x.refOn(t, "refs/heads/land/1") != l.Commit ||
-		x.refOn(t, "refs/atrium/lands/1") != claude {
+	if x.refOn(t, "refs/heads/main") != l.Commit || x.refOn(t, "refs/heads/claude/main") != claude ||
+		x.refOn(t, "refs/atrium/lands/1") != l.Commit || x.refOn(t, "refs/heads/land/1") != "" {
 		t.Fatalf("refs after the land: %s", body)
 	}
 	if got := must(x.st.MergeGet(a.N)); got.LandN != 1 {
@@ -369,17 +377,24 @@ func TestMergeLandCutsOneCommitAndWaitsForItOnMain(t *testing.T) {
 	if got := must(x.st.MergeGet(b.N)); got.LandN != 1 {
 		t.Fatalf("b: %+v", got)
 	}
-	if code, body := x.send("GET", "/_hub/merge", ""); code != 200 || !strings.Contains(body, `"branch":"land/1"`) ||
-		!strings.Contains(body, `"unlanded":{}`) {
-		t.Fatalf("the list: %d %s", code, body)
+	if got := must(x.st.MergeGet(in.N)); got.LandN != 0 {
+		t.Fatalf("the already-in request was carried: %+v", got)
+	}
+	if code, body := x.send("GET", "/_hub/merge", ""); code != 200 || !strings.Contains(body, `"unlanded":{}`) {
+		t.Fatalf("the list after: %d %s", code, body)
 	}
 	code, body = x.send("GET", "/_hub/merge/land?repo="+boardRepo, "")
-	if code != 200 || !strings.Contains(body, `"on_main":false`) || !strings.Contains(body, `"unlanded":[]`) {
+	if code != 200 || !strings.Contains(body, `"on_main":true`) || !strings.Contains(body, `"unlanded":[]`) {
 		t.Fatalf("info: %d %s", code, body)
 	}
-	green("lc")
-	if code, body := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo})); code != 400 || !strings.Contains(body, "not on main") {
-		t.Fatalf("a land before the last is on main: %d %s", code, body)
+	c := green("lc")
+	if got := must(x.st.MergeGet(c.N)); got.State != hubstore.MergeLanded {
+		t.Fatalf("a branch after the land: %+v", got)
+	}
+	code, body = x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo}))
+	var l2 mergeLandOut
+	if code != 201 || json.Unmarshal([]byte(body), &l2) != nil || l2.MainBefore != l.Commit || x.refOn(t, "refs/heads/main") != l2.Commit {
+		t.Fatalf("a land onto the last land: %d %s", code, body)
 	}
 }
 

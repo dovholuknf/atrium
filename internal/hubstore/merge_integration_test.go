@@ -175,19 +175,23 @@ func TestMergeSetMergerOnlyOnAConflict(t *testing.T) {
 
 func TestMergeLandAddCarriesEachLandedRequestOnce(t *testing.T) {
 	s := open(t)
-	land := func(m MergeRequest) {
+	land := func(m MergeRequest, candidate string) {
 		t.Helper()
 		s.MergeMove(MergeStep{N: m.N, To: MergeMerging})
-		if _, err := s.MergeMove(MergeStep{N: m.N, To: MergeLanded, Landed: "abcdef1"}); err != nil {
+		if _, err := s.MergeMove(MergeStep{N: m.N, To: MergeLanded, Candidate: candidate, Landed: "abcdef1"}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	a, b, c := mqAsk(t, s, "claude/a", "aaaaaaa1"), mqAsk(t, s, "claude/b", "bbbbbbb1"), mqAsk(t, s, "claude/c", "ccccccc1")
-	land(a)
-	land(b)
+	land(a, "abcdef1")
+	land(b, "abcdef1")
+	land(mqAsk(t, s, "claude/in", "ddddddd1"), "")
 	got, err := s.MergeUnlanded(mqRepo)
 	if err != nil || len(got) != 2 || got[0].N != a.N || got[1].N != b.N {
 		t.Fatalf("unlanded: %+v %v", got, err)
+	}
+	if counts, err := s.MergeUnlandedCounts(); err != nil || counts[MergeRepoName(mqRepo)] != 2 || len(counts) != 1 {
+		t.Fatalf("counts: %v %v", counts, err)
 	}
 	n, err := s.MergeLandNext()
 	if err != nil || n != 1 {

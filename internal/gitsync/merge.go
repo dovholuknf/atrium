@@ -25,7 +25,7 @@ const MinSHAPrefix = 7
 // MergeGit is the oldest git with `merge-tree --write-tree`.
 const MergeGit = "2.38"
 
-// The identity of a merge commit the queue makes. A land rewrites it.
+// The identity of a merge commit the queue makes. A land is one commit by the operator, so main never carries it.
 const (
 	mergeName  = "atrium merge queue"
 	mergeEmail = "merge-queue@atrium.invalid"
@@ -245,26 +245,38 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 	return true, nil
 }
 
-// LandRefPrefix keeps claude/main's tip from before each land, so no commit becomes unreachable.
+// LandRefPrefix keeps each land's commit, so a main that is a land is told from one a person pushed.
 const LandRefPrefix = "refs/atrium/lands/"
 
-// LandBranch is the branch land n's commit is kept on until it is on main.
-func LandBranch(n int64) string { return "land/" + strconv.FormatInt(n, 10) }
+// LandAuthor is who a land commit is by: the operator, from their own git config.
+type LandAuthor struct{ Name, Email string }
 
-// LandCut is what one land made: Commit, with claude/main's tree and main for its parent.
+// OperatorAuthor reads user.name and user.email from the operator's global git config.
+func OperatorAuthor(ctx context.Context) (LandAuthor, error) {
+	cfg := func(k string) string {
+		out, _ := Default.Git(ctx, "", "config", "--global", "--get", k)
+		return strings.TrimSpace(out)
+	}
+	a := LandAuthor{Name: cfg("user.name"), Email: cfg("user.email")}
+	if a.Name == "" || a.Email == "" {
+		return a, refuse("set git config --global user.name and user.email on the hub's machine")
+	}
+	return a, nil
+}
+
+// LandCut is what one land made: Commit, with claude/main's tree and main for its parent, now main. Moved is false
+// when main already had claude/main's tree, and Commit is then main as it was.
 type LandCut struct {
 	Commit       string `json:"commit"`
 	MainBefore   string `json:"main_before"`
 	ClaudeBefore string `json:"claude_before"`
-	Branch       string `json:"branch"`
+	Moved        bool   `json:"moved"`
 }
 
-// MergeLandCut makes land n under the push lock: one commit whose tree is claude/main's and whose parent is main, kept
-// on LandBranch(n), and claude/main moved onto it with its old tip under LandRefPrefix. body writes the commit object's
-// content, so the identity and the signature are the caller's. mustHave, when set, has to be on main already: the
-// last land, which is pushed before the next is cut.
-func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, mustHave string,
-	body func(tree, parent string) ([]byte, error)) (LandCut, error) {
+// MergeLandCut makes land n under the push lock: one commit whose tree is claude/main's and whose parent is main,
+// written to main and to LandRefPrefix<n> in one transaction. claude/main is not moved, so no branch cut from it
+// loses its merge base. main has to be under claude/main, or be the last land's commit.
+func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandAuthor, msg string) (LandCut, error) {
 	var c LandCut
 	ref, err := ParseName(name)
 	if err != nil {
@@ -280,6 +292,13 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, mustHave
 	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
 	l.Lock()
 	defer l.Unlock()
+	if ml := s.mirrorLock(dir); ml != nil {
+		ml.Lock()
+		defer ml.Unlock()
+	}
+	if markerKind(dir) == KindAdopted {
+		return c, refuse("%s", adoptedSentence(name))
+	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
 	for branch, into := range map[string]*string{IntegrationBranch: &c.ClaudeBefore, "main": &c.MainBefore} {
@@ -292,47 +311,45 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, mustHave
 		}
 		*into = tip
 	}
-	if mustHave != "" {
-		if ok, err := s.isAncestor(ctx, dir, mustHave, c.MainBefore); err != nil {
+	under, err := s.isAncestor(ctx, dir, c.MainBefore, c.ClaudeBefore)
+	if err != nil {
+		return c, err
+	}
+	if !under {
+		out, err := s.git(ctx, dir, "for-each-ref", "--count=1", "--format=%(refname)", "--points-at", c.MainBefore, LandRefPrefix)
+		if err != nil {
 			return c, err
-		} else if !ok {
-			return c, refuse("the last land, %s, is not on main yet. push it to main first", short(mustHave))
+		}
+		if strings.TrimSpace(out) == "" {
+			return c, refuse("main (%s) is neither under claude/main nor a land, so a land would undo what main has", short(c.MainBefore))
 		}
 	}
-	if c.ClaudeBefore == c.MainBefore {
-		return c, refuse("claude/main is main, so there is nothing to land")
-	}
-	if ok, err := s.isAncestor(ctx, dir, c.MainBefore, c.ClaudeBefore); err != nil {
-		return c, err
-	} else if !ok {
-		return c, refuse("claude/main does not have main (%s) under it, so a land would undo what main has", short(c.MainBefore))
-	}
-	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", c.ClaudeBefore+"^{tree}")
+	trees, err := s.git(ctx, dir, "rev-parse", c.ClaudeBefore+"^{tree}", c.MainBefore+"^{tree}")
 	if err != nil {
 		return c, err
 	}
-	tree := strings.TrimSpace(out)
-	b, err := body(tree, c.MainBefore)
-	if err != nil {
-		return c, err
+	tt := strings.Fields(trees)
+	if len(tt) != 2 || !ValidSHA(tt[0]) {
+		return c, fmt.Errorf("rev-parse answered %q, not two trees", short(trees))
 	}
-	out, err = s.h.runner().gitWith(ctx, dir, s.env(), b, 0, "hash-object", "-w", "-t", "commit", "--stdin")
-	if err != nil {
-		return c, err
+	c.Commit = c.MainBefore
+	if tt[0] != tt[1] {
+		env := append(s.env(), "GIT_AUTHOR_NAME="+by.Name, "GIT_AUTHOR_EMAIL="+by.Email,
+			"GIT_COMMITTER_NAME="+by.Name, "GIT_COMMITTER_EMAIL="+by.Email)
+		out, err := s.h.runner().GitEnv(ctx, dir, env, "commit-tree", "--no-gpg-sign", tt[0], "-p", c.MainBefore, "-m", msg)
+		if err != nil {
+			return c, err
+		}
+		if c.Commit = strings.TrimSpace(out); !ValidSHA(c.Commit) {
+			return c, fmt.Errorf("commit-tree answered %q, not a commit", short(c.Commit))
+		}
+		c.Moved = true
 	}
-	c.Commit = strings.TrimSpace(out)
-	if got, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", c.Commit+"^{tree}"); err != nil || strings.TrimSpace(got) != tree {
-		return c, fmt.Errorf("the land commit %s does not have claude/main's tree: %v", short(c.Commit), err)
+	tx := fmt.Sprintf("create %s%d %s\n", LandRefPrefix, n, c.Commit)
+	if c.Moved {
+		tx += fmt.Sprintf("update %s %s %s\n", MainRef, c.Commit, c.MainBefore)
 	}
-	c.Branch = LandBranch(n)
-	msg := fmt.Sprintf("land %d", n)
-	if _, err := s.git(ctx, dir, "update-ref", "-m", msg, headsPrefix+c.Branch, c.Commit, ""); err != nil {
-		return c, err
-	}
-	if _, err := s.git(ctx, dir, "update-ref", "-m", msg, LandRefPrefix+strconv.FormatInt(n, 10), c.ClaudeBefore); err != nil {
-		return c, err
-	}
-	_, err = s.git(ctx, dir, "update-ref", "-m", msg, ClaudeMainRef, c.Commit, c.ClaudeBefore)
+	_, err = s.h.runner().gitWith(ctx, dir, s.env(), []byte(tx), 0, "update-ref", "-m", fmt.Sprintf("land %d", n), "--stdin")
 	return c, err
 }
 
