@@ -67,7 +67,7 @@ async function mergeStripSection(browser, base) {
 
     p.once("dialog", d => d.dismiss());
     await p.click('#term-merge [data-mq="land"]');
-    await p.waitForTimeout(200);
+    await p.waitForTimeout(200); // wait: negative check, a declined confirm must post nothing
     if (posts.length) fail("mergeStrip: Land now posted without a yes: " + JSON.stringify(posts));
     p.once("dialog", d => d.accept());
     await p.click('#term-merge [data-mq="land"]');
@@ -79,7 +79,7 @@ async function mergeStripSection(browser, base) {
     if (got.some(t => t.startsWith("#7"))) fail("mergeStrip: dismiss left the red line");
 
     await p.click('#term-merge [data-mq="cancel"][data-n="6"]');
-    await p.waitForTimeout(200);
+    await p.waitForTimeout(200); // wait: the click posts with no page signal to wait on
     if (!String(posts[0]).startsWith("/_hub/merge/6/cancel ")) fail("mergeStrip: give up posted " + JSON.stringify(posts));
 
     await p.click('#term-merge .mq-sum [data-mq="queue"]');

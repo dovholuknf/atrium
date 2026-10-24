@@ -18977,7 +18977,7 @@ async function workerCardColorsSection(browser, base) {
     for (const sk of skins) {
       await p.evaluate(s => s ? document.documentElement.setAttribute("data-skin", s)
         : document.documentElement.removeAttribute("data-skin"), sk);
-      await p.waitForTimeout(60);
+      await p.waitForTimeout(60); // wait: a skin swap has no event to wait on, let the style settle
       low.push(...await p.evaluate(skin => {
         const parse = s => {
           let m = /^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/.exec(s);
