@@ -551,6 +551,8 @@ if step go-build "go build"; then
   check "test globals" go run scripts/check-test-globals.go
   # No test gains a flat wait: spin on a condition, or mark the line `// wait: <why>`.
   check "test waits" go run scripts/check-test-waits.go
+  # No package imports one the layer table in the file does not allow. See docs/design/go-modules.md.
+  check "import layers" go run scripts/check-imports.go
   check "flaky suite names" node scripts/flaky-suite.js check
 fi
 
