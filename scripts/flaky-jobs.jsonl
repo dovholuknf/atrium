@@ -183,3 +183,6 @@
 {"run":"40034531504","date":"2026-10-23T22:34:56Z","sha":"8ff22026d","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"40062789322","date":"2026-10-24T04:33:11Z","sha":"a1963efc7","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"40063862684","date":"2026-10-24T04:49:36Z","sha":"c05400621","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"40063962133","date":"2026-10-24T04:51:02Z","sha":"3bc208750","job":120783535045,"name":"check (ubuntu-latest, go-all)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40063962133","date":"2026-10-24T04:51:02Z","sha":"3bc208750","job":120783535062,"name":"check (macos-latest, go-test)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40063962133","date":"2026-10-24T04:51:02Z","sha":"3bc208750","job":120783535101,"name":"check (windows-latest, build-board-1)","tests":["(step failed, no test named in the log)"],"retried":[]}
