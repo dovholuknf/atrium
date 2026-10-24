@@ -540,13 +540,13 @@ fi
 
 if step go-vet "go vet"; then
   # With the tag, so the integration test files are vetted too. See scripts/test.sh.
-  check "go vet" go vet -tags integration ./...
+  check "go vet" go vet -tags integration $(go list -m -f '{{.Path}}/...')
 fi
 
 if step go-build "go build"; then
   # `-o build.claude/` even though `./...` writes nothing anybody keeps. Go builds in this repository land in
   # build.claude/ and never in the root, and there is a hook that enforces it on a developer's machine.
-  check "go build" go build -o build.claude/ ./...
+  check "go build" go build -o build.claude/ $(go list -m -f '{{.Path}}/...')
   # No test assigns a package variable: a hook, delay, limit or clock belongs on the struct that uses it.
   check "test globals" go run scripts/check-test-globals.go
   # No test gains a flat wait: spin on a condition, or mark the line `// wait: <why>`.
@@ -576,7 +576,7 @@ if step go-test "go test"; then
   flaky_skip="$(node scripts/flaky-suite.js go-regex)"
   skip_flaky=(); [ -n "$flaky_skip" ] && skip_flaky=(-skip "$flaky_skip")
   if [ -z "$part" ]; then
-    go_test_run all -p "$cpus" ${skip_flaky[@]+"${skip_flaky[@]}"} ./...; go_ok=$?
+    go_test_run all -p "$cpus" ${skip_flaky[@]+"${skip_flaky[@]}"} $(go list -m -f '{{.Path}}/...'); go_ok=$?
     mv "$artefacts/go-test.all/stream.json" "$artefacts/go-test.json"
     mv "$artefacts"/go-test.all/* "$artefacts/" 2>/dev/null
   else
@@ -593,7 +593,7 @@ if step go-test "go test"; then
       go_test_run daemon -run "$cut" ${skip_flaky[@]+"${skip_flaky[@]}"} "$daemon" & daemon_pid=$!
     else
       mod="$(go list -m)"
-      rest="$(go list -tags integration,git ./... | grep -v -x -F -f <(for p in $daemon $part1; do echo "$mod/${p#./}"; done) | tr '\n' ' ')"
+      rest="$(go list -tags integration,git $(go list -m -f '{{.Path}}/...') | grep -v -x -F -f <(for p in $daemon $part1; do echo "$mod/${p#./}"; done) | tr '\n' ' ')"
       go_test_run daemon -skip "$cut${flaky_skip:+|$flaky_skip}" "$daemon" & daemon_pid=$!
     fi
     echo "part $part: daemon $([ "$part" = 1 ] && echo -run || echo -skip) '$cut', then: $rest"
@@ -632,7 +632,7 @@ if step go-race "go test -race (unit tests)"; then
   else
     # Through the same reporter as go-test, into its own folder so its files do not mix with that step's.
     race_dir="$artefacts/race"; mkdir -p "$race_dir"
-    go test -race -json -count=1 -p "$cpus" -timeout 20m ./... 2>&1 | go run scripts/ci-report.go -dir "$race_dir"
+    go test -race -json -count=1 -p "$cpus" -timeout 20m $(go list -m -f '{{.Path}}/...') 2>&1 | go run scripts/ci-report.go -dir "$race_dir"
     codes=("${PIPESTATUS[@]}")
     if [ "${codes[0]}" = "0" ] && [ "${codes[1]}" = "0" ]; then
       echo "ok: go test -race"
@@ -669,7 +669,7 @@ fi
 if step govulncheck "govulncheck"; then
   # A vulnerability in the standard library or a dependency is found by this and not by an audit. Pinned so a new
   # govulncheck cannot redden a build by itself, and the database it reads is always the current one. Needs the network.
-  check "govulncheck" go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+  check "govulncheck" go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 $(go list -m -f '{{.Path}}/...')
 fi
 
 if step board "the board"; then

@@ -51,7 +51,7 @@ release:
 	bash scripts/release.sh $(VERSION)
 
 tidy:
-	go mod tidy
+	for d in $$(go list -m -f '{{.Dir}}'); do (cd "$$d" && go mod tidy) || exit 1; done
 
 # Unit tests. `test-all` adds the integration tests, which CI runs. See scripts/test.sh.
 test:
