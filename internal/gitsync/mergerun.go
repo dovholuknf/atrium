@@ -98,6 +98,7 @@ type MergeRunner struct {
 type mergeRun struct {
 	job    MergeJob
 	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // ErrReportRefused is a verdict the hub answered with a 4xx. Sending it again changes nothing.
@@ -130,22 +131,29 @@ func (m *MergeRunner) serveRun(w http.ResponseWriter, r *http.Request) {
 	if m.running == nil {
 		m.running = map[string]*mergeRun{}
 	}
-	if old := m.running[j.Repo]; old != nil {
+	key := strings.ToLower(j.Repo)
+	old := m.running[key]
+	if old != nil {
 		old.cancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &mergeRun{job: j, cancel: cancel}
-	m.running[j.Repo] = run
+	run := &mergeRun{job: j, cancel: cancel, done: make(chan struct{})}
+	m.running[key] = run
 	m.mu.Unlock()
 	go func() {
+		defer close(run.done)
 		defer cancel()
+		// The old run's worktree is this run's, so its process tree is gone before this one starts.
+		if old != nil {
+			<-old.done
+		}
 		rep := m.Run(ctx, j)
 		m.mu.Lock()
-		if m.running[j.Repo] != run {
+		if m.running[key] != run {
 			m.mu.Unlock()
 			return
 		}
-		delete(m.running, j.Repo)
+		delete(m.running, key)
 		if m.last == nil {
 			m.last = map[int64]MergeReport{}
 		}

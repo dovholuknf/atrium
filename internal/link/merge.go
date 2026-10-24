@@ -68,6 +68,10 @@ type mergeQueue struct {
 	now func() time.Time
 	// author is who a land is by, operatorAuthor when nil.
 	author func(ctx context.Context) (gitsync.LandAuthor, error)
+	// kick wakes RunMerges. Nil until it runs, and a kick then schedules on its own goroutine.
+	kick chan struct{}
+	// launch is the merger launches a schedule left for after merges.run is let go. Held under merges.run.
+	launch []func()
 	// cardID is the id of the card that answers to agent on room, "" when none does. mergeCardOf when nil.
 	cardID func(ctx context.Context, room, agent string) string
 }
@@ -562,14 +566,38 @@ func localConn(c net.Conn, host string) bool {
 	return err == nil && host != "" && strings.EqualFold(strings.TrimSpace(host), me)
 }
 
-// mergeKick runs the queue off the caller's path.
+// mergeKick runs the queue off the caller's path. Kicks while one is pending are one.
 func (p *Proxy) mergeKick() {
-	go p.mergeSchedule(context.Background())
+	p.merges.mu.Lock()
+	k := p.merges.kick
+	p.merges.mu.Unlock()
+	if k == nil {
+		go p.mergeSchedule(context.Background())
+		return
+	}
+	select {
+	case k <- struct{}{}:
+	default:
+	}
+}
+
+// mergeUnlock lets go of merges.run, then launches the mergers the schedule found, so a slow launch holds up no queue.
+func (p *Proxy) mergeUnlock() {
+	launch := p.merges.launch
+	p.merges.launch = nil
+	p.merges.run.Unlock()
+	for _, f := range launch {
+		f()
+	}
 }
 
 // RunMerges is the queue's tick, every 30 seconds, so a queue held for want of a merge room moves when one attaches,
 // and a run whose verdict never came is noticed. What a restart left merging is queued again before anything runs.
 func (p *Proxy) RunMerges(ctx context.Context) {
+	kick := make(chan struct{}, 1)
+	p.merges.mu.Lock()
+	p.merges.kick = kick
+	p.merges.mu.Unlock()
 	p.merges.run.Lock()
 	p.mergeRecover()
 	p.merges.run.Unlock()
@@ -579,6 +607,8 @@ func (p *Proxy) RunMerges(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-kick:
+			p.mergeSchedule(ctx)
 		case <-t.C:
 			p.mergeTick(ctx)
 		}
@@ -587,7 +617,7 @@ func (p *Proxy) RunMerges(ctx context.Context) {
 
 func (p *Proxy) mergeTick(ctx context.Context) {
 	p.merges.run.Lock()
-	defer p.merges.run.Unlock()
+	defer p.mergeUnlock()
 	p.mergeRecover()
 	p.mergeWatch(ctx)
 	p.mergeScheduleLocked(ctx)
@@ -660,7 +690,7 @@ func (p *Proxy) mergeWatch(ctx context.Context) {
 // mergeSchedule starts the next request of every repository with nothing merging or testing. Serial.
 func (p *Proxy) mergeSchedule(ctx context.Context) {
 	p.merges.run.Lock()
-	defer p.merges.run.Unlock()
+	defer p.mergeUnlock()
 	p.mergeScheduleLocked(ctx)
 }
 
@@ -756,6 +786,11 @@ func (p *Proxy) mergeConflict(ctx context.Context, st *hubstore.Store, m hubstor
 		return
 	}
 	p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
+	p.merges.launch = append(p.merges.launch, func() { p.mergeMerger(ctx, st, m, res, why) })
+}
+
+// mergeMerger starts the merger of conflict m, or refuses m when none can start. Outside merges.run.
+func (p *Proxy) mergeMerger(ctx context.Context, st *hubstore.Store, m hubstore.MergeRequest, res gitsync.MergeResult, why string) {
 	merger, err := p.mergeLaunchMerger(ctx, m, res)
 	if err != nil {
 		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeConflict, To: hubstore.MergeRefused,

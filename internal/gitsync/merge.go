@@ -149,6 +149,11 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 			return r, fmt.Errorf("commit-tree answered %q, not a commit", short(cand))
 		}
 	}
+	unlock, err := s.lockMerge(name, dir)
+	if err != nil {
+		return r, err
+	}
+	defer unlock()
 	if _, err := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d", n), MergeRef(n), cand); err != nil {
 		return r, err
 	}
@@ -160,10 +165,6 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 // base any more is refused with ErrConflict, and the caller merges again. One already at candidate is landed, so a
 // verdict sent again after the store failed to record it lands it once.
 func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candidate string) error {
-	ref, err := ParseName(name)
-	if err != nil {
-		return err
-	}
 	dir, err := s.bareFor(name)
 	if err != nil {
 		return err
@@ -174,9 +175,14 @@ func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candi
 	if !ValidSHA(base) || !ValidSHA(candidate) {
 		return refuse("a base and a candidate are full shas")
 	}
-	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
-	l.Lock()
-	defer l.Unlock()
+	unlock, err := s.lockMerge(name, dir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if why := s.mirrorKeeps(dir, ClaudeMainRef); why != "" {
+		return refuse("%s", why)
+	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
 	now, _, err := s.tipOf(ctx, dir, IntegrationBranch)
@@ -204,6 +210,11 @@ func (s *Store) MergeDrop(ctx context.Context, name string, n int64) error {
 	if err != nil || dir == "" {
 		return err
 	}
+	unlock, err := s.lockMerge(name, dir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
 	_, err = s.git(ctx, dir, "update-ref", "-d", MergeRef(n))
@@ -219,17 +230,15 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 	if len(sha) < MinSHAPrefix {
 		return false, refuse("a landed branch is named with its sha")
 	}
-	ref, err := ParseName(name)
-	if err != nil {
-		return false, err
-	}
 	dir, err := s.bareFor(name)
 	if err != nil || dir == "" {
 		return false, err
 	}
-	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
-	l.Lock()
-	defer l.Unlock()
+	unlock, err := s.lockMerge(name, dir)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
 	tip, ok, err := s.tipOf(ctx, dir, branch)
@@ -243,6 +252,36 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 		return false, err
 	}
 	return true, nil
+}
+
+// lockMerge takes the lock every push holds on the repository, then the mirror pass's lock when it is a git_repos
+// mirror, in the order Init and the push path take them.
+func (s *Store) lockMerge(name, dir string) (func(), error) {
+	ref, err := ParseName(name)
+	if err != nil {
+		return nil, err
+	}
+	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
+	l.Lock()
+	ml := s.mirrorLock(dir)
+	if ml != nil {
+		ml.Lock()
+	}
+	return func() {
+		if ml != nil {
+			ml.Unlock()
+		}
+		l.Unlock()
+	}, nil
+}
+
+// mirrorKeeps is why the queue may not move ref: an adopted mirror's pass force-fetches over what it keeps in step.
+func (s *Store) mirrorKeeps(dir, ref string) string {
+	if markerKind(dir) != KindAdopted {
+		return ""
+	}
+	r, _ := s.mirrorOf(dir)
+	return mirrorRefuses(r.Name, ref, r.Branch)
 }
 
 // LandRefPrefix keeps each land's commit, so a main that is a land is told from one a person pushed.
@@ -278,10 +317,6 @@ type LandCut struct {
 // loses its merge base. main has to be under claude/main, or be the last land's commit.
 func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandAuthor, msg string) (LandCut, error) {
 	var c LandCut
-	ref, err := ParseName(name)
-	if err != nil {
-		return c, err
-	}
 	dir, err := s.bareFor(name)
 	if err != nil {
 		return c, err
@@ -289,15 +324,13 @@ func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, by LandA
 	if dir == "" {
 		return c, refuse("the hub holds no repository %s", name)
 	}
-	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
-	l.Lock()
-	defer l.Unlock()
-	if ml := s.mirrorLock(dir); ml != nil {
-		ml.Lock()
-		defer ml.Unlock()
+	unlock, err := s.lockMerge(name, dir)
+	if err != nil {
+		return c, err
 	}
-	if markerKind(dir) == KindAdopted {
-		return c, refuse("%s", adoptedSentence(name))
+	defer unlock()
+	if why := s.mirrorKeeps(dir, MainRef); why != "" {
+		return c, refuse("%s", why)
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
