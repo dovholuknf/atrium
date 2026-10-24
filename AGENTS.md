@@ -7,6 +7,7 @@ terminals. A card outlives its process, state lives on disk, and storage failure
 
 | Read | When you touch or need |
 | --- | --- |
+| `docs/agents.tests.md` | you write, change or land a test: the checks to run first, no flat waits |
 | `docs/working-here.md` | a change, a merge or a landing: the full text of every rule below |
 | `docs/repo-reference.md` | ports, stack, layout, subcommands, out of scope |
 | `docs/README.md` | any other doc |
