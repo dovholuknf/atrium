@@ -27,7 +27,7 @@ type roomsBoard struct {
 func workers(n int) []map[string]any {
 	var out []map[string]any
 	for i := 0; i < n; i++ {
-		out = append(out, map[string]any{"id": fmt.Sprint(i), "status": "working", "supervised": true,
+		out = append(out, map[string]any{"id": fmt.Sprint(i), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, SubagentTag}})
 	}
 	// Directors and a parked worker never count, however many there are.

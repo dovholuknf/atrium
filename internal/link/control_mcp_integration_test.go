@@ -314,7 +314,7 @@ func TestLaunchRefusesAtTheCap(t *testing.T) {
 	}
 	for i := 0; i < DefaultLaunchCap; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
@@ -342,7 +342,7 @@ func TestLaunchProceedsUnderTheCap(t *testing.T) {
 	}
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "needs-input", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
@@ -371,7 +371,7 @@ func TestLaunchCapCountsOnlyAgentSessions(t *testing.T) {
 	var tasks []map[string]any
 	for i := 0; i < DefaultLaunchCap+5; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -392,18 +392,22 @@ func TestLaunchCapCountsOnlyAgentSessions(t *testing.T) {
 func TestLaunchCapCountsOnlyRunningSubagents(t *testing.T) {
 	// One slot left, and everything else on the board must not take it: running
 	// origin:agent cards without the subagent tag (orchestrators, the merger), and
-	// subagent cards that are done, dead, shelved or backlog.
+	// subagent cards that are idle at needs-input, done, dead, paused, shelved or backlog.
 	tasks := []map[string]any{
-		{"id": "orch", "status": "working", "supervised": true, "tags": []string{OriginTag}},
+		{"id": "idle1", "status": "needs-input", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "idle2", "status": "needs-input", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "p", "status": "paused", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "held", "status": "needs-permission", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "orch", "status": "running", "supervised": true, "tags": []string{OriginTag}},
 		{"id": "merger", "status": "needs-input", "supervised": true, "tags": []string{OriginTag}},
 		{"id": "d", "status": "done", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
 		{"id": "x", "status": "dead", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
 		{"id": "s", "status": "shelved", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
 		{"id": "b", "status": "backlog", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
 	}
-	for i := 0; i < DefaultLaunchCap-1; i++ {
+	for i := 0; i < DefaultLaunchCap-2; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, " Atrium:Subagent "},
 		})
 	}
@@ -413,7 +417,7 @@ func TestLaunchCapCountsOnlyRunningSubagents(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	if n, err := c.runningForCap(context.Background(), "beta"); err != nil || n != DefaultLaunchCap-1 {
-		t.Fatalf("runningForCap = %d, %v; want only the %d running subagents", n, err, DefaultLaunchCap-1)
+		t.Fatalf("runningForCap = %d, %v; want only the %d mid-turn subagents", n, err, DefaultLaunchCap-1)
 	}
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
 		launchInput{Item: "f-test", Cwd: "/work/dir"}); err != nil {
@@ -503,7 +507,7 @@ func TestLaunchCapEnvOverride(t *testing.T) {
 	t.Setenv(LaunchCapEnv, "1")
 	// One live supervised session, cap overridden to one, so the next is refused.
 	board := &capBoard{tasks: []map[string]any{
-		{"id": "a", "status": "working", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "a", "status": "running", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
 	}}
 	srv := httptest.NewServer(board.handler())
 	defer srv.Close()
@@ -526,7 +530,7 @@ func TestLaunchReservationStopsTwoLaunchesOvershooting(t *testing.T) {
 	var tasks []map[string]any
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
@@ -554,7 +558,7 @@ func TestLaunchReservationLapsesAfterTTL(t *testing.T) {
 	var tasks []map[string]any
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
