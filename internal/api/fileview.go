@@ -71,7 +71,7 @@ func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// One answer for "outside" and "not there", as download gives.
-	real, err := safepath.Contained(filepath.FromSlash(task.Worktree), want)
+	real, _, err := containedOrOpen(filepath.FromSlash(task.Worktree), want, s.openRoots)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
 		return

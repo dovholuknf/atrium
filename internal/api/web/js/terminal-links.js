@@ -92,13 +92,11 @@ async function provideFileLinks(t, id, y, done) {
 
   const known = probeKnown(id);
   const root = termTask.worktree || "";
-  const spans = [], ask = [], outside = [];
+  const spans = [], ask = [];
   for (const c of fileCandidates(line.text)) {
     const start = cellAt(line, c.start), end = cellAt(line, c.end - 1);
     // Only this row: a joined line can be thousands of characters.
     if (y < start.y || y > end.y) continue;
-    // Never sent to the room: files never leave a card, so the board learns nothing about what is outside it.
-    if (outsideCard(c.token, root)) { outside.push(outsideLink({ start, end }, c.token)); continue; }
     spans.push({ token: c.token, range: { start, end } });
     if (!probeFresh(known, c.token, line.text) && !ask.includes(c.token)) ask.push(c.token);
   }
@@ -111,10 +109,12 @@ async function provideFileLinks(t, id, y, done) {
   if (ask.length) await Promise.all(ask.map(tok => probePending.get(pendKey(tok))));
   if (!termTask || bareId(termTask.id) !== bareId(id)) { done(undefined); return; }
 
-  const links = outside;
+  const links = [];
   for (const s of spans) {
     const hit = probeHit(probeKnown(id), s.token);
+    // The room decides what outside the card it will open. A path it does not find stays refused.
     if (hit) links.push(fileLink(id, s.range, hit));
+    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token));
   }
   done(links.length ? links : undefined);
 }
@@ -289,14 +289,14 @@ async function fileLinkMenu(ev, id, hit) {
     items.unshift({ label: "open rendered", out: true, act: () => openFileTabFor(id, hit.rel, true),
       tip: "drawn in a sandbox: no script runs and nothing outside the file loads" });
   }
-  if (!notEditable(hit.rel)) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
+  if (!notEditable(hit.rel) && !hit.outside) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
   if (launchable(hit.rel)) {
     items.push({
       label: "open externally, on " + (where || "the room's machine"),
       act: () => launchOnRoom(id, hit.rel, where)
     });
   }
-  if (cmd) {
+  if (cmd && !hit.outside) {
     items.push({
       label: where ? "open in the editor on " + where : "open in the editor where the file is",
       act: () => openOnDaemon(id, hit.rel)

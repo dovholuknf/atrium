@@ -53,7 +53,7 @@ func (s *Server) launchFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("no path"))
 		return
 	}
-	full, err := safepath.Contained(filepath.FromSlash(task.Worktree), body.Path)
+	full, _, err := containedOrOpen(filepath.FromSlash(task.Worktree), body.Path, s.openRoots)
 	if err != nil {
 		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
 		return

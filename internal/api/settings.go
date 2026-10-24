@@ -89,6 +89,7 @@ func globalAutoView(s *Server) map[string]any {
 		// Where the directory picker may look. Empty means the default set,
 		// which is the home directory plus every directory a card names.
 		SettingBrowseRoots: "browse_roots",
+		SettingOpenPaths:   "open_paths",
 		// Where atrium_git_clone makes clones, and the credential helper it may use for a
 		// private repository. Empty is a value: no scm folder means the tool refuses and
 		// says how to set it, and no helper means public repositories only.
@@ -295,6 +296,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where the picker may look. A pointer, because clearing it back to
 		// the default set is a request.
 		BrowseRoots *string `json:"browse_roots"`
+		OpenPaths   *string `json:"open_paths"`
 		// The scm folder, `<scm_root>/<host>/<owner>/<repo>`, and the credential helper
 		// for atrium's clones. Pointers, because clearing one is a request.
 		GitSCMRoot *string `json:"git_scm_root"`
@@ -690,6 +692,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// at save time would stop somebody preparing a list for a drive that
 		// is not plugged in.
 		if err := s.st.SetSetting(SettingBrowseRoots, *body.BrowseRoots); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.OpenPaths != nil {
+		if err := s.st.SetSetting(SettingOpenPaths, *body.OpenPaths); err != nil {
 			s.fail(w, err)
 			return
 		}

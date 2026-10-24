@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/dovholuknf/atrium/internal/safepath"
 )
 
 // Which of these words are actually files.
@@ -27,8 +25,8 @@ import (
 // A BATCH, because the alternative is one request per word on a line and the
 // board asks on hover. Bounded on both axes: the batch and each path.
 //
-// IT NEVER LEAVES THE CARD, like every other file endpoint here. A path that
-// resolves outside the worktree is simply absent from the answer, which is the
+// IT NEVER LEAVES THE CARD except for an atrium path or an `open_paths` folder. A path that
+// resolves outside those is simply absent from the answer, which is the
 // same thing this says about a path that is not there, so it reports no more
 // about the machine than `files/list` already does.
 
@@ -51,6 +49,8 @@ type probeHit struct {
 	// Dir separates "open this in the editor" from "show me this directory",
 	// which are different clicks.
 	Dir bool `json:"dir"`
+	// Outside marks a file under an open root and not in the card, and Rel is then its absolute path.
+	Outside bool `json:"outside,omitempty"`
 	// Size, for the hover. Zero for a directory.
 	Size int64 `json:"size,omitempty"`
 }
@@ -78,6 +78,14 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	root := filepath.FromSlash(task.Worktree)
+	var roots []string
+	built := false
+	open := func() []string {
+		if !built {
+			roots, built = s.openRoots(), true
+		}
+		return roots
+	}
 	hits := make([]probeHit, 0, len(body.Paths))
 	seen := map[string]bool{}
 	for _, want := range body.Paths {
@@ -86,7 +94,7 @@ func (s *Server) probeFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[want] = true
-		hit, ok := probeOne(root, want)
+		hit, ok := probeOne(root, want, open)
 		if !ok {
 			continue
 		}
@@ -119,8 +127,8 @@ func probeAlias(want string) string {
 // relative one. `safepath.Contained` is what decides, and it follows symlinks
 // on both sides, so a link pointing out of the worktree is refused the same as
 // a `..` would be.
-func probeOne(root, want string) (probeHit, bool) {
-	full, err := safepath.Contained(root, probeAlias(want))
+func probeOne(root, want string, roots func() []string) (probeHit, bool) {
+	full, outside, err := containedOrOpen(root, probeAlias(want), roots)
 	if err != nil {
 		return probeHit{}, false
 	}
@@ -129,10 +137,13 @@ func probeOne(root, want string) (probeHit, bool) {
 		return probeHit{}, false
 	}
 	rel, err := filepath.Rel(root, full)
+	if outside {
+		rel, err = full, nil
+	}
 	if err != nil {
 		return probeHit{}, false
 	}
-	out := probeHit{Path: want, Rel: filepath.ToSlash(rel), Dir: fi.IsDir()}
+	out := probeHit{Path: want, Rel: filepath.ToSlash(rel), Dir: fi.IsDir(), Outside: outside}
 	if !fi.IsDir() {
 		out.Size = fi.Size()
 	}
