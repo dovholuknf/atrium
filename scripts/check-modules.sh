@@ -24,6 +24,27 @@ sums() {
     cat "$dir/go.mod" "$dir/go.sum" 2>/dev/null || true
   done <<<"$dirs" | cksum
 }
+saved="$(mktemp -d "$here/.check-modules.XXXXXX")"
+files="$here/go.work $here/go.work.sum"
+while IFS= read -r dir; do
+  [ -n "$dir" ] || continue
+  files="$files $dir/go.mod $dir/go.sum"
+done <<<"$dirs"
+# go work sync must leave the tree as it found it, whatever the platform does to go.work
+restore() {
+  n=0
+  for f in $files; do
+    n=$((n + 1))
+    if [ -f "$saved/$n" ]; then cp "$saved/$n" "$f"; else rm -f "$f"; fi
+  done
+  rm -rf "$saved"
+}
+n=0
+for f in $files; do
+  n=$((n + 1))
+  if [ -f "$f" ]; then cp -p "$f" "$saved/$n"; fi
+done
+trap restore EXIT
 before="$(sums)"
 go work sync
 if [ "$before" != "$(sums)" ]; then
