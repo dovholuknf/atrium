@@ -17,7 +17,7 @@ CI runs the same checks first. A job that fails with `FAILED: test waits` (or gl
 ## Waits
 
 - Wait on a condition under one deadline (`waitForFunction`, `waitForSelector`, poll with a deadline), never a flat sleep.
-- A flat wait is allowed only for a negative check (nothing must happen) or a settle with no event to wait on. Mark the line `// wait: <why>` in one line.
+- A flat wait is allowed only for a negative check (nothing must happen) or a settle with no event to wait on. Mark the line `// wait: <why>` in one line, on the same line as the wait: a comment on the line above still counts as unmarked.
 - Never widen a timeout to fix a flake. Trace the logs and find the race.
 - Landed examples: merge-queue strip tests added two unmarked `waitForTimeout(200)` in `scripts/board-tests/merge.js` and a skin-swap `waitForTimeout(60)` in `scripts/test-board-headless.js`. Three jobs went red (ubuntu go-all, macOS go-test, windows build-board-1) on a check, not a test. Fix was the three `// wait:` marks.
 
