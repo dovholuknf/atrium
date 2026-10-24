@@ -3,15 +3,22 @@
 The human-facing HTTP surface: JSON, SSE, and the board itself. The daemon supplies anything that needs a
 process, as a function field on `Server` or a package var, so this package never reaches into supervision.
 
-## Files never leave a card
+## Files leave a card only to the card, an atrium path or an `open_paths` folder
 
 The rule the file endpoints exist under, and the reason `internal/safepath` exists at all.
 
 - **Upload computes its own destination and accepts no path.** There is nothing in the request to point
   somewhere else.
 - **Download takes one and resolves it through `safepath`,** which follows symlinks on BOTH sides.
-- **Everything outside a card answers 403 whether or not it exists,** so the endpoint is not an oracle for what
-  is on the machine.
+- **Everything outside a card answers 403 whether or not it exists,** unless it is under an atrium path or an
+  `open_paths` folder, so the endpoint is not an oracle for what is on the machine.
+- **Only the read endpoints look past the card:** probe, view, launch, list and download, through
+  `containedOrOpen` in `openpaths.go`. Upload, text (read and write), delete, zip and `files/open` stay against
+  the card alone.
+- **An atrium path is allowed with no setting,** and `atriumPaths` is the one place that defines the set: the
+  room's card root, the directory of every card on the room live or archived, the room's repository clones and
+  worktrees, WORKTREE_ROOT and each provider's worktree root. `open_paths` is the folders the operator adds,
+  empty by default. Both resolve through `safepath` on both sides, so a `..` or a symlink cannot leave a root.
 
 `docs/runtime/file-transfer-design.md` records why `browse.go` was never the containment answer everybody assumed
 it was.

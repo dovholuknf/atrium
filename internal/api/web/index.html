@@ -2350,6 +2350,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b id="s-browseroots-now"></b></span>
     </div>
 
+    <div class="field">
+      <label class="eyebrow" for="s-openpaths">folders a terminal link may open outside its card</label>
+      <div class="picker">
+        <textarea id="s-openpaths" spellcheck="false" rows="3" data-saves="saveOpenPaths"
+          placeholder="one absolute directory per line. empty means only atrium's own folders"
+          ></textarea>
+      </div>
+      <span class="hintline">One per line. A path in a terminal opens when it is in the card, in a folder atrium
+        already knows (the card root, every card's directory, the repository clones and the worktree root), or under
+        one of these. Everything else is refused.</span>
+    </div>
+
     <!-- Where to leave the address for somebody else.
          The daemon already writes where it is listening, into this account's
          own state directory, which is the right place and unreadable to

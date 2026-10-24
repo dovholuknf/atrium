@@ -74,7 +74,11 @@ func (s *Server) listFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	dir, err := safepath.Contained(root, want)
+	roots := s.openRoots
+	if inScratch {
+		roots = func() []string { return nil }
+	}
+	dir, _, err := containedOrOpen(root, want, roots)
 	if err != nil {
 		// One answer for outside and for missing, so this cannot be used to
 		// find out what is on the machine outside the card. Same rule the

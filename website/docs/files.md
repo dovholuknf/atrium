@@ -17,8 +17,8 @@ it and send it yourself.
 ## Out of a session
 
 - **Browse** the card's directory from the file drawer, and take one file or the whole tree as a zip.
-- **Hover a path** the agent printed for its name and size. A path outside the card says so, and the board never
-  asks the room about it.
+- **Hover a path** the agent printed for its name and size. A path outside the card says so unless the room
+  opens it: a folder atrium knows or one in the `open_paths` setting.
 - **Click a path.** A picture, an SVG or a PDF opens in atrium's viewer, a tab in the browser you are sitting at. A
   text file offers the viewer (markdown rendered, JSON indented), atrium's editor, and **open externally**. An HTML
   file offers **open rendered** and **open raw in a tab**. Rendered draws it in a sandboxed frame where no script
@@ -34,6 +34,8 @@ it and send it yourself.
 ## Containment
 
 Everything resolves through one check against the card's own directory. A path outside it answers `403`, whether
-or not it exists. There is no way to ask atrium for a path that is not below a card.
+or not it exists, except that viewing, listing and downloading also accept a path under an atrium path (the card
+root, any card's directory, the repository clones and the worktree root) or under a folder in the `open_paths`
+setting. Both are resolved through symlinks and `..` first.
 
 The directory picker used when launching is bounded to the roots you configure, and completes paths with Tab.

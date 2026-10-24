@@ -1053,6 +1053,8 @@ function fillMachineFields(s) {
 
   const roots = document.getElementById("s-browseroots");
   if (roots) roots.value = s.browse_roots || "";
+  const openPaths = document.getElementById("s-openpaths");
+  if (openPaths) openPaths.value = s.open_paths || "";
   const shared = document.getElementById("s-shared-loc");
   if (shared) shared.value = s.shared_location || "";
   const handoff = document.getElementById("s-handoffdir");
@@ -1614,6 +1616,22 @@ async function saveBrowseRoots() {
   afterMachineSave();
   toast("saved", "the picker opens in " +
     ((pastePrefs.browse_roots_now || []).length || 0) + " place(s)");
+}
+
+async function saveOpenPaths() {
+  const el = document.getElementById("s-openpaths");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ open_paths: el.value })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    return;
+  }
+  afterMachineSave();
+  toast("saved", "terminal links open from " + (el.value.trim() ? "those folders too" : "atrium's own folders only"));
 }
 
 async function saveSharedLocation() {

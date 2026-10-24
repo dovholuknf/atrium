@@ -5714,7 +5714,7 @@ async function termLinkLateSection(browser, base) {
 }
 
 // ── terminal file links: an outside path tips without asking, the viewer shows by type, open externally (u-file-links-hover-view-external) ──
-// 1. An absolute path outside the card is a link whose tip says so, and is never sent to the room. One inside is asked.
+// 1. An absolute path outside the card is asked, and when the room does not find it the link's tip says so. One inside is asked.
 // 2. read.html shows a png as the image, an md rendered, an svg as an image that ran nothing, json indented, a pdf in
 //    a frame and a zip as a download, and its Open externally button posts files/launch.
 // 3. The link menu's "open externally, on sg4" posts files/launch, and a .go file is not offered it.
@@ -5795,7 +5795,7 @@ async function fileLinksViewSection(browser, base) {
     if (!got[0].includes(outsideWin)) fail("an outside Windows path was not a link: " + JSON.stringify(got[0]));
     if (!got[1].includes(insideWin)) fail("an inside absolute path was not a link: " + JSON.stringify(got[1]));
     if (!got[2].includes(outsideBash) || !got[2].includes("docs/plan.md")) fail("row 3 linked " + JSON.stringify(got[2]));
-    if (asked.some(a => /openziti-test-kitchen|\/d\/worktrees\/github\/other/.test(a))) fail("an outside path was sent to the room: " + JSON.stringify(asked));
+    if (!asked.some(a => /openziti-test-kitchen/.test(a))) fail("an outside path was not sent to the room: " + JSON.stringify(asked));
     if (!asked.includes(insideWin) || !asked.includes("docs/plan.md")) fail("an inside path was not asked: " + JSON.stringify(asked));
 
     const box = await p.locator("#t-screen .xterm-screen").boundingBox();

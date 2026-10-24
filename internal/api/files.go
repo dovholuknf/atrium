@@ -297,7 +297,11 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	real, err := safepath.Contained(root, want)
+	roots := s.openRoots
+	if inScratch {
+		roots = func() []string { return nil }
+	}
+	real, _, err := containedOrOpen(root, want, roots)
 	if err != nil {
 		// Everything OUTSIDE the card answers the same, whether or not it is
 		// there, so this cannot be used to find out what is on the machine.

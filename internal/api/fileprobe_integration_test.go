@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -219,5 +220,128 @@ func TestProbingACardWithNoDirectoryIsRefused(t *testing.T) {
 	s.probeFiles(w, probeReq(t, task.ID, []string{"notes.md"}))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func writeIn(t *testing.T, dir, name string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func viewCode(s *Server, id, p string) int {
+	w := httptest.NewRecorder()
+	s.viewFile(w, viewReq(id, p))
+	return w.Code
+}
+
+func TestAPathOutsideTheCardOpensOnlyUnderAnOpenRoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with a database")
+	}
+	t.Parallel()
+	s, st, work := fileServer(t)
+	mine := filepath.Join(work, "mine")
+	other := filepath.Join(work, "other")
+	cards := filepath.Join(work, "cards")
+	allowed := filepath.Join(work, "allowed")
+	nowhere := filepath.Join(work, "nowhere")
+	for _, d := range []string{mine, other, cards, allowed, nowhere} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task := cardIn(t, st, mine)
+	if _, _, err := st.Register(store.Observed{
+		WireName: "elsewhere", Worktree: filepath.ToSlash(other), Runner: "claude",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSetting(cardroot.Setting, cards); err != nil {
+		t.Fatal(err)
+	}
+
+	inCard := writeIn(t, mine, "in.md")
+	inOther := writeIn(t, filepath.Join(other, "docs"), "other.md")
+	inCards := writeIn(t, filepath.Join(cards, "x"), "root.md")
+	inAllowed := writeIn(t, allowed, "listed.md")
+	inNowhere := writeIn(t, nowhere, "secret.md")
+
+	for _, p := range []string{inCard, inOther, inCards} {
+		if c := viewCode(s, task.ID, p); c != http.StatusOK {
+			t.Errorf("%s answered %d, want 200", p, c)
+		}
+	}
+	for _, p := range []string{inAllowed, inNowhere} {
+		if c := viewCode(s, task.ID, p); c != http.StatusForbidden {
+			t.Errorf("%s answered %d before it was allowed, want 403", p, c)
+		}
+	}
+
+	if err := st.SetSetting(SettingOpenPaths, filepath.ToSlash(allowed)); err != nil {
+		t.Fatal(err)
+	}
+	if c := viewCode(s, task.ID, inAllowed); c != http.StatusOK {
+		t.Errorf("a path under an allowlisted root answered %d, want 200", c)
+	}
+	if c := viewCode(s, task.ID, inNowhere); c != http.StatusForbidden {
+		t.Errorf("a path outside everything answered %d, want 403", c)
+	}
+
+	got := probed(t, s, task.ID, []string{inCard, inOther, inAllowed, inNowhere})
+	if h := got[inCard]; h.Rel != "in.md" || h.Outside {
+		t.Errorf("the card's own file came back as %+v", h)
+	}
+	if h := got[inOther]; !h.Outside || h.Rel != filepath.ToSlash(inOther) {
+		t.Errorf("another card's file came back as %+v", h)
+	}
+	if h := got[inAllowed]; !h.Outside || h.Size != 5 {
+		t.Errorf("an allowlisted file came back as %+v", h)
+	}
+	if _, ok := got[inNowhere]; ok {
+		t.Errorf("a path outside everything was found")
+	}
+}
+
+func TestADotDotOrASymlinkCannotLeaveAnOpenRoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with a database")
+	}
+	t.Parallel()
+	s, st, work := fileServer(t)
+	mine := filepath.Join(work, "mine")
+	allowed := filepath.Join(work, "allowed")
+	nowhere := filepath.Join(work, "nowhere")
+	for _, d := range []string{mine, allowed} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	task := cardIn(t, st, mine)
+	if err := st.SetSetting(SettingOpenPaths, filepath.ToSlash(allowed)); err != nil {
+		t.Fatal(err)
+	}
+	secret := writeIn(t, nowhere, "secret.md")
+
+	if c := viewCode(s, task.ID, filepath.Join(allowed, "..", "nowhere", "secret.md")); c != http.StatusForbidden {
+		t.Errorf("a .. out of an allowlisted root answered %d, want 403", c)
+	}
+	if err := os.Symlink(nowhere, filepath.Join(allowed, "link")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if c := viewCode(s, task.ID, filepath.Join(allowed, "link", "secret.md")); c != http.StatusForbidden {
+		t.Errorf("a symlink out of an allowlisted root answered %d, want 403", c)
+	}
+	if got := probed(t, s, task.ID, []string{filepath.Join(allowed, "link", "secret.md")}); len(got) != 0 {
+		t.Errorf("a symlink out of an allowlisted root was found: %v", got)
+	}
+	if c := viewCode(s, task.ID, secret); c != http.StatusForbidden {
+		t.Errorf("the target itself answered %d, want 403", c)
 	}
 }
