@@ -25288,7 +25288,8 @@ async function newContextSseSection(browser, base) {
     await p.waitForFunction(() => typeof composeFollow === "function" && typeof onTaskEvent === "function" && typeof sendInput === "function", null, { timeout: slow(15000) });
     const got = await p.evaluate(() => {
       const frames = [];
-      window.send = m => { frames.push(m.d); };
+      const clears = [];
+      window.send = m => { if (m.t === "clear-line") clears.push(m.n); else frames.push(m.d); };
       termTask = { id: "c-sse", new_context: null };
       termKind = "runner";
       sendInput("i thought rooms w");
@@ -25306,7 +25307,7 @@ async function newContextSseSection(browser, base) {
       window.sendInput = t => { typed.push(t); };
       onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "idle" }) });
       window.sendInput = realSend;
-      return { before, held, dropped, stillHeld, typed, after: { box: composeOpen(), sign: !document.getElementById("t-nodev").hidden } };
+      return { before, held, dropped, clears, stillHeld, typed, after: { box: composeOpen(), sign: !document.getElementById("t-nodev").hidden } };
     });
     if (shots) {
       await p.evaluate(() => {
@@ -25325,6 +25326,7 @@ async function newContextSseSection(browser, base) {
     if (!got.held.sign || !got.held.box) fail("newContextSse: the stream row did not engage the gate: " + JSON.stringify(got.held));
     if (got.held.text !== "i thought rooms w") fail("newContextSse: the line the human had was not kept: " + JSON.stringify(got.held));
     if (!got.dropped) fail("newContextSse: a key reached the terminal under the hold");
+    if (JSON.stringify(got.clears) !== "[17]") fail("newContextSse: the line moved into the box was not cleared off the terminal: " + JSON.stringify(got.clears));
     if (!got.stillHeld) fail("newContextSse: a list read from before the stream row lifted the hold");
     if (JSON.stringify(got.typed) !== JSON.stringify(["i thought rooms w"])) fail("newContextSse: the line was not handed back after the cycle: " + JSON.stringify(got.typed));
     if (got.after.box || got.after.sign) fail("newContextSse: the hold stayed up after the cycle: " + JSON.stringify(got.after));

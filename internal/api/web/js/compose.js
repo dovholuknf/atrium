@@ -148,6 +148,8 @@ function composeFollow(row) {
     composeLine = "";
     composeRefused();
     document.getElementById("t-ctxbox-in").value = seed;
+    // Off the terminal's line too, or it is left there and typed a second time when the box is sent or freed.
+    if (typeof send === "function") send({ t: "clear-line", n: [...seed].length });
   }
   if ((n && n.step !== "failed") || !composeOpen()) return;
   const ta = document.getElementById("t-ctxbox-in");

@@ -90,6 +90,14 @@ func (n *newContexts) setTyping(taskID string, gen uint64, on bool) bool {
 	return true
 }
 
+// typingNow reports whether atrium's own write to the terminal is under way.
+func (n *newContexts) typingNow(taskID string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	return cur != nil && cur.typing
+}
+
 // save hands persist the runs now in flight. A failed chip is not in flight.
 func (n *newContexts) save() {
 	if n == nil || n.persist == nil {

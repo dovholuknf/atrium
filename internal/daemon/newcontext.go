@@ -1184,6 +1184,27 @@ func (d *Daemon) ncAwaitArm(taskID string, gen uint64, limit time.Duration) erro
 	})
 }
 
+// maxClearLine bounds the backspaces one clear-line frame can type.
+const maxClearLine = 64 << 10
+
+// ncClearLine takes n characters, which the board moved into its compose box when the hold began, off the terminal's
+// input line, so they are neither left behind nor sent twice. Only while the hold is on, and never while atrium is
+// typing: judged under the input lock, so its own write cannot be under way.
+func (d *Daemon) ncClearLine(taskID string, n int) bool {
+	run := d.sup.get(taskID)
+	if run == nil || n <= 0 || !d.nctx.typingHeld(taskID) {
+		return false
+	}
+	bs := bytes.Repeat([]byte{0x7f}, min(n, maxClearLine))
+	run.pasteMu.Lock()
+	defer run.pasteMu.Unlock()
+	if d.nctx.typingNow(taskID) {
+		return false
+	}
+	run.noteOperatorTyped(bs)
+	return run.Write(bs) == nil
+}
+
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or
 // the time is up.
 func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what string, cond func() (bool, error)) error {

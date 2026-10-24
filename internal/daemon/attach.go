@@ -48,6 +48,8 @@ type attachIn struct {
 	// On carries the wanted state of shared multi-pane input for an
 	// {"t":"echo"} frame. See the case in the reader and `runner.setEchoPeers`.
 	On bool `json:"on"`
+	// N is how many characters a {"t":"clear-line"} frame takes off the input line. See `Daemon.ncClearLine`.
+	N int `json:"n"`
 }
 
 // attachCaps is what the board cannot work out from the bytes, sent once as
@@ -437,6 +439,10 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				me := self
 				selfMu.Unlock()
 				run.echoToPeers([]byte(in.D), me)
+			case "clear-line":
+				if !shell {
+					d.ncClearLine(taskID, in.N)
+				}
 			case "echo":
 				// Turn shared multi-pane input on or off for the whole runner.
 				// The HUB board sends this from a per-terminal toggle. Ignored

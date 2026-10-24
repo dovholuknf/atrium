@@ -702,6 +702,20 @@ async function contextCycleSection(browser, base) {
     if (endFrame.mid.hidden || !/2\/3: clearing the context/.test(endFrame.mid.text))
       fail("a mid-cycle frame did not move the bar to step 2: " + JSON.stringify(endFrame.mid));
     if (!endFrame.hidden || endFrame.box) fail("the end frame left the strip or 'let me type' on screen: " + JSON.stringify(endFrame));
+    const moved = await wp.evaluate(() => {
+      termTask = { id: "ll-cycle" }; termKind = "runner";
+      composeLine = "fix é";
+      const realSend = window.send, frames = [];
+      window.send = msg => { frames.push(msg); };
+      composeFollow({ id: "ll-cycle", row: 1, new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready", held: true } });
+      window.send = realSend;
+      const r = { box: composeOpen(), text: document.getElementById("t-ctxbox-in").value, frames, line: composeLine };
+      composeClose();
+      composeFollow({ id: "ll-cycle", row: 1 });
+      return r;
+    });
+    if (!moved.box || moved.text !== "fix é" || moved.line !== "" || JSON.stringify(moved.frames) !== JSON.stringify([{ t: "clear-line", n: 5 }]))
+      fail("the line moved into the box was not cleared off the terminal: " + JSON.stringify(moved));
     // WEDGED: the card still says the cycle is on its limit step (the mock never ends it), and the bar's own
     // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
     await wp.evaluate(() => {

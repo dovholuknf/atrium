@@ -270,3 +270,96 @@ func TestABoardCycleWaitsForThePartTypedLineBeforeItHolds(t *testing.T) {
 		t.Fatalf("an armed cycle does not say it holds: %v", v)
 	}
 }
+
+func TestEveryAutomaticTriggerWaitsForThePartTypedLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	for name, start := range map[string]func(d *Daemon, id string) error{
+		"cold handoff": func(d *Daemon, id string) error {
+			task, err := d.st.Get(id)
+			if err != nil {
+				return err
+			}
+			return d.coldHandoff(task)
+		},
+		"context ceiling": func(d *Daemon, id string) error {
+			task, err := d.st.Get(id)
+			if err != nil {
+				return err
+			}
+			d.startCycle(task, 300_000, 200_000)
+			return nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := testDaemon(t)
+			fastNewContext(t, d)
+			task, f, _ := ncCard(t, d)
+			id := task.ID
+			run := d.sup.get(id)
+			run.noteOperatorTyped([]byte("ok now review the captions"))
+
+			if err := start(d, id); err != nil {
+				t.Fatal(err)
+			}
+			until(t, "the cycle's claim", func() bool { return d.nctx.get(id) != nil })
+			time.Sleep(100 * time.Millisecond) // wait: negative check, a hold would have armed by now
+			if d.nctx.typingHeld(id) || d.holdingMessages(id) || strings.Contains(f.written(), limitPrompt) {
+				t.Fatal("the cycle held input or typed over a part-typed line")
+			}
+
+			run.noteOperatorTyped([]byte(strings.Repeat("\x7f", len("ok now review the captions"))))
+			run.typeMu.Lock()
+			run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+			run.typeMu.Unlock()
+			until(t, "the hold once the line is clear", func() bool { return d.nctx.typingHeld(id) })
+		})
+	}
+}
+
+func TestTheLineMovedIntoTheComposeBoxIsClearedOffTheTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: real ptys, processes and timers")
+	}
+	d := testDaemon(t)
+	fastNewContext(t, d)
+	task, f, _ := ncCard(t, d)
+	id := task.ID
+	run := d.sup.get(id)
+	if d.ncClearLine(id, 3) {
+		t.Fatal("a line was cleared with no new context holding input")
+	}
+
+	if err := d.StartNewContext(id); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "the hold", func() bool { return d.nctx.typingHeld(id) })
+	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
+	until(t, "atrium's typing to end", func() bool { return !d.nctx.typingNow(id) })
+	run.noteOperatorTyped([]byte("héllo"))
+
+	d.nctx.mu.Lock()
+	d.nctx.by[id].typing = true
+	d.nctx.mu.Unlock()
+	if d.ncClearLine(id, 5) {
+		t.Fatal("the line was cleared while atrium was typing into it")
+	}
+	d.nctx.mu.Lock()
+	d.nctx.by[id].typing = false
+	d.nctx.mu.Unlock()
+
+	before := len(f.written())
+	if !d.ncClearLine(id, 5) {
+		t.Fatal("the line moved into the box was not cleared")
+	}
+	if got := f.written()[before:]; got != strings.Repeat("\x7f", 5) {
+		t.Fatalf("typed %q to clear the line, want five backspaces", got)
+	}
+	run.typeMu.Lock()
+	n := run.line.count()
+	run.typeMu.Unlock()
+	if n != 0 {
+		t.Fatalf("the room still counts %d character(s) on the line", n)
+	}
+}
