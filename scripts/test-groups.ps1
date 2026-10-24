@@ -62,7 +62,7 @@ $Groups = @(
     G 'ptyhost'            'ptyhost: pty and ConPTY host' './internal/ptyhost' 16 @('*')
     G 'guard'              'guard: git guard' './internal/guard' 10 @('*')
     G 'misc'               'small packages: cardproc claudeconf edge forge linkfetch nowindow prreview/render requirements resources roomspec roomstats runnersetup safepath testdiag' @(
-        './internal/cardproc', './internal/claudeconf', './internal/edge', './internal/forge', './internal/linkfetch', './internal/nowindow',
+        './internal/cardproc', './internal/claudeconf', './internal/edge', './internal/forge', './internal/linkfetch', './internal/base/nowindow',
         './internal/prreview/render', './internal/requirements', './internal/resources', './internal/roomspec', './internal/roomstats',
         './internal/runnersetup', './internal/safepath', './internal/testdiag') 11 @('*')
 )

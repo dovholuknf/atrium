@@ -31,4 +31,4 @@ internal/api.TestCloseStopsAProcessTheCardOwns 10 waits out a 5s taskkill retry 
 internal/hubstore.* 24 each opens stores that write thousands of small files. 31.5s on a hosted Windows runner (run 38722254104), under 1s on a developer box
 internal/hubstore.TestOldSnapshotsThinOutRatherThanPilingUp 16 writes 8640 small files
 internal/cli.TestRunnerPIDFindsOpencode 9 real child processes
-internal/detach.TestStartOutsideJobAnswersTheProgramNotCmd 9 real child processes. 5.9s on a hosted Windows runner (run 38944460093)
+internal/base/detach.TestStartOutsideJobAnswersTheProgramNotCmd 9 real child processes. 5.9s on a hosted Windows runner (run 38944460093)
