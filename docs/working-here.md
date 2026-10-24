@@ -51,6 +51,12 @@ machine" and not "it is deployed to the live hub".
   a longer one to that line or remove it. Apply this to every comment in each function or test you touch, and never
   add or reword one while fixing a failing test. Never write one about what changed or how the cause was found: that
   goes in the commit, `REPORT.md` or `docs/troubleshooting-tests.md`.
+- Smallest delta: a change keeps every name, signature, order and line it does not need, so the diff shows only what
+  the change is. A reviewer reads every line of a diff, and a rename, reorder, re-wrap or reworded comment is a line
+  to read that carries no change. When a name gains new behavior (a cache, a bound, a retry), keep the name the call
+  sites use and rename the inner function instead, so no call site appears in the diff. Example: making
+  `commitKnown` cached in `internal/gitsync` was done by adding `knownCommit` and changing every caller. Done right,
+  `commitKnown` is the cached entry point and the raw git lookup is `commitHeld`, used only inside it.
 - All paths in code use forward slashes (Go convention). Reading from gwt JSONs with backslashes is fine. Pass them
   through unchanged.
 - Wrap markdown at 120 characters.

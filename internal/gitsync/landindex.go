@@ -105,9 +105,9 @@ func repoStamp(dir string) string {
 	return string(l)
 }
 
-// knownCommit is commitKnown asked once per commit. A commit once known stays known, and one the mirror lacked is asked
+// commitKnown is commitHeld asked once per commit. A commit once known stays known, and one the mirror lacked is asked
 // again only once a ref has moved, which is how the mirror gets it.
-func (s *Store) knownCommit(ctx context.Context, dir, sha string) (bool, error) {
+func (s *Store) commitKnown(ctx context.Context, dir, sha string) (bool, error) {
 	c := &s.landIdx
 	c.mu.Lock()
 	had := c.known[dir+"\x00"+sha]
@@ -117,7 +117,7 @@ func (s *Store) knownCommit(ctx context.Context, dir, sha string) (bool, error) 
 	}
 	stamp := repoStamp(dir)
 	v, err := s.memo(ctx, "known\x00"+dir+"\x00"+sha+"\x00"+stamp, stamp != "", func() (any, error) {
-		return s.commitKnown(ctx, dir, sha)
+		return s.commitHeld(ctx, dir, sha)
 	})
 	if err != nil {
 		return false, err

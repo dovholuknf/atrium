@@ -67,7 +67,7 @@ func (s *Store) LandFacts(ctx context.Context, name, branch, sha, workID string,
 	}
 	known := false
 	if ValidSHA(sha) {
-		if known, err = s.knownCommit(ctx, dir, sha); err != nil {
+		if known, err = s.commitKnown(ctx, dir, sha); err != nil {
 			return f, err
 		}
 	}
@@ -119,7 +119,7 @@ func (s *Store) landedByItem(ctx context.Context, dir string, f LandFacts, workI
 		fm := forge()
 		known := false
 		if fm.Tip != "" {
-			known, _ = s.knownCommit(ctx, dir, fm.Tip)
+			known, _ = s.commitKnown(ctx, dir, fm.Tip)
 		}
 		switch {
 		case known:
@@ -310,7 +310,7 @@ func (s *Store) pushedToOrigin(ctx context.Context, dir, sha string, fm ForgeMai
 		}
 		return viaMirror(why)
 	}
-	if known, err := s.knownCommit(ctx, dir, fm.Tip); err != nil || !known {
+	if known, err := s.commitKnown(ctx, dir, fm.Tip); err != nil || !known {
 		return viaMirror("the mirror has not fetched the forge's main yet")
 	}
 	ok, c, err := s.carriedBy(ctx, dir, sha, fm.Tip)
@@ -424,7 +424,7 @@ func (s *Store) Contains(ctx context.Context, name, build, sha string) (contains
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
-	if known, err = s.knownCommit(ctx, dir, build); err != nil || !known {
+	if known, err = s.commitKnown(ctx, dir, build); err != nil || !known {
 		return false, false, err
 	}
 	v, err := s.memo(ctx, "anc\x00"+dir+"\x00"+sha+"\x00"+build, true, func() (any, error) {

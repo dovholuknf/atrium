@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/nowindow"
 	"net"
 	"os"
 	"os/exec"
@@ -28,8 +29,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-
-	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // Env is everything the wizard asks of the machine, so a test can answer it. It is the seam internal/guard/env.go

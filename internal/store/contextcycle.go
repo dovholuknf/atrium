@@ -17,7 +17,8 @@ const (
 	SettingContextHandoffDir = "context_handoff_dir"
 )
 
-// ContextLimits reads the per-harness limits. Unset or unreadable reads as the default.
+// ContextLimits reads the per-harness limits. Unset or unreadable reads as the default. A value out of
+// range is dropped, so one bad entry does not turn the others off.
 func (s *Store) ContextLimits() map[string]int {
 	v, err := s.Setting(rules.SettingContextLimits)
 	if err != nil {

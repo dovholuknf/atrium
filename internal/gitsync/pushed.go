@@ -99,8 +99,8 @@ func (s *Store) tipOf(ctx context.Context, dir, branch string) (string, bool, er
 	return sha, true, nil
 }
 
-// commitKnown says whether the repository holds a commit by that id.
-func (s *Store) commitKnown(ctx context.Context, dir, sha string) (bool, error) {
+// commitHeld says whether the repository holds a commit by that id.
+func (s *Store) commitHeld(ctx context.Context, dir, sha string) (bool, error) {
 	_, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", sha+"^{commit}")
 	switch {
 	case err == nil:
