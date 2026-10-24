@@ -8,6 +8,7 @@
 // tell whether its requester is still at work on it, so the strip errs on showing it and the dismissal is per browser.
 
 const MERGE_POLL_MS = 30000;
+const MERGE_EVENT_MS = 300;
 const MERGE_DISMISS_KEY = "atrium.merge.dismissed";
 const MERGE_WANT_DAYS = 3;
 let mergeQ = { at: 0, requests: [], held: {}, room: "", why: "" };
@@ -122,9 +123,16 @@ async function loadMerge(force) {
   if (mergeDlgOpen()) paintMergeDlg();
 }
 
+let mergeEventTimer = 0;
+
+// A burst of merge events (one run moves a request through several states) costs one fetch.
 function onMergeEvent() {
-  for (const k of Object.keys(mergeOutputs)) delete mergeOutputs[k];
-  loadMerge(true);
+  if (mergeEventTimer) return;
+  mergeEventTimer = setTimeout(() => {
+    mergeEventTimer = 0;
+    for (const k of Object.keys(mergeOutputs)) delete mergeOutputs[k];
+    loadMerge(true);
+  }, MERGE_EVENT_MS);
 }
 
 function mergeDlgOpen() {

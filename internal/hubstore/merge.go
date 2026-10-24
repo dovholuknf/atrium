@@ -138,6 +138,9 @@ const mergeCols = `n, repo, branch, sha, requester, requester_room, launcher, la
 	retries, base, candidate, landed, room, merger, reason, failing, output, land_n, asked_at, started_at, tested_at,
 	ended_at, run_token`
 
+// mergeColsBare reads every column but the output, which lists leave out so a board poll never carries it.
+var mergeColsBare = strings.Replace(mergeCols, "output,", "'' AS output,", 1)
+
 func scanMerge(sc rowScanner) (MergeRequest, error) {
 	var m MergeRequest
 	var head int
@@ -261,7 +264,11 @@ func (s *Store) MergeList(f MergeFilter) ([]MergeRequest, error) {
 		if f.Open {
 			where = append(where, "state IN "+mergeOpenStates())
 		}
-		rows, err := s.db.Query(`SELECT `+mergeCols+` FROM merge_request WHERE `+strings.Join(where, " AND ")+
+		cols := mergeColsBare
+		if f.Output {
+			cols = mergeCols
+		}
+		rows, err := s.db.Query(`SELECT `+cols+` FROM merge_request WHERE `+strings.Join(where, " AND ")+
 			` ORDER BY CASE WHEN state IN `+mergeOpenStates()+` THEN 0 ELSE 1 END, n DESC LIMIT ?`, append(args, f.Limit)...)
 		if err != nil {
 			return err
@@ -271,9 +278,6 @@ func (s *Store) MergeList(f MergeFilter) ([]MergeRequest, error) {
 			m, err := scanMerge(rows)
 			if err != nil {
 				return err
-			}
-			if !f.Output {
-				m.Output = ""
 			}
 			out = append(out, m)
 		}
@@ -502,7 +506,7 @@ func (s *Store) MergeUnlanded(repo string) ([]MergeRequest, error) {
 	out := []MergeRequest{}
 	err := s.guard(func() error {
 		out = []MergeRequest{}
-		rows, err := s.db.Query(`SELECT `+mergeCols+` FROM merge_request WHERE repo = ? AND state = ? AND land_n = 0
+		rows, err := s.db.Query(`SELECT `+mergeColsBare+` FROM merge_request WHERE repo = ? AND state = ? AND land_n = 0
 			AND candidate != '' ORDER BY n`, repo, MergeLanded)
 		if err != nil {
 			return err
@@ -513,7 +517,6 @@ func (s *Store) MergeUnlanded(repo string) ([]MergeRequest, error) {
 			if err != nil {
 				return err
 			}
-			m.Output = ""
 			out = append(out, m)
 		}
 		return rows.Err()
