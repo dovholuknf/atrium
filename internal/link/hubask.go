@@ -17,8 +17,8 @@ import (
 // holds no credential it did not have.
 //
 // ONLY THESE ENDPOINTS, and not a general proxy: the path must be /_hub/backlog, /_hub/reports, /_hub/items or
-// /_hub/merge (less the merge room, which is the operator's) and what hangs off them. `by` and `room` on a write are
-// set here from the link, so a room cannot file an item as another room.
+// /_hub/merge (less the merge room and the land, which are the operator's) and what hangs off them. `by` and `room`
+// on a write are set here from the link, so a room cannot file an item as another room.
 
 // hubAskPath is whether a relayed path is one the room may ask. /_hub/backlog/follow is the hub's own card-to-item
 // bookkeeping and is left to the control MCP.
@@ -38,7 +38,7 @@ func hubAskPath(p string) bool {
 	if base == hubPublishPath || base == hubSubsPath {
 		return true
 	}
-	if base == "/_hub/merge/room" {
+	if base == "/_hub/merge/room" || base == "/_hub/merge/land" {
 		return false
 	}
 	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items", "/_hub/merge"} {

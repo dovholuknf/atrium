@@ -234,3 +234,105 @@ func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (boo
 	}
 	return true, nil
 }
+
+// LandRefPrefix keeps claude/main's tip from before each land, so no commit becomes unreachable.
+const LandRefPrefix = "refs/atrium/lands/"
+
+// LandBranch is the branch land n's commit is kept on until it is on main.
+func LandBranch(n int64) string { return "land/" + strconv.FormatInt(n, 10) }
+
+// LandCut is what one land made: Commit, with claude/main's tree and main for its parent.
+type LandCut struct {
+	Commit       string `json:"commit"`
+	MainBefore   string `json:"main_before"`
+	ClaudeBefore string `json:"claude_before"`
+	Branch       string `json:"branch"`
+}
+
+// MergeLandCut makes land n under the push lock: one commit whose tree is claude/main's and whose parent is main, kept
+// on LandBranch(n), and claude/main moved onto it with its old tip under LandRefPrefix. body writes the commit object's
+// content, so the identity and the signature are the caller's. mustHave, when set, has to be on main already: the
+// last land, which is pushed before the next is cut.
+func (s *Store) MergeLandCut(ctx context.Context, name string, n int64, mustHave string,
+	body func(tree, parent string) ([]byte, error)) (LandCut, error) {
+	var c LandCut
+	ref, err := ParseName(name)
+	if err != nil {
+		return c, err
+	}
+	dir, err := s.bareFor(name)
+	if err != nil {
+		return c, err
+	}
+	if dir == "" {
+		return c, refuse("the hub holds no repository %s", name)
+	}
+	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
+	l.Lock()
+	defer l.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, readBound)
+	defer cancel()
+	for branch, into := range map[string]*string{IntegrationBranch: &c.ClaudeBefore, "main": &c.MainBefore} {
+		tip, ok, err := s.tipOf(ctx, dir, branch)
+		if err != nil {
+			return c, err
+		}
+		if !ok {
+			return c, refuse("the repository has no %s, so there is nothing to land", branch)
+		}
+		*into = tip
+	}
+	if mustHave != "" {
+		if ok, err := s.isAncestor(ctx, dir, mustHave, c.MainBefore); err != nil {
+			return c, err
+		} else if !ok {
+			return c, refuse("the last land, %s, is not on main yet. push it to main first", short(mustHave))
+		}
+	}
+	if c.ClaudeBefore == c.MainBefore {
+		return c, refuse("claude/main is main, so there is nothing to land")
+	}
+	if ok, err := s.isAncestor(ctx, dir, c.MainBefore, c.ClaudeBefore); err != nil {
+		return c, err
+	} else if !ok {
+		return c, refuse("claude/main does not have main (%s) under it, so a land would undo what main has", short(c.MainBefore))
+	}
+	out, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", c.ClaudeBefore+"^{tree}")
+	if err != nil {
+		return c, err
+	}
+	tree := strings.TrimSpace(out)
+	b, err := body(tree, c.MainBefore)
+	if err != nil {
+		return c, err
+	}
+	out, err = s.h.runner().gitWith(ctx, dir, s.env(), b, 0, "hash-object", "-w", "-t", "commit", "--stdin")
+	if err != nil {
+		return c, err
+	}
+	c.Commit = strings.TrimSpace(out)
+	if got, err := s.git(ctx, dir, "rev-parse", "--verify", "-q", c.Commit+"^{tree}"); err != nil || strings.TrimSpace(got) != tree {
+		return c, fmt.Errorf("the land commit %s does not have claude/main's tree: %v", short(c.Commit), err)
+	}
+	c.Branch = LandBranch(n)
+	msg := fmt.Sprintf("land %d", n)
+	if _, err := s.git(ctx, dir, "update-ref", "-m", msg, headsPrefix+c.Branch, c.Commit, ""); err != nil {
+		return c, err
+	}
+	if _, err := s.git(ctx, dir, "update-ref", "-m", msg, LandRefPrefix+strconv.FormatInt(n, 10), c.ClaudeBefore); err != nil {
+		return c, err
+	}
+	_, err = s.git(ctx, dir, "update-ref", "-m", msg, ClaudeMainRef, c.Commit, c.ClaudeBefore)
+	return c, err
+}
+
+// OnMain reports whether sha is on main of the repository `name`.
+func (s *Store) OnMain(ctx context.Context, name, sha string) (bool, error) {
+	dir, err := s.bareFor(name)
+	if err != nil || dir == "" {
+		return false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, readBound)
+	defer cancel()
+	return s.isAncestor(ctx, dir, sha, MainRef)
+}

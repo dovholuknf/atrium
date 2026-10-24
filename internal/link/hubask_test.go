@@ -26,6 +26,7 @@ func TestHubAskPath(t *testing.T) {
 		{"/_hub/merge/12/cancel", true},
 		{"/_hub/merge/report", true},
 		{"/_hub/merge/room", false},
+		{"/_hub/merge/land", false},
 		{"/_hub/mergex", false},
 		{"/_hub/backlog/follow", false},
 		{"/_hub/backlog/follow/", false},

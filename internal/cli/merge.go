@@ -44,7 +44,7 @@ func mergeCmd() *cobra.Command {
 	c.Flags().StringVar(&repo, "repo", "", "<host>/<owner>/<repo> (default: this worktree's hub or origin remote)")
 	c.Flags().BoolVar(&list, "list", false, "list the queue instead of asking")
 	c.Flags().BoolVar(&all, "all", false, "with --list, up to 500 requests")
-	c.AddCommand(mergeShowCmd(&board), mergeCancelCmd(&board), mergeRoomCmd(&board))
+	c.AddCommand(mergeShowCmd(&board), mergeCancelCmd(&board), mergeRoomCmd(&board), mergeLandCmd(&board))
 	return c
 }
 
@@ -282,4 +282,71 @@ func mergeRoomCmd(board *string) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+type mergeLandOut struct {
+	hubstore.MergeLand
+	Branch string `json:"branch"`
+	OnMain bool   `json:"on_main"`
+	Push   string `json:"push"`
+}
+
+func mergeLandCmd(board *string) *cobra.Command {
+	var repo string
+	var show bool
+	c := &cobra.Command{
+		Use:   "land",
+		Short: "Cut one commit of what landed on claude/main since the last land, for main. From the hub's machine only",
+		Long: "Makes one commit with claude/main's tree on main, signed as you with your git config, keeps it on the\n" +
+			"hub's land/<n> branch, and moves claude/main onto it. It prints the push that puts it on origin's main,\n" +
+			"which you run. The next land waits until this one is on main. --show says what a land would carry.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if repo == "" {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				dir, _ := os.Getwd()
+				r, _, _, err := mergeHere(ctx, dir)
+				if err != nil {
+					return fmt.Errorf("%v. name it with --repo", err)
+				}
+				repo = r
+			}
+			addr, w := orDefault(*board, backlogHubAddr()), cmd.OutOrStdout()
+			if show {
+				var info struct {
+					Unlanded []hubstore.MergeRequest
+					Lands    []mergeLandOut
+				}
+				if err := backlogDirect(addr, http.MethodGet, "/_hub/merge/land?repo="+url.QueryEscape(repo), nil, &info); err != nil {
+					return err
+				}
+				if len(info.Unlanded) == 0 {
+					fmt.Fprintln(w, "nothing has landed since the last land")
+				}
+				for _, m := range info.Unlanded {
+					fmt.Fprintf(w, "#%d %s %s\n", m.N, m.Branch, shortSHA(m.Landed))
+				}
+				for _, l := range info.Lands {
+					where := "on main"
+					if !l.OnMain {
+						where = "not on main yet: " + l.Push
+					}
+					fmt.Fprintf(w, "land %d %s, %d requests, %s\n", l.N, shortSHA(l.Commit), len(l.Requests), where)
+				}
+				return nil
+			}
+			var l mergeLandOut
+			if err := backlogDirect(addr, http.MethodPost, "/_hub/merge/land", map[string]string{"repo": repo}, &l); err != nil {
+				return err
+			}
+			fmt.Fprintf(w, "land %d: %s on %s, %d requests. claude/main is on it now\n", l.N, shortSHA(l.Commit), l.Branch,
+				len(l.Requests))
+			fmt.Fprintf(w, "put it on origin's main, from a clone of %s, with\n  %s\n", repo, l.Push)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&repo, "repo", "", "<host>/<owner>/<repo> (default: this worktree's hub or origin remote)")
+	c.Flags().BoolVar(&show, "show", false, "say what a land would carry and where the last lands are, and cut nothing")
+	return c
 }

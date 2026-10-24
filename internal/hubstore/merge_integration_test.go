@@ -184,3 +184,51 @@ func TestMergeSetMergerOnlyOnAConflict(t *testing.T) {
 		t.Fatalf("set: %+v %v", m, err)
 	}
 }
+
+func TestMergeLandAddCarriesEachLandedRequestOnce(t *testing.T) {
+	s := open(t)
+	land := func(m MergeRequest) {
+		t.Helper()
+		s.MergeMove(MergeStep{N: m.N, To: MergeMerging})
+		if _, err := s.MergeMove(MergeStep{N: m.N, To: MergeLanded, Landed: "abcdef1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, b, c := mqAsk(t, s, "claude/a", "aaaaaaa1"), mqAsk(t, s, "claude/b", "bbbbbbb1"), mqAsk(t, s, "claude/c", "ccccccc1")
+	land(a)
+	land(b)
+	got, err := s.MergeUnlanded(mqRepo)
+	if err != nil || len(got) != 2 || got[0].N != a.N || got[1].N != b.N {
+		t.Fatalf("unlanded: %+v %v", got, err)
+	}
+	n, err := s.MergeLandNext()
+	if err != nil || n != 1 {
+		t.Fatalf("next: %d %v", n, err)
+	}
+	l := MergeLand{N: n, Repo: mqRepo, Commit: "1234567", MainBefore: "2345678", ClaudeBefore: "3456789", By: "operator"}
+	if _, err := s.MergeLandAdd(MergeLand{N: n, Repo: mqRepo, Commit: "1234567", MainBefore: "2345678", ClaudeBefore: "3456789",
+		Requests: []int64{a.N, c.N}}); !IsRefusal(err) {
+		t.Fatalf("a queued request in a land: %v", err)
+	}
+	if got, _ := s.MergeUnlanded(mqRepo); len(got) != 2 {
+		t.Fatalf("a refused land marked requests: %+v", got)
+	}
+	l.Requests = []int64{a.N, b.N}
+	if _, err := s.MergeLandAdd(l); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.MergeUnlanded(mqRepo); len(got) != 0 {
+		t.Fatalf("still unlanded: %+v", got)
+	}
+	if m, _ := s.MergeGet(a.N); m.LandN != n {
+		t.Fatalf("land_n: %+v", m)
+	}
+	lands, err := s.MergeLands(mqRepo, 0)
+	if err != nil || len(lands) != 1 || len(lands[0].Requests) != 2 || lands[0].Commit != "1234567" || lands[0].At == "" {
+		t.Fatalf("lands: %+v %v", lands, err)
+	}
+	l.N = 2
+	if _, err := s.MergeLandAdd(l); !IsRefusal(err) {
+		t.Fatalf("a request carried twice: %v", err)
+	}
+}

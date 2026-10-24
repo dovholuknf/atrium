@@ -12,6 +12,8 @@ const MERGE_DISMISS_KEY = "atrium.merge.dismissed";
 const MERGE_WANT_DAYS = 3;
 let mergeQ = { at: 0, requests: [], held: {}, room: "", why: "" };
 let mergeOpenN = 0;
+// The test output of a request, read from /_hub/merge/<n> when its row is opened, since the list leaves it out.
+const mergeOutputs = {};
 
 function mergeDismissed() {
   try {
@@ -58,15 +60,36 @@ function mergeWhy(m) {
   return m.reason || "";
 }
 
+// mergeLandRows is a land not yet on main, with the push that puts it there, else Land now with its count. A
+// repository waits for its last land to be on main before it is offered another.
+function mergeLandRows(q) {
+  const rows = [], waiting = new Set();
+  for (const l of q.pending || []) {
+    waiting.add(l.repo);
+    rows.push('<div class="mq-row mq-land"><span class="mq-text">land ' + l.n + " of " + esc(l.repo) +
+      " is not on main yet: " + esc(l.push) + '</span><button type="button" data-mq="copy" data-push="' + esc(l.push) +
+      '">copy the push</button></div>');
+  }
+  for (const [repo, n] of Object.entries(q.unlanded || {})) {
+    if (!n || waiting.has(repo)) continue;
+    rows.push('<div class="mq-row mq-land"><span class="mq-text">' + n + (n === 1 ? " request" : " requests") +
+      " on claude/main of " + esc(repo) + ' since the last land</span><button type="button" class="go" data-mq="land" ' +
+      'data-repo="' + esc(repo) + '" data-tip="one commit of claude/main on main, signed as you. you push it">Land now (' +
+      n + ")</button></div>");
+  }
+  return rows;
+}
+
 function paintMergeStrip() {
   const host = document.getElementById("term-merge");
   if (!host) return;
   const on = typeof hubIsHub !== "undefined" && hubIsHub;
   const wants = on ? mergeWants(mergeQ) : [];
   const open = on ? (mergeQ.requests || []).filter(m => mergeOpenState(m.state) && m.state !== "conflict") : [];
-  host.hidden = wants.length === 0 && open.length === 0;
+  const lands = on ? mergeLandRows(mergeQ) : [];
+  host.hidden = wants.length === 0 && open.length === 0 && lands.length === 0;
   if (host.hidden) { host.replaceChildren(); return; }
-  const rows = wants.map(w => {
+  const rows = lands.concat(wants.map(w => {
     if (w.held) {
       return '<div class="mq-row mq-held"><span class="mq-text">merges in ' + esc(w.held) + " are held: " + esc(w.why) +
         '</span><button type="button" data-mq="queue">set the merge room</button></div>';
@@ -79,7 +102,7 @@ function paintMergeStrip() {
     return '<div class="mq-row mq-' + esc(m.state) + '"><span class="mq-text">#' + m.n + " " + esc(m.branch) + " " +
       esc(m.state) + " " + esc(mergeAge(m.ended_at || m.started_at || m.asked_at)) + ": " + esc(mergeWhy(m)) +
       "</span>" + acts + "</div>";
-  });
+  }));
   const testing = open.find(m => m.state === "merging" || m.state === "testing");
   const queued = open.filter(m => m.state === "queued").length;
   const line = (testing ? "testing " + esc(testing.branch) + (queued ? ", " : "") : "") + (queued ? queued + " queued" : "");
@@ -97,7 +120,8 @@ async function loadMerge(force) {
     const res = await fetcher("/_hub/merge" + (mergeDlgOpen() ? "?all=1" : ""));
     if (!res.ok) throw new Error(String(res.status));
     const body = await res.json();
-    mergeQ = { at: mergeQ.at, requests: body.requests || [], held: body.held || {}, room: body.room || "", why: body.why || "" };
+    mergeQ = { at: mergeQ.at, requests: body.requests || [], held: body.held || {}, room: body.room || "", why: body.why || "",
+      unlanded: body.unlanded || {}, pending: body.pending || [] };
   } catch (e) {
     // A hub mid-restart is not a finding. The strip keeps what it had and the next event or draw asks again.
   }
@@ -105,7 +129,10 @@ async function loadMerge(force) {
   if (mergeDlgOpen()) paintMergeDlg();
 }
 
-function onMergeEvent() { loadMerge(true); }
+function onMergeEvent() {
+  for (const k of Object.keys(mergeOutputs)) delete mergeOutputs[k];
+  loadMerge(true);
+}
 
 function mergeDlgOpen() {
   const d = document.getElementById("mergedlg");
@@ -119,6 +146,17 @@ function openMergeDlg(n) {
   if (!d.open) d.showModal();
   paintMergeDlg();
   loadMerge(true);
+  if (mergeOpenN && !(mergeOpenN in mergeOutputs)) mergeLoadOutput(mergeOpenN);
+}
+
+async function mergeLoadOutput(n) {
+  const fetcher = typeof plainFetch === "function" ? plainFetch : window.fetch.bind(window);
+  try {
+    const res = await fetcher("/_hub/merge/" + n);
+    if (!res.ok) return;
+    mergeOutputs[n] = (await res.json()).output || "";
+  } catch (e) { return; }
+  if (mergeDlgOpen()) paintMergeDlg();
 }
 
 function mergeRow(m) {
@@ -132,12 +170,13 @@ function mergeRow(m) {
   const times = [["asked", m.asked_at], ["started", m.started_at], ["tested", m.tested_at], ["ended", m.ended_at]]
     .filter(t => t[1]).map(t => t[0] + " " + new Date(t[1]).toLocaleString()).join(", ");
   const why = mergeWhy(m);
-  return '<div class="mq-item open">' + head + '<div class="mq-detail"><div>' + esc(m.repo) + (m.sha ? " at " + esc(m.sha.slice(0, 10)) : "") +
-    (m.room ? ", tested on " + esc(m.room) : "") + "</div><div>" + esc(times) + "</div>" +
+  const out = m.output || mergeOutputs[m.n] || "";
+  return '<div class="mq-item open">' + head + '<div class="mq-detail"><div>' + esc(m.repo) +
+    (m.sha ? " at " + esc(m.sha.slice(0, 10)) : "") + (m.room ? ", tested on " + esc(m.room) : "") + "</div><div>" + esc(times) + "</div>" +
     (why ? "<div>" + esc(why) + "</div>" : "") +
-    (mergeOpenState(m.state) ? '<button type="button" data-mq="cancel" data-n="' + m.n + '">' +
+    (m.state === "queued" || m.state === "conflict" ? '<button type="button" data-mq="cancel" data-n="' + m.n + '">' +
       (m.state === "conflict" ? "give up" : "cancel") + "</button>" : "") +
-    (m.output ? '<pre class="mq-out">' + esc(m.output) + "</pre>" : "") + "</div></div>";
+    (out ? '<pre class="mq-out">' + esc(out) + "</pre>" : "") + "</div></div>";
 }
 
 function paintMergeDlg() {
@@ -183,6 +222,11 @@ document.addEventListener("click", e => {
       if (mergeDlgOpen() && n === mergeOpenN) { mergeOpenN = 0; paintMergeDlg(); } else openMergeDlg(n);
       break;
     case "dismiss": mergeDismiss(n); break;
+    case "land": mergePost("/_hub/merge/land", { repo: b.dataset.repo }); break;
+    case "copy":
+      navigator.clipboard.writeText(b.dataset.push || "").then(() => toast("the push is on the clipboard", ""),
+        () => toast("could not copy the push", b.dataset.push || ""));
+      break;
     case "cancel": mergePost("/_hub/merge/" + n + "/cancel", {}); break;
     case "room": {
       const sel = document.getElementById("mergedlg-room");

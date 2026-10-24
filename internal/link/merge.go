@@ -20,18 +20,20 @@ import (
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/land"
 )
 
 // The merge queue's hub half. See docs/rnd/merge-queue.md, internal/hubstore/merge.go for the rows and
 // internal/gitsync/merge.go and mergerun.go for the git and the room's test run.
 //
 //	POST /_hub/merge               {repo, branch, sha?, by, room}: ask. Answers the open request when there is one
-//	GET  /_hub/merge?repo&open&all the requests, the open ones first, and why a queue is held
+//	GET  /_hub/merge?repo&open&all the requests, the open ones first, why a queue is held, and what a land waits on
 //	GET  /_hub/merge/<n>           one, with its test output
 //	POST /_hub/merge/<n>/cancel    {by}: a queued request, by its requester, its launcher or the operator
 //	GET  /_hub/merge/room          the configured merge room and the one the queue would use now
 //	POST /_hub/merge/room          {room}: set it, "" unsets. The operator's, never relayed from a room
 //	POST /_hub/merge/report        the merge room's verdict, relayed with `room` set from the link
+//	GET, POST /_hub/merge/land     land now, in mergeland.go
 //
 // ONE REQUEST PER REPOSITORY AT A TIME, IN ORDER, made by one runner: a 30 second tick and a kick on every change,
 // serial like the task scheduler. The hub merges in its store, the merge room tests, the hub lands.
@@ -51,6 +53,8 @@ type mergeQueue struct {
 	run  sync.Mutex
 	mu   sync.Mutex
 	held map[string]string
+	// sign is the land's identity and signer, operatorSign when nil.
+	sign func() (land.Identity, land.Signer, error)
 }
 
 func (q *mergeQueue) hold(repo, why string) {
@@ -124,6 +128,10 @@ func (p *Proxy) serveMerge(w http.ResponseWriter, r *http.Request, sub string) {
 		p.mergeKick()
 		room, why := p.mergeRoomPick(st)
 		crJSON(w, http.StatusOK, map[string]any{"room": strings.ToLower(strings.TrimSpace(in.Room)), "using": room, "why": why})
+	case rest == "land" && !write:
+		p.mergeLandGet(w, r, st)
+	case rest == "land":
+		p.mergeLandRoute(w, r, st)
 	case rest == "report" && write:
 		p.mergeReport(w, r, st)
 	case strings.HasSuffix(rest, "/cancel") && write:
@@ -171,7 +179,13 @@ func (p *Proxy) mergeList(w http.ResponseWriter, r *http.Request, st *hubstore.S
 		return
 	}
 	room, why := p.mergeRoomPick(st)
-	crJSON(w, http.StatusOK, map[string]any{"requests": ms, "held": p.merges.holds(), "room": room, "why": why})
+	unlanded, pending, err := p.mergeLandState(r, st)
+	if err != nil {
+		ffail(w, err)
+		return
+	}
+	crJSON(w, http.StatusOK, map[string]any{"requests": ms, "held": p.merges.holds(), "room": room, "why": why,
+		"unlanded": unlanded, "pending": pending})
 }
 
 // mergeAskRoute queues a request. The branch has to be on the hub at the sha asked, so "push first" is said here and

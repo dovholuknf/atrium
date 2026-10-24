@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
@@ -486,4 +487,175 @@ func (s *Store) MergeSetMerger(n int64, merger string) (MergeRequest, error) {
 		return err
 	})
 	return out, err
+}
+
+// MergeLand is one "land now": the commit cut from claude/main onto main, and the landed requests it carries.
+type MergeLand struct {
+	N            int64   `json:"n"`
+	Repo         string  `json:"repo"`
+	Commit       string  `json:"commit"`
+	MainBefore   string  `json:"main_before"`
+	ClaudeBefore string  `json:"claude_before"`
+	Requests     []int64 `json:"requests"`
+	By           string  `json:"by,omitempty"`
+	At           string  `json:"at"`
+}
+
+// MergeUnlanded is every landed request of a repository that no land carries yet, oldest first.
+func (s *Store) MergeUnlanded(repo string) ([]MergeRequest, error) {
+	repo = MergeRepoName(repo)
+	out := []MergeRequest{}
+	err := s.guard(func() error {
+		out = []MergeRequest{}
+		rows, err := s.db.Query(`SELECT `+mergeCols+` FROM merge_request WHERE repo = ? AND state = ? AND land_n = 0
+			ORDER BY n`, repo, MergeLanded)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			m, err := scanMerge(rows)
+			if err != nil {
+				return err
+			}
+			m.Output = ""
+			out = append(out, m)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// MergeLandNext is the number the next land gets, so its branch can be named before it is recorded.
+func (s *Store) MergeLandNext() (int64, error) {
+	var top int64
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT COALESCE(MAX(n), 0) FROM merge_land`).Scan(&top)
+	})
+	return top + 1, err
+}
+
+// MergeLandAdd records a land and marks its requests, all or none. A request already carried, or not landed, refuses it.
+func (s *Store) MergeLandAdd(l MergeLand) (MergeLand, error) {
+	l.Repo = MergeRepoName(l.Repo)
+	switch {
+	case l.N <= 0 || len(l.Requests) == 0:
+		return l, refuse(errors.New("a land has a number and carries at least one request"))
+	case !flowShaRe.MatchString(l.Commit) || !flowShaRe.MatchString(l.MainBefore) || !flowShaRe.MatchString(l.ClaudeBefore):
+		return l, refuse(errors.New("a sha is 7 to 64 lower case hex digits"))
+	}
+	if why := CRText("by", l.By, backlogByMax, false); why != "" {
+		return l, refuse(errors.New(why))
+	}
+	l.At = ts(s.now())
+	err := s.tx(func(t *sql.Tx) error {
+		ns := make([]string, len(l.Requests))
+		for i, n := range l.Requests {
+			ns[i] = strconv.FormatInt(n, 10)
+			res, err := t.Exec(`UPDATE merge_request SET land_n = ? WHERE n = ? AND repo = ? AND state = ? AND land_n = 0`,
+				l.N, n, l.Repo, MergeLanded)
+			if err != nil {
+				return err
+			}
+			if c, err := res.RowsAffected(); err != nil {
+				return err
+			} else if c != 1 {
+				return refuse(fmt.Errorf("request %d is not a landed request of %s that no land carries", n, l.Repo))
+			}
+		}
+		_, err := t.Exec(`INSERT INTO merge_land (n, repo, commit_sha, main_before, claude_before, requests, by, at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, l.N, l.Repo, l.Commit, l.MainBefore, l.ClaudeBefore, strings.Join(ns, ","), l.By, l.At)
+		return err
+	})
+	return l, err
+}
+
+// MergeLands lists a repository's lands, newest first, at most limit.
+func (s *Store) MergeLands(repo string, limit int) ([]MergeLand, error) {
+	if limit <= 0 || limit > mergeListMax {
+		limit = 50
+	}
+	out := []MergeLand{}
+	err := s.guard(func() error {
+		out = []MergeLand{}
+		rows, err := s.db.Query(`SELECT n, repo, commit_sha, main_before, claude_before, requests, by, at FROM merge_land
+			WHERE repo = ? ORDER BY n DESC LIMIT ?`, MergeRepoName(repo), limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var l MergeLand
+			var reqs string
+			if err := rows.Scan(&l.N, &l.Repo, &l.Commit, &l.MainBefore, &l.ClaudeBefore, &reqs, &l.By, &l.At); err != nil {
+				return err
+			}
+			l.Requests = []int64{}
+			for _, f := range strings.Split(reqs, ",") {
+				if n, err := strconv.ParseInt(f, 10, 64); err == nil {
+					l.Requests = append(l.Requests, n)
+				}
+			}
+			out = append(out, l)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// MergeUnlandedCounts is how many landed requests each repository has that no land carries yet.
+func (s *Store) MergeUnlandedCounts() (map[string]int, error) {
+	out := map[string]int{}
+	err := s.guard(func() error {
+		out = map[string]int{}
+		rows, err := s.db.Query(`SELECT repo, COUNT(*) FROM merge_request WHERE state = ? AND land_n = 0 GROUP BY repo`,
+			MergeLanded)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var repo string
+			var n int
+			if err := rows.Scan(&repo, &n); err != nil {
+				return err
+			}
+			out[repo] = n
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// MergeLandsLast is the newest land of each repository.
+func (s *Store) MergeLandsLast() ([]MergeLand, error) {
+	var repos []string
+	err := s.guard(func() error {
+		repos = nil
+		rows, err := s.db.Query(`SELECT DISTINCT repo FROM merge_land ORDER BY repo`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r string
+			if err := rows.Scan(&r); err != nil {
+				return err
+			}
+			repos = append(repos, r)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := []MergeLand{}
+	for _, r := range repos {
+		ls, err := s.MergeLands(r, 1)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ls...)
+	}
+	return out, nil
 }
