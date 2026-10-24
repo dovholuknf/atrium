@@ -4,7 +4,7 @@
 #   pwsh -NoProfile -File scripts\ci-defender.ps1
 #
 # WHY. scripts/test-time-guard.sh flagged internal/ptyhost's TestStartRunsADetachedHostFromACopy at 8 to 12 s on
-# the windows-latest runner, and internal/detach's TestStartOutsideJobAnswersTheProgramNotCmd at 7 to 14 s. Both
+# the windows-latest runner, and internal/base/detach's TestStartOutsideJobAnswersTheProgramNotCmd at 7 to 14 s. Both
 # start an executable that did not exist a moment before. On a Windows box with real-time protection on, the first
 # CreateProcess of a fresh copy of a 7 MB test binary takes 2.8 to 3.4 s and the second 20 ms: Defender scans a
 # file it has not seen before the process may run. That the hosted runner does the same was a belief, so this
