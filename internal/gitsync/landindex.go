@@ -12,8 +12,9 @@ import (
 // EVERY ITEM'S CHANGELOG ENTRY, READ ONCE PER REF TIP. A lifecycle pass reads landing for each open item, against claude/main
 // and against origin's main, and a `git log -- changelog/*/*-<id>.md` per item and ref kept twenty git children alive on
 // the live hub. One `git log` per tip lists every added entry and the files of every commit that touched one, and it is
-// kept until the tip moves. Whether it moved is read off the ref store's own files, so a pass where nothing moved spawns
-// no git at all.
+// kept until the tip moves. The rest of a read (patch ids, ancestry, paths) is a fact about shas, kept once asked, and a
+// reader that asks while git runs waits for that git. Whether a tip moved is read off the ref store's own files, so a pass
+// where nothing moved spawns no git at all.
 
 // landIndex is what one tip's history says of every item's changelog entry.
 type landIndex struct {
@@ -31,8 +32,9 @@ type landIndexCache struct {
 	idx map[string]*landIndex
 	// tips is the last resolved tip of a ref, keyed by dir and ref, kept while its stamp is unchanged.
 	tips map[string]refTip
-	// unknown is a commit the mirror lacked, keyed by dir, sha and the stamp of main at the time.
-	unknown map[string]bool
+	// known is a commit the repository holds, keyed by dir and sha. memo is the answers of git about shas. See memo.
+	known map[string]bool
+	memo  map[string]*memoEntry
 }
 
 type refTip struct{ stamp, sha string }
@@ -93,32 +95,102 @@ func (s *Store) resolveTip(ctx context.Context, dir, ref string) (string, error)
 	return sha, nil
 }
 
-// knownCommit is commitKnown for the forge's tip, which every item of a pass asks about. A commit once known stays known,
-// and one the mirror lacked is asked again only once main has moved, which is how the mirror gets it.
-func (s *Store) knownCommit(ctx context.Context, dir, sha string) bool {
+// repoStamp changes whenever any ref of a reftable repository moves. Empty for a files repository, whose refs are not
+// all in one file, and then nothing is remembered of a commit the mirror lacked.
+func repoStamp(dir string) string {
+	l, err := os.ReadFile(filepath.Join(dir, "reftable", "tables.list"))
+	if err != nil {
+		return ""
+	}
+	return string(l)
+}
+
+// knownCommit is commitKnown asked once per commit. A commit once known stays known, and one the mirror lacked is asked
+// again only once a ref has moved, which is how the mirror gets it.
+func (s *Store) knownCommit(ctx context.Context, dir, sha string) (bool, error) {
 	c := &s.landIdx
-	key := dir + "\x00" + sha
-	miss := key + "\x00" + refStamp(dir, MainRef)
 	c.mu.Lock()
-	_, indexed := c.idx[key]
-	gone := c.unknown[miss]
+	had := c.known[dir+"\x00"+sha]
 	c.mu.Unlock()
-	if indexed {
-		return true
+	if had {
+		return true, nil
 	}
-	if gone {
-		return false
+	stamp := repoStamp(dir)
+	v, err := s.memo(ctx, "known\x00"+dir+"\x00"+sha+"\x00"+stamp, stamp != "", func() (any, error) {
+		return s.commitKnown(ctx, dir, sha)
+	})
+	if err != nil {
+		return false, err
 	}
-	known, err := s.commitKnown(ctx, dir, sha)
-	if err == nil && !known {
+	known := v.(bool)
+	if known {
 		c.mu.Lock()
-		if c.unknown == nil || len(c.unknown) > landIndexMax {
-			c.unknown = map[string]bool{}
+		if c.known == nil || len(c.known) > memoMax {
+			c.known = map[string]bool{}
 		}
-		c.unknown[miss] = true
+		c.known[dir+"\x00"+sha] = true
 		c.mu.Unlock()
 	}
-	return known
+	return known, nil
+}
+
+// memoEntry is one answer of git about commits named by sha, which never changes.
+type memoEntry struct {
+	done chan struct{}
+	v    any
+	err  error
+}
+
+// memoMax bounds the answers kept. A pass asks a handful per open item.
+const memoMax = 4096
+
+// memo answers fn once per key, and readers that ask while it runs wait for the one git rather than start their own. A
+// failure is not kept. keep false runs fn without keeping the answer, still shared with whoever asked meanwhile.
+func (s *Store) memo(ctx context.Context, key string, keep bool, fn func() (any, error)) (any, error) {
+	c := &s.landIdx
+	c.mu.Lock()
+	e, ok := c.memo[key]
+	if !ok {
+		if c.memo == nil || len(c.memo) >= memoMax {
+			kept := map[string]*memoEntry{}
+			for k, v := range c.memo {
+				if !closed(v.done) {
+					kept[k] = v
+				}
+			}
+			c.memo = kept
+		}
+		e = &memoEntry{done: make(chan struct{})}
+		c.memo[key] = e
+	}
+	c.mu.Unlock()
+	if ok {
+		select {
+		case <-e.done:
+			return e.v, e.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	e.v, e.err = fn()
+	close(e.done)
+	if e.err != nil || !keep {
+		c.mu.Lock()
+		if c.memo[key] == e {
+			delete(c.memo, key)
+		}
+		c.mu.Unlock()
+	}
+	return e.v, e.err
+}
+
+func closed(done chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
 }
 
 // landIndexAt is the index of ref's tip, nil when the repository has no such ref. Readers of one tip share one log.
@@ -135,7 +207,7 @@ func (s *Store) landIndexAt(ctx context.Context, dir, ref string) (*landIndex, e
 		if c.idx == nil || len(c.idx) >= landIndexMax {
 			kept := map[string]*landIndex{}
 			for k, v := range c.idx {
-				if !v.isDone() {
+				if !closed(v.done) {
 					kept[k] = v
 				}
 			}
@@ -167,15 +239,6 @@ func (s *Store) landIndexAt(ctx context.Context, dir, ref string) (*landIndex, e
 		return nil, x.err
 	}
 	return x, nil
-}
-
-func (x *landIndex) isDone() bool {
-	select {
-	case <-x.done:
-		return true
-	default:
-		return false
-	}
 }
 
 // readLandIndex is the one log of a tip: every non-merge commit that touched a changelog entry, newest first, with every
