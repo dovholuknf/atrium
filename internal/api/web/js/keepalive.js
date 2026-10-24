@@ -23,6 +23,7 @@ const KEEPALIVE_WHY = {
   "context under 50k": "its context is under 50k, too small to be worth keeping warm",
   "a permission dialog is open": "a permission dialog is open",
   "no session id yet": "it has no session yet",
+  "handed off cold": "it was handed off as its cache went cold, so nothing keeps it warm until your next turn",
 };
 
 function keepaliveTime(at) {

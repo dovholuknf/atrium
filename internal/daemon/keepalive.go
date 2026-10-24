@@ -741,6 +741,9 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if card == nil || card.State != store.KeepaliveOn {
 		return skip("")
 	}
+	if k.coldSpent(t.ID) {
+		return skip(whyColdHandedOff)
+	}
 	// Its context is about to be cleared, and after it the cache is a new one.
 	if k.holding != nil && k.holding(t.ID) {
 		return skip("new context running")
@@ -752,8 +755,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if err != nil || !isClaude(h) {
 		return skip("not a Claude card")
 	}
-	// A parked card has no process and its cache is meant to go cold. Refreshing
-	// it would pay to keep warm what the park chose to let go.
+	// A parked card's cache is meant to go cold: the park chose to let it go.
 	if isParked(t) {
 		return skip("parked")
 	}
@@ -1189,9 +1191,6 @@ func (k *keepalive) view(taskID string) any {
 	if !last.IsZero() {
 		out.LastRefreshAt = &last
 	}
-	// decide() re-reads the transcript and the stretch: one more file read and
-	// one indexed query per view. The view is built per board fetch, not per
-	// event.
 	if v := k.decide(t, card); v.act == "skip" && v.why == "not due" {
 		next := refreshDueAt(v.expiry)
 		out.NextRefreshAt = &next
@@ -1201,6 +1200,9 @@ func (k *keepalive) view(taskID string) any {
 	}
 	if r.TTL > 0 {
 		out.WarmUntil = &expiry
+	}
+	if at, ok := k.coldSpentAt(taskID); ok {
+		out.WarmUntil, out.Why = &at, whyColdHandedOff
 	}
 	return out
 }

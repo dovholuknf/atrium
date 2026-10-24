@@ -111,6 +111,19 @@ func (k *keepalive) coldSpent(taskID string) bool {
 	return err != nil || v != ""
 }
 
+// coldSpentAt is when the card was cold-handed-off, while no turn of a person's has come since.
+func (k *keepalive) coldSpentAt(taskID string) (time.Time, bool) {
+	v, err := k.st.Setting(coldSpentKey(taskID))
+	if err != nil || v == "" {
+		return time.Time{}, false
+	}
+	at, err := time.Parse(time.RFC3339Nano, v)
+	return at, err == nil
+}
+
+// whyColdHandedOff is the skip reason of a card handed off cold: its cache is let go until a person's turn.
+const whyColdHandedOff = "handed off cold"
+
 // coldRearm lets the card be handed off again, on a turn a person or a peer started.
 func (k *keepalive) coldRearm(taskID string) {
 	if k == nil {

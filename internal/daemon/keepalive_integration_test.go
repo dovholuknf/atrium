@@ -117,6 +117,12 @@ type replyOpt struct {
 // reply appends one main assistant reply to the card's transcript.
 func (f *kaFix) reply(at time.Time, o replyOpt) {
 	f.t.Helper()
+	appendReply(f.t, f.path, at, o)
+}
+
+// appendReply appends one main assistant reply to the transcript at path.
+func appendReply(t *testing.T, path string, at time.Time, o replyOpt) {
+	t.Helper()
 	if o.model == "" {
 		o.model = "claude-opus-5-5"
 	}
@@ -135,9 +141,9 @@ func (f *kaFix) reply(at time.Time, o replyOpt) {
 			"speed": o.speed, "cache_creation": cc,
 		}},
 	})
-	fh, err := os.OpenFile(f.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	fh, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		f.t.Fatal(err)
+		t.Fatal(err)
 	}
 	defer fh.Close()
 	fmt.Fprintln(fh, string(line))
