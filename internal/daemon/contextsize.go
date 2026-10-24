@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -51,7 +52,7 @@ type ContextSize struct {
 
 // lowLimitNote is "limit 100k from card" when limitK is more than 25 percent under the built-in claude limit.
 func lowLimitNote(limitK int, from string) string {
-	if limitK <= 0 || limitK*4 >= store.DefaultContextLimits()["claude"]*3 {
+	if limitK <= 0 || limitK*4 >= rules.DefaultContextLimits()["claude"]*3 {
 		return ""
 	}
 	return fmt.Sprintf("limit %dk from %s", limitK, from)

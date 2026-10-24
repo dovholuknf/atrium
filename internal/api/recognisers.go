@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // The recognisers: rows that say what a URL means.
@@ -27,13 +27,13 @@ func (s *Server) listRecognisers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rows == nil {
-		rows = []*store.Recogniser{}
+		rows = []*rules.Recogniser{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"recognisers": rows})
 }
 
 func (s *Server) saveRecogniser(w http.ResponseWriter, r *http.Request) {
-	var rec store.Recogniser
+	var rec rules.Recogniser
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&rec); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -90,7 +90,7 @@ func (s *Server) recognise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.Recognise(body.URL)
-	if errors.Is(err, store.ErrNoRecogniser) {
+	if errors.Is(err, rules.ErrNoRecogniser) {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}

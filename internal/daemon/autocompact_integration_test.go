@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -29,7 +30,7 @@ func setK(t *testing.T, d *Daemon, key string, k string) {
 
 func setLimits(t *testing.T, d *Daemon, v string) {
 	t.Helper()
-	setK(t, d, store.SettingContextLimits, v)
+	setK(t, d, rules.SettingContextLimits, v)
 }
 
 // Untouched, the default claude limit gives a window.

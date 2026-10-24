@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -60,8 +61,8 @@ type linkKind struct {
 }
 
 // classify reads the kind off the resolution. "" is a link the open verb cannot make a card for.
-func classify(got *store.Resolved) linkKind {
-	c := store.ClassifyLink(got)
+func classify(got *rules.Resolved) linkKind {
+	c := rules.ClassifyLink(got)
 	return linkKind{kind: c.Kind, host: c.Host, org: c.Org, repo: c.Repo, num: c.Num, branch: c.Branch}
 }
 
@@ -69,7 +70,7 @@ func classify(got *store.Resolved) linkKind {
 // alone. Section 11: the card's title is `zendesk-12345`, and a stranger's text never chooses a directory or a branch.
 // A row's fetch may have filled these templates with ticket prose, so none of them is taken from the row. The number
 // comes from the link, or from the address a redirect landed on, which only a numeric group can fill.
-func supportFromURLOnly(got *store.Resolved, k linkKind) (*store.Resolved, linkKind) {
+func supportFromURLOnly(got *rules.Resolved, k linkKind) (*rules.Resolved, linkKind) {
 	kind := strings.ToLower(strings.TrimSpace(got.Kind))
 	if !supportKindName.MatchString(kind) {
 		kind = "link"
@@ -90,11 +91,11 @@ func holed(s string) bool { return strings.Contains(s, "{") }
 
 // key is the canonical key of the link. Section 4: an issue's key carries an `i`, so issue 5 and PR 5 are two keys.
 func (k linkKind) key(rowKind string) string {
-	return store.LinkKind{Kind: k.kind, Host: k.host, Org: k.org, Repo: k.repo, Num: k.num, Branch: k.branch}.Key(rowKind)
+	return rules.LinkKind{Kind: k.kind, Host: k.host, Org: k.org, Repo: k.repo, Num: k.num, Branch: k.branch}.Key(rowKind)
 }
 
 // openOther is the open verb for an issue, a branch or a support link. See the top of this file.
-func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openRequest, got *store.Resolved, k linkKind, steps *opSteps) {
+func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openRequest, got *rules.Resolved, k linkKind, steps *opSteps) {
 	if k.kind == linkSupport {
 		got, k = supportFromURLOnly(got, k)
 	}
@@ -138,7 +139,7 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 		}
 		host, org, repo = "", "", ""
 		if pick != "" && !strings.EqualFold(pick, repoNone) {
-			if !store.RepoSlug(pick) {
+			if !rules.RepoSlug(pick) {
 				openFail(w, http.StatusBadRequest, "worktree", "bad_request",
 					"repo is host/org/repo, like github.com/openziti/ziti, or none for a scratch folder")
 				return
@@ -258,7 +259,7 @@ func cardRepo(t *store.Task) string {
 
 // openOtherLaunchBody is the card's launch for a non-PR link: the recogniser's fields, the link's tag, and the
 // stranger note after the prompt.
-func (s *Server) openOtherLaunchBody(in openRequest, got *store.Resolved, cwd, key, host, org, repo, branch string, home bool) []byte {
+func (s *Server) openOtherLaunchBody(in openRequest, got *rules.Resolved, cwd, key, host, org, repo, branch string, home bool) []byte {
 	harness := strings.TrimSpace(in.Harness)
 	if harness == "" && repo != "" {
 		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil {
@@ -473,7 +474,7 @@ func (s *Server) scratchDir(host, name string) (string, error) {
 	if root == "" {
 		return "", errNoScratchRoot
 	}
-	if !store.RepoSlug(host+"/x/"+flattenBranch(name)) || flattenBranch(name) == "" {
+	if !rules.RepoSlug(host+"/x/"+flattenBranch(name)) || flattenBranch(name) == "" {
 		return "", fmt.Errorf("%s/%s is not a folder name", host, name)
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {

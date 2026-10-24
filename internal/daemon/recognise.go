@@ -15,7 +15,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/linkfetch"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // Turning a pasted URL into a filled-in launch dialog.
@@ -51,13 +51,13 @@ const (
 
 // Recognise resolves one URL against the recogniser table.
 //
-// Returns store.ErrNoRecogniser when no row wanted it, which the caller reports
+// Returns rules.ErrNoRecogniser when no row wanted it, which the caller reports
 // as "nothing recognises this" rather than as a broken request. Every other
 // difficulty comes back INSIDE the resolution: a fetch that failed, a
 // placeholder nothing filled in, a directory that is not there. All three are
 // things a human reads and acts on, and none of them is a reason to withhold
 // the four fields that did resolve.
-func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
+func (d *Daemon) Recognise(url string) (*rules.Resolved, error) {
 	r, vars, fromHub, err := d.matchRecogniser(url)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 			}
 		}
 	}
-	// The captures win over the facts, and a failed fetch adds none. See store.Recogniser.Resolve.
+	// The captures win over the facts, and a failed fetch adds none. See rules.Recogniser.Resolve.
 	if fetchErr != nil {
 		facts = nil
 	}
@@ -82,8 +82,8 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 	if fetchErr != nil {
 		out.FetchError = firstLine(fetchErr.Error())
 	}
-	// ATRIUM DOES NOT CREATE THE DIRECTORY. See store.DescribeCwd.
-	store.DescribeCwd(out, os.Stat)
+	// ATRIUM DOES NOT CREATE THE DIRECTORY. See rules.DescribeCwd.
+	rules.DescribeCwd(out, os.Stat)
 	return out, nil
 }
 
@@ -93,16 +93,16 @@ func (d *Daemon) Recognise(url string) (*store.Resolved, error) {
 // A hub that cannot be asked right now, or one older than the route, leaves the room on its own table, with a log
 // line: recognising a link runs nothing and reads no forge, so the rule that a room never falls back to a forge of its
 // own does not reach it. fromHub says which table answered.
-func (d *Daemon) matchRecogniser(url string) (r *store.Recogniser, vars map[string]string, fromHub bool, err error) {
+func (d *Daemon) matchRecogniser(url string) (r *rules.Recogniser, vars map[string]string, fromHub bool, err error) {
 	if hf := d.HubForge(); hf != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), recogniserFetchTimeout)
 		var got struct {
-			Recognisers []*store.Recogniser `json:"recognisers"`
+			Recognisers []*rules.Recogniser `json:"recognisers"`
 		}
 		err := hf.Call(ctx, forge.HubRecognisersPath, struct{}{}, &got)
 		cancel()
 		if err == nil {
-			r, vars, err := store.MatchRecogniserIn(got.Recognisers, url)
+			r, vars, err := rules.MatchRecogniserIn(got.Recognisers, url)
 			return r, vars, true, err
 		}
 		log.Printf("[atrium] the hub's recognisers could not be read (%v), so this room's own are used", err)
@@ -122,10 +122,10 @@ func (d *Daemon) matchRecogniser(url string) (r *store.Recogniser, vars map[stri
 // ATRIUM HOLDS NO CREDENTIAL HERE and there is nowhere in the row to put one.
 // `gh` already has a token in the keyring it already uses, which is the same
 // arrangement sources are built on.
-func (d *Daemon) fetchFacts(ctx context.Context, r *store.Recogniser,
+func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	vars map[string]string) (map[string]string, error) {
 
-	name, args := store.FillArgv(r.Fetch, r.FetchArgs, vars)
+	name, args := rules.FillArgv(r.Fetch, r.FetchArgs, vars)
 	if name == forgeFetch {
 		return d.forgeFacts(ctx, args, vars)
 	}

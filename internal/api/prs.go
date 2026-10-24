@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -196,12 +197,12 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The open verb has recognised this link a moment ago, and asking again is another read of the forge for nothing.
-	got, _ := r.Context().Value(openRecognisedKey{}).(*store.Resolved)
+	got, _ := r.Context().Value(openRecognisedKey{}).(*rules.Resolved)
 	var err error
 	if got == nil {
 		got, err = s.Recognise(body.URL)
 	}
-	if errors.Is(err, store.ErrNoRecogniser) {
+	if errors.Is(err, rules.ErrNoRecogniser) {
 		prError(w, http.StatusUnprocessableEntity, "no_recogniser", "no recogniser matches this", nil)
 		return
 	}
@@ -233,7 +234,7 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var answered bool
-		claim, answered = s.claimPR(w, r, PRClaimAsk{Key: store.PRKey(host, org, repo, num), URL: body.URL,
+		claim, answered = s.claimPR(w, r, PRClaimAsk{Key: rules.PRKey(host, org, repo, num), URL: body.URL,
 			Why: body.Why, Head: body.Head, Held: held, Take: r.Context().Value(openTakeKey{}) != nil})
 		if answered {
 			return

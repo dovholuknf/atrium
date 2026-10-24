@@ -6,11 +6,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // A recogniser row that would be typical of this operator's table.
-func pullRequestRow() Recogniser {
-	return Recogniser{
+func pullRequestRow() rules.Recogniser {
+	return rules.Recogniser{
 		ID:      "github-pr",
 		Label:   "github pull request",
 		Enabled: true,
@@ -59,8 +61,8 @@ func TestTheDefaultRepoIsSavedAndCheckedAndFilled(t *testing.T) {
 			t.Errorf("%q was saved", bad)
 		}
 	}
-	if !IsPRRow("pull-request,{repo}") || IsPRRow("issue,{repo}") || IsPRRow("pull-requests") {
-		t.Error("IsPRRow reads the tags wrong")
+	if !rules.IsPRRow("pull-request,{repo}") || rules.IsPRRow("issue,{repo}") || rules.IsPRRow("pull-requests") {
+		t.Error("rules.IsPRRow reads the tags wrong")
 	}
 }
 
@@ -83,7 +85,7 @@ func TestMostSpecificRecogniserWins(t *testing.T) {
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
 	}
-	generic := Recogniser{
+	generic := rules.Recogniser{
 		ID: "github-repo", Label: "a repository", Enabled: true, Rank: 900,
 		Pattern: `^https?://(?P<host>github\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)`,
 		Cwd:     "d:/git/{org}/{repo}",
@@ -122,7 +124,7 @@ func TestDisabledRecognisersAreNotAsked(t *testing.T) {
 	if _, err := s.SaveRecogniser(r); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.MatchRecogniser("https://github.com/openziti/ziti/pull/1"); !errors.Is(err, ErrNoRecogniser) {
+	if _, _, err := s.MatchRecogniser("https://github.com/openziti/ziti/pull/1"); !errors.Is(err, rules.ErrNoRecogniser) {
 		t.Fatalf("a switched-off recogniser answered: %v", err)
 	}
 }
@@ -134,8 +136,8 @@ func TestUnmatchedURLIsNotAnError(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err := s.MatchRecogniser("https://example.invalid/whatever")
-	if !errors.Is(err, ErrNoRecogniser) {
-		t.Fatalf("wanted ErrNoRecogniser so the caller can say 'nothing knows what that is', got %v", err)
+	if !errors.Is(err, rules.ErrNoRecogniser) {
+		t.Fatalf("wanted rules.ErrNoRecogniser so the caller can say 'nothing knows what that is', got %v", err)
 	}
 }
 
@@ -148,7 +150,7 @@ func TestNoURLNormalisationHappens(t *testing.T) {
 	if _, err := s.SaveRecogniser(pullRequestRow()); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.MatchRecogniser("github.com/openziti/ziti/pull/4211"); !errors.Is(err, ErrNoRecogniser) {
+	if _, _, err := s.MatchRecogniser("github.com/openziti/ziti/pull/4211"); !errors.Is(err, rules.ErrNoRecogniser) {
 		t.Fatal("a scheme was invented for a url that did not have one")
 	}
 	// Whitespace is the one thing trimmed, because a pasted url arrives with a
@@ -217,40 +219,6 @@ func TestAPlaceholderNothingFilledIsLeftStandingAndReported(t *testing.T) {
 	}
 }
 
-// A title fetched from an issue tracker is somebody else's text, and somebody
-// else's text has newlines in it. A card title is one line and a path is a path.
-func TestFetchedTextDoesNotBreakOutOfItsField(t *testing.T) {
-	t.Parallel()
-	r := &Recogniser{
-		ID: "x", Title: "{title}", Cwd: "d:/w/{repo}", Prompt: "fix {title}",
-	}
-	got := r.Fill(map[string]string{
-		"title": "crash on start\r\nrm -rf everything",
-		"repo":  "ziti\nelsewhere",
-	})
-	if strings.ContainsAny(got.Title, "\r\n") {
-		t.Fatalf("a two-line title reached the card: %q", got.Title)
-	}
-	if strings.ContainsAny(got.Cwd, "\r\n") {
-		t.Fatalf("a newline reached a path: %q", got.Cwd)
-	}
-	// The prompt is the exception on purpose: an issue body is paragraphs, and
-	// flattening it would be atrium mangling somebody else's words in transit.
-	if !strings.Contains(got.Prompt, "\n") {
-		t.Fatalf("the prompt was flattened, so an issue body would arrive as one line: %q", got.Prompt)
-	}
-}
-
-// FillPrompt takes the captures only: a fetched fact's placeholder is blank, an unknown one stays.
-func TestFillPromptTakesOnlyTheCaptures(t *testing.T) {
-	t.Parallel()
-	r := &Recogniser{ID: "x", Prompt: "Work on {url} in {repo}.\n\n{body}{other}"}
-	got := r.FillPrompt(map[string]string{"url": "https://h/o/r/issues/1", "repo": "r"}, map[string]bool{"body": true})
-	if got != "Work on https://h/o/r/issues/1 in r.\n\n{other}" {
-		t.Fatalf("prompt: %q", got)
-	}
-}
-
 // A capture group called `url` does not get to redefine what {url} means, or
 // every prompt built on it would point somewhere the operator did not paste.
 func TestURLAlwaysMeansTheURL(t *testing.T) {
@@ -269,21 +237,6 @@ func TestURLAlwaysMeansTheURL(t *testing.T) {
 	got := row.Fill(vars)
 	if got.Prompt != "look at https://github.com/openziti/ziti/pull/7" {
 		t.Fatalf("a capture redefined the url: %q", got.Prompt)
-	}
-}
-
-func TestFillArgvKeepsEveryArgumentSeparate(t *testing.T) {
-	t.Parallel()
-	cmd, args := FillArgv("gh", []string{"issue", "view", "{num}", "--repo", "{org}/{repo}"},
-		map[string]string{"num": "12", "org": "open ziti", "repo": "ziti"})
-	if cmd != "gh" {
-		t.Fatalf("cmd: %q", cmd)
-	}
-	if len(args) != 5 {
-		t.Fatalf("arguments were joined or split: %q", args)
-	}
-	if args[4] != "open ziti/ziti" {
-		t.Fatalf("a value with a space in it stopped being one argument: %q", args[4])
 	}
 }
 

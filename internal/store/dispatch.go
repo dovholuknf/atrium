@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // Work handed to another machine.
@@ -380,7 +382,7 @@ func (s *Store) SettleDispatch(id, token, state, cardID, cardURL, why string) (*
 		res, err := s.db.Exec(
 			`UPDATE dispatch SET state = ?, card_id = ?, card_url = ?, error = ?,
 				settled_at = ?, token = '' WHERE id = ? AND token = ? AND state = ?`,
-			state, cardID, cardURL, firstLineOf(why), ts(s.now()), id, token, DispatchClaimed)
+			state, cardID, cardURL, rules.FirstLine(why), ts(s.now()), id, token, DispatchClaimed)
 		if err != nil {
 			return err
 		}

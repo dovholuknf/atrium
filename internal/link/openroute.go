@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // OPEN A LINK, ON THE HUB. Design: docs/rnd/card-lifecycle-design.md, section 3. Item r-open-verb-pr.
@@ -97,7 +97,7 @@ func (p *Proxy) openTargetOf(link, pickedRepo string) (key, repo string) {
 	if err != nil {
 		return "", ""
 	}
-	row, vars, err := store.MatchRecogniserIn(rows, in.URL)
+	row, vars, err := rules.MatchRecogniserIn(rows, in.URL)
 	if err != nil {
 		return "", ""
 	}
@@ -109,19 +109,19 @@ func (p *Proxy) openTargetOf(link, pickedRepo string) (key, repo string) {
 	} else {
 		repo = strings.Trim(strings.TrimSpace(row.DefaultRepo), "/")
 	}
-	if strings.EqualFold(repo, "none") || !store.RepoSlug(repo) {
+	if strings.EqualFold(repo, "none") || !rules.RepoSlug(repo) {
 		repo = ""
 	}
-	if !store.IsPRRow(row.Tags) {
+	if !rules.IsPRRow(row.Tags) {
 		// An issue, a branch or a support link is keyed as the room keys it, and the room claims it on the first open.
 		// A link the room could not open has no key, and goes to the least busy room.
-		return strings.ToLower(store.ClassifyLink(row.Fill(vars)).Key(row.Kind)), repo
+		return strings.ToLower(rules.ClassifyLink(row.Fill(vars)).Key(row.Kind)), repo
 	}
 	num, _ := strconv.Atoi(strings.TrimSpace(vars["num"]))
 	if host == "" || org == "" || name == "" || num <= 0 {
 		return "", repo
 	}
-	return store.PRKey(vars["host"], vars["org"], vars["repo"], num), repo
+	return rules.PRKey(vars["host"], vars["org"], vars["repo"], num), repo
 }
 
 // retagOpen puts the room on an open's answer, and on its card and review ids, in the merged view. A scoped board

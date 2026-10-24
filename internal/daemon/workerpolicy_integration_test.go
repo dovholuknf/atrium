@@ -5,16 +5,17 @@ package daemon
 import (
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-func setPolicy(t *testing.T, d *Daemon, p store.WorkerPolicy) {
+func setPolicy(t *testing.T, d *Daemon, p rules.WorkerPolicy) {
 	t.Helper()
-	v, err := store.CheckWorkerPolicy(p)
+	v, err := rules.CheckWorkerPolicy(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetSetting(store.SettingWorkerPolicy, v); err != nil {
+	if err := d.st.SetSetting(rules.SettingWorkerPolicy, v); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -57,7 +58,7 @@ func TestAWorkerPastTheBudgetTellsItsLauncherOnceAndShowsOnItsCard(t *testing.T)
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
-	setPolicy(t, d, store.WorkerPolicy{BudgetUSD: 25})
+	setPolicy(t, d, rules.WorkerPolicy{BudgetUSD: 25})
 
 	spend(t, d, worker.ID, 1)
 	d.checkBudget(worker)
@@ -89,7 +90,7 @@ func TestTheBudgetNeverTouchesACardTheOperatorStarted(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	own := peerCard(t, d, "mine")
-	setPolicy(t, d, store.WorkerPolicy{BudgetUSD: 1})
+	setPolicy(t, d, rules.WorkerPolicy{BudgetUSD: 1})
 	spend(t, d, own.ID, 5)
 	d.checkBudget(own)
 	if v := d.budgetFor(own.ID); v != nil {
@@ -101,13 +102,13 @@ func TestACardBackUnderTheBudgetStopsShowingIt(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	_, worker := holdingPair(t, d, OrchestratorTag)
-	setPolicy(t, d, store.WorkerPolicy{BudgetUSD: 5})
+	setPolicy(t, d, rules.WorkerPolicy{BudgetUSD: 5})
 	spend(t, d, worker.ID, 1)
 	d.checkBudget(worker)
 	if d.budgetFor(worker.ID) == nil {
 		t.Fatal("not shown past the budget")
 	}
-	setPolicy(t, d, store.WorkerPolicy{})
+	setPolicy(t, d, rules.WorkerPolicy{})
 	d.checkBudget(worker)
 	if v := d.budgetFor(worker.ID); v != nil {
 		t.Fatalf("still shown with the budget off: %v", v)
@@ -124,7 +125,7 @@ func TestTheDefaultWorkerModelOnlyReachesAFreshAgentLaunchThatNamedNone(t *testi
 	if got := d.workerDefaultModel(claude, agent, nil, ""); got != "" {
 		t.Fatalf("model %q with the setting empty", got)
 	}
-	setPolicy(t, d, store.WorkerPolicy{Model: "sonnet"})
+	setPolicy(t, d, rules.WorkerPolicy{Model: "sonnet"})
 	if got := d.workerDefaultModel(claude, agent, nil, ""); got != "sonnet" {
 		t.Fatalf("an agent launch got %q, want sonnet", got)
 	}

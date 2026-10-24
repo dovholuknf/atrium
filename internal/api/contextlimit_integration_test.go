@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,7 +125,7 @@ func TestTheContextLimitResolvesCardThenHubThenDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(200, LimitFromDefault)
-	if err := st.SetSetting(store.SettingContextLimits, `{"claude":250}`); err != nil {
+	if err := st.SetSetting(rules.SettingContextLimits, `{"claude":250}`); err != nil {
 		t.Fatal(err)
 	}
 	check(250, LimitFromHub)
@@ -236,7 +237,7 @@ func TestTheRunnersCompactionPointIsACeilingOnTheLimit(t *testing.T) {
 		t.Fatalf("clearing gave %d", rec.Code)
 	}
 	// The hub's limit cannot be refused at a card PATCH, so it is capped and the limit says what it was.
-	if err := st.SetSetting(store.SettingContextLimits, `{"claude":900}`); err != nil {
+	if err := st.SetSetting(rules.SettingContextLimits, `{"claude":900}`); err != nil {
 		t.Fatal(err)
 	}
 	l := contextLimitWith(st, mustGet(t, st, task.ID), compactAt)

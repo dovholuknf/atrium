@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -1559,7 +1559,7 @@ func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error
 		if !t.Superv {
 			continue
 		}
-		if t.Status != store.StatusRunning && t.Status != store.StatusNeedsPermission {
+		if t.Status != rules.StatusRunning && t.Status != rules.StatusNeedsPermission {
 			continue
 		}
 		if !hasTag(t.Tags, SubagentTag) {

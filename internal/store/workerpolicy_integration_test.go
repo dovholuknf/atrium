@@ -2,7 +2,11 @@
 
 package store
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/dovholuknf/atrium/internal/rules"
+)
 
 func TestWorkerPolicyIsOffUntilSet(t *testing.T) {
 	if testing.Short() {
@@ -10,7 +14,7 @@ func TestWorkerPolicyIsOffUntilSet(t *testing.T) {
 	}
 	t.Parallel()
 	s := openTestStore(t)
-	if p := s.WorkerPolicy(); p != (WorkerPolicy{}) {
+	if p := s.WorkerPolicy(); p != (rules.WorkerPolicy{}) {
 		t.Fatalf("policy %+v on a fresh store", p)
 	}
 }
@@ -21,27 +25,17 @@ func TestWorkerPolicyRoundTripsAndOffIsEmpty(t *testing.T) {
 	}
 	t.Parallel()
 	s := openTestStore(t)
-	v, err := CheckWorkerPolicy(WorkerPolicy{Model: " sonnet ", BudgetUSD: 12.345})
+	v, err := rules.CheckWorkerPolicy(rules.WorkerPolicy{Model: " sonnet ", BudgetUSD: 12.345})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetSetting(SettingWorkerPolicy, v); err != nil {
+	if err := s.SetSetting(rules.SettingWorkerPolicy, v); err != nil {
 		t.Fatal(err)
 	}
 	if p := s.WorkerPolicy(); p.Model != "sonnet" || p.BudgetUSD != 12.35 {
 		t.Fatalf("read back %+v", p)
 	}
-	if off, err := CheckWorkerPolicy(WorkerPolicy{}); err != nil || off != "" {
+	if off, err := rules.CheckWorkerPolicy(rules.WorkerPolicy{}); err != nil || off != "" {
 		t.Fatalf("both off stored as %q, %v", off, err)
-	}
-}
-
-func TestWorkerPolicyRefusesNonsense(t *testing.T) {
-	t.Parallel()
-	for _, p := range []WorkerPolicy{{BudgetUSD: -1}, {BudgetUSD: MaxWorkerBudgetUSD + 1}, {Model: "two words"},
-		{Model: "a;b"}} {
-		if _, err := CheckWorkerPolicy(p); err == nil {
-			t.Fatalf("%+v was taken", p)
-		}
 	}
 }

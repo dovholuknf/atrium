@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -248,7 +249,7 @@ func TestTheHubLimitStartsTheCycle(t *testing.T) {
 	if d.newContextFor(task.ID) != nil {
 		t.Fatal("cycled under the default 200k")
 	}
-	if err := d.st.SetSetting(store.SettingContextLimits, `{"claude":120}`); err != nil {
+	if err := d.st.SetSetting(rules.SettingContextLimits, `{"claude":120}`); err != nil {
 		t.Fatal(err)
 	}
 	watch(t, d)

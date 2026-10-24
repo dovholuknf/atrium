@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // The context limit per harness, on the hub's side. See docs/runtime/context-cycle-design.md,
@@ -24,7 +24,7 @@ import (
 // was changed still cycles at the same limit. The same shape as input_lag_log.
 
 // hubContextLimits is the name the hub stores the list under, the room's setting name.
-const hubContextLimits = store.SettingContextLimits
+const hubContextLimits = rules.SettingContextLimits
 
 // contextLimitsIn reads `context_limits` off a settings write and puts the body back
 // for whoever reads it next. stored is the list as the rooms store it ("" for back
@@ -45,7 +45,7 @@ func contextLimitsIn(r *http.Request) (stored string, found bool, err error) {
 	if json.Unmarshal(payload, &body) != nil || body.Limits == nil {
 		return "", false, nil
 	}
-	stored, err = store.CheckContextLimits(*body.Limits)
+	stored, err = rules.CheckContextLimits(*body.Limits)
 	return stored, true, err
 }
 
@@ -53,7 +53,7 @@ func contextLimitsIn(r *http.Request) (stored string, found bool, err error) {
 func limitsMap(stored string) map[string]int {
 	out := map[string]int{}
 	if strings.TrimSpace(stored) == "" || json.Unmarshal([]byte(stored), &out) != nil || len(out) == 0 {
-		return store.DefaultContextLimits()
+		return rules.DefaultContextLimits()
 	}
 	return out
 }

@@ -5,38 +5,28 @@ package store
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
-// The per-harness limits read the default when unset or unreadable, drop an entry out of range, and the check
-// refuses one.
+// The per-harness limits read the default when unset or unreadable, and drop an entry out of range.
 func TestContextLimitsReadAndCheck(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
 	if got := s.ContextLimits(); len(got) != 1 || got["claude"] != 200 {
 		t.Fatalf("unset reads %v, want claude 200", got)
 	}
-	if err := s.SetSetting(SettingContextLimits, `{"claude":300,"codex":5,"ollama":150}`); err != nil {
+	if err := s.SetSetting(rules.SettingContextLimits, `{"claude":300,"codex":5,"ollama":150}`); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ContextLimits(); got["claude"] != 300 || got["ollama"] != 150 || got["codex"] != 0 {
 		t.Fatalf("reads %v", got)
 	}
-	if err := s.SetSetting(SettingContextLimits, `junk`); err != nil {
+	if err := s.SetSetting(rules.SettingContextLimits, `junk`); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ContextLimits(); got["claude"] != 200 {
 		t.Fatalf("junk reads %v, want the default", got)
-	}
-	if v, err := CheckContextLimits(map[string]int{" claude ": 250}); err != nil || v != `{"claude":250}` {
-		t.Fatalf("check gave %q %v", v, err)
-	}
-	for _, bad := range []map[string]int{{"claude": 9}, {"claude": 2001}, {" ": 200}} {
-		if _, err := CheckContextLimits(bad); err == nil {
-			t.Fatalf("%v was accepted", bad)
-		}
-	}
-	if v, err := CheckContextLimits(nil); err != nil || v != "" {
-		t.Fatalf("empty gave %q %v", v, err)
 	}
 }
 

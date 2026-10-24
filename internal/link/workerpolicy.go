@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // The default worker model and the per-worker budget, on the hub's side. The same shape as contextlimits.go: the hub
@@ -18,7 +18,7 @@ import (
 // attached room, and a room that attaches later is sent it.
 
 // hubWorkerPolicy is the name the hub stores the policy under, the room's setting name.
-const hubWorkerPolicy = store.SettingWorkerPolicy
+const hubWorkerPolicy = rules.SettingWorkerPolicy
 
 // workerPolicyOff is what the hub keeps for a policy that was set back to off, so a room that attaches later is still
 // told.
@@ -37,18 +37,18 @@ func workerPolicyIn(r *http.Request) (stored string, found bool, err error) {
 		return "", false, nil
 	}
 	var body struct {
-		Policy *store.WorkerPolicy `json:"worker_policy"`
+		Policy *rules.WorkerPolicy `json:"worker_policy"`
 	}
 	if json.Unmarshal(payload, &body) != nil || body.Policy == nil {
 		return "", false, nil
 	}
-	stored, err = store.CheckWorkerPolicy(*body.Policy)
+	stored, err = rules.CheckWorkerPolicy(*body.Policy)
 	return stored, true, err
 }
 
 // policyOf is a stored policy as the board reads it: off when unset.
-func policyOf(stored string) store.WorkerPolicy {
-	var out store.WorkerPolicy
+func policyOf(stored string) rules.WorkerPolicy {
+	var out rules.WorkerPolicy
 	if strings.TrimSpace(stored) != "" {
 		_ = json.Unmarshal([]byte(stored), &out)
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -70,7 +71,7 @@ func TestSavingABadPatternIsA400ThatSaysWhy(t *testing.T) {
 func TestAnUnrecognisedURLIsA404(t *testing.T) {
 	t.Parallel()
 	s, _ := recogniserServer(t)
-	s.Recognise = func(url string) (*store.Resolved, error) { return nil, store.ErrNoRecogniser }
+	s.Recognise = func(url string) (*rules.Resolved, error) { return nil, rules.ErrNoRecogniser }
 
 	r := httptest.NewRequest("POST", "/v1/recognise", strings.NewReader(`{"url":"https://x.invalid/y"}`))
 	w := httptest.NewRecorder()
@@ -91,12 +92,12 @@ func TestRecognisingNeverLaunches(t *testing.T) {
 		launched++
 		return nil, nil
 	}
-	if _, err := st.SaveRecogniser(store.Recogniser{
+	if _, err := st.SaveRecogniser(rules.Recogniser{
 		ID: "pr", Enabled: true, Pattern: `^https://x/(?P<repo>\w+)$`, Cwd: "/tmp/{repo}",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s.Recognise = func(url string) (*store.Resolved, error) {
+	s.Recognise = func(url string) (*rules.Resolved, error) {
 		r, vars, err := st.MatchRecogniser(url)
 		if err != nil {
 			return nil, err
@@ -113,7 +114,7 @@ func TestRecognisingNeverLaunches(t *testing.T) {
 	if launched != 0 {
 		t.Fatal("recognising a url started a runner. it fills a form in and stops")
 	}
-	var got store.Resolved
+	var got rules.Resolved
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +127,7 @@ func TestRecognisingNeverLaunches(t *testing.T) {
 func TestDeletingARecogniserLeavesTheCardsItFilled(t *testing.T) {
 	t.Parallel()
 	s, st := recogniserServer(t)
-	if _, err := st.SaveRecogniser(store.Recogniser{
+	if _, err := st.SaveRecogniser(rules.Recogniser{
 		ID: "pr", Enabled: true, Pattern: `^https://x/(?P<repo>\w+)$`,
 	}); err != nil {
 		t.Fatal(err)
