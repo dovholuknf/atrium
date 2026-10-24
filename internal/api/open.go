@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -138,7 +139,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	// 1. recognise
 	steps.begin("recognise", "recognising the link")
 	got, err := s.Recognise(in.URL)
-	if errors.Is(err, store.ErrNoRecogniser) {
+	if errors.Is(err, rules.ErrNoRecogniser) {
 		openFail(w, http.StatusUnprocessableEntity, "recognise", "no_recogniser",
 			"nothing here knows what that is yet. add a row for it under runners, recognisers.")
 		return
@@ -160,7 +161,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host, org, repo, num := k.host, k.org, k.repo, k.num
-	key := store.PRKey(host, org, repo, num)
+	key := rules.PRKey(host, org, repo, num)
 	ans := openAnswer{Key: key, Kind: linkPR, Recogniser: got.Recogniser, Title: got.Title, Repo: host + "/" + org + "/" + repo}
 
 	// 2. a live card for the link already
@@ -322,7 +323,7 @@ func (s *Server) liveWalker(p *store.PRReview) *store.Task {
 
 // openRow makes or finds the review row through postPR, so the claim, the run folder and the runner start exactly as
 // a paste on the pulls tab does. A nil row is a refusal, with the status and body to answer.
-func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (row *store.PRReview, created bool, status int, body map[string]any) {
+func (s *Server) openRow(r *http.Request, in openRequest, got *rules.Resolved) (row *store.PRReview, created bool, status int, body map[string]any) {
 	raw, _ := json.Marshal(map[string]string{"url": in.URL, "why": in.Why})
 	ctx := context.WithValue(r.Context(), openHeldKey{}, true)
 	if in.Pick {
@@ -366,7 +367,7 @@ func (s *Server) openRow(r *http.Request, in openRequest, got *store.Resolved) (
 
 // openLaunchBody is the card's launch: the worktree, what the recogniser filled in, and the tags that tie it to the
 // link. The harness is the caller's, else the review recipe's for the repo.
-func (s *Server) openLaunchBody(in openRequest, got *store.Resolved, wt prWorktreeResult, key, org, repo string, num int) []byte {
+func (s *Server) openLaunchBody(in openRequest, got *rules.Resolved, wt prWorktreeResult, key, org, repo string, num int) []byte {
 	harness := strings.TrimSpace(in.Harness)
 	if harness == "" {
 		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil {

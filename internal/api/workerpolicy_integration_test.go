@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 func settingsWith(t *testing.T, srv *Server, body string) *httptest.ResponseRecorder {
@@ -19,12 +19,12 @@ func settingsWith(t *testing.T, srv *Server, body string) *httptest.ResponseReco
 	return rec
 }
 
-func policyRead(t *testing.T, srv *Server) store.WorkerPolicy {
+func policyRead(t *testing.T, srv *Server) rules.WorkerPolicy {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/settings", nil))
 	var got struct {
-		WorkerPolicy store.WorkerPolicy `json:"worker_policy"`
+		WorkerPolicy rules.WorkerPolicy `json:"worker_policy"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func policyRead(t *testing.T, srv *Server) store.WorkerPolicy {
 func TestTheWorkerSettingsAreOffThenSavedAndChecked(t *testing.T) {
 	t.Parallel()
 	srv, st, _ := fileServer(t)
-	if p := policyRead(t, srv); p != (store.WorkerPolicy{}) {
+	if p := policyRead(t, srv); p != (rules.WorkerPolicy{}) {
 		t.Fatalf("a fresh room has %+v, want both off", p)
 	}
 	if rec := settingsWith(t, srv, `{"worker_policy":{"model":"sonnet","budget_usd":15}}`); rec.Code != http.StatusOK {
@@ -56,7 +56,7 @@ func TestTheWorkerSettingsAreOffThenSavedAndChecked(t *testing.T) {
 	if rec := settingsWith(t, srv, `{"worker_policy":{"model":"","budget_usd":0}}`); rec.Code != http.StatusOK {
 		t.Fatalf("off: %d %s", rec.Code, rec.Body)
 	}
-	if p := policyRead(t, srv); p != (store.WorkerPolicy{}) {
+	if p := policyRead(t, srv); p != (rules.WorkerPolicy{}) {
 		t.Fatalf("off left %+v", p)
 	}
 }

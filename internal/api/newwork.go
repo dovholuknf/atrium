@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -90,7 +91,7 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	}
 	pick := strings.Trim(strings.TrimSpace(in.Repo), "/")
 	name := strings.TrimSpace(in.Name)
-	if !store.RepoSlug(pick) {
+	if !rules.RepoSlug(pick) {
 		openFail(w, http.StatusBadRequest, "request", "bad_request",
 			"repo is host/org/repo, like github.com/openziti/ziti")
 		return

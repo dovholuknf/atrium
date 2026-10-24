@@ -34,6 +34,8 @@ import (
 	"github.com/google/uuid"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // TimeFormat is how every timestamp column is written. RFC3339 in UTC with
@@ -44,9 +46,9 @@ const TimeFormat = "2006-01-02T15:04:05.000Z"
 // Status values. These are the kanban columns.
 const (
 	StatusBacklog         = "backlog"
-	StatusRunning         = "running"
+	StatusRunning         = rules.StatusRunning
 	StatusNeedsInput      = "needs-input"
-	StatusNeedsPermission = "needs-permission"
+	StatusNeedsPermission = rules.StatusNeedsPermission
 	StatusDone            = "done"
 	StatusPaused          = "paused"
 	StatusDead            = "dead"

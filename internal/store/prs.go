@@ -9,7 +9,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -924,10 +923,4 @@ func (st *Store) PendingClaims() ([]*PRReview, error) {
 		return rows.Err()
 	})
 	return out, err
-}
-
-// PRKey is the canonical key of a pull request across rooms, host/org/repo/number in lower case. The hub's claim
-// table is keyed on the same string.
-func PRKey(host, org, repo string, number int) string {
-	return strings.ToLower(host + "/" + org + "/" + repo + "/" + strconv.Itoa(number))
 }

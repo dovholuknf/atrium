@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -223,7 +224,7 @@ func TestAHaltedStoreInsideRecogniseIs503(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	s := New(st)
-	s.Recognise = func(string) (*store.Resolved, error) {
+	s.Recognise = func(string) (*rules.Resolved, error) {
 		// Break the table under the store, then read through it so it halts.
 		raw, err := sql.Open("sqlite", path)
 		if err != nil {

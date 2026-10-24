@@ -98,6 +98,7 @@ internal/daemon/            the room: wires store + api, owns hooks, launching, 
   finish.go                   a session declaring its work over, which nothing could say before
   actions.go                  saying a stored prompt to a card, and asking the runner to leave
   sweep.go                    two timers that are easy to confuse: archiving, and deleting
+internal/rules/             pure values the room and the hub share: the recogniser, worker policy, context limits, PRKey
 internal/store/             the room's sqlite. every table, every query, the halt
   schema.go                   migrations, applied in slice order. read the header before editing
   tasks.go / permissions.go / rules.go / harness.go / messages.go / review.go

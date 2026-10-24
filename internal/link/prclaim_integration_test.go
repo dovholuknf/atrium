@@ -18,7 +18,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 func atoiOr0(s string) int {
@@ -147,13 +147,13 @@ func (c *claimRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), 500)
 				return
 			}
-			_, vars, err := store.MatchRecogniserIn(got.Recognisers, in.URL)
+			_, vars, err := rules.MatchRecogniserIn(got.Recognisers, in.URL)
 			if err != nil {
 				w.WriteHeader(http.StatusUnprocessableEntity)
 				_, _ = w.Write([]byte(`{"error":"no recogniser matches this"}`))
 				return
 			}
-			key = store.PRKey(vars["host"], vars["org"], vars["repo"], atoiOr0(vars["num"]))
+			key = rules.PRKey(vars["host"], vars["org"], vars["repo"], atoiOr0(vars["num"]))
 		}
 		ans, err := c.room.ClaimPR(r.Context(), map[string]any{"key": key, "url": in.URL})
 		if err != nil {
@@ -531,7 +531,7 @@ func TestPullsViewFoldsTwoRowsWithOneKeyToTheOwner(t *testing.T) {
 	}
 	defer st.Close()
 	p := &Proxy{prc: st}
-	key := hubstore.PRKey("github.com", "openziti", "tlsuv", 378)
+	key := rules.PRKey("github.com", "openziti", "tlsuv", 378)
 	if _, _, err := st.ClaimPR(key, "beta", ""); err != nil {
 		t.Fatal(err)
 	}

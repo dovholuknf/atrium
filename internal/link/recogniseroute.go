@@ -16,7 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/linkfetch"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // THE HUB RECOGNISES A PASTE ITSELF. Item r-recognisers-gwt.
@@ -68,14 +68,14 @@ func (p *Proxy) hubRecognise(w http.ResponseWriter, r *http.Request) bool {
 		crFail(w, http.StatusInternalServerError, "the hub's recognisers do not read: "+err.Error())
 		return true
 	}
-	row, vars, err := store.MatchRecogniserIn(rows, in.URL)
+	row, vars, err := rules.MatchRecogniserIn(rows, in.URL)
 	if err == nil && !hubFetches[strings.TrimSpace(row.Fetch)] {
 		return false
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
-	case errors.Is(err, store.ErrNoRecogniser):
+	case errors.Is(err, rules.ErrNoRecogniser):
 		crFail(w, http.StatusNotFound, err.Error())
 		return true
 	case err != nil:
@@ -88,10 +88,10 @@ func (p *Proxy) hubRecognise(w http.ResponseWriter, r *http.Request) bool {
 
 // resolve fills a matched row in on the hub: the built-in fetch, the templates, and a look at the directory on the
 // hub's own disk, which is the board's machine.
-func (f *hubForge) resolve(ctx context.Context, row *store.Recogniser, vars map[string]string) *store.Resolved {
+func (f *hubForge) resolve(ctx context.Context, row *rules.Recogniser, vars map[string]string) *rules.Resolved {
 	var facts map[string]string
 	var fetchErr error
-	name, args := store.FillArgv(strings.TrimSpace(row.Fetch), row.FetchArgs, vars)
+	name, args := rules.FillArgv(strings.TrimSpace(row.Fetch), row.FetchArgs, vars)
 	switch name {
 	case "":
 	case forge.FactsFetch:
@@ -105,7 +105,7 @@ func (f *hubForge) resolve(ctx context.Context, row *store.Recogniser, vars map[
 		facts = nil
 	}
 	out := row.Resolve(vars, facts, fetchErr)
-	store.DescribeCwd(out, os.Stat)
+	rules.DescribeCwd(out, os.Stat)
 	return out
 }
 
@@ -184,7 +184,7 @@ func (p *Proxy) deafAnswer(status int, body, paste []byte) bool {
 	if err != nil {
 		return false
 	}
-	_, _, err = store.MatchRecogniserIn(rows, in.URL)
+	_, _, err = rules.MatchRecogniserIn(rows, in.URL)
 	return err == nil
 }
 

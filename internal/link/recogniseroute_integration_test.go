@@ -13,7 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/linkfetch"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // discourseRedirects stands in for a Discourse forum: /t/<slug> redirects to /t/<slug>/<num>, as the real one does,
@@ -39,7 +39,7 @@ func discourseRedirects(t *testing.T, topics map[string]string) {
 }
 
 // recogniseVia is a POST /v1/recognise through the hub, with a room named or not.
-func (x *claimHub) recogniseVia(t *testing.T, room, url string) (int, store.Resolved) {
+func (x *claimHub) recogniseVia(t *testing.T, room, url string) (int, rules.Resolved) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"url": url})
 	req, _ := http.NewRequest(http.MethodPost, x.front.URL+"/v1/recognise", strings.NewReader(string(body)))
@@ -52,7 +52,7 @@ func (x *claimHub) recogniseVia(t *testing.T, room, url string) (int, store.Reso
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	var out store.Resolved
+	var out rules.Resolved
 	if res.StatusCode == http.StatusOK {
 		if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
 			t.Fatal(err)

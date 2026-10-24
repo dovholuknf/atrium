@@ -11,22 +11,22 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/forge"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // seedOf is a seed that gives exactly `rows`.
-func seedOf(rows ...store.Recogniser) seedFunc {
-	return func() ([]store.Recogniser, error) { return append([]store.Recogniser(nil), rows...), nil }
+func seedOf(rows ...rules.Recogniser) seedFunc {
+	return func() ([]rules.Recogniser, error) { return append([]rules.Recogniser(nil), rows...), nil }
 }
 
 // seedHub gives the hub's forge side the seed `rows`. Call it after SetForge.
-func seedHub(x *claimHub, rows ...store.Recogniser) { x.proxy.forgeSide().seed = seedOf(rows...) }
+func seedHub(x *claimHub, rows ...rules.Recogniser) { x.proxy.forgeSide().seed = seedOf(rows...) }
 
-func seedRow(id string, rank int, pattern string) store.Recogniser {
-	return store.Recogniser{ID: id, Label: id, Enabled: true, Rank: rank, Pattern: pattern, FetchArgs: []string{}}
+func seedRow(id string, rank int, pattern string) rules.Recogniser {
+	return rules.Recogniser{ID: id, Label: id, Enabled: true, Rank: rank, Pattern: pattern, FetchArgs: []string{}}
 }
 
-func rowIDs(rows []*store.Recogniser) string {
+func rowIDs(rows []*rules.Recogniser) string {
 	ids := make([]string, 0, len(rows))
 	for _, r := range rows {
 		ids = append(ids, r.ID)

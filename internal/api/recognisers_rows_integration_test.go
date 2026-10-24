@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -43,9 +44,9 @@ func loadShippedRows(t *testing.T, s *Server, file string) int {
 // recogniseOver asks POST /v1/recognise, with the store's own match and fill
 // standing in for the daemon, which would also run a fetch. A fetch needs `gh`
 // and a network, and none of what is checked here depends on it.
-func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, store.Resolved) {
+func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, rules.Resolved) {
 	t.Helper()
-	s.Recognise = func(u string) (*store.Resolved, error) {
+	s.Recognise = func(u string) (*rules.Resolved, error) {
 		r, vars, err := st.MatchRecogniser(u)
 		if err != nil {
 			return nil, err
@@ -55,7 +56,7 @@ func recogniseOver(t *testing.T, s *Server, st *store.Store, url string) (int, s
 	body, _ := json.Marshal(map[string]string{"url": url})
 	w := httptest.NewRecorder()
 	s.recognise(w, httptest.NewRequest("POST", "/v1/recognise", strings.NewReader(string(body))))
-	var out store.Resolved
+	var out rules.Resolved
 	if w.Code == http.StatusOK {
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 			t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -90,7 +91,7 @@ func TestTheLimitIsAHubSetting(t *testing.T) {
 	d := testDaemon(t)
 	_, worker := launchedPair(t, d)
 	reply := withTranscript(t, d, worker)
-	if err := d.st.SetSetting(store.SettingContextLimits, `{"claude":50}`); err != nil {
+	if err := d.st.SetSetting(rules.SettingContextLimits, `{"claude":50}`); err != nil {
 		t.Fatal(err)
 	}
 	reply(60_000)
@@ -191,7 +192,7 @@ func TestTheRowNamesTheLayerTheLimitCameFrom(t *testing.T) {
 	if got := read(); got.ThresholdK != 200 || got.Source != "default" || !got.Warn {
 		t.Fatalf("%+v, want 200k from default, warned", got)
 	}
-	if err := d.st.SetSetting(store.SettingContextLimits, `{"claude":300}`); err != nil {
+	if err := d.st.SetSetting(rules.SettingContextLimits, `{"claude":300}`); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(); got.ThresholdK != 300 || got.Source != "hub" || got.Warn {

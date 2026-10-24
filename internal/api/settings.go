@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/scratch"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -350,7 +351,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		RestartWrapWaitS  *string         `json:"restart_wrap_wait_s"`
 		// The default model and the dollar budget for an agent-launched card. The hub owns it, like
 		// context_limits. See store/workerpolicy.go.
-		WorkerPolicy *store.WorkerPolicy `json:"worker_policy"`
+		WorkerPolicy *rules.WorkerPolicy `json:"worker_policy"`
 		// Whether this room types the unexpected-exit notice. Stored as `on` or
 		// `off`, and read at the next stop, start or delivery.
 		UnexpectedExit   *bool `json:"unexpected_exit_wake"`
@@ -841,24 +842,24 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.ContextLimits != nil {
-		v, err := store.CheckContextLimits(*body.ContextLimits)
+		v, err := rules.CheckContextLimits(*body.ContextLimits)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := s.st.SetSetting(store.SettingContextLimits, v); err != nil {
+		if err := s.st.SetSetting(rules.SettingContextLimits, v); err != nil {
 			s.fail(w, err)
 			return
 		}
 	}
 
 	if body.WorkerPolicy != nil {
-		v, err := store.CheckWorkerPolicy(*body.WorkerPolicy)
+		v, err := rules.CheckWorkerPolicy(*body.WorkerPolicy)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := s.st.SetSetting(store.SettingWorkerPolicy, v); err != nil {
+		if err := s.st.SetSetting(rules.SettingWorkerPolicy, v); err != nil {
 			s.fail(w, err)
 			return
 		}

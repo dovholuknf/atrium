@@ -3,7 +3,7 @@ package recognisers
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // THE BUILT-IN ROWS READ AND RECOGNISE A PULL REQUEST however it was copied: the PR page, its changes tab, its files
@@ -16,7 +16,7 @@ func TestTheSeedRecognisesAGitHubPullRequest(t *testing.T) {
 	if len(seed) == 0 {
 		t.Fatal("the seed is empty")
 	}
-	rows := make([]*store.Recogniser, 0, len(seed))
+	rows := make([]*rules.Recogniser, 0, len(seed))
 	for i := range seed {
 		rows = append(rows, &seed[i])
 	}
@@ -26,7 +26,7 @@ func TestTheSeedRecognisesAGitHubPullRequest(t *testing.T) {
 		"https://github.com/openziti/ziti-console/pull/967/files",
 		"https://github.com/openziti/ziti-console/pull/967#issuecomment-1",
 	} {
-		r, vars, err := store.MatchRecogniserIn(rows, url)
+		r, vars, err := rules.MatchRecogniserIn(rows, url)
 		if err != nil {
 			t.Fatalf("%s: %v", url, err)
 		}
@@ -43,7 +43,7 @@ func TestTheSeedCoversEveryKindPasted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := make([]*store.Recogniser, 0, len(seed))
+	rows := make([]*rules.Recogniser, 0, len(seed))
 	for i := range seed {
 		rows = append(rows, &seed[i])
 	}
@@ -53,7 +53,7 @@ func TestTheSeedCoversEveryKindPasted(t *testing.T) {
 		"https://netfoundry.zendesk.com/agent/tickets/12345",
 		"https://openziti.discourse.group/t/some-topic/4567",
 	} {
-		if _, _, err := store.MatchRecogniserIn(rows, url); err != nil {
+		if _, _, err := rules.MatchRecogniserIn(rows, url); err != nil {
 			t.Fatalf("%s: %v", url, err)
 		}
 	}
