@@ -142,18 +142,6 @@ func TestMergeListKeepsTheOutputOutUnlessAskedAndPutsOpenFirst(t *testing.T) {
 	}
 }
 
-func TestMergeCutKeepsTheHeadAndTheTail(t *testing.T) {
-	long := "first line\n" + strings.Repeat("x\n", MergeOutputMax) + "--- FAIL: TestLast\n"
-	got := MergeCut(long)
-	if len(got) > MergeOutputMax || !strings.HasPrefix(got, "first line\n") || !strings.HasSuffix(got, "--- FAIL: TestLast\n") ||
-		!strings.Contains(got, "bytes cut") {
-		t.Fatalf("cut: %d bytes, head %q, tail %q", len(got), got[:20], got[len(got)-30:])
-	}
-	if MergeCut("short") != "short" {
-		t.Fatal("a short output must be kept as it is")
-	}
-}
-
 func TestSetMergeRoomTakesOnlyARoomTheHubHas(t *testing.T) {
 	s := open(t)
 	if err := s.SetMergeRoom("nowhere"); !IsRefusal(err) {

@@ -44,8 +44,11 @@ func TestMergeCandidateMergesAndTheHubLandsItAsAFastForward(t *testing.T) {
 	if got := x.refOn(hubRepo, ClaudeMainRef); got != r.Candidate {
 		t.Fatalf("claude/main is %s, want %s", got, r.Candidate)
 	}
-	if err := st.MergeLand(bg, hubRepo, 7, r.Base, r.Candidate); !errors.Is(err, ErrConflict) {
-		t.Fatalf("a second land from the old base: %v", err)
+	if err := st.MergeLand(bg, hubRepo, 7, r.Base, r.Candidate); err != nil {
+		t.Fatalf("the same land again: %v", err)
+	}
+	if err := st.MergeLand(bg, hubRepo, 8, r.Base, a); !errors.Is(err, ErrConflict) {
+		t.Fatalf("another land from the old base: %v", err)
 	}
 	if ok, err := st.DeleteLanded(bg, hubRepo, "claude/a", a); err != nil || !ok || x.refOn(hubRepo, headsPrefix+"claude/a") != "" {
 		t.Fatalf("delete: %v %v", ok, err)

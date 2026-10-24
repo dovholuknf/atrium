@@ -34,10 +34,9 @@ const SettingMergeRoom = "merge_room"
 
 // Bounds, in bytes unless said.
 const (
-	MergeReasonMax  = 500
-	MergeFailingMax = 50
-	MergeOutputMax  = 64 << 10
-	mergeOutputHead = 8 << 10
+	MergeReasonMax  = gitsync.MergeReasonMax
+	MergeFailingMax = gitsync.MergeFailingMax
+	MergeOutputMax  = gitsync.MergeOutputMax
 	mergeListMax    = 500
 )
 
@@ -53,7 +52,7 @@ var (
 var mergeMoves = map[string][]string{
 	MergeQueued:   {MergeMerging, MergeRefused, MergeCancelled},
 	MergeMerging:  {MergeTesting, MergeConflict, MergeLanded, MergeRefused, MergeQueued},
-	MergeTesting:  {MergeLanded, MergeRed, MergeRefused, MergeQueued},
+	MergeTesting:  {MergeLanded, MergeRed, MergeRefused, MergeQueued, MergeCancelled},
 	MergeConflict: {MergeLanded, MergeRefused},
 }
 
@@ -344,6 +343,8 @@ type MergeStep struct {
 	Failing                                       []string
 	Output                                        string
 	Token                                         string
+	// Free queues a request again without spending its retry: the hub or the merge room failed, not the request.
+	Free bool
 }
 
 func (m MergeStep) check() string {
@@ -371,24 +372,6 @@ func (m MergeStep) check() string {
 		}
 	}
 	return ""
-}
-
-// MergeCut keeps the head and the tail of an output that is over MergeOutputMax, at line ends where it can.
-func MergeCut(out string) string {
-	out = strings.ToValidUTF8(out, "?")
-	if len(out) <= MergeOutputMax {
-		return out
-	}
-	head := out[:mergeOutputHead]
-	if i := strings.LastIndexByte(head, '\n'); i > 0 {
-		head = head[:i+1]
-	}
-	tail := out[len(out)-(MergeOutputMax-mergeOutputHead-64):]
-	if i := strings.IndexByte(tail, '\n'); i >= 0 && i < len(tail)-1 {
-		tail = tail[i+1:]
-	}
-	tail = strings.ToValidUTF8(tail, "")
-	return head + fmt.Sprintf("\n[... %d bytes cut ...]\n\n", len(out)-len(head)-len(tail)) + tail
 }
 
 // MergeMove applies a step and answers the row it made.
@@ -425,13 +408,15 @@ func (s *Store) MergeMove(m MergeStep) (MergeRequest, error) {
 			set("failing", strings.Join(m.Failing, "\n"))
 		}
 		if m.Output != "" {
-			set("output", MergeCut(m.Output))
+			set("output", gitsync.MergeCut(m.Output))
 		}
 		switch {
 		case m.To == MergeMerging:
 			set("started_at", at)
 		case m.To == MergeQueued:
-			set("retries", cur.Retries+1)
+			if !m.Free {
+				set("retries", cur.Retries+1)
+			}
 			set("candidate", "")
 			set("started_at", "")
 			set("run_token", "")

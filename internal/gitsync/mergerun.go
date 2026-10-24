@@ -48,6 +48,8 @@ const (
 	VerdictGreen = "green"
 	VerdictRed   = "red"
 	VerdictError = "error"
+	// VerdictRunning is no verdict: the status of a run still going.
+	VerdictRunning = "running"
 )
 
 // MergeReport is what a run came to, posted to the hub's /_hub/merge/report.
@@ -84,10 +86,18 @@ type MergeRunner struct {
 	Bound time.Duration
 
 	mu      sync.Mutex
-	running map[string]context.CancelFunc
+	running map[string]*mergeRun
 	last    map[int64]MergeReport
 	runs    atomic.Int64
 }
+
+type mergeRun struct {
+	job    MergeJob
+	cancel context.CancelFunc
+}
+
+// ErrReportRefused is a verdict the hub answered with a 4xx. Sending it again changes nothing.
+var ErrReportRefused = errors.New("the hub refused the verdict")
 
 func (m *MergeRunner) runner() *Runner {
 	if m.Runner != nil {
@@ -114,18 +124,24 @@ func (m *MergeRunner) serveRun(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	if m.running == nil {
-		m.running = map[string]context.CancelFunc{}
+		m.running = map[string]*mergeRun{}
 	}
-	if stop := m.running[j.Repo]; stop != nil {
-		stop()
+	if old := m.running[j.Repo]; old != nil {
+		old.cancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	m.running[j.Repo] = cancel
+	run := &mergeRun{job: j, cancel: cancel}
+	m.running[j.Repo] = run
 	m.mu.Unlock()
 	go func() {
 		defer cancel()
 		rep := m.Run(ctx, j)
 		m.mu.Lock()
+		if m.running[j.Repo] != run {
+			m.mu.Unlock()
+			return
+		}
+		delete(m.running, j.Repo)
 		if m.last == nil {
 			m.last = map[int64]MergeReport{}
 		}
@@ -153,6 +169,12 @@ func (m *MergeRunner) serveStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	rep, ok := m.last[n]
+	for _, run := range m.running {
+		if run.job.N == n {
+			j := run.job
+			rep, ok = MergeReport{N: j.N, Repo: j.Repo, Candidate: j.Candidate, Verdict: VerdictRunning, Token: j.Token}, true
+		}
+	}
 	m.mu.Unlock()
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this room has no verdict for that run"})
@@ -172,7 +194,7 @@ func (m *MergeRunner) report(rep MergeReport) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		err := m.Report(ctx, rep)
 		cancel()
-		if err == nil || time.Now().After(deadline) {
+		if err == nil || errors.Is(err, ErrReportRefused) || time.Now().After(deadline) {
 			if err != nil {
 				log.Printf("[git] merge %d: the hub did not take the verdict: %v", rep.N, err)
 			}
@@ -190,7 +212,7 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 	m.runs.Add(1)
 	rep := MergeReport{N: j.N, Repo: j.Repo, Candidate: j.Candidate, Token: j.Token}
 	fail := func(format string, a ...any) MergeReport {
-		rep.Verdict, rep.Reason = VerdictError, fmt.Sprintf(format, a...)
+		rep.Verdict, rep.Reason = VerdictError, mergeCutReason(fmt.Sprintf(format, a...))
 		return rep
 	}
 	root := ""
@@ -230,7 +252,7 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 		return fail("could not set up the merge worktree %s: %v", wt, gitWhy(err))
 	}
 	out, code, err := m.test(ctx, wt, j.Base)
-	rep.Output = out
+	rep.Output = MergeCut(out)
 	switch {
 	case err != nil:
 		return fail("%v", err)
@@ -380,25 +402,25 @@ func (b *tailBuffer) String() string {
 }
 
 var (
-	goFailRe    = regexp.MustCompile(`(?m)^\s*--- FAIL: (\S+)`)
-	stepFailRe  = regexp.MustCompile(`(?m)^FAILED (.+?)\s*$`)
-	pkgFailRe   = regexp.MustCompile(`(?m)^FAIL\s+(\S+)\s`)
-	failingKeep = 50
+	goFailRe   = regexp.MustCompile(`(?m)^\s*--- FAIL: (\S+)`)
+	stepFailRe = regexp.MustCompile(`(?m)^FAILED (.+?)\s*$`)
+	pkgFailRe  = regexp.MustCompile(`(?m)^FAIL\s+(\S+)\s`)
 )
 
 // MergeFailing names what failed in a test-touched output: each Go test, each package, then each step, once, in
-// order, at most 50.
+// order, at most MergeFailingMax.
 func MergeFailing(out string) []string {
+	out = ansiRe.ReplaceAllString(out, "")
 	seen := map[string]bool{}
 	var got []string
 	for _, re := range []*regexp.Regexp{goFailRe, pkgFailRe, stepFailRe} {
 		for _, m := range re.FindAllStringSubmatch(out, -1) {
-			name := strings.TrimSpace(m[1])
-			if name == "" || seen[name] || len(got) >= failingKeep {
-				continue
+			name := MergeClean(m[1])
+			if len(name) > MergeNameMax {
+				name = strings.ToValidUTF8(name[:MergeNameMax], "")
 			}
-			if len(name) > 200 {
-				name = name[:200]
+			if name == "" || seen[name] || len(got) >= MergeFailingMax {
+				continue
 			}
 			seen[name] = true
 			got = append(got, name)

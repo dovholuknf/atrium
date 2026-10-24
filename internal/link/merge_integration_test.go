@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -198,14 +199,17 @@ func TestMergeQueueLandsAGreenRefusesAWrongRoomAndKeepsARed(t *testing.T) {
 	if got := x.refOn(t, "refs/atrium/merge/"+strconv.FormatInt(m.N, 10)); got != "" {
 		t.Fatalf("the candidate ref is still there")
 	}
-	if code, _ := report("sg4", "green", nil); code != http.StatusConflict {
-		t.Fatalf("a late verdict: %d", code)
+	if code, body := report("sg4", "green", nil); code != 200 || !strings.Contains(body, `"landed"`) {
+		t.Fatalf("the same verdict again: %d %s", code, body)
+	}
+	if code, _ := report("sg4", "green", map[string]any{"candidate": strings.Repeat("c", 40)}); code != http.StatusConflict {
+		t.Fatalf("a verdict for another candidate: %d", code)
 	}
 
 	x.branch(t, "bar", "bar.txt", "bar")
 	_, m = x.ask(t, "claude/bar", "w1@sg4")
 	m = x.testing(t, m.N)
-	code, body = report("sg4", "red", map[string]any{"failing": []string{"TestA"}, "output": "--- FAIL: TestA\n"})
+	code, body = report("sg4", "red", map[string]any{"failing": []string{"\x1b[31mTestA\x1b[0m\r"}, "output": "--- FAIL: TestA\n"})
 	if code != 200 || !strings.Contains(body, `"red"`) || !strings.Contains(body, "TestA") {
 		t.Fatalf("red: %d %s", code, body)
 	}
@@ -376,5 +380,52 @@ func TestMergeLandCutsOneCommitAndWaitsForItOnMain(t *testing.T) {
 	green("lc")
 	if code, body := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo})); code != 400 || !strings.Contains(body, "not on main") {
 		t.Fatalf("a land before the last is on main: %d %s", code, body)
+	}
+}
+
+func TestMergeQueueNeverLeavesARequestTesting(t *testing.T) {
+	x := newMergeFix(t)
+	x.branch(t, "big", "big.txt", "big")
+	_, m := x.ask(t, "claude/big", "w1@sg4")
+	m = x.testing(t, m.N)
+	body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "green", "room": "sg4",
+		"token": m.Token, "output": strings.Repeat("ok\n", 350<<10)})
+	if code, b := x.send("POST", "/_hub/merge/report", body); code != 200 || !strings.Contains(b, `"landed"`) {
+		t.Fatalf("a 1 MiB report: %d %.200s", code, b)
+	}
+	if got := must(x.st.MergeGet(m.N)); len(got.Output) > hubstore.MergeOutputMax {
+		t.Fatalf("the output was kept whole: %d bytes", len(got.Output))
+	}
+
+	x.branch(t, "quiet", "quiet.txt", "quiet")
+	_, m = x.ask(t, "claude/quiet", "w1@sg4")
+	m = x.testing(t, m.N)
+	x.p.mergeWatch(context.Background())
+	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeTesting {
+		t.Fatalf("a run within its bound was given up: %+v", got)
+	}
+	x.p.merges.now = func() time.Time { return time.Now().Add(mergeSilent + time.Minute) }
+	x.p.mergeWatch(context.Background())
+	got := must(x.st.MergeGet(m.N))
+	if got.State != hubstore.MergeQueued || got.Retries != 0 || !strings.Contains(got.Reason, "did not answer") {
+		t.Fatalf("a room that never reported: %+v", got)
+	}
+
+	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
+	x.p.mergeRecover()
+	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeQueued || got.Retries != 0 {
+		t.Fatalf("a restart while merging: %+v", got)
+	}
+
+	m = x.testing(t, m.N)
+	cancel := "/_hub/merge/" + strconv.FormatInt(m.N, 10) + "/cancel"
+	if code, _ := x.send("POST", cancel, js(map[string]any{"by": "w1@sg4"})); code == 200 {
+		t.Fatal("a card cancelled a testing request")
+	}
+	if code, b := x.send("POST", cancel, "{}"); code != 200 || !strings.Contains(b, `"cancelled"`) {
+		t.Fatalf("the operator cancels a testing request: %d %s", code, b)
+	}
+	if x.refOn(t, gitsync.MergeRef(m.N)) != "" {
+		t.Fatal("the cancelled candidate's ref is still there")
 	}
 }

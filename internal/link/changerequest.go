@@ -91,8 +91,11 @@ func crFail(w http.ResponseWriter, code int, msg string) {
 }
 
 // crDecode reads one JSON object, refusing a field it does not know and anything after the object.
-func crDecode(r *http.Request, into any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, crBody))
+func crDecode(r *http.Request, into any) error { return crDecodeMax(r, into, crBody) }
+
+// crDecodeMax is crDecode with a body of at most max bytes.
+func crDecodeMax(r *http.Request, into any, max int64) error {
+	dec := json.NewDecoder(io.LimitReader(r.Body, max))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(into); err != nil {
 		return err

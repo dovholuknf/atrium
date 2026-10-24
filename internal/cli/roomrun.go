@@ -528,7 +528,11 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 			if err != nil {
 				return err
 			}
-			if code, _, msg := d.HubCall(ctx, http.MethodPost, "/_hub/merge/report", body); code != http.StatusOK {
+			code, _, msg := d.HubCall(ctx, http.MethodPost, "/_hub/merge/report", body)
+			switch {
+			case code >= 400 && code < 500:
+				return fmt.Errorf("%w: %d: %s", gitsync.ErrReportRefused, code, msg)
+			case code != http.StatusOK:
 				return fmt.Errorf("%d: %s", code, msg)
 			}
 			return nil

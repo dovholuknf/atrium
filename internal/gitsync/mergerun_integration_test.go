@@ -114,3 +114,10 @@ func TestMergeFailingNamesEachOnceInOrder(t *testing.T) {
 		t.Fatalf("failing: %s", got)
 	}
 }
+
+func TestMergeFailingCleansAColouredName(t *testing.T) {
+	out := "\x1b[31m--- FAIL: TestC (0.1s)\x1b[0m\r\nFAILED \x1b[1mnode x.js\x1b[0m\r\n"
+	if got := strings.Join(MergeFailing(out), ","); got != "TestC,node x.js" {
+		t.Fatalf("failing: %q", got)
+	}
+}

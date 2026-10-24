@@ -157,7 +157,8 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 }
 
 // MergeLand moves claude/main from base to candidate, which has to have base under it. A claude/main that is not at
-// base any more is refused with ErrConflict, and the caller merges again.
+// base any more is refused with ErrConflict, and the caller merges again. One already at candidate is landed, so a
+// verdict sent again after the store failed to record it lands it once.
 func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candidate string) error {
 	ref, err := ParseName(name)
 	if err != nil {
@@ -181,6 +182,9 @@ func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candi
 	now, _, err := s.tipOf(ctx, dir, IntegrationBranch)
 	if err != nil {
 		return err
+	}
+	if now == candidate {
+		return nil
 	}
 	if now != base {
 		return conflict("claude/main moved from %s to %s while request %d was tested", short(base), short(now), n)

@@ -49,13 +49,23 @@ const (
 	mergeAsk   = 30 * time.Second
 	mergeRetry = 1
 	mergeFrom  = "atrium-merge@hub"
+	// mergeGrace is how long a run the merge room does not know of is waited on, mergeSilent how long past the test
+	// bound a room that does not answer is.
+	mergeGrace  = 2 * time.Minute
+	mergeSilent = gitsync.MergeTestBound + 10*time.Minute
+	// mergeReportBody fits the largest output a room sends, escaped, and the envelope.
+	mergeReportBody = 2 << 20
 )
 
 // mergeQueue is the runner's state on the Proxy.
 type mergeQueue struct {
-	run  sync.Mutex
-	mu   sync.Mutex
-	held map[string]string
+	run sync.Mutex
+	// verdict serializes verdicts, so a duplicate never reads a row another verdict is moving.
+	verdict sync.Mutex
+	mu      sync.Mutex
+	held    map[string]string
+	// now is the clock the watch ages a run by, time.Now when nil.
+	now func() time.Time
 	// sign is the land's identity and signer, operatorSign when nil.
 	sign func() (land.Identity, land.Signer, error)
 	// cardID is the id of the card that answers to agent on room, "" when none does. mergeCardOf when nil.
@@ -83,6 +93,19 @@ func (q *mergeQueue) holds() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// age is how long ago a row's time was, 0 when it cannot be read.
+func (q *mergeQueue) age(at string) time.Duration {
+	t, err := time.Parse(hubstore.TimeFormat, at)
+	if err != nil {
+		return 0
+	}
+	now := time.Now()
+	if q.now != nil {
+		now = q.now()
+	}
+	return now.Sub(t)
 }
 
 func (p *Proxy) serveMerge(w http.ResponseWriter, r *http.Request, sub string) {
@@ -434,20 +457,18 @@ func (p *Proxy) mergeCancel(w http.ResponseWriter, r *http.Request, st *hubstore
 		who = "the operator"
 	}
 	step := hubstore.MergeStep{N: n, From: hubstore.MergeQueued, To: hubstore.MergeCancelled, Reason: "cancelled by " + who}
-	if m.State == hubstore.MergeConflict {
+	switch {
+	case m.State == hubstore.MergeConflict:
 		step.From, step.To, step.Reason = hubstore.MergeConflict, hubstore.MergeRefused, cutReason(m.Reason+", given up by "+who)
-		out := p.mergeEnd(r.Context(), st, step)
-		p.RecordAudit(m.RequesterRoom, "merge-cancel", fmt.Sprintf("#%d by %s", n, who))
-		crJSON(w, http.StatusOK, out)
-		return
+	case m.State == hubstore.MergeTesting && strings.TrimSpace(in.By) == "":
+		step.From = hubstore.MergeTesting
 	}
-	out, err := st.MergeMove(step)
+	out, err := p.mergeEnd(r.Context(), st, step)
 	if err != nil {
 		ffail(w, err)
 		return
 	}
 	p.RecordAudit(m.RequesterRoom, "merge-cancel", fmt.Sprintf("#%d by %s", n, who))
-	p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(n, 10), "state": out.State})
 	crJSON(w, http.StatusOK, out)
 }
 
@@ -501,29 +522,33 @@ func (p *Proxy) mergeKick() {
 	go p.mergeSchedule(context.Background())
 }
 
-// RunMerges is the queue's tick, every 30 seconds, so a queue held for want of a merge room moves when one attaches.
-// The first tick settles what a restart left mid-run, once the rooms have had the time to attach again.
+// RunMerges is the queue's tick, every 30 seconds, so a queue held for want of a merge room moves when one attaches,
+// and a run whose verdict never came is noticed. What a restart left merging is queued again before anything runs.
 func (p *Proxy) RunMerges(ctx context.Context) {
+	p.merges.run.Lock()
+	p.mergeRecover()
+	p.merges.run.Unlock()
 	t := time.NewTicker(mergeTick)
 	defer t.Stop()
-	recovered := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if !recovered {
-				recovered = true
-				p.mergeRecover(ctx)
-			}
-			p.mergeSchedule(ctx)
+			p.mergeTick(ctx)
 		}
 	}
 }
 
-// mergeRecover asks the room of each request a restart left testing for its verdict. A room with none, or that
-// cannot be asked, gets the request queued again, and a request left merging is queued again too.
-func (p *Proxy) mergeRecover(ctx context.Context) {
+func (p *Proxy) mergeTick(ctx context.Context) {
+	p.merges.run.Lock()
+	defer p.merges.run.Unlock()
+	p.mergeWatch(ctx)
+	p.mergeScheduleLocked(ctx)
+}
+
+// mergeRecover queues again, free, each request a restart left merging: the merge was in the hub's memory only.
+func (p *Proxy) mergeRecover() {
 	st := p.backlogStore()
 	if st == nil || p.git() == nil {
 		return
@@ -534,19 +559,53 @@ func (p *Proxy) mergeRecover(ctx context.Context) {
 		return
 	}
 	for _, m := range open {
-		switch m.State {
-		case hubstore.MergeMerging:
-			_, _ = st.MergeMove(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeQueued, Reason: "the hub restarted while merging"})
-		case hubstore.MergeTesting:
-			var rep gitsync.MergeReport
-			if p.mergeRoomCall(ctx, m.Room, http.MethodGet, "/v1/git/merge/status?n="+strconv.FormatInt(m.N, 10), nil, &rep) == nil &&
-				rep.N == m.N && rep.Candidate == m.Candidate {
-				if _, _, err := p.mergeVerdict(ctx, st, m.Room, rep); err != nil {
-					log.Printf("[hub] merge %d: the verdict %s from %s was not taken: %v", m.N, rep.Verdict, m.Room, err)
-				}
-				continue
+		if m.State != hubstore.MergeMerging {
+			continue
+		}
+		if _, err := st.MergeMove(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeQueued, Free: true,
+			Reason: "the hub restarted while merging"}); err != nil {
+			log.Printf("[hub] merge %d: could not queue it again after a restart: %v", m.N, err)
+		}
+	}
+}
+
+// mergeWatch asks the room of each testing request how its run goes. A verdict is applied and a run still going is
+// left. A run the room has no record of past mergeGrace, or a room that does not answer past mergeSilent, gets the
+// request queued again, free, since neither is the request's fault.
+func (p *Proxy) mergeWatch(ctx context.Context) {
+	st := p.backlogStore()
+	if st == nil || p.git() == nil {
+		return
+	}
+	open, err := st.MergeList(hubstore.MergeFilter{Open: true, Limit: 500})
+	if err != nil {
+		log.Printf("[hub] merge queue: could not read the open requests: %v", err)
+		return
+	}
+	for _, m := range open {
+		if m.State != hubstore.MergeTesting {
+			continue
+		}
+		age := p.merges.age(m.StartedAt)
+		var rep gitsync.MergeReport
+		err := p.mergeRoomCall(ctx, m.Room, http.MethodGet, "/v1/git/merge/status?n="+strconv.FormatInt(m.N, 10), nil, &rep)
+		var ra *mergeRoomAnswer
+		mine := err == nil && rep.N == m.N && rep.Candidate == m.Candidate
+		why := ""
+		switch {
+		case mine && rep.Verdict == gitsync.VerdictRunning:
+		case mine:
+			if _, _, err := p.mergeVerdict(ctx, st, m.Room, rep); err != nil {
+				log.Printf("[hub] merge %d: the verdict %s from %s was not taken: %v", m.N, rep.Verdict, m.Room, err)
 			}
-			_, _ = st.MergeMove(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeQueued, Reason: "the hub restarted while testing"})
+		case (err == nil || errors.As(err, &ra) && ra.Code == http.StatusNotFound) && age > mergeGrace:
+			why = "the merge room " + m.Room + " has no run of it"
+		case err != nil && age > mergeSilent:
+			why = fmt.Sprintf("the merge room %s did not answer for the run: %v", m.Room, err)
+		}
+		if why != "" {
+			log.Printf("[hub] merge %d: %s, queued again", m.N, why)
+			p.mergeAgain(ctx, st, m, why, true)
 		}
 	}
 }
@@ -555,6 +614,10 @@ func (p *Proxy) mergeRecover(ctx context.Context) {
 func (p *Proxy) mergeSchedule(ctx context.Context) {
 	p.merges.run.Lock()
 	defer p.merges.run.Unlock()
+	p.mergeScheduleLocked(ctx)
+}
+
+func (p *Proxy) mergeScheduleLocked(ctx context.Context) {
 	st, g := p.backlogStore(), p.git()
 	if st == nil || g == nil {
 		return
@@ -616,7 +679,7 @@ func (p *Proxy) mergeStart(ctx context.Context, st *hubstore.Store, gs *gitsync.
 		p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
 		job := gitsync.MergeJob{N: m.N, Repo: m.Repo, Candidate: res.Candidate, Base: res.Base, Token: m.Token}
 		if err := p.mergeRoomCall(ctx, room, http.MethodPost, "/v1/git/merge/run", job, nil); err != nil {
-			p.mergeAgain(ctx, st, m, "the merge room "+room+" did not take the run: "+err.Error())
+			_ = p.mergeAgain(ctx, st, m, "the merge room "+room+" did not take the run: "+err.Error(), false)
 		}
 	}
 }
@@ -720,21 +783,32 @@ func mergeConflictWhy(paths []string) string {
 }
 
 // mergeAgain queues a testing request again once, and refuses it the second time, so nothing makes the queue spin.
-func (p *Proxy) mergeAgain(ctx context.Context, st *hubstore.Store, m hubstore.MergeRequest, why string) {
+// A free one is the hub's or the room's failure and spends no retry.
+func (p *Proxy) mergeAgain(ctx context.Context, st *hubstore.Store, m hubstore.MergeRequest, why string, free bool) error {
 	if gs := p.git(); gs != nil {
 		_ = gs.Store().MergeDrop(ctx, m.Repo, m.N)
 	}
-	if m.Retries >= mergeRetry {
-		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRefused, Reason: why + ", again"})
-		return
+	why = cutReason(why)
+	if !free && m.Retries >= mergeRetry {
+		_, err := p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRefused, Reason: cutReason(why + ", again")})
+		return err
 	}
-	if _, err := st.MergeMove(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeQueued, Reason: why}); err != nil {
+	if _, err := st.MergeMove(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeQueued, Reason: why, Free: free}); err != nil {
 		log.Printf("[hub] merge %d: could not queue it again: %v", m.N, err)
-		return
+		return err
 	}
 	p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": hubstore.MergeQueued})
 	p.mergeKick()
+	return nil
 }
+
+// mergeRoomAnswer is a room that answered, and not with a yes.
+type mergeRoomAnswer struct {
+	Code int
+	Msg  string
+}
+
+func (e *mergeRoomAnswer) Error() string { return e.Msg }
 
 // mergeRoomCall is one request to a room's merge routes, over the link's data pool, as git sync makes them.
 func (p *Proxy) mergeRoomCall(ctx context.Context, room, method, path string, in, out any) error {
@@ -769,9 +843,9 @@ func (p *Proxy) mergeRoomCall(ctx context.Context, room, method, path string, in
 	if res.StatusCode >= 300 {
 		var e struct{ Error string }
 		if json.Unmarshal(raw, &e) == nil && e.Error != "" {
-			return fmt.Errorf("%s", e.Error)
+			return &mergeRoomAnswer{Code: res.StatusCode, Msg: e.Error}
 		}
-		return fmt.Errorf("the room answered %d", res.StatusCode)
+		return &mergeRoomAnswer{Code: res.StatusCode, Msg: fmt.Sprintf("the room answered %d", res.StatusCode)}
 	}
 	if out != nil {
 		return json.Unmarshal(raw, out)
@@ -779,13 +853,14 @@ func (p *Proxy) mergeRoomCall(ctx context.Context, room, method, path string, in
 	return nil
 }
 
-// mergeReport takes the merge room's verdict.
+// mergeReport takes the merge room's verdict. Its body has its own bound, since a room's output is larger than any
+// other write here.
 func (p *Proxy) mergeReport(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	var in struct {
 		gitsync.MergeReport
 		Room, By string
 	}
-	if err := crDecode(r, &in); err != nil {
+	if err := crDecodeMax(r, &in, mergeReportBody); err != nil {
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
 		return
 	}
@@ -802,8 +877,12 @@ func (p *Proxy) mergeReport(w http.ResponseWriter, r *http.Request, st *hubstore
 }
 
 // mergeVerdict applies a verdict from room. Only the room the request is testing on, for the candidate it was given,
-// is heard, so a late verdict of a run the hub gave up on changes nothing.
+// with the run's token, is heard, so a late verdict of a run the hub gave up on changes nothing. The same verdict
+// again, for a request it already ended, is answered as taken, so the room stops sending it. A store that cannot
+// record the end is a 503, so the room sends it again.
 func (p *Proxy) mergeVerdict(ctx context.Context, st *hubstore.Store, room string, rep gitsync.MergeReport) (int, hubstore.MergeRequest, error) {
+	p.merges.verdict.Lock()
+	defer p.merges.verdict.Unlock()
 	m, err := st.MergeGet(rep.N)
 	switch {
 	case errors.Is(err, hubstore.ErrMergeNotFound):
@@ -812,14 +891,23 @@ func (p *Proxy) mergeVerdict(ctx context.Context, st *hubstore.Store, room strin
 		return http.StatusServiceUnavailable, m, err
 	case m.Token == "" || subtle.ConstantTimeCompare([]byte(m.Token), []byte(rep.Token)) != 1:
 		return http.StatusForbidden, m, fmt.Errorf("that verdict does not carry request %d's run token", m.N)
-	case m.State != hubstore.MergeTesting || m.Candidate != rep.Candidate:
-		return http.StatusConflict, m, fmt.Errorf("request %d is %s and not testing %s", m.N, m.State, shortHex(rep.Candidate))
 	case !strings.EqualFold(m.Room, room):
 		return http.StatusForbidden, m, fmt.Errorf("request %d is tested on %s, not %s", m.N, m.Room, room)
+	case !hubstore.MergeOpen(m.State) && m.Candidate == rep.Candidate:
+		return http.StatusOK, m, nil
+	case m.State != hubstore.MergeTesting || m.Candidate != rep.Candidate:
+		return http.StatusConflict, m, fmt.Errorf("request %d is %s and not testing %s", m.N, m.State, shortHex(rep.Candidate))
 	}
 	g := p.git()
 	if g == nil {
 		return http.StatusServiceUnavailable, m, errors.New("this hub keeps no git store")
+	}
+	end := func(step hubstore.MergeStep) (int, hubstore.MergeRequest, error) {
+		out, err := p.mergeEnd(ctx, st, step)
+		if err != nil {
+			return http.StatusServiceUnavailable, m, fmt.Errorf("the hub could not record request %d's end: %w", m.N, err)
+		}
+		return http.StatusOK, out, nil
 	}
 	gs := g.Store()
 	switch rep.Verdict {
@@ -827,47 +915,47 @@ func (p *Proxy) mergeVerdict(ctx context.Context, st *hubstore.Store, room strin
 		err := gs.MergeLand(ctx, m.Repo, m.N, m.Base, m.Candidate)
 		switch {
 		case errors.Is(err, gitsync.ErrConflict):
-			p.mergeAgain(ctx, st, m, err.Error())
+			if err := p.mergeAgain(ctx, st, m, err.Error(), false); err != nil {
+				return http.StatusServiceUnavailable, m, err
+			}
 			return http.StatusOK, m, nil
 		case errors.Is(err, gitsync.ErrRefused):
-			out := p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRefused, Reason: err.Error(), Output: rep.Output})
-			return http.StatusOK, out, nil
+			return end(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRefused, Reason: cutReason(err.Error()), Output: rep.Output})
 		case err != nil:
 			return http.StatusServiceUnavailable, m, fmt.Errorf("the hub could not move claude/main: %w", err)
 		}
 		g.Store().RefreshView()
 		p.RecordAudit(room, "merge-land", fmt.Sprintf("#%d %s %s as %s", m.N, m.Repo, m.Branch, shortHex(m.Candidate)))
-		out := p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeLanded, Landed: m.Candidate, Output: rep.Output})
-		return http.StatusOK, out, nil
+		return end(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeLanded, Landed: m.Candidate, Output: rep.Output})
 	case gitsync.VerdictRed:
-		failing := rep.Failing
-		if len(failing) > hubstore.MergeFailingMax {
-			failing = failing[:hubstore.MergeFailingMax]
+		var failing []string
+		for _, f := range rep.Failing {
+			if f = gitsync.MergeClean(f); f != "" && len(failing) < hubstore.MergeFailingMax {
+				if len(f) > gitsync.MergeNameMax {
+					f = strings.ToValidUTF8(f[:gitsync.MergeNameMax], "")
+				}
+				failing = append(failing, f)
+			}
 		}
-		out := p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRed, Failing: failing, Output: rep.Output,
+		return end(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRed, Failing: failing, Output: rep.Output,
 			Reason: "tests failed on the merge"})
-		return http.StatusOK, out, nil
 	case gitsync.VerdictError:
-		why := strings.TrimSpace(rep.Reason)
+		why := cutReason(gitsync.MergeClean(rep.Reason))
 		if why == "" {
 			why = "the merge room could not run the tests"
 		}
-		if len(why) > hubstore.MergeReasonMax {
-			why = why[:hubstore.MergeReasonMax]
-		}
-		out := p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRefused, Reason: why, Output: rep.Output})
-		return http.StatusOK, out, nil
+		return end(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeRefused, Reason: why, Output: rep.Output})
 	}
 	return http.StatusBadRequest, m, fmt.Errorf("a verdict is %s, %s or %s", gitsync.VerdictGreen, gitsync.VerdictRed, gitsync.VerdictError)
 }
 
 // mergeEnd moves a request to where it stops waiting on the queue, cleans up after it and tells. A request a merger's
-// request continues ends with it.
-func (p *Proxy) mergeEnd(ctx context.Context, st *hubstore.Store, step hubstore.MergeStep) hubstore.MergeRequest {
+// request continues ends with it. The error is the store's, and nothing else is done when the move was not recorded.
+func (p *Proxy) mergeEnd(ctx context.Context, st *hubstore.Store, step hubstore.MergeStep) (hubstore.MergeRequest, error) {
 	m, err := st.MergeMove(step)
 	if err != nil {
 		log.Printf("[hub] merge %d: could not record %s: %v", step.N, step.To, err)
-		return m
+		return m, err
 	}
 	p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
 	if g := p.git(); g != nil && m.State != hubstore.MergeConflict {
@@ -876,7 +964,9 @@ func (p *Proxy) mergeEnd(ctx context.Context, st *hubstore.Store, step hubstore.
 	if m.State == hubstore.MergeLanded {
 		p.mergeTidy(ctx, m.Repo, m.Branch, m.SHA)
 	}
-	p.mergeTell(ctx, m)
+	if m.State != hubstore.MergeCancelled || step.From == hubstore.MergeTesting {
+		p.mergeTell(ctx, m)
+	}
 	if m.Continues > 0 && m.State != hubstore.MergeConflict {
 		if of, err := st.MergeGet(m.Continues); err == nil && of.State == hubstore.MergeConflict {
 			next := hubstore.MergeStep{N: of.N, From: of.State, To: hubstore.MergeRefused,
@@ -884,11 +974,13 @@ func (p *Proxy) mergeEnd(ctx context.Context, st *hubstore.Store, step hubstore.
 			if m.State == hubstore.MergeLanded {
 				next.To, next.Landed, next.Reason = hubstore.MergeLanded, m.Landed, fmt.Sprintf("landed through %s (#%d)", m.Branch, m.N)
 			}
-			p.mergeEnd(ctx, st, next)
+			if _, err := p.mergeEnd(ctx, st, next); err != nil {
+				log.Printf("[hub] merge %d: request %d it carries on did not end with it: %v", m.N, of.N, err)
+			}
 		}
 	}
 	p.mergeKick()
-	return m
+	return m, nil
 }
 
 // mergeTidy deletes a landed branch in the hub's store and asks every attached room to delete its local branch.

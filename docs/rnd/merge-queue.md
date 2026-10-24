@@ -60,20 +60,29 @@ kept when cut), `merger` (the merger card, if any), `of` (the request a merger's
 
 | State | Means | Moves to |
 | --- | --- | --- |
-| `queued` | waiting its turn | `merging`, `cancelled` |
-| `merging` | the hub is computing the merge | `testing`, `conflict`, `refused` |
-| `testing` | the merge room runs `test-touched.sh` on the candidate | `landed`, `red`, `queued` (main moved) |
+| `queued` | waiting its turn | `merging`, `refused`, `cancelled` |
+| `merging` | the hub is computing the merge | `testing`, `conflict`, `landed` (already in), `refused`, `queued` |
+| `testing` | the merge room runs `test-touched.sh` on the candidate | `landed`, `red`, `refused`, `queued`, `cancelled` |
 | `conflict` | the merge did not apply, a merger card was started | `landed` (through the merger), `refused` |
 | `landed` | `claude/main` is the candidate, with its sha | end |
 | `red` | tests failed on the candidate, the failing tests named | end |
 | `refused` | anything else, with a sentence: not pushed, sha moved, no merge room, old git, the merger gave up | end |
-| `cancelled` | the requester or the operator took it back while queued | end |
+| `cancelled` | the requester took it back while queued, or the operator while queued or testing | end |
 
 The store rules, in `hubstore/merge.go`, follow the rest of the package. A state only moves along the table. An end
 state is never left. One open request (`queued`, `merging`, `testing`, `conflict`) per repository and branch, so a
 second `atrium merge` of the same branch answers the open row. A refusal is `refuse(...)`, and anything else from the
-database halts the hub as every other method does. The output is text the room sent and is capped before it is
-written.
+database halts the hub as every other method does. The output is text the room sent, cut by the room to 64 KiB
+before it is sent and again before it is written. Failing names and reasons are one line, with escape sequences and
+control characters taken out on both sides.
+
+**`testing` is never left to wait on its own.** Each tick the hub asks the merge room `/v1/git/merge/status` for every
+`testing` request. `running` keeps it, a verdict is applied, and a room that has no run of it past two minutes, or
+does not answer past the test bound and ten minutes, has it queued again. A request queued again because the hub
+restarted or the room lost the run spends no retry. A restart re-queues what it left `merging` before the first
+schedule. Only the run's own verdict is heard: each run carries a token from the hub, and a run a newer one replaced
+does not report. The same verdict again is answered as taken, and a store that cannot record a verdict answers 503
+so the room sends it again. `claude/main` already at the candidate counts as landed, so that resend lands it once.
 
 `atrium merge --list` and the board read the same rows: newest first, the open ones on top.
 
