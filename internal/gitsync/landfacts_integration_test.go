@@ -204,3 +204,72 @@ func TestLandFactsFindALandingByTheItemsChangelogEntry(t *testing.T) {
 		t.Fatalf("pushed: %+v", f)
 	}
 }
+
+// EVERY ITEM AT ONE TIP IS READ FROM ONE `git log`, and a pass where no tip moved starts no git at all. A log per item kept
+// twenty git children alive on the live hub.
+func TestLandFactsReadEveryItemAtOneTipFromOneLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	st := x.h.Store()
+	git(t, x.work, "switch", "-q", "-C", "cm")
+	ids := []string{"n-1", "n-2", "n-3", "n-4", "n-5", "n-6"}
+	shas := map[string]string{}
+	for _, id := range ids {
+		dir := filepath.Join(x.work, "changelog", "board")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "2026-10-24-"+id+".md"), []byte(id+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(x.work, id+".go"), []byte("package x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		git(t, x.work, "add", "-A")
+		git(t, x.work, "commit", "-q", "-m", "land "+id)
+		shas[id] = git(t, x.work, "rev-parse", "HEAD")
+	}
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/claude/main"))
+	dir, err := st.bareFor(hubRepo)
+	if err != nil || dir == "" {
+		t.Fatalf("no repository: %q %v", dir, err)
+	}
+	tip := git(t, x.work, "rev-parse", "cm")
+	run := x.h.runner()
+
+	before := run.Spawned.Load()
+	for _, id := range ids {
+		if at, err := st.addedChangelog(bg, dir, tip, id); err != nil || at != shas[id] {
+			t.Fatalf("%s: %q %v", id, at, err)
+		}
+	}
+	if n := run.Spawned.Load() - before; n != 1 {
+		t.Fatalf("%d items at one tip ran %d git commands, want 1", len(ids), n)
+	}
+
+	pass := func() {
+		for _, id := range ids {
+			f, err := st.LandFacts(bg, hubRepo, "", "-", id, nil)
+			if err != nil || !f.Landed || f.LandedSHA != shas[id] || f.Pushed {
+				t.Fatalf("%s: %+v %v", id, f, err)
+			}
+			if len(f.Paths) != 2 || f.Paths[0] != "changelog/board/2026-10-24-"+id+".md" || f.Paths[1] != id+".go" {
+				t.Fatalf("%s paths: %v", id, f.Paths)
+			}
+		}
+	}
+	pass()
+	before = run.Spawned.Load()
+	pass()
+	if n := run.Spawned.Load() - before; n != 0 {
+		t.Fatalf("a pass where no tip moved ran %d git commands", n)
+	}
+
+	x.must(x.push(operator, hubRepo, "cm:refs/heads/main"))
+	if f, _ := st.LandFacts(bg, hubRepo, "", "-", "n-3", nil); !f.Pushed || f.PushedSHA != shas["n-3"] {
+		t.Fatalf("main moved and was not read again: %+v", f)
+	}
+}
