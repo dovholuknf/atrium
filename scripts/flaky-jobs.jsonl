@@ -187,3 +187,6 @@
 {"run":"40063962133","date":"2026-10-24T04:51:02Z","sha":"3bc208750","job":120783535062,"name":"check (macos-latest, go-test)","tests":["(step failed, no test named in the log)"],"retried":[]}
 {"run":"40063962133","date":"2026-10-24T04:51:02Z","sha":"3bc208750","job":120783535101,"name":"check (windows-latest, build-board-1)","tests":["(step failed, no test named in the log)"],"retried":[]}
 {"run":"40065067502","date":"2026-10-24T05:08:08Z","sha":"e81fe6f0d","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"40094265306","date":"2026-10-24T12:31:13Z","sha":"85746b1a0","job":120873165976,"name":"check (ubuntu-latest, go-all)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40094265306","date":"2026-10-24T12:31:13Z","sha":"85746b1a0","job":120873165998,"name":"check (macos-latest, go-test)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40094265306","date":"2026-10-24T12:31:13Z","sha":"85746b1a0","job":120873166119,"name":"check (windows-latest, build-board-1)","tests":["(step failed, no test named in the log)"],"retried":[]}
