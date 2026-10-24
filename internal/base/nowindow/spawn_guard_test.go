@@ -17,7 +17,7 @@ var visibleOnPurpose = map[string]string{
 	"internal/daemon/homedisk.go:OpenHome":           "the file manager, opened for the operator",
 	"internal/daemon/launch.go:launchCore":           "window launch mode: a terminal the operator asked for",
 	"internal/cli/control.go:spawnDetached":          "starts the daemon itself, DETACHED_PROCESS on purpose (cli.detach)",
-	"internal/detach/detach_windows.go:Start":        "flags are deliberate: the pty host and the room must outlive their job",
+	"internal/base/detach/detach_windows.go:Start":   "flags are deliberate: the pty host and the room must outlive their job",
 	"internal/cli/new.go:repoOfCheckout":             "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:Query":                "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:gitCmd":               "operator CLI, runs in the operator's own console",
@@ -49,7 +49,7 @@ func isHide(call *ast.CallExpr) bool {
 }
 
 func TestEveryExecStartIsHiddenOrListed(t *testing.T) {
-	root := filepath.Join("..", "..", "internal")
+	root := filepath.Join("..", "..", "..", "internal")
 	var bad []string
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

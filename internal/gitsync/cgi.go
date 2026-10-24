@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/net/http/httpguts"
 
-	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 // cgiHandler runs `git http-backend` as a CGI, the way net/http/cgi does, with one difference that is the

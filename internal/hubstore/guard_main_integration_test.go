@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/testguard"
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 )
 
 // TestMain keeps the git every test here runs off the operator's own git config. See internal/testguard.

@@ -3,7 +3,7 @@ module github.com/dovholuknf/atrium
 go 1.26.10
 
 require (
-	github.com/Microsoft/go-winio v0.6.2
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/coder/websocket v1.8.15
 	github.com/go-openapi/runtime v0.29.0
@@ -117,4 +117,14 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 	nhooyr.io/websocket v1.8.17 // indirect
+)
+
+require (
+	github.com/dovholuknf/atrium/internal/base v0.0.0
+	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
+)
+
+replace (
+	github.com/dovholuknf/atrium/internal/base => ./internal/base
+	github.com/dovholuknf/atrium/internal/ptyhost => ./internal/ptyhost
 )

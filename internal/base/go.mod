@@ -1,0 +1,5 @@
+module github.com/dovholuknf/atrium/internal/base
+
+go 1.26.10
+
+require golang.org/x/sys v0.48.0

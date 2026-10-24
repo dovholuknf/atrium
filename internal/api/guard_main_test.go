@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 	"github.com/dovholuknf/atrium/internal/store"
-	"github.com/dovholuknf/atrium/internal/testguard"
 )
 
 // TestMain keeps every test here off a live atrium: no ATRIUM_* pointer from the

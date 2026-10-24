@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/forge"
-	"github.com/dovholuknf/atrium/internal/nowindow"
 )
 
 // A PULL REQUEST CARD READS EVERYTHING LOCALLY. A room never talks to a forge, and the permission hook refuses a

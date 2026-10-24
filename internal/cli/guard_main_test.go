@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/testguard"
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 )
 
 // TestMain keeps every test here off a live atrium: no ATRIUM_* pointer from the

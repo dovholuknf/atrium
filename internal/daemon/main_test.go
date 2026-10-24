@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 	"github.com/dovholuknf/atrium/internal/store"
-	"github.com/dovholuknf/atrium/internal/testguard"
 )
 
 // TestMain scrubs the process of the operator's room. The waits production keeps long are shortened per daemon,

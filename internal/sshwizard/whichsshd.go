@@ -16,7 +16,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"net"
 	"os"
 	"os/exec"

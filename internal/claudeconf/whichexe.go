@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/rolebin"
+	"github.com/dovholuknf/atrium/internal/base/rolebin"
 )
 
 // WHICH BINARY GOES INTO settings.json.

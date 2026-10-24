@@ -2,7 +2,7 @@
 
 package ptyhost
 
-import "github.com/dovholuknf/atrium/internal/detach"
+import "github.com/dovholuknf/atrium/internal/base/detach"
 
 // inJob says whether this process sits in a job object that would end or limit it, and describes the job. A job that
 // only allows breakaway ends nothing, so it is not what `probe` answers as in_job (design G5). A host in a job with

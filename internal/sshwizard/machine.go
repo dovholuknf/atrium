@@ -3,7 +3,7 @@ package sshwizard
 import (
 	"context"
 	"errors"
-	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"os"
 	"os/exec"
 	"os/user"
