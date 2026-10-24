@@ -64,6 +64,7 @@ type mergeQueue struct {
 	verdict sync.Mutex
 	mu      sync.Mutex
 	held    map[string]string
+	stalls  map[string]mergeStall
 	// now is the clock the watch ages a run by, time.Now when nil.
 	now func() time.Time
 	// sign is the land's identity and signer, operatorSign when nil.
@@ -101,11 +102,56 @@ func (q *mergeQueue) age(at string) time.Duration {
 	if err != nil {
 		return 0
 	}
-	now := time.Now()
+	return q.clock().Sub(t)
+}
+
+func (q *mergeQueue) clock() time.Time {
 	if q.now != nil {
-		now = q.now()
+		return q.now()
 	}
-	return now.Sub(t)
+	return time.Now()
+}
+
+// mergeStall is a repository whose queue waits on the hub or the merge room, not on a request.
+type mergeStall struct {
+	until time.Time
+	why   string
+	times int
+}
+
+// stall holds repo's queue for a wait that doubles from a minute to sixteen, with why shown as the hold.
+func (q *mergeQueue) stall(repo, why string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.stalls == nil {
+		q.stalls = map[string]mergeStall{}
+	}
+	s := q.stalls[repo]
+	s.times++
+	s.until, s.why = q.clock().Add(time.Minute<<min(s.times-1, 4)), why
+	q.stalls[repo] = s
+	if q.held == nil {
+		q.held = map[string]string{}
+	}
+	q.held[repo] = why
+}
+
+// stalled is why repo's queue waits, while it does.
+func (q *mergeQueue) stalled(repo string) (string, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s, ok := q.stalls[repo]
+	if !ok || !q.clock().Before(s.until) {
+		return "", false
+	}
+	return s.why, true
+}
+
+// unstall is a run that came to a verdict: the room works again.
+func (q *mergeQueue) unstall(repo string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	delete(q.stalls, repo)
 }
 
 func (p *Proxy) serveMerge(w http.ResponseWriter, r *http.Request, sub string) {
@@ -543,11 +589,13 @@ func (p *Proxy) RunMerges(ctx context.Context) {
 func (p *Proxy) mergeTick(ctx context.Context) {
 	p.merges.run.Lock()
 	defer p.merges.run.Unlock()
+	p.mergeRecover()
 	p.mergeWatch(ctx)
 	p.mergeScheduleLocked(ctx)
 }
 
-// mergeRecover queues again, free, each request a restart left merging: the merge was in the hub's memory only.
+// mergeRecover queues again, free, each request left merging. A merge is made under merges.run, so one seen merging
+// while that lock is held was lost to a restart or a store failure.
 func (p *Proxy) mergeRecover() {
 	st := p.backlogStore()
 	if st == nil || p.git() == nil {
@@ -636,6 +684,10 @@ func (p *Proxy) mergeScheduleLocked(ctx context.Context) {
 			p.merges.hold(repo, "")
 			continue
 		}
+		if why, ok := p.merges.stalled(repo); ok {
+			p.merges.hold(repo, why)
+			continue
+		}
 		room, why := p.mergeRoomPick(st)
 		p.merges.hold(repo, why)
 		if room == "" {
@@ -655,12 +707,16 @@ func (p *Proxy) mergeStart(ctx context.Context, st *hubstore.Store, gs *gitsync.
 	p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
 	res, err := gs.MergeCandidate(ctx, m.Repo, m.Branch, m.SHA, m.N, fmt.Sprintf("Merge %s (#%d)", m.Branch, m.N))
 	switch {
+	case errors.Is(err, gitsync.ErrRefused):
+		log.Printf("[hub] merge %d: refused: %v", m.N, err)
+		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeRefused, Reason: cutReason(err.Error())})
+	case errors.Is(err, gitsync.ErrStopped) || ctx.Err() != nil:
+		log.Printf("[hub] merge %d: stopped while merging, queued again at the next start", m.N)
 	case err != nil:
-		why := err.Error()
-		if !errors.Is(err, gitsync.ErrRefused) {
-			why = "the hub could not merge it: " + why
-		}
-		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeRefused, Reason: why})
+		why := cutReason("the hub could not merge it: " + gitsync.MergeClean(err.Error()))
+		log.Printf("[hub] merge %d: %s", m.N, why)
+		p.merges.stall(m.Repo, why)
+		_ = p.mergeAgain(ctx, st, m, why, true)
 	case res.Already:
 		p.mergeEnd(ctx, st, hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeLanded, Base: res.Base,
 			Landed: res.Base, Reason: "claude/main has it already"})
@@ -679,8 +735,14 @@ func (p *Proxy) mergeStart(ctx context.Context, st *hubstore.Store, gs *gitsync.
 		p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
 		job := gitsync.MergeJob{N: m.N, Repo: m.Repo, Candidate: res.Candidate, Base: res.Base, Token: m.Token}
 		if err := p.mergeRoomCall(ctx, room, http.MethodPost, "/v1/git/merge/run", job, nil); err != nil {
-			_ = p.mergeAgain(ctx, st, m, "the merge room "+room+" did not take the run: "+err.Error(), false)
+			why := cutReason("the merge room " + room + " did not take the run: " + gitsync.MergeClean(err.Error()))
+			log.Printf("[hub] merge %d: %s", m.N, why)
+			p.merges.stall(m.Repo, why)
+			_ = p.mergeAgain(ctx, st, m, why, true)
+			return
 		}
+		log.Printf("[hub] merge %d: %s %s at %s merged onto %s as %s, testing on %s", m.N, m.Repo, m.Branch, shortHex(m.SHA),
+			shortHex(res.Base), shortHex(res.Candidate), room)
 	}
 }
 
@@ -910,6 +972,16 @@ func (p *Proxy) mergeVerdict(ctx context.Context, st *hubstore.Store, room strin
 		return http.StatusOK, out, nil
 	}
 	gs := g.Store()
+	log.Printf("[hub] merge %d: %s from %s", m.N, gitsync.MergeClean(rep.Verdict), room)
+	if rep.Verdict == gitsync.VerdictCannot {
+		why := cutReason("the merge room " + room + " could not run it: " + gitsync.MergeClean(rep.Reason))
+		p.merges.stall(m.Repo, why)
+		if err := p.mergeAgain(ctx, st, m, why, true); err != nil {
+			return http.StatusServiceUnavailable, m, err
+		}
+		return http.StatusOK, m, nil
+	}
+	p.merges.unstall(m.Repo)
 	switch rep.Verdict {
 	case gitsync.VerdictGreen:
 		err := gs.MergeLand(ctx, m.Repo, m.N, m.Base, m.Candidate)

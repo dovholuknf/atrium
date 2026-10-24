@@ -84,6 +84,12 @@ schedule. Only the run's own verdict is heard: each run carries a token from the
 does not report. The same verdict again is answered as taken, and a store that cannot record a verdict answers 503
 so the room sends it again. `claude/main` already at the candidate counts as landed, so that resend lands it once.
 
+**A broken merge room or hub git holds the queue and refuses nobody.** What is wrong with the room (no clone, no
+bash, the hub's git out of reach, a worktree it cannot make) is the verdict `cannot`, not `error`. The hub queues the
+request again without spending its retry and holds the repository with the reason on the strip, for a wait that
+doubles from a minute to sixteen. A git failure in the hub's own merge does the same. Only `ErrRefused` refuses, and
+a merge cut short by the hub stopping is left for the next start. The hub logs each hand-off and each verdict.
+
 `atrium merge --list` and the board read the same rows: newest first, the open ones on top.
 
 ## Asking: `atrium merge` and `atrium_merge`

@@ -80,7 +80,7 @@ func TestMergeRunnerTestsTheCandidateAndNamesWhatFailed(t *testing.T) {
 		t.Fatalf("red: %+v", rep)
 	}
 	rep = m.Run(bg, MergeJob{N: 1, Repo: hubRepo, Candidate: strings.Repeat("a", 40), Base: r.Base})
-	if rep.Verdict != VerdictError || !strings.Contains(rep.Reason, "candidate for run 1 is not") {
+	if rep.Verdict != VerdictCannot || !strings.Contains(rep.Reason, "candidate for run 1 is not") {
 		t.Fatalf("a candidate that is not the hub's: %+v", rep)
 	}
 }

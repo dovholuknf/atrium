@@ -429,3 +429,33 @@ func TestMergeQueueNeverLeavesARequestTesting(t *testing.T) {
 		t.Fatal("the cancelled candidate's ref is still there")
 	}
 }
+
+func TestMergeQueueHoldsWhenTheRoomCannotRunAndRefusesNobody(t *testing.T) {
+	x := newMergeFix(t)
+	var ns []int64
+	for _, name := range []string{"h1", "h2", "h3"} {
+		x.branch(t, name, name+".txt", name)
+		_, m := x.ask(t, "claude/"+name, "w1@sg4")
+		ns = append(ns, m.N)
+	}
+	m := x.testing(t, ns[0])
+	body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "cannot", "room": "sg4",
+		"token": m.Token, "reason": "this room has no clone of github/o/r"})
+	if code, b := x.send("POST", "/_hub/merge/report", body); code != 200 {
+		t.Fatalf("cannot: %d %s", code, b)
+	}
+	x.p.mergeSchedule(context.Background())
+	for _, n := range ns {
+		if got := must(x.st.MergeGet(n)); got.State != hubstore.MergeQueued || got.Retries != 0 {
+			t.Fatalf("request %d: %+v", n, got)
+		}
+	}
+	if code, b := x.send("GET", "/_hub/merge?open=1", ""); code != 200 || !strings.Contains(b, `"held":{"github/o/r":"the merge room sg4 could not run it`) {
+		t.Fatalf("held: %d %s", code, b)
+	}
+	x.p.merges.now = func() time.Time { return time.Now().Add(time.Hour) }
+	x.p.mergeSchedule(context.Background())
+	if _, b := x.send("GET", "/_hub/merge?open=1", ""); strings.Contains(b, `"held":{"github/o/r":"the merge room sg4 could not run it`) {
+		t.Fatalf("still held after the wait: %s", b)
+	}
+}

@@ -48,6 +48,8 @@ const (
 	VerdictGreen = "green"
 	VerdictRed   = "red"
 	VerdictError = "error"
+	// VerdictCannot is the room failing to run the tests: no clone, no bash, the hub's git out of reach.
+	VerdictCannot = "cannot"
 	// VerdictRunning is no verdict: the status of a run still going.
 	VerdictRunning = "running"
 )
@@ -208,52 +210,59 @@ func (m *MergeRunner) report(rep MergeReport) {
 }
 
 // Run tests one candidate and answers the verdict. It never panics a caller and never answers without a verdict.
+// What is wrong with this room is VerdictCannot and never VerdictError, so a broken room holds the queue and refuses
+// nobody.
 func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 	m.runs.Add(1)
 	rep := MergeReport{N: j.N, Repo: j.Repo, Candidate: j.Candidate, Token: j.Token}
-	fail := func(format string, a ...any) MergeReport {
-		rep.Verdict, rep.Reason = VerdictError, mergeCutReason(fmt.Sprintf(format, a...))
+	say := func(verdict, format string, a ...any) MergeReport {
+		rep.Verdict, rep.Reason = verdict, mergeCutReason(fmt.Sprintf(format, a...))
 		return rep
 	}
+	fail := func(format string, a ...any) MergeReport { return say(VerdictError, format, a...) }
+	cannot := func(format string, a ...any) MergeReport { return say(VerdictCannot, format, a...) }
 	root := ""
 	if m.Root != nil {
 		root = m.Root()
 	}
 	if root == "" || m.Dir == "" {
-		return fail("this room has no git root or no merge directory")
+		return cannot("this room has no git root or no merge directory")
 	}
 	clone := filepath.Join(root, filepath.FromSlash(j.Repo))
 	if st, err := os.Stat(filepath.Join(clone, ".git")); err != nil || !st.IsDir() {
-		return fail("this room has no clone of %s at %s. sync it from the hub first", j.Repo, clone)
+		return cannot("this room has no clone of %s at %s. sync it from the hub first", j.Repo, clone)
 	}
 	if m.Hub == nil {
-		return fail("this room is not linked to a hub's git")
+		return cannot("this room is not linked to a hub's git")
 	}
 	rt, err := m.Hub()
 	if err != nil {
-		return fail("this room cannot reach the hub's git: %v", err)
+		return cannot("this room cannot reach the hub's git: %v", err)
 	}
 	url, stop, err := HubLoopback(rt, j.Repo)
 	if err != nil {
-		return fail("%v", err)
+		return cannot("%v", err)
 	}
 	defer stop()
 	g := m.runner()
 	ref := MergeRef(j.N)
 	if _, err := g.Git(ctx, clone, "fetch", "--no-tags", "--quiet", url, "+"+ref+":"+ref); err != nil {
-		return fail("could not fetch the candidate: %v", gitWhy(err))
+		return cannot("could not fetch the candidate: %v", gitWhy(err))
 	}
 	defer func() { _, _ = g.Git(context.Background(), clone, "update-ref", "-d", ref) }()
 	if got, err := g.Git(ctx, clone, "rev-parse", "--verify", "-q", ref+"^{commit}"); err != nil || strings.TrimSpace(got) != j.Candidate {
-		return fail("the hub's candidate for run %d is not %s", j.N, short(j.Candidate))
+		return cannot("the hub's candidate for run %d is not %s", j.N, short(j.Candidate))
 	}
 	wt := filepath.Join(m.Dir, filepath.FromSlash(j.Repo))
 	if err := m.worktree(ctx, clone, wt, j.Candidate); err != nil {
-		return fail("could not set up the merge worktree %s: %v", wt, gitWhy(err))
+		return cannot("could not set up the merge worktree %s: %v", wt, gitWhy(err))
 	}
 	out, code, err := m.test(ctx, wt, j.Base)
 	rep.Output = MergeCut(out)
+	var cr *cannotRun
 	switch {
+	case errors.As(err, &cr):
+		return cannot("%v", err)
 	case err != nil:
 		return fail("%v", err)
 	case code == 0:
@@ -358,14 +367,19 @@ func (m *MergeRunner) test(ctx context.Context, wt, base string) (string, int, e
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return out, 0, fmt.Errorf("%s did not finish in %s and was killed", MergeScript, bound)
 		}
-		return out, 0, errors.New("the run was stopped: a newer run of this repository took its place")
+		return out, 0, &cannotRun{"the run was stopped: a newer run of this repository took its place"}
 	case errors.As(err, &ee):
 		return out, ee.ExitCode(), nil
 	case err != nil:
-		return out, 0, fmt.Errorf("could not run %s: %v", MergeScript, err)
+		return out, 0, &cannotRun{fmt.Sprintf("could not run %s: %v", MergeScript, err)}
 	}
 	return out, 0, nil
 }
+
+// cannotRun is the room failing to run the script, which says nothing of the candidate.
+type cannotRun struct{ msg string }
+
+func (e *cannotRun) Error() string { return e.msg }
 
 // tailBuffer keeps the first 64 KiB and the last of what is written, up to mergeOutputKeep in all.
 type tailBuffer struct {
