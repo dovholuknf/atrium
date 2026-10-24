@@ -134,7 +134,7 @@ func TestAColdCardIsHandedOffOnceAndNeverLoops(t *testing.T) {
 		*now = now.Add(2 * time.Hour)
 		appendReply(t, d.ka.transcript("", "cold-session-2"), now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
 		d.ka.tick(context.Background())
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: negative check, a stray second prompt would land asynchronously
 	}
 	if c := strings.Count(f.written(), limitPrompt); c != 1 {
 		t.Fatalf("the limit prompt was typed %d times, want once: %q", c, f.written())
