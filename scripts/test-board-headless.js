@@ -11952,14 +11952,12 @@ async function walkNoResizeSection(browser, base) {
       }, id, { timeout: slow(15000), polling: 10 });
       await attachRetry(p, { unit: "walkNoResize", id: id, check: x => termSock && termSock.readyState === 1 && termTask && termTask.id === x });
       await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
-      // wait: the attach's own fit and its settled resize have to be over before the baseline is taken.
-      await p.waitForTimeout(600);
+      await p.waitForTimeout(600); // wait: the attach's own fit and its settled resize have to be over before the baseline is taken.
       await p.evaluate(() => { window.__sent = []; });
       const before = await look(p);
       await p.click("#t-walk");
       await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
-      // wait: a resize is sent resizeSettleMs (250) after the fit moves, so its absence is only seen after that.
-      await p.waitForTimeout(600);
+      await p.waitForTimeout(600); // wait: a resize is sent resizeSettleMs (250) after the fit moves, so its absence is only seen after that.
       const open = await look(p);
       if (shotDir) { fs.mkdirSync(shotDir, { recursive: true }); await p.screenshot({ path: path.join(shotDir, "walk-" + lay.name + ".png") }); }
       if (open.inList !== (lay.name === "list")) fail(nm + "the drawer opened in the wrong place: " + JSON.stringify(open));
@@ -11971,8 +11969,7 @@ async function walkNoResizeSection(browser, base) {
       const tops = await p.$$eval("#walk-rail .wk-row", els => els.map(e => Math.round(e.getBoundingClientRect().top)));
       if (!(tops.length === 2 && tops[1] > tops[0])) fail(nm + "the rail's rows are not stacked: " + JSON.stringify(tops));
       await p.click("#walk-drawer .walk-head .icon");
-      // wait: as above, the absence of a settled resize after the close.
-      await p.waitForTimeout(600);
+      await p.waitForTimeout(600); // wait: as above, the absence of a settled resize after the close.
       const shut = await look(p);
       if (shut.cols !== before.cols || shut.rows !== before.rows) fail(nm + "closing the walk moved the grid to " + shut.cols + "x" + shut.rows);
       if (shut.box !== before.box) fail(nm + "closing the walk moved the terminal's box to " + shut.box);
