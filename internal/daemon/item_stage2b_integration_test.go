@@ -187,7 +187,7 @@ func TestAnUndeliveredAnswerIsNotDuplicated(t *testing.T) {
 // AN OWNER NOTICE THAT NOBODY COULD RECEIVE IS ALERTED AT DELIVERY.
 func TestAnUnreachedOwnerNoticeAlertsAtOnce(t *testing.T) {
 	d := testDaemon(t)
-	_, worker, it := itemRunning(t, d, "merger")
+	_, worker, it := itemRunning(t, d, "director")
 	blockWith(t, d, "need the staging key")
 	if got, _ := d.st.ItemGet(it.ID); got.StuckAlerted != ItemStuckOwnerGone {
 		t.Fatalf("item: %+v", got)

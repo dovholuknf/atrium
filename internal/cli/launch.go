@@ -125,7 +125,7 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.onto, "onto", "",
 		"start the runner on this existing card, named by its handle, alias, name@room or id. "+
 			"without --cwd it runs in the card's own directory")
-	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --isolated: who owns it. empty is the creating session, human, or orchestrator, merger or director")
+	c.Flags().StringVar(&o.itemOwner, "item-owner", "", "with --isolated: who owns it. empty is the creating session, human, or orchestrator or director")
 	c.Flags().StringVar(&o.item, "item", "",
 		"REQUIRED for a new session: the backlog item this works on, by id (f-new-thing), or new:\"a title\" to file one "+
 			"under the dept: tag in --tags. not needed with --resume or --onto, whose card already exists")

@@ -35,7 +35,7 @@ func itemOwnerSpec(tags []string) string {
 	return ""
 }
 
-var errTesterOwner = errors.New("the tester has several holders, so it cannot own an item. name orchestrator, merger, " +
+var errTesterOwner = errors.New("the tester has several holders, so it cannot own an item. name orchestrator, " +
 	"director or human")
 
 // resolveItemOwner is hubstore.ResolveOwner for the room, which must not import the hub's store. A test in
@@ -56,10 +56,12 @@ func resolveItemOwner(spec, creator string) (kind, owner string, err error) {
 	switch role := strings.TrimPrefix(spec, "role:"); role {
 	case "tester":
 		return "", "", errTesterOwner
-	case "orchestrator", "merger", "director":
+	case "merger":
+		return "", "", errors.New("the merge queue is the merger now: atrium merge")
+	case "orchestrator", "director":
 		return store.ItemOwnerRole, role, nil
 	}
-	return "", "", errors.New("an owner is empty (the creating session), human, orchestrator, merger or director")
+	return "", "", errors.New("an owner is empty (the creating session), human, orchestrator or director")
 }
 
 // checkItemLaunch refuses an item launch whose owner cannot be, BEFORE a card exists. Nothing else is its business.

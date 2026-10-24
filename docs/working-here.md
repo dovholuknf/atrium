@@ -38,10 +38,12 @@ machine" and not "it is deployed to the live hub".
   `card_root_required` on, the room refuses an agent launch whose `cwd` is outside the card root.
 - `claude/main` has to fast-forward onto `origin/main`. If it does not, rebase it on `origin/main` and fix the
   conflict before calling anything done. Landing on the remote `main` is the finish line.
-- A merge worker merges the branch, runs `bash scripts/test-touched.sh`, and lands with
-  `git push hub HEAD:claude/main`. The hub takes that only as a fast-forward of its `claude/main`, and the
-  orchestrator's checkout follows it (`docs/fabric/git-sync-design.md` 4.3). A refusal means `claude/main` moved:
-  merge again and push again. Never push `main` or a tag, and never ask the orchestrator to move `claude/main` by hand.
+- A worker lands its branch with the merge queue: push it to the hub (`git push hub <branch>`), then run
+  `atrium merge` (or `atrium_merge`). The hub merges it onto `claude/main`, runs `bash scripts/test-touched.sh` and
+  answers merged with the sha, red with the failing tests, a conflict, or refused with the reason. A card cannot push
+  `claude/main`, only the operator and the queue move it (`docs/rnd/merge-queue.md`). Never push `main` or a tag, and
+  never ask the orchestrator to move `claude/main` by hand. `atrium merge --list` shows the queue, and landing on
+  `main` is the operator's `atrium merge land`.
 
 ## Conventions
 

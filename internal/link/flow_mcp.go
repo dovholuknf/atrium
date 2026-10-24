@@ -19,8 +19,8 @@ import (
 const flowToolDesc = "The merge flow, kept on the hub: who holds each role, which stage each backlog item is at, " +
 	"which checks passed on which sha, and which sha each room runs. After a restart this is where it is read from, " +
 	"not from other sessions.\n\n" +
-	"Roles are `orchestrator`, `merger`, `tester` and `director`. One holder each, except tester. Only the merger moves " +
-	"claude/main on the hub, and only by fast-forward. Stages, in order: idea, designed, implementing, implemented, " +
+	"Roles are `orchestrator`, `tester` and `director`. One holder each, except tester. The merge queue (`atrium merge`) " +
+	"moves claude/main on the hub, and the orchestrator closes an epoch. Stages, in order: idea, designed, implementing, implemented, " +
 	"merged, tested, deployed, pushed-by-clint. A stage only moves forward. The item must be a backlog item.\n\n" +
 	"action is one of:\n" +
 	"- `roles {role?}`: who holds roles.\n" +
@@ -37,7 +37,7 @@ const flowToolDesc = "The merge flow, kept on the hub: who holds each role, whic
 
 type flowInput struct {
 	Action string `json:"action" jsonschema:"roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys or deploy"`
-	Role   string `json:"role,omitempty" jsonschema:"orchestrator, merger, tester or director"`
+	Role   string `json:"role,omitempty" jsonschema:"orchestrator, tester or director"`
 	Room   string `json:"room,omitempty" jsonschema:"the room, for role_set, role_clear and deploy"`
 	Card   string `json:"card,omitempty" jsonschema:"the card id of the holder, for role_set and role_clear"`
 	ID     string `json:"id,omitempty" jsonschema:"the backlog item id, for item and stage"`
@@ -168,7 +168,7 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		out.Epoch = raw
 		return nil, out, nil
 	case "epoch_close":
-		if err := c.requireMerger(ctx, req); err != nil {
+		if err := c.requireOrchestrator(ctx, req); err != nil {
 			return nil, out, err
 		}
 		var raw json.RawMessage
@@ -212,12 +212,12 @@ func (c *controlMCP) flowHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of roles, role_set, role_clear, items, item, stage, checks, check, epoch, epoch_open, epoch_close, repo, deploys, deploy", in.Action)}
 }
 
-// requireMerger refuses unless the caller is the card the hub has recorded as the merger. THE CALLER IS A CLAIM, as for
+// requireOrchestrator refuses unless the caller is the card the hub has recorded as the orchestrator. THE CALLER IS A CLAIM, as for
 // every tool here (see ctlaudit.go): the claim is the X-Atrium-Agent name, resolved to a card on the caller's room.
-func (c *controlMCP) requireMerger(ctx context.Context, req *mcp.CallToolRequest) error {
+func (c *controlMCP) requireOrchestrator(ctx context.Context, req *mcp.CallToolRequest) error {
 	agent, room := agentOf(req), roomOf(req)
 	if agent == "" {
-		return &refusedError{"only the merger closes an epoch, and this call carries no session name"}
+		return &refusedError{"only the orchestrator closes an epoch, and this call carries no session name"}
 	}
 	card, err := c.callerCard(ctx, room, agent)
 	if err != nil {
@@ -226,7 +226,7 @@ func (c *controlMCP) requireMerger(ctx context.Context, req *mcp.CallToolRequest
 	var held struct {
 		Roles []hubstore.RoleHolder `json:"roles"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/_hub/flow/roles?role="+hubstore.RoleMerger, "", nil, &held); err != nil {
+	if err := c.ask(ctx, http.MethodGet, "/_hub/flow/roles?role="+hubstore.RoleOrchestrator, "", nil, &held); err != nil {
 		return err
 	}
 	for _, h := range held.Roles {
@@ -234,5 +234,5 @@ func (c *controlMCP) requireMerger(ctx context.Context, req *mcp.CallToolRequest
 			return nil
 		}
 	}
-	return &refusedError{"only the merger closes an epoch, and the hub has recorded another card (or none) as the merger"}
+	return &refusedError{"only the orchestrator closes an epoch, and the hub has recorded another card (or none) as the orchestrator"}
 }

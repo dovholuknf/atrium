@@ -23,16 +23,10 @@ func adoptedSentence(name string) string {
 // mirror pass force-fetches the integration branch and nothing else, and a room's sync fetches only that branch, so
 // a work branch beside it is never written over and never fetched by accident. What the pass owns (the integration
 // branch, and main and claude/main whatever the entry names), a tag and anything outside refs/heads are refused, the
-// operator included. The one exception is `lands`: the recorded merger moving claude/main that is already there, which
-// the pre-receive hook holds to a fast-forward. `branch` is the git_repos entry's branch, "" when the entry is no longer configured.
-func mirrorRefuses(name, ref, branch string, lands bool) string {
+// operator included. `branch` is the git_repos entry's branch, "" when the entry is no longer configured.
+func mirrorRefuses(name, ref, branch string) string {
 	if branch == "" {
 		branch = IntegrationBranch
-	}
-	if lands && ref == ClaudeMainRef && headsPrefix+branch == ClaudeMainRef {
-		// THE MERGER LANDS claude/main HERE, and the pre-receive hook holds it to a fast-forward. The mirror pass
-		// never moves the hub's tip backwards, and the checkout follows it (followCheckout).
-		return ""
 	}
 	if !strings.HasPrefix(ref, headsPrefix) || isMainRef(ref) || ref == headsPrefix+branch {
 		return adoptedSentence(name)
@@ -263,13 +257,8 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 				continue
 			}
 		case isMainRef(ref) && !p.Operator:
-			if ref == ClaudeMainRef && rc.h.isMerger(ctx, p) {
-				// THE RECORDED MERGER MOVES claude/main, and the hub's pre-receive hook already holds every ref
-				// to a fast-forward, so the merger cannot move it back. See docs/design/merge-flow.md.
-				break
-			}
 			if ref == ClaudeMainRef {
-				d.fail(ref, "only the operator and the merger move "+label+". push your work under another branch name")
+				d.fail(ref, "only the operator and the merge queue move "+label+". push your branch and run atrium merge")
 			} else {
 				d.fail(ref, "only the operator moves "+label+". push your work under another branch name")
 			}
@@ -437,23 +426,4 @@ func (rc *Receiver) removeIfEmpty(d string) bool {
 	}
 	ents, rerr := os.ReadDir(d)
 	return rerr == nil && len(ents) > 0
-}
-
-// isMerger says whether the pusher is the card the hub has recorded as the merger, or its successor on the same room
-// (a card that moved on to another, which `inherits` honours for a branch). No Merger hook, no merger recorded, or
-// a hook that cannot answer, is no merger: the answer to a doubt is the refusal the hub always gave.
-func (h *Hub) isMerger(ctx context.Context, p Pusher) bool {
-	if h.Merger == nil || p.Operator || p.Room == "" || p.Card == "" {
-		return false
-	}
-	room, card, ok := h.Merger(ctx)
-	if !ok || !strings.EqualFold(p.Room, room) {
-		return false
-	}
-	for _, c := range p.Chain {
-		if c == card {
-			return true
-		}
-	}
-	return false
 }

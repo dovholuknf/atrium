@@ -101,8 +101,10 @@ func ResolveOwner(spec, creator string) (kind, owner string, err error) {
 	switch {
 	case role == RoleTester:
 		return "", "", refuse(errTesterOwner)
+	case role == RoleMerger:
+		return "", "", refuse(ErrMergerRetired)
 	case !SingleHolderRole(role):
-		return "", "", refuse(errors.New("an owner is empty (the creating session), human, orchestrator, merger or director"))
+		return "", "", refuse(errors.New("an owner is empty (the creating session), human, orchestrator or director"))
 	}
 	return OwnerRole, role, nil
 }

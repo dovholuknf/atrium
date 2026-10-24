@@ -679,7 +679,7 @@ type LaunchInput struct {
 	// Item names the backlog item the worker works on. See link.WorkTagPrefix.
 	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker works on, by id (like f-new-thing), or new:<title> to file one under your department as you launch. work is named in the backlog, so find the id with atrium_backlog list. a launch with no item is refused"`
 	// Isolated starts the worker as an isolated item. See link.ItemTag.
-	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with isolated: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator, merger or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
+	ItemOwner string `json:"item_owner,omitempty" jsonschema:"with isolated: who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
 	Isolated  bool   `json:"isolated,omitempty" jsonschema:"start the worker ISOLATED: a task whose only routing is to tell whoever wanted it when it is done. its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. leave it out for an ordinary worker, which is unchanged"`
 	// The launch options, as the hub's atrium_launch takes them. See
 	// docs/runtime/launch-options-design.md.

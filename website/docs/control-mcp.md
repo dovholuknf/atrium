@@ -71,6 +71,7 @@ The hub address is `--url`, then `ATRIUM_HUB_MCP`, then `http://127.0.0.1:7778/_
 | `atrium_git_url` | Where to fetch code that is not in your directory: the hub's copy of finished work, or a room's work in progress. |
 | `atrium_ci` | A repository's CI, read by the hub: runs, a run's jobs and steps, a failed job's log, artifacts. |
 | `atrium_git_push` | Push your branch to the hub, the same push `git push hub <branch>` makes, with no shell. Plain branch pushes only. |
+| `atrium_merge` | Land your pushed branch on `claude/main` through the hub's merge queue: merged with the sha, red with the failing tests, a conflict, or refused. |
 | `atrium_git_sync` | Bring a room's clone up to date with `claude/main` now, instead of on the hub's own schedule. |
 | `atrium_git_collect` | Fetch a room's `claude/*` branches to the hub now, so they can be merged. |
 | `atrium_alias` | Read or set a card's alias, the short `@name` that `atrium_say` and `atrium_peers` take. |

@@ -369,14 +369,6 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// The push log is the hub database's git_push table (migration 0008). gitHub.Cards is set when the proxy
 	// exists. A push is refused when there is no log, so the log is set before the handler is.
 	gitHub.PushLog = store
-	// THE MERGER, read from the hub's merge-flow roles on every push to claude/main. See docs/design/merge-flow.md.
-	gitHub.Merger = func(context.Context) (string, string, bool) {
-		hs, err := store.Roles(hubstore.RoleMerger)
-		if err != nil || len(hs) != 1 {
-			return "", "", false
-		}
-		return hs[0].Room, hs[0].Card, true
-	}
 	gitHub.CreateOnPush = func() bool {
 		on, _ := store.GitCreateOnPush()
 		return on

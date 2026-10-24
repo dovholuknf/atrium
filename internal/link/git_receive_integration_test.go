@@ -426,8 +426,8 @@ func TestTheOwnersCardIsAskedThroughTheRelay(t *testing.T) {
 	}
 }
 
-// ONLY THE RECORDED MERGER MOVES claude/main, and only forward. Everyone else, and main for everyone, is refused.
-func TestOnlyTheRecordedMergerMovesClaudeMain(t *testing.T) {
+// ONLY THE OPERATOR AND THE MERGE QUEUE MOVE claude/main: a card is refused, whatever role it once held.
+func TestOnlyTheOperatorMovesClaudeMain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
@@ -439,47 +439,25 @@ func TestOnlyTheRecordedMergerMovesClaudeMain(t *testing.T) {
 	if out, err := gitAs(t, x.work, nil, "push", op, "main:refs/heads/main", "main:refs/heads/claude/main"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
+	before := x.refOn(t, "refs/heads/claude/main")
 	gitRun(t, x.work, "switch", "-q", "-c", "claude/main")
 	first := x.commit(t, "m1.txt", "m1")
 	c1 := []string{"X-Atrium-Card: C1", "X-Atrium-Card-Chain: C1"}
-	c2 := []string{"X-Atrium-Card: C2", "X-Atrium-Card-Chain: C2"}
 
-	// Nobody is the merger: refused, with a sentence that names the merger.
 	out, err := gitAs(t, x.work, c1, "push", x.url, "claude/main:refs/heads/claude/main")
-	if err == nil || !strings.Contains(out, "only the operator and the merger move claude/main") {
-		t.Fatalf("a card moved claude/main with no merger: %v\n%s", err, out)
+	if err == nil || !strings.Contains(out, "only the operator and the merge queue move claude/main") {
+		t.Fatalf("a card moved claude/main: %v\n%s", err, out)
 	}
-	// The hook cannot answer: still nobody.
-	x.g.Merger = func(context.Context) (string, string, bool) { return "", "", false }
-	if _, err := gitAs(t, x.work, c1, "push", x.url, "claude/main:refs/heads/claude/main"); err == nil {
-		t.Fatal("a card moved claude/main with the hook saying no merger")
-	}
-	x.g.Merger = func(context.Context) (string, string, bool) { return "sg4", "C1", true }
-	// Another card on the same room is not the merger.
-	if out, err := gitAs(t, x.work, c2, "push", x.url, "claude/main:refs/heads/claude/main"); err == nil {
-		t.Fatalf("the wrong card moved claude/main:\n%s", out)
-	}
-	if got := x.refOn(t, "refs/heads/claude/main"); got == first {
+	if got := x.refOn(t, "refs/heads/claude/main"); got != before {
 		t.Fatal("claude/main moved")
 	}
-	// The merger moves it forward.
-	if out, err := gitAs(t, x.work, c1, "push", x.url, "claude/main:refs/heads/claude/main"); err != nil {
-		t.Fatalf("the merger was refused: %v\n%s", err, out)
+	if out, err := gitAs(t, x.work, c1, "push", x.url, "claude/main:refs/heads/main"); err == nil || !strings.Contains(out, "only the operator moves main") {
+		t.Fatalf("a card moved main: %v\n%s", err, out)
+	}
+	if out, err := gitAs(t, x.work, nil, "push", op, "claude/main:refs/heads/claude/main"); err != nil {
+		t.Fatalf("the operator was refused: %v\n%s", err, out)
 	}
 	if got := x.refOn(t, "refs/heads/claude/main"); got != first {
 		t.Fatalf("claude/main is %s, want %s", got, first)
-	}
-	// Not main, not even for the merger.
-	if out, err := gitAs(t, x.work, c1, "push", x.url, "claude/main:refs/heads/main"); err == nil || !strings.Contains(out, "only the operator moves main") {
-		t.Fatalf("the merger moved main: %v\n%s", err, out)
-	}
-	// Not backwards.
-	gitRun(t, x.work, "reset", "-q", "--hard", "HEAD~1")
-	x.commit(t, "other.txt", "other")
-	if out, err := gitAs(t, x.work, c1, "push", x.url, "+claude/main:refs/heads/claude/main"); err == nil {
-		t.Fatalf("the merger rewrote claude/main:\n%s", out)
-	}
-	if got := x.refOn(t, "refs/heads/claude/main"); got != first {
-		t.Fatalf("claude/main is %s after a rewrite", got)
 	}
 }

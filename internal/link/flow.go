@@ -228,7 +228,7 @@ func (p *Proxy) flowItem(w http.ResponseWriter, r *http.Request, st *hubstore.St
 }
 
 // flowEpoch opens or closes an epoch. Opening says clint fetched claude/main at sha, which is claude/main's tip when
-// none is given. Closing is the reset: the hub moves claude/main onto the branch the merger replayed on (or onto main
+// none is given. Closing is the reset: the hub moves claude/main onto the branch the orchestrator replayed on (or onto main
 // when nothing is to be replayed), after the checks in gitsync.EpochMove, and records it.
 func (p *Proxy) flowEpoch(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	var in struct {

@@ -101,7 +101,7 @@ func TestResolveItemOwner(t *testing.T) {
 		refused                    bool
 	}{
 		{"", "orchestrator", store.ItemOwnerSession, "orchestrator", false},
-		{"merger", "orchestrator", store.ItemOwnerRole, "merger", false},
+		{"merger", "orchestrator", "", "", true},
 		{"role:director", "orchestrator", store.ItemOwnerRole, "director", false},
 		{"orchestrator", "x", store.ItemOwnerRole, "orchestrator", false},
 		{"human", "orchestrator", store.ItemOwnerHuman, "", false},
@@ -379,8 +379,8 @@ func TestARoleOwnerIsResolvedWhenTheEndIsDelivered(t *testing.T) {
 	d := testDaemon(t)
 	hub := newHubRelay()
 	d.SetRelay(hub)
-	launcher, _, it := itemRunning(t, d, "merger")
-	holder := peerCard(t, d, "merger-card")
+	launcher, _, it := itemRunning(t, d, "director")
+	holder := peerCard(t, d, "director-card")
 	hub.holder = `{"item_id":"` + it.ID + `","holder":{"room":"","card":"` + holder.ID + `"}}`
 	blockWith(t, d, "need the staging key")
 	if n := len(noticesFromAtrium(t, d, holder.ID)); n != 1 {

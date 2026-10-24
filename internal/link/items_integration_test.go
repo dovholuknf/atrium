@@ -158,12 +158,12 @@ func TestCancelGoesToTheRoomForTheOwner(t *testing.T) {
 
 func TestGetAnItemNamesTheCurrentHolderOfARoleOwner(t *testing.T) {
 	x := newItemRig(t)
-	x.push(t, 1, "running", "role", "merger")
+	x.push(t, 1, "running", "role", "director")
 	_, body := x.send("GET", "/_hub/items/it-1", "", loopAddr)
 	if obj(t, body)["holder"] != nil {
 		t.Fatalf("a holder from nowhere: %s", body)
 	}
-	x.st.RoleSet(hubstore.RoleMerger, "sg4", "c7", "clint")
+	x.st.RoleSet(hubstore.RoleDirector, "sg4", "c7", "clint")
 	_, body = x.send("GET", "/_hub/items/it-1", "", loopAddr)
 	if str(obj(t, body), "holder", "room") != "sg4" || str(obj(t, body), "holder", "card") != "c7" {
 		t.Fatalf("holder: %s", body)

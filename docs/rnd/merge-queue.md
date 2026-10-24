@@ -128,22 +128,22 @@ branches is `o-branch-sweep`, not this.
 Never automatic: no count, timer or idle trigger. A **Land now** button on the board and `atrium merge land` do the same
 thing, and both are operator-only (`edge.LocalOperator` on the hub's machine).
 
-1. The queue is paused, so nothing lands on `claude/main` while the batch is cut, and the open request finishes first.
+1. The queue is paused, so nothing lands on `claude/main` while the batch is cut. A land is refused while a request
+   is merging or testing, and while the last land is not on `main` yet.
 2. The batch is every `landed` request since the last land. One commit is made, its tree `claude/main`'s tree, its
-   parent hub `main` (the mirror of `origin/main`), its message one subject line and one line per request
-   (`#12 claude/foo`), authored and signed as the operator with `internal/land` (the noreply address and the signing
-   `land-history.go` already uses).
-3. That commit is pushed to `origin main`, then to the hub's `main` as the operator's push, which it is.
-4. `claude/main` is reset onto it by the epoch move (`EpochMove`), which writes the old tip to `refs/atrium/epochs/<n>`
-   first, so no commit becomes unreachable. Its tree is the same, so nothing is replayed.
-5. The queue resumes. The land is a row of its own (`merge_land`: when, by, the commit, the requests), and each request
-   in it shows `on main` beside its sha.
+   parent hub `main` (the mirror of `origin/main`), its message one subject line (`internal/land` refuses a body),
+   authored as the operator from the operator's global git config and signed when that config signs.
+3. The commit is put on the hub's branch `land/<n>`, and the answer carries the one `git push` that puts it on
+   `origin`'s `main`. The operator runs it. The board shows the pending land with a button that copies it.
+4. `claude/main` is moved onto the commit, and its old tip is kept under `refs/atrium/lands/<n>` first, so no
+   commit becomes unreachable. Its tree is the same, so nothing is replayed. This is not the epoch move:
+   `EpochMove` checks that every commit is on the new tip as itself or as a cherry-pick, and a squash is neither.
+5. The queue resumes. The land is a row of its own (`merge_land`: when, by, the commit, the requests), and each
+   request in it shows `on main` beside its sha once the hub's `main` has the commit.
 
-**This is the one place atrium writes to a forge.** The hub's rule so far is that it only reads a forge. The push in
-step 3 is made with the operator's own git credential, on the operator's machine, only when the operator presses it,
-which is what clint does by hand today. If that rule must hold absolutely, the fallback is that the button and the CLI
-do steps 1, 2 and 4 against a branch `land/<n>` and print the one `git push` for clint to run. The recommendation is
-the push, because a button that leaves a command to type is not "land now".
+**Atrium does not write to a forge.** The push was the recommendation, but the hub's rule is that it only reads a
+forge and no answer came to change it, so this is the fallback: the button and the CLI do steps 1, 2 and 4 and hand
+the operator the push. Making it the push later is step 3 alone.
 
 ## The board
 
@@ -161,7 +161,9 @@ The Terminals tab first, and only what a person can act on:
 The queue becomes the merger. `RoleMerger` stops being a way to move `claude/main`: `isMerger` in
 `receive_rules.go` is removed, so the only movers of `claude/main` are the operator and the hub itself (the queue and
 the epoch move). `RoleSet` of `merger` is refused with "the merge queue is the merger now: atrium merge". The CHECK
-constraint and any existing rows are left alone, since a shipped migration is never edited, and nothing reads them.
+constraint and any existing rows are left alone, since a shipped migration is never edited. Two things read the
+role: an item may no longer be owned by `merger` (asking for it is refused the same way, an item that has it keeps
+it), and `atrium_flow epoch_close` now needs the orchestrator instead.
 `docs/working-here.md` and the worker briefs change from `git push hub HEAD:claude/main` to `atrium merge`.
 
 ## Slices, one commit each
@@ -179,7 +181,8 @@ constraint and any existing rows are left alone, since a shipped migration is ne
 5. **Asking.** `atrium merge` and `atrium_merge`.
 6. **Conflicts.** The slim merger launch, `of`, the head of the queue, the merger's end.
 7. **The board.** The Terminals tab strip and the history dialog.
-8. **Land now.** `merge_land`, the batch commit, the push, the epoch move, the button and `atrium merge land`.
+8. **Land now.** `merge_land`, the batch commit, `land/<n>`, the move of `claude/main`, the button and
+   `atrium merge land`.
 9. **The merger role retired.** `isMerger` out, `RoleSet` refusing it, the docs and briefs.
 
 ## Open points, one recommendation each

@@ -44,7 +44,7 @@ type itemInput struct {
 	Action  string   `json:"action" jsonschema:"list, get, show, unblock, cancel or submit"`
 	Pool    string   `json:"pool,omitempty" jsonschema:"for submit: the pool's name"`
 	Brief   string   `json:"brief,omitempty" jsonschema:"for submit: the task, typed to whichever card takes it"`
-	Owner   string   `json:"owner,omitempty" jsonschema:"for submit: human, orchestrator, merger or director. empty is you"`
+	Owner   string   `json:"owner,omitempty" jsonschema:"for submit: human, orchestrator or director. empty is you"`
 	Room    string   `json:"room,omitempty" jsonschema:"for submit: the room the pool is on. default is yours"`
 	ID      string   `json:"id,omitempty" jsonschema:"the item id, for get, unblock and cancel"`
 	Answer  string   `json:"answer,omitempty" jsonschema:"for unblock: what to type to the worker"`

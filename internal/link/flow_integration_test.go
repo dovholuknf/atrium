@@ -17,11 +17,11 @@ func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
 	if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-x", "dept": "fabric", "title": "do x"}), loopAddr); code != http.StatusCreated {
 		t.Fatalf("file: %d %s", code, body)
 	}
-	code, body := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "merger", "room": "sg4", "card": "c1", "by": "clint"}), loopAddr)
+	code, body := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "orchestrator", "room": "sg4", "card": "c1", "by": "clint"}), loopAddr)
 	if code != 200 || !strings.Contains(body, `"c1"`) {
 		t.Fatalf("role set: %d %s", code, body)
 	}
-	code, body = x.send("GET", "/_hub/flow/roles?role=merger", "", "203.0.113.9:4000")
+	code, body = x.send("GET", "/_hub/flow/roles?role=orchestrator", "", "203.0.113.9:4000")
 	if code != 200 || !strings.Contains(body, `"c1"`) {
 		t.Fatalf("roles: %d %s", code, body)
 	}
@@ -52,7 +52,7 @@ func TestFlowRolesStagesChecksAndDeploys(t *testing.T) {
 
 func TestFlowIsWrittenOnlyFromTheHubsMachine(t *testing.T) {
 	x := newBacklogRig(t)
-	code, _ := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "merger", "room": "sg4", "card": "c1"}), "203.0.113.9:4000")
+	code, _ := x.send("POST", "/_hub/flow/roles", js(map[string]any{"do": "set", "role": "orchestrator", "room": "sg4", "card": "c1"}), "203.0.113.9:4000")
 	if code != http.StatusForbidden {
 		t.Fatalf("got %d", code)
 	}

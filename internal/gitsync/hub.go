@@ -69,9 +69,6 @@ type Hub struct {
 	// A forge branch fetch sets it for that one command, as a PR head fetch does. Nil is none, and then only public
 	// repositories can be read. See storeforge.go.
 	ForgeHelper func(host string) string
-	// Merger is the (room, card) the hub has recorded as the merger, which may move claude/main by fast-forward. Nil, or
-	// ok false, and nobody but the operator does. Read on every push to claude/main. See docs/design/merge-flow.md.
-	Merger func(ctx context.Context) (room, card string, ok bool)
 	// Observed is called after a mirror pass that moved a repository and after every collect, in the caller's goroutine,
 	// so whoever reads what git says (the item lifecycle's landed and pushed) learns within one pass. It must return
 	// quickly and never fail the pass. Nil is nobody.

@@ -92,7 +92,7 @@ func TestResolveOwner(t *testing.T) {
 	}{
 		{"", "orch@sg4", OwnerSession, "orch@sg4", false},
 		{"human", "orch@sg4", OwnerHuman, "", false},
-		{"merger", "orch@sg4", OwnerRole, RoleMerger, false},
+		{"merger", "orch@sg4", "", "", true},
 		{"role:director", "orch@sg4", OwnerRole, RoleDirector, false},
 		{"orchestrator", "x", OwnerRole, RoleOrchestrator, false},
 		{"tester", "orch@sg4", "", "", true},
@@ -117,16 +117,16 @@ func TestResolveOwner(t *testing.T) {
 func TestItemHolderResolvesARoleAtTheTime(t *testing.T) {
 	s := open(t)
 	it := anItem(1, ItemStateBlocked)
-	it.OwnerKind, it.Owner = OwnerRole, RoleMerger
+	it.OwnerKind, it.Owner = OwnerRole, RoleDirector
 	if _, _, ok, _ := s.ItemHolder(it); ok {
-		t.Fatal("nobody holds merger yet")
+		t.Fatal("nobody holds director yet")
 	}
-	s.RoleSet(RoleMerger, "sg4", "c7", "clint")
+	s.RoleSet(RoleDirector, "sg4", "c7", "clint")
 	room, card, ok, err := s.ItemHolder(it)
 	if err != nil || !ok || room != "sg4" || card != "c7" {
 		t.Fatalf("holder: %q %q %v %v", room, card, ok, err)
 	}
-	s.RoleSet(RoleMerger, "sg3", "c8", "clint")
+	s.RoleSet(RoleDirector, "sg3", "c8", "clint")
 	if room, card, _, _ = s.ItemHolder(it); room != "sg3" || card != "c8" {
 		t.Fatalf("the holder changed: %q %q", room, card)
 	}

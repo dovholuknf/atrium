@@ -9,17 +9,17 @@ import (
 
 func TestRoleSetReplacesTheHolderButNotTesters(t *testing.T) {
 	s := open(t)
-	if _, rep, err := s.RoleSet(RoleMerger, "SG4", "c1", "clint"); err != nil || len(rep) != 0 {
+	if _, rep, err := s.RoleSet(RoleOrchestrator, "SG4", "c1", "clint"); err != nil || len(rep) != 0 {
 		t.Fatalf("first: %v %v", rep, err)
 	}
-	h, rep, err := s.RoleSet(RoleMerger, "sg4", "c2", "clint")
+	h, rep, err := s.RoleSet(RoleOrchestrator, "sg4", "c2", "clint")
 	if err != nil || len(rep) != 1 || rep[0].Card != "c1" || h.Card != "c2" || h.Room != "sg4" {
 		t.Fatalf("replace: %+v %+v %v", h, rep, err)
 	}
-	if ok, _ := s.IsHolder(RoleMerger, "sg4", "c1"); ok {
+	if ok, _ := s.IsHolder(RoleOrchestrator, "sg4", "c1"); ok {
 		t.Fatal("the replaced holder still holds it")
 	}
-	if ok, _ := s.IsHolder(RoleMerger, "SG4", "c2"); !ok {
+	if ok, _ := s.IsHolder(RoleOrchestrator, "SG4", "c2"); !ok {
 		t.Fatal("the new holder does not hold it")
 	}
 	s.RoleSet(RoleTester, "sg3", "t1", "orch")
@@ -27,7 +27,7 @@ func TestRoleSetReplacesTheHolderButNotTesters(t *testing.T) {
 	if got, _ := s.Roles(RoleTester); len(got) != 2 {
 		t.Fatalf("testers: %+v", got)
 	}
-	if err := s.RoleClear(RoleMerger, "sg4", "c2"); err != nil {
+	if err := s.RoleClear(RoleOrchestrator, "sg4", "c2"); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.Roles(""); len(got) != 2 {
@@ -40,8 +40,11 @@ func TestRoleSetRefusesWhatIsNotARole(t *testing.T) {
 	if _, _, err := s.RoleSet("boss", "sg4", "c1", ""); !IsRefusal(err) {
 		t.Fatalf("role: %v", err)
 	}
-	if _, _, err := s.RoleSet(RoleMerger, "", "c1", ""); !IsRefusal(err) {
+	if _, _, err := s.RoleSet(RoleOrchestrator, "", "c1", ""); !IsRefusal(err) {
 		t.Fatalf("room: %v", err)
+	}
+	if _, _, err := s.RoleSet(RoleMerger, "sg4", "c1", "clint"); !errors.Is(err, ErrMergerRetired) {
+		t.Fatalf("merger: %v", err)
 	}
 }
 

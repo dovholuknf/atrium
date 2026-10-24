@@ -49,6 +49,8 @@ var (
 	ErrFlowItemNotFound = errors.New("that item is not in the merge flow")
 	// ErrStageBackwards is a report that would move an item back.
 	ErrStageBackwards = errors.New("a stage only moves forward")
+	// ErrMergerRetired is naming a merger, which the merge queue replaced. Rows already there are left alone.
+	ErrMergerRetired = errors.New("the merge queue is the merger now: atrium merge")
 
 	flowShaRe  = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 	flowNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,39}$`)
@@ -87,8 +89,10 @@ type RoleHolder struct {
 func (s *Store) RoleSet(role, room, card, by string) (RoleHolder, []RoleHolder, error) {
 	room = fold(room)
 	switch {
+	case role == RoleMerger:
+		return RoleHolder{}, nil, refuse(ErrMergerRetired)
 	case !ValidRole(role):
-		return RoleHolder{}, nil, refuse(errors.New("a role is orchestrator, merger, tester or director"))
+		return RoleHolder{}, nil, refuse(errors.New("a role is orchestrator, tester or director"))
 	case room == "" || strings.TrimSpace(card) == "":
 		return RoleHolder{}, nil, refuse(errors.New("a role is held by a card, so say its room and its card"))
 	}
