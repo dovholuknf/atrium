@@ -31,3 +31,19 @@ func TestMergeCleanLeavesOneLineOfText(t *testing.T) {
 		}
 	}
 }
+
+func TestRedKnownPassesOnlyAKnownFailure(t *testing.T) {
+	known := "# Known failing\n\n- `TestRealSessionsKeepTheirText` flakes on a busy machine\n"
+	if !RedKnown("--- FAIL: TestRealSessionsKeepTheirText (2s)\nFAIL\n", known) {
+		t.Fatal("a known failure is red")
+	}
+	if RedKnown("--- FAIL: TestRealSessionsKeepTheirText (2s)\n--- FAIL: TestOther (0s)\n", known) {
+		t.Fatal("an unknown failure beside a known one passed")
+	}
+	if RedKnown("FAILED node scripts/x.js\n", known) {
+		t.Fatal("a red with no test named passed")
+	}
+	if !RedRerun("TestX took 31ms, over the 20ms unit budget") || RedRerun("--- FAIL: TestX") {
+		t.Fatal("budget miss")
+	}
+}

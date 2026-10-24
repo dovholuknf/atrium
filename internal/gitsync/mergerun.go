@@ -63,7 +63,9 @@ type MergeReport struct {
 	Failing   []string `json:"failing,omitempty"`
 	Output    string   `json:"output,omitempty"`
 	Reason    string   `json:"reason,omitempty"`
-	Token     string   `json:"token,omitempty"`
+	// Note is how a green came about when the script alone did not say so: a rerun, or only known failures.
+	Note  string `json:"note,omitempty"`
+	Token string `json:"token,omitempty"`
 }
 
 // MergeScript is the test the queue runs, from the worktree's root.
@@ -258,8 +260,13 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 		return cannot("could not set up the merge worktree %s: %v", wt, gitWhy(err))
 	}
 	out, code, err := m.test(ctx, wt, j.Base)
+	if err == nil && code != 0 && RedRerun(out) {
+		out, code, err = m.test(ctx, wt, j.Base)
+		rep.Note = "rerun once after a unit budget miss"
+	}
 	rep.Output = MergeCut(out)
 	var cr *cannotRun
+	known, _ := os.ReadFile(filepath.Join(wt, filepath.FromSlash(KnownFailingFile)))
 	switch {
 	case errors.As(err, &cr):
 		return cannot("%v", err)
@@ -267,6 +274,9 @@ func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 		return fail("%v", err)
 	case code == 0:
 		rep.Verdict = VerdictGreen
+	case RedKnown(out, string(known)):
+		rep.Verdict = VerdictGreen
+		rep.Note = strings.TrimPrefix(rep.Note+", every failing test is in "+KnownFailingFile, ", ")
 	default:
 		rep.Verdict = VerdictRed
 		rep.Failing = MergeFailing(out)

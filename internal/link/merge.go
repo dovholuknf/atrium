@@ -998,7 +998,8 @@ func (p *Proxy) mergeVerdict(ctx context.Context, st *hubstore.Store, room strin
 		}
 		g.Store().RefreshView()
 		p.RecordAudit(room, "merge-land", fmt.Sprintf("#%d %s %s as %s", m.N, m.Repo, m.Branch, shortHex(m.Candidate)))
-		return end(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeLanded, Landed: m.Candidate, Output: rep.Output})
+		return end(hubstore.MergeStep{N: m.N, From: m.State, To: hubstore.MergeLanded, Landed: m.Candidate, Output: rep.Output,
+			Reason: cutReason(gitsync.MergeClean(rep.Note))})
 	case gitsync.VerdictRed:
 		var failing []string
 		for _, f := range rep.Failing {

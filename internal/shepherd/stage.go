@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // Check is one verification, as the packet shows it. The exit code and the last lines are the evidence.
@@ -119,13 +120,8 @@ func (stageStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error) {
 	return finish(PhaseHold, "")
 }
 
-var (
-	failedTest = regexp.MustCompile(`--- FAIL: (\w+)`)
-	budgetMiss = regexp.MustCompile(`(?i)unit.budget|over the 20ms|exceeded the budget`)
-)
-
-// runTests runs test-touched. A 20ms budget miss gets one rerun, recorded as one. A red whose every failing test is in
-// the repo's known-failing list passes, and says so.
+// runTests runs test-touched under the merge queue's red rules: a 20ms budget miss gets one rerun, recorded as one, and
+// a red whose every failing test is in the repo's known-failing list passes, and says so.
 func runTests(ctx context.Context, e *Env, stage string) (Check, error) {
 	run := func() (Result, error) {
 		return e.Runner.Run(ctx, stage, "bash", "scripts/test-touched.sh")
@@ -135,7 +131,7 @@ func runTests(ctx context.Context, e *Env, stage string) (Check, error) {
 		return Check{}, fmt.Errorf("test-touched: %w", err)
 	}
 	c := Check{Name: "test-touched", Code: r.Code, Tail: tail(r.Out(), 12)}
-	if r.Code != 0 && budgetMiss.MatchString(r.Out()) {
+	if r.Code != 0 && gitsync.RedRerun(r.Out()) {
 		r, err = run()
 		if err != nil {
 			return Check{}, fmt.Errorf("test-touched rerun: %w", err)
@@ -143,34 +139,13 @@ func runTests(ctx context.Context, e *Env, stage string) (Check, error) {
 		c = Check{Name: "test-touched", Code: r.Code, Tail: tail(r.Out(), 12), Rerun: true}
 	}
 	if c.Code != 0 {
-		failing := failedTest.FindAllStringSubmatch(r.Out(), -1)
-		if len(failing) > 0 && e.knownFailing(failing) {
+		known, err := e.Files.Read(path.Join(e.Cfg.Repo, gitsync.KnownFailingFile))
+		if err == nil && gitsync.RedKnown(r.Out(), string(known)) {
 			c.Code = 0
-			c.Note = "every failing test is in docs/known-failing-tests.md"
+			c.Note = "every failing test is in " + gitsync.KnownFailingFile
 		}
 	}
 	return c, nil
-}
-
-// knownFailing is whether every failure is named in the repo's data file, not in the prose of a brief.
-func (e *Env) knownFailing(failing [][]string) bool {
-	raw, err := e.Files.Read(path.Join(e.Cfg.Repo, "docs", "known-failing-tests.md"))
-	if err != nil {
-		return false
-	}
-	known := map[string]bool{}
-	for _, l := range strings.Split(string(raw), "\n") {
-		l = strings.TrimSpace(l)
-		if strings.HasPrefix(l, "- `") {
-			known[strings.Trim(strings.SplitN(l[2:], "`", 3)[1], "` ")] = true
-		}
-	}
-	for _, f := range failing {
-		if !known[f[1]] {
-			return false
-		}
-	}
-	return true
 }
 
 // stripBOMs removes a leading EF BB BF from every .md the branch added or changed. A BOM-prefixed changelog entry

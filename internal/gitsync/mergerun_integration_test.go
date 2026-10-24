@@ -24,6 +24,7 @@ func (a asRoom) RoundTrip(r *http.Request) (*http.Response, error) {
 
 const fakeTouched = `#!/bin/bash
 echo "base $2"
+if [ -f known.txt ]; then echo "--- FAIL: TestRealSessionsKeepTheirText (2.00s)"; echo "FAILED go test ./internal/daemon"; exit 1; fi
 if [ -f fail.txt ]; then echo "--- FAIL: TestBroken (0.01s)"; echo "FAILED go test ./internal/x"; exit 1; fi
 echo "test-touched: everything it ran passed"
 `
@@ -119,5 +120,25 @@ func TestMergeFailingCleansAColouredName(t *testing.T) {
 	out := "\x1b[31m--- FAIL: TestC (0.1s)\x1b[0m\r\nFAILED \x1b[1mnode x.js\x1b[0m\r\n"
 	if got := strings.Join(MergeFailing(out), ","); got != "TestC,node x.js" {
 		t.Fatalf("failing: %q", got)
+	}
+}
+
+func TestMergeRunnerPassesARedOfOnlyKnownFailures(t *testing.T) {
+	x, m, _ := mergeRoomRig(t)
+	st := x.h.Store()
+	git(t, x.work, "switch", "-q", "-C", "known", "cm")
+	if err := os.MkdirAll(filepath.Join(x.work, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, x.work, "docs/known-failing-tests.md", "# Known failing\n\n- `TestRealSessionsKeepTheirText` flakes\n")
+	commit(t, x.work, "known.txt", "known")
+	x.must(x.push(operator, hubRepo, "known:refs/heads/claude/known"))
+	r, err := st.MergeCandidate(bg, hubRepo, "claude/known", "", 3, "Merge claude/known (#3)")
+	if err != nil || r.Candidate == "" {
+		t.Fatalf("candidate: %+v %v", r, err)
+	}
+	rep := m.Run(bg, MergeJob{N: 3, Repo: hubRepo, Candidate: r.Candidate, Base: r.Base})
+	if rep.Verdict != VerdictGreen || !strings.Contains(rep.Note, KnownFailingFile) {
+		t.Fatalf("known: %+v", rep)
 	}
 }

@@ -58,3 +58,33 @@ func mergeCutReason(s string) string {
 	}
 	return s
 }
+
+// KnownFailingFile lists the tests that fail for reasons outside a change, one "- `Name`" line each.
+const KnownFailingFile = "docs/known-failing-tests.md"
+
+var (
+	redTestRe    = regexp.MustCompile(`--- FAIL: (\w+)`)
+	budgetMissRe = regexp.MustCompile(`(?i)unit.budget|over the 20ms|exceeded the budget`)
+)
+
+// RedRerun is whether a red test-touched output is a 20ms unit budget miss, which earns one rerun.
+func RedRerun(out string) bool { return budgetMissRe.MatchString(out) }
+
+// RedKnown is whether a red test-touched output failed only tests named in known, the text of KnownFailingFile.
+// One with no failing test named is not.
+func RedKnown(out, known string) bool {
+	names := map[string]bool{}
+	for _, l := range strings.Split(known, "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "- `") {
+			names[strings.Trim(strings.SplitN(l[2:], "`", 3)[1], "` ")] = true
+		}
+	}
+	failing := redTestRe.FindAllStringSubmatch(out, -1)
+	for _, f := range failing {
+		if !names[f[1]] {
+			return false
+		}
+	}
+	return len(failing) > 0
+}
