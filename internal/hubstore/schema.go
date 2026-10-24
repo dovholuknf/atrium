@@ -1105,7 +1105,8 @@ var migrations = []struct {
 				asked_at       TEXT NOT NULL,
 				started_at     TEXT NOT NULL DEFAULT '',
 				tested_at      TEXT NOT NULL DEFAULT '',
-				ended_at       TEXT NOT NULL DEFAULT ''
+				ended_at       TEXT NOT NULL DEFAULT '',
+				run_token      TEXT NOT NULL DEFAULT ''
 			)`,
 			`CREATE INDEX IF NOT EXISTS merge_request_open ON merge_request (repo, state)`,
 			`CREATE INDEX IF NOT EXISTS merge_request_branch ON merge_request (repo, branch)`,

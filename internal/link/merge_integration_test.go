@@ -40,7 +40,18 @@ func newMergeFix(t *testing.T) *mergeFix {
 	t.Cleanup(srv.Close)
 	x.url = srv.URL + "/git/hub/" + boardRepo + ".git"
 	x.push(t, "main:refs/heads/claude/main")
+	x.p.merges.cardID = func(_ context.Context, _, agent string) string { return agent }
 	return x
+}
+
+// own makes card the owner of claude/<name> on sg4, as its first push since a release would.
+func (x *mergeFix) own(t *testing.T, name, card string) {
+	t.Helper()
+	ref := "refs/heads/claude/" + name
+	if err := x.log.Append(context.Background(), gitsync.PushRow{Repo: boardRepo, Ref: ref, Release: true},
+		gitsync.PushRow{Repo: boardRepo, Ref: ref, New: x.refOn(t, ref), Room: "sg4", Card: card}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (x *mergeFix) push(t *testing.T, spec string) {
@@ -57,6 +68,7 @@ func (x *mergeFix) branch(t *testing.T, name, file, body string) string {
 	sha := x.commit(t, file, body)
 	x.push(t, name+":refs/heads/claude/"+name)
 	gitRun(t, x.work, "checkout", "-q", "main")
+	x.own(t, name, "w1")
 	return sha
 }
 
@@ -95,7 +107,8 @@ func (x *mergeFix) testing(t *testing.T, n int64) hubstore.MergeRequest {
 	if err != nil || res.Candidate == "" {
 		t.Fatalf("candidate: %+v %v", res, err)
 	}
-	m, err = x.st.MergeMove(hubstore.MergeStep{N: n, To: hubstore.MergeTesting, Base: res.Base, Candidate: res.Candidate})
+	m, err = x.st.MergeMove(hubstore.MergeStep{N: n, To: hubstore.MergeTesting, Base: res.Base, Candidate: res.Candidate,
+		Token: strings.Repeat("ab", 16)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,6 +123,12 @@ func TestMergeQueueAsksCancelsAndRefuses(t *testing.T) {
 	x.branch(t, "foo", "foo.txt", "foo")
 	if code, _ := x.ask(t, "claude/foo", "@sg4"); code != http.StatusBadRequest {
 		t.Fatalf("no card: %d", code)
+	}
+	if code, _ := x.ask(t, "claude/foo", "w2@sg4"); code != http.StatusForbidden {
+		t.Fatalf("another card asked for w1's branch: %d", code)
+	}
+	if code, _ := x.ask(t, "claude/foo", "w1@other"); code != http.StatusForbidden {
+		t.Fatalf("the same name on another room asked for it: %d", code)
 	}
 	code, m := x.ask(t, "claude/foo", "w1@SG4")
 	if code != http.StatusCreated || m.State != hubstore.MergeQueued || m.Requester != "w1" || m.RequesterRoom != "sg4" {
@@ -151,7 +170,7 @@ func TestMergeQueueLandsAGreenRefusesAWrongRoomAndKeepsARed(t *testing.T) {
 	_, m := x.ask(t, "claude/foo", "w1@sg4")
 	m = x.testing(t, m.N)
 	report := func(room, verdict string, extra map[string]any) (int, string) {
-		body := map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": verdict, "room": room}
+		body := map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": verdict, "room": room, "token": m.Token}
 		for k, v := range extra {
 			body[k] = v
 		}
@@ -159,6 +178,12 @@ func TestMergeQueueLandsAGreenRefusesAWrongRoomAndKeepsARed(t *testing.T) {
 	}
 	if code, _ := report("other", "green", nil); code != http.StatusForbidden {
 		t.Fatalf("another room's verdict: %d", code)
+	}
+	if code, _ := report("sg4", "green", map[string]any{"token": ""}); code != http.StatusForbidden {
+		t.Fatalf("a verdict with no token: %d", code)
+	}
+	if code, _ := report("sg4", "green", map[string]any{"by": "w1@sg4"}); code != http.StatusForbidden {
+		t.Fatalf("a card's verdict: %d", code)
 	}
 	code, body := report("sg4", "green", map[string]any{"output": "ok\n"})
 	if code != 200 || !strings.Contains(body, `"landed"`) {
@@ -209,7 +234,7 @@ func TestMergeQueueConflictAndAMovedMainAreNotLanded(t *testing.T) {
 	m = x.testing(t, m.N)
 	x.commit(t, "late.txt", "an operator push")
 	x.push(t, "main:refs/heads/claude/main")
-	body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "green", "room": "sg4"})
+	body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "green", "room": "sg4", "token": m.Token})
 	if code, b := x.send("POST", "/_hub/merge/report", body); code != 200 {
 		t.Fatalf("moved main: %d %s", code, b)
 	}
@@ -266,6 +291,7 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 	_, m := x.ask(t, "claude/baz", "w1@sg4")
 	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
 	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, To: hubstore.MergeConflict, Reason: "conflicts in baz.txt"}))
+	must(x.st.MergeSetMerger(m.N, "m1@sg4"))
 
 	brief := mergerBrief(m, gitsync.MergeResult{Conflicts: []string{"baz.txt"}})
 	nb := MergerBranch(m.N)
@@ -274,6 +300,10 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 	}
 
 	sha := x.branch(t, "merge-"+strconv.FormatInt(m.N, 10), "baz.txt", "merged")
+	if code, b := x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": nb, "by": "w1@sg4", "of": m.N})); code != 403 {
+		t.Fatalf("of from a card that is not the merger: %d %s", code, b)
+	}
+	x.own(t, "merge-"+strconv.FormatInt(m.N, 10), "m1")
 	if code, b := x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": "claude/baz", "by": "m1@sg4", "of": m.N})); code != 400 {
 		t.Fatalf("of from the wrong branch: %d %s", code, b)
 	}
@@ -299,7 +329,7 @@ func TestMergeLandCutsOneCommitAndWaitsForItOnMain(t *testing.T) {
 		x.branch(t, name, name+".txt", name)
 		_, m := x.ask(t, "claude/"+name, "w1@sg4")
 		m = x.testing(t, m.N)
-		body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "green", "room": "sg4"})
+		body := js(map[string]any{"n": m.N, "repo": m.Repo, "candidate": m.Candidate, "verdict": "green", "room": "sg4", "token": m.Token})
 		if code, b := x.send("POST", "/_hub/merge/report", body); code != 200 {
 			t.Fatalf("green %s: %d %s", name, code, b)
 		}

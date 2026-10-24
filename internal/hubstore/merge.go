@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -45,6 +46,8 @@ var (
 	ErrMergeNotFound = errors.New("the merge queue has no such request")
 	// ErrMergeMove is a move the state table does not have.
 	ErrMergeMove = errors.New("a merge request cannot move that way")
+
+	mergeTokenRe = regexp.MustCompile(`^[0-9a-f]{32,64}$`)
 )
 
 var mergeMoves = map[string][]string{
@@ -96,6 +99,8 @@ type MergeRequest struct {
 	StartedAt     string   `json:"started_at,omitempty"`
 	TestedAt      string   `json:"tested_at,omitempty"`
 	EndedAt       string   `json:"ended_at,omitempty"`
+	// Token is the run's capability, which the merge room's verdict has to carry. Never shown.
+	Token string `json:"-"`
 }
 
 // MergeAsk is a request to merge Branch at SHA onto the integration branch of Repo. Continues is the request a
@@ -132,7 +137,7 @@ func (a MergeAsk) check() string {
 
 const mergeCols = `n, repo, branch, sha, requester, requester_room, launcher, launcher_room, state, head, continues,
 	retries, base, candidate, landed, room, merger, reason, failing, output, land_n, asked_at, started_at, tested_at,
-	ended_at`
+	ended_at, run_token`
 
 func scanMerge(sc rowScanner) (MergeRequest, error) {
 	var m MergeRequest
@@ -140,7 +145,7 @@ func scanMerge(sc rowScanner) (MergeRequest, error) {
 	var failing string
 	err := sc.Scan(&m.N, &m.Repo, &m.Branch, &m.SHA, &m.Requester, &m.RequesterRoom, &m.Launcher, &m.LauncherRoom,
 		&m.State, &head, &m.Continues, &m.Retries, &m.Base, &m.Candidate, &m.Landed, &m.Room, &m.Merger, &m.Reason,
-		&failing, &m.Output, &m.LandN, &m.AskedAt, &m.StartedAt, &m.TestedAt, &m.EndedAt)
+		&failing, &m.Output, &m.LandN, &m.AskedAt, &m.StartedAt, &m.TestedAt, &m.EndedAt, &m.Token)
 	m.Head = head != 0
 	if failing != "" {
 		m.Failing = strings.Split(failing, "\n")
@@ -338,6 +343,7 @@ type MergeStep struct {
 	Base, Candidate, Landed, Room, Merger, Reason string
 	Failing                                       []string
 	Output                                        string
+	Token                                         string
 }
 
 func (m MergeStep) check() string {
@@ -348,6 +354,8 @@ func (m MergeStep) check() string {
 		return "a sha is 7 to 64 lower case hex digits"
 	case len(m.Failing) > MergeFailingMax:
 		return fmt.Sprintf("name at most %d failing tests", MergeFailingMax)
+	case m.Token != "" && !mergeTokenRe.MatchString(m.Token):
+		return "a run token is 32 to 64 lower case hex digits"
 	}
 	if why := CRText("reason", m.Reason, MergeReasonMax, true); why != "" {
 		return why
@@ -408,7 +416,7 @@ func (s *Store) MergeMove(m MergeStep) (MergeRequest, error) {
 		sets, args := []string{"state = ?"}, []any{m.To}
 		set := func(col string, v any) { sets, args = append(sets, col+" = ?"), append(args, v) }
 		for col, v := range map[string]string{"base": m.Base, "candidate": m.Candidate, "landed": m.Landed,
-			"room": m.Room, "merger": m.Merger, "reason": m.Reason} {
+			"room": m.Room, "merger": m.Merger, "reason": m.Reason, "run_token": m.Token} {
 			if v != "" {
 				set(col, v)
 			}
@@ -426,6 +434,7 @@ func (s *Store) MergeMove(m MergeStep) (MergeRequest, error) {
 			set("retries", cur.Retries+1)
 			set("candidate", "")
 			set("started_at", "")
+			set("run_token", "")
 		}
 		if cur.State == MergeTesting && m.To != MergeRefused {
 			set("tested_at", at)

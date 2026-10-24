@@ -19,6 +19,9 @@ import (
 // MergeRefPrefix is where a request's candidate is kept until the request ends.
 const MergeRefPrefix = "refs/atrium/merge/"
 
+// MinSHAPrefix is the shortest sha prefix the queue takes for a commit.
+const MinSHAPrefix = 7
+
 // MergeGit is the oldest git with `merge-tree --write-tree`.
 const MergeGit = "2.38"
 
@@ -94,7 +97,7 @@ func (s *Store) MergeCandidate(ctx context.Context, name, branch, sha string, n 
 	if !ok {
 		return r, refuse("the hub has no branch %s. push it first: git push hub %s", branch, branch)
 	}
-	if sha != "" && !strings.HasPrefix(tip, strings.ToLower(sha)) {
+	if sha != "" && (len(sha) < MinSHAPrefix || !strings.HasPrefix(tip, strings.ToLower(sha))) {
 		return r, refuse("the hub's %s is at %s, not the %s asked to merge. push again, then ask again", branch, short(tip), short(sha))
 	}
 	base, ok, err := s.tipOf(ctx, dir, IntegrationBranch)
@@ -208,6 +211,9 @@ func (s *Store) MergeDrop(ctx context.Context, name string, n int64) error {
 func (s *Store) DeleteLanded(ctx context.Context, name, branch, sha string) (bool, error) {
 	if why := CheckPushBranch(branch); why != "" || branch == IntegrationBranch || branch == "main" {
 		return false, refuse("the queue deletes a landed claude/* branch and nothing else")
+	}
+	if len(sha) < MinSHAPrefix {
+		return false, refuse("a landed branch is named with its sha")
 	}
 	ref, err := ParseName(name)
 	if err != nil {

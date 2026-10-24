@@ -38,15 +38,27 @@ func hubAskPath(p string) bool {
 	if base == hubPublishPath || base == hubSubsPath {
 		return true
 	}
-	if base == "/_hub/merge/room" || base == "/_hub/merge/land" {
-		return false
+	if base == "/_hub/merge" || strings.HasPrefix(base, "/_hub/merge/") {
+		return mergeAskPath(strings.TrimPrefix(base, "/_hub/merge"))
 	}
-	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items", "/_hub/merge"} {
+	for _, root := range []string{"/_hub/backlog", "/_hub/reports", "/_hub/items"} {
 		if base == root || strings.HasPrefix(base, root+"/") {
 			return true
 		}
 	}
 	return false
+}
+
+// mergeAskPath is whether a room may ask the merge route under /_hub/merge: the queue, the verdict, one request and
+// its cancel. Anything else there is the operator's.
+func mergeAskPath(rest string) bool {
+	switch rest {
+	case "", "/report":
+		return true
+	}
+	n, _ := strings.CutSuffix(strings.TrimPrefix(rest, "/"), "/cancel")
+	_, ok := mergeN(n)
+	return ok
 }
 
 // hubAsk answers one `hub` relay from the room `from`.

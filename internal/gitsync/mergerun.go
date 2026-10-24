@@ -39,6 +39,8 @@ type MergeJob struct {
 	Repo      string `json:"repo"`
 	Candidate string `json:"candidate"`
 	Base      string `json:"base"`
+	// Token is the run's capability, handed back with the verdict so only this run's verdict is heard.
+	Token string `json:"token"`
 }
 
 // The verdicts of a run.
@@ -57,6 +59,7 @@ type MergeReport struct {
 	Failing   []string `json:"failing,omitempty"`
 	Output    string   `json:"output,omitempty"`
 	Reason    string   `json:"reason,omitempty"`
+	Token     string   `json:"token,omitempty"`
 }
 
 // MergeScript is the test the queue runs, from the worktree's root.
@@ -185,7 +188,7 @@ func (m *MergeRunner) report(rep MergeReport) {
 // Run tests one candidate and answers the verdict. It never panics a caller and never answers without a verdict.
 func (m *MergeRunner) Run(ctx context.Context, j MergeJob) MergeReport {
 	m.runs.Add(1)
-	rep := MergeReport{N: j.N, Repo: j.Repo, Candidate: j.Candidate}
+	rep := MergeReport{N: j.N, Repo: j.Repo, Candidate: j.Candidate, Token: j.Token}
 	fail := func(format string, a ...any) MergeReport {
 		rep.Verdict, rep.Reason = VerdictError, fmt.Sprintf(format, a...)
 		return rep

@@ -3,6 +3,9 @@ package link
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,6 +58,8 @@ type mergeQueue struct {
 	held map[string]string
 	// sign is the land's identity and signer, operatorSign when nil.
 	sign func() (land.Identity, land.Signer, error)
+	// cardID is the id of the card that answers to agent on room, "" when none does. mergeCardOf when nil.
+	cardID func(ctx context.Context, room, agent string) string
 }
 
 func (q *mergeQueue) hold(repo, why string) {
@@ -227,7 +232,7 @@ func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubsto
 	sha := strings.ToLower(strings.TrimSpace(in.SHA))
 	if sha == "" {
 		sha = tip
-	} else if !strings.HasPrefix(tip, sha) {
+	} else if len(sha) < gitsync.MinSHAPrefix || !strings.HasPrefix(tip, sha) {
 		crFail(w, http.StatusBadRequest, fmt.Sprintf("the hub's %s is at %s, not %s. push again, then ask again", in.Branch, shortHex(tip), shortHex(sha)))
 		return
 	}
@@ -239,6 +244,16 @@ func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubsto
 			return
 		case err != nil || of.State != hubstore.MergeConflict || in.Branch != MergerBranch(in.Of):
 			crFail(w, http.StatusBadRequest, fmt.Sprintf("of names a request in conflict, asked for from its merger's branch %s", MergerBranch(in.Of)))
+			return
+		}
+		if agent != "operator" && !p.mergeIsMerger(r.Context(), of, agent, room) {
+			crFail(w, http.StatusForbidden, fmt.Sprintf("only request %d's merger asks with of %d", of.N, of.N))
+			return
+		}
+	}
+	if agent != "operator" {
+		if why := p.mergeOwns(r.Context(), g, in.Repo, in.Branch, agent, room); why != "" {
+			crFail(w, http.StatusForbidden, why)
 			return
 		}
 	}
@@ -260,6 +275,58 @@ func (p *Proxy) mergeAskRoute(w http.ResponseWriter, r *http.Request, st *hubsto
 		p.mergeKick()
 	}
 	crJSON(w, code, map[string]any{"request": m, "existing": existing})
+}
+
+func (p *Proxy) mergeCardID(ctx context.Context, room, agent string) string {
+	if p.merges.cardID != nil {
+		return p.merges.cardID(ctx, room, agent)
+	}
+	if c := p.mergeCardOf(ctx, room, agent); c != nil {
+		return c.ID
+	}
+	return ""
+}
+
+// mergeOwns says why the card agent on room may not ask for branch, or "". The owner is the push log's: the first
+// card to push the branch since it was last released, as the push path decides it.
+func (p *Proxy) mergeOwns(ctx context.Context, g *gitsync.Hub, repo, branch, agent, room string) string {
+	if g.PushLog == nil {
+		return "the hub keeps no push log, so it cannot tell whose " + branch + " it is"
+	}
+	oroom, ocard, ok, err := g.PushLog.Owner(ctx, repo, "refs/heads/"+branch)
+	switch {
+	case err != nil:
+		return "the hub could not read who owns " + branch + ": " + err.Error()
+	case !ok:
+		return "nobody owns " + branch + ". push it from your own card, then ask"
+	case ocard == "":
+		return branch + " is the operator's. the operator asks for it"
+	case !strings.EqualFold(oroom, room):
+		return fmt.Sprintf("%s is a card's on %s, not yours", branch, oroom)
+	}
+	if id := p.mergeCardID(ctx, room, agent); id == "" || id != ocard {
+		return fmt.Sprintf("%s is card %s's, and %s@%s is not that card", branch, ocard, agent, room)
+	}
+	return ""
+}
+
+// mergeIsMerger is whether agent on room is the merger recorded for the conflict of.
+func (p *Proxy) mergeIsMerger(ctx context.Context, of hubstore.MergeRequest, agent, room string) bool {
+	handle, mroom, _ := strings.Cut(of.Merger, "@")
+	if handle == "" || !strings.EqualFold(mroom, room) {
+		return false
+	}
+	want := p.mergeCardID(ctx, mroom, handle)
+	return want != "" && want == p.mergeCardID(ctx, room, agent)
+}
+
+// mergeToken is a fresh run's capability.
+func mergeToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 // mergeWho splits `by` into the card and its room. The room in `by` wins, since the relay writes both from the link.
@@ -541,13 +608,13 @@ func (p *Proxy) mergeStart(ctx context.Context, st *hubstore.Store, gs *gitsync.
 		p.mergeConflict(ctx, st, m, res)
 	default:
 		m, err = st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeMerging, To: hubstore.MergeTesting, Base: res.Base,
-			Candidate: res.Candidate, Room: room})
+			Candidate: res.Candidate, Room: room, Token: mergeToken()})
 		if err != nil {
 			log.Printf("[hub] merge %d: could not record the candidate: %v", m.N, err)
 			return
 		}
 		p.backlogEvent("merge", map[string]string{"n": strconv.FormatInt(m.N, 10), "state": m.State})
-		job := gitsync.MergeJob{N: m.N, Repo: m.Repo, Candidate: res.Candidate, Base: res.Base}
+		job := gitsync.MergeJob{N: m.N, Repo: m.Repo, Candidate: res.Candidate, Base: res.Base, Token: m.Token}
 		if err := p.mergeRoomCall(ctx, room, http.MethodPost, "/v1/git/merge/run", job, nil); err != nil {
 			p.mergeAgain(ctx, st, m, "the merge room "+room+" did not take the run: "+err.Error())
 		}
@@ -722,6 +789,10 @@ func (p *Proxy) mergeReport(w http.ResponseWriter, r *http.Request, st *hubstore
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
 		return
 	}
+	if by := strings.TrimSpace(in.By); by != "" && !strings.HasPrefix(by, "@") {
+		crFail(w, http.StatusForbidden, "a verdict comes from the merge room itself, never from a card")
+		return
+	}
 	code, m, err := p.mergeVerdict(r.Context(), st, strings.ToLower(strings.TrimSpace(in.Room)), in.MergeReport)
 	if err != nil {
 		crFail(w, code, err.Error())
@@ -739,6 +810,8 @@ func (p *Proxy) mergeVerdict(ctx context.Context, st *hubstore.Store, room strin
 		return http.StatusNotFound, m, err
 	case err != nil:
 		return http.StatusServiceUnavailable, m, err
+	case m.Token == "" || subtle.ConstantTimeCompare([]byte(m.Token), []byte(rep.Token)) != 1:
+		return http.StatusForbidden, m, fmt.Errorf("that verdict does not carry request %d's run token", m.N)
 	case m.State != hubstore.MergeTesting || m.Candidate != rep.Candidate:
 		return http.StatusConflict, m, fmt.Errorf("request %d is %s and not testing %s", m.N, m.State, shortHex(rep.Candidate))
 	case !strings.EqualFold(m.Room, room):
