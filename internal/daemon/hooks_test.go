@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 	"github.com/dovholuknf/atrium/internal/store"
-	"github.com/dovholuknf/atrium/internal/testguard"
 )
 
 // testTune is what every daemon a test starts runs with instead of production's values: no agent is started for

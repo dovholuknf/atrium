@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/testguard"
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 )
 
 // served is a bare repository holding claude/main and a hidden room ref, behind a Backend.

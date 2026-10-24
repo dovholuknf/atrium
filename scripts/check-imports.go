@@ -44,13 +44,13 @@ var table = []row{
 	{0, "internal/land", nil},
 	{0, "internal/linkfetch", nil},
 	{0, "internal/mcprule", nil},
-	{0, "internal/nowindow", nil},
+	{0, "internal/base/nowindow", nil},
 	{0, "internal/prreview/render", nil},
 	{0, "internal/remoteaccess", nil},
 	{0, "internal/requirements", nil},
 	{0, "internal/rules", nil},
 	{0, "internal/resources", nil},
-	{0, "internal/rolebin", nil},
+	{0, "internal/base/rolebin", nil},
 	{0, "internal/safepath", nil},
 	{0, "internal/scratch", nil},
 	{0, "internal/shellpick", nil},
@@ -58,26 +58,26 @@ var table = []row{
 	{0, "internal/sshkey", nil},
 	{0, "internal/sshtarget", nil},
 	{0, "internal/testdiag", nil},
-	{0, "internal/testguard", nil},
+	{0, "internal/base/testguard", nil},
 	{0, "internal/testwait", nil},
 	{0, "internal/tokenprice", nil},
 	{0, "internal/webasset", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
-	{1, "internal/cardproc", []string{"internal/nowindow"}},
-	{1, "internal/claudeconf", []string{"internal/mcprule", "internal/rolebin"}},
-	{1, "internal/detach", []string{"internal/nowindow"}},
-	{1, "internal/guard", []string{"internal/nowindow"}},
-	{1, "internal/ptyhost", []string{"internal/detach", "internal/rolebin"}},
+	{1, "internal/cardproc", []string{"internal/base/nowindow"}},
+	{1, "internal/claudeconf", []string{"internal/mcprule", "internal/base/rolebin"}},
+	{1, "internal/base/detach", []string{"internal/base/nowindow"}},
+	{1, "internal/guard", []string{"internal/base/nowindow"}},
+	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/rolebin"}},
 	{1, "internal/sshwizard", []string{
-		"internal/nowindow", "internal/remoteaccess", "internal/sshcfg", "internal/sshkey",
+		"internal/base/nowindow", "internal/remoteaccess", "internal/sshcfg", "internal/sshkey",
 	}},
 	{1, "internal/store", []string{"internal/dblock", "internal/mcprule", "internal/rules"}},
-	{1, "internal/wtfree", []string{"internal/nowindow"}},
+	{1, "internal/wtfree", []string{"internal/base/nowindow"}},
 	{1, "tools/codeid", []string{"internal/codeid"}},
-	{2, "internal/cardreview", []string{"internal/nowindow", "internal/safepath", "internal/store"}},
+	{2, "internal/cardreview", []string{"internal/base/nowindow", "internal/safepath", "internal/store"}},
 	{2, "internal/gitsync", []string{
-		"internal/claudeconf", "internal/nowindow", "internal/safepath", "internal/testguard",
+		"internal/claudeconf", "internal/base/nowindow", "internal/safepath", "internal/base/testguard",
 	}},
 	{2, "internal/roomstats", []string{"internal/store", "internal/zitictx"}},
 	{2, "internal/runnerprofile", []string{"internal/store"}},
@@ -87,38 +87,38 @@ var table = []row{
 		"internal/rules", "internal/sshkey", "internal/tokenprice",
 	}},
 	{3, "internal/runnersetup", []string{"internal/claudeconf", "internal/runnerprofile", "internal/store"}},
-	{3, "internal/shepherd", []string{"internal/gitsync", "internal/nowindow"}},
+	{3, "internal/shepherd", []string{"internal/gitsync", "internal/base/nowindow"}},
 	{3, "internal/worktrees", []string{"internal/gitsync"}},
 	{4, "internal/api", []string{
 		"internal/cardcolors", "internal/cardproc", "internal/cardreview", "internal/cardroot", "internal/cardurl",
 		"internal/claudeconf", "internal/edge", "internal/forge", "internal/gitsync", "internal/inputlag",
-		"internal/mcprule", "internal/nowindow", "internal/prreview/render", "internal/runnersetup",
+		"internal/mcprule", "internal/base/nowindow", "internal/prreview/render", "internal/runnersetup",
 		"internal/rules", "internal/safepath", "internal/scratch", "internal/shellpick", "internal/store",
-		"internal/testguard", "internal/webasset", "internal/wtfree",
+		"internal/base/testguard", "internal/webasset", "internal/wtfree",
 	}},
 	{4, "internal/link", []string{
 		"internal/address", "internal/cardcolors", "internal/cardurl", "internal/deployready", "internal/docshare",
 		"internal/edge", "internal/forge", "internal/gitsync", "internal/hubstore", "internal/inputlag", "internal/itemgate", "internal/land",
-		"internal/linkfetch", "internal/nowindow", "internal/remoteaccess", "internal/resources", "internal/rules",
-		"internal/testguard", "internal/tokenprice", "internal/webasset", "internal/zitictx", "scripts/recognisers",
+		"internal/linkfetch", "internal/base/nowindow", "internal/remoteaccess", "internal/resources", "internal/rules",
+		"internal/base/testguard", "internal/tokenprice", "internal/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
 	{5, "internal/daemon", []string{
 		"internal/address", "internal/api", "internal/cardproc", "internal/cardroot", "internal/claudeconf",
 		"internal/docshare",
 		"internal/edge", "internal/forge", "internal/gitsync", "internal/inputlag", "internal/linkfetch", "internal/mcprule",
-		"internal/nowindow", "internal/prreview/render", "internal/ptyhost", "internal/roomstats",
+		"internal/base/nowindow", "internal/prreview/render", "internal/ptyhost", "internal/roomstats",
 		"internal/rules", "internal/runnerprofile", "internal/runnersetup", "internal/safepath",
-		"internal/scratch", "internal/shellpick", "internal/store", "internal/testguard", "internal/worktrees", "internal/wtfree",
+		"internal/scratch", "internal/shellpick", "internal/store", "internal/base/testguard", "internal/worktrees", "internal/wtfree",
 		"internal/zitictx",
 	}},
 	{6, "internal/cli", []string{
 		"internal/address", "internal/api", "internal/cardcolors", "internal/cardroot", "internal/claudeconf",
-		"internal/daemon", "internal/deployready", "internal/detach", "internal/docshare", "internal/edge", "internal/forge", "internal/gitsync",
-		"internal/guard", "internal/hubstore", "internal/link", "internal/nowindow", "internal/ptyhost",
+		"internal/daemon", "internal/deployready", "internal/base/detach", "internal/docshare", "internal/edge", "internal/forge", "internal/gitsync",
+		"internal/guard", "internal/hubstore", "internal/link", "internal/base/nowindow", "internal/ptyhost",
 		"internal/remoteaccess", "internal/requirements", "internal/resources", "internal/roomspec",
 		"internal/roomstats", "internal/shepherd", "internal/sshcfg", "internal/sshtarget", "internal/sshwizard",
-		"internal/store", "internal/testguard", "internal/zitictx",
+		"internal/store", "internal/base/testguard", "internal/zitictx",
 	}},
 	{7, "cmd/atrium", []string{"internal/cli"}},
 }
@@ -147,10 +147,16 @@ func main() {
 		return -1
 	}
 
+	mods, err := exec.Command("go", "list", "-m", "-f", "{{.Path}}/...").Output()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "go list -m:", err)
+		os.Exit(2)
+	}
 	var out []byte
 	for _, goos := range []string{"linux", "darwin", "windows"} {
 		cmd := exec.Command("go", "list", "-f",
-			`{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}|{{join .XTestImports " "}}`, "./...")
+			`{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}|{{join .XTestImports " "}}`)
+		cmd.Args = append(cmd.Args, strings.Fields(string(mods))...)
 		cmd.Env = append(os.Environ(), "GOOS="+goos)
 		o, err := cmd.Output()
 		if err != nil {

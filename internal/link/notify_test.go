@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/testguard"
+	"github.com/dovholuknf/atrium/internal/base/testguard"
 )
 
 // TestMain doubles as the notify command: the test binary run with

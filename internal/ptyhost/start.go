@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/detach"
-	"github.com/dovholuknf/atrium/internal/rolebin"
+	"github.com/dovholuknf/atrium/internal/base/detach"
+	"github.com/dovholuknf/atrium/internal/base/rolebin"
 )
 
 // StartOptions for Start. The zero value is what the daemon wants.

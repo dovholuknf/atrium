@@ -2,7 +2,7 @@ package guard
 
 import (
 	"context"
-	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"os"
 	"os/exec"
 	"path/filepath"

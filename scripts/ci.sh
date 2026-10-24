@@ -553,6 +553,8 @@ if step go-build "go build"; then
   check "test waits" go run scripts/check-test-waits.go
   # No package imports one the layer table in the file does not allow. See docs/design/go-modules.md.
   check "import layers" go run scripts/check-imports.go
+  # Each module builds alone, and the workspace's pins have not drifted. See scripts/check-modules.sh.
+  check "go modules" bash scripts/check-modules.sh
   check "flaky suite names" node scripts/flaky-suite.js check
 fi
 

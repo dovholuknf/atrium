@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 // readClipboard is the text on the system clipboard, read with the platform's own tool: PowerShell on Windows,

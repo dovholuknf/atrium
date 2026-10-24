@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 func hasNoWindow(cmd *exec.Cmd) bool {

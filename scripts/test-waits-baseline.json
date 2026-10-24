@@ -77,7 +77,7 @@
   "internal/daemon/telemetry_integration_test.go": 1,
   "internal/daemon/usageflush_integration_test.go": 3,
   "internal/daemon/worktreegone_integration_test.go": 8,
-  "internal/detach/outsidejob_windows_integration_test.go": 1,
+  "internal/base/detach/outsidejob_windows_integration_test.go": 1,
   "internal/gitsync/forward_integration_test.go": 1,
   "internal/gitsync/hub_integration_test.go": 2,
   "internal/gitsync/pass_integration_test.go": 4,

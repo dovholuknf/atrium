@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	detachpkg "github.com/dovholuknf/atrium/internal/detach"
+	detachpkg "github.com/dovholuknf/atrium/internal/base/detach"
 	"log"
 	"net"
 	"net/http"

@@ -1,6 +1,6 @@
 package daemon
 
-import "github.com/dovholuknf/atrium/internal/nowindow"
+import "github.com/dovholuknf/atrium/internal/base/nowindow"
 
 // hideWindow stops a spawned command flashing a console window on screen.
 // See internal/nowindow.
