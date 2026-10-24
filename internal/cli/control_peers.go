@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -509,7 +510,7 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 	if olderRoom(err) {
 		// A ROOM OLDER THAN THIS BINARY. A bare name takes the old way, now
 		// with the sender. Another room cannot be reached from it at all.
-		name, room, perr := daemon.SplitAddress(in.To)
+		name, room, perr := address.SplitAddress(in.To)
 		if perr != nil {
 			return nil, out, perr
 		}
@@ -1119,7 +1120,7 @@ const taskNote = "status and events only. atrium does not record what a session 
 // isAcross is whether an address names a room at all, `name@room` or
 // `room~id`. The room decides whether that room is itself.
 func isAcross(who string) bool {
-	_, room, err := daemon.SplitAddress(who)
+	_, room, err := address.SplitAddress(who)
 	return err == nil && room != ""
 }
 
@@ -1131,7 +1132,7 @@ func isAcross(who string) bool {
 // this room, and any other it cannot reach.
 func localAfterAll(who, local string, err error) (string, error) {
 	if olderRoom(err) {
-		name, room, perr := daemon.SplitAddress(who)
+		name, room, perr := address.SplitAddress(who)
 		if perr != nil {
 			return "", perr
 		}

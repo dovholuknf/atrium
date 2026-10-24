@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/itemgate"
@@ -514,7 +515,7 @@ func (p *Proxy) tell(ctx context.Context, who, text string) (retry bool) {
 	if c == nil {
 		return true
 	}
-	name, room, err := SplitAddress(who)
+	name, room, err := address.SplitAddress(who)
 	if err != nil {
 		log.Printf("[hub] cannot tell %q that a gate cleared: %v", who, err)
 		return false

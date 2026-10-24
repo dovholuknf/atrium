@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/address"
 )
 
 // A REQUEST THAT NAMES A CARD GOES TO THE ROOM THAT HOLDS IT. Backlog-2 item 63.
@@ -77,7 +79,7 @@ func (p *Proxy) placeCard(w http.ResponseWriter, r *http.Request) (*http.Request
 		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room)), true
 	}
 	rooms := p.hub.Rooms()
-	if name, target, err := SplitAddress(id); err == nil && target != "" {
+	if name, target, err := address.SplitAddress(id); err == nil && target != "" {
 		return p.placeByName(w, r, id, name, target, rooms)
 	}
 	if len(rooms) < 2 {

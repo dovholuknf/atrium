@@ -19,6 +19,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/docshare"
 )
 
 // Hub documents: a place for what agents and the operator write. The design is
@@ -522,7 +524,7 @@ func (s *Store) DocAdd(in DocInput) (DocResult, error) {
 		return res, &DocError{Kind: DocTooBig, Msg: fmt.Sprintf(
 			"that is %d bytes, over the %d byte cap for %s", len(in.Data), limit, what)}
 	}
-	if rule := SecretContent(in.Data); rule != "" && !in.Override {
+	if rule := docshare.SecretContent(in.Data); rule != "" && !in.Override {
 		return res, &DocError{Kind: DocSecret, Rule: rule, Msg: "that looks like it holds a secret (" +
 			rule + "). a document is readable by everyone past the board's password, so it was not stored. " +
 			"this check is a speed bump and not a guarantee"}

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/docshare"
 )
 
 func fileIn(name, body string) FileInput {
@@ -183,13 +185,13 @@ func TestFilesCapsAndRate(t *testing.T) {
 func TestFilesSecretChecks(t *testing.T) {
 	s := open(t)
 	_, err := s.FileAdd(fileIn(".env", "A=1"))
-	if de := wantKind(t, err, DocSecret); de.Rule != RuleFileName {
+	if de := wantKind(t, err, DocSecret); de.Rule != docshare.RuleFileName {
 		t.Fatalf("rule %q", de.Rule)
 	}
 	pem := "-----BEGIN RSA PRIVATE KEY-----\n" + string(bytes.Repeat([]byte("MIIEowIBAAKCAQEA"), 20)) +
 		"\n-----END RSA PRIVATE KEY-----\n"
 	_, err = s.FileAdd(fileIn("notes.txt", pem))
-	if de := wantKind(t, err, DocSecret); de.Rule == "" || de.Rule == RuleFileName {
+	if de := wantKind(t, err, DocSecret); de.Rule == "" || de.Rule == docshare.RuleFileName {
 		t.Fatalf("rule %q", de.Rule)
 	}
 	_, err = s.FileAdd(fileIn("empty.txt", ""))

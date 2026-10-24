@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/docshare"
 )
 
 // The hub file drop: a place a card leaves a file for a card on another room, or for the board. The design is
@@ -195,15 +197,15 @@ func (s *Store) FileAdd(in FileInput) (FileRow, error) {
 	if name == "" {
 		return row, &DocError{Kind: DocBad, Msg: "a file needs a name"}
 	}
-	if SecretFileName(name) {
-		return row, &DocError{Kind: DocSecret, Rule: RuleFileName, Msg: "that file name looks like a secret, so it was " +
+	if docshare.SecretFileName(name) {
+		return row, &DocError{Kind: DocSecret, Rule: docshare.RuleFileName, Msg: "that file name looks like a secret, so it was " +
 			"not stored. the drop is readable by everyone past the board's password"}
 	}
 	if int64(len(in.Data)) > set.Caps.File {
 		return row, &DocError{Kind: DocTooBig, Msg: fmt.Sprintf(
 			"that is %d bytes, over the %d byte cap for a drop file", len(in.Data), set.Caps.File)}
 	}
-	if rule := SecretContent(in.Data); rule != "" {
+	if rule := docshare.SecretContent(in.Data); rule != "" {
 		return row, &DocError{Kind: DocSecret, Rule: rule, Msg: "that looks like it holds a secret (" + rule +
 			"). the drop is readable by everyone past the board's password, so it was not stored. " +
 			"this check is a speed bump and not a guarantee"}

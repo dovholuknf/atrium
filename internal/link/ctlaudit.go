@@ -7,6 +7,8 @@ import (
 	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/address"
 )
 
 // The audit line for a mutating control call.
@@ -124,7 +126,7 @@ func auditOutcome(err error) string {
 // not the caller's own, else the caller's.
 func cardRoom(req *mcp.CallToolRequest, addr string) string {
 	own := roomOf(req)
-	if _, target, err := SplitAddress(addr); err == nil {
+	if _, target, err := address.SplitAddress(addr); err == nil {
 		if other := otherRoom(target, own); other != "" {
 			return other
 		}

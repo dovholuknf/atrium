@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -225,7 +226,7 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		writeItemSayRefused(w)
 		return
 	}
-	name, room, err := SplitAddress(in.To)
+	name, room, err := address.SplitAddress(in.To)
 	if err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
@@ -435,7 +436,7 @@ func (d *Daemon) reportedAcross(sender *store.Task, to, card, text string) {
 	hit := sameAddress(to, name+"@"+room)
 	if !hit && card != "" {
 		// `room~id` splits as the id and its room.
-		if cid, croom, err := SplitAddress(card); err == nil {
+		if cid, croom, err := address.SplitAddress(card); err == nil {
 			_, lid, _ := d.remoteLauncherCard(sender)
 			hit = lid != "" && lid == cid && strings.EqualFold(croom, room)
 		}
@@ -451,8 +452,8 @@ func (d *Daemon) reportedAcross(sender *store.Task, to, card, text string) {
 
 // sameAddress compares two `name@room` addresses, the room without case.
 func sameAddress(a, b string) bool {
-	an, ar, err1 := SplitAddress(a)
-	bn, br, err2 := SplitAddress(b)
+	an, ar, err1 := address.SplitAddress(a)
+	bn, br, err2 := address.SplitAddress(b)
 	return err1 == nil && err2 == nil && an == bn && strings.EqualFold(ar, br)
 }
 
@@ -464,7 +465,7 @@ func (d *Daemon) remoteLauncher(worker *store.Task) (name, room string, ok bool)
 	if worker == nil || !worker.Launched() {
 		return "", "", false
 	}
-	n, r, err := SplitAddress(worker.SpawnedBy)
+	n, r, err := address.SplitAddress(worker.SpawnedBy)
 	if err != nil {
 		return "", "", false
 	}
@@ -787,7 +788,7 @@ func (d *Daemon) handleRoomExit(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) acrossRoom(w http.ResponseWriter, ctx context.Context, to string,
 	ask func(context.Context, Relay, string, string) (RelayResult, error), ok func(RelayResult) map[string]any) {
 
-	name, room, err := SplitAddress(to)
+	name, room, err := address.SplitAddress(to)
 	if err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/spf13/cobra"
 )
 
@@ -182,7 +182,7 @@ func newExitCmd() *cobra.Command {
 				// A card named on another room is asked about by a name that is
 				// foreign there.
 				if isAcross(args[0]) {
-					if _, room, err := daemon.SplitAddress(args[0]); err == nil &&
+					if _, room, err := address.SplitAddress(args[0]); err == nil &&
 						!strings.EqualFold(room, strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))) {
 						body["from"], body["foreign"] = me+"@"+os.Getenv("ATRIUM_ROOM"), true
 					}

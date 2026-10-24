@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -415,7 +416,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
-	if name, room, err := SplitAddress(in.To); err == nil {
+	if name, room, err := address.SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {
 			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake, false)
 			if code < 400 {

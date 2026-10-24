@@ -341,7 +341,7 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 	// WHAT THE PATH RESOLVED TO, relative to the card, so the hub can run a secret name check
 	// on the file that is really being read and not on the name it was asked for. A link
 	// `notes.md -> .env` passes containment and the filename above has lost its leading dot.
-	// See hubstore.SecretFileName and atrium_publish.
+	// See docshare.SecretFileName and atrium_publish.
 	if rel, ok := realRelative(filepath.ToSlash(root), real); ok {
 		w.Header().Set(RealPathHeader, url.PathEscape(rel))
 	}

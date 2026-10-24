@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -302,7 +303,7 @@ func (d *Daemon) remoteOrchestrator() (name, room string) {
 	}
 	// THE HUB IS AWAY: the one last found by tag, so the notice is held.
 	v, _ := d.st.Setting(remoteOrchestratorKey)
-	if n, r, err := SplitAddress(v); err == nil {
+	if n, r, err := address.SplitAddress(v); err == nil {
 		return n, r
 	}
 	return "", ""

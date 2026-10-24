@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
@@ -226,13 +227,13 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 			return nil, out, err
 		}
 		refuseName := func(msg string) error {
-			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: hubstore.RuleFileName,
+			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
 				Msg: msg + ". the drop is readable by everyone past the board's password. this check is a " +
 					"speed bump and not a guarantee"}
 		}
 		// The name that was asked for is refused before the room is asked, so the answer does not hang on whether
 		// the file is there.
-		if hubstore.SecretFileName(in.Path) {
+		if docshare.SecretFileName(in.Path) {
 			return nil, out, refuseName("that file is refused by name (" + path.Base(strings.ReplaceAll(in.Path, `\`, "/")) + ")")
 		}
 		var rel string
@@ -241,7 +242,7 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 			return nil, out, err
 		}
 		// THE NAME CHECK on what the path resolved to: a link `notes.md -> .env` defeats the one above.
-		if hubstore.SecretFileName(rel) {
+		if docshare.SecretFileName(rel) {
 			msg := "that file is refused by name (" + path.Base(rel) + ")"
 			if !strings.EqualFold(path.Base(rel), path.Base(strings.ReplaceAll(in.Path, `\`, "/"))) {
 				msg = fmt.Sprintf("%s is a link to %s, which is refused by name", in.Path, rel)
@@ -329,8 +330,8 @@ func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	if card.Worktree == "" {
 		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "your card has no directory to put a file in"}
 	}
-	if dest != "" && hubstore.SecretFileName(dest) {
-		return nil, out, &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: hubstore.RuleFileName,
+	if dest != "" && docshare.SecretFileName(dest) {
+		return nil, out, &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
 			Msg: "that destination is named like a secret (" + path.Base(strings.ReplaceAll(dest, `\`, "/")) + "), " +
 				"so nothing was written"}
 	}
