@@ -5748,7 +5748,7 @@ async function fileLinksViewSection(browser, base) {
   await ctx.route("**/files/probe", route => {
     const paths = JSON.parse(route.request().postData() || "{}").paths || [];
     asked.push(...paths);
-    const found = paths.filter(p => /\.(md|txt|go)$/.test(p))
+    const found = paths.filter(p => /\.(md|txt|go)$/.test(p) && !/openziti-test-kitchen/.test(p))
       .map(p => ({ path: p, rel: p.replace(/\\/g, "/").replace(/^.*blog-add-by-url\//, ""), size: 10, dir: false }));
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
   });
@@ -5825,6 +5825,8 @@ async function fileLinksViewSection(browser, base) {
     t = await tipFor(20, 1, /README\.md/);
     if (!/README\.md/.test(t) || /outside/.test(t)) fail("the inside path's tip was " + JSON.stringify(t));
     await shot(p, "1-inside-tip");
+    t = await tipFor(5, 2, /click to view/);
+    if (!/click to view/.test(t) || /outside this card/.test(t)) fail("an outside path the room finds was not a file link: " + JSON.stringify(t));
 
     // 3. the menu.
     const menuUp = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
