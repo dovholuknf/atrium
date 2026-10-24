@@ -194,3 +194,4 @@
 {"run":"40095604569","date":"2026-10-24T12:50:33Z","sha":"b738f31e8","job":120877139852,"name":"check (macos-latest, go-test)","tests":["TestAHubPushesChangedPathsToAnAttachedRoom"],"retried":[],"errors":{"TestAHubPushesChangedPathsToAnAttachedRoom":"pathspush_integration_test.go:53: timed out waiting for the condition"}}
 {"run":"40095604569","date":"2026-10-24T12:50:33Z","sha":"b738f31e8","job":120877139889,"name":"check (ubuntu-latest, go-all)","tests":["(step failed, no test named in the log)"],"retried":[]}
 {"run":"40095604569","date":"2026-10-24T12:50:33Z","sha":"b738f31e8","job":120877139899,"name":"check (windows-latest, build-board-1)","tests":["(step failed, no test named in the log)"],"retried":[]}
+{"run":"40096301347","date":"2026-10-24T13:00:38Z","sha":"7b160b845","job":0,"name":"(no failed job)","tests":[],"retried":[]}
