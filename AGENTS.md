@@ -30,5 +30,7 @@ terminals. A card outlives its process, state lives on disk, and storage failure
 - Before handing back, run `bash scripts/test-touched.sh` and nothing else.
 - Branch off `claude/main`. Never push `main` or a tag.
 - Build with `make build` into `build.claude/`, never the repo root.
+- Smallest delta: keep every name, signature, order and line the change does not need. When a name gains new
+  behavior, keep it and rename the inner one.
 - Delete every comment that is not a one-line why for a non-obvious invariant, in each function or test you touch.
 - Forward slashes in code paths. Markdown at 120 columns, no em-dashes, no double-hyphen dash, no semicolons in prose.
