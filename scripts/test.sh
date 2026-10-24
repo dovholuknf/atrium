@@ -37,7 +37,7 @@ pkgs=()
 for a in "$@"; do
   case "$a" in ./*|github.com/*) pkgs=(x) ;; esac
 done
-[ ${#pkgs[@]} -eq 0 ] && set -- "$@" ./...
+[ ${#pkgs[@]} -eq 0 ] && set -- "$@" $(go list -m -f '{{.Path}}/...')
 
 # -count=1 because a cached pass is not a pass.
 #

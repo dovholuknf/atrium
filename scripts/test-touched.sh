@@ -139,7 +139,7 @@ if [ ${#gopkgs[@]} -gt 0 ] || [ -n "$units" ]; then
     units="$rest_units"
   fi
 fi
-[ "$gobuild" = 1 ] && step "go build ./..." go build -o /dev/null ./...
+[ "$gobuild" = 1 ] && step "go build ./..." go build -o /dev/null $(go list -m -f '{{.Path}}/...')
 for g in ${gofiles[@]+"${gofiles[@]}"}; do step "go test $g" go test -count=1 $g; done
 for g in ${govet[@]+"${govet[@]}"}; do step "go vet $g" go vet "$g"; done
 # test.sh: unit mode keeps the 20ms budget, all mode adds -tags integration.
