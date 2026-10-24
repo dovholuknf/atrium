@@ -181,7 +181,7 @@ func TestARelayedLaunchIsCappedPerTargetRoom(t *testing.T) {
 	x.proxy.mu.Unlock()
 	x.sg4.mu.Lock()
 	for _, id := range []string{"w1", "w2"} {
-		x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": id, "wire_name": id, "status": "working",
+		x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": id, "wire_name": id, "status": "running",
 			"supervised": true, "tags": []string{OriginTag, SubagentTag}})
 	}
 	x.sg4.mu.Unlock()

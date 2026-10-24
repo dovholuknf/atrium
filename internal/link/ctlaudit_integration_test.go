@@ -181,7 +181,7 @@ func TestAuditedCapRefusalWritesARefusalLine(t *testing.T) {
 	tasks := []map[string]any{}
 	for i := 0; i < DefaultLaunchCap; i++ {
 		tasks = append(tasks, map[string]any{
-			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"id": string(rune('a' + i)), "status": "running", "supervised": true,
 			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
