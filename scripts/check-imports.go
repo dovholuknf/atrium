@@ -31,13 +31,11 @@ var table = []row{
 	{0, "cmd/ptyhost-spike", nil},
 	{0, "internal/address", nil},
 	{0, "internal/cardcolors", nil},
-	{0, "internal/cardproc", nil},
 	{0, "internal/cardroot", nil},
 	{0, "internal/cardurl", nil},
 	{0, "internal/codeid", nil},
 	{0, "internal/dblock", nil},
 	{0, "internal/deployready", nil},
-	{0, "internal/detach", nil},
 	{0, "internal/docshare", nil},
 	{0, "internal/edge", nil},
 	{0, "internal/forge", nil},
@@ -66,7 +64,9 @@ var table = []row{
 	{0, "internal/webasset", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
+	{1, "internal/cardproc", []string{"internal/nowindow"}},
 	{1, "internal/claudeconf", []string{"internal/mcprule", "internal/rolebin"}},
+	{1, "internal/detach", []string{"internal/nowindow"}},
 	{1, "internal/guard", []string{"internal/nowindow"}},
 	{1, "internal/ptyhost", []string{"internal/detach", "internal/rolebin"}},
 	{1, "internal/sshwizard", []string{
@@ -104,7 +104,8 @@ var table = []row{
 	}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
 	{5, "internal/daemon", []string{
-		"internal/address", "internal/api", "internal/cardroot", "internal/claudeconf", "internal/docshare",
+		"internal/address", "internal/api", "internal/cardproc", "internal/cardroot", "internal/claudeconf",
+		"internal/docshare",
 		"internal/edge", "internal/forge", "internal/gitsync", "internal/inputlag", "internal/linkfetch", "internal/mcprule",
 		"internal/nowindow", "internal/prreview/render", "internal/ptyhost", "internal/roomstats",
 		"internal/rules", "internal/runnerprofile", "internal/runnersetup", "internal/safepath",
@@ -146,11 +147,17 @@ func main() {
 		return -1
 	}
 
-	out, err := exec.Command("go", "list", "-f",
-		`{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}|{{join .XTestImports " "}}`, "./...").Output()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "go list:", err)
-		os.Exit(2)
+	var out []byte
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		cmd := exec.Command("go", "list", "-f",
+			`{{.ImportPath}}|{{join .Imports " "}}|{{join .TestImports " "}}|{{join .XTestImports " "}}`, "./...")
+		cmd.Env = append(os.Environ(), "GOOS="+goos)
+		o, err := cmd.Output()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "go list:", err)
+			os.Exit(2)
+		}
+		out = append(out, o...)
 	}
 
 	var bad []string
@@ -193,8 +200,10 @@ func main() {
 	}
 
 	sort.Strings(bad)
-	for _, b := range bad {
-		fmt.Println(b)
+	for i, b := range bad {
+		if i == 0 || b != bad[i-1] {
+			fmt.Println(b)
+		}
 	}
 	if len(bad) > 0 {
 		os.Exit(1)
