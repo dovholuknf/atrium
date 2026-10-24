@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -31,15 +32,15 @@ func prServer(t *testing.T) (*Server, *store.Store, string) {
 	s, st := recogniserServer(t)
 	root := filepath.ToSlash(t.TempDir())
 	st.DefaultReviewsRoot = root
-	s.Recognise = func(url string) (*store.Resolved, error) {
+	s.Recognise = func(url string) (*rules.Resolved, error) {
 		if !strings.Contains(url, "github.com") {
-			return nil, store.ErrNoRecogniser
+			return nil, rules.ErrNoRecogniser
 		}
 		parts := strings.Split(strings.TrimPrefix(url, "https://github.com/"), "/")
 		if len(parts) < 4 || parts[2] != "pull" {
-			return &store.Resolved{Vars: map[string]string{"host": "github.com", "org": parts[0]}}, nil
+			return &rules.Resolved{Vars: map[string]string{"host": "github.com", "org": parts[0]}}, nil
 		}
-		return &store.Resolved{Vars: map[string]string{"host": "github.com", "org": parts[0], "repo": parts[1],
+		return &rules.Resolved{Vars: map[string]string{"host": "github.com", "org": parts[0], "repo": parts[1],
 			"num": parts[3]}}, nil
 	}
 	return s, st, root

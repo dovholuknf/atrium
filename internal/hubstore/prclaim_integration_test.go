@@ -5,12 +5,14 @@ package hubstore
 import (
 	"errors"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // A RELEASE DELETES THE CLAIM ONLY WHILE THE ROOM STILL OWNS IT, so a claim that moved meanwhile is left alone.
 func TestReleasePRClaimOnlyLetsGoOfTheRoomsOwn(t *testing.T) {
 	s := open(t)
-	key := PRKey("github.com", "o", "r", 7)
+	key := rules.PRKey("github.com", "o", "r", 7)
 	if _, made, err := s.ClaimPR(key, "beta", "paste"); err != nil || !made {
 		t.Fatalf("claim = %v, %v", made, err)
 	}

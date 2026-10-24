@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -50,10 +51,10 @@ func runnerCeilingK(compactAtK func(*store.Task) int, t *store.Task) int {
 	if at <= 0 {
 		return 0
 	}
-	if c := at * 10 / 11; c >= store.MinContextLimitK {
+	if c := at * 10 / 11; c >= rules.MinContextLimitK {
 		return c
 	}
-	return store.MinContextLimitK
+	return rules.MinContextLimitK
 }
 
 // ContextLimit is the limit in force on a card and how it was reached.
@@ -89,7 +90,7 @@ func contextLimitWith(st *store.Store, t *store.Task, compactAtK func(*store.Tas
 		out.K, out.From = k, LimitFromCard
 	} else {
 		limits, from := st.ContextLimits(), LimitFromHub
-		if v, _ := st.Setting(store.SettingContextLimits); strings.TrimSpace(v) == "" {
+		if v, _ := st.Setting(rules.SettingContextLimits); strings.TrimSpace(v) == "" {
 			from = LimitFromDefault
 		}
 		if k := limits[t.Runner]; k > 0 {
@@ -144,9 +145,9 @@ func claudeHarness(h *store.Harness) bool {
 // contextCycleView is the context cycle's settings as stored and in force.
 func contextCycleView(st *store.Store, out map[string]any) {
 	out["context_limits"] = st.ContextLimits()
-	out["context_limits_default"] = store.DefaultContextLimits()
-	out["context_limit_k_min"] = store.MinContextLimitK
-	out["context_limit_k_max"] = store.MaxContextLimitK
+	out["context_limits_default"] = rules.DefaultContextLimits()
+	out["context_limit_k_min"] = rules.MinContextLimitK
+	out["context_limit_k_max"] = rules.MaxContextLimitK
 	out["context_handoff_dir"] = st.ContextHandoffDir()
 	out["restart_wrap_wait_s"] = int(st.RestartWrapWait() / time.Second)
 }

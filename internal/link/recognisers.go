@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/forge"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/scripts/recognisers"
 )
 
@@ -42,11 +42,11 @@ const (
 
 // HubRecognisers is the answer to a room's question, and the board's list.
 type HubRecognisers struct {
-	Recognisers []*store.Recogniser `json:"recognisers"`
+	Recognisers []*rules.Recogniser `json:"recognisers"`
 }
 
 // seedFunc reads the built-in rows. A hubForge holds one so a test can give a hub its own.
-type seedFunc func() ([]store.Recogniser, error)
+type seedFunc func() ([]rules.Recogniser, error)
 
 // seedRows is the built-in rows, or the ones this forge was given instead.
 func (f *hubForge) seedRows() seedFunc {
@@ -60,13 +60,13 @@ func (f *hubForge) seedRows() seedFunc {
 var recognisersMu sync.Mutex
 
 // hubRecogniserRows reads the hub's rows, seeding any built-in row it has never held.
-func hubRecogniserRows(st ForgeSettings, seed seedFunc) ([]*store.Recogniser, error) {
+func hubRecogniserRows(st ForgeSettings, seed seedFunc) ([]*rules.Recogniser, error) {
 	recognisersMu.Lock()
 	defer recognisersMu.Unlock()
 	return hubRecogniserRowsLocked(st, seed)
 }
 
-func hubRecogniserRowsLocked(st ForgeSettings, seedRows seedFunc) ([]*store.Recogniser, error) {
+func hubRecogniserRowsLocked(st ForgeSettings, seedRows seedFunc) ([]*rules.Recogniser, error) {
 	rows, err := readRecogniserRows(st)
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func hubRecogniserRowsLocked(st ForgeSettings, seedRows seedFunc) ([]*store.Reco
 
 // backfillDefaultRepo gives a seeded row held from before the field existed the seed's default repo, once per hub, so
 // an operator who later empties it on purpose keeps it empty. True when a row changed.
-func backfillDefaultRepo(st ForgeSettings, rows []*store.Recogniser, seed []store.Recogniser) bool {
+func backfillDefaultRepo(st ForgeSettings, rows []*rules.Recogniser, seed []rules.Recogniser) bool {
 	if raw, err := st.HubSetting(SettingRecognisersBackfill); err == nil && strings.TrimSpace(raw) != "" {
 		return false
 	}
@@ -145,19 +145,19 @@ func backfillDefaultRepo(st ForgeSettings, rows []*store.Recogniser, seed []stor
 	return changed
 }
 
-func readRecogniserRows(st ForgeSettings) ([]*store.Recogniser, error) {
+func readRecogniserRows(st ForgeSettings) ([]*rules.Recogniser, error) {
 	raw, err := st.HubSetting(SettingRecognisers)
 	if err != nil || strings.TrimSpace(raw) == "" {
-		return []*store.Recogniser{}, nil
+		return []*rules.Recogniser{}, nil
 	}
-	var rows []*store.Recogniser
+	var rows []*rules.Recogniser
 	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
 		return nil, err
 	}
 	return sortedRecognisers(rows), nil
 }
 
-func writeRecogniserRows(st ForgeSettings, rows []*store.Recogniser) error {
+func writeRecogniserRows(st ForgeSettings, rows []*rules.Recogniser) error {
 	raw, err := json.Marshal(sortedRecognisers(rows))
 	if err != nil {
 		return err
@@ -166,8 +166,8 @@ func writeRecogniserRows(st ForgeSettings, rows []*store.Recogniser) error {
 }
 
 // sortedRecognisers is the order the rows are asked in: rank, then id.
-func sortedRecognisers(rows []*store.Recogniser) []*store.Recogniser {
-	out := make([]*store.Recogniser, 0, len(rows))
+func sortedRecognisers(rows []*rules.Recogniser) []*rules.Recogniser {
+	out := make([]*rules.Recogniser, 0, len(rows))
 	for _, r := range rows {
 		if r != nil {
 			out = append(out, r)
@@ -184,8 +184,8 @@ func sortedRecognisers(rows []*store.Recogniser) []*store.Recogniser {
 
 // saveHubRecogniser checks and stores one row. What atrium observed of the row (failures, last use) is kept from
 // the row it replaces and never taken from the request, the same rule the room's table follows.
-func saveHubRecogniser(st ForgeSettings, seed seedFunc, in store.Recogniser) (*store.Recogniser, error) {
-	in, err := store.CheckRecogniser(in)
+func saveHubRecogniser(st ForgeSettings, seed seedFunc, in rules.Recogniser) (*rules.Recogniser, error) {
+	in, err := rules.CheckRecogniser(in)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return true
 		}
-		var rec store.Recogniser
+		var rec rules.Recogniser
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&rec); err != nil {
 			crFail(w, http.StatusBadRequest, err.Error())
 			return true

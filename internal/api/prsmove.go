@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -94,7 +95,7 @@ func (s *Server) exportPR(w http.ResponseWriter, r *http.Request) {
 		s.prFail(w, err)
 		return
 	}
-	head, _ := json.Marshal(prArchiveRow{Version: 1, Key: store.PRKey(host, org, repo, num), Row: t})
+	head, _ := json.Marshal(prArchiveRow{Version: 1, Key: rules.PRKey(host, org, repo, num), Row: t})
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set(PRHeaderID, p.ID)
 	gz := gzip.NewWriter(w)

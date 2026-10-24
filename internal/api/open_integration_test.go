@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -38,30 +39,30 @@ func newOpenHarness(t *testing.T, f *fakeForge) *openHarness {
 	srv := oh.srv
 	srv.st.DefaultReviewsRoot = filepath.ToSlash(t.TempDir())
 	srv.PRRunner = &fakePRRunner{st: srv.st}
-	srv.Recognise = func(url string) (*store.Resolved, error) {
+	srv.Recognise = func(url string) (*rules.Resolved, error) {
 		switch {
 		case strings.Contains(url, "/pull/"):
-			return &store.Resolved{Recogniser: "github-pr", URL: url, Host: "github.com", Title: "review o/r#7",
+			return &rules.Resolved{Recogniser: "github-pr", URL: url, Host: "github.com", Title: "review o/r#7",
 				Prompt: "review it", Tags: []string{"pull-request"},
 				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "num": "7"}}, nil
 		case strings.Contains(url, "/issues/"):
-			return &store.Resolved{Recogniser: "github-issue", URL: url, Kind: "github", Host: "github.com",
+			return &rules.Resolved{Recogniser: "github-issue", URL: url, Kind: "github", Host: "github.com",
 				Title: "o/r#3", Prompt: "work on it", Tags: []string{"issue"}, Branch: "issue-3",
 				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "num": "3"}}, nil
 		case strings.Contains(url, "/tree/"):
-			return &store.Resolved{Recogniser: "github-branch", URL: url, Kind: "github", Host: "github.com",
+			return &rules.Resolved{Recogniser: "github-branch", URL: url, Kind: "github", Host: "github.com",
 				Tags: []string{"branch"}, Branch: "feat/y",
 				Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "ref": "feat/y"}}, nil
 		case strings.Contains(url, "zendesk"):
-			return &store.Resolved{Recogniser: "zendesk-ticket", URL: url, Kind: "zendesk", Host: "acme.zendesk.com",
+			return &rules.Resolved{Recogniser: "zendesk-ticket", URL: url, Kind: "zendesk", Host: "acme.zendesk.com",
 				Title: "zendesk-9", Prompt: "read the ticket", Tags: []string{"zendesk"}, Branch: "zendesk-9",
 				DefaultRepo: oh.defaultRepo,
 				Vars:        map[string]string{"host": "acme.zendesk.com", "num": "9"}}, nil
 		case strings.HasSuffix(url, "/o/r"):
-			return &store.Resolved{Recogniser: "github-repo", URL: url, Kind: "github", Host: "github.com",
+			return &rules.Resolved{Recogniser: "github-repo", URL: url, Kind: "github", Host: "github.com",
 				Tags: []string{"r"}, Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r"}}, nil
 		}
-		return nil, store.ErrNoRecogniser
+		return nil, rules.ErrNoRecogniser
 	}
 	srv.Launch = func(body []byte) (*store.Task, error) {
 		if oh.refuse != nil {
@@ -281,7 +282,7 @@ func TestOpenRecognisesTheLinkOnce(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
 	oh.checkout(t, "o", "r")
 	asked, inner := 0, oh.srv.Recognise
-	oh.srv.Recognise = func(url string) (*store.Resolved, error) { asked++; return inner(url) }
+	oh.srv.Recognise = func(url string) (*rules.Resolved, error) { asked++; return inner(url) }
 	if code, out := oh.open(t, openURL); code != 201 {
 		t.Fatalf("%d %v", code, out)
 	}

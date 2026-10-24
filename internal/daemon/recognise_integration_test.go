@@ -12,14 +12,14 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/forge"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // A recogniser's fetch is a command, so testing one means running a command.
 // The same helper the source tests use stands in for it, re-executed with a
 // marker in the environment. See `helperSource` for why the payload goes in a
 // file rather than in the environment.
-func helperFetch(t *testing.T, r store.Recogniser, out string, fails bool) store.Recogniser {
+func helperFetch(t *testing.T, r rules.Recogniser, out string, fails bool) rules.Recogniser {
 	t.Helper()
 	t.Setenv("ATRIUM_TEST_SOURCE", "1")
 	path := filepath.Join(t.TempDir(), "facts")
@@ -36,8 +36,8 @@ func helperFetch(t *testing.T, r store.Recogniser, out string, fails bool) store
 	return r
 }
 
-func prRow(cwd string) store.Recogniser {
-	return store.Recogniser{
+func prRow(cwd string) rules.Recogniser {
+	return rules.Recogniser{
 		ID: "github-pr", Label: "github pull request", Enabled: true, Rank: 10,
 		Pattern: `^https?://(?P<host>github\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/pull/(?P<num>\d+)`,
 		Kind:    "github",
@@ -263,7 +263,7 @@ func TestNothingRecognisesAnUnknownURL(t *testing.T) {
 	if _, err := d.st.SaveRecogniser(prRow(t.TempDir())); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Recognise("https://example.invalid/thing/1"); !errors.Is(err, store.ErrNoRecogniser) {
+	if _, err := d.Recognise("https://example.invalid/thing/1"); !errors.Is(err, rules.ErrNoRecogniser) {
 		t.Fatalf("wanted ErrNoRecogniser, got %v", err)
 	}
 }
@@ -339,7 +339,7 @@ func TestTheForgeFetchAsksTheHub(t *testing.T) {
 		t.Fatalf("asked %v %+v", paths, asked)
 	}
 
-	issue := store.Recogniser{ID: "github-issue", Label: "issue", Enabled: true, Rank: 11,
+	issue := rules.Recogniser{ID: "github-issue", Label: "issue", Enabled: true, Rank: 11,
 		Pattern: `^https?://(?P<host>github\.com)/(?P<org>[^/]+)/(?P<repo>[^/]+)/issues/(?P<num>\d+)`,
 		Title:   "{title}", Prompt: "{body}", Fetch: "forge", FetchArgs: []string{"issue"}}
 	if _, err := d.st.SaveRecogniser(issue); err != nil {
@@ -421,7 +421,7 @@ func TestARoomRecognisesFromTheHubsRows(t *testing.T) {
 		if path != forge.HubRecognisersPath {
 			t.Fatalf("asked %s", path)
 		}
-		raw, _ := json.Marshal(map[string]any{"recognisers": []store.Recogniser{hubRow}})
+		raw, _ := json.Marshal(map[string]any{"recognisers": []rules.Recogniser{hubRow}})
 		return json.Unmarshal(raw, out)
 	}))
 	got, err := d.Recognise("https://github.com/openziti/ziti-console/pull/967/changes")
@@ -431,7 +431,7 @@ func TestARoomRecognisesFromTheHubsRows(t *testing.T) {
 	if got.Recogniser != "hub" || got.Title != "hub 967" || got.Org != "openziti" || got.Repo != "ziti-console" {
 		t.Fatalf("resolved = %+v", got)
 	}
-	if _, err := d.Recognise("https://example.com/x"); !errors.Is(err, store.ErrNoRecogniser) {
+	if _, err := d.Recognise("https://example.com/x"); !errors.Is(err, rules.ErrNoRecogniser) {
 		t.Fatalf("a link the hub's rows do not match = %v", err)
 	}
 }

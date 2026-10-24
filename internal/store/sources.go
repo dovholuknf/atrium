@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // A source is a command on a timer whose stdout is intake items.
@@ -220,7 +222,7 @@ func (st *Store) SourceRan(id string, count int, runErr error) (disabled bool, e
 		})
 	}
 
-	reason := firstLineOf(runErr.Error())
+	reason := rules.FirstLine(runErr.Error())
 	err = st.guard(func() error {
 		disabled = false
 		res := st.db.QueryRow(`SELECT failures FROM source WHERE id = ?`, id)
@@ -265,18 +267,4 @@ func (st *Store) DueSources(at time.Time) ([]*Source, error) {
 		}
 	}
 	return out, nil
-}
-
-// firstLineOf keeps a failure to one readable line on a row. Shared with the
-// dispatch queue, which draws a room's refusal the same way for the same
-// reason.
-func firstLineOf(s string) string {
-	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
-		s = s[:i]
-	}
-	s = strings.TrimSpace(s)
-	if len(s) > 300 {
-		s = s[:300] + "..."
-	}
-	return s
 }

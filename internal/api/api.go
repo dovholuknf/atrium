@@ -25,6 +25,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/mcprule"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -81,7 +82,7 @@ type Server struct {
 	// the daemon, which owns process spawning: a recogniser's optional fetch is
 	// an operator-written command, and looking at the directory the templates
 	// named needs the daemon's filesystem rather than the browser's.
-	Recognise func(url string) (*store.Resolved, error)
+	Recognise func(url string) (*rules.Resolved, error)
 	// PRForge picks the forge for a host, for making a worktree of a pull request. Owned by the daemon.
 	PRForge func(host string) (forge.Forge, error)
 	// SCMClone is the scm clone path (atrium_git_clone), for a PR on a repo with no checkout.

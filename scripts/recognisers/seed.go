@@ -10,31 +10,31 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 //go:embed *.json
 var files embed.FS
 
 // Seed is every row in the JSON files of this directory, checked, in rank order.
-func Seed() ([]store.Recogniser, error) {
+func Seed() ([]rules.Recogniser, error) {
 	names, err := files.ReadDir(".")
 	if err != nil {
 		return nil, err
 	}
-	var out []store.Recogniser
+	var out []rules.Recogniser
 	seen := map[string]string{}
 	for _, f := range names {
 		raw, err := files.ReadFile(f.Name())
 		if err != nil {
 			return nil, err
 		}
-		var rows []store.Recogniser
+		var rows []rules.Recogniser
 		if err := json.Unmarshal(raw, &rows); err != nil {
 			return nil, fmt.Errorf("%s: %w", f.Name(), err)
 		}
 		for _, r := range rows {
-			r, err := store.CheckRecogniser(r)
+			r, err := rules.CheckRecogniser(r)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %s: %w", f.Name(), r.ID, err)
 			}

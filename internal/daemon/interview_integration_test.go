@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -72,11 +73,11 @@ func TestAnInterviewDefaultsToOpusFromTheSetting(t *testing.T) {
 	if got := d.workerDefaultModel(h, req, nil, ""); got != "opus" {
 		t.Fatalf("default = %q, want opus", got)
 	}
-	stored, err := store.CheckWorkerPolicy(store.WorkerPolicy{InterviewModel: "sonnet"})
+	stored, err := rules.CheckWorkerPolicy(rules.WorkerPolicy{InterviewModel: "sonnet"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetSetting(store.SettingWorkerPolicy, stored); err != nil {
+	if err := d.st.SetSetting(rules.SettingWorkerPolicy, stored); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.workerDefaultModel(h, req, nil, ""); got != "sonnet" {

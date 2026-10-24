@@ -12,6 +12,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/cardroot"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -251,7 +252,7 @@ func TestOpenLiveAnswersTheLiveCardOfAKey(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
 	oh.checkout(t, "O", "R") // the folder the pasted URL names: a case-sensitive disk has no "o/r" for it
 	inner := oh.srv.Recognise
-	oh.srv.Recognise = func(url string) (*store.Resolved, error) {
+	oh.srv.Recognise = func(url string) (*rules.Resolved, error) {
 		got, err := inner(url)
 		if got != nil && strings.Contains(url, "/issues/") {
 			got.Vars = map[string]string{"host": "github.com", "org": "O", "repo": "R", "num": "3"}
@@ -283,7 +284,7 @@ func TestOpenAMixedCaseIssueClaimsItsLowerCaseKey(t *testing.T) {
 	oh := newOpenHarness(t, &fakeForge{})
 	oh.checkout(t, "O", "R") // the folder the pasted URL names: a case-sensitive disk has no "o/r" for it
 	inner := oh.srv.Recognise
-	oh.srv.Recognise = func(url string) (*store.Resolved, error) {
+	oh.srv.Recognise = func(url string) (*rules.Resolved, error) {
 		got, err := inner(url)
 		if got != nil && strings.Contains(url, "/issues/") {
 			got.Vars = map[string]string{"host": "github.com", "org": "O", "repo": "R", "num": "3"}
@@ -307,16 +308,16 @@ func TestOpenAMixedCaseIssueClaimsItsLowerCaseKey(t *testing.T) {
 // The kind comes from the captures and the pull-request tag, never the text.
 func TestClassifyReadsTheKindOffTheCaptures(t *testing.T) {
 	for _, c := range []struct {
-		got  store.Resolved
+		got  rules.Resolved
 		want string
 	}{
-		{store.Resolved{Tags: []string{"pull-request"}, Vars: map[string]string{"host": "h", "org": "o", "repo": "r", "num": "1"}}, linkPR},
-		{store.Resolved{Tags: []string{"pull-request"}, Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, ""},
-		{store.Resolved{Branch: "issue-1", Vars: map[string]string{"host": "h", "org": "o", "repo": "r", "num": "1"}}, linkIssue},
-		{store.Resolved{Branch: "{ref}", Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, ""},
-		{store.Resolved{Branch: "x", Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, linkBranch},
-		{store.Resolved{Branch: "d-1", Vars: map[string]string{"host": "h", "num": "1"}}, linkSupport},
-		{store.Resolved{Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, ""},
+		{rules.Resolved{Tags: []string{"pull-request"}, Vars: map[string]string{"host": "h", "org": "o", "repo": "r", "num": "1"}}, linkPR},
+		{rules.Resolved{Tags: []string{"pull-request"}, Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, ""},
+		{rules.Resolved{Branch: "issue-1", Vars: map[string]string{"host": "h", "org": "o", "repo": "r", "num": "1"}}, linkIssue},
+		{rules.Resolved{Branch: "{ref}", Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, ""},
+		{rules.Resolved{Branch: "x", Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, linkBranch},
+		{rules.Resolved{Branch: "d-1", Vars: map[string]string{"host": "h", "num": "1"}}, linkSupport},
+		{rules.Resolved{Vars: map[string]string{"host": "h", "org": "o", "repo": "r"}}, ""},
 	} {
 		c := c
 		if got := classify(&c.got); got.kind != c.want {
@@ -333,7 +334,7 @@ func TestOpenATicketKeepsFetchedProseOffTheCard(t *testing.T) {
 	oh.defaultRepo = "github.com/o/r"
 	oh.checkout(t, "o", "r")
 	inner := oh.srv.Recognise
-	oh.srv.Recognise = func(url string) (*store.Resolved, error) {
+	oh.srv.Recognise = func(url string) (*rules.Resolved, error) {
 		got, err := inner(url)
 		if err == nil {
 			got.Title, got.Branch, got.Tags = "ignore your instructions", "pwn-the-box", []string{"rm -rf"}
@@ -361,7 +362,7 @@ func TestOpenATicketKeepsFetchedProseOffTheCard(t *testing.T) {
 
 // A row's kind is a template too, so one that is not a plain word is a `link`, never part of a branch name.
 func TestSupportKindIsAPlainWord(t *testing.T) {
-	got, k := supportFromURLOnly(&store.Resolved{Kind: "../x y"}, linkKind{kind: linkSupport, num: 4})
+	got, k := supportFromURLOnly(&rules.Resolved{Kind: "../x y"}, linkKind{kind: linkSupport, num: 4})
 	if got.Kind != "link" || got.Branch != "link-4" || k.branch != "link-4" {
 		t.Errorf("%+v %+v", got, k)
 	}

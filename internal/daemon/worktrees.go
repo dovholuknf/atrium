@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/worktrees"
 )
@@ -72,7 +73,7 @@ func (d *Daemon) worktreesRepo(repo, caller string) (string, error) {
 	if fi, err := os.Stat(filepath.FromSlash(repo)); err == nil && fi.IsDir() {
 		return repo, nil
 	}
-	if !store.RepoSlug(repo) {
+	if !rules.RepoSlug(repo) {
 		return "", errors.New("repo is a path inside a checkout that exists, or host/org/repo, like github.com/openziti/ziti")
 	}
 	if p := d.checkoutOf(repo); p != "" {

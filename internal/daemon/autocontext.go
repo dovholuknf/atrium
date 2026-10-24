@@ -6,6 +6,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -121,7 +122,7 @@ func (d *Daemon) cardLimit(t *store.Task) int64 {
 	if limit := d.cycleLimit(t); limit > 0 {
 		return limit
 	}
-	return int64(store.DefaultContextLimits()["claude"]) * 1000
+	return int64(rules.DefaultContextLimits()["claude"]) * 1000
 }
 
 // The range the runner takes for its compaction window, in thousands of tokens.

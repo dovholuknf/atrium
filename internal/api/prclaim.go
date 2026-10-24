@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -90,7 +91,7 @@ func (s *Server) ReconcilePRClaims() {
 	}
 	for _, p := range rows {
 		ctx, cancel := context.WithTimeout(context.Background(), prClaimWait)
-		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: store.PRKey(p.Host, p.Org, p.Repo, p.Number), Held: true})
+		rep, err := s.ClaimPR(ctx, PRClaimAsk{Key: rules.PRKey(p.Host, p.Org, p.Repo, p.Number), Held: true})
 		cancel()
 		if err != nil {
 			return

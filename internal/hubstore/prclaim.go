@@ -3,8 +3,6 @@ package hubstore
 import (
 	"database/sql"
 	"errors"
-	"strconv"
-	"strings"
 )
 
 // The PR claim table: one owner per PR key across rooms. See migration 0010 and docs/rnd/scm-forge-design.md section 6.
@@ -28,11 +26,6 @@ type PRClaim struct {
 
 // ErrNoPRClaim is a key nobody owns.
 var ErrNoPRClaim = errors.New("no room has claimed that pr")
-
-// PRKey is the canonical key of a pull request, host/org/repo/number in lower case.
-func PRKey(host, org, repo string, number int) string {
-	return strings.ToLower(host + "/" + org + "/" + repo + "/" + strconv.Itoa(number))
-}
 
 const prClaimCols = `key, room, source, claimed_at, warned, warn_n`
 

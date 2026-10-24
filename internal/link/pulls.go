@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 // THE PULLS VIEW THROUGH THE HUB. Design: docs/rnd/pulls-view-design.md section 9. Contract: docs/review/pulls-api.md.
@@ -416,7 +416,7 @@ func (p *Proxy) foldPRRows(all []map[string]any, counts map[string]float64) []ma
 		if host == "" || org == "" || repo == "" || n <= 0 {
 			return ""
 		}
-		return hubstore.PRKey(host, org, repo, int(n))
+		return rules.PRKey(host, org, repo, int(n))
 	}
 	rooms := map[string]map[string]bool{}
 	for _, row := range all {

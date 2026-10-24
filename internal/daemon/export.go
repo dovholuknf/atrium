@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -67,7 +68,7 @@ type Export struct {
 	// is operator-authored free text. Both are the flagged category rather than
 	// the omitted one: an export with them stripped restores a table that
 	// matches URLs and points nowhere.
-	Recognisers []*store.Recogniser `json:"recognisers"`
+	Recognisers []*rules.Recogniser `json:"recognisers"`
 	Overlays    ExportOverlays      `json:"overlays"`
 	// The terminal palettes somebody brought, which are configuration in the
 	// same sense the skin is: they say what this machine looks like and there
@@ -138,8 +139,8 @@ var exportedSettings = []string{
 	api.SettingBoardSkin,
 	api.SettingScrollbackLines,
 	api.SettingTerminalMinCols,
-	store.SettingContextLimits,
-	store.SettingWorkerPolicy,
+	rules.SettingContextLimits,
+	rules.SettingWorkerPolicy,
 	api.SettingEditor,
 	api.SettingTerminal,
 	api.SettingPasteKeep,
