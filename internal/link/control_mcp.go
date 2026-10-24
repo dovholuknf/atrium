@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -1465,7 +1466,7 @@ func WithReportLine(prompt string, resident bool) string {
 }
 
 // SubagentTag marks a worker an orchestrator launched to do one piece of work.
-// The launch cap counts only running cards carrying it. The launcher puts it on
+// The launch cap counts only mid-turn cards carrying it. The launcher puts it on
 // through `tags`; the hub does not stamp it, so an orchestrator, the resident
 // merger or any other long-lived agent launched without it does not consume the
 // cap its workers share.
@@ -1491,7 +1492,7 @@ func hasTag(tags []string, want string) bool {
 	return false
 }
 
-// DefaultLaunchCap is how many concurrent live sessions atrium_launch allows
+// DefaultLaunchCap is how many concurrent mid-turn workers atrium_launch allows
 // before it refuses. It is the HARD backstop under the advisory soft nudge in the
 // dotfiles redirect hook, so no amount of over-eager agents can flood the box.
 // LaunchCapEnv overrides it for a machine that can take more or fewer.
@@ -1539,9 +1540,13 @@ func (c *controlMCP) capOf(room string) int {
 // ONLY SUBAGENTS. OriginTag is on every atrium_launch card, orchestrators and
 // the resident merger as much as their workers, so it is not what the cap
 // counts. A card without SubagentTag never consumes the cap, whoever started
-// it. A done/dead/paused card has no running runner and a backlog card has not
-// started one, so none of them count, and the launch being attempted is not
-// present yet so it is never counted.
+// it.
+//
+// ONLY MID-TURN. A card counts while it is running or held mid-turn at
+// needs-permission. A worker idle at needs-input is a terminal waiting on a
+// person, not load on the machine, so it does not count, nor does a done, dead,
+// paused, shelved or backlog card. The launch being attempted is not present
+// yet so it is never counted.
 func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error) {
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
@@ -1554,8 +1559,7 @@ func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error
 		if !t.Superv {
 			continue
 		}
-		switch t.Status {
-		case "done", "dead", "paused", "shelved", "backlog":
+		if t.Status != store.StatusRunning && t.Status != store.StatusNeedsPermission {
 			continue
 		}
 		if !hasTag(t.Tags, SubagentTag) {
@@ -1890,7 +1894,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		}
 	}
 
-	// THE HARD CAP. Count the live sessions already running plus the launches
+	// THE HARD CAP. Count the workers already mid-turn plus the launches
 	// already admitted but not yet showing as cards, and refuse before forwarding
 	// once the machine is at or over the cap. reserveSlot does the check and the
 	// reservation as one locked step, so two near-simultaneous launches that both
