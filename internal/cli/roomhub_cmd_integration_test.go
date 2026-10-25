@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link"
 )
 
 func runRoomHub(t *testing.T, args ...string) (string, error) {
@@ -72,5 +74,26 @@ func TestRoomHubRefusesWhatIsNotAnAddressOrNotADirectRoom(t *testing.T) {
 		if got, _ := os.ReadFile(path); string(got) != c.body {
 			t.Errorf("a refused change still wrote room.json: %s", got)
 		}
+	}
+}
+
+// A running room that reaches no rung takes the address `atrium room hub` wrote at its next attempt, with no restart.
+func TestARoomThatCannotReachItsHubTakesTheNewAddressWithoutARestart(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "room.json"), []byte(`{"hub": "192.168.1.68:7779", "room": "sgg"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keys := link.Keys{Dir: dir}
+	saved, _ := keys.Joined()
+	l, _, err := roomLadder(keys, saved, link.RoomTransports{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runRoomHub(t, "--dir", dir, "192.168.102.41:7779"); err != nil {
+		t.Fatal(err)
+	}
+	reloadRungs(keys, l)
+	if got := ladderSays(l.Rungs()); !strings.Contains(got, "192.168.102.41:7779") || strings.Contains(got, "192.168.1.68") {
+		t.Fatalf("the ladder is %s, want the new address and not the old", got)
 	}
 }

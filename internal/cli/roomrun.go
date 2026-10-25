@@ -399,7 +399,16 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Name: saved.Room,
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
-		OnPaths: func(ps []link.Path) { learnHubPaths(keys, saved, dial, ps) },
+		OnPaths: func(ps []link.Path) {
+			// room.json read again, so a hub address changed since the start is not put back.
+			now, err := keys.Joined()
+			if err != nil {
+				now = saved
+			}
+			learnHubPaths(keys, now, dial, ps)
+		},
+		// EVERY RUNG FAILED: the hub's address is read from disk again before the next attempt.
+		OnUnreachable: func() { reloadRungs(keys, dial) },
 		// A transport turned off from the hub is written beside the others, so a restart keeps it.
 		PersistOff: func(off []string) error {
 			t, err := keys.Transports()
