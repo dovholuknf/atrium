@@ -7,7 +7,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A codex card in a worktree gets the clone's git dir as a writable root, so its sandbox lets git commit and merge.
 func TestCodexWorktreeAddsItsGitDir(t *testing.T) {
 	t.Parallel()
 	common := "/repo/clone/.git"
