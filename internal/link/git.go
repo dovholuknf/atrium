@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"log"
 	"net"
 	"net/http"
@@ -33,7 +34,7 @@ import (
 
 // gitKind is the connection kind. A hub that predates it refuses with the sentence in
 // hearHello, and a room never gets that far because that hub did not say Git.
-const gitKind = "git"
+const gitKind = wire.GitKind
 
 // ErrNoGit is a room that has no way to fetch from this hub right now.
 var ErrNoGit = errors.New("this hub predates git sync (it did not say it serves git), or this room is not attached to it")

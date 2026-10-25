@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
 	"net"
@@ -52,7 +53,7 @@ import (
 
 // announceKind is the connection kind. Its own, so the hub can tell it from a
 // data connection before reading a byte of the body.
-const announceKind = "announce"
+const announceKind = wire.AnnounceKind
 
 // announceMax bounds an announcement. Large enough for a room holding a few
 // thousand cards, bounded because it arrives over a socket.

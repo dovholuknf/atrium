@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
 	"net"
@@ -58,7 +59,7 @@ import (
 // using the machinery that already exists.
 
 // upgradeKind is the third kind of connection, after control and data.
-const upgradeKind = "upgrade"
+const upgradeKind = wire.UpgradeKind
 
 // upgradeLimit bounds what a room will read as a binary.
 //

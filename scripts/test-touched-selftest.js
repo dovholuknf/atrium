@@ -124,7 +124,7 @@ const ownedBy = (b, f) => { const o = buckets.ownersOfFile(bk, f); return o.leng
 const walkFiles = d => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap(e =>
   e.isDirectory() ? (e.name === "vendor" || e.name === "icons" ? [] : walkFiles(d + "/" + e.name)) : [d + "/" + e.name]);
 const allFiles = [...walkFiles("internal/api/web").filter(f => /\.(js|css|html)$/.test(f)),
-  ...["internal/api", "internal/link", "internal/daemon", "internal/store", "internal/hubstore", "internal/gitsync", "internal/claudeconf", "internal/ptyhost", "internal/cli", "internal/worktrees"]
+  ...["internal/api", "internal/link", "internal/link/wire", "internal/daemon", "internal/store", "internal/hubstore", "internal/gitsync", "internal/claudeconf", "internal/ptyhost", "internal/cli", "internal/worktrees"]
     .flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith(".go") && !f.endsWith("_test.go")).map(f => d + "/" + f))];
 for (const b of bk.buckets) {
   const f = allFiles.find(x => ownedBy(b, x));
