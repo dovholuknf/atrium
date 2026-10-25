@@ -1,7 +1,6 @@
 package userenv
 
 import (
-	"os"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
@@ -24,11 +23,16 @@ func current() map[string]string {
 		}
 		names, _ := k.ReadValueNames(-1)
 		for _, n := range names {
-			v, _, err := k.GetStringValue(n)
+			v, typ, err := k.GetStringValue(n)
 			if err != nil || v == "" {
 				continue
 			}
-			v = os.ExpandEnv(expandPercent(v))
+			// Only REG_EXPAND_SZ holds %NAME%, and a literal $ or % elsewhere is the value.
+			if typ == registry.EXPAND_SZ {
+				if x, err := registry.ExpandString(v); err == nil {
+					v = x
+				}
+			}
 			key := strings.ToUpper(n)
 			if key == "PATH" && out[key] != "" {
 				v = out[key] + ";" + v
@@ -38,28 +42,4 @@ func current() map[string]string {
 		k.Close()
 	}
 	return out
-}
-
-// expandPercent turns %NAME% into ${NAME} for os.ExpandEnv, leaving an unknown or unpaired % alone.
-func expandPercent(s string) string {
-	var b strings.Builder
-	for {
-		i := strings.IndexByte(s, '%')
-		if i < 0 {
-			break
-		}
-		j := strings.IndexByte(s[i+1:], '%')
-		if j < 0 {
-			break
-		}
-		name := s[i+1 : i+1+j]
-		if name != "" && os.Getenv(name) != "" {
-			b.WriteString(s[:i] + "${" + name + "}")
-		} else {
-			b.WriteString(s[:i+j+2])
-		}
-		s = s[i+j+2:]
-	}
-	b.WriteString(s)
-	return b.String()
 }
