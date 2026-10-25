@@ -18,6 +18,8 @@ $AtriumBin    = 'C:\Users\claude\.atrium\bin\atrium.exe'
 $AtriumBinDir = Split-Path $AtriumBin
 $Repo         = 'D:\git\github\dovholuknf\atrium'
 $AtriumNew    = Join-Path $Repo 'build.claude\atrium.exe'
+# Where the deploy looks for go when it is not on PATH. The one place to change it.
+$GoFallbackBin = 'V:\work\tools\go\current\bin'
 # A different build to deploy, for a -WhatIf rehearsal from another worktree.
 if ($env:ATRIUM_NEW_BUILD) { $AtriumNew = $env:ATRIUM_NEW_BUILD }
 $Base         = 'C:\Users\claude\.atrium2'
@@ -255,6 +257,15 @@ function Find-Control {
       ((Split-Path $_.ExecutablePath) -eq $CtlBinDir) -and
       ($_.CommandLine -match ' room( |$)')
     }
+}
+
+# Find-Go puts go on this process's PATH and answers $null, or answers the one line that says where it looked. PATH first,
+# then $GoFallbackBin. A caller with no go on its PATH (a detached worker) is told at once, not once per room later.
+function Find-Go {
+  if (Get-Command go -ErrorAction SilentlyContinue) { return $null }
+  $exe = Join-Path $GoFallbackBin 'go.exe'
+  if (Test-Path $exe) { $env:PATH = "$GoFallbackBin$([IO.Path]::PathSeparator)$env:PATH"; return $null }
+  return "go not found: not on PATH, not at $exe"
 }
 
 # Clear-SessionEnv drops what a supervised session exports, so the processes started here do not inherit the
