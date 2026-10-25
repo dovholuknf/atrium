@@ -187,7 +187,9 @@ func DefaultHarnesses() []Harness {
 			// the prompt, and `resume_args` replaces `args` by design.
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
-			ResumeArgs: []string{"resume", "{resume}"},
+			// --no-alt-screen keeps codex in the normal buffer, the only one xterm.js scrolls back.
+			Args:       []string{"--no-alt-screen"},
+			ResumeArgs: []string{"resume", "--no-alt-screen", "{resume}"},
 			PromptArgs: []string{"{prompt}"},
 			ModelArgs:  []string{"--model", "{model}"},
 			// A config override, because codex has no effort flag. The key is
