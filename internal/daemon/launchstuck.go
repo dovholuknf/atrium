@@ -53,6 +53,7 @@ const (
 	PromptFolderTrust = "folder-trust"
 	PromptLogin       = "login"
 	PromptUpdate      = "update"
+	PromptSettings    = "settings"
 	PromptModelSwitch = "model-switch"
 	PromptOther       = "other"
 )
@@ -274,6 +275,8 @@ func readFrame(text string) termHit {
 	case strings.Contains(low, "select login method") || strings.Contains(low, "paste code here") ||
 		strings.Contains(low, "browser didn't open"):
 		h.prompt, h.title = PromptLogin, "login"
+	case strings.Contains(low, "settings file could not be read") || strings.Contains(low, "claude code settings issues"):
+		h.prompt, h.title = PromptSettings, "settings issues"
 	// An update BANNER is not a prompt: only a dialog waiting for an answer is.
 	case h.menu && strings.Contains(low, "update available"):
 		h.prompt, h.title = PromptUpdate, "update"
