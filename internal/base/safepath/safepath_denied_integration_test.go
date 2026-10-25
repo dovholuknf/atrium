@@ -59,8 +59,12 @@ func TestADeniedDirectoryUnderTheRootIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	eval := denied(dir)
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 
-	for _, p := range []string{dir, filepath.Join(dir, "link"), filepath.Join(dir, "link", "secret")} {
+	for _, p := range []string{filepath.Join(dir, "link"), filepath.Join(dir, "link", "secret")} {
 		if _, err := containedWith(eval, root, p); err == nil {
 			t.Fatalf("%s: a denied directory under the root was walked past", p)
 		}
@@ -85,6 +89,37 @@ func TestADeniedAncestorIsWalkedPastWhenTheRootResolvesToAnotherSpelling(t *test
 		t.Fatalf("a home under a root whose ancestor is denied was refused: %v", err)
 	}
 	if _, err := containedWith(eval, root, filepath.Join(alias, "work", "cards-evil", "x")); !errors.Is(err, ErrOutside) {
+		t.Fatalf("err %v, want ErrOutside", err)
+	}
+}
+
+func deniedWholeTree(root string) func(string) (string, error) {
+	return func(p string) (string, error) {
+		if strings.HasPrefix(strings.ToLower(p), strings.ToLower(root)) {
+			return "", &fs.PathError{Op: "FindFirstFile", Path: p, Err: fs.ErrPermission}
+		}
+		return filepath.EvalSymlinks(p)
+	}
+}
+
+func TestAnExistingPathBelowTheRootIsVettedWhenOnlyTheEvaluatorIsDenied(t *testing.T) {
+	root := t.TempDir()
+	clone := filepath.Join(root, "github", "o", "r")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := containedWith(deniedWholeTree(root), root, clone); err != nil {
+		t.Fatalf("an existing clone under the root was refused: %v", err)
+	}
+}
+
+func TestADeniedEvaluatorStillSeesALinkOutOfTheRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "out")); err != nil {
+		t.Skip("no symlinks here")
+	}
+	if _, err := containedWith(deniedWholeTree(root), root, filepath.Join(root, "out")); !errors.Is(err, ErrOutside) {
 		t.Fatalf("err %v, want ErrOutside", err)
 	}
 }
