@@ -304,6 +304,8 @@ type launchOptions struct {
 	// Autocompact is the compaction window in k tokens, as text, for a harness row that
 	// declares AutocompactArgs. Empty passes nothing. Computed by autocompactK.
 	Autocompact string
+	// GitDir is a worktree's git common dir outside its cwd, which a codex launch adds as a writable root.
+	GitDir string
 }
 
 // runnerArgsWith is runnerArgs with the effort and the extra argv as well.
@@ -366,6 +368,9 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 			return nil, "", err
 		}
 	}
+	if o.GitDir != "" && isCodex(h) {
+		args = append(append([]string{}, args...), "--add-dir", o.GitDir)
+	}
 	if len(o.Args) > 0 {
 		args = append(append([]string{}, args...), o.Args...)
 	}
@@ -390,6 +395,19 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+// outsideGitDir is the git common dir of the worktree at cwd, which lies outside it, else "".
+func outsideGitDir(cwd string) string {
+	out, err := gitIn(cwd, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+	if err != nil {
+		return ""
+	}
+	dirs := strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n")
+	if len(dirs) != 2 || filepath.Clean(dirs[0]) == filepath.Clean(dirs[1]) {
+		return ""
+	}
+	return filepath.Clean(filepath.FromSlash(dirs[1]))
 }
 
 // claudeTakesMany are Claude Code's options that take every argument after them up to the next option. Written
@@ -1168,6 +1186,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
+	if isCodex(h) {
+		opts.GitDir = outsideGitDir(cwd)
+	}
 	// The compaction window, from the limit this card will be held to. The tags are the
 	// request's and the card's, and the agent mark is put on as the launch will.
 	probe := &store.Task{Tags: append([]string{}, req.Tags...), Model: model}
