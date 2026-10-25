@@ -85,7 +85,8 @@ func containedWith(evalSymlinks func(string) (string, error), root, path string)
 		return "", err
 	}
 
-	if !within(realRoot, realTarget) {
+	// a link-walked target keeps an 8.3 spelling, and with every link resolved it can only sit under absRoot by being there
+	if !within(realRoot, realTarget) && !within(absRoot, realTarget) {
 		return "", ErrOutside
 	}
 	return realTarget, nil

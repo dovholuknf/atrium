@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,9 @@ func TestADeniedAncestorStillRefusesAPathOutsideTheRoot(t *testing.T) {
 }
 
 func TestADeniedDirectoryUnderTheRootIsRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0 does not deny lstat here, so the walk rightly sees no link")
+	}
 	root := t.TempDir()
 	dir := filepath.Join(root, "denied")
 	if err := os.Mkdir(dir, 0o755); err != nil {
