@@ -345,8 +345,8 @@ func roomRetireShareCmd(prefix string) *cobra.Command {
 			if _, err := retireZrokShare(f.keys(), nil); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "deleted the zrok share. the next hub start over zrok reserves a new one, "+
-				"and each zrok room needs `rooms token`")
+			fmt.Fprintln(cmd.OutOrStdout(), "deleted the zrok share. a running hub over zrok reserves a new one "+
+				"when it binds again, a stopped one at its next start, and each zrok room must rejoin with a new `rooms token`")
 			return nil
 		},
 	}
