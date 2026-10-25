@@ -662,6 +662,10 @@ public static extern System.IntPtr OpenProcess(uint access, bool inherit, int pi
 public static extern bool IsProcessInJob(System.IntPtr process, System.IntPtr job, out bool result);
 '@
   }
+  # A .NET type cannot be redefined in a running shell, so one that compiled an older Spawn keeps its old members.
+  if (-not [AtriumLive.Spawn].GetMethod('IsProcessInJob')) {
+    throw 'AtriumLive.Spawn in this shell is from an older live-common.ps1 and cannot be reloaded. open a fresh pwsh and run this again'
+  }
 }
 
 # Start-Breakaway starts a command line OUTSIDE any job object this process is in: CREATE_BREAKAWAY_FROM_JOB, no
