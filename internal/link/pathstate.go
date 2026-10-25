@@ -152,7 +152,7 @@ func (l *Ladder) probeRung(ctx context.Context, rg Rung, wait time.Duration) (rt
 		return rtt, nil, false
 	case <-ctx.Done():
 		go func() {
-			if r := <-ch; r.c != nil {
+			if r := <-ch; r.err == nil && r.c != nil {
 				_ = r.c.Close()
 			}
 		}()
