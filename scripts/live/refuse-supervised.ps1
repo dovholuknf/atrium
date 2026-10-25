@@ -80,6 +80,9 @@ function Get-CurrentJobPids {
 [DllImport("kernel32.dll")] public static extern bool QueryInformationJobObject(System.IntPtr job, int cls, byte[] buf, int len, out int ret);
 '@
   }
+  if (-not [AtriumLive.JobList].GetMethod('QueryInformationJobObject')) {
+    throw 'AtriumLive.JobList in this shell is from an older refuse-supervised.ps1 and cannot be reloaded. open a fresh pwsh and run this again'
+  }
   # JobObjectBasicProcessIdList: two counts, then the ids as pointer-sized values. Null job means this process's own.
   $size = 8 + 8 * 4096
   $b = New-Object byte[] $size; $n = 0
