@@ -18,22 +18,6 @@ import (
 // person on the room's machine can add a path the hub cannot know (the room's own
 // ziti identity) and can reorder the lot. See docs/rnd/room-transport-order.md.
 
-// Path is one way to reach a hub. Which fields mean anything depends on the kind.
-type Path struct {
-	Transport string `json:"transport"`
-	// Addr is where a direct room dials, host:port.
-	Addr string `json:"addr,omitempty"`
-	// Service is the ziti service.
-	Service string `json:"service,omitempty"`
-	// Share is a zrok private share token. Room-local: the hub never hands one out.
-	Share string `json:"share,omitempty"`
-	// Identity is the ziti identity file. Room-local: it is this room's credential.
-	Identity string `json:"identity,omitempty"`
-	// From is where the path came from, "join", "hub" or "local", for showing.
-	// Set by Candidates, never stored.
-	From string `json:"from,omitempty"`
-}
-
 // DefaultOrder is the order with nothing said: openziti, then direct, then zrok.
 // clint 2026-10-14: ziti first, direct second.
 var DefaultOrder = []string{"ziti", "direct", "zrok"}

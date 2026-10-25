@@ -78,7 +78,7 @@ against and the operator chose on purpose.
 - **The deploy-ready button names the tip it was shown**, and a mismatch is a 409. There is no timer that deploys.
 - **`Silence` is three beats** (`DefaultTimings`). One missed beat on a busy machine must not evict a room holding live
   terminals.
-- **`address.go` is a copy of `internal/daemon/address.go`**, since neither package imports the other. Both carry the
+- **`wire/address.go` is a copy of `internal/daemon/address.go`**, since neither package imports the other. Both carry the
   same table test. Change both.
 - **`resolve.go` is one rule for two callers**, so a name that works in `atrium_say` works in curl. Across rooms one
   live alias match wins, and anything else is ambiguous rather than whichever room answered first.
@@ -87,7 +87,7 @@ against and the operator chose on purpose.
 
 | | |
 | --- | --- |
-| `link.go` / `protocol.go` | the package comment, `Timings`, and the five frames |
+| `link.go` / `wire/` | the package comment and aliases for `wire`, which holds `Timings`, the frames and `Path`, `PathState`, `RemoteAccess` |
 | `hub.go` / `room.go` | the hub's half (accept and lend connections) and the room's half (dial and serve) |
 | `direct.go` / `certs.go` / `overlaytls.go` | mutual TLS, the hub's own CA, the join string, TLS inside an overlay |
 | `ziti.go` / `zrok.go` | the overlay transports |

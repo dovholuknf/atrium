@@ -59,6 +59,7 @@ $Groups = @(
     G 'store'              'store: sqlite store' './internal/store' 52 @('*')
     G 'hubstore'           'hubstore: hub database' './internal/hubstore' 15 @('*')
     G 'deployready'        'deployready: the deploy-ready checks' './internal/deployready' 40 @('*')
+    G 'link-wire'          'link/wire: the frames, timings and shared types of the room link' './internal/link/wire' 5 @('*')
     G 'ptyhost'            'ptyhost: pty and ConPTY host' './internal/ptyhost' 16 @('*')
     G 'guard'              'guard: git guard' './internal/guard' 10 @('*')
     G 'misc'               'small packages: cardproc claudeconf edge forge linkfetch nowindow prreview/render requirements resources roomspec roomstats runnersetup safepath testdiag' @(

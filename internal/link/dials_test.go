@@ -26,7 +26,7 @@ func (d *blockDialer) Describe() string { return "block" }
 func (d *blockDialer) Reset()           { d.resets.Add(1) }
 
 func newDialRoom(d Dialer, deadline time.Duration) (*Room, *atomic.Int32) {
-	r := &Room{Name: "r", Dial: d, T: Timings{DataDeadline: deadline}.fill()}
+	r := &Room{Name: "r", Dial: d, T: Timings{DataDeadline: deadline}.Fill()}
 	r.conns = make(chan net.Conn, 1)
 	var drops atomic.Int32
 	r.dropLink = func() { drops.Add(1) }

@@ -35,23 +35,6 @@ var PathKinds = []string{"direct", "ziti", "zrok"}
 // maxPathStates bounds what a hub keeps from a beat. A room is a trusted peer, and still this is read off a socket.
 const maxPathStates = 12
 
-// PathState is one rung as a room sees it. Never a credential: Addr is the dial address or the ziti service name.
-type PathState struct {
-	Kind      string    `json:"kind"`
-	Addr      string    `json:"addr,omitempty"`
-	State     string    `json:"state"`
-	Since     time.Time `json:"since,omitempty"`
-	LastError string    `json:"last_error,omitempty"`
-	RTTMs     int64     `json:"rtt_ms,omitempty"`
-	// Stale is true when RTTMs is the last answer and the probe now due has not returned yet.
-	Stale bool `json:"stale,omitempty"`
-	// Mutual is true when the rung really does TLS with a client certificate, which is what "mTLS" claims.
-	Mutual bool   `json:"mtls,omitempty"`
-	Source string `json:"source,omitempty"`
-	// Hammering is true when dials on this path are failing fast. See dialgate.go.
-	Hammering bool `json:"hammering,omitempty"`
-}
-
 // pather is a Dialer that can say what every rung is doing. `Ladder` is the one there is.
 type pather interface {
 	ProbePaths(ctx context.Context, wait time.Duration) []PathState

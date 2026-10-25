@@ -1,4 +1,4 @@
-package link
+package wire
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ import (
 // The frames, and there are five of them.
 //
 // ONE JSON OBJECT PER LINE, and then the connection stops being framed at all.
-// A data connection says hello and from that byte on it is an ordinary HTTP/1.1
+// A data connection says Hello and from that byte on it is an ordinary HTTP/1.1
 // socket in both directions. That is what lets a websocket upgrade and a large
 // download work without this package knowing they exist.
 //
@@ -22,8 +22,8 @@ import (
 // the only thing that needs to: a hub asking for more connections, and a room
 // saying it is still there.
 
-// hello is the first line on every connection, in both kinds.
-type hello struct {
+// Hello is the first line on every connection, in both kinds.
+type Hello struct {
 	V int `json:"v"`
 	// Kind is "control" or "data".
 	Kind string `json:"kind"`
@@ -61,8 +61,8 @@ type hello struct {
 	Fallback bool `json:"fallback,omitempty"`
 }
 
-// welcome is the hub's answer to a hello.
-type welcome struct {
+// Welcome is the hub's answer to a hello.
+type Welcome struct {
 	OK bool `json:"ok"`
 	// Error is why not, in the operator's words. A version mismatch says which
 	// versions, because "handshake failed" sends somebody to a packet capture
@@ -93,7 +93,7 @@ type welcome struct {
 // note is a line on the control connection, after the handshake. One struct
 // rather than a type tag per message, because there are two kinds of thing to
 // say and a tagged union of two is ceremony.
-type note struct {
+type Note struct {
 	// Need asks the room for this many more data connections.
 	Need int `json:"need,omitempty"`
 	// Beat is a room saying it is still there, and a hub saying the same back.
@@ -125,7 +125,7 @@ type note struct {
 	// Access is a room saying what its remote access switch says, at attach and on every change. Observed, and never
 	// trusted for granting: the room checks its own file again at every stream. See stream.go.
 	Access *RemoteAccess `json:"access,omitempty"`
-	// Paths is a hub saying its list of ways in changed, in the shape the welcome carries it. A room hears it
+	// Paths is a hub saying its list of ways in changed, in the shape the Welcome carries it. A room hears it
 	// exactly as it hears the welcome's list. Never a credential.
 	Paths []Path `json:"paths,omitempty"`
 }
@@ -167,20 +167,20 @@ type Offer struct {
 	Arch    string `json:"arch"`
 }
 
-// handshakeWait bounds the hello exchange. A connection that opens and then
+// HandshakeWait bounds the Hello exchange. A connection that opens and then
 // says nothing is either a port scanner or a broken room, and either way it
 // must not hold a slot.
-const handshakeWait = 10 * time.Second
+const HandshakeWait = 10 * time.Second
 
-// maxLine bounds a frame. Nothing here is large, and an unbounded ReadString on
+// MaxLine bounds a frame. Nothing here is large, and an unbounded ReadString on
 // a socket somebody else controls is a memory exhaustion waiting to be found.
-const maxLine = 64 << 10
+const MaxLine = 64 << 10
 
-// writeJSON writes one frame and a newline.
-func writeJSON(w io.Writer, v any) error { return writeJSONLimit(w, v, maxLine) }
+// WriteJSON writes one frame and a newline.
+func WriteJSON(w io.Writer, v any) error { return WriteJSONLimit(w, v, MaxLine) }
 
-// writeJSONLimit is writeJSON with the frame bound the caller names.
-func writeJSONLimit(w io.Writer, v any, limit int) error {
+// WriteJSONLimit is WriteJSON with the frame bound the caller names.
+func WriteJSONLimit(w io.Writer, v any, limit int) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -192,17 +192,17 @@ func writeJSONLimit(w io.Writer, v any, limit int) error {
 	return err
 }
 
-// readJSON reads one frame, bounded.
+// ReadJSON reads one frame, bounded.
 //
 // TAKES A *bufio.Reader AND KEEPS IT. A data connection stops being framed
-// after the hello, and whatever the bufio.Reader has already buffered is the
-// first bytes of HTTP. Reading the hello with a throwaway reader eats them, and
+// after the Hello, and whatever the bufio.Reader has already buffered is the
+// first bytes of HTTP. Reading the Hello with a throwaway reader eats them, and
 // the symptom is a first request that hangs while every later one works, which
 // is a bad afternoon.
-func readJSON(br *bufio.Reader, v any) error { return readJSONLimit(br, v, maxLine) }
+func ReadJSON(br *bufio.Reader, v any) error { return ReadJSONLimit(br, v, MaxLine) }
 
-// readJSONLimit is readJSON with the frame bound the caller names.
-func readJSONLimit(br *bufio.Reader, v any, limit int) error {
+// ReadJSONLimit is ReadJSON with the frame bound the caller names.
+func ReadJSONLimit(br *bufio.Reader, v any, limit int) error {
 	// BOUNDED WHILE READING, NOT AFTER, and the difference is the whole point
 	// of this loop existing instead of a one-line `ReadString`.
 	//
@@ -233,17 +233,17 @@ func readJSONLimit(br *bufio.Reader, v any, limit int) error {
 	return json.Unmarshal(bytes.TrimSpace(line), v)
 }
 
-// sayHello is the room's side of the handshake.
-func sayHello(conn net.Conn, br *bufio.Reader, h hello) (welcome, error) {
-	var w welcome
-	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+// SayHello is the room's side of the handshake.
+func SayHello(conn net.Conn, br *bufio.Reader, h Hello) (Welcome, error) {
+	var w Welcome
+	if err := conn.SetDeadline(time.Now().Add(HandshakeWait)); err != nil {
 		return w, err
 	}
 	h.V = Version
-	if err := writeJSON(conn, h); err != nil {
+	if err := WriteJSON(conn, h); err != nil {
 		return w, err
 	}
-	if err := readJSON(br, &w); err != nil {
+	if err := ReadJSON(br, &w); err != nil {
 		return w, err
 	}
 	if !w.OK {
@@ -255,30 +255,40 @@ func sayHello(conn net.Conn, br *bufio.Reader, h hello) (welcome, error) {
 	return w, conn.SetDeadline(time.Time{})
 }
 
-// hearHello is the hub's side.
-func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
-	var h hello
-	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+// HearHello is the hub's side.
+func HearHello(conn net.Conn, br *bufio.Reader) (Hello, error) {
+	var h Hello
+	if err := conn.SetDeadline(time.Now().Add(HandshakeWait)); err != nil {
 		return h, err
 	}
-	if err := readJSON(br, &h); err != nil {
+	if err := ReadJSON(br, &h); err != nil {
 		return h, err
 	}
 	if h.V != Version {
 		// SAID OUT LOUD BEFORE HANGING UP. A room on an old binary against a
 		// new hub is the ordinary consequence of upgrading one and not the
 		// other, and it deserves a sentence rather than a closed socket.
-		_ = writeJSON(conn, welcome{OK: false, Error: fmt.Sprintf(
+		_ = WriteJSON(conn, Welcome{OK: false, Error: fmt.Sprintf(
 			"this hub speaks link version %d and that room speaks %d. "+
 				"update whichever is older", Version, h.V)})
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", upgradeKind, announceKind, relayKind, gitKind, roomSpecKind, streamKind:
+	case "control", "data", "enrol", UpgradeKind, AnnounceKind, RelayKind, GitKind, RoomSpecKind, StreamKind:
 	default:
-		_ = writeJSON(conn, welcome{OK: false,
+		_ = WriteJSON(conn, Welcome{OK: false,
 			Error: "a connection is control, data, enrol, upgrade, announce, relay, git, roomspec or stream"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})
 }
+
+// The connection kinds after control and data, named here so HearHello can check them.
+const (
+	UpgradeKind  = "upgrade"
+	AnnounceKind = "announce"
+	RelayKind    = "relay"
+	GitKind      = "git"
+	RoomSpecKind = "roomspec"
+	StreamKind   = "stream"
+)

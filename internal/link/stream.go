@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
 	"net"
@@ -29,7 +30,7 @@ import (
 // dial the room makes. After each hop's `101` the connection is raw bytes.
 
 // streamKind is a room asking the hub to carry an ssh stream to another room.
-const streamKind = "stream"
+const streamKind = wire.StreamKind
 
 // StreamUpgrade is the Upgrade token of the hub-to-room request and of the caller's own request.
 const StreamUpgrade = "atrium-stream"
@@ -216,7 +217,7 @@ func (h *Hub) openStream(ctx context.Context, id, room, caller, claim string) (*
 	case !acc.On:
 		return nil, streamErr(http.StatusForbidden,
 			"%s has remote access off. turn it on at that machine: atrium room remote-access on", a.name)
-	case !acc.allows(caller):
+	case !acc.Allows(caller):
 		return nil, streamErr(http.StatusForbidden, "%s does not offer ssh to %s", a.name, caller)
 	case open >= MaxStreams:
 		return nil, streamErr(http.StatusTooManyRequests, "%s already has %d open ssh streams", a.name, MaxStreams)
@@ -410,34 +411,12 @@ func byteCount(n int64) string {
 	return fmt.Sprintf("%d B", n)
 }
 
-// RemoteAccess is what a room said about its switch: observed, never trusted for granting.
-type RemoteAccess struct {
-	On     bool     `json:"on"`
-	From   []string `json:"from,omitempty"`
-	Addr   string   `json:"addr,omitempty"`
-	Port   int      `json:"port,omitempty"`
-	Open   int      `json:"open"`
-	Forced bool     `json:"forced,omitempty"`
-}
-
-// host is the address the room dials for its own sshd.
-func (r RemoteAccess) host() string {
+// remoteHost is the address the room dials for its own sshd.
+func remoteHost(r RemoteAccess) string {
 	if r.Addr == "" {
 		return remoteaccess.DefaultAddr
 	}
 	return r.Addr
-}
-
-func (r *RemoteAccess) allows(caller string) bool {
-	if r == nil || !r.On {
-		return false
-	}
-	for _, f := range r.From {
-		if f == "*" || strings.EqualFold(f, caller) {
-			return true
-		}
-	}
-	return false
 }
 
 // ── the room's side ─────────────────────────────────────
@@ -511,11 +490,11 @@ func (r *Room) serveSSH(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// THE ROOM'S OWN FILE, AGAIN, whatever the hub believes. See OpenStream.
-	if !st.allows(caller) {
+	if !st.Allows(caller) {
 		r.streamRefusal(w, id, caller, http.StatusForbidden, r.Name+" does not offer ssh to "+caller)
 		return
 	}
-	addr := net.JoinHostPort(st.host(), fmt.Sprint(st.Port))
+	addr := net.JoinHostPort(remoteHost(st), fmt.Sprint(st.Port))
 	d := net.Dialer{Timeout: 10 * time.Second}
 	sshd, err := d.DialContext(req.Context(), "tcp", addr)
 	if err != nil {
@@ -646,7 +625,7 @@ func (r *Room) enforceAccess() {
 	r.smu.Lock()
 	var drop []*openStream
 	for _, o := range r.streams {
-		if !st.allows(o.caller) {
+		if !st.Allows(o.caller) {
 			drop = append(drop, o)
 		}
 	}
