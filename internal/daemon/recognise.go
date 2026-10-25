@@ -146,7 +146,7 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	// Fetched behind a dialog the operator is already looking at, so a console
 	// appearing over it is the same interruption a source's was. See
 	// hideWindow.
-	hideWindow(cmd)
+	stopTreeOnCancel(cmd)
 	// The daemon's own environment, minus the markers that would make a child
 	// think it is inside the session atrium was started from. Exactly what a
 	// source and a launched runner get, and for the same reason.
