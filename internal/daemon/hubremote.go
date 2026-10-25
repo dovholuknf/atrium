@@ -307,7 +307,8 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	if err != nil || t == nil {
 		return nil, fmt.Errorf("no card %s on this room", taskID)
 	}
-	if !d.cardLive(t.ID) {
+	// atrium_done ends the work, not the process: a resident runner between tasks still pushes.
+	if !d.cardLive(t.ID) && !(t.PID > 0 && processAlive(t.PID)) {
 		return nil, fmt.Errorf("that card is not running, so it pushes nothing")
 	}
 	if d.st.GitPush() != store.GitPushHub {
