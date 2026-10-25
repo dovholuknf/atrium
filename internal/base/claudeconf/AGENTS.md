@@ -1,4 +1,4 @@
-# internal/claudeconf
+# internal/base/claudeconf
 
 Reading and writing Claude Code's own `settings.json`. Two files, and one of them is a landmine.
 

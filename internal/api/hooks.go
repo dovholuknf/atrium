@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 )
 
 // The hook wiring, as something the board can see and fix. Activity, subagent
