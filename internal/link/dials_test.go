@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"runtime"
 	"sync"
@@ -111,3 +112,30 @@ func TestReattachingNeverExceedsTheCap(t *testing.T) {
 		t.Fatalf("%d dials ever started against a blocked dialer, cap is %d", d.started.Load(), maxDataDials)
 	}
 }
+
+// nilTLSDialer fails after release with a typed nil *tls.Conn, the shape that crashed the sgg room.
+type nilTLSDialer struct{ release chan struct{} }
+
+func (d nilTLSDialer) Dial(context.Context) (net.Conn, error) {
+	<-d.release
+	return (*tls.Conn)(nil), net.ErrClosed
+}
+
+func TestLateFailedDialTypedNilNotClosed(t *testing.T) {
+	d := nilTLSDialer{release: make(chan struct{})}
+	base := runtime.NumGoroutine()
+	if _, err := dialWithin(context.Background(), d, time.Millisecond); err == nil {
+		t.Fatal("dialWithin answered a dial that outlived its wait")
+	}
+	l := NewLadder([]Rung{{Path: Path{Transport: "direct", Addr: "h:1"}, Dial: d}})
+	if _, err, _ := l.probeRung(context.Background(), l.Rungs()[0], time.Millisecond); err == nil {
+		t.Fatal("probeRung answered a dial that outlived its wait")
+	}
+	close(d.release)
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > base && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+}
+
+func (nilTLSDialer) Describe() string { return "niltls" }
