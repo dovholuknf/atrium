@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -641,7 +642,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		case "flat":
 			// Collapsed first, which is the flattener's own pre-filter and
 			// belongs to nothing else. See `collapseRedraws`.
-			body = flatten(collapseRedraws(backlog))
+			body = screen.Flatten(screen.CollapseRedraws(backlog))
 		default:
 			// EACH RUN AT THE WIDTH IT WAS DRAWN AT, with the grid resized at
 			// every mark. See `screen.applyCuts` for the doubled lines one width
@@ -652,9 +653,9 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			// end of the last line, so the operator's first keystroke echoes in
 			// the wrong column. See `screen.textWithCursor`.
 			if len(cuts) == 0 {
-				cuts = []sizeCut{{0, wantCols, 0}}
+				cuts = []screen.SizeCut{{At: 0, Cols: wantCols, Rows: 0}}
 			}
-			body = replayCut(backlog, "screen", cuts, bufRows)
+			body = screen.ReplayCut(backlog, "screen", cuts, bufRows)
 		}
 		if err := c.Write(ctx, websocket.MessageBinary, body); err != nil {
 			return

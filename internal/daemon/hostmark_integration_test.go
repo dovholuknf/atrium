@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A clear mark put in the stream of a terminal under a pty host is still in its replay after the room restarts and
@@ -30,7 +32,7 @@ func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
 	}
 	hostWait(t, 20*time.Second, "AAA in the first daemon's ring", func() bool { return ringHas(r1, "AAA-first") })
 	r1.markClear()
-	hostWait(t, 5*time.Second, "the mark in the first daemon's ring", func() bool { return ringHas(r1, clearMarkOSC) })
+	hostWait(t, 5*time.Second, "the mark in the first daemon's ring", func() bool { return ringHas(r1, screen.ClearMarkOSC) })
 	// The mark reaches the host on its own round trip, well inside the gap before BBB.
 	time.Sleep(500 * time.Millisecond)
 
@@ -43,11 +45,11 @@ func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
 	hostWait(t, 30*time.Second, "BBB in the reattached ring", func() bool { return ringHas(r2, "BBB-second") })
 
 	out := replayOf(r2)
-	a, m, b := strings.Index(out, "AAA-first"), strings.Index(out, clearMarkOSC), strings.Index(out, "BBB-second")
+	a, m, b := strings.Index(out, "AAA-first"), strings.Index(out, screen.ClearMarkOSC), strings.Index(out, "BBB-second")
 	if !(a >= 0 && m > a && b > m) {
 		t.Fatalf("the mark is not between the two lines of the replay: A=%d mark=%d B=%d in %q", a, m, b, out)
 	}
-	if n := strings.Count(out, clearMarkOSC); n != 1 {
+	if n := strings.Count(out, screen.ClearMarkOSC); n != 1 {
 		t.Fatalf("the replay holds %d marks, want 1", n)
 	}
 }

@@ -191,8 +191,8 @@ func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T)
 	out, cuts, _, _ := r2.buf.ReplayCuts()
 	var at = -1
 	for _, c := range cuts {
-		if c.cols == 90 && c.rows == 25 {
-			at = c.at
+		if c.Cols == 90 && c.Rows == 25 {
+			at = c.At
 		}
 	}
 	if at != int(cut.Off) {
@@ -245,8 +245,8 @@ func TestAResizeAfterReattachIsCutBeforeAnyByteAtTheNewSize(t *testing.T) {
 	out, cuts, _, _ := r3.buf.ReplayCuts()
 	at := -1
 	for _, c := range cuts {
-		if c.cols == 70 && c.rows == 20 {
-			at = c.at
+		if c.Cols == 70 && c.Rows == 20 {
+			at = c.At
 		}
 	}
 	if at < 0 {

@@ -1,4 +1,4 @@
-package daemon
+package screen
 
 import (
 	"fmt"
@@ -32,8 +32,8 @@ import (
 // held for the rest of the ring.
 const repairMaxSpan = 64 << 10
 
-// repairEvent is one candidate and how it came out.
-type repairEvent struct {
+// RepairEvent is one candidate and how it came out.
+type RepairEvent struct {
 	offset int // the byte of the ESC[H in the replayed bytes
 	rows   int // the grid's size at the candidate
 	cols   int
@@ -46,9 +46,9 @@ type repairEvent struct {
 	why     string
 }
 
-// repairWatch is the detector's state. One per report, never shared.
-type repairWatch struct {
-	events []repairEvent
+// RepairWatch is the detector's state. One per report, never shared.
+type RepairWatch struct {
+	events []RepairEvent
 	// pos is the byte `applyCuts` is stepping, so an event can say where it was.
 	pos int
 
@@ -113,14 +113,14 @@ func fullSnapshot(snap []string, hist int) bool {
 	return hist > 0 || (len(snap) > 0 && snap[len(snap)-1] != "")
 }
 
-func (r *repairWatch) add(ev repairEvent) { r.events = append(r.events, ev) }
+func (r *RepairWatch) add(ev RepairEvent) { r.events = append(r.events, ev) }
 
-func (r *repairWatch) cancel(why string) {
+func (r *RepairWatch) cancel(why string) {
 	if !r.open {
 		return
 	}
 	r.open = false
-	ev := repairEvent{offset: r.openAt, rows: r.rows, cols: r.cols, outcome: "cancelled", why: why}
+	ev := RepairEvent{offset: r.openAt, rows: r.rows, cols: r.cols, outcome: "cancelled", why: why}
 	if r.atCut {
 		ev.cut = r.preRows
 	}
@@ -128,12 +128,12 @@ func (r *repairWatch) cancel(why string) {
 }
 
 // finish reports a candidate the ring ended inside.
-func (r *repairWatch) finish() {
+func (r *RepairWatch) finish() {
 	if !r.open {
 		return
 	}
 	r.open = false
-	ev := repairEvent{offset: r.openAt, rows: r.rows, cols: r.cols, outcome: "incomplete",
+	ev := RepairEvent{offset: r.openAt, rows: r.rows, cols: r.cols, outcome: "incomplete",
 		why: fmt.Sprintf("%d of %d rows", len(r.lines), r.rows)}
 	if r.atCut {
 		ev.cut = r.preRows
@@ -144,8 +144,8 @@ func (r *repairWatch) finish() {
 // shifts is every k from 1 to rows-1 at which the repaint's first M rows equal the
 // snapshot's rows k+1 to k+M, with at least four of them non-blank and distinct.
 // `thin` is whether any k matched on text and failed only that last rule.
-func (r *repairWatch) shifts() (ks []int, thin bool) {
-	m := maxInt(6, r.rows/4)
+func (r *RepairWatch) shifts() (ks []int, thin bool) {
+	m := MaxInt(6, r.rows/4)
 	if m > len(r.lines) {
 		return nil, false
 	}
@@ -181,9 +181,9 @@ func (r *repairWatch) shifts() (ks []int, thin bool) {
 // snapshot rows 1 to k at the history length noted on open. At a cut, only rows
 // gone+1 to k, at the pre-cut history length plus gone, which is right after the
 // rows `fitRows` filed.
-func (r *repairWatch) close() {
+func (r *RepairWatch) close() {
 	r.open = false
-	ev := repairEvent{offset: r.openAt, rows: r.rows, cols: r.cols}
+	ev := RepairEvent{offset: r.openAt, rows: r.rows, cols: r.cols}
 	if r.atCut {
 		ev.cut = r.preRows
 	}
@@ -214,11 +214,11 @@ func (r *repairWatch) close() {
 // --- the hooks on screen. Every one is called only when s.rep is not nil. ---
 
 // repCutStart is called before a size cut is applied.
-func (s *screen) repCutStart(c sizeCut) {
+func (s *Screen) repCutStart(c SizeCut) {
 	r := s.rep
 	r.cancel("cut")
 	r.histBefore = len(s.history)
-	if c.rows > 0 && c.rows != s.rows && !s.alt {
+	if c.Rows > 0 && c.Rows != s.rows && !s.alt {
 		if !r.cutPending {
 			r.cutSnap = snapshotRows(s.cells)
 			r.cutHist = len(s.history)
@@ -230,7 +230,7 @@ func (s *screen) repCutStart(c sizeCut) {
 }
 
 // repCutEnd is called after it, and notes what `fitRows` filed off the top.
-func (s *screen) repCutEnd() {
+func (s *Screen) repCutEnd() {
 	r := s.rep
 	if r.cutPending {
 		r.cutGone += len(s.history) - r.histBefore
@@ -239,10 +239,10 @@ func (s *screen) repCutEnd() {
 
 // repPut is a printable character. Something was drawn, so a cut before it is no
 // longer what a following `ESC[H` sits at.
-func (s *screen) repPut() { s.rep.cutPending = false }
+func (s *Screen) repPut() { s.rep.cutPending = false }
 
 // repLF is a line feed from the stream, which records the row just finished.
-func (s *screen) repLF() {
+func (s *Screen) repLF() {
 	r := s.rep
 	r.cutPending = false
 	if !r.open {
@@ -254,7 +254,7 @@ func (s *screen) repLF() {
 	}
 }
 
-func (s *screen) rowNow() string {
+func (s *Screen) rowNow() string {
 	if s.row < 0 || s.row >= len(s.cells) {
 		return ""
 	}
@@ -264,7 +264,7 @@ func (s *screen) rowNow() string {
 // repMove is a cursor move. It CLOSES an open candidate that has exactly rows-1
 // rows (the repaint whose last row has no line feed), and cancels one that has any
 // other count. Then, if it is a bare home, it may open a new one.
-func (s *screen) repMove(home bool) {
+func (s *Screen) repMove(home bool) {
 	r := s.rep
 	if r.open {
 		if len(r.lines) == r.rows-1 {
@@ -301,7 +301,7 @@ func (s *screen) repMove(home bool) {
 }
 
 // repCSI is every CSI sequence that is not private, before it is applied.
-func (s *screen) repCSI(final byte, home bool) {
+func (s *Screen) repCSI(final byte, home bool) {
 	r := s.rep
 	switch final {
 	case 'm', 'K':
@@ -323,30 +323,30 @@ func (s *screen) repCSI(final byte, home bool) {
 	}
 }
 
-// repairReport replays `b` through a grid that is watching, and answers what it
-// found. It is `replayCut`'s screen arm, minus the rendering, so the bytes and the
+// RepairReport replays `b` through a grid that is watching, and answers what it
+// found. It is `ReplayCut`'s screen arm, minus the rendering, so the bytes and the
 // cuts are the ones an attach would have replayed.
-func repairReport(b []byte, cuts []sizeCut, rows int) []repairEvent {
+func RepairReport(b []byte, cuts []SizeCut, rows int) []RepairEvent {
 	cols := 0
 	if len(cuts) > 0 {
-		cols = cuts[0].cols
-		if cuts[0].rows > 0 {
-			rows = cuts[0].rows
+		cols = cuts[0].Cols
+		if cuts[0].Rows > 0 {
+			rows = cuts[0].Rows
 		}
 		cuts = cuts[1:]
 	}
-	sc := newScreenSized(cols, rows)
-	sc.rep = &repairWatch{}
-	sc.applyCuts(b, cuts)
+	sc := NewScreenSized(cols, rows)
+	sc.rep = &RepairWatch{}
+	sc.ApplyCuts(b, cuts)
 	sc.rep.finish()
 	return sc.rep.events
 }
 
 var repairOutcomes = []string{"repaired", "resize-filed", "no-match", "ambiguous", "cancelled", "incomplete"}
 
-// formatRepairReport is tab separated: one header line, one line per candidate,
+// FormatRepairReport is tab separated: one header line, one line per candidate,
 // and a `totals` line.
-func formatRepairReport(events []repairEvent) string {
+func FormatRepairReport(events []RepairEvent) string {
 	var b strings.Builder
 	b.WriteString("offset\trows\tcols\tcut\toutcome\tk\tadded\twhy\n")
 	counts := map[string]int{}

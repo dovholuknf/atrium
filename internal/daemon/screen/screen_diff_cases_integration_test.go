@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"fmt"
@@ -120,7 +120,7 @@ func traceCases() []traceCase {
 	return []traceCase{
 		{name: "bare home repaint by autowrap", cols: 40, rows: 12, data: long + fullRows},
 		{name: "width shrinks over a long row", cols: 60, rows: 6, data: shrinkFirst + "after\r\n",
-			cuts: []sizeCut{{at: len(shrinkFirst), cols: 40}},
+			cuts: []SizeCut{{At: len(shrinkFirst), Cols: 40}},
 			accept: map[diffKind]string{
 				diffText:   "xterm.js reflows a row wider than the new width onto a second row, and screen.go cuts it. This model has no reflow, deliberately: the ring's width marks already replay each run at the width it was composed for (applyCuts), which is the case reflow would be for",
 				diffCursor: "the reflowed row moves the cursor down a row",
@@ -158,7 +158,7 @@ func traceCases() []traceCase {
 		{name: "region survives the alt screen", cols: 40, rows: 6, data: regionAlt},
 		{name: "region reset by a full reset", cols: 40, rows: 5, data: regionRIS, accept: clearKeepsHistory},
 		{name: "region reset by a resize", cols: 40, rows: 6, data: regionResize1 + regionResize2,
-			cuts: []sizeCut{{at: len(regionResize1), cols: 40, rows: 8}}},
+			cuts: []SizeCut{{At: len(regionResize1), Cols: 40, Rows: 8}}},
 		{name: "wide characters", cols: 40, rows: 6, data: wide},
 		{name: "wide overwrite first half", cols: 10, rows: 4, data: "あいう\rx\r\nあいう\r\x1b[2Cx\r\n"},
 		{name: "wide overwrite second half", cols: 10, rows: 4, data: "あいう\x1b[5Dx\r\nあいう\x1b[4Dy\r\n"},
@@ -181,7 +181,7 @@ func traceCases() []traceCase {
 		{name: "wide with colour", cols: 10, rows: 4, data: "\x1b[31mあ\x1b[mい\x1b[1D\x1b[32mx\r\n"},
 		{name: "wide characters scroll", cols: 10, rows: 3, data: "あいう\r\nえお\r\nかき\r\nくけ\r\n"},
 		{name: "wide across a width cut", cols: 10, rows: 4, data: "あいう\r\nx\r\n",
-			cuts: []sizeCut{{at: len("あいう\r\n"), cols: 5}},
+			cuts: []SizeCut{{At: len("あいう\r\n"), Cols: 5}},
 			accept: map[diffKind]string{
 				diffText:   "xterm.js reflows the row and screen.go cuts it, the accepted difference of the width shrinks case above",
 				diffCursor: "the reflowed row moves the cursor down a row",
@@ -198,7 +198,7 @@ func traceCases() []traceCase {
 		{name: "alt screen", cols: 40, rows: 12, data: alt},
 		{name: "bracketed paste", cols: 40, rows: 10, data: paste},
 		{name: "width change mid stream", cols: 60, rows: 12, data: first + second,
-			cuts: []sizeCut{{at: len(first), cols: 48}}},
+			cuts: []SizeCut{{At: len(first), Cols: 48}}},
 		{name: "bare home repaint over long output", cols: 40, rows: 12, data: long + repaint},
 	}
 }

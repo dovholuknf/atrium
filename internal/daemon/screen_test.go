@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // The screen model, tested against the shapes that broke the flattener.
@@ -13,7 +15,7 @@ import (
 
 // render is the whole pipeline at one width.
 func render(in string, cols int) string {
-	return string(renderHistory([]byte(in), cols))
+	return string(screen.RenderHistory([]byte(in), cols))
 }
 
 // lines of output, with the trailing line ending dropped.

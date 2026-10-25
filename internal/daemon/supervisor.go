@@ -15,6 +15,7 @@ import (
 	"github.com/aymanbagabas/go-pty"
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,7 +125,7 @@ func newRing(size, cols int) *ringBuffer { return newRingSized(size, cols, 0) }
 
 func newRingSized(size, cols, rows int) *ringBuffer {
 	if rows <= 0 {
-		rows = screenRows
+		rows = screen.ScreenRows
 	}
 	if size < 0 {
 		size = 0
@@ -486,13 +487,13 @@ func (r *ringBuffer) ReplaySized() (out []byte, widths []int, rows int, wrapped 
 //
 // The same rule as the widths list: a mark at the write position describes
 // nothing yet and is left out.
-func (r *ringBuffer) ReplayCuts() (out []byte, cuts []sizeCut, rows int, wrapped bool) {
+func (r *ringBuffer) ReplayCuts() (out []byte, cuts []screen.SizeCut, rows int, wrapped bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.replayCutsLocked()
 }
 
-func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []sizeCut, rows int, wrapped bool) {
+func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []screen.SizeCut, rows int, wrapped bool) {
 	start := r.retainedStart()
 	out = r.from(start)
 	if len(out) == 0 {
@@ -501,7 +502,7 @@ func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []sizeCut, rows int, w
 	// `from` can trim to a line start, so the bytes begin here and not at
 	// `start`.
 	base := r.written - int64(len(out))
-	cuts = []sizeCut{{0, r.marks[0].cols, r.marks[0].rows}}
+	cuts = []screen.SizeCut{{At: 0, Cols: r.marks[0].cols, Rows: r.marks[0].rows}}
 	for _, m := range r.marks {
 		if m.at >= r.written {
 			break
@@ -512,110 +513,14 @@ func (r *ringBuffer) replayCutsLocked() (out []byte, cuts []sizeCut, rows int, w
 		}
 		last := &cuts[len(cuts)-1]
 		switch {
-		case last.cols == m.cols && last.rows == m.rows:
-		case last.at == at:
-			last.cols, last.rows = m.cols, m.rows
+		case last.Cols == m.cols && last.Rows == m.rows:
+		case last.At == at:
+			last.Cols, last.Rows = m.cols, m.rows
 		default:
-			cuts = append(cuts, sizeCut{at, m.cols, m.rows})
+			cuts = append(cuts, screen.SizeCut{At: at, Cols: m.cols, Rows: m.rows})
 		}
 	}
 	return out, cuts, r.marks[len(r.marks)-1].rows, start > 0
-}
-
-// collapseRedraws keeps the last frame of repeated in-place updates.
-//
-// ONLY EVER FOR THE FLATTENER, and running it anywhere else destroys output.
-// It has no grid, so it decides what a frame is from `\r` and the erases, and
-// `\r` is not only a redraw: claude-code ends every WRAPPED VISUAL ROW with
-// one. A paragraph three rows wide is one newline-free segment with three
-// boundaries in it, this reads them as three frames, and two rows of the
-// paragraph are thrown away before any renderer sees them.
-//
-// Measured on one card's ring: twelve findings went in, and what came out of
-// here had zero of their `#:`, `Sev:` and `Location:` lines and eight of their
-// twelve `Issue:` lines. A whole day was spent on renderers that were being
-// handed that.
-//
-// The flattener needs it, because without a grid a spinner that redrew four
-// hundred times becomes four hundred lines. The screen model does not: a grid
-// resolves a repaint by definition, which is what a grid is for. Same ring
-// through the screen model uncollapsed keeps all twelve.
-//
-// Run during replay to keep parsing off the write path. Never collapse across
-// a newline, since completed lines belong in history.
-// Detect frames by boundaries, since counters and timers change the text.
-// Require two boundaries so a single prompt overwrite is preserved.
-func collapseRedraws(b []byte) []byte {
-	out := make([]byte, 0, len(b))
-	// seg is the start of the newline free segment being judged, last and prev
-	// the starts of the two most recent boundary groups in it, and drawn
-	// whether a frame has been written since the last of them.
-	seg, last, prev, groups, drawn := 0, -1, -1, 0, false
-	flush := func(end int) {
-		from := seg
-		if groups >= 2 {
-			// A trailing boundary with nothing after it is the start of a frame
-			// the runner never drew, so the last frame begins one group back.
-			if drawn && last > seg {
-				from = last
-			} else if !drawn && prev > seg {
-				from = prev
-			}
-		}
-		out = append(out, b[from:end]...)
-	}
-	for i := 0; i < len(b); {
-		if b[i] == '\n' {
-			flush(i + 1)
-			seg, last, prev, groups, drawn = i+1, -1, -1, 0, false
-			i++
-			continue
-		}
-		if n := redrawAt(b, i); n > 0 {
-			// Boundaries with no frame between them are one reset, such as a
-			// carriage return followed by an erase to end of line.
-			if last < 0 || drawn {
-				prev, last, groups, drawn = last, i, groups+1, false
-			}
-			i += n
-			continue
-		}
-		drawn = true
-		i++
-	}
-	flush(len(b))
-	return out
-}
-
-// redrawAt returns the length of a redraw boundary at b[i], or zero.
-// Recognize carriage return, line/display erases, and synchronized-output
-// start (CSI ? 2026 h), which Claude Code uses to delimit frames.
-// Absolute cursor positions are not boundaries: a frame can contain several,
-// and splitting on each would discard parts of that frame.
-func redrawAt(b []byte, i int) int {
-	if b[i] == '\r' {
-		return 1
-	}
-	if b[i] != 0x1b || i+1 >= len(b) || b[i+1] != '[' {
-		return 0
-	}
-	j := i + 2
-	for j < len(b) && (b[j] >= '0' && b[j] <= '9' || b[j] == ';' || b[j] == '?') {
-		j++
-	}
-	if j >= len(b) {
-		return 0
-	}
-	if b[j] == 'K' || b[j] == 'J' {
-		return j + 1 - i
-	}
-	// The begin marker only. The end marker closes a frame that has already
-	// been counted, and treating both as boundaries would count every frame
-	// twice, which changes where the two-boundary threshold falls.
-	if b[j] == 'h' && string(b[i+2:j]) == "?2026" {
-		return j + 1 - i
-	}
-	return 0
 }
 
 // from returns the retained bytes at and after a stream position, oldest
@@ -727,7 +632,7 @@ type runner struct {
 	resumed bool
 	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
 	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
-	esc         escParser
+	esc         screen.EscParser
 	fed         int64 // runner bytes written through writeLocked, so a mark can be placed in the host's offsets
 	markPending bool
 	markHeld    int
@@ -975,7 +880,7 @@ func (r *runner) Say(text string) error {
 // This keeps long peer messages together even if the PTY delivers chunks
 // (B2-47). Other runners get plain text to avoid displaying escape sequences.
 func (r *runner) SayPasted(text string) error {
-	if err := r.Write([]byte(bracketedPaste(text))); err != nil {
+	if err := r.Write([]byte(screen.BracketedPaste(text))); err != nil {
 		return err
 	}
 	time.Sleep(sayThenEnter)
@@ -1830,7 +1735,7 @@ func agreedViewport(all map[any]viewport) viewport {
 func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrapped bool, updates chan []byte) {
 	backlog, cuts, _, wantCols, wrapped, updates := r.subscribeSized()
 	for _, c := range cuts {
-		widths = append(widths, c.cols)
+		widths = append(widths, c.Cols)
 	}
 	return backlog, widths, wantCols, wrapped, updates
 }
@@ -1838,7 +1743,7 @@ func (r *runner) subscribe() (backlog []byte, widths []int, wantCols int, wrappe
 // subscribeSized is subscribe, plus the height the buffer was drawn at, which
 // the replay needs to build a grid the right shape and nothing else wants, and
 // the widths as cuts into the backlog, so each run replays at its own width.
-func (r *runner) subscribeSized() (backlog []byte, cuts []sizeCut, rows, wantCols int, wrapped bool, updates chan []byte) {
+func (r *runner) subscribeSized() (backlog []byte, cuts []screen.SizeCut, rows, wantCols int, wrapped bool, updates chan []byte) {
 	ch := make(chan []byte, 64)
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1944,7 +1849,7 @@ func isClearCommand(s string) bool {
 func (r *runner) markClear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.esc.ground() {
+	if r.esc.Ground() {
 		r.emitMarkLocked()
 		return
 	}
@@ -1956,7 +1861,7 @@ func (r *runner) markClear() {
 	if after == nil {
 		after = time.AfterFunc
 	}
-	r.markTimer = after(markHoldTime, func() {
+	r.markTimer = after(screen.MarkHoldTime, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.markPending {
@@ -1971,8 +1876,8 @@ func (r *runner) emitMarkLocked() {
 		r.markTimer.Stop()
 		r.markTimer = nil
 	}
-	_, _ = r.buf.Write([]byte(clearMarkOSC))
-	r.fanoutLocked([]byte(clearMarkOSC))
+	_, _ = r.buf.Write([]byte(screen.ClearMarkOSC))
+	r.fanoutLocked([]byte(screen.ClearMarkOSC))
 	// Under a pty host the host's ring holds only what the pty wrote, so a re-adopt would replay it without the mark.
 	// Tell the host the offset of the stream the mark sits at: smaller than keeping the bytes in its ring, which
 	// would move every offset the cuts and a reattach count in. Off the lock, since it is a round trip.
@@ -1986,20 +1891,20 @@ func (r *runner) emitMarkLocked() {
 // held mark is written at the first ground point inside the chunk, so the chunk is split there.
 func (r *runner) outputLocked(chunk []byte) {
 	if r.markPending {
-		if i := r.esc.feedUntilGround(chunk); i >= 0 {
+		if i := r.esc.FeedUntilGround(chunk); i >= 0 {
 			r.writeLocked(chunk[:i])
 			r.emitMarkLocked()
 			chunk = chunk[i:]
 		} else {
 			r.writeLocked(chunk)
-			if r.markHeld += len(chunk); r.markHeld >= markHoldBytes {
+			if r.markHeld += len(chunk); r.markHeld >= screen.MarkHoldBytes {
 				r.emitMarkLocked()
 			}
 			return
 		}
 	}
 	for _, c := range chunk {
-		r.esc.feed(c)
+		r.esc.Feed(c)
 	}
 	r.writeLocked(chunk)
 }
@@ -2376,7 +2281,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	// viewer that arrived between the two would be sent the new terminal's
 	// first bytes and nothing before them, which is the bug being fixed.
 	if t, err := d.st.Get(taskID); err == nil {
-		r.line.escClears = clearsOnEsc(t.Runner)
+		r.line.escClears = screen.ClearsOnEsc(t.Runner)
 	}
 	d.adoptCarryover(r)
 	// DURABLE BEFORE THE LAUNCH COUNTS AS COMPLETE. See `recordRun`.

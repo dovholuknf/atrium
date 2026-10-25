@@ -1,14 +1,11 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 // nlines is "line 04" to "line 10" style rows, joined by CR LF with no trailing
@@ -55,22 +52,22 @@ func blankRows(n int) []string { return make([]string, n) }
 
 // watched replays b through a watching grid and through one that is not, and
 // insists the two agree on everything a rendering could show.
-func watched(t *testing.T, cols, rows int, b string, cuts []sizeCut) []repairEvent {
+func watched(t *testing.T, cols, rows int, b string, cuts []SizeCut) []RepairEvent {
 	t.Helper()
-	w := newScreenSized(cols, rows)
-	w.rep = &repairWatch{}
-	w.applyCuts([]byte(b), cuts)
+	w := NewScreenSized(cols, rows)
+	w.rep = &RepairWatch{}
+	w.ApplyCuts([]byte(b), cuts)
 	w.rep.finish()
 
-	c := newScreenSized(cols, rows)
-	c.applyCuts([]byte(b), cuts)
-	if w.text() != c.text() || len(w.history) != len(c.history) || w.textWithCursor() != c.textWithCursor() {
-		t.Fatalf("the detector changed the grid:\nwatched %q\ncontrol %q", w.textWithCursor(), c.textWithCursor())
+	c := NewScreenSized(cols, rows)
+	c.ApplyCuts([]byte(b), cuts)
+	if w.Text() != c.Text() || len(w.history) != len(c.history) || w.TextWithCursor() != c.TextWithCursor() {
+		t.Fatalf("the detector changed the grid:\nwatched %q\ncontrol %q", w.TextWithCursor(), c.TextWithCursor())
 	}
 	return w.rep.events
 }
 
-func only(t *testing.T, ev []repairEvent) repairEvent {
+func only(t *testing.T, ev []RepairEvent) RepairEvent {
 	t.Helper()
 	if len(ev) != 1 {
 		t.Fatalf("want one candidate, got %+v", ev)
@@ -78,7 +75,7 @@ func only(t *testing.T, ev []repairEvent) repairEvent {
 	return ev[0]
 }
 
-func none(t *testing.T, ev []repairEvent) {
+func none(t *testing.T, ev []RepairEvent) {
 	t.Helper()
 	for _, e := range ev {
 		if e.outcome == "repaired" {
@@ -152,7 +149,7 @@ func TestASecondCutInsideARepaintCancelsIt(t *testing.T) {
 	head := nlines(1, 10)
 	full := repaint(rows, true)
 	mid := len(head) + len("\x1b[H") + 3*len("line 04\x1b[K\r\n")
-	ev := only(t, watched(t, 30, 10, head+full, []sizeCut{{mid, 25, 0}}))
+	ev := only(t, watched(t, 30, 10, head+full, []SizeCut{{mid, 25, 0}}))
 	if ev.outcome != "cancelled" || ev.why != "cut" {
 		t.Fatalf("got %+v", ev)
 	}
@@ -226,7 +223,7 @@ func TestAReallyCollapsedBlockIsReportedAsRepairable(t *testing.T) {
 func TestARepaintAtAShrinkOnlyAddsWhatTheResizeDidNotFile(t *testing.T) {
 	t.Parallel()
 	head := nlines(1, 50)
-	cut := []sizeCut{{len(head), 30, 40}}
+	cut := []SizeCut{{len(head), 30, 40}}
 
 	shifted12 := append(lineRows(13, 50), newRows(51, 52)...)
 	ev := only(t, watched(t, 30, 50, head+repaint(shifted12, true), cut))
@@ -244,7 +241,7 @@ func TestARepaintAtAGrowAddsNothing(t *testing.T) {
 	t.Parallel()
 	head := nlines(1, 40)
 	ev := only(t, watched(t, 30, 40, head+repaint(append(lineRows(1, 40), blankRows(10)...), true),
-		[]sizeCut{{len(head), 30, 50}}))
+		[]SizeCut{{len(head), 30, 50}}))
 	if ev.outcome != "no-match" || ev.added != 0 || ev.cut != 40 {
 		t.Fatalf("got %+v", ev)
 	}
@@ -255,7 +252,7 @@ func TestARepaintAfterSomethingWasDrawnIsNotAtTheCut(t *testing.T) {
 	t.Parallel()
 	head := nlines(1, 50)
 	b := head + "\r\nmore" + repaint(append(lineRows(14, 50), newRows(51, 53)...), true)
-	ev := only(t, watched(t, 30, 50, b, []sizeCut{{len(head), 30, 40}}))
+	ev := only(t, watched(t, 30, 50, b, []SizeCut{{len(head), 30, 40}}))
 	if ev.cut != 0 {
 		t.Fatalf("got %+v", ev)
 	}
@@ -263,7 +260,7 @@ func TestARepaintAfterSomethingWasDrawnIsNotAtTheCut(t *testing.T) {
 
 func TestTheReportFormat(t *testing.T) {
 	t.Parallel()
-	got := formatRepairReport([]repairEvent{
+	got := FormatRepairReport([]RepairEvent{
 		{offset: 9, rows: 10, cols: 30, outcome: "repaired", k: 3, added: 3},
 		{offset: 99, rows: 40, cols: 30, cut: 50, outcome: "resize-filed", why: "k=10 gone=10"},
 	})
@@ -273,98 +270,5 @@ func TestTheReportFormat(t *testing.T) {
 		"totals\trepaired=1\tresize-filed=1\tno-match=0\tambiguous=0\tcancelled=0\tincomplete=0\tadded=3\n"
 	if got != want {
 		t.Fatalf("got\n%q\nwant\n%q", got, want)
-	}
-}
-
-func repairGet(t *testing.T, d *Daemon, taskID, query string) string {
-	t.Helper()
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID+"/scrollback/text?"+query, nil)
-	req.SetPathValue("id", taskID)
-	d.handleTextScrollback(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
-	}
-	return w.Body.String()
-}
-
-func repairStream() string {
-	rows := append(lineRows(4, 10), newRows(11, 13)...)
-	return nlines(1, 10) + repaint(rows, true)
-}
-
-func TestTheReportThroughHTTP(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	_, r := sizedSession(t, d, "rep-card", 30, 10)
-	r.buf.Write([]byte(repairStream()))
-
-	got := repairGet(t, d, "rep-card", "repair=report&mode=raw&ansi=1&collapse=0")
-	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("want header, one row and totals, got %q", got)
-	}
-	if lines[0] != "offset\trows\tcols\tcut\toutcome\tk\tadded\twhy" {
-		t.Fatalf("header %q", lines[0])
-	}
-	if want := fmt.Sprintf("%d\t10\t30\t-\trepaired\t3\t3\t", len(nlines(1, 10))); lines[1] != want {
-		t.Fatalf("row %q, want %q", lines[1], want)
-	}
-	if want := "totals\trepaired=1\tresize-filed=0\tno-match=0\tambiguous=0\tcancelled=0\tincomplete=0\tadded=3"; lines[2] != want {
-		t.Fatalf("totals %q", lines[2])
-	}
-	if strings.Contains(got, "[atrium]") {
-		t.Fatalf("the report carries a banner: %q", got)
-	}
-}
-
-func TestTheReportReadsAShellWhenAsked(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	_, _ = sizedSession(t, d, "rep-shell", 30, 10)
-	sh := &runner{
-		taskID: "rep-shell", pty: newFakePTY(), started: time.Now(),
-		buf: newRingSized(1<<16, 30, 10), watchers: map[chan []byte]struct{}{}, done: make(chan struct{}),
-	}
-	sh.buf.Write([]byte(repairStream()))
-	d.sup.addShell(sh)
-
-	if got := repairGet(t, d, "rep-shell", "repair=report"); strings.Contains(got, "\trepaired\t") {
-		t.Fatalf("the card's own ring is empty and reported %q", got)
-	}
-	if got := repairGet(t, d, "rep-shell", "repair=report&kind=shell"); !strings.Contains(got, "\trepaired\t3\t3\t") {
-		t.Fatalf("the shell's ring was not reported: %q", got)
-	}
-}
-
-// NOTHING ELSE MOVES. Plain /scrollback/text and the screen replay an attach uses
-// are what they were, before and after a report has run over the same bytes.
-func TestThePlainReplayIsUnchangedByTheDetector(t *testing.T) {
-	t.Parallel()
-	d := testDaemon(t)
-	_, r := sizedSession(t, d, "rep-plain", 30, 10)
-	r.buf.Write([]byte(repairStream()))
-
-	b, cuts, rows, _ := r.buf.ReplayCuts()
-	before := string(replayCut(b, "screen", cuts, rows))
-	plainBefore := repairGet(t, d, "rep-plain", "mode=screen")
-
-	_ = repairGet(t, d, "rep-plain", "repair=report")
-	repairReport(b, cuts, rows)
-
-	if after := string(replayCut(b, "screen", cuts, rows)); after != before {
-		t.Fatalf("attach replay changed:\n%q\n%q", before, after)
-	}
-	if plainAfter := repairGet(t, d, "rep-plain", "mode=screen"); plainAfter != plainBefore {
-		t.Fatalf("/scrollback/text changed:\n%q\n%q", plainBefore, plainAfter)
-	}
-	if !strings.HasPrefix(plainBefore, "[atrium] screen mode, 30 columns, 10 rows,") {
-		t.Fatalf("the banner went: %q", plainBefore)
-	}
-	// And the rows the repaint overwrote are still not in it: nothing is spliced.
-	for _, gone := range []string{"line 01", "line 02", "line 03"} {
-		if strings.Contains(plainBefore, gone) {
-			t.Fatalf("%q is in history, which nothing here may do", gone)
-		}
 	}
 }

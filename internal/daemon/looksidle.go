@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -119,7 +120,7 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 			continue
 		}
 		cols, rows := run.buf.CurrentSize()
-		idle, why := classifyFrame(run.buf.Tail(frameTailBytes), cols, rows)
+		idle, why := screen.ClassifyFrame(run.buf.Tail(screen.FrameTailBytes), cols, rows)
 		if !idle {
 			continue
 		}
@@ -173,12 +174,12 @@ func (d *Daemon) trustReattachedLine(run *runner, now time.Time) {
 		return
 	}
 	cols, rows := run.buf.CurrentSize()
-	tail := run.buf.Tail(frameTailBytes)
+	tail := run.buf.Tail(screen.FrameTailBytes)
 	if claude {
-		if !framePromptEmpty(tail, cols, rows) && !frameLineEmpty(tail, cols, rows) {
+		if !screen.FramePromptEmpty(tail, cols, rows) && !screen.FrameLineEmpty(tail, cols, rows) {
 			return
 		}
-	} else if d.act.midTurn(run.taskID) || frameHasInterrupt(tail, cols, rows) {
+	} else if d.act.midTurn(run.taskID) || screen.FrameHasInterrupt(tail, cols, rows) {
 		return
 	}
 	run.typeMu.Lock()

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // Scrollback that survives a restart.
@@ -397,7 +398,7 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 	backlog, cuts, rows, _ := run.buf.ReplayCuts()
 	widths := make([]int, 0, len(cuts))
 	for _, c := range cuts {
-		widths = append(widths, c.cols)
+		widths = append(widths, c.Cols)
 	}
 	// `?repair=report` IS A DIAGNOSTIC AND NOT A REPAIR. It lists the repaints that
 	// overwrote rows above them (item 74, option 3) and says what a repair WOULD
@@ -411,7 +412,7 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Content-Disposition", "inline")
 		w.Header().Set("Cache-Control", "no-store")
-		_, _ = io.WriteString(w, formatRepairReport(repairReport(backlog, cuts, rows)))
+		_, _ = io.WriteString(w, screen.FormatRepairReport(screen.RepairReport(backlog, cuts, rows)))
 		return
 	}
 	if r.URL.Query().Get("collapse") == "0" {
@@ -421,9 +422,9 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 	if mode == "" {
 		mode = replayMode(d.st)
 	}
-	out := replayCut(backlog, mode, cuts, rows)
+	out := screen.ReplayCut(backlog, mode, cuts, rows)
 	if r.URL.Query().Get("ansi") != "1" {
-		out = stripSGR(out)
+		out = screen.StripSGR(out)
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", "inline")
@@ -431,7 +432,7 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 	// Said in the body rather than only in a header, because the first question
 	// about a rendering is always which one produced it.
 	fmt.Fprintf(w, "[atrium] %s mode, %d columns, %d rows, %d bytes in\n\n",
-		mode, replayCols(widths, 0), rows, len(backlog))
+		mode, screen.ReplayCols(widths, 0), rows, len(backlog))
 	_, _ = w.Write(out)
 }
 
@@ -454,7 +455,7 @@ func (d *Daemon) handleOlderScrollback(w http.ResponseWriter, r *http.Request) {
 	// over is gone from it. For a pane that is right. For "what did this card
 	// hold before the restart" it is the wrong trade, and the test below pins
 	// it with a redraw over a coloured line.
-	body := stripSGR(flatten(collapseRedraws(c.bytes)))
+	body := screen.StripSGR(screen.Flatten(screen.CollapseRedraws(c.bytes)))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	// Read in a tab rather than downloaded, which is the difference between
 	// answering the question and putting a file in somebody's downloads.
@@ -462,42 +463,6 @@ func (d *Daemon) handleOlderScrollback(w http.ResponseWriter, r *http.Request) {
 	// It is a snapshot of a moment that has passed, so it will not change.
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(body)
-}
-
-// stripSGR removes the colour that `flatten` deliberately keeps.
-//
-// Two callers want the same bytes and disagree about exactly one thing. A
-// terminal wants the colour, because a transcript in one colour is much harder
-// to read. A browser tab cannot render it and shows the codes as text.
-func stripSGR(b []byte) []byte {
-	out := make([]byte, 0, len(b))
-	for i := 0; i < len(b); {
-		if b[i] != 0x1b {
-			out = append(out, b[i])
-			i++
-			continue
-		}
-		// Only SGR can be here, since flatten dropped everything else, but the
-		// scan is written to consume any CSI so a stray sequence cannot leave
-		// its parameters on screen.
-		j := i + 1
-		if j < len(b) && b[j] == '[' {
-			j++
-			for j < len(b) && b[j] >= 0x30 && b[j] <= 0x3f {
-				j++
-			}
-			for j < len(b) && b[j] >= 0x20 && b[j] <= 0x2f {
-				j++
-			}
-			if j < len(b) {
-				j++
-			}
-			i = j
-			continue
-		}
-		i = j + 1
-	}
-	return out
 }
 
 // adoptCarryover hands a freshly spawned runner whatever the last daemon left
@@ -552,8 +517,8 @@ func (d *Daemon) adoptCarryover(r *runner) {
 // otherwise. The caller says so in `carryNotice`, as its own frame ahead of the
 // replay: in the replay it would go through the screen model, which keeps no
 // link.
-func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int, all bool) (
-	out []byte, joined []sizeCut, trimmed bool, held int) {
+func (r *runner) withCarried(live []byte, cuts []screen.SizeCut, wantCols, max int, all bool) (
+	out []byte, joined []screen.SizeCut, trimmed bool, held int) {
 	r.mu.Lock()
 	c := r.carried
 	r.mu.Unlock()
@@ -602,12 +567,12 @@ func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int, all
 
 	// The saved run at its own width, then the live ring's cuts moved past it.
 	// A live ring with no mark at its start gets one at the width it is drawn at.
-	joined = []sizeCut{{0, c.cols, 0}}
-	if len(cuts) == 0 || cuts[0].at > 0 {
-		joined = append(joined, sizeCut{len(prefix), wantCols, 0})
+	joined = []screen.SizeCut{{At: 0, Cols: c.cols, Rows: 0}}
+	if len(cuts) == 0 || cuts[0].At > 0 {
+		joined = append(joined, screen.SizeCut{At: len(prefix), Cols: wantCols, Rows: 0})
 	}
 	for _, cut := range cuts {
-		joined = append(joined, sizeCut{cut.at + len(prefix), cut.cols, cut.rows})
+		joined = append(joined, screen.SizeCut{At: cut.At + len(prefix), Cols: cut.Cols, Rows: cut.Rows})
 	}
 	return out, joined, trimmed, held
 }
@@ -737,9 +702,9 @@ func normSpace(s string) string {
 
 // needsSettling is whether the file's one width cannot describe these bytes. A single width is replayed as drawn, which
 // keeps text a cursor-home repaint overwrote, so settling is only for what a single width gets wrong.
-func needsSettling(cuts []sizeCut, carried *carryover) bool {
+func needsSettling(cuts []screen.SizeCut, carried *carryover) bool {
 	for i, c := range cuts {
-		if c.cols != cuts[0].cols || (i == 0 && carried != nil && c.cols != carried.cols) {
+		if c.Cols != cuts[0].Cols || (i == 0 && carried != nil && c.Cols != carried.cols) {
 			return true
 		}
 	}
@@ -752,35 +717,35 @@ func needsSettling(cuts []sizeCut, carried *carryover) bool {
 // rewrites by counting rows, and replayed at the file's one width the counts land on the wrong rows:
 // lines printed over each other, the old one left behind. Rendered here, at the width each run was
 // drawn at, what is saved is text that can be laid out at any width.
-func settleCarry(b []byte, cuts []sizeCut, rows int) []byte {
+func settleCarry(b []byte, cuts []screen.SizeCut, rows int) []byte {
 	if len(b) == 0 {
 		return b
 	}
 	if len(cuts) == 0 {
-		cuts = []sizeCut{{0, 0, 0}}
+		cuts = []screen.SizeCut{{At: 0, Cols: 0, Rows: 0}}
 	}
 	var out []byte
 	for i := 0; i < len(cuts); {
 		j := i + 1
-		for j < len(cuts) && cuts[j].cols == cuts[i].cols {
+		for j < len(cuts) && cuts[j].Cols == cuts[i].Cols {
 			j++
 		}
 		end := len(b)
 		if j < len(cuts) {
-			end = minInt(maxInt(cuts[j].at, cuts[i].at), len(b))
+			end = screen.MinInt(screen.MaxInt(cuts[j].At, cuts[i].At), len(b))
 		}
-		start := minInt(cuts[i].at, end)
+		start := screen.MinInt(cuts[i].At, end)
 		h := rows
-		if cuts[i].rows > 0 {
-			h = cuts[i].rows
+		if cuts[i].Rows > 0 {
+			h = cuts[i].Rows
 		}
-		within := make([]sizeCut, 0, j-i-1)
+		within := make([]screen.SizeCut, 0, j-i-1)
 		for _, c := range cuts[i+1 : j] {
-			within = append(within, sizeCut{c.at - start, c.cols, c.rows})
+			within = append(within, screen.SizeCut{At: c.At - start, Cols: c.Cols, Rows: c.Rows})
 		}
-		sc := newScreenSized(cuts[i].cols, h)
-		sc.applyCuts(b[start:end], within)
-		if text := sc.text(); text != "" {
+		sc := screen.NewScreenSized(cuts[i].Cols, h)
+		sc.ApplyCuts(b[start:end], within)
+		if text := sc.Text(); text != "" {
 			if len(out) > 0 && !bytes.HasSuffix(out, []byte("\n")) {
 				out = append(out, '\r', '\n')
 			}
@@ -823,7 +788,7 @@ func (r *runner) carryFrom(max int) *carryover {
 	}
 	if carried == nil {
 		for _, c := range liveCuts {
-			cols = maxInt(cols, c.cols)
+			cols = screen.MaxInt(cols, c.Cols)
 		}
 	}
 

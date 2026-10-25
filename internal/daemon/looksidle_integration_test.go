@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -31,19 +32,19 @@ func TestClassifyFrame(t *testing.T) {
 		idle  bool
 		why   string
 	}{
-		{"idle prompt", idleFrame, true, frameIdle},
-		{"idle after an earlier working frame", workingFrame + idleFrame, true, frameIdle},
-		{"working footer", workingFrame, false, frameHint},
-		{"working after an idle one", idleFrame + workingFrame, false, frameHint},
-		{"status line rows under the box", idleFrame + "  ~/repo (main) [22:54] | 5h 1% | wk 26% | ctx 64k\r\n  Checking for updates\r\n", true, frameIdle},
-		{"five rows under the box", idleFrame + "a\r\nb\r\nc\r\nd\r\n", false, frameNoBox},
-		{"hint in a status row", workingFrame + "  status\r\n", false, frameHint},
-		{"no box", "building...\r\nstill going\r\nmore\r\nlines\r\n", false, frameNoBox},
-		{"box half drawn", "x\r\n" + frameRule + "\r\n❯", false, frameNoBox},
-		{"spinner with no footer hint", "· Ionizing… (5s)\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule + "\r\n  footer\r\n", false, frameSpinner},
+		{"idle prompt", idleFrame, true, screen.FrameIdle},
+		{"idle after an earlier working frame", workingFrame + idleFrame, true, screen.FrameIdle},
+		{"working footer", workingFrame, false, screen.FrameHint},
+		{"working after an idle one", idleFrame + workingFrame, false, screen.FrameHint},
+		{"status line rows under the box", idleFrame + "  ~/repo (main) [22:54] | 5h 1% | wk 26% | ctx 64k\r\n  Checking for updates\r\n", true, screen.FrameIdle},
+		{"five rows under the box", idleFrame + "a\r\nb\r\nc\r\nd\r\n", false, screen.FrameNoBox},
+		{"hint in a status row", workingFrame + "  status\r\n", false, screen.FrameHint},
+		{"no box", "building...\r\nstill going\r\nmore\r\nlines\r\n", false, screen.FrameNoBox},
+		{"box half drawn", "x\r\n" + frameRule + "\r\n❯", false, screen.FrameNoBox},
+		{"spinner with no footer hint", "· Ionizing… (5s)\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule + "\r\n  footer\r\n", false, screen.FrameSpinner},
 	}
 	for _, c := range cases {
-		idle, why := classifyFrame([]byte(c.frame), 80, 40)
+		idle, why := screen.ClassifyFrame([]byte(c.frame), 80, 40)
 		if idle != c.idle || why != c.why {
 			t.Errorf("%s: got %v/%s, wanted %v/%s", c.name, idle, why, c.idle, c.why)
 		}
@@ -59,8 +60,8 @@ func TestClassifyFrameOnRealCaptures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if idle, why := classifyFrame(b, 120, 40); idle || why != frameHint {
-			t.Errorf("%s: got %v/%s, wanted working via %s", f, idle, why, frameHint)
+		if idle, why := screen.ClassifyFrame(b, 120, 40); idle || why != screen.FrameHint {
+			t.Errorf("%s: got %v/%s, wanted working via %s", f, idle, why, screen.FrameHint)
 		}
 	}
 }
@@ -75,7 +76,7 @@ func TestClassifyFrameOnARealSettledPromptWithAStatusLine(t *testing.T) {
 	}
 	// The session was 206 columns wide, unlike the other captures. Read at the
 	// wrong width its rules wrap and it reads as no box, which fails safe.
-	if idle, why := classifyFrame(b, 206, 60); !idle {
+	if idle, why := screen.ClassifyFrame(b, 206, 60); !idle {
 		t.Errorf("wanted idle, got %s", why)
 	}
 }
@@ -93,7 +94,7 @@ func TestClassifyFrameOnARealCaptureMadeIdle(t *testing.T) {
 	// the tool line and spinner become a summary, and the footer loses its hint.
 	b = append(bytes.Clone(b), "\x1b[16;1H\x1b[2K\x1b[19;1H\x1b[2K✻ Crunched for 10m 1s"+
 		"\x1b[24;1H\x1b[2K  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents"...)
-	if idle, why := classifyFrame(b, 120, 40); !idle {
+	if idle, why := screen.ClassifyFrame(b, 120, 40); !idle {
 		t.Errorf("wanted idle, got %s", why)
 	}
 }

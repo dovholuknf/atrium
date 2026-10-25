@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 func newMarkRunner(f *fakePTY) *runner {
@@ -35,14 +37,14 @@ func TestMarkClearReachesTheReplayAndTheWatchersAndNotTheOutputClock(t *testing.
 	}
 	select {
 	case chunk := <-updates:
-		if string(chunk) != clearMarkOSC {
+		if string(chunk) != screen.ClearMarkOSC {
 			t.Fatalf("the watcher got %q", chunk)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("the watcher never got the mark")
 	}
 	replay, _, _ := r.buf.Replay()
-	if !strings.HasSuffix(string(replay), "old line 1\r\n"+clearMarkOSC) {
+	if !strings.HasSuffix(string(replay), "old line 1\r\n"+screen.ClearMarkOSC) {
 		t.Fatalf("the replay is %q", replay)
 	}
 	// The room's screen model reads the same bytes back and agrees.
@@ -64,7 +66,7 @@ func TestTypingSlashClearMarksTheStreamBeforeTheBytesAndOtherTextDoesNot(t *test
 		t.Fatalf("injectPeer: %v %v", ok, err)
 	}
 	replay, _, _ := r.buf.Replay()
-	if string(replay) != clearMarkOSC {
+	if string(replay) != screen.ClearMarkOSC {
 		t.Fatalf("typing /clear left %q in the stream", replay)
 	}
 	if !strings.Contains(f.written(), "/clear") {

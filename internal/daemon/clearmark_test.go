@@ -3,6 +3,8 @@ package daemon
 import (
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A clear on Windows reaches the room as ConPTY's repaint in place: the cursor goes home, the new frame is drawn over
@@ -19,7 +21,7 @@ func TestAClearThatIsRepaintedInPlaceLosesThePageWithoutTheMark(t *testing.T) {
 
 func TestTheClearMarkPutsThePageInHistoryBeforeItIsRepaintedOver(t *testing.T) {
 	t.Parallel()
-	got := plain(render("old line 1\r\nold line 2\r\n"+clearMarkOSC+conptyClear, 40))
+	got := plain(render("old line 1\r\nold line 2\r\n"+screen.ClearMarkOSC+conptyClear, 40))
 	for _, want := range []string{"old line 1", "old line 2", "new banner"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%q is missing after a marked clear:\n%q", want, got)
@@ -36,14 +38,14 @@ func TestTheClearMarkPutsThePageInHistoryBeforeItIsRepaintedOver(t *testing.T) {
 // The ST terminator is as good as BEL, and a mark the stream cuts in two is still one mark.
 func TestTheClearMarkEndedByStringTerminatorAndTheOneAcrossTwoWrites(t *testing.T) {
 	t.Parallel()
-	st := strings.TrimSuffix(clearMarkOSC, "\x07") + "\x1b\\"
+	st := strings.TrimSuffix(screen.ClearMarkOSC, "\x07") + "\x1b\\"
 	if got := plain(render("old line 1\r\n"+st+conptyClear, 40)); !strings.Contains(got, "old line 1") {
 		t.Fatalf("a mark ended by ST did not keep the page:\n%q", got)
 	}
-	s := newScreen(40)
-	s.apply([]byte("old line 1\r\n" + clearMarkOSC + conptyClear))
-	s.apply([]byte("later\r\n"))
-	if len(s.history) == 0 {
+	s := screen.NewScreen(40)
+	s.Apply([]byte("old line 1\r\n" + screen.ClearMarkOSC + conptyClear))
+	s.Apply([]byte("later\r\n"))
+	if s.HistoryRows() == 0 {
 		t.Fatal("nothing went into history")
 	}
 }
@@ -52,7 +54,7 @@ func TestTheClearMarkEndedByStringTerminatorAndTheOneAcrossTwoWrites(t *testing.
 // rule the board's `keepPage` keeps too so a live viewer and a replay agree.
 func TestAMarkAndTheEraseDisplayAfterItDoNotStackTheSamePage(t *testing.T) {
 	t.Parallel()
-	got := plain(render("old line 1\r\nold line 2\r\n"+clearMarkOSC+"\x1b[2J\x1b[Hnew\r\n", 40))
+	got := plain(render("old line 1\r\nold line 2\r\n"+screen.ClearMarkOSC+"\x1b[2J\x1b[Hnew\r\n", 40))
 	if n := strings.Count(got, "old line 1"); n != 1 {
 		t.Fatalf("the page is in history %d times, not once:\n%q", n, got)
 	}
@@ -60,7 +62,7 @@ func TestAMarkAndTheEraseDisplayAfterItDoNotStackTheSamePage(t *testing.T) {
 
 func TestTheClearMarkOnTheAlternateScreenKeepsNothing(t *testing.T) {
 	t.Parallel()
-	got := plain(render("before\r\n\x1b[?1049h"+"PAGER ROW\r\n"+clearMarkOSC+"\x1b[?1049l"+"after\r\n", 40))
+	got := plain(render("before\r\n\x1b[?1049h"+"PAGER ROW\r\n"+screen.ClearMarkOSC+"\x1b[?1049l"+"after\r\n", 40))
 	if strings.Contains(got, "PAGER ROW") {
 		t.Fatalf("the alternate screen was kept:\n%q", got)
 	}

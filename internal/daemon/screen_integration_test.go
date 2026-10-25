@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A PARTIAL REPAINT LANDS ON THE ROW IT WAS AIMED AT.
@@ -233,7 +235,7 @@ func TestAWrappedParagraphSurvivesTheReplay(t *testing.T) {
 		}
 	}
 
-	got := plain(string(Replay(live, "screen", replayCols(widths, 0), rows)))
+	got := plain(string(screen.Replay(live, "screen", screen.ReplayCols(widths, 0), rows)))
 	for _, want := range []string{
 		"#: 1", "Sev: high", "Location: e2ee_tls.c:159", "Issue: the first row of this one",
 	} {
@@ -244,7 +246,7 @@ func TestAWrappedParagraphSurvivesTheReplay(t *testing.T) {
 	// And the collapse, run on the same bytes, is what used to eat them. Pinned
 	// so that moving it back in front of everything fails here rather than in
 	// somebody's pane a week later.
-	if c := string(collapseRedraws(live)); strings.Contains(c, "Issue: the first row") {
+	if c := string(screen.CollapseRedraws(live)); strings.Contains(c, "Issue: the first row") {
 		t.Errorf("collapseRedraws kept the paragraph, so this test no longer pins anything: %q", c)
 	}
 }
@@ -311,14 +313,14 @@ func TestAnAbsurdParameterIsBounded(t *testing.T) {
 	if !strings.Contains(got, "top") || !strings.Contains(got, "bottom") {
 		t.Fatalf("text was lost: %q", got)
 	}
-	if n := len(lines(got)); n > screenMaxRows+2 {
+	if n := len(lines(got)); n > screen.ScreenMaxRows+2 {
 		t.Fatalf("a corrupt row parameter produced %d lines", n)
 	}
 }
 
 func TestEmptyInput(t *testing.T) {
 	t.Parallel()
-	if got := renderHistory(nil, 80); len(got) != 0 {
+	if got := screen.RenderHistory(nil, 80); len(got) != 0 {
 		t.Fatalf("empty input produced %q", got)
 	}
 }
