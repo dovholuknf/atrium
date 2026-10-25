@@ -31,7 +31,7 @@ import (
 // and the agents, and it serves its board on loopback exactly as it always did.
 // It runs the same binary the hooks run, so the address file it writes names a
 // binary that answers `atrium hook`, and the board's "install hooks" writes lines
-// that run. See internal/claudeconf/whichexe.go.
+// that run. See internal/base/claudeconf/whichexe.go.
 // The only new thing is that it also dials a hub and serves that SAME handler
 // down the connection, so the board can be served from somewhere else by a
 // process that can be restarted freely.

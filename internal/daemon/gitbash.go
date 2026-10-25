@@ -11,7 +11,7 @@ import (
 // each tool call blocks, the runner cannot even read its brief, and the card
 // sits idle looking like work. A room started over ssh has none of the PATH an
 // interactive one has, which is how that happened. So the launch looks first,
-// by the same order Claude Code does (see internal/claudeconf/shell.go), and
+// by the same order Claude Code does (see internal/base/claudeconf/shell.go), and
 // either leaves things alone, points the runner at a Git atrium installed, or
 // refuses with the reason before anything is spawned.
 

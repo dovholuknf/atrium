@@ -417,7 +417,7 @@
     "store": {"package": "./internal/store", "sources": ["internal/store/*.go"], "tests": ["internal/store/*_test.go"]},
     "hubstore": {"package": "./internal/hubstore", "sources": ["internal/hubstore/*.go"], "tests": ["internal/hubstore/*_test.go"]},
     "gitsync": {"package": "./internal/gitsync", "sources": ["internal/gitsync/*.go"], "tests": ["internal/gitsync/*_test.go"]},
-    "claudeconf": {"package": "./internal/claudeconf", "sources": ["internal/claudeconf/*.go"], "tests": ["internal/claudeconf/*_test.go"]},
+    "claudeconf": {"package": "./internal/base/claudeconf", "sources": ["internal/base/claudeconf/*.go"], "tests": ["internal/base/claudeconf/*_test.go"]},
     "worktrees": {"package": "./internal/worktrees", "sources": ["internal/worktrees/*.go"], "tests": ["internal/worktrees/*_test.go"]},
     "link/wire": {"package": "./internal/link/wire", "sources": ["internal/link/wire/*.go"], "tests": ["internal/link/wire/*_test.go"]},
     "ptyhost": {"package": "./internal/ptyhost", "sources": ["internal/ptyhost/*.go"], "tests": ["internal/ptyhost/*_test.go"]},

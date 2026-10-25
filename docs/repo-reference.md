@@ -118,11 +118,11 @@ internal/ptyhost/           the pty host that keeps terminals alive across a roo
 internal/gitsync/           git between hub and rooms
 internal/base/forge/        forges
 internal/base/prreview/     pull request review
-internal/claudeconf/        reading and writing a runner's hook config
+internal/base/claudeconf/   reading and writing a runner's hook config
   whichexe.go                 WHICH BINARY goes in there. not `os.Executable()`. read the header
 internal/base/safepath/     is this path inside that directory. one function, three rules
 internal/base/ edge/ itemgate/ requirements/ resources/ mcprule/ cardurl/ cardcolors/ shellpick/ inputlag/ webasset/
-  detach/ testguard/
+  detach/ testguard/ claudeconf/
 internal/ runnerprofile/ runnersetup/ roomstats/ deployready/
                             one concern each
 ```
