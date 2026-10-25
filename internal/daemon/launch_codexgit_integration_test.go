@@ -18,8 +18,6 @@ func gitWT(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// A worktree's git dir is outside it and is named. A plain clone keeps its git dir inside the workspace and gets
-// nothing.
 func TestOutsideGitDirNamesAWorktreesCloneOnly(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
