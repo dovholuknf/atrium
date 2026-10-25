@@ -998,7 +998,8 @@ async function cleanUpNow(id, t) {
     (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
     if (out.left) said.push(out.left + " left on the card");
     (out.warnings || []).forEach(w => said.push(w));
-    toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
+    if (out.session_error) toast("could not terminate " + title, said.join(". "));
+    else toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
   } catch (e) {
     toast("could not clean up", e.message);
   }
@@ -1009,11 +1010,12 @@ function endCardKeeping(id, t) { return oneAtATime("close:" + id, () => endCardK
 
 async function endCardKeepingNow(id, t) {
   try {
-    await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
+    const out = await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirm: true, keep: true })
     });
-    toast("terminated " + ((t && t.display_title) || id), "nothing was cleaned up");
+    if (out && out.session_error) toast("could not terminate " + ((t && t.display_title) || id), out.session_error);
+    else toast("terminated " + ((t && t.display_title) || id), "nothing was cleaned up");
   } catch (e) {
     toast("could not terminate", e.message);
   }

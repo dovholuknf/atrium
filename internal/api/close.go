@@ -145,6 +145,8 @@ type closeResult struct {
 	// Left counts the rows still live: kept on purpose or not freed.
 	Left     int      `json:"left"`
 	Warnings []string `json:"warnings"`
+	// SessionErr is why the session is still running after the close.
+	SessionErr string `json:"session_error,omitempty"`
 }
 
 // closing holds the cards a close is running on, so a second press does not race the first.
@@ -440,9 +442,13 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
 
 	// 1. the runner
-	if s.sessionLive(t) && s.Kill != nil {
+	if s.sessionLive(t) && s.Kill == nil {
+		res.SessionErr = "this room cannot stop its sessions"
+		warn("the session did not stop: %s", res.SessionErr)
+	} else if s.sessionLive(t) {
 		steps.begin("session", "stopping the session")
 		if err := s.Kill(t.ID); err != nil {
+			res.SessionErr = err.Error()
 			warn("the session did not stop: %v. a worktree it holds open may not remove", err)
 			steps.problem("%v", err)
 		}

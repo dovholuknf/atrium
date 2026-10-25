@@ -42,6 +42,7 @@ type closeOut struct {
 	Stashes []closeStash  `json:"stashes"`
 	Preview *closePreview `json:"preview"`
 	Warn    []string      `json:"warnings"`
+	Session string        `json:"session_error"`
 }
 
 func closeCall(t *testing.T, oh *openHarness, card string, body map[string]any) (int, closeOut) {
@@ -216,6 +217,26 @@ func TestCloseStopsTheSessionOfACardThatReportedDone(t *testing.T) {
 	}
 	if len(oh.killed) != 1 || oh.killed[0] != card {
 		t.Errorf("the session was not stopped: %v", oh.killed)
+	}
+	if out.Session != "" {
+		t.Errorf("a stopped session answered an error: %q", out.Session)
+	}
+}
+
+func TestCloseNamesASessionThatDidNotStop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, _, _ := openForClose(t)
+	if err := oh.srv.st.SetStatus(card, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.hk.isSupervised = func(string) bool { return true }
+	oh.srv.Kill = func(string) error { return errors.New("could not stop process 38036: access is denied") }
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "keep": true})
+	if code != 200 || out.Session != "could not stop process 38036: access is denied" {
+		t.Fatalf("%d %+v", code, out)
 	}
 }
 

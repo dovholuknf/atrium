@@ -136,14 +136,18 @@
   }
 
   async function endKeeping(id) {
-    try { await post(id, "close", { confirm: true, keep: true }); }
+    let out;
+    try { out = await post(id, "close", { confirm: true, keep: true }); }
     catch (e) { openSheet(id, "could not terminate: " + e.message); return; }
+    if (out && out.session_error) { openSheet(id, "could not terminate: " + out.session_error); return; }
     window.mNet.refresh();
   }
 
   async function finishCleanUp(id, answers) {
-    try { await post(id, "close", { confirm: true, answers }); }
+    let out;
+    try { out = await post(id, "close", { confirm: true, answers }); }
     catch (e) { openSheet(id, "could not clean up: " + e.message); return; }
+    if (out && out.session_error) { openSheet(id, "could not terminate: " + out.session_error); return; }
     close();
     window.mNet.refresh();
   }

@@ -13537,6 +13537,7 @@ async function termMenuSection(browser, base) {
     const patches = [], closes = [];
     let asks = [];
     let freed = [{ seq: 1, kind: "worktree", ref: "/w/x", action: "free", bytes: 1 }];
+    let closeReply = { closed: true, items: [] };
     await ctx.route("**/v1/tasks/*", route => {
       const r = route.request();
       if (r.method() !== "PATCH") return route.fallback();
@@ -13550,7 +13551,7 @@ async function termMenuSection(browser, base) {
           body: JSON.stringify({ items: freed, asks, can_stash: true, warnings: [], kept: [] }) });
       }
       closes.push(JSON.parse(r.postData() || "{}"));
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [] }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(closeReply) });
     });
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
@@ -13649,6 +13650,17 @@ async function termMenuSection(browser, base) {
     await p.waitForTimeout(500);
     if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
     if (await dialogUp().count()) fail("termMenu: the foreign worktree dialog stayed up after terminate.");
+    const toasted = () => p.evaluate(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].map(b => b.textContent));
+    if (!(await toasted()).some(x => /^terminated /.test(x))) fail("termMenu: a terminate that stopped the session did not say terminated: " + JSON.stringify(await toasted()));
+    // A session that did not stop is not called terminated: the toast names the failure (u-015).
+    closeReply = { closed: true, items: [], warnings: ["the session did not stop: access is denied"], session_error: "access is denied" };
+    await openMenu("land-tm-run");
+    await pick("terminate and clean up");
+    await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
+    await p.locator("dialog[open] button", { hasText: "terminate" }).click();
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^could not terminate /.test(b.textContent)),
+      null, { timeout: slow(5000) }).catch(() => fail("termMenu: a session that did not stop was not toasted as could not terminate."));
+    closeReply = { closed: true, items: [] };
     closes.length = 0;
     freed = [{ seq: 1, kind: "worktree", ref: "/w/x", action: "free", bytes: 1 }];
 
