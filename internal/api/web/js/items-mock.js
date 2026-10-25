@@ -15,7 +15,7 @@
   const sum = t => t ? t.in + t.cw + t.cr + t.out : 0;
   const clock = iso => { const d = new Date(iso); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 
-  const PRICES = [{ k: "sonnet-5-5 input / output", v: "$2 / $10" }, { k: "cache write 1h / read", v: "$4 / $0.20" }];
+  const PRICES = [{ k: "sonnet-5-5 input / output", v: "$2 / $10" }, { k: "cache write 1h / read", v: "$4 / $0.10" }];
   const TABLE = "v3, list prices";
 
   function blank() {
