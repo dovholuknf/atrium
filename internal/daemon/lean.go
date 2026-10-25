@@ -614,6 +614,13 @@ func leanSettings(user []byte, stopHook string, agents []string, hk *hooks) (str
 				"matcher": "Agent|Task",
 				"hooks":   []any{map[string]any{"type": "command", "command": cmd}},
 			})
+			// The operator's only-atrium-subagents guard would refuse the Agent tool this launch granted.
+			env := map[string]any{}
+			if raw, ok := out["env"].(json.RawMessage); ok {
+				_ = json.Unmarshal(raw, &env)
+			}
+			env["ATRIUM_ONLY_SUBAGENTS"] = "0"
+			out["env"] = env
 		}
 	}
 	out["hooks"] = hooks
