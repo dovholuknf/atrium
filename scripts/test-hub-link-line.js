@@ -30,6 +30,14 @@ if (!line.includes("no answer within 5s")) fail("the line does not say the dial 
 if (!line.includes("atrium room hub")) fail("the line does not say how to change the address: " + line);
 if (!thisMachineRow(down).includes("hublink-down")) fail("the room's own pane does not carry the line");
 
+const lost = { up: false, room: "sgg", hub: "sg4:7779", error: "every rung failed",
+  unreachable: ["direct sg4:7779", "direct 192.168.1.68:7779", "ziti atrium-hub"] };
+const all = hubLinkLine(lost);
+if (!all.includes("cannot reach the hub at any known address")) fail("a room no rung reaches does not say so: " + all);
+if (!all.includes("sgg")) fail("the line does not name the room: " + all);
+for (const a of lost.unreachable) if (!all.includes(a)) fail(`the line does not name ${a}: ` + all);
+if (!all.includes("atrium room hub")) fail("the line does not give the one-line fix: " + all);
+
 if (hubLinkLine({ up: true, hub: "10.0.0.1:7779" }) !== "") fail("an attached room drew a line");
 if (hubLinkLine(null) !== "") fail("a plain daemon with no hub drew a line");
 if (thisMachineRow(null).includes("hublink-down")) fail("a plain daemon's pane carries the line");

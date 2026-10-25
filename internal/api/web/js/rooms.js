@@ -447,6 +447,12 @@ async function loadHubLink() {
 // row is the noise `roomLine` leaves out.
 function hubLinkLine(link) {
   if (!link || link.up) return "";
+  if (link.unreachable && link.unreachable.length) {
+    const room = link.room ? `Room <b>${esc(link.room)}</b>` : "This room";
+    return `<div class="hintline hublink-down">${room} cannot reach the hub at any known address.
+      Tried ${link.unreachable.map(a => `<code>${esc(a)}</code>`).join(", ")}.
+      If the hub moved, <code>atrium room hub &lt;host:port&gt;</code> points this room at its new address.</div>`;
+  }
   const tried = link.hub ? ` Tried <code>${esc(link.hub)}</code>.` : "";
   const why = link.error ? ` ${esc(link.error)}.` : "";
   return `<div class="hintline hublink-down">Not attached to its hub.${tried}${why}

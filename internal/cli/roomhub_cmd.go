@@ -14,7 +14,8 @@ import (
 // It exists because the hub moves: a DHCP lease changes and the address in room.json, which
 // the join string put there, is wrong for good. Editing the file by hand is what this
 // replaces. It writes room.json and nothing else, so it works on a stopped room and on one that
-// cannot reach its hub, which is when it is needed. A running room reads the file at its start.
+// cannot reach its hub, which is when it is needed. A running room that cannot reach its hub reads it
+// again before its next attempt, and an attached one at its next start.
 func roomHubCmd() *cobra.Command {
 	var dir string
 	c := &cobra.Command{
@@ -22,7 +23,8 @@ func roomHubCmd() *cobra.Command {
 		Short: "Show, or change, the address this room dials its hub at",
 		Long: "With no argument this prints the address in room.json. With one it writes that address\n" +
 			"there, after copying the old file to room.json.bak-<time> beside it. Only direct rooms\n" +
-			"have one. The room reads it at its next start, so restart it afterwards.",
+			"have one. A room that cannot reach its hub tries it at its next attempt, and an attached\n" +
+			"one at its next start.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
@@ -44,7 +46,8 @@ func roomHubCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(out, "hub: %s (was %s)\nthe old room.json is at %s\n"+
-				"restart this room to use it: `atrium room --detach`, or ask the hub to restart it.\n",
+				"a room that cannot reach its hub tries it at its next attempt. an attached one takes it at its\n"+
+				"next start: restart it with `atrium room --detach`, or ask the hub to restart it.\n",
 				addr, saved.Hub, backup)
 			return nil
 		},
