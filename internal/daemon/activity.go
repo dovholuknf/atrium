@@ -832,7 +832,10 @@ func (d *Daemon) handleActivity(w http.ResponseWriter, r *http.Request) {
 // onActivity applies one event. Returns the task it landed on, or "" when
 // there was nothing to land on.
 func (d *Daemon) onActivity(in ActivityEvent) string {
-	taskID := in.TaskID
+	taskID := ""
+	if t := d.ownCard(in.TaskID); t != nil {
+		taskID = t.ID
+	}
 	if taskID == "" {
 		name := strings.TrimSpace(in.Agent)
 		if name == "" {

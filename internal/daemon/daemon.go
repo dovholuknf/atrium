@@ -936,6 +936,10 @@ func observedFor(agent string) store.Observed {
 }
 
 func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, error) {
+	// The runner's own card, when it says so, over a name another card in the same checkout may hold.
+	if t := d.ownCard(req.TaskID); t != nil {
+		req.Agent, req.NameSource = t.WireName, ""
+	}
 	obs := observedFor(req.Agent)
 	if req.Runner != "" {
 		obs.Runner = req.Runner
