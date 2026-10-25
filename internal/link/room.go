@@ -163,7 +163,7 @@ func (r *restarter) finish() {
 // exactly what it was before anybody built a hub. So this logs, backs off and
 // tries again, and the room's own board never notices.
 func (r *Room) Run(ctx context.Context) error {
-	r.T = r.T.fill()
+	r.T = r.T.Fill()
 	r.conns = make(chan net.Conn, 1)
 	r.accessPoke = make(chan struct{}, 1)
 

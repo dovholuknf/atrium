@@ -397,7 +397,7 @@ func TestAnOldHubIsToldApartAndNotHeldFor(t *testing.T) {
 		_ = readJSON(br, &h)
 		_ = writeJSON(c, welcome{OK: false, Error: "a connection is control, data, enrol, upgrade or announce"})
 	}()
-	r := &Room{Name: "m1mini", Dial: plain{addr: ln.Addr().String()}, T: Timings{}.fill()}
+	r := &Room{Name: "m1mini", Dial: plain{addr: ln.Addr().String()}, T: Timings{}.Fill()}
 	r.up = true
 	_, err = r.Relay(context.Background(), RelayRequest{Op: RelaySay})
 	if !errors.Is(err, ErrRelayOld) {

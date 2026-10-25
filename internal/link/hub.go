@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"log"
 	"net"
 	"net/http"
@@ -275,7 +276,7 @@ type attached struct {
 
 // NewHub makes an empty hub.
 func NewHub(t Timings) *Hub {
-	return &Hub{T: t.fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1), every: newEverywhere()}
+	return &Hub{T: t.Fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1), every: newEverywhere()}
 }
 
 // Serve accepts connections until the listener closes.
@@ -1094,20 +1095,9 @@ func newSession() string {
 // machines is one room.
 func keyOf(s string) string { return lowerASCII(s) }
 
-func equalFold(a, b string) bool { return lowerASCII(a) == lowerASCII(b) }
+func equalFold(a, b string) bool { return wire.EqualFold(a, b) }
 
-// lowerASCII rather than strings.ToLower, so a room name is folded the same way
-// on every machine regardless of locale. A Turkish dotless i is a real thing
-// and a room name is not prose.
-func lowerASCII(s string) string {
-	out := []byte(s)
-	for i, c := range out {
-		if c >= 'A' && c <= 'Z' {
-			out[i] = c + 32
-		}
-	}
-	return string(out)
-}
+func lowerASCII(s string) string { return wire.LowerASCII(s) }
 
 var _ = http.StatusOK
 
