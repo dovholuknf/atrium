@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -177,6 +178,44 @@ func TestCloseWithKeepEndsTheCardAndFreesNothing(t *testing.T) {
 	}
 	if task, _ := oh.srv.st.Get(card); task.Status != store.StatusDone {
 		t.Errorf("the card is %s", task.Status)
+	}
+}
+
+func TestClosePreviewSaysADoneCardsLiveSessionIsStopped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, _, _ := openForClose(t)
+	if err := oh.srv.st.SetStatus(card, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.hk.isSupervised = func(string) bool { return true }
+	code, out := closeCall(t, oh, card, map[string]any{})
+	if code != 200 || !slices.Contains(out.Warn, "the session is still running. it is stopped first") {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if len(oh.killed) != 0 {
+		t.Errorf("the preview stopped the session: %v", oh.killed)
+	}
+}
+
+func TestCloseStopsTheSessionOfACardThatReportedDone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, _, _ := openForClose(t)
+	if err := oh.srv.st.SetStatus(card, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.hk.isSupervised = func(string) bool { return true }
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "keep": true})
+	if code != 200 || !out.Closed {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if len(oh.killed) != 1 || oh.killed[0] != card {
+		t.Errorf("the session was not stopped: %v", oh.killed)
 	}
 }
 

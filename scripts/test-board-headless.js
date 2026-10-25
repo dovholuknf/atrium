@@ -13648,6 +13648,7 @@ async function termMenuSection(browser, base) {
     await p.locator("dialog[open] button", { hasText: "terminate" }).click();
     await p.waitForTimeout(500);
     if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
+    if (await dialogUp().count()) fail("termMenu: the foreign worktree dialog stayed up after terminate.");
     closes.length = 0;
     freed = [{ seq: 1, kind: "worktree", ref: "/w/x", action: "free", bytes: 1 }];
 
