@@ -32,6 +32,29 @@ const secretLife = time.Hour
 // back as.
 var ErrBadSecret = errors.New("that join string has been used already, or it expired")
 
+// A spent secret's row is gone, so used and never minted here read the same.
+var (
+	ErrSecretExpired = secretError{kind: "expired"}
+	ErrSecretUnknown = secretError{kind: "unknown", msg: "that join string has been used already, " +
+		"or it is not one this hub minted now" + mintAgain("<name>")}
+)
+
+type secretError struct{ kind, msg string }
+
+func (e secretError) Error() string { return e.msg }
+
+func (e secretError) Is(target error) bool {
+	if target == ErrBadSecret {
+		return true
+	}
+	t, ok := target.(secretError)
+	return ok && t.kind == e.kind
+}
+
+func mintAgain(room string) string {
+	return ". mint a new one with `atrium rooms token " + room + "` on the hub"
+}
+
 // Mint makes this room a fresh join secret and returns it in the clear, once.
 //
 // THE ONLY TIME THE CLEAR SECRET EXISTS. What is stored is its SHA-256, the way
@@ -109,7 +132,7 @@ func (s *Store) Outstanding(roomID string) (bool, time.Time, error) {
 // be guessed a character at a time, which this never could be.
 func (s *Store) Spend(secret string) (*Room, error) {
 	if secret == "" {
-		return nil, ErrBadSecret
+		return nil, ErrSecretUnknown
 	}
 	sum := sha256.Sum256([]byte(secret))
 	want := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -121,7 +144,7 @@ func (s *Store) Spend(secret string) (*Room, error) {
 			`SELECT room_id, expires_at FROM room_secret WHERE hash = ?`, want).
 			Scan(&roomID, &expires)
 		if errors.Is(err, sql.ErrNoRows) {
-			return refuse(ErrBadSecret)
+			return refuse(ErrSecretUnknown)
 		}
 		return err
 	})
@@ -137,7 +160,11 @@ func (s *Store) Spend(secret string) (*Room, error) {
 			_, err := s.db.Exec(`DELETE FROM room_secret WHERE room_id = ?`, roomID)
 			return err
 		})
-		return nil, ErrBadSecret
+		name := "<name>"
+		if r, err := s.Get(roomID); err == nil {
+			name = r.Name
+		}
+		return nil, secretError{kind: ErrSecretExpired.kind, msg: "that join string expired" + mintAgain(name)}
 	}
 
 	// THE DELETE IS WHAT MAKES IT SINGLE USE, and it is conditional on the hash
@@ -160,7 +187,7 @@ func (s *Store) Spend(secret string) (*Room, error) {
 		return nil, err
 	}
 	if !spent {
-		return nil, ErrBadSecret
+		return nil, ErrSecretUnknown
 	}
 	// THE NAME IS PROVEN FROM HERE ON, and the old overlay path is closed to it.
 	// See `Enrolled`.
