@@ -116,6 +116,7 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 	body, err := json.Marshal(map[string]any{
 		"runner":      whichRunner(runner),
 		"agent":       agent,
+		"task_id":     os.Getenv("ATRIUM_TASK_ID"),
 		"name_source": nameSource,
 		"tool":        in.ToolName,
 		"command":     summary,
