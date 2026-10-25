@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1006,7 +1007,7 @@ func (d *Daemon) typeLabelledGuardedAs(run *runner, taskID, banner, text string,
 func (d *Daemon) typePayload(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
-		payload = bracketedPaste(text)
+		payload = screen.BracketedPaste(text)
 	}
 	return run.injectPeerIf(banner, payload, ok)
 }

@@ -1,4 +1,4 @@
-package daemon
+package screen
 
 // Replaying a captured byte stream, for anybody outside this package.
 //
@@ -25,14 +25,14 @@ var ReplayModes = []string{"raw", "flat", "screen"}
 //
 // Zero for either takes the default, which is 80 columns and `screenRows`.
 func Replay(b []byte, mode string, cols, rows int) []byte {
-	return replayCut(b, mode, []sizeCut{{0, cols, 0}}, rows)
+	return ReplayCut(b, mode, []SizeCut{{0, cols, 0}}, rows)
 }
 
-// replayCut is Replay for output composed at more than one size. The screen
+// ReplayCut is Replay for output composed at more than one size. The screen
 // starts at the first cut's size and is resized at each later one. See
-// `screen.applyCuts`. `rows` is the height to start at when the first cut
+// `applyCuts`. `rows` is the height to start at when the first cut
 // recorded none.
-func replayCut(b []byte, mode string, cuts []sizeCut, rows int) []byte {
+func ReplayCut(b []byte, mode string, cuts []SizeCut, rows int) []byte {
 	switch mode {
 	case "raw":
 		// Nothing at all. What a terminal receiving this stream would be given.
@@ -40,22 +40,22 @@ func replayCut(b []byte, mode string, cuts []sizeCut, rows int) []byte {
 	case "flat":
 		// COLLAPSE FIRST, and only here. Without a grid the flattener turns a
 		// spinner that redrew four hundred times into four hundred lines, and
-		// `collapseRedraws` is what stops that. It also deletes real text, so
+		// `CollapseRedraws` is what stops that. It also deletes real text, so
 		// nothing that has a grid should ever be handed its output. See the
-		// note on `collapseRedraws`.
-		return flatten(collapseRedraws(b))
+		// note on `CollapseRedraws`.
+		return Flatten(CollapseRedraws(b))
 	default:
 		cols := 0
 		if len(cuts) > 0 {
-			cols = cuts[0].cols
-			if cuts[0].rows > 0 {
-				rows = cuts[0].rows
+			cols = cuts[0].Cols
+			if cuts[0].Rows > 0 {
+				rows = cuts[0].Rows
 			}
 			cuts = cuts[1:]
 		}
-		sc := newScreenSized(cols, rows)
-		sc.applyCuts(b, cuts)
-		return []byte(sc.textWithCursor())
+		sc := NewScreenSized(cols, rows)
+		sc.ApplyCuts(b, cuts)
+		return []byte(sc.TextWithCursor())
 	}
 }
 
@@ -72,9 +72,9 @@ type ReplayStats struct {
 // StatsFor counts what a rendering came out as.
 func StatsFor(out []byte) ReplayStats {
 	st := ReplayStats{Bytes: len(out)}
-	for _, line := range splitKeepingEndings(out) {
+	for _, line := range SplitKeepingEndings(out) {
 		st.Lines++
-		trimmed := stripSGR(line)
+		trimmed := StripSGR(line)
 		body := string(trimmed)
 		for len(body) > 0 && (body[len(body)-1] == '\n' || body[len(body)-1] == '\r') {
 			body = body[:len(body)-1]

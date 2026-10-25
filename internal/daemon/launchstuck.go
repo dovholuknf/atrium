@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -236,9 +237,9 @@ func (d *Daemon) scanTerminal(id string, run *runner, outAt time.Time) termHit {
 		return h
 	}
 	cols, rows := run.buf.CurrentSize()
-	sc := newScreenSized(cols, rows)
-	sc.apply(run.buf.Tail(menuTailBytes))
-	h := readFrame(frameText(sc))
+	sc := screen.NewScreenSized(cols, rows)
+	sc.Apply(run.buf.Tail(menuTailBytes))
+	h := readFrame(screen.FrameText(sc))
 	d.scans.put(id, key, h)
 	return h
 }
@@ -287,7 +288,7 @@ func readFrame(text string) termHit {
 func menuTitle(above []string) string {
 	start := len(above) - 1
 	for ; start >= 0 && len(above)-start <= menuScanLines; start-- {
-		if isRule(above[start]) {
+		if screen.IsRule(above[start]) {
 			break
 		}
 	}

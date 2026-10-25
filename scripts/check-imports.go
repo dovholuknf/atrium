@@ -62,6 +62,7 @@ var table = []row{
 	{0, "internal/base/testwait", nil},
 	{0, "internal/base/tokenprice", nil},
 	{0, "internal/base/webasset", nil},
+	{0, "internal/daemon/screen", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
@@ -106,6 +107,7 @@ var table = []row{
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/claudeconf",
 		"internal/base/docshare",
+		"internal/daemon/screen",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",
 		"internal/base/rules", "internal/runnerprofile", "internal/runnersetup", "internal/base/safepath",
@@ -114,7 +116,7 @@ var table = []row{
 	}},
 	{6, "internal/cli", []string{
 		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardroot", "internal/claudeconf",
-		"internal/daemon", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/gitsync",
+		"internal/daemon", "internal/daemon/screen", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/gitsync",
 		"internal/guard", "internal/hubstore", "internal/link", "internal/base/nowindow", "internal/ptyhost",
 		"internal/base/remoteaccess", "internal/base/requirements", "internal/base/resources", "internal/roomspec",
 		"internal/roomstats", "internal/shepherd", "internal/base/sshcfg", "internal/base/sshtarget", "internal/sshwizard",

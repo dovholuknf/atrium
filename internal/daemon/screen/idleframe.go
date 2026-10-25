@@ -1,4 +1,4 @@
-package daemon
+package screen
 
 import (
 	"strings"
@@ -34,46 +34,46 @@ const (
 	frameFooterRows = 4
 )
 
-// frameTailBytes is how much of the ring is rendered to find the last screen.
+// FrameTailBytes is how much of the ring is rendered to find the last screen.
 // Enough to hold several full redraws, so the render starts from a complete one.
-const frameTailBytes = 64 << 10
+const FrameTailBytes = 64 << 10
 
 // Why a frame was judged as it was, for the log line. Told apart so a wrong
 // badge can be traced to the classifier and not to hook ordering.
 const (
-	frameIdle    = "idle_prompt"
-	frameNoBox   = "no_input_box"
-	frameOpenBox = "box_not_closed"
-	frameHint    = "interrupt_hint"
-	frameSpinner = "spinner_line"
+	FrameIdle    = "idle_prompt"
+	FrameNoBox   = "no_input_box"
+	FrameOpenBox = "box_not_closed"
+	FrameHint    = "interrupt_hint"
+	FrameSpinner = "spinner_line"
 )
 
-// classifyFrame reports whether the screen `tail` (raw pty bytes, composed at
+// ClassifyFrame reports whether the screen `tail` (raw pty bytes, composed at
 // cols by rows) ends with Claude Code at an idle prompt, and the reason either way.
-func classifyFrame(tail []byte, cols, rows int) (bool, string) {
-	sc := newScreenSized(cols, rows)
-	sc.apply(tail)
+func ClassifyFrame(tail []byte, cols, rows int) (bool, string) {
+	sc := NewScreenSized(cols, rows)
+	sc.Apply(tail)
 	// The live grid only. History is rows that scrolled or were cleared away,
 	// and an old working frame there must not veto the one on screen.
-	return classifyScreen(frameText(sc))
+	return ClassifyScreen(FrameText(sc))
 }
 
-// framePromptEmpty is whether the screen `tail` shows Claude Code at an idle
+// FramePromptEmpty is whether the screen `tail` shows Claude Code at an idle
 // prompt with nothing typed on the input line.
-func framePromptEmpty(tail []byte, cols, rows int) bool {
-	sc := newScreenSized(cols, rows)
-	sc.apply(tail)
-	idle, _, typed := classifyScreenPrompt(frameText(sc))
+func FramePromptEmpty(tail []byte, cols, rows int) bool {
+	sc := NewScreenSized(cols, rows)
+	sc.Apply(tail)
+	idle, _, typed := classifyScreenPrompt(FrameText(sc))
 	return idle && typed == ""
 }
 
-// frameLineEmpty is a looser read than framePromptEmpty, for a runner whose line is only unsure because of a restart.
+// FrameLineEmpty is a looser read than framePromptEmpty, for a runner whose line is only unsure because of a restart.
 // It asks for the prompt row under a rule and nothing typed on it, and no interrupt hint in the footer rows. Reply
 // text that happens to hold an ellipsis and a bracket, a status line taller than the box classifier allows, and the
 // dim suggestion Claude draws in an empty prompt all leave classifyScreenPrompt unsure, and none of them is a draft.
-func frameLineEmpty(tail []byte, cols, rows int) bool {
-	sc := newScreenSized(cols, rows)
-	sc.apply(tail)
+func FrameLineEmpty(tail []byte, cols, rows int) bool {
+	sc := NewScreenSized(cols, rows)
+	sc.Apply(tail)
 	type row struct {
 		text    string
 		restDim bool
@@ -109,7 +109,7 @@ func frameLineEmpty(tail []byte, cols, rows int) bool {
 		}
 	}
 	for i := n - 1; i >= 1 && i >= n-9; i-- {
-		if !strings.HasPrefix(lines[i].text, framePrompt) || !isRule(lines[i-1].text) {
+		if !strings.HasPrefix(lines[i].text, framePrompt) || !IsRule(lines[i-1].text) {
 			continue
 		}
 		return strings.TrimSpace(strings.TrimPrefix(lines[i].text, framePrompt)) == "" || lines[i].restDim
@@ -139,12 +139,12 @@ func sgrIsDim(sgr string) bool {
 	return false
 }
 
-// frameHasInterrupt is whether any of the last rows of the screen carries the hint a working runner draws.
-func frameHasInterrupt(tail []byte, cols, rows int) bool {
-	sc := newScreenSized(cols, rows)
-	sc.apply(tail)
+// FrameHasInterrupt is whether any of the last rows of the screen carries the hint a working runner draws.
+func FrameHasInterrupt(tail []byte, cols, rows int) bool {
+	sc := NewScreenSized(cols, rows)
+	sc.Apply(tail)
 	var lines []string
-	for _, ln := range strings.Split(frameText(sc), "\n") {
+	for _, ln := range strings.Split(FrameText(sc), "\n") {
 		if ln = strings.TrimSpace(ln); ln != "" {
 			lines = append(lines, ln)
 		}
@@ -157,10 +157,10 @@ func frameHasInterrupt(tail []byte, cols, rows int) bool {
 	return false
 }
 
-// frameText is the live grid as text, one line per row. The second cell of a wide
+// FrameText is the live grid as text, one line per row. The second cell of a wide
 // character holds contCh and is skipped, as writeRow does, so the character
 // appears once.
-func frameText(sc *screen) string {
+func FrameText(sc *Screen) string {
 	var b strings.Builder
 	for _, r := range sc.cells {
 		for _, c := range r {
@@ -177,12 +177,12 @@ func frameText(sc *screen) string {
 	return b.String()
 }
 
-func isRule(ln string) bool {
+func IsRule(ln string) bool {
 	return strings.Count(ln, frameRuleRune) >= frameRuleMin
 }
 
-// classifyScreen judges rendered screen text, colour already removed.
-func classifyScreen(text string) (bool, string) {
+// ClassifyScreen judges rendered screen text, colour already removed.
+func ClassifyScreen(text string) (bool, string) {
 	idle, why, _ := classifyScreenPrompt(text)
 	return idle, why
 }
@@ -198,7 +198,7 @@ func classifyScreenPrompt(text string) (bool, string, string) {
 	}
 	n := len(lines)
 	if n < 4 {
-		return false, frameNoBox, ""
+		return false, FrameNoBox, ""
 	}
 	// A hint or a spinner ANYWHERE in the last rows says working. This is wider
 	// than where they are drawn on purpose: a screen rebuilt from a 64KB tail can
@@ -207,10 +207,10 @@ func classifyScreenPrompt(text string) (bool, string, string) {
 	// redraws its spinner every second.
 	for i := n - 1; i >= 0 && i >= n-12; i-- {
 		if strings.Contains(lines[i], frameInterrupt) {
-			return false, frameHint, ""
+			return false, FrameHint, ""
 		}
 		if strings.Contains(lines[i], "…") && strings.Contains(lines[i], "(") {
-			return false, frameSpinner, ""
+			return false, FrameSpinner, ""
 		}
 	}
 	// The bottom rule is the last rule on screen, with the footer under it. A
@@ -218,27 +218,27 @@ func classifyScreenPrompt(text string) (bool, string, string) {
 	// frameFooterRows of them, none of which the veto above found working.
 	bottom := -1
 	for i := n - 2; i >= 0 && i >= n-1-frameFooterRows; i-- {
-		if isRule(lines[i]) {
+		if IsRule(lines[i]) {
 			bottom = i
 			break
 		}
 	}
 	if bottom < 0 {
-		return false, frameNoBox, ""
+		return false, FrameNoBox, ""
 	}
 	// Up from the bottom rule to the top one: the prompt, which may wrap.
 	top := -1
 	for i := bottom - 1; i >= 0 && i >= bottom-8; i-- {
-		if isRule(lines[i]) {
+		if IsRule(lines[i]) {
 			top = i
 			break
 		}
 	}
 	if top < 0 {
-		return false, frameOpenBox, ""
+		return false, FrameOpenBox, ""
 	}
 	if top+1 >= bottom || !strings.HasPrefix(strings.TrimSpace(lines[top+1]), framePrompt) {
-		return false, frameNoBox, ""
+		return false, FrameNoBox, ""
 	}
-	return true, frameIdle, strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[top+1]), framePrompt))
+	return true, FrameIdle, strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[top+1]), framePrompt))
 }

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 func newEscRunner() *runner {
@@ -52,7 +54,7 @@ func TestMarkWaitsForTheEndOfASequenceSplitAtEveryOffset(t *testing.T) {
 				for at > 3 && at < end {
 					at++
 				}
-				want := tc.stream[:at] + clearMarkOSC + tc.stream[at:]
+				want := tc.stream[:at] + screen.ClearMarkOSC + tc.stream[at:]
 				if got := replayOf(r); got != want {
 					t.Fatalf("split at %d: got %q want %q", k, got, want)
 				}
@@ -74,7 +76,7 @@ func TestMarkHeldAcrossManyChunks(t *testing.T) {
 	for i := 5; i < len(stream); i++ {
 		r.deliverOutput([]byte{stream[i]})
 	}
-	want := "a\x1b]0;a long title\x07" + clearMarkOSC + "b"
+	want := "a\x1b]0;a long title\x07" + screen.ClearMarkOSC + "b"
 	if got := replayOf(r); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -92,7 +94,7 @@ func TestHeldMarkReachesWatchersAfterTheSequence(t *testing.T) {
 	for len(updates) > 0 {
 		got.Write(<-updates)
 	}
-	if want := "x\x1b[31m" + clearMarkOSC + "more"; got.String() != want {
+	if want := "x\x1b[31m" + screen.ClearMarkOSC + "more"; got.String() != want {
 		t.Fatalf("got %q want %q", got.String(), want)
 	}
 }
@@ -106,8 +108,8 @@ func TestHeldMarkIsForcedOutByBytes(t *testing.T) {
 	if r.markPending == false {
 		t.Fatal("the mark was not held")
 	}
-	r.deliverOutput([]byte(strings.Repeat("x", markHoldBytes)))
-	if r.markPending || !strings.Contains(replayOf(r), clearMarkOSC) {
+	r.deliverOutput([]byte(strings.Repeat("x", screen.MarkHoldBytes)))
+	if r.markPending || !strings.Contains(replayOf(r), screen.ClearMarkOSC) {
 		t.Fatal("the mark was not forced out by the byte bound")
 	}
 }
@@ -124,7 +126,7 @@ func TestHeldMarkIsForcedOutByTime(t *testing.T) {
 	}
 	r.deliverOutput([]byte("\x1b[3"))
 	r.markClear()
-	if fire == nil || held != markHoldTime {
+	if fire == nil || held != screen.MarkHoldTime {
 		t.Fatalf("the hold timer was not armed for markHoldTime: %v", held)
 	}
 	if !r.markPending {
@@ -134,7 +136,7 @@ func TestHeldMarkIsForcedOutByTime(t *testing.T) {
 	if r.markPending {
 		t.Fatal("the mark was never released")
 	}
-	if !strings.Contains(replayOf(r), clearMarkOSC) {
+	if !strings.Contains(replayOf(r), screen.ClearMarkOSC) {
 		t.Fatal("released without the mark")
 	}
 }

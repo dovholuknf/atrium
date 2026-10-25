@@ -1,4 +1,4 @@
-package daemon
+package screen
 
 import (
 	"bytes"
@@ -136,7 +136,7 @@ func BenchmarkReplayGrowth(b *testing.B) {
 		b.Run(fmt.Sprintf("%dx", n), func(b *testing.B) {
 			b.SetBytes(int64(len(in)))
 			for i := 0; i < b.N; i++ {
-				renderHistory(in, 120)
+				RenderHistory(in, 120)
 			}
 		})
 	}

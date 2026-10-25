@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/spf13/cobra"
 )
 
@@ -74,8 +74,8 @@ func newReplayCmd() *cobra.Command {
 				if out == "" {
 					return fmt.Errorf("--all writes one file per mode, so it needs --out")
 				}
-				for _, m := range daemon.ReplayModes {
-					r := daemon.Replay(b, m, cols, rows)
+				for _, m := range screen.ReplayModes {
+					r := screen.Replay(b, m, cols, rows)
 					p := out + "." + m + ".txt"
 					if err := os.WriteFile(p, r, 0o644); err != nil {
 						return err
@@ -87,9 +87,9 @@ func newReplayCmd() *cobra.Command {
 
 			if !validMode(mode) {
 				return fmt.Errorf("no mode called %q. the ones there are: %s",
-					mode, strings.Join(daemon.ReplayModes, ", "))
+					mode, strings.Join(screen.ReplayModes, ", "))
 			}
-			r := daemon.Replay(b, mode, cols, rows)
+			r := screen.Replay(b, mode, cols, rows)
 			if out != "" {
 				if err := os.WriteFile(out, r, 0o644); err != nil {
 					return err
@@ -107,7 +107,7 @@ func newReplayCmd() *cobra.Command {
 	}
 
 	c.Flags().StringVar(&mode, "mode", "screen",
-		"how to render it: "+strings.Join(daemon.ReplayModes, ", "))
+		"how to render it: "+strings.Join(screen.ReplayModes, ", "))
 	c.Flags().BoolVar(&all, "all", false, "write one file per mode, named after --out")
 	c.Flags().StringVar(&out, "out", "", "write here instead of stdout")
 	c.Flags().IntVar(&cols, "cols", 0, "the width the stream was COMPOSED at (default 80)")
@@ -117,7 +117,7 @@ func newReplayCmd() *cobra.Command {
 }
 
 func validMode(m string) bool {
-	for _, k := range daemon.ReplayModes {
+	for _, k := range screen.ReplayModes {
 		if k == m {
 			return true
 		}
@@ -130,7 +130,7 @@ func validMode(m string) bool {
 // something where a cursor move was and what it has is spaces. Blank lines are
 // the screen model's, since a repaint scrolls empty grid rows into history.
 func statLine(path string, out []byte) string {
-	st := daemon.StatsFor(out)
+	st := screen.StatsFor(out)
 	where := path
 	if where == "" {
 		where = "(stdout)"

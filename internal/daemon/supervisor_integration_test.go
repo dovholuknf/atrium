@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 func TestRingBufferKeepsTheTail(t *testing.T) {
@@ -589,7 +591,7 @@ func TestAnInPlaceRunReplaysAsItsLastFrameOnly(t *testing.T) {
 	// the flattener runs. It used to run on everything, which meant a renderer
 	// with a grid was handed output this had already deleted lines from.
 	live, _, _ := r.Replay()
-	got := collapseRedraws(live)
+	got := screen.CollapseRedraws(live)
 	if strings.Count(string(got), "Forging…") != 1 {
 		t.Fatalf("replayed the animation instead of its last frame: %q", got)
 	}
@@ -610,7 +612,7 @@ func TestFramesThatDifferAreStillOneRun(t *testing.T) {
 	}
 
 	live, _, _ := r.Replay()
-	got := collapseRedraws(live)
+	got := screen.CollapseRedraws(live)
 	if strings.Count(string(got), "Garnishing…") != 1 {
 		t.Fatalf("differing frames were not collapsed: %q", got)
 	}

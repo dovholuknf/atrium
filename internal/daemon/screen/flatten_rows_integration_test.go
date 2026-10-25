@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"strconv"
@@ -28,7 +28,7 @@ func TestARowJumpBecomesALineEnding(t *testing.T) {
 		`4 rm -rf "$out/prof2"`,
 	)
 
-	got := string(flatten([]byte(in)))
+	got := string(Flatten([]byte(in)))
 	lines := strings.Split(strings.ReplaceAll(got, "\r\n", "\n"), "\n")
 
 	var seen []string
@@ -54,7 +54,7 @@ func TestARowJumpBecomesALineEnding(t *testing.T) {
 // The column becomes leading spaces, so an indented row comes back indented.
 func TestAColumnBecomesIndent(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("top\x1b[2;5Hindented")))
+	got := string(Flatten([]byte("top\x1b[2;5Hindented")))
 	if !strings.Contains(got, "\n    indented") {
 		t.Fatalf("the indent was lost: %q", got)
 	}
@@ -65,7 +65,7 @@ func TestARowJumpBackwardsDrawsNothing(t *testing.T) {
 	t.Parallel()
 	in := "\x1b[5;1Hfifth row" + "\x1b[2;1Hsecond row, drawn later"
 
-	got := string(flatten([]byte(in)))
+	got := string(Flatten([]byte(in)))
 
 	if !strings.Contains(got, "fifth row") {
 		t.Fatalf("the earlier row was overwritten: %q", got)
@@ -83,7 +83,7 @@ func TestARowJumpIsAlwaysOneBreak(t *testing.T) {
 		"top\x1b[8;1Hnext",   // a few rows down
 		"top\x1b[400;1Hnext", // a full screen repaint
 	} {
-		got := string(flatten([]byte(in)))
+		got := string(Flatten([]byte(in)))
 		if n := strings.Count(got, "\n"); n != 1 {
 			t.Fatalf("%q produced %d line endings: %q", in, n, got)
 		}
@@ -97,7 +97,7 @@ func TestARowJumpIsAlwaysOneBreak(t *testing.T) {
 // blocks; repeated blank lines are tested separately.
 func TestARowMoveAddsNoBlankLine(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("one\r\n\r\ntwo")))
+	got := string(Flatten([]byte("one\r\n\r\ntwo")))
 	if n := strings.Count(got, "\n"); n != 2 {
 		t.Fatalf("the separating blank line was changed: %q", got)
 	}
@@ -110,7 +110,7 @@ func TestARowMoveAddsNoBlankLine(t *testing.T) {
 // gap from a row the text has already passed.
 func TestARealNewlineAdvancesTheRow(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("one\r\ntwo\x1b[2;1Hthree")))
+	got := string(Flatten([]byte("one\r\ntwo\x1b[2;1Hthree")))
 	// Row 2 has already been reached by the newline, so this positioning is
 	// backwards and draws nothing.
 	if strings.Count(got, "\n") != 1 {
@@ -121,7 +121,7 @@ func TestARealNewlineAdvancesTheRow(t *testing.T) {
 // A private mode is not a position, whatever its final byte looks like.
 func TestAPrivateModeIsNotAPosition(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("kept\x1b[?1049hstill kept")))
+	got := string(Flatten([]byte("kept\x1b[?1049hstill kept")))
 	if strings.Contains(got, "\n") {
 		t.Fatalf("a private mode was read as a cursor move: %q", got)
 	}
@@ -134,7 +134,7 @@ func TestAPrivateModeIsNotAPosition(t *testing.T) {
 // single blank line between blocks.
 func TestARunOfBlankLinesBecomesOne(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("above\r\n\r\n\r\n\r\n\r\n\r\n\r\nbelow")))
+	got := string(Flatten([]byte("above\r\n\r\n\r\n\r\n\r\n\r\n\r\nbelow")))
 	if n := strings.Count(got, "\n"); n != 2 {
 		t.Fatalf("a run of seven blank lines came out as %d line endings: %q", n, got)
 	}
@@ -147,7 +147,7 @@ func TestARunOfBlankLinesBecomesOne(t *testing.T) {
 // and removing it runs them together.
 func TestOneBlankLineSurvives(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("above\r\n\r\nbelow")))
+	got := string(Flatten([]byte("above\r\n\r\nbelow")))
 	if !strings.Contains(got, "above\r\n\r\nbelow") {
 		t.Fatalf("the separating blank line was removed: %q", got)
 	}
@@ -156,7 +156,7 @@ func TestOneBlankLineSurvives(t *testing.T) {
 // Treat lines containing only colour changes and spacing as blank.
 func TestALineOfOnlyColourCountsAsBlank(t *testing.T) {
 	in := "above\r\n" + "\x1b[m   \r\n" + "\x1b[38;2;1;2;3m \r\n" + "   \r\n" + "below"
-	got := string(flatten([]byte(in)))
+	got := string(Flatten([]byte(in)))
 
 	blank := 0
 	for _, l := range strings.Split(strings.ReplaceAll(got, "\r\n", "\n"), "\n") {

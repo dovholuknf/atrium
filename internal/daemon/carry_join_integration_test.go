@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A card that has lived through many restarts holds far more than an attach
@@ -35,7 +37,7 @@ func TestAnAttachReplaysOnlyTheNewestPreRestartHistory(t *testing.T) {
 	if !bytes.Contains(out, newest) || bytes.Contains(out, []byte("saved line 0000000 ")) {
 		t.Fatal("kept the wrong end of the saved history")
 	}
-	if len(cuts) != 2 || cuts[1].at != prefix {
+	if len(cuts) != 2 || cuts[1].At != prefix {
 		t.Fatalf("the live ring's width mark is not where it starts: %+v", cuts)
 	}
 }
@@ -80,7 +82,7 @@ func TestRealCarryJoinFindsTheReprint(t *testing.T) {
 	r := &runner{carried: &carryover{cols: 188, bytes: old}}
 	joined, cuts, _, _ := r.withCarried(live, nil, 164, 32<<20, false)
 	began := time.Now()
-	out := replayCut(joined, "screen", cuts, 48)
+	out := screen.ReplayCut(joined, "screen", cuts, 48)
 	t.Logf("screen replay of %d joined bytes took %v and produced %d bytes",
 		len(joined), time.Since(began), len(out))
 	tail, _ := plainText(old[max(0, cut-400):cut])

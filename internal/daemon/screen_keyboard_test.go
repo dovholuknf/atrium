@@ -3,6 +3,8 @@ package daemon
 import (
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // The shape claude draws on Windows, through ConPTY: a banner, a rule, the
@@ -25,7 +27,7 @@ func TestKeyboardProtocolSequencesDoNotMoveTheCursor(t *testing.T) {
 		"\x1b[<u\x1b[>5u\x1b[>4;2m" + "can we\x1b[3;9H" +
 		// ctrl-delete: the line redrawn from the input's start, absolutely.
 		"\x1b[3;3H\x1b[<u\x1b[>5u\x1b[>4;2m" + "an we\x1b[K\x1b[3;8H"
-	got := string(Replay([]byte(in), "screen", 40, 10))
+	got := string(screen.Replay([]byte(in), "screen", 40, 10))
 
 	lines := strings.Split(got, "\r\n")
 	if len(lines) < 4 {
@@ -51,7 +53,7 @@ func TestKeyboardProtocolSequencesDoNotMoveTheCursor(t *testing.T) {
 func TestSaveAndRestoreStillWork(t *testing.T) {
 	t.Parallel()
 	in := "top\r\nmid\x1b[s\r\nbottom\x1b[u!"
-	got := string(Replay([]byte(in), "screen", 40, 10))
+	got := string(screen.Replay([]byte(in), "screen", 40, 10))
 	if !strings.Contains(got, "mid!") {
 		t.Fatalf("CSI s / CSI u no longer save and restore:\n%q", got)
 	}
