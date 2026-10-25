@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 type specHub struct {
@@ -259,5 +260,5 @@ func (l legacyListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &legacyConn{peeked: &peeked{Conn: c, r: bufio.NewReader(c)}, transport: "ziti"}, nil
+	return transport.NewLegacyConn(c, "ziti"), nil
 }

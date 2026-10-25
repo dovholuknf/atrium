@@ -59,23 +59,35 @@
 package link
 
 import (
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 const Version = wire.Version
 
 type (
-	Dialer       = wire.Dialer
-	Timings      = wire.Timings
-	RestartAsk   = wire.RestartAsk
-	Offer        = wire.Offer
-	Path         = wire.Path
-	PathState    = wire.PathState
-	RemoteAccess = wire.RemoteAccess
-	hello        = wire.Hello
-	welcome      = wire.Welcome
-	note         = wire.Note
+	Dialer         = wire.Dialer
+	Timings        = wire.Timings
+	RestartAsk     = wire.RestartAsk
+	Offer          = wire.Offer
+	Path           = wire.Path
+	PathState      = wire.PathState
+	RemoteAccess   = wire.RemoteAccess
+	Proven         = transport.Proven
+	Ziti           = transport.Ziti
+	Zrok           = transport.Zrok
+	ZrokAPI        = transport.ZrokAPI
+	Direct         = transport.Direct
+	Keys           = transport.Keys
+	Join           = transport.Join
+	Saved          = transport.Saved
+	RoomTransports = transport.RoomTransports
+	hello          = wire.Hello
+	welcome        = wire.Welcome
+	note           = wire.Note
 )
+
+const DefaultZitiService = transport.DefaultZitiService
 
 const (
 	handshakeWait = wire.HandshakeWait
@@ -90,5 +102,21 @@ var (
 	readJSON       = wire.ReadJSON
 	readJSONLimit  = wire.ReadJSONLimit
 	sayHello       = wire.SayHello
-	hearHello      = wire.HearHello
+	RejoinSentence = transport.RejoinSentence
+	DefaultOrder   = transport.DefaultOrder
+	Arrange        = transport.Arrange
+	Candidates     = transport.Candidates
+	Hosts          = transport.Hosts
+	ParseOrder     = transport.ParseOrder
+	MixedListener  = transport.MixedListener
+	NewCSR         = transport.NewCSR
+	ParseToken     = transport.ParseToken
+	EnrolOver      = transport.EnrolOver
+
+	MintOverlayToken     = transport.MintOverlayToken
+	DirectAuthenticated  = transport.DirectAuthenticated
+	OverlayAuthenticated = transport.OverlayAuthenticated
+	ZitiAuthenticated    = transport.ZitiAuthenticated
+	ZrokAuthenticated    = transport.ZrokAuthenticated
+	hearHello            = wire.HearHello
 )

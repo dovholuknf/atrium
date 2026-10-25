@@ -48,7 +48,7 @@ func tlsPair(t *testing.T, handler http.Handler) (*httptest.Server, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	der, err := hk.sign(csr, "testroom")
+	der, err := hk.Sign(csr, "testroom")
 	if err != nil {
 		t.Fatal(err)
 	}
