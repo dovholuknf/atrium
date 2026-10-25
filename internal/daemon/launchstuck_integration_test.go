@@ -130,9 +130,10 @@ func TestLaunchPromptFolderTrust(t *testing.T) {
 func TestLaunchPromptKinds(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"Select login method:\r\n 1. Claude account\r\n":                                PromptLogin,
-		"Update available!\r\n 1. Update now\r\n Enter to select · ↑/↓ to navigate\r\n": PromptUpdate,
-		" Weird\r\n 1. a\r\n Enter to select · ↑/↓ to navigate\r\n":                     PromptOther,
+		"Select login method:\r\n 1. Claude account\r\n":                                              PromptLogin,
+		"Update available!\r\n 1. Update now\r\n Enter to select · ↑/↓ to navigate\r\n":               PromptUpdate,
+		" Weird\r\n 1. a\r\n Enter to select · ↑/↓ to navigate\r\n":                                   PromptOther,
+		"Settings file could not be read: Refusing to read a file whose path could not be vetted\r\n": PromptSettings,
 	}
 	for frame, want := range cases {
 		h := readFrame(frame)
