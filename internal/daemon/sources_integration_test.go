@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,22 @@ func TestHelperSourceProcess(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("ATRIUM_TEST_SOURCE") == "" {
 		t.Skip("not the helper")
+	}
+	if os.Getenv("ATRIUM_TEST_SOURCE_HANG") != "" {
+		time.Sleep(10 * time.Minute) // wait: a grandchild that outlives its parent unless the tree is killed
+		os.Exit(0)
+	}
+	if p := os.Getenv("ATRIUM_TEST_SOURCE_GRANDCHILD"); p != "" {
+		gc := exec.Command(os.Args[0], "-test.run=TestHelperSourceProcess")
+		gc.Env = append(os.Environ(), "ATRIUM_TEST_SOURCE_GRANDCHILD=", "ATRIUM_TEST_SOURCE_HANG=1")
+		gc.Stdout = os.Stdout
+		if err := gc.Start(); err != nil {
+			os.Exit(5)
+		}
+		_ = os.WriteFile(p+".tmp", []byte(strconv.Itoa(gc.Process.Pid)), 0o600)
+		_ = os.Rename(p+".tmp", p)
+		time.Sleep(10 * time.Minute) // wait: hangs until the source's timeout kills it
+		os.Exit(0)
 	}
 	// From a FILE, not from the environment. See `helperSource`.
 	if p := os.Getenv("ATRIUM_TEST_SOURCE_OUT_FILE"); p != "" {
