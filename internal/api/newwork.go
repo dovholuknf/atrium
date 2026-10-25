@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -306,7 +307,7 @@ func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path stri
 		cmd = exec.CommandContext(ctx, "sh", file, filepath.FromSlash(path), org, repo, host)
 	}
 	cmd.Dir = filepath.FromSlash(path)
-	cmd.Env = append(os.Environ(), "ATRIUM_WORKTREE="+filepath.FromSlash(path), "ATRIUM_ORG="+org,
+	cmd.Env = append(userenv.Refresh(os.Environ()), "ATRIUM_WORKTREE="+filepath.FromSlash(path), "ATRIUM_ORG="+org,
 		"ATRIUM_REPO="+repo, "ATRIUM_HOST="+host)
 	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
