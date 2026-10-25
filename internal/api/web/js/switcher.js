@@ -189,7 +189,7 @@ function swWatchForTheft() {
 // typing more letters narrow rather than widen. Where it matched decides the
 // order: the name is what people mean, the tag is what they filed it under,
 // and the directory is the long one that matches too easily. A subsequence is
-// the last resort, so `atsw` still finds `atrium:switcher` without letting a
+// the last resort and only within the name, so `atsw` still finds `atrium:switcher` without letting a
 // scattering of letters outrank a real word.
 function swScore(t, q) {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -205,7 +205,7 @@ function swScore(t, q) {
     else if (at > 0) s = 70;
     else if (tags.includes(term)) s = 50;
     else if (dir.includes(term)) s = 40;
-    else if (swSubseq(name + " " + dir + " " + tags, term)) s = 10;
+    else if (swSubseq(name, term)) s = 10;
     if (s < 0) return -1;
     total += s;
   }
