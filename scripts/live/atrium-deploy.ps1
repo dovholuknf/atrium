@@ -88,11 +88,25 @@ Say "deploying $($want -join ', ')"
 $results = [ordered]@{}
 foreach ($n in $want) { $results[$n] = 'failed - not reached' }
 
-# Report says the result lines, logs them, and says them to $ReportTo through the hub. The hub routes `card@room`.
+# Report says the result lines, logs them, and says them to $ReportTo through the hub. The hub routes `card@room`. It is
+# called once per run, and lists every room.
 function Report {
   $lines = foreach ($k in $results.Keys) { "${k}: $($results[$k])" }
   $lines | ForEach-Object { Say $_ }
   if (-not $ReportTo) { return }
+  # A hand retry of one room that fails the way the last report said is not said again.
+  $lastFile = Join-Path $Base 'atrium-deploy-last.json'
+  $last = @{}
+  if (-not $WhatIf -and (Test-Path $lastFile)) {
+    try { (Get-Content $lastFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $last[$_.Name] = $_.Value } } catch {}
+  }
+  $repeat = -not $WhatIf
+  foreach ($k in $results.Keys) { if ($results[$k] -notlike 'failed*' -or $last[$k] -ne $results[$k]) { $repeat = $false } }
+  if (-not $WhatIf) {
+    foreach ($k in $results.Keys) { $last[$k] = $results[$k] }
+    $last | ConvertTo-Json | Set-Content $lastFile
+  }
+  if ($repeat) { Say "not reported again: every room failed as the last report said"; return }
   $text = "atrium-deploy$(if ($WhatIf) { ' (WhatIf)' }):`n" + ($lines -join "`n")
   $null = Send-CardSay $ReportTo $text
 }
