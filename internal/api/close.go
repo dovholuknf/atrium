@@ -104,10 +104,14 @@ type closePreview struct {
 	Kept      []string    `json:"kept"`
 	DiskBytes int64       `json:"disk_bytes"`
 	CanStash  bool        `json:"can_stash"`
+	// keepAll ends the card and frees nothing, for a close asked to leave the folder and branches alone.
+	keepAll bool
 }
 
 type closeRequest struct {
 	Confirm bool `json:"confirm"`
+	// Keep ends the card and frees nothing: the folder, the branch and any hub branch stay.
+	Keep bool `json:"keep,omitempty"`
 	// Answers is keep, stash or delete by the worktree row's seq.
 	Answers map[string]string `json:"answers"`
 	// Progress is the id the board sends so each step of the close is broadcast as a close-progress event with it.
@@ -206,6 +210,9 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 	}
 	var missing []string
 	for _, a := range pv.Asks {
+		if in.Keep {
+			break
+		}
 		ans := in.Answers[strconv.Itoa(a.Seq)]
 		if ans == "" {
 			missing = append(missing, a.Path)
@@ -225,6 +232,7 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 			"preview": pv})
 		return
 	}
+	pv.keepAll = in.Keep
 	steps := s.newCloseSteps(strings.TrimSpace(in.Progress), t.ID)
 	writeJSON(w, http.StatusOK, s.closeCard(t, pv, in.Answers, orphan, steps))
 }
@@ -451,6 +459,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 	of := func(kind string) []*store.CardResource {
 		var out []*store.CardResource
+		if pv.keepAll {
+			return out
+		}
 		for i := len(rows) - 1; i >= 0; i-- {
 			if rows[i].Live() && rows[i].Kind == kind {
 				out = append(out, rows[i])
@@ -505,6 +516,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 
 	// 2. the review
 	outside := s.walkedOutside(t.ID, rows)
+	if pv.keepAll {
+		outside = nil
+	}
 	if len(outside)+len(of(store.ResReview)) > 0 {
 		steps.begin("review", "archiving the review")
 	}
@@ -524,7 +538,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 
 	// 2b. the card's branches on the hub, pushed from its worktree, so before the worktree goes
-	s.freeHubBranches(t, rows, asked, answers, steps, failed, freed, warn)
+	if !pv.keepAll {
+		s.freeHubBranches(t, rows, asked, answers, steps, failed, freed, warn)
+	}
 
 	// 3. worktrees. A kept one keeps its branch: repo and branch name.
 	keptBranch := map[string]bool{}

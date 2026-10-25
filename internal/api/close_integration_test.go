@@ -153,6 +153,33 @@ func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
 	}
 }
 
+func TestCloseWithKeepEndsTheCardAndFreesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, wt, _ := openForClose(t)
+	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "keep": true})
+	if code != 200 || !out.Closed || out.Left == 0 {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if !exists(filepath.Join(filepath.FromSlash(wt), "notes.txt")) {
+		t.Error("the worktree was removed")
+	}
+	if got := git(t, wt, "symbolic-ref", "--short", "HEAD"); got != "feat/x" {
+		t.Errorf("the branch is %q", got)
+	}
+	if len(oh.killed) != 1 || oh.killed[0] != card {
+		t.Errorf("the session was not stopped: %v", oh.killed)
+	}
+	if task, _ := oh.srv.st.Get(card); task.Status != store.StatusDone {
+		t.Errorf("the card is %s", task.Status)
+	}
+}
+
 func TestCloseDeletesWhenToldTo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")

@@ -113,7 +113,11 @@
       {
         label: "terminate and clean up", danger: true,
         help: "Stops the agent and removes the folder and branch it was working in, when atrium created them. A folder it did not create stays, and it says so first. It asks about changes that exist nowhere else.",
-        act: () => cleanUp(id, t)
+        act: () => cleanUp(id, t),
+        both: true,
+        pick: [{ label: "and don't clean up",
+          help: "Stops the session and ends the card. The folder, the branch and any hub branch are left untouched.",
+          act: () => endKeeping(id) }]
       }
     ].filter(Boolean).filter((it, i, all) => !it.sep || (i > 0 && i < all.length - 1 && !all[i - 1].sep));
   }
@@ -129,6 +133,12 @@
     if (asks.length && !skipped()[CLEANUP_KEY]) { showAsk(id, t, pv); return; }
     asks.forEach(a => { answers[String(a.seq)] = "delete"; });
     finishCleanUp(id, answers);
+  }
+
+  async function endKeeping(id) {
+    try { await post(id, "close", { confirm: true, keep: true }); }
+    catch (e) { openSheet(id, "could not terminate: " + e.message); return; }
+    window.mNet.refresh();
   }
 
   async function finishCleanUp(id, answers) {
@@ -209,7 +219,7 @@
       const b = e.target.closest("[data-i]");
       if (!b || b.disabled) return;
       const it = current[Number(b.dataset.i)];
-      if (it.pick) {
+      if (it.pick && !(it.both && !e.target.closest(".rmenu-more"))) {
         const list = b.closest(".rmenu-row").parentNode.querySelector('.rmenu-picks[data-i="' + b.dataset.i + '"]');
         if (list) list.hidden = !list.hidden;
         return;
@@ -259,7 +269,7 @@
         '</button><button type="button" class="rmenu-q" aria-label="what is ' + esc(it.label) + '?">?</button></div>' +
         '<p class="rmenu-help" hidden>' + esc(it.help || "") + (it.off ? " It cannot be resumed: " + esc(it.off) + "." : "") + "</p>" +
         (it.pick ? '<div class="rmenu-picks" data-i="' + i + '" hidden>' + it.pick.map((p, j) =>
-          '<button type="button" class="rmenu-item sub' + (p.on ? " on" : "") + '" data-pick="1" data-i="' + i + '" data-j="' + j + '">' + esc(p.label) + (p.tag ? ' <span class="newtag">' + esc(p.tag) + "</span>" : "") + "</button>").join("") + "</div>" : "");
+          '<button type="button" class="rmenu-item sub' + (p.on ? " on" : "") + '" data-pick="1" data-i="' + i + '" data-j="' + j + '">' + esc(p.label) + (p.tag ? ' <span class="newtag">' + esc(p.tag) + "</span>" : "") + "</button>" + (p.help ? '<p class="rmenu-help">' + esc(p.help) + "</p>" : "")).join("") + "</div>" : "");
     }).join("");
     sheet.innerHTML = '<div class="rmenu-back" data-close="1"></div>' +
       '<div class="rmenu-box" role="dialog" aria-label="card actions"><p class="rmenu-name"></p>' + rows +
