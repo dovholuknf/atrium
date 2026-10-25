@@ -137,8 +137,7 @@ func resolve(evalSymlinks func(string) (string, error), path string, skipDenied 
 		}
 		denied := errors.Is(err, fs.ErrPermission)
 		if denied && !skipDenied(cur) {
-			// EvalSymlinks lists every ancestor to fold case, so a drive root the process may not list denies it for
-			// a path whose own components all lstat fine. A walk that only lstats and reads links needs no list right.
+			// EvalSymlinks lists every ancestor to fold case, and lstat alone needs no list right.
 			if real, werr := walkLinks(cur); werr == nil {
 				return joinRest(real, rest), nil
 			}
@@ -164,11 +163,9 @@ func joinRest(real, rest string) string {
 	return filepath.Join(real, rest)
 }
 
-// maxLinks bounds the links walkLinks follows, so a loop ends in an error.
 const maxLinks = 255
 
-// walkLinks resolves path one component at a time with Lstat and Readlink only. A component that cannot be
-// examined fails the walk, so a denied folder that could hide a link still fails closed.
+// walkLinks resolves path with Lstat and Readlink only, so a component it cannot examine fails closed.
 func walkLinks(path string) (string, error) {
 	vol := filepath.VolumeName(path)
 	pending := strings.Split(strings.TrimPrefix(path[len(vol):], string(filepath.Separator)), string(filepath.Separator))
