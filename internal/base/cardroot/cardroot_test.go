@@ -1,7 +1,9 @@
 package cardroot
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -63,5 +65,24 @@ func TestResolveDefaults(t *testing.T) {
 	}
 	if _, err := env.Resolve(home, ""); err == nil || !strings.Contains(err.Error(), "home") {
 		t.Fatalf("the home folder was accepted: %v", err)
+	}
+}
+
+func TestCheckRefusesARootWithAnUnreadableAncestor(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("needs a folder this process cannot search")
+	}
+	base := t.TempDir()
+	locked := filepath.Join(base, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	env := envAt(filepath.Join(base, "home"), "linux")
+	if _, err := env.Check(filepath.Join(locked, "cards"), filepath.Join(base, "state"), ""); err == nil {
+		t.Fatal("a root under an unreadable folder was accepted")
 	}
 }
