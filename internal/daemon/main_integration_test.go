@@ -11,7 +11,7 @@ import (
 // that does not care how its database came to exist skips the schema
 // migration, which costs far more than the test. A test of a NEW database
 // starts its own daemon and does not call this.
-func seedMigratedDB(t *testing.T, path string) {
+func seedMigratedDB(t testing.TB, path string) {
 	t.Helper()
 	template, err := migratedTemplate()
 	if err != nil {
