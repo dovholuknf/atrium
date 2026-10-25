@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1380,6 +1381,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		"ATRIUM_RUNNER": h.ID,
 	}
 	d.tellWhereIAm(atrium)
+	if u, ok := d.hubURLDefault(overEnv(h.Env, addedEnv)); ok {
+		atrium["ATRIUM_HUB_URL"] = u
+	}
 	// A HOME'S TEMP FOLDER, over the harness and the machine, so nothing the runner starts writes outside it.
 	if home != nil {
 		for k, v := range homeEnv(homeDir) {
@@ -1897,6 +1901,22 @@ func permGateDefault(harnessEnv map[string]string) (string, bool) {
 		}
 	}
 	return "on", true
+}
+
+// hubURLDefault is this room's agent listener for ATRIUM_HUB_URL, which a hook reads ahead of the machine's address
+// file: a second room on a machine records no address there, so without it its runners' hooks reach the first room.
+// A harness that names the variable keeps its own.
+func (d *Daemon) hubURLDefault(harnessEnv map[string]string) (string, bool) {
+	for k := range harnessEnv {
+		if strings.EqualFold(k, "ATRIUM_HUB_URL") {
+			return "", false
+		}
+	}
+	a := d.agentAddr()
+	if _, port, err := net.SplitHostPort(a); err != nil || port == "0" {
+		return "", false
+	}
+	return addressOf(a), true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.

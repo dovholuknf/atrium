@@ -433,3 +433,17 @@ func TestADoneCardWhoseRunnerStillRunsMayPush(t *testing.T) {
 		t.Fatalf("a done card whose runner still runs was refused: %v", err)
 	}
 }
+
+// A second room on a machine records no address in the machine's file, so its runners' hooks find it by the URL it
+// launches them with, ahead of that file.
+func TestARunnerIsLaunchedWithItsOwnRoomsAgentAddress(t *testing.T) {
+	d := testDaemon(t)
+	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7787})
+	t.Setenv("ATRIUM_HUB_URL", "http://127.0.0.1:7777")
+	if got := launchDump(t, d, LaunchRequest{})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:7787" {
+		t.Fatalf("the runner's hooks are aimed at %q, want this room's http://127.0.0.1:7787", got)
+	}
+	if got := launchDump(t, d, LaunchRequest{Env: map[string]string{"ATRIUM_HUB_URL": "http://127.0.0.1:1"}})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:1" {
+		t.Fatalf("a harness that names ATRIUM_HUB_URL was overridden: %q", got)
+	}
+}
