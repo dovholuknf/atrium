@@ -10,6 +10,10 @@
 #
 #     pwsh -File C:\Users\claude\.atrium2\scripts\stop-atrium.ps1
 #
+# It ends everything atrium on this machine in one run: the room, its pty host and every runner the host holds, and the
+# hub, then lists what is still running. -KillRunners is accepted and implied. `atrium stop` is the gentler stop, and
+# leaves a supervised runner running.
+#
 # -WhatIf says what it would stop and stops nothing. -KeepControl is accepted and ignored. The claude-sg4 room first
 # asks its working cards to wrap up (up to its restart_wrap_wait_s). -Immediate skips that.
 param([switch]$KeepControl, [switch]$Force, [switch]$WhatIf, [switch]$Immediate, [switch]$KillRunners, [switch]$Control,
@@ -22,6 +26,7 @@ Assert-NotSupervised
 Assert-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = Join-Path $Base 'stop.log'
+$KillRunners = $true
 
 if ($env:ATRIUM_TASK_ID -and -not $Force -and -not $WhatIf) {
   Say "refusing: this shell is atrium card $env:ATRIUM_TASK_ID, and stopping its room stops this script. run it from a plain PowerShell, or pass -Force"
@@ -30,11 +35,12 @@ if ($env:ATRIUM_TASK_ID -and -not $Force -and -not $WhatIf) {
 
 $withControl = $Control -and $IKnowItKillsMyShell
 if ($withControl) { Stop-Control }
-if (-not (Stop-Room)) { Say 'the room refused to stop without ending its runners. nothing was stopped. pass -KillRunners to end them'; exit 1 }
+Say 'this ends the room, its pty host with every runner it holds (typed text not sent is lost), and the hub'
+if (-not (Stop-Room)) { Say 'the room refused to stop. nothing was stopped'; exit 1 }
 Stop-Hub
 
 if (-not $WhatIf) {
-  $left = @(Find-Atrium run) + @(Find-Atrium room)
+  $left = @(Find-Atrium run) + @(Find-Atrium room) + @(Find-Atrium ptyhost)
   if ($withControl) { $left += @(Find-Control) }
   if ($left.Count) { Say "still running: $(($left | ForEach-Object { $_.ProcessId }) -join ', ')" }
   else { Say 'atrium stopped. start it again with start-atrium.ps1' }
