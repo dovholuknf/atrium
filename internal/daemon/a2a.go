@@ -597,7 +597,7 @@ type Escalation struct {
 	// `launch-prompt` or `terminal-menu`.
 	Source string `json:"source"`
 	// Prompt names which prompt a launch-prompt or terminal-menu is stuck at:
-	// folder-trust, login, update, model-switch or other. Empty otherwise.
+	// folder-trust, login, update, settings, model-switch or other. Empty otherwise.
 	Prompt string `json:"prompt,omitempty"`
 	// Since is when it became stuck. The backoff counts from here.
 	Since time.Time `json:"since"`
