@@ -79,7 +79,7 @@ func TestASuperleanLaunchDeliversItsPrompt(t *testing.T) {
 	if got := claudePositionals(args); len(got) != 1 || !strings.Contains(got[0], "fix the bug") {
 		t.Fatalf("claude would read the prompt as %q from %q", got, args)
 	}
-	if flagValue(t, args, "--tools") != "Read,Edit,Write,Grep,Glob,Bash,ToolSearch" {
+	if flagValue(t, args, "--tools") != "Read,Edit,Write,Grep,Glob,Bash,PowerShell,ToolSearch" {
 		t.Fatalf("tools changed: %q", args)
 	}
 }

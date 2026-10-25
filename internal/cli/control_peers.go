@@ -146,7 +146,7 @@ func addPeerTools(s *mcp.Server) {
 			"in ~/.claude/agents (no .md) and directories in ~/.claude/skills on the room. They are " +
 			"namespaced, so start `atrium:<name>`. A name with no file, or a runner that is not " +
 			"claude, refuses the launch. The card keeps the lists.\n\n" +
-			"`superlean: true` starts the worker below lean: only Read, Edit, Write, Grep, Glob, Bash and " +
+			"`superlean: true` starts the worker below lean: only Read, Edit, Write, Grep, Glob, Bash, PowerShell and " +
 			"ToolSearch, no mercurius, and a one paragraph worker prompt. For a bounded change. Claude only.\n\n" +
 			"`room` launches on ANOTHER ROOM, through this room's hub: `cwd` is then a path on that " +
 			"room's machine, `brief` is written there and not here, and the worker's reports and " +
@@ -693,7 +693,7 @@ type LaunchInput struct {
 	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these. Explore and Plan are Claude Code's own built-in agents and need no file, started by their bare name. any other name is namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
 	// Superlean, as the hub's atrium_launch takes it. Passed as the kit is.
-	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, no mercurius, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. claude only, never an interview. default false"`
+	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. claude only, never an interview. default false"`
 	// Room launches on another room, as the hub's atrium_launch does.
 	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. cwd is then a path on that room's machine and brief is written there. its reports and notices still reach you, as your-handle@your-room"`
 	// Scratch, Lean, MCP and Theme are the hub's atrium_launch fields of the same name, for a launch on this room.

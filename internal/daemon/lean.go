@@ -177,7 +177,7 @@ Report to your launcher, never to the operator, unless your launcher is the oper
 const superleanSystemPrompt = `You are a worker launched through atrium. BRIEF.md is your whole task. End with atrium_done (a sha or an artifact) when you finish, or atrium_blocked when something stops you: that is the one message your launcher gets. Ask with atrium_say. Commit on your own branch, never on claude/main or main, with a one-line subject and no trailer. Never restart atrium or deploy unless the brief says to. Run tests in one foreground call, scoped to what you touched.`
 
 // superlean tools: the built-ins a superlean worker keeps. ToolSearch stays, or every MCP tool loads its full schema.
-var superleanBase = []string{"Read", "Edit", "Write", "Grep", "Glob", "Bash", "ToolSearch"}
+var superleanBase = []string{"Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell", "ToolSearch"}
 
 // superleanTools is the `--tools` list: the base, plus Agent with lean_agents and Skill with lean_skills.
 func superleanTools(k leanKit) []string {
