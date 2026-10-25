@@ -711,6 +711,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		return 0
 	}
 	api.KeepaliveOf = d.ka.view
+	api.KeepaliveOfTask = d.ka.viewTask
 	d.ap.SetKeepalive = d.keepaliveSet
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()

@@ -608,6 +608,7 @@ type Store struct {
 	closed atomic.Bool
 	// inflight is the calls running an operation. Close waits for it to reach zero so no connection outlives it.
 	inflight atomic.Int64
+	memo     readMemo
 
 	// OnHalt is called once, from the goroutine that hit the failure. The
 	// daemon uses it to close the agent-facing listener and stop supervised

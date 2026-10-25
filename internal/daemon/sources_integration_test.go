@@ -68,7 +68,7 @@ func helperSource(t *testing.T, id, out string) store.Source {
 
 // A daemon with a store and nothing listening. Everything under test here runs
 // a child process and writes to the database, and none of it needs a port.
-func testDaemon(t *testing.T) *Daemon {
+func testDaemon(t testing.TB) *Daemon {
 	t.Helper()
 	dir := t.TempDir()
 	seedMigratedDB(t, filepath.Join(dir, "atrium.db"))
