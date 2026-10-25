@@ -108,8 +108,7 @@ func (e Env) Check(path, stateDir, scmRoot string) (string, error) {
 	return abs, nil
 }
 
-// examinable lstats every component of path that exists, following links, and answers the first one the process is
-// refused. A path that does not exist yet is fine up to where it stops existing.
+// examinable answers the first existing component of path, links followed, that lstat refuses.
 func examinable(path string) error {
 	pending := []string{path}
 	for links := 0; len(pending) > 0 && links < 40; {
