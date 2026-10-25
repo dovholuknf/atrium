@@ -1350,7 +1350,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// launch: the point of preparing is that the runner needs what it sets up,
 	// so starting without it produces an agent that cannot find its tools and
 	// no explanation of why.
-	base := os.Environ()
+	base := withUserPath(os.Environ())
 	if h.Prepare != "" {
 		prepared, err := captureEnv(h.Prepare, cwd)
 		if err != nil {
