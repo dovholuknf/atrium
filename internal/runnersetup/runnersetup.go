@@ -283,6 +283,9 @@ func WorkspaceRoots(ps []*store.Provider) []string {
 // where its root is, because `npm root -g` is another process and the thing
 // this function exists to avoid is starting processes.
 //
+// A launcher that is a symlink into another prefix, like `~/.local/bin/codex`
+// pointing into a node version manager's tree, is searched upward from its target too.
+//
 // Empty when it cannot be worked out, which is a normal answer: a runner
 // installed some other way has a version atrium has no business guessing at.
 func InstalledVersion(exePath, pkg string) string {
@@ -295,6 +298,14 @@ func InstalledVersion(exePath, pkg string) string {
 		filepath.Join(append([]string{dir, "node_modules"}, parts...)...),
 		filepath.Join(append([]string{dir, "..", "lib", "node_modules"}, parts...)...),
 		filepath.Join(append([]string{dir, "..", "node_modules"}, parts...)...),
+	}
+	if real, err := filepath.EvalSymlinks(exePath); err == nil {
+		for up := filepath.Dir(real); ; up = filepath.Dir(up) {
+			candidates = append(candidates, filepath.Join(append([]string{up, "node_modules"}, parts...)...))
+			if filepath.Dir(up) == up {
+				break
+			}
+		}
 	}
 	for _, c := range candidates {
 		b, err := os.ReadFile(filepath.Join(c, "package.json"))
