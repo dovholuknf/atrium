@@ -69,6 +69,7 @@ var table = []row{
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
 	{1, "internal/base/claudeconf", []string{"internal/base/mcprule", "internal/base/rolebin"}},
 	{1, "internal/base/detach", []string{"internal/base/nowindow"}},
+	{1, "internal/link/transport", []string{"internal/link/wire", "internal/zitictx"}},
 	{1, "internal/guard", []string{"internal/base/nowindow"}},
 	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/rolebin"}},
 	{1, "internal/sshwizard", []string{
@@ -101,7 +102,7 @@ var table = []row{
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},

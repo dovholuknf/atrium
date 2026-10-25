@@ -1,4 +1,4 @@
-package link
+package transport
 
 import (
 	"bufio"
@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's certificate proves a room's name on an overlay too (decision 18).
@@ -53,9 +55,9 @@ type legacyConn struct {
 	transport string
 }
 
-// legacyTransport says whether a connection took the old, certificate-less path
+// LegacyTransport says whether a connection took the old, certificate-less path
 // on an overlay listener, and which overlay it came in on.
-func legacyTransport(c net.Conn) (string, bool) {
+func LegacyTransport(c net.Conn) (string, bool) {
 	l, ok := c.(*legacyConn)
 	if !ok {
 		return "", false
@@ -71,7 +73,7 @@ func legacyTransport(c net.Conn) (string, bool) {
 // `Hub.LegacyRefused` after this, so a connection without a certificate on the
 // new path is refused here and one on the old path is refused with its own sentence.
 func OverlayAuthenticated(c net.Conn) bool {
-	if _, ok := legacyTransport(c); ok {
+	if _, ok := LegacyTransport(c); ok {
 		return true
 	}
 	return DirectAuthenticated(c)
@@ -139,7 +141,7 @@ func (m *mixedListener) loop() {
 // sort looks at the first byte and hands the connection on as the right kind.
 func (m *mixedListener) sort(c net.Conn) {
 	p := &peeked{Conn: c, r: bufio.NewReader(c)}
-	_ = c.SetReadDeadline(time.Now().Add(handshakeWait))
+	_ = c.SetReadDeadline(time.Now().Add(wire.HandshakeWait))
 	b, err := p.r.Peek(1)
 	_ = c.SetReadDeadline(time.Time{})
 	if err != nil {
@@ -175,7 +177,7 @@ func (m *mixedListener) Close() error {
 
 // ── the room's side ──────────────────────────────────────
 
-// Proven wraps a transport's Dialer so every connection it opens is mutual TLS
+// Proven wraps a transport's wire.Dialer so every connection it opens is mutual TLS
 // with the room's certificate.
 //
 // IN THE DIALER, and not in each caller, so every kind of connection the room
@@ -183,19 +185,19 @@ func (m *mixedListener) Close() error {
 // dials through `r.Dial.Dial`) is covered by construction. Nothing may open its
 // own path to the hub.
 type Proven struct {
-	Dialer
+	wire.Dialer
 	Keys Keys
 }
 
 // Reset and Close pass through to the transport, which an embedded interface does not do on its own.
 func (p Proven) Reset() {
-	if r, ok := p.Dialer.(resetter); ok {
+	if r, ok := p.Dialer.(interface{ Reset() }); ok {
 		r.Reset()
 	}
 }
 
 func (p Proven) Close() {
-	if c, ok := p.Dialer.(closer); ok {
+	if c, ok := p.Dialer.(interface{ Close() }); ok {
 		c.Close()
 	}
 }
@@ -217,7 +219,7 @@ func (p Proven) Dial(ctx context.Context) (net.Conn, error) {
 // bounded by the caller's context and by the handshake deadline.
 func handshakeClient(ctx context.Context, raw net.Conn, cfg *tls.Config) (net.Conn, error) {
 	tc := tls.Client(raw, cfg)
-	if err := raw.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+	if err := raw.SetDeadline(time.Now().Add(wire.HandshakeWait)); err != nil {
 		_ = raw.Close()
 		return nil, err
 	}
@@ -242,7 +244,7 @@ func (k Keys) HasRoomCert() bool {
 // EnrolOver spends a join secret on a connection the transport dialled, then
 // keeps the certificate that comes back. The overlay carries the bytes and the
 // pinned handshake inside it proves the hub, exactly as over direct.
-func EnrolOver(ctx context.Context, dial Dialer, keys Keys, pin, self, secret string) (string, error) {
+func EnrolOver(ctx context.Context, dial wire.Dialer, keys Keys, pin, self, secret string) (string, error) {
 	if pin == "" || secret == "" {
 		return "", errors.New("this join string carries no secret to enrol with")
 	}

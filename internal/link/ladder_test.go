@@ -296,3 +296,29 @@ func TestSetKeepsTheCurrentTransport(t *testing.T) {
 		t.Fatal("a dial after Set did not use the new ziti rung")
 	}
 }
+
+type countDialer struct{ closed atomic.Int32 }
+
+func (d *countDialer) Dial(context.Context) (net.Conn, error) { return nil, errors.New("no") }
+func (d *countDialer) Describe() string                       { return "count" }
+func (d *countDialer) Close()                                 { d.closed.Add(1) }
+
+func TestLadderSetClosesDroppedDialersAndKeepsTheOneItStandsOn(t *testing.T) {
+	a, b, c := &countDialer{}, &countDialer{}, &countDialer{}
+	pa, pb, pc := Path{Transport: "ziti", Service: "a"}, Path{Transport: "ziti", Service: "b"}, Path{Transport: "ziti", Service: "c"}
+	l := NewLadder([]Rung{{pa, a}, {pb, b}, {pc, c}})
+	for i := 0; i < 100; i++ {
+		l.Set([]Rung{{pa, a}, {pb, b}, {pc, c}})
+	}
+	if a.closed.Load()+b.closed.Load()+c.closed.Load() != 0 {
+		t.Fatal("a Set with the same dialers closed one")
+	}
+	l.Set([]Rung{{pa, a}})
+	if a.closed.Load() != 0 || b.closed.Load() != 1 || c.closed.Load() != 1 {
+		t.Fatalf("closed a=%d b=%d c=%d, want 0 1 1", a.closed.Load(), b.closed.Load(), c.closed.Load())
+	}
+	l.Set([]Rung{{pb, b}})
+	if a.closed.Load() != 0 {
+		t.Fatal("closed the rung the ladder stands on")
+	}
+}

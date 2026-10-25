@@ -161,20 +161,6 @@ func (b *CIBinder) serve(ctx context.Context, ln net.Listener) error {
 	return err
 }
 
-// ListenService binds another service with the same identity, and so the same ziti context as the link and the board.
-func (z *Ziti) ListenService(name string) (net.Listener, error) {
-	ctx, err := z.context()
-	if err != nil {
-		return nil, err
-	}
-	ln, err := ctx.Listen(name)
-	if err != nil {
-		return nil, errors.New("could not bind the ziti service " + name + ". does this identity have a bind policy for it: " +
-			err.Error())
-	}
-	return ln, nil
-}
-
 var ciNoticeSeq atomic.Uint64
 
 // ciNotify puts one post in front of the operator as a growler on the board, the channel a new push device and a change

@@ -1,4 +1,4 @@
-package link
+package transport
 
 import (
 	"encoding/json"
@@ -8,6 +8,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The ways a room can reach its hub, and the order it tries them in.
@@ -76,8 +78,8 @@ func rank(order []string, kind string) int {
 }
 
 // Arrange sorts paths by an order. Nil is the default order.
-func Arrange(paths []Path, order []string) []Path {
-	out := append([]Path(nil), paths...)
+func Arrange(paths []wire.Path, order []string) []wire.Path {
+	out := append([]wire.Path(nil), paths...)
 	sort.SliceStable(out, func(i, j int) bool {
 		return rank(order, out[i].Transport) < rank(order, out[j].Transport)
 	})
@@ -89,25 +91,25 @@ type RoomTransports struct {
 	// Order is this room's own order. Empty follows the hub's.
 	Order []string `json:"order,omitempty"`
 	// Paths were told to this room on its own machine, and win over the hub's word.
-	Paths []Path `json:"paths,omitempty"`
+	Paths []wire.Path `json:"paths,omitempty"`
 	// Hub is the hub's list as last heard, in the hub's order.
-	Hub []Path `json:"hub,omitempty"`
+	Hub []wire.Path `json:"hub,omitempty"`
 	// Off is the kinds turned off from the hub or the board, ziti or zrok. Kept across a restart.
 	Off []string `json:"off,omitempty"`
 }
 
 // Local returns the room-local path for a kind, or a fresh one.
-func (t RoomTransports) Local(kind string) Path {
+func (t RoomTransports) Local(kind string) wire.Path {
 	for _, p := range t.Paths {
 		if p.Transport == kind {
 			return p
 		}
 	}
-	return Path{Transport: kind}
+	return wire.Path{Transport: kind}
 }
 
 // SetLocal replaces the room-local path of that kind.
-func (t *RoomTransports) SetLocal(p Path) {
+func (t *RoomTransports) SetLocal(p wire.Path) {
 	for i := range t.Paths {
 		if t.Paths[i].Transport == p.Transport {
 			t.Paths[i] = p
@@ -159,7 +161,7 @@ func (k Keys) SaveTransports(t RoomTransports) error {
 }
 
 // merge lays the fields src sets over dst.
-func merge(dst, src Path, from string) Path {
+func merge(dst, src wire.Path, from string) wire.Path {
 	set := false
 	for _, f := range []struct {
 		d *string
@@ -191,10 +193,10 @@ func merge(dst, src Path, from string) Path {
 // room that reached its hub on 127.0.0.1 into one whose every data dial went to
 // an address that timed out, while its control connection, dialled before the
 // hub had spoken, stayed up and made the room look attached.
-func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string) {
-	by := map[string]Path{}
-	var direct []Path
-	add := func(p Path, from string) {
+func Candidates(joined Saved, t RoomTransports) (rungs []wire.Path, skipped []string) {
+	by := map[string]wire.Path{}
+	var direct []wire.Path
+	add := func(p wire.Path, from string) {
 		k := strings.ToLower(strings.TrimSpace(p.Transport))
 		if k == "openziti" {
 			k = "ziti"
@@ -203,22 +205,22 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 			return
 		}
 		if k == "direct" {
-			by[k] = Path{Transport: k}
+			by[k] = wire.Path{Transport: k}
 			addr := strings.TrimSpace(p.Addr)
 			if addr == "" {
 				return
 			}
 			for _, d := range direct {
-				if equalFold(d.Addr, addr) {
+				if wire.EqualFold(d.Addr, addr) {
 					return
 				}
 			}
-			direct = append(direct, Path{Transport: k, Addr: addr, From: from})
+			direct = append(direct, wire.Path{Transport: k, Addr: addr, From: from})
 			return
 		}
 		cur, ok := by[k]
 		if !ok {
-			cur = Path{Transport: k}
+			cur = wire.Path{Transport: k}
 		}
 		by[k] = merge(cur, p, from)
 	}
@@ -229,7 +231,7 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 		}
 	}
 	if joined.Transport != "" {
-		add(Path{Transport: joined.Transport, Addr: joined.Hub, Service: joined.Service,
+		add(wire.Path{Transport: joined.Transport, Addr: joined.Hub, Service: joined.Service,
 			Share: joined.Share, Identity: joined.Identity}, "join")
 	}
 	var hubOrder []string
@@ -282,7 +284,7 @@ func Candidates(joined Saved, t RoomTransports) (rungs []Path, skipped []string)
 // machine, and sending its traffic round an overlay costs the overlay's round trip
 // (85ms against 1ms) on every board call and keystroke. The overlay stays below it
 // as the fallback. Order among the rest is untouched.
-func loopbackFirst(ps []Path) []Path {
+func loopbackFirst(ps []wire.Path) []wire.Path {
 	// A direct rung that already sits above every overlay (an address typed on this machine) keeps its place.
 	first := -1
 	for i, p := range ps {
@@ -294,8 +296,8 @@ func loopbackFirst(ps []Path) []Path {
 	if first < 0 {
 		return ps
 	}
-	out := append([]Path(nil), ps[:first]...)
-	var rest []Path
+	out := append([]wire.Path(nil), ps[:first]...)
+	var rest []wire.Path
 	for _, p := range ps[first:] {
 		if isLoopbackDirect(p) {
 			out = append(out, p)
@@ -306,7 +308,7 @@ func loopbackFirst(ps []Path) []Path {
 	return append(out, rest...)
 }
 
-func isLoopbackDirect(p Path) bool {
+func isLoopbackDirect(p wire.Path) bool {
 	if p.Transport != "direct" {
 		return false
 	}

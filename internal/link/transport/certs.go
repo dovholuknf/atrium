@@ -1,4 +1,4 @@
-package link
+package transport
 
 import (
 	"crypto/ecdsa"
@@ -514,7 +514,7 @@ func NewCSR(room string) (*ecdsa.PrivateKey, []byte, error) {
 	return key, der, err
 }
 
-// sign turns a room's request into a certificate for the name the hub chose.
+// Sign turns a room's request into a certificate for the name the hub chose.
 //
 // THE PUBLIC KEY IS THE ONLY THING TAKEN FROM THE REQUEST. Not the common name,
 // not an extension, not a subject alternative name: everything else in a CSR is
@@ -523,7 +523,7 @@ func NewCSR(room string) (*ecdsa.PrivateKey, []byte, error) {
 //
 // `room` comes from the secret that was spent, which the hub bound to one room
 // when it minted the token.
-func (k Keys) sign(csrDER []byte, room string) ([]byte, error) {
+func (k Keys) Sign(csrDER []byte, room string) ([]byte, error) {
 	csr, err := x509.ParseCertificateRequest(csrDER)
 	if err != nil {
 		return nil, errors.New("that signing request could not be read")
