@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 func TestFetchArgsNeverCollectGarbage(t *testing.T) {

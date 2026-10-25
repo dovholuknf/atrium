@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/land"
+	"github.com/dovholuknf/atrium/internal/base/land"
 )
 
 var (

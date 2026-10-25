@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 // THE HUB READS CI FOR ITS ROOMS: runs, jobs and steps, failed-job logs and artifacts, all read only, through the

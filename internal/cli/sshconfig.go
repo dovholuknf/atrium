@@ -15,8 +15,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dovholuknf/atrium/internal/base/sshcfg"
 	"github.com/dovholuknf/atrium/internal/link"
-	"github.com/dovholuknf/atrium/internal/sshcfg"
 )
 
 // sshConfigCmd is `atrium ssh config add|rm|show`: the opt-in helper that writes the Host blocks `atrium ssh-proxy

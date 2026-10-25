@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/shellpick"
+	"github.com/dovholuknf/atrium/internal/base/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

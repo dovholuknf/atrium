@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/mcprule"
+	"github.com/dovholuknf/atrium/internal/base/mcprule"
 )
 
 // Entry is one converted rule.

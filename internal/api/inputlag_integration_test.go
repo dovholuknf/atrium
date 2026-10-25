@@ -5,7 +5,7 @@ package api
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // The gear's checkbox switches this room's logging at once, keeps it for the

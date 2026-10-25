@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // The persistent growler: something waiting on a human, shown on every screen

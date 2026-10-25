@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/itemgate"
+	"github.com/dovholuknf/atrium/internal/base/itemgate"
 )
 
 // Item gates: "item A waits on target T", kept on the hub.

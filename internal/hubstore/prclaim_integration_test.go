@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // A RELEASE DELETES THE CLAIM ONLY WHILE THE ROOM STILL OWNS IT, so a claim that moved meanwhile is left alone.

@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
 )
 
 // writeRoomCert puts a loadable room.crt and room.key in dir, which is all that makes it a room's directory here.

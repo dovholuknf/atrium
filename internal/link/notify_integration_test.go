@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/testwait"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // fakeStore is NotifyStore with the semantics of hubstore.NotifyRecord.

@@ -3,7 +3,7 @@ package hubstore
 import (
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/tokenprice"
+	"github.com/dovholuknf/atrium/internal/base/tokenprice"
 )
 
 // WHAT AN ITEM'S CARDS SPENT, AS THE HUB INGESTED IT (item lifecycle L5, docs/rnd/item-lifecycle-design.md section 6).

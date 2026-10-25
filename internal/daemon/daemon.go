@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/cardroot"
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/mcprule"
+	"github.com/dovholuknf/atrium/internal/base/shellpick"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/mcprule"
-	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

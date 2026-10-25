@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // The recognisers: rows that say what a URL means.

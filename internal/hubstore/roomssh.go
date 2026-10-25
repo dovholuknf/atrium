@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/sshkey"
+	"github.com/dovholuknf/atrium/internal/base/sshkey"
 )
 
 // A room's ssh login: the user other rooms log in as, and the public key this room logs in with. See migration 0019.

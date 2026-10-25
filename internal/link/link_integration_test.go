@@ -17,7 +17,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/testwait"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // pair stands a hub and a room up, attached, and hands back the proxy's URL.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 func settingsWith(t *testing.T, srv *Server, body string) *httptest.ResponseRecorder {

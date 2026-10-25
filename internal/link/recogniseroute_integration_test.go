@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/forge"
-	"github.com/dovholuknf/atrium/internal/linkfetch"
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/linkfetch"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // discourseRedirects stands in for a Discourse forum: /t/<slug> redirects to /t/<slug>/<num>, as the real one does,

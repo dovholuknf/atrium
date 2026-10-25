@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // Input-lag logging as a gear setting, on the hub's side. See internal/inputlag

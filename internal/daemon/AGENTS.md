@@ -46,7 +46,7 @@ do not do it without reading why each one sits where it does.
 7. **`/finish` follows the hook posture.** An agent atrium has never heard of gets `ok` and nothing recorded,
    because failing there would mean a session could fail at the moment it tried to end tidily.
 8. **Files leave a card only to the card, an atrium path or an `open_paths` folder.** Upload computes its own
-   destination and accepts no path, download resolves one through `internal/safepath`, and everything else answers
+   destination and accepts no path, download resolves one through `internal/base/safepath`, and everything else answers
    `403` whether or not it exists. The rule lives in `internal/api/AGENTS.md`.
 
 ## Supervision: two maps, and keeping them apart is the design

@@ -5,7 +5,7 @@ package hubstore
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/tokenprice"
+	"github.com/dovholuknf/atrium/internal/base/tokenprice"
 )
 
 // THE PRICE TABLE COMES WITH ROWS, OPUS AND FABLE AMONG THEM, and nothing ships priced as zero.

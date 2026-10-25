@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // The context limit per harness, on the hub's side. See docs/runtime/context-cycle-design.md,

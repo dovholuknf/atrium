@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // The ziti-hook bind, and the hub's loopback door for the same handler. See docs/fabric/ci-hook-design.md, 1.

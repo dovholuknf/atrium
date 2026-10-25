@@ -6,7 +6,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/dovholuknf/atrium/internal/dblock"
+	"github.com/dovholuknf/atrium/internal/base/dblock"
 	"path/filepath"
 	"sync"
 	"testing"

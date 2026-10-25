@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // GET /v1/scm/has?repo=host/org/repo says whether this room already holds a checkout of the repo, so the hub can open

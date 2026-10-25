@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // THE HUB MACHINE'S OPERATOR is the one door for the caller `hub`: POST /_hub/ssh/<room> with `Connection: Upgrade` and

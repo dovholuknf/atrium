@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/docshare"
+	"github.com/dovholuknf/atrium/internal/base/docshare"
 )
 
 func fileIn(name, body string) FileInput {

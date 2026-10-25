@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // THE ECHO LINE SAYS WHOSE TIME IT WAS. A 2.9s keystroke logged the same gap on

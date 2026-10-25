@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
-	"github.com/dovholuknf/atrium/internal/sshcfg"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/sshcfg"
 )
 
 type ranAnswer struct {

@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // The hub's notify endpoints, under /_hub/ like audit and nudge.

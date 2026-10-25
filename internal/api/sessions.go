@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // The conversations a directory already has, so resuming can offer a choice.

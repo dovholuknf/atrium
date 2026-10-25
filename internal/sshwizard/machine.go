@@ -11,8 +11,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
-	"github.com/dovholuknf/atrium/internal/sshcfg"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/sshcfg"
 )
 
 // ErrUnavailable is what a Machine answers for something that cannot be asked yet, such as what the hub holds for this

@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/address"
+	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 )
 
 // An ssh stream: bytes from a caller to a room's own sshd, through the hub. See docs/rnd/ssh-via-hub.md.

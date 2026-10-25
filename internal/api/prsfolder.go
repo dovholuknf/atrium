@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/prreview/render"
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/prreview/render"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Reading a review's run folder. The index never holds a finding, so every count

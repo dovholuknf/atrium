@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 )
 
 // fakeSSHD writes a banner and echoes, and half closes back when the caller does.

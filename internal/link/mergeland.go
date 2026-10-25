@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/base/land"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/land"
 )
 
 // "Land now": the landed requests of a repository since the last land become one commit on the hub's main. See

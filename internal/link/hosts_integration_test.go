@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // THE HOSTS ARE A SETTING, applied with no restart: a PUT on the hub reaches

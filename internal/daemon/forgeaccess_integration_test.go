@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 // fakeForgeCLI stands in for the forge CLI: what it prints, whether it exits non-zero, and whether it is on PATH.
