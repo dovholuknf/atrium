@@ -63,7 +63,7 @@ reader uses, so a shared page looks like the reader and no second renderer exist
 | a later edit | not shown until refreshed | shown at once, including a half-written paragraph or a pasted secret |
 | secret check | once, at share time, on exactly the bytes served | on every request, or not at all |
 | the card is culled | still answers | 404, the link dies with the worktree |
-| path escapes | checked once with `safepath.Contained` | a symlink added later in the worktree is a new path to check on every request |
+| path escapes | checked once with `safepath.Contained` | a symlink added later is a new path to check per request |
 
 Live means the public internet reads the worktree, which an agent is writing to. An agent that writes a key into a
 draft, or a symlink into its tree, publishes it before anyone looks. A snapshot puts a human decision (or an agent's
