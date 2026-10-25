@@ -273,7 +273,7 @@ function Find-Go {
 # to that file instead of the machine's one place.
 function Clear-SessionEnv {
   foreach ($n in 'ATRIUM_LOCATION', 'ATRIUM_SHARED_LOCATION', 'ATRIUM_AGENT_NAME', 'ATRIUM_TASK_ID', 'ATRIUM_ROOM',
-    'ATRIUM_RUNNER', 'ATRIUM_HOOK_EXE') {
+    'ATRIUM_RUNNER', 'ATRIUM_HOOK_EXE', 'ATRIUM_HUB_URL') {
     Remove-Item "Env:$n" -ErrorAction SilentlyContinue
   }
 }
