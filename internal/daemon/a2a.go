@@ -155,17 +155,26 @@ func launcherFor(req LaunchRequest) string {
 // isClaude reports whether a runner row runs Claude Code, which is the one
 // runner `--settings` means anything to.
 func isClaude(h *store.Harness) bool {
+	return runsAs(h, "claude")
+}
+
+// isCodex reports whether a runner row runs the codex CLI.
+func isCodex(h *store.Harness) bool {
+	return runsAs(h, "codex")
+}
+
+func runsAs(h *store.Harness, name string) bool {
 	if h == nil {
 		return false
 	}
-	if strings.EqualFold(h.ID, "claude") {
+	if strings.EqualFold(h.ID, name) {
 		return true
 	}
 	leaf := strings.ToLower(filepath.Base(filepath.FromSlash(strings.TrimSpace(h.Cmd))))
 	for _, ext := range []string{".exe", ".cmd", ".bat", ".ps1"} {
 		leaf = strings.TrimSuffix(leaf, ext)
 	}
-	return leaf == "claude"
+	return leaf == name
 }
 
 // stopHookCommand is the Stop hook an agent-launched claude session should
