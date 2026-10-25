@@ -4,7 +4,13 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/zitictx"
+	"github.com/openziti/sdk-golang/ziti"
+	"github.com/openziti/sdk-golang/ziti/edge"
 )
 
 type fakeZrok struct {
@@ -99,5 +105,25 @@ func TestARoomDialsTheTokenItWasGiven(t *testing.T) {
 	}
 	if len(api.dialed) != 2 || api.dialed[0] != hubTok || api.dialed[1] != hubTok {
 		t.Fatalf("the room dialled %v, want %s twice", api.dialed, hubTok)
+	}
+}
+
+func (c *sdkCtx) DialWithOptions(string, *ziti.DialOptions) (edge.Conn, error) {
+	c.reg.dialed.Add(1)
+	return nil, errors.New("fake: no route")
+}
+
+func TestZrokRedialsHoldOneContext(t *testing.T) {
+	reg := fakeSDK(t)
+	z := &Zrok{Token: "tok", API: sdkZrok{identity: "zrok.json"}}
+	var hour atomic.Int64
+	z.gate.now = func() time.Time { return time.Unix(hour.Add(3600), 0) }
+	for i := 0; i < 200; i++ {
+		if c, err := z.Dial(context.Background()); err == nil {
+			c.Close()
+		}
+	}
+	if reg.dialed.Load() != 200 || reg.built.Load() != 1 || zitictx.Live() != 1 {
+		t.Fatalf("dialled %d, built %d, live %d, want 200, 1 and 1", reg.dialed.Load(), reg.built.Load(), zitictx.Live())
 	}
 }

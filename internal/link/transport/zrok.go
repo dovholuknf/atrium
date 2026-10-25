@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/zitictx"
+	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	"github.com/openziti/zrok/v2/rest_client_zrok/metadata"
@@ -73,7 +75,13 @@ type Zrok struct {
 	mu   sync.Mutex
 }
 
-type sdkZrok struct{ root env_core.Root }
+// One shared ziti context, since zrok's NewDialer builds one per call, never closes it, and leaks :443 sockets.
+type sdkZrok struct {
+	root     env_core.Root
+	identity string
+}
+
+func (s sdkZrok) context() (ziti.Context, error) { return zitictx.SharedFile("zrok", s.identity) }
 
 func (s sdkZrok) Exists(token string) (bool, error) {
 	_, err := zroksdk.GetShareDetail(s.root, token)
@@ -112,10 +120,20 @@ func (s sdkZrok) Delete(token string) error {
 }
 
 func (s sdkZrok) Listen(token string) (net.Listener, error) {
-	return zroksdk.NewListener(token, s.root)
+	zc, err := s.context()
+	if err != nil {
+		return nil, err
+	}
+	return zc.ListenWithOptions(token, &ziti.ListenOptions{ConnectTimeout: 30 * time.Second, WaitForNEstablishedListeners: 1})
 }
 
-func (s sdkZrok) Dial(token string) (net.Conn, error) { return zroksdk.NewDialer(token, s.root) }
+func (s sdkZrok) Dial(token string) (net.Conn, error) {
+	zc, err := s.context()
+	if err != nil {
+		return nil, err
+	}
+	return zc.DialWithOptions(token, &ziti.DialOptions{ConnectTimeout: 30 * time.Second})
+}
 
 func (z *Zrok) api() (ZrokAPI, error) {
 	if z.API != nil {
@@ -125,7 +143,11 @@ func (z *Zrok) api() (ZrokAPI, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sdkZrok{root}, nil
+	id, err := root.ZitiIdentityNamed(root.EnvironmentIdentityName())
+	if err != nil {
+		return nil, fmt.Errorf("could not find this machine's zrok identity: %w", err)
+	}
+	return sdkZrok{root: root, identity: id}, nil
 }
 
 // Describe is what to log. THE TOKEN IS NOT PRINTED: on a private share it is
