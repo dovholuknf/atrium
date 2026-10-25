@@ -139,7 +139,7 @@ func newLaunch() *cobra.Command {
 		"start a claude runner lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, "+
 			"atrium's hooks and the atrium-control and mercurius MCP servers. claude only")
 	c.Flags().BoolVar(&o.superlean, "superlean", false,
-		"start a claude runner superlean: lean, and only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, "+
+		"start a claude runner superlean: lean, and only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, "+
 			"no mercurius, and a one paragraph worker prompt. for a bounded change. implies --lean. claude only")
 	c.Flags().StringSliceVar(&o.leanAgents, "lean-agents", nil,
 		"subagents a lean claude session may start, comma separated. Explore and Plan are Claude Code's own and need no file, "+

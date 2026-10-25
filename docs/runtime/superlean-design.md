@@ -18,7 +18,7 @@ exactly as lean does it, built by the same `leanArgs` call.
 
 | | lean | superlean |
 |---|---|---|
-| built-in tools | all but the 22 in `leanDisallowed` | `--tools Read,Edit,Write,Grep,Glob,Bash,ToolSearch` |
+| built-in tools | all but the 22 in `leanDisallowed` | `--tools Read,Edit,Write,Grep,Glob,Bash,PowerShell,ToolSearch` |
 | `--disallowedTools` | `leanDisallowedFor(kit)` | unchanged. Redundant under `--tools`, free on the wire |
 | MCP servers | atrium-control, mercurius, plus `mcp` | atrium-control, plus `mcp` |
 | appended prompt | `leanSystemPrompt`, ten lines | `superleanSystemPrompt`, one paragraph, below |

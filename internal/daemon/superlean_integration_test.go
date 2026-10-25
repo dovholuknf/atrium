@@ -29,7 +29,7 @@ func superleanFlags(t *testing.T, in []string, kit leanKit, gateway string, mcp 
 func TestSuperleanFlagSetHasTheAllowListAndTheShortPrompt(t *testing.T) {
 	t.Parallel()
 	got := superleanFlags(t, []string{"--mcp-config", "C:/t/mcp.json", "--strict-mcp-config", "go"}, leanKit{}, "")
-	if flagValue(t, got, "--tools") != "Read,Edit,Write,Grep,Glob,Bash,ToolSearch" {
+	if flagValue(t, got, "--tools") != "Read,Edit,Write,Grep,Glob,Bash,PowerShell,ToolSearch" {
 		t.Fatalf("tools = %q", flagValue(t, got, "--tools"))
 	}
 	if flagValue(t, got, "--append-system-prompt") != superleanSystemPrompt || got[len(got)-1] != "go" {
@@ -79,7 +79,7 @@ func TestSuperleanToolsGrowOnlyWithAgentsAndSkills(t *testing.T) {
 		}
 		return flagValue(t, got, "--tools")
 	}
-	base := "Read,Edit,Write,Grep,Glob,Bash,ToolSearch"
+	base := "Read,Edit,Write,Grep,Glob,Bash,PowerShell,ToolSearch"
 	if got := run(leanKit{}); got != base {
 		t.Fatalf("got %s", got)
 	}
@@ -187,7 +187,7 @@ func TestForkOfASuperleanCardCarriesToolsAndMatchesTheLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if flagValue(t, fork, "--tools") != "Read,Edit,Write,Grep,Glob,Bash,ToolSearch" ||
+	if flagValue(t, fork, "--tools") != "Read,Edit,Write,Grep,Glob,Bash,PowerShell,ToolSearch" ||
 		flagValue(t, fork, "--append-system-prompt") != superleanSystemPrompt {
 		t.Fatalf("fork argv misses the superlean flags: %q", fork)
 	}
