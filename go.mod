@@ -15,7 +15,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
 	modernc.org/sqlite v1.57.0
@@ -121,10 +121,12 @@ require (
 
 require (
 	github.com/dovholuknf/atrium/internal/base v0.0.0
+	github.com/dovholuknf/atrium/internal/gitsync v0.0.0
 	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
 )
 
 replace (
 	github.com/dovholuknf/atrium/internal/base => ./internal/base
+	github.com/dovholuknf/atrium/internal/gitsync => ./internal/gitsync
 	github.com/dovholuknf/atrium/internal/ptyhost => ./internal/ptyhost
 )
