@@ -3,6 +3,7 @@ package cardroot
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -101,7 +102,41 @@ func (e Env) Check(path, stateDir, scmRoot string) (string, error) {
 	if scmRoot = strings.TrimSpace(scmRoot); scmRoot != "" && within(scmRoot, abs) {
 		return "", fmt.Errorf("card_root %s is inside git.scm_root %s. homes and clones are kept apart", abs, scmRoot)
 	}
+	if err := examinable(abs); err != nil {
+		return "", fmt.Errorf("card_root %s cannot be used: %v. claude must be able to examine every folder on the way to it", abs, err)
+	}
 	return abs, nil
+}
+
+// examinable lstats every component of path that exists, following links, and answers the first one the process is
+// refused. A path that does not exist yet is fine up to where it stops existing.
+func examinable(path string) error {
+	pending := []string{path}
+	for links := 0; len(pending) > 0 && links < 40; {
+		cur := pending[0]
+		pending = pending[1:]
+		for p := cur; ; {
+			fi, err := os.Lstat(p)
+			if errors.Is(err, fs.ErrPermission) {
+				return fmt.Errorf("%s is not readable", p)
+			}
+			if err == nil && fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				if to, err := os.Readlink(p); err == nil {
+					if !filepath.IsAbs(to) {
+						to = filepath.Join(filepath.Dir(p), to)
+					}
+					pending = append(pending, to)
+					links++
+				}
+			}
+			if parent := filepath.Dir(p); parent != p {
+				p = parent
+				continue
+			}
+			break
+		}
+	}
+	return nil
 }
 
 // within says whether inner is outer or inside it, compared as the platform does.
