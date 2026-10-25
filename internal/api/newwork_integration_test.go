@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -198,6 +199,20 @@ func TestNewWorkRunsTheSetupHookOnceAndReportsOneThatFails(t *testing.T) {
 	code, out = nh.newWork(t, map[string]any{"name": "hook-fails"})
 	if code != 201 || !strings.Contains(out["hook_error"].(string), "hook says no") {
 		t.Errorf("a failing hook: %d %v", code, out)
+	}
+}
+
+func TestNewWorkWarnsWhenTheHooksFolderIsMissing(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	dir, _ := nh.srv.st.Setting(SettingWorktreeHooks)
+	code, out := nh.newWork(t, map[string]any{"name": "no-hooks"})
+	if code != 201 || !strings.Contains(fmt.Sprint(out["hook_warning"]), dir) {
+		t.Fatalf("%d %v", code, out)
+	}
+	mkDir(t, filepath.FromSlash(dir))
+	code, out = nh.newWork(t, map[string]any{"name": "hooks-there"})
+	if code != 201 || out["hook_warning"] != nil {
+		t.Errorf("a hooks folder that is there: %d %v", code, out)
 	}
 }
 

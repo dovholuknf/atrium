@@ -327,7 +327,7 @@ async function newWorkGo() {
     document.getElementById("launch").close();
     if (typeof rememberLaunchRoom === "function") rememberLaunchRoom(room, out.card);
     const warn = [out.fetch_error && "fetching origin failed, so the base is what was last fetched",
-      out.hook_error && "the setup hook failed: " + out.hook_error].filter(Boolean).join(". ");
+      out.hook_error && "the setup hook failed: " + out.hook_error, out.hook_warning].filter(Boolean).join(". ");
     toast(out.existed && out.card && !out.created ? "already there" : "new work", warn || out.worktree);
     const card = out.card ? await api("/v1/tasks/" + encodeURIComponent(out.card)) : null;
     if (typeof refresh === "function") refresh();
