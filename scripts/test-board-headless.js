@@ -28089,7 +28089,7 @@ async function mResumeSection(browser) {
       labels: [...e.querySelectorAll(".rmenu-item")].map(b => b.firstChild.textContent.trim()),
       seps: e.querySelectorAll(".rmenu-sep").length,
       qs: e.querySelectorAll(".rmenu-q").length, items: e.querySelectorAll(".rmenu-row").length }));
-    if (sheet.labels.join() !== "resume,settings,terminate and clean up" || sheet.seps !== 2 || sheet.qs !== sheet.items) {
+    if (sheet.labels.join() !== "resume,settings,terminate and clean up,and don't clean up" || sheet.seps !== 2 || sheet.qs !== sheet.items) {
       fail(tag + "the phone menu is " + JSON.stringify(sheet));
     }
     await p.tap("#m-rmenu .rmenu-q");
@@ -28101,7 +28101,7 @@ async function mResumeSection(browser) {
     // a running card cannot be resumed, and says why
     await p.evaluate(() => window.mResume.open("live-1"));
     const run = await p.$eval("#m-rmenu", e => [...e.querySelectorAll(".rmenu-item")].map(b => b.firstChild.textContent.trim()));
-    if (run.join() !== "restart,new context,settings,stop,terminate and clean up") fail(tag + "a running card was offered " + JSON.stringify(run));
+    if (run.join() !== "restart,new context,settings,stop,terminate and clean up,and don't clean up") fail(tag + "a running card was offered " + JSON.stringify(run));
     await p.tap("#m-rmenu .rmenu-x");
 
     // 3. Resume: one launch with the card's resume id, the row spins and says so, a second resume launches nothing.
