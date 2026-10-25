@@ -246,6 +246,12 @@ func cardRunning(t *store.Task) bool {
 	return false
 }
 
+// sessionLive adds a runner atrium still holds: a card that reported done keeps its session up.
+func (s *Server) sessionLive(t *store.Task) bool {
+	sup := s.supervised()
+	return cardRunning(t) || (sup != nil && sup(t.ID))
+}
+
 // closePreview reads the inventory and the worktrees it names. Nothing is changed.
 func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview, error) {
 	rows, err := s.st.Resources(t.ID)
@@ -256,7 +262,7 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	pv := &closePreview{Card: t.ID, Items: []closeItem{}, Asks: []closeAsk{}, Warnings: []string{},
 		DiskBytes: diskOf(rows), CanStash: s.Stash != nil,
 		Kept: []string{"the card and its transcript", "this list, with what freeing each row said"}}
-	if cardRunning(t) {
+	if s.sessionLive(t) {
 		pv.Warnings = append(pv.Warnings, "the session is still running. it is stopped first")
 	}
 	// A pull request's card: its hub branches count as merged once the forge's main has them (closehub.go).
@@ -434,7 +440,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
 
 	// 1. the runner
-	if cardRunning(t) && s.Kill != nil {
+	if s.sessionLive(t) && s.Kill != nil {
 		steps.begin("session", "stopping the session")
 		if err := s.Kill(t.ID); err != nil {
 			warn("the session did not stop: %v. a worktree it holds open may not remove", err)
