@@ -26,7 +26,7 @@ Most of the counting is built. The handover was written without knowing that.
 | Piece | Where | What it does |
 | --- | --- | --- |
 | A row per turn | `daemon/usage.go`, `session_usage` | Read at each Stop from a cursor, merged by message id |
-| Turn cause | `usage.go`, `store.Usage*` | `operator`, `say`, `restart-wake`, `resume`, `unknown`, `keepalive`, `subagent` |
+| Turn cause | `usage.go`, `store.Usage*` | `operator`, `say`, `restart-wake`, `resume`, `unknown` and two more |
 | Subagents apart | `usage.go` `readSubagentFiles` | `subagents/` files and inline `isSidechain`, a row of their own |
 | Write TTL split | `SessionUsage.CacheWrite5m`, `.CacheWrite1h` | Which cache a write went to |
 | Calls per turn | `SessionUsage.Replies` | Distinct message ids in the turn |
