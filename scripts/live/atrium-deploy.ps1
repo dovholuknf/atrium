@@ -94,7 +94,8 @@ function Report {
   $lines = foreach ($k in $results.Keys) { "${k}: $($results[$k])" }
   $lines | ForEach-Object { Say $_ }
   if (-not $ReportTo) { return }
-  # A hand retry of one room that fails the way the last report said is not said again.
+  # A retry that fails the way the last report said gets one line, not the list again. Never nothing: a detached
+  # deploy's card waits for this.
   $lastFile = Join-Path $Base 'atrium-deploy-last.json'
   $last = @{}
   if (-not $WhatIf -and (Test-Path $lastFile)) {
@@ -106,8 +107,8 @@ function Report {
     foreach ($k in $results.Keys) { $last[$k] = $results[$k] }
     $last | ConvertTo-Json | Set-Content $lastFile
   }
-  if ($repeat) { Say "not reported again: every room failed as the last report said"; return }
   $text = "atrium-deploy$(if ($WhatIf) { ' (WhatIf)' }):`n" + ($lines -join "`n")
+  if ($repeat) { $text = 'atrium-deploy: every room failed again as the last report said' }
   $null = Send-CardSay $ReportTo $text
 }
 
