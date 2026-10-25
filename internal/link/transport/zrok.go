@@ -284,7 +284,8 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 }
 
 const (
-	causeShareGone  = "the share in this join string is gone, so the hub's share changed"
+	causeShareGone = "the share in this join string is gone, so the hub's share changed. " +
+		"mint a new one with `atrium rooms token <name>` on the hub"
 	causeNoAccess   = "this zrok account may not access that share"
 	causeNotFound   = "the share is not in this environment's network: it is gone, or the access to it is"
 	causeHubDown    = "the hub is not answering on its share"

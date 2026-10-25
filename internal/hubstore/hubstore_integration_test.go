@@ -166,7 +166,8 @@ func TestAJoinStringWorksExactlyOnce(t *testing.T) {
 	if _, err := s.Spend(secret); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Spend(secret); !errors.Is(err, ErrBadSecret) {
+	if _, err := s.Spend(secret); !errors.Is(err, ErrSecretUnknown) || !errors.Is(err, ErrBadSecret) ||
+		!strings.Contains(err.Error(), "used already") || !strings.Contains(err.Error(), "atrium rooms token") {
 		t.Fatalf("the same join string worked twice: %v", err)
 	}
 }
@@ -188,7 +189,7 @@ func TestMintingAgainRetiresTheOldString(t *testing.T) {
 	if first == second {
 		t.Fatal("minting twice produced the same string")
 	}
-	if _, err := s.Spend(first); !errors.Is(err, ErrBadSecret) {
+	if _, err := s.Spend(first); !errors.Is(err, ErrSecretUnknown) {
 		t.Fatalf("the retired join string still works: %v", err)
 	}
 	if _, err := s.Spend(second); err != nil {
@@ -212,7 +213,8 @@ func TestAJoinStringExpires(t *testing.T) {
 	if ok, _, err := s.Outstanding(r.ID); err != nil || ok {
 		t.Fatalf("an expired join string still reads as outstanding (%v, %v)", ok, err)
 	}
-	if _, err := s.Spend(secret); !errors.Is(err, ErrBadSecret) {
+	if _, err := s.Spend(secret); !errors.Is(err, ErrSecretExpired) || errors.Is(err, ErrSecretUnknown) ||
+		!strings.Contains(err.Error(), "expired. mint a new one with `atrium rooms token sparta`") {
 		t.Fatalf("an expired join string was accepted: %v", err)
 	}
 }
