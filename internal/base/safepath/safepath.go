@@ -133,12 +133,16 @@ func resolve(evalSymlinks func(string) (string, error), path string, skipDenied 
 	for {
 		real, err := evalSymlinks(cur)
 		if err == nil {
-			if rest == "" {
-				return real, nil
-			}
-			return filepath.Join(real, rest), nil
+			return joinRest(real, rest), nil
 		}
 		denied := errors.Is(err, fs.ErrPermission)
+		if denied && !skipDenied(cur) {
+			// EvalSymlinks lists every ancestor to fold case, so a drive root the process may not list denies it for
+			// a path whose own components all lstat fine. A walk that only lstats and reads links needs no list right.
+			if real, werr := walkLinks(cur); werr == nil {
+				return joinRest(real, rest), nil
+			}
+		}
 		if !os.IsNotExist(err) && !(denied && skipDenied(cur)) {
 			return "", err
 		}
@@ -151,6 +155,58 @@ func resolve(evalSymlinks func(string) (string, error), path string, skipDenied 
 		rest = filepath.Join(filepath.Base(cur), rest)
 		cur = parent
 	}
+}
+
+func joinRest(real, rest string) string {
+	if rest == "" {
+		return real
+	}
+	return filepath.Join(real, rest)
+}
+
+// maxLinks bounds the links walkLinks follows, so a loop ends in an error.
+const maxLinks = 255
+
+// walkLinks resolves path one component at a time with Lstat and Readlink only. A component that cannot be
+// examined fails the walk, so a denied folder that could hide a link still fails closed.
+func walkLinks(path string) (string, error) {
+	vol := filepath.VolumeName(path)
+	pending := strings.Split(strings.TrimPrefix(path[len(vol):], string(filepath.Separator)), string(filepath.Separator))
+	cur := vol + string(filepath.Separator)
+	for links := 0; len(pending) > 0; {
+		name := pending[0]
+		pending = pending[1:]
+		switch name {
+		case "", ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+			continue
+		}
+		next := filepath.Join(cur, name)
+		fi, err := os.Lstat(next)
+		if err != nil {
+			return "", err
+		}
+		// a Windows junction reports as irregular, and one that leaves the root must be followed too
+		if fi.Mode()&(os.ModeSymlink|os.ModeIrregular) == 0 {
+			cur = next
+			continue
+		}
+		if links++; links > maxLinks {
+			return "", errors.New("too many links")
+		}
+		target, err := os.Readlink(next)
+		if err != nil {
+			return "", err
+		}
+		if filepath.IsAbs(target) {
+			cur = filepath.VolumeName(target) + string(filepath.Separator)
+			target = target[len(filepath.VolumeName(target)):]
+		}
+		pending = append(strings.Split(strings.TrimPrefix(target, string(filepath.Separator)), string(filepath.Separator)), pending...)
+	}
+	return cur, nil
 }
 
 // SafeName turns a caller's filename into one that cannot escape a directory.
