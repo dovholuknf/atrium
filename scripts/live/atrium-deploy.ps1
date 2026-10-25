@@ -58,6 +58,9 @@ $why = Test-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyS
   -Named:(($Rooms -split ',' | ForEach-Object { $_.Trim() }) -contains 'sg4-control')
 if ($why) { Stop-Early "refusing: $why" }
 
+$noGo = Find-Go
+if ($noGo) { Stop-Early $noGo }
+
 $remoteNames = 'sg3', 'm1mini', 'sgg'
 try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
 catch { Stop-Early "FATAL: $($_.Exception.Message)" }
