@@ -5,4 +5,5 @@ use (
 	./internal/base
 	./internal/gitsync
 	./internal/ptyhost
+	./internal/store
 )
