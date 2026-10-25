@@ -123,10 +123,12 @@ require (
 	github.com/dovholuknf/atrium/internal/base v0.0.0
 	github.com/dovholuknf/atrium/internal/gitsync v0.0.0
 	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
+	github.com/dovholuknf/atrium/internal/store v0.0.0
 )
 
 replace (
 	github.com/dovholuknf/atrium/internal/base => ./internal/base
 	github.com/dovholuknf/atrium/internal/gitsync => ./internal/gitsync
 	github.com/dovholuknf/atrium/internal/ptyhost => ./internal/ptyhost
+	github.com/dovholuknf/atrium/internal/store => ./internal/store
 )
