@@ -8,7 +8,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-openapi/runtime v0.29.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/google/uuid v1.6.0
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/openziti/sdk-golang v1.2.8
 	github.com/openziti/zrok/v2 v2.0.4
@@ -122,6 +122,7 @@ require (
 require (
 	github.com/dovholuknf/atrium/internal/base v0.0.0
 	github.com/dovholuknf/atrium/internal/gitsync v0.0.0
+	github.com/dovholuknf/atrium/internal/hubstore v0.0.0
 	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
 	github.com/dovholuknf/atrium/internal/store v0.0.0
 )
@@ -129,6 +130,7 @@ require (
 replace (
 	github.com/dovholuknf/atrium/internal/base => ./internal/base
 	github.com/dovholuknf/atrium/internal/gitsync => ./internal/gitsync
+	github.com/dovholuknf/atrium/internal/hubstore => ./internal/hubstore
 	github.com/dovholuknf/atrium/internal/ptyhost => ./internal/ptyhost
 	github.com/dovholuknf/atrium/internal/store => ./internal/store
 )
