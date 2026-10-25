@@ -322,3 +322,35 @@ func TestLadderSetClosesDroppedDialersAndKeepsTheOneItStandsOn(t *testing.T) {
 		t.Fatal("closed the rung the ladder stands on")
 	}
 }
+
+// A room whose every rung fails says each address it tried, and asks for its addresses afresh before the next attempt.
+func TestARoomThatReachesNoRungSaysEveryAddressAndRereadsThem(t *testing.T) {
+	direct, ziti := &fakeDial{name: "192.168.1.68:7779"}, &fakeDial{name: "atrium-hub"}
+	direct.fail.Store(true)
+	ziti.fail.Store(true)
+	l := NewLadder([]Rung{{Path: Path{Transport: "direct"}, Dial: direct}, {Path: Path{Transport: "ziti"}, Dial: ziti}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	asked := make(chan State, 1)
+	r := &Room{Name: "sgg", Dial: l, T: Timings{DialWait: time.Second}}
+	r.OnUnreachable = func() {
+		asked <- r.State()
+		cancel()
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.Run(ctx) }()
+	var s State
+	select {
+	case s = <-asked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a room that reached no rung never asked for its addresses again")
+	}
+	<-done
+	want := []string{"direct 192.168.1.68:7779", "ziti atrium-hub"}
+	if s.Room != "sgg" || s.Up || strings.Join(s.Unreachable, "|") != strings.Join(want, "|") {
+		t.Fatalf("state %+v, want room sgg down having tried %v", s, want)
+	}
+	if !strings.Contains(s.Error, "192.168.1.68:7779: 192.168.1.68:7779 refused") {
+		t.Fatalf("the error lost why each rung failed: %q", s.Error)
+	}
+}

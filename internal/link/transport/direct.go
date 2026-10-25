@@ -66,6 +66,8 @@ type Direct struct {
 	// where the two meet. Nil refuses enrolment, which is what a test over a
 	// pipe and a hub with no store both want.
 	Spend func(secret string) (string, error)
+	// Lookup asks DNS for a hostname afresh, on the room's side. Nil asks it past the operating system's cache.
+	Lookup func(ctx context.Context, host string) ([]string, error)
 }
 
 // ── the hub's side ───────────────────────────────────────
@@ -220,11 +222,40 @@ func (d Direct) Dial(ctx context.Context) (net.Conn, error) {
 		return nil, err
 	}
 	dialer := &tls.Dialer{NetDialer: &net.Dialer{}, Config: cfg}
-	conn, err := dialer.DialContext(ctx, "tcp", d.Addr)
-	if err != nil {
+	host, port, splitErr := net.SplitHostPort(d.Addr)
+	if splitErr != nil || net.ParseIP(strings.Trim(host, "[]")) != nil {
+		return dialer.DialContext(ctx, "tcp", d.Addr)
+	}
+	// The resolver cache may still answer a moved hub's old address, so the second half of the wait asks DNS afresh.
+	first, cancel := halfOf(ctx)
+	conn, err := dialer.DialContext(first, "tcp", d.Addr)
+	cancel()
+	if err == nil {
+		return conn, nil
+	}
+	lookup := d.Lookup
+	if lookup == nil {
+		lookup = (&net.Resolver{PreferGo: true}).LookupHost
+	}
+	ips, lerr := lookup(ctx, host)
+	if lerr != nil {
 		return nil, err
 	}
-	return conn, nil
+	for _, ip := range ips {
+		if c, derr := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, port)); derr == nil {
+			return c, nil
+		}
+	}
+	return nil, err
+}
+
+// halfOf is ctx with half its remaining time, or ctx itself when it has no deadline.
+func halfOf(ctx context.Context) (context.Context, context.CancelFunc) {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, time.Until(dl)/2)
 }
 
 // Describe is what to log. The address, and nothing secret.

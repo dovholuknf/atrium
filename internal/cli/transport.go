@@ -573,6 +573,27 @@ func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []link.P
 	}
 }
 
+// reloadRungs rebuilds the ladder from disk, so an address `atrium room hub` changed is tried without a restart.
+func reloadRungs(keys link.Keys, l *link.Ladder) {
+	saved, err := keys.Joined()
+	if err != nil {
+		log.Printf("[link] could not read this room's join: %v", err)
+		return
+	}
+	tr, err := keys.Transports()
+	if err != nil {
+		log.Printf("[link] could not read %s: %v", keys.TransportsPath(), err)
+		return
+	}
+	had := l.Rungs()
+	rungs, _ := roomRungs(keys, saved, tr, had)
+	if len(rungs) == 0 || ladderSays(rungs) == ladderSays(had) {
+		return
+	}
+	l.Set(rungs)
+	log.Printf("[link] this room's hub addresses changed on disk. will try %s", ladderSays(rungs))
+}
+
 func samePaths(a, b []link.Path) bool {
 	if len(a) != len(b) {
 		return false

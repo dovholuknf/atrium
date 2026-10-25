@@ -65,6 +65,8 @@ type Room struct {
 	// welcome carries one, in its own goroutine. It is how the room writes the
 	// fallback down for a start when the hub cannot be reached. Nil ignores it.
 	OnPaths func([]Path)
+	// OnUnreachable runs after a climb on which every rung failed, so the room reads its hub's address from disk again.
+	OnUnreachable func()
 	// RemoteDir is the room's key directory, where remote_access.json and its log live. Empty means remote access is
 	// off and nothing is recorded. See stream.go.
 	RemoteDir string
@@ -93,6 +95,8 @@ type Room struct {
 	claimRT http.RoundTripper
 	since   time.Time
 	lastErr string
+	// tried is every address the last climb dialled when none answered, cleared by a climb that gets anywhere.
+	tried []string
 	// dataErr is the last data dial that failed, cleared by one that works, and
 	// dataSaid is when one was last logged. A control connection that is up
 	// while every data dial fails is a room that looks attached and serves
@@ -218,6 +222,10 @@ func (r *Room) Run(ctx context.Context) error {
 		if err != nil {
 			log.Printf("[link] hub %s: %v (trying again in %s)", r.Dial.Describe(), err, wait)
 		}
+		var u *unreachable
+		if errors.As(err, &u) && r.OnUnreachable != nil {
+			r.OnUnreachable()
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -269,7 +277,7 @@ func (r *Room) attach(ctx context.Context) error {
 	}
 
 	r.mu.Lock()
-	r.session, r.up, r.since, r.lastErr = w.Session, true, time.Now(), ""
+	r.session, r.up, r.since, r.lastErr, r.tried = w.Session, true, time.Now(), "", nil
 	r.hubGit = w.Git
 	r.dropLink = func() { _ = conn.Close() }
 	r.mu.Unlock()
@@ -561,6 +569,11 @@ func (r *Room) setDown(err error) {
 	r.up, r.session, r.hubGit = false, "", false
 	if err != nil {
 		r.lastErr = err.Error()
+		r.tried = nil
+		var u *unreachable
+		if errors.As(err, &u) {
+			r.tried = u.tried
+		}
 	}
 }
 
@@ -578,6 +591,10 @@ type State struct {
 	// DataError is the last data dial that failed while the control connection
 	// is up. Empty once one gets through.
 	DataError string `json:"data_error,omitempty"`
+	// Room is this room's name, for the board's sentence about it.
+	Room string `json:"room,omitempty"`
+	// Unreachable is every address the last climb tried when none answered. Empty while any does.
+	Unreachable []string `json:"unreachable,omitempty"`
 }
 
 // State reports the link, for the room's own board to draw. A room whose hub is
@@ -585,7 +602,10 @@ type State struct {
 func (r *Room) State() State {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := State{Up: r.up, Hub: r.Dial.Describe(), Error: r.lastErr}
+	s := State{Up: r.up, Hub: r.Dial.Describe(), Error: r.lastErr, Room: r.Name}
+	if !r.up {
+		s.Unreachable = r.tried
+	}
 	if cl, ok := r.Dial.(climber); ok {
 		s.Transport, s.Fallback = cl.Transport(), cl.Fallback()
 	}
