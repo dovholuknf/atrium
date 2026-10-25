@@ -3,7 +3,9 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/sdk-golang/ziti/edge"
+	"github.com/openziti/zrok/v2/rest_client_zrok/share"
 )
 
 type fakeZrok struct {
@@ -20,6 +23,7 @@ type fakeZrok struct {
 	dialed  []string
 	access  []string
 	accErr  error
+	dialErr error
 	askErr  error
 }
 
@@ -41,6 +45,9 @@ func (f *fakeZrok) Delete(t string) error {
 func (f *fakeZrok) Listen(string) (net.Listener, error) { return nil, errors.New("not here") }
 
 func (f *fakeZrok) Dial(t string) (net.Conn, error) {
+	if f.dialErr != nil {
+		return nil, f.dialErr
+	}
 	f.dialed = append(f.dialed, t)
 	c, _ := net.Pipe()
 	return c, nil
@@ -157,5 +164,36 @@ func TestARoomWithNoAccessDoesNotDial(t *testing.T) {
 	api := &fakeZrok{shares: map[string]bool{}, accErr: errors.New("refused")}
 	if _, err := (&Zrok{Token: "tok", API: api}).Dial(context.Background()); err == nil || len(api.dialed) != 0 {
 		t.Fatalf("got %v and dialled %v, want an error and no dial", err, api.dialed)
+	}
+}
+
+func TestTheZrokBackoffSaysWhatFailed(t *testing.T) {
+	cases := []struct {
+		name    string
+		api     *fakeZrok
+		want    string
+		accessd bool
+	}{
+		{"share gone", &fakeZrok{accErr: fmt.Errorf("unable to create access: %w", share.NewAccessNotFound())}, causeShareGone, false},
+		{"no access", &fakeZrok{accErr: fmt.Errorf("unable to create access: %w", share.NewAccessUnauthorized())}, causeNoAccess, false},
+		{"controller down", &fakeZrok{accErr: errors.New("dial tcp: connection refused")}, causeController, false},
+		{"hub down", &fakeZrok{dialErr: errors.New("service tok has no terminators")}, causeHubDown, true},
+		{"not found", &fakeZrok{dialErr: errors.New("service 'tok' not found")}, causeNotFound, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.api.shares = map[string]bool{}
+			z := &Zrok{Token: "tok", API: c.api}
+			if _, err := z.Dial(context.Background()); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("the dial said %v, want %q", err, c.want)
+			}
+			_, err := z.Dial(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "not dialling") || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("the backoff said %v, want %q", err, c.want)
+			}
+			if got := z.accessed == "tok"; got != c.accessd {
+				t.Fatalf("access kept %v, want %v", got, c.accessd)
+			}
+		})
 	}
 }

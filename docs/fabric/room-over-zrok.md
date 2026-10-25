@@ -103,7 +103,7 @@ atrium room transports
 | `this machine has no zrok environment yet` | `zrok enable` was not run on that machine (steps 1 and 2) **(clint)** |
 | `no hub is running over zrok from <dir>` | `rooms add` ran before, or beside a different directory than, the hub. Start the hub first |
 | `zrok: no share token on this room` | the room has no token. Step 5, `room transports zrok --token` |
-| `the zrok controller is not answering` | the zrok instance is down or unreachable. The room backs off and retries |
+| `not dialling that zrok share again for <n>s. the last dial: <cause>` | the room backs off and retries. The cause is the last failure: the share is gone, no access, the hub is not answering on its share, or the zrok controller is not answering |
 | `reserved a private zrok share. rooms joined over the old one need rooms token` | the saved share was deleted on the zrok side, so the hub reserved a new one. Mint a new string with `rooms token` for each zrok room |
 | `could not ask zrok whether the share this hub saved is still there` | the controller did not answer. The hub keeps the saved share and retries, and reserves nothing |
 

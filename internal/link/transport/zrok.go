@@ -14,6 +14,7 @@ import (
 	"github.com/openziti/zrok/v2/environment"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	"github.com/openziti/zrok/v2/rest_client_zrok/metadata"
+	"github.com/openziti/zrok/v2/rest_client_zrok/share"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 )
 
@@ -73,9 +74,10 @@ type Zrok struct {
 	root env_core.Root
 	err  error
 	// gate backs dials off after a failure. See dialgate.go.
-	gate dialGate
-	mu   sync.Mutex
+	gate     dialGate
+	mu       sync.Mutex
 	accessed string
+	cause    string
 }
 
 // One shared ziti context, since zrok's NewDialer builds one per call, never closes it, and leaks :443 sockets.
@@ -254,8 +256,8 @@ func (z *Zrok) Retire(token string) error {
 // Dial opens one connection, which is the room's side.
 func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 	if wait, ok := z.gate.allow(); !ok {
-		return nil, fmt.Errorf("the zrok controller is not answering. not dialling again for %s",
-			wait.Round(time.Second))
+		return nil, fmt.Errorf("not dialling that zrok share again for %s. the last dial: %s",
+			wait.Round(time.Second), z.lastCause())
 	}
 	api, err := z.api()
 	if err != nil {
@@ -265,17 +267,66 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 		return nil, errors.New("no share token. the join string carries it")
 	}
 	if err := z.access(api); err != nil {
-		z.gate.failed()
-		return nil, fmt.Errorf("could not get access to that private share: %w", err)
+		return nil, z.failed(accessCause(err), err)
 	}
 	conn, err := api.Dial(z.Token)
 	if err != nil {
-		z.gate.failed()
-		return nil, fmt.Errorf("could not reach that private share. "+
-			"is the hub running, and has this account been granted access: %w", err)
+		cause := dialCause(err)
+		if cause == causeNotFound {
+			z.mu.Lock()
+			z.accessed = ""
+			z.mu.Unlock()
+		}
+		return nil, z.failed(cause, err)
 	}
 	z.gate.worked()
 	return conn, nil
+}
+
+const (
+	causeShareGone  = "the share in this join string is gone, so the hub's share changed"
+	causeNoAccess   = "this zrok account may not access that share"
+	causeNotFound   = "the share is not in this environment's network: it is gone, or the access to it is"
+	causeHubDown    = "the hub is not answering on its share"
+	causeController = "the zrok controller is not answering"
+	causeNetwork    = "the zrok network did not carry the dial"
+)
+
+func accessCause(err error) string {
+	var gone *share.AccessNotFound
+	var denied *share.AccessUnauthorized
+	switch {
+	case errors.As(err, &gone):
+		return causeShareGone
+	case errors.As(err, &denied):
+		return causeNoAccess
+	}
+	return causeController
+}
+
+func dialCause(err error) string {
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "terminator"):
+		return causeHubDown
+	case strings.Contains(msg, "not found"):
+		return causeNotFound
+	}
+	return causeNetwork
+}
+
+func (z *Zrok) failed(cause string, err error) error {
+	z.mu.Lock()
+	z.cause = cause
+	z.mu.Unlock()
+	z.gate.failed()
+	return fmt.Errorf("could not reach that private zrok share. %s: %w", cause, err)
+}
+
+func (z *Zrok) lastCause() string {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return z.cause
 }
 
 func (z *Zrok) access(api ZrokAPI) error {
