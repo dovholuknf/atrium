@@ -278,7 +278,7 @@ func dialWithin(ctx context.Context, d Dialer, wait time.Duration) (net.Conn, er
 		return r.c, r.err
 	case <-ctx.Done():
 		go func() {
-			if r := <-ch; r.c != nil {
+			if r := <-ch; r.err == nil && r.c != nil {
 				_ = r.c.Close()
 			}
 		}()
