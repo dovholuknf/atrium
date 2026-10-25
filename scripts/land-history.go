@@ -50,6 +50,14 @@ func main() {
 		die("cannot resolve " + *base)
 	}
 
+	if dups, err := land.Duplicates(".", baseSHA, oldTip); err != nil {
+		die(err.Error())
+	} else if len(dups) > 0 {
+		fmt.Fprintln(os.Stderr, "  "+strings.Join(dups, "\n  "))
+		die(fmt.Sprintf("%d commits on %s have a patch already on %s. Landing them again adds copies. "+
+			"Run git rebase %s first", len(dups), *branch, *base, *base))
+	}
+
 	start := time.Now()
 	out, err := exec.Command("git", "rev-list", "--reverse", "--topo-order", "--header", baseSHA+".."+oldTip).Output()
 	if err != nil {
