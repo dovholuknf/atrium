@@ -36,6 +36,8 @@ func (f *fakeShares) Listen(string) (net.Listener, error) { return net.Listen("t
 
 func (f *fakeShares) Dial(string) (net.Conn, error) { return nil, os.ErrInvalid }
 
+func (f *fakeShares) Access(string) error { return nil }
+
 func hubStart(t *testing.T, keys link.Keys, api link.ZrokAPI) (token string, stop func()) {
 	t.Helper()
 	side, err := newZrokHub(keys, nil, api)

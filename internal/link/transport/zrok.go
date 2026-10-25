@@ -57,6 +57,8 @@ type ZrokAPI interface {
 	Delete(token string) error
 	Listen(token string) (net.Listener, error)
 	Dial(token string) (net.Conn, error)
+	// Access is `zrok access private`: a private share is not in this environment's network until it is asked for.
+	Access(token string) error
 }
 
 // Zrok reaches a hub over a private zrok share.
@@ -73,6 +75,7 @@ type Zrok struct {
 	// gate backs dials off after a failure. See dialgate.go.
 	gate dialGate
 	mu   sync.Mutex
+	accessed string
 }
 
 // One shared ziti context, since zrok's NewDialer builds one per call, never closes it, and leaks :443 sockets.
@@ -113,6 +116,11 @@ func (s sdkZrok) Create() (string, error) {
 		return "", err
 	}
 	return shr.Token, nil
+}
+
+func (s sdkZrok) Access(token string) error {
+	_, err := zroksdk.CreateAccess(s.root, &zroksdk.AccessRequest{ShareToken: token})
+	return err
 }
 
 func (s sdkZrok) Delete(token string) error {
@@ -256,6 +264,10 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 	if strings.TrimSpace(z.Token) == "" {
 		return nil, errors.New("no share token. the join string carries it")
 	}
+	if err := z.access(api); err != nil {
+		z.gate.failed()
+		return nil, fmt.Errorf("could not get access to that private share: %w", err)
+	}
 	conn, err := api.Dial(z.Token)
 	if err != nil {
 		z.gate.failed()
@@ -264,6 +276,22 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 	}
 	z.gate.worked()
 	return conn, nil
+}
+
+func (z *Zrok) access(api ZrokAPI) error {
+	z.mu.Lock()
+	done := z.accessed == z.Token
+	z.mu.Unlock()
+	if done {
+		return nil
+	}
+	if err := api.Access(z.Token); err != nil {
+		return err
+	}
+	z.mu.Lock()
+	z.accessed = z.Token
+	z.mu.Unlock()
+	return nil
 }
 
 // Hammering says dials to zrok are failing fast. Shown on the room's row.

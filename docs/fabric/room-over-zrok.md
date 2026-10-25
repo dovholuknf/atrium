@@ -7,7 +7,9 @@ last.
 
 How it works: the hub reserves a PRIVATE zrok share on its own zrok environment and prints its token. A room dials
 that share with the token, then spends a one-time secret over it to get a hub-signed certificate, the same enrolment
-direct and ziti use. The token is the gate. See `docs/fabric/ziti-zrok-flow-design.md` and `docs/fabric/hub-and-rooms.md`.
+direct and ziti use. The token is the gate. Before its first dial the room creates its own access to the share, as
+`zrok access private <token>` would, once per process. See `docs/fabric/ziti-zrok-flow-design.md` and
+`docs/fabric/hub-and-rooms.md`.
 
 ## What each machine needs
 

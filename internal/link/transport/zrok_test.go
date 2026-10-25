@@ -18,6 +18,8 @@ type fakeZrok struct {
 	created int
 	deleted []string
 	dialed  []string
+	access  []string
+	accErr  error
 	askErr  error
 }
 
@@ -115,7 +117,7 @@ func (c *sdkCtx) DialWithOptions(string, *ziti.DialOptions) (edge.Conn, error) {
 
 func TestZrokRedialsHoldOneContext(t *testing.T) {
 	reg := fakeSDK(t)
-	z := &Zrok{Token: "tok", API: sdkZrok{identity: "zrok.json"}}
+	z := &Zrok{Token: "tok", API: sdkZrok{identity: "zrok.json"}, accessed: "tok"}
 	var hour atomic.Int64
 	z.gate.now = func() time.Time { return time.Unix(hour.Add(3600), 0) }
 	for i := 0; i < 200; i++ {
@@ -125,5 +127,35 @@ func TestZrokRedialsHoldOneContext(t *testing.T) {
 	}
 	if reg.dialed.Load() != 200 || reg.built.Load() != 1 || zitictx.Live() != 1 {
 		t.Fatalf("dialled %d, built %d, live %d, want 200, 1 and 1", reg.dialed.Load(), reg.built.Load(), zitictx.Live())
+	}
+}
+
+func (f *fakeZrok) Access(t string) error {
+	if f.accErr != nil {
+		return f.accErr
+	}
+	f.access = append(f.access, t)
+	return nil
+}
+
+func TestARoomAsksForAccessOnceBeforeItDials(t *testing.T) {
+	api := &fakeZrok{shares: map[string]bool{}}
+	room := &Zrok{Token: "tok", API: api}
+	for i := 0; i < 3; i++ {
+		c, err := room.Dial(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
+	}
+	if len(api.access) != 1 || api.access[0] != "tok" || len(api.dialed) != 3 {
+		t.Fatalf("access %v, dialled %v, want tok once and three dials", api.access, api.dialed)
+	}
+}
+
+func TestARoomWithNoAccessDoesNotDial(t *testing.T) {
+	api := &fakeZrok{shares: map[string]bool{}, accErr: errors.New("refused")}
+	if _, err := (&Zrok{Token: "tok", API: api}).Dial(context.Background()); err == nil || len(api.dialed) != 0 {
+		t.Fatalf("got %v and dialled %v, want an error and no dial", err, api.dialed)
 	}
 }
