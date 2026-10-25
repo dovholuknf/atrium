@@ -139,3 +139,23 @@ func TestLateFailedDialTypedNilNotClosed(t *testing.T) {
 }
 
 func (nilTLSDialer) Describe() string { return "niltls" }
+
+type failDialer struct{ resets atomic.Int32 }
+
+func (d *failDialer) Dial(context.Context) (net.Conn, error) { return nil, net.ErrClosed }
+func (d *failDialer) Describe() string                       { return "fail" }
+func (d *failDialer) Reset()                                 { d.resets.Add(1) }
+
+func TestGitDialsThatFailDropTheLinkSoTheNextAttachDialsAfresh(t *testing.T) {
+	d := &failDialer{}
+	r, drops := newDialRoom(d, time.Hour)
+	r.up, r.session, r.hubGit = true, "s", true
+	for i := 0; i < dataRedialAfter; i++ {
+		if _, err := r.DialGit(context.Background()); err == nil {
+			t.Fatal("DialGit succeeded against a dialer that fails")
+		}
+	}
+	if drops.Load() != 1 || d.resets.Load() != 1 {
+		t.Fatalf("drops = %d, resets = %d, want 1 and 1", drops.Load(), d.resets.Load())
+	}
+}

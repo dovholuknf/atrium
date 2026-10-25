@@ -67,6 +67,8 @@ func (r *Room) DialGit(ctx context.Context) (net.Conn, error) {
 	conn, err := r.Dial.Dial(dialCtx)
 	cancel()
 	if err != nil {
+		// A warm pool keeps a room's data link looking healthy while every new dial fails, so a push's dial counts too.
+		r.dataFailed(err)
 		return nil, fmt.Errorf("the hub is not answering: %w", err)
 	}
 	br := bufio.NewReader(conn)
@@ -76,8 +78,10 @@ func (r *Room) DialGit(ctx context.Context) (net.Conn, error) {
 		if !w.OK && w.Error != "" {
 			return nil, fmt.Errorf("the hub refused a git connection: %s", w.Error)
 		}
+		r.dataFailed(err)
 		return nil, fmt.Errorf("the hub is not answering: %w", err)
 	}
+	r.dataWorked()
 	return &buffered{Conn: conn, br: br}, nil
 }
 
