@@ -243,7 +243,7 @@ func Defaults(validFrom string) []Price {
 	return []Price{
 		row("claude-haiku-4-5", 1, 2, 0.10, 5),
 		row("claude-sonnet-5", 2, 4, 0.20, 10),
-		row("claude-sonnet-5-5", 2, 4, 0.20, 10),
+		row("claude-sonnet-5-5", 2, 4, 0.10, 10),
 		row("claude-opus-5-5", 4, 8, 0.20, 20),
 		row("claude-fable-5-1", 10, 20, 0.25, 50),
 	}

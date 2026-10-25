@@ -37,6 +37,27 @@ func TestThePriceTableIsSeededWithEveryModelPriced(t *testing.T) {
 	}
 }
 
+// Sonnet 5.5 reads from the cache at 0.10, and the other rows are as seeded.
+func TestEveryPriceRowIsPinned(t *testing.T) {
+	s := open(t)
+	tb, err := s.Prices()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for m, want := range map[string][5]float64{
+		"claude-haiku-4-5":  {1, 1.25, 2, 0.10, 5},
+		"claude-sonnet-5":   {2, 2.5, 4, 0.20, 10},
+		"claude-sonnet-5-5": {2, 2.5, 4, 0.10, 10},
+		"claude-opus-5-5":   {4, 5, 8, 0.20, 20},
+		"claude-fable-5-1":  {10, 12.5, 20, 0.25, 50},
+	} {
+		p, ok := tb.For(m, "")
+		if !ok || [5]float64{p.Input, p.CacheWrite5m, p.CacheWrite1h, p.CacheRead, p.Output} != want {
+			t.Fatalf("%s: %+v %v, want %v", m, p, ok, want)
+		}
+	}
+}
+
 // A replay of rows adds nothing, and a delivery whose counts grew is updated once.
 func TestWorkUsageIsKeptOnceAndADeliveryThatGrewIsUpdated(t *testing.T) {
 	s := open(t)

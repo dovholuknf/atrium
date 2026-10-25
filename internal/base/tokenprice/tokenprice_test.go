@@ -46,6 +46,16 @@ func TestDivideIsExactForAnyWeightsAndNeverOverflows(t *testing.T) {
 	}
 }
 
+func TestDefaultsPriceEveryModelsCacheRead(t *testing.T) {
+	tb := Table{Rows: Defaults("2026-09-28T00:00:00Z")}
+	for m, cr := range map[string]float64{"claude-haiku-4-5": 0.10, "claude-sonnet-5": 0.20, "claude-sonnet-5-5": 0.10,
+		"claude-opus-5-5": 0.20, "claude-fable-5-1": 0.25} {
+		if p, ok := tb.For(m, ""); !ok || p.CacheRead != cr {
+			t.Fatalf("%s: %+v %v, want cache read %v", m, p, ok, cr)
+		}
+	}
+}
+
 func TestAModelIsMatchedByItsNameAndADateStampNotByAPrefix(t *testing.T) {
 	tb := Table{Rows: Defaults("2026-09-28T00:00:00Z")}
 	for model, want := range map[string]string{
