@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/testwait"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // bsFix is a work tree with a claude/main whose history was REWRITTEN after the branches were cut (so no branch is an

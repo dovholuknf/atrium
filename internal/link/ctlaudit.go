@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dovholuknf/atrium/internal/address"
+	"github.com/dovholuknf/atrium/internal/base/address"
 )
 
 // The audit line for a mutating control call.

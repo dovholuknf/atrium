@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/sshtarget"
+	"github.com/dovholuknf/atrium/internal/base/sshtarget"
 )
 
 // newSSH is `atrium ssh`. See docs/rnd/ssh-across-rooms.md. It edits the list of addresses this room offers to other

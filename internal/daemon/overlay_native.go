@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 )
 
 func startProc(t *testing.T, oh *openHarness, card string, body map[string]any) (int, struct {

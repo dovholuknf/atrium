@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/cardcolors"
+	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 )
 
 // remembering is an Inventory holding cards for rooms that are not here.

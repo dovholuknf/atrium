@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/testdiag"
+	"github.com/dovholuknf/atrium/internal/base/testdiag"
 )
 
 // freePort asks the OS for a port nobody is using, so tests never collide with

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 // fakeForge is the hub's forge with no CLI: it answers what it is set to, and records the asks.

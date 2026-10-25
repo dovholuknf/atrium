@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/tokenprice"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/tokenprice"
 )
 
 var t0 = time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)

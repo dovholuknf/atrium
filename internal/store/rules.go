@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/mcprule"
+	"github.com/dovholuknf/atrium/internal/base/mcprule"
 )
 
 // Rule is a standing answer to a permission request. Deciding a request

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/requirements"
+	"github.com/dovholuknf/atrium/internal/base/requirements"
 )
 
 // newRequirements is `atrium requirements <file> --json`.

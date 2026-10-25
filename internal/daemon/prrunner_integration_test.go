@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	prrender "github.com/dovholuknf/atrium/internal/prreview/render"
+	prrender "github.com/dovholuknf/atrium/internal/base/prreview/render"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -40,7 +40,7 @@ type prFix struct {
 
 func prFindingsFixture(t *testing.T) []prrender.Finding {
 	t.Helper()
-	b, err := os.ReadFile("../prreview/render/testdata/findings.json")
+	b, err := os.ReadFile("../base/prreview/render/testdata/findings.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func newPRFix(t *testing.T) *prFix {
 			return prReceipt("fork", `{"findings": []}`, 3_000, 55_000), nil
 		}
 	}
-	diff, err := os.ReadFile("../prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}

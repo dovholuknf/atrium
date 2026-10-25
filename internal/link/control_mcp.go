@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/address"
+	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

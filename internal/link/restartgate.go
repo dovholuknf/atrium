@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // The hub restart gate. See docs/fabric/hub-restart-gate.md.

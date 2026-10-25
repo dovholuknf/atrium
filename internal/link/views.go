@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/webasset"
+	"github.com/dovholuknf/atrium/internal/base/webasset"
 )
 
 // BOARD VIEWS: one board tree per worker worktree, at `<name>.localhost`.

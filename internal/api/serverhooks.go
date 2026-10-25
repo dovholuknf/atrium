@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/dovholuknf/atrium/internal/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

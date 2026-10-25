@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

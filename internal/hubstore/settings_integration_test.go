@@ -5,7 +5,7 @@ package hubstore
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/cardcolors"
+	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 )
 
 // A FRESH HUB HAS NO SHARE LOGIN, which reads as an empty scheme rather than an

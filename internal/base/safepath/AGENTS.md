@@ -1,4 +1,4 @@
-# internal/safepath
+# internal/base/safepath
 
 One question: is this path inside that directory. One function, three rules, and it exists because nothing else
 in atrium answered it.

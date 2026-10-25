@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/safepath"
 )
 
 // SettingOpenPaths is the folders the board may open files from besides the card's own and the atrium paths. One

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
-	"github.com/dovholuknf/atrium/internal/sshcfg"
-	"github.com/dovholuknf/atrium/internal/sshkey"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/sshcfg"
+	"github.com/dovholuknf/atrium/internal/base/sshkey"
 )
 
 // Status is what one step found. A Check only reads, so none of these says a thing was changed.

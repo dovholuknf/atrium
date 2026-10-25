@@ -14,7 +14,7 @@ import (
 
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/store"
 	"net/url"
 )

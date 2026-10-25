@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dovholuknf/atrium/internal/docshare"
+	"github.com/dovholuknf/atrium/internal/base/docshare"
 )
 
 // The hub file drop: a place a card leaves a file for a card on another room, or for the board. The design is

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // lagRoom records every settings write it is sent.

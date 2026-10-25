@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dovholuknf/atrium/internal/codeid"
+	"github.com/dovholuknf/atrium/internal/base/codeid"
 )
 
 func main() {

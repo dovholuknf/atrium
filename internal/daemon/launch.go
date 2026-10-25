@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
-	"github.com/dovholuknf/atrium/internal/scratch"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

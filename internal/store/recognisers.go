@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // The recogniser rows. The value, its matching and its filling are in internal/rules, which the hub shares.

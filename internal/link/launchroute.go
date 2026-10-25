@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // An UNSCOPED launch finds its own room: the one on the caller's machine that has

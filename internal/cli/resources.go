@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dovholuknf/atrium/internal/base/resources"
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/resources"
 )
 
 // newResources is `atrium resources`. See docs/fabric/f-003-resources-design.md.

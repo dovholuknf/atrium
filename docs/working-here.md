@@ -65,6 +65,6 @@ machine" and not "it is deployed to the live hub".
   card, or under an atrium path (the room's card root, the directory of every card on the room live or archived, the
   room's repository clones and worktrees, WORKTREE_ROOT and each provider's worktree root), or under a folder in the
   room's `open_paths` setting (empty by default). The server decides after resolving symlinks and `..` through
-  `internal/safepath`, and everything else answers `403` whether or not it exists. Upload, the editor's read and
+  `internal/base/safepath`, and everything else answers `403` whether or not it exists. Upload, the editor's read and
   write, delete, zip and `files/open` stay against the card alone.
 - Build with `make build` (writes to `build.claude/`). Never to the repo root.
