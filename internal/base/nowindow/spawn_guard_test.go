@@ -21,6 +21,7 @@ var visibleOnPurpose = map[string]string{
 	"internal/cli/new.go:repoOfCheckout":             "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:Query":                "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:gitCmd":               "operator CLI, runs in the operator's own console",
+	"internal/base/land/duplicates.go:Duplicates":    "operator script, runs in the operator's own console",
 	"internal/base/land/identity.go:CheckGitEmail":   "operator CLI, runs in the operator's own console",
 	"internal/base/land/sign.go:GitSigner":           "operator CLI, runs in the operator's own console",
 	"internal/link/deployready.go:spawnDeployScript": "link.detach gives it a windowless console of its own",
