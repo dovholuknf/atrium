@@ -63,6 +63,7 @@ var table = []row{
 	{0, "internal/base/tokenprice", nil},
 	{0, "internal/base/webasset", nil},
 	{0, "internal/daemon/screen", nil},
+	{0, "internal/link/wire", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
@@ -100,7 +101,7 @@ var table = []row{
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
