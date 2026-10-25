@@ -237,7 +237,7 @@ function Invoke-Step([string]$What, [scriptblock]$Do) {
 # what Windows reports as that process's image path is not something to bet a second room on. Every image in
 # .atrium\bin named atrium*.exe counts, and the subcommand picks which. atrium-control.exe runs ` control`, which
 # matches neither.
-function Find-Atrium([ValidateSet('run', 'room')][string]$Sub) {
+function Find-Atrium([ValidateSet('run', 'room', 'ptyhost')][string]$Sub) {
   Get-CimInstance Win32_Process |
     Where-Object {
       $_.ExecutablePath -and
