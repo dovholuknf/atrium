@@ -406,3 +406,30 @@ func TestTheRoomPushesForAReattachedCardWithoutReplacingItsToken(t *testing.T) {
 		t.Fatal("a token from another start was accepted")
 	}
 }
+
+func TestADoneCardWhoseRunnerStillRunsMayPush(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	gone, _, err := d.st.Register(store.Observed{WireName: "gone", Worktree: "/tmp/atrium-test", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resident, _, err := d.st.Register(store.Observed{
+		WireName: "resident", Worktree: "/tmp/atrium-test", Runner: "claude", PID: os.Getpid(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{gone.ID, resident.ID} {
+		if err := d.st.SetStatus(id, store.StatusDone); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.GitPush(gone.ID, "fix/x"); err == nil || !strings.Contains(err.Error(), "not running") {
+		t.Fatalf("a done card with no runner: %v", err)
+	}
+	if _, err := d.GitPush(resident.ID, "fix/x"); err != nil && strings.Contains(err.Error(), "not running") {
+		t.Fatalf("a done card whose runner still runs was refused: %v", err)
+	}
+}
