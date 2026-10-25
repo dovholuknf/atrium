@@ -19,10 +19,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/address"
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/itemgate"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/itemgate"
 )
 
 // Item gates as the hub serves and checks them. See docs/runtime/item-dependencies-design.md.

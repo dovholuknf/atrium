@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // A source is a command on a timer whose stdout is intake items.

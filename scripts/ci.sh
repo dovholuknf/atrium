@@ -136,7 +136,7 @@ mkdir -p "$artefacts/goroutines"
 if [ -n "$kept" ]; then mv "$kept" "$artefacts/go-test.json"; fi
 steps_tsv="$artefacts/steps.tsv"
 : > "$steps_tsv"
-# Read by internal/testdiag. An absolute path, because each test binary runs in its own package's folder.
+# Read by internal/base/testdiag. An absolute path, because each test binary runs in its own package's folder.
 export CI_DIAG_DIR="$here/$artefacts/goroutines"
 
 # The steps: name, seconds, result. A step is closed by the next one starting, or by the end.

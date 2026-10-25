@@ -9,7 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dovholuknf/atrium/internal/resources"
+	"github.com/dovholuknf/atrium/internal/base/resources"
 )
 
 // atrium_resources, the control tool that lists the machines and environments an agent may use. See

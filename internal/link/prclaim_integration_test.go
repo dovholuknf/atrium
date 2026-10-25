@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/rules"
 )
 
 func atoiOr0(s string) int {

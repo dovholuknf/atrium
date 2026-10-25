@@ -13,7 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
 )

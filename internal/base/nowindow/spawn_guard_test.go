@@ -21,10 +21,10 @@ var visibleOnPurpose = map[string]string{
 	"internal/cli/new.go:repoOfCheckout":             "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:Query":                "operator CLI, runs in the operator's own console",
 	"internal/cli/roomsetup.go:gitCmd":               "operator CLI, runs in the operator's own console",
-	"internal/land/identity.go:CheckGitEmail":        "operator CLI, runs in the operator's own console",
-	"internal/land/sign.go:GitSigner":                "operator CLI, runs in the operator's own console",
+	"internal/base/land/identity.go:CheckGitEmail":   "operator CLI, runs in the operator's own console",
+	"internal/base/land/sign.go:GitSigner":           "operator CLI, runs in the operator's own console",
 	"internal/link/deployready.go:spawnDeployScript": "link.detach gives it a windowless console of its own",
-	"internal/forge/exec.go:Exec":                    "the caller passes prepare, and link passes hideWindow",
+	"internal/base/forge/exec.go:Exec":               "the caller passes prepare, and link passes hideWindow",
 }
 
 var otherOS = []string{"_other.go", "_darwin.go", "_linux.go", "_unix.go"}

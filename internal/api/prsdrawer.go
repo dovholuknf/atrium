@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/prreview/render"
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/prreview/render"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

@@ -51,7 +51,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/dblock"
+	"github.com/dovholuknf/atrium/internal/base/dblock"
 
 	"github.com/google/uuid"
 	"modernc.org/sqlite"

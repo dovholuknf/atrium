@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/tokenprice"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/tokenprice"
 )
 
 // THE USAGE PULL (item lifecycle L5, docs/rnd/item-lifecycle-design.md section 6.2). On a tick the hub reads each room's

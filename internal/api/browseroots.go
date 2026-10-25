@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Where the directory picker may look.

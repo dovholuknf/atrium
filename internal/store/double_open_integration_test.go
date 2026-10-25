@@ -5,7 +5,7 @@ package store
 import (
 	"errors"
 
-	"github.com/dovholuknf/atrium/internal/dblock"
+	"github.com/dovholuknf/atrium/internal/base/dblock"
 	"os"
 	"path/filepath"
 	"sync"

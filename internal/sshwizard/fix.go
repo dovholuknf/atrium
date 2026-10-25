@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 )
 
 // THE FIX HALF. Check only reads. Fix does steps 5, 6 and 7 for a step that says todo, and nothing else:

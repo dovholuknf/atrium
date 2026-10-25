@@ -10,7 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dovholuknf/atrium/internal/resources"
+	"github.com/dovholuknf/atrium/internal/base/resources"
 )
 
 func callResources(t *testing.T, h *classHarness, agent string) resourcesOutput {

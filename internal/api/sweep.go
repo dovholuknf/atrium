@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )

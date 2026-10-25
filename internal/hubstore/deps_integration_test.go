@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/itemgate"
+	"github.com/dovholuknf/atrium/internal/base/itemgate"
 )
 
 const depRepo = "github/dovholuknf/atrium"

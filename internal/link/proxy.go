@@ -19,12 +19,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/cardcolors"
-	"github.com/dovholuknf/atrium/internal/cardurl"
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/cardcolors"
+	"github.com/dovholuknf/atrium/internal/base/cardurl"
+	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/webasset"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/webasset"
 )
 
 // What the hub actually answers with.

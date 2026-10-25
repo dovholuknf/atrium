@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // A recogniser row that would be typical of this operator's table.

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 // fakeExec replaces the two seams. Every exec is recorded, and nothing real runs.

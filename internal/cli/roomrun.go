@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/edge"
-	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/roomstats"

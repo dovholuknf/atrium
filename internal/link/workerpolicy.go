@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // The default worker model and the per-worker budget, on the hub's side. The same shape as contextlimits.go: the hub

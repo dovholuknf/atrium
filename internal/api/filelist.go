@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Finding a file so it can be taken back out.

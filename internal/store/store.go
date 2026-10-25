@@ -29,13 +29,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/dblock"
+	"github.com/dovholuknf/atrium/internal/base/dblock"
 
 	"github.com/google/uuid"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // TimeFormat is how every timestamp column is written. RFC3339 in UTC with

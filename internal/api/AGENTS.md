@@ -5,7 +5,7 @@ process, as a function field on `Server` or a package var, so this package never
 
 ## Files leave a card only to the card, an atrium path or an `open_paths` folder
 
-The rule the file endpoints exist under, and the reason `internal/safepath` exists at all.
+The rule the file endpoints exist under, and the reason `internal/base/safepath` exists at all.
 
 - **Upload computes its own destination and accepts no path.** There is nothing in the request to point
   somewhere else.

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 )
 
 // Clones in the operator's scm folder: `<git.scm_root>/<host>/<owner>/<repo>`, made by

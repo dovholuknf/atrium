@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -43,7 +43,7 @@ func (f *fakeForge) PRURL(r forge.Ref) string { return "https://example.test/o/r
 func TestPRRunnerWorksWithNoGh(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
-	diff, err := os.ReadFile("../prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
 func TestPRRunnerWithAHubAsksTheHubAndFetchesFromItsStore(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
-	diff, err := os.ReadFile("../prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}

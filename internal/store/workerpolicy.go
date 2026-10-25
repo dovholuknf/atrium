@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // WorkerPolicy reads the policy. Unset or unreadable is off.

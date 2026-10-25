@@ -3,7 +3,7 @@ package recognisers
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // THE BUILT-IN ROWS READ AND RECOGNISE A PULL REQUEST however it was copied: the PR page, its changes tab, its files

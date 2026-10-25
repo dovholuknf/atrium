@@ -14,7 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dovholuknf/atrium/internal/docshare"
+	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 

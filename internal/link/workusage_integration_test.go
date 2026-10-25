@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/tokenprice"
+	"github.com/dovholuknf/atrium/internal/base/tokenprice"
 )
 
 // usageRoom is a room's two ndjson routes, as lines.

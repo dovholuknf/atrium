@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // Configuring the login that sits in front of the published board.

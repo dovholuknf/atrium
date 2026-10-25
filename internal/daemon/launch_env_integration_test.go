@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

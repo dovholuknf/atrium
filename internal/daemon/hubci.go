@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 var errBadCIAsk = errors.New("that is not a CI question")

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/forge"
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // A recogniser's fetch is a command, so testing one means running a command.

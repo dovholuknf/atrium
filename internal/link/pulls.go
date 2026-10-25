@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/rules"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
 // THE PULLS VIEW THROUGH THE HUB. Design: docs/rnd/pulls-view-design.md section 9. Contract: docs/review/pulls-api.md.

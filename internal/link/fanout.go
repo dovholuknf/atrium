@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/cardcolors"
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/cardcolors"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // The aggregate view: every room, one board.
