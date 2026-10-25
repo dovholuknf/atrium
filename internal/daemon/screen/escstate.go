@@ -1,11 +1,11 @@
-package daemon
+package screen
 
 import "time"
 
-// escParser is a small state machine over a runner's output bytes. It does not interpret anything, it only knows
+// EscParser is a small state machine over a runner's output bytes. It does not interpret anything, it only knows
 // whether the stream is between sequences (ground) or in the middle of one, so the clear mark is never written
 // into the middle of a CSI, an OSC or DCS string, or a UTF-8 character. See `runner.markClear`.
-type escParser struct {
+type EscParser struct {
 	state escState
 	// need is the UTF-8 continuation bytes still owed.
 	need int
@@ -26,14 +26,14 @@ const (
 // divider from drawing for good, so a mark is forced out once this many bytes have passed it or this long has
 // gone by, whichever is first. A real sequence is far shorter than either.
 const (
-	markHoldBytes = 4096
-	markHoldTime  = 2 * time.Second
+	MarkHoldBytes = 4096
+	MarkHoldTime  = 2 * time.Second
 )
 
-func (p *escParser) ground() bool { return p.state == escGround }
+func (p *EscParser) Ground() bool { return p.state == escGround }
 
 // feed consumes one byte.
-func (p *escParser) feed(b byte) {
+func (p *EscParser) Feed(b byte) {
 	switch p.state {
 	case escGround:
 		switch {
@@ -80,7 +80,7 @@ func (p *escParser) feed(b byte) {
 			p.state = escGround
 		} else {
 			p.state = escEsc
-			p.feed(b)
+			p.Feed(b)
 		}
 	case escUTF8:
 		if b >= 0x80 && b <= 0xbf {
@@ -91,16 +91,16 @@ func (p *escParser) feed(b byte) {
 		}
 		// not a continuation: the character was cut short, this byte starts afresh
 		p.state = escGround
-		p.feed(b)
+		p.Feed(b)
 	}
 }
 
 // feedUntilGround consumes b and returns the index just past the first byte after which the parser is in ground
 // state, or -1 if it never is. It stops there, so the caller can put something in at that point.
-func (p *escParser) feedUntilGround(b []byte) int {
+func (p *EscParser) FeedUntilGround(b []byte) int {
 	for i, c := range b {
-		p.feed(c)
-		if p.ground() {
+		p.Feed(c)
+		if p.Ground() {
 			return i + 1
 		}
 	}

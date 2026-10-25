@@ -10,7 +10,7 @@
 // default. A wide character and a character with combining marks each take one
 // position, the way translateToString gives them.
 const path = require("path");
-const { Terminal } = require(path.join(__dirname, "..", "..", "api", "web", "vendor", "xterm.js"));
+const { Terminal } = require(path.join(__dirname, "..", "..", "..", "api", "web", "vendor", "xterm.js"));
 
 let raw = "";
 process.stdin.on("data", (d) => (raw += d));

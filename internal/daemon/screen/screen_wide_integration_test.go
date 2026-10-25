@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 // assertWideInvariant checks the one rule the wide cell ops exist to keep: every
 // wide character is followed by exactly one continuation cell, and every
 // continuation follows one. Applied to history and to the alternate screen too.
-func assertWideInvariant(t *testing.T, s *screen) {
+func assertWideInvariant(t *testing.T, s *Screen) {
 	t.Helper()
 	rows := append(append([][]cell{}, s.history...), s.cells...)
 	rows = append(rows, s.altCells...)
@@ -103,7 +103,7 @@ func TestWidthMatchesXterm(t *testing.T) {
 }
 
 // texts is the grid as rows of text with the continuation cells skipped.
-func texts(s *screen) []string {
+func texts(s *Screen) []string {
 	var out []string
 	for _, r := range s.cells {
 		var b strings.Builder
@@ -117,9 +117,9 @@ func texts(s *screen) []string {
 	return out
 }
 
-func wideScreen(cols, rows int, data string) *screen {
-	s := newScreenSized(cols, rows)
-	s.apply([]byte(data))
+func wideScreen(cols, rows int, data string) *Screen {
+	s := NewScreenSized(cols, rows)
+	s.Apply([]byte(data))
 	return s
 }
 
@@ -191,16 +191,16 @@ func TestWideResizeNeverLeavesAHalf(t *testing.T) {
 func TestWideTextEmitsTheRuneOnce(t *testing.T) {
 	t.Parallel()
 	s := wideScreen(10, 0, "あいう\r\nx\x1b[1;3H")
-	if got := s.text(); got != "あいう\r\nx\r\n" {
+	if got := s.Text(); got != "あいう\r\nx\r\n" {
 		t.Fatalf("text %q", got)
 	}
 	// The cursor is a cell column, which is where the terminal puts it once it
 	// has drawn each of those characters across two.
-	if got := s.textWithCursor(); !strings.HasSuffix(got, "\x1b[2A\r\x1b[2C") {
+	if got := s.TextWithCursor(); !strings.HasSuffix(got, "\x1b[2A\r\x1b[2C") {
 		t.Fatalf("cursor move in %q", got)
 	}
-	f := newScreenSized(10, 3)
-	f.apply([]byte("あいう\r\nx\x1b[1;3H"))
+	f := NewScreenSized(10, 3)
+	f.Apply([]byte("あいう\r\nx\x1b[1;3H"))
 	if got := f.textAtRows(); !strings.Contains(got, "あいう\r\nx") || !strings.HasSuffix(got, "\x1b[1;3H") {
 		t.Fatalf("rows %q", got)
 	}
@@ -209,10 +209,10 @@ func TestWideTextEmitsTheRuneOnce(t *testing.T) {
 func TestReplayOfWideTextLandsOnTheSameColumns(t *testing.T) {
 	t.Parallel()
 	session := "あいう\x1b[2D.\r\nabあ\x1b[1D\x1b[K"
-	want := newScreenSized(10, 4)
-	want.apply([]byte(session))
-	got := newScreenSized(10, 4)
-	got.apply(Replay([]byte(session), "screen", 10, 4))
+	want := NewScreenSized(10, 4)
+	want.Apply([]byte(session))
+	got := NewScreenSized(10, 4)
+	got.Apply(Replay([]byte(session), "screen", 10, 4))
 	if w, g := strings.Join(texts(want), "|"), strings.Join(texts(got), "|"); w != g {
 		t.Fatalf("replay differs: %q, want %q", g, w)
 	}

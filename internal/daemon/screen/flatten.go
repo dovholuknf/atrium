@@ -1,4 +1,4 @@
-package daemon
+package screen
 
 import "bytes"
 
@@ -40,7 +40,7 @@ import "bytes"
 // terminal user interface works normally from the moment you are attached.
 // The trade is deliberate: the alternative on offer was an empty pane.
 
-// flatten returns the bytes with everything that could overwrite what came
+// Flatten returns the bytes with everything that could overwrite what came
 // before it removed.
 //
 // Colour is kept, because a transcript without it is markedly harder to read
@@ -48,7 +48,7 @@ import "bytes"
 // vocabulary is dropped rather than interpreted: this is not a terminal
 // emulator and does not need to be one to answer "can this byte destroy the
 // line above it".
-func flatten(b []byte) []byte {
+func Flatten(b []byte) []byte {
 	if len(b) == 0 {
 		return b
 	}
@@ -110,7 +110,7 @@ func flatten(b []byte) []byte {
 // spacing; whitespace and colour changes alone do not make a line nonblank.
 // Apply this after flattening the whole result.
 func squeezeBlanks(b []byte) []byte {
-	lines := splitKeepingEndings(b)
+	lines := SplitKeepingEndings(b)
 	out := make([]byte, 0, len(b))
 	blanks := 0
 	for _, l := range lines {
@@ -165,9 +165,9 @@ func visuallyEmpty(line []byte) bool {
 	return true
 }
 
-// splitKeepingEndings cuts into lines with each line's ending still attached,
+// SplitKeepingEndings cuts into lines with each line's ending still attached,
 // so reassembling is a concatenation and no ending is invented or lost.
-func splitKeepingEndings(b []byte) [][]byte {
+func SplitKeepingEndings(b []byte) [][]byte {
 	var out [][]byte
 	start := 0
 	for i := 0; i < len(b); i++ {
@@ -256,8 +256,8 @@ func skipEscape(b []byte, i int, out *[]byte, row *int, pend *owedBreak) int {
 		params := b[start+2 : i-1]
 		if final == 'C' {
 			if n := csiParam(params, 1); n > 0 {
-				if n > maxSkipColumns {
-					n = maxSkipColumns
+				if n > MaxSkipColumns {
+					n = MaxSkipColumns
 				}
 				// Spacing is writing, so it settles what a move owed. A run of
 				// jumps followed by an indent is one break and then the
@@ -318,9 +318,9 @@ func skipEscape(b []byte, i int, out *[]byte, row *int, pend *owedBreak) int {
 	}
 }
 
-// maxSkipColumns caps spaces produced by cursor-forward sequences to limit
+// MaxSkipColumns caps spaces produced by cursor-forward sequences to limit
 // allocation from malformed or excessively large parameters.
-const maxSkipColumns = 1000
+const MaxSkipColumns = 1000
 
 // csiParam reads the first numeric CSI parameter, using def when omitted
 // or invalid. Ring boundaries can leave incomplete sequences.
@@ -338,8 +338,8 @@ func csiParam(params []byte, def int) int {
 		}
 		seen = true
 		n = n*10 + int(c-'0')
-		if n > maxSkipColumns {
-			return maxSkipColumns
+		if n > MaxSkipColumns {
+			return MaxSkipColumns
 		}
 	}
 	if !seen {
@@ -397,7 +397,7 @@ func (p *owedBreak) pay(out *[]byte) {
 		return
 	}
 	*out = append(*out, '\r', '\n')
-	for k := 1; k < p.col && k <= maxSkipColumns; k++ {
+	for k := 1; k < p.col && k <= MaxSkipColumns; k++ {
 		*out = append(*out, ' ')
 	}
 	p.clear()

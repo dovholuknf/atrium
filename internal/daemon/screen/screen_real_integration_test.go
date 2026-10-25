@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"bytes"
@@ -96,7 +96,7 @@ func checkReplays(t *testing.T, f realFile) {
 	t.Helper()
 	// 120 columns, the width the board actually uses most.
 	start := time.Now()
-	out := renderHistory(f.raw, 120)
+	out := RenderHistory(f.raw, 120)
 	took := time.Since(start)
 
 	if len(f.raw) > 0 && len(out) == 0 {
@@ -124,7 +124,7 @@ func TestLiveEverySessionReplays(t *testing.T) {
 // survival samples every stride-th eligible word the session printed and
 // reports how many came through the renderer. sampled is the sample size.
 func survival(raw []byte, stride int) (found, sampled int) {
-	out := plain(string(renderHistory(raw, 120)))
+	out := plain(string(RenderHistory(raw, 120)))
 
 	// What the runner printed, with every escape stripped, is the ceiling.
 	// The model cannot produce more text than was sent.
@@ -248,8 +248,8 @@ func TestLiveSessionsKeepTheirText(t *testing.T) {
 // paint more.
 func checkLinearOutput(t *testing.T, name string, small, big []byte, bound int) {
 	t.Helper()
-	a := renderHistory(small, 120)
-	b := renderHistory(big, 120)
+	a := RenderHistory(small, 120)
+	b := RenderHistory(big, 120)
 	if len(a) > 0 && len(b) > len(a)*bound {
 		t.Errorf("%s: %d bytes in gave %d out and %d in gave %d out, which is not linear",
 			name, len(small), len(a), len(big), len(b))
@@ -287,7 +287,7 @@ func TestLiveReplayOutputGrowsLinearly(t *testing.T) {
 func checkSpinners(t *testing.T, f realFile) int {
 	t.Helper()
 	s := string(f.raw)
-	out := plain(string(renderHistory(f.raw, 120)))
+	out := plain(string(RenderHistory(f.raw, 120)))
 	most := 0
 	for _, word := range []string{"Kneading", "Forging", "Garnishing", "Simmering", "Brewing"} {
 		before := strings.Count(s, word)
@@ -346,7 +346,7 @@ const (
 // is found by a plain search from the start but not by the ordered one.
 func lostSurvivors(t testing.TB) (kept int, inOrder bool, text string) {
 	t.Helper()
-	text = plain(string(renderHistory(fixtureNamed(t, lostFixture), 120)))
+	text = plain(string(RenderHistory(fixtureNamed(t, lostFixture), 120)))
 	line := func(i int) string { return fmt.Sprintf("L%04d %s", i, lostTail) }
 
 	start := 0

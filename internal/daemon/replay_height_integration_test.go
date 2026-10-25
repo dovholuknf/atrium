@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A SESSION OPENED SHORT AND ATTACHED TALL keeps what it drew while short.
@@ -32,7 +34,7 @@ func TestReplayKeepsOutputDrawnAtAnEarlierHeight(t *testing.T) {
 	r.Write([]byte("\x1b[55;1H> typed at the new height"))
 
 	out, cuts, rows, _ := r.ReplayCuts()
-	got := plain(string(replayCut(out, "screen", cuts, rows)))
+	got := plain(string(screen.ReplayCut(out, "screen", cuts, rows)))
 	for _, want := range []string{"the banner", "line 1 of the prompt", "line 17 of the prompt",
 		"> the repainted frame", "> typed at the new height"} {
 		if !strings.Contains(got, want) {
@@ -61,19 +63,19 @@ func TestAHeightNothingWasWrittenAtIsNotAMark(t *testing.T) {
 // cursor on the row it was writing.
 func TestShrinkingTheGridFilesTheTopAway(t *testing.T) {
 	t.Parallel()
-	s := newScreenSized(20, 10)
+	s := screen.NewScreenSized(20, 10)
 	for i := 0; i < 10; i++ {
-		s.apply([]byte(fmt.Sprintf("row %d", i)))
+		s.Apply([]byte(fmt.Sprintf("row %d", i)))
 		if i < 9 {
-			s.apply([]byte("\r\n"))
+			s.Apply([]byte("\r\n"))
 		}
 	}
-	s.resizeRows(4)
-	if len(s.history) != 6 || s.row != 3 {
-		t.Fatalf("history %d rows, cursor on %d, want 6 and 3", len(s.history), s.row)
+	s.ResizeRows(4)
+	if row, _ := s.Cursor(); s.HistoryRows() != 6 || row != 3 {
+		t.Fatalf("history %d rows, cursor on %d, want 6 and 3", s.HistoryRows(), row)
 	}
-	s.apply([]byte("\x1b[1;1Hover"))
-	if got := plain(s.text()); !strings.Contains(got, "row 5") || !strings.Contains(got, "over6") {
+	s.Apply([]byte("\x1b[1;1Hover"))
+	if got := plain(s.Text()); !strings.Contains(got, "row 5") || !strings.Contains(got, "over6") {
 		t.Fatalf("a move after the shrink landed on history:\n%s", got)
 	}
 }

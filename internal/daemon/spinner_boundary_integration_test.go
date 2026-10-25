@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // Captured frame boundaries use synchronized output with no carriage returns.
@@ -18,7 +20,7 @@ func TestASynchronizedSpinnerCollapses(t *testing.T) {
 	}
 	b.WriteString("\r\nreal work below\r\n")
 
-	got := string(collapseRedraws([]byte(b.String())))
+	got := string(screen.CollapseRedraws([]byte(b.String())))
 
 	if n := strings.Count(got, "Lollygagging"); n != 1 {
 		t.Fatalf("%d spinner frames survived, wanted 1", n)
@@ -44,7 +46,7 @@ func TestAbsolutePositioningIsNotAFrameBoundary(t *testing.T) {
 		"\x1b[46;3H third line of the block" +
 		"\x1b[?2026l"
 
-	got := string(collapseRedraws([]byte(one)))
+	got := string(screen.CollapseRedraws([]byte(one)))
 
 	for _, keep := range []string{"first line", "second line", "third line"} {
 		if !strings.Contains(got, keep) {
@@ -59,7 +61,7 @@ func TestAbsolutePositioningIsNotAFrameBoundary(t *testing.T) {
 func TestOneFrameIsLeftAlone(t *testing.T) {
 	t.Parallel()
 	one := frame("Lollygagging… 1 token")
-	if got := string(collapseRedraws([]byte(one))); got != one {
+	if got := string(screen.CollapseRedraws([]byte(one))); got != one {
 		t.Fatalf("a single frame was collapsed:\n got %q\nwant %q", got, one)
 	}
 }
@@ -69,7 +71,7 @@ func TestOneFrameIsLeftAlone(t *testing.T) {
 func TestACarriageReturnSpinnerStillCollapses(t *testing.T) {
 	t.Parallel()
 	in := "10%\r50%\r99%\r100%\r\ndone\r\n"
-	got := string(collapseRedraws([]byte(in)))
+	got := string(screen.CollapseRedraws([]byte(in)))
 	if strings.Contains(got, "10%") || strings.Contains(got, "50%") {
 		t.Fatalf("earlier frames survived: %q", got)
 	}
@@ -84,7 +86,7 @@ func TestCursorForwardBecomesSpacing(t *testing.T) {
 	t.Parallel()
 	row := "id" + "\x1b[4C" + "wire_name" + "\x1b[2C" + "status"
 
-	got := string(flatten([]byte(row)))
+	got := string(screen.Flatten([]byte(row)))
 
 	if strings.Contains(got, "idwire_name") {
 		t.Fatalf("the fields ran together: %q", got)
@@ -97,7 +99,7 @@ func TestCursorForwardBecomesSpacing(t *testing.T) {
 // No parameter means one, the same as every other movement sequence.
 func TestCursorForwardDefaultsToOneColumn(t *testing.T) {
 	t.Parallel()
-	if got := string(flatten([]byte("a\x1b[Cb"))); got != "a b" {
+	if got := string(screen.Flatten([]byte("a\x1b[Cb"))); got != "a b" {
 		t.Fatalf("got %q, wanted one space", got)
 	}
 }
@@ -106,8 +108,8 @@ func TestCursorForwardDefaultsToOneColumn(t *testing.T) {
 // must not become a megabyte of spaces in the middle of history.
 func TestCursorForwardIsBounded(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("a\x1b[99999999Cb")))
-	if n := strings.Count(got, " "); n > maxSkipColumns {
+	got := string(screen.Flatten([]byte("a\x1b[99999999Cb")))
+	if n := strings.Count(got, " "); n > screen.MaxSkipColumns {
 		t.Fatalf("%d spaces, which is past the bound", n)
 	}
 	if !strings.HasPrefix(got, "a") || !strings.HasSuffix(got, "b") {
@@ -130,7 +132,7 @@ func TestMovementsThatCouldReachHistoryAreDropped(t *testing.T) {
 		"\x1b[3M",     // delete lines
 		"\x1b[S",      // scroll up
 	} {
-		got := string(flatten([]byte("kept" + seq + "also kept")))
+		got := string(screen.Flatten([]byte("kept" + seq + "also kept")))
 		if strings.Contains(got, "\x1b") {
 			t.Fatalf("%q survived flattening: %q", seq, got)
 		}

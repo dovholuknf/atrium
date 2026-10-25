@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 type traceCase struct {
 	name       string
 	cols, rows int
-	cuts       []sizeCut
+	cuts       []SizeCut
 	data       string
 	// accept names the differences this trace is allowed to have, each with
 	// the reason. A name that is claimed and does not occur fails the test, so
@@ -76,16 +76,16 @@ func runXterm(t *testing.T, c traceCase) xtermDump {
 	return d
 }
 
-func cutsJSON(cuts []sizeCut) []map[string]int {
+func cutsJSON(cuts []SizeCut) []map[string]int {
 	out := []map[string]int{}
 	for _, c := range cuts {
-		out = append(out, map[string]int{"at": c.at, "cols": c.cols, "rows": c.rows})
+		out = append(out, map[string]int{"at": c.At, "cols": c.Cols, "rows": c.Rows})
 	}
 	return out
 }
 
 // dumpScreen is what screen.go holds, in the shape xterm_dump.js prints.
-func dumpScreen(s *screen) xtermDump {
+func dumpScreen(s *Screen) xtermDump {
 	var d xtermDump
 	row := func(r []cell) xtermLine {
 		end := len(r)
@@ -167,8 +167,8 @@ func TestScreenAgainstXterm(t *testing.T) {
 	for _, c := range traceCases() {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			s := newScreenSized(c.cols, c.rows)
-			s.applyCuts([]byte(c.data), c.cuts)
+			s := NewScreenSized(c.cols, c.rows)
+			s.ApplyCuts([]byte(c.data), c.cuts)
 			assertWideInvariant(t, s)
 			diffs := diffDumps(dumpScreen(s), runXterm(t, c))
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -690,7 +691,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 		banner = launcherBanner(from)
 		body = launcherSayBody(d.saysDir(target.ID), target.ID, text)
 	} else if d.bracketedPasteFor(target.ID, false) {
-		body = bracketedPaste(body)
+		body = screen.BracketedPaste(body)
 	}
 	// injectPeer types and submits ONLY when the gate is open right now: an empty
 	// line and peerGateIdle of quiet. It never leaves unsent text in the prompt

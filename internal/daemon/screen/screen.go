@@ -1,11 +1,9 @@
-package daemon
+package screen
 
 import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // Replay output through a screen grid to preserve partial row updates,
@@ -16,16 +14,16 @@ import (
 // preserve only the last screenful. This handles sequences used by supported
 // runners, not a complete terminal emulator. See apply.
 
-// screenRows is the starting height when the stream provides none.
+// ScreenRows is the starting height when the stream provides none.
 // The ring records columns but not rows, so grow the grid as larger rows are
 // addressed. Start small: scrolling a row into history early preserves it,
 // while an oversized grid can let later repaints overwrite older content.
-const screenRows = 24
+const ScreenRows = 24
 
-// screenMaxRows bounds that growth. A runner addressing row 10,000 is a
+// ScreenMaxRows bounds that growth. A runner addressing row 10,000 is a
 // corrupt parameter, not a very tall window, and a grid that believed it would
 // allocate a hundred megabytes of blank cells.
-const screenMaxRows = 400
+const ScreenMaxRows = 400
 
 // cell holds a character and its SGR sequence. Preserve colour sequences
 // verbatim because replay does not need to interpret individual attributes.
@@ -55,7 +53,7 @@ const (
 )
 
 // screen is a grid, a cursor, and the lines that have scrolled off it.
-type screen struct {
+type Screen struct {
 	cols, rows int
 	cells      [][]cell
 	row, col   int
@@ -109,7 +107,7 @@ type screen struct {
 	// rep is the detector `repairReport` turns on, and is nil for every other
 	// user of the grid, which then pays a nil check and nothing else. It only
 	// watches. See screen_repair.go.
-	rep *repairWatch
+	rep *RepairWatch
 	// pushed is the text of the page `keepPage` last put into history.
 	pushed string
 	// pushedRows is each row's text at that push, and pushedLive is whether the grid has not scrolled or shifted since.
@@ -118,21 +116,21 @@ type screen struct {
 }
 
 // region is the rows a line feed scrolls between, inclusive.
-func (s *screen) region() (top, bot int) {
+func (s *Screen) region() (top, bot int) {
 	if !s.regSet {
 		return 0, len(s.cells) - 1
 	}
-	return s.regTop, minInt(s.regBot, len(s.cells)-1)
+	return s.regTop, MinInt(s.regBot, len(s.cells)-1)
 }
 
 // resetRegion puts the region back to the whole grid.
-func (s *screen) resetRegion() { s.regSet = false }
+func (s *Screen) resetRegion() { s.regSet = false }
 
 // setRegion is `CSI top;bottom r`, 1-based and inclusive. It follows xterm.js:
 // a missing or zero bottom, or one past the last row, means the last row, and a
 // region of fewer than two rows is ignored WITHOUT homing the cursor. A valid
 // one homes it.
-func (s *screen) setRegion(top, bottom int) {
+func (s *Screen) setRegion(top, bottom int) {
 	if top < 1 {
 		top = 1
 	}
@@ -147,9 +145,9 @@ func (s *screen) setRegion(top, bottom int) {
 	s.moveTo(0, 0)
 }
 
-func newScreen(cols int) *screen { return newScreenSized(cols, 0) }
+func NewScreen(cols int) *Screen { return NewScreenSized(cols, 0) }
 
-// newScreenSized builds the grid at the size the output was drawn at.
+// NewScreenSized builds the grid at the size the output was drawn at.
 //
 // THE HEIGHT IS THE PART THAT WAS BEING GUESSED, and it decides what becomes
 // history rather than how anything wraps. A grid taller than the terminal that
@@ -162,18 +160,18 @@ func newScreen(cols int) *screen { return newScreenSized(cols, 0) }
 // the ring carried one. `screenRows` stands in, and `grow` still stretches the
 // grid to any row that gets addressed, so an under-estimate costs nothing and
 // an over-estimate costs history.
-func newScreenSized(cols, rows int) *screen {
+func NewScreenSized(cols, rows int) *Screen {
 	if cols <= 0 {
 		cols = 80
 	}
 	fixed := rows > 0
 	if rows <= 0 {
-		rows = screenRows
+		rows = ScreenRows
 	}
-	if rows > screenMaxRows {
-		rows = screenMaxRows
+	if rows > ScreenMaxRows {
+		rows = ScreenMaxRows
 	}
-	s := &screen{cols: cols, rows: rows, fixedRows: fixed}
+	s := &Screen{cols: cols, rows: rows, fixedRows: fixed}
 	s.cells = make([][]cell, s.rows)
 	for i := range s.cells {
 		s.cells[i] = blankRow(cols)
@@ -204,7 +202,7 @@ func blankRow(cols int) []cell {
 // are gone. Measured on a real session: the expanded file listings claude
 // prints and then collapses to `+31 lines (ctrl+o to expand)` were all lost
 // this way, 154 lines of a 361 line capture, because they never scrolled.
-func (s *screen) grow(toRow int) {
+func (s *Screen) grow(toRow int) {
 	if toRow < s.rows {
 		return
 	}
@@ -213,8 +211,8 @@ func (s *screen) grow(toRow int) {
 	if s.fixedRows {
 		return
 	}
-	if toRow >= screenMaxRows {
-		toRow = screenMaxRows - 1
+	if toRow >= ScreenMaxRows {
+		toRow = ScreenMaxRows - 1
 	}
 	for len(s.cells) <= toRow {
 		s.cells = append(s.cells, blankRow(s.cols))
@@ -226,7 +224,7 @@ func (s *screen) grow(toRow int) {
 // history only when the region starts at the screen's top, which is xterm.js's
 // rule: rows scrolled out of a region that starts lower were never above the
 // fold and are discarded. The alternate screen has no scrollback, by definition.
-func (s *screen) scroll() {
+func (s *Screen) scroll() {
 	top, bot := s.region()
 	s.pushedLive = false
 	if top == 0 && !s.alt {
@@ -237,14 +235,14 @@ func (s *screen) scroll() {
 }
 
 // scrollDown moves the region down one row, dropping its bottom row.
-func (s *screen) scrollDown() {
+func (s *Screen) scrollDown() {
 	top, bot := s.region()
 	copy(s.cells[top+1:bot+1], s.cells[top:bot])
 	s.cells[top] = blankRow(s.cols)
 }
 
 // put writes one character at the cursor and advances it.
-func (s *screen) put(ch rune) {
+func (s *Screen) put(ch rune) {
 	w := runeWidth(ch)
 	if s.rep != nil {
 		s.repPut()
@@ -306,7 +304,7 @@ func (s *screen) put(ch rune) {
 // cells at `at` breaks: the character before, when `at` is its second cell, and
 // the one after, when its second cell is the first one left over. The blank
 // wears the colour being written, as xterm.js has it.
-func (s *screen) clearHalves(r []cell, at, w int) {
+func (s *Screen) clearHalves(r []cell, at, w int) {
 	gap := cell{ch: ' ', sgr: s.sgr}
 	if at > 0 && r[at].ch == contCh {
 		r[at-1] = gap
@@ -322,7 +320,7 @@ func (s *screen) clearHalves(r []cell, at, w int) {
 // gives the mark a cell then. A mark past the bounds is dropped and still
 // counts as attached, since a stream of them is corrupt and giving each a cell
 // would be the wrong way to be generous.
-func (s *screen) combine(ch rune) bool {
+func (s *Screen) combine(ch rune) bool {
 	col := s.col - 1
 	if s.wrapNext {
 		col = s.col
@@ -400,7 +398,7 @@ func repairRow(r []cell) {
 }
 
 // emit writes the character in a cell and the marks after it.
-func (s *screen) emit(b *strings.Builder, c cell) {
+func (s *Screen) emit(b *strings.Builder, c cell) {
 	ch := c.ch
 	if ch == 0 {
 		ch = ' '
@@ -411,7 +409,7 @@ func (s *screen) emit(b *strings.Builder, c cell) {
 	}
 }
 
-func (s *screen) lineFeed() {
+func (s *Screen) lineFeed() {
 	s.wrapNext = false
 	// Only the region's bottom row scrolls. Below the region a line feed moves
 	// down until the last row and stops there.
@@ -423,7 +421,7 @@ func (s *screen) lineFeed() {
 	}
 }
 
-func (s *screen) moveTo(row, col int) {
+func (s *Screen) moveTo(row, col int) {
 	s.wrapNext = false
 	if row < 0 {
 		row = 0
@@ -442,7 +440,7 @@ func (s *screen) moveTo(row, col int) {
 }
 
 // eraseLine is `CSI K`: 0 to the end, 1 to the start, 2 the whole line.
-func (s *screen) eraseLine(mode int) {
+func (s *Screen) eraseLine(mode int) {
 	s.grow(s.row)
 	r := s.cells[s.row]
 	from, to := s.col, s.cols
@@ -457,7 +455,7 @@ func (s *screen) eraseLine(mode int) {
 
 // eraseDisplay handles CSI J. For full-screen clears (2 and 3), preserve
 // existing rows in history before clearing the grid.
-func (s *screen) eraseDisplay(mode int) {
+func (s *Screen) eraseDisplay(mode int) {
 	s.grow(s.row)
 	switch mode {
 	case 0:
@@ -491,7 +489,7 @@ func (s *screen) eraseDisplay(mode int) {
 // a reattach both see it at the same byte. A terminal that does not know the OSC
 // ignores it.
 const (
-	clearMarkOSC     = "\x1b]7777;atrium-clear\x07"
+	ClearMarkOSC     = "\x1b]7777;atrium-clear\x07"
 	clearMarkPayload = "7777;atrium-clear"
 )
 
@@ -499,7 +497,7 @@ const (
 // the alternate screen, and not when the page is the one pushed last, so a
 // repaint that clears and draws the same frame, or a mark followed by the 2J a
 // restart sends, does not stack copies. The board's `keepPage` does the same.
-func (s *screen) keepPage() {
+func (s *Screen) keepPage() {
 	if s.alt {
 		return
 	}
@@ -545,13 +543,13 @@ func (s *screen) keepPage() {
 // insertLines is `CSI L`, and deleteLines is `CSI M`. Both move the lines below
 // the cursor, which is how an application opens or closes a gap in a list. They
 // act inside the scroll region and do nothing with the cursor outside it.
-func (s *screen) insertLines(n int) {
+func (s *Screen) insertLines(n int) {
 	s.grow(s.row)
 	top, bot := s.region()
 	if s.row < top || s.row > bot {
 		return
 	}
-	n = minInt(n, bot-s.row+1)
+	n = MinInt(n, bot-s.row+1)
 	s.pushedLive = false
 	for k := 0; k < n; k++ {
 		copy(s.cells[s.row+1:bot+1], s.cells[s.row:bot])
@@ -560,13 +558,13 @@ func (s *screen) insertLines(n int) {
 	s.col, s.wrapNext = 0, false
 }
 
-func (s *screen) deleteLines(n int) {
+func (s *Screen) deleteLines(n int) {
 	s.grow(s.row)
 	top, bot := s.region()
 	if s.row < top || s.row > bot {
 		return
 	}
-	n = minInt(n, bot-s.row+1)
+	n = MinInt(n, bot-s.row+1)
 	s.pushedLive = false
 	for k := 0; k < n; k++ {
 		// The line leaving is not history: it is being removed from a view the
@@ -588,7 +586,7 @@ func rowIsBlank(r []cell) bool {
 
 // toAlt and fromAlt switch buffers. What the alternate screen holds is never
 // history, so entering it stashes the real screen and leaving it puts it back.
-func (s *screen) toAlt() {
+func (s *Screen) toAlt() {
 	if s.alt {
 		return
 	}
@@ -604,7 +602,7 @@ func (s *screen) toAlt() {
 	s.row, s.col = 0, 0
 }
 
-func (s *screen) fromAlt() {
+func (s *Screen) fromAlt() {
 	if !s.alt {
 		return
 	}
@@ -619,7 +617,7 @@ func (s *screen) fromAlt() {
 // text renders scrolled history followed by the current screen. Trim grid
 // padding and trailing blank rows. Emit colour only when it changes and
 // reset it at line endings.
-func (s *screen) text() string {
+func (s *Screen) Text() string {
 	body, _, _, _ := s.render()
 	return body
 }
@@ -646,7 +644,7 @@ func (s *screen) text() string {
 // the SIGWINCH made the runner repaint, and the repaint carried an absolute
 // cursor move. Once an attach at an unchanged size stopped resizing, the repaint
 // stopped coming, and restoring the cursor became the replay's own job.
-func (s *screen) textWithCursor() string {
+func (s *Screen) TextWithCursor() string {
 	if s.fixedRows && !s.alt {
 		return s.textAtRows()
 	}
@@ -685,7 +683,7 @@ func (s *screen) textWithCursor() string {
 // top of the viewport. That holds whatever the history's length, provided the
 // attaching terminal is this grid's height, which the pty size frame sent ahead
 // of the replay sees to. See `TestReplayKeepsTheSessionsRows`.
-func (s *screen) textAtRows() string {
+func (s *Screen) textAtRows() string {
 	var b strings.Builder
 	cur := ""
 	blanks := 0
@@ -721,7 +719,7 @@ func (s *screen) textAtRows() string {
 
 // writeRow writes one row, trailing blanks dropped, with its colour reset at
 // the end the way `render` does.
-func (s *screen) writeRow(b *strings.Builder, r []cell, cur *string) {
+func (s *Screen) writeRow(b *strings.Builder, r []cell, cur *string) {
 	end := len(r)
 	for end > 0 && (r[end-1].ch == ' ' || r[end-1].ch == 0) {
 		end--
@@ -756,7 +754,7 @@ func (s *screen) writeRow(b *strings.Builder, r []cell, cur *string) {
 // `ok` is false when the cursor is below the last emitted row, which is a fresh
 // prompt with nothing under it: the resting position is already right and no
 // move is owed.
-func (s *screen) render() (body string, curLine, total int, ok bool) {
+func (s *Screen) render() (body string, curLine, total int, ok bool) {
 	var b strings.Builder
 	rows := append(append([][]cell{}, s.history...), s.cells...)
 	// Where the session's cursor sits in the combined rows.
@@ -847,12 +845,12 @@ func (s *screen) render() (body string, curLine, total int, ok bool) {
 
 // apply feeds bytes into the screen model. Skip unsupported sequences
 // without changing the grid.
-func (s *screen) apply(b []byte) { s.applyCuts(b, nil) }
+func (s *Screen) Apply(b []byte) { s.ApplyCuts(b, nil) }
 
-// sizeCut is where replayed output changed size: from byte `at` on, it was
+// SizeCut is where replayed output changed size: from byte `at` on, it was
 // composed for a terminal `cols` wide and `rows` tall. Zero rows means nothing
 // recorded a height there, and the grid keeps the one it has.
-type sizeCut struct{ at, cols, rows int }
+type SizeCut struct{ At, Cols, Rows int }
 
 // applyCuts is apply with the grid resized at each cut, the way the terminal
 // that produced the bytes was.
@@ -875,7 +873,7 @@ type sizeCut struct{ at, cols, rows int }
 //
 // A cut that falls inside an escape sequence or a rune is taken at the next
 // boundary, so resizing never splits one.
-func (s *screen) applyCuts(b []byte, cuts []sizeCut) {
+func (s *Screen) ApplyCuts(b []byte, cuts []SizeCut) {
 	for i := 0; i < len(b); {
 		if s.rep != nil {
 			s.rep.pos = i
@@ -883,7 +881,7 @@ func (s *screen) applyCuts(b []byte, cuts []sizeCut) {
 				s.rep.cancel("too-long")
 			}
 		}
-		for len(cuts) > 0 && cuts[0].at <= i {
+		for len(cuts) > 0 && cuts[0].At <= i {
 			s.cutTo(cuts[0])
 			cuts = cuts[1:]
 		}
@@ -896,12 +894,12 @@ func (s *screen) applyCuts(b []byte, cuts []sizeCut) {
 
 // cutTo is one size cut, with the detector told either side of it when there is
 // one.
-func (s *screen) cutTo(c sizeCut) {
+func (s *Screen) cutTo(c SizeCut) {
 	if s.rep != nil {
 		s.repCutStart(c)
 	}
-	s.resize(c.cols)
-	s.resizeRows(c.rows)
+	s.resize(c.Cols)
+	s.ResizeRows(c.Rows)
 	if s.rep != nil {
 		s.repCutEnd()
 	}
@@ -909,7 +907,7 @@ func (s *screen) cutTo(c sizeCut) {
 
 // step applies the one character or sequence at b[i] and returns where the
 // next one starts.
-func (s *screen) step(b []byte, i int) int {
+func (s *Screen) step(b []byte, i int) int {
 	c := b[i]
 	switch {
 	case c == 0x1b:
@@ -949,7 +947,7 @@ func (s *screen) step(b []byte, i int) int {
 // resize changes the grid's width the way a terminal without reflow does: rows
 // on the grid are cut or padded, and rows already in history are left alone,
 // because they were composed at the width they have.
-func (s *screen) resize(cols int) {
+func (s *Screen) resize(cols int) {
 	if cols <= 0 || cols == s.cols {
 		return
 	}
@@ -982,7 +980,7 @@ func (s *screen) resize(cols int) {
 	s.wrapNext = false
 }
 
-// resizeRows changes the grid's height the way a terminal does. Shrinking drops
+// ResizeRows changes the grid's height the way a terminal does. Shrinking drops
 // blank rows under the cursor first, then scrolls rows off the top into
 // history, so the cursor stays on the grid. Growing adds blank rows at the
 // bottom and never pulls history back, because a row pulled back is a row the
@@ -990,12 +988,12 @@ func (s *screen) resize(cols int) {
 //
 // A height given here is a recorded one, so the grid stops guessing and stops
 // growing past it.
-func (s *screen) resizeRows(rows int) {
+func (s *Screen) ResizeRows(rows int) {
 	if rows <= 0 {
 		return
 	}
-	if rows > screenMaxRows {
-		rows = screenMaxRows
+	if rows > ScreenMaxRows {
+		rows = ScreenMaxRows
 	}
 	s.fixedRows = true
 	if rows == s.rows {
@@ -1020,10 +1018,10 @@ func (s *screen) resizeRows(rows int) {
 	s.wrapNext = false
 }
 
-// fitRows is one grid of resizeRows. `history` is whether rows leaving the top
+// fitRows is one grid of ResizeRows. `history` is whether rows leaving the top
 // are kept, which is false for the alternate screen. It returns the grid and
 // how many rows left the top.
-func (s *screen) fitRows(cells [][]cell, cur *int, rows int, history bool) ([][]cell, int) {
+func (s *Screen) fitRows(cells [][]cell, cur *int, rows int, history bool) ([][]cell, int) {
 	if cells == nil {
 		return nil, 0
 	}
@@ -1075,7 +1073,7 @@ func min(a, b int) int {
 }
 
 // escape consumes one escape sequence and returns the index after it.
-func (s *screen) escape(b []byte, i int) int {
+func (s *Screen) escape(b []byte, i int) int {
 	start := i
 	i++
 	if i >= len(b) {
@@ -1162,7 +1160,7 @@ func (s *screen) escape(b []byte, i int) int {
 }
 
 // csi handles `ESC [ ... final`.
-func (s *screen) csi(b []byte, start, i int) int {
+func (s *Screen) csi(b []byte, start, i int) int {
 	priv := false
 	from := i
 	for i < len(b) && b[i] >= 0x30 && b[i] <= 0x3f {
@@ -1212,17 +1210,17 @@ func (s *screen) csi(b []byte, start, i int) int {
 	case 'H', 'f':
 		s.moveTo(arg(0, 1)-1, arg(1, 1)-1)
 	case 'A':
-		s.moveTo(maxInt(0, s.row-arg(0, 1)), s.col)
+		s.moveTo(MaxInt(0, s.row-arg(0, 1)), s.col)
 	case 'B':
 		s.moveTo(s.row+arg(0, 1), s.col)
 	case 'C':
 		s.moveTo(s.row, s.col+arg(0, 1))
 	case 'D':
-		s.moveTo(s.row, maxInt(0, s.col-arg(0, 1)))
+		s.moveTo(s.row, MaxInt(0, s.col-arg(0, 1)))
 	case 'E':
 		s.moveTo(s.row+arg(0, 1), 0)
 	case 'F':
-		s.moveTo(maxInt(0, s.row-arg(0, 1)), 0)
+		s.moveTo(MaxInt(0, s.row-arg(0, 1)), 0)
 	case 'G', '`':
 		s.moveTo(s.row, arg(0, 1)-1)
 	case 'd':
@@ -1241,8 +1239,8 @@ func (s *screen) csi(b []byte, start, i int) int {
 		r := s.cells[s.row]
 		k := arg(0, 1)
 		if s.col < len(r) {
-			copy(r[s.col:], r[minInt(s.col+k, len(r)):])
-			for j := maxInt(s.col, len(r)-k); j < len(r); j++ {
+			copy(r[s.col:], r[MinInt(s.col+k, len(r)):])
+			for j := MaxInt(s.col, len(r)-k); j < len(r); j++ {
 				r[j] = blank
 			}
 			repairRow(r)
@@ -1253,8 +1251,8 @@ func (s *screen) csi(b []byte, start, i int) int {
 		r := s.cells[s.row]
 		k := arg(0, 1)
 		if s.col < len(r) {
-			copy(r[minInt(s.col+k, len(r)):], r[s.col:])
-			for j := s.col; j < minInt(s.col+k, len(r)); j++ {
+			copy(r[MinInt(s.col+k, len(r)):], r[s.col:])
+			for j := s.col; j < MinInt(s.col+k, len(r)); j++ {
 				r[j] = blank
 			}
 			repairRow(r)
@@ -1263,15 +1261,15 @@ func (s *screen) csi(b []byte, start, i int) int {
 		// Erase characters in place.
 		s.grow(s.row)
 		r := s.cells[s.row]
-		blankSpan(r, s.col, minInt(s.col+arg(0, 1), len(r)))
+		blankSpan(r, s.col, MinInt(s.col+arg(0, 1), len(r)))
 	case 'r':
 		s.setRegion(arg(0, 1), arg(1, 0))
 	case 'S':
-		for k := 0; k < minInt(arg(0, 1), s.rows); k++ {
+		for k := 0; k < MinInt(arg(0, 1), s.rows); k++ {
 			s.scroll()
 		}
 	case 'T':
-		for k := 0; k < minInt(arg(0, 1), s.rows); k++ {
+		for k := 0; k < MinInt(arg(0, 1), s.rows); k++ {
 			s.scrollDown()
 		}
 	case 'm':
@@ -1344,7 +1342,7 @@ func (a sgrState) render() string {
 //
 // No parameters means `0`: `ESC [ m` and `ESC [ 0 m` are the same thing and
 // both clear everything, colours included.
-func (s *screen) setSGR(seq string) {
+func (s *Screen) setSGR(seq string) {
 	params := strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b["), "m")
 	if params == "" {
 		params = "0"
@@ -1440,7 +1438,7 @@ func extendedColour(parts []string, i int) (int, string) {
 }
 
 // privateMode is `ESC [ ? ... h` or `l`. Only the screen buffer matters here.
-func (s *screen) privateMode(params string, final byte) {
+func (s *Screen) privateMode(params string, final byte) {
 	for _, p := range strings.Split(params, ";") {
 		switch p {
 		case "1049", "47", "1047":
@@ -1467,64 +1465,41 @@ func csiNums(params string) []int {
 		if err != nil || v < 0 {
 			v = 0
 		}
-		if v > screenMaxRows*100 {
-			v = screenMaxRows * 100
+		if v > ScreenMaxRows*100 {
+			v = ScreenMaxRows * 100
 		}
 		out = append(out, v)
 	}
 	return out
 }
 
-func maxInt(a, b int) int {
+func MaxInt(a, b int) int {
 	if a > b {
 		return a
 	}
 	return b
 }
 
-func minInt(a, b int) int {
+func MinInt(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
 }
 
-// renderHistory is the entry point: bytes in, transcript out.
-func renderHistory(b []byte, cols int) []byte {
+// RenderHistory is the entry point: bytes in, transcript out.
+func RenderHistory(b []byte, cols int) []byte {
 	if len(b) == 0 {
 		return nil
 	}
-	s := newScreen(cols)
-	s.apply(b)
-	return []byte(s.text())
+	s := NewScreen(cols)
+	s.Apply(b)
+	return []byte(s.Text())
 }
 
-// replayMode is how this daemon has been asked to replay history.
-//
-// Read on every attach rather than cached, so flipping it takes effect on the
-// next attach instead of on the next restart. An attach is a websocket upgrade
-// and one settings read is nothing beside it.
-//
-// A STORE THAT CANNOT ANSWER GETS THE DEFAULT. A halted store means the daemon
-// is already reporting a failure, and picking some other rendering on top of
-// that would be a second surprise.
-func replayMode(st *store.Store) string {
-	v, err := st.Setting(store.SettingReplayMode)
-	if err != nil {
-		return "screen"
-	}
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "raw":
-		return "raw"
-	case "flat", "flatten", "on", "1", "true", "yes":
-		return "flat"
-	}
-	return "screen"
-}
-
-// replayCols selects the last recorded width to match the newest output.
+// ReplayCols selects the last recorded width to match the newest output.
 // Using the attaching browser's width would misplace cursor updates.
-func replayCols(widths []int, wantCols int) int {
+func ReplayCols(widths []int, wantCols int) int {
 	if n := len(widths); n > 0 && widths[n-1] > 0 {
 		return widths[n-1]
 	}
@@ -1532,4 +1507,28 @@ func replayCols(widths []int, wantCols int) int {
 		return wantCols
 	}
 	return 80
+}
+
+// Cursor is where the cursor sits, zero based.
+func (s *Screen) Cursor() (row, col int) { return s.row, s.col }
+
+// HistoryRows is how many rows have scrolled off the top.
+func (s *Screen) HistoryRows() int { return len(s.history) }
+
+// Grid is the visible rows as text, without history and without the cells a wide character covers.
+func (s *Screen) Grid() string {
+	var b strings.Builder
+	for i, r := range s.cells {
+		line := make([]rune, 0, len(r))
+		for _, c := range r {
+			if c.ch != contCh {
+				line = append(line, c.ch)
+			}
+		}
+		b.WriteString(strings.TrimRight(string(line), " \x00"))
+		if i < len(s.cells)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }

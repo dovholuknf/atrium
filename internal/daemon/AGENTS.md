@@ -7,6 +7,9 @@ is `:7778`) and `:7777`. The older `atrium daemon` single process serves its boa
 A room keeps two listeners on purpose. When the store halts the agent listener closes and stays closed, so runners
 park on connection-refused and burn nothing, while the board stays up to say what broke.
 
+`screen/` is the terminal screen model: the grid, replay, flatten, idle frame and width tables. It imports nothing
+from the daemon and holds no daemon state, so a change there runs only its own tests.
+
 ## The permission chain: order is critical
 
 `onPermRequest` in `daemon.go`. Each step can answer and stop. **Reordering changes what the tool means**, so

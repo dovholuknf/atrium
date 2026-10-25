@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // hostile holds both markers and Shift+Tab, and ends in a lone ESC.
@@ -18,13 +20,13 @@ const hostile = "before \x1b[201~ \x1b[Z middle \x1b[200~ after\x1b"
 func onlyBracketsAtTheEnds(t *testing.T, what, got string) {
 	t.Helper()
 	body := strings.TrimSuffix(got, "\r")
-	if strings.Count(got, pasteOpen) != 1 || strings.Count(got, pasteClose) != 1 {
+	if strings.Count(got, screen.PasteOpen) != 1 || strings.Count(got, screen.PasteClose) != 1 {
 		t.Fatalf("%s: want one opener and one closer, got %q", what, got)
 	}
-	if !strings.HasPrefix(body, pasteOpen) || !strings.HasSuffix(body, pasteClose) {
+	if !strings.HasPrefix(body, screen.PasteOpen) || !strings.HasSuffix(body, screen.PasteClose) {
 		t.Fatalf("%s: markers are not at the ends: %q", what, got)
 	}
-	inside := body[strings.Index(body, pasteOpen)+len(pasteOpen) : len(body)-len(pasteClose)]
+	inside := body[strings.Index(body, screen.PasteOpen)+len(screen.PasteOpen) : len(body)-len(screen.PasteClose)]
 	if strings.Contains(inside, "\x1b[20") || strings.HasSuffix(inside, "\x1b") {
 		t.Fatalf("%s: a marker or ESC survives inside the paste: %q", what, got)
 	}
@@ -79,7 +81,7 @@ func TestAPeerMessageCannotEndItsOwnPaste(t *testing.T) {
 	}
 	got := f.written()
 	// The banner sits outside the markers, so cut it off before looking.
-	got = got[strings.Index(got, pasteOpen):]
+	got = got[strings.Index(got, screen.PasteOpen):]
 	onlyBracketsAtTheEnds(t, "tellByTyping", got)
 }
 

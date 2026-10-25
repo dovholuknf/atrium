@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A resumed claude reprints only its recent conversation. The saved bytes are
@@ -43,15 +45,15 @@ func TestTheJoinedReplayKeepsEachRunsWidth(t *testing.T) {
 	t.Parallel()
 	r := &runner{carried: &carryover{cols: 188, bytes: []byte("● old line that only the saved file holds\r\n")}}
 	live := []byte("● live line from the new process, long enough\r\n")
-	out, cuts, trimmed, _ := r.withCarried(live, []sizeCut{{0, 164, 0}}, 164, 1<<20, false)
+	out, cuts, trimmed, _ := r.withCarried(live, []screen.SizeCut{{At: 0, Cols: 164, Rows: 0}}, 164, 1<<20, false)
 	if trimmed {
 		t.Fatal("trimmed with plenty of room")
 	}
 	if !bytes.HasPrefix(out, []byte("● old line")) || !bytes.HasSuffix(out, live) {
 		t.Fatalf("the join is not saved-then-live: %q", out)
 	}
-	if len(cuts) != 2 || cuts[0] != (sizeCut{0, 188, 0}) || cuts[1].cols != 164 ||
-		!bytes.HasPrefix(out[cuts[1].at:], live) {
+	if len(cuts) != 2 || cuts[0] != (screen.SizeCut{At: 0, Cols: 188, Rows: 0}) || cuts[1].Cols != 164 ||
+		!bytes.HasPrefix(out[cuts[1].At:], live) {
 		t.Fatalf("the width marks are wrong: %+v", cuts)
 	}
 }

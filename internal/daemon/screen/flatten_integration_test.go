@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package screen
 
 import (
 	"strings"
@@ -13,7 +13,7 @@ import (
 // everything above goes.
 func TestAnAbsoluteCursorMoveCannotOverwriteHistory(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("an hour of history\r\n\x1b[Hthe latest redraw\r\n")))
+	got := string(Flatten([]byte("an hour of history\r\n\x1b[Hthe latest redraw\r\n")))
 	if !strings.Contains(got, "an hour of history") {
 		t.Fatalf("the history was left able to be overwritten: %q", got)
 	}
@@ -30,7 +30,7 @@ func TestAnAbsoluteCursorMoveCannotOverwriteHistory(t *testing.T) {
 func TestErasesAreDropped(t *testing.T) {
 	t.Parallel()
 	for _, seq := range []string{"\x1b[K", "\x1b[2K", "\x1b[J", "\x1b[2J", "\x1b[3J"} {
-		got := string(flatten([]byte("kept" + seq + "also kept")))
+		got := string(Flatten([]byte("kept" + seq + "also kept")))
 		if strings.Contains(got, "\x1b") {
 			t.Fatalf("%q survived: %q", seq, got)
 		}
@@ -51,11 +51,11 @@ func TestErasesAreDropped(t *testing.T) {
 // tells typing from pasting by timing sees one paste as five.
 func TestBracketedPasteModeSurvivesFlattening(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("history\r\n\x1b[?2004hlive\r\n")))
+	got := string(Flatten([]byte("history\r\n\x1b[?2004hlive\r\n")))
 	if !strings.Contains(got, "\x1b[?2004h") {
 		t.Fatalf("stripped the enable, so a pane after this replay pastes raw: %q", got)
 	}
-	if got := string(flatten([]byte("\x1b[?2004l"))); !strings.Contains(got, "\x1b[?2004l") {
+	if got := string(Flatten([]byte("\x1b[?2004l"))); !strings.Contains(got, "\x1b[?2004l") {
 		t.Fatalf("kept the enable but not the disable: %q", got)
 	}
 }
@@ -71,7 +71,7 @@ func TestOnlyBracketedPasteIsKeptAmongThePrivateModes(t *testing.T) {
 		"\x1b[?1h", "\x1b[?7l", // application keys, autowrap
 		"\x1b[?2004", // truncated, not a whole sequence
 	} {
-		if got := string(flatten([]byte("kept" + seq + "also kept"))); strings.Contains(got, "\x1b") {
+		if got := string(Flatten([]byte("kept" + seq + "also kept"))); strings.Contains(got, "\x1b") {
 			t.Fatalf("%q survived: %q", seq, got)
 		}
 	}
@@ -82,7 +82,7 @@ func TestOnlyBracketedPasteIsKeptAmongThePrivateModes(t *testing.T) {
 // off the screen at once.
 func TestTheAlternateScreenIsNeverEntered(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("history\r\n\x1b[?1049hfullscreen thing\x1b[?1049l")))
+	got := string(Flatten([]byte("history\r\n\x1b[?1049hfullscreen thing\x1b[?1049l")))
 	if strings.Contains(got, "1049") {
 		t.Fatalf("left a screen buffer switch in the replay: %q", got)
 	}
@@ -96,7 +96,7 @@ func TestTheAlternateScreenIsNeverEntered(t *testing.T) {
 func TestTwoByteEscapesAreDropped(t *testing.T) {
 	t.Parallel()
 	for _, seq := range []string{"\x1bc", "\x1b7", "\x1b8", "\x1bM"} {
-		got := string(flatten([]byte("kept" + seq + "still here")))
+		got := string(Flatten([]byte("kept" + seq + "still here")))
 		if strings.Contains(got, "\x1b") {
 			t.Fatalf("%q survived: %q", seq, got)
 		}
@@ -111,7 +111,7 @@ func TestTwoByteEscapesAreDropped(t *testing.T) {
 func TestColourSurvives(t *testing.T) {
 	t.Parallel()
 	in := "\x1b[38;5;244mgrey\x1b[0m and \x1b[1mbold\x1b[22m\r\n"
-	got := string(flatten([]byte(in)))
+	got := string(Flatten([]byte(in)))
 	if got != in {
 		t.Fatalf("colour was altered: %q", got)
 	}
@@ -122,7 +122,7 @@ func TestColourSurvives(t *testing.T) {
 // were ever on screen and all of them true.
 func TestABareCarriageReturnBecomesALineEnding(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("10%\r50%\r100%\r\ndone\r\n")))
+	got := string(Flatten([]byte("10%\r50%\r100%\r\ndone\r\n")))
 	want := "10%\r\n50%\r\n100%\r\ndone\r\n"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
@@ -133,7 +133,7 @@ func TestABareCarriageReturnBecomesALineEnding(t *testing.T) {
 // with blank lines.
 func TestARunOfCarriageReturnsIsOneBreak(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("a\r\r\nb\r\n\r\nc")))
+	got := string(Flatten([]byte("a\r\r\nb\r\n\r\nc")))
 	want := "a\r\nb\r\n\r\nc"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
@@ -153,7 +153,7 @@ func TestASequenceCutInHalfDoesNotPanicOrEatTheBuffer(t *testing.T) {
 		"text then an unterminated dcs\x1bPsomething",
 	}
 	for _, in := range cases {
-		got := string(flatten([]byte(in)))
+		got := string(Flatten([]byte(in)))
 		if !strings.HasPrefix(got, "text then") {
 			t.Fatalf("a cut sequence ate the text before it: %q -> %q", in, got)
 		}
@@ -164,11 +164,11 @@ func TestASequenceCutInHalfDoesNotPanicOrEatTheBuffer(t *testing.T) {
 // everything after it, so the whole string is dropped.
 func TestOperatingSystemCommandsAreDropped(t *testing.T) {
 	t.Parallel()
-	got := string(flatten([]byte("before\x1b]0;a window title\x07after")))
+	got := string(Flatten([]byte("before\x1b]0;a window title\x07after")))
 	if got != "beforeafter" {
 		t.Fatalf("got %q, want %q", got, "beforeafter")
 	}
-	got = string(flatten([]byte("before\x1b]8;;http://example.com\x1b\\after")))
+	got = string(Flatten([]byte("before\x1b]8;;http://example.com\x1b\\after")))
 	if got != "beforeafter" {
 		t.Fatalf("the ESC-backslash terminator was not honoured: %q", got)
 	}
@@ -179,14 +179,14 @@ func TestOperatingSystemCommandsAreDropped(t *testing.T) {
 func TestOrdinaryTextAndRunesAreUntouched(t *testing.T) {
 	t.Parallel()
 	in := "héllo wörld ünicode ✓ 日本語\r\n"
-	if got := string(flatten([]byte(in))); got != in {
+	if got := string(Flatten([]byte(in))); got != in {
 		t.Fatalf("altered ordinary text: %q", got)
 	}
 }
 
 func TestFlattenOfNothingIsNothing(t *testing.T) {
 	t.Parallel()
-	if got := flatten(nil); len(got) != 0 {
+	if got := Flatten(nil); len(got) != 0 {
 		t.Fatalf("invented bytes: %q", got)
 	}
 }
@@ -202,7 +202,7 @@ func TestAnHourOfHistoryFollowedByARedrawKeepsTheHour(t *testing.T) {
 	// What claude-code emits on every turn: home, erase down, redraw.
 	b.WriteString("\x1b[H\x1b[2J\x1b[38;5;244mthe current screen\x1b[0m\r\n")
 
-	got := string(flatten([]byte(b.String())))
+	got := string(Flatten([]byte(b.String())))
 	if n := strings.Count(got, "line of real work that must survive"); n != 500 {
 		t.Fatalf("kept %d of 500 lines of history", n)
 	}

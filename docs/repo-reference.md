@@ -113,6 +113,7 @@ internal/api/               the room's HTTP surface: JSON API, SSE, files, setti
   web/                        the board: index.html, css/, js/, m/ (the phone), read.html, sw.js
 internal/link/              the hub: the proxy to rooms, the room link, the control MCP, git, notifications
 internal/hubstore/          the hub's own store
+internal/daemon/screen/     the terminal screen model: grid, replay, flatten, width tables. no daemon state
 internal/ptyhost/           the pty host that keeps terminals alive across a room restart
 internal/gitsync/           git between hub and rooms
 internal/base/forge/        forges
