@@ -191,6 +191,7 @@ func roomHoldsOn(q querier) ([]RoomHold, error) {
 }
 
 func (s *Store) writeRoomHoldsOn(q querier, holds []RoomHold) error {
+	defer s.memo.drop()
 	v := ""
 	if len(holds) > 0 {
 		raw, err := json.Marshal(holds)
