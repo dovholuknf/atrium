@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/scratch"
+	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -1350,7 +1351,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// launch: the point of preparing is that the runner needs what it sets up,
 	// so starting without it produces an agent that cannot find its tools and
 	// no explanation of why.
-	base := withUserPath(os.Environ())
+	base := userenv.Refresh(os.Environ())
 	if h.Prepare != "" {
 		prepared, err := captureEnv(h.Prepare, cwd)
 		if err != nil {
