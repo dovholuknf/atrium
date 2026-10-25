@@ -1174,6 +1174,24 @@ func (k *keepalive) view(taskID string) any {
 	if err != nil || t == nil {
 		return out
 	}
+	return k.viewOf(t, card, out)
+}
+
+// viewTask is view for a caller that already holds the card's row.
+func (k *keepalive) viewTask(t *store.Task) any {
+	card, err := k.st.KeepaliveCardOf(t.ID)
+	if err != nil || card == nil {
+		return nil
+	}
+	out := &keepaliveCardView{State: card.State, StateAt: card.StateAt, Suspended: k.st.KeepaliveSuspended()}
+	k.mu.Lock()
+	out.Why = k.why[t.ID]
+	k.mu.Unlock()
+	return k.viewOf(t, card, out)
+}
+
+func (k *keepalive) viewOf(t *store.Task, card *store.KeepaliveCard, out *keepaliveCardView) any {
+	taskID := t.ID
 	// As tick does, so the view after a new context reads the new session.
 	if t = k.followSession(t); t.ResumeID == "" {
 		return out

@@ -172,6 +172,9 @@ func (s *Store) RunnerPriorityRaised() bool {
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {
+	if v, ok := s.memo.setting(key); ok {
+		return v, nil
+	}
 	var v string
 	err := s.guard(func() error {
 		err := s.db.QueryRow(`SELECT value FROM setting WHERE key = ?`, key).Scan(&v)
@@ -181,11 +184,15 @@ func (s *Store) Setting(key string) (string, error) {
 		}
 		return err
 	})
+	if err == nil {
+		s.memo.keepSetting(key, v)
+	}
 	return v, err
 }
 
 // SetSetting writes one value.
 func (s *Store) SetSetting(key, value string) error {
+	defer s.memo.drop()
 	return s.guard(func() error {
 		_, err := s.db.Exec(
 			`INSERT INTO setting (key, value, updated_at) VALUES (?, ?, ?)
