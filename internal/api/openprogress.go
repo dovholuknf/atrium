@@ -45,6 +45,13 @@ func (o *opSteps) begin(name, line string) {
 	}
 }
 
+// note says a line without starting a step.
+func (o *opSteps) note(line string) {
+	if o != nil && o.say != nil && line != "" {
+		o.say(line)
+	}
+}
+
 // end logs the running step's seconds.
 func (o *opSteps) end() {
 	if o == nil || o.name == "" {

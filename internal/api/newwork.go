@@ -78,6 +78,9 @@ type newWorkAnswer struct {
 	Hook       string `json:"hook,omitempty"`
 	HookError  string `json:"hook_error,omitempty"`
 	FetchError string `json:"fetch_error,omitempty"`
+
+	// HookWarning says the hooks folder is not there, so no setup hook could run.
+	HookWarning string `json:"hook_warning,omitempty"`
 }
 
 func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +137,9 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !wt.Existed {
+		if ans.HookWarning = s.missingHooksDir(); ans.HookWarning != "" {
+			steps.note(ans.HookWarning)
+		}
 		ans.Hook, ans.HookError = s.runWorktreeHook(ctx, host, org, repo, wt.Path)
 	}
 
@@ -262,14 +268,9 @@ func newWorkBase(ctx context.Context, repo, name, from string) (string, error) {
 // worktreeHookFile is the setup hook of a repo, or "": `<hooks>/<host>/<org>/<repo>/worktree.ps1` or `worktree.sh`,
 // where host is the full host name or its first label (github.com or github), as gwt's hooks are laid out.
 func (s *Server) worktreeHookFile(host, org, repo string) string {
-	dir, _ := s.st.Setting(SettingWorktreeHooks)
-	dir = gitsync.ExpandHome(strings.TrimSpace(dir))
+	dir := s.worktreeHooksDir()
 	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		dir = filepath.Join(home, ".atrium", "hooks")
+		return ""
 	}
 	hosts := []string{host}
 	if i := strings.Index(host, "."); i > 0 {
@@ -284,6 +285,33 @@ func (s *Server) worktreeHookFile(host, org, repo string) string {
 		}
 	}
 	return ""
+}
+
+// worktreeHooksDir is the folder of setup hooks, the setting or ~/.atrium/hooks, or "" with no home.
+func (s *Server) worktreeHooksDir() string {
+	dir, _ := s.st.Setting(SettingWorktreeHooks)
+	dir = gitsync.ExpandHome(strings.TrimSpace(dir))
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, ".atrium", "hooks")
+	}
+	return dir
+}
+
+// missingHooksDir is a warning when the hooks folder is not a folder, or "".
+func (s *Server) missingHooksDir() string {
+	dir := s.worktreeHooksDir()
+	if dir == "" {
+		return ""
+	}
+	if st, err := os.Stat(dir); err == nil && st.IsDir() {
+		return ""
+	}
+	return "the hooks folder " + filepath.ToSlash(dir) + " does not exist, so no setup hook ran (setting " +
+		SettingWorktreeHooks + ")"
 }
 
 // runWorktreeHook runs the repo's setup hook in the new worktree, and answers which file ran and why it failed. A hook
