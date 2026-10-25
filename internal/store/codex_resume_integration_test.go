@@ -20,7 +20,7 @@ func TestCodexHasAWayToResume(t *testing.T) {
 	if len(h.ResumeArgs) == 0 {
 		t.Fatal("codex still has no way to resume, so its cards cannot be picked back up")
 	}
-	if strings.Join(h.ResumeArgs, " ") != "resume {resume}" {
+	if strings.Join(h.ResumeArgs, " ") != "resume --no-alt-screen {resume}" {
 		t.Fatalf("codex resumes with %v, and codex takes `codex resume <SESSION_ID>`", h.ResumeArgs)
 	}
 }
