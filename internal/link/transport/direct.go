@@ -1,4 +1,4 @@
-package link
+package transport
 
 import (
 	"bufio"
@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The direct transport: mutual TLS over TCP, and one port for everything.
@@ -119,30 +121,26 @@ func (d Direct) ServerTLS() (*tls.Config, error) {
 	}, nil
 }
 
-// identify reads the room name out of the client certificate.
-//
-// Wired into the package variable in `hub.go`, so the hub's handshake code
-// never imports TLS and a transport with no certificates (a test over a pipe)
-// simply leaves the claim alone.
-func init() {
-	identify = func(c net.Conn) string {
-		if cert := peerCert(c); cert != nil {
-			return cert.Subject.CommonName
-		}
+// Identify reads the room name out of the client certificate. A transport with no certificates (a test over a pipe)
+// answers empty, and the hello's claim is left alone.
+func Identify(c net.Conn) string {
+	if cert := peerCert(c); cert != nil {
+		return cert.Subject.CommonName
+	}
+	return ""
+}
+
+// PeerKey is the PUBLIC KEY, not the serial or the fingerprint of the whole
+// certificate. A room that is reissued a certificate keeps its key, so
+// this stays stable across a renewal while still being something only the
+// holder of that key can present.
+func PeerKey(c net.Conn) string {
+	cert := peerCert(c)
+	if cert == nil {
 		return ""
 	}
-	// The PUBLIC KEY, not the serial or the fingerprint of the whole
-	// certificate. A room that is reissued a certificate keeps its key, so
-	// this stays stable across a renewal while still being something only the
-	// holder of that key can present.
-	peerKey = func(c net.Conn) string {
-		cert := peerCert(c)
-		if cert == nil {
-			return ""
-		}
-		sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-		return base64.RawURLEncoding.EncodeToString(sum[:])
-	}
+	sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 func peerCert(c net.Conn) *x509.Certificate {
@@ -172,16 +170,16 @@ func DirectAuthenticated(c net.Conn) bool {
 // Called by the hub when the first frame says `enrol`. Returns the room's name
 // on success, for the log.
 func (d Direct) ServeEnrolment(conn net.Conn, br *bufio.Reader) (string, error) {
-	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(wire.HandshakeWait)); err != nil {
 		return "", err
 	}
 	var req enrolReq
-	if err := readJSON(br, &req); err != nil {
+	if err := wire.ReadJSON(br, &req); err != nil {
 		return "", err
 	}
 	if d.Spend == nil {
 		err := errors.New("this hub is not set up to enrol rooms")
-		_ = writeJSON(conn, enrolResp{Error: err.Error()})
+		_ = wire.WriteJSON(conn, enrolResp{Error: err.Error()})
 		return "", err
 	}
 	// THE SECRET SAYS WHICH ROOM THIS IS. Not the frame, not the request, and
@@ -190,24 +188,24 @@ func (d Direct) ServeEnrolment(conn net.Conn, br *bufio.Reader) (string, error) 
 	// answer, in one step, which is what leaves nothing to claim.
 	name, err := d.Spend(req.Secret)
 	if err != nil {
-		_ = writeJSON(conn, enrolResp{Error: err.Error()})
+		_ = wire.WriteJSON(conn, enrolResp{Error: err.Error()})
 		return "", err
 	}
-	if self := strings.TrimSpace(req.Self); self != "" && !equalFold(self, name) {
+	if self := strings.TrimSpace(req.Self); self != "" && !wire.EqualFold(self, name) {
 		// Observed beside the override, and the log is where it first shows up.
 		log.Printf("[hub] the machine joining as %q calls itself %q", name, self)
 	}
-	certDER, err := d.Keys.sign(req.CSR, name)
+	certDER, err := d.Keys.Sign(req.CSR, name)
 	if err != nil {
-		_ = writeJSON(conn, enrolResp{Error: err.Error()})
+		_ = wire.WriteJSON(conn, enrolResp{Error: err.Error()})
 		return "", err
 	}
 	ca, _, err := d.Keys.CA()
 	if err != nil {
-		_ = writeJSON(conn, enrolResp{Error: err.Error()})
+		_ = wire.WriteJSON(conn, enrolResp{Error: err.Error()})
 		return "", err
 	}
-	if err := writeJSON(conn, enrolResp{OK: true, Cert: certDER, CA: ca.Raw}); err != nil {
+	if err := wire.WriteJSON(conn, enrolResp{OK: true, Cert: certDER, CA: ca.Raw}); err != nil {
 		return "", err
 	}
 	return name, nil
@@ -383,24 +381,24 @@ func enrolOn(conn net.Conn, keys Keys, hub, self, secret string,
 	defer conn.Close()
 
 	br := bufio.NewReader(conn)
-	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(wire.HandshakeWait)); err != nil {
 		return "", err
 	}
-	if err := writeJSON(conn, hello{V: Version, Kind: "enrol", Room: self}); err != nil {
+	if err := wire.WriteJSON(conn, wire.Hello{V: wire.Version, Kind: "enrol", Room: self}); err != nil {
 		return "", err
 	}
-	var w welcome
-	if err := readJSON(br, &w); err != nil {
+	var w wire.Welcome
+	if err := wire.ReadJSON(br, &w); err != nil {
 		return "", err
 	}
 	if !w.OK {
 		return "", errors.New(w.Error)
 	}
-	if err := writeJSON(conn, enrolReq{Secret: secret, Self: self, CSR: csr}); err != nil {
+	if err := wire.WriteJSON(conn, enrolReq{Secret: secret, Self: self, CSR: csr}); err != nil {
 		return "", err
 	}
 	var resp enrolResp
-	if err := readJSON(br, &resp); err != nil {
+	if err := wire.ReadJSON(br, &resp); err != nil {
 		return "", err
 	}
 	if !resp.OK {

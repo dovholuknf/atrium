@@ -1,6 +1,6 @@
 //go:build integration
 
-package link
+package transport
 
 import (
 	"crypto/ecdsa"

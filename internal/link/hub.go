@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"log"
 	"net"
@@ -323,7 +324,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 		// A CONNECTION WITHOUT TLS CANNOT ENROL. The secret is spent inside the
 		// pinned handshake, which is what proves the hub to the room, so the old
 		// path is never a way to hand a secret over.
-		if _, legacy := legacyTransport(conn); legacy {
+		if _, legacy := transport.LegacyTransport(conn); legacy {
 			_ = writeJSON(conn, welcome{OK: false,
 				Error: "joining has to run inside TLS. update this room to a build that has it"})
 			return
@@ -358,7 +359,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 	// joined an overlay before certificates reached it dials without one, and
 	// turning it away on upgrade would be an outage nobody chose. The switch is a
 	// hub setting, never flipped by anything but a person.
-	if _, legacy := legacyTransport(conn); legacy && h.LegacyRefused != nil && h.LegacyRefused() {
+	if _, legacy := transport.LegacyTransport(conn); legacy && h.LegacyRefused != nil && h.LegacyRefused() {
 		_ = writeJSON(conn, welcome{OK: false, Error: RejoinSentence(hi.Room)})
 		conn.Close()
 		return
@@ -389,7 +390,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn, via string) {
 	// overlay admits could replace a room with a certificate, or relay and
 	// announce as it. Refused whether or not that room is attached right now.
 	// A room that never enrolled keeps attaching as it always did.
-	if over, legacy := legacyTransport(conn); legacy {
+	if over, legacy := transport.LegacyTransport(conn); legacy {
 		if why := h.provenName(name); why != "" {
 			h.refuseUnproven(name, over, why)
 			_ = writeJSON(conn, welcome{OK: false, Error: "the name " + name + " belongs to a room " +
@@ -958,7 +959,7 @@ type Attached struct {
 
 // unprovenOver names the overlay a connection took the old path on, or "".
 func unprovenOver(c net.Conn) string {
-	t, _ := legacyTransport(c)
+	t, _ := transport.LegacyTransport(c)
 	return t
 }
 
@@ -1065,9 +1066,8 @@ func (h *Hub) Only() string {
 }
 
 // peerKey fingerprints the credential a connection presented, so a reconnect
-// can be distinguished from an impersonation. Set by the transport, for the
-// same reason `identify` is.
-var peerKey = func(net.Conn) string { return "" }
+// can be distinguished from an impersonation.
+var peerKey = transport.PeerKey
 
 // keyOf is the key a connection presented, read through the hub's own `peerKey` when a test set one.
 func (h *Hub) keyOf(c net.Conn) string {
@@ -1077,13 +1077,9 @@ func (h *Hub) keyOf(c net.Conn) string {
 	return peerKey(c)
 }
 
-// identify asks the transport who authenticated, as a name.
-//
-// Set by whichever transport file is compiled in. Direct mTLS reads the client
-// certificate's common name. A transport with no identity leaves it nil and the
-// hello's claim is used, which is right for a test over a pipe and wrong
-// everywhere else.
-var identify = func(net.Conn) string { return "" }
+// identify asks the transport who authenticated, as a name. A transport with no identity answers empty and the
+// hello's claim is used, which is right for a test over a pipe and wrong everywhere else.
+var identify = transport.Identify
 
 func newSession() string {
 	var b [16]byte

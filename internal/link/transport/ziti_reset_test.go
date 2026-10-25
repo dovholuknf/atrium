@@ -1,14 +1,14 @@
-package link
+package transport
 
 import (
 	"context"
 	"errors"
-	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/sdk-golang/ziti/edge"
@@ -72,15 +72,14 @@ func fakeSDK(t *testing.T) *zitiReg {
 
 func TestZitiRedialsAndResetsBuildOneContextAndCloseNone(t *testing.T) {
 	z, reg := newFakeZiti(false)
-	l := NewLadder([]Rung{{Path: Path{Transport: "ziti", Service: "hub"}, Dial: z}})
 	var hour atomic.Int64
 	z.gate.now = func() time.Time { return time.Unix(hour.Load(), 0) }
 	for i := 0; i < 200; i++ {
 		hour.Add(3600)
-		_, _ = l.Dial(context.Background())
-		l.Reset()
+		_, _ = z.Dial(context.Background())
+		z.Reset()
 	}
-	l.Close()
+	z.Close()
 	if reg.built.Load() != 1 || reg.closed.Load() != 0 {
 		t.Fatalf("built %d, closed %d, want 1 and 0", reg.built.Load(), reg.closed.Load())
 	}
@@ -149,37 +148,11 @@ func TestZitiDialReturnsWhenItsContextIsDoneWhileTheSDKIsStuck(t *testing.T) {
 
 func TestProvenForwardsResetAndClose(t *testing.T) {
 	z, reg := newFakeZiti(false)
-	var d Dialer = Proven{Dialer: z}
+	var d wire.Dialer = Proven{Dialer: z}
 	_, _ = z.Dial(context.Background())
-	d.(resetter).Reset()
-	d.(closer).Close()
+	d.(interface{ Reset() }).Reset()
+	d.(interface{ Close() }).Close()
 	if reg.closed.Load() != 0 {
 		t.Fatal("Reset or Close through Proven closed the process's context")
-	}
-}
-
-type countDialer struct{ closed atomic.Int32 }
-
-func (d *countDialer) Dial(context.Context) (net.Conn, error) { return nil, errors.New("no") }
-func (d *countDialer) Describe() string                       { return "count" }
-func (d *countDialer) Close()                                 { d.closed.Add(1) }
-
-func TestLadderSetClosesDroppedDialersAndKeepsTheOneItStandsOn(t *testing.T) {
-	a, b, c := &countDialer{}, &countDialer{}, &countDialer{}
-	pa, pb, pc := Path{Transport: "ziti", Service: "a"}, Path{Transport: "ziti", Service: "b"}, Path{Transport: "ziti", Service: "c"}
-	l := NewLadder([]Rung{{pa, a}, {pb, b}, {pc, c}})
-	for i := 0; i < 100; i++ {
-		l.Set([]Rung{{pa, a}, {pb, b}, {pc, c}})
-	}
-	if a.closed.Load()+b.closed.Load()+c.closed.Load() != 0 {
-		t.Fatal("a Set with the same dialers closed one")
-	}
-	l.Set([]Rung{{pa, a}})
-	if a.closed.Load() != 0 || b.closed.Load() != 1 || c.closed.Load() != 1 {
-		t.Fatalf("closed a=%d b=%d c=%d, want 0 1 1", a.closed.Load(), b.closed.Load(), c.closed.Load())
-	}
-	l.Set([]Rung{{pb, b}})
-	if a.closed.Load() != 0 {
-		t.Fatal("closed the rung the ladder stands on")
 	}
 }

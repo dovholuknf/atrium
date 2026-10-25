@@ -1,4 +1,4 @@
-package link
+package transport
 
 import (
 	"context"
@@ -113,6 +113,20 @@ func (z *Ziti) context() (zitiConn, error) {
 	}
 	z.ctx = c
 	return c, nil
+}
+
+// ListenService binds another service with the same identity, and so the same ziti context as the link and the board.
+func (z *Ziti) ListenService(name string) (net.Listener, error) {
+	ctx, err := z.context()
+	if err != nil {
+		return nil, err
+	}
+	ln, err := ctx.Listen(name)
+	if err != nil {
+		return nil, errors.New("could not bind the ziti service " + name + ". does this identity have a bind policy for it: " +
+			err.Error())
+	}
+	return ln, nil
 }
 
 // Reset logs the live context in again, beside any dial in flight. The link calls it after repeated data dial
