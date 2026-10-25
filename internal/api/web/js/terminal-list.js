@@ -790,7 +790,12 @@ function termMenuItems(id, t) {
       help: "Stops the agent and removes the folder and branch it was working in, here and on the hub, when atrium " +
         "created them. A folder it did not create stays, and it says so first. It asks about changes that exist " +
         "nowhere else.",
-      act: () => cleanUpCard(id, t)
+      act: () => cleanUpCard(id, t),
+      sub: [{
+        label: "and don't clean up",
+        help: "Stops the session and ends the card. The folder, the branch and any hub branch are left untouched.",
+        act: () => endCardKeeping(id, t)
+      }]
     }
   ].filter(Boolean);
 }
