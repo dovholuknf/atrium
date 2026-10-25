@@ -348,8 +348,11 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	case ReportBlocked, ReportQuestion:
 		status, reason = store.StatusNeedsInput, in.Status
 	case ReportProgress:
-		// Still working. The card stays where it is.
+		// Still working. The card stays where it is, and a done card is working again.
 		status = task.Status
+		if status == store.StatusDone {
+			status = store.StatusRunning
+		}
 	}
 
 	recap := strings.TrimSpace(in.Recap)

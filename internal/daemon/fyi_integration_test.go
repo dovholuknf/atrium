@@ -437,3 +437,20 @@ func TestParkedFyisAreRedeliveredOnce(t *testing.T) {
 		t.Fatalf("queued = %+v, want the one parked fyi for the turn end", msgs)
 	}
 }
+
+func TestAProgressReportOnADoneCardDoesNotAnswerDone(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	_, worker := holdingPair(t, d, OrchestratorTag)
+	if err := d.st.SetStatus(worker.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
+		Recap: "on to the next task"})
+	if rec.Code != http.StatusOK || out["status"] == store.StatusDone {
+		t.Fatalf("a progress report answered %d %v, want the card working: %s", rec.Code, out["status"], rec.Body)
+	}
+	if got, err := d.st.Get(worker.ID); err != nil || got.Status == store.StatusDone {
+		t.Fatalf("a progress report left the card done: %v %+v", err, got)
+	}
+}
