@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/store"
 	"strconv"
 )

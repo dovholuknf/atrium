@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -150,7 +150,7 @@ func (s *Server) listHarnesses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// AND THE OPERATOR'S OWN PICKER, which is not a list atrium holds. See
-	// `internal/claudeconf/models.go`: it is read from their settings file,
+	// `internal/base/claudeconf/models.go`: it is read from their settings file,
 	// the same one Claude Code reads it from, so the names are whatever they
 	// decided and they change when the operator changes them.
 	writeJSON(w, http.StatusOK, map[string]any{

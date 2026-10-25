@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 )
 
 func TestTheAddressGoesWhereTheOptionsSay(t *testing.T) {
@@ -161,7 +161,7 @@ func TestTheTakeoverWarningIsPrinted(t *testing.T) {
 //
 // This is what stops `atrium hook install`, typed at a freshly built binary,
 // writing that binary's path into settings.json while the daemon runs from
-// somewhere else. `internal/claudeconf/whichexe.go` reads this field.
+// somewhere else. `internal/base/claudeconf/whichexe.go` reads this field.
 func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
@@ -198,7 +198,7 @@ func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
 	}
 }
 
-// The location path is duplicated in `internal/claudeconf` to avoid an import
+// The location path is duplicated in `internal/base/claudeconf` to avoid an import
 // cycle. If the two disagree, hooks are written naming a binary that is not the
 // daemon's, and they fail silently by design.
 func TestTheLocationPathAgreesWithTheHookResolver(t *testing.T) {

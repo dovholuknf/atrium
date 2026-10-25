@@ -63,7 +63,7 @@ type Location struct {
 	// directory while the daemon ran from an installed copy, and the board
 	// reported them all as pointing elsewhere. Correctly: they were.
 	//
-	// See `internal/claudeconf/whichexe.go`, which reads it.
+	// See `internal/base/claudeconf/whichexe.go`, which reads it.
 	Exe string `json:"exe,omitempty"`
 }
 
