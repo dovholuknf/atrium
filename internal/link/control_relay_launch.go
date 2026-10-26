@@ -59,7 +59,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 	in := launchInput{
 		Cwd: spec.Cwd, Title: spec.Title, Why: spec.Why, Prompt: spec.Prompt, Brief: spec.Brief,
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
-		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: spec.Superlean, Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
+		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: relaySuperlean(spec.Superlean), Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
 	}
 	out, err := c.launchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)
@@ -108,4 +108,12 @@ func (c *controlMCP) auditLaunchAcross(target, from, by, harness string, out lau
 		what += " as " + out.Card
 	}
 	c.audit(target, "ctl-launch", "by "+by+"@"+from+" (claimed): "+what+", "+auditOutcome(err))
+}
+
+// relaySuperlean is a room's superlean flag as the hub's launchInput takes it: only true is a choice, false is absent.
+func relaySuperlean(on bool) *bool {
+	if !on {
+		return nil
+	}
+	return &on
 }
