@@ -77,6 +77,7 @@ type hooks struct {
 	healthHalted  func(d *Daemon) (bool, error)
 	backoffSteps  []time.Duration
 	stuckAfter    time.Duration
+	silentNudges  int
 	OrphanGrace   time.Duration
 	RelayKeep     time.Duration
 	listMax       int
@@ -136,6 +137,7 @@ func defaultHooks() hooks {
 		healthHalted:          healthHalted,
 		backoffSteps:          append([]time.Duration(nil), backoffSteps...),
 		stuckAfter:            heldStuckAfter,
+		silentNudges:          silentNudges,
 		OrphanGrace:           OrphanGrace,
 		RelayKeep:             RelayKeep,
 		listMax:               listMax,
