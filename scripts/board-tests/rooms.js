@@ -628,7 +628,7 @@ async function loginNeededSection(browser, base) {
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     if (lifts.length) fail("loginNeeded: lifted before it asked.");
     await p.click('#ask-actions button:has-text("lift it")');
-    await p.waitForTimeout(300);
+    await untilTrue(() => lifts.length > 0, 5000, "loginNeeded: the lift was never sent");
     if (lifts.length !== 1 || lifts[0].method !== "DELETE" || lifts[0].room !== "alpha") {
       fail("loginNeeded: the lift sent " + JSON.stringify(lifts));
     }
