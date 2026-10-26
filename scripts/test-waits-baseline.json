@@ -2,7 +2,7 @@
   "internal/api/cardports_integration_test.go": 1,
   "internal/api/cardsarchive_integration_test.go": 1,
   "internal/api/open_integration_test.go": 1,
-  "internal/api/taskevent_integration_test.go": 5,
+  "internal/api/taskevent_integration_test.go": 2,
   "internal/base/detach/outsidejob_windows_integration_test.go": 1,
   "internal/cli/advertiseset_test.go": 1,
   "internal/cli/control_launch_timeout_integration_test.go": 2,
