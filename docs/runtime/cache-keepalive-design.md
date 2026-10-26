@@ -156,9 +156,11 @@ The prefix is exact, so the fork must reproduce everything that is part of the c
 - **Model.** The model of the card's last main reply, from its transcript (`message.model`), plus the 1M context
   variant when the card's telemetry says the session has a 1M window. A different model is a different cache and
   the fork would write the whole context.
-- **Effort.** On Opus 5.5 and Fable 5.1 a change of effort keeps the cache. On other models it does not, and atrium
-  does not know a card's current effort. So **only Opus 5.5 and Fable 5.1 cards are refreshed**. Others are
-  skipped as `skipped: model`. This covers nearly all of clint's use since the report.
+- **Effort.** On Opus 5.5, Fable 5.1 and Sonnet 5.5 a change of effort keeps the cache. On other models it does
+  not, and atrium does not know a card's current effort. So **only Opus 5.5, Fable 5.1 and Sonnet 5.5 cards are
+  refreshed**. Others are skipped as `skipped: model`. Sonnet 5.5 was probed on 2026-10-26: a fork at `low` of an
+  original at `high` read 47,870 of its 51,457 tokens and wrote 5,820, the same split as a fork at the same
+  effort.
 - **Fast mode.** A header in the cache key. A card whose last main reply has `usage.speed: "fast"` is skipped.
 - **Environment.** The card's own environment, with `ATRIUM_PERM_GATE=off` so the fork's hooks do not reach atrium
   and do not appear as a second session on the board.
@@ -378,8 +380,8 @@ of a 300k Opus 5.5 card are $0.30, about 0.02% of the week.
 A card is refreshed when ALL of these hold:
 
 1. Keep-alive is on for the card (see "Controls").
-2. The card runs Claude, on Opus 5.5 or Fable 5.1, not in fast mode, on the `1h` cache, and atrium knows its
-   session id and directory.
+2. The card runs Claude, on Opus 5.5, Fable 5.1 or Sonnet 5.5, not in fast mode, on the `1h` cache, and atrium
+   knows its session id and directory.
 3. The card is idle: its Stop hook has landed since its last prompt, and no permission dialog is open.
 4. Its cache is still warm. Expiry is the time of the last reply that read or wrote the prefix (the card's own last
    main reply, or atrium's last `warmed` refresh) plus one hour. A cold prefix is never refreshed: that is a write.

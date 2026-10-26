@@ -110,8 +110,9 @@ type keepalivePrice struct{ In, Cw5m, Cw1h, Cr, Out float64 }
 // not part of the cache key are here, because atrium cannot know a card's
 // current effort, and a fork at another effort would write the whole context.
 var keepalivePrices = map[string]keepalivePrice{
-	"claude-opus-5-5":  {In: 4, Cw5m: 5, Cw1h: 8, Cr: 0.20, Out: 20},
-	"claude-fable-5-1": {In: 10, Cw5m: 12.5, Cw1h: 20, Cr: 0.25, Out: 50},
+	"claude-opus-5-5":   {In: 4, Cw5m: 5, Cw1h: 8, Cr: 0.20, Out: 20},
+	"claude-fable-5-1":  {In: 10, Cw5m: 12.5, Cw1h: 20, Cr: 0.25, Out: 50},
+	"claude-sonnet-5-5": {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.10, Out: 10},
 }
 
 // keepalivePriceFor looks a model up with any `[1m]` style suffix and date

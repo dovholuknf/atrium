@@ -414,7 +414,7 @@ func TestUsagePricesEveryCurrentModel(t *testing.T) {
 			t.Fatalf("%s priced %+v", model, p)
 		}
 	}
-	for _, model := range []string{"claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"} {
+	for _, model := range []string{"claude-sonnet-5", "claude-haiku-4-5-20251001"} {
 		if _, ok := keepalivePriceFor(model); ok {
 			t.Fatalf("%s is in keep-alive's table, so keep-alive would refresh it", model)
 		}
