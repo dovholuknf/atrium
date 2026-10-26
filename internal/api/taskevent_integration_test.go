@@ -57,6 +57,21 @@ func listRow(t *testing.T, srv *Server, id string) string {
 	return ""
 }
 
+func subscribed(t *testing.T, srv *Server) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		srv.bus.mu.Lock()
+		n := len(srv.bus.subs)
+		srv.bus.mu.Unlock()
+		if n > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the event stream never subscribed")
+		}
+	}
+}
+
 func eventStream(t *testing.T, srv *Server) *bufio.Scanner {
 	t.Helper()
 	ts := httptest.NewServer(srv.Handler())
@@ -118,7 +133,7 @@ func TestTaskEventEqualsListRow(t *testing.T) {
 	}
 
 	sc := eventStream(t, srv)
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	for _, c := range []*store.Task{busy, plain} {
 		got, err := st.Get(c.ID)
 		if err != nil {
@@ -150,7 +165,7 @@ func TestTaskEventFromAClosedStoreSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	st.Close()
 	srv.PublishTask(card)
 	if evs := readTaskEvents(resp, 3*taskCoalesce); len(evs) != 0 {
@@ -232,7 +247,7 @@ func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	for i := 0; i < 10; i++ {
 		if _, err := st.AddAsk(card.ID, "q?", ""); err != nil {
 			t.Fatal(err)
@@ -269,7 +284,7 @@ func TestPublishTaskForADeletedCardSendsNoTaskEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	srv.PublishTask(card)
 	if err := st.Forget(card.ID); err != nil {
 		t.Fatal(err)
