@@ -24,7 +24,7 @@ import (
 // NEW WORK: `gwt new some.new.work`, from the board and from `atrium new`. One call that updates the repo's origin,
 // makes a worktree on a branch named for the work, runs the repo's setup hook and starts a card there.
 //
-//	POST /v1/new {repo: "host/org/repo", name, from?, prompt?, harness?, title?, why?, model?, effort?}
+//	POST /v1/new {repo: "host/org/repo", name, from?, prompt?, harness?, title?, why?, model?, effort?, twig?}
 //
 // Where the branch starts, in order:
 //
@@ -63,6 +63,8 @@ type newWorkRequest struct {
 	// hub or room here has seen stops after this for a confirm, since a worktree's own settings and hooks run once a
 	// runner starts in it. Name is not needed.
 	Prepare bool `json:"prepare"`
+	// Twig is the worktree the work is twigged from. See twig.go.
+	Twig string `json:"twig"`
 }
 
 type newWorkAnswer struct {
@@ -81,6 +83,9 @@ type newWorkAnswer struct {
 
 	// HookWarning says the hooks folder is not there, so no setup hook could run.
 	HookWarning string `json:"hook_warning,omitempty"`
+
+	Patch      string `json:"patch,omitempty"`
+	CarryError string `json:"carry_error,omitempty"`
 }
 
 func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
@@ -116,8 +121,16 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 		s.prepareRepo(ctx, w, host, org, repo, pick)
 		return
 	}
-	wt, status, err := s.branchWorktreeFrom(ctx, s.providerByHost(host), host, org, repo, name, true,
-		branchOpts{fetch: true, from: strings.TrimSpace(in.From)})
+	opts := branchOpts{fetch: true, from: strings.TrimSpace(in.From)}
+	if strings.TrimSpace(in.Twig) != "" {
+		src, head, status, err := s.twigSource(ctx, strings.TrimSpace(in.Twig))
+		if err != nil {
+			openFail(w, status, "twig", "bad_twig", err.Error())
+			return
+		}
+		opts = branchOpts{from: head, twig: src}
+	}
+	wt, status, err := s.branchWorktreeFrom(ctx, s.providerByHost(host), host, org, repo, name, true, opts)
 	if err != nil {
 		worktreeFail(w, status, err)
 		return
@@ -136,6 +149,9 @@ func (s *Server) newWork(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if opts.twig != "" {
+		ans.Patch, ans.CarryError = carryTwig(ctx, opts.twig, wt.Path)
+	}
 	if !wt.Existed {
 		if ans.HookWarning = s.missingHooksDir(); ans.HookWarning != "" {
 			steps.note(ans.HookWarning)

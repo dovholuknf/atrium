@@ -314,6 +314,8 @@ type branchOpts struct {
 	fetch bool
 	// from is the ref to fork a branch that exists nowhere yet from, instead of origin/<name> or the default branch.
 	from string
+	// twig is the worktree a twig starts from, and from is its HEAD. See twig.go.
+	twig string
 }
 
 // branchWorktreeFrom is branchWorktree with opts. With fetch, a branch the remote has and the clone does not is made
@@ -345,6 +347,11 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		if out, err := gitIn(ctx, repoPath, "fetch", "--prune", "origin"); err != nil {
 			res.FetchError = strings.TrimSpace(tailLines(out + " " + err.Error()))
 			log.Printf("[atrium api] new %s: fetching origin failed, using what the clone has: %s", repoPath, res.FetchError)
+		}
+	}
+	if opts.twig != "" {
+		if status, err := twigBase(ctx, repoPath, branch, opts.twig, opts.from); err != nil {
+			return res, status, err
 		}
 	}
 	for _, wt := range worktreesOf(repoPath) {

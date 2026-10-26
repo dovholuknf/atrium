@@ -29,6 +29,7 @@ type newOpts struct {
 	repo     string
 	asJSON   bool
 	attach   bool
+	twig     string
 }
 
 // newWorkAnswer is the half of the room's answer this command reads.
@@ -43,6 +44,8 @@ type newWorkReply struct {
 	Hook       string `json:"hook"`
 	HookError  string `json:"hook_error"`
 	FetchError string `json:"fetch_error"`
+	Patch      string `json:"patch"`
+	CarryError string `json:"carry_error"`
 }
 
 func newNew() *cobra.Command {
@@ -116,7 +119,7 @@ func repoFromRemote(remote string) (string, error) {
 func startNew(repo, name string, o newOpts) error {
 	board := boardAddress(o.boardURL)
 	body, err := json.Marshal(map[string]string{"repo": repo, "name": name, "from": strings.TrimSpace(o.from),
-		"prompt": o.prompt, "harness": o.runner})
+		"prompt": o.prompt, "harness": o.runner, "twig": o.twig})
 	if err != nil {
 		return err
 	}
@@ -188,6 +191,8 @@ func printNew(board string, n newWorkReply) {
 	row("hook", n.Hook)
 	row("hook failed", n.HookError)
 	row("fetch failed", n.FetchError)
+	row("patch not applied", n.Patch)
+	row("carry failed", n.CarryError)
 	row("board", strings.TrimRight(board, "/")+"/#term="+url.QueryEscape(n.Card))
 	w.Flush()
 }
