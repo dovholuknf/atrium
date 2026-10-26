@@ -8742,7 +8742,70 @@ async function copySelectSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── clean copy: a selection of a reply is copied as written ───────────────
+// ── find by speaker: "me" matches only the operator's tinted prompt rows ──
+// A wrapped tinted prompt holds the word on its continuation row and the agent's plain row holds it too. "me" finds
+// the prompt's, "agent" the agent's, "all" both.
+async function termFindSpeakerSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termFindSpeaker", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await p.evaluate(() => {
+      const pad = "x".repeat(term.cols - 2);
+      termSock.onmessage({ data: "the widget is fixed\r\n\x1b[48;5;237m> " + pad + " widget again\x1b[K\x1b[0m\r\nnothing here\r\n" });
+    });
+    await p.waitForFunction(() => {
+      const b = term.buffer.active;
+      for (let y = 0; y < b.length; y++) if (b.getLine(y).translateToString(true).includes("nothing here")) return true;
+      return false;
+    }, null, { timeout: slow(5000) });
+    await p.evaluate(() => openFind());
+    await p.fill("#t-find-q", "widget");
+    const pick = who => p.evaluate(w => {
+      while (findWho !== w) toggleFind("who");
+      runFind(false);
+      const b = term.buffer.active, s = term.getSelectionPosition();
+      return { n: document.getElementById("t-find-n").textContent, sel: term.getSelection(),
+        label: document.getElementById("t-find-who").textContent, wrapped: s ? b.getLine(s.start.y).isWrapped : null };
+    }, who);
+    const me = await pick("me");
+    if (me.label !== "me" || me.n !== "1 of 1" || me.sel !== "widget" || me.wrapped !== true) fail("\"me\" did not find only the wrapped prompt's word: " + JSON.stringify(me));
+    const agent = await pick("agent");
+    if (agent.n !== "1 of 1" || agent.sel !== "widget" || agent.wrapped !== false) fail("\"agent\" did not find only the agent's word: " + JSON.stringify(agent));
+    await p.evaluate(() => toggleFind("who"));
+    const all = await p.waitForFunction(() => /^(\d+ of )?2$/.test(document.getElementById("t-find-n").textContent), null, { timeout: slow(5000) })
+      .then(() => true, () => false);
+    if (!all) fail("\"all\" did not find both: " + await p.evaluate(() => document.getElementById("t-find-n").textContent));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the find by speaker page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
+// ── clean copy: a selection of a reply is copied as written───────────────
 // A quoted block drawn with an indent, a bar and hard wraps is selected. A plain copy is the render. A "copy clean"
 // button pops up beside the selection, and clicking it copies the reply's own substring, markdown kept. No toast either
 // way. The button goes on clear, scroll and Escape, and never shows for a selection no reply holds or a failed endpoint.
@@ -25747,7 +25810,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, openExtAnywhere: openExtAnywhereSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection,cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -27670,6 +27733,7 @@ async function main() {
     await unit("askAgain", () => askAgainSection(browser, base));
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));
+    await unit("termFindSpeaker", () => termFindSpeakerSection(browser, base));
     await unit("cleanCopy", () => cleanCopySection(browser, base));
     await unit("cleanCopyTwo", () => cleanCopyTwoSection(browser, base));
     await unit("chatTab", bu("chatTab"));
