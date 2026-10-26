@@ -18,11 +18,7 @@ import (
 
 func fileServer(t *testing.T) (*Server, *store.Store, string) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "atrium.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := openMigrated(t)
 
 	work := t.TempDir()
 	real, err := filepath.EvalSymlinks(work)
