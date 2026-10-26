@@ -10715,6 +10715,11 @@ async function peekScratchSection(browser, base) {
     });
     if (!row || !/scratch\s*D:\/tmp\/hot-loop-01ABCDEF/.test(row.text)) fail("peekScratch: the scratch folder is not in the details: " + JSON.stringify(row));
     if (row && row.none) fail("peekScratch: a card with no scratch folder draws a row.");
+    const idRow = await p.evaluate(() => {
+      const b = document.querySelector("#shot-root .peek-copyid");
+      return b ? { id: b.dataset.id, text: document.querySelector("#shot-root").textContent.includes("sg4~c1") } : null;
+    });
+    if (!idRow || idRow.id !== "sg4~c1" || !idRow.text) fail("peekScratch: the card id is not shown with a copy button: " + JSON.stringify(idRow));
     await p.click("#shot-root .peek-scratch");
     await p.waitForSelector("#shot-root .peek-sfile a", { timeout: slow(10000) });
     if (!listed.length || !/root=scratch/.test(listed[0])) fail("peekScratch: the listing was not read with root=scratch: " + JSON.stringify(listed));
