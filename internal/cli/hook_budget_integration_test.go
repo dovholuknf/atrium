@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,22 +68,30 @@ func TestEveryHookFailsOpenInsideItsBudget(t *testing.T) {
 		{"turn", 2500 * time.Millisecond, func(u string) string { return turnEnded(u, "end", "tester", "claude") }},
 	}
 	targets := map[string]string{"silent": silentListener(t), "nothing listening": closedAddress(t)}
+	var wg sync.WaitGroup
 	for _, h := range hooks {
 		for kind, url := range targets {
-			start := time.Now()
-			out := h.run(url)
-			if took := time.Since(start); took > h.budget {
-				t.Errorf("%s hook against %s took %s, budget %s", h.name, kind, took, h.budget)
-			}
-			if out != "" && out != keepGoing {
-				t.Errorf("%s hook against %s printed %q, want nothing", h.name, kind, out)
-			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				start := time.Now()
+				out := h.run(url)
+				if took := time.Since(start); took > h.budget {
+					t.Errorf("%s hook against %s took %s, budget %s", h.name, kind, took, h.budget)
+				}
+				if out != "" && out != keepGoing {
+					t.Errorf("%s hook against %s printed %q, want nothing", h.name, kind, out)
+				}
+			}()
 		}
 	}
+	wg.Wait()
 }
 
 func TestPermissionHookStopsRetryingAReplyThatKeepsDying(t *testing.T) {
 	permEnv(t, "force")
+	t.Setenv("ATRIUM_PERM_RETRY_FOR", "400ms")
+	t.Setenv("ATRIUM_PERM_RETRY_EVERY", "100ms")
 	var posts atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/gate" {
