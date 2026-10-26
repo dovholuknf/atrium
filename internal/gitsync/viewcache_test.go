@@ -5,6 +5,8 @@ package gitsync
 import (
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // A request for the list runs no git and answers at once, however many repositories there are, and the
@@ -21,16 +23,10 @@ func TestSnapshotRunsNoGitOnTheRequest(t *testing.T) {
 	x.s.RefreshView()
 	run := x.h.Runner
 	// Wait for the build Init asked for, then count from there.
-	deadline := time.Now().Add(20 * time.Second)
-	for x.s.Snapshot().Computed.IsZero() || len(x.s.Snapshot().Repos[0].Branches) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("the snapshot was never built")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	for x.s.Snapshot().Building {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, 20*time.Second, "the snapshot to be built", func() bool {
+		return !x.s.Snapshot().Computed.IsZero() && len(x.s.Snapshot().Repos[0].Branches) != 0
+	})
+	testwait.Eventually(t, 20*time.Second, "the build to end", func() bool { return !x.s.Snapshot().Building })
 	before := run.Spawned.Load()
 	start := time.Now()
 	var snap Snapshot

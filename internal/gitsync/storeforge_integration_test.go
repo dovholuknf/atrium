@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 type forgeFix struct {
@@ -474,11 +476,8 @@ func TestOneFetchPerBranchAtATime(t *testing.T) {
 		}()
 	}
 	// Every caller is waiting on the one run before it is let go.
-	deadline := time.Now().Add(5 * time.Second)
-	for runs.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	time.Sleep(50 * time.Millisecond)
+	testwait.Eventually(t, 5*time.Second, "the one run to start", func() bool { return runs.Load() != 0 })
+	time.Sleep(50 * time.Millisecond) // wait: the other callers block inside once, which shows nothing to wait on
 	close(release)
 	wg.Wait()
 	if runs.Load() != 1 {
@@ -493,15 +492,12 @@ func TestOneFetchPerBranchAtATime(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
 	go fs.once(bg, "slow", func() (string, error) { <-block; return "", nil })
-	for {
+	testwait.Eventually(t, 5*time.Second, "the slow flight to start", func() bool {
 		fs.mu.Lock()
+		defer fs.mu.Unlock()
 		_, in := fs.flights["slow"]
-		fs.mu.Unlock()
-		if in {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
+		return in
+	})
 	ctx, cancel := context.WithCancel(bg)
 	cancel()
 	if _, err := fs.once(ctx, "slow", func() (string, error) { return "", nil }); err == nil {

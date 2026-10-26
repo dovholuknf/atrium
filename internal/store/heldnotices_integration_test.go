@@ -3,13 +3,27 @@
 package store
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
 
+// tickingClock gives the store a clock that moves a millisecond on every read, so each stamp is newer than the last.
+func tickingClock(s *Store) {
+	var mu sync.Mutex
+	at := wallNow()
+	s.clock = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		at = at.Add(time.Millisecond)
+		return at
+	}
+}
+
 func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t)
+	tickingClock(s)
 	card, _, err := s.Register(Observed{WireName: "orch", Worktree: "D:/w/orch", Runner: "claude"})
 	if err != nil {
 		t.Fatal(err)
@@ -25,7 +39,6 @@ func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 	if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("fyi", "w", "w1", "one")); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
 	if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("silent-stop", "w", "w1", "two")); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +53,6 @@ func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 		t.Fatalf("the unread list: %+v %v", list, err)
 	}
 
-	time.Sleep(5 * time.Millisecond)
 	through := ts(s.now())
 	changed, err := s.MarkNoticesRead(card.ID, through)
 	if err != nil || !changed {
@@ -56,7 +68,6 @@ func TestHeldNoticeStatsCountUnreadHeldNoticesOnly(t *testing.T) {
 		t.Fatal("reading with nothing unread reported a change")
 	}
 
-	time.Sleep(5 * time.Millisecond)
 	if err := s.AppendEvent(card.ID, EventNotified, HeldNoticePayload("fyi", "w", "w1", "three")); err != nil {
 		t.Fatal(err)
 	}

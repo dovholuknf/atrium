@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // passRooms is a hub's view of its rooms with a transport that answers from a function, so a pass-through is
@@ -242,26 +244,18 @@ func slots(p *Pass) int {
 // freed waits for the room's slot to be taken, which proves the request got there, and then to be given back.
 func freed(t *testing.T, p *Pass, what string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for slots(p) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s: the request never took the slot", what)
-		}
-		time.Sleep(time.Millisecond)
-	}
+	testwait.EventuallyEvery(t, time.Millisecond, 5*time.Second, what+": the request to take the slot", func() bool {
+		return slots(p) != 0
+	})
 	gone(t, p, what)
 }
 
 // gone waits for the slot to be given back, for a test whose own answer already proves the request was holding it.
 func gone(t *testing.T, p *Pass, what string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for slots(p) != 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s: the room's slot was never given back", what)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, 5*time.Second, what+": the room's slot to be given back", func() bool {
+		return slots(p) == 0
+	})
 }
 
 func rawConn(t *testing.T, srv *httptest.Server) net.Conn {
