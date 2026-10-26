@@ -51,6 +51,16 @@ Atrium types things into supervised sessions: messages you queue, messages from 
 Every one of those writes waits until your input line is empty and the keyboard has been quiet for two seconds. A
 held write is queued and retried. Atrium also refuses to type into a permission dialog it did not raise.
 
+## The merge strip
+
+On a hub, a strip above the list shows the merge queue when something wants you. A request that is red or refused
+stays until you dismiss it in this browser, and a conflict offers **give up**. **output** opens the test output. A
+queue held because no merge room is attached says so, with **set the merge room** beside it. **queue and history**
+opens the whole queue in a dialog.
+
+**Land now (n)** shows for a repository with `n` requests on `claude/main` that no land carries yet. It asks first,
+then puts `claude/main` on the hub's `main` as one commit by you. `atrium merge land` does the same from a shell.
+
 ## Restarting and stopping
 
 - **restart** in the terminal cog ends the session and resumes its conversation on the same card, so it picks up
