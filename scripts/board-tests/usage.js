@@ -11,6 +11,10 @@ const { fail } = require("../lib/results.js");
 const { CTX_CARDS, CTX_USAGE, docImgDir } = require("../lib/helpers.js");
 const SCRIPTS = path.join(__dirname, "..");
 
+// The stream opening reloads the tab once; the onopen handler starts that read synchronously, so live and idle is settled.
+const usageSettled = p => p.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight,
+  null, { timeout: slow(10000) });
+
 async function boardUsageSection(browser, base) {
   const errors = [];
   const imgs = docImgDir("docs", "changes", "img");
@@ -1540,7 +1544,7 @@ async function usageTabSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(400);
+    await usageSettled(sp);
     if (process.env.USAGE_SHOT_ONLY) { await usageShot(sp, process.env.USAGE_SHOT_ONLY); return; }
 
     // by card and by group: one neutral fill, and totals that follow the toggle
@@ -1730,7 +1734,7 @@ async function usageWeekResetSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(400);
+    await usageSettled(sp);
 
     // the tab on Monday 12:00 EDT: last week's turns, then this week's. 40k an hour since the reset.
     const draw = range => sp.evaluate(range => {
