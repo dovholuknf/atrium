@@ -1980,7 +1980,7 @@ async function usageLimitsSection(browser, base) {
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
       await sp.waitForSelector("#uc-body #ul-limits", { timeout: slow(5000) });
-      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) }); // the stream opening reloads the tab once
       await fn(sp, asked);
     } finally { await ctx.close(); }
   };
@@ -2119,7 +2119,7 @@ async function usagePolishSection(browser, base) {
       await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
       await sp.evaluate(() => switchView("usage"));
       await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
-      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) }); // the stream opening reloads the tab once
       await fn(sp);
     } finally { await ctx.close(); }
   };
@@ -2291,7 +2291,7 @@ async function burnChartSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(1500);
+    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) });
     const MIN = 60000, HOUR = 3600000;
 
     // A day range, the 5h limit at 70%, resetting in 2h. The window started 3h ago: 12 buckets of 5000 = 60000 tokens
@@ -2389,7 +2389,7 @@ async function burnReadoutSection(browser, base) {
     await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => switchView("usage"));
     await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
-    await sp.waitForTimeout(1200);
+    await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live") && !UC.inflight, null, { timeout: slow(15000) });
     return { ctx, sp };
   };
   // 24h of 15 minute buckets; the last 20 hold `hot` counted tokens each; the 5h limit (if `pct`) was read 5 minutes ago.

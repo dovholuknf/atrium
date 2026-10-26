@@ -1388,17 +1388,17 @@ async function roomsDashSection(browser, base) {
 
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
-      await p.waitForTimeout(2300);
+      await p.clock.runFor(2300);
       for (const skin of ["", "paper"]) {
         await p.evaluate(sk => { applySkin(sk); }, skin);
-        await p.waitForTimeout(250);
+        await p.clock.runFor(250);
         await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-1400.png`) });
       }
       await p.setViewportSize({ width: 390, height: 844 });
       await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
       for (const skin of ["", "paper"]) {
         await p.evaluate(sk => { applySkin(sk); }, skin);
-        await p.waitForTimeout(250);
+        await p.clock.runFor(250);
         await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-390.png`) });
       }
       const phone = await p.evaluate(() => {
@@ -1804,13 +1804,15 @@ async function roomsMachineSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   await p.addInitScript(skip);
   try {
+    await p.clock.install();
     await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
       roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await fakePause(p);
     await p.evaluate(() => openRooms());
-    await p.waitForTimeout(2300);
+    await p.clock.runFor(2300);
     await p.evaluate(() => clearInterval(roomsDemoTimer));
-    await p.waitForTimeout(900);
+    await p.clock.runFor(900);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "u-034-after-1400.png") });

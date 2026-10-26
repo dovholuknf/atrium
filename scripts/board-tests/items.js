@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, fakeWait, fakeTick, fakePause } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, fakeRun } = require("../lib/browser.js");
 const { mock, WEB_ROOT } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { docImgDir } = require("../lib/helpers.js");
@@ -90,11 +90,13 @@ async function readyPopoutSection(browser, base) {
     Document.prototype.hasFocus = () => window.__focus;
   });
   try {
+    await page.clock.install();
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined" && typeof soloAlert === "function", null,
       { timeout: slow(15000) });
-    await page.waitForTimeout(1500);
-    const got = await page.evaluate(async () => {
+    await fakePause(page);
+    await fakeTick(page, 1500);
+    const got = await fakeRun(page, (a, done) => { (async () => {
       localStorage.removeItem("atrium.toastlog");
       alerting.set({ debounce: 0, muted: true });
       const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -137,7 +139,7 @@ async function readyPopoutSection(browser, base) {
       await sleep(900);
       out.boardOther = shown("bfocus2 ready");
       return out;
-    });
+    })().then(done); }, null, 10000);
     const j = JSON.stringify(got);
     if (got.pfocus || got.pfocusLog) fail("readyPopout: a focused pop-out toasted its own card or logged it: " + j);
     if (!got.pblur || !got.pblurLog) fail("readyPopout: an unfocused pop-out did not ring for its card: " + j);
@@ -324,20 +326,24 @@ async function itemDocsLandedSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.route(/\/_hub\/items/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
+    await p.clock.install();
     await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await fakePause(p);
+    await fakeTick(p, 1000);
     await p.evaluate(() => { localStorage.removeItem("atrium.items.docsOfferDismissed"); switchView("items"); });
-    await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
+    await fakeWait(p, () => document.querySelectorAll("#items-list .it-row").length > 4, null, 10000);
     // Paint the detail of one item with the hub's `docs` as given, and say what is drawn.
-    const paint = (docs) => p.evaluate(async docs => {
-      itemsShow("f-ptyhost-reconnect");
-      await new Promise(r => setTimeout(r, 300));
-      for (const it of [itemsDetail, itemsList.find(x => x.id === "f-ptyhost-reconnect")]) { if (it) { if (docs) it.docs = docs; else delete it.docs; } }
-      itemsPaint(true);
-      const q = (s) => document.querySelector(".it-detail " + s);
-      return { note: (q('[data-docs="not-said"]') || {}).textContent || "", offer: (q('[data-docs="offer"]') || {}).textContent || "", any: document.querySelectorAll(".it-detail .it-docs").length };
-    }, docs);
+    const paint = async (docs) => {
+      await p.evaluate(() => itemsShow("f-ptyhost-reconnect"));
+      await fakeWait(p, () => !!itemsDetail, null, 5000).catch(() => {});
+      return p.evaluate(docs => {
+        for (const it of [itemsDetail, itemsList.find(x => x.id === "f-ptyhost-reconnect")]) { if (it) { if (docs) it.docs = docs; else delete it.docs; } }
+        itemsPaint(true);
+        const q = (s) => document.querySelector(".it-detail " + s);
+        return { note: (q('[data-docs="not-said"]') || {}).textContent || "", offer: (q('[data-docs="offer"]') || {}).textContent || "", any: document.querySelectorAll(".it-detail .it-docs").length };
+      }, docs);
+    };
     const none = await paint(null);
     await p.waitForSelector(".it-detail");
     await p.screenshot({ path: path.join(imgs, "item-detail-before.png"), clip: { x: 0, y: 0, width: 1200, height: 420 } });
