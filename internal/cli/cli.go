@@ -113,10 +113,17 @@ func newRoot() *cobra.Command {
 			"shows every one of them on one board.",
 	}
 	root.AddCommand(newDaemon(),
+<<<<<<< HEAD
 		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
 		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd(), newWorktree(), newUpdate())
+=======
+		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
+		newName(), newFinish(), newReady(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
+		newAnswer(), newOpen(), newNew(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newArchiveWorkers(),
+		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd(), newOpenHandler())
+>>>>>>> d9e1e6ebb (Open a card's file by an atrium-open link handled as the desktop user)
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/archive/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")

@@ -720,8 +720,29 @@ async function openOnDaemon(id, path) {
   toast("opening", path.split(/[\\/]/).pop() + " on the machine running this session");
 }
 
+// On the room's own machine, with `atrium open-handler install` done and localStorage.atriumOpenLink = "1", the room
+// issues an `atrium-open:` link and the browser hands it to the desktop user's handler. False means use `files/launch`.
+async function launchByLink(id, path) {
+  if (localStorage.getItem("atriumOpenLink") !== "1" || !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) return false;
+  try {
+    const r = await api(`/v1/tasks/${id}/files/launch-link`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path })
+    });
+    if (!r || !r.url) return false;
+    location.href = r.url;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Opens a file with the default app of the ROOM's machine, which over a share is not the one in front of you.
 async function launchOnRoom(id, path, where) {
+  if (await launchByLink(id, path)) {
+    toast("asking your desktop to open", path.split(/[\\/]/).pop());
+    return;
+  }
   try {
     await api(`/v1/tasks/${id}/files/launch`, {
       method: "POST", headers: { "Content-Type": "application/json" },

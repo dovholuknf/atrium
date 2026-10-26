@@ -111,6 +111,20 @@ function extMain(id, path) {
     btn.disabled = true;
     let msg = "";
     try {
+      // On the room's own machine with the handler installed, the desktop user's link. See `launchByLink` in notes-files.js.
+      if (localStorage.getItem("atriumOpenLink") === "1" && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
+        const l = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files/launch-link", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: path })
+        });
+        const j = l.ok ? await l.json() : null;
+        if (j && j.url) {
+          location.href = j.url;
+          btn.disabled = false;
+          note.textContent = "Asked your desktop to open it.";
+          note.hidden = false;
+          return;
+        }
+      }
       const r = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files/launch", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: path })
       });

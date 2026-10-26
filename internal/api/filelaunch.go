@@ -66,6 +66,39 @@ func (s *Server) openExternalAnywhere() bool {
 // Launchable says whether a file of this extension may be opened with the default app.
 func Launchable(ext string) bool { return launchTypes[strings.ToLower(ext)] }
 
+// launchTarget resolves a card's path to the file a default app may open, answering the refusal itself.
+func (s *Server) launchTarget(w http.ResponseWriter, task *store.Task, rel string) (string, bool) {
+	full, _, err := containedOrOpen(filepath.FromSlash(task.Worktree), rel, s.openRoots)
+	if err != nil && filepath.IsAbs(rel) && s.openExternalAnywhere() {
+		full, err = filepath.EvalSymlinks(filepath.Clean(rel))
+	}
+	if err != nil {
+		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
+		return "", false
+	}
+	fi, err := os.Stat(full)
+	if err != nil {
+		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
+		return "", false
+	}
+	if fi.IsDir() {
+		writeErr(w, http.StatusBadRequest, errors.New("that is a directory. ask for one file"))
+		return "", false
+	}
+	if Executable(filepath.Ext(full)) {
+		writeErr(w, http.StatusBadRequest, errors.New("atrium never opens a "+strings.ToLower(filepath.Ext(full))+
+			" file with the default app, whatever the settings say. this machine would run it"))
+		return "", false
+	}
+	if !Launchable(filepath.Ext(full)) {
+		writeErr(w, http.StatusBadRequest, errors.New(
+			"atrium opens only pictures, pdf and text documents with the default app. "+
+				"a program or a script would run"))
+		return "", false
+	}
+	return full, true
+}
+
 func (s *Server) launchFile(w http.ResponseWriter, r *http.Request) {
 	task, err := s.st.Get(r.PathValue("id"))
 	if err != nil {
@@ -85,32 +118,8 @@ func (s *Server) launchFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("no path"))
 		return
 	}
-	full, _, err := containedOrOpen(filepath.FromSlash(task.Worktree), body.Path, s.openRoots)
-	if err != nil && filepath.IsAbs(body.Path) && s.openExternalAnywhere() {
-		full, err = filepath.EvalSymlinks(filepath.Clean(body.Path))
-	}
-	if err != nil {
-		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
-		return
-	}
-	fi, err := os.Stat(full)
-	if err != nil {
-		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
-		return
-	}
-	if fi.IsDir() {
-		writeErr(w, http.StatusBadRequest, errors.New("that is a directory. ask for one file"))
-		return
-	}
-	if Executable(filepath.Ext(full)) {
-		writeErr(w, http.StatusBadRequest, errors.New("atrium never opens a "+strings.ToLower(filepath.Ext(full))+
-			" file with the default app, whatever the settings say. this machine would run it"))
-		return
-	}
-	if !Launchable(filepath.Ext(full)) {
-		writeErr(w, http.StatusBadRequest, errors.New(
-			"atrium opens only pictures, pdf and text documents with the default app. "+
-				"a program or a script would run"))
+	full, ok := s.launchTarget(w, task, body.Path)
+	if !ok {
 		return
 	}
 	if err := s.launcher()(full, filepath.FromSlash(task.Worktree)); err != nil {

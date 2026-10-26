@@ -665,6 +665,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/open", s.openFile)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/launch", s.launchFile)
+	mux.HandleFunc("POST /v1/tasks/{id}/files/launch-link", s.launchLink)
+	mux.HandleFunc("POST /v1/tasks/{id}/files/launch-link/redeem", s.redeemLink)
 	// The card's directory in a terminal window on the daemon's desktop. Not
 	// a pane and not a runner: see `termopen.go`.
 	mux.HandleFunc("POST /v1/tasks/{id}/open-terminal", s.openTerminal)
