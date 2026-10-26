@@ -21546,6 +21546,39 @@ async function hostLabelGroupSection(browser, base) {
   }
   console.log("hostLabelGroup ok");
 }
+
+// The strip's path tree draws a chain of only children as one heading, keeps a split's own heading, and folds on the merged path.
+async function termCondenseSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForTimeout(600);
+    const got = await p.evaluate(() => {
+      const a = { id: "c1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
+      const b = { id: "c2", worktree: "D:/worktrees/github/openziti/ziti-tunnel-sdk-c/y", repo: "ziti-tunnel-sdk-c", branch: "y" };
+      const draw = (list, folded) => {
+        const host = document.createElement("div");
+        host.innerHTML = termNodeHTML(termTree(list), 0, "", new Set(folded));
+        return { heads: [...host.querySelectorAll(".tgroup .tgname")].map(n => n.textContent).join(","),
+          counts: [...host.querySelectorAll(".tgroup .tgcount")].map(n => n.textContent).join(","),
+          rows: [...host.querySelectorAll(".tab[data-id]")].map(n => n.dataset.id).join(",") };
+      };
+      return { one: draw([a], []), split: draw([a, b], []), shut: draw([a], ["github/openziti/ziti-sdk-c"]),
+        later: draw([a, b], ["github/openziti/ziti-sdk-c"]) };
+    });
+    if (got.one.heads !== "github/openziti/ziti-sdk-c" || got.one.counts !== "1" || got.one.rows !== "c1") fail("termCondense: a single chain is not one heading: " + JSON.stringify(got.one));
+    if (got.split.heads !== "github/openziti,ziti-sdk-c,ziti-tunnel-sdk-c" || got.split.rows !== "c1,c2") fail("termCondense: a split lost its heading: " + JSON.stringify(got.split));
+    if (got.shut.heads !== "github/openziti/ziti-sdk-c" || got.shut.rows !== "") fail("termCondense: folding the merged heading did not fold the chain: " + JSON.stringify(got.shut));
+    if (got.later.heads !== "github/openziti,ziti-sdk-c,ziti-tunnel-sdk-c" || got.later.rows !== "c2") fail("termCondense: the split did not start expanded: " + JSON.stringify(got.later));
+    if (errors.length) fail("termCondense: page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+  console.log("termCondense ok");
+}
 async function termRowBleedSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
@@ -28019,6 +28052,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("hostLabelGroup", () => hostLabelGroupSection(browser, base));
+    await unit("termCondense", () => termCondenseSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
     await unit("termLag", () => termLagSection(browser, base));
