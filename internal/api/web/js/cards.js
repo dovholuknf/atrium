@@ -28,12 +28,16 @@ let cardsReadAt = 0;
 // list before either has it, and two copies of half a megabyte arriving a
 // moment apart is the cost this file exists to remove.
 let cardsLoading = null;
+// A pin the board has drawn and the room has not confirmed yet: id -> wanted value. A list read that began before the
+// PATCH landed carries the old value and would flip the star back off.
+const pinHeld = new Map();
 function loadCards(signal) {
   if (cardsLoading) return cardsLoading;
   cardsLoading = (async () => {
     const { tasks } = await api("/v1/tasks", { signal });
     const next = new Map();
     (tasks || []).forEach(t => { if (t && t.id) next.set(t.id, t); });
+    pinHeld.forEach((on, id) => { if (next.has(id)) next.set(id, Object.assign({}, next.get(id), { pinned: on })); });
     if (cardsLoaded) next.forEach((t, id) => cleanupWhenDone(cardRows.get(id), t));
     cardRows = next;
     cardsLoaded = true;

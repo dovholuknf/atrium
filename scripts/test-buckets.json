@@ -10,7 +10,7 @@
     "boot": {
       "file": "scripts/board-tests/boot.js",
       "page": "what every page needs: the board loads with no page error, the service worker, contrast",
-      "units": ["bootClean"],
+      "units": ["bootClean", "pinHold"],
       "sources": [
         "internal/api/web/sw.js",
         "internal/api/web/js/board.js",
