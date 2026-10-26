@@ -64,6 +64,11 @@ const usagePricesVersion = "usageprices-2026-09-28b"
 // A 5m write is 1.25 times input, a read 0.1 times, on both.
 var usageOnlyPrices = map[string]keepalivePrice{
 	"claude-haiku-4-5": {In: 1, Cw5m: 1.25, Cw1h: 2, Cr: 0.10, Out: 5},
+	"claude-opus-5":    {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-5":  {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-6":  {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-7":  {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
+	"claude-opus-4-8":  {In: 5, Cw5m: 6.25, Cw1h: 10, Cr: 0.50, Out: 25},
 	"claude-sonnet-5":  {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
 	// Sonnet 5.5 reads at half Sonnet 5's price, and is its own key because the
 	// matcher below does not take one model's price for the other's.
