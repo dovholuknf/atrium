@@ -143,6 +143,43 @@ var (
 func (d *Daemon) trustReattachedLines(now time.Time) {
 	for _, run := range d.sup.all() {
 		d.trustReattachedLine(run, now)
+		d.trustUnsureLine(run, now)
+	}
+}
+
+// trustUnsureLine reads the screen of a claude runner whose line a key made unsure, like control-p recalling a line.
+// Once keys and output have both been quiet for reattachQuiet, an empty prompt on screen proves the line empty, so a
+// say is not held until the next keystroke. A key since the read keeps it unsure.
+func (d *Daemon) trustUnsureLine(run *runner, now time.Time) {
+	if run.buf == nil || d.act.dialogOpen(run.taskID) || d.act.onSubagents(run.taskID) {
+		return
+	}
+	run.typeMu.Lock()
+	why, seq, typed := run.line.unsure, run.keySeq, run.lastTyped
+	run.typeMu.Unlock()
+	if why == "" || why == reattachLineKey || now.Sub(typed) < reattachQuiet || now.Sub(run.lastOutputAt()) < reattachQuiet {
+		return
+	}
+	t, err := d.st.Get(run.taskID)
+	if err != nil || !strings.EqualFold(t.Runner, "claude") {
+		return
+	}
+	cols, rows := run.buf.CurrentSize()
+	tail := run.buf.Tail(screen.FrameTailBytes)
+	if !screen.FramePromptEmpty(tail, cols, rows) && !screen.FrameLineEmpty(tail, cols, rows) {
+		return
+	}
+	run.typeMu.Lock()
+	if run.line.unsure != why || run.keySeq != seq {
+		run.typeMu.Unlock()
+		return
+	}
+	run.line.clear()
+	run.typeMu.Unlock()
+	log.Printf("[atrium] %s: line unsure after %s, quiet for %s and the screen shows an empty prompt, so it is taken as empty",
+		run.taskID, why, reattachQuiet)
+	if d.pending != nil {
+		d.pending.reset(run.taskID)
 	}
 }
 
