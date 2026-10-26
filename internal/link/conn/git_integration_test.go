@@ -190,6 +190,7 @@ func TestTheHubFetchesFromARoomOverThePool(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
+	lightSlot(t)
 	// A room serving a repository at /v1/git.
 	root := t.TempDir()
 	work := filepath.Join(root, "work")
