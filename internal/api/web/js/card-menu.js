@@ -998,6 +998,7 @@ async function cardMenu(e, id) {
     } : null,
     // The name to mention this card by. See js/alias.js.
     typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
+    typeof parentMenuItem === "function" ? parentMenuItem(t) : null,
     // ANSWERED IN THE TERMINAL, which atrium cannot see.
     //
     // Every other way a question comes off a card delivers text to the

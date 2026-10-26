@@ -27485,6 +27485,7 @@ async function main() {
     await unit("typing", () => typingSection(browser, base));
     // ── a card wears its alias, and the menu sets it ────────────────────────
     await unit("alias", bu("alias"));
+    await unit("parent", bu("parent"));
     await unit("askAgain", () => askAgainSection(browser, base));
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));

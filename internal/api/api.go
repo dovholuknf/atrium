@@ -705,6 +705,7 @@ func (s *Server) Handler() http.Handler {
 	// Ports handed out and processes recorded, as inventory. See cardports.go.
 	mux.HandleFunc("POST /v1/tasks/{id}/ports", s.postCardPorts)
 	mux.HandleFunc("POST /v1/tasks/{id}/own", s.postOwn)
+	mux.HandleFunc("POST /v1/tasks/{id}/parent", s.postParent)
 	mux.HandleFunc("POST /v1/tasks/{id}/proc", s.postCardProc)
 	mux.HandleFunc("POST /v1/tasks/{id}/overlay", s.postOverlay)
 	// Closing a card frees its inventory. See close.go.
