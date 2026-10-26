@@ -330,6 +330,25 @@ func (s *Server) missingHooksDir() string {
 		SettingWorktreeHooks + ")"
 }
 
+// setupWorktree is the best-effort hook step after a worktree is made: it never fails the make, and says on the steps
+// what ran, what failed and a missing hooks folder.
+func (s *Server) setupWorktree(ctx context.Context, host, org, repo, path string) {
+	if host == "" {
+		return
+	}
+	steps := stepsOf(ctx)
+	if warn := s.missingHooksDir(); warn != "" {
+		steps.note(warn)
+		return
+	}
+	ran, failed := s.runWorktreeHook(ctx, host, org, repo, path)
+	if failed != "" {
+		steps.note("the setup hook " + filepath.ToSlash(ran) + " failed: " + failed)
+	} else if ran != "" {
+		steps.note("ran the setup hook " + filepath.ToSlash(ran))
+	}
+}
+
 // runWorktreeHook runs the repo's setup hook in the new worktree, and answers which file ran and why it failed. A hook
 // that fails never fails the new work: the worktree is made, and the card says so.
 func (s *Server) runWorktreeHook(ctx context.Context, host, org, repo, path string) (ran, failed string) {
