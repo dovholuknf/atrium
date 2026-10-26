@@ -78,21 +78,23 @@ func (d *Daemon) budgetFor(taskID string) any {
 	return nil
 }
 
-// cardSpendUSD is what a card has spent at list price, each row priced on its model. A model with no price counts at
-// zero, as the turn cost does.
-func (d *Daemon) cardSpendUSD(taskID string) (float64, error) {
+// cardSpendUSD is what a card has spent at list price, each row priced on its model. A model with no price is not
+// counted as zero: it is named in unpriced, so the total is known to be short.
+func (d *Daemon) cardSpendUSD(taskID string) (total float64, unpriced []string, err error) {
 	rows, err := d.st.SessionUsageByModel(taskID)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	total := 0.0
 	for _, r := range rows {
-		if p, ok := usagePriceFor(r.Model); ok {
-			total += usageCost(&store.SessionUsage{Input: r.Input, Output: r.Output, CacheRead: r.CacheRead,
-				CacheWrite5m: r.CacheWrite5m, CacheWrite1h: r.CacheWrite1h}, p)
+		p, ok := usagePriceFor(r.Model)
+		if !ok {
+			unpriced = append(unpriced, r.Model)
+			continue
 		}
+		total += usageCost(&store.SessionUsage{Input: r.Input, Output: r.Output, CacheRead: r.CacheRead,
+			CacheWrite5m: r.CacheWrite5m, CacheWrite1h: r.CacheWrite1h}, p)
 	}
-	return total, nil
+	return total, unpriced, nil
 }
 
 // checkBudget is looked at as each row of a card's spend lands. Best effort and never on anybody's path: a failure is
@@ -108,10 +110,14 @@ func (d *Daemon) checkBudget(t *store.Task) {
 		}
 		return
 	}
-	spent, err := d.cardSpendUSD(t.ID)
+	spent, unpriced, err := d.cardSpendUSD(t.ID)
 	if err != nil {
 		log.Printf("[atrium] could not total the spend of %s: %v", t.ID, err)
 		return
+	}
+	if len(unpriced) > 0 {
+		log.Printf("[atrium] %s ran on models with no price, so its spend is more than counted: %s", t.ID,
+			strings.Join(unpriced, ", "))
 	}
 	if spent < limit {
 		if d.budgets.put(t.ID, nil) {
@@ -120,6 +126,9 @@ func (d *Daemon) checkBudget(t *store.Task) {
 		return
 	}
 	text := fmt.Sprintf("%s has spent about $%.2f, past the $%.2f worker budget, at list price", t.WireName, spent, limit)
+	if len(unpriced) > 0 {
+		text += ", not counting unpriced " + strings.Join(unpriced, ", ")
+	}
 	if d.budgets.put(t.ID, &BudgetView{SpentUSD: spent, BudgetUSD: limit, Text: text}) {
 		d.publishTask(t.ID)
 	}
