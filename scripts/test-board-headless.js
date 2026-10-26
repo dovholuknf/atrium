@@ -16441,6 +16441,7 @@ async function mPinchSection(browser) {
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector("#m-replies .md")).fontSize) === 24, null, { timeout: slow(5000) }).catch(() => {});
     if ((await state()).fs !== 24) fail(tag + "the size did not survive a reload");
+    await settleStyle(p);
     await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 600; });
     await frames(p, 2);
     const held = await p.evaluate(() => {
