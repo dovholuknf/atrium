@@ -13,8 +13,8 @@ func TestAGroupingExpressionCannotBeStoredOnTheDaemon(t *testing.T) {
 		t.Skip("slow: a real server with git worktrees and a database")
 	}
 	t.Parallel()
+	srv, _, _ := fileServer(t)
 	for _, field := range []string{"group_by", "group_order"} {
-		srv, _, _ := fileServer(t)
 		rec := settingsPost(t, srv, `{"`+field+`":"return task.repo"}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s was accepted with %d. read the comment in settings.go before "+
