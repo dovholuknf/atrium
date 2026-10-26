@@ -25,7 +25,8 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   skips the six flaky jobs, and the check jobs still start because a skipped need is not `failure`. `flaky-sync.js`
   adding an entry turns them on again. `test-ci-select.js` and `test-flaky-sync.js` pin both cases.
 - **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms
-  that is over 20ms again when run alone, which it marks `load` when it is not. The fix is to move the test into an integration file, not to raise the number.
+  that is over 20ms again when run alone, which it marks `load` when it is not. The fix is to move the test into an
+  integration file, not to raise the number.
 - **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the
   time of a test is never a reason to run the suite again.
 - **A manual dispatch can run one os and one suite.** `scripts/ci-select.sh --os all|ubuntu|macos|windows --suite
