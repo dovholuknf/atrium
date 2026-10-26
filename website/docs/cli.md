@@ -86,6 +86,7 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium room get` / `set` | Read or set a room setting, such as `git_root`, in a stopped room's database. |
 | `atrium backlog` | The hub's backlog: `list`, `show`, `file`, `status`, `priority`, from any room. |
 | `atrium merge` | Land the current branch on `claude/main` through the hub's merge queue. `--list` shows the queue, `land` cuts the batch for `main` (operator only). |
+| `atrium land-check <branch>` | Fetch a hub branch and print its commits ahead of `claude/main`, whether it merges without conflict, and the diffstat. Nothing is merged. Exit 0 clean, 1 conflict, 2 no such branch. |
 | `atrium reports` | Reports directors leave for each other on the hub: `list`, `read`, `add`, from any room. |
 | `atrium ci` | A repository's CI, read through the hub: `runs`, `run`, `log`, `artifacts`, `artifact`. A log is written to a file and its path printed. |
 | `atrium resources init` | Write a starter `resources.md`, the inventory of machines agents may use. |
