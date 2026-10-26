@@ -1,6 +1,6 @@
 // items: the items view: unified cards, interviews, ready cards.
 //
-// Units: readyOnce, readyPopout, readyTwoWindows, itemsRealShape, itemsUx, itemsView, itemsMock, itemsEfficacy, itemsPhone, interviewTop, itemMinionChip, itemDocsLanded, itemOpenHiddenCard, kidCounts, unifiedCard, noReadyChildren, readyNoSeed.
+// Units: readyOnce, readyPopout, readyTwoWindows, itemsRealShape, itemsUx, itemsView, itemsMock, itemsEfficacy, itemsPhone, itemsTaskList, interviewTop, itemMinionChip, itemDocsLanded, itemOpenHiddenCard, kidCounts, unifiedCard, noReadyChildren, readyNoSeed.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
@@ -1191,6 +1191,63 @@ async function itemsUxSection(browser, base) {
   if (!bad) console.log("itemsUx ok");
 }
 
+// THE TASKS OF AN ITEM in its detail, read only (stage T1): one row per task from the hub's `tasks` of /_hub/work/<id>, in order,
+// with its state, line, why, files and reason, no buttons, and no folder path. The hub is a route here.
+async function itemsTaskListSection(browser, base) {
+  const wasHub = mock.hubMode;
+  mock.hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  let failed = 0;
+  const no = msg => { failed++; fail("itemsTaskList: " + msg); };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    const at = new Date(Date.now() - 600000).toISOString();
+    const row = { item_id: "5f0c8a1e-0000-4000-8000-000000000001", work_id: "f-x", room: "sg4", card: "c-1", state: "running", revision: 1,
+      generation: 1, owner_kind: "human", owner: "", created_at: at, updated_at: at };
+    const tasks = [
+      { backlog_id: "f-x", task_id: "t1", title: "count the rows", state: "captured", attempt: 1, line: "counted 41 rows", why: "the header is not a row",
+        files: [{ path: "count.txt", name: "f-x-t1-count.txt", size: 3, sha256: "ab" }], folder: "" },
+      { backlog_id: "f-x", task_id: "t2", title: "sum the rows", state: "capture-failed", attempt: 1, reason: "out/big.csv is 41 MB, over 5 MB",
+        files: [], folder: "D:/cards/f-x-t2-a1-abcdef" },
+      { backlog_id: "f-x", task_id: "t3", title: "chart it", state: "pending", attempt: 2, files: [] },
+    ];
+    await p.route(/\/_hub\/work(\/[^/?]+)?(\?.*)?$/, r => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[3] || "");
+      const work = { backlog_id: "f-x", title: "the data item", state: "running" };
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(id ? { work, steps: [], tasks } : { work: [work] }) });
+    });
+    await p.route(/\/_hub\/items(\/[^/?]+)?(\?.*)?$/, r => {
+      const id = decodeURIComponent(new URL(r.request().url()).pathname.split("/")[3] || "");
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(id ? { ...row, item: row, history: [] } : { items: [row] }) });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await p.click('.tab[data-view="items"]');
+    await p.waitForSelector(".it-row", { timeout: slow(10000) });
+    await p.click(".it-row .it-main");
+    await p.waitForSelector(".it-detail .it-tasks .it-task", { timeout: slow(10000) });
+    const seen = await p.evaluate(() => ({
+      rows: [...document.querySelectorAll(".it-detail .it-task")].map(e => ({ id: e.dataset.task, state: e.querySelector(".it-tag").textContent, text: e.textContent })),
+      buttons: document.querySelectorAll(".it-detail .it-tasks button").length,
+      head: (document.querySelector(".it-detail .it-tasks h2") || {}).textContent || "",
+    }));
+    if (seen.head !== "Tasks") no("the heading is " + JSON.stringify(seen.head));
+    if (seen.rows.map(r => r.id + ":" + r.state).join(",") !== "t1:captured,t2:capture failed,t3:pending") no("the rows are " + JSON.stringify(seen.rows.map(r => [r.id, r.state])));
+    const [t1, t2, t3] = seen.rows.map(r => r.text);
+    if (!/counted 41 rows/.test(t1) || !/why: the header is not a row/.test(t1) || !/files: f-x-t1-count\.txt/.test(t1)) no("t1 reads " + t1);
+    if (!/over 5 MB/.test(t2) || /D:\/cards/.test(t2)) no("t2 reads " + t2);
+    if (!/attempt 2/.test(t3) || /attempt/.test(t1)) no("the attempts read " + JSON.stringify([t1, t3]));
+    if (seen.buttons) no(seen.buttons + " buttons on a read only list");
+  } finally {
+    mock.hubMode = wasHub;
+    await ctx.close();
+  }
+  if (errors.length) no("threw " + errors.join(" | "));
+  if (!failed) console.log("itemsTaskList ok");
+}
+
 const units = [
   { name: "readyOnce", run: ({ browser, base }) => readyOnceSection(browser, base) },
   { name: "readyPopout", run: ({ browser, base }) => readyPopoutSection(browser, base) },
@@ -1201,6 +1258,7 @@ const units = [
   { name: "itemsEfficacy", run: ({ browser, base }) => itemsEfficacySection(browser, base) },
   { name: "itemsUx", run: ({ browser, base }) => itemsUxSection(browser, base) },
   { name: "itemsPhone", run: ({ browser, base }) => itemsPhoneSection(browser, base) },
+  { name: "itemsTaskList", run: ({ browser, base }) => itemsTaskListSection(browser, base) },
   { name: "interviewTop", run: ({ browser, base }) => interviewTopSection(browser, base) },
   { name: "itemMinionChip", run: ({ browser, base }) => itemMinionChipSection(browser, base) },
   { name: "itemDocsLanded", run: ({ browser, base }) => itemDocsLandedSection(browser, base) },
