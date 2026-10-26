@@ -32,14 +32,15 @@ const backlogToolDesc = "The backlog, kept on the hub, so a director on any room
 	"branch tip, `new:` one line per verb, flag, endpoint, setting or tab, `stale:` `<path>  <what it says " +
 	"wrong>` per page left wrong, `updated:` the pages the branch already fixed. No stale page, no item.\n" +
 	"- `status {id, status}`: change the status.\n" +
-	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`."
+	"- `priority {id, priority}`: change the priority to `high`, `medium`, `low` or `unset`.\n" +
+	"- `edit {id, title?, body?}`: replace the title, the body, or both."
 
 type backlogInput struct {
-	Action   string `json:"action" jsonschema:"list, get, file, status or priority"`
+	Action   string `json:"action" jsonschema:"list, get, file, status, priority or edit"`
 	ID       string `json:"id,omitempty" jsonschema:"the item id, for get and status, and for file when you choose it"`
 	Dept     string `json:"dept,omitempty" jsonschema:"the department, for file, and to narrow a list"`
-	Title    string `json:"title,omitempty" jsonschema:"for file: one line"`
-	Body     string `json:"body,omitempty" jsonschema:"for file: the item, markdown"`
+	Title    string `json:"title,omitempty" jsonschema:"for file and edit: one line"`
+	Body     string `json:"body,omitempty" jsonschema:"for file and edit: the item, markdown"`
 	Priority string `json:"priority,omitempty" jsonschema:"high, medium or low (unset for none). for file, priority, and to narrow a list"`
 	Status   string `json:"status,omitempty" jsonschema:"for status: open, held, in-progress, done or dropped. for list: only that status"`
 	Open     bool   `json:"open,omitempty" jsonschema:"for list: leave out done and dropped"`
@@ -211,8 +212,25 @@ func (c backlogTools) backlogHandler(ctx context.Context, req *mcp.CallToolReque
 		}
 		out.Item = &b
 		return nil, out, nil
+	case "edit":
+		if id == "" || (in.Title == "" && in.Body == "") {
+			return nil, out, &refusedError{"edit needs id and a title or a body"}
+		}
+		ask := map[string]any{"by": c.by(req)}
+		if in.Title != "" {
+			ask["title"] = in.Title
+		}
+		if in.Body != "" {
+			ask["body"] = in.Body
+		}
+		var b hubstore.BacklogItem
+		if err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", ask, &b); err != nil {
+			return nil, out, err
+		}
+		out.Item = &b
+		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, file, status, priority", in.Action)}
+	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, file, status, priority, edit", in.Action)}
 }
 
 func (c backlogTools) reportsHandler(ctx context.Context, req *mcp.CallToolRequest, in reportsInput) (

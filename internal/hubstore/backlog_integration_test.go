@@ -228,6 +228,28 @@ func TestPriorityIsHighMediumLowOrUnsetAndFoldsCase(t *testing.T) {
 	}
 }
 
+func TestItemEdit(t *testing.T) {
+	s := open(t)
+	_, _ = s.ItemFile(newItem("a", "fabric"))
+	title, body, blank := "new title", "new body", " "
+	b, err := s.ItemEdit("a", &title, nil, "orch@sg4")
+	if err != nil || b.Title != "new title" || b.Body == "new body" || b.ChangedBy != "orch@sg4" {
+		t.Fatalf("title: %+v %v", b, err)
+	}
+	if b, err = s.ItemEdit("a", nil, &body, "x"); err != nil || b.Title != "new title" || b.Body != "new body" {
+		t.Fatalf("body: %+v %v", b, err)
+	}
+	if _, err = s.ItemEdit("a", &blank, nil, "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("blank title: %v", err)
+	}
+	if _, err = s.ItemEdit("a", nil, nil, "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("nothing: %v", err)
+	}
+	if _, err = s.ItemEdit("nope", &title, nil, "x"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+}
+
 func TestItemSetPriorityAndFilter(t *testing.T) {
 	s := open(t)
 	_, _ = s.ItemFile(newItem("a", "fabric"))

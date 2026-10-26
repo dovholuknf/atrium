@@ -295,6 +295,46 @@ func (s *Store) ItemSetPriority(id, priority, by string) (BacklogItem, error) {
 	return out, err
 }
 
+// ItemEdit replaces an item's title, its body, or both, and says who did. A nil field is left as it is.
+func (s *Store) ItemEdit(id string, title, body *string, by string) (BacklogItem, error) {
+	switch {
+	case title == nil && body == nil:
+		return BacklogItem{}, refuse(errors.New("an edit needs a title or a body"))
+	case title != nil && strings.TrimSpace(*title) == "":
+		return BacklogItem{}, refuse(errors.New("an item needs a title"))
+	}
+	if title != nil {
+		if why := CRText("title", *title, ItemTitleMax, false); why != "" {
+			return BacklogItem{}, refuse(errors.New(why))
+		}
+	}
+	if body != nil {
+		if why := CRText("body", *body, ItemBodyMax, true); why != "" {
+			return BacklogItem{}, refuse(errors.New(why))
+		}
+	}
+	if why := CRText("changer", by, backlogByMax, false); why != "" {
+		return BacklogItem{}, refuse(errors.New(why))
+	}
+	var out BacklogItem
+	err := s.tx(func(t *sql.Tx) error {
+		res, err := t.Exec(`UPDATE backlog_item SET title = COALESCE(?, title), body = COALESCE(?, body),
+			changed_at = ?, changed_by = ? WHERE id = ?`, title, body, ts(s.now()), by, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return refuse(ErrItemNotFound)
+		}
+		out, err = scanItem(t.QueryRow(`SELECT `+itemCols+` FROM backlog_item WHERE id = ?`, id))
+		return err
+	})
+	if errors.Is(err, ErrItemNotFound) {
+		return BacklogItem{}, ErrItemNotFound
+	}
+	return out, err
+}
+
 // ── reports ─────────────────────────────────────────────
 
 // DirectorReport is one report, as the API carries it.
