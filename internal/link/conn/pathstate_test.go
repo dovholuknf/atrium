@@ -1,4 +1,4 @@
-package link
+package conn
 
 import (
 	"context"
@@ -182,5 +182,17 @@ func TestMutualIsReportedOnlyWhenTheRungSaysSo(t *testing.T) {
 	got := l.ProbePaths(context.Background(), time.Second)
 	if !got[0].Mutual || got[1].Mutual {
 		t.Fatalf("mtls flags: %+v", got)
+	}
+}
+
+func TestOnlyViaSkipsARoomWithAnotherPathUp(t *testing.T) {
+	h := NewHub(Timings{})
+	h.rooms[keyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
+		paths: []PathState{{Kind: "direct", State: PathDown}, {Kind: "ziti", State: PathOn}}}
+	h.rooms[keyOf("sg3")] = &attached{name: "sg3", via: "ziti",
+		paths: []PathState{{Kind: "direct", State: PathUp}, {Kind: "ziti", State: PathOn}}}
+	got := h.OnlyVia("ziti")
+	if len(got) != 1 || got[0] != "m1mini" {
+		t.Fatalf("only on ziti: %v", got)
 	}
 }

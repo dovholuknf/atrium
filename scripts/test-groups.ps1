@@ -38,7 +38,7 @@ $Groups = @(
     G 'link-git-url'       'link: git over the room URL, pass-through of pushes' './internal/link' 73 @('git_url_*', 'git_pass_*')
     G 'link-git'           'link: git receive, hub and store plumbing, end to end git' './internal/link' 55 @('git_receive_*', 'git_integration_*', 'git_store_*', 'git_e2e_*', 'git_hub_*', 'git_push_tool_*')
     G 'link-changerequest' 'link: change requests and deploy-ready gate' './internal/link' 100 @('changerequest_*', 'deployready_*')
-    G 'link-forge'         'link: forge routes and CI, announce, upgrade, PR claim/move/prune, rooms events' './internal/link' 21 @('forgeroute_*', 'forgeci_*', 'announce_*', 'upgrade_*', 'roomsevent_*', 'prclaim_*', 'prmove_*', 'prune_*', 'prworktreeroute_*', 'pinorder_*')
+    G 'link-forge'         'link: forge routes and CI, PR claim/move/prune, rooms events' './internal/link' 21 @('forgeroute_*', 'forgeci_*', 'roomsevent_*', 'prclaim_*', 'prmove_*', 'prune_*', 'prworktreeroute_*', 'pinorder_*')
     G 'link-messaging'     'link: relay, everywhere, notify, growl, push, fanout' './internal/link' 14 @('relay_*', 'everywhere_*', 'everywhere_relay_*', 'notify_*', 'notify*_*', 'notifyapi_*', 'growl_*', 'growl_ladder_*', 'push_*', 'pushapi_*', 'webpush_*', 'fanout_*', 'says_*', 'events_*', 'hubask_*')
     G 'link-core'          'link: everything else in link (restart gate, routes, MCP, docs, deps, readers)' './internal/link' 82 -Rest
 
@@ -62,6 +62,7 @@ $Groups = @(
     G 'link-wire'          'link/wire: the frames, timings and shared types of the room link' './internal/link/wire' 5 @('*')
     G 'daemon-screen-model' 'daemon/screen: the screen model, flatten, replay, width tables, idle frames' './internal/daemon/screen' 3 @('*')
     G 'link-transport'     'link/transport: how the room link makes a connection, direct and the overlays' './internal/link/transport' 10 @('*')
+    G 'link-conn'          'link/conn: the hub and room halves of the room link, attach, dials, paths, streams, upgrade' './internal/link/conn' 14 @('*')
     G 'ptyhost'            'ptyhost: pty and ConPTY host' './internal/ptyhost' 16 @('*')
     G 'guard'              'guard: git guard' './internal/guard' 10 @('*')
     G 'misc'               'small packages: cardproc claudeconf edge forge linkfetch nowindow prreview/render requirements resources roomspec roomstats runnersetup safepath testdiag' @(

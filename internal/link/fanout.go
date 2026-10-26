@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -625,7 +626,7 @@ func (p *Proxy) roomClient(room string) *http.Client {
 	}
 	c := &http.Client{
 		Transport: &http.Transport{
-			DialContext:         p.hub.dialer(room),
+			DialContext:         func(ctx context.Context, _, _ string) (net.Conn, error) { return p.hub.Dial(ctx, room) },
 			MaxIdleConns:        16,
 			MaxIdleConnsPerHost: 16,
 			IdleConnTimeout:     90 * time.Second,

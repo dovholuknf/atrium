@@ -308,16 +308,8 @@ func TestAnUpgradeBecomesARawConnection(t *testing.T) {
 // not when bytes arrive, so any non-zero value silently closes exactly the
 // connections the pool exists to hold. The link went on reporting itself
 // healthy with four idle connections while every request answered EOF.
-//
-// Any timeout on the server is a bug, whatever its length, so the server's own
-// settings are asserted instead of waiting out one.
 func TestAConnectionThatWaitedInThePoolStillWorks(t *testing.T) {
 	parallel(t)
-	srv := newLinkServer(http.NotFoundHandler())
-	if srv.ReadHeaderTimeout != 0 || srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || srv.IdleTimeout != 0 {
-		t.Fatalf("the link server has a timeout: %v %v %v %v",
-			srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout)
-	}
 	front, _, done := pair(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "still here")
 	}))

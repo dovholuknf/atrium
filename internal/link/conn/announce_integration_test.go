@@ -1,6 +1,6 @@
 //go:build integration
 
-package link
+package conn
 
 import (
 	"context"
@@ -111,6 +111,11 @@ func (s *roomState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // caching stands up a hub that keeps what it is told, and a room attached to it.
 func caching(t *testing.T, state http.Handler) (*Hub, *[]announcement, *sync.Mutex, func()) {
+	return cachingWith(t, state, nil)
+}
+
+// cachingWith is `caching` with a chance to adjust the hub before it serves.
+func cachingWith(t *testing.T, state http.Handler, tune func(*Hub)) (*Hub, *[]announcement, *sync.Mutex, func()) {
 	t.Helper()
 	// Most of these tests are waits, and each has a hub and a room of its own.
 	parallel(t)
@@ -129,6 +134,9 @@ func caching(t *testing.T, state http.Handler) (*Hub, *[]announcement, *sync.Mut
 		return nil
 	}
 
+	if tune != nil {
+		tune(hub)
+	}
 	ctx, stop := context.WithCancel(context.Background())
 	go func() { _ = hub.Serve(ctx, ln) }()
 
@@ -500,3 +508,37 @@ func (c countingDialer) Dial(ctx context.Context) (net.Conn, error) {
 }
 
 func (c countingDialer) Describe() string { return c.addr }
+
+// index is an everywhere index that keeps what it is handed.
+type index struct {
+	mu    sync.Mutex
+	cards map[string][]CardState
+}
+
+func (x *index) Replace(room string, cards []CardState) bool {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.cards[room] = cards
+	return true
+}
+
+func (x *index) has(room, id string) bool {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	for _, c := range x.cards[room] {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// AFTER THE CACHE, what a room announced reaches the hub's everywhere index under the room's name.
+func TestEverywhereAnAnnouncementReachesTheIndex(t *testing.T) {
+	state := newRoomState(map[string]any{"id": "one", "status": "running", "wire_name": "atrium-1",
+		"alias": "orchestrator", "tags": []string{"atrium:everywhere"}})
+	idx := &index{cards: map[string][]CardState{}}
+	_, _, _, stop := cachingWith(t, state, func(h *Hub) { h.Every = idx })
+	defer stop()
+	waitFor(t, announceWait, func() bool { return idx.has("testroom", "one") })
+}

@@ -28,21 +28,6 @@ import (
 // GET /_hub/git/url and atrium_git_url take a repository and a branch to LOOK UP, and give neither to git: the repository
 // is found in the list the hub knows, and the branch is compared with the names that were listed (git_url.go).
 
-// GitRooms adapts this hub to what internal/gitsync needs of the link.
-func (h *Hub) GitRooms() gitsync.Rooms { return hubGitRooms{h} }
-
-type hubGitRooms struct{ h *Hub }
-
-func (g hubGitRooms) Attached() []gitsync.RoomInfo {
-	var out []gitsync.RoomInfo
-	for _, a := range g.h.Rooms() {
-		out = append(out, gitsync.RoomInfo{Name: a.Name, Host: a.Host, Git: a.Git})
-	}
-	return out
-}
-
-func (g hubGitRooms) Transport(room string) http.RoundTripper { return g.h.Transport(room) }
-
 // SetGit wires the hub's git side into the board API. Nil leaves /_hub/git answering 404.
 func (p *Proxy) SetGit(g *gitsync.Hub) {
 	p.mu.Lock()

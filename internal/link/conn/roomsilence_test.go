@@ -1,9 +1,10 @@
-package link
+package conn
 
 import (
 	"bufio"
 	"errors"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -47,5 +48,14 @@ func TestReadNoteWithNoSilenceSetsNoDeadline(t *testing.T) {
 	var n note
 	if err := readNote(a, bufio.NewReader(a), 0, &n); err != nil || n.Beat != 1 {
 		t.Fatalf("n=%+v err=%v", n, err)
+	}
+}
+
+// A pooled connection is old when it is used, and http.Server timeouts start at accept, so any timeout drops it.
+func TestTheLinkServerHasNoTimeout(t *testing.T) {
+	srv := newLinkServer(http.NotFoundHandler())
+	if srv.ReadHeaderTimeout != 0 || srv.ReadTimeout != 0 || srv.WriteTimeout != 0 || srv.IdleTimeout != 0 {
+		t.Fatalf("the link server has a timeout: %v %v %v %v",
+			srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout)
 	}
 }

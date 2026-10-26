@@ -71,5 +71,5 @@ func (p *Proxy) serveSSH(w http.ResponseWriter, r *http.Request, room string) {
 		return
 	}
 	// Bytes the server already read are the first of ssh's, and go onward first.
-	st.Run(&buffered{Conn: c, br: rw.Reader}, nil)
+	st.Run(newBuffered(c, rw.Reader), nil)
 }
