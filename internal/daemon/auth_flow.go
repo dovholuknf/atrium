@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -529,7 +530,7 @@ func (d *Daemon) claimsOf(ctx context.Context, disc *discovery, cfg AuthConfig, 
 		return "", "", fmt.Errorf("the provider publishes no signing keys, so nothing it " +
 			"sends can be verified")
 	}
-	keys, err := jwksFor(ctx, disc.JWKSURL)
+	keys, err := publish.JwksFor(ctx, disc.JWKSURL)
 	if err != nil {
 		return "", "", err
 	}

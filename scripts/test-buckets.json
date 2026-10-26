@@ -414,6 +414,8 @@
     "hub/transport": {"package": "./internal/link", "sources": ["internal/link/transport_mcp.go"], "tests": ["internal/link/overlaysetup_*test.go"]},
     "agent": {"package": "./internal/daemon", "sources": ["internal/daemon/*.go"], "tests": ["internal/daemon/*_test.go"]},
     "screen": {"package": "./internal/daemon/screen", "sources": ["internal/daemon/screen/*.go"], "tests": ["internal/daemon/screen/*_test.go"]},
+    "daemon-launch": {"package": "./internal/daemon/launch", "sources": ["internal/daemon/launch/*.go"], "tests": ["internal/daemon/launch/*_test.go"]},
+    "publish": {"package": "./internal/daemon/publish", "sources": ["internal/daemon/publish/*.go"], "tests": []},
     "store": {"package": "./internal/store", "sources": ["internal/store/*.go"], "tests": ["internal/store/*_test.go"]},
     "hubstore": {"package": "./internal/hubstore", "sources": ["internal/hubstore/*.go"], "tests": ["internal/hubstore/*_test.go"]},
     "gitsync": {"package": "./internal/gitsync", "sources": ["internal/gitsync/*.go"], "tests": ["internal/gitsync/*_test.go"]},

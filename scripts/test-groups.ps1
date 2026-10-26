@@ -61,6 +61,8 @@ $Groups = @(
     G 'deployready'        'deployready: the deploy-ready checks' './internal/deployready' 40 @('*')
     G 'link-wire'          'link/wire: the frames, timings and shared types of the room link' './internal/link/wire' 5 @('*')
     G 'daemon-screen-model' 'daemon/screen: the screen model, flatten, replay, width tables, idle frames' './internal/daemon/screen' 3 @('*')
+    G 'daemon-launch'   'daemon/launch: the Git Bash lookup a Windows launch makes' './internal/daemon/launch' 3 @('*')
+    G 'daemon-publish'  'daemon/publish: the ziti SDK enrol and the login provider key fetch' './internal/daemon/publish' 3 @('*')
     G 'link-transport'     'link/transport: how the room link makes a connection, direct and the overlays' './internal/link/transport' 10 @('*')
     G 'link-conn'          'link/conn: the hub and room halves of the room link, attach, dials, paths, streams, upgrade' './internal/link/conn' 14 @('*')
     G 'ptyhost'            'ptyhost: pty and ConPTY host' './internal/ptyhost' 16 @('*')

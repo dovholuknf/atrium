@@ -63,6 +63,8 @@ var table = []row{
 	{0, "internal/base/tokenprice", nil},
 	{0, "internal/base/userenv", nil},
 	{0, "internal/base/webasset", nil},
+	{0, "internal/daemon/launch", nil},
+	{0, "internal/daemon/publish", nil},
 	{0, "internal/daemon/screen", nil},
 	{0, "internal/link/wire", nil},
 	{0, "internal/zitictx", nil},
@@ -114,6 +116,7 @@ var table = []row{
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
+		"internal/daemon/launch", "internal/daemon/publish",
 		"internal/daemon/screen",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",

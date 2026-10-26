@@ -1,4 +1,4 @@
-package daemon
+package launch
 
 import (
 	"fmt"
@@ -17,9 +17,9 @@ import (
 
 const gitBashEnvName = "CLAUDE_CODE_GIT_BASH_PATH"
 
-// checkGitBash is gitBashFor with this machine's own lookups. It returns the
+// CheckGitBash is gitBashFor with this machine's own lookups. It returns the
 // KEY=VALUE to add to the runner's env, or empty.
-func checkGitBash(runnerID string, env []string) (string, error) {
+func CheckGitBash(runnerID string, env []string) (string, error) {
 	home, _ := os.UserHomeDir()
 	return gitBashFor(runtime.GOOS, runnerID, env, home, func(p string) bool {
 		st, err := os.Stat(p)
