@@ -7,13 +7,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/link/transport"
-	"github.com/dovholuknf/atrium/internal/link/wire"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
@@ -158,8 +162,8 @@ type Hub struct {
 	// be listening: a hub with no board open leaves the token sitting there, and
 	// the next reconciler starts by looking at the truth anyway.
 	changed chan struct{}
-	// every is the everywhere index. See everywhere.go.
-	every *everywhere
+	// Every is the everywhere index, nil on a hub that keeps none. See everywhere.go.
+	Every Index
 }
 
 // Changes is the channel that fires when the set of attached rooms may have
@@ -275,9 +279,9 @@ type attached struct {
 	done     chan struct{}
 }
 
-// NewHub makes an empty hub.
-func NewHub(t Timings) *Hub {
-	return &Hub{T: t.Fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1), every: newEverywhere()}
+// newHub makes an empty hub with no everywhere index.
+func newHub(t Timings) *Hub {
+	return &Hub{T: t.Fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1)}
 }
 
 // Serve accepts connections until the listener closes.
@@ -1103,4 +1107,87 @@ func (h *Hub) paths() []Path {
 		return nil
 	}
 	return h.Paths()
+}
+
+// localConn is whether a room's link came from the hub's own machine.
+func localConn(c net.Conn, host string) bool {
+	if a := c.RemoteAddr(); a != nil {
+		h, _, err := net.SplitHostPort(a.String())
+		if err != nil {
+			h = a.String()
+		}
+		if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+			return true
+		}
+	}
+	me, err := os.Hostname()
+	return err == nil && host != "" && strings.EqualFold(strings.TrimSpace(host), me)
+}
+
+// OnlyVia names the attached rooms that reach this hub over a kind and have no other path that answers. A room that has
+// reported no paths is counted, since nothing says it has another.
+func (h *Hub) OnlyVia(kind string) []string {
+	var out []string
+	for _, a := range h.Rooms() {
+		if a.Via != kind {
+			continue
+		}
+		other := false
+		for _, p := range a.Paths {
+			if p.Kind != kind && (p.State == PathUp || p.State == PathOn) {
+				other = true
+			}
+		}
+		if !other {
+			out = append(out, a.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// RoomSetup is what the hub last learned about one room's setup.
+type RoomSetup struct {
+	// Answering is false when the room did not answer the check. Nothing else is meaningful then.
+	Answering bool      `json:"answering"`
+	Checked   time.Time `json:"checked"`
+	// HooksMissing is the report's `missing` count, which includes stale hooks. HooksStale counts those alone.
+	HooksMissing int `json:"hooks_missing"`
+	HooksStale   int `json:"hooks_stale"`
+	// HooksUnreadable is the parse error when settings.json cannot be read. Nothing is written then, so no fix.
+	HooksUnreadable string `json:"hooks_unreadable,omitempty"`
+	// HooksTwoGates is true when the dotfiles gate and atrium's own are both registered. It is one of HooksMissing.
+	HooksTwoGates bool   `json:"hooks_two_gates,omitempty"`
+	Build         string `json:"build,omitempty"`
+	// Code is the room's code fingerprint and Commit the commit it was built from. Both are empty on an old room.
+	Code    string   `json:"code,omitempty"`
+	Commit  string   `json:"commit,omitempty"`
+	Go      string   `json:"go,omitempty"`
+	Runners []string `json:"runners,omitempty"`
+	// Issues is what is wrong, named once here so the pill and the row cannot disagree.
+	Issues []SetupIssue `json:"issues"`
+
+	Since time.Time `json:"-"`
+}
+
+// SetupIssue is one thing wrong with a room, in a line a person can read.
+type SetupIssue struct {
+	// Kind is `hooks` or `build`. Only `hooks` has a fix on the board.
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+// IndexEverywhere replaces one room's cards in the everywhere index. Called
+// with what the room announced, and once per room from the cache when the hub
+// starts. Reports whether the index changed.
+func (h *Hub) IndexEverywhere(room string, cards []CardState) bool {
+	if h.Every == nil {
+		return false
+	}
+	return h.Every.Replace(room, cards)
+}
+
+// Index is the everywhere index as the hub feeds it from a room's announcement.
+type Index interface {
+	Replace(room string, cards []CardState) bool
 }

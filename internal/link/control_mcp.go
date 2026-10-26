@@ -59,12 +59,6 @@ import (
 // `X-Atrium-Room` avoid all five.
 const AgentHeader = "X-Atrium-Agent"
 
-// controlTimeout bounds every call these tools make to the hub's own board.
-//
-// Short. All of them are local HTTP against a listener in this process, and the
-// failure worth reporting quickly is "the board is down", not "a slow one".
-const controlTimeout = 8 * time.Second
-
 // controlMCP holds what the hub-side tools need: where to reach the hub's own
 // board, a client to do it with, and the hub to forward a restart over.
 type controlMCP struct {
@@ -776,7 +770,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 	} else if room != "" && c.hub != nil {
 		// WITHOUT `rooms`, the cards tagged atrium:everywhere on other rooms,
 		// after the local ones, so they can be told to by name.
-		for _, e := range c.hub.every.all(room) {
+		for _, e := range everyOf(c.hub).all(room) {
 			out.Peers = append(out.Peers, e.asPeer())
 		}
 	}
@@ -2354,7 +2348,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	if err != nil {
 		var be *boardError
 		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
-			return nil, out, errors.New(predatesCull(scope, c.hub.buildOf(scope)))
+			return nil, out, errors.New(predatesCull(scope, buildOf(c.hub, scope)))
 		}
 		return nil, out, err
 	}

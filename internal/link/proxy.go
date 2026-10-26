@@ -218,9 +218,9 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 			}
 		}
 	}
-	hub.every.mu.Lock()
-	hub.every.onChange = p.feeds.everywhereChanged
-	hub.every.mu.Unlock()
+	everyOf(hub).mu.Lock()
+	everyOf(hub).onChange = p.feeds.everywhereChanged
+	everyOf(hub).mu.Unlock()
 	// A ROOM'S STREAM COMING UP is when the board-wide approver sweeps that room.
 	// See autoapprove.go.
 	p.feeds.connected = func(room string) {
@@ -1334,7 +1334,7 @@ type ShareAuth struct {
 // permission chain is then whatever each room's own gate does, exactly as
 // before. See autoapprove.go.
 func (p *Proxy) SetInventory(s Inventory) {
-	p.hub.every.setHolding(s)
+	everyOf(p.hub).setHolding(s)
 	// WHEN AN OFFLINE ROOM WAS LAST HEARD, for the sentence a refused ssh stream gets.
 	if p.hub.LastSeen == nil {
 		p.hub.LastSeen = func(room string) (time.Time, bool) {
@@ -1545,7 +1545,7 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
-	p.hub.every.drop(body.Name)
+	everyOf(p.hub).drop(body.Name)
 	p.feeds.roomsChanged()
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }

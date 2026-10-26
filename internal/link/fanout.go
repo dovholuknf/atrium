@@ -607,10 +607,6 @@ func (p *Proxy) askRoom(r *http.Request, room, field string) ([]any, error) {
 	return rows, nil
 }
 
-type errStatus int
-
-func (e errStatus) Error() string { return "the room answered " + http.StatusText(int(e)) }
-
 // roomClient is a client pinned to one room.
 //
 // One per room, kept, because `http.Transport` is where the keep-alive lives

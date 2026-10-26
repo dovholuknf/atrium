@@ -283,3 +283,9 @@ func (h *Hub) serveRelay(ctx context.Context, name string, conn net.Conn, br *bu
 	ans := h.Relay(cctx, name, req)
 	_ = json.NewEncoder(conn).Encode(ans)
 }
+
+// controlTimeout bounds every call these tools make to the hub's own board.
+//
+// Short. All of them are local HTTP against a listener in this process, and the
+// failure worth reporting quickly is "the board is down", not "a slow one".
+const controlTimeout = 8 * time.Second

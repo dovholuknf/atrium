@@ -96,7 +96,7 @@ func (p *Proxy) SetBoardViews(roots []string, hash func(fs.FS) string) (bad []st
 	}
 	host, _ := os.Hostname()
 	p.views = &views{roots: clean, host: host, now: time.Now, hash: hash,
-		cards: func() []everyCard { return p.hub.every.allTrees() },
+		cards: func() []everyCard { return everyOf(p.hub).allTrees() },
 		byDir: map[string]*boardView{}}
 	return bad
 }
