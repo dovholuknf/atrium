@@ -6170,8 +6170,9 @@ async function termFitHeightSection(browser, base) {
           const hint = document.querySelector(".term-help").getBoundingClientRect();
           const screen = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
           const cell = term._core._renderService.dimensions.css.cell.height;
-          const pane = term.element.parentElement;
-          if (term._atriumBox !== pane.clientWidth + "x" + pane.clientHeight) return false;
+          // Not the box mark `onTermResize` leaves: the first fit after open does not leave one.
+          const d = termFit.proposeDimensions();
+          if (!d || term.rows !== rowsInPane(d.rows)) return false;
           return screen.top + term.rows * cell <= hint.top + 0.5;
         }, null, { timeout: slow(3000) });
       } catch (e) {
