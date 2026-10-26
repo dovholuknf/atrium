@@ -720,59 +720,6 @@ async function openOnDaemon(id, path) {
   toast("opening", path.split(/[\\/]/).pop() + " on the machine running this session");
 }
 
-// A board loaded from loopback is on the hub's machine, so a card is on this machine when it has no room prefix (one
-// room) or its room is the hub's own (`local` in `/_hub/rooms`). A card on another room goes to `files/launch`.
-function cardOnThisMachine(id) {
-  if (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) return false;
-  const room = roomOf(id);
-  return !room || !!(hubRooms.find(r => r.name === room) || {}).local;
-}
-
-// On the room's own machine the room issues an `atrium-open:` link and the browser hands it to the desktop user's
-// handler (`atrium open-handler install`). False means use `files/launch`. A browser with no handler does nothing
-// on an unknown scheme, so a link that moved no focus in 3s is taken as not picked up and the install command is shown.
-async function launchByLink(id, path) {
-  if (!cardOnThisMachine(id)) return false;
-  try {
-    const r = await api(`/v1/tasks/${id}/files/launch-link`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path })
-    });
-    if (!r || !r.url) return false;
-    let picked = false;
-    const saw = () => { picked = true; };
-    window.addEventListener("blur", saw, { once: true });
-    document.addEventListener("visibilitychange", saw, { once: true });
-    setTimeout(() => {
-      window.removeEventListener("blur", saw);
-      document.removeEventListener("visibilitychange", saw);
-      if (!picked) toast("nothing opened it", "to open files here, run once as the desktop user: " + r.install);
-    }, 3000);
-    location.href = r.url;
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-// Opens a file with the default app of the ROOM's machine, which over a share is not the one in front of you.
-async function launchOnRoom(id, path, where) {
-  if (await launchByLink(id, path)) {
-    toast("asking your desktop to open", path.split(/[\\/]/).pop());
-    return;
-  }
-  try {
-    await api(`/v1/tasks/${id}/files/launch`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path })
-    });
-  } catch (e) {
-    toast("could not open it", e.message);
-    return;
-  }
-  toast("opened externally", path.split(/[\\/]/).pop() + " on " + (where || "the room's machine") + ", not in this browser");
-}
-
 function filesUp() {
   if (filesPos.dialog.parent) loadFiles(filesPos.dialog.parent, dialogFilesCtx());
 }

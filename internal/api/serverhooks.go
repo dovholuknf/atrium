@@ -26,8 +26,6 @@ type serverHooks struct {
 	prArchiveCap int64
 	// scrapDir, when non-nil, is the scrap folder instead of ScrapDir. A pointer so a test can say it is empty.
 	scrapDir *string
-	// launchFile, when set, opens a file instead of the operating system's default app.
-	launchFile func(path, dir string) error
 	// removeWaits and leftoverWaits, when non-nil, replace closeRemoveWaits and closeLeftoverWaits.
 	removeWaits, leftoverWaits *[]time.Duration
 }
@@ -111,11 +109,4 @@ func (s *Server) archiveCap() int64 {
 		return s.hk.prArchiveCap
 	}
 	return PRArchiveCap
-}
-
-func (s *Server) launcher() func(path, dir string) error {
-	if s.hk.launchFile != nil {
-		return s.hk.launchFile
-	}
-	return osLaunch
 }

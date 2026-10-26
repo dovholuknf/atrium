@@ -368,7 +368,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		ColdHandoff *bool `json:"cache_cold_handoff"`
 		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
 		UsageCacheReads *bool `json:"usage_cache_reads"`
-		// Whether open externally reaches a file outside the card and the open roots. See filelaunch.go.
+		// The removed open externally's switch, still stored. See SettingOpenExternalAnywhere.
 		OpenExternalAnywhere *bool `json:"open_external_anywhere"`
 		// When the weekly limit resets: weekday, time and time zone. One per board. See usageweek.go.
 		UsageWeekReset *UsageWeekReset `json:"usage_week_reset"`
@@ -1037,6 +1037,14 @@ const SettingUsageCacheReads = "usage_cache_reads"
 
 func (s *Server) usageCacheReads() bool {
 	v, err := s.st.Setting(SettingUsageCacheReads)
+	return err == nil && strings.TrimSpace(v) == "on"
+}
+
+// SettingOpenExternalAnywhere is the stored switch of the removed open externally. Only settings reads it.
+const SettingOpenExternalAnywhere = "open_external_anywhere"
+
+func (s *Server) openExternalAnywhere() bool {
+	v, err := s.st.Setting(SettingOpenExternalAnywhere)
 	return err == nil && strings.TrimSpace(v) == "on"
 }
 

@@ -12,7 +12,7 @@ The rule the file endpoints exist under, and the reason `internal/base/safepath`
 - **Download takes one and resolves it through `safepath`,** which follows symlinks on BOTH sides.
 - **Everything outside a card answers 403 whether or not it exists,** unless it is under an atrium path or an
   `open_paths` folder, so the endpoint is not an oracle for what is on the machine.
-- **Only the read endpoints look past the card:** probe, view, launch, list and download, through
+- **Only the read endpoints look past the card:** probe, view, list and download, through
   `containedOrOpen` in `openpaths.go`. Upload, text (read and write), delete, zip and `files/open` stay against
   the card alone.
 - **An atrium path is allowed with no setting,** and `atriumPaths` is the one place that defines the set: the

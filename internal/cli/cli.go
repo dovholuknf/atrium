@@ -116,7 +116,7 @@ func newRoot() *cobra.Command {
 		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
-		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd(), newWorktree(), newUpdate(), newOpenHandler())
+		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd(), newWorktree(), newUpdate())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/archive/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")

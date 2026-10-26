@@ -15,7 +15,7 @@ script, a stylesheet by link or a picture beside it draws without them.
 1. In a card's terminal, have the agent print the path of an HTML file in the card, such as `out/topology.html`.
 2. Click it.
 
-**Expected:** the menu offers "open rendered", "open raw in a tab", "open in atrium's editor" and "open externally".
+**Expected:** the menu offers "open rendered", "open raw in a tab" and "open in atrium's editor".
 Hovering "open rendered" shows the board's bubble, not a browser tooltip.
 
 ### @LETTER@2. The rendered page is sandboxed

@@ -114,7 +114,7 @@ async function provideFileLinks(t, id, y, done) {
     const hit = probeHit(probeKnown(id), s.token);
     // The room decides what outside the card it will open. A path it does not find stays refused.
     if (hit) links.push(fileLink(id, s.range, hit));
-    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token, id));
+    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token));
   }
   done(links.length ? links : undefined);
 }
@@ -168,41 +168,15 @@ function fileLink(id, range, hit) {
   };
 }
 
-// A path that names somewhere outside the card. Its link opens nothing and says why, unless the room lets open
-// externally reach it. Decided from the name and the setting: the board never asks about the file.
-function outsideLink(range, tok, id) {
-  const anywhere = () => typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.open_external_anywhere === true;
+// A path that names somewhere outside the card. Its link opens nothing and says why.
+function outsideLink(range, tok) {
   return {
     range,
     text: tok,
-    activate: (ev) => {
-      if (ev && ev.button) return;
-      if (term && term.hasSelection && term.hasSelection()) return;
-      if (!launchable(tok)) return;
-      linkTipHide();
-      hideTip();
-      outsideLinkMenu(ev, id, tok);
-    },
-    hover: (ev) => linkTipShow(ev, tok, tok + (anywhere() && launchable(tok)
-      ? "\noutside this card. click to open it externally on the room's machine"
-      : "\noutside this card, the board cannot open it")),
+    activate: () => {},
+    hover: (ev) => linkTipShow(ev, tok, tok + "\noutside this card, the board cannot open it"),
     leave: () => linkTipLeave()
   };
-}
-
-// The one thing an outside path offers, and only when the card's own room has open_external_anywhere on.
-async function outsideLinkMenu(ev, id, tok) {
-  const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
-  const where = (termTask && termTask.id === id && termTask.room) || "";
-  let on = false;
-  try {
-    const s = await api("/v1/settings", where ? { headers: { "X-Atrium-Room": where } } : undefined);
-    on = !!s && s.open_external_anywhere === true;
-  } catch (e) {
-    return;
-  }
-  if (!on || !termTask || termTask.id !== id) return;
-  showMenu(at, [{ label: "open externally, on " + (where || "the room's machine"), act: () => launchOnRoom(id, tok, where) }]);
 }
 
 // Whether `tok` is an absolute path that is not under the card's directory, judged from the spelling alone. A
@@ -271,22 +245,16 @@ function notEditable(rel) { return binaryExt.test(rel || ""); }
 // What a click opens in the viewer without asking: an SVG is text, but it is read as a picture.
 function viewAtOnce(rel) { return notEditable(rel) || /\.svg$/i.test(rel || ""); }
 
-// What `files/launch` will hand to the room's default app. The same list as `launchTypes` in filelaunch.go.
-const launchExt = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg|pdf|md|markdown|txt|log|csv|json|html?)$/i;
-function launchable(rel) { return launchExt.test(rel || ""); }
-
 // A clicked file asks where it should open.
 //
 //   open rendered / open in a tab   atrium's viewer, in a new browser tab, streamed from the room that holds the
 //                                   card. First and always offered. Markdown is rendered there. HTML is offered
 //                                   both ways: drawn in a sandboxed frame, and as its source.
 //   in atrium's editor              here, in this browser, in the drawer. Not for a binary.
-//   open externally, on <machine>   `files/launch`, the room's DEFAULT APP for the file, on the room's machine.
-//                                   Only for a document or a picture: a program's default app is to run it.
 //   open in the editor on <machine> `files/open`, which runs the operator's `editor_command` on the machine the
 //                                   file is on. Offered ONLY when that room has one set. There is no default.
 //
-// Both of the last two are named for the machine because over a share it is not the machine in front of you. The
+// The last is named for the machine because over a share it is not the machine in front of you. The
 // room's own setting decides, not the board's: a card on another room is opened by that room's command.
 async function fileLinkMenu(ev, id, hit) {
   const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
@@ -308,12 +276,6 @@ async function fileLinkMenu(ev, id, hit) {
       tip: "drawn in a sandbox: no script runs and nothing outside the file loads" });
   }
   if (!notEditable(hit.rel) && !hit.outside) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
-  if (launchable(hit.rel)) {
-    items.push({
-      label: "open externally, on " + (where || "the room's machine"),
-      act: () => launchOnRoom(id, hit.rel, where)
-    });
-  }
   if (cmd && !hit.outside) {
     items.push({
       label: where ? "open in the editor on " + where : "open in the editor where the file is",

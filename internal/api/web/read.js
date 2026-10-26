@@ -92,57 +92,6 @@ function readKind(path) {
   return "text";
 }
 
-// What `files/launch` opens with the default app. The same list as `launchTypes` in filelaunch.go.
-function readLaunchable(path) { return /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg|pdf|md|markdown|txt|log|csv|json|html?)$/i.test(path); }
-
-// OPEN EXTERNALLY hands the file to the default app of the ROOM's machine, which is named, because over a share
-// it is not this one.
-function extMain(id, path) {
-  const btn = document.getElementById("open-ext");
-  const note = document.getElementById("ext-note");
-  if (!btn || !readLaunchable(path)) return;
-  const cut = id.indexOf("~");
-  const room = cut > 0 ? id.slice(0, cut) : "";
-  const on = room ? room + "'s machine" : "the room's machine";
-  btn.hidden = false;
-  btn.title = "Opens it with the default app on " + on + ", not in this browser.";
-  btn.textContent = "Open externally, on " + (room || "the room's machine");
-  btn.onclick = async () => {
-    btn.disabled = true;
-    let msg = "";
-    try {
-      // A bare card id on a loopback board is on this machine, so the desktop user's link. See `launchByLink` in notes-files.js.
-      if (!room && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
-        const l = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files/launch-link", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: path })
-        });
-        const j = l.ok ? await l.json() : null;
-        if (j && j.url) {
-          location.href = j.url;
-          btn.disabled = false;
-          note.textContent = "Asked your desktop to open it. If nothing opens, run once as the desktop user: " + j.install;
-          note.hidden = false;
-          return;
-        }
-      }
-      const r = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files/launch", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: path })
-      });
-      if (!r.ok) {
-        let m = (await r.text()).trim();
-        try { const j = JSON.parse(m); if (j && j.error) m = j.error; } catch (e) {}
-        throw new Error(m || r.statusText);
-      }
-      msg = "Opened with the default app on " + on + ", not in this browser.";
-    } catch (e) {
-      msg = "Could not open it: " + e.message;
-    }
-    btn.disabled = false;
-    note.textContent = msg;
-    note.hidden = false;
-  };
-}
-
 // A relative reference against the folder of `from`, as a card path. The result is
 // never trusted: containment is the daemon's and a `..` past the top is refused there.
 function resolveRel(from, ref) {
@@ -250,7 +199,6 @@ function readMain() {
   }
   where.textContent = path;
   document.title = path.split("/").pop() + " — atrium";
-  if (!SHARE) extMain(id, path);
   const kind = readKind(path);
   const oops = msg => { text.className = "oops"; text.textContent = msg; };
   if (kind === "image") {

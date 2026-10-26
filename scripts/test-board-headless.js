@@ -5343,7 +5343,7 @@ async function fileMenuSection(browser, base) {
     const same = (got, want) => JSON.stringify(got) === JSON.stringify(want);
 
     let got = await ask("docs/plan.md");
-    const want = ["open rendered", "open in atrium's editor", "open externally, on sg4", "open in the editor on sg4"];
+    const want = ["open rendered", "open in atrium's editor", "open in the editor on sg4"];
     if (!same(got, want)) fail("the file menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
     await shot(p, "menu-md");
@@ -5369,72 +5369,9 @@ async function fileMenuSection(browser, base) {
 
     editorCommand = "";
     got = await ask("docs/plan.md");
-    if (!same(got, want.slice(0, 3))) fail("with no editor_command the menu offered " + JSON.stringify(got));
+    if (!same(got, want.slice(0, 2))) fail("with no editor_command the menu offered " + JSON.stringify(got));
     await p.keyboard.press("Escape");
     if (errors.length) fail("the file menu page threw uncaught errors: " + errors.join(" | "));
-  } finally {
-    mock.tasksMode = was;
-    await ctx.close();
-  }
-}
-
-// ── an outside path offers open externally only when its room has open_external_anywhere on (u-open-external-outside-card) ──
-// The board never asks about the file: no probe, view or download is sent for it.
-async function openExtAnywhereSection(browser, base) {
-  const was = mock.tasksMode;
-  mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
-  mock.landList = [mock.LAND["land-live"]];
-  mock.landPerms = [];
-  const errors = [];
-  let anywhere = false;
-  const launched = [], fileAsks = [];
-  const ctx = await landContext(browser);
-  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
-    body: JSON.stringify(Object.assign({}, settingsBody(""), { open_external_anywhere: anywhere })) }));
-  await ctx.route("**/files/launch", route => {
-    launched.push(JSON.parse(route.request().postData() || "{}").path);
-    route.fulfill({ status: 200, contentType: "application/json", body: "{\"ok\":true}" });
-  });
-  await ctx.route(/\/files\/(probe|view|download|text)/, route => { fileAsks.push(route.request().url()); route.abort(); });
-  try {
-    const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
-    const menuUp = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
-      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
-    const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
-    const ask = tok => p.evaluate(tok => outsideLinkMenu({ clientX: 100, clientY: 100 }, "land-live", tok), tok);
-
-    await ask("D:/elsewhere/report.pdf");
-    if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on"))) fail("with the setting off an outside path opened a menu");
-
-    anywhere = true;
-    await ask("D:/elsewhere/report.pdf");
-    if (!await menuUp(true)) { fail("with the setting on an outside pdf opened no menu"); return; }
-    const got = await items();
-    if (JSON.stringify(got) !== JSON.stringify(["open externally, on sg4"])) fail("the outside menu offered " + JSON.stringify(got));
-    await p.locator("#cardmenu button", { hasText: "open externally, on sg4" }).click();
-    await menuUp(false);
-    const end = Date.now() + slow(3000);
-    while (Date.now() < end && !launched.length) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
-    if (JSON.stringify(launched) !== JSON.stringify(["D:/elsewhere/report.pdf"])) fail("open externally sent " + JSON.stringify(launched));
-
-    const tip = await p.evaluate(() => {
-      pastePrefs = Object.assign({}, pastePrefs || {}, { open_external_anywhere: true });
-      const l = outsideLink({}, "D:/elsewhere/tool.exe", "land-live");
-      let clicked = false;
-      const real = outsideLinkMenu;
-      outsideLinkMenu = () => { clicked = true; };
-      l.activate({ button: 0, clientX: 1, clientY: 1 });
-      outsideLinkMenu = real;
-      return clicked;
-    });
-    if (tip) fail("an outside .exe offered the menu");
-    if (fileAsks.length) fail("the board asked about an outside file: " + JSON.stringify(fileAsks));
-    if (errors.length) fail("the outside menu page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
     await ctx.close();
@@ -5474,7 +5411,7 @@ async function fileMenuHTMLSection(browser, base) {
 
     if (!await ask("out/topology.html")) { fail("fileLinkMenu for an html file did not open the menu"); return; }
     const got = await items();
-    const want = ["open rendered", "open raw in a tab", "open in atrium's editor", "open externally, on sg4"];
+    const want = ["open rendered", "open raw in a tab", "open in atrium's editor"];
     if (JSON.stringify(got) !== JSON.stringify(want)) fail("an html menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     const rendered = p.locator("#cardmenu button", { hasText: "open rendered" });
     if (!await rendered.getAttribute("data-tip")) fail("open rendered carries no data-tip");
@@ -5859,11 +5796,11 @@ async function termLinkLateSection(browser, base) {
   }
 }
 
-// ── terminal file links: an outside path tips without asking, the viewer shows by type, open externally (u-file-links-hover-view-external) ──
+// ── terminal file links: an outside path tips without asking, the viewer shows by type (u-file-links-hover-view-external) ──
 // 1. An absolute path outside the card is asked, and when the room does not find it the link's tip says so. One inside is asked.
 // 2. read.html shows a png as the image, an md rendered, an svg as an image that ran nothing, json indented, a pdf in
-//    a frame and a zip as a download, and its Open externally button posts files/launch.
-// 3. The link menu's "open externally, on sg4" posts files/launch, and a .go file is not offered it.
+//    a frame and a zip as a download.
+// 3. The link menu puts the viewer first and offers nothing that opens a file externally.
 // FILELINKSVIEW_SHOTS=dir writes the PNGs.
 async function fileLinksViewSection(browser, base) {
   const was = mock.tasksMode;
@@ -5875,7 +5812,7 @@ async function fileLinksViewSection(browser, base) {
   const errors = [];
   const shots = process.env.FILELINKSVIEW_SHOTS || "";
   const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
-  const asked = [], launched = [];
+  const asked = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
     const Real = window.WebSocket;
@@ -5897,10 +5834,6 @@ async function fileLinksViewSection(browser, base) {
     const found = paths.filter(p => /\.(md|txt|go)$/.test(p) && !/openziti-test-kitchen/.test(p))
       .map(p => ({ path: p, rel: p.replace(/\\/g, "/").replace(/^.*blog-add-by-url\//, ""), size: 10, dir: false }));
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
-  });
-  await ctx.route("**/files/launch", route => {
-    launched.push({ url: new URL(route.request().url()).pathname, path: JSON.parse(route.request().postData() || "{}").path });
-    route.fulfill({ status: 200, contentType: "application/json", body: "{\"ok\":true}" });
   });
   await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
     body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
@@ -5989,13 +5922,11 @@ async function fileLinksViewSection(browser, base) {
     await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "docs/plan.md", dir: false }); });
     if (!await menuUp(true)) fail("the menu did not open for an md");
     let menu = await items();
-    if (!menu.includes("open externally, on sg4")) fail("an md menu offered no open externally: " + JSON.stringify(menu));
+    if (menu.some(m => /externally/.test(m))) fail("an md file was offered open externally: " + JSON.stringify(menu));
     if (menu[0] !== "open rendered") fail("the viewer is not first: " + JSON.stringify(menu));
     await shot(p, "3-menu");
-    await p.locator("#cardmenu button", { hasText: "open externally, on sg4" }).click();
-    const until = async cond => { const end = Date.now() + slow(3000); while (Date.now() < end && !cond()) await new Promise(r => setTimeout(r, 10)); }; // wait: poll step of a deadline loop
-    await until(() => launched.length > 0);
-    if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/land-live/files/launch", path: "docs/plan.md" }])) fail("open externally sent " + JSON.stringify(launched));
+    await p.keyboard.press("Escape");
+    await menuUp(false);
     await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "src/a.go", dir: false }); });
     if (!await menuUp(true)) fail("the menu did not open for a .go");
     menu = await items();
@@ -6028,18 +5959,6 @@ async function fileLinksViewSection(browser, base) {
     v = await view("spec/doc.pdf", () => { const f = document.getElementById("pdf"); return !f.hidden && /files\/view\?path=spec%2Fdoc\.pdf$/.test(f.src); });
     await v.close();
     v = await view("out/bundle.zip", () => !!document.querySelector("#text a[href*='/files?path=out%2Fbundle.zip']"));
-    if (await v.evaluate(() => !document.getElementById("open-ext").hidden)) fail("a zip was offered open externally");
-    await v.close();
-    launched.length = 0;
-    v = await view("docs/plan.md", () => !document.getElementById("open-ext").hidden);
-    const label = await v.evaluate(() => document.getElementById("open-ext").textContent);
-    if (label !== "Open externally, on sg4") fail("the viewer's button says " + JSON.stringify(label));
-    await v.click("#open-ext");
-    await v.waitForFunction(() => !document.getElementById("ext-note").hidden, null, { timeout: slow(3000) }).catch(() => {});
-    const note = await v.evaluate(() => document.getElementById("ext-note").textContent);
-    if (!/sg4's machine, not in this browser/.test(note)) fail("the viewer's note said " + JSON.stringify(note));
-    if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/sg4~land-live/files/launch", path: "docs/plan.md" }])) fail("the viewer's button sent " + JSON.stringify(launched));
-    await shot(v, "2-open-ext");
     await v.close();
     if (errors.length) fail("the page threw: " + errors.join(" | "));
   } finally {
@@ -26078,7 +25997,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, openExtAnywhere: openExtAnywhereSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -28151,7 +28070,6 @@ async function main() {
     await unit("emptyGroups", () => emptyGroupsSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileMenu", () => fileMenuSection(browser, base));
-    await unit("openExtAnywhere", () => openExtAnywhereSection(browser, base));
     await unit("fileMenuHTML", () => fileMenuHTMLSection(browser, base));
     await unit("htmlTab", () => htmlTabSection(browser, base));
     await unit("markdownTab", () => markdownTabSection(browser, base));

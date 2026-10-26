@@ -3,7 +3,7 @@ Docs: none, website/docs/files.md is updated on this branch
 New setting `open_paths`: absolute directories, one per line, empty by default, in settings under the picker's box.
 Files under them, and under an atrium path, open from any card's terminal. An atrium path is the room's card root, the
 directory of every card on the room live or archived, the room's repository clones and worktrees, WORKTREE_ROOT and
-each provider's worktree root. The probe, `files/view`, `files/launch`, `files/list` and download accept them, resolved
+each provider's worktree root. The probe, `files/view`, `files/list` and download accept them, resolved
 through `safepath`. The editor, `files/open`, upload, delete and zip stay against the card alone.
 
 ## Test plan
