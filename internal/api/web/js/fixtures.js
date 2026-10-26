@@ -1466,6 +1466,28 @@ function refreshLaunchRunners(preferId) {
   return want;
 }
 
+// The named prompts (`allActions`, js/notes-files.js) offered as the opening message. Picking one fills the box, which
+// stays editable. Painted from what is held, then again when the read lands.
+function fillLaunchPresets() {
+  const sel = document.getElementById("l-preset");
+  const paint = () => {
+    const keep = sel.value;
+    const on = allActions.filter(a => a.enabled && a.prompt);
+    sel.innerHTML = "";
+    sel.add(new Option("start from a named prompt", ""));
+    for (const a of on) sel.add(new Option(a.label || a.id, a.id));
+    sel.value = on.some(a => a.id === keep) ? keep : "";
+    sel.hidden = !on.length;
+  };
+  sel.value = "";
+  paint();
+  loadActions().then(paint);
+  sel.onchange = () => {
+    const a = allActions.find(x => x.id === sel.value);
+    if (a) document.getElementById("l-prompt").value = a.prompt;
+  };
+}
+
 async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   launchWhere = where === "window" ? "window" : "here";
   // Held already, from the read bootBoard starts. Awaiting it anyway would put a round trip between the click and the
@@ -1525,6 +1547,7 @@ async function openLaunch(id, resume, cwd, ontoTask, prefill, where) {
   document.getElementById("l-title").value = pre.title || "";
   document.getElementById("l-why").value = pre.why || "";
   document.getElementById("l-prompt").value = pre.prompt || "";
+  fillLaunchPresets();
   document.getElementById("l-tags").value = (pre.tags || []).join(", ");
 
   // Every dialog starts with nothing recognised. Left over from the last one,
