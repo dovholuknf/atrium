@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // Issue is what a forge says about an issue, in atrium's shape. A recogniser reads it as facts, under the names gh
@@ -21,6 +22,19 @@ type Issue struct {
 // pull requests is still a Forge.
 type IssueReader interface {
 	Issue(ctx context.Context, ref Ref) (*Issue, error)
+}
+
+// ViewerReader is a forge that says who the login it runs as is. It is its own interface for the same reason.
+type ViewerReader interface {
+	Viewer(ctx context.Context, ref Ref) (string, error)
+}
+
+func (g *github) Viewer(ctx context.Context, ref Ref) (string, error) {
+	out, err := g.do(ctx, ref, ghJSONLimit, "api", "user", "--jq", ".login")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (g *github) Issue(ctx context.Context, ref Ref) (*Issue, error) {

@@ -16,7 +16,9 @@ import (
 const (
 	HubPRPath    = "/_forge/pr"
 	HubIssuePath = "/_forge/issue"
-	HubRepoPath  = "/_forge/repo"
+	// HubViewerPath answers the login the hub's forge runs as, asked with a pull request's host, org and repo.
+	HubViewerPath = "/_forge/viewer"
+	HubRepoPath   = "/_forge/repo"
 	// HubRecognisersPath answers the hub's recogniser rows. Not a forge call: it rides the same route because a room
 	// asks the hub through it. See link/recognisers.go.
 	HubRecognisersPath = "/_forge/recognisers"
@@ -50,6 +52,12 @@ type HubPR struct {
 type HubIssue struct {
 	Kind  string `json:"kind"`
 	Issue *Issue `json:"issue"`
+}
+
+// HubViewer is the hub's answer to who its forge runs as.
+type HubViewer struct {
+	Kind  string `json:"kind"`
+	Login string `json:"login"`
 }
 
 // HubRepo is the hub's answer to a repository it was asked to hold: its name in the store.
@@ -243,6 +251,15 @@ func (r *Remote) Issue(ctx context.Context, ref Ref) (*Issue, error) {
 		return nil, fmt.Errorf("the hub answered nothing about issue %d", ref.Number)
 	}
 	return out.Issue, nil
+}
+
+// Viewer asks the hub which login its forge runs as.
+func (r *Remote) Viewer(ctx context.Context, ref Ref) (string, error) {
+	var out HubViewer
+	if err := r.Call(ctx, HubViewerPath, ask(ref), &out); err != nil {
+		return "", err
+	}
+	return out.Login, nil
 }
 
 // Repo asks the hub to hold the repository in its store, cloning it from the forge when it does not, and answers its

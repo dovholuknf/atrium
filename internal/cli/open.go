@@ -43,6 +43,7 @@ type openOpts struct {
 	start    bool
 	attach   bool
 	asJSON   bool
+	review   bool
 }
 
 func newOpen() *cobra.Command {
@@ -102,6 +103,7 @@ func newOpen() *cobra.Command {
 	c.Flags().StringVar(&o.repo, "repo", "",
 		"for a link that names no repo: host/org/repo to open it in, or none for a scratch folder (default: the recogniser's)")
 	c.Flags().StringVar(&o.runner, "runner", "", "which configured runner starts the card (default: the review recipe's, or claude for --start)")
+	c.Flags().BoolVar(&o.review, "review", false, "open your own pull request as a review card too")
 	c.Flags().BoolVar(&o.asJSON, "json", false, "print the answer as json")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -147,8 +149,8 @@ type opened struct {
 // openLink sends the link to the open verb and prints the card, or attaches to it.
 func openLink(link string, o openOpts) error {
 	board := boardAddress(o.boardURL)
-	body, err := json.Marshal(map[string]string{"url": strings.TrimSpace(link), "why": o.why, "harness": o.runner,
-		"repo": strings.TrimSpace(o.repo)})
+	body, err := json.Marshal(map[string]any{"url": strings.TrimSpace(link), "why": o.why, "harness": o.runner,
+		"repo": strings.TrimSpace(o.repo), "review": o.review})
 	if err != nil {
 		return err
 	}
