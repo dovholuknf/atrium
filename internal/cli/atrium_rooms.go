@@ -33,6 +33,7 @@ import (
 // nobody can script.
 
 func hubRoomsCmd(use, prefix string) *cobra.Command {
+	var hub string
 	c := &cobra.Command{
 		Use:   use,
 		Short: "The rooms this hub knows about: add, list, and remove",
@@ -41,7 +42,12 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 			"THE HUB NAMES THE ROOM. `add` gives it a name and mints that name into the\n" +
 			"join string, so the string authorises exactly one name and the machine that\n" +
 			"pastes it does not choose what it is called.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return roomsTable(cmd, hub)
+		},
 	}
+	c.Flags().StringVar(&hub, "hub", "", "the hub's board address, when it is not the default")
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
 		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix),
 		roomSpecCmd(prefix), roomLockCmd(prefix), roomTransportsCmd(prefix), roomRetireShareCmd(prefix))
