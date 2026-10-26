@@ -196,6 +196,8 @@ type Daemon struct {
 	looksIdleFired atomic.Int64
 	// login is whether claude's login here is revoked. See loginneeded.go.
 	login loginState
+	// toolchain is what the last launch's PATH lacked. See toolchain.go.
+	toolchain toolchainState
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
@@ -492,6 +494,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling
 	d.ap.LoginNeeded = d.loginHealth
+	d.ap.ToolchainMissing = d.toolchainHealth
 	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach

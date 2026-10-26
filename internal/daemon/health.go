@@ -34,6 +34,9 @@ func (d *Daemon) healthBody() map[string]any {
 	if l := d.loginHealth(); l != nil {
 		body["login_needed"] = l
 	}
+	if tc := d.toolchainHealth(); tc != nil {
+		body["toolchain_missing"] = tc
+	}
 	return body
 }
 

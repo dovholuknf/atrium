@@ -1470,6 +1470,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	} else if add != "" {
 		env = append(env, add)
 	}
+	d.checkToolchain(task.ID, cwd, env)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
 	// The runner a PTY launch started, nil in window mode. See spawnPTYRunner.
