@@ -178,6 +178,30 @@ func httpDo(t *testing.T, h http.Handler, method, path string) *httptest.Respons
 	return rec
 }
 
+func TestOpenOwnPullRequestIsAPlainCardUnlessReview(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	for _, c := range []struct {
+		name, me string
+		review   bool
+		plain    bool
+	}{{"own", "Lee", false, true}, {"someone else's", "kim", false, false}, {"own with review", "lee", true, false}} {
+		oh := newOpenHarness(t, &fakeForge{me: c.me, pr: forge.PR{HeadRef: "feat/x", Author: "lee"}})
+		oh.checkout(t, "o", "r")
+		rec := post(t, oh.h, "/v1/open", map[string]any{"url": openURL, "why": "look", "review": c.review})
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if rec.Code != 201 || out["card"] == nil || len(oh.launched) != 1 {
+			t.Fatalf("%s: %d %v", c.name, rec.Code, out)
+		}
+		if _, has := out["pr"]; has == c.plain {
+			t.Errorf("%s: pr row in the answer is %v, want %v", c.name, has, !c.plain)
+		}
+	}
+}
+
 func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")
