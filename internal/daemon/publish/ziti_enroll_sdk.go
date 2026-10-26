@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/openziti/sdk-golang/ziti/enroll"
 )
 
-// enrollWithSDK enrolls a one-time-token JWT in this process, with the ziti SDK
+// EnrollWithSDK enrolls a one-time-token JWT in this process, with the ziti SDK
 // atrium already embeds, and writes the identity to outPath.
 //
 // THE FALLBACK FOR A MACHINE WITH NO ziti CLI, which is most machines a room is
@@ -18,7 +18,7 @@ import (
 // check. This does the same enrolment the CLI's `ziti edge enroll` does: a new
 // EC key made here, a certificate from the controller, and a config file that
 // holds both. The key never leaves this machine.
-func enrollWithSDK(token, outPath string) error {
+func EnrollWithSDK(token, outPath string) error {
 	claims, tok, err := enroll.ParseToken(token)
 	if err != nil {
 		return fmt.Errorf("that is not an enrollment token: %w", err)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	restEnvironment "github.com/openziti/zrok/v2/rest_client_zrok/environment"
@@ -280,10 +281,10 @@ func EnrollZitiInto(token, name, dir string) (string, string, error) {
 	jwtPath := filepath.Join(dir, base+".jwt")
 	outPath := filepath.Join(dir, base+".json")
 
-	// NO CLI, SO THE SDK. See enrollWithSDK.
+	// NO CLI, SO THE SDK. See EnrollWithSDK.
 	if exe == "" {
 		log.Printf("[atrium] enrolling a ziti identity as %s, in process: no ziti CLI on PATH", base)
-		if err := enrollWithSDK(token, outPath); err != nil {
+		if err := publish.EnrollWithSDK(token, outPath); err != nil {
 			return "", "", err
 		}
 		return filepath.ToSlash(outPath), "enrolled in process, no ziti CLI on PATH", nil

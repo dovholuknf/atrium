@@ -1,4 +1,4 @@
-package daemon
+package launch
 
 import (
 	"strings"
