@@ -28429,8 +28429,8 @@ async function mResumeSection(browser) {
   if (!bad) console.log("mResume ok");
 }
 
-// GREY MEANS NOT RUNNING, NOTHING ELSE. One rule (`runnerGone` in js/cardrules.js) decides it for the stack and the terminals
-// tab; the phone page reads the same rule and is checked in mAgentIdle. GREY_SHOTS=<dir> writes a PNG of the rows.
+// GREY MEANS NOT RUNNING, NOTHING ELSE. One rule (`runnerGone` in js/cardrules.js) decides it for the stack, the terminals
+// tab and the board; the phone page reads the same rule and is checked in mAgentIdle. GREY_SHOTS=<dir> writes a PNG of the rows.
 async function greyMeansDeadSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
@@ -28458,8 +28458,13 @@ async function greyMeansDeadSection(browser, base) {
       for (const t of cs) {
         const stack = document.createElement("div"); stack.innerHTML = stackRow(t);
         const term = document.createElement("div"); term.innerHTML = termRow(t, false, false);
+        const board = document.createElement("div"); board.className = "board"; board.innerHTML = cardHTML(t);
+        document.body.appendChild(board);
+        const bc = board.querySelector(".card");
         out[t.id] = { attn: stack.firstElementChild.classList.contains("attn"),
-          cold: !!term.querySelector(".card.tab.cold"), waiting: isWaiting(t), gone: typeof runnerGone === "function" && runnerGone(t) };
+          cold: !!term.querySelector(".card.tab.cold"), waiting: isWaiting(t), gone: typeof runnerGone === "function" && runnerGone(t),
+          boardCold: bc.classList.contains("cold"), boardOpacity: Number(getComputedStyle(bc).opacity) };
+        board.remove();
       }
       const shots = document.createElement("div");
       shots.id = "grey-shots"; shots.style.cssText = "position:fixed;top:0;left:0;width:900px;z-index:99999;background:#111";
@@ -28478,6 +28483,9 @@ async function greyMeansDeadSection(browser, base) {
       const g = got[id];
       if (g.attn !== want[id].attn) fail(tag + id + " on the stack: orange=" + g.attn + ", want " + want[id].attn);
       if (g.cold !== want[id].cold) fail(tag + id + " on the terminals tab: grey=" + g.cold + ", want " + want[id].cold);
+      if (g.boardCold !== want[id].cold || (g.boardOpacity < 0.5) !== want[id].cold) {
+        fail(tag + id + " on the board: grey=" + g.boardCold + " opacity=" + g.boardOpacity + ", want " + want[id].cold);
+      }
       if (g.waiting !== want[id].attn) fail(tag + id + " isWaiting=" + g.waiting);
     }
     if (process.env.GREY_SHOTS) {

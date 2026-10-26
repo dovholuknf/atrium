@@ -170,9 +170,9 @@
      cold without reading anything, and the colour is drained as well as dimmed, since opacity alone over a
      light background still leaves a saturated mark. The left edge keeps a trace of its theme colour so the row
      is still that session, and hover brings it most of the way back. */
-  .term-list .card.tab.cold { opacity: .3; filter: grayscale(.65); }
-  .term-list .card.tab.cold:hover { opacity: .8; filter: grayscale(.2); }
-  .term-list .card.tab.cold::before { opacity: .25; }
+  .term-list .card.tab.cold, .board .card.cold { opacity: .3; filter: grayscale(.65); }
+  .term-list .card.tab.cold:hover, .board .card.cold:hover { opacity: .8; filter: grayscale(.2); }
+  .term-list .card.tab.cold::before, .board .card.cold::before { opacity: .25; }
   /* The one row in this strip that is a real drag. `grab` rather than `move`, because the row is being picked
      up rather than pushed around. */
   .termbucket .card.tab { cursor: grab; }
