@@ -1398,7 +1398,7 @@ func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
 		// See pulls.go.
 		"/v1/prs",
 		// Opening a link makes a worktree, a row and a card. See openroute.go.
-		"/v1/open":
+		"/v1/open", "/v1/tangent":
 	default:
 		if !walkerLaunch(r) {
 			return false
