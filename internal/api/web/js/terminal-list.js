@@ -1526,9 +1526,8 @@ function termFlatGroupsHTML(list, g, folded) {
     // An empty group starts shut, and `open:` + the heading records somebody opening it.
     const nobody = by.get(name).length === 0;
     const off = nobody ? !folded.has("open:" + at) : folded.has(at);
-    // A group you made keeps the order you set, not the strip's sort. See
-    // `byRank` on the board. It is also a drop target, see `wireTermDrag`.
-    const mine = g.handOrdered && name && name !== UNTAGGED && typeof byRank === "function";
+    // A group you made is a drop target, see `wireTermDrag`. Its rows keep the strip's sort.
+    const mine = g.handOrdered && name && name !== UNTAGGED;
     // THE GROUP'S COLOUR, from the same `groupHue` the stack and the board
     // read, so a recolour made on any of the three lands on all three. The
     // strip drew every heading in the label grey, which is what "the group
@@ -1543,8 +1542,6 @@ function termFlatGroupsHTML(list, g, folded) {
     const head = termHeading(shown, at, by.get(name).length, off, menu, style, mine, by.get(name), nobody);
     if (off) return head;
     const rows = by.get(name);
-    // `by activity` is a sort the operator asked for on purpose, and hand order would bury a working card under it.
-    if (mine && !sortByActivity) rows.sort(byRank);
     // `untagged` in custom mode is where a row is dragged to take it OUT of
     // the group it came from. See `wireUngroupDrop`.
     const out = g.handOrdered && name === UNTAGGED ? ` data-ungroup="1"` : "";
@@ -2343,12 +2340,9 @@ function wireTermDrag(host) {
 
 // One of your groups as a drop target, under any sort.
 //
-// A row dropped inside its own group is being moved, and its new rank is the
-// midpoint of the rows either side of where it landed, so nothing else is
-// renumbered. A row dragged in from outside is being FILED as well: it gets the
-// group's tag, the same as `into group` on its menu, and lands where it was
-// dropped. It keeps any group it was already in, because a group is a tag and
-// a card can carry several.
+// A row dragged in from outside is FILED: it gets the group's tag, the same as
+// `into group` on its menu, and the strip's sort places it. It keeps any group
+// it was already in, because a group is a tag and a card can carry several.
 function wireGroupDrop(nest) {
   const name = nest.dataset.group;
   nest.ondragover = e => {
@@ -2357,11 +2351,6 @@ function wireGroupDrop(nest) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     nest.classList.add("dropover");
-    const over = e.target.closest(".card.tab:not(.kid)");
-    if (!over || over === termDragEl || !nest.contains(over)) return;
-    const box = over.getBoundingClientRect();
-    const after = e.clientY > (box.top + box.height / 2);
-    nest.insertBefore(termDragEl, after ? over.nextSibling : over);
   };
   nest.ondragleave = e => {
     if (!nest.contains(e.relatedTarget)) nest.classList.remove("dropover");
@@ -2376,24 +2365,10 @@ function wireGroupDrop(nest) {
     termDragEl = null;
     termDragID = "";
     if (!el) return;
-    if (!nest.contains(el)) nest.appendChild(el);
     const id = el.dataset.id;
     const t = lastTasks.find(x => x.id === id);
-    const rows = [...nest.querySelectorAll(".card.tab:not(.kid)")];
-    const at = rows.indexOf(el);
-    const rankOf = row => {
-      const x = lastTasks.find(y => y.id === row.dataset.id);
-      return x ? (x.rank || 0) : 0;
-    };
-    const prev = rows[at - 1], next = rows[at + 1];
-    const rank = prev && next ? (rankOf(prev) + rankOf(next)) / 2
-      : prev ? rankOf(prev) + 1 : next ? rankOf(next) - 1 : (t && t.rank) || 0;
     const tags = (t && t.tags) || [];
-    const body = {};
-    // A pinned card keeps its place among the pins. It is filed, not moved.
-    if (!(t && t.pinned)) body.rank = rank;
-    if (!tags.includes(name)) body.tags = tags.concat(name);
-    if (Object.keys(body).length) await patchTask(id, body);
+    if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
     repaintTermList();
   };
 }

@@ -20306,6 +20306,57 @@ async function termActivityWorkingFirstSection(browser, base) {
   if (!bad) console.log("termActivityWorkingFirst ok");
 }
 
+// A drop into a group you made files the card and nothing more: the strip's sort places it, under every sort, and
+// the write carries the tag and no rank. The ranks here run against the name order, so hand order would show.
+async function termGroupDropSortSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { switchView("terms"); localStorage.removeItem("atrium.termSort"); });
+    const out = await p.evaluate(async () => {
+      const card = (id, rank, tags, created) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags, rank, created_at: created, last_activity_at: created, activity: { what: "idle" } });
+      const cards = [card("bravo", 1, ["mine"], "2026-10-01T10:00:00Z"), card("delta", 2, ["mine"], "2026-10-03T10:00:00Z"),
+        card("alpha", 3, ["mine"], "2026-10-02T10:00:00Z"), card("charlie", 0, [], "2026-10-04T10:00:00Z")];
+      boardCards = async () => cards;
+      const writes = [];
+      patchTask = async (id, body) => { writes.push({ id, body }); Object.assign(cards.find(c => c.id === id), body); };
+      const order = () => [...document.querySelectorAll('#term-list .tnest[data-group="mine"] .card.tab')]
+        .map(c => c.dataset.id);
+      const res = {};
+      setTermSortMode("name");
+      setGrouping({ on: true, mode: "custom", picked: true, groups: ["mine"] }, "terms");
+      await renderTermList();
+      res.name = order();
+      termDragEl = document.querySelector('#term-list .card.tab[data-id="charlie"]');
+      await document.querySelector('#term-list .tnest[data-group="mine"]').ondrop(
+        { preventDefault() {}, stopPropagation() {} });
+      await renderTermList();
+      res.dropped = order();
+      res.writes = writes;
+      setTermSortMode("started");
+      await renderTermList();
+      res.started = order();
+      setTermSortMode("name");
+      setGroupMode("off", "terms");
+      return res;
+    });
+    if (out.name.join() !== "alpha,bravo,delta") fail("termGroupDropSort: a custom group is not in name order: " + out.name.join());
+    if (out.dropped.join() !== "alpha,bravo,charlie,delta") fail("termGroupDropSort: a dropped card is not placed by the sort: " + out.dropped.join());
+    if (out.started.join() !== "charlie,delta,alpha,bravo") fail("termGroupDropSort: a custom group is not newest first under started: " + out.started.join());
+    if (out.writes.length !== 1 || "rank" in out.writes[0].body || String(out.writes[0].body.tags) !== "mine") {
+      fail("termGroupDropSort: the drop wrote more than the group's tag: " + JSON.stringify(out.writes));
+    }
+    if (errors.length) fail("termGroupDropSort: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termGroupDropSort ok");
+}
+
 // A spawned card is drawn under its parent's row, under every sort and group mode. An orphan stays a row.
 async function childUnderParentSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -25651,7 +25702,7 @@ async function main() {
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
@@ -27831,6 +27882,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termFollowBottom", () => termFollowBottomSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("termActivityWorkingFirst", () => termActivityWorkingFirstSection(browser, base));
+    await unit("termGroupDropSort", () => termGroupDropSortSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("boardUsage", bu("boardUsage"));
