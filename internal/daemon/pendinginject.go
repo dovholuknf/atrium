@@ -683,10 +683,17 @@ func (pi *pendingInjector) deliveredElsewhere(taskID string, ids []string) {
 	}
 	ht.entries = kept
 	empty := len(ht.entries) == 0
+	var oldest pendingMsg
+	if !empty {
+		oldest = ht.entries[0]
+	}
 	pi.mu.Unlock()
 	if empty {
 		pi.drop(taskID)
+		return
 	}
+	// A partial delivery leaves the count on the chip stale until the next retry.
+	pi.noteHeld(taskID, pi.heldFor(taskID, oldest))
 }
 
 // stopAll halts every backoff timer, for shutdown. The held messages stay in
