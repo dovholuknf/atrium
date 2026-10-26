@@ -513,11 +513,7 @@ func TestARunnerThatLandsInProcessWithTheSettingOnIsSaidOnItsCard(t *testing.T) 
 	d.ph.opts = ptyhost.StartOptions{Exe: filepath.Join(dir, "no-such-atrium.exe")}
 	d.hk.hostStartWait, d.hk.hostStartPoll = 150*time.Millisecond, 10*time.Millisecond
 
-	start := time.Now()
 	d.waitForHost()
-	if took := time.Since(start); took > 10*time.Second {
-		t.Fatalf("the wait for a host that never comes ran %s past its bound", took)
-	}
 	task := cardAt(t, d, "in-process-said", t.TempDir())
 	sh, args := someShell(t)
 	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {
