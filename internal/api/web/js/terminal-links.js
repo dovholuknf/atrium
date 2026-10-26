@@ -114,7 +114,7 @@ async function provideFileLinks(t, id, y, done) {
     const hit = probeHit(probeKnown(id), s.token);
     // The room decides what outside the card it will open. A path it does not find stays refused.
     if (hit) links.push(fileLink(id, s.range, hit));
-    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token));
+    else if (outsideCard(s.token, root)) links.push(outsideLink(s.range, s.token, id));
   }
   done(links.length ? links : undefined);
 }
@@ -176,15 +176,41 @@ function fileLinkTip(hit) {
   return name + (viewAtOnce(hit.rel) ? "\nclick to view it in atrium" : "\nclick to view, edit or open it");
 }
 
-// A path that names somewhere outside the card. Its link opens nothing and says why.
-function outsideLink(range, tok) {
+// A path that names somewhere outside the card. Its link opens nothing and says why, unless the room lets open
+// externally reach it. Decided from the name and the setting: the board never asks about the file.
+function outsideLink(range, tok, id) {
+  const anywhere = () => typeof pastePrefs !== "undefined" && pastePrefs && pastePrefs.open_external_anywhere === true;
   return {
     range,
     text: tok,
-    activate: () => {},
-    hover: (ev) => linkTipShow(ev, tok, tok + "\noutside this card, the board cannot open it"),
+    activate: (ev) => {
+      if (ev && ev.button) return;
+      if (term && term.hasSelection && term.hasSelection()) return;
+      if (!launchable(tok)) return;
+      linkTipHide();
+      hideTip();
+      outsideLinkMenu(ev, id, tok);
+    },
+    hover: (ev) => linkTipShow(ev, tok, tok + (anywhere() && launchable(tok)
+      ? "\noutside this card. click to open it externally on the room's machine"
+      : "\noutside this card, the board cannot open it")),
     leave: () => linkTipLeave()
   };
+}
+
+// The one thing an outside path offers, and only when the card's own room has open_external_anywhere on.
+async function outsideLinkMenu(ev, id, tok) {
+  const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
+  const where = (termTask && termTask.id === id && termTask.room) || "";
+  let on = false;
+  try {
+    const s = await api("/v1/settings", where ? { headers: { "X-Atrium-Room": where } } : undefined);
+    on = !!s && s.open_external_anywhere === true;
+  } catch (e) {
+    return;
+  }
+  if (!on || !termTask || termTask.id !== id) return;
+  showMenu(at, [{ label: "open externally, on " + (where || "the room's machine"), act: () => launchOnRoom(id, tok, where) }]);
 }
 
 // Whether `tok` is an absolute path that is not under the card's directory, judged from the spelling alone. A

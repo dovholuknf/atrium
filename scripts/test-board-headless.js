@@ -5423,6 +5423,69 @@ async function fileMenuSection(browser, base) {
   }
 }
 
+// ── an outside path offers open externally only when its room has open_external_anywhere on (u-open-external-outside-card) ──
+// The board never asks about the file: no probe, view or download is sent for it.
+async function openExtAnywhereSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, room: "sg4", created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  let anywhere = false;
+  const launched = [], fileAsks = [];
+  const ctx = await landContext(browser);
+  await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify(Object.assign({}, settingsBody(""), { open_external_anywhere: anywhere })) }));
+  await ctx.route("**/files/launch", route => {
+    launched.push(JSON.parse(route.request().postData() || "{}").path);
+    route.fulfill({ status: 200, contentType: "application/json", body: "{\"ok\":true}" });
+  });
+  await ctx.route(/\/files\/(probe|view|download|text)/, route => { fileAsks.push(route.request().url()); route.abort(); });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { termTask = { id: "land-live", room: "sg4" }; });
+    const menuUp = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
+      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+    const items = () => p.evaluate(() => [...document.querySelectorAll("#cardmenu > button")].map(b => b.textContent.trim()));
+    const ask = tok => p.evaluate(tok => outsideLinkMenu({ clientX: 100, clientY: 100 }, "land-live", tok), tok);
+
+    await ask("D:/elsewhere/report.pdf");
+    if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on"))) fail("with the setting off an outside path opened a menu");
+
+    anywhere = true;
+    await ask("D:/elsewhere/report.pdf");
+    if (!await menuUp(true)) { fail("with the setting on an outside pdf opened no menu"); return; }
+    const got = await items();
+    if (JSON.stringify(got) !== JSON.stringify(["open externally, on sg4"])) fail("the outside menu offered " + JSON.stringify(got));
+    await p.locator("#cardmenu button", { hasText: "open externally, on sg4" }).click();
+    await menuUp(false);
+    const end = Date.now() + slow(3000);
+    while (Date.now() < end && !launched.length) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
+    if (JSON.stringify(launched) !== JSON.stringify(["D:/elsewhere/report.pdf"])) fail("open externally sent " + JSON.stringify(launched));
+
+    const tip = await p.evaluate(() => {
+      pastePrefs = Object.assign({}, pastePrefs || {}, { open_external_anywhere: true });
+      const l = outsideLink({}, "D:/elsewhere/tool.exe", "land-live");
+      let clicked = false;
+      const real = outsideLinkMenu;
+      outsideLinkMenu = () => { clicked = true; };
+      l.activate({ button: 0, clientX: 1, clientY: 1 });
+      outsideLinkMenu = real;
+      return clicked;
+    });
+    if (tip) fail("an outside .exe offered the menu");
+    if (fileAsks.length) fail("the board asked about an outside file: " + JSON.stringify(fileAsks));
+    if (errors.length) fail("the outside menu page threw: " + errors.join(" | "));
+  } finally {
+    mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── an html link offers rendered and raw, and the menu closes on a wheel or a key in the terminal (u-file-menu-html) ──
 // Output scrolling the terminal leaves the menu open. FILEMENUHTML_SHOTS=dir writes the PNG.
 async function fileMenuHTMLSection(browser, base) {
@@ -25669,7 +25732,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, openExtAnywhere: openExtAnywhereSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -27734,6 +27797,7 @@ async function main() {
     await unit("emptyGroups", () => emptyGroupsSection(browser, base));
     await unit("backtickPathLinks", () => backtickPathLinksSection(browser, base));
     await unit("fileMenu", () => fileMenuSection(browser, base));
+    await unit("openExtAnywhere", () => openExtAnywhereSection(browser, base));
     await unit("fileMenuHTML", () => fileMenuHTMLSection(browser, base));
     await unit("htmlTab", () => htmlTabSection(browser, base));
     await unit("markdownTab", () => markdownTabSection(browser, base));

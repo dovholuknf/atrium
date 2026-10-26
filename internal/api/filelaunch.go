@@ -31,6 +31,38 @@ var launchTypes = map[string]bool{
 	".json": true, ".html": true, ".htm": true,
 }
 
+// neverLaunch is refused whatever the setting, with the reason: a program, a script or a shortcut to one. PATHEXT
+// adds whatever else this machine's shell runs.
+var neverLaunch = map[string]bool{
+	".exe": true, ".msi": true, ".bat": true, ".cmd": true, ".com": true, ".ps1": true, ".psm1": true,
+	".vbs": true, ".vbe": true, ".js": true, ".jse": true, ".wsf": true, ".wsh": true, ".scr": true, ".lnk": true,
+	".url": true, ".reg": true, ".sh": true, ".command": true, ".app": true, ".pkg": true, ".dmg": true,
+	".jar": true, ".msc": true, ".cpl": true, ".hta": true, ".pif": true, ".py": true, ".pyw": true,
+}
+
+// Executable says whether a file of this extension is one the OS would run.
+func Executable(ext string) bool {
+	ext = strings.ToLower(ext)
+	if neverLaunch[ext] {
+		return true
+	}
+	for _, e := range strings.Split(os.Getenv("PATHEXT"), ";") {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" && e == ext {
+			return true
+		}
+	}
+	return false
+}
+
+// SettingOpenExternalAnywhere is `on` when open externally may hand the room's default app a file outside the card
+// and the open roots. Unset is off. Only a local operator changes it.
+const SettingOpenExternalAnywhere = "open_external_anywhere"
+
+func (s *Server) openExternalAnywhere() bool {
+	v, err := s.st.Setting(SettingOpenExternalAnywhere)
+	return err == nil && strings.TrimSpace(v) == "on"
+}
+
 // Launchable says whether a file of this extension may be opened with the default app.
 func Launchable(ext string) bool { return launchTypes[strings.ToLower(ext)] }
 
@@ -54,6 +86,9 @@ func (s *Server) launchFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	full, _, err := containedOrOpen(filepath.FromSlash(task.Worktree), body.Path, s.openRoots)
+	if err != nil && filepath.IsAbs(body.Path) && s.openExternalAnywhere() {
+		full, err = filepath.EvalSymlinks(filepath.Clean(body.Path))
+	}
 	if err != nil {
 		writeErr(w, http.StatusForbidden, safepath.ErrOutside)
 		return
@@ -65,6 +100,11 @@ func (s *Server) launchFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if fi.IsDir() {
 		writeErr(w, http.StatusBadRequest, errors.New("that is a directory. ask for one file"))
+		return
+	}
+	if Executable(filepath.Ext(full)) {
+		writeErr(w, http.StatusBadRequest, errors.New("atrium never opens a "+strings.ToLower(filepath.Ext(full))+
+			" file with the default app, whatever the settings say. this machine would run it"))
 		return
 	}
 	if !Launchable(filepath.Ext(full)) {
