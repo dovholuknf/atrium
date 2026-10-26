@@ -158,6 +158,9 @@ func TestPRWorktreeWithoutACloneWaitsForTheForgeBeforeCloning(t *testing.T) {
 func TestPRWorktreeSaysEachStep(t *testing.T) {
 	t.Parallel()
 	rh := newReuseHarness(t, headForge, nil)
+	if err := rh.srv.st.SetSetting(SettingWorktreeHooks, filepath.ToSlash(t.TempDir())); err != nil {
+		t.Fatal(err)
+	}
 	var said []string
 	steps := &opSteps{label: "test", last: time.Now(), say: func(s string) { said = append(said, s) }}
 	rh.make(t, withOpSteps(context.Background(), steps))

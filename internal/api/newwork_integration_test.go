@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -249,5 +250,45 @@ func TestNewWorkPrepareMakesNoWorktreeAndNoCard(t *testing.T) {
 	code, out = nh.newWork(t, map[string]any{"name": "claude/work-261016-1432", "title": "o/r"})
 	if code != 201 || !strings.HasSuffix(out["worktree"].(string), "/o/r/claude-work-261016-1432") {
 		t.Fatalf("%d %v", code, out)
+	}
+}
+
+// A WORKTREE MADE BY OPEN, A PULL REQUEST OR THE DIALOG runs the same setup hook, and says a missing folder, a run and
+// a failure on its progress without failing.
+func TestSetupWorktreeRunsTheHookAndSaysWhatHappened(t *testing.T) {
+	nh := newNewWorkHarness(t)
+	var said []string
+	ctx := withOpSteps(context.Background(), &opSteps{say: func(step string) { said = append(said, step) }})
+	wt := t.TempDir()
+	dir, _ := nh.srv.st.Setting(SettingWorktreeHooks)
+	nh.srv.setupWorktree(ctx, "github.com", "o", "r", wt)
+	if len(said) != 1 || !strings.Contains(said[0], "does not exist") {
+		t.Fatalf("a missing hooks folder: %q", said)
+	}
+	hookDir := filepath.Join(filepath.FromSlash(dir), "github.com", "o", "r")
+	mkDir(t, hookDir)
+	file, body, fail := "worktree.sh", "echo \"$2/$3@$4\" > \"$1/hooked.txt\"\n", "echo 'hook says no'\nexit 3\n"
+	if runtime.GOOS == "windows" {
+		file = "worktree.ps1"
+		body = "param($WorktreePath,$Org,$Repo,$RemoteHost)\nSet-Content -Path (Join-Path $WorktreePath 'hooked.txt') -Value \"$Org/$Repo@$RemoteHost\"\n"
+		fail = "Write-Output 'hook says no'\nexit 3\n"
+	}
+	if err := os.WriteFile(filepath.Join(hookDir, file), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	said = nil
+	nh.srv.setupWorktree(ctx, "github.com", "o", "r", wt)
+	raw, err := os.ReadFile(filepath.Join(wt, "hooked.txt"))
+	if err != nil || !strings.Contains(string(raw), "o/r@github.com") || len(said) != 1 ||
+		!strings.HasPrefix(said[0], "ran the setup hook") {
+		t.Fatalf("the hook did not run: %v %q %q", err, raw, said)
+	}
+	if err := os.WriteFile(filepath.Join(hookDir, file), []byte(body+fail), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	said = nil
+	nh.srv.setupWorktree(ctx, "github.com", "o", "r", wt)
+	if len(said) != 1 || !strings.Contains(said[0], "failed: ") || !strings.Contains(said[0], "hook says no") {
+		t.Errorf("a failing hook: %q", said)
 	}
 }
