@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"context"
@@ -38,8 +38,8 @@ var jwksCache struct {
 // they use it, so an hour is well inside the window where both are listed.
 const jwksFresh = time.Hour
 
-// jwksFor fetches a provider's keys, or returns what was fetched recently.
-func jwksFor(ctx context.Context, url string) (map[string]*rsa.PublicKey, error) {
+// JwksFor fetches a provider's keys, or returns what was fetched recently.
+func JwksFor(ctx context.Context, url string) (map[string]*rsa.PublicKey, error) {
 	jwksCache.Lock()
 	if k, ok := jwksCache.keys[url]; ok && time.Since(jwksCache.got[url]) < jwksFresh {
 		jwksCache.Unlock()

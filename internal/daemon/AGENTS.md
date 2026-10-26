@@ -10,6 +10,9 @@ park on connection-refused and burn nothing, while the board stays up to say wha
 `screen/` is the terminal screen model: the grid, replay, flatten, idle frame and width tables. It imports nothing
 from the daemon and holds no daemon state, so a change there runs only its own tests.
 
+`launch/` (the Git Bash lookup) and `publish/` (the ziti SDK enrol, the login provider key fetch) are the same: they
+import nothing from the daemon, and the daemon calls their exported names.
+
 ## The permission chain: order is critical
 
 `onPermRequest` in `daemon.go`. Each step can answer and stop. **Reordering changes what the tool means**, so
