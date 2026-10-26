@@ -1302,7 +1302,7 @@ async function prefsEverywhereSection(browser, base) {
     await a.goto(base, { waitUntil: "domcontentloaded" });
     await b.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
     await b.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: slow(10000) });
-    await a.waitForTimeout(800);
+    await a.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(10000) });
     // Counts a navigation, which is what "without a reload" must not do.
     await b.evaluate(() => { window.__noReload = true; });
     const SPAN = slow(4000);
