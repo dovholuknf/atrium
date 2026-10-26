@@ -23,7 +23,10 @@ type fakeForge struct {
 	pr   forge.PR
 	err  error
 	spec forge.FetchSpec
+	me   string
 }
+
+func (f *fakeForge) Viewer(context.Context, forge.Ref) (string, error) { return f.me, nil }
 
 func (f *fakeForge) Kind() string { return forge.GitHub }
 
