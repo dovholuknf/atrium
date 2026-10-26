@@ -220,6 +220,8 @@ type attached struct {
 	// os and arch are what the room said it runs on, in its hello. Observed, and
 	// they ride the `rooms` event so the board can say which build a machine wants.
 	os, arch string
+	// tools is where the room said each toolchain is, in its hello. Observed.
+	tools map[string]string
 	// unproven is the overlay a room attached over WITHOUT a certificate, so its
 	// name is only what it said. Empty for a room the hub's certificate names.
 	unproven string
@@ -471,7 +473,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	session := newSession()
 	a := &attached{
 		name: name, version: hi.Version, host: hi.Host, commit: hi.Commit, session: session,
-		os: hi.OS, arch: hi.Arch, git: hi.Git,
+		os: hi.OS, arch: hi.Arch, git: hi.Git, tools: hi.Tools,
 		since: time.Now(), control: conn,
 		unproven: unprovenOver(conn),
 		local:    localConn(conn, hi.Host),
@@ -929,6 +931,8 @@ type Attached struct {
 	Beat   time.Time `json:"last_beat"`
 	OS     string    `json:"os,omitempty"`
 	Arch   string    `json:"arch,omitempty"`
+	// Tools is where the room said each toolchain is. Nil from a room that does not say.
+	Tools map[string]string `json:"tools,omitempty"`
 	// Proven is false for a room that attached over an overlay WITHOUT a
 	// certificate, so what it is called is only what it said. That is how an
 	// operator finds who must re-join before the old path is refused.
@@ -1038,6 +1042,7 @@ func (h *Hub) Rooms() []Attached {
 			Via: a.via, Fallback: a.fallback, Starved: starved, RemoteAccess: acc,
 			LoginNeeded: login,
 			Paths:       paths,
+			Tools:       a.tools,
 		})
 	}
 	return out

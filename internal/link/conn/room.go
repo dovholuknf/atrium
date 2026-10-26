@@ -56,6 +56,8 @@ type Room struct {
 	// Git says this room takes git syncs, so it tells its hub in the hello. Set only when
 	// the room's handler serves /v1/git/sync. See git.go.
 	Git bool
+	// Tools is where each toolchain is on this room, sent in the hello for atrium_resources.
+	Tools map[string]string
 	// IdleCPU reads this machine's idle CPU percent for the beat to carry to the hub. Nil, or ok false, says
 	// nothing and the hub counts the room as unknown.
 	IdleCPU func() (float64, bool)
@@ -271,6 +273,7 @@ func (r *Room) attach(ctx context.Context) error {
 		OS: runtime.GOOS, Arch: runtime.GOARCH,
 		Upgrades: r.Upgrades != nil && r.Upgrades.Accept,
 		Git:      r.Git,
+		Tools:    r.Tools,
 	})
 	if err != nil {
 		return err

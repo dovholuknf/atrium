@@ -44,7 +44,9 @@ func TestWorkerReadsTheInventoryAndRooms(t *testing.T) {
 	}
 	h := newClassHarness(t, classTasks)
 	h.c.resourcesDir = func() string { return dir }
-	h.c.rooms = func() []resourceRoom { return []resourceRoom{{Name: "sg3", Online: true}, {Name: "cdz"}} }
+	h.c.rooms = func() []resourceRoom {
+		return []resourceRoom{{Name: "sg3", Online: true, Tools: map[string]string{"go": "V:/tools/go/bin/go.exe"}}, {Name: "cdz"}}
+	}
 
 	out := callResources(t, h, "worker1")
 	if !out.Exists || !strings.Contains(out.File, "ssh m1mini") || !strings.Contains(out.Text, "## m1mini") {
@@ -52,6 +54,9 @@ func TestWorkerReadsTheInventoryAndRooms(t *testing.T) {
 	}
 	if len(out.Rooms) != 2 || !strings.Contains(out.Text, "- cdz, offline") || !strings.Contains(out.Text, "- sg3, online") {
 		t.Fatalf("rooms wrong: %+v", out)
+	}
+	if !strings.Contains(out.Text, "  - go: V:/tools/go/bin/go.exe") {
+		t.Fatalf("tool location not listed: %q", out.Text)
 	}
 }
 
