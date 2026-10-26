@@ -41,6 +41,14 @@ async function chatterSection(browser, base) {
   let releaseUsage;
   const usageGate = new Promise(r => { releaseUsage = r; });
   await ctx.route("**/v1/tasks/*/usage*", async route => { await usageGate; await route.fallback(); });
+  // Every refresh replaces lastTasks, so the two cards come in the list the board reads, not as a patch to it.
+  await ctx.route("**/v1/tasks", async route => {
+    const res = await route.fetch();
+    const body = await res.json();
+    body.tasks = (body.tasks || []).concat([{ id: "me-1", title: "me", wire_name: "me", status: "running", resume_id: "r-me-1" },
+      { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
+    await route.fulfill({ response: res, json: body });
+  });
   await dp.addInitScript(() => {
     localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
   });
@@ -49,10 +57,9 @@ async function chatterSection(browser, base) {
     await dp.waitForSelector('.tab[data-view="terms"]', { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
+    await dp.waitForFunction(() => lastTasks.some(t => t.id === "other-2"), null, { timeout: slow(15000) });
     await dp.evaluate(() => {
       for (let n = document.getElementById("t-expando"); n; n = n.parentElement) n.hidden = false;
-      lastTasks = lastTasks.concat([{ id: "me-1", title: "me", wire_name: "me", status: "running", resume_id: "r-me-1" },
-        { id: "other-2", title: "other", wire_name: "other", status: "running" }]);
       document.getElementById("t-drawer").classList.add("open");
       termDrawerOpen = true;
       peekFill(document.getElementById("t-drawer-body"), "me-1", () => true);
