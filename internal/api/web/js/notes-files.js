@@ -1055,6 +1055,8 @@ function fillMachineFields(s) {
   if (roots) roots.value = s.browse_roots || "";
   const openPaths = document.getElementById("s-openpaths");
   if (openPaths) openPaths.value = s.open_paths || "";
+  const openAnywhere = document.getElementById("s-openext-anywhere");
+  if (openAnywhere) openAnywhere.checked = s.open_external_anywhere === true;
   const shared = document.getElementById("s-shared-loc");
   if (shared) shared.value = s.shared_location || "";
   const handoff = document.getElementById("s-handoffdir");
@@ -1632,6 +1634,25 @@ async function saveOpenPaths() {
   }
   afterMachineSave();
   toast("saved", "terminal links open from " + (el.value.trim() ? "those folders too" : "atrium's own folders only"));
+}
+
+async function saveOpenExtAnywhere() {
+  const el = document.getElementById("s-openext-anywhere");
+  if (!el) return;
+  try {
+    pastePrefs = await api("/v1/settings", {
+      method: "POST",
+      body: JSON.stringify({ open_external_anywhere: !!el.checked })
+    });
+  } catch (e) {
+    toast("that did not save", e.message);
+    afterMachineSave();
+    return;
+  }
+  afterMachineSave();
+  toast("saved", el.checked
+    ? "a document or picture path anywhere on this machine may open with its default app"
+    : "open externally reaches only atrium's folders and the ones listed");
 }
 
 async function saveSharedLocation() {

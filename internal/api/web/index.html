@@ -2373,6 +2373,17 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         one of these. Everything else is refused.</span>
     </div>
 
+    <div class="field">
+      <label class="eyebrow" for="s-openext-anywhere">open externally, anywhere on this machine</label>
+      <div class="picker">
+        <label><input id="s-openext-anywhere" type="checkbox" data-saves="saveOpenExtAnywhere">
+          let a terminal link outside those folders open with this machine's default app</label>
+      </div>
+      <span class="hintline">Off by default. On, any picture, pdf or text document path an agent prints can be
+        handed to this room's default app on this machine, wherever it is. The board still never reads or shows the
+        file. A program, a script or a shortcut is refused whatever this says. Switched only from this machine.</span>
+    </div>
+
     <!-- Where to leave the address for somebody else.
          The daemon already writes where it is listening, into this account's
          own state directory, which is the right place and unreadable to

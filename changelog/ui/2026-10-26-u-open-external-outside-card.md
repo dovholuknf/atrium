@@ -1,0 +1,1 @@
+A new room setting, off by default, lets "open externally" hand a picture, pdf or text document anywhere on the room's machine to its default app from a terminal link. The board still never reads the file. A program, a script or a shortcut is refused whatever the setting, and only someone at the room's machine can switch it. Item u-open-external-outside-card.

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/shellpick"
@@ -201,6 +202,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["card_root_required"] = s.st.CardRootRequiredOn()
 	// Whether the usage tab draws cache reads. Off unless switched on.
 	out["usage_cache_reads"] = s.usageCacheReads()
+	out["open_external_anywhere"] = s.openExternalAnywhere()
 	// When the weekly limit resets, for the usage tab's "this week" range. See usageweek.go.
 	out["usage_week_reset"] = s.usageWeekReset()
 	// The cache keep-alive: the default for new Claude cards, whether the room
@@ -366,6 +368,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		ColdHandoff *bool `json:"cache_cold_handoff"`
 		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
 		UsageCacheReads *bool `json:"usage_cache_reads"`
+		// Whether open externally reaches a file outside the card and the open roots. See filelaunch.go.
+		OpenExternalAnywhere *bool `json:"open_external_anywhere"`
 		// When the weekly limit resets: weekday, time and time zone. One per board. See usageweek.go.
 		UsageWeekReset *UsageWeekReset `json:"usage_week_reset"`
 		// Clears the room's keep-alive suspension. Only false means anything:
@@ -436,6 +440,12 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 					"\"the grouping expression\"", banned))
 			return
 		}
+	}
+
+	if body.OpenExternalAnywhere != nil && !edge.LocalOperator(r) {
+		writeErr(w, http.StatusForbidden, fmt.Errorf("opening files outside atrium's folders is switched "+
+			"from the machine the room runs on%s", edge.ProxyNote(r)))
+		return
 	}
 
 	if body.Minutes < 0 || body.Minutes > maxAutoMinutes {
@@ -997,6 +1007,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.Broadcast("settings", globalAutoView(s))
+	}
+
+	if body.OpenExternalAnywhere != nil {
+		v := "off"
+		if *body.OpenExternalAnywhere {
+			v = "on"
+		}
+		if err := s.st.SetSetting(SettingOpenExternalAnywhere, v); err != nil {
+			s.fail(w, err)
+			return
+		}
 	}
 
 	if body.InputLag != nil {
