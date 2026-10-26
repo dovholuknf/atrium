@@ -2475,7 +2475,7 @@ async function clearMarkSection(browser, base) {
     // What sits above the viewport on the normal buffer, as text.
     const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
       const w = d => new Promise(r => term.write(d, r));
-      if (fresh) { term.reset(); term._atriumPushed = ""; }
+      if (fresh) { term.reset(); term._atriumPushed = ""; term._atriumClearAt = 0; }
       await w(seq);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       const b = term.buffer.normal, above = [], shown = [];
