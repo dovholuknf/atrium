@@ -55,13 +55,24 @@
   function createGroup(id, g, raw) {
     const name = groupNameOf(raw);
     if (!name) return Promise.resolve();
-    if (g.all.indexOf(name) < 0) {
+    const made = g.all.indexOf(name) < 0;
+    if (made) {
       const shared = readKey("atrium.grouping");
       shared.groups = (Array.isArray(shared.groups) ? shared.groups : []).concat(name);
       shared.made = Object.assign({}, shared.made, { [name]: Date.now() });
       try { localStorage.setItem("atrium.grouping", JSON.stringify(shared)); } catch (e) {}
     }
-    return g.tags.indexOf(name) >= 0 ? Promise.resolve() : patch(id, { tags: g.tags.concat(name) });
+    if (g.tags.indexOf(name) >= 0) return Promise.resolve();
+    // A group made for a card that never got in is taken back, and the sheet says why.
+    return patch(id, { tags: g.tags.concat(name) }).catch(err => {
+      if (made) {
+        const shared = readKey("atrium.grouping");
+        shared.groups = (shared.groups || []).filter(n => n !== name);
+        if (shared.made) delete shared.made[name];
+        try { localStorage.setItem("atrium.grouping", JSON.stringify(shared)); } catch (e) {}
+      }
+      throw err;
+    });
   }
   const tagOf = (g, name) => groupIsNew(name, g.made) ? "new" : "";
 
