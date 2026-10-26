@@ -1637,8 +1637,8 @@ type launchInput struct {
 	// LeanAgents starts the worker lean and keeps its Agent tool plus these agents.
 	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these. Explore and Plan are Claude Code's own built-in agents and need no file, started by their bare name. any other name is namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
-	// Superlean cuts a lean worker further. See superleanLaunch.
-	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius unless mcp names it, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. implies lean, refused with lean: false. claude only, never an interview. default false, lean stays the default"`
+	// Superlean cuts a lean worker further. Absent leaves it to superleanLaunch.
+	Superlean *bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius unless mcp names it, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. implies lean, refused with lean: false. claude only, never an interview. default true for an isolated item worker other than a review, false for anything else: false brings an item worker back lean"`
 	// Model and Effort are mapped by the runner's harness row, Args and Env are
 	// passed as given. See docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`
@@ -1672,13 +1672,22 @@ func leanLaunch(in launchInput, harness string) bool {
 	}
 	// lean_agents keeps agents on a lean launch, so it is lean whatever the runner.
 	// A runner with no lean mode refuses it.
-	return harness == "claude" || len(in.LeanAgents) > 0 || len(in.LeanSkills) > 0 || in.Superlean
+	return harness == "claude" || len(in.LeanAgents) > 0 || len(in.LeanSkills) > 0 || in.Superlean != nil && *in.Superlean
+}
+
+// superleanLaunch is whether an atrium_launch starts superlean. A per-item worker (isolated) is superlean unless it is a
+// review, which needs mercurius, or lean is off. Everything else is lean unless asked.
+func superleanLaunch(in launchInput, harness string) bool {
+	if in.Superlean != nil {
+		return *in.Superlean
+	}
+	return in.Isolated && harness == "claude" && !isReview(in.Kind) && !isInterview(in.Kind) && (in.Lean == nil || *in.Lean)
 }
 
 // superleanRefusal is the sentence for `superlean` beside `lean: false`, said before anything is posted.
 // Superlean is a lean launch, so the two cannot both be asked for.
 func superleanRefusal(in launchInput) error {
-	if in.Superlean && in.Lean != nil && !*in.Lean {
+	if in.Superlean != nil && *in.Superlean && in.Lean != nil && !*in.Lean {
 		return fmt.Errorf("superlean is a lean launch, and this one says lean: false")
 	}
 	return nil
@@ -1864,6 +1873,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if err := superleanRefusal(in); err != nil {
 		return out, err
 	}
+	superlean := superleanLaunch(in, harness)
 
 	// EVERY LAUNCH NAMES AN ITEM, before a slot is reserved or anything is posted. The argument is the one the caller gave,
 	// and a launch relayed from a room's stdio server has already resolved it into the tag. An interviewer is not a
@@ -1998,7 +2008,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if in.Home {
 		reqBody["home"] = true
 	}
-	if in.Superlean {
+	if superlean {
 		reqBody["superlean"] = true
 	}
 	if spawnedByID != "" {
@@ -2088,7 +2098,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	missed := LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
 	missed = append(missed, LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
-	if SuperleanDropped(in.Superlean, t.Tags) {
+	if SuperleanDropped(superlean, t.Tags) {
 		missed = append(missed, "superlean")
 	}
 	out.Note = filedNote + itemNote + LaunchDroppedWarning(missed) + out.Note

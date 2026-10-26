@@ -889,7 +889,7 @@ func (p *Proxy) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest, 
 	}
 	in := launchInput{
 		Title: fmt.Sprintf("%s merge #%d %s", item, m.N, m.Branch), Repo: m.Repo, Branch: MergerBranch(m.N),
-		Item: item, Superlean: true, Brief: mergerBrief(m, res), Prompt: "Read BRIEF.md and do what it says.",
+		Item: item, Superlean: relaySuperlean(true), Brief: mergerBrief(m, res), Prompt: "Read BRIEF.md and do what it says.",
 		Why:  fmt.Sprintf("merge request %d did not merge onto claude/main", m.N),
 		Tags: []string{"atrium:merger", "atrium:merge:" + strconv.FormatInt(m.N, 10)},
 	}
