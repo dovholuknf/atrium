@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // slowPTY yields inside Resize, which is what widens the window between a
@@ -19,7 +21,7 @@ type slowPTY struct {
 func (s *slowPTY) Resize(cols, rows int) error {
 	runtime.Gosched()
 	if cols%3 == 0 {
-		time.Sleep(50 * time.Microsecond)
+		time.Sleep(50 * time.Microsecond) // wait: widens the race under test inside the fake Resize
 	}
 	return s.fakePTY.Resize(cols, rows)
 }
@@ -64,15 +66,11 @@ func TestConcurrentViewportChangesLeavePtyRingAndViewersAgreeing(t *testing.T) {
 		}
 		wg.Wait()
 		// The last height may still be waiting out the hold.
-		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		testwait.PollEvery(time.Millisecond, 5*time.Second, func() bool {
 			r.resizeMu.Lock()
-			waiting := r.pendingRows != 0
-			r.resizeMu.Unlock()
-			if !waiting {
-				break
-			}
-			time.Sleep(time.Millisecond)
-		}
+			defer r.resizeMu.Unlock()
+			return r.pendingRows == 0
+		})
 
 		want := agreedViewport(r.views)
 		sizes := f.resized()

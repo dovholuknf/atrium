@@ -84,7 +84,7 @@ func TestStopRunnersEndsHostRunners(t *testing.T) {
 	d.stopSupervised(2 * time.Second)
 
 	hostWait(t, 30*time.Second, "the exit to be filed", func() bool { return len(filedExits(t, d, task.ID)) == 1 })
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, the exit must not be filed again
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("the runner's exit was filed %d times, want once", n)
 	}

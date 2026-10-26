@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -35,13 +36,9 @@ func seenCard(t *testing.T, d *Daemon, id string) *store.SeenView {
 
 func waitSeen(t *testing.T, d *Daemon, id string, ok func(*store.SeenView) bool, what string) *store.SeenView {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
 	var v *store.SeenView
-	for time.Now().Before(deadline) {
-		if v = seenCard(t, d, id); ok(v) {
-			return v
-		}
-		time.Sleep(10 * time.Millisecond)
+	if testwait.Poll(3*time.Second, func() bool { v = seenCard(t, d, id); return ok(v) }) {
+		return v
 	}
 	t.Fatalf("%s: card shows %+v", what, v)
 	return nil
@@ -194,17 +191,14 @@ func TestTypingSeesTheTurn(t *testing.T) {
 		t.Fatal("an unseen turn was not reloaded from the store")
 	}
 	d.seenTyped(task.ID)
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if s, _ := d.st.GetSeen(task.ID); !s.Unseen() {
-			if s.SeenVia != store.SeenTyped {
-				t.Fatalf("seen via %q", s.SeenVia)
-			}
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	var s *store.Seen
+	testwait.Eventually(t, 3*time.Second, "a keystroke to see the turn", func() bool {
+		s, _ = d.st.GetSeen(task.ID)
+		return !s.Unseen()
+	})
+	if s.SeenVia != store.SeenTyped {
+		t.Fatalf("seen via %q", s.SeenVia)
 	}
-	t.Fatal("a keystroke did not see the turn")
 }
 
 func reportToLauncher(t *testing.T, d *Daemon, worker *store.Task) {
@@ -317,7 +311,7 @@ func TestAReportedWorkersStopPublishesOnce(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: a settle, the probe publishes still in flight raise no event
 	for len(lines) > 0 {
 		<-lines
 	}

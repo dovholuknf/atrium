@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -50,9 +51,7 @@ func shellCard(t *testing.T, d *Daemon) *store.Task {
 		if r := d.sup.get(task.ID); r != nil {
 			windDown(r, time.Second, d.exitKeysFor(task.ID), d.hk.windDownKeyGap)
 		}
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(task.ID) != nil; {
-			time.Sleep(50 * time.Millisecond)
-		}
+		testwait.Poll(10*time.Second, func() bool { return d.sup.get(task.ID) == nil })
 	})
 	return task
 }
@@ -80,12 +79,7 @@ func windDownLike(t *testing.T, d *Daemon, task *store.Task) {
 
 func waitGone(t *testing.T, d *Daemon, id string) {
 	t.Helper()
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
-		if d.sup.get(id) == nil {
-			return
-		}
-	}
-	t.Fatal("the runner did not stop")
+	testwait.Eventually(t, 10*time.Second, "the runner to stop", func() bool { return d.sup.get(id) == nil })
 }
 
 func TestARestartBringsBackACardAtItsPrompt(t *testing.T) {

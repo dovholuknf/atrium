@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -114,17 +115,14 @@ func testDaemon(t testing.TB) *Daemon {
 				windDown(r, time.Second, d.exitKeysFor(r.taskID), d.hk.windDownKeyGap)
 			}
 		}
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
-			left := 0
+		testwait.PollEvery(testwait.HTTP, 10*time.Second, func() bool {
 			for _, r := range real {
 				if d.sup.get(r.taskID) == r {
-					left++
+					return false
 				}
 			}
-			if left == 0 {
-				break
-			}
-		}
+			return true
+		})
 	})
 	return d
 }
