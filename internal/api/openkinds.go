@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
@@ -161,7 +162,8 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	)
 	steps.begin("worktree", "making the worktree")
 	if repo != "" {
-		wt, status, err = s.branchWorktree(ctx, s.providerByHost(host), host, org, repo, k.branch, k.kind != linkBranch)
+		wt, status, err = s.branchWorktreeFrom(ctx, s.providerByHost(host), host, org, repo, k.branch, k.kind != linkBranch,
+			branchOpts{fork: advisoryForkOf(got)})
 		if err != nil {
 			worktreeFail(w, status, err)
 			return
@@ -210,6 +212,9 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 	}
 	if wt.Cloned {
 		own(store.ResClone, wt.Repo, "")
+	}
+	if wt.Remote != "" {
+		own(store.ResRemote, wt.Remote, wt.Repo)
 	}
 
 	// 4. the card
@@ -319,6 +324,8 @@ type branchOpts struct {
 	from string
 	// twig is the worktree a twig starts from, and from is its HEAD. See twig.go.
 	twig string
+	// fork is the advisory fork a link is on: its remote is added and the link's ref fetched, and the branch made from it.
+	fork *advisoryFork
 }
 
 // branchWorktreeFrom is branchWorktree with opts. With fetch, a branch the remote has and the clone does not is made
@@ -371,6 +378,30 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		return res, http.StatusConflict, errors.New(
 			dest + " already exists but is not a worktree of that branch. move it aside, or use a different branch name")
 	}
+	forkFrom, made := "", false
+	if opts.fork != nil {
+		stepsOf(ctx).begin("fetch", "fetching from the advisory's fork")
+		forgeCmd := ""
+		if p != nil {
+			forgeCmd = p.ForgeCmd
+		}
+		from, added, err := fetchAdvisoryFork(ctx, repoPath, host, org, repo, opts.fork, credentialHelper(forge.GitHub, forgeCmd))
+		if err != nil {
+			return res, http.StatusBadRequest, errors.New("could not fetch from the advisory's fork: " + err.Error())
+		}
+		forkFrom = from
+		// A remote the operator added is theirs: only one atrium added is held, and removed with its last holder.
+		if added || s.remoteHeld(opts.fork.remote(), repoPath, "") {
+			res.Remote, res.AddedRemote = opts.fork.remote(), added
+		}
+		if added {
+			defer func() {
+				if !made {
+					_, _ = gitIn(context.Background(), repoPath, "remote", "remove", opts.fork.remote())
+				}
+			}()
+		}
+	}
 	if opts.fetch {
 		stepsOf(ctx).begin("worktree", "making the worktree")
 	}
@@ -390,12 +421,19 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), base}
 		res.CreatedBranch = true
 	default:
-		from := remoteBranch(ctx, repoPath, branch)
+		from := forkFrom
+		if from == "" {
+			from = remoteBranch(ctx, repoPath, branch)
+		}
 		if from == "" {
 			return res, http.StatusBadRequest, errors.New("the branch " + branch + " is not in " + repoPath +
 				" yet. push it, or fetch it there, then paste the link again")
 		}
 		args = []string{"worktree", "add", "-b", branch, filepath.FromSlash(dest), from}
+		if opts.fork != nil && opts.fork.pr > 0 {
+			// A fork PR's head is no branch of the fork, so there is nothing to track.
+			args = []string{"worktree", "add", "--no-track", "-b", branch, filepath.FromSlash(dest), from}
+		}
 		res.CreatedBranch = true
 	}
 	if err := os.MkdirAll(filepath.Dir(filepath.FromSlash(dest)), 0o755); err != nil {
@@ -408,6 +446,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		return prWorktreeResult{}, http.StatusBadRequest, errors.New(
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
 	}
+	made = true
 	s.scopeHub(filepath.FromSlash(dest))
 	res.Path, res.Branch = dest, branch
 	return res, http.StatusOK, nil
