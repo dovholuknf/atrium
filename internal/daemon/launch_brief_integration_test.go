@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -152,13 +153,13 @@ func promptSeenBy(t *testing.T, d *Daemon, req LaunchRequest) string {
 		t.Skipf("could not spawn a test runner here: %v", err)
 	}
 	t.Cleanup(func() { _ = d.StopRunner(task.ID) })
-	for i := 0; i < 100; i++ {
-		if raw, err := os.ReadFile(out); err == nil {
-			return string(raw)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return ""
+	var got string
+	testwait.PollEvery(50*time.Millisecond, 5*time.Second, func() bool {
+		raw, err := os.ReadFile(out)
+		got = string(raw)
+		return err == nil
+	})
+	return got
 }
 
 func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {

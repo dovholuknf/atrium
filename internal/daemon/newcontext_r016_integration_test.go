@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -120,7 +121,7 @@ func TestFailedChipSurvivesATurnStart(t *testing.T) {
 	d.act.promptSeen(id)
 	d.turnResumed(id)
 	ncTurnEnds(d, id)
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond) // wait: the failed chip must stay
 	if failedWith(d, id) == "" {
 		t.Fatal("a turn start cleared the failed chip")
 	}
@@ -146,7 +147,7 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	d.wakeSawSession(id, "conv-B")
 
 	// Longer than typeWait, which is what used to give up.
-	time.Sleep(d.hk.ncTiming.typeWait + 200*time.Millisecond)
+	time.Sleep(d.hk.ncTiming.typeWait + 200*time.Millisecond) // wait: the cycle must not fail while a turn runs
 	if failedWith(d, id) != "" {
 		t.Fatalf("the cycle failed while a turn ran: %s", failedWith(d, id))
 	}
@@ -215,7 +216,7 @@ func TestNcTypeWaitsTurnSettleAfterAPromptEvent(t *testing.T) {
 	}
 
 	d.act.promptSeen(id)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: the prompt must settle before the type, no event marks it
 	start := time.Now()
 	if err := d.ncType(id, gen, "", "/clear", d.hk.ncTiming.typeWait); err != nil {
 		t.Fatal(err)
@@ -249,15 +250,18 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 	if err := os_WriteHandoff(d, id, dir); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: the handoff must settle before the turn ends, no event marks it
 	ncTurnEnds(d, id)
 
 	// Inside the settle gap the injector is kicked repeatedly.
 	sayViaMessage(t, d, "alice", id, heldSay)
-	for i := 0; i < 10 && !strings.Contains(f.written(), "/clear"); i++ {
+	testwait.PollEvery(20*time.Millisecond, 200*time.Millisecond, func() bool {
+		if strings.Contains(f.written(), "/clear") {
+			return true
+		}
 		d.pending.reset(id)
-		time.Sleep(20 * time.Millisecond)
-	}
+		return false
+	})
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatalf("the message was typed ahead of /clear or with it: %q", f.written())
@@ -291,7 +295,7 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	if err := os_WriteHandoff(d, id, dir); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: the handoff must settle before the say, no event marks it
 	// At the same moment.
 	sayViaMessage(t, d, "alice", id, heldSay)
 	ncTurnEnds(d, id)
@@ -301,7 +305,7 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatalf("the message went in with /clear: %q", f.written())
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: the message must not be typed before the new session
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatalf("the message was typed before the new session: %q", f.written())
 	}

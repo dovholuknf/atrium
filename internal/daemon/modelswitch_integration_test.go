@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -198,16 +199,11 @@ func TestAModelSwitchWaitsForTheLineAndThenTypes(t *testing.T) {
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.HasSuffix(f.written(), "") && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	testwait.Poll(5*time.Second, func() bool { return strings.HasSuffix(f.written(), "\r") })
 	if got := f.written(); got != "/model haiku\r" {
 		t.Fatalf("after the line cleared the terminal got %q", got)
 	}
-	for len(modelEvents(t, d, target.ID)) < 2 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	testwait.Poll(5*time.Second, func() bool { return len(modelEvents(t, d, target.ID)) >= 2 })
 	evs := modelEvents(t, d, target.ID)
 	if len(evs) != 2 || evs[0]["state"] != "waiting" || evs[1]["state"] != "typed after waiting" {
 		t.Fatalf("events = %v, want waiting then typed after waiting", evs)
@@ -237,11 +233,8 @@ func TestANewerModelSwitchReplacesAWaitingOne(t *testing.T) {
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.HasSuffix(f.written(), "") && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	time.Sleep(100 * time.Millisecond)
+	testwait.Poll(5*time.Second, func() bool { return strings.HasSuffix(f.written(), "\r") })
+	time.Sleep(100 * time.Millisecond) // wait: nothing more may be typed after the newer model
 	if got := f.written(); got != "/model opus\r" {
 		t.Fatalf("the terminal got %q, want only the newer /model opus", got)
 	}
@@ -355,7 +348,7 @@ func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
 	r.typeMu.Unlock()
 	mu := d.modelLock(target.ID)
 	mu.Lock()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: let the waiter park on the held lock, no event marks it
 
 	// The handler's step: replace the wait and type the newer model.
 	d.modelWaits.Delete(target.ID)
@@ -365,7 +358,7 @@ func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
 	}
 	mu.Unlock()
 
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: the stale wait must type nothing
 	if got := f.written(); got != "/model opus\r" {
 		t.Fatalf("the terminal got %q, want only the newer /model opus", got)
 	}
@@ -380,10 +373,7 @@ func TestAWaitThatGivesUpIsRecorded(t *testing.T) {
 	r.noteOperatorTyped([]byte("git comm"))
 	switchModel(t, d, target.ID, `{"model":"haiku"}`)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for len(modelEvents(t, d, target.ID)) < 2 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
+	testwait.Poll(5*time.Second, func() bool { return len(modelEvents(t, d, target.ID)) >= 2 })
 	evs := modelEvents(t, d, target.ID)
 	if len(evs) != 2 || evs[1]["state"] != "gave up waiting" || evs[1]["to"] != "haiku" {
 		t.Fatalf("events = %v, want waiting then gave up waiting", evs)

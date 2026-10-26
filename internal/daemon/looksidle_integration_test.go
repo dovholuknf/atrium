@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -196,13 +197,10 @@ func TestLooksIdleClearsOnOutputKeystrokeAndHook(t *testing.T) {
 		case "hook":
 			d.onActivity(ActivityEvent{TaskID: task.ID, Event: "idle"})
 		}
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) {
-			if a := d.act.get(task.ID); a == nil || !a.LooksIdle {
-				break
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
+		testwait.Poll(2*time.Second, func() bool {
+			a := d.act.get(task.ID)
+			return a == nil || !a.LooksIdle
+		})
 		if a := d.act.get(task.ID); a != nil && a.LooksIdle {
 			t.Fatalf("%s left the badge up", cause)
 		}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,18 +125,10 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 	// supervisor is not the exit being filed. Wait for what is asserted: the item
 	// ended and the launcher told, then count, since however many paths saw the
 	// death it is one.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		cur := itemOf(t, d, w.TaskID)
-		if cur.State == store.WorkEnded && d.sup.get(w.TaskID) == nil && len(pendingFrom(t, d, launcher.ID)) > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the failed start was never filed as ended within 10s: item = %+v, runner present = %v, notices = %d",
-				cur, d.sup.get(w.TaskID) != nil, len(pendingFrom(t, d, launcher.ID)))
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, 10*time.Second, "the failed start to be filed as ended", func() bool {
+		return itemOf(t, d, w.TaskID).State == store.WorkEnded && d.sup.get(w.TaskID) == nil &&
+			len(pendingFrom(t, d, launcher.ID)) > 0
+	})
 	w = itemOf(t, d, w.TaskID)
 	if w.State != store.WorkEnded || w.LauncherID != launcher.ID || !strings.Contains(w.Brief, "the brief") ||
 		!strings.HasSuffix(w.BriefPath, "BRIEF.md") {

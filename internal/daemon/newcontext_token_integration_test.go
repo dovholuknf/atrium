@@ -153,7 +153,7 @@ func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
 	}
 	d.act.set(task.ID, ActivityThinking, "")
 	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine(m[1], handoffBody), time.Minute)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // wait: the file must age before the turn ends, no event marks it
 	ncTurnEnds(d, task.ID)
 	if err := <-done; err != nil {
 		t.Fatalf("the capture was refused: %v", err)

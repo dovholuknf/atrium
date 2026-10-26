@@ -122,7 +122,7 @@ func TestLetItThroughHoldsKeysPressedMeanwhile(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		time.Sleep(50 * time.Millisecond) // inside the sequence's pauses
+		time.Sleep(50 * time.Millisecond) // wait: a key inside the sequence's pauses, no event marks it
 		r.noteOperatorTyped([]byte("Z"))
 		_ = r.writeOperatorInput([]byte("Z"))
 	}()

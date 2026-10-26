@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -107,12 +108,8 @@ func ncTurnEnds(d *Daemon, id string) {
 // until waits for cond, failing the test with what if it never holds.
 func until(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("gave up waiting for %s", what)
-		}
-		time.Sleep(2 * time.Millisecond)
+	if !testwait.PollEvery(2*time.Millisecond, 3*time.Second, cond) {
+		t.Fatalf("gave up waiting for %s", what)
 	}
 }
 
@@ -161,7 +158,7 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 		t.Fatal(err)
 	}
 	ncTurnEnds(d, id)
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond) // wait: nothing may be cleared without the ack
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("/clear was typed with no ack: %q", f.written())
 	}
@@ -172,7 +169,7 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	if _, _, err := d.ready(task); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: nothing may be cleared inside the turn
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("/clear was typed into the turn that ran atrium ready: %q", f.written())
 	}
@@ -183,7 +180,7 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["step"] != NewContextClear {
 		t.Fatalf("the card does not show the clear step: %v", d.newContextFor(id))
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: no wake may be typed before the new session starts
 	if strings.Contains(f.written(), newContextWake(path)) {
 		t.Fatalf("the wake was typed before the new session started: %q", f.written())
 	}
@@ -254,7 +251,7 @@ func TestNewContextWaitsForAnEmptyLine(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: nothing may be typed over the operator's line
 	if f.written() != "" {
 		t.Fatalf("typed over the operator's line: %q", f.written())
 	}
@@ -289,7 +286,7 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 	task, f, _ := ncCard(t, d)
 	ncToClear(t, d, task, f)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond) // wait: the failed chip must stay
 	if failedWith(d, task.ID) == "" {
 		t.Fatal("a failed chip went away by itself")
 	}
@@ -326,7 +323,7 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 	written := f.written()
 	d.act.set(task.ID, ActivityThinking, "")
 	ncTurnEnds(d, task.ID)
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond) // wait: a dismissed run must type nothing
 	if f.written() != written {
 		t.Fatalf("a dismissed run kept typing: %q", f.written()[len(written):])
 	}
