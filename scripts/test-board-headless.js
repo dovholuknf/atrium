@@ -4125,8 +4125,9 @@ async function termLastReadSection(browser, base) {
 }
 
 // ── a terminal follows the bottom (u-016) ────────────────────────────────
-// Opening a card lands on its input line, and output keeps it there: after coming back to it, after a wheel and a key,
-// and after the pty grows taller than the pane, whose taller grid clamped xterm's scroll and read as a scroll up.
+// Opening a card lands on its input line, and output keeps it there: after coming back to it, after a wheel and a key
+// even when a scroll event nobody made follows, and after the pty grows taller than the pane, whose taller grid
+// clamped xterm's scroll and read as a scroll up. A wheel up with nothing typed leaves the view where it is.
 async function termFollowBottomSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "land";
@@ -4201,14 +4202,36 @@ async function termFollowBottomSection(browser, base) {
     await p.mouse.move(box.x, box.y);
     await p.mouse.wheel(0, -100);
     await p.waitForTimeout(300);
+    const still = await p.evaluate(async () => {
+      const was = term.buffer.active.viewportY;
+      for (let i = 0; i < 5; i++) { __say("fb-a", __lines(i * 10, 10, "unread")); await __idle(60); }
+      await __idle(300);
+      return Object.assign(__at(), { was });
+    });
+    if (still.top !== still.was || still.top >= still.base) fail("termFollowBottom: scrolled up with nothing typed, output moved the view: " + JSON.stringify(still));
     await p.keyboard.type("hi");
     await p.keyboard.press("Enter");
+    // A scroll event nobody made, the kind a browser fires when it clamps the viewport, and then a reply that took a while.
     const typed = await p.evaluate(async () => {
+      await __idle(300);
+      const vp = term.element.querySelector(".xterm-viewport");
+      vp.scrollTop -= 3 * term._core.viewport._currentRowHeight;
+      await __idle(1500);
       for (let i = 0; i < 10; i++) { __say("fb-a", __lines(i * 10, 10, "reply")); await __idle(60); }
       await __idle(600);
       return __at();
     });
     if (!atBottom(typed)) fail("termFollowBottom: after a wheel up and a key, output did not follow to the input line: " + JSON.stringify(typed));
+    await p.mouse.wheel(0, -100);
+    await p.waitForTimeout(300);
+    const again = await p.evaluate(async () => {
+      const was = term.buffer.active.viewportY;
+      for (let i = 0; i < 5; i++) { __say("fb-a", __lines(i * 10, 10, "later")); await __idle(60); }
+      await __idle(300);
+      return Object.assign(__at(), { was });
+    });
+    if (again.top !== again.was || again.top >= again.base) fail("termFollowBottom: a wheel up while following did not stop the follow: " + JSON.stringify(again));
+    await p.keyboard.type("k");
 
     const tall = await p.evaluate(async () => {
       __say("fb-a", '{"t":"size","cols":' + term.cols + ',"rows":' + (term.rows + 7) + '}');

@@ -1887,17 +1887,12 @@ function hideCompletions() {
 // paste lands with the view about twenty lines short, which is worse than not
 // scrolling at all, because it looks like it worked.
 //
-// So the view follows the output for a moment afterwards, and then stops. It
-// has to stop: a terminal that scrolls to the bottom on every write can never
-// be scrolled up while a runner is producing output, which is the whole reason
-// xterm does not do this by default.
+// So the view follows the output afterwards, until the operator scrolls (`stopFollow`). Scrolled up with nothing typed,
+// the view stays. Typed, it goes to the bottom and keeps following (u-016). Not xterm's own follow alone, whose
+// scrolled-up flag a scroll event nobody made can set again after a notch of the wheel.
 let followScrollUntil = 0;
 
-// followScrollFor is how long that moment is.
-//
-// It covers the round trip and the redraw, not the work. A runner that thinks
-// for a minute and then prints is not still being followed, and should not be.
-const followScrollFor = 1200;
+function stopFollow() { followScrollUntil = 0; }
 
 // `quiet` sends the bytes without treating them as something somebody typed.
 //
@@ -1917,7 +1912,7 @@ function sendInput(text, quiet, pasted) {
   if (!quiet) {
     phoneFollow();
     if (term) term.scrollToBottom();
-    followScrollUntil = Date.now() + followScrollFor;
+    followScrollUntil = Infinity;
   }
   if (!quiet && typeof composeLineFeed === "function") composeLineFeed(d, pasted);
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
@@ -2035,7 +2030,7 @@ function sendPaste(d) {
     if (pasteFlight === f) { f.sent = true; f.sentAt = Date.now(); }
     phoneFollow();
     if (term) term.scrollToBottom();
-    followScrollUntil = Date.now() + followScrollFor;
+    followScrollUntil = Infinity;
     const q = pasteHeld;
     pasteHeld = null;
     for (const [d2, quiet, pasted] of q) sendInput(d2, quiet, pasted);
