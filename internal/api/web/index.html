@@ -871,10 +871,21 @@ Tokens only, except the turns atrium caused, which carry an estimated dollar fig
   <!-- The hub's backlog and director reports, drawn by js/backlog.js. Hub only. -->
   <div id="backlog" hidden>
     <div id="fd-backlog"></div>
+    <button type="button" id="newitem-open" class="go" onclick="newItemOpen()"
+      data-tip="file, edit or remove an item with a small throwaway agent">new item</button>
     <p class="pane-lead" id="backlog-note" role="status"></p>
     <div id="backlog-items"></div>
     <div class="col-head" style="margin:16px 0 10px"><span>director reports</span></div>
     <div id="backlog-reports"></div>
+  </div>
+
+  <!-- The new item agent's conversation, drawn by js/newitem.js. Floats over every tab until closed. -->
+  <div id="newitem-panel" hidden>
+    <div class="chat-bar"><strong>new item</strong><span class="grow"></span>
+      <button type="button" class="ghost" id="newitem-close" onclick="newItemClose()"
+        aria-label="close and end the item agent">&times;</button></div>
+    <p class="pane-lead" id="newitem-note" role="status" hidden></p>
+    <div class="chat-frame" id="newitem-frame"></div>
   </div>
 
   <div id="audit" hidden>
@@ -3901,6 +3912,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/review.js"></script>
 <script src="/js/hubrepos.js"></script>
 <script src="/js/backlog.js"></script>
+<script src="/js/newitem.js"></script>
 <script src="/js/items-mock.js"></script>
 <script src="/js/items-data.js"></script>
 <script src="/js/efficacy.js"></script>
