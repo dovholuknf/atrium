@@ -132,6 +132,9 @@ func lockClaudeConfig(env Env, path string) (unlock func(), err error) {
 	}
 	deadline := time.Now().Add(limit)
 	wait := 20 * time.Millisecond
+	if env.lockPoll > 0 {
+		wait = env.lockPoll
+	}
 	for {
 		err := mkdir(lock, 0o700)
 		if err == nil {
@@ -151,7 +154,7 @@ func lockClaudeConfig(env Env, path string) (unlock func(), err error) {
 			return nil, fmt.Errorf("a claude session held %s for %s", filepath.ToSlash(lock), limit)
 		}
 		time.Sleep(wait)
-		if wait < 200*time.Millisecond {
+		if wait < 200*time.Millisecond && env.lockPoll <= 0 {
 			wait *= 2
 		}
 	}

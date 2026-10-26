@@ -65,9 +65,10 @@ type Env struct {
 	// GOOS is runtime.GOOS unless a test says otherwise.
 	GOOS string
 
-	// lockWait bounds the wait for claude's config lock, claudeLockWait when zero, and mkdirLock is os.Mkdir when nil.
+	// lockWait bounds the wait for claude's config lock, claudeLockWait when zero, lockPoll fixes the retry interval when set, and mkdirLock is os.Mkdir when nil.
 	// Tests set them to reproduce a held lock and the Windows answers.
 	lockWait  time.Duration
+	lockPoll  time.Duration
 	mkdirLock func(name string, perm os.FileMode) error
 }
 
