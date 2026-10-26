@@ -4124,6 +4124,111 @@ async function termLastReadSection(browser, base) {
   if (!bad) console.log("termLastRead ok");
 }
 
+// ── a terminal follows the bottom (u-016) ────────────────────────────────
+// Opening a card lands on its input line, and output keeps it there: after coming back to it, after a wheel and a key,
+// and after the pty grows taller than the pane, whose taller grid clamped xterm's scroll and read as a scroll up.
+async function termFollowBottomSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("fb-a", { supervised: true, created_at: "2026-09-19T12:00:00Z", activity: { what: "working" } });
+  landCard("fb-b", { supervised: true, created_at: "2026-09-19T12:01:00Z", activity: { what: "working" } });
+  mock.landList = [mock.LAND["fb-a"], mock.LAND["fb-b"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__socks = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__say = (id, text) => {
+      const sock = window.__socks.filter(s => s.url.includes("/" + id + "/") && s.readyState === 1).pop();
+      sock.onmessage({ data: typeof text === "string" && text[0] === "{" ? text : new TextEncoder().encode(text).buffer });
+    };
+    window.__lines = (from, n, tag) => { let s = ""; for (let i = from; i < from + n; i++) s += tag + " " + i + " words that make a line\r\n"; return s; };
+    window.__idle = ms => new Promise(r => setTimeout(r, ms || 250));
+    window.__goto = async id => { attachTask(id); await new Promise(r => setTimeout(r, 700)); };
+    window.__at = () => {
+      const b = term.buffer.active, vp = term.element.querySelector(".xterm-viewport");
+      return { top: b.viewportY, base: b.baseY, rows: term.rows, el: vp.scrollHeight - vp.clientHeight - vp.scrollTop,
+        tall: document.getElementById("t-screen").classList.contains("tall") };
+    };
+  });
+  const atBottom = s => s.top === s.base && s.base > 0 && s.el <= 1;
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+
+    const open = await p.evaluate(async () => {
+      attachTask("fb-a");
+      await __idle(50);
+      __say("fb-a", __lines(0, 200, "replayed") + "> ");
+      await __idle(900);
+      return __at();
+    });
+    if (!atBottom(open)) fail("termFollowBottom: opening a card did not land on its input line: " + JSON.stringify(open));
+
+    const more = await p.evaluate(async () => {
+      for (let i = 0; i < 10; i++) { __say("fb-a", __lines(i * 10, 10, "live")); await __idle(60); }
+      await __idle(600);
+      return __at();
+    });
+    if (!atBottom(more)) fail("termFollowBottom: output at the bottom did not keep the view there: " + JSON.stringify(more));
+
+    const back = await p.evaluate(async () => {
+      await __goto("fb-b");
+      __say("fb-b", __lines(0, 120, "other"));
+      __say("fb-a", __lines(0, 40, "away"));
+      await __idle();
+      await __goto("fb-a");
+      __say("fb-a", __lines(0, 5, "after"));
+      await __idle(900);
+      return __at();
+    });
+    if (!atBottom(back)) fail("termFollowBottom: coming back to a card left at the bottom did not land on its input line: " + JSON.stringify(back));
+
+    const box = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    await p.mouse.move(box.x, box.y);
+    await p.mouse.wheel(0, -100);
+    await p.waitForTimeout(300);
+    await p.keyboard.type("hi");
+    await p.keyboard.press("Enter");
+    const typed = await p.evaluate(async () => {
+      for (let i = 0; i < 10; i++) { __say("fb-a", __lines(i * 10, 10, "reply")); await __idle(60); }
+      await __idle(600);
+      return __at();
+    });
+    if (!atBottom(typed)) fail("termFollowBottom: after a wheel up and a key, output did not follow to the input line: " + JSON.stringify(typed));
+
+    const tall = await p.evaluate(async () => {
+      __say("fb-a", '{"t":"size","cols":' + term.cols + ',"rows":' + (term.rows + 7) + '}');
+      await __idle(300);
+      for (let i = 0; i < 10; i++) { __say("fb-a", __lines(i * 10, 10, "tall")); await __idle(60); }
+      await __idle(600);
+      return __at();
+    });
+    if (!tall.tall) fail("termFollowBottom: a pty taller than the pane did not draw tall: " + JSON.stringify(tall));
+    if (!atBottom(tall)) fail("termFollowBottom: after the pty grew taller than the pane, output did not follow: " + JSON.stringify(tall));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the follow-bottom page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+  if (!bad) console.log("termFollowBottom ok");
+}
+
+
 // ── the debug switches are per card ──────────────────────────────────────
 // The drawer belongs to one card, so its two switches do too: on for one terminal, the next terminal shows them off
 // and is neither timed nor polled. The hub and the room log for the whole machine, so they are told "on" while any
@@ -25458,7 +25563,7 @@ async function main() {
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
@@ -27633,6 +27738,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termHiddenRedraw", () => termHiddenRedrawSection(browser, base));
     // termLastRead is off while the new-since divider is (js/lastread.js, LR_OFF).
     // await unit("termLastRead", () => termLastReadSection(browser, base));
+    await unit("termFollowBottom", () => termFollowBottomSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("termActivityWorkingFirst", () => termActivityWorkingFirstSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
