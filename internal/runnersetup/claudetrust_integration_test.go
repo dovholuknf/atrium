@@ -274,6 +274,7 @@ func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
 		t.Skip("slow: real file locking and writes")
 	}
 	env, path := claudeHome(t)
+	env.lockPoll = time.Millisecond
 	const n = 8
 	var dirs []string
 	for i := 0; i < n; i++ {
