@@ -113,13 +113,13 @@ func backlogCmd() *cobra.Command {
 	var board string
 	c := &cobra.Command{
 		Use:   "backlog",
-		Short: "The hub's backlog: list, show, file, status, priority, import",
+		Short: "The hub's backlog: list, show, file, status, priority, edit, append, import",
 		Long: "The backlog items every room reads and writes through the hub. On the hub's machine a call goes to its\n" +
 			"board, and on any other room through that room's link to its hub. --board-addr asks that board only.",
 	}
 	boardFlag(c, &board)
 	c.AddCommand(backlogListCmd(&board), backlogShowCmd(&board), backlogFileCmd(&board), backlogStatusCmd(&board),
-		backlogPriorityCmd(&board), backlogImportCmd(&board))
+		backlogPriorityCmd(&board), backlogEditCmd(&board), backlogAppendCmd(&board), backlogImportCmd(&board))
 	return c
 }
 
@@ -180,6 +180,9 @@ func backlogShowCmd(board *string) *cobra.Command {
 			fmt.Fprintf(w, "%s  [%s]  %s\n", b.ID, b.Status, b.Title)
 			fmt.Fprintf(w, "dept %s, priority %s, filed %s by %s on %s\n", b.Dept, orDefault(b.Priority, "-"), b.CreatedAt,
 				orDefault(b.FiledBy, "?"), orDefault(b.FiledRoom, "?"))
+			if b.ChangedAt != "" && b.ChangedAt != b.CreatedAt {
+				fmt.Fprintf(w, "changed %s by %s\n", b.ChangedAt, orDefault(b.ChangedBy, "?"))
+			}
 			if b.Body != "" {
 				fmt.Fprintf(w, "\n%s\n", b.Body)
 			}
@@ -263,6 +266,65 @@ func backlogPriorityCmd(board *string) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s priority is now %s\n", b.ID, orDefault(b.Priority, "unset"))
+			return nil
+		},
+	}
+}
+
+func backlogEditCmd(board *string) *cobra.Command {
+	var title, body string
+	c := &cobra.Command{
+		Use:   "edit <id>",
+		Short: "Replace an item's title, its body, or both",
+		Long:  "Only the flags given are changed. --body - reads the body from stdin.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			by, _ := backlogFiler()
+			ask := map[string]string{"by": by}
+			if cmd.Flags().Changed("title") {
+				ask["title"] = title
+			}
+			if cmd.Flags().Changed("body") {
+				text, err := stdinBody(cmd, body)
+				if err != nil {
+					return err
+				}
+				ask["body"] = text
+			}
+			if len(ask) == 1 {
+				return errors.New("edit needs --title or --body")
+			}
+			var b hubstore.BacklogItem
+			if err := backlogCall(*board, http.MethodPost, "/_hub/backlog/"+url.PathEscape(args[0]), ask, &b); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "edited %s [%s] %s\n", b.ID, b.Status, b.Title)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&title, "title", "", "the new title, one line")
+	c.Flags().StringVar(&body, "body", "", "the new body, or - for stdin")
+	return c
+}
+
+func backlogAppendCmd(board *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "append <id> <text|->",
+		Short: "Add a paragraph to an item's body, headed with who and the day",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			text, err := stdinBody(cmd, args[1])
+			if err != nil {
+				return err
+			}
+			by, _ := backlogFiler()
+			var b hubstore.BacklogItem
+			err = backlogCall(*board, http.MethodPost, "/_hub/backlog/"+url.PathEscape(args[0]),
+				map[string]string{"append": text, "by": by}, &b)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "appended to %s\n", b.ID)
 			return nil
 		},
 	}

@@ -85,6 +85,29 @@ func TestBacklogStatusAndAHubRefusalIsShownAsTheHubSaidIt(t *testing.T) {
 	}
 }
 
+func TestBacklogEditAndAppend(t *testing.T) {
+	t.Setenv("ATRIUM_AGENT_NAME", "qa")
+	out, method, path, body, err := runBacklog(t, 200, `{"id":"a","status":"open","title":"t2"}`, "new body",
+		"backlog", "edit", "a", "--body", "-")
+	if err != nil || method != "POST" || path != "/_hub/backlog/a" || body != `{"body":"new body","by":"qa"}` ||
+		!strings.Contains(out, "edited a") {
+		t.Fatalf("edit body: %s %s %s %q %v", method, path, body, out, err)
+	}
+	if _, _, _, body, err = runBacklog(t, 200, `{"id":"a"}`, "", "backlog", "edit", "a", "--title", "t2"); err != nil ||
+		body != `{"by":"qa","title":"t2"}` {
+		t.Fatalf("edit title: %s %v", body, err)
+	}
+	if _, _, _, _, err = runBacklog(t, 200, `{"id":"a"}`, "", "backlog", "edit", "a"); err == nil ||
+		!strings.Contains(err.Error(), "--title or --body") {
+		t.Fatalf("edit with nothing: %v", err)
+	}
+	out, _, path, body, err = runBacklog(t, 200, `{"id":"a"}`, "", "backlog", "append", "a", "one more")
+	if err != nil || path != "/_hub/backlog/a" || body != `{"append":"one more","by":"qa"}` ||
+		!strings.Contains(out, "appended to a") {
+		t.Fatalf("append: %s %s %q %v", path, body, out, err)
+	}
+}
+
 func TestReportsAddListAndRead(t *testing.T) {
 	_, method, path, body, err := runBacklog(t, 201, `{"id":"r1"}`, "", "reports", "add", "--to", "fabric", "--subject", "hi", "--body", "b")
 	if err != nil || method != "POST" || path != "/_hub/reports" || !strings.Contains(body, `"subject":"hi"`) {

@@ -1,4 +1,4 @@
-Docs: none, the reference page lists atrium_backlog without its actions, and the tool's own description names edit
+Docs: none, the reference page lists atrium_backlog without its actions, and the tool and its --help name both
 
 ## Test plan
 
@@ -22,3 +22,17 @@ Docs: none, the reference page lists atrium_backlog without its actions, and the
 1. Call `atrium_backlog edit {id}` with no title and no body.
 
 **Expected:** it is refused with "edit needs id and a title or a body".
+
+### @LETTER@4. Append a paragraph
+
+1. Call `atrium_backlog append {id, text: "one more"}`, then `get`.
+
+**Expected:** the body is `b2`, a blank line, then `<your card> <today>: one more`, and changed_by is your card.
+
+### @LETTER@5. The CLI
+
+1. Run `atrium backlog edit <id> --title t3`, then `atrium backlog append <id> "from the shell"`.
+2. Run `atrium backlog show <id>`.
+
+**Expected:** the title is `t3`, the body ends with the appended paragraph, and a `changed ... by ...` line shows
+the last change.
