@@ -56,7 +56,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 	case RelayHub:
 		return c.hubAsk(ctx, from, req)
 	case RelayFind:
-		card, code, err := c.hub.lookupEverywhere(from, req.To)
+		card, code, err := lookupEverywhere(c.hub, from, req.To)
 		if err != nil {
 			return RelayAnswer{Code: code, Error: err.Error()}
 		}
@@ -66,7 +66,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 			// ONLY THE CARDS TAGGED atrium:everywhere, from the index, with no
 			// question put to any room.
 			peers := []RelayPeer{}
-			for _, e := range c.hub.every.all(from) {
+			for _, e := range everyOf(c.hub).all(from) {
 				p := e.asPeer()
 				peers = append(peers, RelayPeer{Handle: p.Handle, Alias: p.Alias, Card: p.Card, Room: p.Room,
 					Title: p.Title, Status: p.Status, Everywhere: true})

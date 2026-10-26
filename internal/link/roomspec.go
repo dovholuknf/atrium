@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -155,35 +156,6 @@ func (p *Proxy) serveRoomSpecBoard(w http.ResponseWriter, r *http.Request, sub s
 }
 
 // ── the hub's side of the kind ──────────────────────────
-
-// serveRoomSpec answers HTTP on one connection a room dialled, for the room the certificate named.
-func (h *Hub) serveRoomSpec(name string, conn net.Conn, br *bufio.Reader) {
-	if h.RoomSpec == nil {
-		_ = writeJSON(conn, welcome{OK: false, Error: "this hub keeps no room specs. update the hub"})
-		return
-	}
-	if err := writeJSON(conn, welcome{OK: true}); err != nil {
-		return
-	}
-	one := newOneConn(&buffered{Conn: conn, br: br})
-	srv := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// SET, NOT ADDED TO: whatever the room sent in this header is gone.
-			r.Header.Set(RoomSpecRoomHeader, name)
-			h.RoomSpec.ServeHTTP(w, r)
-		}),
-		ReadHeaderTimeout: gitHeaderWait,
-		ReadTimeout:       gitHeaderWait,
-		IdleTimeout:       time.Second,
-		ConnState: func(_ net.Conn, s http.ConnState) {
-			if s == http.StateClosed || s == http.StateHijacked {
-				one.finish()
-			}
-		},
-		ErrorLog: log.New(discard{}, "", 0),
-	}
-	_ = srv.Serve(one)
-}
 
 // ── the room's side ─────────────────────────────────────
 

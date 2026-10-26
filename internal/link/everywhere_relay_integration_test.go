@@ -224,11 +224,11 @@ func TestARoomTheStoreNoLongerHoldsLeavesTheIndex(t *testing.T) {
 	stock := &remembering{cards: map[string][]CardState{"sg4": {card("s1", "work", "running")}}}
 	x.proxy.SetInventory(stock)
 
-	if got := x.hub.every.find("m1mini", "orchestrator"); len(got) != 1 {
+	if got := everyOf(x.hub).find("m1mini", "orchestrator"); len(got) != 1 {
 		t.Fatalf("while held: %+v", got)
 	}
 	delete(stock.cards, "sg4") // what store.Remove or Force cascades
-	if got := x.hub.every.find("m1mini", "orchestrator"); len(got) != 0 {
+	if got := everyOf(x.hub).find("m1mini", "orchestrator"); len(got) != 0 {
 		t.Fatalf("after the store dropped the room: %+v", got)
 	}
 	ans, _ := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayFind, To: "orchestrator"})
@@ -247,14 +247,14 @@ func TestForgettingARoomDropsItFromTheIndex(t *testing.T) {
 	defer done()
 	front.Config.Handler.(*Proxy).SetInventory(stock)
 	hub.IndexEverywhere("athens", []CardState{everyRow("c1", "running", "atrium-1", "orchestrator", EverywhereTag)})
-	if len(hub.every.find("elsewhere", "orchestrator")) != 1 {
+	if len(everyOf(hub).find("elsewhere", "orchestrator")) != 1 {
 		t.Fatal("not indexed")
 	}
 	// The fake keeps its cards when forgotten, so this is the endpoint's own drop.
 	if code, body := forget(t, front.URL, "athens"); code != http.StatusOK {
 		t.Fatalf("forget = %d %s", code, body)
 	}
-	if got := hub.every.byRoom["athens"]; len(got) != 0 {
+	if got := everyOf(hub).byRoom["athens"]; len(got) != 0 {
 		t.Fatalf("still indexed after the forget: %+v", got)
 	}
 }

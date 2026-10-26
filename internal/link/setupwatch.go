@@ -48,37 +48,6 @@ const (
 	setupBound = 10 * time.Second
 )
 
-// SetupIssue is one thing wrong with a room, in a line a person can read.
-type SetupIssue struct {
-	// Kind is `hooks` or `build`. Only `hooks` has a fix on the board.
-	Kind string `json:"kind"`
-	Text string `json:"text"`
-}
-
-// RoomSetup is what the hub last learned about one room's setup.
-type RoomSetup struct {
-	// Answering is false when the room did not answer the check. Nothing else is meaningful then.
-	Answering bool      `json:"answering"`
-	Checked   time.Time `json:"checked"`
-	// HooksMissing is the report's `missing` count, which includes stale hooks. HooksStale counts those alone.
-	HooksMissing int `json:"hooks_missing"`
-	HooksStale   int `json:"hooks_stale"`
-	// HooksUnreadable is the parse error when settings.json cannot be read. Nothing is written then, so no fix.
-	HooksUnreadable string `json:"hooks_unreadable,omitempty"`
-	// HooksTwoGates is true when the dotfiles gate and atrium's own are both registered. It is one of HooksMissing.
-	HooksTwoGates bool   `json:"hooks_two_gates,omitempty"`
-	Build         string `json:"build,omitempty"`
-	// Code is the room's code fingerprint and Commit the commit it was built from. Both are empty on an old room.
-	Code    string   `json:"code,omitempty"`
-	Commit  string   `json:"commit,omitempty"`
-	Go      string   `json:"go,omitempty"`
-	Runners []string `json:"runners,omitempty"`
-	// Issues is what is wrong, named once here so the pill and the row cannot disagree.
-	Issues []SetupIssue `json:"issues"`
-
-	since time.Time
-}
-
 type setupWatch struct {
 	mu    sync.Mutex
 	facts map[string]*RoomSetup
@@ -119,7 +88,7 @@ func (p *Proxy) setupSweep(ctx context.Context, now time.Time) {
 		k := keyOf(a.Name)
 		live[k] = true
 		f := p.setup.facts[k]
-		if f == nil || !f.since.Equal(a.Since) || now.Sub(f.Checked) >= setupEvery {
+		if f == nil || !f.Since.Equal(a.Since) || now.Sub(f.Checked) >= setupEvery {
 			due = append(due, a)
 		}
 	}
@@ -155,7 +124,7 @@ func (p *Proxy) checkSetup(ctx context.Context, a Attached) bool {
 	ctx, cancel := context.WithTimeout(ctx, setupBound)
 	defer cancel()
 	f := p.readSetup(ctx, a.Name)
-	f.since = a.Since
+	f.Since = a.Since
 	f.Issues = p.setupIssues(ctx, f)
 	k := keyOf(a.Name)
 	p.setup.mu.Lock()

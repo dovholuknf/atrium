@@ -63,7 +63,7 @@ func isCullRoute(r *http.Request) bool {
 }
 
 // buildOf is the build a room said it was running when it attached.
-func (h *Hub) buildOf(room string) string {
+func buildOf(h *Hub, room string) string {
 	if h == nil {
 		return ""
 	}
@@ -101,7 +101,7 @@ func (p *Proxy) rewriteOldRoom(res *http.Response) error {
 		res.Body = io.NopCloser(bytes.NewReader(raw))
 		return nil
 	}
-	out, _ := json.Marshal(map[string]string{"error": predatesCull(room, p.hub.buildOf(room))})
+	out, _ := json.Marshal(map[string]string{"error": predatesCull(room, buildOf(p.hub, room))})
 	res.Body = io.NopCloser(bytes.NewReader(out))
 	res.ContentLength = int64(len(out))
 	res.Header.Set("Content-Length", fmt.Sprint(len(out)))

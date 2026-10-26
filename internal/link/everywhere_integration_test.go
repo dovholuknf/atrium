@@ -32,7 +32,7 @@ func TestEverywhereIndexesOnlyTaggedCardsThatAreNotEnded(t *testing.T) {
 		everyRow("d", "running", "atrium-4", "plain", "other"),
 		everyRow("e", "running", "atrium-5", ""),
 	})
-	got := h.every.all("")
+	got := everyOf(h).all("")
 	if len(got) != 1 || got[0].ID != "a" || got[0].Room != "sg4" {
 		t.Fatalf("index = %+v, wanted only the running tagged card", got)
 	}
@@ -55,7 +55,7 @@ func TestEverywhereIndexesOnlyCardsAHumanLaunched(t *testing.T) {
 		launched("agent2", "", OriginTag, EverywhereTag),
 	})
 	got := map[string]bool{}
-	for _, c := range h.every.all("") {
+	for _, c := range everyOf(h).all("") {
 		got[c.ID] = true
 	}
 	if len(got) != 2 || !got["hand"] || !got["board"] {
@@ -67,11 +67,11 @@ func TestEverywhereIndexesOnlyCardsAHumanLaunched(t *testing.T) {
 func TestEverywhereADoneCardDropsOutOfFind(t *testing.T) {
 	h := NewHub(Timings{})
 	h.IndexEverywhere("sg4", []CardState{everyRow("a", "running", "atrium-1", "orchestrator", EverywhereTag)})
-	if got := h.every.find("sg3", "orchestrator"); len(got) != 1 {
+	if got := everyOf(h).find("sg3", "orchestrator"); len(got) != 1 {
 		t.Fatalf("find before = %+v, wanted one", got)
 	}
 	h.IndexEverywhere("sg4", []CardState{everyRow("a", "done", "atrium-1", "orchestrator", EverywhereTag)})
-	if got := h.every.find("sg3", "orchestrator"); len(got) != 0 {
+	if got := everyOf(h).find("sg3", "orchestrator"); len(got) != 0 {
 		t.Fatalf("find after done = %+v, wanted none", got)
 	}
 }
@@ -83,7 +83,7 @@ func TestEverywhereAnnouncementReplacesOnlyThatRoom(t *testing.T) {
 	if !h.IndexEverywhere("sg4", []CardState{everyRow("a", "done", "atrium-1", "", EverywhereTag)}) {
 		t.Fatal("a card ending is a change to the index")
 	}
-	got := h.every.all("")
+	got := everyOf(h).all("")
 	if len(got) != 1 || got[0].Room != "sg3" {
 		t.Fatalf("index = %+v, sg4's card should be gone and sg3's kept", got)
 	}
@@ -96,14 +96,14 @@ func TestEverywhereFindMatchesHandleOrAliasAndExcludesTheAskingRoom(t *testing.T
 	h := NewHub(Timings{})
 	h.IndexEverywhere("sg4", []CardState{everyRow("a", "running", "atrium-87300", "Orchestrator", EverywhereTag)})
 	for _, who := range []string{"orchestrator", "@ORCHESTRATOR", "atrium-87300", " @Atrium-87300 "} {
-		if got := h.every.find("sg3", who); len(got) != 1 {
+		if got := everyOf(h).find("sg3", who); len(got) != 1 {
 			t.Errorf("find(%q) = %+v, wanted one", who, got)
 		}
 	}
-	if got := h.every.find("sg3", "a"); len(got) != 0 {
+	if got := everyOf(h).find("sg3", "a"); len(got) != 0 {
 		t.Errorf("a card id matched: %+v", got)
 	}
-	if got := h.every.find("SG4", "orchestrator"); len(got) != 0 {
+	if got := everyOf(h).find("SG4", "orchestrator"); len(got) != 0 {
 		t.Errorf("the asking room's own card matched: %+v", got)
 	}
 }
@@ -115,5 +115,5 @@ func TestEverywhereAnAnnouncementReachesTheIndex(t *testing.T) {
 		"alias": "orchestrator", "tags": []string{EverywhereTag}})
 	hub, _, _, stop := caching(t, state)
 	defer stop()
-	waitFor(t, announceWait, func() bool { return len(hub.every.find("elsewhere", "orchestrator")) == 1 })
+	waitFor(t, announceWait, func() bool { return len(everyOf(hub).find("elsewhere", "orchestrator")) == 1 })
 }
