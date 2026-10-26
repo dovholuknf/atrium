@@ -417,6 +417,13 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	if tune != nil {
 		tune(&d.hk)
 	}
+	if st.Fresh() {
+		if home, err := os.UserHomeDir(); err != nil {
+			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
+		} else if err := wireControlMCP(st, home, d.hk.atriumBinary()); err != nil {
+			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
+		}
+	}
 	d.hubGit.cards = &gitsync.CardTokens{Live: d.cardLive}
 	d.restoreHubGit()
 	d.pending = newPendingInjector(d)
