@@ -813,7 +813,7 @@ async function groupRemoveSection(browser, base) {
   mock.tasksMode = "filed";
   try {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
-    await gp.waitForTimeout(900);
+    await gp.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await gp.click('.tab[data-view="terms"]');
     await gp.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
       { state: "attached", timeout: slow(15000) });
@@ -824,7 +824,9 @@ async function groupRemoveSection(browser, base) {
       const item = gp.locator("#cardmenu button", { hasText: "remove from the view" });
       if (!(await item.count())) { fail("the " + name + " group's heading has no remove item on its menu."); return; }
       await item.click();
-      await gp.waitForTimeout(400);
+      await gp.waitForFunction(n => !groupingPrefs().groups.includes(n) &&
+        ![...document.querySelectorAll("#term-list .tgroup .tgname")].some(e => e.textContent.trim() === n), name,
+      { timeout: slow(5000) }).catch(() => {});
     };
 
     // The empty group: gone from the list and from the saved view.
@@ -902,11 +904,11 @@ async function groupColorSection(browser, base) {
     await page.locator('#term-list .tgroup[data-ghead="active"]').click({ button: "right" });
     await page.locator("#cardmenu button", { hasText: "recolor" }).click();
     await page.locator(`#ask-body .swatch[data-hue="${hue}"]`).click();
-    await page.waitForTimeout(500);
+    await until(async () => (await hues(page)).term === String(hue), 5000, "the recolour").catch(() => {});
   };
   try {
     await cp.goto(base, { waitUntil: "domcontentloaded" });
-    await cp.waitForTimeout(900);
+    await cp.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await cp.click('.tab[data-view="terms"]');
     await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(15000) });
     await recolor(cp, 140);
@@ -915,11 +917,11 @@ async function groupColorSection(browser, base) {
       for (const cc of [false, true]) {
         await cp.evaluate(([s, c]) => { applySkin(s); toggleCardColors(c); }, [skin, cc]);
         await cp.click('.tab[data-view="board"]');
-        await cp.waitForTimeout(500);
+        await until(async () => (await hues(cp)).board === "140", 5000, "the board's hue").catch(() => {});
         await cp.click('.tab[data-view="stack"]');
-        await cp.waitForTimeout(500);
+        await until(async () => (await hues(cp)).stack === "140", 5000, "the stack's hue").catch(() => {});
         await cp.click('.tab[data-view="terms"]');
-        await cp.waitForTimeout(300);
+        await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(5000) }).catch(() => {});
         const h = await hues(cp);
         if (h.stack !== "140" || h.board !== "140" || h.term !== "140" || h.nest !== "140") {
           fail(`a group recoloured from the terminals pane did not land everywhere on ${skin}, ` +
@@ -943,14 +945,14 @@ async function groupColorSection(browser, base) {
     cp2.on("pageerror", e => errors.push(String(e)));
     await cp2.goto(base, { waitUntil: "domcontentloaded" });
     await cp2.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: slow(15000) });
-    await cp2.waitForTimeout(600);
+    await cp2.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await cp.click('.tab[data-view="terms"]');
-    await cp.waitForTimeout(300);
+    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(5000) }).catch(() => {});
     await recolor(cp, 250);
-    await cp2.waitForTimeout(1200);
+    await until(async () => (await hues(cp2)).term === "250", 5000, "the second window's hue").catch(() => {});
     const seen = await hues(cp2);
     await cp2.click('.tab[data-view="stack"]');
-    await cp2.waitForTimeout(500);
+    await until(async () => (await hues(cp2)).stack === "250", 5000, "the second window's stack").catch(() => {});
     const other = Object.assign(await hues(cp2), { termBeforeSwitch: seen.term });
     if (seen.term !== "250" || other.stack !== "250") {
       fail("a group recoloured in one window did not reach a second window: " + JSON.stringify(other));
@@ -995,18 +997,21 @@ async function groupDragSection(browser, base) {
   };
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForTimeout(900);
+    await dp.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: slow(15000) });
 
     // A heading dragged above another moves the whole group and writes the order.
     await dp.locator('#term-list .tgroup[data-ghead="spare"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="active"]'), { targetPosition: { x: 10, y: 2 } });
-    await dp.waitForTimeout(600);
+    await dp.waitForFunction(() => JSON.stringify(groupingPrefs().groups) === '["spare","active"]', null, { timeout: slow(5000) }).catch(() => {});
     await dp.click('.tab[data-view="stack"]');
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(() => {
+      const k = [...document.querySelectorAll(".stackgroup")].map(d => d.dataset.morphKey);
+      return k.includes("stack:spare") && k.indexOf("stack:spare") < k.indexOf("stack:active");
+    }, null, { timeout: slow(5000) }).catch(() => {});
     await dp.click('.tab[data-view="terms"]');
-    await dp.waitForTimeout(300);
+    await dp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(5000) }).catch(() => {});
     let st = await dp.evaluate(() => ({
       groups: groupingPrefs().groups,
       stack: [...document.querySelectorAll(".stackgroup")].map(d => d.dataset.morphKey),
@@ -1030,13 +1035,13 @@ async function groupDragSection(browser, base) {
     await quiet('#term-list .card.tab[data-id="loose1"]', '#term-list .tgroup[data-ghead="spare"]');
     await dp.locator('#term-list .card.tab[data-id="loose1"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="spare"]'));
-    await dp.waitForTimeout(500);
+    await frames(dp, 2);
     st = await dp.evaluate(() => groupingPrefs().groups);
     if (JSON.stringify(st) !== '["spare","active"]') fail("a row dropped on a heading reordered the groups: " + JSON.stringify(st));
     // And a heading dropped on the pinned bucket pins nothing.
     await quiet('#term-list .tgroup[data-ghead="active"]', "#term-list .termbucket");
     await dp.locator('#term-list .tgroup[data-ghead="active"]').dragTo(dp.locator("#term-list .termbucket"));
-    await dp.waitForTimeout(500);
+    await dp.waitForTimeout(500); // wait: absence, a pin write from the drop would land here
     if (writes.some(w => /pinned/.test(w))) fail("a heading dropped on the pinned bucket pinned something: " + writes.join(" | "));
     writes.length = 0;
 
@@ -1045,7 +1050,7 @@ async function groupDragSection(browser, base) {
       '#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]');
     await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').dragTo(
       dp.locator('#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]'));
-    await dp.waitForTimeout(600);
+    await until(() => writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w)), 5000, "the untag write").catch(() => {});
     if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
       fail("a row dragged out of its group onto untagged did not lose the group's tag: " + writes.join(" | "));
     }
@@ -1058,7 +1063,7 @@ async function groupDragSection(browser, base) {
     if (!(await out.count())) fail("a card in a group has no `remove from group` entry on its menu.");
     else {
       await out.click();
-      await dp.waitForTimeout(500);
+      await until(() => writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w)), 5000, "the menu's untag write").catch(() => {});
       if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
         fail("`remove from group` did not take the tag off: " + writes.join(" | "));
       }
@@ -1066,7 +1071,10 @@ async function groupDragSection(browser, base) {
 
     // Outside custom mode a heading does not drag and says where ordering lives.
     await dp.evaluate(() => { setGrouping({ mode: "recency" }); });
-    await dp.waitForTimeout(600);
+    await dp.waitForFunction(() => {
+      const b = [...document.querySelectorAll("#term-list .tgroup:not(.pinnedhead)")];
+      return b.length && b.every(e => !e.draggable && !e.querySelector(".tgrip"));
+    }, null, { timeout: slow(5000) }).catch(() => {});
     const tag = await dp.evaluate(() => [...document.querySelectorAll("#term-list .tgroup:not(.pinnedhead)")]
       .map(b => ({ drag: b.draggable, grip: !!b.querySelector(".tgrip"), title: b.dataset.tip })));
     if (tag.some(t => t.drag || t.grip)) fail("a heading drags outside the custom grouping: " + JSON.stringify(tag));
@@ -8626,7 +8634,7 @@ async function termListLastRowSection(browser, base) {
             const l = document.querySelector(".term-layout");
             l.classList.add("tl-open");
           }, tray);
-          await p.waitForTimeout(300);
+          await settleStyle(p);
           const tag = "termListLastRow " + vp.width + "x" + vp.height + (tray ? " tray" : " plain") + " gap " + gap + ": ";
           const r = await p.evaluate(() => {
             const vv = window.visualViewport, vis = vv.offsetTop + vv.height;
@@ -11537,6 +11545,10 @@ async function questionsClickSection(browser, base) {
       { state: "attached", timeout: slow(15000) });
   };
   const said = () => p.evaluate(() => toastLog().map(e => e.title + " " + e.body).join("|"));
+  const polled = async () => {
+    await p.evaluate(() => runRefresh());
+    await p.waitForFunction(() => !refreshInFlight && !refreshDirty, null, { timeout: slow(15000) });
+  };
   // Which of the two lists is in front. Both are drawn, one is hidden.
   const show = v => p.evaluate(x => switchView(x), v);
   try {
@@ -11633,7 +11645,7 @@ async function questionsClickSection(browser, base) {
     await p.waitForFunction(() => toastLog()
       .some(e => /newer questions arrived, nothing was dismissed/.test(e.title)), null, { timeout: slow(5000) })
       .catch(() => fail("a stale answer drew no toast."));
-    await p.waitForTimeout(600);
+    await polled();
     if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a stale answer removed the chip.");
 
     // Already answered elsewhere: not "dismissed", and nothing was open.
@@ -11653,7 +11665,7 @@ async function questionsClickSection(browser, base) {
     await p.waitForFunction(() => toastLog()
       .some(e => /the store said no/.test(e.body)), null, { timeout: slow(5000) })
       .catch(() => fail("a failed dismiss did not toast its error."));
-    await p.waitForTimeout(600);
+    await polled();
     if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a failed dismiss removed the chip.");
 
     // `!` and the queued mark take their own click and change nothing else.
@@ -11666,7 +11678,7 @@ async function questionsClickSection(browser, base) {
       await show("terms");
       await p.waitForSelector(sel, { timeout: slow(5000) });
       await p.click(sel);
-      await p.waitForTimeout(300);
+      await polled();
       const term = await p.evaluate(() => termTask ? termTask.id : null);
       if (term !== null) fail("clicking the " + (quiet ? "queued" : "held") + " chip selected " + term);
       if (mock.qDismissWrites.length) fail("clicking the held chip posted a dismiss.");
@@ -14518,8 +14530,8 @@ async function backForwardSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "backForward", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
-    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(200); };
+    await p.waitForSelector("#t-screen .xterm-screen", { state: "attached", timeout: slow(5000) });
+    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.evaluate(() => new Promise(r => term.write("", r))); };
 
     // Press and release a side button on `sel` and answer which of its events the page cancelled.
     const side = (sel, button) => p.evaluate(({ sel, button }) => {
@@ -14556,12 +14568,13 @@ async function backForwardSection(browser, base) {
     await p.evaluate(() => { switchView("runners"); });
     const view = () => p.evaluate(() => history.state && history.state.view);
     if ((await view()) !== "runners") fail("backForward: the pushed entry is not the view just opened: " + (await view()));
-    await p.goBack(); await p.waitForTimeout(150);
+    const at = v => p.waitForFunction(x => history.state && history.state.view === x, v, { timeout: slow(5000) }).catch(() => {});
+    await p.goBack(); await at("stack");
     if ((await view()) !== "stack") fail("backForward: back from runners did not land on stack: " + (await view()));
-    await p.goBack(); await p.waitForTimeout(150);
+    await p.goBack(); await at("board");
     if ((await view()) !== "board") fail("backForward: back from stack did not land on board: " + (await view()));
-    await p.goForward(); await p.waitForTimeout(150);
-    await p.goForward(); await p.waitForTimeout(150);
+    await p.goForward(); await at("stack");
+    await p.goForward(); await at("runners");
     if ((await view()) !== "runners") fail("backForward: forward twice did not return to runners: " + (await view()));
     const shown = await p.evaluate(() => VIEWS.find(isViewing));
     if (shown !== "runners") fail("backForward: history said runners but the board shows " + shown);
@@ -19083,7 +19096,7 @@ async function discreteGroupSection(browser, base) {
     await p.waitForFunction(() => hubRepos.loaded, null, { timeout: slow(10000) });
     const order = () => p.evaluate(() => hubReposSorted(hubRepos.repos, hubReposSort()).map(r => r.repo).join(","));
     const shown = () => p.evaluate(() => [...document.querySelectorAll("#hubrepos-list .hr-repo")].map(e => e.dataset.repo).join(","));
-    await p.waitForTimeout(200);
+    await frames(p, 2);
     if ((await order()) !== "alpha,bravo,charlie") fail("discreteGroup: repos by name gave " + await order());
     await pick("hubrepos-sort", "pushed");
     if ((await order()) !== "bravo,charlie,alpha") fail("discreteGroup: repos by last push gave " + await order());
@@ -21616,7 +21629,7 @@ async function hostLabelGroupSection(browser, base) {
   p.on("pageerror", e => errors.push(e.message));
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => typeof termTree === "function", null, { timeout: slow(15000) });
     const got = await p.evaluate(() => {
       const a = { id: "h1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
       const b = { id: "h2", worktree: "D:/git/worktrees/github.com/openziti/ziti-sdk-c/y", repo: "ziti-sdk-c", branch: "y" };
@@ -24919,8 +24932,8 @@ async function pinNowSection(browser, base) {
       if (route.request().method() !== "PATCH") return route.continue();
       patches++;
       if (mode !== "fail") { const r = mock.wornTasks.find(x => route.request().url().endsWith("/" + x.id)); if (r) r.pinned = !!JSON.parse(route.request().postData() || "{}").pinned; }
-      if (mode === "fail") { await new Promise(r => setTimeout(r, 400)); return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) }); }
-      await new Promise(r => setTimeout(r, 2000));
+      if (mode === "fail") { await new Promise(r => setTimeout(r, 400)); return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) }); } // wait: the slow refusal the star shows first
+      await new Promise(r => setTimeout(r, 2000)); // wait: the held PATCH the repaint must not wait behind
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row("pn-a")) });
     });
     await wp.goto(base, { waitUntil: "domcontentloaded" });
@@ -24931,6 +24944,7 @@ async function pinNowSection(browser, base) {
       const s = r && r.querySelector(".pin"); return s ? s.classList.contains("on") : null; }, id);
     if (await star("pn-a") !== false) fail("pinNow: the row did not start with an unpinned star (" + await star("pn-a") + ").");
     // Click, then read the star after two animation frames, with the PATCH still held.
+    const held = wp.waitForResponse(r => /\/v1\/tasks\/pn-a$/.test(r.url()) && r.request().method() === "PATCH", { timeout: slow(10000) }).catch(() => {});
     const t0 = Date.now();
     await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-a"] .pin').click());
     const waitStar = async (id, want) => { const end = Date.now() + 1500; while (Date.now() < end && await star(id) !== want) await wp.waitForTimeout(10); };
@@ -24938,13 +24952,14 @@ async function pinNowSection(browser, base) {
     const took = Date.now() - t0;
     if (await star("pn-a") !== true) fail("pinNow: the star did not turn on within a frame of the click.");
     if (took > 1500) fail("pinNow: the repaint waited " + took + "ms, behind the PATCH.");
-    await wp.waitForTimeout(2300);
+    await held;
+    await frames(wp, 2);
     // Refused: the star goes on, then back.
     mode = "fail";
     await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-b"] .pin').click());
     await waitStar("pn-b", true);
     if (await star("pn-b") !== true) fail("pinNow: a refused pin was not shown first.");
-    for (let i = 0; i < 30 && await star("pn-b") !== false; i++) await wp.waitForTimeout(100);
+    await until(async () => await star("pn-b") === false, 3000, "the star back").catch(() => {});
     if (await star("pn-b") !== false) fail("pinNow: a refused PATCH did not put the star back.");
     if (patches < 2) fail("pinNow: expected two PATCHes, saw " + patches + ".");
     if (errors.length) fail("pinNow: page errors: " + errors.join("; "));
@@ -26214,7 +26229,7 @@ async function main() {
       if (nest && stray) nest.appendChild(stray);
       repaintTermList();
     });
-    await page.waitForTimeout(300);
+    await frames(page, 2);
     fs1 = await filedState();
     if (fs1.strays !== 0) {
       fail("a row dragged into a group stayed there after a repaint with unchanged markup.");
@@ -26607,10 +26622,12 @@ async function main() {
     await page.click('.tab[data-view="stack"]');
     await page.waitForSelector('#stack-list .stackrow[data-id="t1"]', { timeout: slow(15000) });
     mock.tasksMode = "hang";
+    const hung0 = hungResponses.length;
     await page.evaluate(() => runRefresh());
 
     // While it hangs, the board keeps its last paint rather than clearing.
-    await page.waitForTimeout(800);
+    await until(() => hungResponses.length > hung0, 5000, "the hung fetch").catch(() => {});
+    await frames(page, 2);
     const duringHang = await page.locator("#stack-list .stackrow").count();
     if (duringHang < 1) {
       fail("the board blanked its task list while a fetch was in flight. A hung " +
@@ -26623,7 +26640,7 @@ async function main() {
     mock.tasksMode = "second";
     if (process.env.DEBUG_HEADLESS) {
       for (let i = 0; i < 12; i++) {
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(500); // wait: debug only, samples the state every half second
         const st = await page.evaluate(() => ({
           ids: [...document.querySelectorAll("#stack-list .stackrow")]
             .map(e => e.dataset.id),
@@ -26695,7 +26712,7 @@ async function main() {
 
     // A second of real time. On the broken code the counters run into the
     // hundreds here; the fix bounds them.
-    await page.waitForTimeout(1200);
+    await page.waitForTimeout(1200); // wait: the second of real time the counts are bounded over
     const opens = await page.evaluate(() => window.__openTermCount);
     const attempts = await page.evaluate(() => window.__attachAttempts);
     if (opens > 8) {
@@ -26723,7 +26740,7 @@ async function main() {
     });
     // Wait past the capped backoff for a pending retry to fire and open.
     await page.waitForFunction(() => window.__attachAttempts > 0, null, { timeout: slow(20000) });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500); // wait: absence, a churning attach would reopen here
     const opensAfter = await page.evaluate(() => window.__openTermCount);
     const attemptsAfter = await page.evaluate(() => window.__attachAttempts);
     if (opensAfter > 2) {
@@ -26785,7 +26802,7 @@ async function main() {
       await fillPage.setViewportSize({ width: 1280, height: 900 });
       await fillPage.goto(base, { waitUntil: "domcontentloaded" });
       // Let the board's first poll fire and settle before attaching.
-      await fillPage.waitForTimeout(900);
+      await fillPage.waitForFunction(() => document.querySelector("#stack-list .stackrow") && !refreshInFlight && !refreshDirty, null, { timeout: slow(15000) });
       await fillPage.click('.tab[data-view="terms"]');
       // Build, fill, and measure in ONE step. The mocked attach opens but never
       // replays, so a poll or watchdog that ran between steps would read the card
@@ -26878,7 +26895,7 @@ async function main() {
     try {
       await floorPage.setViewportSize({ width: 700, height: 800 });
       await floorPage.goto(base, { waitUntil: "domcontentloaded" });
-      await floorPage.waitForTimeout(900);
+      await floorPage.waitForFunction(() => document.querySelector("#stack-list .stackrow") && !refreshInFlight && !refreshDirty, null, { timeout: slow(15000) });
       await floorPage.click('.tab[data-view="terms"]');
       await floorPage.evaluate(async () => {
         const t = await api("/v1/tasks/t1");
@@ -26905,7 +26922,7 @@ async function main() {
         fail("a pane under the floor did not draw 120 columns in a sideways scroll: " + JSON.stringify(seen));
       }
       await floorPage.click("#ask-body a");
-      await floorPage.waitForTimeout(300);
+      await floorPage.waitForFunction(() => document.getElementById("settings").open, null, { timeout: slow(5000) }).catch(() => {});
       const cog = await floorPage.evaluate(() => {
         const pane = document.querySelector('#settings .pane[data-name="board"]');
         const field = document.getElementById("s-mincols-field");
@@ -27194,7 +27211,7 @@ async function main() {
       // Attach sgg, clear the loadHubRooms throttle, then push the `rooms` event
       // the hub sends on a membership change. Nothing reopens the menu.
       mock.sggAttached = true;
-      await hub.waitForTimeout(2100);
+      await hub.evaluate(() => { hubRead = 0; });
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
 
       // The open menu repaints in place: sgg is now live, not disconnected, and
@@ -27511,15 +27528,17 @@ async function main() {
     const ga1Errors = [];
     ga1.on("pageerror", e => ga1Errors.push(String(e)));
     try {
+      const ga1Read = ga1.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/settings"), { timeout: slow(15000) }).catch(() => {});
       await ga1.goto(base, { waitUntil: "domcontentloaded" });
-      await ga1.waitForTimeout(1500);
+      await ga1Read;
+      await ga1.waitForFunction(() => { const b = document.getElementById("gauto"); return b && b.textContent.trim() && b.classList.contains("unknown"); }, null, { timeout: slow(5000) }).catch(() => {});
       const g = await gautoPaint(ga1);
       if (gautoDrawn("settings failing at load", g) && !/unknown/.test(g.cls)) {
         fail("settings failing at load: #gauto claims a state nobody read, " + JSON.stringify(g));
       }
       // Past loadHubRooms' 2s throttle, a room attaches and the read succeeds.
-      await ga1.waitForTimeout(2200);
       mock.hubHasRoom = true;
+      await ga1.evaluate(() => { hubRead = 0; });
       pushRooms();
       await gautoHeals("settings failing at load", ga1, "asking");
       if (ga1Errors.length) fail("the gauto load page threw: " + ga1Errors.join(" | "));
@@ -27537,8 +27556,10 @@ async function main() {
     const ga2Errors = [];
     ga2.on("pageerror", e => ga2Errors.push(String(e)));
     try {
+      const ga2Read = ga2.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/settings"), { timeout: slow(15000) }).catch(() => {});
       await ga2.goto(base, { waitUntil: "domcontentloaded" });
-      await ga2.waitForTimeout(1500);
+      await ga2Read;
+      await ga2.waitForFunction(() => { const b = document.getElementById("gauto"); return b && b.classList.contains("gauto") && b.textContent.trim(); }, null, { timeout: slow(5000) }).catch(() => {});
       gautoDrawn("settings failing in a room scope", await gautoPaint(ga2));
       // The room comes back. The poll re-reads while the switch is unknown.
       mock.roomSettingsDown = false;
@@ -27572,13 +27593,13 @@ async function main() {
       openStreams.splice(0).forEach(r => { try { r.end(); } catch (e) {} });
       hubStreams.splice(0);
       await settingsAfter;
-      await ga3.waitForTimeout(300);
+      await ga3.waitForFunction(() => { const b = document.getElementById("gauto"); return b && b.classList.contains("stale"); }, null, { timeout: slow(5000) }).catch(() => {});
       const g = await gautoPaint(ga3);
       if (gautoDrawn("settings failing on a stream reopen", g) && !/stale/.test(g.cls)) {
         fail("settings failing on a stream reopen: #gauto shows its old answer as fresh, " + JSON.stringify(g));
       }
-      await ga3.waitForTimeout(2200);
       mock.hubHasRoom = true;
+      await ga3.evaluate(() => { hubRead = 0; });
       pushRooms();
       await gautoHeals("settings failing on a stream reopen", ga3, "approving everything");
       if (ga3Errors.length) fail("the gauto reopen page threw: " + ga3Errors.join(" | "));
@@ -28713,7 +28734,7 @@ async function greyMeansDeadSection(browser, base) {
   const tag = "greyMeansDead: ";
   try {
     await p.goto(base + "/raw", { waitUntil: "load" });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => typeof stackRow === "function" && typeof termRow === "function" && typeof isWaiting === "function", null, { timeout: slow(15000) });
     const card = (id, over) => Object.assign({ id, title: id, display_title: id, status: "needs-input", wire_name: "w/" + id,
       tags: ["origin:agent"], worktree: "/w/" + id, repo: "r", runner: "claude", supervised: true, pid: 0, seen: {}, activity: {},
       created_at: "2026-10-13T10:00:00Z", last_activity_at: new Date().toISOString(), waiting_since: new Date().toISOString() }, over);
