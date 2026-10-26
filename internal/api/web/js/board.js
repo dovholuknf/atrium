@@ -1436,7 +1436,6 @@ function grouperByMode(view) {
   // is not on the list draws no bucket of its own.
   if (p.mode === "custom" && !usesCode(p)) {
     const groups = Array.isArray(p.groups) ? p.groups : [];
-    const set = new Set(groups);
     const at = new Map(groups.map((n, i) => [n, i]));
     return {
       many: true,
@@ -1450,7 +1449,7 @@ function grouperByMode(view) {
       // groups the board makes for itself. See `byRank`.
       handOrdered: true,
       of: t => {
-        const mine = (t.tags || []).filter(x => set.has(x));
+        const mine = groups.filter(n => groupMatches(p, n, t.tags));
         return mine.length ? mine : [UNTAGGED];
       },
       cmp: (a, b) => {
@@ -1500,6 +1499,25 @@ function groupHue(name) {
   return h;
 }
 
+// A group is its own tag plus the aliases set on it, so a launch path that tags a PR card `atrium:pr` and one that
+// tags it `prs` both land in the same group. A card matching two groups is drawn in each.
+function groupMatches(p, name, tags) {
+  const also = (p.aliases && p.aliases[name]) || [];
+  return (tags || []).some(x => x === name || also.includes(x));
+}
+
+async function aliasCustomGroup(name) {
+  const p = groupingPrefs();
+  const raw = await askText("tags for " + name,
+    "A card carrying any of these tags is drawn in this group too. Separate them with commas.",
+    ((p.aliases || {})[name] || []).join(", "), "e.g. prs, atrium:pr, pull-request");
+  if (raw === null) return;
+  const aliases = Object.assign({}, p.aliases);
+  const also = [...new Set(String(raw).split(",").map(groupNameOf).filter(x => x && x !== name))];
+  if (also.length) aliases[name] = also; else delete aliases[name];
+  setGrouping({ aliases });
+}
+
 // The palette offered when recoloring. Spread around the wheel so two picks
 // are always tellable apart, which is the whole job of the color.
 const GROUP_HUES = [0, 25, 45, 65, 95, 140, 170, 195, 215, 250, 285, 320];
@@ -1523,6 +1541,11 @@ function groupMenu(e, name) {
     inView && at < groups.length - 1
       ? { label: "move down", act: () => moveCustomGroup(name, 1) } : null,
     inView ? { label: "rename…", act: () => renameCustomGroup(name) } : null,
+    inView ? {
+      label: "also matches tags…",
+      help: "Other tags that put a card in this group, for cards tagged a different way for the same thing.",
+      act: () => aliasCustomGroup(name)
+    } : null,
     inView ? {
       label: "remove from the view",
       note: "does not untag any card",
@@ -1567,7 +1590,9 @@ function removeCustomGroup(name) {
   const groups = (p.groups || []).filter(x => x !== name);
   const made = Object.assign({}, p.made);
   delete made[name];
-  setGrouping({ groups, made });
+  const aliases = Object.assign({}, p.aliases);
+  delete aliases[name];
+  setGrouping({ groups, made, aliases });
 }
 
 function moveCustomGroup(name, delta) {
@@ -1594,7 +1619,9 @@ async function renameCustomGroup(name) {
   const groups = (p.groups || []).map(x => x === name ? next : x);
   const made = Object.assign({}, p.made);
   if (name in made) { made[next] = made[name]; delete made[name]; }
-  setGrouping({ groups, made });
+  const aliases = Object.assign({}, p.aliases);
+  if (name in aliases) { aliases[next] = aliases[name].filter(x => x !== next); delete aliases[name]; }
+  setGrouping({ groups, made, aliases });
 }
 
 function setGroupHue(name, hue) {
@@ -2478,10 +2505,9 @@ function handList(t) {
   if (t.pinned) return lastTasks.filter(x => x.pinned).sort(byRank);
   const p = groupingPrefs();
   if (!p.on || p.mode !== "custom") return null;
-  const tags = new Set(t.tags || []);
-  const name = (Array.isArray(p.groups) ? p.groups : []).find(n => tags.has(n));
+  const name = (Array.isArray(p.groups) ? p.groups : []).find(n => groupMatches(p, n, t.tags));
   if (!name) return null;
-  return lastTasks.filter(x => !x.pinned && (x.tags || []).includes(name)).sort(byRank);
+  return lastTasks.filter(x => !x.pinned && groupMatches(p, name, x.tags)).sort(byRank);
 }
 
 async function patchTask(id, body) {
