@@ -345,7 +345,8 @@ func TestOnlyTheGenericMenuFooterMakesAMenu(t *testing.T) {
 	}
 }
 
-func TestASessionStartHookCountsAsHeard(t *testing.T) {
+// The launch prompt was dropped: the session hook spoke and the worker never took a turn.
+func TestASessionStartHookAloneIsStillLaunchIdle(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
@@ -355,8 +356,12 @@ func TestASessionStartHookCountsAsHeard(t *testing.T) {
 	if err := d.onSession(SessionEvent{Agent: task.WireName, Event: "start", Source: "startup", TaskID: task.ID}); err != nil {
 		t.Fatal(err)
 	}
+	if x := d.launchStuck(task, time.Now()); x == nil || x.Source != NoticeLaunchIdle {
+		t.Fatalf("got %+v after its session hook spoke, want launch-idle", x)
+	}
+	d.act.set(task.ID, ActivityThinking, "")
 	if x := d.launchStuck(task, time.Now()); x != nil {
-		t.Fatalf("%+v after its session hook spoke", x)
+		t.Fatalf("%+v after a turn began", x)
 	}
 }
 
@@ -456,9 +461,9 @@ func TestAResumeAfterAnExitStartsUnheard(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _ := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
-	d.act.sessionSpoke(task.ID)
+	d.act.set(task.ID, ActivityThinking, "")
 	if x := d.launchStuck(task, time.Now()); x != nil {
-		t.Fatalf("%+v after the session hook", x)
+		t.Fatalf("%+v after a turn began", x)
 	}
 	d.act.forget(task.ID)
 	if x := d.launchStuck(task, time.Now()); x == nil || x.Source != NoticeLaunchIdle {
