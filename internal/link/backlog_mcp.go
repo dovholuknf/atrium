@@ -13,8 +13,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// atrium_backlog and atrium_reports, the control tools over /_hub/backlog and /_hub/reports. Full class only:
-// `workerTools` does not name them. Both go through the hub, so a director on any room reads and writes the same rows.
+// atrium_backlog and atrium_reports, the control tools over /_hub/backlog and /_hub/reports. Full class has both,
+// and `workerTools` names atrium_reports. Both go through the hub, so a director on any room reads and writes the same rows.
 // The HTTP half, and who may write, is in backlog.go. The audit lines are written there, so these tools write none.
 
 const backlogToolDesc = "The backlog, kept on the hub, so a director on any room sees an item filed on any other. " +

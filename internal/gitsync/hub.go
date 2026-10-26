@@ -35,7 +35,7 @@ type Rooms interface {
 
 // Hub mirrors each configured repository into a bare repository, tells rooms to sync from
 // it, collects each room's claude/* branches back, and delivers them into the checkout.
-// Every transfer is a fetch, and no receive-pack runs anywhere.
+// Every room-hub transfer is a fetch. Only the hub store (receive.go) takes pushes.
 type Hub struct {
 	// hk is the seams a test sets on one hub. See hooks.go.
 	hk hubHooks
