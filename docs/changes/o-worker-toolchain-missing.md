@@ -7,6 +7,10 @@ when it holds a `Makefile`. A miss is logged and carried on `/v1/health` and the
 (`tools`, `reason`, `card`, `since`). The launch still goes ahead. The next launch in such a folder that finds both
 clears it. `internal/daemon/toolchain.go`.
 
+A worker's own shell saying so counts too. When a Bash or PowerShell call answers `command not found` (or `is not
+recognized`) for a known tool such as `go`, `make`, `git` or `node`, the post-tool hook sends it as `missing_tool` and
+the room logs it and adds it to `toolchain_missing`, once per room and tool. `missingTool` in `internal/cli/hook.go`.
+
 Not yet a growler: the hub's `growl.reason` CHECK does not allow a new reason without a migration.
 
 ## Test plan
