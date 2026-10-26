@@ -37,13 +37,6 @@ import (
 //
 // THE FORGE IS PICKED HERE BY HOST, from the hub's own entries, so a provider's name need not match on every room.
 
-// ForgePrefix is where a room's forge questions are served on the git kind. ForgeRoomHeader carries the room the
-// hello named.
-const (
-	ForgePrefix     = "/_forge/"
-	ForgeRoomHeader = "X-Atrium-Forge-Room"
-)
-
 // SettingForgeEntries is the hub setting that names the forge per host, a JSON list of forge.Entry. Empty is the
 // built-in table: github.com is GitHub and bitbucket.org is Bitbucket.
 const SettingForgeEntries = "forge.entries"
@@ -706,52 +699,6 @@ func (p *Proxy) serveForgeAdmin(w http.ResponseWriter, r *http.Request, rest str
 var forgeCmd = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // ── the room's side ─────────────────────────────────────
-
-// Forge asks the hub a forge question over the git kind: in is posted to path and the answer decoded into out. A
-// refusal comes back as a *forge.HubError with the hub's sentence. A hub that cannot be asked is an error that says
-// so, and the room never falls back to a forge of its own.
-func (r *Room) Forge(ctx context.Context, path string, in, out any) error {
-	if !r.HubServesGit() {
-		return errors.New("the hub cannot be asked about the forge right now: this room is not attached, or its hub " +
-			"serves no git. a room reads pull requests and issues only through its hub")
-	}
-	raw, err := json.Marshal(in)
-	if err != nil {
-		return err
-	}
-	r.mu.Lock()
-	if r.claimRT == nil {
-		r.claimRT = r.GitTransport()
-	}
-	rt := r.claimRT
-	r.mu.Unlock()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://hub"+path, strings.NewReader(string(raw)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := rt.RoundTrip(req)
-	if err != nil {
-		return fmt.Errorf("the hub could not be asked about the forge: %w", err)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
-	if err != nil {
-		return err
-	}
-	if res.StatusCode != http.StatusOK {
-		var he forge.HubError
-		if json.Unmarshal(body, &he) == nil && he.Message != "" {
-			return &he
-		}
-		if res.StatusCode == http.StatusNotFound {
-			return errors.New("the hub does not run a forge for its rooms. it is older than this room, or has no " +
-				"store: update the hub")
-		}
-		return fmt.Errorf("the hub answered %d to a forge question", res.StatusCode)
-	}
-	return json.Unmarshal(body, out)
-}
 
 // keep hubstore imported for the type of SetForge's usual argument.
 var _ ForgeSettings = (*hubstore.Store)(nil)

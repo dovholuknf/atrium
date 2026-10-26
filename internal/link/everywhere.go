@@ -72,6 +72,19 @@ type everywhere struct {
 	onChange func()
 }
 
+// NewHub makes an empty hub with an everywhere index.
+func NewHub(t Timings) *Hub {
+	h := newHub(t)
+	h.Every = newEverywhere()
+	return h
+}
+
+// everyOf is the hub's everywhere index.
+func everyOf(h *Hub) *everywhere {
+	e, _ := h.Every.(*everywhere)
+	return e
+}
+
 func newEverywhere() *everywhere {
 	return &everywhere{byRoom: map[string][]everyCard{}, named: map[string][]everyCard{},
 		trees: map[string][]everyCard{}, names: map[string]string{}}
@@ -183,7 +196,7 @@ func liveTrees(room string, cards []CardState) []everyCard {
 
 // replace swaps one room's cards for what it just announced, and says whether
 // that changed the index.
-func (e *everywhere) replace(room string, cards []CardState) bool {
+func (e *everywhere) Replace(room string, cards []CardState) bool {
 	changed := e.swap(room, cards)
 	if changed {
 		e.changed()
@@ -412,24 +425,17 @@ func (c everyCard) answersTo(name string) bool {
 	return c.Alias != "" && c.Alias == lowerASCII(name)
 }
 
-// IndexEverywhere replaces one room's cards in the everywhere index. Called
-// with what the room announced, and once per room from the cache when the hub
-// starts. Reports whether the index changed.
-func (h *Hub) IndexEverywhere(room string, cards []CardState) bool {
-	return h.every.replace(room, cards)
-}
-
 // lookupEverywhere is the one card on another room that `who` names, or the
 // refusal that says why not: a 409 naming every match when two or more rooms
 // answer, a 404 carrying the everywhere list when none does. `code` is the
 // refusal's status, zero on a match.
-func (h *Hub) lookupEverywhere(besides, who string) (card everyCard, code int, err error) {
+func lookupEverywhere(h *Hub, besides, who string) (card everyCard, code int, err error) {
 	if h == nil {
 		return everyCard{}, http.StatusNotFound, fmt.Errorf("no card called %q on another room", who)
 	}
-	found := h.every.find(besides, who)
+	found := everyOf(h).find(besides, who)
 	if len(found) == 0 {
-		found = h.every.findAny(besides, who)
+		found = everyOf(h).findAny(besides, who)
 	}
 	switch len(found) {
 	case 1:
@@ -437,7 +443,7 @@ func (h *Hub) lookupEverywhere(besides, who string) (card everyCard, code int, e
 	case 0:
 		msg := fmt.Sprintf("no card called %q on another room", who)
 		var list []string
-		for _, c := range h.every.allNamed(besides) {
+		for _, c := range everyOf(h).allNamed(besides) {
 			list = append(list, c.spelled())
 		}
 		if len(list) > 0 {
@@ -474,7 +480,7 @@ func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyC
 	if room == "" || c.hub == nil || errors.As(miss, &be) {
 		return everyCard{}, miss
 	}
-	card, code, err := c.hub.lookupEverywhere(room, who)
+	card, code, err := lookupEverywhere(c.hub, room, who)
 	switch code {
 	case 0:
 		return card, nil
@@ -482,7 +488,7 @@ func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyC
 		return everyCard{}, err
 	}
 	var list []string
-	for _, e := range c.hub.every.allNamed(room) {
+	for _, e := range everyOf(c.hub).allNamed(room) {
 		list = append(list, e.spelled())
 	}
 	if len(list) == 0 {

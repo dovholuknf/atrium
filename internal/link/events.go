@@ -330,7 +330,7 @@ func (f *feeds) index() *everywhere {
 	if f.p == nil || f.p.hub == nil {
 		return nil
 	}
-	return f.p.hub.every
+	return everyOf(f.p.hub)
 }
 
 // everywhereChanged is the index changing: the reconciler looks again at which

@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -438,28 +437,6 @@ func (t *HubTransports) Effective(name string) (bool, string) {
 		return false, ""
 	}
 	return h.on, h.service
-}
-
-// OnlyVia names the attached rooms that reach this hub over a kind and have no other path that answers. A room that has
-// reported no paths is counted, since nothing says it has another.
-func (h *Hub) OnlyVia(kind string) []string {
-	var out []string
-	for _, a := range h.Rooms() {
-		if a.Via != kind {
-			continue
-		}
-		other := false
-		for _, p := range a.Paths {
-			if p.Kind != kind && (p.State == PathUp || p.State == PathOn) {
-				other = true
-			}
-		}
-		if !other {
-			out = append(out, a.Name)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // SetTransports gives the proxy the hub's transports, answered at /_hub/transports.

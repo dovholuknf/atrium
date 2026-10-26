@@ -11,10 +11,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -552,21 +550,6 @@ func (p *Proxy) mergeRoomPick(st *hubstore.Store) (string, string) {
 		}
 	}
 	return "", "no merge room: attach a room on the hub's machine, or name one with atrium merge room <name>"
-}
-
-// localConn is whether a room's link came from the hub's own machine.
-func localConn(c net.Conn, host string) bool {
-	if a := c.RemoteAddr(); a != nil {
-		h, _, err := net.SplitHostPort(a.String())
-		if err != nil {
-			h = a.String()
-		}
-		if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
-			return true
-		}
-	}
-	me, err := os.Hostname()
-	return err == nil && host != "" && strings.EqualFold(strings.TrimSpace(host), me)
 }
 
 // mergeKick runs the queue off the caller's path. Kicks while one is pending are one.

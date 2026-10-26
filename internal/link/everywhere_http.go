@@ -31,7 +31,7 @@ func (p *Proxy) serveEverywhere(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"error":"that has to be a GET"}`)
 		return
 	}
-	cards := p.hub.every.all(r.URL.Query().Get("room"))
+	cards := everyOf(p.hub).all(r.URL.Query().Get("room"))
 	rows := make([]map[string]any, len(cards))
 	sem := make(chan struct{}, everywhereCap)
 	var wg sync.WaitGroup
