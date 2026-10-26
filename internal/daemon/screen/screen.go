@@ -113,7 +113,12 @@ type Screen struct {
 	// pushedRows is each row's text at that push, and pushedLive is whether the grid has not scrolled or shifted since.
 	pushedRows []string
 	pushedLive bool
+	// modes is the last `h` (true) or `l` seen for each of inputModes, so a replay can turn mouse and paste reporting back on.
+	modes map[string]bool
 }
+
+// inputModes are the private modes that change what the terminal sends rather than what it draws.
+var inputModes = []string{"1000", "1002", "1003", "1005", "1006", "1015", "1004", "2004"}
 
 // region is the rows a line feed scrolls between, inclusive.
 func (s *Screen) region() (top, bot int) {
@@ -645,6 +650,17 @@ func (s *Screen) Text() string {
 // cursor move. Once an attach at an unchanged size stopped resizing, the repaint
 // stopped coming, and restoring the cursor became the replay's own job.
 func (s *Screen) TextWithCursor() string {
+	var b strings.Builder
+	b.WriteString(s.textWithCursor())
+	for _, m := range inputModes {
+		if s.modes[m] {
+			b.WriteString("\x1b[?" + m + "h")
+		}
+	}
+	return b.String()
+}
+
+func (s *Screen) textWithCursor() string {
 	if s.fixedRows && !s.alt {
 		return s.textAtRows()
 	}
@@ -1450,6 +1466,11 @@ func (s *Screen) privateMode(params string, final byte) {
 			} else if final == 'l' {
 				s.fromAlt()
 			}
+		case "1000", "1002", "1003", "1005", "1006", "1015", "1004", "2004":
+			if s.modes == nil {
+				s.modes = map[string]bool{}
+			}
+			s.modes[p] = final == 'h'
 		}
 	}
 }
