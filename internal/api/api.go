@@ -129,6 +129,8 @@ type Server struct {
 	// `/v1/login-needed`, where DELETE lifts it. See internal/daemon/loginneeded.go.
 	LoginNeeded  func() map[string]any
 	LoginHandler http.HandlerFunc
+	// ToolchainMissing is the tools a worker launched here lacked, for `/v1/health`: nil when fine.
+	ToolchainMissing func() map[string]any
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -1033,6 +1035,11 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	if s.LoginNeeded != nil {
 		if l := s.LoginNeeded(); l != nil {
 			body["login_needed"] = l
+		}
+	}
+	if s.ToolchainMissing != nil {
+		if tc := s.ToolchainMissing(); tc != nil {
+			body["toolchain_missing"] = tc
 		}
 	}
 	writeJSON(w, http.StatusOK, body)
