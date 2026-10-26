@@ -25,7 +25,7 @@ import (
 // The hub's half: accept what rooms dial, and lend those connections out as if
 // the hub had dialled them.
 //
-// THE HUB HOLDS NOTHING DURABLE. No database, no card, no scrollback. Kill it
+// THE HUB HOLDS NOTHING DURABLE. No work, no card, no scrollback. Kill it
 // mid-sentence and the only thing lost is the socket. That is not tidiness, it
 // is the entire point: the hub is the part being restarted every few minutes
 // while somebody changes CSS, so it must never be the part that owns anything

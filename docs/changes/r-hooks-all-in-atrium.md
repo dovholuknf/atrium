@@ -12,7 +12,7 @@ The goal is that no session runs a PowerShell or bash hook script. Each one beco
 - The guard is OFF by default. `ATRIUM_GUARD=on` (or 1, true, yes) turns it on, and anything else leaves it off. `settings.json`, the dotfiles and the board's hook installer were not changed. Switching a machine over is clint's call.
 - `ATRIUM_GUARD_RULES=<path>` replaces the built-in rules with a file.
 
-Every test case in the dotfiles `test-git-guard.ps1` is ported in `internal/guard/gitguard_test.go`. For the misfires, the tests check the right answer, not the old one.
+Every test case in the dotfiles `test-git-guard.ps1` is ported in `internal/guard/gitguard_integration_test.go`. For the misfires, the tests check the right answer, not the old one.
 
 ### Failure posture
 
