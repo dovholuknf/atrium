@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 func TestStartOutsideJobAnswersTheProgramAndWritesItsLog(t *testing.T) {
@@ -29,16 +31,12 @@ func TestStartOutsideJobAnswersTheProgramAndWritesItsLog(t *testing.T) {
 	if !strings.Contains(strings.ToLower(string(out)), "ping.exe") {
 		t.Fatalf("pid %d is %q, want ping.exe", p.Pid, strings.TrimSpace(string(out)))
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		data, _ := os.ReadFile(log)
-		if strings.Contains(string(data), "127.0.0.1") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("ping's output never reached the log, which has %q", data)
-		}
-		time.Sleep(50 * time.Millisecond)
+	var data []byte
+	if !testwait.PollEvery(50*time.Millisecond, 10*time.Second, func() bool {
+		data, _ = os.ReadFile(log)
+		return strings.Contains(string(data), "127.0.0.1")
+	}) {
+		t.Fatalf("ping's output never reached the log, which has %q", data)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/link"
 )
 
@@ -64,9 +65,7 @@ func TestWatchPathsPushesOnlyWhenTheListChanged(t *testing.T) {
 		t.Fatalf("pushed %d times with nothing changed", n)
 	}
 	addr.Store("b:1")
-	for i := 0; i < 200 && pushed.Load() == 0; i++ {
-		time.Sleep(time.Millisecond)
-	}
+	testwait.PollEvery(time.Millisecond, 200*time.Millisecond, func() bool { return pushed.Load() != 0 })
 	if pushed.Load() != 1 {
 		t.Fatalf("pushed %d times after one change, want 1", pushed.Load())
 	}

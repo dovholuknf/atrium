@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -57,21 +58,6 @@ func listRow(t *testing.T, srv *Server, id string) string {
 	return ""
 }
 
-func subscribed(t *testing.T, srv *Server) {
-	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		srv.bus.mu.Lock()
-		n := len(srv.bus.subs)
-		srv.bus.mu.Unlock()
-		if n > 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the event stream never subscribed")
-		}
-	}
-}
-
 func eventStream(t *testing.T, srv *Server) *bufio.Scanner {
 	t.Helper()
 	ts := httptest.NewServer(srv.Handler())
@@ -82,6 +68,15 @@ func eventStream(t *testing.T, srv *Server) *bufio.Scanner {
 	}
 	t.Cleanup(func() { resp.Body.Close() })
 	return bufio.NewScanner(resp.Body)
+}
+
+func subscribed(t *testing.T, srv *Server) {
+	t.Helper()
+	testwait.Eventually(t, 5*time.Second, "the event stream to subscribe", func() bool {
+		srv.bus.mu.Lock()
+		defer srv.bus.mu.Unlock()
+		return len(srv.bus.subs) > 0
+	})
 }
 
 func sameJSON(t *testing.T, a, b string) {
@@ -217,7 +212,7 @@ func readTaskEvents(resp *http.Response, d time.Duration) []string {
 			}
 		}
 	}()
-	time.Sleep(d)
+	time.Sleep(d) // wait: callers count what arrives in the window, often to check nothing does
 	close(done)
 	resp.Body.Close()
 	mu.Lock()

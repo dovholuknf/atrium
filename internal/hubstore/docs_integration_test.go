@@ -635,8 +635,7 @@ func TestPurgeRacingAnAddOfTheSameBytesKeepsTheNewVersion(t *testing.T) {
 			defer close(addDone)
 			added, addErr = s.DocAdd(docIn("Racer copy", "r.md", "the shared bytes"))
 		}()
-		// Long enough for an unserialised write to finish inside the gap.
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond) // wait: long enough for an unserialised write to finish inside the gap
 	}
 	if _, err := s.DocPurge(first.Slug, 0); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 )
@@ -46,13 +47,7 @@ func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	room := &link.Room{Name: "m1mini", Version: "b", Dial: tcpDial{ln.Addr().String()},
 		Handler: http.NotFoundHandler(), T: tm}
 	go func() { _ = room.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for !room.State().Up {
-		if time.Now().After(deadline) {
-			t.Fatal("the room never attached")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testwait.EventuallyEvery(t, 20*time.Millisecond, 5*time.Second, "the room to attach", func() bool { return room.State().Up })
 
 	rctx, rcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer rcancel()

@@ -378,7 +378,7 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 		pr, pw := io.Pipe()
 		go func() {
 			for i := 0; i < chunks; i++ {
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond) // wait: a fetch that keeps moving slowly is what is under test
 				if _, err := pw.Write([]byte("0123456789")); err != nil {
 					return
 				}
@@ -427,7 +427,7 @@ func TestTheDeadlinesAreClearedWhenTheRequestEnds(t *testing.T) {
 		if resp.StatusCode != 200 {
 			t.Fatalf("request %d = %d", i, resp.StatusCode)
 		}
-		time.Sleep(450 * time.Millisecond) // longer than every deadline, so a stale one would have passed
+		time.Sleep(450 * time.Millisecond) // wait: longer than every deadline, so a stale one would have passed
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -112,12 +113,8 @@ func TestArchiveByCwdWithoutWaitAnswersAtOnceAndClosesBehind(t *testing.T) {
 	if code != 202 || len(out.Cards) != 1 || out.Cards[0] != c.ID {
 		t.Fatalf("%d %+v", code, out)
 	}
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if got, _ := oh.srv.st.Get(c.ID); got != nil && slices.Contains(got.Tags, ClosedTag) {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatal("the card was never closed")
+	testwait.EventuallyEvery(t, 50*time.Millisecond, 20*time.Second, "the card to be closed", func() bool {
+		got, _ := oh.srv.st.Get(c.ID)
+		return got != nil && slices.Contains(got.Tags, ClosedTag)
+	})
 }

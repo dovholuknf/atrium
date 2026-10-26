@@ -211,7 +211,7 @@ func TestAHeldLockIsWaitedFor(t *testing.T) {
 	}
 	released := make(chan struct{})
 	go func() {
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond) // wait: a lock held for a while is what is under test
 		os.Remove(lock)
 		close(released)
 	}()
