@@ -212,7 +212,8 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 // session makes no tool calls for the permission hook to ride.
 func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Agent string `json:"agent"`
+		Contract int    `json:"contract,omitempty"`
+		Agent    string `json:"agent"`
 		// The card the runner was launched on, which binds this report to it by
 		// id. Empty from a hook older than the field, or a session atrium did
 		// not launch.

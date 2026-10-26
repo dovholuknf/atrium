@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /session body",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "integer",
+      "description": "contract version the sender speaks, absent means 1"
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "session",
+          "activity",
+          "permission",
+          "stop",
+          "finish"
+        ]
+      },
+      "description": "contract calls this adapter makes"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "start",
+        "end",
+        "compact",
+        "join"
+      ]
+    },
+    "runner": {
+      "type": "string"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "resume": {
+      "type": "string"
+    },
+    "resumable": {
+      "type": "boolean"
+    },
+    "source": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "trigger": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "why": {
+      "type": "string"
+    },
+    "name_source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "agent"
+      ]
+    },
+    {
+      "required": [
+        "task_id"
+      ]
+    }
+  ]
+}

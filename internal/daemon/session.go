@@ -26,7 +26,11 @@ import (
 
 // SessionEvent is what a session hook posts.
 type SessionEvent struct {
-	Agent string `json:"agent"`
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int `json:"contract,omitempty"`
+	// Features are the contract calls the adapter says it makes: session, activity, permission, stop, finish.
+	Features []string `json:"features,omitempty"`
+	Agent    string   `json:"agent"`
 	// Event is "start" or "end".
 	Event  string `json:"event"`
 	Runner string `json:"runner,omitempty"`

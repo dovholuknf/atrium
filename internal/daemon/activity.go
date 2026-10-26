@@ -777,8 +777,10 @@ func (a *activityTracker) backgroundWork(taskID string) (int, time.Time) {
 
 // ActivityEvent is what a hook posts to /activity.
 type ActivityEvent struct {
-	Agent  string `json:"agent"`
-	TaskID string `json:"task_id,omitempty"`
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int    `json:"contract,omitempty"`
+	Agent    string `json:"agent"`
+	TaskID   string `json:"task_id,omitempty"`
 	// NameSource is "dir" when Agent was made up from the directory. Absent from
 	// a hook older than the field, which is read as a told name. Nothing here
 	// acts on it yet: activity only looks a card up.
