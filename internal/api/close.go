@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,6 +68,16 @@ const ClosedTag = "atrium:closed"
 
 // closeGitWait bounds one git command of a close.
 const closeGitWait = time.Minute
+
+// closeTreeWait bounds the wait for a card's stopped processes to exit, so none still holds its worktree.
+const closeTreeWait = 30 * time.Second
+
+// closeRemoveWaits are the pauses between a close's tries at a worktree a process still holds, and
+// closeLeftoverWaits those of the later tries, after the close answered: Windows lets go of a folder late.
+var (
+	closeRemoveWaits   = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second}
+	closeLeftoverWaits = []time.Duration{30 * time.Second, 2 * time.Minute, 10 * time.Minute, 30 * time.Minute, time.Hour}
+)
 
 // closeItem is one inventory row and what a close does with it.
 type closeItem struct {
@@ -441,16 +452,23 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	res := &closeResult{Card: t.ID, Stashes: []closeStash{}, Warnings: []string{}}
 	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
 
-	// 1. the runner
+	// 1. the runner. Its tree is read before the kill, so the close can wait for every process of it to exit.
+	tree := map[int]string{}
 	if s.sessionLive(t) && s.Kill == nil {
 		res.SessionErr = "this room cannot stop its sessions"
 		warn("the session did not stop: %s", res.SessionErr)
 	} else if s.sessionLive(t) {
 		steps.begin("session", "stopping the session")
+		var sub map[int]string
+		if t.PID > 0 {
+			sub = cardproc.Tree(t.PID)
+		}
 		if err := s.Kill(t.ID); err != nil {
 			res.SessionErr = err.Error()
 			warn("the session did not stop: %v. a worktree it holds open may not remove", err)
 			steps.problem("%v", err)
+		} else {
+			maps.Copy(tree, sub)
 		}
 	}
 
@@ -493,14 +511,23 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	for _, r := range of(store.ResProc) {
 		if procStillIt(r) {
 			pid, _ := strconv.Atoi(r.Ref)
+			sub := cardproc.Tree(pid)
 			if err := cardproc.StopTree(pid); err != nil {
 				failed(r, err)
 				warn("process %s did not stop: %v", r.Ref, err)
 				steps.problem("process %s: %v", r.Ref, err)
 				continue
 			}
+			maps.Copy(tree, sub)
 		}
 		freed(r)
+	}
+	if len(tree) > 0 {
+		steps.begin("exit", "waiting for the card's processes to exit")
+		if left := cardproc.WaitGone(tree, closeTreeWait); len(left) > 0 {
+			warn("%d of the card's processes still run (%v). a worktree they hold may not remove", len(left), left)
+			steps.problem("still running: %v", left)
+		}
 	}
 	if n := len(of(store.ResPort)); n > 0 {
 		steps.begin("ports", fmt.Sprintf("releasing %d %s", n, plural(n, "port", "ports")))
@@ -556,6 +583,13 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 
 	// 3. worktrees. A kept one keeps its branch: repo and branch name.
 	keptBranch := map[string]bool{}
+	removeWaits, leftoverWaits := s.closeWaits()
+	leftover := map[*store.CardResource]string{}
+	defer func() {
+		if len(leftover) > 0 {
+			go s.retryLeftovers(t.ID, leftover, leftoverWaits)
+		}
+	}()
 	for _, r := range of(store.ResWorktree) {
 		a, isAsked := asked[r.Seq]
 		ans := answers[strconv.Itoa(r.Seq)]
@@ -594,10 +628,11 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		if !(isAsked && ans == CloseStash) {
 			steps.begin(key, "removing "+r.Ref+sizeNote(n))
 		}
-		if err := removeWorktree(r.Detail, r.Ref); err != nil {
+		if err := retryRemove(r.Detail, r.Ref, removeWaits); err != nil {
 			failed(r, err)
 			keptBranch[r.Detail+"\x00"+a.Branch] = true
-			warn("%s did not remove: %v", r.Ref, err)
+			leftover[r] = a.Branch
+			warn("%s did not remove, atrium tries again later: %v", r.Ref, err)
 			steps.problem("%v", err)
 			continue
 		}
@@ -819,6 +854,73 @@ func removeWorktree(repo, path string) error {
 	}
 	// Git is done with it. What is still at the path is not freed until it is gone.
 	return removeLeftover(repo, path)
+}
+
+// retryRemove is removeWorktree tried again after each of waits while it fails.
+func retryRemove(repo, path string, waits []time.Duration) error {
+	err := removeWorktree(repo, path)
+	for _, d := range waits {
+		if err == nil {
+			break
+		}
+		time.Sleep(d)
+		err = removeWorktree(repo, path)
+	}
+	return err
+}
+
+// retryLeftovers tries the worktrees a close left on disk again after each of waits, and frees each row that goes,
+// with the branch the close kept for it. A row someone else freed or closed meanwhile is dropped.
+func (s *Server) retryLeftovers(card string, rows map[*store.CardResource]string, waits []time.Duration) {
+	for _, d := range waits {
+		time.Sleep(d)
+		now, err := s.st.Resources(card)
+		if err != nil {
+			continue
+		}
+		live := map[int]bool{}
+		for _, r := range now {
+			live[r.Seq] = r.Live()
+		}
+		still := map[*store.CardResource]string{}
+		for r, branch := range rows {
+			if !live[r.Seq] {
+				continue
+			}
+			if _, busy := closing.Load(card); busy {
+				still[r] = branch
+				continue
+			}
+			if err := removeWorktree(r.Detail, r.Ref); err != nil {
+				_ = s.st.ResourceFailed(r.Card, r.Seq, err.Error())
+				still[r] = branch
+				continue
+			}
+			if err := s.st.FreeResource(r.Card, r.Seq, "removed on a later try"); err != nil {
+				log.Printf("[atrium api] close %s: %v", card, err)
+			}
+			log.Printf("[atrium api] close %s: %s removed on a later try", card, r.Ref)
+			for _, b := range now {
+				if branch == "" || b.Kind != store.ResBranch || !b.Live() || b.Detail != r.Detail || b.Ref != branch {
+					continue
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
+				_, err := gitIn(ctx, b.Detail, "branch", "-D", "--", b.Ref)
+				cancel()
+				if err == nil || !branchStillThere(b.Detail, b.Ref) {
+					_ = s.st.FreeResource(b.Card, b.Seq, "")
+				}
+			}
+		}
+		if len(still) < len(rows) {
+			if nt, err := s.st.Get(card); err == nil {
+				s.PublishTask(nt)
+			}
+		}
+		if rows = still; len(rows) == 0 {
+			return
+		}
+	}
 }
 
 // closeReview stops a review that is going, sets its run folder aside without its source copy, and archives the

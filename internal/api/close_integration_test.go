@@ -8,10 +8,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -319,5 +321,58 @@ func TestCloseArchivesAReviewTheCardWalksOutsideItsInventory(t *testing.T) {
 	}
 	if got, _ := oh.srv.st.PRByID(made.PR.ID); got.Archived == "" {
 		t.Error("the walked review was not archived")
+	}
+}
+
+func TestCloseSaysALockedWorktreeIsLeftAndRemovesItOnALaterTry(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("an open file holds its folder only on Windows")
+	}
+	t.Parallel()
+	oh, card, wt, _ := openForClose(t)
+	now, later := []time.Duration{}, []time.Duration{}
+	for range 200 {
+		later = append(later, 50*time.Millisecond)
+	}
+	oh.srv.hk.removeWaits, oh.srv.hk.leftoverWaits = &now, &later
+	held, err := os.Create(filepath.Join(filepath.FromSlash(wt), "held.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := make(chan struct{})
+	release := func() {
+		select {
+		case <-gate:
+		default:
+			close(gate)
+			_ = held.Close()
+		}
+	}
+	defer release()
+
+	seq := worktreeSeq(t, oh.srv.st, card)
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "answers": map[string]string{strconv.Itoa(seq): "delete"}})
+	if code != 200 || out.Left != 2 || !exists(wt) {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if !slices.ContainsFunc(out.Items, func(it closeItem) bool { return it.Seq == seq && it.Action == "keep" && it.Err != "" }) {
+		t.Fatalf("the worktree is not named as left with its error: %+v", out.Items)
+	}
+
+	release()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) { // wait: poll the later try under one deadline
+		rows, _ := oh.srv.st.Resources(card)
+		if !slices.ContainsFunc(rows, func(r *store.CardResource) bool { return r.Live() }) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the later try did not free the worktree and its branch")
+		}
+	}
+	if exists(wt) {
+		t.Error("the worktree is freed but still on disk")
 	}
 }
