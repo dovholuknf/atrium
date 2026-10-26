@@ -84,6 +84,8 @@ type TransportItem struct {
 	Locked string
 	// NoIdentity marks an item that binds no ziti service and uses no identity file: a zrok share.
 	NoIdentity bool
+	// Detail is a line about what the item is bound to, like a zrok share's masked token and env. May be nil.
+	Detail func() string
 }
 
 // TransportView is one item as the gear shows it.
@@ -103,6 +105,7 @@ type TransportView struct {
 	Locked         string    `json:"locked,omitempty"`
 	Switchable     bool      `json:"switchable"`
 	NoService      bool      `json:"no_service,omitempty"`
+	Detail         string    `json:"detail,omitempty"`
 }
 
 type htItem struct {
@@ -308,6 +311,9 @@ func (t *HubTransports) view(h *htItem) TransportView {
 	v := TransportView{Name: h.Name, Label: h.Label, Kind: h.Kind, On: h.on, Service: h.service,
 		DefaultService: h.DefaultService, Identity: h.identity, IdentityUsed: t.identityFor(h), Locked: h.Locked,
 		Switchable: h.Locked == "", Since: since, NoService: h.NoIdentity}
+	if h.Detail != nil {
+		v.Detail = h.Detail()
+	}
 	switch {
 	case !h.on:
 		v.State = "off"

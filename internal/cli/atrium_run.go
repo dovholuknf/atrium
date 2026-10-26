@@ -262,7 +262,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		if s.kind == "ziti" && i > 0 {
 			continue
 		}
-		// A zrok first is bound by zrokBinder, so a controller that cannot be asked does not stop the hub.
+		// A zrok first is bound in the hub transports' loop, so a controller that cannot be asked does not stop the hub.
 		if s.kind == "zrok" && i == 0 {
 			zrokFirst = s
 			continue
@@ -309,7 +309,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if zrokSide != nil && zrokSide != set.sides[0] {
 		z := zrokSide
 		ht.Add(link.TransportItem{
-			Name: link.TransportRoomZrok, Label: "Room link over zrok", Kind: "zrok", NoIdentity: true,
+			Name: link.TransportRoomZrok, Label: "Room link over zrok", Kind: "zrok", NoIdentity: true, Detail: z.detail,
 			Listen: func(_, _ string) (net.Listener, error) { return z.listen() },
 			Serve:  func(ctx context.Context, ln net.Listener) error { return h.ServeVia(ctx, ln, "zrok") },
 			Refuse: func() string {
@@ -677,7 +677,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	go proxy.RunSetupWatch(ctx)
 
 	if zrokFirst != nil {
-		go zrokBinder(zrokFirst, h, func(kind, detail string) { proxy.RecordAudit("", kind, detail) }).Run(ctx)
+		b, on := zrokBinder(zrokFirst, h, nil), true
+		ht.Add(link.TransportItem{
+			Name: link.TransportRoomZrok, Label: "Room link over zrok", Kind: "zrok", NoIdentity: true,
+			Detail: zrokFirst.detail, Locked: "the room link's first transport, bound for as long as the hub runs",
+			Listen: func(_, _ string) (net.Listener, error) { return b.Listen() },
+			Serve:  b.Serve,
+		}, link.TransportSeed{On: &on})
 	}
 	for i, ln := range lns {
 		go func(ln net.Listener, via string) {

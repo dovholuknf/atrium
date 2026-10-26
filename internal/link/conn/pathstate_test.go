@@ -41,6 +41,16 @@ func TestProbePathsSaysOnUpDownAndNone(t *testing.T) {
 	}
 }
 
+func TestZrokPathShowsItsShareMaskedNeverWhole(t *testing.T) {
+	got := pathAddr(Path{Transport: "zrok", Share: "abcd1234wxyz"})
+	if got != "share abcd..." {
+		t.Fatalf("a zrok rung's addr is %q, want the first four of its share", got)
+	}
+	if got := pathAddr(Path{Transport: "zrok"}); got != "" {
+		t.Fatalf("a zrok rung with no share says %q", got)
+	}
+}
+
 func TestStampSinceMovesOnlyWhenTheStateDoes(t *testing.T) {
 	t0 := time.Unix(100, 0)
 	t1 := t0.Add(time.Minute)

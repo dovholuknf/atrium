@@ -62,6 +62,8 @@ type hubSide struct {
 	// overlay(). service, when not nil, is the service the side is bound to now.
 	enabled func() bool
 	service func() string
+	// detail, when not nil, is the side's line in the hub transports list.
+	detail func() string
 }
 
 func (s *hubSide) on() bool { return s.enabled == nil || s.enabled() }
@@ -325,7 +327,24 @@ func newZrokHub(keys link.Keys, spend func(string) (string, error), api link.Zro
 		},
 		release: func() {},
 		says:    "a private zrok share",
+		detail:  h.detail,
 	}, nil
+}
+
+// detail is the share's masked token and this machine's zrok env, for the hub transports list.
+func (h *zrokHub) detail() string {
+	token := h.z.Reserved()
+	if token == "" {
+		token, _ = readZrokShare(h.keys)
+	}
+	s := "no share reserved yet"
+	if token != "" {
+		s = "share " + link.MaskShare(token)
+	}
+	if env := h.z.Env(); env != "" {
+		s += ", env " + env
+	}
+	return s
 }
 
 func (h *zrokHub) listen() (net.Listener, error) {
