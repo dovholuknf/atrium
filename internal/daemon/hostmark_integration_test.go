@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +23,9 @@ func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
 	d1 := daemonAt(t, dir)
 	task := cardAt(t, d1, "mark-readopt", t.TempDir())
 	sh, args := someShell(t)
+	gate := filepath.Join(t.TempDir(), "gate")
 	if _, err := d1.spawnPTY(task.ID, sh, append(args,
-		"echo AAA-first; sleep 4; echo BBB-second; sleep 60"), t.TempDir(), os.Environ()); err != nil {
+		"echo AAA-first; "+gatedOn(gate)+"; echo BBB-second; sleep 60"), t.TempDir(), os.Environ()); err != nil {
 		t.Fatal(err)
 	}
 	r1 := d1.sup.get(task.ID)
@@ -33,7 +35,7 @@ func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
 	hostWait(t, 20*time.Second, "AAA in the first daemon's ring", func() bool { return ringHas(r1, "AAA-first") })
 	r1.markClear()
 	hostWait(t, 5*time.Second, "the mark in the first daemon's ring", func() bool { return ringHas(r1, screen.ClearMarkOSC) })
-	// The mark reaches the host on its own round trip, well inside the gap before BBB.
+	// The mark reaches the host on its own round trip, and the gate holds BBB back until the test opens it.
 	time.Sleep(500 * time.Millisecond) // wait: the mark's round trip to the host raises no event on this side
 
 	d2 := restarted(t, d1, dir)
@@ -42,6 +44,7 @@ func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
 	if r2 == nil || r2.runID != r1.runID {
 		t.Fatalf("the run was not reattached: %+v", r2)
 	}
+	openGate(t, gate)
 	hostWait(t, 30*time.Second, "BBB in the reattached ring", func() bool { return ringHas(r2, "BBB-second") })
 
 	out := replayOf(r2)
