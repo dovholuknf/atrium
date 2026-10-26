@@ -300,7 +300,7 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 	if n1 != 1 || at1 == "" {
 		t.Fatalf("after one fyi: %d at %q", n1, at1)
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	d.holdNotice(launcher, worker, NoticeSilentStop, "b")
 	n2, at2 := d.heldNoticesFor(launcher)
 	if n2 != 2 || at2 != at1 {
@@ -311,7 +311,7 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 		t.Fatalf("a worker shows %d at %q", n, at)
 	}
 
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	through := time.Now().UTC().Format(store.TimeFormat)
 	changed, err := d.st.MarkNoticesRead(launcher.ID, through)
 	if err != nil || !changed {
@@ -323,7 +323,7 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 	if changed, _ := d.st.MarkNoticesRead(launcher.ID, through); changed {
 		t.Fatal("a second read with nothing new reported a change")
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	d.holdNotice(launcher, worker, NoticeSilentStop, "c")
 	if n, _ := d.heldNoticesFor(launcher); n != 1 {
 		t.Fatalf("after a new fyi: %d, want 1", n)
@@ -351,7 +351,7 @@ func TestANoticeHeldBetweenTheReadAndTheStampStillCountsUnread(t *testing.T) {
 		}
 	}
 	through := newest.UTC().Format(store.TimeFormat)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	d.holdNotice(launcher, worker, NoticeSilentStop, "b") // held after the read, before the stamp
 
 	if changed, err := d.st.MarkNoticesRead(launcher.ID, through); err != nil || !changed {

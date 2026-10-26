@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -54,14 +55,7 @@ func parkedNow(t *testing.T, d *Daemon, id string) bool {
 // settles waits for a park in flight, or for it to have not happened.
 func settles(t *testing.T, d *Daemon, id string) bool {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if parkedNow(t, d, id) {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
+	return testwait.Poll(2*time.Second, func() bool { return parkedNow(t, d, id) })
 }
 
 // settlesTo is settles for a card that should NOT park: it looks after a short
@@ -71,7 +65,7 @@ func settlesTo(t *testing.T, d *Daemon, id string, want bool) bool {
 	if want {
 		return settles(t, d, id)
 	}
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond) // wait: the card must not park
 	return parkedNow(t, d, id)
 }
 
@@ -163,7 +157,7 @@ func TestIdleClockIgnoresHandoffTurn(t *testing.T) {
 		t.Fatalf("the finished capture moved the idle clock: %v -> %v", before, got)
 	}
 	// Real activity after it restarts the clock and the cycle.
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	d.idle.put(card.ID, &handoffMark{base: before, end: time.Now().Add(-time.Minute), written: true})
 	if err := d.st.AppendEvent(card.ID, store.EventPrompted, map[string]any{"text": "real", "via": "terminal"}); err != nil {
 		t.Fatal(err)
@@ -318,14 +312,14 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 	card := idleAgent(t, d, "donecard", store.StatusDone)
 	// The wind-down would file it dead. It must come back as done.
 	go func() {
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: lands the dead filing inside the park's wind-down, the race under test
 		_ = d.st.SetStatus(card.ID, store.StatusDead)
 	}()
 	d.parkIdle(idleAfter(3 * time.Hour))
 	if !settles(t, d, card.ID) {
 		t.Fatal("not parked")
 	}
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: the wind-down must not file it dead
 	got, _ := d.st.Get(card.ID)
 	if got.Status == store.StatusDead && !isParked(got) {
 		t.Fatal("filed dead")
@@ -351,7 +345,7 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 
 	// Under 50 minutes: nothing.
 	d.parkIdle(idleAfter(40 * time.Minute))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: no handoff may be asked for
 	if strings.Contains(f.written(), "HANDOFF.") {
 		t.Fatal("a handoff was asked for before 50 minutes")
 	}
@@ -379,7 +373,7 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 	// Still in the window: another tick asks for nothing more.
 	written := f.written()
 	d.parkIdle(idleAfter(60 * time.Minute))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: no second capture may be asked for
 	if f.written() != written {
 		t.Fatal("a second capture was asked for")
 	}
