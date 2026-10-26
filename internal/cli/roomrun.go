@@ -423,6 +423,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Host:    hostname(),
 		// SAYS GIT in the hello, so the hub will ask this room to sync. See internal/gitsync.
 		Git: true,
+		// WHERE THIS ROOM'S TOOLCHAINS ARE, for atrium_resources.
+		Tools: daemon.ToolLocations(),
 		// IDLE CPU rides on the heartbeat, so the hub can break a tie between rooms with the same session count.
 		IdleCPU: roomstats.NewIdleMeter().Idle,
 		// WHETHER CLAUDE'S LOGIN HERE IS REVOKED, on the beat, so the hub can show it and ring once.

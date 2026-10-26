@@ -41,6 +41,11 @@ func toolLocations(path string) map[string]string {
 	return out
 }
 
+// ToolLocations is toolLocations on this process's PATH, for the room's hello.
+func ToolLocations() map[string]string {
+	return toolLocations(os.Getenv("PATH"))
+}
+
 // toolsLine is the brief line naming the room's tool locations, "" when none are found.
 func toolsLine(path string) string {
 	var parts []string

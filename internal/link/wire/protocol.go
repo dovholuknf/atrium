@@ -59,6 +59,8 @@ type Hello struct {
 	// because the ones above did not answer. The room's word: the hub knows which
 	// listener took the connection and not what the room would rather be on.
 	Fallback bool `json:"fallback,omitempty"`
+	// Tools is where each toolchain (go, node, ...) is on this room, for atrium_resources. Observed, never trusted.
+	Tools map[string]string `json:"tools,omitempty"`
 }
 
 // Welcome is the hub's answer to a hello.
