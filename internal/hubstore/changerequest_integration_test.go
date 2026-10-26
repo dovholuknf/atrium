@@ -299,7 +299,7 @@ func TestChangeRequestMigrationToleratesBeingThere(t *testing.T) {
 // table) follows it. 0011 (push subscriptions), 0012 (backlog and reports), 0013 (room spec and lock), 0014 (backlog
 // priority), 0015 (the merge flow) 0016 (its epochs) and 0017 (the file drop, the last) come after.
 func TestChangeRequestMigrationIsAtTheEnd(t *testing.T) {
-	n := len(migrations) - 17
+	n := len(migrations) - 18
 	if got := migrations[n-1].name; got != "0018_item" {
 		t.Fatalf("the last migration is %q", got)
 	}

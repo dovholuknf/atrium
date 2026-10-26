@@ -26009,7 +26009,7 @@ async function main() {
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection, trayMerge: trayMergeSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlRoomAlert: growlRoomAlertSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection, trayMerge: trayMergeSection,
       mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, hears: hearsSection, presence: presenceSection, tallPty: tallPtySection, arrivedOnce: arrivedOnceSection, popoutBell: popoutBellSection, windowMute: windowMuteSection, 
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       
@@ -27984,6 +27984,7 @@ async function main() {
     // ── the persistent growler: stack, actions, over a modal, and quiet ────
     await unit("growlStack", () => growlStackSection(browser, base));
     await unit("growlActions", () => growlActionsSection(browser, base));
+    await unit("growlRoomAlert", () => growlRoomAlertSection(browser, base));
     await unit("growlModal", () => growlModalSection(browser, base));
     await unit("growlQuiet", () => growlQuietSection(browser, base));
     await unit("growlAttention", () => growlAttentionSection(browser, base));
@@ -29594,6 +29595,55 @@ async function growlActionsSection(browser, base) {
     if (h.errors.length) fail("growlActions: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlActions ok");
+}
+
+// The room alert, f-room-cpu-alert: a hot room's growler lists its processes, offers a kill only for the closed card's
+// orphans, asks first and posts each pid to that room. The room tile badges what the alert says.
+async function growlRoomAlertSection(browser, base) {
+  const h = await growlBoard(browser, base, true);
+  const { p } = h;
+  const kills = [];
+  await h.ctx.route("**/v1/room/procs/kill", route => {
+    kills.push({ body: JSON.parse(route.request().postData() || "{}"), room: route.request().headers()["x-atrium-room"] || "" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  try {
+    const hot = GR("hot", "room-cpu", 1, { room: "sgg", card_id: "", card: "", subject: "42,43",
+      title: "sgg is at high cpu with no agents running", urgency: 7,
+      body: "- 99% pid 42 ppid 1 up 02:01:00, orphan of closed card c-old: node server.js (in /homes/old)\n" +
+        "- 40% pid 7 ppid 1 up 5-00:00:00, foreign: audiomxd" });
+    await h.say([hot]);
+    const d = await p.evaluate(() => ({
+      items: [...document.querySelectorAll("#growl .gr-full .gr-body li")].map(li => li.textContent),
+      acts: [...document.querySelectorAll("#growl .gr-full .gr-acts button")].map(b => b.dataset.do)
+    }));
+    if (d.items.length !== 2 || !/orphan of closed card c-old/.test(d.items[0]) || !/foreign: audiomxd/.test(d.items[1])) {
+      fail("growlRoomAlert: the body drew " + JSON.stringify(d.items));
+    }
+    if (!d.acts.includes("kill") || !d.acts.includes("room")) fail("growlRoomAlert: the actions were " + JSON.stringify(d.acts));
+    await p.click('#growl .gr-full button[data-do="kill"]');
+    await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+    if (kills.length) fail("growlRoomAlert: kill posted before it asked.");
+    await p.click('#ask-actions button:has-text("kill")');
+    await until(() => kills.length >= 2, 5000, "the kill posts").catch(() => {});
+    if (kills.map(k => k.body.pid + "@" + k.room).join() !== "42@sgg,43@sgg") fail("growlRoomAlert: kill posted " + JSON.stringify(kills));
+    if (h.posts.length) fail("growlRoomAlert: kill posted to /_hub/growls.");
+    await h.say([Object.assign({}, hot, { subject: "" })]);
+    if (await p.$('#growl .gr-full button[data-do="kill"]')) fail("growlRoomAlert: a growler with no orphan offered a kill.");
+    const badge = await p.evaluate(() => {
+      const el = document.createElement("div");
+      el.innerHTML = roomTileHTML({ name: "sgg" }, { alert: { hot_since: "2026-10-26T12:00:00Z", cpu_pct: 93.4, runners_missing: ["codex"] } }, false);
+      const b = el.querySelector(".rt-head .chip.bad.rd-alert");
+      const none = document.createElement("div");
+      none.innerHTML = roomTileHTML({ name: "sgg" }, {}, false);
+      return { text: b && b.textContent, tip: b && b.dataset.tip, none: !!none.querySelector(".rd-alert") };
+    });
+    if (badge.text !== "hot, runner missing" || !/cpu at 93% since/.test(badge.tip || "") || !/codex/.test(badge.tip || "") || badge.none) {
+      fail("growlRoomAlert: the tile badge was " + JSON.stringify(badge));
+    }
+    if (h.errors.length) fail("growlRoomAlert: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlRoomAlert ok");
 }
 
 async function growlModalSection(browser, base) {

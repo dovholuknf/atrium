@@ -144,6 +144,7 @@ type growlRig struct {
 	phoned []Notice
 	health roomHealth
 	hold   roomHold
+	alert  roomAlert
 	perms  []pendingPerm
 }
 
@@ -194,6 +195,11 @@ func newGrowlRig(t *testing.T) *growlRig {
 		rig.mu.Lock()
 		defer rig.mu.Unlock()
 		return rig.hold
+	}
+	g.alert = func(context.Context, string) roomAlert {
+		rig.mu.Lock()
+		defer rig.mu.Unlock()
+		return rig.alert
 	}
 	g.pending = func(context.Context, string) []pendingPerm {
 		rig.mu.Lock()
@@ -630,5 +636,56 @@ func TestGrowlEndedQuestionIsNotReraisedAfterThePrune(t *testing.T) {
 	rig.mu.Unlock()
 	if after != before {
 		t.Fatalf("the ticks said %d growls events for nothing new", after-before)
+	}
+}
+
+// A ROOM'S ALERT GROWLS AS ITS ROOM SAYS, once per spell: a hot room names its
+// processes and offers only the closed card's orphan, a missing runner growls
+// on its own, a dismissed one stays dismissed while the spell lasts, and a room
+// that cooled ends it so the next spell raises again.
+func TestGrowlRoomAlert(t *testing.T) {
+	rig := newGrowlRig(t)
+	hot := roomAlert{ok: true, HotSince: "2026-10-26T12:00:00Z", CPUPct: 93, Procs: []alertProc{
+		{PID: 42, PPID: 1, Etime: "02:01:00", CPUPct: 99.4, Command: "node server.js", Cwd: "/homes/old", Kind: "card-closed", Card: "c-old"},
+		{PID: 7, PPID: 1, Etime: "5-00:00:00", CPUPct: 40, Command: "audiomxd", Kind: "foreign"},
+	}, RunnersMissing: []string{"codex"}}
+	rig.alert = hot
+	rig.g.tick(context.Background())
+	rows := rig.live(t)
+	if len(rows) != 2 {
+		t.Fatalf("growlers %+v", rows)
+	}
+	cpu, run := rows[0], rows[1]
+	if cpu.Reason != "room-cpu" || cpu.Subject != "42" || cpu.Urgency != 7 || cpu.Title != "sparta is at high cpu with no agents running" ||
+		!strings.Contains(cpu.Body, "- 99% pid 42 ppid 1 up 02:01:00, orphan of closed card c-old: node server.js (in /homes/old)") ||
+		!strings.Contains(cpu.Body, "foreign: audiomxd") {
+		t.Fatalf("room-cpu growler %+v", cpu)
+	}
+	if run.Reason != "runner-missing" || run.Body != "codex" || run.Title != "sparta: enabled runner not found" {
+		t.Fatalf("runner-missing growler %+v", run)
+	}
+	if _, _, err := rig.g.act(cpu.ID, "dismiss", 0, "board", ""); err != nil {
+		t.Fatal(err)
+	}
+	rig.g.tick(context.Background())
+	if rows := rig.live(t); len(rows) != 1 || rows[0].Reason != "runner-missing" {
+		t.Fatalf("a dismissed spell came back: %+v", rows)
+	}
+	rig.alert = roomAlert{}
+	rig.g.tick(context.Background())
+	if len(rig.live(t)) != 1 {
+		t.Fatal("a room that did not answer ended its alert")
+	}
+	rig.alert = roomAlert{ok: true}
+	rig.g.tick(context.Background())
+	if rows := rig.live(t); len(rows) != 0 {
+		t.Fatalf("a cooled room kept %+v", rows)
+	}
+	rig.advance(time.Hour)
+	hot.HotSince = "2026-10-26T13:00:00Z"
+	rig.alert = hot
+	rig.g.tick(context.Background())
+	if rows := rig.live(t); len(rows) != 2 {
+		t.Fatalf("the next spell did not raise again: %+v", rows)
 	}
 }

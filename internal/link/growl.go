@@ -37,6 +37,9 @@ import (
 //     on for growl.hold_after (fifteen minutes). A deploy restarts its room in
 //     a minute or two, so a hold still there is a deploy that stalled, and
 //     every card it holds is frozen until somebody lifts it.
+//   - `room-cpu` and `runner-missing`, from the `alert` in a room's own
+//     /v1/room/stats: hot with no agent mid-turn, or an enabled runner not
+//     found. The room decides both. See internal/roomstats/alert.go.
 //
 // `input` without a report and `finished` never growl.
 //
@@ -82,7 +85,8 @@ const (
 var growlLadderDefault = map[string]bool{ReasonPermission: true, "halt": true, "deploy-hold": true}
 
 // growlLadderReasons is every reason the setting may name.
-var growlLadderReasons = []string{ReasonPermission, ReasonQuestion, reasonBlocked, "halt", "deploy-hold"}
+var growlLadderReasons = []string{ReasonPermission, ReasonQuestion, reasonBlocked, "halt", "deploy-hold", reasonRoomCPU,
+	reasonRunnerMissing}
 
 const (
 	growlTick         = 30 * time.Second
@@ -104,7 +108,8 @@ var growlBackoff = []time.Duration{
 
 // growlUrgency orders the stack, most urgent first.
 var growlUrgency = map[string]int{
-	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5, ReasonCI: 6,
+	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5, ReasonCI: 6, reasonRoomCPU: 7,
+	reasonRunnerMissing: 8,
 }
 
 // The card reasons R1 derives. Passed to the store, which touches no other
@@ -113,6 +118,12 @@ var growlCardReasons = []string{ReasonPermission, ReasonQuestion, reasonBlocked}
 
 // reasonBlocked is a growler reason and never a notify one.
 const reasonBlocked = "blocked"
+
+// The room alert's reasons, f-room-cpu-alert.
+const (
+	reasonRoomCPU       = "room-cpu"
+	reasonRunnerMissing = "runner-missing"
+)
 
 // ErrGrowlNotFound and ErrGrowlStale are what a GrowlStore answers an action
 // with. Stale carries the row as it is now.
@@ -186,6 +197,28 @@ type roomHold struct {
 	startedAt time.Time
 }
 
+// roomAlert is the `alert` in one room's /v1/room/stats. ok is false for a
+// room that did not answer.
+type roomAlert struct {
+	ok             bool
+	HotSince       string      `json:"hot_since"`
+	CPUPct         float64     `json:"cpu_pct"`
+	Procs          []alertProc `json:"procs"`
+	RunnersMissing []string    `json:"runners_missing"`
+}
+
+// alertProc is roomstats.Proc as the hub reads it.
+type alertProc struct {
+	PID     int     `json:"pid"`
+	PPID    int     `json:"ppid"`
+	Etime   string  `json:"etime"`
+	CPUPct  float64 `json:"cpu_pct"`
+	Command string  `json:"command"`
+	Cwd     string  `json:"cwd"`
+	Kind    string  `json:"kind"`
+	Card    string  `json:"card"`
+}
+
 // pendingPerm is one request a room is holding, as its /v1/permissions says.
 type pendingPerm struct {
 	ID          string    `json:"id"`
@@ -205,6 +238,7 @@ type Growler struct {
 	say      func(Event)
 	health   func(ctx context.Context, room string) roomHealth
 	hold     func(ctx context.Context, room string) roomHold
+	alert    func(ctx context.Context, room string) roomAlert
 	pending  func(ctx context.Context, room string) []pendingPerm
 	phone    func(Notice)
 	// prWait is the sweep for PRs claimed by a room that is offline. See prclaim.go.
@@ -641,6 +675,7 @@ func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 	type answer struct {
 		health roomHealth
 		hold   roomHold
+		alert  roomAlert
 	}
 	got := make([]answer, len(ask))
 	var wg sync.WaitGroup
@@ -653,6 +688,9 @@ func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 			}
 			if g.hold != nil {
 				got[i].hold = g.hold(ctx, room)
+			}
+			if g.alert != nil {
+				got[i].alert = g.alert(ctx, room)
 			}
 		}(i, room)
 	}
@@ -672,6 +710,13 @@ func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 			record(room, "halt", h.halted, GrowlRow{
 				ID: room + "|halt|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: "halt",
 				Title: room + " has halted", Body: clip(h.cause),
+			})
+		}
+		if a := got[i].alert; a.ok {
+			record(room, reasonRoomCPU, a.HotSince != "", hotGrowl(room, a))
+			record(room, reasonRunnerMissing, len(a.RunnersMissing) > 0, GrowlRow{
+				ID: room + "|runner-missing|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: reasonRunnerMissing,
+				Title: room + ": enabled runner not found", Body: clip(strings.Join(a.RunnersMissing, ", ")),
 			})
 		}
 		if h := got[i].hold; h.ok {
@@ -820,6 +865,7 @@ func (p *Proxy) SetGrowler(g *Growler) {
 	g.say = p.feeds.broadcast
 	g.health = p.roomHealth
 	g.hold = p.roomHold
+	g.alert = p.roomAlert
 	g.pending = p.roomPending
 	g.phone = func(x Notice) {
 		if n := p.notifier(); n != nil {
@@ -1022,4 +1068,48 @@ func (p *Proxy) openGrowls(s *sub) {
 	case s.ch <- Event{Kind: "growls", Data: data}:
 	case <-time.After(time.Second):
 	}
+}
+
+// hotGrowl is the room-cpu growler. The body is one line per process, and the
+// subject the pids of closed cards' orphans, which is what the kill button
+// offers. A foreign process is named and never offered.
+func hotGrowl(room string, a roomAlert) GrowlRow {
+	var lines, orphans []string
+	for _, p := range a.Procs {
+		who := "foreign"
+		switch p.Kind {
+		case "card-closed":
+			who = "orphan of closed card " + p.Card
+			orphans = append(orphans, fmt.Sprint(p.PID))
+		case "card-live":
+			who = "live card " + p.Card
+		case "atrium":
+			who = "atrium"
+		}
+		line := fmt.Sprintf("- %d%% pid %d ppid %d up %s, %s: %s", int(p.CPUPct+0.5), p.PID, p.PPID, p.Etime, who, p.Command)
+		if p.Cwd != "" {
+			line += " (in " + p.Cwd + ")"
+		}
+		lines = append(lines, line)
+	}
+	return GrowlRow{
+		ID: room + "|room-cpu|" + a.HotSince, Room: room, Reason: reasonRoomCPU,
+		Title:   room + " is at high cpu with no agents running",
+		Body:    strings.Join(lines, "\n"),
+		Subject: strings.Join(orphans, ","),
+	}
+}
+
+func (p *Proxy) roomAlert(ctx context.Context, room string) roomAlert {
+	var body struct {
+		Alert *roomAlert `json:"alert"`
+	}
+	if !p.roomGet(ctx, room, "/v1/room/stats", &body) {
+		return roomAlert{}
+	}
+	if body.Alert == nil {
+		return roomAlert{ok: true}
+	}
+	body.Alert.ok = true
+	return *body.Alert
 }

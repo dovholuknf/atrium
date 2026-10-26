@@ -82,7 +82,7 @@ func storeFreeSources(clk Clock, out *[][]byte) Sources {
 		Worktrees:    func() (int, error) { return 38, nil },
 		Machine:      (&machineSeq{}).read,
 		Runners: func() ([]Runner, error) {
-			return []Runner{{"claude", true}, {"ollama", false}}, nil
+			return []Runner{{Kind: "claude", Resolves: true}, {Kind: "ollama"}}, nil
 		},
 		Publish: func(b []byte) { *out = append(*out, b) },
 	}
@@ -491,7 +491,7 @@ func TestFailingSamplerKeepsLastGoodValuesAndMarksStale(t *testing.T) {
 		if fail {
 			return nil, errors.New("boom")
 		}
-		return []Runner{{"claude", true}}, nil
+		return []Runner{{Kind: "claude", Resolves: true}}, nil
 	}
 	sm := New(src)
 	sm.SampleDisk()

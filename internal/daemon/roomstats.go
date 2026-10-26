@@ -64,13 +64,16 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 			}
 			out := make([]roomstats.Runner, 0, len(hs))
 			for _, h := range hs {
-				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: d.hk.runnerFound(h) != ""})
+				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: d.hk.runnerFound(h) != "", Enabled: h.Enabled})
 			}
 			return out, nil
 		},
+		Agents:  d.agentsRunning,
+		Procs:   d.topProcs,
 		Publish: func(b []byte) { d.ap.Broadcast("room-stats", json.RawMessage(b)) },
 	})
 	d.ap.RoomStats = s.Bytes
+	d.ap.KillOrphan = d.KillOrphan
 	stop := make(chan struct{})
 	go func() {
 		<-ctx.Done()

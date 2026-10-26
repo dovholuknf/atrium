@@ -349,6 +349,9 @@ type Server struct {
 	// or nil before the first. Does no work of its own. Owned by the daemon.
 	// See internal/roomstats.
 	RoomStats func() []byte
+	// KillOrphan is the room alert's kill: a process under a closed card's home, read again first. Owned by
+	// the daemon. See internal/daemon/roomalert.go.
+	KillOrphan func(pid int) error
 
 	// Overlays reports how the board can be reached from elsewhere, and turns
 	// those ways on and off. Supplied by the daemon, which owns the child
@@ -521,6 +524,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/usage", s.postBoardUsage)
 	mux.HandleFunc("GET /v1/usage/board", s.getBoardUsage)
 	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
+	mux.HandleFunc("POST /v1/room/procs/kill", s.roomKill)
 	mux.HandleFunc("GET /v1/settings", s.getSettings)
 	mux.HandleFunc("POST /v1/settings", s.setSettings)
 	mux.HandleFunc("GET /v1/fixtures", s.getFixtures)
@@ -3036,4 +3040,25 @@ func (s *Server) pendingMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+}
+
+// roomKill ends one orphan the room alert named. The daemon refuses anything
+// that is not under a closed card's home when it looks again.
+func (s *Server) roomKill(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PID int `json:"pid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PID <= 0 {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("a pid is required"))
+		return
+	}
+	if s.KillOrphan == nil {
+		writeErr(w, http.StatusServiceUnavailable, fmt.Errorf("this room cannot kill processes"))
+		return
+	}
+	if err := s.KillOrphan(body.PID); err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"killed": body.PID})
 }

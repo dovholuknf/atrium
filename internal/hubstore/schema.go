@@ -1129,6 +1129,41 @@ var migrations = []struct {
 			`UPDATE price SET cache_read = 0.10 WHERE model = 'claude-sonnet-5-5' AND valid_from = '2026-09-28T00:00:00Z'`,
 		},
 	},
+	{
+		// A GROWLER MAY BE ABOUT A ROOM'S ALERT, f-room-cpu-alert: hot with no agents, or an enabled runner not found.
+		// The reason CHECK gains both, rebuilt as 0031 did.
+		name: "0036_growl_room_alert",
+		stmts: []string{
+			`DROP TABLE IF EXISTS growl_rebuilt`,
+			`CREATE TABLE growl_rebuilt (
+				id          TEXT PRIMARY KEY,
+				room_id     TEXT NOT NULL,
+				card_id     TEXT NOT NULL DEFAULT '',
+				reason      TEXT NOT NULL CHECK (reason IN ('permission','halt','blocked','question','deploy-hold','ci',
+				                                            'room-cpu','runner-missing')),
+				title       TEXT NOT NULL,
+				body        TEXT NOT NULL DEFAULT '',
+				subject     TEXT NOT NULL DEFAULT '',
+				raised_at   TEXT NOT NULL,
+				state       TEXT NOT NULL CHECK (state IN ('open','snoozed','dismissed','acted','resolved')),
+				until       TEXT NOT NULL DEFAULT '',
+				reminders   INTEGER NOT NULL DEFAULT 0,
+				changed_at  TEXT NOT NULL,
+				changed_via TEXT NOT NULL DEFAULT '',
+				changed_tab TEXT NOT NULL DEFAULT '',
+				ended_at    TEXT NOT NULL DEFAULT ''
+			)`,
+			`INSERT INTO growl_rebuilt (id, room_id, card_id, reason, title, body, subject, raised_at, state, until, reminders,
+					changed_at, changed_via, changed_tab, ended_at)
+				SELECT id, room_id, card_id, reason, title, body, subject, raised_at, state, until, reminders,
+					changed_at, changed_via, changed_tab, ended_at
+				FROM growl`,
+			`DROP TABLE growl`,
+			`ALTER TABLE growl_rebuilt RENAME TO growl`,
+			`CREATE INDEX IF NOT EXISTS growl_room ON growl (room_id, reason, ended_at)`,
+			`CREATE INDEX IF NOT EXISTS growl_state ON growl (state)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

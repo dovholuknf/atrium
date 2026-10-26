@@ -83,6 +83,7 @@ type Disk struct {
 type Runner struct {
 	Kind     string `json:"kind"`
 	Resolves bool   `json:"resolves"`
+	Enabled  bool   `json:"-"`
 }
 
 // Snapshot is the event.
@@ -99,6 +100,7 @@ type Snapshot struct {
 	// RunnersStaleSince is the runners array's stale mark, since an array
 	// carries no field of its own.
 	RunnersStaleSince string `json:"runners_stale_since,omitempty"`
+	Alert             *Alert `json:"alert,omitempty"`
 }
 
 // Clock is time, so a test can drive the cadence.
@@ -135,6 +137,10 @@ type Sources struct {
 	// Worktrees counts distinct existing card worktrees the room knows.
 	Worktrees func() (int, error)
 	Runners   func() ([]Runner, error)
+	// Agents is how many cards are mid-turn. Nil leaves the hot alert off.
+	Agents func() int
+	// Procs is the TopProcs busiest processes, classified. Read only while the alert is hot.
+	Procs func() ([]Proc, error)
 	// Machine reads whole-machine CPU counters and memory.
 	Machine func() (MachineReading, error)
 	// Drift is the timer-lateness probe. Run starts it.
@@ -159,6 +165,9 @@ type Sampler struct {
 	havePrevCPU         bool
 	cpuRing, memRing    *minuteAvg
 	driftRing           *minuteAvg
+
+	hotStart, procsAt time.Time
+	hotProcs          []Proc
 }
 
 // New builds a sampler. Nothing runs until Run.
@@ -278,6 +287,23 @@ func (s *Sampler) Tick() {
 	if s.src.Runners != nil {
 		runners, runErr = s.src.Runners()
 	}
+	agents := -1
+	if s.src.Agents != nil {
+		agents = s.src.Agents()
+	}
+	s.mu.Lock()
+	want := s.wantProcs(now)
+	s.mu.Unlock()
+	var procs []Proc
+	procsOK := false
+	if want {
+		var err error
+		if procs, err = s.src.Procs(); err == nil {
+			procsOK = true
+		} else {
+			log.Printf("[atrium] room-stats procs: %v", err)
+		}
+	}
 
 	s.mu.Lock()
 	s.snap.V, s.snap.Room, s.snap.At = Version, s.src.Room, rfc(now)
@@ -307,6 +333,7 @@ func (s *Sampler) Tick() {
 			s.snap.RunnersStaleSince = st
 		}
 	}
+	s.sampleAlert(now, agents, procs, procsOK)
 	data, err := json.Marshal(&s.snap)
 	if err != nil {
 		s.mu.Unlock()
