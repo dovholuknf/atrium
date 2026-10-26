@@ -150,7 +150,7 @@ func TestTheHubRefusesABadQuestion(t *testing.T) {
 }
 
 // A HUB CLI THAT IS NOT LOGGED IN IS THE HUB'S ALERT: one growler, hung on the room that asked, the sentence names the
-// hub, and the next answer that works ends it.
+// hub, the next answer that works ends it, and it is never raised again.
 func TestTheHubRaisesTheForgeAlertOnceAndEndsItOnSuccess(t *testing.T) {
 	x := newForgeHub(t)
 	x.ff.err = &forge.AccessError{Tool: "gh", Host: "github.com", Detail: "not logged in"}
@@ -174,11 +174,22 @@ func TestTheHubRaisesTheForgeAlertOnceAndEndsItOnSuccess(t *testing.T) {
 	if len(x.growls.ended) != 1 || x.growls.ended[0] != g.ID {
 		t.Fatalf("ended = %v, want %s", x.growls.ended, g.ID)
 	}
-	// A new failure is a new alert under its own id.
 	x.ff.err = &forge.AccessError{Tool: "gh", Host: "github.com"}
 	x.ask(forge.HubPRPath, prAsk)
-	if len(x.growls.raised) != 2 || x.growls.raised[1].ID == g.ID {
-		t.Fatalf("raised = %+v", x.growls.raised)
+	if len(x.growls.raised) != 1 {
+		t.Fatalf("raised again after it ended: %+v", x.growls.raised)
+	}
+	// A restart forgets what is open, and a pruned row is no longer in the store.
+	f := x.p.forgeSide()
+	f.mu.Lock()
+	f.open = map[string]string{}
+	f.mu.Unlock()
+	x.growls.mu.Lock()
+	x.growls.raised, x.growls.ended = nil, nil
+	x.growls.mu.Unlock()
+	code, body := x.ask(forge.HubPRPath, prAsk)
+	if !strings.Contains(body, "gh auth login") || len(x.growls.raised) != 0 {
+		t.Fatalf("after the alert ended, answer = %d %s, raised = %+v", code, body, x.growls.raised)
 	}
 }
 

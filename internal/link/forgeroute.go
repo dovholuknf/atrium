@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,10 @@ import (
 // SettingForgeEntries is the hub setting that names the forge per host, a JSON list of forge.Entry. Empty is the
 // built-in table: github.com is GitHub and bitbucket.org is Bitbucket.
 const SettingForgeEntries = "forge.entries"
+
+// SettingForgeAlerted is the hub setting that lists each `tool@host` whose alert was ever raised, a JSON list. An
+// alert is raised once ever, so one dismissed for a CLI the hub will never have does not come back.
+const SettingForgeAlerted = "forge.alerted"
 
 // ForgeSettings is what the forge route needs of the hub's store. hubstore.Store has both.
 type ForgeSettings interface {
@@ -448,7 +453,7 @@ func forgeAlertID(tool, host string, at time.Time) string {
 
 func forgeAlertPrefix(tool, host string) string { return "forge|" + tool + "@" + host + "|" }
 
-// raise raises the hub's alert for a CLI, hung on the room that asked, once while it is open. It answers the
+// raise raises the hub's alert for a CLI, hung on the room that asked, once ever per `tool@host`. It answers the
 // sentence the room is told.
 func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bool, login string) string {
 	state := forgeLoggedOut
@@ -467,7 +472,16 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 	key := tool + "@" + host
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	alerted, err := f.alerted()
+	if err != nil {
+		log.Printf("[hub] the forge alerts already raised do not read: %v", err)
+		return msg
+	}
+	if slices.Contains(alerted, key) {
+		return msg
+	}
 	if id := f.open[key]; id != "" || f.openIn(g, tool, host) != "" {
+		f.markAlerted(alerted, key)
 		return msg
 	}
 	id := forgeAlertID(tool, host, time.Now())
@@ -478,11 +492,31 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 		return msg
 	}
 	f.open[key] = id
+	f.markAlerted(alerted, key)
 	if raised {
 		g.publish(nil)
 	}
 	p.RecordAudit(room, "forge-access", msg)
 	return msg
+}
+
+// alerted is each `tool@host` whose alert was ever raised. Called with f.mu held.
+func (f *hubForge) alerted() ([]string, error) {
+	raw, err := f.st.HubSetting(SettingForgeAlerted)
+	if err != nil || raw == "" {
+		return nil, err
+	}
+	var keys []string
+	err = json.Unmarshal([]byte(raw), &keys)
+	return keys, err
+}
+
+// markAlerted saves key as raised. Called with f.mu held.
+func (f *hubForge) markAlerted(alerted []string, key string) {
+	raw, _ := json.Marshal(append(alerted, key))
+	if err := f.st.SetHubSetting(SettingForgeAlerted, string(raw)); err != nil {
+		log.Printf("[hub] could not save the forge alert for %s as raised: %v", key, err)
+	}
 }
 
 // openIn finds an alert raised before this hub started, so a restart neither raises it again nor leaves it open
