@@ -154,7 +154,7 @@ type LaunchRequest struct {
 	// otherwise put a second runner in a directory that has one, and the two
 	// write to the same files while neither knows about the other.
 	//
-	//	""       start anyway, which is what the board does and the default
+	//	""       refuse when a live or parked card holds the directory, naming it
 	//	"skip"   hand back the card that is there and start nothing
 	//	"adopt"  start onto that card, unless something is already running on it
 	//
@@ -1058,6 +1058,20 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 
+	// ONE CARD PER DIRECTORY. A second card in a directory a live or parked card holds would take its hooks, so a
+	// launch that did not ask to skip or adopt is refused, naming that card.
+	if req.TaskID == "" && req.IfRunning == "" && home == nil && !throwaway {
+		if here, err := d.st.AdoptableTask(filepath.ToSlash(cwd)); err != nil {
+			return nil, err
+		} else if here != "" {
+			t, err := d.st.Get(here)
+			if err != nil {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%s already holds the card %s (%s). launch onto it, or pick another directory",
+				filepath.ToSlash(cwd), t.DisplayTitle(), t.ID)
+		}
+	}
 	// ONE SESSION PER DIRECTORY, when the caller asks for it. See `IfRunning`.
 	if req.TaskID == "" && req.IfRunning != "" {
 		here, err := d.st.AdoptableTask(filepath.ToSlash(cwd))
