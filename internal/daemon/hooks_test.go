@@ -14,6 +14,7 @@ import (
 // real, no PATH walk, and the waits are short. Each daemon has its own copy, so what one test changes after that
 // reaches no other.
 func testTune(hk *hooks) {
+	hk.silentNudges = 0
 	hk.agentSpawn = func(exe string, args []string) (string, []string) {
 		if !testguard.IsAgent(exe) {
 			return exe, args

@@ -783,3 +783,51 @@ func mustTask(t *testing.T, d *Daemon, id string) *store.Task {
 	}
 	return task
 }
+
+// A silent stop is nudged twice, and only the third reaches the launcher. A report after the first nudge ends it.
+func TestASilentStopIsNudgedTwiceBeforeTheLauncherHears(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	d.hk.silentNudges = 2
+	launcher, worker := launchedPair(t, d)
+
+	for i := 1; i <= 2; i++ {
+		stopSilentlyByID(t, d, worker.ID)
+		d.silentStop(worker.ID)
+		if n := len(pendingFrom(t, d, worker.ID)); n != i {
+			t.Fatalf("after silent stop %d the worker holds %d nudges, want %d", i, n, i)
+		}
+		if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+			t.Fatalf("the launcher heard at silent stop %d", i)
+		}
+	}
+	stopSilentlyByID(t, d, worker.ID)
+	d.silentStop(worker.ID)
+	if n := len(pendingFrom(t, d, worker.ID)); n != 2 {
+		t.Fatalf("the worker holds %d nudges after the third stop, want still 2", n)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
+		t.Fatalf("the launcher holds %d notices after the third silent stop, want 1", n)
+	}
+}
+
+func TestAReportAfterTheFirstNudgeLeavesTheLauncherUntold(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	d.hk.silentNudges = 2
+	launcher, worker := launchedPair(t, d)
+
+	stopSilentlyByID(t, d, worker.ID)
+	d.silentStop(worker.ID)
+	if rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
+		NoCommit: "research only", Recap: "done"}); rec.Code != http.StatusOK {
+		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
+	}
+	stopSilentlyByID(t, d, worker.ID)
+	d.silentStop(worker.ID)
+	for _, m := range pendingFrom(t, d, launcher.ID) {
+		if strings.Contains(m.Text, "without reporting") {
+			t.Fatalf("a silent-stop notice after a report: %q", m.Text)
+		}
+	}
+}
