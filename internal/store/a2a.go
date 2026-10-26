@@ -118,6 +118,39 @@ func (s *Store) SetLauncher(id, handle, parentID string) error {
 	})
 }
 
+// ErrParentCycle is a parent change that would make a card its own ancestor.
+var ErrParentCycle = errors.New("a card cannot nest under itself or under a card it launched")
+
+// ChangeParent nests a card under another card of this room, or under nobody when parent is nil. It is the operator's
+// edit, so it also drops `report_to`, which would otherwise resolve the old launcher again at the next delivery.
+func (s *Store) ChangeParent(id string, parent *Task) error {
+	handle, parentID := HumanLauncher, ""
+	if parent != nil {
+		handle, parentID = parent.WireName, parent.ID
+		// The walk is bounded so a cycle already on disk cannot hang the room.
+		for at, hops := parent, 0; at != nil && hops < 1000; hops++ {
+			if at.ID == id {
+				return ErrParentCycle
+			}
+			if at.SpawnedByID == "" {
+				break
+			}
+			next, err := s.Get(at.SpawnedByID)
+			if errors.Is(err, sql.ErrNoRows) {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			at = next
+		}
+	}
+	if err := s.SetReportTo(id, ""); err != nil {
+		return err
+	}
+	return s.SetLauncher(id, handle, parentID)
+}
+
 // MarkReported stamps the moment a card said something to its launcher.
 func (s *Store) MarkReported(id string) error {
 	return s.guard(func() error {

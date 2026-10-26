@@ -1,6 +1,6 @@
 // settings: settings, themes and skins, providers, preferences.
 //
-// Units: skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant.
+// Units: skinScope, skinHeal, settingsOnce, websiteSkin, prefsEverywhere, themePreview, themeLab, alias, parent, readTabSize, readWidthSkin, themePicker, themePickerShots, dropdownsInstant.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/settings.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -427,6 +427,39 @@ async function themePreviewSection(browser, base) {
     if (errors.length) fail("the theme preview page threw: " + errors.join(" | "));
   } finally {
     mock.tasksMode = was;
+    await ctx.close();
+  }
+}
+
+// ── a card's parent ───────────────────────────────────────────────────────
+// The card menu offers "change parent…", the dialog lists the room's other cards and "(no parent)", and the pick is
+// POSTed to the card's parent route. See js/parent.js.
+async function parentSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const pp = await ctx.newPage();
+  const errors = [];
+  pp.on("pageerror", e => errors.push(String(e)));
+  mock.parentWrites = [];
+  try {
+    await pp.goto(base, { waitUntil: "domcontentloaded" });
+    await pp.waitForFunction(() => typeof parentMenuItem === "function", null, { timeout: slow(15000) });
+    const item = await pp.evaluate(t1 => {
+      lastTasks = [Object.assign({}, t1, { id: "a1", wire_name: "orch" }), Object.assign({}, t1, { id: "b2", wire_name: "hook" }),
+        Object.assign({}, t1, { id: "x~c3", wire_name: "far" })];
+      const m = parentMenuItem(Object.assign({}, t1, { id: "b2", spawned_by: "orch" }));
+      return { label: m.label, note: m.note, values: parentChoices({ id: "b2" }).map(c => c.value) };
+    }, T1);
+    if (item.label !== "change parent…" || item.note !== "orch") fail("the parent menu item reads wrong: " + JSON.stringify(item));
+    if (item.values.join() !== "a1") fail("the parent choices are not the room's other cards: " + JSON.stringify(item));
+    await pp.evaluate(() => { window.__parentDone = changeParent("b2", { id: "b2" }); });
+    await pp.waitForSelector("#ask[open] #ask-choices", { timeout: slow(5000) });
+    await pp.selectOption("#ask-choices", "a1");
+    await pp.click("#ask-actions button.go");
+    await pp.evaluate(() => window.__parentDone);
+    const w = mock.parentWrites[0];
+    if (!w || w.id !== "b2" || w.body.parent !== "a1") fail("changing the parent did not POST it: " + JSON.stringify(mock.parentWrites));
+    if (errors.length) fail("parent: page errors: " + errors.join("; "));
+  } finally {
     await ctx.close();
   }
 }
@@ -1335,13 +1368,14 @@ const units = [
   { name: "themePreview", run: ({ browser, base }) => themePreviewSection(browser, base) },
   { name: "themeLab", run: ({ browser, base }) => themeLabSection(browser, base) },
   { name: "alias", run: ({ browser, base }) => aliasSection(browser, base) },
+  { name: "parent", run: ({ browser, base }) => parentSection(browser, base) },
   { name: "readTabSize", run: ({ browser, base }) => readTabSizeSection(browser, base) },
   { name: "readWidthSkin", run: ({ browser, base }) => readWidthSkinSection(browser, base) },
   { name: "themePicker", run: ({ browser, base }) => themePickerSection(browser, base) },
   { name: "themePickerShots", run: ({ browser, base }) => themePickerShotsSection(browser, base) },
   { name: "dropdownsInstant", run: ({ browser, base }) => dropdownsInstantSection(browser, base) },
 ];
-const sections = { skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection };
+const sections = { skinScope: skinScopeSection, skinHeal: skinHealSection, settingsOnce: settingsOnceSection, prefsEverywhere: prefsEverywhereSection, themePreview: themePreviewSection, themeLab: themeLabSection, alias: aliasSection, parent: parentSection, readTabSize: readTabSizeSection, readWidthSkin: readWidthSkinSection, themePicker: themePickerSection, themePickerShots: themePickerShotsSection, dropdownsInstant: dropdownsInstantSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
