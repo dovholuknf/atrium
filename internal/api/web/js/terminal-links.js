@@ -148,7 +148,7 @@ async function askProbe(id, paths, row) {
   }
 }
 
-// One link, with somewhere to go and something to say on the way.
+// One link, with somewhere to go.
 function fileLink(id, range, hit) {
   return {
     range,
@@ -164,16 +164,8 @@ function fileLink(id, range, hit) {
       if (hit.dir) openFromTerminal(id, hit);
       else if (viewAtOnce(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
-    },
-    hover: (ev) => linkTipShow(ev, hit.rel, fileLinkTip(hit)),
-    leave: () => linkTipLeave()
+    }
   };
-}
-
-function fileLinkTip(hit) {
-  if (hit.dir) return hit.rel + "/\nopens the file browser here";
-  const name = hit.rel + (hit.size ? "  (" + bytes(hit.size) + ")" : "");
-  return name + (viewAtOnce(hit.rel) ? "\nclick to view it in atrium" : "\nclick to view, edit or open it");
 }
 
 // A path that names somewhere outside the card. Its link opens nothing and says why, unless the room lets open

@@ -5184,78 +5184,6 @@ async function crossedPaneSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── hovering a file path underlines it and tips its name; a click opens the menu ──
-async function linkTipSection(browser, base) {
-  const was = mock.tasksMode;
-  mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  mock.landList = [mock.LAND["land-live"]];
-  mock.landPerms = [];
-  const errors = [];
-  const shots = process.env.LINKTIP_SHOTS || "";
-  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
-  const ctx = await landContext(browser);
-  await ctx.addInitScript(() => {
-    const Real = window.WebSocket;
-    window.WebSocket = function (url, protocols) {
-      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
-      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
-        onopen: null, onclose: null, onmessage: null, onerror: null,
-        send() {}, close() { this.readyState = 3; } };
-      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
-      return s;
-    };
-    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-  });
-  await ctx.route("**/files/probe", route => {
-    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
-    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
-  });
-  try {
-    const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await attachRetry(p, { unit: "linkTip", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.evaluate(() => new Promise(res => term.write("see src/alpha.go here\r\nsrc/beta.go\r\n", res)));
-    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
-    const cell = await p.evaluate(() => {
-      const d = term._core._renderService.dimensions.css.cell;
-      return { w: d.width, h: d.height };
-    });
-    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
-    const tipOn = () => p.evaluate(() => document.getElementById("tip").classList.contains("on"));
-    const underlined = () => p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) }).then(() => true, () => false);
-
-    await shot(p, "before-hover");
-    await p.mouse.move(...at(40, 5));
-    await p.mouse.move(...at(8, 0), { steps: 3 });
-    if (!await underlined()) { fail("hovering a path in the terminal did not underline it, so this proves nothing"); return; }
-    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000), polling: 10 }).catch(() => {});
-    const tipText = () => p.evaluate(() => document.getElementById("tip").textContent);
-    if (!await tipOn()) fail("hovering a file path showed no tip");
-    else if (!/src\/alpha\.go/.test(await tipText())) fail("the file tip does not name the file: " + await tipText());
-    await shot(p, "hover-tip");
-
-    await p.mouse.move(...at(3, 1), { steps: 2 });
-    if (!await underlined()) fail("hovering a second path did not underline it");
-    const next = Date.now() + slow(3000);
-    while (Date.now() < next && !/src\/beta\.go/.test(await tipText())) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
-    if (!/src\/beta\.go/.test(await tipText())) fail("hovering a second file path did not show its tip: " + await tipText());
-
-    await p.mouse.click(...at(3, 1));
-    const menu = await p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
-      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
-    if (!menu) fail("clicking a file path did not open the menu");
-    await shot(p, "click-menu");
-    if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
-  } finally {
-    mock.tasksMode = was;
-    await ctx.close();
-  }
-}
-
 // ── a path wrapped in backticks, quotes, parens or bold is still a link, and the wrapper is not in it ──
 // Claude Code puts paths in code spans and prose puts them in quotes and brackets. The link has to cover the path
 // and stop short of every character around it, whatever the path's shape and with or without a :line.
@@ -6040,11 +5968,18 @@ async function fileLinksViewSection(browser, base) {
     await p.mouse.click(...at(12, 0));
     await p.waitForTimeout(300); // wait: negative check, nothing may open after a click
     if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on") || window.__tabs.length > 0)) fail("clicking an outside path opened something");
-    t = await tipFor(20, 1, /README\.md/);
-    if (!/README\.md/.test(t) || /outside/.test(t)) fail("the inside path's tip was " + JSON.stringify(t));
-    await shot(p, "1-inside-tip");
-    t = await tipFor(5, 2, /click to view/);
-    if (!/click to view/.test(t) || /outside this card/.test(t)) fail("an outside path the room finds was not a file link: " + JSON.stringify(t));
+    const clickMenu = async (col, r) => {
+      await p.mouse.move(...at(60, 8));
+      await p.mouse.move(...at(col, r), { steps: 3 });
+      await p.mouse.click(...at(col, r));
+      const on = await p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
+        { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+      await p.keyboard.press("Escape");
+      return on;
+    };
+    if (!await clickMenu(20, 1)) fail("clicking an inside path did not open the file menu");
+    await shot(p, "1-inside-menu");
+    if (!await clickMenu(5, 2)) fail("an outside path the room finds was not a file link");
 
     // 3. the menu.
     const menuUp = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
@@ -26046,7 +25981,7 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, openExtAnywhere: openExtAnywhereSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, openExtAnywhere: openExtAnywhereSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
@@ -28351,7 +28286,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
       process.exitCode = 1;
     }
     // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
-    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
+    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection"]);
     const src = fs.readFileSync(__filename, "utf8");
     const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
     // a unit moved to scripts/board-tests/ is owned by the `{ name, run }` that calls its section there
