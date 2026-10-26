@@ -30563,8 +30563,8 @@ async function growlReplyGrowSection(browser, base) {
       if ((await size()).v !== "first\nsecond") fail(tag + "Shift+Enter did not make a newline: " + JSON.stringify((await size()).v));
       if (h.messages.length) fail(tag + "Shift+Enter sent.");
       await p.keyboard.press("Enter");
-      await until(() => h.messages.length, 5000, "the send").catch(() => {});
-      if (h.messages.length !== 1 || h.messages[0].body.text !== "first\nsecond") fail(tag + "Enter sent " + JSON.stringify(h.messages));
+      await p.waitForFunction(s => document.querySelector(s).value === "", box, { timeout: slow(5000) }).catch(() => {});
+      if (h.messages.length !== 1 || h.messages[0].body.text !== "first\nsecond") fail(tag + "Enter sent" + JSON.stringify(h.messages));
       if ((await size()).v !== "") fail(tag + "the box kept its text after sending.");
       // the bigger box keeps the text, takes the focus, and folds with Escape or its control
       await p.fill(box, "half a thought");
