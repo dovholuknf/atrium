@@ -130,5 +130,5 @@
   "scripts/board-tests/rooms.js": 13,
   "scripts/board-tests/settings.js": 18,
   "scripts/board-tests/usage.js": 25,
-  "scripts/test-board-headless.js": 580
+  "scripts/test-board-headless.js": 429
 }
