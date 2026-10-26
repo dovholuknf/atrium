@@ -11,7 +11,6 @@ type (
 const tokenPrefix = transport.TokenPrefix
 
 var (
-	handshakeClient  = transport.HandshakeClient
-	isLoopbackDirect = transport.IsLoopbackDirect
-	legacyTransport  = transport.LegacyTransport
+	handshakeClient = transport.HandshakeClient
+	legacyTransport = transport.LegacyTransport
 )

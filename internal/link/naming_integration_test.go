@@ -4,14 +4,12 @@ package link
 
 import (
 	"bufio"
-	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -215,85 +213,5 @@ func TestASpentSecretEnrolsNothing(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error, "used already") {
 		t.Fatalf("the room was told %q", resp.Error)
-	}
-}
-
-// AND A ROOM WHOSE RECORD GOES WHILE IT IS ATTACHED IS LET GO.
-//
-// The hub's store is a file, and `atrium2 hub room rm --force` is another
-// process writing to it. Checking only at attach would leave the hub proxying
-// to a room it has no record of: not on the list, not nameable, and not
-// something anything else in the design knows how to describe.
-func TestARoomWhoseRecordGoesIsLetGo(t *testing.T) {
-	h := NewHub(Timings{Beat: 20 * time.Millisecond, Silence: time.Hour})
-
-	var gone bool
-	var mu sync.Mutex
-	h.Attaching = func(string, string, string) error {
-		mu.Lock()
-		defer mu.Unlock()
-		if gone {
-			return errors.New("this hub has no room called sparta")
-		}
-		return nil
-	}
-
-	hub, room := net.Pipe()
-	defer room.Close()
-	// The room's side has to be read continuously or the pipe blocks the hub.
-	go func() {
-		buf := make([]byte, 256)
-		for {
-			if _, err := room.Read(buf); err != nil {
-				return
-			}
-		}
-	}()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	go h.control(ctx, "sparta", hello{}, hub, bufio.NewReader(hub), "")
-
-	waitFor(t, 5*time.Second, func() bool { return h.Has("sparta") })
-
-	mu.Lock()
-	gone = true
-	mu.Unlock()
-
-	waitFor(t, 5*time.Second, func() bool { return !h.Has("sparta") })
-}
-
-// A ROOM THE HUB HAS NO RECORD OF DOES NOT ATTACH, even holding papers this hub
-// signed. A room that was forced out keeps its certificate, and a hub that let
-// it back in would be proxying to something it cannot name, settle, or mark for
-// deletion.
-func TestARoomWithNoRecordIsTurnedAway(t *testing.T) {
-	h := NewHub(Timings{})
-	h.Attaching = func(name, _, _ string) error {
-		if name == "sparta" {
-			return nil
-		}
-		return errors.New("this hub has no room called " + name)
-	}
-
-	hub, room := net.Pipe()
-	defer hub.Close()
-	defer room.Close()
-
-	go h.control(t.Context(), "athens", hello{}, hub, bufio.NewReader(hub), "")
-
-	_ = room.SetDeadline(time.Now().Add(10 * time.Second))
-	var w welcome
-	if err := readJSON(bufio.NewReader(room), &w); err != nil {
-		t.Fatal(err)
-	}
-	if w.OK {
-		t.Fatal("a room the hub has no record of was adopted")
-	}
-	if !strings.Contains(w.Error, "no room called athens") {
-		t.Fatalf("the room was told %q", w.Error)
-	}
-	if h.Has("athens") {
-		t.Fatal("the refused room is in the hub's list anyway")
 	}
 }

@@ -1,4 +1,4 @@
-package link
+package conn
 
 import (
 	"bufio"
@@ -365,3 +365,18 @@ const (
 	PRClaimPrefix     = "/_claim/pr"
 	PRClaimRoomHeader = "X-Atrium-Claim-Room"
 )
+
+// GitRooms adapts this hub to what internal/gitsync needs of the link.
+func (h *Hub) GitRooms() gitsync.Rooms { return hubGitRooms{h} }
+
+type hubGitRooms struct{ h *Hub }
+
+func (g hubGitRooms) Attached() []gitsync.RoomInfo {
+	var out []gitsync.RoomInfo
+	for _, a := range g.h.Rooms() {
+		out = append(out, gitsync.RoomInfo{Name: a.Name, Host: a.Host, Git: a.Git})
+	}
+	return out
+}
+
+func (g hubGitRooms) Transport(room string) http.RoundTripper { return g.h.Transport(room) }

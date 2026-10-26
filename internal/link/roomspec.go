@@ -49,8 +49,7 @@ import (
 const (
 	roomSpecKind = wire.RoomSpecKind
 	// RoomSpecPrefix is the path the room asks, and RoomSpecRoomHeader carries the room the hello named.
-	RoomSpecPrefix     = "/_room/"
-	RoomSpecRoomHeader = "X-Atrium-Spec-Room"
+	RoomSpecPrefix = "/_room/"
 	// RoomSpecHashHeader carries the sha256 of the YAML on a spec answer.
 	RoomSpecHashHeader = "X-Atrium-Spec-Sha256"
 )
@@ -178,7 +177,7 @@ func roomSpecDo(ctx context.Context, d Dialer, room, method, path string, body [
 		return nil, nil, err
 	}
 	rt := &http.Transport{
-		DialContext:       func(context.Context, string, string) (net.Conn, error) { return &buffered{Conn: conn, br: br}, nil },
+		DialContext:       func(context.Context, string, string) (net.Conn, error) { return newBuffered(conn, br), nil },
 		DisableKeepAlives: true,
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://hub"+path, bytes.NewReader(body))

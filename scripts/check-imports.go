@@ -90,6 +90,10 @@ var table = []row{
 		"internal/base/cardcolors", "internal/base/dblock", "internal/base/docshare", "internal/gitsync", "internal/base/itemgate",
 		"internal/base/rules", "internal/base/sshkey", "internal/base/tokenprice",
 	}},
+	{3, "internal/link/conn", []string{
+		"internal/base/forge", "internal/base/remoteaccess", "internal/base/testwait", "internal/gitsync", "internal/link/transport",
+		"internal/link/wire",
+	}},
 	{3, "internal/runnersetup", []string{"internal/base/claudeconf", "internal/runnerprofile", "internal/store"}},
 	{3, "internal/shepherd", []string{"internal/gitsync", "internal/base/nowindow"}},
 	{3, "internal/worktrees", []string{"internal/gitsync"}},
@@ -103,7 +107,7 @@ var table = []row{
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
