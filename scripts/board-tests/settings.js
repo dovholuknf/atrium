@@ -118,20 +118,15 @@ async function settingsOnceSection(browser, base) {
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     // The answer is held until the room list has landed, so every read of the load is inside one round trip however slow the runner.
-    const roomsBy = Date.now() + 15000;
-    while (!roomsLanded && Date.now() < roomsBy) await sp.waitForTimeout(10);
+    await until(() => roomsLanded, 15000, "the room list", 10).catch(() => {});
     if (!roomsLanded) fail("the hub's room list never reached the page.");
     // The stream opening re-reads settings, so it has to open inside the held read too.
     await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
     await sp.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     release();
-    const skinBy = Date.now() + 15000;
-    let skin;
-    while (Date.now() < skinBy) {
-      skin = await sp.evaluate(() => document.documentElement.getAttribute("data-skin"));
-      if (skin === mock.skinFor[""]) break;
-      await sp.waitForTimeout(10);
-    }
+    await sp.waitForFunction(v => document.documentElement.getAttribute("data-skin") === v, mock.skinFor[""], { timeout: slow(15000) })
+      .catch(() => {});
+    const skin = await sp.evaluate(() => document.documentElement.getAttribute("data-skin"));
     if (settingsReads !== 1) fail("a board load read /v1/settings " + settingsReads + " times, not once.");
     if (skin !== mock.skinFor[""]) {
       fail("with the settings read shared, the skin did not land (got " + skin + ", want " + mock.skinFor[""] + ").");
@@ -600,7 +595,7 @@ async function aliasSection(browser, base) {
     await ap.fill("#ask-input", "@orch");
     await ap.click("#ask-actions button.go, #ask-actions button:last-child");
     await ap.waitForFunction(() => !document.querySelector("#ask[open]"), null, { timeout: slow(5000) });
-    for (let i = 0; i < 50 && !mock.aliasWrites.length; i++) await ap.waitForTimeout(50);
+    await until(() => mock.aliasWrites.length, 2500, "the alias PATCH", 50).catch(() => {});
     const bw = mock.aliasWrites.find(x => x.id === "t1");
     if (!bw || bw.body.alias !== "@orch") fail("setting the alias from the bar did not PATCH it: " + JSON.stringify(mock.aliasWrites));
   } finally {
@@ -632,7 +627,7 @@ async function readTabSizeSection(browser, base) {
     const open = async () => {
       await p.goto(base + "/read.html#land-live/docs%2Fplan.md", { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#md h1", { timeout: slow(8000) });
-      await p.waitForTimeout(200);
+      await settleStyle(p);
     };
     await open();
     if (shots) await p.screenshot({ path: path.join(shots, before ? "before.png" : "after.png") });
@@ -716,7 +711,7 @@ async function readWidthSkinSection(browser, base) {
       await p.waitForSelector("#md table", { timeout: slow(8000) }).catch(async e => {
         throw new Error(e.message + " body: " + (await p.evaluate(() => document.body.innerText.slice(0, 300))));
       });
-      await p.waitForTimeout(400);
+      await settleStyle(p);
     };
     const m = () => p.evaluate(() => {
       const w = e => Math.round(e.getBoundingClientRect().width);
@@ -857,13 +852,11 @@ async function skinScopeSection(browser, base) {
   const settled = async what => {
     await skin.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
       null, { timeout: slow(15000) }).catch(() => fail(what + ": the event stream never opened."));
-    await skin.evaluate(() => new Promise(r => setTimeout(r, 0)));
-    for (const end = Date.now() + 15000; settingsOut.size && Date.now() < end;) {
-      await skin.waitForTimeout(50);
-    }
+    await frames(skin, 1);
+    await until(() => !settingsOut.size, 15000, "the settings reads", 50).catch(() => {});
     if (settingsOut.size) fail(what + ": the settings reads never finished.");
     // One more turn of the page, so the last answer has been painted.
-    await skin.evaluate(() => new Promise(r => setTimeout(r, 0)));
+    await frames(skin, 1);
   };
   // scopeTo reloads the board into a scope (null for ALL) and waits for the
   // skin that scope wears to land and the reads behind it to finish.
@@ -969,7 +962,8 @@ async function skinScopeSection(browser, base) {
     // its body rather than being coalesced away. Then a room leaves and one
     // attaches: two changes to the attached set, neither of which is the ALL
     // scope the operator is on, so the settled skin must not move.
-    await skin.waitForTimeout(2200);
+    const pastThrottle = h => skin.waitForFunction(h => hubRead !== h && Date.now() - hubRead >= 2000, h, { timeout: slow(15000) });
+    await pastThrottle(null);
     // The re-read a room flip would do is `bootSkin`, counted. A stream that reopens meanwhile reads settings too,
     // and that read is right to win (the daemon's answer wins), so with one the skin itself is not judged.
     let reopened = 0;
@@ -980,11 +974,16 @@ async function skinScopeSection(browser, base) {
       window.bootSkin = (...a) => { window.__bootSkins++; return f(...a); };
     });
     mock.sggAttached = false;
+    const leftAt = await skin.evaluate(() => hubRead);
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-    await skin.waitForTimeout(2200);
+    await pastThrottle(leftAt);
     mock.sggAttached = true;
+    const cameAt = await skin.evaluate(() => hubRead);
+    const answered = skin.waitForResponse(r => new URL(r.url()).pathname === "/_hub/rooms", { timeout: slow(15000) }).catch(() => {});
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-    await skin.waitForTimeout(500);
+    await skin.waitForFunction(h => hubRead !== h, cameAt, { timeout: slow(15000) }).catch(() => {});
+    await answered;
+    await frames(skin, 2);
     const reread = await skin.evaluate(() => window.__bootSkins);
     if (reread) fail("a room attaching or leaving re-read the settled ALL skin " + reread + " times.");
     if (!reopened && (await dataSkin()) !== "vapor") {
@@ -1028,9 +1027,11 @@ async function skinHealSection(browser, base) {
     heal.on("console", m => console.error("[heal] " + m.type() + ": " + m.text()));
   }
   try {
+    const refused = heal.waitForResponse(r => new URL(r.url()).pathname === "/v1/settings" && r.status() === 409, { timeout: slow(15000) }).catch(() => {});
     await heal.goto(base, { waitUntil: "domcontentloaded" });
     // No room to borrow from: the load-time read 409s and the board is dark.
-    await heal.waitForTimeout(1500);
+    await refused;
+    await frames(heal, 2);
     const dark = await heal.evaluate(() =>
       document.documentElement.getAttribute("data-skin"));
     if (dark !== null) {
@@ -1039,7 +1040,7 @@ async function skinHealSection(browser, base) {
     }
     // Past loadHubRooms' 2s throttle, then a room attaches: the read now
     // succeeds and the skin heals to the hub's paper without a reload.
-    await heal.waitForTimeout(2200);
+    await heal.waitForFunction(() => Date.now() - hubRead >= 2000, null, { timeout: slow(15000) });
     mock.hubHasRoom = true;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await heal.waitForFunction(() =>
@@ -1073,8 +1074,7 @@ async function dropdownsInstantSection(browser, base) {
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length >= 2, null, { timeout: slow(15000) });
-    // Long enough for the 500ms answers to land if the board asks for them at start.
-    await p.waitForTimeout(1500);
+    await p.waitForFunction(() => allHarnesses.length > 0, null, { timeout: slow(15000) }).catch(() => {});
     const got = await p.evaluate(() => new Promise(done => {
       const t0 = performance.now();
       openLaunch(null, "", "", null, null);
@@ -1089,7 +1089,7 @@ async function dropdownsInstantSection(browser, base) {
     if (!got.runner.length) fail("dropdownsInstant: the runner select was empty when the dialog showed");
     // Nothing is rebuilt while it is open: a node that was in the DOM at the first frame is still there afterwards.
     const mark = await p.evaluate(() => { const o = document.querySelector("#l-room option"); if (o) o.dataset.mark = "1"; return document.getElementById("l-room").innerHTML; });
-    await p.waitForTimeout(1200);
+    await p.waitForTimeout(1200); // wait: a negative check, no late answer may rebuild the open dialog
     const after = await p.evaluate(() => ({ marked: !!document.querySelector("#l-room option[data-mark]"), html: document.getElementById("l-room").innerHTML,
       runner: document.getElementById("l-harness").innerHTML }));
     if (!after.marked || after.html !== mark) fail("dropdownsInstant: the room options were rebuilt after the dialog opened");
@@ -1279,10 +1279,11 @@ async function themePickerShotsSection(browser, base) {
     });
     await p.screenshot({ path: require("path").join(dir, prefix + "-attached-uncoloured.png") });
     await p.evaluate(() => { pickTheme(); const s = document.getElementById("skinlab-pick"); s.value = "nord"; previewLab(s.value); });
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => !document.getElementById("skinlab").hidden, null, { timeout: slow(5000) });
+    await settleStyle(p);
     await p.screenshot({ path: require("path").join(dir, prefix + "-picker.png") });
     await p.evaluate(() => { cancelLab(); openThemeEditor("nord"); document.getElementById("th-sample").scrollIntoView({ block: "end" }); });
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     await p.screenshot({ path: require("path").join(dir, prefix + "-themes-editor.png") });
   } finally {
     mock.tasksMode = was;

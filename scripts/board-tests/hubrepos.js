@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/hubrepos.js` runs just these units, the way the full run would.
 const path = require("path");
 const http = require("http");
-const { slow } = require("../lib/browser.js");
+const { slow, frames, settleStyle } = require("../lib/browser.js");
 const { mock } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { hubReposNoOverflow } = require("../lib/helpers.js");
@@ -35,14 +35,14 @@ async function hubReposSection(browser, base) {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
     // The board puts you back on the remembered view half a second after it loads, so wait that out or it lands on top of ours.
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(5000) }).catch(() => {});
     const open = async () => {
       await p.evaluate(() => {
         lastTasks = [{ id: "c-known", room: "sg4", title: "fix the x", display_title: "fix the x", status: "working" }];
         return switchView("hubrepos");
       });
-      await p.waitForFunction(() => hubRepos.loaded || hubRepos.note, null, { timeout: slow(10000) });
-      await p.waitForTimeout(200);
+      await p.waitForFunction(() => (hubRepos.loaded || hubRepos.note) && !hubRepos.inflight, null, { timeout: slow(10000) });
+      await frames(p, 2);
     };
     await open();
     const got = await p.evaluate(() => {
@@ -181,7 +181,7 @@ async function hubReposFixturePage(browser, base, o) {
     return switchView("hubrepos");
   }, { tasks: fx.tasks, view: o.view === undefined ? null : o.view });
   await p.waitForFunction(() => hubRepos.loaded && document.querySelector("#hubrepos-list .hr-root"), null, { timeout: slow(10000) });
-  await p.waitForTimeout(150);
+  await settleStyle(p);
   return { ctx, p, errors, fx, repos };
 }
 
@@ -193,10 +193,10 @@ async function hubReposShots(browser, base, view) {
     const { ctx, p } = await hubReposFixturePage(browser, base, { w, h: 900, view, empty: state === "empty" });
     try {
       await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
-      await p.waitForTimeout(150);
+      await settleStyle(p);
       const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
       await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
-      await p.waitForTimeout(200);
+      await settleStyle(p);
       await p.screenshot({ path: require("path").join(dir, view + "-" + state + "-" + w + "-" + skin + ".png") });
     } finally { await ctx.close(); }
   }
@@ -230,7 +230,7 @@ async function hubReposEscaped(p, tag) {
     hubRepos.sel = null; hubRepos.filter = ""; hubRepos.mode = {};
     hubReposPaint();
   });
-  await p.waitForTimeout(100);
+  await p.waitForTimeout(100); // wait: a negative check, no onerror may fire
   const r = await p.evaluate(() => { const l = document.getElementById("hubrepos-list");
     return { x: window.__x, img: l.querySelectorAll("img").length, raw: /<img/.test(l.innerHTML), text: l.textContent }; });
   if (r.x || r.img || r.raw) fail(tag + ": a name became markup: " + JSON.stringify({ x: r.x, img: r.img, raw: r.raw }));
@@ -416,7 +416,7 @@ async function hubReposTimelineDotsSection(browser, base) {
           if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin");
           document.body.style.zoom = String(z);
         }, { s: skin, z: zoom });
-        await p.waitForTimeout(150);
+        await settleStyle(p);
         const r = await p.evaluate(() => {
           const rail = document.querySelector(".hr-detail .hr-rail"), rs = getComputedStyle(rail, "::before");
           const line = parseFloat(rs.left) + parseFloat(rs.width) / 2;
@@ -432,7 +432,7 @@ async function hubReposTimelineDotsSection(browser, base) {
       }
       if (process.env.DOTS_SHOT) {
         await p.evaluate(() => { document.body.style.zoom = "1"; document.documentElement.setAttribute("data-skin", "paper"); });
-        await p.waitForTimeout(150);
+        await settleStyle(p);
         const rail = p.locator(".hr-detail .hr-rail"); await rail.scrollIntoViewIfNeeded();
         await rail.screenshot({ path: process.env.DOTS_SHOT });
       }
@@ -495,7 +495,7 @@ async function hubReposBranchesSection(browser, base) {
       const other = await ctx.newPage();
       await other.goto(base + "/", { waitUntil: "domcontentloaded" });
       await other.evaluate(() => localStorage.setItem("atrium.reposView", "ledger"));
-      await p.waitForTimeout(300);
+      await p.waitForTimeout(300); // wait: a negative check, the storage event must not move this window
       if ((await read()).view !== "branches") fail(tag + ": another window's choice moved this one off Branches");
       await other.close();
       // Leaving and coming back keeps this window's chips, and the switcher walks off it by key.
@@ -534,10 +534,10 @@ async function hubReposBranchesSection(browser, base) {
           await p.waitForFunction(() => document.querySelector("#hubrepos-list .hr-brtable"), null, { timeout: slow(8000) });
           await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
           await p.click('.hr-bfoot [data-act="brchip"]');
-          await p.waitForTimeout(250);
+          await settleStyle(p);
           const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
           await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
-          await p.waitForTimeout(200);
+          await settleStyle(p);
           await p.screenshot({ path: require("path").join(dir, "branches-" + w + "-" + skin + ".png") });
         } finally { await ctx.close(); }
       }

@@ -4,7 +4,7 @@
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
-const { slow } = require("../lib/browser.js");
+const { slow, frames } = require("../lib/browser.js");
 const { mock } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 
@@ -429,11 +429,11 @@ async function launchLinkSection(browser, base) {
       Object.defineProperty(window, "launchQueue", { configurable: true, value: { setConsumer: fn => { window.__consumer = fn; } } });
     });
     await p.goto(base + "/", { waitUntil: "load" });
-    await p.waitForTimeout(1200);
+    await p.waitForFunction(() => typeof window.__consumer === "function", null, { timeout: slow(5000) }).catch(() => {});
     if (!(await p.evaluate(() => typeof window.__consumer === "function"))) { fail("launchLink: the board registered no launchQueue consumer."); return; }
     await p.evaluate(() => { window.__lands = []; window.landOnAlert = (...a) => { window.__lands.push(a); }; });
     await p.evaluate(u => window.__consumer({ targetURL: u }), base + "/#term=s1");
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__lands.length > 0, null, { timeout: slow(5000) }).catch(() => {});
     let lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1 || lands[0][0] !== "s1") fail("launchLink: a #term= link landed " + JSON.stringify(lands));
     await p.evaluate(() => window.__consumer({ targetURL: "https://example.com/#term=s2" }));
@@ -447,8 +447,10 @@ async function launchLinkSection(browser, base) {
     const q = await ctx2.newPage();
     const e2 = [];
     q.on("pageerror", e => e2.push(String(e && e.message || e)));
+    const streamed = q.waitForRequest(r => new URL(r.url()).pathname.startsWith("/v1/events"), { timeout: slow(15000) }).catch(() => {});
     await q.goto(base + "/", { waitUntil: "load" });
-    await q.waitForTimeout(800);
+    await streamed;
+    await frames(q, 2);
     if (e2.length) fail("launchLink: without launchQueue the board threw " + e2.join(" | "));
     await ctx2.close();
   } finally { await ctx.close(); }
