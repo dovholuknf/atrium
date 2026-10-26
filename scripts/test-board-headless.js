@@ -11691,6 +11691,40 @@ async function questionsClickSection(browser, base) {
   if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
 }
 
+// Open questions read under the terminal row, one line each with how long they waited, beside the `? N` chip.
+async function questionLinesSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "qclick";
+  mock.qDismissed.clear();
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  const row = '#term-list .card.tab[data-id="qc1"]';
+  const lines = () => p.evaluate(r => [...document.querySelectorAll(r + " .seenq")]
+    .map(l => ({ q: (l.querySelector("span") || {}).textContent, t: (l.querySelector("time") || {}).textContent || "" })), row);
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof loadCards === "function" && typeof renderTermList === "function", null,
+      { timeout: slow(15000) });
+    await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
+    await p.waitForSelector(row + " .seenq", { state: "attached", timeout: slow(15000) });
+    const got = await lines();
+    if (got.map(l => l.q).join("|") !== "land sa21 first?|build the tray?") fail("questionLines: the row did not draw a line per question: " + JSON.stringify(got));
+    if (got.some(l => !l.t.trim())) fail("questionLines: a question line does not say how long it waited: " + JSON.stringify(got));
+    if (!(await p.locator(row + " .chip.questions").count())) fail("questionLines: the ? N chip is gone beside the lines");
+    mock.qDismissed.add("qc1");
+    await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
+    await p.waitForFunction(r => !document.querySelector(r + " .seenq"), row, { timeout: slow(5000) })
+      .catch(() => fail("questionLines: answered questions still draw lines"));
+  } finally {
+    await ctx.close();
+    mock.qDismissed.clear();
+    mock.tasksMode = was;
+  }
+  if (errors.length) fail("questionLines: the page threw: " + errors.join(" | "));
+}
+
 function sumCounts(counts) { return [...counts.values()].reduce((a, b) => a + b, 0); }
 async function eventDrivenSection(browser, base) {
   const was = mock.tasksMode, wasB = mock.mockBroadcast;
@@ -25961,7 +25995,7 @@ async function main() {
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, autoPerm: autoPermSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, walkContext: walkContextSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
+      questionsClick: questionsClickSection, questionLines: questionLinesSection, walk: walkSection, walkContext: walkContextSection, walkNoResize: walkNoResizeSection, linkReuse: linkReuseSection, linkBoard: linkBoardSection,
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
@@ -27808,6 +27842,7 @@ async function main() {
     await unit("autoPerm", () => autoPermSection(browser, base));
     await unit("notifyOff", () => notifyOffSection(browser, base));
     await unit("questionsClick", () => questionsClickSection(browser, base));
+    await unit("questionLines", () => questionLinesSection(browser, base));
     await unit("walk", () => walkSection(browser, base));
     await unit("walkContext", () => walkContextSection(browser, base));
     await unit("walkNoResize", () => walkNoResizeSection(browser, base));
