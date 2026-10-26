@@ -863,7 +863,7 @@ function cardHTML(t, wearAs) {
   // selection never starts. `data-rank` stays because the menu's up and down
   // are computed from the ranks on screen.
   return `<div class="card s-${state}${w ? " waiting" : ""}${
-      t.auto_approve ? " autoon" : ""}${wear ? wear.cls : ""}${newCardClass(t)}"${
+      t.auto_approve ? " autoon" : ""}${termCold(t) ? " cold" : ""}${wear ? wear.cls : ""}${newCardClass(t)}"${
       wear ? ` style="${wear.style}"` : ""}
     onclick="cardMenu(event, '${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}"
