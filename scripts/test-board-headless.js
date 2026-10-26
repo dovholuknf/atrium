@@ -28230,6 +28230,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("boardUsage", bu("boardUsage"));
+    await unit("pullsMorePending", bu("pullsMorePending"));
     await unit("pullsLiveSteps", bu("pullsLiveSteps"));
     await unit("pullsPasteOpening", bu("pullsPasteOpening"));
     await unit("pulls", bu("pulls"));

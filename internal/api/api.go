@@ -730,6 +730,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/prs/{id}/findings", s.getPRFindings)
 	mux.HandleFunc("PUT /v1/prs/{id}/findings/{key}", s.putPRFinding)
 	mux.HandleFunc("POST /v1/prs/{id}/findings/{key}/walk", s.walkPRFinding)
+	mux.HandleFunc("GET /v1/prs/{id}/panel", s.getPRPanel)
+	mux.HandleFunc("POST /v1/prs/{id}/panel", s.applyPRPanel)
 	mux.HandleFunc("POST /v1/prs/{id}/walker", s.walkerPR)
 	// A review moves with its PR: see `prsmove.go`.
 	mux.HandleFunc("GET /v1/prs/export", s.exportPR)

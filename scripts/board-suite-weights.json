@@ -199,6 +199,7 @@
   "pullsPage": 4000,
   "pullsPasteOpening": 3000,
   "pullsDrawer": 6709,
+  "pullsMorePending": 2500,
   "pullsPanelStage": 614,
   "questionsClick": 16999,
   "quickPaste": 6292,

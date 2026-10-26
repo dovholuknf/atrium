@@ -1212,7 +1212,93 @@ async function pullsLiveStepsSection(browser, base) {
   if (!bad) console.log("pullsLiveSteps ok");
 }
 
+// The walker's drawer says "more pending" while the panel cards it launched are live, and once merged.md lands asks keep both,
+// merge or replace. MORESHOT=/dir writes the pictures, MOREBEFORE=1 draws the drawer as it was without either.
+async function pullsMorePendingSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  mock.landList = [
+    landCard("land-pm1", { supervised: true, worktree: "/pr/walker" }),
+    landCard("land-pm2", { supervised: true, status: "running", pid: 1, spawned_by_id: "land-pm1", tags: ["atrium:subagent"] })
+  ];
+  mock.landPerms = [];
+  const errors = [], posts = [];
+  const PR = "https://github.com/openziti/r/pull/1";
+  const text = PR + "\nMED a/b.go line 7: x = 1\n\n* first bullet\n\nEvidence\nId: one\n";
+  const finding = { key: "f-one", position: 1, file: "01-med-b.go-L7.txt", sev: "med", path: "a/b.go", line: 7, code: "x = 1", link: "",
+    comment: "* first bullet", evidence: {}, leak: "", group: "", hunk: "", walk: { state: "open", at: "", url: "" }, text, hash: "h1" };
+  const panelFinding = Object.assign({}, finding, { key: "f-panel-high-01", position: 2, file: "02-high-c.go-L9.txt", sev: "high", path: "c.go",
+    line: 9, group: "panel", text: text.replace("MED a/b.go line 7", "HIGH c.go line 9") });
+  const st = { applied: "", findings: [finding] };
+  const row = { id: "pr_m", url: PR, host: "github.com", org: "openziti", repo: "r", org_repo: "openziti/r", number: 1, title: "title", why: "",
+    head: "", head7: "abc1234", state: "ready", run_state: "", run_error: "", cost_usd: 0, started_at: "", ready_at: "2026-10-01T09:20:00Z",
+    created_at: "2026-10-01T09:00:00Z", archived_at: "", run_dir: "", second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { accepted: 0, done: 0, skipped: 0, deferred: 0, open: 1 }, walker_task: "land-pm1" };
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route(/\/v1\/tasks\/land-pm1\/files\//, route => json(route, 404, { error: "no files here" }));
+  await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
+    const req = route.request(), p = new URL(req.url()).pathname;
+    if (p === "/v1/prs") return json(route, 200, { prs: [row], counts: { ready: 1 }, nav_count: 1 });
+    if (p === "/v1/prs/pr_m/findings") return json(route, 200, { pr: row, findings: st.findings });
+    if (p === "/v1/prs/pr_m/panel" && req.method() === "GET") return json(route, 200, { found: true, count: 3, skipped: 1, hash: "m1", applied: st.applied });
+    if (p === "/v1/prs/pr_m/panel") {
+      posts.push(JSON.parse(req.postData() || "{}"));
+      st.applied = posts[posts.length - 1].mode;
+      st.findings = [finding, panelFinding];
+      return json(route, 200, { ok: true, added: 1, skipped: 1 });
+    }
+    return json(route, 404, { error: "no route", code: "not_found" });
+  });
+  const shot = (p, name) => process.env.MORESHOT ? p.screenshot({ path: path.join(process.env.MORESHOT, name + ".png") }) : null;
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('#stack-list .stackrow[data-id="land-pm1"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForFunction(() => typeof pulls !== "undefined" && pulls.loaded, null, { timeout: slow(15000) });
+    if (process.env.MOREBEFORE) await p.evaluate(() => { walkPanelLive = () => 0; walkPanelAsk = async () => {}; });
+    await attachRetry(p, { unit: "pullsMorePending", id: "land-pm1", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-pm1" });
+    await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    await p.click("#t-walk");
+    await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 1, null, { timeout: slow(10000) });
+    const more = () => p.evaluate(() => { const e = document.getElementById("walk-more"); return e.hidden ? "" : e.textContent; });
+    if (!process.env.MOREBEFORE) {
+      if (await more() !== "more pending") fail("pullsMorePending: a live panel card did not say more pending: " + JSON.stringify(await more()));
+      if (await p.locator("#ask-actions button").first().isVisible()) fail("pullsMorePending: asked what to do before the panel was done");
+    }
+    await shot(p, "pending");
+    await p.evaluate(() => { lastTasks.find(t => t.id === "land-pm2").status = "done"; dockResync(); });
+    if (process.env.MOREBEFORE) { await shot(p, "ask"); return; }
+    await p.locator("#ask-actions button", { hasText: "keep both" }).waitFor({ timeout: slow(5000) })
+      .catch(() => fail("pullsMorePending: the finished panel was not asked about"));
+    if (await more()) fail("pullsMorePending: still says more pending with no live panel card");
+    await p.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running"), null, { timeout: slow(5000) });
+    await shot(p, "ask");
+    await p.locator("#ask-actions button", { hasText: "keep both" }).click();
+    await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail("pullsMorePending: the panel's finding did not join the rail"));
+    if (JSON.stringify(posts) !== JSON.stringify([{ mode: "both", hash: "m1" }])) fail("pullsMorePending: the panel was applied as " + JSON.stringify(posts));
+    if (await p.locator("#walk-rail .wk-grp").count() !== 1) fail("pullsMorePending: the panel's finding is not labelled panel");
+    await shot(p, "applied");
+    if (errors.length) fail("pullsMorePending: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); mock.tasksMode = was; mock.landList = []; }
+  if (!bad) console.log("pullsMorePending ok");
+}
+
 const units = [
+  { name: "pullsMorePending", run: ({ browser, base }) => pullsMorePendingSection(browser, base) },
   { name: "pullsLiveSteps", run: ({ browser, base }) => pullsLiveStepsSection(browser, base) },
   { name: "pullsPasteOpening", run: ({ browser, base }) => pullsPasteOpeningSection(browser, base) },
   { name: "pulls", run: ({ browser, base }) => pullsSection(browser, base) },
@@ -1222,7 +1308,7 @@ const units = [
   { name: "pullsDrawer", run: ({ browser, base }) => pullsDrawerSection(browser, base) },
   { name: "prMove", run: ({ browser, base }) => prMoveSection(browser, base) },
 ];
-const sections = { pullsLiveSteps: pullsLiveStepsSection, pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
+const sections = { pullsMorePending: pullsMorePendingSection, pullsLiveSteps: pullsLiveStepsSection, pullsPasteOpening: pullsPasteOpeningSection, pulls: pullsSection, pullsPanelStage: pullsPanelStageSection, pullsPage: pullsPageSection, pullsAbsent: pullsAbsentSection, pullsDrawer: pullsDrawerSection, prMove: prMoveSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

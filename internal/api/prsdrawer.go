@@ -72,6 +72,7 @@ type PRFinding struct {
 	Comment  string            `json:"comment"`
 	Evidence map[string]string `json:"evidence"`
 	Leak     string            `json:"leak"`
+	Group    string            `json:"group"`
 	Hunk     string            `json:"hunk"`
 	Walk     PRFindingWalk     `json:"walk"`
 	Text     string            `json:"text"`
@@ -133,6 +134,7 @@ func parseFinding(name string, pos int, sev string, raw []byte) PRFinding {
 		f.Evidence[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
 	f.Leak = f.Evidence["Leak"]
+	f.Group = f.Evidence["Group"]
 	if id := f.Evidence["Id"]; id != "" {
 		f.Key = "f-" + id
 	} else {

@@ -84,6 +84,15 @@
     background: var(--teal-bg); color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4);
   }
   .wk-lk + .wk-new { margin-left: var(--sp-2); }
+  .wk-grp {
+    margin-left: auto; font-size: var(--fs-xxs); padding: 0 var(--sp-2); border-radius: var(--r-pill);
+    color: var(--dim); border: 1px solid var(--dim);
+  }
+  .walk-head .walk-pending {
+    flex: 0 0 auto; font-size: var(--fs-xs); white-space: nowrap;
+    padding: 0 var(--sp-2); border-radius: var(--r-pill); color: var(--teal);
+    border: 1px solid rgba(var(--teal-rgb),.4); background: var(--teal-bg);
+  }
 
   .wk-sev {
     display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xxs);
