@@ -27658,6 +27658,7 @@ async function main() {
     await unit("backlogSearch", bu("backlogSearch"));
     await unit("backlogShow", bu("backlogShow"));
     await unit("backlogGroup", bu("backlogGroup"));
+    await unit("backlogNewItem", bu("backlogNewItem"));
     await unit("mergeStrip", bu("mergeStrip"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));

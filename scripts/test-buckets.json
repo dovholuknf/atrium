@@ -141,7 +141,7 @@
       "file": "scripts/board-tests/backlog.js",
       "page": "the backlog page: rows, sort, priority chips, the priority select, open and department filters",
       "units": ["backlog*"],
-      "sources": ["internal/api/web/js/backlog.js"],
+      "sources": ["internal/api/web/js/backlog.js", "internal/api/web/js/newitem.js"],
       "tests": [],
       "checks": []
     },
