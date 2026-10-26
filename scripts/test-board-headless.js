@@ -10442,7 +10442,7 @@ const ONE_HOVER_CARD = Object.assign({}, T1, {
   ask: "land sa21 first?", asks_open: 2,
   seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false, open_questions: ["land sa21 first?", "build the tray?"] },
   keepalive: { state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
-    warm_until: new Date(Date.now() + 30 * 60000).toISOString() },
+    warm_until: new Date(Date.now() + 30 * 60000).toISOString(), next_refresh_at: new Date(Date.now() + 25 * 60000).toISOString() },
 });
 // The two cards the peek is measured on: one open question and a recap, and a plain idle card.
 const OH_RECAP = "Moved the peek's size rules into one place and cut the card block, the usage grid and the cache paragraph. " +
