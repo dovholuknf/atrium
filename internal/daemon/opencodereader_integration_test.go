@@ -212,7 +212,7 @@ func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
 	for name, c := range cases {
 		for i := 0; i < 2; i++ { // the second call is not blocked by the first
 			ready := filepath.Join(t.TempDir(), "ready")
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			stopAt := make(chan time.Time, 1)
 			exited := make(chan struct{})
 			if c.keeps {
@@ -234,7 +234,7 @@ func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
 				}()
 			}
 			start := time.Now()
-			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script, "sh", ready}, 1<<20, 500*time.Millisecond)
+			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script, "sh", ready}, 1<<20, 100*time.Millisecond)
 			close(exited)
 			cancel()
 			select {
