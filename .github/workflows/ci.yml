@@ -19,6 +19,7 @@ on:
   push:
     branches: ["**", "!dependabot/**"]
   pull_request:
+    branches: [main, "dev-*"]
   workflow_dispatch:
     inputs:
       os:
