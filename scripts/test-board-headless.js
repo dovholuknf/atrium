@@ -8829,7 +8829,7 @@ async function termFindSpeakerSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── clean copy: a selection of a reply is copied as written───────────────
+// ── clean copy: a selection of a reply is copied as written ───────────────
 // A quoted block drawn with an indent, a bar and hard wraps is selected. A plain copy is the render. A "copy clean"
 // button pops up beside the selection, and clicking it copies the reply's own substring, markdown kept. No toast either
 // way. The button goes on clear, scroll and Escape, and never shows for a selection no reply holds or a failed endpoint.
@@ -25956,7 +25956,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, openExtAnywhere: openExtAnywhereSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection,cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
