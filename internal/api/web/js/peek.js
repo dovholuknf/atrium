@@ -223,10 +223,23 @@ function peekRows(t) {
   return (need.length ? `<div class="peek-sec need" data-drawer="need" data-label="needs you" data-sum="${esc(needSum)}">${need.join("")}</div>` : "") +
     peekKidsHtml(kids) +
     (t.lifetime ? `<div class="peek-sec">${row("lifetime", t.lifetime)}</div>` : "") +
+    peekIdHtml(t) +
     peekScratchHtml(t) +
     (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
       `<button type="button" class="peek-more" hidden>more</button></div>` : "");
 }
+
+// THE CARD'S ID, copyable on click, so it can still be read once the runner has exited.
+function peekIdHtml(t) {
+  if (!t || !t.id) return "";
+  return `<div class="peek-sec"><div class="peek-row"><b>id</b><span>${esc(t.id)}</span></div>` +
+    `<div class="peek-row"><button type="button" class="peek-copyid link" data-id="${esc(t.id)}" data-tip="copy the card id">copy id</button></div></div>`;
+}
+document.addEventListener("click", async ev => {
+  const b = ev.target && ev.target.closest && ev.target.closest(".peek-copyid");
+  if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.id); b.textContent = "copied"; } catch (e) { b.textContent = "copy failed"; }
+});
 
 // THE CARD'S SCRATCH FOLDER: where the room told it to put throwaway files, set by the room's scratch_root. Absent when the
 // room has none. "files" lists the folder and each file is a link to download it, both read with `?root=scratch`, which

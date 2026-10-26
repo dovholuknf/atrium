@@ -747,6 +747,7 @@ async function cardMenu(e, id) {
         : document.querySelector(`.card[data-id="${CSS.escape(id)}"], .stackrow[data-id="${CSS.escape(id)}"]`) ||
           { x: e.clientX, y: e.clientY }, "menu")
     },
+    { label: "copy id", act: () => { if (navigator.clipboard) navigator.clipboard.writeText(id).catch(() => {}); toast(id, "id copied"); } },
     { sep: true },
     // One entry, two ways to open it. Attaching and popping out are the same
     // intention with a different destination, so they are one row that says
