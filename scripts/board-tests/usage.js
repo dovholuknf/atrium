@@ -2221,7 +2221,7 @@ async function clockSection(browser, base) {
     const wa = await read(w);
     if (want && !near(wa.h, wa.m)) fail("clock: a pop-out window reads " + wa.h + ":" + wa.m + ", not near " + spec);
     if (Math.abs(wa.now - Date.now()) > 2000) fail("clock: a pop-out window disagrees with Node by " + (wa.now - Date.now()) + "ms");
-    await p.waitForTimeout(400); // wait: the real span the clock is measured across
+    await p.waitForFunction(t0 => Date.now() - t0 >= 400, a.now, { timeout: slow(5000) });
     const b = await read(p);
     if (b.now - a.now < 300 || b.now - a.now > 3000) fail("clock: time did not advance sanely: " + (b.now - a.now) + "ms in 400ms");
     if (CLOCK_OFFSET) {
