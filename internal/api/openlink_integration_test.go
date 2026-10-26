@@ -48,11 +48,14 @@ func TestAnOpenLinkIsIssuedForOneLaunchableFileAndRedeemedOnce(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("issue answered %d: %s", w.Code, w.Body.String())
 	}
-	var out struct{ URL string }
+	var out struct{ URL, Install string }
 	_ = json.Unmarshal(w.Body.Bytes(), &out)
 	addr, card, tok, err := ParseOpenLink(out.URL)
 	if err != nil || addr != "127.0.0.1:7778" || card != task.ID {
 		t.Fatalf("link %q parsed as %q %q: %v", out.URL, addr, card, err)
+	}
+	if !filepath.IsAbs(strings.Trim(strings.TrimSuffix(out.Install, " open-handler install"), `"`)) {
+		t.Fatalf("install command %q does not name the binary by its full path", out.Install)
 	}
 	redeem := func(tk string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()

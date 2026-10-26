@@ -120,7 +120,7 @@ function extMain(id, path) {
         if (j && j.url) {
           location.href = j.url;
           btn.disabled = false;
-          note.textContent = "Asked your desktop to open it. If nothing opens, run once as the desktop user: atrium open-handler install";
+          note.textContent = "Asked your desktop to open it. If nothing opens, run once as the desktop user: " + j.install;
           note.hidden = false;
           return;
         }

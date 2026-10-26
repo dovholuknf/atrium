@@ -746,7 +746,7 @@ async function launchByLink(id, path) {
     setTimeout(() => {
       window.removeEventListener("blur", saw);
       document.removeEventListener("visibilitychange", saw);
-      if (!picked) toast("nothing opened it", "to open files here, run once as the desktop user: atrium open-handler install");
+      if (!picked) toast("nothing opened it", "to open files here, run once as the desktop user: " + r.install);
     }, 3000);
     location.href = r.url;
     return true;

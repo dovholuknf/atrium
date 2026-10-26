@@ -119,7 +119,14 @@ func (s *Server) launchLink(w http.ResponseWriter, r *http.Request) {
 	}
 	openGrants.m[tok] = openGrant{card: task.ID, rel: body.Path, exp: now.Add(openLinkTTL)}
 	openGrants.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"url": OpenLink(r.Host, task.ID, tok)})
+	install := "atrium open-handler install"
+	if exe, err := atriumExe(); err == nil {
+		if exe = filepath.FromSlash(exe); strings.ContainsRune(exe, ' ') {
+			exe = `"` + exe + `"`
+		}
+		install = exe + " open-handler install"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"url": OpenLink(r.Host, task.ID, tok), "install": install})
 }
 
 // redeemLink gives the handler the path a token was issued for, once. The file is judged again, so a path that
