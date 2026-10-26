@@ -30,6 +30,8 @@ const SWITCH_RECENT_STORE = "atrium.switch.recent";
 // two or three sessions being worked between are all there, short enough that
 // the list is still read at a glance rather than searched.
 const SWITCH_RECENT_KEEP = 8;
+// Dead cards drawn under the live ones, so one typed letter on a board of hundreds stays a short list.
+const SWITCH_DEAD_KEEP = 20;
 
 // Keys no browser hands over, whatever the page asks. Refused at the point of
 // binding rather than accepted and then found not to work, which is the exact
@@ -105,6 +107,8 @@ addEventListener("keydown", e => {
 // re-derived so the arrow keys and Enter agree with what is on the screen even
 // if a poll lands between the two.
 let swTasks = [], swRows = [], swQuery = "", swSel = 0;
+// Archived cards matching what is typed, read from `/v1/history`: the card map holds no archived card.
+let swGone = [], swGoneSeq = 0, swGoneTimer = 0;
 let swCapturing = false, swSaidTaken = "";
 // Whether the list has ever been answered. Only the empty state reads it, and
 // only so the first open in a window says "looking" rather than announcing
@@ -138,7 +142,7 @@ async function openSwitcher(opts) {
   // Painted from the card map (js/cards.js), which the event stream keeps
   // current, so the list is there in the frame the dialog opens. Only a board
   // that has never read its cards waits on the one read below.
-  if (cardsLoaded) { swTasks = cardList().filter(t => t.supervised); swLoaded = true; }
+  if (cardsLoaded) { swTasks = cardList(); swLoaded = true; }
   // Painted from what was last fetched, THEN again when the fresh answer
   // lands. The whole promise here is key, letters, Enter, and a list that
   // appears after a round trip is a list you have already typed into.
@@ -149,10 +153,8 @@ async function openSwitcher(opts) {
   swWatchForTheft();
   let all = null;
   try { all = await boardCards(); } catch (e) {}
-  // Terminals only. This list is a place to GO, and a card with nothing
-  // running is not one: the board and the stack restart a stopped session,
-  // with the whole card in front of you, which is where that belongs.
-  if (all) { swTasks = all.filter(t => t.supervised); swLoaded = true; }
+  if (all) { swTasks = all; swLoaded = true; }
+  swFindGone();
   if (dlg.open) paintSwitcher();
 }
 
@@ -264,15 +266,20 @@ function switcherRows() {
   const recent = swRecent();
   const here = swHere();
   const scored = [];
-  swTasks.forEach(t => {
+  // A card with nothing running is listed only once something is typed: with nothing typed the list is where to GO.
+  const known = new Set(swTasks.map(t => bareId(t.id)));
+  const pool = swQuery ? swTasks.concat(swGone.filter(t => !known.has(bareId(t.id))))
+    : swTasks.filter(t => t.supervised);
+  pool.forEach(t => {
     const s = swScore(t, swQuery);
     if (s < 0) return;
     const r = recent.indexOf(t.id);
-    scored.push({ t, s, r: r < 0 ? recent.length + 1 : r, real: !swQuery || swReal(t, swQuery) });
+    scored.push({ t, s, r: r < 0 ? recent.length + 1 : r, real: !swQuery || swReal(t, swQuery), dead: !t.supervised });
   });
   // A real match anywhere means the subsequence-only ones are not wanted. With no real match they are all there is.
   if (scored.some(x => x.real)) for (let i = scored.length - 1; i >= 0; i--) if (!scored[i].real) scored.splice(i, 1);
   scored.sort((a, b) => {
+    if (a.dead !== b.dead) return a.dead ? 1 : -1;
     if (swQuery && b.s !== a.s) return b.s - a.s;
     if (a.r !== b.r) return a.r - b.r;
     const w = (isWaiting(b.t) ? 1 : 0) - (isWaiting(a.t) ? 1 : 0);
@@ -282,7 +289,24 @@ function switcherRows() {
   // Where you already are, last. It is still listed, because a switcher that
   // hides a session makes you wonder whether it is gone.
   scored.sort((a, b) => (a.t.id === here ? 1 : 0) - (b.t.id === here ? 1 : 0));
-  return scored.map(x => x.t);
+  const live = scored.filter(x => !x.dead).length;
+  return scored.slice(0, live + SWITCH_DEAD_KEEP).map(x => x.t);
+}
+
+// The archived cards matching the longest typed term, read once typing pauses. `switcherRows` filters on every term.
+function swFindGone() {
+  clearTimeout(swGoneTimer);
+  const seq = ++swGoneSeq;
+  const term = swQuery.split(/\s+/).sort((a, b) => b.length - a.length)[0] || "";
+  if (!term || swLinkOf(swQuery)) { swGone = []; return; }
+  swGoneTimer = setTimeout(async () => {
+    let res = null;
+    try { res = await api("/v1/history?limit=100&q=" + encodeURIComponent(term)); } catch (e) {}
+    if (seq !== swGoneSeq || !res) return;
+    swGone = (res.tasks || []).filter(t => t.archived_at);
+    const dlg = switcherDlg();
+    if (dlg && dlg.open) paintSwitcher();
+  }, 150);
 }
 
 // A link in the field. It is the first row, so Enter on a pasted link opens it, and it is not a session.
@@ -298,6 +322,7 @@ function swSetQuery(text) {
   document.getElementById("sw-q").value = text;
   swQuery = text.trim();
   swSel = 0;
+  swFindGone();
   paintSwitcher();
 }
 
@@ -324,6 +349,7 @@ function paintSwitcher() {
         ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
+        ${t.supervised ? "" : `<span class="chip">${t.archived_at ? "archived" : "ended"}</span>`}
         <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(terminalLabel(t) || t.worktree || "")}</span>
       </div>`;
     }).join("")
@@ -352,6 +378,9 @@ function swMove(d) {
 // window has no pane to attach in, so it MOVES. See `soloSwitch`.
 async function switchTo(id) {
   if (!id) return;
+  const row = swRows.find(t => t.id === id);
+  // A dead card lands the way an alert does: on its card, to resume or to read, never a fresh launch.
+  if (row && !row.supervised) { closeSwitcher(); landOnAlert(id, "", ""); return; }
   swRemember(id);
   closeSwitcher();
   if (termOnly()) await soloSwitch(id);
@@ -428,6 +457,7 @@ async function soloSwitch(id) {
     // the highlighted row jumps to whatever is now in that position, which is
     // a different session and one keystroke from being opened.
     swSel = 0;
+    swFindGone();
     // A link is read as it is typed or pasted, so Enter has the answer already.
     const link = swLinkOf(swQuery);
     if (link) quickPasteWatch(link, e.inputType === "insertFromPaste");

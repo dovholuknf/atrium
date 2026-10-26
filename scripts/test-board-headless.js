@@ -21957,6 +21957,21 @@ async function switcherRankSection(browser, base) {
     // Two cards of one repo are told apart by their titles.
     const both = await rows("ziti-console");
     if (new Set(both.map(r => r.name)).size !== 2) fail("switcherRank: two cards of one repo read alike: " + JSON.stringify(both));
+    // A dead card is found once something is typed, under the live one, chipped ended or archived.
+    const gone = Object.assign(card("sw-d", "Config old", "/w/github/openziti/ziti-console", "old"), { supervised: false });
+    const idle = await rows("");
+    if (idle.some(r => r.id === "sw-d")) fail("switcherRank: a dead card is listed with nothing typed");
+    const dead = await p.evaluate(([cs, g]) => {
+      swTasks = cs;
+      swSetQuery("config");
+      swGone = [Object.assign({}, g, { id: "sw-e", archived_at: "2026-10-01T00:00:00Z" })];
+      paintSwitcher();
+      return [...document.querySelectorAll("#sw-list .swrow[data-id]")].map(r =>
+        r.dataset.id + ":" + [...r.querySelectorAll(".chip")].map(c => c.textContent).filter(c => /^(ended|archived)$/.test(c)).join("/"));
+    }, [cards.concat(gone), gone]);
+    if (dead[0] !== "sw-a:" || dead.slice(1).sort().join() !== "sw-d:ended,sw-e:archived") {
+      fail("switcherRank: config should list sw-a, then sw-d ended and sw-e archived, got " + dead.join());
+    }
     if (errors.length) fail("switcherRank: page errors: " + errors.join(" | "));
   } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("switcherRank ok");
