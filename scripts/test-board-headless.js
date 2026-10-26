@@ -15634,7 +15634,7 @@ async function popoutRaiseSection(browser, base) {
       };
       const first = await click("first");
       if (first !== "opened") fail("popoutRaise: the first click answered " + first);
-      await settled();
+      await page.waitForFunction(() => soloHeld.has("land-a"), null, { timeout: slow(5000) }).catch(() => {});
       if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after the first click");
       if (await click("second") !== "raised") fail("popoutRaise: the second click did not raise by handle");
 
