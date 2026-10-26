@@ -782,8 +782,10 @@ async function contextCycleSection(browser, base) {
       return { before, after: Number(row.querySelector(".stepval").value) };
     });
     if (!cog || cog.after !== cog.before + 1) fail("the cog's context limit row did not step: " + JSON.stringify(cog));
-    await new Promise(r => setTimeout(r, 300));
-    if (!patches.some(p => p.overrides && p.overrides.context_limit_k === String(cog.before + 1)))
+    const cogK = String(cog && cog.before + 1);
+    await wp.waitForFunction(v => termTask.overrides && termTask.overrides.context_limit_k === v, cogK, { timeout: slow(5000) })
+      .catch(() => {});
+    if (!patches.some(p => p.overrides && p.overrides.context_limit_k === cogK))
       fail("the cog's context limit did not save as an override: " + JSON.stringify(patches));
 
     // The history: the start as a line, the handoff as a row with its text behind a disclosure, escaped.
