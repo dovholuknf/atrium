@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // postGate sends one ask or poll and decodes the answer.
@@ -124,17 +126,10 @@ func TestAHeldAskWithNobodyPollingIsDropped(t *testing.T) {
 	if e := waitEvent(t, events, restartEvent); fields(t, e.Data)["state"] != "cancelled" {
 		t.Fatalf("an ask nobody polled said %s, not cancelled", e.Data)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	testwait.EventuallyHTTP(t, 2*time.Second, "a dropped ask to answer gone", func() bool {
 		code, _ := postGate(t, front.URL, `{"ask":"`+id+`","hold":0.1}`)
-		if code == http.StatusGone {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("a dropped ask still answered %d", code)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return code == http.StatusGone
+	})
 	if st := p.restart.state(); st["waiting"] != false {
 		t.Errorf("a dropped ask still holds the slot: %v", st)
 	}

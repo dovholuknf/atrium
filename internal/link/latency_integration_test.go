@@ -100,7 +100,7 @@ func echoTimes(t *testing.T, base string, n int, gap time.Duration) []time.Durat
 			t.Fatal(err)
 		}
 		out = append(out, time.Since(t0))
-		time.Sleep(gap)
+		time.Sleep(gap) // wait: the gap between keystrokes is what is measured
 	}
 	return out
 }
@@ -256,7 +256,7 @@ func TestProbeSchedulingHiccups(t *testing.T) {
 	}
 	for end := time.Now().Add(d); time.Now().Before(end); {
 		t0 := time.Now()
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) // wait: how late a 1ms sleep wakes is what is measured
 		if late := time.Since(t0) - time.Millisecond; late >= 15*time.Millisecond {
 			t.Logf("hiccup %s %v", time.Now().Format("15:04:05.000"), late)
 		}

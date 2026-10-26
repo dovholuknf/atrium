@@ -66,7 +66,7 @@ func TestNotifyCommandNeverSeesWhatACardHolds(t *testing.T) {
 		t.Fatalf("argv %v", rec.Args)
 	}
 	until(t, "the run to be recorded", func() bool { return n.Status().Sent == 1 })
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the status must never come to name the canary
 	if s := n.Status(); strings.Contains(strings.Join(s.Command, " "), "CANARY") {
 		t.Fatalf("status %+v", s)
 	}

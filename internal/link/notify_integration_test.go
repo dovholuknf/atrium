@@ -120,7 +120,7 @@ func until(t *testing.T, what string, ok func() bool) {
 	testwait.Eventually(t, 5*time.Second, what, ok)
 }
 
-func settle() { time.Sleep(150 * time.Millisecond) }
+func settle() { time.Sleep(150 * time.Millisecond) } // wait: callers check that no further notice comes
 
 func ncard(id, extra string) CardState {
 	body := fmt.Sprintf(`{"id":%q,"title":"title-%s"%s}`, id, id, extra)

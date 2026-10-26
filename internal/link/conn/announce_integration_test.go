@@ -284,7 +284,7 @@ func TestNothingIsSentWhenNothingChanged(t *testing.T) {
 	// looks like to this.
 	for i := 0; i < 10; i++ {
 		state.set(map[string]any{"id": "one", "status": "running"})
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: events spread over time are what is under test
 	}
 	// A real change, announced only after anything the ten events sent.
 	state.set(map[string]any{"id": "one", "status": "done"})
@@ -508,7 +508,7 @@ func TestARoomDoesNotAnnounceAtAHubThatKeepsNothing(t *testing.T) {
 	waitFor(t, announceWait, func() bool { return hub.Has("testroom") })
 
 	state.set(map[string]any{"id": "one", "status": "done"})
-	time.Sleep(2 * announceEvery)
+	time.Sleep(2 * announceEvery) // wait: a negative check, nothing must be announced
 
 	mu.Lock()
 	defer mu.Unlock()

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
@@ -108,14 +109,13 @@ func getReadyOnce(t *testing.T, p *Proxy, target string) deployReadyView {
 func getReady(t *testing.T, p *Proxy) deployReadyView {
 	t.Helper()
 	v := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
-	deadline := time.Now().Add(10 * time.Second)
-	for v.Building {
-		if time.Now().After(deadline) {
-			t.Fatalf("the hub is still building: %+v", v.Report)
+	testwait.Eventually(t, 10*time.Second, "the hub to stop building", func() bool {
+		if !v.Building {
+			return true
 		}
-		time.Sleep(10 * time.Millisecond)
 		v = getReadyOnce(t, p, "/_hub/deploy-ready")
-	}
+		return !v.Building
+	})
 	return v
 }
 
@@ -255,19 +255,13 @@ func TestDeployClickStartsOneScriptWithTheTipItWasShown(t *testing.T) {
 	}
 
 	(*started)[0].finish <- 3
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		v := getReady(t, p)
-		if v.Deploy.State == "finished" {
-			if v.Deploy.Exit == nil || *v.Deploy.Exit != 3 {
-				t.Fatalf("deploy = %+v", v.Deploy)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("never finished: %+v", v.Deploy)
-		}
-		time.Sleep(20 * time.Millisecond)
+	var v deployReadyView
+	testwait.Eventually(t, 5*time.Second, "the deploy to finish", func() bool {
+		v = getReady(t, p)
+		return v.Deploy.State == "finished"
+	})
+	if v.Deploy.Exit == nil || *v.Deploy.Exit != 3 {
+		t.Fatalf("deploy = %+v", v.Deploy)
 	}
 }
 
@@ -378,19 +372,11 @@ func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testin
 	if first.State != deployready.StateUnknown || first.Ready || !first.Building || first.Computed != "" {
 		t.Fatalf("first = %+v", first)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	testwait.Eventually(t, 2*time.Second, "the pass to reach git", func() bool {
 		slow.mu.Lock()
-		n := slow.calls
-		slow.mu.Unlock()
-		if n > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the pass never reached git")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		defer slow.mu.Unlock()
+		return slow.calls > 0
+	})
 	start = time.Now()
 	second := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
 	if d := time.Since(start); d > 200*time.Millisecond {
@@ -401,17 +387,13 @@ func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testin
 	}
 
 	// At the bound the pass gives up, and the answer says so and is no longer building.
-	for end := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		v := getReadyOnce(t, p, "/_hub/deploy-ready")
-		if !v.Building {
-			if v.State != deployready.StateUnknown || v.Ready || !strings.Contains(v.Error, "timed out") || v.Computed == "" {
-				t.Fatalf("after the bound = %+v", v)
-			}
-			break
-		}
-		if time.Now().After(end) {
-			t.Fatal("the pass was not ended at the bound")
-		}
+	var v deployReadyView
+	testwait.Eventually(t, 3*time.Second, "the pass to end at the bound", func() bool {
+		v = getReadyOnce(t, p, "/_hub/deploy-ready")
+		return !v.Building
+	})
+	if v.State != deployready.StateUnknown || v.Ready || !strings.Contains(v.Error, "timed out") || v.Computed == "" {
+		t.Fatalf("after the bound = %+v", v)
 	}
 }
 

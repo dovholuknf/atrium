@@ -52,7 +52,7 @@ func notifyHelper(mode string) int {
 		fmt.Fprintln(os.Stderr, "second line")
 		return 3
 	case "sleep":
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) // wait: a hung notify command is what is under test
 		return 0
 	case "flood":
 		chunk := bytes.Repeat([]byte("x"), 4096)
