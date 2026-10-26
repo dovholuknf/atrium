@@ -224,6 +224,36 @@ function swReal(t, q) {
   return terms.every(term => hay.includes(term));
 }
 
+// The title with what was typed marked, so a row says why it matched.
+function swMark(text, q) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const low = text.toLowerCase();
+  const on = new Array(text.length).fill(false);
+  terms.forEach(term => {
+    const at = low.indexOf(term);
+    if (at >= 0) for (let i = at; i < at + term.length; i++) on[i] = true;
+  });
+  let out = "";
+  for (let i = 0; i < text.length;) {
+    let j = i;
+    while (j < text.length && on[j] === on[i]) j++;
+    const part = esc(text.slice(i, j));
+    out += on[i] ? `<mark class="swhit">${part}</mark>` : part;
+    i = j;
+  }
+  return out;
+}
+
+// The enabled runners whose name holds every term. Only when something is typed: with nothing typed the list is places to go.
+function swRunnerRows(q) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length || typeof allHarnesses === "undefined") return [];
+  return allHarnesses.filter(h => {
+    const hay = (String(h.label || "") + " " + h.id).toLowerCase();
+    return h.enabled && terms.every(term => hay.includes(term));
+  }).map(h => ({ harness: h.id, label: h.label || h.id }));
+}
+
 function swSubseq(hay, needle) {
   let i = 0;
   for (const ch of hay) {
@@ -330,7 +360,7 @@ function paintSwitcher() {
   const host = document.getElementById("sw-list");
   if (!host) return;
   const link = swLinkOf(swQuery);
-  swRows = (link ? [{ link }] : []).concat(switcherRows());
+  swRows = (link ? [{ link }] : []).concat(switcherRows(), swRunnerRows(swQuery));
   if (swSel >= swRows.length) swSel = Math.max(0, swRows.length - 1);
   const here = swHere();
   setHTML(host, swRows.length
@@ -341,10 +371,18 @@ function paintSwitcher() {
       <div class="swrow swopen ${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
         id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}">${r.html}</div>`;
       }
+      if (t.harness) {
+        return `
+      <div class="swrow ${i === swSel ? "on" : ""}" data-harness="${esc(t.harness)}">
+        ${runnerMark(t.harness)}
+        <span class="swname">${swMark(t.label, swQuery)}</span>
+        <span class="swdir">new agent</span>
+      </div>`;
+      }
       return `
       <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
         ${runnerMark(t.runner)}
-        <span class="swname">${esc(t.display_title || t.title || terminalLabel(t))}</span>
+        <span class="swname">${swMark(String(t.display_title || t.title || terminalLabel(t) || ""), swQuery)}</span>
         ${sameCard(t.id, here) ? `<span class="chip">here</span>` : ""}
         ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
@@ -358,10 +396,16 @@ function paintSwitcher() {
   // The id travels in a data attribute and comes back through the DOM, never
   // through an inline handler. The house rule, and it costs nothing here.
   host.querySelectorAll(".swrow").forEach(el => {
-    el.onclick = e => el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey) : switchTo(el.dataset.id);
+    el.onclick = e => el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey)
+      : el.dataset.harness ? swLaunch(el.dataset.harness) : switchTo(el.dataset.id);
   });
   const on = host.querySelector(".swrow.on");
   if (on) on.scrollIntoView({ block: "nearest" });
+}
+
+function swLaunch(harness) {
+  closeSwitcher();
+  openLaunch(harness);
 }
 
 function swMove(d) {
@@ -471,6 +515,7 @@ async function soloSwitch(id) {
       const t = swRows[swSel];
       // Shift-Enter on a link stops at the launch dialog. On a session it is Enter.
       if (t && t.link) quickPasteGo(t.link, e.shiftKey);
+      else if (t && t.harness) swLaunch(t.harness);
       else if (t) switchTo(t.id);
     }
     // Escape is the dialog's own and needs nothing here.

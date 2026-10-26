@@ -22123,6 +22123,14 @@ async function switcherRankSection(browser, base) {
     // With no real match, the scattered one is all there is and stays.
     const scatter = await rows("uixtlsfig");
     if (scatter.map(r => r.id).join() !== "sw-c") fail("switcherRank: a scattered query with no real match should keep sw-c, got " + scatter.map(r => r.id).join());
+    // The typed text is marked in the title, and a runner is a row that opens the launch dialog on it.
+    const marked = await p.evaluate(() => {
+      allHarnesses = [{ id: "claude-slim", label: "claude slim (orchestrator)", enabled: true, found: true }];
+      swSetQuery("slim");
+      const r = document.querySelector("#sw-list .swrow[data-harness]");
+      return r ? { name: r.querySelector(".swhit") && r.querySelector(".swhit").textContent, id: r.dataset.harness } : null;
+    });
+    if (!marked || marked.id !== "claude-slim" || marked.name !== "slim") fail("switcherRank: a runner row was not offered and marked: " + JSON.stringify(marked));
     // Two cards of one repo are told apart by their titles.
     const both = await rows("ziti-console");
     if (new Set(both.map(r => r.name)).size !== 2) fail("switcherRank: two cards of one repo read alike: " + JSON.stringify(both));

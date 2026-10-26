@@ -279,9 +279,10 @@
     border: 1px solid transparent;
   }
   #switcher .swrow .swname {
-    color: var(--head); font-size: var(--fs-md); white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto;
+    color: var(--head); font-size: var(--fs-md); white-space: normal;
+    overflow-wrap: anywhere; flex: 0 1 auto;
   }
+  #switcher .swhit { background: none; color: var(--teal); font-weight: 600; }
   /* The directory, truncated from the left. What tells two sessions apart is the end of the path, and every one
      of these opens with the same three segments. */
   #switcher .swdir {
