@@ -403,7 +403,8 @@ func TestASweepAndAnEventForOneRequestDecideOnce(t *testing.T) {
 	l.pending["p1"] = true
 	l.mu.Unlock()
 	l.say <- sse("permission", `{"id":"p1","tool":"Bash"}`)
-	time.Sleep(600 * time.Millisecond)
+	l.raise("p1b")
+	waitFor(t, 5*time.Second, func() bool { _, d := l.counts(); return d["p1b"] == 1 })
 	if _, d := l.counts(); d["p1"] != 1 {
 		t.Fatalf("p1 was decided %d times", d["p1"])
 	}

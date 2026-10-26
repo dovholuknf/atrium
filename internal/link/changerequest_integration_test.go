@@ -129,6 +129,19 @@ func (x *crRig) owner(t *testing.T, branch, sha, room, card string) {
 	}
 }
 
+// settled is the sentinel for "nobody was told": a request that does tell sg4's card, whose message arriving
+// means everything sent before it has been delivered. It returns the messages with the sentinel's included.
+func (x *crRig) settled(t *testing.T, branch string, before int) int {
+	t.Helper()
+	x.hubPush(t, x.c[2], branch)
+	x.owner(t, branch, x.c[2], "sg4", "s1")
+	if code, c := x.create(t, x.op, hubReq(branch, "other")); code != http.StatusCreated {
+		t.Fatal(code, c)
+	}
+	waitFor(t, 5*time.Second, func() bool { return len(x.rp.sg4.messages()) > before })
+	return len(x.rp.sg4.messages())
+}
+
 func (x *crRig) tip(room, branch, sha string) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -1036,8 +1049,7 @@ func TestTheOwnerCardIsToldAsAnFyiWithTheWordsQuotedAsData(t *testing.T) {
 	}
 	waitFor(t, 5*time.Second, func() bool { return len(x.rp.sg4.messages()) == 3 })
 	x.do(t, x.asCard("sg4", "s1"), "cr_2", map[string]any{"do": "close"})
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 3 {
+	if n := x.settled(t, "claude/sentinel", 3); n != 4 {
 		t.Errorf("the owner was told of its own close: %d messages", n)
 	}
 }
@@ -1059,8 +1071,7 @@ func TestNobodyIsToldWhenThereIsNoOwnerOrTheChangeWasRefused(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return len(x.rp.sg4.messages()) == 1 })
 	// a refused change tells nobody
 	x.do(t, x.asCard("m1mini", "m9"), str(c, "id"), map[string]any{"do": "close"})
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 1 {
+	if n := x.settled(t, "claude/sentinel", 1); n != 2 {
 		t.Errorf("%d messages, want 1", n)
 	}
 }
@@ -1097,8 +1108,7 @@ func TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest(t 
 		t.Fatalf("growlers = %+v", rows)
 	}
 	// ONE QUESTION and it is the operator's: the owner is not told there is a question.
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 0 {
+	if n := x.settled(t, "claude/sentinel", 0); n != 1 {
 		t.Errorf("a question about main told a card: %v", x.rp.sg4.messages())
 	}
 	// the question is on the board's own growls route
@@ -1135,8 +1145,7 @@ func TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest(t 
 	if len(rows) != 1 || rows[0].ID != "cr|"+str(c, "id") || rows[0].RoomName != "sg4" {
 		t.Fatalf("growlers = %+v", rows)
 	}
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 0 {
+	if n := x.settled(t, "claude/sentinel2", 1); n != 2 {
 		t.Errorf("the owner was told of a question about main: %v", x.rp.sg4.messages())
 	}
 }
