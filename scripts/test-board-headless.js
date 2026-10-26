@@ -25999,7 +25999,7 @@ async function main() {
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection, trayMerge: trayMergeSection,
       mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, hears: hearsSection, presence: presenceSection, tallPty: tallPtySection, arrivedOnce: arrivedOnceSection, popoutBell: popoutBellSection, windowMute: windowMuteSection, 
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       
@@ -27984,6 +27984,7 @@ async function main() {
     await unit("growlOff", () => growlOffSection(browser, base));
     await unit("growlRemind", () => growlRemindSection(browser, base));
     await unit("growlTrayRow", () => growlTrayRowSection(browser, base));
+  await unit("trayMerge", () => trayMergeSection(browser, base));
     // ── card urls: a card has an address made of names ──
     await unit("cardUrlTable", () => cardUrlTableSection(browser, base));
     await unit("cardUrlClash", () => cardUrlClashSection(browser, base));
@@ -29810,6 +29811,45 @@ async function growlTrayRowSection(browser, base) {
     if (h.errors.length) fail("growlTrayRow: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlTrayRow ok");
+}
+
+async function trayMergeSection(browser, base) {
+  growlBoard.off = true;
+  let h;
+  try { h = await growlBoard(browser, base, true, GROWL_STUBS); } finally { growlBoard.off = false; }
+  const { p } = h;
+  try {
+    await p.evaluate(() => {
+      localStorage.removeItem("atrium.toastlog");
+      localStorage.removeItem("atrium.tray.mine");
+      lastTasks = [{ id: "kid", spawned_by: "boss@room", display_title: "kid" }, { id: "solo", display_title: "solo" }];
+      logKind = "blocker";
+      [6, 11, 30, 31].forEach(m => recordToLog("kid", "BLOCKED: no activity since launch (" + m + " min)", "stack", "", "kid"));
+      logKind = "";
+      recordToLog("kid is ready", "", "stack", "", "kid");
+      recordToLog("solo is ready", "", "stack", "", "solo");
+      recordToLog("kid asked a question", "", "stack", "", "kid");
+      logKind = "blocker";
+      recordToLog("kid", "BLOCKED: no activity since launch (32 min)", "stack", "", "kid");
+      logKind = "";
+    });
+    const log = await p.evaluate(() => toastLog());
+    const blk = log.filter(e => e.kind === "blocker");
+    if (blk.length !== 1 || blk[0].n !== 5 || !/32 min/.test(blk[0].body)) fail("trayMerge: blocked alerts were " + JSON.stringify(blk));
+    if (log[log.length - 1].kind !== "blocker") fail("trayMerge: a new alert of the same kind did not move to the top");
+    await p.evaluate(() => openToastLog());
+    const rows = () => p.$$eval("#toastlog-list .tlrow:not(.pinned)", r => r.map(x => [x.textContent.trim().slice(0, 40), x.classList.contains("agent")]));
+    let r = await rows();
+    if (r.length !== 4) fail("trayMerge: expected 4 rows, got " + JSON.stringify(r));
+    const dim = r.filter(x => x[1]).length;
+    if (dim !== 2) fail("trayMerge: expected the two agent rows dimmed, not the question or the solo card's: " + JSON.stringify(r));
+    await p.click("#toastlog-mine");
+    r = await rows();
+    if (r.length !== 2 || r.some(x => x[1])) fail("trayMerge: mine only left " + JSON.stringify(r));
+    if ((await p.evaluate(() => localStorage.getItem("atrium.tray.mine"))) !== "1") fail("trayMerge: the toggle was not kept");
+    if (h.errors.length) fail("trayMerge: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("trayMerge ok");
 }
 
 async function growlQuietSection(browser, base) {
