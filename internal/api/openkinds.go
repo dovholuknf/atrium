@@ -480,6 +480,11 @@ func worktreeFail(w http.ResponseWriter, status int, err error) {
 // scratchDir makes a card's own folder for a link that opens in no repo, `<git.scm_root>/scratch/<host>/<name>`.
 // One already there belongs to some earlier card and is refused, so two cards never share a scratch folder.
 func (s *Server) scratchDir(host, name string) (string, error) {
+	return s.scratchFolder(host, name, false)
+}
+
+// scratchFolder is scratchDir, and with reuse a folder already there is answered rather than refused.
+func (s *Server) scratchFolder(host, name string, reuse bool) (string, error) {
 	root := s.scratchRoot()
 	if root == "" {
 		return "", errNoScratchRoot
@@ -494,7 +499,9 @@ func (s *Server) scratchDir(host, name string) (string, error) {
 	if err != nil {
 		return "", errors.New("that scratch folder would be outside " + filepath.ToSlash(root))
 	}
-	if _, err := os.Stat(dest); err == nil {
+	if fi, err := os.Stat(dest); err == nil && reuse && fi.IsDir() {
+		return filepath.ToSlash(dest), nil
+	} else if err == nil {
 		return "", errors.New(filepath.ToSlash(dest) + " already exists. close the card that had it, or move it aside")
 	}
 	if err := os.MkdirAll(dest, 0o755); err != nil {
