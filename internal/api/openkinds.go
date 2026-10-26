@@ -167,6 +167,9 @@ func (s *Server) openOther(w http.ResponseWriter, r *http.Request, in openReques
 			return
 		}
 		ans.Worktree, ans.Repo = wt.Path, host+"/"+org+"/"+repo
+		if !wt.Existed {
+			s.setupWorktree(ctx, host, org, repo, wt.Path)
+		}
 	} else {
 		if s.cardRootOK() {
 			home = true

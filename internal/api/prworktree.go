@@ -242,6 +242,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
 	}
 	s.scopeHub(filepath.FromSlash(dest))
+	s.setupWorktree(ctx, host, req.Org, req.Repo, dest)
 	res.Path, res.Branch, res.CreatedBranch = dest, branch, made
 	return res, http.StatusOK, nil
 }

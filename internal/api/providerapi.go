@@ -401,6 +401,7 @@ func (s *Server) makeProviderWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.scopeHub(filepath.FromSlash(dest))
+	s.setupWorktree(ctx, p.Host, req.Org, req.Repo, dest)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"path": dest, "existed": false, "branch": branch, "created_branch": made,
 	})
