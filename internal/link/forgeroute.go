@@ -241,6 +241,10 @@ func (p *Proxy) serveForge(w http.ResponseWriter, r *http.Request) {
 		var ans forge.HubIssue
 		ans, err = p.forgeIssue(r.Context(), f, ask)
 		out, kind = ans, ans.Kind
+	case forge.HubViewerPath:
+		var ans forge.HubViewer
+		ans, err = p.forgeViewer(r.Context(), f, ask)
+		out, kind = ans, ans.Kind
 	case forge.HubRepoPath:
 		var name string
 		name, err = p.forgeHold(r.Context(), ask)
@@ -333,6 +337,24 @@ func (p *Proxy) forgeIssue(ctx context.Context, f *hubForge, ask forge.HubAsk) (
 		return ans, &forge.NoForgeError{Kind: ans.Kind}
 	}
 	ans.Issue, err = ir.Issue(ctx, forge.Ref{Host: ask.Host, Org: ask.Org, Repo: ask.Repo, Number: ask.Number})
+	if err != nil {
+		return ans, &forgeAccess{kind: ans.Kind, err: err}
+	}
+	return ans, nil
+}
+
+func (p *Proxy) forgeViewer(ctx context.Context, f *hubForge, ask forge.HubAsk) (forge.HubViewer, error) {
+	var ans forge.HubViewer
+	fg, err := f.forgeFor(ask.Host)
+	if err != nil {
+		return ans, err
+	}
+	ans.Kind = fg.Kind()
+	vr, ok := fg.(forge.ViewerReader)
+	if !ok {
+		return ans, &forge.NoForgeError{Kind: ans.Kind}
+	}
+	ans.Login, err = vr.Viewer(ctx, forge.Ref{Host: ask.Host, Org: ask.Org, Repo: ask.Repo, Number: ask.Number})
 	if err != nil {
 		return ans, &forgeAccess{kind: ans.Kind, err: err}
 	}
