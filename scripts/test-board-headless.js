@@ -615,7 +615,7 @@ async function detailsHoverSection(browser, base) {
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await dp.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
-    await dp.waitForTimeout(900);
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
     const themes = [["plain", null], ["dark theme", ["#e6e6e6", "#101418"]], ["light theme", ["#222222", "#f4f1e8"]]];
@@ -712,7 +712,7 @@ async function detailsSideBySideSection(browser, base) {
   });
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForTimeout(900);
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
     await dp.evaluate(() => {
@@ -740,7 +740,7 @@ async function detailsSideBySideSection(browser, base) {
     });
     // Short: side by side.
     await dp.setViewportSize({ width: 1400, height: 420 });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(h => innerHeight === h, 420, { timeout: slow(5000) });
     let m = await measure();
     if (!m.wide) fail("at a short viewport the details panels are still stacked " + JSON.stringify(m));
     if (!(m.card.r <= m.dbg.l + 1)) fail("the card panel is not left of DEBUG " + JSON.stringify(m));
@@ -757,13 +757,13 @@ async function detailsSideBySideSection(browser, base) {
         window.__fit = termDrawerFit; termDrawerFit = () => {};
         document.getElementById("t-drawer").classList.remove("wide");
       });
-      await dp.waitForTimeout(300);
+      await dp.waitForTimeout(300); // wait: a settle for the screenshot only
       await dp.screenshot({ path: require("path").join(process.env.DETAILS_SIDE_SHOTS, "details-side-by-side-before.png") });
       await dp.evaluate(() => { termDrawerFit = window.__fit; });
     }
     // Shorter still: each panel scrolls inside itself.
     await dp.setViewportSize({ width: 1400, height: 300 });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(h => innerHeight === h, 300, { timeout: slow(5000) });
     m = await measure();
     if (!m.wide || m.card.t < 0 || m.dbg.t < 0) fail("at a very short viewport a panel leaves the screen " + JSON.stringify(m));
     const scrolls = await dp.evaluate(() => {
@@ -773,19 +773,19 @@ async function detailsSideBySideSection(browser, base) {
     if (!scrolls) fail("the card panel does not scroll inside itself at a very short viewport.");
     // Tall: stacked again, after a resize alone.
     await dp.setViewportSize({ width: 1400, height: 1400 });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(h => innerHeight === h, 1400, { timeout: slow(5000) });
     m = await measure();
     if (m.wide) fail("at a tall viewport the details panels are not stacked " + JSON.stringify(m));
     if (!(m.dbg.t >= m.card.b - 1)) fail("stacked, DEBUG is not under the card panel " + JSON.stringify(m));
     // Content growing while open re-decides, with no resize.
     await dp.setViewportSize({ width: 1400, height: 700 });
-    await dp.waitForTimeout(400);
+    await dp.waitForFunction(h => innerHeight === h, 700, { timeout: slow(5000) });
     await dp.evaluate(() => {
       let more = "";
       for (let i = 0; i < 40; i++) more += "<div style='margin:3px 0'>more " + i + "</div>";
       document.getElementById("t-drawer-body").insertAdjacentHTML("beforeend", more);
     });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(() => document.getElementById("t-drawer").classList.contains("wide"), null, { timeout: slow(5000) }).catch(() => {});
     const grown = await dp.evaluate(() => document.getElementById("t-drawer").classList.contains("wide"));
     if (!grown) fail("the panels did not go side by side when the content grew while open.");
     if (errors.length) fail("the details page threw uncaught errors: " + errors.join(" | "));
@@ -1495,7 +1495,7 @@ async function tooltipSection(browser, base) {
       }
       // Leaving takes it down.
       await tp.mouse.move(700, 890);
-      await tp.waitForTimeout(100);
+      await tp.waitForFunction(() => !document.getElementById("tip").classList.contains("on"), null, { timeout: slow(5000) }).catch(() => {});
       if ((await tipNow()).on) fail("in " + skin + " the tooltip stayed up after the pointer left.");
     }
     await tp.evaluate(() => applySkin("harbour"));
@@ -1580,7 +1580,7 @@ async function popoutTagFlipSection(browser, base) {
   if (process.env.DEBUG_HEADLESS) bp.on("console", m => console.error("[flip] " + m.text()));
   try {
     await bp.goto(base, { waitUntil: "domcontentloaded" });
-    await bp.waitForTimeout(1000);
+    await bp.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(15000) });
     await bp.click('.tab[data-view="terms"]');
     // A stand-in popped-out window on the shared bus, holding the card under
     // one spelling and answering every roll call with it.
@@ -1595,14 +1595,14 @@ async function popoutTagFlipSection(browser, base) {
 
     // Claimed bare, asked tagged, and the other way round.
     await standIn("s1");
-    await bp.waitForTimeout(200);
+    await bp.waitForFunction(() => poppedOut("sgg~s1"), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await bp.evaluate(() => poppedOut("sgg~s1")))) {
       fail("a card popped out as `s1` read as free once the board spelled it `sgg~s1`.");
     }
     await standIn("sgg~s1");
     await bp.evaluate(() => soloHeld.clear());
     await bp.evaluate(() => runRefresh());
-    await bp.waitForTimeout(200);
+    await bp.waitForFunction(() => poppedOut("s1"), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await bp.evaluate(() => poppedOut("s1")))) {
       fail("a card popped out as `sgg~s1` read as free once the board spelled it `s1`.");
     }
@@ -1612,7 +1612,7 @@ async function popoutTagFlipSection(browser, base) {
     // attach.
     await bp.evaluate(() => soloHeld.clear());
     await standIn("s1");
-    await bp.waitForTimeout(200);
+    await bp.waitForFunction(() => poppedOut("sgg~s1"), null, { timeout: slow(5000) }).catch(() => {});
     // Counted at `openTerm`, because the list render tears a pane down again
     // when the mocked list does not carry the card, which would hide the attach.
     await bp.evaluate(() => {
@@ -1620,9 +1620,9 @@ async function popoutTagFlipSection(browser, base) {
       const real = openTerm;
       window.__flipRealOpen = real;
       openTerm = t => { window.__flipOpened.push(t.id); return real(t); };
-      waitAndAttach("sgg~s1");
+      waitAndAttach("sgg~s1").finally(() => { window.__flipWaited = true; });
     });
-    await bp.waitForTimeout(1500);
+    await bp.waitForFunction(() => window.__flipWaited, null, { timeout: slow(5000) }).catch(() => {});
     const restored = await bp.evaluate(() => {
       openTerm = window.__flipRealOpen;
       return window.__flipOpened;
@@ -2658,7 +2658,7 @@ async function toastsTopSection(browser, base) {
       toast("older toast", "first");
       toast("newer toast", "second");
     });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => window.__starts >= 2 && document.querySelectorAll("#toasts .toast:not(.leaving)").length === 2, null, { timeout: slow(5000) }).catch(() => {});
 
     // 1. Off the terminals view: bottom right, as before.
     let w = await where(p);
@@ -2673,7 +2673,7 @@ async function toastsTopSection(browser, base) {
       document.querySelectorAll("#toasts .toast").forEach(el => { el.__mark = 1; });
       switchView("terms");
     });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => document.getElementById("toasts").classList.contains("top"), null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     const kept = await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].every(el => el.__mark));
     if (!w.top || w.boxes.length !== 2 || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
@@ -2691,7 +2691,7 @@ async function toastsTopSection(browser, base) {
 
     // 3. A paste on its way: the indicator is not under a toast.
     await p.evaluate(() => { pasteShow({ n: 300 * 1024 }); toast("during a paste", "third"); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => document.querySelectorAll("#toasts .toast:not(.leaving)").length === 3 && document.getElementById("t-pasting").getBoundingClientRect().height, null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     const paste = await p.evaluate(() => {
       const r = document.getElementById("t-pasting").getBoundingClientRect();
@@ -2706,7 +2706,7 @@ async function toastsTopSection(browser, base) {
     // 4. And back off it: bottom right again, still not re-animated.
     const before = (await where(p)).starts;
     await p.evaluate(() => switchView("stack"));
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => !document.getElementById("toasts").classList.contains("top"), null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
       fail("back off the terminals view the toasts did not return bottom right: " + JSON.stringify(w));
@@ -2717,7 +2717,7 @@ async function toastsTopSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     for (const skin of ["harbour", "daylight", "website", "noir", "paper"]) {
       await p.evaluate(s => applySkin(s), skin);
-      await p.waitForTimeout(150);
+      await frames(p, 2);
       w = await where(p);
       // Three toasts by now, hanging under the filter line as well as the bar, so the floor is 60%.
       if (!w.top || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h * 0.6)) {
@@ -2731,7 +2731,7 @@ async function toastsTopSection(browser, base) {
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
     await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: slow(10000) });
     await solo.evaluate(() => toast("solo toast", "in a popped-out window"));
-    await solo.waitForTimeout(400);
+    await solo.waitForFunction(() => document.getElementById("toasts").classList.contains("top") && document.querySelector("#toasts .toast:not(.leaving)"), null, { timeout: slow(5000) }).catch(() => {});
     w = await where(solo);
     if (!w.top || !w.boxes.length || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
       fail("in a popped-out window the toasts are not top right: " + JSON.stringify(w));
@@ -5223,8 +5223,7 @@ async function linkTipSection(browser, base) {
     await p.mouse.move(...at(40, 5));
     await p.mouse.move(...at(8, 0), { steps: 3 });
     if (!await underlined()) { fail("hovering a path in the terminal did not underline it, so this proves nothing"); return; }
-    const deadline = Date.now() + slow(3000);
-    while (Date.now() < deadline && !(await tipOn())) await new Promise(r => setTimeout(r, 10));
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000), polling: 10 }).catch(() => {});
     const tipText = () => p.evaluate(() => document.getElementById("tip").textContent);
     if (!await tipOn()) fail("hovering a file path showed no tip");
     else if (!/src\/alpha\.go/.test(await tipText())) fail("the file tip does not name the file: " + await tipText());
@@ -5401,7 +5400,7 @@ async function fileMenuSection(browser, base) {
     const choose = async text => { await p.locator("#cardmenu button", { hasText: text }).click(); await menuState(false); };
     const until = async cond => {
       const end = Date.now() + slow(3000);
-      while (Date.now() < end && !(await cond())) await new Promise(r => setTimeout(r, 10));
+      while (Date.now() < end && !(await cond())) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
     };
     const tabs = () => p.evaluate(() => window.__tabs);
     const same = (got, want) => JSON.stringify(got) === JSON.stringify(want);
@@ -10174,6 +10173,7 @@ async function peekEverywhereSection(browser, base) {
   const W = 1400, H = 900;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   const p = await ctx.newPage();
+  await p.clock.install();
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => {
@@ -10194,7 +10194,7 @@ async function peekEverywhereSection(browser, base) {
     }
     if (px >= pk.x && px <= pk.r && py >= pk.y && py <= pk.b) fail(what + ": the details open over the pointer.");
   };
-  const settle = () => new Promise(r => setTimeout(r, 450));
+  const settle = () => settleStyle(p);
   const reset = async () => {
     await p.mouse.move(W / 2, 3);
     await p.evaluate(() => closePeek());
@@ -10215,7 +10215,7 @@ async function peekEverywhereSection(browser, base) {
       const ok = await p.waitForSelector(sel, { state: "visible", timeout: slow(5000) }).then(() => true)
         .catch(() => { fail("the " + view + " tab draws no entry for the card."); return false; });
       if (!ok) continue;
-      await new Promise(r => setTimeout(r, 300));
+      await settle();
       await reset();
 
       // Held still on the entry: nothing at half a second, the details at one,
@@ -10228,9 +10228,12 @@ async function peekEverywhereSection(browser, base) {
         document.querySelector(s).dataset.peekOld = "1";
         window.peekRedraw = setInterval(() => runRefresh(), 120);
       }, sel);
+      await fakePause(p);
       await p.mouse.move(px, py);
-      await new Promise(r => setTimeout(r, 500));
+      await fakeTick(p, 500, 100);
       if (await state()) fail("on the " + view + " tab the details opened after half a second, not one.");
+      await fakeTick(p, 600, 100);
+      await p.clock.resume();
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
         null, { timeout: slow(3000) }).catch(() => fail("a second on the card on the " + view + " tab did not open its details."));
       const redrawn = await p.evaluate(s => {
@@ -10260,10 +10263,11 @@ async function peekEverywhereSection(browser, base) {
       // from the right edge where the entry reaches it.
       await reset();
       await p.evaluate(() => { document.querySelector("main").style.paddingTop = "420px"; });
-      await new Promise(r => setTimeout(r, 200));
+      await frames(p, 2);
       const low = await p.locator(sel).boundingBox();
       await p.setViewportSize({ width: W, height: Math.ceil(low.y + low.height + 40) });
-      await new Promise(r => setTimeout(r, 300));
+      await p.waitForFunction(h => innerHeight === h, Math.ceil(low.y + low.height + 40), { timeout: slow(5000) });
+      await settle();
       const cut = await p.locator(sel).boundingBox();
       const cx = Math.round(cut.x + cut.width - 3), cy = Math.round(cut.y + cut.height / 2);
       const hit = await p.evaluate(([x, y, s]) => {
@@ -10271,7 +10275,10 @@ async function peekEverywhereSection(browser, base) {
         return !!(e && e.closest(s));
       }, [cx, cy, sel]);
       if (!hit) fail("the " + view + " tab's entry is not under the pointer near the bottom of the screen.");
+      await fakePause(p);
       await p.mouse.move(cx, cy);
+      await fakeTick(p, 1100, 100);
+      await p.clock.resume();
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
         null, { timeout: slow(3000) }).catch(() => fail("a second near the bottom of the " + view + " tab's entry did not open its details."));
       await settle();
@@ -10310,21 +10317,23 @@ async function peekEverywhereSection(browser, base) {
       const ok = await part.waitFor({ state: "visible", timeout: slow(5000) }).then(() => true)
         .catch(() => { fail("the " + view + " tab's entry has no part with a tooltip at " + sel); return false; });
       if (!ok) continue;
-      await new Promise(r => setTimeout(r, 300));
+      await settle();
       await reset();
       const own = view === "terms";
       const said = norm(await part.getAttribute("data-tip"));
       const b = await part.boundingBox();
       const px = Math.round(b.x + Math.min(b.width / 2, 20)), py = Math.round(b.y + b.height / 2);
+      await fakePause(p);
       await p.mouse.move(px, py);
       let both = false, tipped = false, opened = false;
-      for (const t0 = Date.now(); Date.now() - t0 < 1800;) {
+      for (let t = 0; t < 1800; t += 40) {
         const s = await shown();
         both = both || (s.tip && s.peek);
         tipped = tipped || s.tip;
         opened = opened || s.peek;
-        await new Promise(r => setTimeout(r, 40));
+        await p.clock.runFor(40);
       }
+      await p.clock.resume();
       if (both) fail("on the " + view + " tab the card's tooltip and its details showed at once.");
       if (tipped) fail("on the " + view + " tab a tooltip showed on the card under the pointer: " + sel);
       if (!opened) { fail("on the " + view + " tab a second on " + sel + " did not open the details."); continue; }
@@ -10349,9 +10358,11 @@ async function peekEverywhereSection(browser, base) {
         // Across the same card to another part: the details stay, and say what that one says.
         const nb = await p.locator(next).first().boundingBox();
         const nsaid = norm(await p.locator(next).first().getAttribute("data-tip"));
+        await fakePause(p);
         await p.mouse.move(Math.round(nb.x + nb.width / 2), Math.round(nb.y + nb.height / 2), { steps: 4 });
-        await new Promise(r => setTimeout(r, 700));
+        await p.clock.runFor(700);
         const s = await shown();
+        await p.clock.resume();
         if (s.tip) fail("on the " + view + " tab a tooltip showed after crossing the card to " + next);
         if (!s.peek) fail("on the " + view + " tab the details closed crossing their own card to " + next);
         else if (await p.evaluate(() => !!document.querySelector(".peek.on .peek-hint"))) {
@@ -10445,6 +10456,7 @@ async function peekOneHoverSection(browser, base) {
   const W = 1400, H = 1000;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   const p = await ctx.newPage();
+  await p.clock.install();
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
@@ -10467,7 +10479,8 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
-    await new Promise(r => setTimeout(r, 1500));
+    await p.waitForFunction(r => ["held", "questions", "unseen", "cache", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
+    await settleStyle(p);
     // The row's badges, by what they are. Every one must be on the row for the test to mean anything.
     const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.cache", "chip.room"]
       .map(c => row + " ." + c.split(".").join("."));
@@ -10477,12 +10490,15 @@ async function peekOneHoverSection(browser, base) {
       if (!(await loc.count())) { if (sel.endsWith(".tname") || sel === row) fail("onehover: no " + sel); else fail("onehover: the row draws no " + sel); continue; }
       await p.mouse.move(W / 2, 3);
       await p.evaluate(() => closePeek());
-      await new Promise(r => setTimeout(r, 300));
+      await settleStyle(p);
       const b = await loc.boundingBox();
+      await fakePause(p);
       await p.mouse.move(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2));
+      await fakeTick(p, 1500, 100);
+      await p.clock.resume();
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("onehover: a second on " + sel + " did not open the details."));
-      await new Promise(r => setTimeout(r, 400));
+      await settleStyle(p);
       if (await p.evaluate(() => document.getElementById("tip").classList.contains("on"))) fail("onehover: a tooltip showed over " + sel);
       const pk = await open();
       if (!pk) { fail("onehover: no details on " + sel); continue; }
@@ -10498,7 +10514,7 @@ async function peekOneHoverSection(browser, base) {
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "hover"), id);
       await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("onehover: the details of " + id + " never showed a context size."));
-      await new Promise(r => setTimeout(r, 400));
+      await settleStyle(p);
       // Every drawer open, for the picture and for the recap's "more", which only measures in an open drawer.
       if (all) await p.evaluate(() => document.querySelectorAll(".peek.on .peek-drawer:not(.open) > .peek-dh").forEach(h => h.click()));
       const m = await p.evaluate(() => {
@@ -10530,8 +10546,10 @@ async function peekOneHoverSection(browser, base) {
     // Short window: it never grows past the viewport, and scrolls inside.
     await p.evaluate(() => closePeek());
     await p.setViewportSize({ width: W, height: 260 });
+    await p.waitForFunction(() => innerHeight === 260, null, { timeout: slow(5000) });
     await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
-    await new Promise(r => setTimeout(r, 600));
+    await p.waitForSelector(".peek.on .peek-body", { timeout: slow(5000) });
+    await settleStyle(p);
     const short = await p.evaluate(() => { const b = document.querySelector(".peek.on .peek-body"); const r = b.getBoundingClientRect();
       return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: b.scrollHeight > b.clientHeight, oy: getComputedStyle(b).overflowY }; });
     if (short.top < 0 || short.bottom > short.vh || short.oy !== "auto") fail("onehover: in a short window the details leave it: " + JSON.stringify(short));
@@ -10545,7 +10563,8 @@ async function peekOneHoverSection(browser, base) {
       t.seen = Object.assign({}, t.seen, { open_questions: ["Where should the Config builder link go in the ziti-doc sidebar? ".repeat(8).trim()] });
     });
     await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
-    await new Promise(r => setTimeout(r, 600));
+    await p.waitForSelector(".peek.on .qa-qx", { timeout: slow(5000) });
+    await settleStyle(p);
     const lq = () => p.evaluate(() => {
       const pop = document.querySelector(".peek.on"), x = pop.querySelector(".qa-qx"), e = pop.querySelector(".qa-exp"), r = pop.getBoundingClientRect();
       const lh = parseFloat(getComputedStyle(x).lineHeight) || 18;
@@ -10563,7 +10582,7 @@ async function peekOneHoverSection(browser, base) {
     if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq-open.png" });
     await p.evaluate(() => closePeek());
     await p.mouse.move(W / 2, 3);
-    await new Promise(r => setTimeout(r, 400));
+    await settleStyle(p);
 
     const [firstSel, first] = hovered[0] || ["", ""];
     for (const [sel, text] of hovered) {
@@ -10579,7 +10598,9 @@ async function peekOneHoverSection(browser, base) {
     // Opening a peek hides any tooltip, so one still closing or opening from the hovers above would take the gear's
     // tooltip down after it showed. Wait until no peek is on screen, then let the grace timers run out.
     await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: slow(5000) });
-    await new Promise(r => setTimeout(r, 400));
+    await fakePause(p);
+    await p.clock.runFor(400);
+    await p.clock.resume();
     const gear = await p.locator("#gear").boundingBox();
     await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
     await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000) })
@@ -10968,13 +10989,13 @@ async function peekStatusTruthSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~ps1"]', { state: "visible", timeout: slow(15000) });
-    await new Promise(r => setTimeout(r, 1000));
+    await settleStyle(p);
     const show = async id => {
       await p.evaluate(() => closePeek());
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "menu"), id);
       await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("peekStatus: " + id + " never showed a context size."));
-      await new Promise(r => setTimeout(r, 400));
+      await settleStyle(p);
       return p.evaluate(() => {
         const b = document.querySelector(".peek.on .peek-body");
         const q = s => (b.querySelector(s) || {}).textContent || "";
@@ -11018,7 +11039,8 @@ async function peekStatusTruthSection(browser, base) {
     const q = await p.locator(".peek.on .qa-q").first().boundingBox();
     // The question is taller than its scrolling block, so the pointer goes on its top edge, the part in view.
     await p.mouse.move(Math.round(q.x + q.width / 2), Math.round(q.y + 12));
-    await new Promise(r => setTimeout(r, 500));
+    await p.waitForFunction(() => document.querySelector(".peek.on .qa-q:hover") !== null, null, { timeout: slow(5000) }).catch(() => {});
+    await settleStyle(p);
     const hov = await p.evaluate(() => document.querySelector(".peek.on .qa-q:hover") !== null);
     if (!hov) fail("peekStatus: the pointer is not over the question, so the hover check proves nothing: " + JSON.stringify({ q, at: await p.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.className + "|" + e.tagName : ""; }, [Math.round(q.x + q.width / 2), Math.round(q.y + q.height / 2)]) }));
     await shot("hover");
@@ -13557,7 +13579,7 @@ async function shiftMenuSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     const attach = async (id) => {
       await attachRetry(p, { unit: "shiftMenu", id: id, check: i => termSock && termSock.readyState === 1 && termTask && termTask.id === i });
-      await p.waitForTimeout(300);
+      await termWrite(p, "");
     };
     const fire = (opts) => p.evaluate(o => {
       let pasted = 0;
@@ -13575,7 +13597,7 @@ async function shiftMenuSection(browser, base) {
       return { shown, left: r.left, top: r.top,
         labels: shown ? [...m.querySelectorAll("button")].map(b => b.textContent) : [] };
     });
-    const closeMenu = async () => { await p.keyboard.press("Escape"); await p.evaluate(() => document.body.click()); await p.waitForTimeout(100); };
+    const closeMenu = async () => { await p.keyboard.press("Escape"); await p.evaluate(() => document.body.click()); await p.waitForFunction(() => !document.querySelector("#cardmenu.on"), null, { timeout: slow(5000) }).catch(() => {}); };
     const has = (m) => m.labels.some(l => /new context/.test(l));
 
     await attach("land-live");
@@ -13596,7 +13618,7 @@ async function shiftMenuSection(browser, base) {
     if (Math.abs(m.left - 210) > 40 || Math.abs(m.top - 160) > 40) fail("shiftMenu: the menu is not at the pointer: " + JSON.stringify(m));
     // choose it
     await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /new context/.test(b.textContent)).click());
-    await p.waitForTimeout(400);
+    await until(() => posts.length, 5000, "the new context POST").catch(() => {});
     if (posts.length !== 1 || posts[0] !== "/v1/tasks/land-live/new-context POST")
       fail("shiftMenu: choosing new context did not POST once: " + JSON.stringify(posts));
     await closeMenu();
@@ -13709,7 +13731,8 @@ async function groupMenusSection(browser, base) {
     await p.locator("dialog[open] #ask-input").waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("dialog[open] #ask-input").fill("nope");
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {});
+    await frames(p, 2);
     if ((await groupsNow()).includes("nope") || patches.length) fail("groupMenus: Esc still made a group: " + JSON.stringify([await groupsNow(), patches]));
 
     // Create: the group exists, the card is in it, and it is still there after a reload.
@@ -13738,7 +13761,7 @@ async function groupMenusSection(browser, base) {
     // The new one is "new", and sorted in. Remove from group lists A to Z too, with the same tag.
     mock.LAND["land-gm-b"].tags = ["prs", "zeta", "discourse"];
     await p.evaluate(() => refresh());
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => ((lastTasks.find(t => t.id === "land-gm-b") || {}).tags || []).includes("zeta"), null, { timeout: slow(5000) }).catch(() => {});
     fly = await flyout("land-gm-b", "remove from group");
     if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-desktop-remove.png") });
     if (!fly) fail("groupMenus: no \"remove from group\" on a card in three groups");
@@ -13755,7 +13778,7 @@ async function groupMenusSection(browser, base) {
     await p.locator("dialog[open] #ask-input").fill("ACTIVE");
     await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
     await p.waitForFunction(() => true);
-    await p.waitForTimeout(500);
+    await until(() => patches.some(x => /^land-gm-b /.test(x) && /"active"/.test(x)), 5000, "the PATCH filing land-gm-b into active").catch(() => {});
     const after = await groupsNow();
     if (after.length !== before || after.filter(n => n === "active").length !== 1) fail("groupMenus: an existing name made a duplicate: " + JSON.stringify(after));
     if (!mock.LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(mock.LAND["land-gm-b"].tags));
@@ -13826,7 +13849,10 @@ async function mGroupMenusSection(browser) {
     const read = () => p.evaluate(() => [...document.querySelectorAll('#m-rmenu .rmenu-picks[data-i] [data-pick]')].filter(b => b.offsetParent).map(b => ({
       label: b.firstChild.textContent.trim(), tag: (b.querySelector(".newtag") || {}).textContent || "" })));
     const got = await read();
-    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(300); await p.screenshot({ path: path.join(shots, shotTag + "-phone-add.png") }); }
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(300); // wait: a settle for the screenshot only
+      await p.screenshot({ path: path.join(shots, shotTag + "-phone-add.png") });
+    }
     if (got.map(g => g.label).join("|") !== "active|discourse|orchestrators|prs|create group...") fail(tag + "the add to group sheet lists " + JSON.stringify(got));
     if (got.filter(g => g.tag).map(g => g.label).join() !== "discourse") fail(tag + "the new tags are " + JSON.stringify(got));
     // Esc puts the entry back and makes nothing.
@@ -13843,7 +13869,7 @@ async function mGroupMenusSection(browser) {
     await p.keyboard.press("Enter");
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
       .catch(() => fail(tag + "the group was not made"));
-    await p.waitForTimeout(400);
+    await until(() => st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x)), 5000, "the PATCH filing gm-1 into zeta").catch(() => {});
     if (!st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x))) fail(tag + "the card was not filed into zeta: " + JSON.stringify(st.patches));
     const made = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).made.zeta);
     if (!(Date.now() - made < 60000)) fail(tag + "no creation time on zeta");
@@ -14082,7 +14108,7 @@ async function closeOneDialogSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => { switchView("terms"); });
-    for (const end = Date.now() + slow(10000); openStreams.filter(r => !r.destroyed).length < 1 && Date.now() < end;) await p.waitForTimeout(100);
+    await until(() => openStreams.filter(r => !r.destroyed).length >= 1, 10000, "an open event stream").catch(() => {});
     const say = ev => openStreams.forEach(r => { try { r.write("event: close-progress\ndata: " + JSON.stringify(Object.assign({ id: posts[posts.length - 1].progress, seconds: 0 }, ev)) + "\n\n"); } catch (e) {} });
     const rowsOf = () => p.evaluate(() => [...document.querySelectorAll("#close-steps li")].map(l => l.className + ":" + l.dataset.key));
     let askUps = 0;
@@ -14120,7 +14146,7 @@ async function closeOneDialogSection(browser, base) {
     if (focus !== "stash") fail("closeStash: the focus is on " + focus + ", not the stash choice");
     // delete is picked inline, cancel changes nothing
     await p.click('#ask-actions button:has-text("cancel")');
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) }).catch(() => {});
     if (posts.length) fail("closeOne: cancel posted a close");
 
     // pressed: the dialog stays, the button is off and spins, the steps tick, the card reads closing
@@ -14129,7 +14155,7 @@ async function closeOneDialogSection(browser, base) {
     await askUp();
     await p.click('#ask-body .close-wt input[value="delete"]');
     await p.click('#ask-actions button:has-text("close it")');
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].confirm !== true || JSON.stringify(posts[0].answers) !== '{"1":"delete"}' || !/^close-/.test(posts[0].progress || "")) fail("closeOne: the close posted " + JSON.stringify(posts));
     const busy = await p.evaluate(() => ({ off: [...document.querySelectorAll("#ask-actions button")].every(b => b.disabled), spin: !!document.querySelector("#ask-actions button.busy"),
       open: document.getElementById("ask").open, radios: [...document.querySelectorAll("#ask-body .close-wt input")].every(i => i.disabled),
@@ -14137,12 +14163,11 @@ async function closeOneDialogSection(browser, base) {
     if (!busy.off || !busy.spin || !busy.open || !busy.radios) fail("closeOne: not busy after the press: " + JSON.stringify(busy));
     if (!/land-co-a/.test(busy.closing) || !/closing/.test(busy.closing)) fail("closeOne: the card does not read closing: " + busy.closing);
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(150);
-    if (!(await p.evaluate(() => document.getElementById("ask").open))) fail("closeOne: escape shut a working dialog");
     say({ key: "session", line: "stopping the session", state: "run", detail: "" });
     say({ key: "session", line: "stopping the session", state: "ok", detail: "" });
     say({ key: "worktree:1", line: "removing /w/ziti-console (0.46 GB)", state: "run", detail: "" });
     await p.waitForFunction(() => document.querySelectorAll("#close-steps li").length === 2, null, { timeout: slow(5000) }).catch(() => fail("closeOne: the steps were not drawn"));
+    if (!(await p.evaluate(() => document.getElementById("ask").open))) fail("closeOne: escape shut a working dialog");
     let rows = await rowsOf();
     if (rows.join() !== "ok:session,run:worktree:1") fail("closeOne: the rows are " + rows.join());
     await shot(p, "close-progress");
@@ -14158,14 +14183,14 @@ async function closeOneDialogSection(browser, base) {
     await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
     await askUp();
     await p.keyboard.press("Enter");
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].answers["1"] !== "stash") fail("closeStash: Enter posted " + JSON.stringify(posts[0] && posts[0].answers) + ", not stash");
     say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "run", detail: "" });
     say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "fail", detail: "kept, the stash did not land: git push: rejected" });
     await p.waitForFunction(() => document.querySelector('#close-steps li.fail'), null, { timeout: slow(5000) }).catch(() => fail("closeOne: the failed row was not drawn"));
     answer = () => ({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [], stashes: [], left: 1, warnings: ["kept"] }) });
     release.go();
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join() === "dismiss", null, { timeout: slow(5000) }).catch(() => {});
     const stayed = await p.evaluate(() => ({ open: document.getElementById("ask").open, fail: (document.querySelector("#close-steps li.fail") || {}).textContent || "",
       buttons: [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent + (b.disabled ? "!" : "")).join() }));
     if (!stayed.open || !/git push: rejected/.test(stayed.fail)) fail("closeOne: a failure did not leave the dialog open on its row: " + JSON.stringify(stayed));
@@ -14189,7 +14214,7 @@ async function closeOneDialogSection(browser, base) {
     if (nostash.radios !== "keep,delete" || nostash.checked !== "keep" || nostash.focus !== "keep") fail("closeStash: without can_stash " + JSON.stringify(nostash));
     await shot(p, "close-stash-default-cannot");
     await p.keyboard.press("Enter");
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].answers["1"] !== "keep") fail("closeStash: Enter without can_stash posted " + JSON.stringify(posts[0] && posts[0].answers));
     await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) }).catch(() => {});
     canStash = true;
@@ -14202,7 +14227,7 @@ async function closeOneDialogSection(browser, base) {
     const cu = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join());
     if (cu !== "cancel,delete it,stash to the hub") fail("closeStash: the clean up buttons are " + cu);
     await p.keyboard.press("Enter");
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].answers["1"] !== "stash") fail("closeStash: Enter on the clean up question posted " + JSON.stringify(posts[0] && posts[0].answers));
     await p.waitForFunction(() => !document.getElementById("ask").open && !busyKeys.has("close:land-co-a"), null, { timeout: slow(5000) })
       .catch(() => fail("closeStash: the clean up question left the dialog or the card busy"));
@@ -14371,8 +14396,10 @@ async function notifyCommandSection(browser, base) {
   const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await open(ctx2, false);
+    const answered = p.waitForResponse(r => new URL(r.url()).pathname === "/_hub/notify", { timeout: slow(5000) }).catch(() => {});
     await p.click("#gear");
-    await p.waitForTimeout(500);
+    await answered;
+    await frames(p, 2);
     const vis = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return r.hidden || r.offsetParent === null; });
     if (!vis) fail("notifyCommand: a 404 from the hub still drew the row");
   } finally { await ctx2.close(); }
@@ -14387,7 +14414,7 @@ async function notifyCommandSection(browser, base) {
     const p = await ctx3.newPage();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: a guest board must never call the hub, and nothing it does afterwards is a sentinel
     const row = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return !r || r.hidden || r.offsetParent === null; });
     if (!row) fail("notifyCommand: a guest board drew the row");
     if (hubCalls.length) fail("notifyCommand: a guest board called the hub: " + hubCalls.join(" "));
@@ -14419,7 +14446,7 @@ async function presenceSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(500);
+    await until(() => posts.length && streams.length, 5000, "the load's presence post and event stream").catch(() => {});
     const tab = await p.evaluate(() => hubTabId);
     if (!tab) fail("presence: no tab id");
     if (!streams.length || !streams.every(u => new URL(u).searchParams.get("tab") === tab)) {
@@ -14429,7 +14456,7 @@ async function presenceSection(browser, base) {
     // hidden
     const n0 = posts.length;
     await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
-    await p.waitForTimeout(300);
+    await until(() => posts.length > n0, 5000, "the hidden presence post").catch(() => {});
     const last = posts[posts.length - 1];
     if (posts.length !== n0 + 1 || last.visible !== false) fail("presence: hidden did not post visible false: " + JSON.stringify(posts.slice(n0)));
     // pagehide goes by beacon, as text/plain, and not by fetch.
@@ -14443,11 +14470,11 @@ async function presenceSection(browser, base) {
     // A 404 stops it: the next post is the last.
     status = 404;
     await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => presenceOff, null, { timeout: slow(5000) }).catch(() => {});
     const n2 = posts.length;
     await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
     await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
-    await p.waitForTimeout(300);
+    await p.evaluate(() => fetch("/v1/tasks").then(r => r.text()));
     if (posts.length !== n2) fail("presence: posts continued after a 404: " + (posts.length - n2) + " more");
     const reloaded = await p.evaluate(() => sessionStorage.getItem("atrium.tab"));
     if (reloaded !== tab) fail("presence: the tab id is not in sessionStorage");
@@ -15549,18 +15576,23 @@ async function popoutRaiseSection(browser, base) {
         return what;
       };
       const popups = () => ctx.pages().filter(p => p !== page);
+      // Page events come in the order the windows opened, so one opened after a click is the sentinel for any it opened.
+      const settled = async () => {
+        const [s] = await Promise.all([ctx.waitForEvent("page"), page.evaluate(() => { window.open("about:blank", "_blank"); })]);
+        await s.close();
+      };
       const first = await click("first");
       if (first !== "opened") fail("popoutRaise: the first click answered " + first);
-      await page.waitForTimeout(800);
+      await settled();
       if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after the first click");
       if (await click("second") !== "raised") fail("popoutRaise: the second click did not raise by handle");
 
       // A board that reloaded has no handle.
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
-      await page.waitForTimeout(1500);
+      await page.waitForFunction(() => poppedOut("land-a"), null, { timeout: slow(5000) }).catch(() => {});
       const again = await click("after reload");
-      await page.waitForTimeout(1000);
+      await settled();
       if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after a click on a reloaded board (" + again + ")");
       if (again !== "raised") fail("popoutRaise: after a reload the click answered " + again);
 
@@ -15568,12 +15600,12 @@ async function popoutRaiseSection(browser, base) {
       for (const w of popups()) await w.close();
       const [pasted] = await Promise.all([ctx.waitForEvent("page"), page.evaluate(u => { window.open(u, "_blank"); }, base + "/#term=land-a")]);
       await cuSolo(pasted, "land-a");
-      await pasted.waitForTimeout(1500);
+      await page.waitForFunction(() => poppedOut("land-a"), null, { timeout: slow(5000) }).catch(() => {});
       const nameless = await page.evaluate(() => { popOuts.clear(); return poppedOut("land-a"); });
       if (!nameless) fail("popoutRaise: the pasted-url window did not claim the card");
       // The window was named on boot, so the board finds it by name and raises it: no second window, nothing closed.
       const last = await click("pasted url");
-      await page.waitForTimeout(1000);
+      await settled();
       if (last !== "raised") fail("popoutRaise: the click on a named #term window answered " + last);
       if (pasted.isClosed()) fail("popoutRaise: the #term window was closed by a click that could raise it");
       const out = popups();
@@ -16040,7 +16072,7 @@ async function mBubblesSection(browser) {
       await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
       const bub = i => "#m-replies .reply:nth-of-type(" + i + ")";
       // selectable: no user-select none on the text, and each bubble has the two actions with a 40px hit area and readable colour
-      await p.waitForTimeout(700);
+      await settleStyle(p);
       const info = await p.evaluate(() => {
         const lum = c => { const m = c.match(/[\d.]+/g).map(Number); const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
         const r = document.querySelectorAll("#m-replies .reply")[1], md = r.querySelector(".md"), b = r.querySelector(".bact");
@@ -16064,8 +16096,10 @@ async function mBubblesSection(browser) {
       await p.evaluate(sel => { const n = document.querySelector(sel + " .md p, " + sel + " .md"); const r = document.createRange(); r.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
       const at2 = mIso(M_MIN);
       st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: at2, text: "Newest arrives mid-selection." }]) };
+      const fetched = p.waitForResponse(r => /\/v1\/tasks\/bub-1\/replies/.test(r.url()), { timeout: slow(5000) }).catch(() => {});
       st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
-      await p.waitForTimeout(900);
+      await fetched;
+      await frames(p, 3);
       const held = await p.evaluate(() => ({ sel: String(getSelection()), has: /Newest arrives/.test(document.getElementById("m-replies").textContent) }));
       if (held.sel !== "Plain reply.") fail(tag + "the selection was lost to a redraw: " + JSON.stringify(held));
       if (held.has) fail(tag + "the thread was redrawn under a selection");
@@ -16119,8 +16153,10 @@ async function mBubblesSection(browser) {
         await p.evaluate(sel => { const r = document.createRange(); r.selectNodeContents(document.querySelector(sel + " .md")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
         const at = mIso(-n * M_MIN);
         st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: mIso(M_MIN), text: "Newest arrives mid-selection." }, { at, text: "Held " + n }]) };
+        const fetched = p.waitForResponse(r => /\/v1\/tasks\/bub-1\/replies/.test(r.url()), { timeout: slow(5000) }).catch(() => {});
         st.send("task", Object.assign({}, c, { row: 1, output_at: at }));
-        await p.waitForTimeout(700);
+        await fetched;
+        await frames(p, 3);
         return () => p.evaluate(n => ({ drawn: document.getElementById("m-replies").textContent.includes("Held " + n), sel: String(getSelection()).length }), n);
       };
       let probe = await hold(1);
@@ -20142,18 +20178,19 @@ async function growlChoiceOnceSection(browser, base) {
       h.msgDelay = 600; h.msgFail = true;
       const first = root + " [data-choice]";
       await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
-      await p.waitForTimeout(150);
+      await p.waitForFunction(s => [...document.querySelectorAll(s)].every(x => x.disabled === true), root + " [data-choice]", { timeout: slow(5000) }).catch(() => {});
       if ((await off()).join() !== "true,true,true") fail(tag + "the buttons were not disabled in flight: " + (await off()));
-      await p.waitForTimeout(900);
+      await p.waitForFunction(s => [...document.querySelectorAll(s)].every(x => x.disabled === false), root + " [data-choice]", { timeout: slow(5000) }).catch(() => {});
       if (h.messages.length !== 1) fail(tag + "a double press sent " + h.messages.length + " messages.");
       if ((await off()).join() !== "false,false,false") fail(tag + "a failed send did not light the buttons again: " + (await off()));
       h.msgDelay = 0; h.msgFail = false;
+      const sent = p.waitForResponse(r => r.url().endsWith("/message"), { timeout: slow(5000) }).catch(() => {});
       await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
-      await p.waitForTimeout(400);
+      await sent;
+      await frames(p, 2);
       if (h.messages.length !== 2) fail(tag + "the retry sent " + (h.messages.length - 1) + " messages.");
       if ((await off()).join() !== "true,true,true") fail(tag + "an answered choice left its buttons lit: " + (await off()));
       await h.say([GR("c", "blocked", 1, { body })]);
-      await p.waitForTimeout(200);
       if ((await off()).join() !== "true,true,true") fail(tag + "a redraw lit an answered choice again.");
       if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
     } finally { await h.close(); }
@@ -20199,7 +20236,7 @@ async function ciGrowlSection(browser, base) {
         if (name === "hostile" && (f.imgs || f.pwned || !f.text.includes("<img src=x"))) fail(tag + "the body was not escaped: " + JSON.stringify(f));
         if (name === "delivered") {
           await p.click(root + " .gr-full [data-do=dismiss]");
-          await p.waitForTimeout(150);
+          await until(() => h.posts.length, 5000, "the dismiss POST").catch(() => {});
           if (h.posts.length !== 1 || h.posts[0].body.do !== "dismiss") fail(tag + "dismiss posted " + JSON.stringify(h.posts));
         }
         const shots = process.env.CIGROWL_SHOTS;
@@ -20207,7 +20244,7 @@ async function ciGrowlSection(browser, base) {
           fs.mkdirSync(shots, { recursive: true });
           await p.locator(root).screenshot({ path: path.join(shots, "after.png") });
           await h.say([Object.assign({}, row, { reason: "question", urgency: 4 })]);
-          await p.waitForTimeout(150);
+          await p.waitForTimeout(150); // wait: a settle for the screenshot only
           await p.locator(root).screenshot({ path: path.join(shots, "before.png") });
         }
         if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
@@ -29240,7 +29277,7 @@ async function growlBoard(browser, base, hub, init, phone) {
   });
   await ctx.route("**/v1/tasks/*/message", async route => {
     h.messages.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
-    if (h.msgDelay) await new Promise(r => setTimeout(r, h.msgDelay));
+    if (h.msgDelay) await new Promise(r => setTimeout(r, h.msgDelay)); // wait: the mocked send's delay is what the test holds the buttons across
     if (h.msgFail) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "queued", when: "done" }) });
   });
@@ -29250,18 +29287,16 @@ async function growlBoard(browser, base, hub, init, phone) {
     h.rows = rows;
     const line = "event: growls\ndata: " + JSON.stringify(Object.assign({ growls: rows, perm_after_seconds: 120 }, extra || {})) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
-    if (growlBoard.fake) { said++; await until(() => p.evaluate(k => window.__ga >= k, said), 5000, "the growls event was never applied", 10); }
-    else await p.waitForTimeout(150);
+    said++;
+    await until(() => p.evaluate(k => window.__ga >= k, said), 5000, "the growls event was never applied", 10);
   };
   h.close = async () => { mock.hubMode = h.wasHub; await ctx.close(); };
   if (growlBoard.fake) await p.clock.install();
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
   if (hub) await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
-  if (growlBoard.fake) {
-    await fakePause(p);
-    await p.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
-  }
+  if (growlBoard.fake) await fakePause(p);
+  await p.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
   return h;
 }
 
@@ -29298,7 +29333,7 @@ async function growlStackSection(browser, base) {
     if (cmd !== "Bash: rm -rf build") fail("growlStack: the command line was " + JSON.stringify(cmd));
     // Pinned above the toasts, and outside their cap.
     await p.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "x"); });
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => document.querySelectorAll("#toasts .toast:not(.sticky)").length === 3, null, { timeout: slow(5000) }).catch(() => {});
     const pin = await p.evaluate(() => {
       const g = document.getElementById("growl"), t = document.querySelector("#toasts .toast");
       return { above: g.getBoundingClientRect().bottom <= t.getBoundingClientRect().top + 1,
@@ -29357,7 +29392,7 @@ async function growlActionsSection(browser, base) {
     // approve and block answer the request and never touch the growler's own endpoint
     await p.click('#growl .gr-full button[data-do="approve"]');
     await p.waitForFunction(() => true);
-    await p.waitForTimeout(200);
+    await until(() => h.decides.length, 5000, "the approve decide").catch(() => {});
     if (h.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(h.decides[0].url) || h.decides[0].body.decision !== "approve") {
       fail("growlActions: approve posted " + JSON.stringify(h.decides));
     }
@@ -29365,7 +29400,7 @@ async function growlActionsSection(browser, base) {
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     await p.fill("#ask-input", "use pnpm instead");
     await p.click('#ask-actions button:has-text("ok")');
-    await p.waitForTimeout(300);
+    await until(() => h.decides.length >= 2, 5000, "the block decide").catch(() => {});
     const blk = h.decides[1];
     if (!blk || blk.body.decision !== "block" || blk.body.reason !== "use pnpm instead") fail("growlActions: block posted " + JSON.stringify(blk));
     if (h.posts.length) fail("growlActions: approve and block posted to /_hub/growls: " + JSON.stringify(h.posts));
@@ -29377,7 +29412,7 @@ async function growlActionsSection(browser, base) {
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     if (h.holds.length) fail("growlActions: lift posted before it asked.");
     await p.click('#ask-actions button:has-text("lift it")');
-    await p.waitForTimeout(300);
+    await until(() => h.holds.length, 5000, "the lift hold").catch(() => {});
     if (h.holds.length !== 1 || h.holds[0].body.action !== "lift" || h.holds[0].room !== "sgg") fail("growlActions: lift posted " + JSON.stringify(h.holds));
     if (h.posts.length) fail("growlActions: lift posted to /_hub/growls.");
     // a permission row with no subject yet cannot be answered
@@ -29389,7 +29424,7 @@ async function growlActionsSection(browser, base) {
     await h.say([perm, q]);
     await p.evaluate(() => { window.__lands = []; window.landOnAlert = (...a) => { window.__lands.push(a); }; });
     await p.click('#growl .gr-full button[data-do="open"]');
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__lands.length, null, { timeout: slow(5000) }).catch(() => {});
     let lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1 || lands[0][1] !== "perms" || lands[0][2] !== "perm-a" || !/c$|a$/.test(String(lands[0][0]))) fail("growlActions: open landed " + JSON.stringify(lands));
     // and then dismisses the growler the way "dismiss this" does: one post, the board's own, with the undo offered
@@ -29405,7 +29440,7 @@ async function growlActionsSection(browser, base) {
     await h.say([q]);
     await p.fill("#growl .gr-reply", "yes, do it");
     await p.click('#growl button[data-do="reply"]');
-    await p.waitForTimeout(300);
+    await until(() => h.messages.length, 5000, "the reply message").catch(() => {});
     if (h.messages.length !== 1 || !/\/v1\/tasks\/(alpha~)?c\/message$/.test(h.messages[0].url) || h.messages[0].body.text !== "yes, do it") {
       fail("growlActions: reply posted " + JSON.stringify(h.messages));
     }
@@ -29413,7 +29448,8 @@ async function growlActionsSection(browser, base) {
     // snooze: 15 min, and the body carries the board's tab and via
     await p.click('#growl button[data-do="snooze"]');
     await p.click('#growl .gr-snooze button[data-snooze="15"]');
-    await p.waitForTimeout(300);
+    await until(() => h.posts.length, 5000, "the snooze post").catch(() => {});
+    await p.waitForFunction(() => !document.getElementById("growl"), null, { timeout: slow(5000) }).catch(() => {});
     let last = h.posts[h.posts.length - 1];
     if (!last || last.id !== q.id || last.body.do !== "snooze" || last.body.minutes !== 15 || last.body.via !== "board" || !last.body.tab) {
       fail("growlActions: snooze posted " + JSON.stringify(h.posts));
@@ -29423,21 +29459,21 @@ async function growlActionsSection(browser, base) {
     await h.say([q]);
     await p.click('#growl button[data-do="snooze"]');
     await p.click('#growl .gr-snooze button[data-snooze="0"]');
-    await p.waitForTimeout(300);
+    await until(() => h.posts.some(x => x.body.do === "snooze" && x.body.minutes !== 15), 5000, "the tomorrow snooze post").catch(() => {});
     last = h.posts[h.posts.length - 1];
     if (!(last.body.minutes >= 1 && last.body.minutes <= 2 * 24 * 60 - 1) || last.body.minutes % 1) fail("growlActions: tomorrow snooze sent " + last.body.minutes);
     // a 409 says already handled and drops the row
     await h.say([q]);
     h.answer = (id, body, row) => ({ status: 409, json: { growl: Object.assign({}, row, { state: "resolved" }) } });
     await p.click('#growl button[data-do="dismiss"]');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some(t => /already handled/.test(t.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await toasts()).some(t => /already handled/.test(t))) fail("growlActions: a 409 did not say already handled: " + JSON.stringify(await toasts()));
     if (await p.$("#growl")) fail("growlActions: a 409 left the row up.");
     // a 400 toasts the error text
     await h.say([q]);
     h.answer = () => ({ status: 400, json: { error: "minutes out of range" } });
     await p.click('#growl button[data-do="dismiss"]');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some(t => /minutes out of range/.test(t.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await toasts()).some(t => /minutes out of range/.test(t))) fail("growlActions: a 400 did not toast its error.");
     // dismiss, then undo inside the window puts it straight back
     h.answer = null;
@@ -29449,7 +29485,8 @@ async function growlActionsSection(browser, base) {
     if (last.body.do !== "dismiss" || last.body.via !== "board") fail("growlActions: dismiss posted " + JSON.stringify(last));
     if ((await p.textContent("#growl .gr-full b")) !== "question c") fail("growlActions: dismiss left the dismissed row on top.");
     await p.click(".toast .gr-undo");
-    await p.waitForTimeout(300);
+    await until(() => h.posts[h.posts.length - 1].body.do === "undismiss", 5000, "the undismiss post").catch(() => {});
+    await p.waitForFunction(() => (document.querySelector("#growl .gr-full b") || {}).textContent === "permission a", null, { timeout: slow(5000) }).catch(() => {});
     last = h.posts[h.posts.length - 1];
     if (last.body.do !== "undismiss") fail("growlActions: undo posted " + JSON.stringify(last));
     if ((await p.textContent("#growl .gr-full b")) !== "permission a") fail("growlActions: undo did not restore the growler at once.");
@@ -29458,7 +29495,7 @@ async function growlActionsSection(browser, base) {
     await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
     h.answer = (id, body, row) => body.do === "undismiss" ? { status: 409, json: { growl: Object.assign({}, row, { state: "resolved" }) } } : null;
     await p.click(".toast .gr-undo");
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some(t => /already handled/.test(t.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await toasts()).some(t => /already handled/.test(t))) fail("growlActions: a 409 undo did not say already handled.");
     // the undo toast is gone after its window, and one for a growler already back is taken down
     h.answer = null;
@@ -29491,11 +29528,11 @@ async function growlModalSection(browser, base) {
     if (!inside) fail("growlModal: the growler was not drawn inside the open dialog.");
     await p.click('#growl .gr-full button[data-do="approve"]', { timeout: slow(3000) })
       .catch(() => fail("growlModal: approve could not be clicked over the settings dialog."));
-    await p.waitForTimeout(200);
+    await until(() => h.decides.length, 5000, "the approve decide").catch(() => {});
     if (h.decides.length !== 1) fail("growlModal: the click over the dialog did not reach the decide call.");
     await p.click('#growl .gr-full button[data-do="dismiss"]', { timeout: slow(3000) })
       .catch(() => fail("growlModal: dismiss could not be clicked over the settings dialog."));
-    await p.waitForTimeout(200);
+    await until(() => h.posts.length, 5000, "the dismiss post").catch(() => {});
     if (h.posts.length !== 1) fail("growlModal: dismiss over the dialog posted " + h.posts.length + " times.");
     if (!(await p.evaluate(() => document.getElementById("settings").open))) fail("growlModal: the settings dialog closed under the growler.");
     if (h.errors.length) fail("growlModal: page errors: " + h.errors.join(" | "));
@@ -29532,7 +29569,6 @@ async function growlOffSection(browser, base) {
       const g = GR("c", reason, 1);
       await h.say([]);
       await h.say([g]);
-      await p.waitForTimeout(300);
       if (await drawn()) fail("growlOff: a " + reason + " drew a growler.");
       if (await p.$("#growl-phone:not([hidden]) *")) fail("growlOff: a " + reason + " drew the phone strip.");
       const after = await heard();
@@ -29547,7 +29583,6 @@ async function growlOffSection(browser, base) {
     await p.evaluate(() => setNotifyOff(true));
     await h.say([]);
     await h.say([GR("c", "question", 2)]);
-    await p.waitForTimeout(300);
     if ((await heard()).notes !== n0) fail("growlOff: a desktop notification came through with notify switched off.");
     if (!(await logged("question c"))) fail("growlOff: the held question left no log line.");
     await p.evaluate(() => setNotifyOff(false));
@@ -29558,7 +29593,6 @@ async function growlOffSection(browser, base) {
     const times = t => p.evaluate(t0 => toastLog().filter(e => e.title === t0).reduce((s, e) => s + (e.n || 1), 0), t);
     const q0 = await times("question c");
     await h.say([Object.assign({}, q, { reminders: 1 })], { remind: [q.id] });
-    await p.waitForTimeout(300);
     const r1 = await heard();
     if (await drawn() || r1.osc !== r0.osc) fail("growlOff: a hub reminder drew or rang: " + JSON.stringify([r0, r1]));
     if (!(await times("question c") > q0)) fail("growlOff: a hub reminder was not logged.");
@@ -29567,14 +29601,12 @@ async function growlOffSection(browser, base) {
     if (prefixed.length) fail("growlOff: the bell log carries an internal prefix: " + JSON.stringify(prefixed));
     // a dismissal draws no undo bar
     await p.evaluate(g => growlPost(g, { do: "dismiss" }, true), q);
-    await p.waitForTimeout(300);
     if (await p.$(".gr-undo") || await p.$("#toasts .toast")) fail("growlOff: dismissing drew an undo bar or toast.");
     // a permission: no growler, no tone from the growler, still logged, and the nag is back
     await h.say([]);
     const pr = GR("a", "permission", 4);
     const b0 = await heard();
     await h.say([pr]);
-    await p.waitForTimeout(300);
     if (await drawn()) fail("growlOff: a permission drew a growler.");
     if ((await heard()).osc !== b0.osc) fail("growlOff: a permission rang the growler's tone.");
     if (!(await logged("permission a"))) fail("growlOff: a permission left no log line.");
@@ -29587,7 +29619,8 @@ async function growlOffSection(browser, base) {
       alerting.check("permission", [], say);
       alerting.check("permission", [{ id: "perm-a", task_id: "a", requested_at: new Date().toISOString() }], say);
     });
-    await p.waitForTimeout(500);
+    await p.waitForFunction(o => window.__osc > o && [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("needs permission perm-a")),
+      t0.osc, { timeout: slow(5000) }).catch(() => {});
     if (!(await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("needs permission perm-a")))))
       fail("growlOff: a pending permission with the growler off drew no keyed toast.");
     if ((await heard()).osc <= t0.osc) fail("growlOff: a pending permission with the growler off rang no permission tone.");
@@ -29598,7 +29631,6 @@ async function growlOffSection(browser, base) {
     await p.waitForSelector("#growl .gr-full", { timeout: slow(3000) }).catch(() => fail("growlOff: turning it on drew no growler for the open permission."));
     await h.say([]);
     await h.say([GR("c", "question", 5)]);
-    await p.waitForTimeout(300);
     if (!(await p.$("#growl .gr-full"))) fail("growlOff: on did not draw a question.");
     await p.evaluate(() => { Document.prototype.hasFocus = () => false; });
     await p.evaluate(() => setGrowler(false));
@@ -29607,9 +29639,9 @@ async function growlOffSection(browser, base) {
     const p2 = await h.ctx.newPage();
     await p2.goto(base, { waitUntil: "domcontentloaded" });
     await p2.waitForFunction(() => typeof growlDraw === "function" && document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await p2.waitForTimeout(500);
+    await p2.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
     await h.say([GR("c", "question", 6)]);
-    await p2.waitForTimeout(300);
+    await p2.waitForFunction(() => window.__ga >= 1, null, { timeout: slow(5000) }).catch(() => {});
     if (await p2.$("#growl")) fail("growlOff: the second window drew a growler while off.");
     await p.evaluate(() => setGrowler(true));
     await p2.waitForSelector("#growl .gr-full", { timeout: slow(4000) }).catch(() => fail("growlOff: the second window did not follow the switch on."));
@@ -29635,7 +29667,6 @@ async function growlRemindSection(browser, base) {
     await h.say([]);
     await h.say([q, e]);
     await h.say([q]);
-    await p.waitForTimeout(300);
     await p.evaluate(() => openToastLog());
     if (await p.$("#growl")) fail("growlRemind: the growler was drawn while off.");
     const rows = () => p.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow")].map(r => ({
@@ -29649,19 +29680,17 @@ async function growlRemindSection(browser, base) {
     r = await rows();
     if (r.find(x => x.t.startsWith("question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
     await p.click('#toastlog-list .tlremind[data-remind="60"]');
-    await p.waitForTimeout(300);
+    await until(() => h.posts.some(x => x.id === q.id), 5000, "the remind post").catch(() => {});
     const post = h.posts.find(x => x.id === q.id);
     if (!post || post.body.do !== "snooze" || post.body.minutes !== 60) fail("growlRemind: the post was " + JSON.stringify(h.posts));
     if (await p.$("#growl")) fail("growlRemind: a reminded row drew a growler.");
     // the stub answers with the row snoozed and no `until`; the hub's own event carries one, and the open bell follows it
     await h.say([Object.assign({}, q, { state: "snoozed", until: new Date(Date.now() + 3 * 3600000 + 60000).toISOString() })]);
-    await p.waitForTimeout(300);
     const said = await p.evaluate(() => (document.querySelector("#toastlog-list .tlremits .tlremind:not([data-remind])") || {}).textContent || "");
     if (said !== "reminding in 3 h") fail("growlRemind: the open bell said " + JSON.stringify(said) + " after a growls event.");
     if (await p.$("#toastlog-list .tlremind[data-remind]")) fail("growlRemind: a reminded row still offered the menu.");
     // and an open one coming back (the reminder is due) gets its control again without reopening the bell
     await h.say([q]);
-    await p.waitForTimeout(300);
     if (!(await p.$('#toastlog-list .tlremind[data-remind="menu"]'))) fail("growlRemind: the open bell did not repaint when the growler came back.");
     // tomorrow 9am is a literal tomorrow, clamped to the hub's week
     const mins = await p.evaluate(async () => {
