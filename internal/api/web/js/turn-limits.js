@@ -61,6 +61,7 @@ function paintTurnLimits() {
 
 async function renderTurnLimits() {
   if (Date.now() - turnLimits.at < TURN_LIMIT_POLL_MS) return;
+  if (typeof roomUnnamed === "function" && roomUnnamed()) return;
   turnLimits.at = Date.now();
   try {
     const r = await api("/v1/usage/turn-limits");
