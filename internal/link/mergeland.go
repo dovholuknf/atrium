@@ -37,12 +37,14 @@ type mergeLandOut struct {
 }
 
 // operatorAuthor is the land's author: the operator's global git identity on the hub's machine.
-func operatorAuthor(ctx context.Context) (gitsync.LandAuthor, error) {
-	a, err := gitsync.OperatorAuthor(ctx)
-	if err != nil {
-		return a, err
+func operatorAuthor(want string) func(context.Context) (gitsync.LandAuthor, error) {
+	return func(ctx context.Context) (gitsync.LandAuthor, error) {
+		a, err := gitsync.OperatorAuthor(ctx)
+		if err != nil {
+			return a, err
+		}
+		return a, land.CheckEmailIs(want, a.Email, "git config --global")
 	}
-	return a, land.CheckEmail(a.Email, "git config --global")
 }
 
 func (p *Proxy) mergeLandGet(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
@@ -103,7 +105,12 @@ func (p *Proxy) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubst
 	}
 	author := p.merges.author
 	if author == nil {
-		author = operatorAuthor
+		prof, err := st.OperatorProfile()
+		if err != nil {
+			crFail(w, http.StatusServiceUnavailable, "cannot read the operator profile: "+err.Error())
+			return
+		}
+		author = operatorAuthor(prof.Email)
 	}
 	by, err := author(r.Context())
 	if err != nil {

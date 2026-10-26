@@ -103,6 +103,15 @@ type Hub interface {
 	ItemForCard(ctx context.Context, card string) (WorkItem, bool, error)
 	// CardStatus is the card's own status on this machine's room: running, dead and the rest.
 	CardStatus(ctx context.Context, card string) (string, error)
+	// Profile is the operator a worker commits as.
+	Profile(ctx context.Context) (Profile, error)
+}
+
+// Profile is the part of the hub's operator profile a worker's git config and brief need.
+type Profile struct {
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Display string `json:"display"`
 }
 
 // Files is the few file reads and writes a phase makes, so a test needs no disk.
