@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -432,14 +434,10 @@ func TestCadenceIsTenSecondsAndDiskIsSeparate(t *testing.T) {
 	count := func() (int, int) { mu.Lock(); defer mu.Unlock(); return pushed, diskCalls }
 	wait := func(want int) {
 		t.Helper()
-		for i := 0; i < 500; i++ {
-			if p, _ := count(); p == want {
-				return
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-		p, _ := count()
-		t.Fatalf("pushed %d want %d", p, want)
+		testwait.Eventually(t, 5*time.Second, fmt.Sprintf("push %d", want), func() bool {
+			p, _ := count()
+			return p == want
+		})
 	}
 	wait(1) // the initial sample
 	for i := 2; i <= 4; i++ {
@@ -451,15 +449,10 @@ func TestCadenceIsTenSecondsAndDiskIsSeparate(t *testing.T) {
 		t.Errorf("disk sampled %d times across three ticks, want 1", d)
 	}
 	clk.disk <- clk.Now()
-	for i := 0; i < 500; i++ {
-		if _, d := count(); d == 2 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if _, d := count(); d != 2 {
-		t.Errorf("disk timer did not sample, calls %d", d)
-	}
+	testwait.Eventually(t, 5*time.Second, "the disk timer to sample", func() bool {
+		_, d := count()
+		return d == 2
+	})
 	close(stop)
 	<-done
 }
