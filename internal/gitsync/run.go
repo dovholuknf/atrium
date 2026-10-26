@@ -1,6 +1,5 @@
-// Package gitsync moves code between a hub and its rooms by FETCH, and by nothing else.
-// See docs/fabric/git-sync-design.md. Room and hub sync never receives a push: no receive-pack
-// runs between them, so no ref can be moved by what the other end sends. Only the hub store (receive.go) takes pushes.
+// Package gitsync moves code between a hub and its rooms. The git_repos mirror and sync move it by FETCH only,
+// see docs/fabric/git-sync-design.md. The hub's own store takes pushes, checked before git sees them (receive.go).
 //
 // This package is git plumbing. It knows nothing about the link, which carries its bytes.
 package gitsync
