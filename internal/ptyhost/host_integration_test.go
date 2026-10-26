@@ -100,7 +100,7 @@ func TestReattachLosesAndRepeatsNothing(t *testing.T) {
 		return err == nil && !p.Daemon
 	})
 	before := next
-	time.Sleep(300 * time.Millisecond) // the ring keeps growing with nobody there
+	time.Sleep(300 * time.Millisecond) // wait: the ring growing with nobody there is what is under test
 
 	c2 := daemonT(t, addr)
 	if got := infoOf(t, c2, sp.RunID).OutOffset; got <= before {
@@ -268,8 +268,7 @@ func TestRunnerAndShellOnOneCardAreAddressedByRunID(t *testing.T) {
 		t.Fatal(err)
 	}
 	ss.until(t, 20*time.Second, has("GOT:only-the-shell"))
-	time.Sleep(300 * time.Millisecond)
-	// the runner never saw it
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, the runner must never see it
 	ar2, err := c.Attach(run.RunID, 0)
 	if err == nil && contains(ar2.Replay, "only-the-shell") {
 		t.Fatal("a write to the shell reached the runner")
@@ -332,8 +331,8 @@ func TestExitWithNoClientIsKeptAndCollected(t *testing.T) {
 			if err := c1.Write(sp.RunID, []byte(tc.cmd+"\r")); err != nil {
 				t.Fatal(err)
 			}
-			c1.Close() // and nobody is there when it exits
-			time.Sleep(700 * time.Millisecond)
+			c1.Close()
+			time.Sleep(700 * time.Millisecond) // wait: nobody may be connected when it exits, so there is nothing to poll
 			c2 := daemonT(t, addr)
 			info := infoOf(t, c2, sp.RunID)
 			if !info.Exited || info.ExitCode != tc.code {

@@ -34,7 +34,7 @@ func TestMCPRelayRidesOutAHubRestart(t *testing.T) {
 	}
 	var gotAgent, gotRoom atomic.Value
 	go func() {
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond) // wait: the hub staying down while the relay retries is what is under test
 		l, err := net.Listen("tcp", addr)
 		if err != nil {
 			return

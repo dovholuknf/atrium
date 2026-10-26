@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -150,14 +151,12 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		Resources []store.CardResource `json:"resources"`
 		Disk      int64                `json:"disk_bytes"`
 	}
-	for deadline := time.Now().Add(openMeasureWait); ; time.Sleep(5 * time.Millisecond) {
+	testwait.PollEvery(5*time.Millisecond, openMeasureWait, func() bool {
 		rec = httpDo(t, oh.h, "GET", "/v1/tasks/"+out["card"].(string)+"/resources")
 		inv.Disk = 0
 		_ = json.Unmarshal(rec.Body.Bytes(), &inv)
-		if inv.Disk > 0 || time.Now().After(deadline) {
-			break
-		}
-	}
+		return inv.Disk > 0
+	})
 	kinds := []string{}
 	for _, r := range inv.Resources {
 		kinds = append(kinds, r.Kind+" "+r.Ref)

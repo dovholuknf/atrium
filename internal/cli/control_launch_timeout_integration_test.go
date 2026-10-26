@@ -47,7 +47,7 @@ func (s *slowRoom) serve(t *testing.T, started bool) {
 			if started {
 				s.add()
 			}
-			time.Sleep(s.hang)
+			time.Sleep(s.hang) // wait: a room slow to answer the launch is what is under test
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "c9"})
 		default:
 			http.NotFound(w, r)
@@ -136,7 +136,7 @@ func TestARetryAfterALostAnswerSendsTheKeyAgain(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			keys = append(keys, body.Key)
 			if len(keys) == 1 {
-				time.Sleep(400 * time.Millisecond)
+				time.Sleep(400 * time.Millisecond) // wait: a first answer lost to the launch wait is what is under test
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "c9", "launch_replay": len(keys) > 1})
 		default:

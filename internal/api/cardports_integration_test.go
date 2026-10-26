@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -35,13 +36,10 @@ func longChild(t *testing.T) *exec.Cmd {
 }
 
 func gone(pid int) bool {
-	for i := 0; i < 50; i++ {
-		if _, err := cardproc.StartTime(pid); errors.Is(err, cardproc.ErrGone) {
-			return true
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return false
+	return testwait.PollEvery(100*time.Millisecond, 5*time.Second, func() bool {
+		_, err := cardproc.StartTime(pid)
+		return errors.Is(err, cardproc.ErrGone)
+	})
 }
 
 func askPorts(t *testing.T, oh *openHarness, card string, n int) (int, []int) {

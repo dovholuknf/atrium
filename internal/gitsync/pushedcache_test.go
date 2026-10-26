@@ -61,7 +61,7 @@ func TestPushedSnapshotAnswersAtOnceWhileGitIsSlow(t *testing.T) {
 			t.Fatalf("before the first build: %+v", v)
 		}
 	}
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // wait: a negative check, no second build must start
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("20 requests started %d builds, want 1", n)
 	}
