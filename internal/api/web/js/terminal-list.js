@@ -997,21 +997,9 @@ function termNoteDuplicates(tasks) {
 // Entries were already being cut at the FRONT to keep the leaf, which is the
 // symptom of a shared prefix drawn once per row. A heading holds it once.
 //
-// EVERY FORGE AND EVERY ORG GETS ITS OWN HEADING, even when it holds one
-// thing.
-//
-// A chain of only children used to be folded into one heading, so `github`
-// containing only `dovholuknf` read as `github/dovholuknf`. It was done to keep
-// the heading count down and it made the list inconsistent in the way that
-// matters: `openziti` was drawn as an org and `netfoundry` was drawn as text on
-// a row, so the same kind of thing appeared in two shapes and one of them
-// looked like the grouping had failed to recognise it. The operator read it
-// exactly that way.
-//
-// The heading count is kept down by the OTHER rule instead, in `termNodeHTML`:
-// a level holding a single ROW folds into that row as `project:branch`. That
-// one removes headings that group nothing, where this one removed headings
-// that name something.
+// A NAMED LEVEL HOLDING NO ROW AND ONE LEVEL merges with it, names joined by `/`, down the chain, so `claude/atrium/rnd`
+// is one heading. A level with two or more children, or a row of its own, keeps its heading. The merged name is the
+// full path, so a fold is keyed on it and a chain that later splits starts open on the split.
 function termTree(list) {
   const root = { name: "", rows: [], kids: new Map() };
   for (const t of list) {
@@ -1023,6 +1011,18 @@ function termTree(list) {
     }
     node.rows.push(t);
   }
+  const condense = node => {
+    for (const [key, kid] of node.kids) {
+      let k = kid;
+      while (!k.rows.length && k.kids.size === 1) {
+        const [only] = k.kids.values();
+        k = { name: k.name + "/" + only.name, rows: only.rows, kids: only.kids };
+      }
+      condense(k);
+      node.kids.set(key, k);
+    }
+  };
+  condense(root);
   return root;
 }
 
