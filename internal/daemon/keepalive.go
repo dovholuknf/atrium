@@ -69,6 +69,9 @@ const (
 	// the card's last reply and the prompt, and on a 55k card that tail alone
 	// passed the old 5% while the fork read 99.99%.
 	keepaliveWarmRead = 0.90
+	// keepaliveForkTail is the tokens a fork writes at the 1h price on top of its read: the card's last
+	// reply and the prompt, measured near 2,000 in the ledger.
+	keepaliveForkTail = 2_000
 )
 
 // keepalivePrompt is what the fork is asked. The words do not matter to the
@@ -805,7 +808,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 		act: "refresh", reply: r, h: h, price: price, budget: budgetFor(r.Context, price),
 		spent: spent, count: count, expiry: expiry, anchor: anchor, history: rows,
 	}
-	next := float64(r.Context) * price.Cr / 1e6
+	next := (float64(r.Context)*price.Cr + keepaliveForkTail*price.Cw1h) / 1e6
 	if spent+next > v.budget {
 		v.act, v.why = "break-even", "budget spent"
 	}

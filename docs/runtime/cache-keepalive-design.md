@@ -275,7 +275,7 @@ cache read.
 | Sonnet 5 | $4.00 | $0.20 | 1/20 | 19 |
 
 For a context of C tokens, a wake onto an expired cache costs `C x W`. A wake onto a warm one costs `C x R`. One
-refresh costs `C x R` plus about 300 tokens of overhead. On Opus 5.5:
+refresh costs `C x R` plus the fork's own tail, about 2,000 tokens at the 1h write price, $0.016 on Opus 5.5. On Opus 5.5:
 
 | context | one cold wake | one refresh | 5 refreshes |
 | --- | --- | --- | --- |
