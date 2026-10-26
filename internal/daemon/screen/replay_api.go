@@ -54,6 +54,8 @@ func ReplayCut(b []byte, mode string, cuts []SizeCut, rows int) []byte {
 			cuts = cuts[1:]
 		}
 		sc := NewScreenSized(cols, rows)
+		// conhost's repaints move its top row up or down a history it never sends. See screen_repair.go.
+		sc.rep = &RepairWatch{splice: true}
 		sc.ApplyCuts(b, cuts)
 		return []byte(sc.TextWithCursor())
 	}

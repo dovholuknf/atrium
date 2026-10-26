@@ -15,16 +15,18 @@ import (
 // filed into its own history, which it never sends, and the grid here overwrites
 // them in place. They never reach `history`.
 //
-// THIS FILE ONLY MEASURES. It notices such a repaint and says what a repair WOULD
-// add, and it changes nothing: the grid, its history and every rendering are what
-// they were without it. `outcome=repaired` means "would be repaired", and `added`
-// is the rows that would be spliced. The splice is the one small addition this was
-// written to take, at `close`, and it has not been made because clint approved the
-// report that says how often it matters and nothing past it.
+// The other way round, `unfiled`: when the first row is an EARLIER row, held in
+// the tail of history, conhost pulled rows back out of its history (a resize that
+// unwrapped lines, a taller pty), and the grid here would file them a second time.
 //
-// OFF UNLESS `screen.rep` IS SET, and only `repairReport` sets it. Every other user
-// of `screen` (idleframe, attach replay, plain `/scrollback/text`) carries a nil
-// pointer and pays a nil check.
+// The report only measures: `outcome=repaired` means "would be repaired", and
+// `added` is the rows that would be spliced. With `splice` set, as `ReplayCut`
+// sets it, `close` makes the repair: rows above a later first row are filed, and
+// rows of an earlier first row are taken back out of history.
+//
+// OFF UNLESS `screen.rep` IS SET, and only `RepairReport` and `ReplayCut` set it.
+// Every other user of `screen` (idleframe, the live models) carries a nil pointer
+// and pays a nil check.
 
 // repairMaxSpan is how many bytes a candidate may consume before it is dropped. A
 // repaint is about 50 rows of a few hundred bytes, so this is generous, and it
@@ -51,12 +53,15 @@ type RepairWatch struct {
 	events []RepairEvent
 	// pos is the byte `applyCuts` is stepping, so an event can say where it was.
 	pos int
+	// splice is whether `close` repairs history, not only reports.
+	splice bool
 
 	// A row cut, remembered until something is drawn. A candidate opened while it
 	// is pending is AT A CUT: it is compared with the grid as it was BEFORE the cut,
 	// because that is what the repaint's rows were counted from.
 	cutPending bool
 	cutSnap    []string
+	cutCells   [][]cell
 	cutHist    int
 	cutRows    int
 	cutGone    int // rows `fitRows` filed off the top, all cuts since the last draw
@@ -70,6 +75,9 @@ type RepairWatch struct {
 	preRows int
 	gone    int
 	snap    []string
+	cells   [][]cell // the snapshot's rows, kept only to splice
+	hist    int      // history's length the snapshot was taken at
+	tail    []string // history's last rows before the snapshot
 	lines   []string // the repaint's rows, recorded at each line feed
 }
 
@@ -96,6 +104,14 @@ func rowText(r []cell) string {
 		}
 	}
 	return b.String()
+}
+
+func cloneRows(cells [][]cell) [][]cell {
+	out := make([][]cell, len(cells))
+	for i, r := range cells {
+		out[i] = append([]cell(nil), r...)
+	}
+	return out
 }
 
 func snapshotRows(cells [][]cell) []string {
@@ -175,20 +191,71 @@ func (r *RepairWatch) shifts() (ks []int, thin bool) {
 	return ks, thin
 }
 
-// close judges a repaint that is whole. Exactly one passing k or nothing.
-//
-// The splice belongs here, and is not written. Not at a cut, it would be
-// snapshot rows 1 to k at the history length noted on open. At a cut, only rows
-// gone+1 to k, at the pre-cut history length plus gone, which is right after the
-// rows `fitRows` filed.
-func (r *RepairWatch) close() {
+// ups is every j from 1 to rows-1 at which the repaint's first M rows equal the
+// last j rows of history followed by the snapshot, by the same rules as shifts.
+// None when the repaint starts where the snapshot does.
+func (r *RepairWatch) ups() []int {
+	m := MaxInt(6, r.rows/4)
+	if m > len(r.lines) || m > len(r.snap) {
+		return nil
+	}
+	at := func(j, i int) string {
+		if i < j {
+			return r.tail[len(r.tail)-j+i]
+		}
+		return r.snap[i-j]
+	}
+	same := func(j int) bool {
+		for i := 0; i < m; i++ {
+			if r.lines[i] != at(j, i) {
+				return false
+			}
+		}
+		return true
+	}
+	if same(0) {
+		return nil
+	}
+	var js []int
+	for j := 1; j <= r.rows-1 && j <= len(r.tail); j++ {
+		if !same(j) {
+			continue
+		}
+		seen := map[string]bool{}
+		for i := 0; i < m; i++ {
+			if r.lines[i] != "" {
+				seen[r.lines[i]] = true
+			}
+		}
+		if len(seen) >= 4 {
+			js = append(js, j)
+		}
+	}
+	return js
+}
+
+// close judges a repaint that is whole. Exactly one passing k or nothing, and
+// with `splice` set, makes the repair.
+func (r *RepairWatch) close(s *Screen) {
 	r.open = false
 	ev := RepairEvent{offset: r.openAt, rows: r.rows, cols: r.cols}
 	if r.atCut {
 		ev.cut = r.preRows
 	}
 	ks, thin := r.shifts()
+	var js []int
+	if len(ks) == 0 {
+		js = r.ups()
+	}
 	switch {
+	case len(js) == 1:
+		ev.outcome, ev.k, ev.why = "unfiled", -js[0], fmt.Sprintf("removed=%d", js[0]+r.gone)
+	case len(js) > 1:
+		parts := make([]string, len(js))
+		for i, j := range js {
+			parts[i] = strconv.Itoa(-j)
+		}
+		ev.outcome, ev.why = "ambiguous", "k="+strings.Join(parts, ",")
 	case len(ks) == 0:
 		ev.outcome, ev.why = "no-match", "no-k"
 		if thin {
@@ -209,6 +276,29 @@ func (r *RepairWatch) close() {
 		}
 	}
 	r.add(ev)
+	if r.splice {
+		r.repair(s, ev)
+	}
+}
+
+// repair files snapshot rows gone to k-1 right after the rows `fitRows` filed, or
+// takes the j rows an earlier repaint repeats, and the rows `fitRows` filed, back
+// out of history. `r.gone` is 0 away from a cut.
+func (r *RepairWatch) repair(s *Screen, ev RepairEvent) {
+	at := r.hist + r.gone
+	if at > len(s.history) {
+		return
+	}
+	switch ev.outcome {
+	case "repaired":
+		add := make([][]cell, 0, ev.added)
+		for _, row := range r.cells[r.gone:ev.k] {
+			add = append(add, append([]cell(nil), row...))
+		}
+		s.history = append(s.history[:at], append(add, s.history[at:]...)...)
+	case "unfiled":
+		s.history = append(s.history[:r.hist+ev.k], s.history[at:]...)
+	}
 }
 
 // --- the hooks on screen. Every one is called only when s.rep is not nil. ---
@@ -221,6 +311,9 @@ func (s *Screen) repCutStart(c SizeCut) {
 	if c.Rows > 0 && c.Rows != s.rows && !s.alt {
 		if !r.cutPending {
 			r.cutSnap = snapshotRows(s.cells)
+			if r.splice {
+				r.cutCells = cloneRows(s.cells)
+			}
 			r.cutHist = len(s.history)
 			r.cutRows = s.rows
 			r.cutGone = 0
@@ -250,7 +343,7 @@ func (s *Screen) repLF() {
 	}
 	r.lines = append(r.lines, s.rowNow())
 	if len(r.lines) == r.rows {
-		r.close()
+		r.close(s)
 	}
 }
 
@@ -269,7 +362,7 @@ func (s *Screen) repMove(home bool) {
 	if r.open {
 		if len(r.lines) == r.rows-1 {
 			r.lines = append(r.lines, s.rowNow())
-			r.close()
+			r.close(s)
 		} else {
 			r.cancel("cursor-move")
 		}
@@ -281,18 +374,23 @@ func (s *Screen) repMove(home bool) {
 		return
 	}
 	var snap []string
+	var cells [][]cell
 	var hist int
 	if r.cutPending {
-		snap, hist = r.cutSnap, r.cutHist
+		snap, cells, hist = r.cutSnap, r.cutCells, r.cutHist
 	} else {
 		snap, hist = snapshotRows(s.cells), len(s.history)
+		if r.splice {
+			cells = cloneRows(s.cells)
+		}
 	}
 	if !fullSnapshot(snap, hist) {
 		return
 	}
 	r.open, r.openAt = true, r.pos
 	r.rows, r.cols = s.rows, s.cols
-	r.snap = snap
+	r.snap, r.cells, r.hist = snap, cells, hist
+	r.tail = snapshotRows(s.history[hist-min(hist, s.rows) : hist])
 	r.lines = r.lines[:0]
 	r.atCut, r.preRows, r.gone = r.cutPending, 0, 0
 	if r.atCut {
@@ -342,7 +440,7 @@ func RepairReport(b []byte, cuts []SizeCut, rows int) []RepairEvent {
 	return sc.rep.events
 }
 
-var repairOutcomes = []string{"repaired", "resize-filed", "no-match", "ambiguous", "cancelled", "incomplete"}
+var repairOutcomes = []string{"repaired", "unfiled", "resize-filed", "no-match", "ambiguous", "cancelled", "incomplete"}
 
 // FormatRepairReport is tab separated: one header line, one line per candidate,
 // and a `totals` line.
