@@ -275,7 +275,6 @@ func TestATaskFolderWithNoLedgerRowIsNeverRemoved(t *testing.T) {
 }
 
 func TestATaskLedgerPathOutsideTheCardRootIsNotRemoved(t *testing.T) {
-	t.Skip("bug: reapTaskFolder does not check the ledger path against card_root (homeGuard)")
 	x := newTaskRig(t)
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("x"), 0o644); err != nil {
