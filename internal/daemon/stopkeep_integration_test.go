@@ -81,7 +81,7 @@ func TestStopRunnersEndsHostRunners(t *testing.T) {
 	task, _ := hostRunnerCard(t, d, "stop-runners")
 
 	d.stopRunners.Store(true)
-	d.stopSupervised(2 * time.Second)
+	d.stopSupervised(200 * time.Millisecond)
 
 	hostWait(t, 30*time.Second, "the exit to be filed", func() bool { return len(filedExits(t, d, task.ID)) == 1 })
 	time.Sleep(300 * time.Millisecond) // wait: a negative check, the exit must not be filed again
