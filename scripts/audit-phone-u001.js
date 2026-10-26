@@ -336,7 +336,7 @@ let vpNow = null;
 async function shoot(p, name, scope, note) {
   const key = name;
   const w = vpNow.width;
-  await p.waitForTimeout(350);
+  await settle(p);
   let data;
   try { data = await p.evaluate(scan, scope || ""); } catch (e) { data = { error: String(e) }; }
   if (note) data.note = note;
@@ -347,6 +347,24 @@ async function shoot(p, name, scope, note) {
   console.log("shot " + name + " " + w + (data.error ? " ERROR " + data.error : " small=" + data.smallCount + " off=" + data.offEdge.length +
     " clip=" + data.clippedCount + (data.docSideways ? " SIDEWAYS=" + data.docSideways : "")));
 }
+// The settle before a measure or a shot: the fetches an action started have answered, every finite animation has
+// ended, and two frames have drawn. A condition, when given, is waited for first.
+async function settle(p, cond, arg) {
+  if (cond) await p.waitForFunction(cond, arg, { timeout: 5000 }).catch(() => {});
+  await p.waitForFunction(() => !(window.__inflight > 0) && document.getAnimations()
+    .every(a => a.playState !== "running" || a.effect.getComputedTiming().iterations === Infinity), null, { timeout: 5000 }).catch(() => {});
+  await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
+}
+function countFetches() {
+  const real = window.fetch;
+  window.__inflight = 0;
+  window.fetch = function () {
+    window.__inflight++;
+    const r = real.apply(this, arguments);
+    r.then(() => { window.__inflight--; }, () => { window.__inflight--; });
+    return r;
+  };
+}
 function record(name, obj) { results[name] = results[name] || {}; results[name][vpNow.width] = Object.assign(results[name][vpNow.width] || {}, obj); }
 
 async function newPage(browser, vp, opts) {
@@ -356,6 +374,7 @@ async function newPage(browser, vp, opts) {
     localStorage.setItem("atrium.walked", "1");
   });
   await ctx.addInitScript(fakeSock);
+  await ctx.addInitScript(countFetches);
   const p = await ctx.newPage();
   p.__errors = [];
   p.on("pageerror", e => p.__errors.push(String(e)));
@@ -380,7 +399,7 @@ async function showAsk(p) {
     if (await p.$('#stack-list .stackrow[data-id="ask1"]')) return;
     await p.evaluate(i => { const b = [...document.querySelectorAll("#stack-seg button")]; const r = b.find(x => /^ready/.test(x.textContent.trim()));
       (i === 0 && r ? r : b[i % b.length]).click(); }, i);
-    await p.waitForTimeout(300);
+    await settle(p);
   }
 }
 async function step(name, fn) {
@@ -397,7 +416,7 @@ async function keyboard(p, name, fieldSel, actionSel) {
   // that is done here, and what is left to measure is whether the action can still be reached with it.
   await p.evaluate(() => document.activeElement && document.activeElement.scrollIntoView &&
     document.activeElement.scrollIntoView({ block: "nearest" }));
-  await p.waitForTimeout(400);
+  await settle(p);
   const kb = await p.evaluate(([f, a]) => {
     const H = innerHeight;
     const box = s => { const e = s && document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), vis: r.bottom > 0 && r.top < H && r.height > 0 }; };
@@ -414,14 +433,14 @@ async function board(browser, vp) {
   const { ctx, p } = await newPage(browser, vp);
   await p.goto(BASE + "/", { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
-  await p.waitForTimeout(800);
+  await settle(p);
   results.hoverOnly = results.hoverOnly || {};
   results.hoverOnly[vp.width] = await p.evaluate(hoverOnly);
 
   await step("stack", async () => {
     await shoot(p, "stack");
     await p.evaluate(() => { const s = document.querySelector('#stack-seg button:not(.on)'); document.querySelectorAll('#stack-seg button:not(.on)').forEach(b => b.click()); });
-    await p.waitForTimeout(300);
+    await settle(p);
     await shoot(p, "stack-all");
     await p.evaluate(() => window.scrollTo(0, 99999) || (document.querySelector("main").scrollTop = 99999));
     await shoot(p, "stack-all-scrolled");
@@ -439,7 +458,7 @@ async function board(browser, vp) {
     await showAsk(p);
     await touch(p, '#stack-list .stackrow[data-id="ask1"] .who b');
     await p.waitForSelector("#cardmenu.on", { timeout: 5000 });
-    await p.waitForTimeout(400);
+    await settle(p);
     const m = await p.evaluate(() => {
       const e = document.getElementById("cardmenu"), r = e.getBoundingClientRect();
       const items = [...e.querySelectorAll(":scope > button")].map(b => Math.round(b.getBoundingClientRect().height));
@@ -456,7 +475,7 @@ async function board(browser, vp) {
       await fly.tap({ force: true });
       const at = [150, 900];
       const open = [];
-      for (const ms of at) { await p.waitForTimeout(ms - (open.length ? at[0] : 0)); open.push(await p.evaluate(() => !!document.querySelector("#cardmenu button.subopen"))); }
+      for (const ms of at) { await p.waitForTimeout(ms - (open.length ? at[0] : 0)); open.push(await p.evaluate(() => !!document.querySelector("#cardmenu button.subopen"))); } // wait: the tap's flyout is read at fixed times after the finger lifts, which is the measurement
       record("card-menu", { flyoutAfterTap: { label: m.flyouts[0], at, open, menuStillOn: await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on")) } });
       await shoot(p, "card-menu-flyout", "#cardmenu");
     }
@@ -475,7 +494,7 @@ async function board(browser, vp) {
     if (q && await q.isVisible()) {
       const before = posts.length;
       await q.tap({ force: true });
-      await p.waitForTimeout(500);
+      await settle(p);
       record("questions", { tapPosted: posts.slice(before) });
       await shoot(p, "questions-chip");
     }
@@ -490,7 +509,7 @@ async function board(browser, vp) {
   });
   await step("board", async () => {
     await p.tap('nav .tab[data-view="board"]');
-    await p.waitForTimeout(500);
+    await settle(p, () => !!document.querySelector("#board .card"));
     await shoot(p, "board");
     await p.evaluate(() => { document.querySelector("main").scrollTop = 1200; window.scrollTo(0, 1200); });
     await shoot(p, "board-scrolled");
@@ -508,25 +527,25 @@ async function board(browser, vp) {
     await keyboard(p, "perms-cmd", "#perms-list .row.perm textarea.cmd", '#perms-list .row.perm [data-do="approve"]');
     // block with a reason: the block button asks why
     const blk = await p.$('#perms-list .row.perm [data-do="block"]');
-    if (blk) { await blk.tap(); await p.waitForTimeout(400); await shoot(p, "perms-block"); await p.keyboard.press("Escape"); }
+    if (blk) { await blk.tap(); await settle(p); await shoot(p, "perms-block"); await p.keyboard.press("Escape"); }
   });
   await step("terms-list", async () => {
     await p.tap('nav .tab[data-view="terms"]');
-    await p.waitForTimeout(600);
+    await settle(p, () => !!document.querySelector("#term-list .card.tab"));
     await shoot(p, "terms");
   });
   await step("terminal", async () => {
     await p.evaluate(() => attachTask("ask1"));
     await p.waitForFunction(() => typeof termSock !== "undefined" && termSock && termSock.readyState === 1, null, { timeout: 8000 });
-    await p.waitForTimeout(900);
+    await settle(p);
     await shoot(p, "terminal");
     await p.tap("#t-tray-handle").catch(() => p.evaluate(() => phoneTraySet(true)));
-    await p.waitForTimeout(400);
+    await settle(p);
     await shoot(p, "terminal-tray");
     const pick = await p.$("#t-pick");
-    if (pick && await pick.isVisible()) { await pick.tap(); await p.waitForTimeout(400); await shoot(p, "terminal-picker"); await pick.tap().catch(() => {}); }
+    if (pick && await pick.isVisible()) { await pick.tap(); await settle(p); await shoot(p, "terminal-picker"); await pick.tap().catch(() => {}); }
     await p.evaluate(() => phoneTraySet(false)).catch(() => {});
-    await p.waitForTimeout(300);
+    await settle(p);
     const perm = await p.evaluate(() => { const e = document.getElementById("term-perm"); return e && !e.hidden; });
     record("terminal", { termPermShown: perm });
     if (perm) {
@@ -555,12 +574,12 @@ async function board(browser, vp) {
       if (xt) await keyboard(p, "terminal-keys", "#t-screen .xterm-helper-textarea", "#t-keys");
     }
     await p.evaluate(() => toggleTermFull()).catch(() => {});
-    await p.waitForTimeout(400);
+    await settle(p);
     await shoot(p, "terminal-full");
     await p.evaluate(() => toggleTermFull()).catch(() => {});
     // the files panel and the cog, both from the tray
     await p.evaluate(() => { phoneTraySet(true); openTermFiles(); });
-    await p.waitForTimeout(500);
+    await settle(p);
     await shoot(p, "terminal-files");
     // A file row's actions (edit here, open there, get) show on :hover or :focus-within only. Tap the name, which
     // takes no focus, and ask whether they became visible.
@@ -568,37 +587,37 @@ async function board(browser, vp) {
       return f ? getComputedStyle(f).visibility : "none"; });
     const atRest = await facts();
     const nm = await p.$("#t-files-list .frow:not(.dir) .fname");
-    if (nm) { await touch(p, "#t-files-list .frow:not(.dir) .fname"); await p.waitForTimeout(300); }
+    if (nm) { await touch(p, "#t-files-list .frow:not(.dir) .fname"); await settle(p); }
     record("terminal-files", { factsAtRest: atRest, factsAfterNameTap: await facts() });
     if (nm) await shoot(p, "terminal-files-tapped");
     await p.evaluate(() => { openTermFiles(); });
     await p.evaluate(() => termSettings({ currentTarget: document.getElementById("t-cog"), target: document.getElementById("t-cog"), stopPropagation() {}, preventDefault() {} })).catch(() => {});
-    await p.waitForTimeout(400);
+    await settle(p);
     await shoot(p, "terminal-cog");
     await p.keyboard.press("Escape");
     await p.evaluate(() => phoneTraySet(false)).catch(() => {});
   });
   await step("history", async () => {
     await p.evaluate(() => switchView("history"));
-    await p.waitForTimeout(600);
+    await settle(p);
     await shoot(p, "history");
     await keyboard(p, "history-search", "#h-q", "#history-list");
   });
   await step("usage", async () => {
     await p.evaluate(() => switchView("usage"));
-    await p.waitForTimeout(1200);
+    await settle(p);
     await shoot(p, "usage");
     await p.evaluate(() => { document.querySelector("main").scrollTop = 800; window.scrollTo(0, 800); });
     await shoot(p, "usage-scrolled");
   });
   await step("runners", async () => {
     await p.evaluate(() => switchView("runners"));
-    await p.waitForTimeout(600);
+    await settle(p);
     const panes = await p.$$eval("#runners .pane-nav button", b => b.map(x => x.textContent.trim()));
     record("runners", { panes });
     for (let i = 0; i < panes.length; i++) {
       await p.evaluate(i => document.querySelectorAll("#runners .pane-nav button")[i].click(), i);
-      await p.waitForTimeout(350);
+      await settle(p);
       await shoot(p, "runners-" + panes[i].replace(/[^a-z0-9]+/gi, "-").toLowerCase());
     }
   });
@@ -619,12 +638,12 @@ async function board(browser, vp) {
     await p.evaluate(() => { const b = document.querySelector("#launch .dlg-body"); if (b) b.scrollTop = 0; });
     await keyboard(p, "launch-cwd", "#l-cwd", "#l-go");
     // The first instruction is always shown (u-005).
-    await p.waitForTimeout(300);
+    await settle(p);
     const pr = await p.$("#l-prompt");
     if (pr && await pr.isVisible()) await keyboard(p, "launch-prompt", "#l-prompt", "#l-go");
     else record("launch-prompt-kb", { stepError: "#l-prompt not visible" });
     await p.evaluate(() => openBrowse()).catch(() => {});
-    await p.waitForTimeout(500);
+    await settle(p);
     if (await p.$("#browse[open]")) { await shoot(p, "launch-browse"); await p.evaluate(() => document.getElementById("browse").close()); }
     await p.evaluate(() => document.getElementById("launch").close());
   });
@@ -638,7 +657,7 @@ async function board(browser, vp) {
     await shoot(p, "settings");
     for (let i = 0; i < panes.length; i++) {
       await p.evaluate(i => document.querySelectorAll("#settings .pane-nav button")[i].click(), i);
-      await p.waitForTimeout(350);
+      await settle(p);
       await shoot(p, "settings-" + panes[i].replace(/[^a-z0-9]+/gi, "-").toLowerCase());
     }
     // With the keyboard: the first visible text or number field on any pane, and whether the dialog's close is
@@ -646,7 +665,7 @@ async function board(browser, vp) {
     let done = false;
     for (let i = 0; i < panes.length && !done; i++) {
       await p.evaluate(i => document.querySelectorAll("#settings .pane-nav button")[i].click(), i);
-      await p.waitForTimeout(250);
+      await settle(p);
       const sel = await p.evaluate(() => {
         const f = [...document.querySelectorAll("#settings input[type=text], #settings input[type=number], #settings textarea")]
           .find(e => e.getBoundingClientRect().height > 0);
@@ -660,14 +679,14 @@ async function board(browser, vp) {
   });
   await step("toastlog", async () => {
     await p.evaluate(() => openToastLog());
-    await p.waitForTimeout(400);
+    await settle(p);
     await shoot(p, "toastlog");
     await p.keyboard.press("Escape");
     await p.evaluate(() => { const d = document.getElementById("toastlog"); if (d.open) d.close(); });
   });
   await step("switcher", async () => {
     await p.evaluate(() => openSwitcher());
-    await p.waitForTimeout(400);
+    await settle(p);
     await shoot(p, "switcher");
     await p.evaluate(() => { const d = document.getElementById("switcher"); if (d.open) d.close(); });
   });
@@ -680,21 +699,21 @@ async function hubBoard(browser, vp) {
   const { ctx, p } = await newPage(browser, vp);
   await p.goto(BASE + "/", { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
-  await p.waitForTimeout(1200);
+  await settle(p);
   await step("hub-stack", async () => { await shoot(p, "hub-stack"); });
   await step("rooms-menu", async () => {
     await p.tap("#hdr-toggle");
-    await p.waitForTimeout(300);
+    await settle(p);
     await shoot(p, "hub-header-open");
     await p.evaluate(() => openRooms());
-    await p.waitForTimeout(700);
+    await settle(p);
     await shoot(p, "rooms-menu");
     await p.evaluate(() => { const m = document.getElementById("rooms-menu"); if (m) m.hidden = true; });
     await p.tap("#hdr-toggle").catch(() => {});
   });
   await step("audit", async () => {
     await p.evaluate(() => switchView("audit"));
-    await p.waitForTimeout(800);
+    await settle(p);
     await shoot(p, "audit");
   });
   record("hub-errors", { errors: p.__errors.slice(0, 10) });
@@ -704,8 +723,8 @@ async function hubBoard(browser, vp) {
   await d.p.goto(BASE + "/?demo=rooms", { waitUntil: "domcontentloaded" });
   await step("rooms-demo", async () => {
     await d.p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive && roomsDemoTicks > 0, null, { timeout: 15000 });
-    await d.p.evaluate(() => openRooms());
-    await d.p.waitForTimeout(2500);
+    const ticks = await d.p.evaluate(() => { openRooms(); return roomsDemoTicks; });
+    await settle(d.p, t => roomsDemoTicks > t, ticks);
     await shoot(d.p, "rooms-dash");
     await d.p.evaluate(() => { const m = document.getElementById("rooms-menu"); const s = m && (m.querySelector(".rd-scroll") || m); if (s) s.scrollTop = 99999; });
     await shoot(d.p, "rooms-dash-scrolled");
@@ -719,10 +738,10 @@ async function popout(browser, vp) {
   await p.goto(BASE + "/#term=ask1", { waitUntil: "domcontentloaded" });
   await step("popout", async () => {
     await p.waitForFunction(() => typeof termSock !== "undefined" && termSock && termSock.readyState === 1, null, { timeout: 10000 });
-    await p.waitForTimeout(1000);
+    await settle(p);
     await shoot(p, "popout");
     await p.tap("#t-tray-handle").catch(() => p.evaluate(() => phoneTraySet(true)));
-    await p.waitForTimeout(400);
+    await settle(p);
     await shoot(p, "popout-tray");
   });
   await ctx.close();
@@ -734,35 +753,35 @@ async function mPage(browser, vp) {
   await p.goto(BASE + "/m/", { waitUntil: "domcontentloaded" });
   await step("m-home", async () => {
     await p.waitForSelector("#m-list .row", { timeout: 10000 });
-    await p.waitForTimeout(900);
+    await settle(p);
     await shoot(p, "m-home");
     await p.tap("#m-seg-all");
-    await p.waitForTimeout(500);
+    await settle(p);
     await shoot(p, "m-all");
     await p.tap("#m-seg-needs");
   });
   await step("m-perm-row", async () => {
     await p.waitForSelector('#m-list .row[data-id="perm1"]', { timeout: 10000 });
     const row = await p.$('#m-list .row[data-id="perm1"]');
-    if (row) { await row.tap(); await p.waitForSelector("#m-card.on", { timeout: 5000 }); await p.waitForTimeout(700); await shoot(p, "m-card-perm"); }
+    if (row) { await row.tap(); await p.waitForSelector("#m-card.on", { timeout: 5000 }); await settle(p); await shoot(p, "m-card-perm"); }
     // "Deny with a reason" opens a textarea under the buttons. Not the plain Deny, which sends at once.
     const why = await p.$("#m-card .mp-btn.why");
     if (why) {
-      await why.tap(); await p.waitForTimeout(400);
+      await why.tap(); await settle(p);
       await shoot(p, "m-card-perm-deny");
       await keyboard(p, "m-card-perm-deny", "#m-card .mp-reason-box", "#m-card .mp-btn.deny.go");
     }
     await p.goBack().catch(() => {});
-    await p.waitForTimeout(500);
+    await settle(p);
   });
   await step("m-card", async () => {
     await p.evaluate(() => { if (location.hash) history.replaceState(null, "", location.pathname); });
     await p.goto(BASE + "/m/", { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#m-list .row", { timeout: 10000 });
-    await p.waitForTimeout(600);
+    await settle(p);
     await touch(p, '#m-list .row[data-id="ask1"]');
     await p.waitForSelector("#m-card.on", { timeout: 5000 });
-    await p.waitForTimeout(900);
+    await settle(p);
     await shoot(p, "m-card");
     await p.evaluate(() => { const s = document.getElementById("m-card-scroll"); if (s) s.scrollTop = 99999; });
     await shoot(p, "m-card-scrolled");
@@ -785,10 +804,11 @@ async function main() {
     if (!ONLY || ONLY.has("hover-desktop")) {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
       await ctx.addInitScript(() => { localStorage.setItem("atrium.walked", "1"); });
+      await ctx.addInitScript(countFetches);
       const p = await ctx.newPage();
       await p.goto(BASE + "/", { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow, #board .card", { timeout: 15000 }).catch(() => {});
-      await p.waitForTimeout(800);
+      await settle(p);
       results.hoverOnlyDesktop = await p.evaluate(hoverOnly);
       await ctx.close();
     }
