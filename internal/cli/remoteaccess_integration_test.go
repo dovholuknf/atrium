@@ -32,7 +32,7 @@ func TestRemoteAccessOnOffAndState(t *testing.T) {
 	if out, err := runRemoteAccess(t, dir); err != nil || !strings.Contains(out, "remote access: off") {
 		t.Fatalf("fresh state: %q %v", out, err)
 	}
-	if out, err := runRemoteAccess(t, dir, "on", "--from", "hub,m1mini", "--port", "2222"); err != nil ||
+	if out, err := runRemoteAccess(t, dir, "on", "--from", "hub,m1mini", "--port", "2222", "--addr", "127.0.0.1"); err != nil ||
 		!strings.Contains(out, "on, port 2222, from hub, m1mini") {
 		t.Fatalf("on: %q %v", out, err)
 	}
@@ -47,7 +47,7 @@ func TestRemoteAccessOnOffAndState(t *testing.T) {
 		t.Fatalf("still on after off: %+v", s)
 	}
 	// Default from is *, and a bad list is refused.
-	if _, err := runRemoteAccess(t, dir, "on"); err != nil {
+	if _, err := runRemoteAccess(t, dir, "on", "--addr", "127.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
 	if s, _ = remoteaccess.Load(dir); !s.On || s.From[0] != "*" || s.Port != 22 {
