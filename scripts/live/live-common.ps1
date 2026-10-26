@@ -581,6 +581,7 @@ function Stop-Room {
         }
       }
       if ($script:StopRoomRefused) { return }
+      Say "waiting up to ${wait}s for room pid $($p.ProcessId) to exit while its cards wrap up"
       try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
         Say "room still up after ${wait}s, force stop"
