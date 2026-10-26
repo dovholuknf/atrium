@@ -409,6 +409,8 @@
   .chip.cache.pie { width: 14px; height: 14px; background: conic-gradient(var(--teal) var(--pie, 0deg), transparent 0); }
   .chip.cache.pie.due { border-color: var(--warn); background: conic-gradient(var(--warn) var(--pie, 0deg), transparent 0); }
   .chip.cache.stopped { width: 14px; height: 14px; background: linear-gradient(to top right, transparent calc(50% - 1px), var(--warn) calc(50% - 1px), var(--warn) calc(50% + 1px), transparent calc(50% + 1px)); }
+  /* A Terminals row already carries the runner dot, so its chip is only the dial or the stopped strike. */
+  .term-list .chip.cache:not(.pie):not(.stopped) { display: none; }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;

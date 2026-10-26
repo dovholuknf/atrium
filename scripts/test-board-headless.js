@@ -9469,6 +9469,55 @@ async function keepaliveSection(browser, base) {
     if (!/off . cold/.test(by["ka-off"].text)) fail("a card with its switch off does not say off and cold: " + JSON.stringify(by["ka-off"]));
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
 
+    // A Terminals row draws only the dial (pie, pie due) and the stopped strike. Every other state draws nothing
+    // there, and the same chip on a board card still shows. KA_ROW_SHOTS=<dir> writes the rows.
+    const soon = ms => new Date(Date.now() + ms).toISOString();
+    const rowCards = KA_CARDS.concat([
+      Object.assign({}, T1, { id: "ka-kept", display_title: "kept pie card", keepalive: { state: "on", refreshes: 2,
+        warm_until: soon(50 * 60000), next_refresh_at: soon(45 * 60000), last_refresh_at: soon(-10 * 60000) } }),
+      Object.assign({}, T1, { id: "ka-due", display_title: "due card", keepalive: { state: "on", refreshes: 1,
+        warm_until: soon(6 * 60000), next_refresh_at: soon(60000), last_refresh_at: soon(-50 * 60000) } }),
+      Object.assign({}, T1, { id: "ka-cold", display_title: "cold card", keepalive: { state: "on", refreshes: 0,
+        warm_until: soon(-60 * 60000) } }),
+      Object.assign({}, T1, { id: "ka-nocache", display_title: "no cache card", keepalive: { state: "on", refreshes: 0 } }),
+    ]);
+    const rows = await kp.evaluate(cards => {
+      const list = document.createElement("aside");
+      list.className = "term-list";
+      list.id = "ka-rows";
+      list.style.cssText = "position:fixed;left:0;top:0;width:360px;z-index:99999;background:var(--bg-2)";
+      const board = document.createElement("div");
+      document.body.append(list, board);
+      const out = cards.map(t => {
+        const row = document.createElement("div");
+        row.className = "card tab";
+        row.innerHTML = `<span>${esc(t.display_title)}</span>` + termRowChips(t);
+        list.appendChild(row);
+        const card = document.createElement("div");
+        card.innerHTML = cardHTML(t);
+        board.appendChild(card);
+        const c = row.querySelector(".chip.cache");
+        const b = card.querySelector(".chip.cache");
+        return { id: t.id, cls: c ? c.className : "", shown: !!c && c.getBoundingClientRect().width > 0,
+          boardShown: !!b && b.getBoundingClientRect().width > 0 };
+      });
+      board.remove();
+      return out;
+    }, rowCards);
+    const wantRow = { "ka-stop": "stopped", "ka-miss": "stopped", "ka-quiet": "pie", "ka-kept": "pie", "ka-due": "pie due" };
+    for (const r of rows) {
+      const want = wantRow[r.id];
+      if (want && (!r.shown || !want.split(" ").every(c => r.cls.split(" ").includes(c)))) {
+        fail("a Terminals row does not draw the " + want + " chip: " + JSON.stringify(r));
+      }
+      if (!want && r.shown) fail("a Terminals row draws a plain keep-alive dot: " + JSON.stringify(r));
+      if (r.id !== "ka-none" && !r.boardShown) fail("a board card lost its keep-alive chip: " + JSON.stringify(r));
+    }
+    if (process.env.KA_ROW_SHOTS) {
+      await kp.locator("#ka-rows").screenshot({ path: require("path").join(process.env.KA_ROW_SHOTS, "keepalive-rows.png") });
+    }
+    await kp.evaluate(() => document.getElementById("ka-rows").remove());
+
     // The card menu's switch: offered on a Claude card, reads its state, and
     // posts to that card. Not offered on a card with no switch.
     const menu = await kp.evaluate(async cards => {
