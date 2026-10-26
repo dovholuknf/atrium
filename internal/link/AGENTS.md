@@ -47,8 +47,8 @@ against and the operator chose on purpose.
   the room's loopback check would pass for anybody who could reach the hub. Once something else can reach a room,
   loopback stops meaning "this machine".
 - **`/v1/git/` is never proxied from the board.** A room's git is reached by the hub's own sync and collect only.
-- **The hub OFFERS a binary, the room decides, fetches and checks** (`upgrade.go`). Shipping an executable is more power
-  than stopping one, so there is no push of a binary down the link.
+- **The hub OFFERS a binary, the room decides, fetches and checks** (`conn/upgrade.go`). Shipping an executable is more
+  power than stopping one, so there is no push of a binary down the link.
 - **The control MCP's class is NOT a boundary** (`ctlclass.go`). It comes from `X-Atrium-Agent`, which anything on
   loopback can set, and a failed lookup serves the full set. Every handler keeps every check. The worker set is the
   `workerTools` map and only that map, so a new tool lands in `full` alone unless it is named there. Some file headers
@@ -88,22 +88,23 @@ against and the operator chose on purpose.
 
 | | |
 | --- | --- |
-| `link.go` / `wire/` | the package comment and aliases for `wire`, which holds `Timings`, the frames and `Path`, `PathState`, `RemoteAccess` |
-| `hub.go` / `room.go` | the hub's half (accept and lend connections) and the room's half (dial and serve) |
+| `link.go` / `wire/` | the package comment and aliases for `conn` and `wire`. `wire` holds `Timings`, the frames and `Path`, `PathState`, `RemoteAccess` |
+| `conn/hub.go` / `conn/room.go` | the hub's half (accept and lend connections) and the room's half (dial and serve) |
+| `conn/dials.go` / `conn/ladder.go` / `conn/pathstate.go` / `conn/stream.go` | warm connections, the order of paths a room tries, what each path says, streams over the link |
 | `transport/direct.go` / `certs.go` / `overlaytls.go` | mutual TLS, the hub's own CA, the join string, TLS inside an overlay |
 | `transport/ziti.go` / `zrok.go` | the overlay transports |
 | `proxy.go` | what the hub answers with, and what it refuses to pass to a room |
 | `rooms.go` / `fanout.go` / `cardroute.go` | scoped versus aggregate, merging lists, routing by card |
-| `events.go` / `announce.go` / `roomsevent.go` | the event stream fan-in, the room's cache announcements, the `rooms` event |
+| `events.go` / `conn/announce.go` / `roomsevent.go` | the event stream fan-in, the room's cache announcements, the `rooms` event |
 | `control_mcp.go` / `ctlclass.go` / `ctlaudit.go` | the control MCP served by the hub, who sees which tools, the audit line |
 | `ctl_end.go` / `control_alias.go` / `*_mcp.go` | individual control tools. `*_door.go` is one code shared with the stdio server |
-| `relay.go` / `control_relay*.go` / `hubask.go` | a room asking the hub to carry a message, a launch or a backlog call |
+| `conn/relay.go` / `control_relay*.go` / `hubask.go` | a room asking the hub to carry a message, a launch or a backlog call |
 | `address.go` / `resolve.go` | how a name is split and turned into a card |
 | `launchroute.go` / `launchcaps.go` / `openroute.go` | placing an unscoped launch or open, and the per-room cap |
 | `prclaim.go` / `prmove.go` / `prworktreeroute.go` / `pulls.go` | one owning room per PR, moving it, the pulls view |
 | `recognisers.go` / `recogniseroute.go` | the hub-owned recogniser table, and recognising a paste on the hub |
 | `forgeroute.go` / `forgeci.go` | the forge, run by the hub for its rooms |
-| `git.go` / `git_hub.go` / `git_store.go` / `git_url.go` | the git kind, the hub's git side, the store on the board, the lookup |
+| `conn/git.go` / `git_hub.go` / `git_store.go` / `git_url.go` | the git kind, the hub's git side, the store on the board, the lookup |
 | `tasks.go` / `tasks_launch.go` | the tasks of an item: the owner's routes, a room's report of one, and the scheduler that starts the next. `docs/runtime/item-tasks-design.md` |
 | `backlog.go` / `changerequest.go` / `deps.go` / `flow*.go` | the hub's backlog, change requests, gates and merge flow |
 | `merge.go` / `merge_mcp.go` | the merge queue and `atrium_merge`: asking, the runner that merges in the store and hands the candidate to the merge room, the verdict, the land, telling. `docs/rnd/merge-queue.md` |
@@ -113,7 +114,7 @@ against and the operator chose on purpose.
 | `autoapprove.go` | board-wide auto mode, enforced by answering pending requests over the relay |
 | `deployready.go` / `deployqueue.go` / `deploy_mcp.go` / `newcontexts.go` | deploying, and what a deploy waits for |
 | `restartgate.go` | holding a hub restart until nobody is typing |
-| `upgrade.go` | a room taking a newer binary, at its own choice |
+| `conn/upgrade.go` | a room taking a newer binary, at its own choice |
 | `setupwatch.go` / `predates.go` | whether rooms are set up alike, and a room too old for a route |
 | `views.go` | a board tree per worker worktree at `<name>.localhost` |
 | `hosts.go` | the extra names the hub answers to |

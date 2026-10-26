@@ -1,4 +1,4 @@
-package link
+package conn
 
 import (
 	"bufio"
@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // serveRoomSpec answers HTTP on one connection a room dialled, for the room the certificate named.
@@ -36,3 +38,9 @@ func (h *Hub) serveRoomSpec(name string, conn net.Conn, br *bufio.Reader) {
 	}
 	_ = srv.Serve(one)
 }
+
+const (
+	roomSpecKind = wire.RoomSpecKind
+	// RoomSpecRoomHeader carries the room the hello named, set by the hub over whatever the room sent.
+	RoomSpecRoomHeader = "X-Atrium-Spec-Room"
+)

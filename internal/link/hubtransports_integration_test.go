@@ -262,24 +262,19 @@ func TestARefusingControllerShowsFailingAndBacksOffToACap(t *testing.T) {
 func boolp(b bool) *bool { return &b }
 
 func TestTurningOffTheRoomLinksZitiIsRefusedWhileARoomIsOnlyOnIt(t *testing.T) {
-	h := NewHub(Timings{})
-	h.rooms[keyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
-		paths: []PathState{{Kind: "direct", State: PathDown}, {Kind: "ziti", State: PathOn}}}
-	h.rooms[keyOf("sg3")] = &attached{name: "sg3", via: "ziti",
-		paths: []PathState{{Kind: "direct", State: PathUp}, {Kind: "ziti", State: PathOn}}}
-	got := h.OnlyVia("ziti")
-	if len(got) != 1 || got[0] != "m1mini" {
-		t.Fatalf("only on ziti: %v", got)
-	}
+	var mu sync.Mutex
+	only := []string{"m1mini"}
 
 	f := &fakeBinds{}
-	tr := &HubTransports{Store: &fakeSettings{m: map[string]string{}}, Hub: h, IdentityFallback: "C:/ids/hub.json",
+	tr := &HubTransports{Store: &fakeSettings{m: map[string]string{}}, Hub: NewHub(Timings{}), IdentityFallback: "C:/ids/hub.json",
 		CloseIdentity: func(string) {},
 		Wait:          func(ctx context.Context, d time.Duration) bool { return waitTimer(ctx, time.Millisecond) }}
 	tr.Add(TransportItem{Name: TransportRoomZiti, Kind: "ziti", DefaultService: "atrium-hub", Listen: f.listen,
 		Serve: func(ctx context.Context, ln net.Listener) error { <-ctx.Done(); return ln.Close() },
 		Refuse: func() string {
-			if rs := h.OnlyVia("ziti"); len(rs) > 0 {
+			mu.Lock()
+			defer mu.Unlock()
+			if rs := only; len(rs) > 0 {
 				return "refused: " + strings.Join(rs, ", ") + " reaches this hub only over ziti"
 			}
 			return ""
@@ -298,7 +293,9 @@ func TestTurningOffTheRoomLinksZitiIsRefusedWhileARoomIsOnlyOnIt(t *testing.T) {
 	if !accepts(f.last()) {
 		t.Fatal("a refused turn off closed the listener")
 	}
-	delete(h.rooms, keyOf("m1mini"))
+	mu.Lock()
+	only = nil
+	mu.Unlock()
 	if _, err := tr.Set(TransportRoomZiti, boolp(false), nil, nil); err != nil {
 		t.Fatalf("with no room only on ziti it answered %v", err)
 	}

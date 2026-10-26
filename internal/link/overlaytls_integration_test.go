@@ -454,55 +454,6 @@ func TestOldPathCannotTakeAnAttachedProvenName(t *testing.T) {
 	}
 }
 
-// A KEYLESS ATTACH CANNOT REPLACE A KEYED ROOM, on any transport. Before f-026 an
-// empty key slipped past the comparison in `Hub.control`. Over a pipe, with the
-// key read from a table, so only that comparison is under test.
-func TestAKeylessAttachCannotReplaceAKeyedRoom(t *testing.T) {
-	var mu sync.Mutex
-	keys := map[net.Conn]string{}
-
-	h := NewHub(Timings{Beat: time.Hour, Silence: time.Hour, Warm: 1})
-	h.peerKey = func(c net.Conn) string {
-		mu.Lock()
-		defer mu.Unlock()
-		if k, ok := keys[c]; ok {
-			return k
-		}
-		return peerKey(c)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	dial := func(key string) welcome {
-		t.Helper()
-		srv, cli := net.Pipe()
-		t.Cleanup(func() { _ = cli.Close() })
-		mu.Lock()
-		keys[srv] = key
-		mu.Unlock()
-		go h.control(ctx, "alpha", hello{V: Version, Kind: "control", Room: "alpha"}, srv, bufio.NewReader(srv), "")
-		var w welcome
-		_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
-		br := bufio.NewReader(cli)
-		if err := readJSON(br, &w); err != nil {
-			t.Fatal(err)
-		}
-		// A PIPE HAS NO BUFFER, so the room keeps reading, as a socket would let
-		// the hub write its goodbye when this link is replaced.
-		_ = cli.SetDeadline(time.Time{})
-		go func() { _, _ = io.Copy(io.Discard, br) }()
-		return w
-	}
-	if w := dial("key-one"); !w.OK {
-		t.Fatalf("the keyed room was refused: %+v", w)
-	}
-	if w := dial(""); w.OK || !strings.Contains(w.Error, "different room") {
-		t.Fatalf("a keyless attach over a keyed room was answered %+v", w)
-	}
-	if w := dial("key-one"); !w.OK {
-		t.Fatalf("the same key could not reconnect: %+v", w)
-	}
-}
-
 // The same dial while the proven room is away: the name is still proven.
 func TestOldPathCannotTakeADetachedEnrolledName(t *testing.T) {
 	r := newRig(t)

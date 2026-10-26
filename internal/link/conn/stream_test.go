@@ -1,4 +1,4 @@
-package link
+package conn
 
 import (
 	"io"

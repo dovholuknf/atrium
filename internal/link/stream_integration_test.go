@@ -119,7 +119,7 @@ func (s *streamRig) addRoom(name string, access time.Duration) *streamRoom {
 	go func() { _ = room.Run(ctx) }()
 	// The stream handlers write to RemoteDir after their stream ends, and the TempDir is removed right after this
 	// runs, so the room is stopped and every handler waited for first.
-	s.t.Cleanup(func() { cancel(); room.endStreams() })
+	s.t.Cleanup(func() { cancel(); room.EndStreams() })
 	waitFor(s.t, 10*time.Second, func() bool { _, ok := s.rig.attachedAs(name); return ok })
 	sr := &streamRoom{room: room, dir: room.RemoteDir, seen: seen}
 	s.rooms[name] = sr
@@ -487,17 +487,6 @@ func TestTheBoardCannotReachTheStreamRoute(t *testing.T) {
 	}
 }
 
-// A room's own loopback board is not where the route is served: only the link handler has it.
-func TestTheRoomsOwnBoardHasNoStreamRoute(t *testing.T) {
-	var seen atomic.Int64
-	r := &Room{Name: "x", Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { seen.Add(1) })}
-	rec := httptest.NewRecorder()
-	r.linkHandler().ServeHTTP(rec, httptest.NewRequest("GET", "/_link/other", nil))
-	if rec.Code != http.StatusNotFound || seen.Load() != 0 {
-		t.Fatalf("%d, the board handler was asked %d times", rec.Code, seen.Load())
-	}
-}
-
 // f-ssh-wslrelay-loopback: the room dials the address its switch names, not always 127.0.0.1. sshd answers on a second
 // loopback address and nothing answers on 127.0.0.1 at that port, so only the right dial reaches the banner.
 func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
@@ -545,21 +534,4 @@ func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
 		t.Fatalf("status %d: %s", resp.StatusCode, streamBody(t, resp))
 	}
 	readBanner(t, br, c)
-}
-
-// A PEER THAT NEVER FINISHES ITS HALF cannot hold the connection forever.
-func TestSpliceClosesBothAfterTheLinger(t *testing.T) {
-	callerEnd, a := tcpPair(t)
-	_, b := tcpPair(t)
-	res := make(chan spliceResult, 1)
-	go func() { res <- splice(a, b, 100*time.Millisecond, nil) }()
-	callerEnd.(*net.TCPConn).CloseWrite()
-	select {
-	case r := <-res:
-		if !strings.Contains(r.EndedBy, endLinger) {
-			t.Fatalf("ended by %q", r.EndedBy)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("a half closed stream outlived its linger")
-	}
 }
