@@ -770,6 +770,22 @@ async function contextCycleSection(browser, base) {
     if (!o.some(x => x.context_cycle === "off" && x.context_limit_k === "300")) fail("the switch did not save off: " + JSON.stringify(patches));
     if (await wp.evaluate(() => document.getElementById("d-ctx-clear").hidden)) fail("the clear button is hidden although the card has its own limit.");
 
+    // The terminal cog's context limit row is a stepper that saves the same override.
+    const cog = await wp.evaluate(async () => {
+      termTask = current;
+      await termSettings({ preventDefault() {}, stopPropagation() {}, clientX: 10, clientY: 10, currentTarget: document.body });
+      const row = [...document.querySelectorAll("#card-menu .stepper, .stepper")]
+        .find(r => /context limit/.test(r.textContent));
+      if (!row) return null;
+      const before = Number(row.querySelector(".stepval").value);
+      row.querySelector(".stepup").click();
+      return { before, after: Number(row.querySelector(".stepval").value) };
+    });
+    if (!cog || cog.after !== cog.before + 1) fail("the cog's context limit row did not step: " + JSON.stringify(cog));
+    await new Promise(r => setTimeout(r, 300));
+    if (!patches.some(p => p.overrides && p.overrides.context_limit_k === String(cog.before + 1)))
+      fail("the cog's context limit did not save as an override: " + JSON.stringify(patches));
+
     // The history: the start as a line, the handoff as a row with its text behind a disclosure, escaped.
     await wp.waitForSelector("#d-events details.handoff", { timeout: slow(5000) })
       .catch(() => fail("the stored handoff is not a row in the card's history."));
