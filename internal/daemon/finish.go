@@ -54,6 +54,8 @@ const (
 
 // FinishRequest is a session declaring its work over, or reporting on it.
 type FinishRequest struct {
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int `json:"contract,omitempty"`
 	// Agent is the wire name, the same one every hook uses.
 	Agent string `json:"agent"`
 	// TaskID is used when the session was launched by atrium and told which

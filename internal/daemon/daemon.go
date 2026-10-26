@@ -1169,6 +1169,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/permission", d.handlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
 	agentMux.HandleFunc("/gate", d.handleGate)
+	agentMux.HandleFunc("/contract", handleContract)
 	agentMux.HandleFunc("/stop", d.handleStop)
 	agentMux.HandleFunc("/activity", d.handleActivity)
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)

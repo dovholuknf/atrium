@@ -89,6 +89,7 @@ database. This package is where they meet:
 | `atrium_rooms*.go` / `atrium_inventory.go` | the hub's side of rooms, from a terminal |
 | `atrium_backups.go` / `atrium_builds.go` / `atrium_share.go` | restoring the hub's store, builds to offer rooms, the board on zrok |
 | `hook*.go` / `session.go` / `turn.go` / `turnquestions.go` | the hooks |
+| `adapter_test_cmd.go` / `adapter_validate.go` | `atrium adapter test`, the runner contract conformance kit and its schema check |
 | `merged.go` | git's `post-merge`, which never fails a merge |
 | `control*.go` | the stdio `atrium control` MCP server and its tools. Many tools are the hub's, reached through the room |
 | `peer.go` / `cardverbs.go` | `peers`, `tell`, and naming a card by handle from a shell |

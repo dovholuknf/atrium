@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /activity body",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "integer",
+      "description": "contract version the sender speaks, absent means 1"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "name_source": {
+      "type": "string"
+    },
+    "event": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "agent_id": {
+      "type": "string"
+    },
+    "agent_type": {
+      "type": "string"
+    },
+    "notification": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "event"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "agent"
+      ]
+    },
+    {
+      "required": [
+        "task_id"
+      ]
+    }
+  ]
+}

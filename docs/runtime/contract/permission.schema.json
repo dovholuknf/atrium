@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /permission body",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "integer",
+      "description": "contract version the sender speaks, absent means 1"
+    },
+    "runner": {
+      "type": "string"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "name_source": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "details": {
+      "type": "string"
+    },
+    "dedup_key": {
+      "type": "string"
+    },
+    "tool_use_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "command"
+  ]
+}
