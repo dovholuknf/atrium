@@ -255,7 +255,11 @@ function markTermDead() {
   if (title) title.classList.remove("as-alias");
   // The pid is gone and the runner chip reads as running, so neither belongs.
   const chips = document.getElementById("t-chips");
-  if (chips) chips.innerHTML = `<span class="chip warn">exited</span>`;
+  if (chips) chips.innerHTML = `<span class="chip warn">exited</span>` + (termTask
+    ? `<span class="chip path t-deadid" data-path="${esc(bareId(termTask.id))}"
+       ><button class="copybit" data-tip="copy the card's id"
+         onclick="event.stopPropagation();copyPath(this.parentNode)"
+         >${copyIcon()}</button>${esc(bareId(termTask.id))}</span>` : "");
   document.getElementById("term-perm").hidden = true;
 
   // Asking a dead terminal to exit, or detaching from it, are both nonsense.
@@ -266,7 +270,7 @@ function markTermDead() {
   const bar = document.querySelector(".term-bar");
   if (bar) {
     bar.querySelectorAll("button").forEach(b => {
-      const keep = b.id === "t-copymode";
+      const keep = b.id === "t-copymode" || !!b.closest(".t-deadid");
       b.hidden = !keep;
     });
     if (!bar.querySelector(".t-close")) {
