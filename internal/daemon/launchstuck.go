@@ -124,6 +124,26 @@ func (d *Daemon) heardSince(t *store.Task, started time.Time) bool {
 	return d.act.heard(t.ID)
 }
 
+// tookTurn is heardSince without the session hook: a SessionStart alone is a runner that came up, and a launch
+// prompt the runner dropped leaves exactly that, an idle worker nobody would call stuck.
+func (d *Daemon) tookTurn(t *store.Task, started time.Time) bool {
+	if t.ToolHookSeenAt != nil && t.ToolHookSeenAt.After(started) {
+		return true
+	}
+	if t.StopHookSeenAt != nil && t.StopHookSeenAt.After(started) {
+		return true
+	}
+	return d.act.turned(t.ID)
+}
+
+// turned is whether a hook other than the session hook has set an activity for the card.
+func (a *activityTracker) turned(taskID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	return cur != nil && cur.What != ""
+}
+
 // neverHeard is a claude card with a live runner no hook has spoken for since
 // it started. Such a card has not "stopped without reporting": it never began.
 // False when there is no runner, or one with no recorded start.
@@ -175,7 +195,7 @@ func (d *Daemon) launchStuck(t *store.Task, now time.Time) *Escalation {
 			Minutes: int(now.Sub(since) / time.Minute), Text: text,
 		}
 	}
-	if d.heardSince(t, run.started) {
+	if d.tookTurn(t, run.started) {
 		// A permission atrium holds, and a dialog a Notification raised, are
 		// already on the card in their own words.
 		if t.Status == store.StatusNeedsPermission || d.act.dialogOpen(t.ID) || d.hasPendingPermission(t.ID) {
