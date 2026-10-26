@@ -238,8 +238,12 @@ async function cacheChipSection(browser, base) {
       "cc-cold": /^\u2744 cold since (?:yesterday )?\d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
       "cc-off": /^\u25cb off \u00b7 cold$/, "cc-none": /^\u2744 no cache yet$/
     };
-    const check = (where, o) => {
+    const check = (where, o, hidden = []) => {
       for (const [id, re] of Object.entries(expect)) {
+        if (hidden.includes(id)) {
+          if (o[id] && o[id].length) fail("cacheChip " + where + ": " + id + " drew a chip the row hides " + JSON.stringify(o[id]));
+          continue;
+        }
         if (!o[id] || o[id].length !== 1 || !re.test(o[id][0])) fail("cacheChip " + where + ": " + id + " shows " + JSON.stringify(o[id]));
       }
       if (o["cc-shell"] && o["cc-shell"].length) fail("cacheChip " + where + ": a non-Claude card drew a chip " + JSON.stringify(o["cc-shell"]));
@@ -258,7 +262,7 @@ async function cacheChipSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector(".term-list .card", { timeout: slow(10000) });
     await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 6, null, { timeout: slow(10000) });
-    check("terminals list", await texts(".term-list .card"));
+    check("terminals list", await texts(".term-list .card"), ["cc-warm", "cc-cold", "cc-off", "cc-none"]);
     if (shots) await p.screenshot({ path: path.join(shots, "u-032-terms-1400x900.png") });
 
     // The header: attach a card and its chip is in the bar. A fake socket, as the phone sections use.
@@ -349,7 +353,7 @@ async function cacheChipSection(browser, base) {
           c.querySelectorAll(".chip.cache").forEach(ch => {
             const r = ch.getBoundingClientRect();
             if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.innerText);
-            shorts.push(ch.innerText.trim());
+            if (r.width) shorts.push(ch.innerText.trim());
             if (r.width > 16 || r.height > 16) bad.push("chip is " + r.width + "x" + r.height + ", not a dot");
             if (ch.getAttribute("aria-label").indexOf(ch.querySelector(".cfull").textContent) !== 0) bad.push("aria " + ch.innerText);
           });
