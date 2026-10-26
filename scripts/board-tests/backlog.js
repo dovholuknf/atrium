@@ -101,7 +101,7 @@ async function backlogRowsSection(browser, base) {
     if (got.rows.join() !== "bk-high-new,bk-low,bk-int,bk-high-old,bk-med,bk-none") fail("backlogRows: the default order is " + got.rows);
     if (got.rows.includes("bk-done") || got.rows.includes("bk-held")) fail("backlogRows: a finished or held item is listed by default");
     if (got.oldBox) fail("backlogRows: the department box or the open only box is still on the page");
-    if (!b.gets.length || !b.gets.every(q => q === "")) fail("backlogRows: the read carried a filter, the board filters what it holds: " + b.gets.join(" "));
+    if (!b.gets.length || !b.gets.every(q => q === "?bodies=1")) fail("backlogRows: the read carried a filter, the board filters what it holds: " + b.gets.join(" "));
     if (got.head.join() !== "status,dept,id,priority,title,created,changed") fail("backlogRows: the header is " + got.head);
     for (const w of ["in-progress", "fabric", "bk-high-new", "High and new"]) if (!got.first.includes(w)) fail("backlogRows: a row lacks " + w + ": " + got.first);
     if (got.prio !== "bk-high-new:high,bk-low:low,bk-int:low,bk-high-old:high,bk-med:medium,bk-none:unset") fail("backlogRows: the priority selects read " + got.prio);
