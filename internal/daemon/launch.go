@@ -1167,7 +1167,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// THE RESOURCES LINE rides on every fresh start with a prompt, an outside-code card included: it names a tool
 	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile).
 	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" {
-		wanted = withResourcesLine(wanted)
+		wanted = withToolsLine(withResourcesLine(wanted))
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
 	// different reason: a relaunch or an resume of a card that was started
@@ -1475,7 +1475,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	if v, ok := classicRendererDefault(h, launchEnv); ok {
 		atrium[classicRendererEnv] = v
 	}
-	env := childEnvFrom(base, launchEnv, atrium)
+	env := withToolDirs(childEnvFrom(base, launchEnv, atrium), os.Getenv("PATH"))
 	// Before anything is spawned: a runner that cannot run a tool must not make
 	// a card that looks alive. See gitbash.go.
 	if add, err := launch.CheckGitBash(h.ID, env); err != nil {
@@ -1977,7 +1977,7 @@ func writeBriefFile(cwd, brief string, gitURL bool) (string, error) {
 	if gitURL {
 		body = withGitURLLine(brief)
 	}
-	body = withResourcesLine(body)
+	body = withToolsLine(withResourcesLine(body))
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
