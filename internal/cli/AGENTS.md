@@ -93,6 +93,7 @@ database. This package is where they meet:
 | `control*.go` | the stdio `atrium control` MCP server and its tools. Many tools are the hub's, reached through the room |
 | `peer.go` / `cardverbs.go` | `peers`, `tell`, and naming a card by handle from a shell |
 | `finish.go` / `help.go` (`atrium ask`) / `ready.go` | an agent saying it is done, stuck, or that its handoff is written |
+| `wait.go` | `atrium wait`: block until the board, the room link and named rooms answer |
 | `launch.go` / `dispatch.go` / `open.go` / `close.go` | starting work here, queueing it for a room, opening a link, closing a card |
 | `stop.go` / `preview.go` / `tenant.go` | stopping without killing, a throwaway board, naming an atrium |
 | `ancestry*.go` | finding the runner a hook is under |
