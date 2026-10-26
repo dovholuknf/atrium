@@ -165,6 +165,34 @@ func newTaskCmd() *cobra.Command {
 	return c
 }
 
+func newCdCmd() *cobra.Command {
+	var boardURL string
+	c := &cobra.Command{
+		Use:   "cd <who>",
+		Short: "Print a card's worktree path, for a shell function: cd \"$(atrium cd rnd)\".",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			got, err := callCard(boardURL, http.MethodGet, args[0], "", nil)
+			if err != nil {
+				return err
+			}
+			var t struct {
+				Worktree string `json:"worktree"`
+			}
+			if err := json.Unmarshal(got.body, &t); err != nil {
+				return fmt.Errorf("could not read the card: %w", err)
+			}
+			if t.Worktree == "" {
+				return fmt.Errorf("%s has no worktree", got.reached())
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), t.Worktree)
+			return err
+		},
+	}
+	c.Flags().StringVar(&boardURL, "url", "", "atrium board address (default: $ATRIUM_BOARD_URL or the running daemon's)")
+	return c
+}
+
 func newExitCmd() *cobra.Command {
 	var boardURL string
 	var force bool
