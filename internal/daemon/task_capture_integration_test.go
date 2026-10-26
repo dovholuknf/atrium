@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -290,7 +291,9 @@ func TestATaskLedgerPathOutsideTheCardRootIsNotRemoved(t *testing.T) {
 }
 
 func TestARunnerStillAliveAfterTheWaitIsCaptureFailedWithTheFolderKept(t *testing.T) {
-	t.Skip("bug: captureTask does not check that the runner is gone after the 60 second wait")
+	was := taskExitWait
+	taskExitWait = 100 * time.Millisecond
+	t.Cleanup(func() { taskExitWait = was })
 	x := newTaskRig(t, "out.txt")
 	x.write(t, "out.txt", 1)
 	r := &runner{taskID: x.card.ID}
