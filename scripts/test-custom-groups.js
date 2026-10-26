@@ -108,5 +108,14 @@ if (!(pos("r1") < pos("r2") && pos("r2") < pos("r3"))) {
 // The cards in none of your groups are the board's own heap and keep the sort.
 if (!(pos("u2") < pos("u1"))) fail("untagged cards were reordered by rank, not left to the sort");
 
+// A GROUP MATCHES ITS ALIASES. A PR card tagged `atrium:pr` by one launch path lands in `prs` with one tagged `prs`.
+const { groupMatches } = new Function(lift("function groupMatches(", "\n}") + "\nreturn { groupMatches };")();
+const aliased = { groups: ["prs"], aliases: { prs: ["atrium:pr", "pull-request"] } };
+for (const tags of [["prs"], ["atrium:pr"], ["x", "pull-request"]]) {
+  if (!groupMatches(aliased, "prs", tags)) fail("a card tagged " + tags + " is not in the group prs");
+}
+if (groupMatches(aliased, "prs", ["review"])) fail("a card tagged review matched the group prs");
+if (groupMatches({ groups: ["prs"] }, "prs", ["atrium:pr"])) fail("a group with no aliases matched a tag that is not its own");
+
 if (bad) process.exit(1);
-console.log("custom groups: an empty one is drawn, a card in two is drawn in both, and rank holds the order.");
+console.log("custom groups: an empty one is drawn, a card in two is drawn in both, rank holds the order, and aliases match.");
