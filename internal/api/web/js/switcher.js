@@ -225,7 +225,7 @@ function swReal(t, q) {
 }
 
 // The title with what was typed marked, so a row says why it matched.
-function swMark(text, q) {
+function swHighlight(text, q) {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   const low = text.toLowerCase();
   const on = new Array(text.length).fill(false);
@@ -375,14 +375,14 @@ function paintSwitcher() {
         return `
       <div class="swrow ${i === swSel ? "on" : ""}" data-harness="${esc(t.harness)}">
         ${runnerMark(t.harness)}
-        <span class="swname">${swMark(t.label, swQuery)}</span>
+        <span class="swname">${swHighlight(t.label, swQuery)}</span>
         <span class="swdir">new agent</span>
       </div>`;
       }
       return `
       <div class="swrow ${i === swSel ? "on" : ""}" data-id="${esc(t.id)}">
         ${runnerMark(t.runner)}
-        <span class="swname">${swMark(String(t.display_title || t.title || terminalLabel(t) || ""), swQuery)}</span>
+        <span class="swname">${swHighlight(String(t.display_title || t.title || terminalLabel(t) || ""), swQuery)}</span>
         ${sameCard(t.id, here) ? `<span class="chip">here</span>` : ""}
         ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
