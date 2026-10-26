@@ -2624,7 +2624,16 @@ function sizeTermHost() {
   // Nothing measured yet: leave the 100% fallback in place rather than collapse
   // the host to zero.
   if (!cell) { el.style.height = ""; return; }
+  const b = term.buffer.active, atBottom = b.viewportY >= b.baseY, was = el.style.height;
   el.style.height = Math.round(term.rows * cell) + "px";
+  // A taller grid clamps xterm's scrollTop before xterm grows its scroll area, and xterm reads the clamp's scroll
+  // event as the operator scrolling up, so output stops following (u-016). The read clamps now, and the scroll event
+  // runs before the frame's callbacks, so the bottom is put back after xterm has taken it.
+  if (atBottom && el.style.height !== was) {
+    void el.offsetHeight;
+    const t = term;
+    requestAnimationFrame(() => { if (term === t) t.scrollToBottom(); });
+  }
   tallClip();
 }
 
