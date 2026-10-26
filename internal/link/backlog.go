@@ -15,7 +15,8 @@ import (
 // The hub's backlog and its director reports, which every room reads and writes through the hub. See
 // internal/hubstore/backlog.go for the rows and docs/rnd/reports-channel-design.md for why they are here.
 //
-//	GET  /_hub/backlog?dept=&status=&open=1   the items, filtered, without their bodies
+//	GET  /_hub/backlog?dept=&status=&open=1   the items, filtered, without their bodies. bodies=1 keeps the first
+//	                                          backlogExcerptMax bytes of each, which the board searches
 //	POST /_hub/backlog                        file one {id?, dept, title, body?, priority?, by?, room?}. No id takes
 //	                                          the next `<prefix>-<n>` of the department. {upsert:true, status?} makes
 //	                                          the row for the id match a file (import), changing only what differs
@@ -52,6 +53,9 @@ var (
 	backlogIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,79}$`)
 	reportIDRe  = regexp.MustCompile(`^rp_[1-9][0-9]{0,17}$`)
 )
+
+// backlogExcerptMax bounds a body in a list so a thousand items stay a small payload.
+const backlogExcerptMax = 2000
 
 func (p *Proxy) serveBacklog(w http.ResponseWriter, r *http.Request, sub string) {
 	st := p.backlogStore()
@@ -153,8 +157,13 @@ func (p *Proxy) itemList(w http.ResponseWriter, r *http.Request, st *hubstore.St
 		return
 	}
 	// THE BODY IS LEFT OUT OF A LIST. A list is for finding an item, and GET /_hub/backlog/<id> reads one whole.
+	bodies := q.Get("bodies") == "1"
 	for i := range items {
-		items[i].Body = ""
+		if !bodies {
+			items[i].Body = ""
+		} else if len(items[i].Body) > backlogExcerptMax {
+			items[i].Body = strings.ToValidUTF8(items[i].Body[:backlogExcerptMax], "")
+		}
 	}
 	crJSON(w, http.StatusOK, map[string]any{"items": items})
 }

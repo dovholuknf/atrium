@@ -72,6 +72,18 @@ func TestBacklogFiledOnOneRoomIsListedAndReadFromAnother(t *testing.T) {
 	if code != 200 || !strings.Contains(body, `"f-new-x"`) || strings.Contains(body, "the whole item") {
 		t.Fatalf("list: %d %s", code, body)
 	}
+	code, body = x.send("GET", "/_hub/backlog?dept=fabric&bodies=1", "", "203.0.113.9:4000")
+	if code != 200 || !strings.Contains(body, "the whole item") {
+		t.Fatalf("list with bodies: %d %s", code, body)
+	}
+	if code, body := x.send("POST", "/_hub/backlog", js(map[string]any{"id": "f-long", "dept": "rnd", "title": "long",
+		"body": strings.Repeat("é", backlogExcerptMax), "by": "orch@sg4"}), loopAddr); code != http.StatusCreated {
+		t.Fatalf("file long: %d %s", code, body)
+	}
+	_, body = x.send("GET", "/_hub/backlog?dept=rnd&bodies=1", "", loopAddr)
+	if got := strings.Count(body, "é"); got != backlogExcerptMax/2 {
+		t.Fatalf("a long body is not cut to an excerpt: %d runes", got)
+	}
 	code, body = x.send("GET", "/_hub/backlog/f-new-x", "", loopAddr)
 	if code != 200 || str(obj(t, body), "body") != "the whole item" || str(obj(t, body), "filed_room") != "sg4" {
 		t.Fatalf("get: %d %s", code, body)
