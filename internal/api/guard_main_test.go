@@ -60,3 +60,26 @@ func (m *migratedFixture) path() (string, error) {
 	})
 	return filepath.Join(m.dir, "atrium.db"), m.err
 }
+
+// openMigrated opens this test's own copy of the migrated template, so no test pays the migration chain.
+func openMigrated(t *testing.T) *store.Store {
+	t.Helper()
+	template, err := migrated.path()
+	if err != nil {
+		t.Fatalf("building the migrated template: %v", err)
+	}
+	b, err := os.ReadFile(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "atrium.db")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
+}
