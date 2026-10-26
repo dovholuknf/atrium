@@ -1104,7 +1104,7 @@ async function transportToggleSection(browser, base) {
 }
 
 // hubTransports: the gear lists the hub's ziti transports (the board, the room link, the CI hook) with a state, a
-// service and an identity each. Turning one on or off PUTs {name, on, service, identity} to /_hub/transports, a flag
+// service and an identity each, and its zrok share with a state and a line of masked token and env. Turning one on or off PUTs {name, on, service, identity} to /_hub/transports, a flag
 // seed is named, a 409 refusal is shown as the hub said it, and a 403 makes the row read-only.
 // HT_SHOTS=dir writes the row before (no section) and after.
 async function hubTransportsSection(browser, base) {
@@ -1120,7 +1120,8 @@ async function hubTransportsSection(browser, base) {
       { name: "ci-hook", label: "CI hook", kind: "ci-hook", on: false, state: "off", service: "ziti-hook", default_service: "ziti-hook",
         identity: "", identity_used: "/ids/hub.json", switchable: true },
       { name: "room-zrok", label: "Room link over zrok", kind: "zrok", on: st.zrok, state: st.zrok ? "bound" : "off", service: "",
-        default_service: "", identity: "", identity_used: "", seeded: ["on"], switchable: true, no_service: true },
+        default_service: "", identity: "", identity_used: "", seeded: ["on"], switchable: true, no_service: true,
+        detail: "share abcd..., env zEnv1 at https://api.zrok.io" },
     ] });
     await ctx.route("**/_hub/transports", route => {
       const req = route.request();
@@ -1163,6 +1164,7 @@ async function hubTransportsSection(browser, base) {
     if (a[0].btn !== "turn on" || a[1].btn !== "turn off") fail(tag + "the switches read " + JSON.stringify(a.map(x => x.btn)));
 
     if (!/set by flag: on/.test(a[3].text) || a[3].btn !== "turn on") fail(tag + "the zrok row reads " + a[3].text + " / " + a[3].btn);
+    if (!a[3].text.includes("share abcd..., env zEnv1 at https://api.zrok.io")) fail(tag + "the zrok row shows no share or env: " + a[3].text);
     const zrokBox = await p.evaluate(() => ({ inputs: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] input').length,
       apply: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] .ht-apply').length }));
     if (zrokBox.inputs || zrokBox.apply) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrokBox));

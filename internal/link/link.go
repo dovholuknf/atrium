@@ -113,6 +113,7 @@ var (
 	NewCSR         = transport.NewCSR
 	ParseToken     = transport.ParseToken
 	EnrolOver      = transport.EnrolOver
+	MaskShare      = wire.MaskShare
 
 	MintOverlayToken     = transport.MintOverlayToken
 	DirectAuthenticated  = transport.DirectAuthenticated
