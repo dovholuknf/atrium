@@ -736,8 +736,9 @@ func (d *Daemon) escalationFor(taskID string) any {
 }
 
 // watchWorkers is the watchdog. One pass over the live agent-launched cards,
-// on the reaper's tick. It reads the store and the in-memory activity, never
-// touches a runner, and only ever tells the launcher or the board.
+// on the reaper's tick. It reads the store and the in-memory activity, touches a
+// runner only to retype a launch prompt it dropped, and otherwise only tells the
+// launcher or the board.
 //
 // Two conditions in stage 1:
 //
@@ -758,6 +759,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	for _, t := range tasks {
 		var x *Escalation
 		if d.reportsToLauncher(t) {
+			d.retypeLaunchPrompt(t, now)
 			x = d.stuckNow(t, now)
 			d.wakeLauncher(t, x)
 		} else {

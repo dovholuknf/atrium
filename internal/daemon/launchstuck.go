@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -134,6 +135,42 @@ func (d *Daemon) tookTurn(t *store.Task, started time.Time) bool {
 		return true
 	}
 	return d.act.turned(t.ID)
+}
+
+// launchRetypeLabel is the banner on a launch prompt atrium types again.
+var launchRetypeLabel = atriumLabel("your launch prompt, typed again because it never reached you:")
+
+// retypeLaunchPrompt types a launch prompt the runner dropped, once: its session hook spoke, no prompt or tool hook
+// followed, and the terminal has gone quiet with no dialog on it. A gate that holds tries again next tick.
+func (d *Daemon) retypeLaunchPrompt(t *store.Task, now time.Time) {
+	run := d.sup.get(t.ID)
+	if run == nil || run.buf == nil || run.started.IsZero() || run.resumed {
+		return
+	}
+	p := run.owedPrompt.Load()
+	if p == nil {
+		return
+	}
+	if d.tookTurn(t, run.started) {
+		run.owedPrompt.Store(nil)
+		return
+	}
+	outAt := run.lastOutputAt()
+	if !d.heardSince(t, run.started) || now.Sub(outAt) < TerminalMenuAfter || d.act.dialogOpen(t.ID) {
+		return
+	}
+	if hit := d.scanTerminal(t.ID, run, outAt); hit.prompt != "" || hit.menu {
+		return
+	}
+	wrote, err := d.typeLabelledGuardedAs(run, t.ID, launchRetypeLabel, *p, nil, store.DeliveryNotice)
+	if err != nil {
+		log.Printf("[atrium] could not retype the launch prompt of %s: %v", t.DisplayTitle(), err)
+		return
+	}
+	if wrote {
+		run.owedPrompt.Store(nil)
+		log.Printf("[atrium] %s took no turn on its launch prompt, typed it again", t.DisplayTitle())
+	}
 }
 
 // turned is whether a hook other than the session hook has set an activity for the card.

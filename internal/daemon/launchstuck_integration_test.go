@@ -365,6 +365,46 @@ func TestASessionStartHookAloneIsStillLaunchIdle(t *testing.T) {
 	}
 }
 
+func TestADroppedLaunchPromptIsTypedAgainOnce(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, r := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
+	owed := "read BRIEF.md and do it"
+	r.owedPrompt.Store(&owed)
+	pty := r.pty.(*fakePTY)
+	d.retypeLaunchPrompt(task, time.Now())
+	if got := pty.written(); got != "" {
+		t.Fatalf("typed %q before the session hook spoke", got)
+	}
+	if err := d.onSession(SessionEvent{Agent: task.WireName, Event: "start", Source: "startup", TaskID: task.ID}); err != nil {
+		t.Fatal(err)
+	}
+	d.retypeLaunchPrompt(task, time.Now())
+	if got := pty.written(); !strings.Contains(got, owed) {
+		t.Fatalf("typed %q, want the launch prompt", got)
+	}
+	before := pty.written()
+	r.lastOut.Store(time.Now().Add(-time.Hour).UnixNano())
+	d.retypeLaunchPrompt(task, time.Now())
+	if pty.written() != before {
+		t.Fatal("typed the launch prompt twice")
+	}
+}
+
+func TestALaunchPromptThatStartedATurnIsNotTypedAgain(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	task, r := stuckWorker(t, d, "x\r\n", 10*time.Minute, 10*time.Minute)
+	owed := "read BRIEF.md and do it"
+	r.owedPrompt.Store(&owed)
+	d.act.sessionSpoke(task.ID)
+	d.act.set(task.ID, ActivityThinking, "")
+	d.retypeLaunchPrompt(task, time.Now())
+	if got := r.pty.(*fakePTY).written(); got != "" {
+		t.Fatalf("typed %q after a turn began", got)
+	}
+}
+
 const clearScreen = "\x1b[2J\x1b[H"
 
 // The review's probe: a grep output line quoting the footer, above claude's input box.

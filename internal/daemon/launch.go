@@ -1523,6 +1523,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			return nil, err
 		}
 		spawned = sp
+		if prompt != "" {
+			sp.owedPrompt.Store(&prompt)
+		}
 		pid := sp.pid
 		via = "pty"
 		// Terminate and the liveness reaper both key off the pid. A window mode

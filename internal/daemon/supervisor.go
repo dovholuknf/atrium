@@ -630,6 +630,8 @@ type runner struct {
 	// a dead card and a terminal that never appeared. Knowing the launch asked
 	// for a resume is what lets that be retried as a fresh start.
 	resumed bool
+	// owedPrompt is the launch prompt until the runner submits it or atrium types it again. See retypeLaunchPrompt.
+	owedPrompt atomic.Pointer[string]
 	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
 	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
 	esc         screen.EscParser
