@@ -29,7 +29,7 @@
         "term*", "tallPty", "attachAtOnce", "switch*", "copySelect", "cleanCopy*","clear*", "paste*", "quickPaste", "repoPaste", "walk*",
         "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepaliveMark", "coldHandoff", "keepMemory",
         "idle*", "looksIdle", "joined*", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
-        "bridge", "collapsedBridge", "groupBridge", "selectedFits", "selectedHead", "termQuestions", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
+        "bridge", "collapsedBridge", "groupBridge", "selectedFits", "selectedHead", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
         "newContextSse", "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
       ],
       "sources": [
@@ -188,7 +188,7 @@
     "growls": {
       "page": "growls, questions, notifications, toasts, held lines, auto permission",
       "units": [
-        "growl*", "ciGrowl", "askAgain", "alertKinds", "questionsClick", "questionLines", "quietDoer", "popoutBell", "windowMute", "notify*", "trayMerge", "sayEnter", "sayWhen",
+        "growl*", "ciGrowl", "askAgain", "alertKinds", "questionsClick", "quietDoer", "popoutBell", "windowMute", "notify*", "trayMerge", "sayEnter", "sayWhen",
         "toast*", "hears", "heldLine", "heldLink", "blockerMark", "stuck", "autoPerm", "gauto", "soundPhone", "mailChip", "heldEnvelope", "cycleChip", "cardRowChips"
       ],
       "sources": [

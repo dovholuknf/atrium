@@ -1165,7 +1165,6 @@ function termRow(t, deep, kid) {
         </div>
         ${termRowChips(t, keptChip)}${termKidsToggle(t, termKidTotal(t), termKidTotal(t) - shown.length, shut)}
       </div>
-      ${typeof seenQuestionLines === "function" ? seenQuestionLines(t) : ""}
     </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
 
