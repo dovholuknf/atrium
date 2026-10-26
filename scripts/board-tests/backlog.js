@@ -49,6 +49,7 @@ async function backlogBoard(browser, base, o) {
     let list = items;
     if (u.searchParams.get("open") === "1") list = list.filter(b => b.status !== "done" && b.status !== "dropped");
     if (u.searchParams.get("dept")) list = list.filter(b => b.dept === u.searchParams.get("dept"));
+    if (u.searchParams.get("bodies") !== "1") list = list.map(b => Object.assign({}, b, { body: "" }));
     return json(r, 200, { items: list });
   });
   await p.goto(base + "/", { waitUntil: "domcontentloaded" });
