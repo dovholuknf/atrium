@@ -88,7 +88,7 @@
   "internal/gitsync/viewcache_test.go": 2,
   "internal/hubstore/docs_integration_test.go": 1,
   "internal/link/changerequest_integration_test.go": 2,
-  "internal/link/conn/announce_integration_test.go": 5,
+  "internal/link/conn/announce_integration_test.go": 2,
   "internal/link/conn/roomlogin_integration_test.go": 1,
   "internal/link/conn/transportoff_integration_test.go": 1,
   "internal/link/conn/transportorder_integration_test.go": 1,

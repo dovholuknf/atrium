@@ -33,6 +33,7 @@ type roomState struct {
 	// streams counts the event streams that have started listening. A change made before one is listening is
 	// never seen by it, so a test that changes the state waits for one first.
 	streams int
+	refused int
 }
 
 func newRoomState(cards ...map[string]any) *roomState {
@@ -59,6 +60,23 @@ func (s *roomState) fail(body string, code int) {
 	close(old)
 }
 
+// mended waits for the room to refuse a read, then mends it and waits for an announcement after `sent`, which
+// must come after anything the refused read sent.
+func mended(t *testing.T, s *roomState, got *[]announcement, mu *sync.Mutex, sent int) {
+	t.Helper()
+	waitFor(t, announceWait, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.refused > 0
+	})
+	s.fail("", 0)
+	waitFor(t, announceWait, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(*got) > sent
+	})
+}
+
 func (s *roomState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/v1/state":
@@ -76,6 +94,9 @@ func (s *roomState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if code == 0 {
 				code = http.StatusInternalServerError
 			}
+			s.mu.Lock()
+			s.refused++
+			s.mu.Unlock()
 			w.WriteHeader(code)
 			_, _ = w.Write([]byte(broken))
 			return
@@ -265,14 +286,21 @@ func TestNothingIsSentWhenNothingChanged(t *testing.T) {
 		state.set(map[string]any{"id": "one", "status": "running"})
 		time.Sleep(20 * time.Millisecond)
 	}
-	time.Sleep(2 * announceEvery)
+	// A real change, announced only after anything the ten events sent.
+	state.set(map[string]any{"id": "one", "status": "done"})
+	waitFor(t, announceWait, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		last := (*got)[len(*got)-1]
+		return len(last.Cards) == 1 && last.Cards[0].Status == "done"
+	})
 
 	mu.Lock()
 	now := len(*got)
 	mu.Unlock()
-	if now != after {
+	if now != after+1 {
 		t.Fatalf("%d announcement(s) were sent for ten events that changed nothing",
-			now-after)
+			now-after-1)
 	}
 }
 
@@ -306,13 +334,13 @@ func TestARoomInTroubleDoesNotAnnounceItselfEmpty(t *testing.T) {
 	// Now the room breaks, the way `s.fail` breaks: a status and an error
 	// object, with no card list in it at all.
 	state.fail(`{"error":"store is halted"}`, 500)
-	time.Sleep(3 * announceEvery)
+	mended(t, state, got, mu, sent)
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(*got) != sent {
+	if len(*got) != sent+1 || len((*got)[sent].Cards) != 1 {
 		t.Fatalf("a room that could not read its own state announced anyway: %+v",
-			(*got)[len(*got)-1])
+			(*got)[sent])
 	}
 }
 
@@ -341,13 +369,13 @@ func TestAnAnswerWithNoCardListIsNotAnEmptyRoom(t *testing.T) {
 	mu.Unlock()
 
 	state.fail(`{"ok":true}`, 200)
-	time.Sleep(3 * announceEvery)
+	mended(t, state, got, mu, sent)
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(*got) != sent {
+	if len(*got) != sent+1 || len((*got)[sent].Cards) != 1 {
 		t.Fatalf("an answer carrying no card list was taken as a room with no cards: %+v",
-			(*got)[len(*got)-1])
+			(*got)[sent])
 	}
 }
 
