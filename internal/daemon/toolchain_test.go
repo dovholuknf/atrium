@@ -33,3 +33,21 @@ func TestToolchainMissingLooksOnTheRunnersPath(t *testing.T) {
 		}
 	}
 }
+
+func TestHeardNotFoundSaysSoOncePerTool(t *testing.T) {
+	t.Parallel()
+	var s toolchainState
+	s.missing = []string{"make"}
+	if !s.heardNotFound("c1", "go") {
+		t.Fatal("first go not heard")
+	}
+	if s.heardNotFound("c2", "go") {
+		t.Fatal("second go heard again")
+	}
+	if !s.heardNotFound("c2", "make") {
+		t.Fatal("first make not heard")
+	}
+	if !reflect.DeepEqual(s.missing, []string{"make", "go"}) || s.card != "c2" {
+		t.Fatalf("got %v from %s", s.missing, s.card)
+	}
+}

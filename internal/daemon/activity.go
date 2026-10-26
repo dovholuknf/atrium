@@ -804,6 +804,8 @@ type ActivityEvent struct {
 	// The one value acted on is `permission_prompt`, which says a dialog is on
 	// that terminal's screen. See dialogRaised.
 	Notification string `json:"notification,omitempty"`
+	// MissingTool is a known tool a shell answered command not found for, on a tool-end.
+	MissingTool string `json:"missing_tool,omitempty"`
 }
 
 // handleActivity records what a session is doing.
@@ -882,6 +884,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	case "tool-end":
 		// The turn continues, so the model has the floor again.
 		d.act.set(taskID, ActivityThinking, "")
+		d.toolNotFound(taskID, in.MissingTool)
 	case "prompt":
 		// The operator answered, so the agent is working again. This is the
 		// other half of the needs-input signal: without it a card stays in

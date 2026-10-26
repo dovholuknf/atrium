@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,36 @@ type toolchainState struct {
 	missing []string
 	card    string
 	since   time.Time
+	// heard is each tool a hook already reported as command not found, so a room says so once per tool.
+	heard map[string]bool
+}
+
+// heardNotFound records a tool a card's shell could not find, true only the first time this room hears of it.
+func (s *toolchainState) heardNotFound(taskID, tool string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.heard[tool] {
+		return false
+	}
+	if s.heard == nil {
+		s.heard = map[string]bool{}
+	}
+	s.heard[tool] = true
+	if !slices.Contains(s.missing, tool) {
+		s.missing = append(slices.Clone(s.missing), tool)
+		s.since = time.Now()
+	}
+	s.card = taskID
+	return true
+}
+
+// toolNotFound is the post-tool hook's half: a card's shell answered command not found for a known tool.
+func (d *Daemon) toolNotFound(taskID, tool string) {
+	if tool == "" || !d.toolchain.heardNotFound(taskID, tool) {
+		return
+	}
+	log.Printf("[atrium] room misconfigured: %s found no %s on its PATH", taskID, tool)
+	d.publishHealth()
 }
 
 // toolchainMissing is each tool the work in cwd needs that the env's PATH does not hold. checked is false when cwd

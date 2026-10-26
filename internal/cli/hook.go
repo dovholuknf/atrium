@@ -86,6 +86,26 @@ type hookInput struct {
 	// one is starting immediately, so the card should not die and come back a
 	// second later.
 	Reason string `json:"reason"`
+	// ToolResponse and Error are a finished tool's output, read only for a shell's command not found.
+	ToolResponse json.RawMessage `json:"tool_response"`
+	Error        string          `json:"error"`
+}
+
+// knownTools are the tools whose absence from a card's shell is the room's misconfiguration.
+var knownTools = []string{"go", "gofmt", "make", "git", "gh", "node", "npm", "npx", "python", "python3", "pwsh"}
+
+// missingTool is the first known tool a shell tool's output says was not found, or "".
+func missingTool(in hookInput) string {
+	if in.ToolName != "Bash" && in.ToolName != "PowerShell" {
+		return ""
+	}
+	out := string(in.ToolResponse) + "\n" + in.Error
+	for _, t := range knownTools {
+		if strings.Contains(out, " "+t+": command not found") || strings.Contains(out, "The term '"+t+"' is not recognized") {
+			return t
+		}
+	}
+	return ""
 }
 
 // wantsAHuman reports whether a notification means a card is waiting on you.
@@ -430,6 +450,7 @@ func reportActivity(hubURL, event, name string) {
 		// The daemon needs it to tell a dialog it raised from one the runner
 		// put up on its own. See wantsAHuman.
 		"notification": notificationKind(in),
+		"missing_tool": missingTool(in),
 	})
 	if err != nil {
 		return
