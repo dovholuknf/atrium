@@ -113,7 +113,7 @@ func newRoot() *cobra.Command {
 			"shows every one of them on one board.",
 	}
 	root.AddCommand(newDaemon(),
-		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
+		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newReady(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newNew(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newArchiveWorkers(),
 		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd())
