@@ -69,7 +69,7 @@ func TestAQuietEventStreamIsNotCut(t *testing.T) {
 		}
 		got <- res
 	}()
-	time.Sleep(4 * testReadWait)
+	time.Sleep(4 * testReadWait) // wait: a stream quiet past the read wait is what is under test
 	close(release)
 	select {
 	case res := <-got:
@@ -93,7 +93,7 @@ func TestASlowBodyAfterPromptHeadersIsNotCut(t *testing.T) {
 		fl := w.(http.Flusher)
 		io.WriteString(w, "start ")
 		fl.Flush()
-		time.Sleep(3 * testReadWait)
+		time.Sleep(3 * testReadWait) // wait: a body slower than the read wait is what is under test
 		io.WriteString(w, "end")
 	}), shortWait)
 	defer done()

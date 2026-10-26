@@ -38,7 +38,7 @@ func TestTheWelcomeIsTheFirstFrameEvenWhenAnAttachHookWantsAConnection(t *testin
 				c.Close()
 			}
 		}()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // wait: a slow OnAttach widens the race under test
 	}
 	go func() { _ = hub.Serve(ctx, ln) }()
 

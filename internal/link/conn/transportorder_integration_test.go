@@ -148,7 +148,7 @@ func TestARefusalDoesNotFallBack(t *testing.T) {
 		T: Timings{Beat: 100 * time.Millisecond, Backoff: 20 * time.Millisecond}}
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool { return room.State().Error != "" })
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, a refusal must not send the room to ziti
 	if n := viaZiti.Load(); n != 0 {
 		t.Fatalf("a refusal on direct sent the room to ziti %d times", n)
 	}

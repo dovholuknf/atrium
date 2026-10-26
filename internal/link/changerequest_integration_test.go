@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -244,17 +245,16 @@ func TestThePushedReadSaysAllFiveStatesAndTheOwner(t *testing.T) {
 	ask := func(repo, branch, head string) map[string]any {
 		t.Helper()
 		// The hub answers from a snapshot and says `building` until the first build of this question is done.
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		var m map[string]any
+		testwait.EventuallyHTTP(t, 10*time.Second, repo+" "+branch+" "+head+" to stop building", func() bool {
 			code, raw := x.op("GET", "/_hub/git/pushed?repo="+repo+"&branch="+branch+"&head="+head, "")
 			if code != 200 {
 				t.Fatalf("%s %s %s = %d %s", repo, branch, head, code, raw)
 			}
-			if m := obj(t, raw); m["building"] != true {
-				return m
-			}
-		}
-		t.Fatalf("%s %s %s was still building", repo, branch, head)
-		return nil
+			m = obj(t, raw)
+			return m["building"] != true
+		})
+		return m
 	}
 	want := func(m map[string]any, state, hub string) {
 		t.Helper()
@@ -762,24 +762,22 @@ func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
 	// hub's disk, so the test asks for a rebuild and reads until the answer is the state it wants.
 	pushed := func(id, want string) map[string]any {
 		t.Helper()
-		var last string
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		var p map[string]any
+		testwait.EventuallyHTTP(t, 10*time.Second, "pushed "+want+" on "+id, func() bool {
 			x.g.Store().RefreshView()
 			code, raw := x.op("GET", "/_hub/change-requests/"+id, "")
 			if code != 200 {
 				t.Fatalf("get %s = %d %s", id, code, raw)
 			}
-			last = raw
 			m := obj(t, raw)
 			if str(m, "id") != id {
 				t.Errorf("id = %s", str(m, "id"))
 			}
-			if p, ok := m["pushed"].(map[string]any); ok && str(p, "state") == want {
-				return p
-			}
-		}
-		t.Fatalf("no pushed %s on %s: %s", want, id, last)
-		return nil
+			var ok bool
+			p, ok = m["pushed"].(map[string]any)
+			return ok && str(p, "state") == want
+		})
+		return p
 	}
 	// matches: a hub-pushed request is at the hub's own tip when it is made.
 	_, c1 := x.create(t, x.op, hubReq("claude/x", "main"))
