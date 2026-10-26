@@ -1098,7 +1098,7 @@ async function newContext(id) {
     const r = await api(`/v1/tasks/${encodeURIComponent(id)}/new-context`, { method: "POST" });
     const file = (r && r.new_context && r.new_context.file) || "its handoff file";
     toast("new context started",
-      `it is asked to write ${file} and run atrium ready, then cleared, then told to read it back`);
+      `it is asked to write ${file} and run atrium ready, then cleared, then told to read it back`, "", null, id);
   } catch (e) {
     toast("could not start a new context", e.message);
     return;
