@@ -5,7 +5,8 @@ removes it. In a browser loaded from loopback, for a card whose room is on that 
 for a link (`files/launch-link`) and the browser hands it to the handler, which opens the file with that user's default
 app. The link carries no path, only a token the room issued for one launchable file, good once and for a minute. The
 handler redeems it (`files/launch-link/redeem`), the room judges the file again, and the handler refuses an extension
-`files/launch` would. Anywhere else the board still posts to `files/launch`. A link that moves no focus in 3s toasts the install command.
+`files/launch` would. Anywhere else the board still posts to `files/launch`. A link that moves no focus in 3s
+toasts the install command.
 
 ## Test plan
 
@@ -13,11 +14,17 @@ handler redeems it (`files/launch-link/redeem`), the room judges the file again,
 
 ### @LETTER@1. Install and open
 
-1. As the desktop user, run `atrium open-handler install`. In the board's browser console run
-   `localStorage.atriumOpenLink = "1"`.
+1. As the desktop user, run `atrium open-handler install`.
 2. Open the board from 127.0.0.1, click a `.png` link in a terminal, choose open externally.
 
-**Expected:** the browser asks to open atrium the first time, then the picture opens in that user's default app.
+**Expected:** the browser asks to open atrium the first time, then the picture opens in that user's default app. A
+card on another room still opens through the room.
+
+### @LETTER@1b. No handler
+
+1. As a user who has not run install, choose open externally.
+
+**Expected:** after 3 seconds a toast says to run `atrium open-handler install`.
 
 ### @LETTER@2. A bare link does nothing
 
