@@ -2906,14 +2906,16 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, fmt.Errorf("streaming unsupported"))
 		return
 	}
+	// Subscribe before the headers go out, so a client that has its response
+	// can never miss an event published after it.
+	sub := s.bus.subscribe()
+	defer s.bus.unsubscribe(sub)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	sub := s.bus.subscribe()
-	defer s.bus.unsubscribe(sub)
 
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
