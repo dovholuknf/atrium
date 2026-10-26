@@ -1,6 +1,6 @@
 // homes: the card's home on the board, the room's card root, the Disk panel, the new-home launch.
 //
-// Units: homesChips, homesRoot, homesDisk, homesLaunch.
+// Units: homesChips, homesRoot, homesDisk, homesLaunch, homesAllRooms.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/homes.js` runs just these units, the way the full run would.
 const path = require("path");
@@ -200,13 +200,37 @@ async function homesLaunchSection(browser, base) {
   }
 }
 
+// The all-rooms view of a hub with more than one room asks for neither the homes nor the turn limits: the hub answers
+// both with a 409 asking for a room. Scoped to one room, both are asked.
+async function homesAllRoomsSection(browser, base) {
+  const { ctx, p, errors } = await open(browser, base);
+  try {
+    const asked = { homes: 0, limits: 0 };
+    await ctx.route(/\/v1\/homes(\?|$)/, route => { asked.homes++; route.fulfill({ json: { homes: [] } }); });
+    await ctx.route(/\/v1\/usage\/turn-limits/, route => { asked.limits++; route.fulfill({ json: { day: "", findings: [] } }); });
+    const ask = () => p.evaluate(async () => { turnLimits.at = 0; await loadHomes(true); await renderTurnLimits(); });
+    const where = await p.evaluate(() => ({ hub: hubIsHub, rooms: hubRooms.length, room: roomNow() }));
+    if (!where.hub || where.rooms < 2 || where.room) fail("homesAllRooms: the demo is not the all-rooms view of a hub: " + JSON.stringify(where));
+    asked.homes = asked.limits = 0;
+    await ask();
+    if (asked.homes || asked.limits) fail("homesAllRooms: the all-rooms view asked for what the hub refuses: " + JSON.stringify(asked));
+    await p.evaluate(() => sessionStorage.setItem(ROOMS_DEMO_KEY, hubRooms[0].name));
+    await ask();
+    if (!asked.homes || !asked.limits) fail("homesAllRooms: a board scoped to one room did not ask: " + JSON.stringify(asked));
+    if (errors.length) fail("homesAllRooms page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 const units = [
   { name: "homesChips", run: ({ browser, base }) => homesChipsSection(browser, base) },
   { name: "homesRoot", run: ({ browser, base }) => homesRootSection(browser, base) },
   { name: "homesDisk", run: ({ browser, base }) => homesDiskSection(browser, base) },
   { name: "homesLaunch", run: ({ browser, base }) => homesLaunchSection(browser, base) },
+  { name: "homesAllRooms", run: ({ browser, base }) => homesAllRoomsSection(browser, base) },
 ];
-const sections = { homesChips: homesChipsSection, homesRoot: homesRootSection, homesDisk: homesDiskSection, homesLaunch: homesLaunchSection };
+const sections = { homesChips: homesChipsSection, homesRoot: homesRootSection, homesDisk: homesDiskSection, homesLaunch: homesLaunchSection, homesAllRooms: homesAllRoomsSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);
