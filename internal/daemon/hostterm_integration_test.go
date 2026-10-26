@@ -157,7 +157,7 @@ func TestReattachReplaysTheRingAndFollowsWithNothingLostOrRepeated(t *testing.T)
 	task := cardAt(t, d1, "reattach-replay", t.TempDir())
 	sh, args := someShell(t)
 	if _, err := d1.spawnPTY(task.ID, sh, append(args,
-		"echo AAA-first; sleep 4; echo BBB-second; sleep 4; echo CCC-third; sleep 60"),
+		"echo AAA-first; sleep 2; echo BBB-second; sleep 2; echo CCC-third; sleep 60"),
 		t.TempDir(), os.Environ()); err != nil {
 		t.Fatal(err)
 	}
