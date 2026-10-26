@@ -72,7 +72,10 @@ function entryAt(line) {
 
 function editSuite(text, adds, removes) {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  let lines = text.split(/\r?\n/).flatMap((l) => /^(\s*"entries":\s*\[)\s*\](,?)\s*$/.test(l) ? [l.replace(/\s*\](,?)\s*$/, ''), ' ]' + l.match(/\](,?)\s*$/)[1]] : [l]);
+  let lines = text.split(/\r?\n/).flatMap((l) => {
+    const m = /^(\s*"entries":\s*\[)\s*\](,?)\s*$/.exec(l);
+    return m ? [m[1], ' ]' + m[2]] : [l];
+  });
   const gone = new Set(removes.map((e) => e.kind + '\0' + (e.package || '') + '\0' + e.name));
   lines = lines.filter((l) => {
     const e = entryAt(l);
