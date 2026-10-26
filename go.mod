@@ -8,14 +8,14 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-openapi/runtime v0.29.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/google/uuid v1.6.0
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/openziti/sdk-golang v1.2.8
 	github.com/openziti/zrok/v2 v2.0.4
 	github.com/spf13/cobra v1.10.2
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
 	modernc.org/sqlite v1.57.0
@@ -121,10 +121,16 @@ require (
 
 require (
 	github.com/dovholuknf/atrium/internal/base v0.0.0
+	github.com/dovholuknf/atrium/internal/gitsync v0.0.0
+	github.com/dovholuknf/atrium/internal/hubstore v0.0.0
 	github.com/dovholuknf/atrium/internal/ptyhost v0.0.0
+	github.com/dovholuknf/atrium/internal/store v0.0.0
 )
 
 replace (
 	github.com/dovholuknf/atrium/internal/base => ./internal/base
+	github.com/dovholuknf/atrium/internal/gitsync => ./internal/gitsync
+	github.com/dovholuknf/atrium/internal/hubstore => ./internal/hubstore
 	github.com/dovholuknf/atrium/internal/ptyhost => ./internal/ptyhost
+	github.com/dovholuknf/atrium/internal/store => ./internal/store
 )

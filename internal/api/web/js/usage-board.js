@@ -14,7 +14,14 @@
     return s;
   }
   function labelOf(el) {
-    return el.getAttribute("aria-label") || el.getAttribute("title") || el.value && el.type === "button" && el.value || el.textContent;
+    return el.getAttribute("aria-label") || el.getAttribute("title") || el.value && el.type === "button" && el.value || textOf(el);
+  }
+  // textContent with a space between text nodes, so a card title and its cwd in two spans do not run together.
+  function textOf(el) {
+    const out = [];
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) out.push(w.currentNode.nodeValue);
+    return out.join(" ");
   }
   // A label with its digits made '#' and cut to 40, so "stash 3 files" and "stash 12 files" are one control.
   function tidy(s) {

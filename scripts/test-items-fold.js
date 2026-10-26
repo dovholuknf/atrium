@@ -58,6 +58,13 @@ if (pushing.fold.group !== "working") fail("waiting to push is " + pushing.fold.
 const cancelled = one([asg(1, "b6", "c1", "finished", { note: "cancelled by clint" })], tasks([]));
 if (cancelled.fold.group !== "finished" || !cancelled.fold.cancelled) fail("a cancelled item is " + cancelled.fold.group);
 
+// A pushed item is finished though an earlier step was left open, and so is a backlog item marked done or dropped.
+const leftOpen = at => ({ steps: work(0, { all: true }).steps.map(s => Object.assign({}, s, { state: s.step === "reviewed" ? "pending" : s.step === "tested" ? "stale" : s.state })), work: at });
+if (one([row(asg(1, "b12", "c1", "running"), leftOpen())], tasks([])).fold.group !== "finished") fail("a pushed item with an open earlier step is not finished");
+for (const st of ["done", "dropped"]) {
+  if (one([row(asg(1, "b13", "c1", "running"), Object.assign(work(2), { work: { status: st } }))], tasks([])).fold.group !== "finished") fail("backlog " + st + " is not finished");
+}
+
 // QUEUED: only when none ever started. An ended card means it is not.
 if (one([asg(1, "b7", "", "queued")], tasks([])).fold.group !== "queued") fail("a queued item is not queued");
 const q2 = one([asg(1, "b7", "", "queued"), asg(2, "b7", "c2", "finished")], tasks([]));

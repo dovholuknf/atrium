@@ -89,7 +89,7 @@ func TestTheSignedNameIsTheHubsAndNotTheOneAskedFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	der, err := k.sign(csr, "sparta")
+	der, err := k.Sign(csr, "sparta")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestTheSignedNameIsTheHubsAndNotTheOneAskedFor(t *testing.T) {
 
 	// AND WITH NO NAME THERE IS NOTHING TO SIGN. Falling back to the request is
 	// what made a room able to name itself.
-	if _, err := k.sign(csr, ""); err == nil {
+	if _, err := k.Sign(csr, ""); err == nil {
 		t.Fatal("the hub signed a certificate using the name in the request")
 	}
 }

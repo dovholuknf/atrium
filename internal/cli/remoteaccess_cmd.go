@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
 )
 

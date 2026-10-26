@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/docshare"
+	"github.com/dovholuknf/atrium/internal/base/docshare"
 )
 
 func docIn(title, name, body string) DocInput {

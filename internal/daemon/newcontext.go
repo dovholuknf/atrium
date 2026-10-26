@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1153,7 +1154,7 @@ func (d *Daemon) atIdlePrompt(taskID string) bool {
 		return false
 	}
 	cols, rows := run.buf.CurrentSize()
-	idle, _ := classifyFrame(run.buf.Tail(frameTailBytes), cols, rows)
+	idle, _ := screen.ClassifyFrame(run.buf.Tail(screen.FrameTailBytes), cols, rows)
 	return idle
 }
 

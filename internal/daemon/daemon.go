@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/cardroot"
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/mcprule"
+	"github.com/dovholuknf/atrium/internal/base/shellpick"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/mcprule"
-	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -711,6 +711,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		return 0
 	}
 	api.KeepaliveOf = d.ka.view
+	api.KeepaliveOfTask = d.ka.viewTask
 	d.ap.SetKeepalive = d.keepaliveSet
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
@@ -936,6 +937,10 @@ func observedFor(agent string) store.Observed {
 }
 
 func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, error) {
+	// The runner's own card, when it says so, over a name another card in the same checkout may hold.
+	if t := d.ownCard(req.TaskID); t != nil {
+		req.Agent, req.NameSource = t.WireName, ""
+	}
 	obs := observedFor(req.Agent)
 	if req.Runner != "" {
 		obs.Runner = req.Runner

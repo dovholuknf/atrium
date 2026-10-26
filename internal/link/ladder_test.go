@@ -296,3 +296,61 @@ func TestSetKeepsTheCurrentTransport(t *testing.T) {
 		t.Fatal("a dial after Set did not use the new ziti rung")
 	}
 }
+
+type countDialer struct{ closed atomic.Int32 }
+
+func (d *countDialer) Dial(context.Context) (net.Conn, error) { return nil, errors.New("no") }
+func (d *countDialer) Describe() string                       { return "count" }
+func (d *countDialer) Close()                                 { d.closed.Add(1) }
+
+func TestLadderSetClosesDroppedDialersAndKeepsTheOneItStandsOn(t *testing.T) {
+	a, b, c := &countDialer{}, &countDialer{}, &countDialer{}
+	pa, pb, pc := Path{Transport: "ziti", Service: "a"}, Path{Transport: "ziti", Service: "b"}, Path{Transport: "ziti", Service: "c"}
+	l := NewLadder([]Rung{{pa, a}, {pb, b}, {pc, c}})
+	for i := 0; i < 100; i++ {
+		l.Set([]Rung{{pa, a}, {pb, b}, {pc, c}})
+	}
+	if a.closed.Load()+b.closed.Load()+c.closed.Load() != 0 {
+		t.Fatal("a Set with the same dialers closed one")
+	}
+	l.Set([]Rung{{pa, a}})
+	if a.closed.Load() != 0 || b.closed.Load() != 1 || c.closed.Load() != 1 {
+		t.Fatalf("closed a=%d b=%d c=%d, want 0 1 1", a.closed.Load(), b.closed.Load(), c.closed.Load())
+	}
+	l.Set([]Rung{{pb, b}})
+	if a.closed.Load() != 0 {
+		t.Fatal("closed the rung the ladder stands on")
+	}
+}
+
+// A room whose every rung fails says each address it tried, and asks for its addresses afresh before the next attempt.
+func TestARoomThatReachesNoRungSaysEveryAddressAndRereadsThem(t *testing.T) {
+	direct, ziti := &fakeDial{name: "192.168.1.68:7779"}, &fakeDial{name: "atrium-hub"}
+	direct.fail.Store(true)
+	ziti.fail.Store(true)
+	l := NewLadder([]Rung{{Path: Path{Transport: "direct"}, Dial: direct}, {Path: Path{Transport: "ziti"}, Dial: ziti}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	asked := make(chan State, 1)
+	r := &Room{Name: "sgg", Dial: l, T: Timings{DialWait: time.Second}}
+	r.OnUnreachable = func() {
+		asked <- r.State()
+		cancel()
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.Run(ctx) }()
+	var s State
+	select {
+	case s = <-asked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a room that reached no rung never asked for its addresses again")
+	}
+	<-done
+	want := []string{"direct 192.168.1.68:7779", "ziti atrium-hub"}
+	if s.Room != "sgg" || s.Up || strings.Join(s.Unreachable, "|") != strings.Join(want, "|") {
+		t.Fatalf("state %+v, want room sgg down having tried %v", s, want)
+	}
+	if !strings.Contains(s.Error, "192.168.1.68:7779: 192.168.1.68:7779 refused") {
+		t.Fatalf("the error lost why each rung failed: %q", s.Error)
+	}
+}

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/deployready"
-	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 

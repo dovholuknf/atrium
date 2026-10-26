@@ -59,12 +59,15 @@ $Groups = @(
     G 'store'              'store: sqlite store' './internal/store' 52 @('*')
     G 'hubstore'           'hubstore: hub database' './internal/hubstore' 15 @('*')
     G 'deployready'        'deployready: the deploy-ready checks' './internal/deployready' 40 @('*')
+    G 'link-wire'          'link/wire: the frames, timings and shared types of the room link' './internal/link/wire' 5 @('*')
+    G 'daemon-screen-model' 'daemon/screen: the screen model, flatten, replay, width tables, idle frames' './internal/daemon/screen' 3 @('*')
+    G 'link-transport'     'link/transport: how the room link makes a connection, direct and the overlays' './internal/link/transport' 10 @('*')
     G 'ptyhost'            'ptyhost: pty and ConPTY host' './internal/ptyhost' 16 @('*')
     G 'guard'              'guard: git guard' './internal/guard' 10 @('*')
     G 'misc'               'small packages: cardproc claudeconf edge forge linkfetch nowindow prreview/render requirements resources roomspec roomstats runnersetup safepath testdiag' @(
-        './internal/cardproc', './internal/claudeconf', './internal/edge', './internal/forge', './internal/linkfetch', './internal/base/nowindow',
-        './internal/prreview/render', './internal/requirements', './internal/resources', './internal/roomspec', './internal/roomstats',
-        './internal/runnersetup', './internal/safepath', './internal/testdiag') 11 @('*')
+        './internal/base/cardproc', './internal/claudeconf', './internal/base/edge', './internal/base/forge', './internal/base/linkfetch', './internal/base/nowindow',
+        './internal/base/prreview/render', './internal/base/requirements', './internal/base/resources', './internal/roomspec', './internal/roomstats',
+        './internal/runnersetup', './internal/base/safepath', './internal/base/testdiag') 11 @('*')
 )
 
 # ---- helpers ---------------------------------------------------------------------------------------------

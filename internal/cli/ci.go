@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 )
 
 // `atrium ci`: atrium_ci from a terminal, asked through the same door (roomCIDoor). A log or an artifact's file is

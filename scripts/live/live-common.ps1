@@ -18,6 +18,8 @@ $AtriumBin    = 'C:\Users\claude\.atrium\bin\atrium.exe'
 $AtriumBinDir = Split-Path $AtriumBin
 $Repo         = 'D:\git\github\dovholuknf\atrium'
 $AtriumNew    = Join-Path $Repo 'build.claude\atrium.exe'
+# Where the deploy looks for go when it is not on PATH. The one place to change it.
+$GoFallbackBin = 'V:\work\tools\go\current\bin'
 # A different build to deploy, for a -WhatIf rehearsal from another worktree.
 if ($env:ATRIUM_NEW_BUILD) { $AtriumNew = $env:ATRIUM_NEW_BUILD }
 $Base         = 'C:\Users\claude\.atrium2'
@@ -237,7 +239,7 @@ function Invoke-Step([string]$What, [scriptblock]$Do) {
 # what Windows reports as that process's image path is not something to bet a second room on. Every image in
 # .atrium\bin named atrium*.exe counts, and the subcommand picks which. atrium-control.exe runs ` control`, which
 # matches neither.
-function Find-Atrium([ValidateSet('run', 'room')][string]$Sub) {
+function Find-Atrium([ValidateSet('run', 'room', 'ptyhost')][string]$Sub) {
   Get-CimInstance Win32_Process |
     Where-Object {
       $_.ExecutablePath -and
@@ -257,12 +259,21 @@ function Find-Control {
     }
 }
 
+# Find-Go puts go on this process's PATH and answers $null, or answers the one line that says where it looked. PATH first,
+# then $GoFallbackBin. A caller with no go on its PATH (a detached worker) is told at once, not once per room later.
+function Find-Go {
+  if (Get-Command go -ErrorAction SilentlyContinue) { return $null }
+  $exe = Join-Path $GoFallbackBin 'go.exe'
+  if (Test-Path $exe) { $env:PATH = "$GoFallbackBin$([IO.Path]::PathSeparator)$env:PATH"; return $null }
+  return "go not found: not on PATH, not at $exe"
+}
+
 # Clear-SessionEnv drops what a supervised session exports, so the processes started here do not inherit the
 # session that ran the script. ATRIUM_LOCATION above all: a room keeps an inherited one, and would write its address
 # to that file instead of the machine's one place.
 function Clear-SessionEnv {
   foreach ($n in 'ATRIUM_LOCATION', 'ATRIUM_SHARED_LOCATION', 'ATRIUM_AGENT_NAME', 'ATRIUM_TASK_ID', 'ATRIUM_ROOM',
-    'ATRIUM_RUNNER', 'ATRIUM_HOOK_EXE') {
+    'ATRIUM_RUNNER', 'ATRIUM_HOOK_EXE', 'ATRIUM_HUB_URL') {
     Remove-Item "Env:$n" -ErrorAction SilentlyContinue
   }
 }
@@ -661,6 +672,10 @@ public static extern System.IntPtr OpenProcess(uint access, bool inherit, int pi
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern bool IsProcessInJob(System.IntPtr process, System.IntPtr job, out bool result);
 '@
+  }
+  # A .NET type cannot be redefined in a running shell, so one that compiled an older Spawn keeps its old members.
+  if (-not [AtriumLive.Spawn].GetMethod('IsProcessInJob')) {
+    throw 'AtriumLive.Spawn in this shell is from an older live-common.ps1 and cannot be reloaded. open a fresh pwsh and run this again'
   }
 }
 

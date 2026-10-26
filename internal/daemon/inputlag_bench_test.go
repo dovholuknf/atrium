@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // nopPTY takes every write and keeps nothing, so a benchmark measures the

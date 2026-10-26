@@ -58,6 +58,9 @@ $why = Test-ControlOptIn -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyS
   -Named:(($Rooms -split ',' | ForEach-Object { $_.Trim() }) -contains 'sg4-control')
 if ($why) { Stop-Early "refusing: $why" }
 
+$noGo = Find-Go
+if ($noGo) { Stop-Early $noGo }
+
 $remoteNames = 'sg3', 'm1mini', 'sgg'
 try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
 catch { Stop-Early "FATAL: $($_.Exception.Message)" }
@@ -85,12 +88,27 @@ Say "deploying $($want -join ', ')"
 $results = [ordered]@{}
 foreach ($n in $want) { $results[$n] = 'failed - not reached' }
 
-# Report says the result lines, logs them, and says them to $ReportTo through the hub. The hub routes `card@room`.
+# Report says the result lines, logs them, and says them to $ReportTo through the hub. The hub routes `card@room`. It is
+# called once per run, and lists every room.
 function Report {
   $lines = foreach ($k in $results.Keys) { "${k}: $($results[$k])" }
   $lines | ForEach-Object { Say $_ }
   if (-not $ReportTo) { return }
+  # A retry that fails the way the last report said gets one line, not the list again. Never nothing: a detached
+  # deploy's card waits for this.
+  $lastFile = Join-Path $Base 'atrium-deploy-last.json'
+  $last = @{}
+  if (-not $WhatIf -and (Test-Path $lastFile)) {
+    try { (Get-Content $lastFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $last[$_.Name] = $_.Value } } catch {}
+  }
+  $repeat = -not $WhatIf
+  foreach ($k in $results.Keys) { if ($results[$k] -notlike 'failed*' -or $last[$k] -ne $results[$k]) { $repeat = $false } }
+  if (-not $WhatIf) {
+    foreach ($k in $results.Keys) { $last[$k] = $results[$k] }
+    $last | ConvertTo-Json | Set-Content $lastFile
+  }
   $text = "atrium-deploy$(if ($WhatIf) { ' (WhatIf)' }):`n" + ($lines -join "`n")
+  if ($repeat) { $text = 'atrium-deploy: every room failed again as the last report said' }
   $null = Send-CardSay $ReportTo $text
 }
 

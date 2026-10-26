@@ -5,9 +5,15 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -145,4 +151,39 @@ func TestReofferingAfterAFailedRunIsHarmless(t *testing.T) {
 	if first.ID != second.ID {
 		t.Fatal("re-offering answered with a different card")
 	}
+}
+
+func TestAStoppedSourceEndsWhatItStarted(t *testing.T) {
+	d := testDaemon(t)
+	src := helperSource(t, "tree", "")
+	pidFile := filepath.Join(t.TempDir(), "grandchild")
+	t.Setenv("ATRIUM_TEST_SOURCE_GRANDCHILD", pidFile)
+	var pid int
+	t.Cleanup(func() {
+		if p, err := os.FindProcess(pid); pid > 0 && err == nil {
+			_ = p.Kill()
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.readSource(ctx, &src)
+		done <- err
+	}()
+	waitFor(t, func() bool {
+		raw, _ := os.ReadFile(pidFile)
+		pid, _ = strconv.Atoi(string(raw))
+		return pid > 0
+	})
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the source run never returned: a child it started still holds its stdout")
+	}
+	waitFor(t, func() bool {
+		_, err := cardproc.StartTime(pid)
+		return errors.Is(err, cardproc.ErrGone)
+	})
 }

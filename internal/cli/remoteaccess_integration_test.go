@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 )
 
 func runRemoteAccess(t *testing.T, dir string, args ...string) (string, error) {

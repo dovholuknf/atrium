@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
 	"net"
@@ -45,7 +46,7 @@ import (
 // hubstore.MaxRoomSpec.
 
 const (
-	roomSpecKind = "roomspec"
+	roomSpecKind = wire.RoomSpecKind
 	// RoomSpecPrefix is the path the room asks, and RoomSpecRoomHeader carries the room the hello named.
 	RoomSpecPrefix     = "/_room/"
 	RoomSpecRoomHeader = "X-Atrium-Spec-Room"

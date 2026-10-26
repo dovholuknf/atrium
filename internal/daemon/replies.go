@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // GET /v1/tasks/{id}/replies: a card's last few replies as text, for the phone's
@@ -163,7 +165,7 @@ func (d *Daemon) screenReply(taskID string) []Reply {
 		return []Reply{}
 	}
 	backlog, cuts, rows, _ := run.buf.ReplayCuts()
-	text := strings.TrimSpace(string(stripSGR(replayCut(backlog, "screen", cuts, rows))))
+	text := strings.TrimSpace(string(screen.StripSGR(screen.ReplayCut(backlog, "screen", cuts, rows))))
 	if text == "" {
 		return []Reply{}
 	}

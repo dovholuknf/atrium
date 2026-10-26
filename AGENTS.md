@@ -19,7 +19,7 @@ terminals. A card outlives its process, state lives on disk, and storage failure
 | `internal/cli/AGENTS.md` | a subcommand |
 | `internal/link/`, `internal/hubstore/`, `internal/gitsync/` `AGENTS.md` | the hub, its store, the room link, git sync |
 | `internal/ptyhost/AGENTS.md` | the pty host |
-| `internal/guard/`, `internal/claudeconf/`, `internal/safepath/` `AGENTS.md` | the guard, hook config, paths |
+| `internal/guard/`, `internal/base/claudeconf/`, `internal/base/safepath/` `AGENTS.md` | the guard, hook config, paths |
 | `scripts/AGENTS.md` | a script or CI |
 
 ## Rules

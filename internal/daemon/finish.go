@@ -348,8 +348,11 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	case ReportBlocked, ReportQuestion:
 		status, reason = store.StatusNeedsInput, in.Status
 	case ReportProgress:
-		// Still working. The card stays where it is.
+		// Still working. The card stays where it is, and a done card is working again.
 		status = task.Status
+		if status == store.StatusDone {
+			status = store.StatusRunning
+		}
 	}
 
 	recap := strings.TrimSpace(in.Recap)
@@ -614,6 +617,18 @@ func (d *Daemon) taskFor(agent, taskID string) (*store.Task, error) {
 		}
 	}
 	return nil, err
+}
+
+// ownCard is the card a hook's ATRIUM_TASK_ID names on this room, or nil. A card that moved away is not it.
+func (d *Daemon) ownCard(id string) *store.Task {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	t, err := d.st.Get(id)
+	if err != nil || t == nil || t.WireName == "" || t.MovedTo != "" {
+		return nil
+	}
+	return t
 }
 
 // errString is an error from a literal, without reaching for fmt.

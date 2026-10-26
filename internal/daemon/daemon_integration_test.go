@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/testdiag"
+	"github.com/dovholuknf/atrium/internal/base/testdiag"
 )
 
 // freePort asks the OS for a port nobody is using, so tests never collide with
 // a real daemon.
-func freePort(t *testing.T) string {
+func freePort(t testing.TB) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -38,7 +38,7 @@ func startDaemon(t *testing.T) (*Daemon, *safeBuf, context.CancelFunc, chan erro
 //
 // Closing is not enough on Windows. A connection a goroutine was still using when the store closed is let go only
 // when its query ends, and until then the file cannot be deleted.
-func closeAtCleanup(t *testing.T, d *Daemon) {
+func closeAtCleanup(t testing.TB, d *Daemon) {
 	t.Helper()
 	t.Cleanup(func() {
 		// Before the close, while whatever the test was waiting on is still there to see.
@@ -60,7 +60,7 @@ func closeAtCleanup(t *testing.T, d *Daemon) {
 }
 
 // releaseDB waits until the database at path and its WAL files are gone, deleting each as soon as nothing holds it.
-func releaseDB(t *testing.T, path string) {
+func releaseDB(t testing.TB, path string) {
 	t.Helper()
 	for _, p := range []string{path, path + "-wal", path + "-shm"} {
 		end := time.Now().Add(10 * time.Second)

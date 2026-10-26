@@ -24,6 +24,7 @@ import (
 type PermissionRequest struct {
 	Runner  string `json:"runner,omitempty"`
 	Agent   string `json:"agent"`
+	TaskID  string `json:"task_id,omitempty"`
 	Command string `json:"command"`
 	// NameSource is "dir" when Agent was made up from the directory, so
 	// Register will not match it to a finished card. Absent is a told name.

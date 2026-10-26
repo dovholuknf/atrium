@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/guard"
 	"github.com/spf13/cobra"
 )
@@ -416,7 +416,8 @@ func reportActivity(hubURL, event, name string) {
 	}
 
 	body, err := json.Marshal(map[string]any{
-		"agent": agent,
+		"agent":   agent,
+		"task_id": os.Getenv("ATRIUM_TASK_ID"),
 		// "dir" when the name was made up from the directory. Absent otherwise.
 		"name_source": nameSource,
 		"event":       kind,

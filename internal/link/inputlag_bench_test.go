@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // echoConn answers every read at once and takes every write, so a benchmark

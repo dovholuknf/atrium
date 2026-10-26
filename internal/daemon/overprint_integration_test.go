@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 const (
@@ -98,7 +100,7 @@ func TestACarriedFileDrawnAtTwoWidthsReplaysWithoutOverprintedRows(t *testing.T)
 	after.carried = readCarry(dir, "card-two-widths", 1<<16)
 	live := []byte("live after the restart\r\n")
 	out, cuts, _, _ := after.withCarried(live, nil, 60, 1<<16, true)
-	got := plain(string(replayCut(out, "screen", cuts, 20)))
+	got := plain(string(screen.ReplayCut(out, "screen", cuts, 20)))
 
 	flat := strings.ReplaceAll(strings.Join(strings.Fields(got), ""), " ", "")
 	for _, want := range []string{sayLine, hookLine} {

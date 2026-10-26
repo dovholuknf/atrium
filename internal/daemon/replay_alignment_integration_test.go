@@ -5,6 +5,8 @@ package daemon
 import (
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A REPLAY HAS TO PUT THE SCREEN WHERE THE SESSION THINKS IT IS, row for row.
@@ -42,20 +44,22 @@ func TestReplayKeepsTheSessionsRows(t *testing.T) {
 	}
 	for name, session := range cases {
 		t.Run(name, func(t *testing.T) {
-			want := newScreenSized(cols, rows)
-			want.apply([]byte(session + next))
+			want := screen.NewScreenSized(cols, rows)
+			want.Apply([]byte(session + next))
 
-			got := newScreenSized(cols, rows)
-			got.apply(Replay([]byte(session), "screen", cols, rows))
-			got.apply([]byte(next))
+			got := screen.NewScreenSized(cols, rows)
+			got.Apply(screen.Replay([]byte(session), "screen", cols, rows))
+			got.Apply([]byte(next))
 
 			w, g := gridText(want), gridText(got)
 			if w != g {
 				t.Fatalf("the attaching terminal does not hold the session's screen after its next draw.\n"+
 					"session:\n%s\nattached:\n%s", w, g)
 			}
-			if got.row != want.row || got.col != want.col {
-				t.Fatalf("cursor at %d,%d, the session's is at %d,%d", got.row, got.col, want.row, want.col)
+			gr, gc := got.Cursor()
+			wr, wc := want.Cursor()
+			if gr != wr || gc != wc {
+				t.Fatalf("cursor at %d,%d, the session's is at %d,%d", gr, gc, wr, wc)
 			}
 		})
 	}
@@ -72,12 +76,12 @@ func TestReplayKeepsTheScrollRegion(t *testing.T) {
 	session := "\x1b[1;6r" + strings.Repeat("chat\r\n", 3) + "\x1b[8;1Hfooter\x1b[6;1Hlast chat"
 	next := "\r\nmore one\r\nmore two\r\n"
 
-	want := newScreenSized(cols, rows)
-	want.apply([]byte(session + next))
+	want := screen.NewScreenSized(cols, rows)
+	want.Apply([]byte(session + next))
 
-	got := newScreenSized(cols, rows)
-	got.apply(Replay([]byte(session), "screen", cols, rows))
-	got.apply([]byte(next))
+	got := screen.NewScreenSized(cols, rows)
+	got.Apply(screen.Replay([]byte(session), "screen", cols, rows))
+	got.Apply([]byte(next))
 
 	if w, g := gridText(want), gridText(got); w != g {
 		t.Fatalf("the region did not survive the replay.\nsession:\n%s\nattached:\n%s", w, g)
@@ -85,24 +89,11 @@ func TestReplayKeepsTheScrollRegion(t *testing.T) {
 	if !strings.Contains(gridText(got), "footer") {
 		t.Fatalf("the footer scrolled with the chat:\n%s", gridText(got))
 	}
-	if got.row != want.row || got.col != want.col {
-		t.Fatalf("cursor at %d,%d, the session's is at %d,%d", got.row, got.col, want.row, want.col)
+	gr, gc := got.Cursor()
+	wr, wc := want.Cursor()
+	if gr != wr || gc != wc {
+		t.Fatalf("cursor at %d,%d, the session's is at %d,%d", gr, gc, wr, wc)
 	}
 }
 
-func gridText(s *screen) string {
-	var b strings.Builder
-	for i, r := range s.cells {
-		line := make([]rune, 0, len(r))
-		for _, c := range r {
-			if c.ch != contCh {
-				line = append(line, c.ch)
-			}
-		}
-		b.WriteString(strings.TrimRight(string(line), " \x00"))
-		if i < len(s.cells)-1 {
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
-}
+func gridText(s *screen.Screen) string { return s.Grid() }

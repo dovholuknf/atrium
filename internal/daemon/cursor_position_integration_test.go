@@ -5,6 +5,8 @@ package daemon
 import (
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // The screen model composes output, parks the cursor mid-screen the way a TUI
@@ -15,7 +17,7 @@ func TestReplayRestoresTheCursor(t *testing.T) {
 	// Three rows drawn, then the cursor parked at row 2, column 6 (1-based),
 	// which the app addresses absolutely. It is not the end of the output.
 	in := "line one\r\nline two\r\nline three\r\n\x1b[2;6H"
-	got := string(Replay([]byte(in), "screen", 40, 24))
+	got := string(screen.Replay([]byte(in), "screen", 40, 24))
 
 	// The screen is replayed at its own rows, so the move is to the session's
 	// own row and column. See `TestReplayKeepsTheSessionsRows`.

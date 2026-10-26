@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/address"
+	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -328,7 +328,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"named `atrium`, so they are NAMESPACED: start `atrium:go-security-reviewer`, not " +
 			"`go-security-reviewer`. Either implies lean. Claude only, and a name with no file refuses " +
 			"the launch. The card keeps the lists.\n\n" +
-			"`superlean: true` starts a worker below lean: only Read, Edit, Write, Grep, Glob, Bash and " +
+			"`superlean: true` starts a worker below lean: only Read, Edit, Write, Grep, Glob, Bash, PowerShell and " +
 			"ToolSearch, no mercurius unless `mcp` names it, and a one paragraph worker prompt. For a bounded " +
 			"change. It implies lean and is refused with `lean: false`. Lean stays the default.\n\n" +
 			"`room` launches on ANOTHER ROOM: `cwd` is then a path on that room's machine, `brief` is " +
@@ -1636,7 +1636,7 @@ type launchInput struct {
 	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these. Explore and Plan are Claude Code's own built-in agents and need no file, started by their bare name. any other name is namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
 	// Superlean cuts a lean worker further. See superleanLaunch.
-	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash and ToolSearch, no mercurius unless mcp names it, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. implies lean, refused with lean: false. claude only, never an interview. default false, lean stays the default"`
+	Superlean bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius unless mcp names it, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. implies lean, refused with lean: false. claude only, never an interview. default false, lean stays the default"`
 	// Model and Effort are mapped by the runner's harness row, Args and Env are
 	// passed as given. See docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`

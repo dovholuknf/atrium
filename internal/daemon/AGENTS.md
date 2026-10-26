@@ -7,6 +7,9 @@ is `:7778`) and `:7777`. The older `atrium daemon` single process serves its boa
 A room keeps two listeners on purpose. When the store halts the agent listener closes and stays closed, so runners
 park on connection-refused and burn nothing, while the board stays up to say what broke.
 
+`screen/` is the terminal screen model: the grid, replay, flatten, idle frame and width tables. It imports nothing
+from the daemon and holds no daemon state, so a change there runs only its own tests.
+
 ## The permission chain: order is critical
 
 `onPermRequest` in `daemon.go`. Each step can answer and stop. **Reordering changes what the tool means**, so
@@ -46,7 +49,7 @@ do not do it without reading why each one sits where it does.
 7. **`/finish` follows the hook posture.** An agent atrium has never heard of gets `ok` and nothing recorded,
    because failing there would mean a session could fail at the moment it tried to end tidily.
 8. **Files leave a card only to the card, an atrium path or an `open_paths` folder.** Upload computes its own
-   destination and accepts no path, download resolves one through `internal/safepath`, and everything else answers
+   destination and accepts no path, download resolves one through `internal/base/safepath`, and everything else answers
    `403` whether or not it exists. The rule lives in `internal/api/AGENTS.md`.
 
 ## Supervision: two maps, and keeping them apart is the design

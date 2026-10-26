@@ -343,6 +343,34 @@ func (h *zrokHub) listen() (net.Listener, error) {
 	return overlayListen(h.z.Listen, h.d, "zrok")()
 }
 
+// zrokBinder binds a zrok-first hub's share in a loop, so a deleted share is replaced by the next bind.
+func zrokBinder(s *hubSide, h *link.Hub, audit func(kind, detail string)) *link.CIBinder {
+	attempt := 0
+	return &link.CIBinder{
+		Name: "room-zrok",
+		Listen: func() (net.Listener, error) {
+			attempt++
+			ln, err := s.listen()
+			if err != nil {
+				log.Printf("[hub] not listening for rooms over zrok yet (attempt %d), trying again: %v", attempt, err)
+				return nil, err
+			}
+			attempt = 0
+			log.Printf("[hub] listening for rooms over zrok: %s", s.says)
+			return ln, nil
+		},
+		Serve: func(ctx context.Context, ln net.Listener) error {
+			err := h.ServeVia(ctx, ln, "zrok")
+			if err != nil && ctx.Err() == nil {
+				log.Printf("[hub] the room listener over zrok stopped, binding the share again: %v", err)
+			}
+			return err
+		},
+		State: func(up bool, err error) { h.SetListener("zrok", up, err) },
+		Audit: audit,
+	}
+}
+
 // retireZrokShare deletes the share this hub saved and forgets it, so the next hub start reserves a new one.
 func retireZrokShare(keys link.Keys, api link.ZrokAPI) (string, error) {
 	token, err := readZrokShare(keys)
@@ -543,6 +571,27 @@ func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []link.P
 		l.Set(rungs)
 		log.Printf("[link] the hub's transports changed. will try %s", ladderSays(rungs))
 	}
+}
+
+// reloadRungs rebuilds the ladder from disk, so an address `atrium room hub` changed is tried without a restart.
+func reloadRungs(keys link.Keys, l *link.Ladder) {
+	saved, err := keys.Joined()
+	if err != nil {
+		log.Printf("[link] could not read this room's join: %v", err)
+		return
+	}
+	tr, err := keys.Transports()
+	if err != nil {
+		log.Printf("[link] could not read %s: %v", keys.TransportsPath(), err)
+		return
+	}
+	had := l.Rungs()
+	rungs, _ := roomRungs(keys, saved, tr, had)
+	if len(rungs) == 0 || ladderSays(rungs) == ladderSays(had) {
+		return
+	}
+	l.Set(rungs)
+	log.Printf("[link] this room's hub addresses changed on disk. will try %s", ladderSays(rungs))
 }
 
 func samePaths(a, b []link.Path) bool {

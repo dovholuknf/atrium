@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dovholuknf/atrium/internal/address"
+	"github.com/dovholuknf/atrium/internal/base/address"
 )
 
 // A REQUEST THAT NAMES A CARD GOES TO THE ROOM THAT HOLDS IT. Backlog-2 item 63.

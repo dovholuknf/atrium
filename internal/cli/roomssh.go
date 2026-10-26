@@ -17,9 +17,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
-	"github.com/dovholuknf/atrium/internal/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
 )
 

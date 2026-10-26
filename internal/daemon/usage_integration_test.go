@@ -421,6 +421,16 @@ func TestUsagePricesEveryCurrentModel(t *testing.T) {
 	}
 }
 
+// Sonnet 5.5 reads from the cache at half Sonnet 5's price.
+func TestUsagePricesPinSonnetCacheReads(t *testing.T) {
+	t.Parallel()
+	for model, cr := range map[string]float64{"claude-sonnet-5": 0.20, "claude-sonnet-5-5": 0.10, "claude-haiku-4-5": 0.10} {
+		if p, ok := usagePriceFor(model); !ok || p.Cr != cr {
+			t.Fatalf("%s: %+v %v, want cache read %v", model, p, ok, cr)
+		}
+	}
+}
+
 // rowsOf is a card's rows of one cause, newest first.
 func (f *usageFix) rowsOf(cause string) []*store.SessionUsage {
 	f.t.Helper()

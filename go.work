@@ -3,5 +3,8 @@ go 1.26.10
 use (
 	.
 	./internal/base
+	./internal/gitsync
+	./internal/hubstore
 	./internal/ptyhost
+	./internal/store
 )

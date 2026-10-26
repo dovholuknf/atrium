@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -135,7 +136,7 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, wait
 	}
 	body := text
 	if d.bracketedPasteFor(taskID, false) {
-		body = bracketedPaste(text)
+		body = screen.BracketedPaste(text)
 	}
 	banner := ""
 	if from != "" {

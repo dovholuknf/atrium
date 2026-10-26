@@ -187,7 +187,9 @@ func DefaultHarnesses() []Harness {
 			// the prompt, and `resume_args` replaces `args` by design.
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
-			ResumeArgs: []string{"resume", "{resume}"},
+			// --no-alt-screen keeps codex in the normal buffer, the only one xterm.js scrolls back.
+			Args:       []string{"--no-alt-screen"},
+			ResumeArgs: []string{"resume", "--no-alt-screen", "{resume}"},
 			PromptArgs: []string{"{prompt}"},
 			ModelArgs:  []string{"--model", "{model}"},
 			// A config override, because codex has no effort flag. The key is
@@ -312,6 +314,9 @@ func (s *Store) Harnesses() ([]*Harness, error) {
 
 // Harness returns one runner by id.
 func (s *Store) Harness(id string) (*Harness, error) {
+	if h, ok := s.memo.runner(id); ok {
+		return h, nil
+	}
 	var h *Harness
 	err := s.guard(func() error {
 		row := s.db.QueryRow(`SELECT `+harnessColumns+` FROM harness WHERE id = ?`, id)
@@ -322,11 +327,15 @@ func (s *Store) Harness(id string) (*Harness, error) {
 		h = got
 		return nil
 	})
+	if err == nil {
+		s.memo.keepRunner(id, h)
+	}
 	return h, err
 }
 
 // SaveHarness creates or replaces a runner.
 func (s *Store) SaveHarness(h Harness) (*Harness, error) {
+	defer s.memo.drop()
 	h.ID = strings.TrimSpace(h.ID)
 	if h.ID == "" {
 		return nil, errors.New("a harness needs an id")
@@ -497,6 +506,7 @@ func orEmptySlice(v []string) []string {
 
 // DeleteHarness removes a runner.
 func (s *Store) DeleteHarness(id string) error {
+	defer s.memo.drop()
 	return s.guard(func() error {
 		_, err := s.db.Exec(`DELETE FROM harness WHERE id = ?`, id)
 		return err

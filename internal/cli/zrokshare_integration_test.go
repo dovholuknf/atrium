@@ -3,10 +3,13 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"net"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/link"
 )
@@ -15,9 +18,11 @@ type fakeShares struct {
 	live    map[string]bool
 	created int
 	deleted []string
+	askErr  error
+	bound   chan net.Listener
 }
 
-func (f *fakeShares) Exists(t string) (bool, error) { return f.live[t], nil }
+func (f *fakeShares) Exists(t string) (bool, error) { return f.live[t], f.askErr }
 
 func (f *fakeShares) Create() (string, error) {
 	f.created++
@@ -32,9 +37,17 @@ func (f *fakeShares) Delete(t string) error {
 	return nil
 }
 
-func (f *fakeShares) Listen(string) (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") }
+func (f *fakeShares) Listen(string) (net.Listener, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err == nil && f.bound != nil {
+		f.bound <- ln
+	}
+	return ln, err
+}
 
 func (f *fakeShares) Dial(string) (net.Conn, error) { return nil, os.ErrInvalid }
+
+func (f *fakeShares) Access(string) error { return nil }
 
 func hubStart(t *testing.T, keys link.Keys, api link.ZrokAPI) (token string, stop func()) {
 	t.Helper()
@@ -117,4 +130,61 @@ func TestRoomZrokSeedIsOnOnlyWhenTransportNamesZrok(t *testing.T) {
 	if s := roomZrokSeed("direct,ziti"); s.On != nil {
 		t.Fatalf("direct,ziti seeds %+v, want nothing", s)
 	}
+}
+
+func TestAZrokFirstHubStartsWithTheControllerDownAndRebindsWhenItsShareGoes(t *testing.T) {
+	keys := link.Keys{Dir: t.TempDir()}
+	if err := writeZrokShare(keys, "old"); err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeShares{live: map[string]bool{"old": true}, askErr: errors.New("controller down"),
+		bound: make(chan net.Listener, 1)}
+	side, err := newZrokHub(keys, nil, api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := link.NewHub(link.Timings{})
+	waited, goOn := make(chan struct{}), make(chan struct{})
+	b := zrokBinder(side, h, nil)
+	b.Wait = func(ctx context.Context, _ time.Duration) bool {
+		waited <- struct{}{}
+		<-goOn
+		return ctx.Err() == nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { b.Run(ctx); close(done) }()
+	defer func() { cancel(); close(goOn); <-done }()
+
+	<-waited
+	if ls := h.Listeners(); len(ls) != 1 || ls[0].Up || !strings.Contains(ls[0].LastError, "could not ask zrok") {
+		t.Fatalf("with the controller down the listeners are %+v, want zrok down and why", ls)
+	}
+	if saved, _ := readZrokShare(keys); saved != "old" || api.created != 0 {
+		t.Fatalf("the share file says %q with %d reserved, want old and none", saved, api.created)
+	}
+	api.askErr = nil
+	goOn <- struct{}{}
+	first := <-api.bound
+
+	delete(api.live, "old")
+	first.Close()
+	<-waited
+	goOn <- struct{}{}
+	<-api.bound
+	if saved, _ := readZrokShare(keys); saved != "share1" || api.created != 1 {
+		t.Fatalf("after the share went the file says %q with %d reserved, want share1 and one", saved, api.created)
+	}
+	if line, err := side.joinString("vm1", "secret"); err != nil || shareOf(t, line) != "share1" {
+		t.Fatalf("the join string after the rebind: %v", err)
+	}
+}
+
+func shareOf(t *testing.T, line string) string {
+	t.Helper()
+	j, err := link.ParseToken(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return j.ShareToken
 }

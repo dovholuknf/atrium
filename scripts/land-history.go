@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/land"
+	"github.com/dovholuknf/atrium/internal/base/land"
 )
 
 var (
@@ -48,6 +48,14 @@ func main() {
 	baseSHA := gitOut("rev-parse", "--verify", "--quiet", *base+"^{commit}")
 	if baseSHA == "" {
 		die("cannot resolve " + *base)
+	}
+
+	if dups, err := land.Duplicates(".", baseSHA, oldTip); err != nil {
+		die(err.Error())
+	} else if len(dups) > 0 {
+		fmt.Fprintln(os.Stderr, "  "+strings.Join(dups, "\n  "))
+		die(fmt.Sprintf("%d commits on %s have a patch already on %s. Landing them again adds copies. "+
+			"Run git rebase %s first", len(dups), *branch, *base, *base))
 	}
 
 	start := time.Now()

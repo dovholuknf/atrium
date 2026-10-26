@@ -440,3 +440,13 @@ func TestPermissionHookRetriesThroughARestart(t *testing.T) {
 		t.Fatalf("retried %d times", len(never.posts))
 	}
 }
+
+func TestPermissionHookSaysWhichCardItsRunnerIs(t *testing.T) {
+	h := newFakeHub(t, true, 200, `{"decision":"approve"}`)
+	permEnv(t, "force")
+	t.Setenv("ATRIUM_TASK_ID", "card-1")
+	permissionHook(h.srv.URL, []byte(bashPayload), func() int { return 4242 })
+	if len(h.posts) != 1 || h.posts[0]["task_id"] != "card-1" {
+		t.Fatalf("posted %v, want task_id card-1", h.posts)
+	}
+}

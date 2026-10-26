@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 )
 
 const codexPermissionPayload = `{"hook_event_name":"PermissionRequest","session_id":"codex-session",` +

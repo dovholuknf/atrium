@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"log"
 	"net"
 	"net/http"
@@ -33,7 +34,7 @@ import (
 
 // gitKind is the connection kind. A hub that predates it refuses with the sentence in
 // hearHello, and a room never gets that far because that hub did not say Git.
-const gitKind = "git"
+const gitKind = wire.GitKind
 
 // ErrNoGit is a room that has no way to fetch from this hub right now.
 var ErrNoGit = errors.New("this hub predates git sync (it did not say it serves git), or this room is not attached to it")
@@ -66,6 +67,8 @@ func (r *Room) DialGit(ctx context.Context) (net.Conn, error) {
 	conn, err := r.Dial.Dial(dialCtx)
 	cancel()
 	if err != nil {
+		// A warm pool keeps a room's data link looking healthy while every new dial fails, so a push's dial counts too.
+		r.dataFailed(err)
 		return nil, fmt.Errorf("the hub is not answering: %w", err)
 	}
 	br := bufio.NewReader(conn)
@@ -75,8 +78,10 @@ func (r *Room) DialGit(ctx context.Context) (net.Conn, error) {
 		if !w.OK && w.Error != "" {
 			return nil, fmt.Errorf("the hub refused a git connection: %s", w.Error)
 		}
+		r.dataFailed(err)
 		return nil, fmt.Errorf("the hub is not answering: %w", err)
 	}
+	r.dataWorked()
 	return &buffered{Conn: conn, br: br}, nil
 }
 

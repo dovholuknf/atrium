@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,12 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/address"
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/scratch"
+	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
-	"github.com/dovholuknf/atrium/internal/scratch"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -302,6 +304,8 @@ type launchOptions struct {
 	// Autocompact is the compaction window in k tokens, as text, for a harness row that
 	// declares AutocompactArgs. Empty passes nothing. Computed by autocompactK.
 	Autocompact string
+	// GitDir is a worktree's git common dir outside its cwd, which a codex launch adds as a writable root.
+	GitDir string
 }
 
 // runnerArgsWith is runnerArgs with the effort and the extra argv as well.
@@ -364,6 +368,9 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 			return nil, "", err
 		}
 	}
+	if o.GitDir != "" && isCodex(h) {
+		args = append(append([]string{}, args...), "--add-dir", o.GitDir)
+	}
 	if len(o.Args) > 0 {
 		args = append(append([]string{}, args...), o.Args...)
 	}
@@ -388,6 +395,19 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 		next = append(next, strings.ReplaceAll(a, "{prompt}", prompt))
 	}
 	return next, logged, nil
+}
+
+// outsideGitDir is the git common dir of the worktree at cwd, which lies outside it, else "".
+func outsideGitDir(cwd string) string {
+	out, err := gitIn(cwd, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
+	if err != nil {
+		return ""
+	}
+	dirs := strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n")
+	if len(dirs) != 2 || filepath.Clean(dirs[0]) == filepath.Clean(dirs[1]) {
+		return ""
+	}
+	return filepath.Clean(filepath.FromSlash(dirs[1]))
 }
 
 // claudeTakesMany are Claude Code's options that take every argument after them up to the next option. Written
@@ -1166,6 +1186,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
+	if isCodex(h) {
+		opts.GitDir = outsideGitDir(cwd)
+	}
 	// The compaction window, from the limit this card will be held to. The tags are the
 	// request's and the card's, and the agent mark is put on as the launch will.
 	probe := &store.Task{Tags: append([]string{}, req.Tags...), Model: model}
@@ -1350,7 +1373,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// launch: the point of preparing is that the runner needs what it sets up,
 	// so starting without it produces an agent that cannot find its tools and
 	// no explanation of why.
-	base := os.Environ()
+	base := userenv.Refresh(os.Environ())
 	if h.Prepare != "" {
 		prepared, err := captureEnv(h.Prepare, cwd)
 		if err != nil {
@@ -1379,6 +1402,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		"ATRIUM_RUNNER": h.ID,
 	}
 	d.tellWhereIAm(atrium)
+	if u, ok := d.hubURLDefault(overEnv(h.Env, addedEnv)); ok {
+		atrium["ATRIUM_HUB_URL"] = u
+	}
 	// A HOME'S TEMP FOLDER, over the harness and the machine, so nothing the runner starts writes outside it.
 	if home != nil {
 		for k, v := range homeEnv(homeDir) {
@@ -1896,6 +1922,22 @@ func permGateDefault(harnessEnv map[string]string) (string, bool) {
 		}
 	}
 	return "on", true
+}
+
+// hubURLDefault is this room's agent listener for ATRIUM_HUB_URL, which a hook reads ahead of the machine's address
+// file: a second room on a machine records no address there, so without it its runners' hooks reach the first room.
+// A harness that names the variable keeps its own.
+func (d *Daemon) hubURLDefault(harnessEnv map[string]string) (string, bool) {
+	for k := range harnessEnv {
+		if strings.EqualFold(k, "ATRIUM_HUB_URL") {
+			return "", false
+		}
+	}
+	a := d.agentAddr()
+	if _, port, err := net.SplitHostPort(a); err != nil || port == "0" {
+		return "", false
+	}
+	return addressOf(a), true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.

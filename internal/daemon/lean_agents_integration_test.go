@@ -387,3 +387,15 @@ func TestLeanWithoutAgentsIsUnchangedByTheBuiltinRule(t *testing.T) {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+func TestLeanAgentsLiftTheOnlySubagentsGuardForTheNamedAgents(t *testing.T) {
+	t.Parallel()
+	raw, err := leanSettings([]byte(`{"env":{"ATRIUM_ONLY_SUBAGENTS":"1","KEEP":"x"}}`), "", []string{"reviewer"}, testHooks())
+	if err != nil || !strings.Contains(raw, `"ATRIUM_ONLY_SUBAGENTS":"0"`) || !strings.Contains(raw, `"KEEP":"x"`) {
+		t.Fatalf("lean_agents should lift the guard and keep the env: %s %v", raw, err)
+	}
+	raw, err = leanSettings([]byte(`{"env":{"ATRIUM_ONLY_SUBAGENTS":"1"}}`), "", nil, testHooks())
+	if err != nil || !strings.Contains(raw, `"ATRIUM_ONLY_SUBAGENTS":"1"`) {
+		t.Fatalf("no lean_agents leaves the guard: %s %v", raw, err)
+	}
+}

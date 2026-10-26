@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -119,7 +120,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	}
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
-		payload = bracketedPaste(text)
+		payload = screen.BracketedPaste(text)
 	}
 	// Read before the write: whether it lands in a queued box depends on the state the line is typed into.
 	inBox := d.typedWouldQueue(taskID)

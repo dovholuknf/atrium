@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
-	"github.com/dovholuknf/atrium/internal/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/edge"
-	"github.com/dovholuknf/atrium/internal/forge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/roomstats"
@@ -31,7 +31,7 @@ import (
 // and the agents, and it serves its board on loopback exactly as it always did.
 // It runs the same binary the hooks run, so the address file it writes names a
 // binary that answers `atrium hook`, and the board's "install hooks" writes lines
-// that run. See internal/claudeconf/whichexe.go.
+// that run. See internal/base/claudeconf/whichexe.go.
 // The only new thing is that it also dials a hub and serves that SAME handler
 // down the connection, so the board can be served from somewhere else by a
 // process that can be restarted freely.
@@ -399,7 +399,16 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Name: saved.Room,
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
-		OnPaths: func(ps []link.Path) { learnHubPaths(keys, saved, dial, ps) },
+		OnPaths: func(ps []link.Path) {
+			// room.json read again, so a hub address changed since the start is not put back.
+			now, err := keys.Joined()
+			if err != nil {
+				now = saved
+			}
+			learnHubPaths(keys, now, dial, ps)
+		},
+		// EVERY RUNG FAILED: the hub's address is read from disk again before the next attempt.
+		OnUnreachable: func() { reloadRungs(keys, dial) },
 		// A transport turned off from the hub is written beside the others, so a restart keeps it.
 		PersistOff: func(off []string) error {
 			t, err := keys.Transports()

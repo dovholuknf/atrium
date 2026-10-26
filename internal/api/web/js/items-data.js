@@ -157,7 +157,10 @@ function foldItems(list, tasks, stateOf) {
     const row = Object.assign({}, d, { assignments: as });
     if (approval) { row.ask = approval.ask; row.state = "blocked"; row.owner_kind = "human"; }
     const steps = row.steps || [], cur = itemCurrent(row), step = steps[cur] || { name: "" };
-    const allDone = steps.length > 0 && steps.every(s => s.state === "done" || s.state === "skipped");
+    // The last step done, or a backlog item closed, is finished whatever an earlier step says.
+    const pushed = steps.length > 0 && steps[steps.length - 1].state === "done";
+    const closed = row.backlogStatus === "done" || row.backlogStatus === "dropped";
+    const allDone = pushed || closed || (steps.length > 0 && steps.every(s => s.state === "done" || s.state === "skipped"));
     const everyEnded = as.every(a => a.state === "finished");
     const cancelled = everyEnded && d.state === "finished" && /cancelled/i.test(d.note || "");
     const humanAsks = !!approval || (d.state === "blocked" && d.owner_kind === "human" && !!itemQuestionText(d));
@@ -213,6 +216,7 @@ function itemWithWork(it, w) {
   if (!out.title && wk.title) out.title = wk.title;
   if (!out.body && wk.body) out.body = wk.body;
   if (!out.priority && wk.priority) out.priority = wk.priority;
+  if (wk.status) out.backlogStatus = wk.status;
   if (!out.dept && wk.dept) out.dept = wk.dept;
   const ap = by.approved;
   if (ap && (ap.state === "active" || ap.state === "stale") && ap.party === "human") {

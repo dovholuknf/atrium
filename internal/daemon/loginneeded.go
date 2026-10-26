@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // A room whose claude login is revoked. See docs/changes/bug-room-auth-revoked-silent.md.
@@ -149,9 +150,9 @@ func (d *Daemon) watchLoginNeeded(now time.Time) {
 		d.login.mu.Unlock()
 		if !known || v.out != stamp {
 			cols, rows := run.buf.CurrentSize()
-			sc := newScreenSized(cols, rows)
-			sc.apply(run.buf.Tail(frameTailBytes))
-			v = loginVerdict{out: stamp, line: revokedLogin(frameText(sc))}
+			sc := screen.NewScreenSized(cols, rows)
+			sc.Apply(run.buf.Tail(screen.FrameTailBytes))
+			v = loginVerdict{out: stamp, line: revokedLogin(screen.FrameText(sc))}
 			d.login.mu.Lock()
 			d.login.verdicts[run.taskID] = v
 			d.login.mu.Unlock()

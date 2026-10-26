@@ -3,7 +3,7 @@ package cli
 import (
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/cardcolors"
+	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 )

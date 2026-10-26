@@ -227,3 +227,37 @@ func TestStaleDirectoryNamePermissionStillLandsOnACard(t *testing.T) {
 	}
 	d.onActivity(ActivityEvent{Agent: "checkout", NameSource: store.NameFromDir, Event: "tool-start", Tool: "Bash"})
 }
+
+// Two cards in one checkout: a hook that names its runner's card lands there, whatever name it sends.
+func TestAHookThatNamesItsCardLandsOnItAndNotOnTheOldCardInItsCheckout(t *testing.T) {
+	t.Parallel()
+	d := testDaemon(t)
+	old, _, err := d.st.Register(store.Observed{WireName: "rnd", Worktree: "/tmp/rnd", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relaunch, _, err := d.st.Register(store.Observed{WireName: "rnd-2", Worktree: "/tmp/rnd", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.onPermRequest(PermissionRequest{
+		Agent: "rnd", TaskID: relaunch.ID, Tool: "Bash", Command: "ls", Cwd: "/tmp/rnd",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{old.ID, relaunch.ID} {
+		ps, err := d.st.PendingForTask(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := map[bool]int{true: 1, false: 0}[id == relaunch.ID]; len(ps) != want {
+			t.Fatalf("card %s has %d permissions, want %d", id, len(ps), want)
+		}
+	}
+	if got := d.onActivity(ActivityEvent{Agent: "rnd", TaskID: relaunch.ID, Event: "tool-start", Tool: "Bash"}); got != relaunch.ID {
+		t.Fatalf("activity landed on %q, want the relaunch %s", got, relaunch.ID)
+	}
+	if got := d.onActivity(ActivityEvent{Agent: "rnd", TaskID: "no-such-card", Event: "tool-start", Tool: "Bash"}); got != old.ID {
+		t.Fatalf("a card id this room does not have landed on %q, want the name's card %s", got, old.ID)
+	}
+}

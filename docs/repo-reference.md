@@ -98,7 +98,7 @@ internal/daemon/            the room: wires store + api, owns hooks, launching, 
   finish.go                   a session declaring its work over, which nothing could say before
   actions.go                  saying a stored prompt to a card, and asking the runner to leave
   sweep.go                    two timers that are easy to confuse: archiving, and deleting
-internal/rules/             pure values the room and the hub share: the recogniser, worker policy, context limits, PRKey
+internal/base/rules/        pure values the room and the hub share: the recogniser, worker policy, context limits, PRKey
 internal/store/             the room's sqlite. every table, every query, the halt
   schema.go                   migrations, applied in slice order. read the header before editing
   tasks.go / permissions.go / rules.go / harness.go / messages.go / review.go
@@ -113,15 +113,17 @@ internal/api/               the room's HTTP surface: JSON API, SSE, files, setti
   web/                        the board: index.html, css/, js/, m/ (the phone), read.html, sw.js
 internal/link/              the hub: the proxy to rooms, the room link, the control MCP, git, notifications
 internal/hubstore/          the hub's own store
+internal/daemon/screen/     the terminal screen model: grid, replay, flatten, width tables. no daemon state
 internal/ptyhost/           the pty host that keeps terminals alive across a room restart
 internal/gitsync/           git between hub and rooms
-internal/forge/             forges
-internal/prreview/          pull request review
-internal/claudeconf/        reading and writing a runner's hook config
+internal/base/forge/        forges
+internal/base/prreview/     pull request review
+internal/base/claudeconf/   reading and writing a runner's hook config
   whichexe.go                 WHICH BINARY goes in there. not `os.Executable()`. read the header
-internal/safepath/          is this path inside that directory. one function, three rules
-internal/edge/ itemgate/ requirements/ resources/ runnerprofile/ runnersetup/ roomstats/ mcprule/ cardurl/
-  cardcolors/ deployready/ detach/ shellpick/ inputlag/ testguard/ webasset/
+internal/base/safepath/     is this path inside that directory. one function, three rules
+internal/base/ edge/ itemgate/ requirements/ resources/ mcprule/ cardurl/ cardcolors/ shellpick/ inputlag/ webasset/
+  detach/ testguard/ claudeconf/
+internal/ runnerprofile/ runnersetup/ roomstats/ deployready/
                             one concern each
 ```
 

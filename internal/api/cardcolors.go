@@ -1,6 +1,6 @@
 package api
 
-import "github.com/dovholuknf/atrium/internal/cardcolors"
+import "github.com/dovholuknf/atrium/internal/base/cardcolors"
 
 // SettingCardColors and CardColors live in internal/cardcolors, shared with the hub.
 const SettingCardColors = cardcolors.Setting

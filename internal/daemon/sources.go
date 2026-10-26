@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -191,6 +192,18 @@ func (d *Daemon) RunSourceNow(id string) (int, error) {
 	return d.runSource(context.Background(), s)
 }
 
+// stopTreeOnCancel hides cmd's console and makes its cancel end what it started too: killing a source's shell alone
+// left its children running and holding stdout, so Run never returned.
+func stopTreeOnCancel(cmd *exec.Cmd) {
+	cardproc.OwnGroup(cmd)
+	hideWindow(cmd)
+	cmd.Cancel = func() error {
+		killTree(cmd.Process.Pid)
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = 5 * time.Second
+}
+
 // readSource runs the command and parses what it printed.
 func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.IntakeItem, error) {
 	if strings.TrimSpace(s.Cmd) == "" {
@@ -202,7 +215,7 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 	cmd := exec.CommandContext(runCtx, s.Cmd, s.Args...)
 	cmd.Dir = s.Cwd
 	// A source runs on a timer and nobody asked to watch it. See hideWindow.
-	hideWindow(cmd)
+	stopTreeOnCancel(cmd)
 	// The daemon's own environment, minus the markers that would make a child
 	// think it is inside the session atrium was started from. Exactly what a
 	// launched runner gets, and for the same reason.

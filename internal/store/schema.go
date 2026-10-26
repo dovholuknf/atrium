@@ -2495,6 +2495,16 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS doc_share_task ON doc_share (task_id)`,
 		},
 	},
+	{
+		// A codex card scrolls back. The alternate screen has no scrollback in xterm.js, so codex starts with
+		// `--no-alt-screen`. Guarded on the value the seed shipped, so an operator's own list is kept.
+		name: "0114_codex_no_alt_screen",
+		stmts: []string{
+			`UPDATE harness SET args = '["--no-alt-screen"]' WHERE id = 'codex' AND (args = '[]' OR args = '')`,
+			`UPDATE harness SET resume_args = '["resume","--no-alt-screen","{resume}"]'
+			   WHERE id = 'codex' AND resume_args = '["resume","{resume}"]'`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

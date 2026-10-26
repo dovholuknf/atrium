@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -56,7 +57,7 @@ func launcherSayBody(dir, taskID, text string) string {
 	}
 	path := filepath.Join(dir, taskID+".md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
-		if err = os.WriteFile(path, []byte(stripPasteMarkers(text)), 0o600); err == nil {
+		if err = os.WriteFile(path, []byte(screen.StripPasteMarkers(text)), 0o600); err == nil {
 			return "read " + path + " and do what it says."
 		}
 	}

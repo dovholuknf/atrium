@@ -7,7 +7,9 @@ last.
 
 How it works: the hub reserves a PRIVATE zrok share on its own zrok environment and prints its token. A room dials
 that share with the token, then spends a one-time secret over it to get a hub-signed certificate, the same enrolment
-direct and ziti use. The token is the gate. See `docs/fabric/ziti-zrok-flow-design.md` and `docs/fabric/hub-and-rooms.md`.
+direct and ziti use. The token is the gate. Before its first dial the room creates its own access to the share, as
+`zrok access private <token>` would, once per process. See `docs/fabric/ziti-zrok-flow-design.md` and
+`docs/fabric/hub-and-rooms.md`.
 
 ## What each machine needs
 
@@ -52,8 +54,10 @@ The hub log says `a private zrok share` once the share is bound, and writes the 
 
 THE SHARE SURVIVES A RESTART. On each start the hub reads `zrok-share`, asks zrok whether that share is still on its
 environment, and reuses it when it is. It reserves a new one only when zrok says the share is gone, which the log says.
-When zrok cannot be asked (the controller is down) the hub reserves nothing and retries. A room already joined carries
-the token in its join, so it reattaches after a hub restart with no new string.
+When zrok cannot be asked (the controller is down) the hub starts without the zrok listener, reserves nothing, and
+retries on a backoff, one log line per attempt, and the board's listeners show zrok down with why. When the listener
+dies under a running hub (the share was deleted or retired) the hub binds again the same way. A room already joined
+carries the token in its join, so it reattaches after a hub restart with no new string.
 
 ## 4. Add the room and get its join string
 
@@ -101,9 +105,10 @@ atrium room transports
 | `this machine has no zrok environment yet` | `zrok enable` was not run on that machine (steps 1 and 2) **(clint)** |
 | `no hub is running over zrok from <dir>` | `rooms add` ran before, or beside a different directory than, the hub. Start the hub first |
 | `zrok: no share token on this room` | the room has no token. Step 5, `room transports zrok --token` |
-| `the zrok controller is not answering` | the zrok instance is down or unreachable. The room backs off and retries |
+| `not dialling that zrok share again for <n>s. the last dial: <cause>` | the room backs off and retries. The cause is the last failure: the share is gone, no access, the hub is not answering on its share, or the zrok controller is not answering |
 | `reserved a private zrok share. rooms joined over the old one need rooms token` | the saved share was deleted on the zrok side, so the hub reserved a new one. Mint a new string with `rooms token` for each zrok room |
 | `could not ask zrok whether the share this hub saved is still there` | the controller did not answer. The hub keeps the saved share and retries, and reserves nothing |
+| `the room listener over zrok stopped, binding the share again` | the share went under a running hub. The next bind reserves a new one when zrok says it is gone. Mint a new string with `rooms token` for each zrok room |
 
 ## Tear down
 
@@ -114,9 +119,9 @@ reuse, which is what keeps a room attached across a deploy. To retire it for goo
 atrium rooms retire-share --atrium-dir <scratch dir>
 ```
 
-That deletes the share and removes `zrok-share`. The next hub start over zrok reserves a new share, and every zrok room
-needs `atrium rooms token <name>` and a rejoin. A killed or abandoned hub leaves its share on the account the same way
-(`zrok overview` lists it, `zrok delete share <token>` removes it **(clint)**).
+That deletes the share and removes `zrok-share`. A running hub over zrok binds again and reserves a new share, a
+stopped one does at its next start, and either way every zrok room needs `atrium rooms token <name>` and a rejoin. A
+killed or abandoned hub leaves its share on the account the same way (`zrok overview` lists it, `zrok delete share <token>` removes it **(clint)**).
 
 ## Adding a zrok room to the LIVE hub
 

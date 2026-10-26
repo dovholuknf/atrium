@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/deployready"
-	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
@@ -257,8 +257,14 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	var lns []net.Listener
 	var lnVia []string
 	var sideStates []link.ListenerState
+	var zrokFirst *hubSide
 	for i, s := range set.sides {
 		if s.kind == "ziti" && i > 0 {
+			continue
+		}
+		// A zrok first is bound by zrokBinder, so a controller that cannot be asked does not stop the hub.
+		if s.kind == "zrok" && i == 0 {
+			zrokFirst = s
 			continue
 		}
 		ln, err := s.listen()
@@ -670,6 +676,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// EACH ROOM'S SETUP, read on attach and every few minutes, for the rooms pill. See internal/link/setupwatch.go.
 	go proxy.RunSetupWatch(ctx)
 
+	if zrokFirst != nil {
+		go zrokBinder(zrokFirst, h, func(kind, detail string) { proxy.RecordAudit("", kind, detail) }).Run(ctx)
+	}
 	for i, ln := range lns {
 		go func(ln net.Listener, via string) {
 			if err := h.ServeVia(ctx, ln, via); err != nil && ctx.Err() == nil {

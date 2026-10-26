@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/inputlag"
 )
 
 // lagOnFor switches the logging on for one test, as the gear does.

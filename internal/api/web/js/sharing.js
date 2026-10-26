@@ -592,7 +592,8 @@ function showMenu(e, items, opened) {
           : s.quiet
             ? `<span class="subnote">${esc(s.quiet)}</span>`
             : `<span class="subitem" data-i="${i}" data-j="${j}"
-                >${s.icon || ""}${esc(s.label)}${s.tag ? `<span class="newtag">${esc(s.tag)}</span>` : ""}</span>`).join("")}</span>` : ""}</button>`
+                >${s.icon || ""}${esc(s.label)}${s.tag ? `<span class="newtag">${esc(s.tag)}</span>` : ""}${
+                s.help ? `<span class="help" tabindex="0" data-tip="${esc(s.help)}">?</span>` : ""}</span>`).join("")}</span>` : ""}</button>`
   ).join("");
   // DIRECT CHILDREN ONLY. A stepper row holds two buttons of its own, and
   // they carry no `data-i`, so reaching them here would look up `items[NaN]`
@@ -606,7 +607,7 @@ function showMenu(e, items, opened) {
     const it = items[Number(b.dataset.i)];
     // A row that only opens a flyout does nothing when pressed. Closing the
     // menu on it would take the choice away at the moment it was offered.
-    if (it.sub) return;
+    if (it.sub && !it.act) return;
     // "more..." redraws the menu in place, so it stays open.
     if (it.expand) { it.act(); return; }
     closeCardMenu();
@@ -614,6 +615,7 @@ function showMenu(e, items, opened) {
   });
   cardMenuEl.querySelectorAll(".subitem").forEach(s => s.onclick = ev => {
     ev.stopPropagation();
+    if (ev.target.closest(".help")) return;
     closeCardMenu();
     items[Number(s.dataset.i)].sub[Number(s.dataset.j)].act();
   });
@@ -996,9 +998,26 @@ async function cleanUpNow(id, t) {
     (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
     if (out.left) said.push(out.left + " left on the card");
     (out.warnings || []).forEach(w => said.push(w));
-    toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
+    if (out.session_error) toast("could not terminate " + title, said.join(". "));
+    else toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
   } catch (e) {
     toast("could not clean up", e.message);
+  }
+  refresh();
+}
+
+function endCardKeeping(id, t) { return oneAtATime("close:" + id, () => endCardKeepingNow(id, t)); }
+
+async function endCardKeepingNow(id, t) {
+  try {
+    const out = await api(`/v1/tasks/${encodeURIComponent(id)}/close`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true, keep: true })
+    });
+    if (out && out.session_error) toast("could not terminate " + ((t && t.display_title) || id), out.session_error);
+    else toast("terminated " + ((t && t.display_title) || id), "nothing was cleaned up");
+  } catch (e) {
+    toast("could not terminate", e.message);
   }
   refresh();
 }

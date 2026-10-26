@@ -46,12 +46,12 @@ render() {
 # exit, including a failed build, because leaving somebody's screen.go replaced
 # by an older copy is a worse outcome than any answer this prints.
 keep=$(mktemp)
-cp internal/daemon/screen.go "$keep"
-restore() { cp "$keep" internal/daemon/screen.go; rm -f "$keep"; }
+cp internal/daemon/screen/screen.go "$keep"
+restore() { cp "$keep" internal/daemon/screen/screen.go; rm -f "$keep"; }
 trap restore EXIT
 
 echo "== step 1: does HEAD's renderer reproduce what the pane showed? =="
-git show HEAD:internal/daemon/screen.go > internal/daemon/screen.go
+git show HEAD:internal/daemon/screen/screen.go > internal/daemon/screen/screen.go
 render
 cp "$out/screen.txt" "$out/head.txt"
 restore

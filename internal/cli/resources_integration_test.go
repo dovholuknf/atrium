@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/resources"
+	"github.com/dovholuknf/atrium/internal/base/resources"
 )
 
 func TestResourcesInitWritesOnceAndNeverOverwrites(t *testing.T) {

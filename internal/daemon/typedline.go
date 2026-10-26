@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 )
 
 // typedLine is atrium's model of the operator's current input line: the TEXT,
@@ -414,7 +416,7 @@ func (l *typedLine) escape(p []byte, more bool) (int, bool) {
 // written command. Clearing the scrollback sends no byte and empties no line, so
 // it rightly releases nothing.
 func (l *typedLine) loneEsc() (cleared bool) {
-	if l.escClears && !l.escAt.IsZero() && l.now().Sub(l.escAt) < escAgainWithin {
+	if l.escClears && !l.escAt.IsZero() && l.now().Sub(l.escAt) < screen.EscAgainWithin {
 		l.clear()
 		l.escAt = time.Time{}
 		return true

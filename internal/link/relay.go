@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"log"
 	"net"
@@ -32,7 +33,7 @@ import (
 
 // relayKind is the connection kind. An older hub refuses it with the sentence
 // in hearHello, which is how a room finds out the hub cannot carry this.
-const relayKind = "relay"
+const relayKind = wire.RelayKind
 
 // relayWait bounds one relay exchange. The hub resolves the name and posts the
 // message, two loopback calls into a proxied room, each bounded by

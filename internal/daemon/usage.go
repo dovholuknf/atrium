@@ -65,9 +65,9 @@ const usagePricesVersion = "usageprices-2026-09-28b"
 var usageOnlyPrices = map[string]keepalivePrice{
 	"claude-haiku-4-5": {In: 1, Cw5m: 1.25, Cw1h: 2, Cr: 0.10, Out: 5},
 	"claude-sonnet-5":  {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
-	// Sonnet 5.5 costs what Sonnet 5 does, and is its own key because the
+	// Sonnet 5.5 reads at half Sonnet 5's price, and is its own key because the
 	// matcher below does not take one model's price for the other's.
-	"claude-sonnet-5-5": {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.20, Out: 10},
+	"claude-sonnet-5-5": {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.10, Out: 10},
 }
 
 // usagePriceFor prices a reply for a usage row: keep-alive's models, then the

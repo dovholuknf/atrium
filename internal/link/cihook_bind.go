@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/edge"
+	"github.com/dovholuknf/atrium/internal/base/edge"
 )
 
 // The ziti-hook bind, and the hub's loopback door for the same handler. See docs/fabric/ci-hook-design.md, 1.
@@ -159,20 +159,6 @@ func (b *CIBinder) serve(ctx context.Context, ln net.Listener) error {
 		err = errors.New("the listener closed")
 	}
 	return err
-}
-
-// ListenService binds another service with the same identity, and so the same ziti context as the link and the board.
-func (z *Ziti) ListenService(name string) (net.Listener, error) {
-	ctx, err := z.context()
-	if err != nil {
-		return nil, err
-	}
-	ln, err := ctx.Listen(name)
-	if err != nil {
-		return nil, errors.New("could not bind the ziti service " + name + ". does this identity have a bind policy for it: " +
-			err.Error())
-	}
-	return ln, nil
 }
 
 var ciNoticeSeq atomic.Uint64

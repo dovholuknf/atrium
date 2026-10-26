@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
-	"github.com/dovholuknf/atrium/internal/cardproc"
-	"github.com/dovholuknf/atrium/internal/safepath"
+	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -104,10 +104,14 @@ type closePreview struct {
 	Kept      []string    `json:"kept"`
 	DiskBytes int64       `json:"disk_bytes"`
 	CanStash  bool        `json:"can_stash"`
+	// keepAll ends the card and frees nothing, for a close asked to leave the folder and branches alone.
+	keepAll bool
 }
 
 type closeRequest struct {
 	Confirm bool `json:"confirm"`
+	// Keep ends the card and frees nothing: the folder, the branch and any hub branch stay.
+	Keep bool `json:"keep,omitempty"`
 	// Answers is keep, stash or delete by the worktree row's seq.
 	Answers map[string]string `json:"answers"`
 	// Progress is the id the board sends so each step of the close is broadcast as a close-progress event with it.
@@ -141,6 +145,8 @@ type closeResult struct {
 	// Left counts the rows still live: kept on purpose or not freed.
 	Left     int      `json:"left"`
 	Warnings []string `json:"warnings"`
+	// SessionErr is why the session is still running after the close.
+	SessionErr string `json:"session_error,omitempty"`
 }
 
 // closing holds the cards a close is running on, so a second press does not race the first.
@@ -206,6 +212,9 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 	}
 	var missing []string
 	for _, a := range pv.Asks {
+		if in.Keep {
+			break
+		}
 		ans := in.Answers[strconv.Itoa(a.Seq)]
 		if ans == "" {
 			missing = append(missing, a.Path)
@@ -225,6 +234,7 @@ func (s *Server) closeFlow(w http.ResponseWriter, r *http.Request, t *store.Task
 			"preview": pv})
 		return
 	}
+	pv.keepAll = in.Keep
 	steps := s.newCloseSteps(strings.TrimSpace(in.Progress), t.ID)
 	writeJSON(w, http.StatusOK, s.closeCard(t, pv, in.Answers, orphan, steps))
 }
@@ -238,6 +248,12 @@ func cardRunning(t *store.Task) bool {
 	return false
 }
 
+// sessionLive adds a runner atrium still holds: a card that reported done keeps its session up.
+func (s *Server) sessionLive(t *store.Task) bool {
+	sup := s.supervised()
+	return cardRunning(t) || (sup != nil && sup(t.ID))
+}
+
 // closePreview reads the inventory and the worktrees it names. Nothing is changed.
 func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview, error) {
 	rows, err := s.st.Resources(t.ID)
@@ -248,7 +264,7 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 	pv := &closePreview{Card: t.ID, Items: []closeItem{}, Asks: []closeAsk{}, Warnings: []string{},
 		DiskBytes: diskOf(rows), CanStash: s.Stash != nil,
 		Kept: []string{"the card and its transcript", "this list, with what freeing each row said"}}
-	if cardRunning(t) {
+	if s.sessionLive(t) {
 		pv.Warnings = append(pv.Warnings, "the session is still running. it is stopped first")
 	}
 	// A pull request's card: its hub branches count as merged once the forge's main has them (closehub.go).
@@ -426,9 +442,13 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	warn := func(format string, a ...any) { res.Warnings = append(res.Warnings, fmt.Sprintf(format, a...)) }
 
 	// 1. the runner
-	if cardRunning(t) && s.Kill != nil {
+	if s.sessionLive(t) && s.Kill == nil {
+		res.SessionErr = "this room cannot stop its sessions"
+		warn("the session did not stop: %s", res.SessionErr)
+	} else if s.sessionLive(t) {
 		steps.begin("session", "stopping the session")
 		if err := s.Kill(t.ID); err != nil {
+			res.SessionErr = err.Error()
 			warn("the session did not stop: %v. a worktree it holds open may not remove", err)
 			steps.problem("%v", err)
 		}
@@ -451,6 +471,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 	of := func(kind string) []*store.CardResource {
 		var out []*store.CardResource
+		if pv.keepAll {
+			return out
+		}
 		for i := len(rows) - 1; i >= 0; i-- {
 			if rows[i].Live() && rows[i].Kind == kind {
 				out = append(out, rows[i])
@@ -505,6 +528,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 
 	// 2. the review
 	outside := s.walkedOutside(t.ID, rows)
+	if pv.keepAll {
+		outside = nil
+	}
 	if len(outside)+len(of(store.ResReview)) > 0 {
 		steps.begin("review", "archiving the review")
 	}
@@ -524,7 +550,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 
 	// 2b. the card's branches on the hub, pushed from its worktree, so before the worktree goes
-	s.freeHubBranches(t, rows, asked, answers, steps, failed, freed, warn)
+	if !pv.keepAll {
+		s.freeHubBranches(t, rows, asked, answers, steps, failed, freed, warn)
+	}
 
 	// 3. worktrees. A kept one keeps its branch: repo and branch name.
 	keptBranch := map[string]bool{}

@@ -1122,6 +1122,13 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// Sonnet 5.5 cache read was seeded at 0.20 and lists at 0.10.
+		name: "0035_sonnet_5_5_cache_read",
+		stmts: []string{
+			`UPDATE price SET cache_read = 0.10 WHERE model = 'claude-sonnet-5-5' AND valid_from = '2026-09-28T00:00:00Z'`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

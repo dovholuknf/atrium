@@ -8,11 +8,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -41,6 +42,7 @@ type closeOut struct {
 	Stashes []closeStash  `json:"stashes"`
 	Preview *closePreview `json:"preview"`
 	Warn    []string      `json:"warnings"`
+	Session string        `json:"session_error"`
 }
 
 func closeCall(t *testing.T, oh *openHarness, card string, body map[string]any) (int, closeOut) {
@@ -150,6 +152,91 @@ func TestCloseAsksAboutWorkThatIsNowhereElseAndKeepsWhatItIsTold(t *testing.T) {
 	}
 	if got := git(t, wt, "symbolic-ref", "--short", "HEAD"); got != "feat/x" {
 		t.Errorf("a kept worktree lost its branch: %q", got)
+	}
+}
+
+func TestCloseWithKeepEndsTheCardAndFreesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, wt, _ := openForClose(t)
+	if err := os.WriteFile(filepath.Join(filepath.FromSlash(wt), "notes.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "keep": true})
+	if code != 200 || !out.Closed || out.Left == 0 {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if !exists(filepath.Join(filepath.FromSlash(wt), "notes.txt")) {
+		t.Error("the worktree was removed")
+	}
+	if got := git(t, wt, "symbolic-ref", "--short", "HEAD"); got != "feat/x" {
+		t.Errorf("the branch is %q", got)
+	}
+	if len(oh.killed) != 1 || oh.killed[0] != card {
+		t.Errorf("the session was not stopped: %v", oh.killed)
+	}
+	if task, _ := oh.srv.st.Get(card); task.Status != store.StatusDone {
+		t.Errorf("the card is %s", task.Status)
+	}
+}
+
+func TestClosePreviewSaysADoneCardsLiveSessionIsStopped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, _, _ := openForClose(t)
+	if err := oh.srv.st.SetStatus(card, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.hk.isSupervised = func(string) bool { return true }
+	code, out := closeCall(t, oh, card, map[string]any{})
+	if code != 200 || !slices.Contains(out.Warn, "the session is still running. it is stopped first") {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if len(oh.killed) != 0 {
+		t.Errorf("the preview stopped the session: %v", oh.killed)
+	}
+}
+
+func TestCloseStopsTheSessionOfACardThatReportedDone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, _, _ := openForClose(t)
+	if err := oh.srv.st.SetStatus(card, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.hk.isSupervised = func(string) bool { return true }
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "keep": true})
+	if code != 200 || !out.Closed {
+		t.Fatalf("%d %+v", code, out)
+	}
+	if len(oh.killed) != 1 || oh.killed[0] != card {
+		t.Errorf("the session was not stopped: %v", oh.killed)
+	}
+	if out.Session != "" {
+		t.Errorf("a stopped session answered an error: %q", out.Session)
+	}
+}
+
+func TestCloseNamesASessionThatDidNotStop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh, card, _, _ := openForClose(t)
+	if err := oh.srv.st.SetStatus(card, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	oh.srv.hk.isSupervised = func(string) bool { return true }
+	oh.srv.Kill = func(string) error { return errors.New("could not stop process 38036: access is denied") }
+	code, out := closeCall(t, oh, card, map[string]any{"confirm": true, "keep": true})
+	if code != 200 || out.Session != "could not stop process 38036: access is denied" {
+		t.Fatalf("%d %+v", code, out)
 	}
 }
 

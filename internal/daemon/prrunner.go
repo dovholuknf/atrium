@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/forge"
-	prrender "github.com/dovholuknf/atrium/internal/prreview/render"
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	prrender "github.com/dovholuknf/atrium/internal/base/prreview/render"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 

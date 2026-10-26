@@ -20,7 +20,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/dovholuknf/atrium/internal/docshare"
+	"github.com/dovholuknf/atrium/internal/base/docshare"
 )
 
 // Hub documents: a place for what agents and the operator write. The design is

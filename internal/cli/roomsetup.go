@@ -17,7 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/docshare"
+	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/roomspec"
 	"github.com/dovholuknf/atrium/internal/store"
 )

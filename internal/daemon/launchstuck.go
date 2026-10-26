@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -52,6 +53,7 @@ const (
 	PromptFolderTrust = "folder-trust"
 	PromptLogin       = "login"
 	PromptUpdate      = "update"
+	PromptSettings    = "settings"
 	PromptModelSwitch = "model-switch"
 	PromptOther       = "other"
 )
@@ -236,9 +238,9 @@ func (d *Daemon) scanTerminal(id string, run *runner, outAt time.Time) termHit {
 		return h
 	}
 	cols, rows := run.buf.CurrentSize()
-	sc := newScreenSized(cols, rows)
-	sc.apply(run.buf.Tail(menuTailBytes))
-	h := readFrame(frameText(sc))
+	sc := screen.NewScreenSized(cols, rows)
+	sc.Apply(run.buf.Tail(menuTailBytes))
+	h := readFrame(screen.FrameText(sc))
 	d.scans.put(id, key, h)
 	return h
 }
@@ -273,6 +275,8 @@ func readFrame(text string) termHit {
 	case strings.Contains(low, "select login method") || strings.Contains(low, "paste code here") ||
 		strings.Contains(low, "browser didn't open"):
 		h.prompt, h.title = PromptLogin, "login"
+	case strings.Contains(low, "settings file could not be read") || strings.Contains(low, "claude code settings issues"):
+		h.prompt, h.title = PromptSettings, "settings issues"
 	// An update BANNER is not a prompt: only a dialog waiting for an answer is.
 	case h.menu && strings.Contains(low, "update available"):
 		h.prompt, h.title = PromptUpdate, "update"
@@ -287,7 +291,7 @@ func readFrame(text string) termHit {
 func menuTitle(above []string) string {
 	start := len(above) - 1
 	for ; start >= 0 && len(above)-start <= menuScanLines; start-- {
-		if isRule(above[start]) {
+		if screen.IsRule(above[start]) {
 			break
 		}
 	}

@@ -209,7 +209,7 @@ func (l *Ladder) Climb(ctx context.Context, wait time.Duration) (net.Conn, error
 	if len(rungs) == 0 {
 		return nil, errors.New("this room has no transport to reach its hub, or every one is turned off")
 	}
-	var why []string
+	var why, tried []string
 	for _, r := range rungs {
 		c, err := dialWithin(ctx, r.Dial, wait)
 		if err == nil {
@@ -231,9 +231,18 @@ func (l *Ladder) Climb(ctx context.Context, wait time.Duration) (net.Conn, error
 			return nil, ctx.Err()
 		}
 		why = append(why, r.Path.Transport+" "+r.Dial.Describe()+": "+err.Error())
+		tried = append(tried, r.Path.Transport+" "+r.Dial.Describe())
 	}
-	return nil, errors.New(strings.Join(why, "; "))
+	return nil, &unreachable{why: strings.Join(why, "; "), tried: tried}
 }
+
+// unreachable is a climb on which every rung failed to dial.
+type unreachable struct {
+	why   string
+	tried []string
+}
+
+func (u *unreachable) Error() string { return u.why }
 
 // Probe dials every rung above the current one and says whether any answered.
 // It closes what it opened and never moves the ladder: only a climb does that.
@@ -278,7 +287,7 @@ func dialWithin(ctx context.Context, d Dialer, wait time.Duration) (net.Conn, er
 		return r.c, r.err
 	case <-ctx.Done():
 		go func() {
-			if r := <-ch; r.c != nil {
+			if r := <-ch; r.err == nil && r.c != nil {
 				_ = r.c.Close()
 			}
 		}()

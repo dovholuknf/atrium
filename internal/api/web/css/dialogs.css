@@ -291,7 +291,7 @@
   dialog.waitcard { top: 26vh; outline: none; }
   dialog.waitcard[open], div.waitcard { display: flex; }
   dialog.waitcard[open] { animation: wc-in .28s ease-out; }
-  dialog.waitcard::backdrop { background: rgba(var(--sink-rgb),.62); backdrop-filter: blur(6px) saturate(120%); }
+  dialog.waitcard::backdrop { background: rgba(var(--sink-rgb),.62); }
   @keyframes wc-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
   .wc-ring {
     width: 52px; height: 52px; border-radius: 50%; flex: none; margin-bottom: 18px;
@@ -443,7 +443,7 @@
 
   /* ── the dialog family ──────────────────────────────────
      Every dialog wears the wait card's clothes (`.waitcard` above): the teal-to-blue rule along the top edge,
-     a soft teal glow falling from it, the card gradient under that, and the board blurred behind. The rule is
+     a soft teal glow falling from it, the card gradient under that, and the board dimmed behind. The rule is
      a background layer rather than a `::before`, because a modal dialog scrolls itself when it is taller than
      the window and a pseudo element would scroll away with the content.
 
@@ -471,7 +471,8 @@
   /* For rows read down as a table, or content that is commands. A wrapped
      command has to be reassembled before it can be trusted. */
   dialog.wide { width: min(1280px, 96vw); }
-  dialog::backdrop { background: rgba(var(--sink-rgb),.66); backdrop-filter: blur(6px) saturate(120%); }
+  /* Dimmed, never blurred: a blurred backdrop repainted the whole board on every scroll frame of the dialog. */
+  dialog::backdrop { background: rgba(var(--sink-rgb),.66); }
   /* Opacity only. A dialog is pinned so it does not move under the pointer (above), and an entrance that
      slid it would be the one movement left. */
   dialog[open] { animation: dlg-in .18s ease-out; }
@@ -482,12 +483,8 @@
   dialog[open] > .dlg-body { min-height: 0; }
   @keyframes dlg-in { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } }
-  /* The tray does not blur the board. Every other dialog here is something you
-     came to do, so hiding what is behind it is the point. This one lists
-     things that happened to the board, and reading it against a blur means
-     checking one against the other from memory. Dimmed instead, and a click
-     outside still closes it. */
-  #toastlog::backdrop { background: rgba(var(--sink-rgb),.34); backdrop-filter: none; }
+  /* The tray dims the board less: it lists things that happened to the board, read against the board itself. */
+  #toastlog::backdrop { background: rgba(var(--sink-rgb),.34); }
   /* One command, with its own heading and its own copy button. Kept apart
      because they are pasted one at a time into different places. */
   .step { margin-bottom: var(--vs-4); }

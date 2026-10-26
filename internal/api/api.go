@@ -21,11 +21,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/claudeconf"
-	"github.com/dovholuknf/atrium/internal/forge"
+	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/mcprule"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/mcprule"
-	"github.com/dovholuknf/atrium/internal/rules"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1256,6 +1256,9 @@ var NewContextOf func(taskID string) any
 // daemon.
 var KeepaliveOf func(taskID string) any
 
+// KeepaliveOfTask is KeepaliveOf for a caller that holds the row, so the list does not read it again per card.
+var KeepaliveOfTask func(t *store.Task) any
+
 // OutputAtOf returns when a card's transcript last gained a reply, RFC3339, or
 // "". Supplied by the daemon, which holds it in memory.
 var OutputAtOf func(taskID string) string
@@ -1310,7 +1313,9 @@ func (s *Server) toView(t *store.Task) view {
 	if NewContextOf != nil {
 		v.NewContext = NewContextOf(t.ID)
 	}
-	if KeepaliveOf != nil {
+	if KeepaliveOfTask != nil {
+		v.Keepalive = KeepaliveOfTask(t)
+	} else if KeepaliveOf != nil {
 		v.Keepalive = KeepaliveOf(t.ID)
 	}
 	if ContextSizeOf != nil {
@@ -1337,9 +1342,11 @@ func (s *Server) toView(t *store.Task) view {
 
 func (s *Server) toViews(ts []*store.Task) []view {
 	out := make([]view, 0, len(ts))
-	for _, t := range ts {
-		out = append(out, s.toView(t))
-	}
+	s.st.Memoized(func() {
+		for _, t := range ts {
+			out = append(out, s.toView(t))
+		}
+	})
 	return out
 }
 

@@ -17,7 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dovholuknf/atrium/internal/sshcfg"
+	"github.com/dovholuknf/atrium/internal/base/sshcfg"
 )
 
 // `atrium ssh-proxy <room>` is ssh's ProxyCommand: stdin and stdout are the ssh protocol, carried through the hub to

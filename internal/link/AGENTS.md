@@ -16,9 +16,10 @@ first, then `docs/fabric/hub-and-rooms.md`.
 - **If the hub has the file, the hub serves it. Everything else goes to the room** (`proxy.go`). Resolved against the
   directory, not a list of prefixes.
 - **A transport supplies a `net.Listener` on the hub and something that returns a `net.Conn` on the room.** Nothing
-  more. `direct.go` is mutual TLS over TCP on one port, and the first frame decides enrol, control or data. `ziti.go`
-  and `zrok.go` are the overlays, and zrok is private shares only. There is no public mode on purpose.
-- **A room's name comes from the hub-signed certificate**, on direct and inside an overlay alike (`overlaytls.go`).
+  more. `transport/direct.go` is mutual TLS over TCP on one port, and the first frame decides enrol, control or data.
+  `transport/ziti.go` and `transport/zrok.go` are the overlays, and zrok is private shares only. There is no public mode
+  on purpose.
+- **A room's name comes from the hub-signed certificate**, on direct and inside an overlay alike (`transport/overlaytls.go`).
   The overlay decides who may reach the hub, not which room is calling. Rooms that joined an overlay before this keep
   attaching beside it, marked unproven, until `atrium rooms legacy refuse`.
 - **The room link is mutual TLS.** `atrium rooms add <name>` prints a one-time join string, and joining saves a
@@ -78,7 +79,7 @@ against and the operator chose on purpose.
 - **The deploy-ready button names the tip it was shown**, and a mismatch is a 409. There is no timer that deploys.
 - **`Silence` is three beats** (`DefaultTimings`). One missed beat on a busy machine must not evict a room holding live
   terminals.
-- **`address.go` is a copy of `internal/daemon/address.go`**, since neither package imports the other. Both carry the
+- **`wire/address.go` is a copy of `internal/daemon/address.go`**, since neither package imports the other. Both carry the
   same table test. Change both.
 - **`resolve.go` is one rule for two callers**, so a name that works in `atrium_say` works in curl. Across rooms one
   live alias match wins, and anything else is ambiguous rather than whichever room answered first.
@@ -87,10 +88,10 @@ against and the operator chose on purpose.
 
 | | |
 | --- | --- |
-| `link.go` / `protocol.go` | the package comment, `Timings`, and the five frames |
+| `link.go` / `wire/` | the package comment and aliases for `wire`, which holds `Timings`, the frames and `Path`, `PathState`, `RemoteAccess` |
 | `hub.go` / `room.go` | the hub's half (accept and lend connections) and the room's half (dial and serve) |
-| `direct.go` / `certs.go` / `overlaytls.go` | mutual TLS, the hub's own CA, the join string, TLS inside an overlay |
-| `ziti.go` / `zrok.go` | the overlay transports |
+| `transport/direct.go` / `certs.go` / `overlaytls.go` | mutual TLS, the hub's own CA, the join string, TLS inside an overlay |
+| `transport/ziti.go` / `zrok.go` | the overlay transports |
 | `proxy.go` | what the hub answers with, and what it refuses to pass to a room |
 | `rooms.go` / `fanout.go` / `cardroute.go` | scoped versus aggregate, merging lists, routing by card |
 | `events.go` / `announce.go` / `roomsevent.go` | the event stream fan-in, the room's cache announcements, the `rooms` event |
