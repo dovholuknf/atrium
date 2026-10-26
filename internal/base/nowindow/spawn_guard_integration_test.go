@@ -44,7 +44,7 @@ func isExecStart(call *ast.CallExpr) bool {
 func isHide(call *ast.CallExpr) bool {
 	switch f := call.Fun.(type) {
 	case *ast.Ident:
-		return f.Name == "hideWindow" || f.Name == "prepareTree"
+		return f.Name == "hideWindow" || f.Name == "prepareTree" || f.Name == "stopTreeOnCancel"
 	case *ast.SelectorExpr:
 		return f.Sel.Name == "Hide"
 	}
