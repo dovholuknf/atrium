@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/usage.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, fakeWait, fakeTick, fakePause, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, frames, until, settleStyle, RUN_T0, CLOCK_OFFSET } = require("../lib/browser.js");
 const { boardUsageSeen, landCard, mock, T1, SKINS } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { CTX_CARDS, CTX_USAGE, docImgDir } = require("../lib/helpers.js");
@@ -24,7 +24,7 @@ async function boardUsageSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     await p.click("#tabmore");
     if (stage === "before") {
       await p.screenshot({ path: path.join(imgs, "board-usage-menu-before.png"), clip: { x: 0, y: 0, width: 940, height: 400 } });
@@ -56,7 +56,6 @@ async function boardUsageSection(browser, base) {
     for (const sel of ["#usage-probe li:nth-child(1) button", "#usage-probe li:nth-child(2) button", "#usage-probe a",
       "#probedlg button", "#probedlg2 button"]) await p.click(sel);
     await p.evaluate(() => window.boardUsageFlush());
-    await p.waitForTimeout(300);
     const probe = [...boardUsageSeen].filter(([k]) => /stash|go$|ziti|zrok/.test(k));
     const rowNames = probe.filter(([k]) => k.startsWith("trow:"));
     if (rowNames.length !== 1 || rowNames[0][1] !== 2) fail("boardUsage: the same button in two card rows is not one control with 2 clicks: " + JSON.stringify(probe));
@@ -65,10 +64,10 @@ async function boardUsageSection(browser, base) {
     await p.evaluate(() => document.getElementById("usage-probe").remove());
     await p.click("#tabmore");
     await p.evaluate(() => window.boardUsageFlush());
-    await p.waitForTimeout(300);
     await p.click('#tabs-menu button[data-usage="menu:controls used"]');
     await p.waitForSelector("#usagedlg[open] .usagedlg-row");
-    await p.waitForTimeout(300);
+    await p.waitForFunction(h => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].some(r =>
+      r.querySelector(".name").textContent === "view:" + h && r.querySelector(".n").textContent === "2"), hot, { timeout: slow(5000) }).catch(() => {});
     const rows = await p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row")].map(r => ({
       name: r.querySelector(".name").textContent, n: r.querySelector(".n").textContent, never: r.classList.contains("never") })));
     const at = (name) => rows.findIndex(r => r.name === name);
@@ -79,13 +78,15 @@ async function boardUsageSection(browser, base) {
     if (never < Math.max(used, more)) fail("boardUsage: a never control sits above a used one");
     if (rows.some(r => r.never) && rows.findIndex(r => r.never) < rows.filter(r => !r.never).length) fail("boardUsage: the never rows are not all at the bottom");
     // The snapshot: closing and opening again draws the rows in the same tick, before any read has come back.
+    const reread = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/usage/board", { timeout: slow(5000) }).catch(() => {});
     const instant = await p.evaluate(() => {
       document.getElementById("usagedlg").close();
       window.openControlsUsed();
       return document.querySelectorAll("#usagedlg-list .usagedlg-row").length;
     });
     if (instant < 5) fail("boardUsage: the view did not open from a snapshot: " + instant + " rows at once");
-    await p.waitForTimeout(300);
+    await reread;
+    await frames(p, 2);
     // Sorting: count most first by default, then the name header sorts A to Z and flips, and the count header is back.
     const names = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .name")].map(e => e.textContent));
     const counts = () => p.evaluate(() => [...document.querySelectorAll("#usagedlg-list .usagedlg-row:not(.never) .n")].map(e => Number(e.textContent)));
@@ -667,7 +668,7 @@ async function contextCycleSection(browser, base) {
         document.getElementById("t-ctxbox").hidden = true;
         toast("Typing dropped", "input is refused during a new context", null, "in-refused");
       });
-      await wp.waitForTimeout(400);
+      await settleStyle(wp);
       await wp.screenshot({ path: path.join(process.env.COMPOSE_SHOTS, "compose-before.png") });
       process.exit(0);
     }
@@ -766,9 +767,9 @@ async function contextCycleSection(browser, base) {
     // An own limit and the switch off are written as the card's overrides.
     await wp.fill("#d-ctx-limit", "300");
     await wp.dispatchEvent("#d-ctx-limit", "change");
-    await new Promise(r => setTimeout(r, 300));
+    await until(() => patches.some(p => (p.overrides || {}).context_limit_k === "300"), 5000, "the limit override").catch(() => {});
     await wp.click("#d-ctx-cycle");
-    await new Promise(r => setTimeout(r, 300));
+    await until(() => patches.some(p => (p.overrides || {}).context_cycle === "off"), 5000, "the switch override").catch(() => {});
     const o = patches.map(p => p.overrides || {});
     if (!o.some(x => x.context_limit_k === "300" && x.context_cycle === "")) fail("the limit box did not save as an override: " + JSON.stringify(patches));
     if (!o.some(x => x.context_cycle === "off" && x.context_limit_k === "300")) fail("the switch did not save off: " + JSON.stringify(patches));
@@ -820,7 +821,7 @@ async function contextCycleSection(browser, base) {
       box.value = "claude=220, codex=300";
       box.dispatchEvent(new Event("change"));
     });
-    await new Promise(r => setTimeout(r, 300));
+    await until(() => posts.slice(before).some(p => p.context_limits), 5000, "the limits POST").catch(() => {});
     const sent = posts.slice(before).find(p => p.context_limits);
     if (!sent || sent.context_limits.claude !== 220 || sent.context_limits.codex !== 300) fail("the per-harness list saved " + JSON.stringify(posts));
     const n = posts.length;
@@ -925,7 +926,7 @@ async function ctxLineSection(browser, base) {
         await wp.setViewportSize({ width: w, height: h });
         for (const skin of ["paper", "graphite"]) {
           await wp.evaluate(async sk => { applySkin(sk); await loadCards().catch(() => {}); await renderTermList(); }, skin);
-          await wp.waitForTimeout(1500);
+          await settleStyle(wp);
           await wp.screenshot({ path: require("path").join(dir, `${tag}-${w}-${skin}.png`) });
         }
       }
@@ -963,14 +964,14 @@ async function ctxLineSection(browser, base) {
               applySkin(sk); document.documentElement.style.setProperty("--density", dn);
               await renderTermList();
             }, [skin, dens]);
-            await page.waitForTimeout(900);
+            await settleStyle(page);
             // A parent row is as tall as it is without its fold button, and the pinned heading is not under the
             // controls tray (the list's own scrollTop, not the header, is what a screenshot can get wrong).
             const m = await page.evaluate(async () => {
               // The list keeps whatever scrollTop an earlier render left it at (60px at density 1, 48 at 0.72), which
               // slid the heading under the tray in the shots. Start every shot from the top of the list.
               const top = document.querySelector(".termscroll"); if (top) top.scrollTop = 0;
-              await new Promise(r => setTimeout(r, 100));
+              await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
               const row = [...document.querySelectorAll("#term-list .card .tkidfold")].map(b => b.closest(".card"))[0];
               const out = { row: !!row };
               if (row) {
@@ -1131,7 +1132,7 @@ async function contextSizeSection(browser, base) {
   const shots = process.env.CTX_SHOTS || "";
   const shoot = async (name, clip) => {
     if (!shots) return;
-    await new Promise(r => setTimeout(r, 350));
+    await settleStyle(sp);
     await sp.screenshot({ path: `${shots}/${name}.png`, clip });
   };
   const peekState = () => sp.evaluate(() => {
@@ -1161,7 +1162,8 @@ async function contextSizeSection(browser, base) {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => runRefresh());
-    await new Promise(r => setTimeout(r, 400));
+    await sp.waitForFunction(() => !!document.querySelector('#stack-list .stackrow[data-id="cx-big"] .chip.ctxwarn'), null, { timeout: slow(5000) })
+      .catch(() => {});
     // CTX_SKIN=noir draws it all in another skin, for the screenshots.
     if (process.env.CTX_SKIN) await sp.evaluate(s => applySkin(s), process.env.CTX_SKIN);
 
@@ -1210,7 +1212,7 @@ async function contextSizeSection(browser, base) {
 
     // A second on a stack row opens the details, and not half a second.
     await sp.hover('#stack-list .stackrow[data-id="cx-big"] .title, #stack-list .stackrow[data-id="cx-big"]');
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 500)); // wait: the half second the details must not open within
     let pk = await peekState();
     if (pk && pk.on) fail("the details opened after half a second of hover, not one.");
     await sp.waitForFunction(() => { const p = document.querySelector(".peek"); return p && p.classList.contains("on"); },
@@ -1246,7 +1248,7 @@ async function contextSizeSection(browser, base) {
       pk = await peekState();
       if (pk && (!pk.pinned || pk.warn)) fail("the menu's details are not pinned, or warn under the line: " + JSON.stringify(pk));
       await sp.mouse.move(1390, 890);
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 600)); // wait: a negative check, the pinned details must not close
       if (!(await peekState()).on) fail("the menu's details closed when the pointer left.");
       await shoot("menu-" + (await sp.evaluate(() => document.documentElement.getAttribute("data-skin") || "harbour")));
       await sp.keyboard.press("Escape");
@@ -1255,7 +1257,7 @@ async function contextSizeSection(browser, base) {
 
     // The shortcut strip's expando slides the drawer up for the attached card.
     await sp.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
-    await new Promise(r => setTimeout(r, 500));
+    await sp.waitForFunction(() => !document.getElementById("terms").hidden, null, { timeout: slow(5000) });
     // Attached, as far as the strip is concerned: no socket in a mocked room.
     await sp.evaluate(card => { termTask = card; }, CTX_CARDS[1]);
     await sp.waitForSelector("#t-expando", { state: "visible", timeout: slow(5000) })
@@ -1264,7 +1266,7 @@ async function contextSizeSection(browser, base) {
     await sp.click("#t-expando").catch(e => fail("the expando could not be clicked: " + e.message));
     await sp.waitForFunction(() => /212k/.test(document.getElementById("t-drawer-body").textContent),
       null, { timeout: slow(4000) }).catch(() => fail("the drawer did not open on the attached card's details."));
-    await new Promise(r => setTimeout(r, 400));
+    await settleStyle(sp);
     const dr = await sp.evaluate(() => {
       const d = document.getElementById("t-drawer"), help = document.querySelector(".term-help");
       const r = d.getBoundingClientRect(), h = help.getBoundingClientRect();
@@ -1351,7 +1353,7 @@ async function usageTurnsSection(browser, base) {
     if (!/noise: 16 turns/.test(t.noise) || !/10 no reply, 6 ack/.test(t.noise) || !/2 delivered, turn not ended yet/.test(t.noise)) fail("usageTurns: the noise line reads " + t.noise);
     if (process.env.TURNCOST_SHOT) {
       await sp.evaluate(() => { const b = document.querySelector("#uc-body [data-role=turns-kind]"); const hd = b && b.previousElementSibling; if (hd) hd.scrollIntoView(); });
-      await sp.waitForTimeout(300);
+      await settleStyle(sp);
       await sp.screenshot({ path: process.env.TURNCOST_SHOT });
     }
   } finally { await ctx.close(); }
@@ -1382,7 +1384,7 @@ async function turnLimitsSection(browser, base) {
   const again = async () => { await sp.evaluate(() => { turnLimits.at = 0; return renderTurnLimits(); }); };
   const shot = async name => {
     if (!process.env.TURNLIMIT_SHOT) return;
-    await sp.waitForTimeout(300);
+    await settleStyle(sp);
     await sp.screenshot({ path: process.env.TURNLIMIT_SHOT + "/" + name });
   };
   try {
@@ -1763,7 +1765,7 @@ async function usageWeekResetSection(browser, base) {
     // can be taken from a board that has no weekly reset. The old board has no "week" range, so it is asked for 7d.
     if (process.env.USAGE_WEEK_SHOT_ONLY) {
       await draw(process.env.USAGE_WEEK_RANGE || "week");
-      await sp.waitForTimeout(800);   // the range button's colour is eased
+      await settleStyle(sp);
       await sp.screenshot({ path: process.env.USAGE_WEEK_SHOT_ONLY, fullPage: true });
       return;
     }
@@ -1838,7 +1840,7 @@ async function usageWeekResetSection(browser, base) {
     if (process.env.USAGE_WEEK_SHOT) {
       await sp.evaluate(() => { UC.weekReset = { day: "sun", time: "18:00", tz: "America/New_York" }; });
       await draw(process.env.USAGE_WEEK_RANGE || "week");
-      await sp.waitForTimeout(800);
+      await settleStyle(sp);
       await sp.screenshot({ path: process.env.USAGE_WEEK_SHOT, fullPage: true });
     }
   } finally {
@@ -2219,7 +2221,7 @@ async function clockSection(browser, base) {
     const wa = await read(w);
     if (want && !near(wa.h, wa.m)) fail("clock: a pop-out window reads " + wa.h + ":" + wa.m + ", not near " + spec);
     if (Math.abs(wa.now - Date.now()) > 2000) fail("clock: a pop-out window disagrees with Node by " + (wa.now - Date.now()) + "ms");
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: the real span the clock is measured across
     const b = await read(p);
     if (b.now - a.now < 300 || b.now - a.now > 3000) fail("clock: time did not advance sanely: " + (b.now - a.now) + "ms in 400ms");
     if (CLOCK_OFFSET) {

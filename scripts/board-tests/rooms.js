@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue, settleStyle } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { attachRetry, countRequests, landContext, topCounts } = require("../lib/helpers.js");
@@ -710,7 +710,7 @@ async function pollsGoneSection(browser, base) {
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
       // The event below goes to the streams open now, so the page's hub stream has to be one of them.
-      for (const t0 = Date.now(); hubStreams.length <= streams0 && Date.now() - t0 < slow(5000);) await p.waitForTimeout(50);
+      await untilTrue(() => hubStreams.length > streams0, 5000, "the hub event stream", 50).catch(() => {});
       if (hubStreams.length <= streams0) fail("pollsGone: the page never opened its hub event stream");
       await run(p, 2500);
       c2.clear();
@@ -1085,13 +1085,13 @@ async function transportToggleSection(browser, base) {
     }
 
     await p.locator("#tt-rows .roomrow:nth-child(1) .pthtoggle").click();
-    for (let i = 0; i < 50 && calls.length < 1; i++) await p.waitForTimeout(100);
+    await untilTrue(() => calls.length >= 1, 5000, "the ziti toggle").catch(() => {});
     if (!calls[0] || calls[0].room !== "sg3" || calls[0].body !== JSON.stringify({ transport: "ziti", on: true })) {
       fail("turning ziti on asked the wrong thing: " + JSON.stringify(calls[0]));
     }
     // The refusal is shown as the room said it.
     await p.locator("#tt-rows .roomrow:nth-child(2) .pthtoggle").nth(1).click();
-    for (let i = 0; i < 50 && calls.length < 2; i++) await p.waitForTimeout(100);
+    await untilTrue(() => calls.length >= 2, 5000, "the zrok toggle").catch(() => {});
     if (!calls[1] || calls[1].room !== "m1mini" || calls[1].body !== JSON.stringify({ transport: "zrok", on: false })) {
       fail("turning zrok off asked the wrong thing: " + JSON.stringify(calls[1]));
     }
@@ -1267,7 +1267,7 @@ async function zitiLogoSection(browser, base) {
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.evaluate(() => { document.getElementById("zl-probe").remove(); openRooms(); });
-      await p.waitForTimeout(600);
+      await settleStyle(p);
       await p.screenshot({ path: path.join(shots, "rooms-page.png") });
     }
     if (errors.length) fail("page errors: " + errors.join("; "));
@@ -1657,7 +1657,7 @@ async function restartMenuSection(browser, base) {
     labels = await open("land-rs-idle");
     if (process.env.RESTART_SHOT) await p.screenshot({ path: process.env.RESTART_SHOT });
     await item().click();
-    await p.waitForTimeout(500);
+    await untilTrue(() => posts.length, 5000, "a restart POST").catch(() => {});
     if (await dialogUp().count()) fail("restartMenu: an idle card asked before restarting.");
     if (posts.join() !== "/v1/tasks/land-rs-idle/restart POST") fail("restartMenu: idle restart did not POST once: " + JSON.stringify(posts));
     posts.length = 0;
@@ -1669,12 +1669,12 @@ async function restartMenuSection(browser, base) {
       .catch(() => fail("restartMenu: a working card did not ask before restarting."));
     if (!/working right now/.test(await p.locator("dialog[open]").first().textContent())) fail("restartMenu: the question does not say it is working.");
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
-    await p.waitForTimeout(300);
+    await dialogUp().waitFor({ state: "hidden", timeout: slow(5000) }).catch(() => {});
     if (posts.length) fail("restartMenu: cancelling still posted: " + JSON.stringify(posts));
     await open("land-rs-work");
     await item().click();
     await dialogUp().click();
-    await p.waitForTimeout(500);
+    await untilTrue(() => posts.length, 5000, "a restart POST").catch(() => {});
     if (posts.join() !== "/v1/tasks/land-rs-work/restart POST") fail("restartMenu: confirmed restart did not POST once: " + JSON.stringify(posts));
     posts.length = 0;
 
@@ -1693,7 +1693,7 @@ async function restartMenuSection(browser, base) {
     // Two entries are called resume: the conversation picker (a submenu, marked with an arrow) and the parked
     // card's own, which has none. The sub-text that told them apart is gone.
     await p.locator("#cardmenu button", { hasText: /^resume/, hasNotText: /▸/ }).first().click();
-    await p.waitForTimeout(500);
+    await untilTrue(() => posts.length, 5000, "a restart POST").catch(() => {});
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
     // paused: open() already refused a repeated label.

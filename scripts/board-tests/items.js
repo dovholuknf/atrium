@@ -5,7 +5,7 @@
 // Alone: `node scripts/board-tests/items.js` runs just these units, the way the full run would.
 const fs = require("fs");
 const path = require("path");
-const { slow, fakeWait, fakeTick, fakePause, fakeRun } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, fakeRun, frames } = require("../lib/browser.js");
 const { mock, WEB_ROOT } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { docImgDir } = require("../lib/helpers.js");
@@ -269,7 +269,7 @@ async function itemMinionChipSection(browser, base) {
     await p.route(/\/_hub\/items/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
     await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(5000) }).catch(() => {});
     await p.evaluate(() => switchView("items"));
     await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
     const paint = (minion) => p.evaluate(async minion => {
@@ -277,7 +277,7 @@ async function itemMinionChipSection(browser, base) {
       const mk = (id, extra) => Object.assign({ id, tags, status: "running", supervised: true, pid: 1, display_title: id, wire_name: id }, extra || {});
       lastTasks = [mk("c-builder-ptyhost"), mk("c-reviewer-1", { status: "done", supervised: false, pid: 0 })];
       itemsShow("f-ptyhost-reconnect");
-      await new Promise(r => setTimeout(r, 300));
+      for (const end = Date.now() + 5000; !itemsDetail && Date.now() < end;) await new Promise(r => requestAnimationFrame(r));
       for (const it of [itemsDetail, itemsList.find(x => x.id === "f-ptyhost-reconnect")]) {
         const st = it && it.steps && it.steps[2];
         if (st && !st.cards.some(c => c.name === "reviewer-1")) st.cards.push({ name: "reviewer-1", role: "reviewer" });
@@ -834,7 +834,7 @@ async function itemsViewSection(browser, base) {
     });
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(5000) }).catch(() => {});
     // THE BADGE: only what is blocked on the human, before the tab is ever opened.
     await p.waitForFunction(() => document.getElementById("c-items").textContent === "1", null, { timeout: slow(10000) });
     await p.evaluate(() => {
@@ -878,7 +878,7 @@ async function itemsViewSection(browser, base) {
     if (posts.length) fail("itemsView: an empty answer was sent");
     await p.fill('.it-answer-box[data-id="it-blk"]', "use KEY-9");
     await p.evaluate(() => loadItems());
-    await p.waitForTimeout(300);
+    await frames(p, 2);
     if ((await p.inputValue('.it-answer-box[data-id="it-blk"]')) !== "use KEY-9") fail("itemsView: a refresh ate the typed answer");
     await p.click('.it-row[data-item="it-blk"] .it-send');
     await p.waitForFunction(() => document.getElementById("items-note").textContent.includes("Sent the answer"), null, { timeout: slow(10000) });
@@ -972,7 +972,7 @@ async function itemsMockSection(browser, base) {
     await p.route(/\/_hub\/items/, r => r.fulfill({ status: 500, body: "the mock must not reach the hub" }));
     await p.goto(base + "/?itemsmock=1", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(5000) }).catch(() => {});
     await p.evaluate(() => switchView("items"));
     await p.waitForFunction(() => document.querySelectorAll("#items-list .it-row").length > 4, null, { timeout: slow(10000) });
     const list = await p.evaluate(() => ({ stats: document.querySelectorAll(".it-chip").length, segs: document.querySelector(".it-prog").children.length,
@@ -1016,9 +1016,10 @@ async function itemsMockSection(browser, base) {
     await p.waitForFunction(() => { const it = itemsList.find(x => x.id === "rd-item-lifecycle"); return it && it.state === "running" && it.steps[0].state === "active"; }, null, { timeout: slow(10000) });
     if (!/Sent rd-item-lifecycle back/.test(await p.textContent("#items-note"))) fail("itemsMock: no notice after a send back");
     // THE WORKER'S QUESTION in the detail: its three suggested answers, the first orange, and a click answers.
+    await p.evaluate(() => history.replaceState(null, ""));
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="items"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(5000) }).catch(() => {});
     await p.evaluate(() => switchView("items"));
     await p.waitForSelector('.it-row[data-item="f-ptyhost-reconnect"] .it-opt');
     const rowOpts = await p.$$eval('.it-row[data-item="f-ptyhost-reconnect"] .it-opt', e => e.map(b => b.textContent + (b.classList.contains("go") ? "*" : "")));
