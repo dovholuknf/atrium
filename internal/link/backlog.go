@@ -21,7 +21,8 @@ import (
 //	                                          the row for the id match a file (import), changing only what differs
 //	GET  /_hub/backlog/<id>                   one, with its body
 //	POST /_hub/backlog/<id>                   {status, by?}, {priority, by?} (high, medium, low or "" for unset), or
-//	                                          {card, by?} to link the card launched for it. GET takes ?priority= too
+//	                                          {card, by?} to link the card launched for it, or {title?, body?, by?}
+//	                                          to replace either. GET takes ?priority= too
 //	POST /_hub/backlog/follow                 {card, status, by?}: a card's report moves the item linked to it
 //	GET  /_hub/reports?to=&unread=1&limit=    the reports, newest first
 //	POST /_hub/reports                        leave one {to?, subject, body?, by?, room?}
@@ -218,6 +219,8 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 		Status   string  `json:"status"`
 		Card     string  `json:"card"`
 		Priority *string `json:"priority"`
+		Title    *string `json:"title"`
+		Body     *string `json:"body"`
 		By       string  `json:"by"`
 	}
 	if err := crDecode(r, &in); err != nil {
@@ -226,7 +229,15 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 	}
 	var b hubstore.BacklogItem
 	var err error
-	if in.Priority != nil {
+	if in.Title != nil || in.Body != nil {
+		b, err = st.ItemEdit(id, in.Title, in.Body, in.By)
+		if err == nil {
+			p.RecordAudit("", "backlog-edit", id)
+			p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
+			crJSON(w, http.StatusOK, b)
+			return
+		}
+	} else if in.Priority != nil {
 		b, err = st.ItemSetPriority(id, *in.Priority, in.By)
 		if err == nil {
 			p.RecordAudit("", "backlog-priority", id+" "+orUnset(b.Priority))

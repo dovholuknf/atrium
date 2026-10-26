@@ -319,3 +319,42 @@ func TestBacklogPriorityOverHTTPAndTool(t *testing.T) {
 		t.Fatalf("tool file bad priority: %v", err)
 	}
 }
+
+func TestBacklogEditOverHTTPAndTool(t *testing.T) {
+	x := newBacklogRig(t)
+	srv := httptest.NewServer(x.p)
+	t.Cleanup(srv.Close)
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	ctx := context.Background()
+
+	x.send("POST", "/_hub/backlog", js(map[string]any{"id": "a", "dept": "fabric", "title": "old", "body": "b0",
+		"priority": "high"}), loopAddr)
+	code, body := x.send("POST", "/_hub/backlog/a", `{"body":"b1","by":"o@sg4"}`, loopAddr)
+	if m := obj(t, body); code != 200 || str(m, "body") != "b1" || str(m, "title") != "old" ||
+		str(m, "priority") != "high" || str(m, "status") != "open" || str(m, "changed_by") != "o@sg4" {
+		t.Fatalf("edit body: %d %s", code, body)
+	}
+	x.sawEvent(t, "backlog")
+	if code, body = x.send("POST", "/_hub/backlog/a", `{"title":" "}`, loopAddr); code != http.StatusBadRequest {
+		t.Fatalf("blank title: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/nope", `{"title":"t"}`, loopAddr); code != http.StatusNotFound {
+		t.Fatalf("edit a missing item: %d", code)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/a", `{"title":"t"}`, "203.0.113.9:4000"); code != http.StatusForbidden {
+		t.Fatalf("an edit from another machine: %d", code)
+	}
+
+	_, out, err := c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", ID: "a", Title: "new"})
+	if err != nil || out.Item == nil || out.Item.Title != "new" || out.Item.Body != "b1" {
+		t.Fatalf("tool title: %+v %v", out, err)
+	}
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", ID: "a", Title: "t2", Body: "b2"})
+	if err != nil || out.Item == nil || out.Item.Title != "t2" || out.Item.Body != "b2" {
+		t.Fatalf("tool both: %+v %v", out, err)
+	}
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "edit", ID: "a"}); err == nil ||
+		!strings.Contains(err.Error(), "title or a body") {
+		t.Fatalf("tool edit with nothing: %v", err)
+	}
+}
