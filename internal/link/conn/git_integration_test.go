@@ -1,6 +1,6 @@
 //go:build integration && git
 
-package link
+package conn
 
 import (
 	"bufio"
