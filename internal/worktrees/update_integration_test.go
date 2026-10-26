@@ -40,7 +40,11 @@ func TestUpdatesFastForwardsCleanAndSkipsTheRest(t *testing.T) {
 	}
 	got := map[string]Update{}
 	for _, u := range res {
-		got[u.Path] = u
+		for _, dir := range []string{clean, dirty, gone, local} {
+			if SamePath(u.Path, dir) {
+				got[dir] = u
+			}
+		}
 	}
 	if u := got[clean]; u.Done == "" || u.Skipped != "" {
 		t.Fatalf("clean: %+v", u)
