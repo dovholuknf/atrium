@@ -380,7 +380,7 @@ func (p *Proxy) readyCached(fresh bool) (deployready.Report, time.Time, bool) {
 	if have {
 		rep.Notes = append([]string(nil), rep.Notes...)
 	}
-	building := st.inflight
+	building := st.inflight || st.kicking
 	st.mu.Unlock()
 	if have && at.IsZero() {
 		// The last pass gave up at its bound. What it kept is not an answer to act on, and it is read again once it is
