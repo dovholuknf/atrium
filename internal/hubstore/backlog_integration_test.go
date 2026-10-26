@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newItem(id, dept string) ItemNew {
@@ -246,6 +247,32 @@ func TestItemEdit(t *testing.T) {
 		t.Fatalf("nothing: %v", err)
 	}
 	if _, err = s.ItemEdit("nope", &title, nil, "x"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+}
+
+func TestItemAppend(t *testing.T) {
+	s := open(t)
+	s.clock = func() time.Time { return time.Date(2026, 10, 17, 18, 0, 0, 0, time.UTC) }
+	_, _ = s.ItemFile(newItem("a", "fabric"))
+	b, err := s.ItemAppend("a", " one more line \n", "qa@sg4")
+	if err != nil || b.Body != "why\n\tand how\n\nqa@sg4 2026-10-17: one more line" || b.ChangedBy != "qa@sg4" ||
+		b.Title != "do the thing" {
+		t.Fatalf("append: %+v %v", b, err)
+	}
+	title := "t"
+	empty := ""
+	_, _ = s.ItemEdit("a", &title, &empty, "x")
+	if b, err = s.ItemAppend("a", "first", ""); err != nil || b.Body != "2026-10-17: first" {
+		t.Fatalf("append to empty: %+v %v", b, err)
+	}
+	if _, err = s.ItemAppend("a", " ", "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("blank: %v", err)
+	}
+	if _, err = s.ItemAppend("a", strings.Repeat("x", ItemBodyMax), "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("too long: %v", err)
+	}
+	if _, err = s.ItemAppend("nope", "t", "x"); !errors.Is(err, ErrItemNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
 }

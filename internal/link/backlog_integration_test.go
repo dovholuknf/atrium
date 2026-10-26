@@ -369,4 +369,22 @@ func TestBacklogEditOverHTTPAndTool(t *testing.T) {
 		!strings.Contains(err.Error(), "title or a body") {
 		t.Fatalf("tool edit with nothing: %v", err)
 	}
+
+	code, body = x.send("POST", "/_hub/backlog/a", `{"append":"more","by":"qa@sg4"}`, loopAddr)
+	if m := obj(t, body); code != 200 || !strings.HasPrefix(str(m, "body"), "b2\n\nqa@sg4 ") ||
+		!strings.HasSuffix(str(m, "body"), ": more") || str(m, "title") != "t2" || str(m, "changed_by") != "qa@sg4" {
+		t.Fatalf("append: %d %s", code, body)
+	}
+	if code, _ = x.send("POST", "/_hub/backlog/nope", `{"append":"t"}`, loopAddr); code != http.StatusNotFound {
+		t.Fatalf("append to a missing item: %d", code)
+	}
+	_, out, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "append", ID: "a", Text: "again"})
+	if err != nil || out.Item == nil || !strings.Contains(out.Item.Body, ": more\n\n") ||
+		!strings.HasSuffix(out.Item.Body, out.Item.ChangedAt[:10]+": again") {
+		t.Fatalf("tool append: %+v %v", out, err)
+	}
+	if _, _, err = c.tools().backlogHandler(ctx, nil, backlogInput{Action: "append", ID: "a", Text: " "}); err == nil ||
+		!strings.Contains(err.Error(), "append needs id and text") {
+		t.Fatalf("tool append with nothing: %v", err)
+	}
 }

@@ -23,7 +23,8 @@ import (
 //	GET  /_hub/backlog/<id>                   one, with its body
 //	POST /_hub/backlog/<id>                   {status, by?}, {priority, by?} (high, medium, low or "" for unset), or
 //	                                          {card, by?} to link the card launched for it, or {title?, body?, by?}
-//	                                          to replace either. GET takes ?priority= too
+//	                                          to replace either, or {append, by?} to add a dated paragraph to the
+//	                                          body. GET takes ?priority= too
 //	POST /_hub/backlog/follow                 {card, status, by?}: a card's report moves the item linked to it
 //	GET  /_hub/reports?to=&unread=1&limit=    the reports, newest first
 //	POST /_hub/reports                        leave one {to?, subject, body?, by?, room?}
@@ -230,6 +231,7 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 		Priority *string `json:"priority"`
 		Title    *string `json:"title"`
 		Body     *string `json:"body"`
+		Append   string  `json:"append"`
 		By       string  `json:"by"`
 	}
 	if err := crDecode(r, &in); err != nil {
@@ -238,7 +240,15 @@ func (p *Proxy) itemDo(w http.ResponseWriter, r *http.Request, st *hubstore.Stor
 	}
 	var b hubstore.BacklogItem
 	var err error
-	if in.Title != nil || in.Body != nil {
+	if in.Append != "" {
+		b, err = st.ItemAppend(id, in.Append, in.By)
+		if err == nil {
+			p.RecordAudit("", "backlog-append", id)
+			p.backlogEvent("backlog", map[string]string{"id": b.ID, "dept": b.Dept, "status": b.Status, "title": b.Title})
+			crJSON(w, http.StatusOK, b)
+			return
+		}
+	} else if in.Title != nil || in.Body != nil {
 		b, err = st.ItemEdit(id, in.Title, in.Body, in.By)
 		if err == nil {
 			p.RecordAudit("", "backlog-edit", id)
