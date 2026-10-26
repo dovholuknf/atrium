@@ -34,7 +34,7 @@ pwsh -File C:\Users\claude\.atrium2\scripts\stop-atrium.ps1
 ```
 
 It asks claude-sg4 (and sg4-control first, only with -Control -IKnowItKillsMyShell), to wind down (runners are parked and what to reopen is saved), forces each one
-only after 45 seconds, and then stops the hub. Rooms on other machines lose the hub until it is back. Their runners
+only after its restart_wrap_wait_s plus 45 seconds, and then stops the hub. Rooms on other machines lose the hub until it is back. Their runners
 wait on the backoff they already have and reattach by themselves.
 
 After you log in again:

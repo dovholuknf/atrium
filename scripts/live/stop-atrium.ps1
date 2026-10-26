@@ -2,8 +2,8 @@
 # first, only with both -Control and -IKnowItKillsMyShell, and one without the other is refused.
 #
 # Each room is ASKED to wind down (POST /v1/shutdown), so it parks its runners and saves what to reopen, and is forced
-# only after 45 seconds. A reboot or a taskkill skips that and ends every runner mid-turn. The hub holds nothing and
-# goes last, so the rooms can still report to it while they wind down.
+# only after its restart_wrap_wait_s plus 45 seconds. A reboot or a taskkill skips that and ends every runner
+# mid-turn. The hub holds nothing and goes last, so the rooms can still report to it while they wind down.
 #
 # RUN FROM A SHELL ATRIUM DOES NOT SUPERVISE. A script running inside one of the rooms' terminals is stopped with
 # that room, halfway through. Refuses when it sees it is inside one, unless -Force.
@@ -14,7 +14,7 @@
 # hub, then lists what is still running. -KillRunners is accepted and implied. `atrium stop` is the gentler stop, and
 # leaves a supervised runner running.
 #
-# -WhatIf says what it would stop and stops nothing. -KeepControl is accepted and ignored. The claude-sg4 room first
+# -WhatIf says what it would stop and stops nothing. -KeepControl is accepted and ignored. Each room first
 # asks its working cards to wrap up (up to its restart_wrap_wait_s). -Immediate skips that.
 param([switch]$KeepControl, [switch]$Force, [switch]$WhatIf, [switch]$Immediate, [switch]$KillRunners, [switch]$Control,
   [switch]$IKnowItKillsMyShell)
