@@ -185,7 +185,7 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 	}
 
 	// The runner's own exit files against the runner's run.
-	windDown(r, time.Second, nil, windDownKeyGap)
+	_ = r.tm().Kill()
 	testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool { return len(filedExits(t, d, task.ID)) != 0 })
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("%d exit events after the runner ended, want 1", n)
@@ -214,7 +214,7 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 	}
 	r := d.sup.get(task.ID)
 	t.Cleanup(func() {
-		windDown(r, time.Second, nil, windDownKeyGap)
+		_ = r.tm().Kill()
 		select {
 		case <-r.done:
 		case <-time.After(10 * time.Second):
