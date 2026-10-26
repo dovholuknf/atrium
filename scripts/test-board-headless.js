@@ -4155,8 +4155,8 @@ async function termFollowBottomSection(browser, base) {
       sock.onmessage({ data: typeof text === "string" && text[0] === "{" ? text : new TextEncoder().encode(text).buffer });
     };
     window.__lines = (from, n, tag) => { let s = ""; for (let i = from; i < from + n; i++) s += tag + " " + i + " words that make a line\r\n"; return s; };
-    window.__idle = ms => new Promise(r => setTimeout(r, ms || 250));
-    window.__goto = async id => { attachTask(id); await new Promise(r => setTimeout(r, 700)); };
+    window.__idle = ms => new Promise(r => setTimeout(r, ms || 250)); // wait: a settle for the page, no condition to spin on
+    window.__goto = async id => { attachTask(id); await new Promise(r => setTimeout(r, 700)); }; // wait: the card attaches asynchronously with no event to await
     window.__at = () => {
       const b = term.buffer.active, vp = term.element.querySelector(".xterm-viewport");
       return { top: b.viewportY, base: b.baseY, rows: term.rows, el: vp.scrollHeight - vp.clientHeight - vp.scrollTop,
@@ -4201,7 +4201,7 @@ async function termFollowBottomSection(browser, base) {
     const box = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     await p.mouse.move(box.x, box.y);
     await p.mouse.wheel(0, -100);
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: the wheel lands in xterm with no event to await
     const still = await p.evaluate(async () => {
       const was = term.buffer.active.viewportY;
       for (let i = 0; i < 5; i++) { __say("fb-a", __lines(i * 10, 10, "unread")); await __idle(60); }
@@ -4223,7 +4223,7 @@ async function termFollowBottomSection(browser, base) {
     });
     if (!atBottom(typed)) fail("termFollowBottom: after a wheel up and a key, output did not follow to the input line: " + JSON.stringify(typed));
     await p.mouse.wheel(0, -100);
-    await p.waitForTimeout(300);
+    await p.waitForTimeout(300); // wait: the wheel lands in xterm with no event to await
     const again = await p.evaluate(async () => {
       const was = term.buffer.active.viewportY;
       for (let i = 0; i < 5; i++) { __say("fb-a", __lines(i * 10, 10, "later")); await __idle(60); }
