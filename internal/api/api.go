@@ -1642,6 +1642,10 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	// launch_cmd was three quarters of the hub's list (b-hub-tasks-4mb-slow). The card details read it from GET one.
+	for _, t := range tasks {
+		t.LaunchCmd = nil
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(s.toViews(tasks))})
 }
 
