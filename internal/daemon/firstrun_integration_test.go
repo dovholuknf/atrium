@@ -45,7 +45,6 @@ func TestALaunchedClaudeStartsOnTheClassicRenderer(t *testing.T) {
 	if err := os.WriteFile(bash, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("CLAUDE_CODE_GIT_BASH_PATH", bash)
 	t.Setenv("ATRIUM_TEST_ENV_DUMP", "1")
 	// An inherited choice is not the operator's for this runner: the room's own
 	// CLAUDE_CODE_ variables are stripped, and the default goes on anyway.
@@ -56,6 +55,7 @@ func TestALaunchedClaudeStartsOnTheClassicRenderer(t *testing.T) {
 	if _, err := d.st.SaveHarness(store.Harness{
 		ID: "claude", Label: "claude code", Enabled: true, LaunchMode: store.LaunchPTY,
 		Cmd: os.Args[0], Args: []string{"-test.run=^TestHelperEnvDump$"},
+		Env: map[string]string{"CLAUDE_CODE_GIT_BASH_PATH": bash},
 	}); err != nil {
 		t.Fatal(err)
 	}
