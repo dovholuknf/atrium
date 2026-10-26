@@ -478,12 +478,27 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 	assertNoMoney(t, v)
 }
 
-// Four spent still leaves room for the fifth.
-func TestKeepaliveRefreshesUpToTheBudget(t *testing.T) {
+// A refresh costs its read plus the fork's tail, so four spent at $0.06 leave no room for a fifth.
+func TestKeepaliveStopsWhenReadPlusForkTailPassesTheBudget(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-5*time.Hour), replyOpt{})
 	f.seed(4, 0.06, 56*time.Minute)
+	f.tick()
+	if f.forks() != 0 {
+		t.Fatal("a refresh whose read and fork tail pass the budget was sent")
+	}
+	if f.state() != store.KeepaliveBreakEven {
+		t.Fatalf("state = %s, want %s", f.state(), store.KeepaliveBreakEven)
+	}
+}
+
+// Three spent still leaves room for the fourth.
+func TestKeepaliveRefreshesUpToTheBudget(t *testing.T) {
+	t.Parallel()
+	f := newKAFix(t)
+	f.reply(f.now.Add(-5*time.Hour), replyOpt{})
+	f.seed(3, 0.06, 56*time.Minute)
 	f.tick()
 	if f.forks() != 1 {
 		t.Fatal("the last refresh inside the budget was not sent")
