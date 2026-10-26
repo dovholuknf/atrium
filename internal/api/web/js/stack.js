@@ -742,16 +742,21 @@ async function togglePin(id, on) {
   const row = cardRows.get(id);
   const was = row ? !!row.pinned : !on;
   const flipped = setPinLocal(id, on);
+  pinHeld.set(id, on);
+  const release = () => { if (pinHeld.get(id) === on) pinHeld.delete(id); };
   try {
     await api(`/v1/tasks/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pinned: on })
     });
   } catch (e) {
+    release();
     toast("that did not stick", e.message);
     if (flipped) setPinLocal(id, was); else refresh();
     return;
   }
+  // A read already in flight started before the PATCH landed, so the hold outlives it.
+  Promise.resolve(cardsLoading).catch(() => {}).then(release);
   if (!flipped) refresh();
 }
 
