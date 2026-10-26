@@ -39,6 +39,8 @@ type Room struct {
 	Commit string
 	// T is the timing set. Zero fields take defaults.
 	T Timings
+	// AnnounceEvery replaces the announcement ceiling when set, for tests. Zero keeps announceEvery.
+	AnnounceEvery time.Duration
 	// Upgrades is whether this room will consider a build its hub offers, and
 	// what to do with one it has fetched and checked. Nil means no, which is
 	// the default: a hub may say what it is running and nothing happens. See

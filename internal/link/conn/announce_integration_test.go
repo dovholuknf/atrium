@@ -19,6 +19,8 @@ import (
 // announcement through the ceiling, a dial and a store write.
 const announceWait = 30 * time.Second
 
+const testAnnounceEvery = 200 * time.Millisecond
+
 // roomState is a handler that answers `/v1/state` with whatever it is set to,
 // and `/v1/events` with a stream that says something when told.
 type roomState struct {
@@ -162,7 +164,7 @@ func cachingWith(t *testing.T, state http.Handler, tune func(*Hub)) (*Hub, *[]an
 	go func() { _ = hub.Serve(ctx, ln) }()
 
 	room := &Room{
-		Name: "testroom", Dial: plain{addr: ln.Addr().String()}, Handler: state,
+		Name: "testroom", Dial: plain{addr: ln.Addr().String()}, Handler: state, AnnounceEvery: testAnnounceEvery,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
@@ -444,7 +446,7 @@ func TestAnAnnouncementThatFailedIsSentAgain(t *testing.T) {
 	// it attaches, which is the whole point of the test.
 	state := newRoomState(map[string]any{"id": "one", "status": "running"})
 	room := &Room{
-		Name: "testroom", Dial: plain{addr: ln.Addr().String()}, Handler: state,
+		Name: "testroom", Dial: plain{addr: ln.Addr().String()}, Handler: state, AnnounceEvery: testAnnounceEvery,
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
@@ -501,14 +503,14 @@ func TestARoomDoesNotAnnounceAtAHubThatKeepsNothing(t *testing.T) {
 				}
 			},
 		},
-		Handler: state,
-		T:       Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
+		Handler: state, AnnounceEvery: testAnnounceEvery,
+		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, announceWait, func() bool { return hub.Has("testroom") })
 
 	state.set(map[string]any{"id": "one", "status": "done"})
-	time.Sleep(2 * announceEvery) // wait: a negative check, nothing must be announced
+	time.Sleep(2 * testAnnounceEvery) // wait: a negative check, nothing must be announced
 
 	mu.Lock()
 	defer mu.Unlock()
