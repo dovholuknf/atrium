@@ -523,9 +523,10 @@ func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	var quiet, halted []string
+	var quiet, halted, names []string
 	settling := false
 	for _, a := range got {
+		names = append(names, a.room)
 		if a.body == nil {
 			quiet = append(quiet, a.room)
 			continue
@@ -542,6 +543,8 @@ func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(quiet)
 	sort.Strings(halted)
+	sort.Strings(names)
+	out["room_names"] = names
 	out["halted"] = len(halted) > 0
 	out["halted_rooms"] = halted
 	out["settling"] = settling
