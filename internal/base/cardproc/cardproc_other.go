@@ -67,6 +67,27 @@ func StopTree(pid int) error {
 	return nil
 }
 
+// Tree is pid and every process under it, each with its start time, read now. Read it before StopTree.
+func Tree(pid int) map[int]string {
+	kids := map[int][]int{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=").Output(); err == nil {
+		for _, l := range strings.Split(string(out), "\n") {
+			f := strings.Fields(l)
+			if len(f) != 2 {
+				continue
+			}
+			c, cerr := strconv.Atoi(f[0])
+			p, perr := strconv.Atoi(f[1])
+			if cerr == nil && perr == nil {
+				kids[p] = append(kids[p], c)
+			}
+		}
+	}
+	return treeOf(pid, kids, nil)
+}
+
 // OwnGroup makes cmd lead a process group of its own, so StopTree ends what it starts too.
 func OwnGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

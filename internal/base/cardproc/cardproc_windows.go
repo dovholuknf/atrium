@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -37,6 +38,25 @@ func StartTime(pid int) (string, error) {
 		return "", err
 	}
 	return strconv.FormatInt(c.Nanoseconds(), 10), nil
+}
+
+// Tree is pid and every process under it, each with its start time, read now. Read it before StopTree, which leaves
+// no parent to walk from.
+func Tree(pid int) map[int]string {
+	kids := map[int][]int{}
+	if snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0); err == nil {
+		var e windows.ProcessEntry32
+		e.Size = uint32(unsafe.Sizeof(e))
+		for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+			kids[int(e.ParentProcessID)] = append(kids[int(e.ParentProcessID)], int(e.ProcessID))
+		}
+		_ = windows.CloseHandle(snap)
+	}
+	return treeOf(pid, kids, func(child, parent string) bool {
+		c, cerr := strconv.ParseInt(child, 10, 64)
+		p, perr := strconv.ParseInt(parent, 10, 64)
+		return cerr != nil || perr != nil || c >= p
+	})
 }
 
 // OwnGroup starts cmd in a process group of its own, so a Ctrl+C to atrium's console does not reach it. StopTree

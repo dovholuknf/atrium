@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -26,6 +28,19 @@ type serverHooks struct {
 	scrapDir *string
 	// launchFile, when set, opens a file instead of the operating system's default app.
 	launchFile func(path, dir string) error
+	// removeWaits and leftoverWaits, when non-nil, replace closeRemoveWaits and closeLeftoverWaits.
+	removeWaits, leftoverWaits *[]time.Duration
+}
+
+func (s *Server) closeWaits() (now, later []time.Duration) {
+	now, later = closeRemoveWaits, closeLeftoverWaits
+	if s.hk.removeWaits != nil {
+		now = *s.hk.removeWaits
+	}
+	if s.hk.leftoverWaits != nil {
+		later = *s.hk.leftoverWaits
+	}
+	return now, later
 }
 
 func (s *Server) scrapRoot() string {

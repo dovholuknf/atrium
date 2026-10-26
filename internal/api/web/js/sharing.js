@@ -863,7 +863,7 @@ async function closeCardNow(id, t, via) {
       (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
       if (out.left) said.push(out.left + " left on the card");
       (out.warnings || []).forEach(w => said.push(w));
-      toast("closed " + title, said.join(". "));
+      toast(closeNotDone(out) ? "closed " + title + ", not cleaned up yet" : "closed " + title, said.join(". "));
       // A row that did not free is a failure even when no step event said so (a stream that was down).
       (out.items || []).filter(it => it.error).forEach(it =>
         closeStepSay({ key: "row:" + it.kind + ":" + it.ref, line: it.kind + " " + it.ref, state: "fail", detail: it.error }));
@@ -951,6 +951,9 @@ const CLEANUP_ASK_KEY = "cleanup-unsaved";
 
 function cleanUpCard(id, t) { return oneAtATime("close:" + id, () => cleanUpNow(id, t)); }
 
+// closeNotDone is a close that left a row on the card it tried and failed to free. A row kept on purpose has no error.
+function closeNotDone(out) { return (out.items || []).some(it => it.action === "keep" && it.error); }
+
 async function cleanUpNow(id, t) {
   let pv;
   try { pv = await api(`/v1/tasks/${encodeURIComponent(id)}/close`); }
@@ -999,6 +1002,7 @@ async function cleanUpNow(id, t) {
     if (out.left) said.push(out.left + " left on the card");
     (out.warnings || []).forEach(w => said.push(w));
     if (out.session_error) toast("could not terminate " + title, said.join(". "));
+    else if (closeNotDone(out)) toast("not cleaned up yet: " + title, said.join(". "));
     else toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
   } catch (e) {
     toast("could not clean up", e.message);
