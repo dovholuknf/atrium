@@ -370,7 +370,7 @@ func TestAutoApprovesFromTheEventWithNoBoardAndNoPolling(t *testing.T) {
 
 	// The turn-on sweep and the pump's connect sweep are the reads allowed.
 	waitFor(t, 5*time.Second, func() bool { return b.proxy.feeds.count() == 1 })
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond) // wait: a settle, the connect sweeps have no event to wait on
 	base, _ := l.counts()
 
 	l.raise("p9")
@@ -425,7 +425,7 @@ func TestAnEventInFlightWhenAutoIsSwitchedOffIsNotApproved(t *testing.T) {
 	// approval.
 	s.set(false, nil)
 	l.raise("p2")
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond) // wait: a negative check, nothing must be approved
 	if _, d := l.counts(); d["p2"] != 0 {
 		t.Fatalf("a request was approved after the switch went off")
 	}
@@ -446,9 +446,9 @@ func TestAnEventPastTheDeadlineIsNotApproved(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return b.proxy.feeds.count() == 1 })
 
 	// The deadline passes between the approver subscribing and the event.
-	time.Sleep(time.Until(until) + 100*time.Millisecond)
+	time.Sleep(time.Until(until) + 100*time.Millisecond) // wait: the deadline passing is what is under test
 	l.raise("p3")
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(700 * time.Millisecond) // wait: a negative check, nothing must be approved
 	if _, d := l.counts(); d["p3"] != 0 {
 		t.Fatalf("a request was approved after the deadline")
 	}
@@ -460,7 +460,7 @@ func TestNoPumpRunsWithAutoOffAndNoBoard(t *testing.T) {
 	l := newPermRoom()
 	b.attach("alpha", l.handler())
 	b.proxy.SetInventory(newStock("alpha"))
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond) // wait: a negative check, no pump must start
 	if n := b.proxy.feeds.count(); n != 0 {
 		t.Fatalf("%d pump(s) ran with auto off and no board", n)
 	}

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
@@ -327,11 +328,10 @@ func TestGrowlPermissionIsFilledFromTheRoom(t *testing.T) {
 	rig.announce(t, growlPermCard("a", now.Add(-5*time.Minute)))
 	// The fill runs off the announcement's goroutine.
 	var rows []GrowlRow
-	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
-		if rows = rig.live(t); len(rows) == 1 && rows[0].Subject != "" {
-			break
-		}
-	}
+	testwait.Eventually(t, 5*time.Second, "the permission growler to fill", func() bool {
+		rows = rig.live(t)
+		return len(rows) == 1 && rows[0].Subject != ""
+	})
 	if len(rows) != 1 || rows[0].Subject != "p1" || rows[0].Body != "go test ./..." {
 		t.Fatalf("the permission growler is %+v, want the oldest request's id and first line", rows)
 	}
