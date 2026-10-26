@@ -1222,7 +1222,10 @@ function openTerm(task) {
     const n = params[0];
     if (n === 3) return true;
     if (n !== 2) return false;
-    keepPage(mine, false);
+    // Claude Code repaints a clear with several erase-displays in a row, and only the first holds the old page.
+    const now = performance.now();
+    if (!(mine._atriumPushed && now - mine._atriumClearAt < 150)) keepPage(mine, false);
+    mine._atriumClearAt = now;
     mine._atriumRows = null;
     return false;
   });

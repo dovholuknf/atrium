@@ -2414,6 +2414,10 @@ async function clearKeepsPageSection(browser, base) {
     got = await run(page("same", 4) + "\x1b[2J\x1b[H" + page("same", 4) + "\x1b[2J", true);
     if (got.hist.filter(l => l === "same1").length !== 1) fail("a repaint of the same page stacked copies of it in history.");
 
+    got = await run(page("old", rows - 2) + "\x1b[2J\x1b[Hbanner" + "\x1b[2J\x1b[Hbanner\r\n> /clear", true);
+    have(got, "old", rows - 2, "a clear repainted twice");
+    if (got.hist.includes("banner")) fail("the intermediate repaint of a clear was pushed into history.");
+
     // The replay is the same bytes through the same handler.
     got = await run(page("old", rows - 2) + "\x1b[2J\x1b[Hnew banner", true);
     if (got.hist.join("|") !== live) fail("the same stream written again as a replay left a different history.");
