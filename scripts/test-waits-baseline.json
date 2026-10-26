@@ -124,11 +124,11 @@
   "scripts/board-tests/chat.js": 13,
   "scripts/board-tests/deploy.js": 2,
   "scripts/board-tests/hubrepos.js": 11,
-  "scripts/board-tests/items.js": 10,
+  "scripts/board-tests/items.js": 7,
   "scripts/board-tests/launch.js": 3,
   "scripts/board-tests/pulls.js": 4,
-  "scripts/board-tests/rooms.js": 18,
+  "scripts/board-tests/rooms.js": 13,
   "scripts/board-tests/settings.js": 18,
-  "scripts/board-tests/usage.js": 29,
-  "scripts/test-board-headless.js": 605
+  "scripts/board-tests/usage.js": 25,
+  "scripts/test-board-headless.js": 580
 }

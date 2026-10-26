@@ -3263,10 +3263,12 @@ async function typingSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "typing", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(1200);
+    await fakePause(p);
+    await fakeTick(p, 1200);
 
     const off = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
@@ -3296,7 +3298,7 @@ async function typingSection(browser, base) {
       const say = (name, ans, on) => (async () => {
         mock.typingAnswer = ans;
         await held(on);
-        await p.waitForTimeout(1200);
+        await fakeTick(p, 1200);
         fs.mkdirSync(process.env.TYPING_SHOTS, { recursive: true });
         await p.locator("#t-typing").evaluate(el => el.parentElement.scrollIntoView());
         await p.screenshot({ path: path.join(process.env.TYPING_SHOTS,
@@ -3314,8 +3316,8 @@ async function typingSection(browser, base) {
 
     mock.typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
       reason: "13 unsent character(s) on the line" };
-    await p.waitForFunction(() => /waits: 13/.test((document.getElementById("t-typing") || {}).textContent || ""),
-      null, { timeout: slow(5000) }).catch(() => {});
+    await fakeWait(p, () => /waits: 13/.test((document.getElementById("t-typing") || {}).textContent || ""),
+      null, 5000).catch(() => {});
     const on = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
       const help = document.querySelector(".term-help");
@@ -3339,8 +3341,8 @@ async function typingSection(browser, base) {
 
     // It follows the endpoint: the gate opening shows on the next poll.
     mock.typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
-    await p.waitForFunction(() => document.getElementById("t-typing").textContent === "line empty", null,
-      { timeout: slow(5000) }).catch(() => {});
+    await fakeWait(p, () => document.getElementById("t-typing").textContent === "line empty", null,
+      5000).catch(() => {});
     const opened = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
       return { hidden: el.hidden, text: el.textContent, calm: el.classList.contains("calm"),
@@ -3358,8 +3360,8 @@ async function typingSection(browser, base) {
         peekCard("land-live").activity = h ? { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" }
           : { what: "idle" };
       }, held);
-      await p.waitForFunction(w => document.getElementById("t-typing").textContent === w, want,
-        { timeout: slow(5000) }).catch(() => {});
+      await fakeWait(p, w => document.getElementById("t-typing").textContent === w, want,
+        5000).catch(() => {});
       return p.evaluate(() => {
         const el = document.getElementById("t-typing");
         return { text: el.textContent, calm: el.classList.contains("calm"), shut: el.classList.contains("shut") };
@@ -3383,9 +3385,9 @@ async function typingSection(browser, base) {
 
     // Off again: hidden, and the polling stops.
     await p.evaluate(() => toggleTypingReadout(false));
-    await p.waitForTimeout(200);
+    await fakeTick(p, 200);
     const n = mock.typingPolls.length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
     const after = await p.evaluate(() => document.getElementById("t-typing").hidden);
     if (!after) fail("the typing readout stayed up after it was switched off.");
     if (mock.typingPolls.length !== n) fail("the typing endpoint was still polled after the readout was switched off.");
@@ -3427,6 +3429,7 @@ async function termDebugSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing.land-live"); localStorage.removeItem("atrium.debug.inputlag.land-live"); });
@@ -3483,9 +3486,11 @@ async function termDebugSection(browser, base) {
 
     // Closing the drawer stops the asking.
     await p.evaluate(() => toggleTermDrawer(false));
-    await p.waitForTimeout(200);
+    await fakePause(p);
+    await fakeTick(p, 200);
     const n = mock.typingPolls.length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
+    await p.clock.resume();
     if (mock.typingPolls.length !== n) fail("the gate was still polled after the drawer closed.");
 
     // The gate line under the terminal speaks only when blocking, and never repeats the line.
@@ -3559,8 +3564,10 @@ async function termDebugSection(browser, base) {
     mock.kaSettings = { input_lag_log: true, input_lag_pinned: false };
     await p.evaluate(() => toggleTermDrawer(true));
     await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
-    await p.waitForTimeout(200);
+    await fakePause(p);
+    await fakeTick(p, 200);
     const lagOnState = await lagState();
+    await p.clock.resume();
     await p.evaluate(() => { toggleTermDrawer(false); toggleInputLag(false); });
     if (lagOnState.box || lagOnState.lag || lagOnState.pinned) {
       fail("the machine logging switched this card's input lag box on: " + JSON.stringify(lagOnState));
@@ -3581,10 +3588,12 @@ async function termDebugSection(browser, base) {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       toggleTermDrawer(true);
     });
-    await p.waitForTimeout(300);
+    await fakePause(p);
+    await fakeTick(p, 300);
     const hiddenN = mock.typingPolls.length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
     const asked = mock.typingPolls.length - hiddenN;
+    await p.clock.resume();
     await p.evaluate(() => { toggleTermDrawer(false); delete document.hidden; });
     if (asked) fail("a hidden tab still asked for the gate " + asked + "x.");
 
@@ -3673,7 +3682,7 @@ async function termLagSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     for (const id of ids) {
       await attachRetry(p, { unit: "termLag", id: id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
-      await p.waitForTimeout(300);
+      await frames(p, 2);
     }
     // A working agent's screen: a block of new text now and then, and a status block under it redrawn ten times a
     // second, with colour and a spinner, as Claude Code's does.
@@ -3696,7 +3705,7 @@ async function termLagSection(browser, base) {
     });
     // The SSE stream says something changed every couple of seconds on a busy board, and the board refreshes.
     if (process.env.TERMLAG_REFRESH !== "0") await p.evaluate(() => { window.__refresh = setInterval(() => refresh(), 2000); });
-    await p.waitForTimeout(1500);
+    await p.waitForTimeout(1500); // wait: the stream and the refreshes warm up on the real clock before the trace
     if (process.env.TERMLAG_PROBE) {
       console.log(JSON.stringify(await p.evaluate(() => ({
         canvases: [...document.querySelectorAll("canvas")].map(c => c.width + "x" + c.height + (c.offsetParent ? "" : " hidden") + " " + (c.className || "")),
@@ -3717,7 +3726,7 @@ async function termLagSection(browser, base) {
     // Typing while it streams: a key every 150ms, through xterm, as the operator does.
     const typer = setInterval(() => { p.keyboard.press("a").catch(() => {}); }, 150);
     await p.focus("#t-screen textarea").catch(() => {});
-    await p.waitForTimeout(secs * 1000);
+    await p.waitForTimeout(secs * 1000); // wait: the trace window, real time is what it measures
     clearInterval(typer);
     await cdp.send("Tracing.end");
     await doneP;
@@ -4291,6 +4300,7 @@ async function termDebugPerCardSection(browser, base) {
       if (r.method() !== "POST" || !/\/v1\/settings$/.test(r.url())) return;
       try { const b = JSON.parse(r.postData() || "{}"); if ("input_lag_log" in b) posted.push(b.input_lag_log); } catch (e) {}
     });
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     // A browser that had the old browser-wide switch on drops it.
@@ -4322,11 +4332,13 @@ async function termDebugPerCardSection(browser, base) {
     // The other card: both off, the line hidden, its gate never asked for by the line.
     await attach("land-b");
     await p.evaluate(() => toggleTermDrawer(false));
-    await p.waitForTimeout(300);
+    await fakePause(p);
+    await fakeTick(p, 300);
     const n = mock.typingPolls.filter(u => u.includes("/land-b/")).length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
     const b = await state();
     const bPolls = mock.typingPolls.filter(u => u.includes("/land-b/")).length - n;
+    await p.clock.resume();
     if (b.lag || b.typing || b.lagBox || b.typingBox || b.line) fail("a card switched on carried over to another card: " + JSON.stringify(b));
     if (bPolls) fail("the gate line polled a card it is not switched on for: " + bPolls + "x");
     const stored = await p.evaluate(() => ({ lagB: localStorage.getItem("atrium.debug.inputlag.land-b"),
@@ -4335,9 +4347,10 @@ async function termDebugPerCardSection(browser, base) {
 
     // Switching the other card off-then-on and off keeps the machine on while the first card still is.
     await p.evaluate(() => toggleTermDrawer(true));
+    const twice = posted.length;
     await click("s-inputlag");
     await click("s-inputlag");
-    await p.waitForTimeout(300);
+    await until(() => posted.length >= twice + 2, 5000, "both input lag posts").catch(() => {});
     if (posted[posted.length - 1] !== true) fail("unticking one card told the hub to stop while another card is on: " + JSON.stringify(posted));
     await p.evaluate(() => toggleTermDrawer(false));
 
@@ -4349,9 +4362,10 @@ async function termDebugPerCardSection(browser, base) {
 
     // Its last card off: the hub and room are told to stop.
     await p.evaluate(() => toggleTermDrawer(true));
+    const last = posted.length;
     await click("s-inputlag");
     await click("s-typing");
-    await p.waitForTimeout(300);
+    await until(() => posted.length > last, 5000, "the input lag post").catch(() => {});
     if (posted[posted.length - 1] !== false) fail("the last card switched off did not tell the hub to stop: " + JSON.stringify(posted));
     await p.evaluate(() => toggleTermDrawer(false));
   } finally {
@@ -10592,16 +10606,18 @@ async function peekDrawersSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "onehover";
   try {
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~oh2"]', { state: "visible", timeout: slow(15000) });
-    await new Promise(r => setTimeout(r, 1000));
+    await fakePause(p);
+    await fakeTick(p, 1000);
     const show = async id => {
       await p.evaluate(() => closePeek());
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "menu"), id);
-      await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
-        null, { timeout: slow(4000) }).catch(() => fail("peekDrawers: " + id + " never showed a context size."));
-      await new Promise(r => setTimeout(r, 300));
+      await fakeWait(p, () => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
+        null, 4000).catch(() => fail("peekDrawers: " + id + " never showed a context size."));
+      await fakeTick(p, 300);
     };
     // What each drawer looks like now: open or not, its summary as seen, whether its body is visible.
     const drawers = () => p.evaluate(() => {
@@ -11192,9 +11208,12 @@ async function quietDoerSection(browser, base) {
     try {
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
+      await p.clock.install();
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
-      await p.waitForTimeout(1500);
+      await fakePause(p);
+      await fakeTick(p, 1500);
+      await p.clock.resume();
       const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
         [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
       const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
@@ -11315,7 +11334,7 @@ async function autoPermSection(browser, base) {
     // AUTOPERM_SHOT=<file.png> writes a picture of the board and its toast log after the approved request.
     if (process.env.AUTOPERM_SHOT) {
       await p.evaluate(() => openToastLog());
-      await p.waitForTimeout(900);
+      await p.clock.runFor(900);
       await p.screenshot({ path: process.env.AUTOPERM_SHOT });
       await p.evaluate(() => document.getElementById("toastlog").close());
     }
@@ -14707,9 +14726,11 @@ async function arrivedOnceSection(browser, base) {
   page.on("pageerror", e => errors.push(String(e)));
   await page.addInitScript(() => { Document.prototype.hasFocus = () => true; });
   try {
+    await page.clock.install();
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
-    await page.waitForTimeout(1500);
+    await fakePause(page);
+    await fakeTick(page, 1500);
     const got = await page.evaluate(() => {
       localStorage.removeItem("atrium.toastlog");
       alerting.set({ debounce: 0, muted: true });
@@ -20215,6 +20236,7 @@ async function termEndedSection(browser, base) {
     r.fulfill({ json: { ok: true } }); });
   const shots = process.env.TERM_ENDED_SHOTS || "";
   try {
+    await p.clock.install();
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof termEndedHTML === "function" && (() => { try { newCardBook; termSuffix; return true; } catch (e) { return false; } })(), null, { timeout: slow(15000) });
     const setup = async () => { await p.waitForFunction(() => typeof termEndedHTML === "function" && (() => { try { newCardBook; termSuffix; return true; } catch (e) { return false; } })(), null, { timeout: slow(15000) });
@@ -20231,7 +20253,9 @@ async function termEndedSection(browser, base) {
       // The ended group is the dead chip's, so the chip is on to see it.
       localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]');
       });
-      await p.waitForTimeout(1500);
+      await fakePause(p);
+      await fakeTick(p, 1500);
+      await p.clock.resume();
       await p.evaluate(async () => { switchView("terms"); await renderTermList(); });
     };
     const shot = name => shots ? p.screenshot({ path: require("path").join(shots, name) }) : null;
@@ -25142,15 +25166,19 @@ async function keepMemorySection(browser, base) {
       const bs = await browser.newBrowserCDPSession();
       const heap = async () => {
         await cdp.send("HeapProfiler.collectGarbage"); await cdp.send("HeapProfiler.collectGarbage");
-        await wp.waitForTimeout(500);
+        await wp.waitForTimeout(500); // wait: the renderer's resident memory settles after the collection on its own time
         const procs = (await bs.send("SystemInfo.getProcessInfo")).processInfo.filter(p => p.type === "renderer");
         const rss = Math.max(...procs.map(p => +require("child_process").execSync("ps -o rss= -p " + p.id).toString().trim() / 1024));
         return { heap: (await cdp.send("Runtime.getHeapUsage")).usedSize / 1048576, rss };
       };
-      await wp.evaluate(id => attachTask(id), ids[0]);
-      await wp.waitForTimeout(1500);
+      const attached = async id => {
+        await wp.evaluate(i => attachTask(i), id);
+        await wp.waitForFunction(i => termTask && termTask.id === i && termSock && termSock.readyState === 1, id, { timeout: slow(15000) });
+        await termWrite(wp, "");
+      };
+      await attached(ids[0]);
       const one = await heap();
-      for (const id of ids.slice(1)) { await wp.evaluate(i => attachTask(i), id); await wp.waitForTimeout(1200); }
+      for (const id of ids.slice(1)) await attached(id);
       const nine = await heap();
       const kept = await wp.evaluate(() => keptTerms.size);
       const histLines = await wp.evaluate(() => Array.from(keptTerms.values()).map(s => s.term.buffer.active.length));
