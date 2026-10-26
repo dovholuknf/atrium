@@ -367,3 +367,80 @@ func TestSupportKindIsAPlainWord(t *testing.T) {
 		t.Errorf("%+v %+v", got, k)
 	}
 }
+
+// AN ADVISORY FORK LINK fetches from the fork's ghsa-<id> remote: a branch is checked out tracking it, a pull
+// request's head on a branch of its own. Both cards hold the remote, and the last one's close removes it.
+func TestOpenAnAdvisoryForkAddsItsRemoteAndTheLastCloseRemovesIt(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	repo := oh.checkout(t, "o", "r")
+	fork := realSlash(t.TempDir()) + "/fork.git"
+	git(t, oh.up, "init", "-q", "--bare", fork)
+	git(t, oh.up, "push", "-q", fork, "refs/pull/7/head:refs/pull/7/head", "refs/pull/7/head:refs/heads/fix-it")
+	head := git(t, fork, "rev-parse", "refs/pull/7/head")
+	url, proto := advisoryForkURL, advisoryForkProtocol
+	advisoryForkURL = func(host, org, repo, ghsa string) string { return fork }
+	advisoryForkProtocol = "file"
+	defer func() { advisoryForkURL, advisoryForkProtocol = url, proto }()
+	inner := oh.srv.Recognise
+	oh.srv.Recognise = func(u string) (*rules.Resolved, error) {
+		if !strings.Contains(u, "-ghsa-") {
+			return inner(u)
+		}
+		got := &rules.Resolved{Recogniser: "github-advisory-fork-branch", URL: u, Kind: "github", Host: "github.com",
+			Tags: []string{"advisory"}, Branch: "fix-it",
+			Vars: map[string]string{"host": "github.com", "org": "o", "repo": "r", "ghsa": "abcd-efgh-ijkl", "ref": "fix-it"}}
+		if strings.Contains(u, "/pull/") {
+			got.Recogniser, got.Branch = "github-advisory-fork-pr", "advisory-abcd-efgh-ijkl-pr7"
+			got.Vars = map[string]string{"host": "github.com", "org": "o", "repo": "r", "ghsa": "abcd-efgh-ijkl", "pr": "7"}
+		}
+		return got, nil
+	}
+	oh.srv.Launch = func(body []byte) (*store.Task, error) {
+		var in struct {
+			Cwd  string   `json:"cwd"`
+			Tags []string `json:"tags"`
+		}
+		_ = json.Unmarshal(body, &in)
+		task, _, err := oh.srv.st.Register(store.Observed{WireName: in.Cwd[strings.LastIndex(in.Cwd, "/")+1:],
+			Worktree: in.Cwd, Runner: "claude"})
+		if err == nil {
+			err = oh.srv.st.SetTags(task.ID, in.Tags)
+		}
+		return task, err
+	}
+
+	code, br := oh.open(t, "https://github.com/o/r-ghsa-abcd-efgh-ijkl/tree/fix-it")
+	if code != 201 || br["kind"] != "branch" {
+		t.Fatalf("the fork branch: %d %v", code, br)
+	}
+	path := br["worktree"].(string)
+	if git(t, path, "rev-parse", "HEAD") != head || git(t, path, "rev-parse", "--abbrev-ref", "@{upstream}") != "ghsa-abcd-efgh-ijkl/fix-it" {
+		t.Errorf("the fork branch is not the fork's fix-it, tracked")
+	}
+	code, pr := oh.open(t, "https://github.com/o/r-ghsa-abcd-efgh-ijkl/pull/7")
+	if code != 201 || pr["kind"] != "branch" {
+		t.Fatalf("the fork PR: %d %v", code, pr)
+	}
+	prPath := pr["worktree"].(string)
+	if git(t, prPath, "rev-parse", "HEAD") != head || git(t, prPath, "rev-parse", "--abbrev-ref", "HEAD") != "advisory-abcd-efgh-ijkl-pr7" {
+		t.Errorf("the fork PR is not its head on its own branch")
+	}
+	for _, out := range []map[string]any{br, pr} {
+		if got := inventory(t, oh.srv.st, out["card"].(string)); !strings.HasSuffix(got, ",remote ghsa-abcd-efgh-ijkl") {
+			t.Errorf("the inventory is %s", got)
+		}
+	}
+
+	if code, closed := closeCall(t, oh, br["card"].(string), map[string]any{"confirm": true}); code != 200 || closed.Left != 0 {
+		t.Fatalf("the first close: %d %+v", code, closed)
+	}
+	if !strings.Contains(git(t, repo, "remote"), "ghsa-abcd-efgh-ijkl") {
+		t.Error("the first close removed a remote another card holds")
+	}
+	if code, closed := closeCall(t, oh, pr["card"].(string), map[string]any{"confirm": true}); code != 200 || closed.Left != 0 {
+		t.Fatalf("the last close: %d %+v", code, closed)
+	}
+	if strings.Contains(git(t, repo, "remote"), "ghsa-abcd-efgh-ijkl") || git(t, repo, "for-each-ref", "refs/remotes/ghsa-abcd-efgh-ijkl") != "" {
+		t.Error("the last close left the remote or its refs")
+	}
+}

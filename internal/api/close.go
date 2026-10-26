@@ -360,6 +360,8 @@ func (s *Server) closePreview(ctx context.Context, t *store.Task) (*closePreview
 			it.Note = "its tunnelers and controller stopped, then its folder deleted, PKI and identities with it"
 		case store.ResIdentity:
 			it.Note = "deleted with its overlay's folder"
+		case store.ResRemote:
+			it.Note = "the advisory fork's remote, removed unless another card holds it. kept if its worktree is"
 		}
 		pv.Items = append(pv.Items, it)
 	}
@@ -668,6 +670,29 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			failed(r, err)
 			steps.problem("%v", err)
 			continue
+		}
+		freed(r)
+	}
+
+	// 5. the advisory fork's remote, by its last holder, and kept with a kept worktree of its repo
+	for _, r := range of(store.ResRemote) {
+		kept := false
+		for k := range keptBranch {
+			kept = kept || strings.HasPrefix(k, r.Detail+"\x00")
+		}
+		if kept {
+			continue
+		}
+		if !s.remoteHeld(r.Ref, r.Detail, t.ID) {
+			ctx, cancel := context.WithTimeout(context.Background(), closeGitWait)
+			_, err := gitIn(ctx, r.Detail, "remote", "remove", r.Ref)
+			_, still := gitIn(ctx, r.Detail, "remote", "get-url", r.Ref)
+			cancel()
+			if err != nil && still == nil {
+				failed(r, err)
+				steps.problem("%v", err)
+				continue
+			}
 		}
 		freed(r)
 	}
