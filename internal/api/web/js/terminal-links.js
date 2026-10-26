@@ -483,6 +483,7 @@ function worthProbing(tok) {
 // scrollbar, which is what makes "17 of 240" mean something.
 let termSearch = null;
 let findCase = false, findRe = false;
+let findWho = "all", findWhoHits = [], findWhoAt = -1;
 
 function useSearch(t) {
   termSearch = null;
@@ -886,6 +887,16 @@ function runFind(step, back) {
     paintFindCount(null);
     return;
   }
+  if (findWho !== "all") {
+    termSearch.clearDecorations();
+    try {
+      findBySpeaker(text, step, back);
+    } catch (e) {
+      if (!findRe) throw e;
+      paintFindCount(null, "bad pattern");
+    }
+    return;
+  }
   try {
     const found = step && back
       ? termSearch.findPrevious(text, findOpts(false))
@@ -915,9 +926,66 @@ function runFind(step, back) {
 function toggleFind(which) {
   if (which === "case") findCase = !findCase;
   if (which === "re") findRe = !findRe;
+  if (which === "who") {
+    findWho = { all: "me", me: "agent", agent: "all" }[findWho];
+    const who = document.getElementById("t-find-who");
+    if (who) { who.textContent = findWho; who.classList.toggle("on", findWho !== "all"); }
+    runFind(false);
+    return;
+  }
   const el = document.getElementById(which === "case" ? "t-find-case" : "t-find-re");
   if (el) el.classList.toggle("on", which === "case" ? findCase : findRe);
   runFind(false);
+}
+
+// Claude Code paints the operator's prompt rows with a background tint and the agent's text on the default one.
+// A wrapped row takes the speaker of the row it continues, so a long or pasted prompt stays mine to its end.
+function rowIsMine(b, y) {
+  while (y > 0 && b.getLine(y).isWrapped) y--;
+  const c = b.getLine(y).getCell(0);
+  return !!c && !c.isBgDefault();
+}
+
+// The search addon matches text and nothing else, so a speaker search walks the buffer itself: each logical line
+// (wrapped rows joined) of the chosen speaker, matched as a string, the hit mapped back to its cells and selected.
+function findBySpeaker(text, step, back) {
+  const b = term.buffer.active;
+  const re = new RegExp(findRe ? text : text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), findCase ? "g" : "gi");
+  const hits = [];
+  for (let y = 0; y < b.length; y++) {
+    if (b.getLine(y).isWrapped) continue;
+    if (rowIsMine(b, y) !== (findWho === "me")) continue;
+    let s = "";
+    const at = [];
+    for (let r = y; r < b.length && (r === y || b.getLine(r).isWrapped); r++) {
+      const l = b.getLine(r);
+      for (let x = 0; x < term.cols; x++) {
+        const c = l.getCell(x);
+        if (!c || c.getWidth() === 0) continue;
+        const ch = c.getChars() || " ";
+        for (let i = 0; i < ch.length; i++) at.push({ y: r, x, w: c.getWidth() });
+        s += ch;
+      }
+    }
+    for (const m of s.matchAll(re)) {
+      if (!m[0].length) continue;
+      const a = at[m.index], z = at[m.index + m[0].length - 1];
+      hits.push({ y: a.y, x: a.x, n: (z.y - a.y) * term.cols + z.x + z.w - a.x });
+    }
+  }
+  const prev = findWhoHits[findWhoAt];
+  findWhoHits = hits;
+  if (!hits.length) { findWhoAt = -1; term.clearSelection(); paintFindCount(null, "no matches"); return; }
+  if (step) {
+    findWhoAt = ((findWhoAt + (back ? -1 : 1)) % hits.length + hits.length) % hits.length;
+  } else {
+    const i = prev ? hits.findIndex(h => h.y > prev.y || (h.y === prev.y && h.x >= prev.x)) : 0;
+    findWhoAt = i < 0 ? 0 : i;
+  }
+  const h = hits[findWhoAt];
+  term.select(h.x, h.y, h.n);
+  if (h.y < b.viewportY || h.y >= b.viewportY + term.rows) term.scrollToLine(Math.max(0, h.y - (term.rows >> 1)));
+  paintFindCount({ resultIndex: findWhoAt, resultCount: hits.length });
 }
 
 function paintFindCount(r, msg) {
