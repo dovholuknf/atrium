@@ -524,6 +524,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		freed(r)
 	}
+	if !pv.keepAll && strings.TrimSpace(s.cardsRoot()) != "" {
+		maps.Copy(tree, cardproc.StopInDir(filepath.Join(s.cardsRoot(), t.ID)))
+	}
 	if len(tree) > 0 {
 		steps.begin("exit", "waiting for the card's processes to exit")
 		if left := cardproc.WaitGone(tree, closeTreeWait); len(left) > 0 {
