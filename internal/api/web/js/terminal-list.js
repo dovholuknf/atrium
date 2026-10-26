@@ -2027,8 +2027,6 @@ async function renderTermList() {
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
-  // A shut heading stands in for the attached row only while no copy of that row is drawn.
-  if (host.querySelector(".card.on")) host.querySelectorAll(".tgroup.carries").forEach(h => h.classList.remove("carries"));
 
   // After the cards exist, since it is placed against one of them. A frame
   // later, so the measurement happens on the layout that was just written

@@ -22641,35 +22641,6 @@ async function selectedFitsSection(browser, base) {
   if (!bad) console.log("selectedFits ok");
 }
 
-// A SHUT HEADING CARRIES THE ATTACHED ROW ONLY WHILE THE ROW IS NOWHERE ELSE. With orchestrators shut and the row still
-// drawn in pinned and directors, the heading wears nothing and no funnel runs from it. With every copy shut away, the
-// orchestrators heading carries it again, inside its column.
-async function selectedHeadSection(browser, base) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  try {
-    const { p, errors, settle, read, fold } = await selectedRowsPage(ctx, base);
-    const shots = process.env.SELECTED_HEAD_SHOTS || "";
-    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, name + ".png") }); } };
-    await fold("g:orchestrators");
-    await settle();
-    let g = await read();
-    await shot("selected-head-shown");
-    if (g.on.length !== 2) fail("selectedHead: want the attached row in pinned and directors: " + JSON.stringify(g));
-    if (g.carries.length) fail("selectedHead: a shut heading wears the attached row while the row is drawn: " + JSON.stringify(g));
-    if (g.bridges !== 2) fail("selectedHead: want a bridge per drawn copy and none from the heading: " + JSON.stringify(g));
-    await fold("g:directors");
-    await fold("");
-    await settle();
-    g = await read();
-    await shot("selected-head-shut");
-    if (g.on.length) fail("selectedHead: the attached row is still drawn with every copy shut: " + JSON.stringify(g));
-    if (!g.carries.length) fail("selectedHead: no shut heading carries the attached row: " + JSON.stringify(g));
-    if (g.heads.some(r => r > g.col)) fail("selectedHead: a carrying heading runs past its column: " + JSON.stringify(g));
-    if (errors.length) fail("selectedHead: page errors: " + errors.join(" | "));
-  } finally { await ctx.close(); }
-  if (!bad) console.log("selectedHead ok");
-}
-
 async function collapsedBridgeSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
@@ -26116,7 +26087,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedHead: selectedHeadSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -28252,7 +28223,6 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("selectedFits", () => selectedFitsSection(browser, base));
-    await unit("selectedHead", () => selectedHeadSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));

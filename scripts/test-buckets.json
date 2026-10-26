@@ -29,7 +29,7 @@
         "term*", "tallPty", "attachAtOnce", "switch*", "copySelect", "cleanCopy*","clear*", "paste*", "quickPaste", "repoPaste", "walk*",
         "peek*", "crossedPane", "worn", "resume*", "noResume*", "details*", "gear*", "keepAlive", "pinNow", "keepalive", "keepaliveMark", "coldHandoff", "keepMemory",
         "idle*", "looksIdle", "joined*", "liveHome", "presence", "parked*", "pausedDead", "greyMeansDead", "busyGuard",
-        "bridge", "collapsedBridge", "groupBridge", "selectedFits", "selectedHead", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
+        "bridge", "collapsedBridge", "groupBridge", "selectedFits", "sshBadge", "popout*", "popup*", "compose*", "typing", "sendArrow",
         "newContextSse", "replies*", "reselect", "tabsOrder", "u002", "u016", "backtickPathLinks", "deadCardId"
       ],
       "sources": [
