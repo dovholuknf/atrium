@@ -27,7 +27,7 @@ func TestTypingIsHeldForTheWholeCycle(t *testing.T) {
 		if !d.nctx.typingHeld(id) {
 			t.Fatal("typing not held while waiting for atrium ready")
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // wait: a negative check, typing must stay held while atrium ready is awaited
 	}
 	gen := d.nctx.get(id).gen
 	d.nctx.setTyping(id, gen, true)
@@ -102,7 +102,7 @@ func TestQueuedTextGoesInOrderAfterTheWake(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	sayViaMessage(t, d, "alice", id, "QUEUEDONE")
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the two queued stamps so their order is the one under test
 	sayViaMessage(t, d, "alice", id, "QUEUEDTWO")
 	finishCycle(t, d, id, dir, f)
 	d.wake.sawSession(id, time.Now())

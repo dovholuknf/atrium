@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -42,16 +43,15 @@ func postPermission(ctx context.Context, d *Daemon, body string) <-chan Permissi
 // since the handler writes the row a moment before it parks.
 func parkedID(t *testing.T, d *Daemon, taskID string) string {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	var id string
+	testwait.Eventually(t, 3*time.Second, "the request to reach the store with a hook parked on it", func() bool {
 		pend, err := d.st.PendingForTask(taskID)
 		if err == nil && len(pend) > 0 && d.liveStoreIDs()[pend[0].ID] {
-			return pend[0].ID
+			id = pend[0].ID
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("the request never reached the store with a hook parked on it")
-	return ""
+		return id != ""
+	})
+	return id
 }
 
 func permTask(t *testing.T, d *Daemon, name string) *store.Task {
@@ -155,13 +155,9 @@ func TestDroppedPermissionLeavesLiveSet(t *testing.T) {
 
 	hangUp()
 	<-answer
-	deadline := time.Now().Add(3 * time.Second)
-	for d.liveStoreIDs()[id] {
-		if time.Now().After(deadline) {
-			t.Fatal("a request whose hook hung up is still counted as live")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, 3*time.Second, "a request whose hook hung up to stop counting as live", func() bool {
+		return !d.liveStoreIDs()[id]
+	})
 	// Nobody is parked, so a late decision is recorded without waking anything.
 	if d.decideByStoreID(id, "approve", "", "") {
 		t.Fatal("a decision claimed to wake a hook that had gone")

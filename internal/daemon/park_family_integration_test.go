@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -128,13 +129,9 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 			t.Fatalf("launched %d times, want 1 (%v)", launched, out)
 		}
 		d.wakeSawSession(worker.ID, "conv-1")
-		deadline := time.Now().Add(5 * time.Second)
-		for (f == nil || !strings.Contains(f.written(), "FAMILYWORDS")) && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-		if f == nil || !strings.Contains(f.written(), "FAMILYWORDS") {
-			t.Fatal("the launcher's words never reached the resumed worker")
-		}
+		testwait.Eventually(t, 5*time.Second, "the launcher's words to reach the resumed worker", func() bool {
+			return f != nil && strings.Contains(f.written(), "FAMILYWORDS")
+		})
 	})
 	t.Run("the launcher's fyi is kept and does not wake it", func(t *testing.T) {
 		d, launcher, worker := finished(t)

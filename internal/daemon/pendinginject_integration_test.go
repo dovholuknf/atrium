@@ -143,7 +143,7 @@ func TestTwoRetriesAtOnceTypeEachMessageOnce(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
 		go func() { defer wg.Done(); d.pending.attempt(target.ID) }()
-		time.Sleep(sayThenEnter / 2)
+		time.Sleep(sayThenEnter / 2) // wait: overlaps the two attempts inside one say, the race under test
 	}
 	wg.Wait()
 	got := f.written()

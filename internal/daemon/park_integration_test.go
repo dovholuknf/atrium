@@ -40,7 +40,7 @@ func stamped(t *testing.T, d *Daemon, id, via string) {
 // notStamped gives the async write time to land, then checks nothing did.
 func notStamped(t *testing.T, d *Daemon, id string) {
 	t.Helper()
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: a negative check, the async write must not stamp a touch
 	if v, ok := humanStamp(t, d, id); ok {
 		t.Fatalf("a touch was stamped (%s) where there should be none", v)
 	}
@@ -73,7 +73,7 @@ func sendFrames(t *testing.T, d *Daemon, path string, frames ...string) {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(80 * time.Millisecond) // wait: the daemon reading the frames raises no event on this side
 }
 
 func TestHumanTouchKeyCounts(t *testing.T) {
@@ -208,7 +208,7 @@ func TestHumanTouchStoreFailureSwallowed(t *testing.T) {
 	// A card that is not there: the write updates nothing and must not panic or
 	// block the caller. A halted store would return an error the same way.
 	d.humanTouch("no-such-card", ViaTyped)
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond) // wait: a negative check, the failed write must not panic off the caller's path
 }
 
 func parkedCard(t *testing.T, d *Daemon, name, status string) *store.Task {

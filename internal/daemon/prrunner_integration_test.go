@@ -523,7 +523,7 @@ func TestPRRunnerAbortMidStepLeavesAborted(t *testing.T) {
 	// The API deletes the folder, and nothing the run does after rebuilds it.
 	dir := filepath.FromSlash(p.RunDir)
 	os.RemoveAll(dir)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, nothing after the abort may rebuild the folder
 	if _, err := os.Stat(dir); err == nil {
 		t.Fatal("the folder came back after an abort")
 	}

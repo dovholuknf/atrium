@@ -17,7 +17,7 @@ func TestPushKinNamesTheLauncherAndEarlierSiblingsOnTheSameBranch(t *testing.T) 
 	launcher := peerCard(t, d, "orchestrator")
 	launch := func(name, branch string) *store.Task {
 		t.Helper()
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the launches' stamps so earlier siblings sort first
 		w := peerCard(t, d, name)
 		if err := d.st.SetLineage(w.ID, "orchestrator", launcher.ID); err != nil {
 			t.Fatal(err)
