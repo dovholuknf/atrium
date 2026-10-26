@@ -13660,12 +13660,14 @@ async function groupMenusSection(browser, base) {
       localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
     });
     const patches = [];
+    let refusePatch = false;
     await ctx.route("**/v1/tasks/*", route => {
       const r = route.request();
       if (r.method() !== "PATCH") return route.fallback();
       const id = decodeURIComponent(new URL(r.url()).pathname.split("/").pop());
       const body = JSON.parse(r.postData() || "{}");
       patches.push(id + " " + r.postData());
+      if (refusePatch) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) });
       if (mock.LAND[id]) Object.assign(mock.LAND[id], body);
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND[id] || {}) });
     });
@@ -13757,6 +13759,20 @@ async function groupMenusSection(browser, base) {
     const after = await groupsNow();
     if (after.length !== before || after.filter(n => n === "active").length !== 1) fail("groupMenus: an existing name made a duplicate: " + JSON.stringify(after));
     if (!mock.LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(mock.LAND["land-gm-b"].tags));
+
+    // A save that fails takes the new group back and says so.
+    refusePatch = true;
+    const seen = patches.length;
+    await flyout("land-gm-a", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").fill("broken");
+    await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
+    await p.waitForFunction(() => document.body.textContent.includes("that did not stick"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: a failed save said nothing"));
+    await p.waitForFunction(() => !JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("broken"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: a failed save left the group broken behind"));
+    if (!patches.slice(seen).some(x => /"broken"/.test(x))) fail("groupMenus: the failed save was never sent: " + JSON.stringify(patches.slice(seen)));
+    refusePatch = false;
 
     // Eleven minutes on, discourse and zeta are no longer new. The clock is the page's Date.now.
     await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });

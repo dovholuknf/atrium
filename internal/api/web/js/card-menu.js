@@ -614,12 +614,18 @@ async function createGroupFor(id, t) {
   if (raw === null || !name) return;
   const p = groupingPrefs();
   const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
-  if (!groups.includes(name)) {
+  const made = !groups.includes(name);
+  if (made) {
     groups.push(name);
     setGrouping({ groups, made: Object.assign({}, p.made, { [name]: Date.now() }) });
   }
   const tags = t.tags || [];
-  if (!tags.includes(name)) await patchTask(id, { tags: tags.concat(name) });
+  // patchTask toasts a failure and answers undefined. A group made for a card that never got in is taken back.
+  if (!tags.includes(name) && await patchTask(id, { tags: tags.concat(name) }) === undefined && made) {
+    const now = groupingPrefs(), stamps = Object.assign({}, now.made);
+    delete stamps[name];
+    setGrouping({ groups: (now.groups || []).filter(n => n !== name), made: stamps });
+  }
   refresh();
 }
 
