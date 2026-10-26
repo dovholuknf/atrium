@@ -12930,12 +12930,13 @@ async function mComposeImagesSection(browser) {
     return e.defaultPrevented;
   });
   await p.waitForSelector('#m-compose .mc-file[data-state="ok"]:last-child', { timeout: slow(5000) });
-  await p.waitForTimeout(200);
+  await p.waitForTimeout(200); // wait: absence, a second upload of the one paste would land here
   if (!took || up.n !== n0 + 1) fail(tag + "the paste uploaded " + (up.n - n0) + " times");
 
   // Send clears the chips.
   await p.tap("#m-compose .mc-send");
-  await p.waitForTimeout(300);
+  await until(() => calls.message.length, 5000, "the send").catch(() => {});
+  await p.waitForFunction(() => !document.querySelector("#m-compose .mc-file"), null, { timeout: slow(5000) }).catch(() => {});
   if (await p.evaluate(() => document.querySelectorAll("#m-compose .mc-file").length)) fail(tag + "chips after a send");
   if (calls.message.length !== 1) fail(tag + "sends " + calls.message.length);
   if (!/\/w\/b\.txt/.test(calls.message[0].body.text) || !/\/w\/pasted\.png/.test(calls.message[0].body.text)) fail(tag + "the paths did not leave with the message: " + JSON.stringify(calls.message[0].body));
@@ -12992,7 +12993,7 @@ async function mHarness(browser, view, opts) {
       const body = JSON.parse(route.request().postData() || "{}");
       calls.message.push({ id: m[1], body });
       if (mode.message === "fail") return send(500, JSON.stringify({ error: "the session is gone" }));
-      if (mode.message === "slow") await new Promise(r => setTimeout(r, 400));
+      if (mode.message === "slow") await new Promise(r => setTimeout(r, 400)); // wait: the slow answer the double tap races
       const d = mode.message === "slow" ? "terminal" : mode.message;
       return send(200, JSON.stringify({ delivered: d, warning: d === "parked" ? "no live session" : "" }));
     }
@@ -13020,6 +13021,7 @@ async function mComposeSection(browser) {
     const mount = (id) => p.evaluate((i) => mCompose.mount(document.getElementById("m-compose"), i), id || "c1");
     const type = async (text) => { await p.fill(box, text); };
     const noteText = () => p.evaluate((s) => document.querySelector(s).textContent, note);
+    const hinted = () => p.waitForFunction((s) => /joined with spaces/.test(document.querySelector(s).textContent), note, { timeout: slow(5000) }).catch(() => {});
     await mount();
 
     // Send disabled when empty, 44px target, Enter inserts a newline.
@@ -13079,8 +13081,8 @@ async function mComposeSection(browser) {
     await Promise.all([p.waitForResponse(r => /\/message$/.test(r.url())), p.tap(btn)]);
     if (calls.message[calls.message.length - 1].body.text !== "line a\nline b") fail(tag + "claude multi-line changed: " + JSON.stringify(calls.message[calls.message.length - 1]));
     await mount("c2");
-    await p.waitForTimeout(100);
     await type("line a\nline b");
+    await hinted();
     if (!/joined with spaces/.test(await noteText())) fail(tag + "no join hint: " + await noteText());
     await Promise.all([p.waitForResponse(r => /\/message$/.test(r.url())), p.tap(btn)]);
     const last =calls.message[calls.message.length - 1];
@@ -13108,18 +13110,20 @@ async function mComposeSection(browser) {
     await p.evaluate(() => { window.__cards.push({ id: "plain~c3", runner: "claude", status: "working", title: "plain" }, { id: "paste~c4", runner: "claude", status: "working", title: "paste" }); });
     await mount("plain~c3");
     await type("line a\nline b");
-    await p.waitForTimeout(150);
+    await hinted();
     if (!/joined with spaces/.test(await noteText())) fail(tag + "the room that cannot paste got no join hint: " + await noteText());
+    const read = p.waitForResponse(r => /\/v1\/harnesses$/.test(r.url()) && r.request().headers()["x-atrium-room"] === "paste", { timeout: slow(5000) }).catch(() => {});
     await mount("paste~c4");
     await type("line a\nline b");
-    await p.waitForTimeout(150);
+    await read;
+    await frames(p, 2);
     if (/joined with spaces/.test(await noteText())) fail(tag + "one room's claude took the other room's capability");
     if (calls.harnessRooms.indexOf("plain") < 0 || calls.harnessRooms.indexOf("paste") < 0) fail(tag + "harnesses were not read per room: " + calls.harnessRooms);
     await mount("c1");
 
     // The fixed quick replies are gone, for a working card and for one that is asking.
     await p.evaluate(() => { __cards[0].status = "needs-input"; __emit("cards"); });
-    await p.waitForTimeout(150);
+    await frames(p, 2);
     if (await p.$(".mc-chip, .mc-chips")) fail(tag + "quick reply buttons are still drawn");
 
     // The keyboard lifts the composer by the visual viewport gap.
@@ -13128,7 +13132,7 @@ async function mComposeSection(browser) {
       Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - 300 });
       vv.dispatchEvent(new Event("resize"));
     });
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => document.querySelector("#m-compose .mc").style.getPropertyValue("--mc-lift") === "300px", null, { timeout: slow(5000) }).catch(() => {});
     const lift = await p.$eval("#m-compose .mc", e => e.style.getPropertyValue("--mc-lift"));
     if (lift !== "300px") fail(tag + "lift is " + lift);
 
@@ -13150,7 +13154,7 @@ async function mComposeSection(browser) {
           document.querySelector(".mc-box").value = "Go ahead, and keep the tests green.";
           document.querySelector(".mc-box").dispatchEvent(new Event("input"));
         }, skin);
-        await p.waitForTimeout(400);
+        await p.waitForTimeout(400); // wait: shots only, the face settles before the picture
         fs.mkdirSync(path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m"), { recursive: true });
         await p.screenshot({ path: path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m", "compose-" + skin + "-" + view.width + ".png") });
       }
@@ -13187,8 +13191,7 @@ async function mPermsSection(browser) {
       }
       // Approve and deny bodies.
       await p.tap('.mp-row[data-id="p1"] .mp-btn.approve');
-      await p.waitForFunction(() => true);
-      await p.waitForTimeout(100);
+      await until(() => calls.decide.length, 5000, "the approve").catch(() => {});
       const a = calls.decide[0];
       if (!a || a.url !== "/v1/permissions/p1/decide" || a.body.decision !== "approve" || a.body.forever !== false) fail(tag + "approve: " + JSON.stringify(a));
       if (await p.$eval('.mp-row[data-id="p1"] .mp-btn.approve', b => !b.disabled)) fail(tag + "an answered row can be answered again");
@@ -13201,7 +13204,7 @@ async function mPermsSection(browser) {
       await setPerms([perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "x" }), perm("p4", "c1")]);
       if ((await p.$eval('.mp-reason-box', t => t.value)) !== "use pnpm instead") fail(tag + "an update lost the typed reason");
       await p.tap('.mp-row[data-id="p3"] .mp-reason .go');
-      await p.waitForTimeout(150);
+      await until(() => calls.decide.length >= 2, 5000, "the block").catch(() => {});
       const d = calls.decide[1];
       if (!d || d.url !== "/v1/permissions/r9/decide" || d.room !== "lab" || d.body.decision !== "block" || d.body.reason !== "use pnpm instead") fail(tag + "reason: " + JSON.stringify(d));
       // Plain deny has no reason. A refused answer unlocks the row and says why.
@@ -13217,9 +13220,9 @@ async function mPermsSection(browser) {
       await p.waitForSelector('.mp-row[data-id="beta~p1"]');
       const before = calls.decide.length;
       await p.tap('.mp-row[data-id="beta~p1"] .mp-btn.approve');
-      await p.waitForTimeout(100);
+      await until(() => calls.decide.length >= before + 1, 5000, "the beta approve").catch(() => {});
       await p.tap('.mp-row[data-id="alpha~p1"] .mp-btn.deny:not(.go)');
-      await p.waitForTimeout(150);
+      await until(() => calls.decide.length >= before + 2, 5000, "the alpha deny").catch(() => {});
       const two = calls.decide.slice(before).map(c => c.room + " " + c.url + " " + c.body.decision).join(" | ");
       if (two !== "beta /v1/permissions/p1/decide approve | alpha /v1/permissions/p1/decide block") fail(tag + "two rooms: " + two);
       // All-cards view and its empty state.
@@ -13227,7 +13230,7 @@ async function mPermsSection(browser) {
       if ((await p.$$(".mp-row")).length !== 2) fail(tag + "all view shows " + (await p.$$(".mp-row")).length);
       await setPerms([]);
       await p.waitForFunction(() => !document.querySelector(".mp-empty").hidden, null, { timeout: 2000 });
-      await p.waitForTimeout(400);
+      await p.waitForFunction(() => !document.querySelector(".mp-row"), null, { timeout: slow(5000) }).catch(() => {});
       if ((await p.$$(".mp-row")).length) fail(tag + "rows remained after the store emptied");
       const s0 = await p.evaluate(() => window.__subs);
       await p.evaluate(() => mPerms.unmount());
@@ -13243,7 +13246,7 @@ async function mPermsSection(browser) {
             window.__perms = [{ id: "s1", task_id: "c1", tool: "Bash", command: "npm run build && git status --short", agent: "worker", requested_at: new Date().toISOString(), details: "+ added line\n- removed line" }];
             mPerms.mount(document.getElementById("m-perms"), "c1");
           }, skin);
-          await p.waitForTimeout(400);
+          await p.waitForTimeout(400); // wait: shots only, the face settles before the picture
           await p.screenshot({ path: path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m", "perms-" + skin + "-" + view.width + ".png") });
         }
       }
@@ -15955,8 +15958,7 @@ async function mWorkingSection(browser) {
       await mShot(p, "working-thinking-" + vp.width);
       // events sent before the page's stream is open are lost, so wait for the stream the page holds
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-      const t1 = Date.now();
-      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
       // a tool event shows the tool's name, from the stream
       st.send("task", Object.assign({}, run, { row: 1, activity: { what: "tool", tool: "Bash", seconds: 2 } }));
       await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
@@ -15973,8 +15975,7 @@ async function mWorkingSection(browser) {
       st.streams.forEach(x => { try { x.destroy(); } catch (e) {} });
       st.streams = [];
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on") === false, null, { timeout: slow(5000) }).catch(() => {});
-      const t0 = Date.now();
-      while (!st.streams.length && Date.now() - t0 < slow(15000)) await p.waitForTimeout(200);
+      await until(() => st.streams.length, 15000, "the stream to reopen").catch(() => {});
       if (!st.streams.length) fail(tag + "the stream did not reopen (" + n + " before)");
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
       // the reopen reads the tasks again, so the room's answer must already agree with the event
@@ -16248,7 +16249,7 @@ async function mCompactSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.tap('#m-list .row[data-id="cp-1"]');
     await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
-    await p.waitForTimeout(500);
+    await settleStyle(p);
     const k = await mCompactCount(p);
     console.log("mCompact count: " + JSON.stringify(k));
     await mShot(p, "compact-390");
@@ -16262,13 +16263,12 @@ async function mCompactSection(browser) {
     await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
     await p.tap("#m-compose .mc-send");
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-    await p.waitForTimeout(400);
+    await until(async () => (await mCompactCount(p)).note === 0, 5000, "the sent line to leave").catch(() => {});
     if ((await mCompactCount(p)).note > 0) fail(tag + "a sent line is still above the composer");
     // the activity shares the row above the composer with the send state, and has no box of its own
     const act = mCard("cp-1", { alias: "packer", display_title: "packer", status: "running", activity: { what: "tool", tool: "Bash" }, seen: { turn_ended_at: mIso(20 * M_MIN) } });
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const t1 = Date.now();
-    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     st.send("task", Object.assign({}, act, { row: 1 }));
     await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
     const row = await p.evaluate(() => {
@@ -16318,8 +16318,8 @@ async function mCompactSection(browser) {
     await n.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await n.p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
     await n.p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    await n.p.waitForTimeout(600);
     await n.p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await settleStyle(n.p);
     await mCompactButtons(n.p, tag + "360: ");
     await mShot(n.p, "compact-jump-360");
     if (await mNoSideways(n.p)) fail(tag + "360: the card scrolls sideways");
@@ -16342,7 +16342,7 @@ async function mPinchSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.tap('#m-list .row[data-id="pn-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-    await p.waitForTimeout(500);
+    await settleStyle(p);
     const meta = await p.$eval('meta[name=viewport]', m => m.content);
     if (!/user-scalable=no/.test(meta) || !/maximum-scale=1/.test(meta)) fail(tag + "the browser pinch is not off: " + meta);
     if (await p.$eval("#m-card-scroll", e => getComputedStyle(e).touchAction) !== "pan-y") fail(tag + "touch-action does not stop the browser pinch");
@@ -16372,7 +16372,7 @@ async function mPinchSection(browser) {
     if (!a.mid) fail(tag + "no message in the middle to hold");
     const prevented = await pinch(100, 200);
     if (!prevented) fail(tag + "the pinch was not caught");
-    await p.waitForTimeout(200);
+    await frames(p, 2);
     const b = await state();
     if (b.fs <= a.fs + 3) fail(tag + "spreading did not grow the text: " + a.fs + " to " + b.fs);
     if (b.comp !== a.comp || b.head !== a.head) fail(tag + "the composer or header changed size: " + JSON.stringify([a, b]));
@@ -16391,10 +16391,10 @@ async function mPinchSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.tap('#m-list .row[data-id="pn-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector("#m-replies .md")).fontSize) === 24, null, { timeout: slow(5000) }).catch(() => {});
     if ((await state()).fs !== 24) fail(tag + "the size did not survive a reload");
     await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 600; });
-    await p.waitForTimeout(300);
+    await frames(p, 2);
     const held = await p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;
       const at = document.elementFromPoint(cx, cy).closest(".reply");
@@ -16476,7 +16476,7 @@ async function mTypeSteadySection(browser) {
     await p.tap('#m-list .row[data-id="ty-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
-    await p.waitForTimeout(600);
+    await settleStyle(p);
     const look = () => p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
       const first = [...document.querySelectorAll("#m-replies .reply")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
@@ -16485,9 +16485,9 @@ async function mTypeSteadySection(browser) {
     });
     for (const where of ["bottom", "middle"]) {
       if (where === "middle") await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = Math.round(e.scrollHeight / 3); });
-      await p.waitForTimeout(300);
+      await settleStyle(p);
       await p.tap("#m-compose textarea");
-      await p.waitForTimeout(200);
+      await settleStyle(p);
       const base = await look();
       const steps = [];
       for (let line = 0; line < 10; line++) {
@@ -16500,7 +16500,7 @@ async function mTypeSteadySection(browser) {
         await p.keyboard.press("Shift+Enter");
         if (line === 3) await p.setViewportSize({ width: 390, height: 844 - 320 });
         if (line === 7) await p.setViewportSize({ width: 390, height: 844 });
-        await p.waitForTimeout(60);
+        await frames(p, 2);
       }
       if (steps.length) fail(tag + where + ": the thread moved " + JSON.stringify({ base, step: steps[0] }));
       const end = await look();
@@ -16519,15 +16519,14 @@ async function mTypeSteadySection(browser) {
     for (let i = 0; i < 4; i++) await p.keyboard.press("Backspace");
     if (await p.$eval("#m-compose textarea", t => t.value)) fail(tag + "the box did not empty");
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const t1 = Date.now();
-    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     const at2 = mIso(1 * M_MIN);
     st.replies["ty-1"] = { source: "transcript", replies: st.replies["ty-1"].replies.concat([{ at: at2, text: "A new reply that must be followed. " + "more ".repeat(60) }]) };
     st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
     await p.waitForFunction(() => /must be followed/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
     const readGap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight; });
     let gap = await readGap();
-    for (const t2 = Date.now(); gap > 4 && Date.now() - t2 < slow(3000);) { await p.waitForTimeout(10); gap = await readGap(); }
+    await until(async () => (gap = await readGap()) <= 4, 3000, "the thread to follow").catch(() => {});
     if (gap > 4) fail(tag + "an emptied but focused box still holds the thread, gap " + gap);
     // and the next input pins again
     await p.keyboard.type("x");
@@ -16573,7 +16572,7 @@ async function mOlderRun(browser, cfg) {
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForSelector("#m-older", { timeout: slow(5000) });
     if (cfg.fs) await p.evaluate(f => document.getElementById("m-card").style.setProperty("--m-fs", f + "px"), cfg.fs);
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     const ov = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollHeight, e.clientHeight]; });
     if (ov[0] <= ov[1] + 40) fail(tag + "the thread does not overflow its box, so the top cannot be reached: " + ov.join(" in "));
     if (!st.hits.includes("ol-1?50")) fail(tag + "the first page was not asked for with n=50: " + st.hits.join(","));
@@ -16586,9 +16585,8 @@ async function mOlderRun(browser, cfg) {
     // reaching the top asks once, after a short wait, and an empty page with more=true does not end it
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await p.waitForFunction(h => h, olderHits("cur-A") > 0, { timeout: 100 }).catch(() => {});
-    const t0 = Date.now();
-    while (olderHits("cur-A") < 1 && Date.now() - t0 < slow(4000)) await p.waitForTimeout(50);
-    await p.waitForTimeout(900);
+    await until(() => olderHits("cur-A") >= 1, 4000, "the first older page").catch(() => {});
+    await p.waitForTimeout(900); // wait: absence, a second ask for the top would land here
     if (olderHits("cur-A") !== 1) fail(tag + "reaching the top asked " + olderHits("cur-A") + " times: " + st.hits.join(","));
     if (olderHits("cur-B") !== 0) fail(tag + "the empty page led to a loop: " + st.hits.join(","));
     if (!(await p.$("#m-older"))) fail(tag + "an empty page with more=true removed the row");
@@ -16597,10 +16595,10 @@ async function mOlderRun(browser, cfg) {
     await p.tap("#m-older");
     await p.waitForFunction(() => document.querySelectorAll("#m-replies [data-k]").length > 8, null, { timeout: slow(5000) });
     if (olderHits("cur-B") !== 1) fail(tag + "the click did not follow next_before: " + st.hits.join(","));
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     const after = await p.evaluate(k => { const e = [...document.querySelectorAll("#m-replies [data-k]")].find(x => x.dataset.k === k); return e ? Math.round(e.getBoundingClientRect().top) : null; }, before.k);
     if (after === null || Math.abs(after - before.y) > 2) fail(tag + "the bubble at the top moved: " + JSON.stringify({ before, after }));
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: absence, a click must not go on to the next page by itself
     if (olderHits("cur-C") !== 0) fail(tag + "a click went on to ask for the next page by itself: " + st.hits.join(","));
     const o = await p.evaluate(() => {
       const times = [...document.querySelectorAll("#m-replies .reply time")].map(t => Date.parse(t.getAttribute("datetime")));
@@ -16620,8 +16618,7 @@ async function mOlderRun(browser, cfg) {
     await mShot(p, "older-390");
     // the newest window moves on with new entries after a load: nothing that fell out of it goes missing
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const ts = Date.now();
-    while (!st.streams.length && Date.now() - ts < slow(10000)) await p.waitForTimeout(100);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     const fresh = [1, 2, 3].map(i => ({ at: mIso((10 - i) * 0.5 * M_MIN), text: "Fresh " + i + ". " + "newer words. ".repeat(4) }));
     st.replies["ol-1"] = { source: "transcript", replies: latest.slice(3).concat(fresh), prompts: [], more: true, next_before: "cur-A" };
     st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.2 * M_MIN) }));
@@ -16630,10 +16627,9 @@ async function mOlderRun(browser, cfg) {
     if (kept.r2 !== 1 || kept.r3 !== 1 || kept.r112 !== 1 || kept.fresh !== 3) fail(tag + "a refreshed window left a gap or a repeat: " + JSON.stringify(kept));
     // a failure shows a retry row, makes no further request of its own, and the retry goes on
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    const t1 = Date.now();
-    while (olderHits("cur-C") < 1 && Date.now() - t1 < slow(4000)) await p.waitForTimeout(50);
+    await until(() => olderHits("cur-C") >= 1, 4000, "the failing page").catch(() => {});
     await p.waitForFunction(() => /retry/.test((document.getElementById("m-older") || {}).textContent || ""), null, { timeout: slow(5000) });
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: absence, a failure must not be asked again on its own
     if (olderHits("cur-C") !== 1) fail(tag + "a failure was asked again on its own: " + st.hits.join(","));
     await p.tap("#m-older");
     await p.waitForFunction(() => !document.getElementById("m-older"), null, { timeout: slow(5000) });
@@ -16715,9 +16711,16 @@ async function mFollowSection(browser) {
     await p.tap('#m-list .row[data-id="fo-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const t1 = Date.now();
-    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
-    await p.waitForTimeout(500);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
+    await settleStyle(p);
+    await p.evaluate(() => { window.__reads = 0; const was = window.mNet.api; window.mNet.api = async function (path) { try { return await was.apply(this, arguments); } finally { if (/\/replies\?/.test(path)) window.__reads++; } }; });
+    let reads = 0;
+    const applied = async () => {
+      if (tick % 3 === 2) await p.waitForFunction(w => document.getElementById("m-working").textContent.includes(w), "Tool" + tick, { timeout: slow(5000) }).catch(() => {});
+      else await p.waitForFunction(k => window.__reads >= k, reads, { timeout: slow(5000) }).catch(() => {});
+      await frames(p, 2);
+    };
+    const atEnd = () => p.waitForFunction(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight <= 3; }, null, { timeout: slow(5000) }).catch(() => {});
     const gap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return Math.round(e.scrollHeight - e.scrollTop - e.clientHeight); });
     const look = () => p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
@@ -16728,9 +16731,9 @@ async function mFollowSection(browser) {
     const output = async () => {
       tick++;
       const kind = tick % 3;
-      if (kind === 1) { n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(Math.max(0.1, 30 - tick)) })); }
+      if (kind === 1) { n++; reads++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(Math.max(0.1, 30 - tick)) })); }
       else if (kind === 2) st.send("task", Object.assign({}, c, { row: 1, activity: { what: "tool", tool: "Tool" + tick, seconds: tick } }));
-      else { st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
+      else { reads++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
     };
     if ((await gap()) > 4) fail(tag + "did not open at the bottom: " + await gap());
     // a finger goes down and drags slowly up for 8 s while output arrives every 2 s: four outputs, each of the three kinds
@@ -16738,13 +16741,13 @@ async function mFollowSection(browser) {
     const X = 200;
     let y = 600;
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: X, y }] });
-    await p.waitForTimeout(150);
+    await frames(p, 2);
     const t0 = Date.now();
     let base = null, bad1 = null, last = null, nextOut = t0 + 1000;
     while (Date.now() - t0 < 8000) {
       y += Number(process.env.FOLLOW_STEP || 0.5);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: X, y: Math.round(y) }] });
-      await p.waitForTimeout(100);
+      await p.waitForTimeout(100); // wait: the pace of a slow drag
       if (Date.now() >= nextOut) { nextOut += 2000; await output(); }
       const s = await look();
       if (!base && s.k) base = s;
@@ -16759,33 +16762,33 @@ async function mFollowSection(browser) {
     if (bad1) fail(tag + bad1);
     if (!base) fail(tag + "no bubble to hold " + JSON.stringify(await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); return [sc.scrollTop, sc.scrollHeight, sc.clientHeight, document.querySelectorAll("#m-replies [data-k]").length, [...document.querySelectorAll("#m-replies [data-k]")].map(e => Math.round(e.getBoundingClientRect().height))]; })));
     // after the finger lifts, a reader above the bottom still keeps still, through more output
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum after a touch ends
     const rest = await look();
-    for (let i = 0; i < 3; i++) { await output(); await p.waitForTimeout(700); }
+    for (let i = 0; i < 3; i++) { await output(); await applied(); }
     const after = await look();
     if (after.k === rest.k && (Math.abs(after.top - rest.top) > 2 || Math.abs(after.y - rest.y) > 2)) fail(tag + "a reader who let go was moved: " + JSON.stringify({ rest, after }));
     // parked 100 px above the bottom: replies arrive and nothing moves
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = e.scrollHeight - e.clientHeight - 100; });
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: the page's 120ms scroll window, a paint inside it is deferred
     const park = await look();
-    for (let i = 0; i < 3; i++) { await output(); await p.waitForTimeout(700); }
+    for (let i = 0; i < 3; i++) { await output(); await applied(); }
     const parked = await look();
     if (Math.abs(parked.top - park.top) > 2) fail(tag + "a reader parked 100px above the bottom was moved: " + JSON.stringify({ park, parked }));
     if ((await gap()) < 90) fail(tag + "the thread went back to the bottom under a parked reader: " + await gap());
     // the jump arrow resumes following
     await p.tap("#m-jump");
-    await p.waitForTimeout(500);
+    await atEnd();
     if ((await gap()) > 3) fail(tag + "the jump arrow did not reach the bottom: " + await gap());
-    await output(); await p.waitForTimeout(900);
+    await output(); await applied(); await atEnd();
     if ((await gap()) > 3) fail(tag + "following did not resume after the jump arrow: " + await gap());
     // scrolling back to the very bottom by hand resumes it too, and a little way up does not
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = e.scrollTop - 300; });
-    await p.waitForTimeout(500);
-    await output(); await p.waitForTimeout(900);
+    await p.waitForTimeout(500); // wait: the page's 120ms scroll window, a paint inside it is deferred
+    await output(); await applied();
     if ((await gap()) < 250) fail(tag + "a reader 300px up was pulled down: " + await gap());
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 })); e.scrollTop = e.scrollHeight; });
-    await p.waitForTimeout(600);
-    await output(); await p.waitForTimeout(900);
+    await frames(p, 2);
+    await output(); await applied(); await atEnd();
     if ((await gap()) > 3) fail(tag + "scrolling to the very bottom did not resume following: " + await gap());
     // a touch is over only when the last finger lifts: touchend with another finger still down keeps it
     await p.evaluate(() => {
@@ -16794,14 +16797,15 @@ async function mFollowSection(browser) {
       sc.dispatchEvent(new TouchEvent("touchend", { touches: [t(2)], targetTouches: [t(2)], changedTouches: [t(1)], bubbles: true, cancelable: true }));
       sc.scrollTop = sc.scrollHeight;
     });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum and 120ms scroll window
     const nBefore = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
-    n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.05) }));
-    await p.waitForTimeout(1200);
+    n++; reads++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.05) }));
+    await p.waitForFunction(k => window.__reads >= k, reads, { timeout: slow(5000) }).catch(() => {});
+    await frames(p, 2);
     const nDuring = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
     if (nDuring !== nBefore) fail(tag + "a finger still down was treated as lifted, the thread was redrawn under it: " + nBefore + " to " + nDuring);
     await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new TouchEvent("touchend", { touches: [], targetTouches: [], changedTouches: [], bubbles: true, cancelable: true })); });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum after the last finger lifts
     // a pen dragged on a touch screen ends with pointercancel and no pointerup: the thread must still stick again at the bottom
     await p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll");
@@ -16809,10 +16813,11 @@ async function mFollowSection(browser) {
       sc.dispatchEvent(new PointerEvent("pointercancel", { pointerType: "pen", pointerId: 7, bubbles: true }));
       sc.scrollTop = sc.scrollHeight;
     });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum after the pen's pointercancel
     const nPen = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
     n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.04) }));
-    await p.waitForTimeout(1500);
+    await p.waitForFunction(k => document.querySelectorAll("#m-replies [data-k]").length > k, nPen, { timeout: slow(5000) }).catch(() => {});
+    await atEnd();
     const nPen2 = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
     if (nPen2 <= nPen) fail(tag + "after a pen's pointercancel the thread still counts as held, nothing new was drawn: " + nPen + " to " + nPen2);
     if ((await gap()) > 3) fail(tag + "after a pen's pointercancel the thread never stuck to the bottom again: " + await gap());
@@ -17005,7 +17010,7 @@ async function mNoSidewaysSection(browser) {
         await p.tap("#m-opts-btn");
         for (const tab of ["#m-seg-needs", "#m-seg-all"]) {
           await p.tap(tab);
-          await p.waitForTimeout(300);
+          await settleStyle(p);
           const r = await p.evaluate(() => {
             const vw = window.innerWidth, bad = [];
             for (const e of document.body.querySelectorAll("*")) {
@@ -17057,7 +17062,7 @@ async function mPullSection(browser) {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
       for (let i = 1; i <= steps; i++) {
         await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: Math.round(y0 + (y1 - y0) * i / steps) }] });
-        await p.waitForTimeout(25);
+        await p.waitForTimeout(25); // wait: the pace of a finger drag
       }
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     };
@@ -17086,18 +17091,18 @@ async function mPullSection(browser) {
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.scrollTop = 500; });
     await frames(p, 3);
     await drag(200, 300, 520, 12);
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull from mid-thread reloaded the page");
     // from the composer, and from the viewer over the card
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await drag(200, 870, 900, 6);
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull from the composer reloaded the page");
     await p.evaluate(() => window.mViewer.open("pl-2", "/w/card/a.txt"));
     await p.waitForFunction(() => window.mViewer.isOpen(), null, { timeout: slow(5000) });
     await frames(p, 3);
     await drag(200, 200, 420, 12);
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull from the viewer reloaded the page");
     if (!(await p.evaluate(() => window.mViewer.isOpen()))) fail(tag + "a pull closed the viewer");
     await p.evaluate(() => window.mViewer.close && window.mViewer.close());
@@ -17106,7 +17111,7 @@ async function mPullSection(browser) {
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await frames(p, 3);
     await drag(200, 200, 240, 4);
-    await p.waitForTimeout(600);
+    await p.waitForTimeout(600); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a short pull reloaded the page");
     if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner stayed after a short pull");
     // a send in flight is not lost to a pull: no spinner and no reload until the room has answered
@@ -17121,10 +17126,10 @@ async function mPullSection(browser) {
     const at0 = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
     if (at0 !== 0) fail(tag + "the thread was not at its top for the in-flight case: " + at0);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
-    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); } // wait: the pace of a finger drag
     if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner started while a send was in flight");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    await p.waitForTimeout(800);
+    await p.waitForTimeout(800); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull reloaded the page with a send in flight");
     release();
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
@@ -17132,14 +17137,13 @@ async function mPullSection(browser) {
     await frames(p, 3);
     // a pull at the very top shows a spinner and reloads
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
-    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); } // wait: the pace of a finger drag
     const spin = await p.evaluate(() => { const e = document.getElementById("m-pull"); return { shown: !e.hidden, go: e.classList.contains("go") }; });
     if (!spin.shown || !spin.go) fail(tag + "no spinner while pulling at the top: " + JSON.stringify(spin));
     await mShot(p, "pull-412");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    const t0 = Date.now();
-    while (await kept().catch(() => false) && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
-    await p.waitForTimeout(500);
+    await until(async () => !(await kept().catch(() => false)), 5000, "the reload").catch(() => {});
+    await p.waitForLoadState("domcontentloaded").catch(() => {});
     if (await kept().catch(() => false)) fail(tag + "a pull at the top did not reload the page");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -17458,7 +17462,7 @@ async function mDocsSection(browser) {
       if (!/published 1 document$/.test(await p.textContent("#m-card-docs"))) fail(tag + "the card line is wrong: " + await p.textContent("#m-card-docs"));
       st.send("task", Object.assign({}, st.tasks[0], { row: 1, output_at: mIso(0.1 * M_MIN) }));
       st.send("task", Object.assign({}, st.tasks[0], { row: 1, output_at: mIso(0.05 * M_MIN) }));
-      await p.waitForTimeout(800);
+      await p.waitForTimeout(800); // wait: absence, a second ask for the card line would land here
       const asks = hub.log.filter(r => r.path === "/_hub/docs" && /card=dc-1/.test(r.q)).length;
       if (asks !== 1) fail(tag + "the card line asked " + asks + " times inside 30 seconds");
       await p.tap("#m-card-docs");
@@ -17549,8 +17553,7 @@ async function mOutputAtSection(browser) {
       await p.tap('#m-list .row[data-id="out-1"]');
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-      const t1 = Date.now();
-      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
       const reads = () => st.hits.filter(h => h === "out-1?50").length;
       st.hits.length = 0;
       // a newer output_at re-reads once
@@ -17564,7 +17567,7 @@ async function mOutputAtSection(browser) {
       const bare = Object.assign({}, c, { row: 1, activity: { what: "thinking" } });
       delete bare.output_at;
       st.send("task", bare);
-      await p.waitForTimeout(700);
+      await p.waitForTimeout(700); // wait: absence, a second read would land here
       if (reads() !== 1) fail(tag + "the same or an absent output_at read again: " + reads());
       // and the next newer one reads again
       const at3 = mIso(M_MIN);
@@ -17645,8 +17648,7 @@ async function mStickBottomSection(browser) {
       await p.waitForFunction(() => Array.from(document.querySelectorAll("#m-replies img")).every(i => i.complete), null, { timeout: slow(5000) });
       await settled("after the late image loaded");
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-      const t1 = Date.now();
-      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
       // a new reply while following lands on it
       st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }]) };
       st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(30000) } }));
@@ -17660,11 +17662,11 @@ async function mStickBottomSection(browser) {
       st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }, { at: mIso(1000), text: "LATER one " + "x ".repeat(100) }]) };
       st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(500) } }));
       await p.waitForFunction(() => /LATER one/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-      await p.waitForTimeout(300);
+      await p.waitForTimeout(300); // wait: absence, a pull down to the newest would land here
       if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 5) fail(tag + "the view was pulled down while scrolled up on purpose");
       if (!(await jump())) fail(tag + "no jump control while scrolled up");
       await p.evaluate(() => window.visualViewport.dispatchEvent(new Event("resize")));
-      await p.waitForTimeout(200);
+      await p.waitForTimeout(200); // wait: absence, a pull down to the newest would land here
       if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 5) fail(tag + "the keyboard pulled a scrolled-up view down");
       await mShot(p, "stick-jump-" + vp.width);
       await p.tap("#m-jump");
@@ -17690,11 +17692,11 @@ async function mStickBottomSection(browser) {
       await settled("own message");
       // closing the recap sheet gives back what the reader had: a reader at the top stays there
       await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-      await p.waitForTimeout(400);
+      await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) }).catch(() => {});
       await p.tap("#m-recap-open");
       await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
       await p.tap("#m-recap-close");
-      await p.waitForTimeout(500);
+      await p.waitForTimeout(500); // wait: absence, a move of the reader at the top would land here
       if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 4) fail(tag + "closing the recap moved a reader at the top");
       // and one following the end still follows
       await p.tap("#m-jump");
@@ -17737,7 +17739,7 @@ async function mSendFreeSection(browser) {
         await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       };
       const box = () => p.evaluate(() => ({ v: document.querySelector("#m-compose textarea").value, off: document.querySelector("#m-compose .mc-send").disabled }));
-      const answered = async () => { const t0 = Date.now(); while (!release && Date.now() - t0 < slow(5000)) await p.waitForTimeout(50); const f = release; release = null; f(); };
+      const answered = async () => { await until(() => release, 5000, "the send to reach the room").catch(() => {}); const f = release; release = null; f(); };
       // a slow send: the box is clear and usable at once, the row is pending
       await type("first message");
       await p.tap("#m-compose .mc-send");
@@ -19619,7 +19621,7 @@ async function mHomeOrderSection(browser) {
   ];
   const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
   const heads = p => p.$$eval("#m-list h2.grp", e => e.map(x => x.textContent.replace(/\s+/g, " ").trim()));
-  const pick = async (p, sel) => { await p.tap(sel); await p.waitForTimeout(150); };
+  const pick = async (p, sel) => { await p.tap(sel); await frames(p, 2); };
   try {
     for (const vp of M_VIEWS) {
       st.tasks = cards();
@@ -20065,7 +20067,7 @@ async function mHostileSection(browser) {
       st.fileHits = [];
       const { ctx, p, errors, remote } = await mReplyPage(browser, st, vp, "ev-1");
       await p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the inside image did not load"));
-      await p.waitForTimeout(400);
+      await p.waitForTimeout(400); // wait: absence, a script, a remote read or an outside download would land here
       const d = await p.evaluate(() => {
         const r = document.getElementById("m-replies");
         return {
@@ -22825,7 +22827,7 @@ async function mReloadSection(browser) {
     await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
     await p.evaluate(() => window.mBuild.check());
     const base = loads;
-    const settle = ms => p.waitForTimeout(ms);
+    const settle = ms => p.waitForTimeout(ms); // wait: absence, a reload would land here
     const tag = "mReload: ";
 
     // same id: nothing
@@ -22986,8 +22988,8 @@ async function mActivityReadSection(browser) {
     const want = JSON.stringify([r.last_activity_at, r.prompted_at, r.output_at]);
     await p.waitForFunction(w => { const c = window.mStore.cards()[0]; return c && JSON.stringify([c.last_activity_at, c.prompted_at, c.output_at]) === w; }, want, { timeout: slow(4000) }).catch(() => {});
   };
-  const readsReach = async n => { const end = Date.now() + slow(3000); while (reads() < n && Date.now() < end) await new Promise(r => setTimeout(r, 20)); return reads(); };
-  const readsSettle = async () => { await new Promise(r => setTimeout(r, slow(300))); return reads(); };
+  const readsReach = async n => { await until(() => reads() >= n, 3000, "the reads").catch(() => {}); return reads(); };
+  const readsSettle = async () => { await new Promise(r => setTimeout(r, slow(300))); return reads(); }; // wait: absence, an extra read would land here
   try {
     const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
     p = await ctx.newPage();
@@ -23070,11 +23072,14 @@ async function mReviewSection(browser, base) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     // 3. The read starts on a bare `task` event, and is answered 900ms later with what the list was when it began.
     st.tasksSlow = 900;
+    const asked = st.tasksAsked || 0;
+    const answered = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/tasks", { timeout: slow(5000) }).catch(() => {});
     st.send("task", {});
-    await p.waitForTimeout(450);
+    await until(() => (st.tasksAsked || 0) > asked, 5000, "the slow read").catch(() => {});
     st.send("task", Object.assign({}, st.tasks[0], { row: 1, status: "done" }));
     st.send("task-removed", { id: "b-1" });
-    await p.waitForTimeout(1300);
+    await answered;
+    await frames(p, 2);
     const got = await p.evaluate(() => ({ a: (window.mStore.card("a-1") || {}).status, b: !!window.mStore.card("b-1") }));
     if (got.a !== "done") fail(tag + "an older read put the card back to " + got.a);
     if (got.b) fail(tag + "an older read brought a removed card back");
@@ -23086,18 +23091,18 @@ async function mReviewSection(browser, base) {
       await p.waitForSelector('#m-list .row[data-id="z-1"]', { timeout: slow(5000) });
       await p.tap('#m-list .row[data-id="' + first + '"]');
       await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
-      await p.waitForTimeout(500);
+      await settleStyle(p);
       // Right after the back button's popstate, which starts the slide-out, and before it can have finished.
       await p.evaluate(([id, again]) => new Promise(done => {
         addEventListener("popstate", () => { window.mCard.open(again); done(); }, { once: true });
         window.mCard.close();
       }), [first, second]);
-      await p.waitForTimeout(700);
+      await p.waitForFunction(id => window.mCard.current() === id && document.getElementById("m-card").classList.contains("on") && !document.getElementById("m-card").hidden, second, { timeout: slow(5000) }).catch(() => {});
       const now = await p.evaluate(() => ({ cur: window.mCard.current(), on: document.getElementById("m-card").classList.contains("on"), hidden: document.getElementById("m-card").hidden }));
       if (now.cur !== second || !now.on || now.hidden) fail(tag + "a tap on " + second + " just after closing " + first + " did nothing: " + JSON.stringify(now));
       await p.evaluate(() => window.mCard.close());
       await p.waitForFunction(() => !document.getElementById("m-card").classList.contains("on"), null, { timeout: slow(2000) });
-      await p.waitForTimeout(600);
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) }).catch(() => {});
       if (await p.evaluate(() => !document.getElementById("m-card").hidden)) fail(tag + "the sheet stayed up after a close");
     }
     if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
@@ -23147,12 +23152,12 @@ async function mReviewSection(browser, base) {
       await p.waitForSelector('#m-list .row[data-id="alpha~a-1"]', { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="alpha~a-1"]');
       await p.waitForSelector("#m-card.on .mp-row", { timeout: slow(10000) });
-      await p.waitForTimeout(700);
+      await p.waitForTimeout(700); // wait: shots only, the face settles before the picture
       fs.mkdirSync(process.env.REVIEW_SHOTS, { recursive: true });
       const nm = process.env.REVIEW_SHOT_NAME || "shot";
       await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, nm + "-rows-390.png") });
       await p.tap('.mp-row[data-id="alpha~p1"] .mp-btn.approve');
-      await p.waitForTimeout(900);
+      await p.waitForTimeout(900); // wait: shots only, the face settles before the picture
       await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, nm + "-approve-390.png") });
       console.log("review shots " + nm + ": decides " + JSON.stringify(hub.decides));
       await ctx.close();
@@ -23175,7 +23180,7 @@ async function mReadRetrySection(browser) {
       await p.clock.install();
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
-      for (let t = 0; t < 6500; t += 100) { await p.clock.runFor(100); await new Promise(r => setTimeout(r, 10)); }
+      for (let t = 0; t < 6500; t += 100) { await p.clock.runFor(100); await new Promise(r => setTimeout(r, 10)); } // wait: real time for each failed read to land between fake clock steps
       const n = st.permsHits;
       if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
       if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
@@ -23204,7 +23209,7 @@ async function mBellSection(browser) {
       if (!(await vis("#m-bell"))) fail(tag + "no bell in the header");
       if (!(await vis("#m-sound-hint"))) fail(tag + "no tap-to-enable hint while sound is locked");
       await p.tap("#m-seg-all");
-      await p.waitForTimeout(150);
+      await p.waitForFunction(() => { const e = document.querySelector("#m-sound-hint"); return !e || e.hidden || !e.getClientRects().length; }, null, { timeout: slow(5000) }).catch(() => {});
       if (await vis("#m-sound-hint")) fail(tag + "the hint is still up after a touch");
       // a request arrives: the sound plays and the bell counts it
       st.perms = [{ id: "px" + vp.width, task_id: "b-1", tool: "Bash", command: "ls", requested_at: mIso(0) }];
@@ -23223,7 +23228,7 @@ async function mBellSection(browser) {
       st.perms = [{ id: "py" + vp.width, task_id: "b-1", tool: "Bash", command: "pwd", requested_at: mIso(0) }];
       st.send("permission", {});
       await p.waitForFunction(() => document.getElementById("m-log-list") && true, null, { timeout: slow(1000) });
-      await p.waitForTimeout(500);
+      await p.waitForTimeout(500); // wait: absence, a sound would land here
       if ((await p.evaluate(() => window.__osc)) !== before) fail(tag + "a muted page made a sound");
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
@@ -23611,16 +23616,12 @@ async function mViewerSection(browser) {
       const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
       // What the mock server saw of a streamed file: it waits for the read to be cut, or for the server to finish it.
       const streamEnd = async key => {
-        for (let t = 0; t < slow(10000); t += 50) {
-          const r = (st.streamed || {})[key] || {};
-          if (r.aborted) return r;
-          await p.waitForTimeout(50);
-        }
+        await until(() => ((st.streamed || {})[key] || {}).aborted, 10000, "the read to be cut").catch(() => {});
         return (st.streamed || {})[key] || {};
       };
       // markdown, through the safe renderer, and Back restores the thread's scroll
       await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 300; });
-      await p.waitForTimeout(150);
+      await frames(p, 2);
       const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
       await p.evaluate(s => document.querySelector(s).click(), file("plan.md"));
       await settle();
@@ -23708,7 +23709,7 @@ async function mViewerSection(browser) {
       await settle();
       v = await viewer();
       if (!/Can't preview pack\.zip \(2\.9 KB\)\. Download\?/.test(v.text)) fail(tag + "the question says: " + v.text);
-      await p.waitForTimeout(200);
+      await p.waitForTimeout(200); // wait: absence, a read before the answer would land here
       if (st.fileReqs.some(r => r.method === "GET")) fail(tag + "the file was read before the question was answered");
       const dl = p.waitForEvent("download", { timeout: slow(5000) });
       await p.tap("#m-viewer-body .v-btn");
@@ -23823,7 +23824,7 @@ async function mHomeLiveSection(browser) {
       if (c.o[key] !== state.order) await p.tap('[data-opt="order"][data-val="' + state.order + '"]');
       if (c.o.group !== state.group) await p.tap('[data-opt="group"][data-val="' + state.group + '"]');
       for (const f of ["needsMe", "hideDone", "hideSubs"]) { c = await cur(); if (!!c.o[f] !== !!state[f]) await p.tap('[data-opt="' + f + '"]'); }
-      await p.waitForTimeout(120);
+      await frames(p, 2);
     };
     const check = async (name, state) => {
       const tag = "mHomeLive " + name + ": ";
@@ -23925,9 +23926,9 @@ async function mChangesSection(browser) {
       if (await p.$$eval(".reply", e => e.length) !== 3 || st.changeReqs.length) fail(tag + "the thread asked for changes before a tap: " + st.changeReqs.length);
       const sheet = () => p.evaluate(() => { const s = document.getElementById("m-changes"); return { open: !s.hidden, title: document.getElementById("m-changes-title").textContent, text: document.getElementById("m-changes-body").textContent, state: history.state && history.state.mchg || "" }; });
       const wait = fn => p.waitForFunction(fn, null, { timeout: slow(6000) });
-      const back = async () => { await p.goBack(); await p.waitForTimeout(150); };
+      const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-changes").hidden, null, { timeout: slow(5000) }).catch(() => {}); };
       await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 120; });
-      await p.waitForTimeout(150);
+      await frames(p, 2);
       const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
       // the turn
       const chipFor = at => '.chg-chip[data-at="' + at + '"]';
@@ -23978,8 +23979,7 @@ async function mChangesSection(browser) {
       await p.fill("#m-compose textarea", "why 10?");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
-      await p.waitForFunction(() => true);
-      await p.waitForTimeout(300);
+      await until(() => posted.length, 5000, "the send").catch(() => {});
       const hh = new Date(at1).getHours().toString().padStart(2, "0") + ":" + new Date(at1).getMinutes().toString().padStart(2, "0");
       const want = "review comment on internal/api/web/m/js/card.js line 12, removed (turn " + hh + ", head 1a2b3c4):\n    -const REPLIES_N = 3;\n" +
         "review comment on internal/api/web/m/js/card.js line 12 (turn " + hh + ", head 1a2b3c4):\n    +const REPLIES_N = 10;\nwhy 10?";
@@ -23990,7 +23990,7 @@ async function mChangesSection(browser) {
       await p.fill("#m-compose textarea", "ok");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
-      await p.waitForTimeout(300);
+      await until(() => posted.length >= 2, 5000, "the send").catch(() => {});
       if (posted.length !== 2 || !posted[1].text.includes("line 10 (turn " + hh + ", head 1a2b3c4):\n     const U = window.mUtil;\nok")) fail(tag + "a context line was quoted as " + JSON.stringify(posted[1]));
       // text size
       await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
@@ -24036,7 +24036,7 @@ async function mChangesSection(browser) {
       await p.fill("#m-compose textarea", "danger");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
-      await p.waitForTimeout(300);
+      await until(() => posted.length, 5000, "the send").catch(() => {});
       const evil = (posted[0] || {}).text || "";
       if (/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/.test(evil)) fail(tag + "a control character reached the message: " + JSON.stringify(evil));
       if (evil.split("\n").length !== 3) fail(tag + "the message split into " + evil.split("\n").length + " lines: " + JSON.stringify(evil));
@@ -24064,12 +24064,12 @@ async function mChangesSection(browser) {
       st.send("task", Object.assign({ row: 1 }, st.tasks[0]));
       await wait(() => /the agent is still working/.test(document.getElementById("m-changes-body").textContent));
       const n = st.changeReqs.length;
-      await p.waitForTimeout(300);
+      await p.waitForTimeout(300); // wait: absence, a read while running would land here
       if (st.changeReqs.length !== n) fail(tag + "the sheet asked again while the card was running");
       st.tasks[0] = Object.assign({}, c1, { status: "needs-input", seen: { turn_ended_at: new Date().toISOString() } });
       st.send("task", Object.assign({ row: 1 }, st.tasks[0]));
       await wait(() => !/the agent is still working/.test(document.getElementById("m-changes-body").textContent));
-      await p.waitForTimeout(200);
+      await until(() => st.changeReqs.length >= n + 1, 5000, "the read on stop").catch(() => {});
       if (st.changeReqs.length !== n + 1) fail(tag + "the card's Stop made " + (st.changeReqs.length - n) + " reads, not one");
       await back();
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
@@ -25435,7 +25435,7 @@ async function mChangeReqPage(browser, st, vp, o) {
   await p.goto(st.url + "/m/" + (o.query || ""), { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
   await p.waitForFunction(() => window.mRequests && window.mRequests.state && (window.mRequests.state.loaded || window.mRequests.state.note), null, { timeout: slow(8000) });
-  await p.waitForTimeout(150);
+  await frames(p, 2);
   return { ctx, p, errors, hub };
 }
 
@@ -25544,7 +25544,7 @@ async function mChangeReqSection(browser) {
       try {
         if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + "a banner with the mock off");
         await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
-        await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(400);
+        await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForFunction(() => window.mRequests && window.mRequests.state && (window.mRequests.state.loaded || window.mRequests.state.note), null, { timeout: slow(8000) }).catch(() => {});
         if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + "localStorage still turns the mock on");
       } finally { await ctx.close(); }
 
@@ -25662,7 +25662,7 @@ async function mChangeReqSection(browser) {
         await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
         await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
         await p.tap("#m-card-changes"); await p.waitForSelector(".cg-sub");
-        await p.waitForTimeout(200);
+        await p.waitForTimeout(200); // wait: absence, a Pushed line or a call would land here
         if (await p.$(".cg-pushed") || asked.length) fail(tag0 + ": a card with no branch got a Pushed line or a call");
       } finally { await ctx.close(); }
     }
@@ -25691,10 +25691,10 @@ async function mCrShots(browser, st) {
         if (view === "closed") { await p.tap(".crm-seg button:nth-child(2)"); await p.tap('.crm-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test((document.querySelector(".crm-ttl") || {}).textContent || "") && document.querySelectorAll(".crm-tl li").length >= 3); }
         if (view === "form") { await p.tap(".crm-bar .crm-btn"); await p.waitForSelector(".crm-form"); }
       }
-      await p.waitForTimeout(250);
+      await p.waitForTimeout(250); // wait: shots only, the face settles before the picture
       const h = await p.evaluate(() => { const sc = document.querySelector("#m-requests:not([hidden]) .crm-scroll") || document.querySelector(".v-scroll"); return sc ? sc.scrollHeight + 90 : 844; });
       await p.setViewportSize({ width: 390, height: Math.min(5000, Math.max(844, h)) });
-      await p.waitForTimeout(200);
+      await p.waitForTimeout(200); // wait: shots only, the face settles before the picture
       await p.screenshot({ path: require("path").join(dir, "m-requests-" + view + "-390-" + skin + ".png") });
     } finally { await ctx.close(); }
   }
@@ -28395,6 +28395,7 @@ function mServer(state) {
     const p = u.pathname;
     const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
     if (p === "/v1/tasks") {
+      state.tasksAsked = (state.tasksAsked || 0) + 1;
       // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
       const rm = req.headers["x-atrium-room"];
       if (state.tasksFail > 0) { state.tasksFail--; return json(503, { error: "the room is not up yet" }); }
@@ -28561,7 +28562,7 @@ async function mShot(p, name) {
   if (dir) {
     // Let the fade, the slide and the stream settle, so the picture is the resting state.
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) }).catch(() => {});
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: shots only, the face settles before the picture
     fs.mkdirSync(dir, { recursive: true }); await p.screenshot({ path: path.join(dir, name + ".png") }); }
 }
 function mNeedsCards() {
@@ -28593,7 +28594,7 @@ async function mResumeSection(browser) {
   const shots = process.env.RESUME_SHOTS, shotTag = process.env.RESUME_TAG || "after";
   try {
     const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
-    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(250); await p.screenshot({ path: path.join(shots, shotTag + "-" + name + ".png") }); } };
+    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(250); await p.screenshot({ path: path.join(shots, shotTag + "-" + name + ".png") }); } }; // wait: shots only, the face settles before the picture
     await p.tap("#m-seg-all");
     await p.waitForSelector('#m-list .row[data-id="shelf-1"]', { timeout: slow(10000) });
     await shot("m1-card");
@@ -28653,12 +28654,14 @@ async function mResumeSection(browser) {
     await p.evaluate(() => window.mResume.open("shelf-1"));
     await p.tap("#m-rmenu .rmenu-resume");
     await p.evaluate(() => window.mResume.resume("shelf-1"));
-    await p.waitForTimeout(200);
+    await p.waitForTimeout(200); // wait: absence, a second launch would land here
     if (st.launches.length !== 1) fail(tag + "a second resume while opening launched again: " + st.launches.length);
     const b = st.launches[0];
     if (b.task_id !== "shelf-1" || b.resume !== "sess-1" || b.harness !== "claude" || b.cwd !== "/tmp/res") fail(tag + "the launch was " + JSON.stringify(b));
+    const launched = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/launch", { timeout: slow(5000) }).catch(() => {});
     open();
-    await p.waitForTimeout(300);
+    await launched;
+    await frames(p, 2);
     if (!(await p.$(sel + " .opening .m-spin"))) fail(tag + "the spinner ended when the launch answered, before any output");
 
     // 4. First output (the card runs and moves) ends it.
@@ -28672,7 +28675,7 @@ async function mResumeSection(browser) {
     // 5. No output inside the bound: the reason, and a resume is allowed again.
     st.tasks = [paused(), st.tasks[1]];
     st.send("task", st.tasks[0]);
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => { const c = window.mStore.card("shelf-1"); return c && c.status === "done"; }, null, { timeout: slow(5000) }).catch(() => {});
     st.launchGate = null;
     const first = await p.evaluate(() => { RESUME_BOUND_MS = 400; window.mResume.resume("shelf-1"); return openingState("shelf-1").state; });
     if (first !== "opening") fail(tag + "the resume was " + first + " straight after it started");
@@ -28682,7 +28685,7 @@ async function mResumeSection(browser) {
     await shot("m5-slow");
     const n0 = st.launches.length;
     await p.evaluate(() => window.mResume.resume("shelf-1"));
-    await p.waitForTimeout(300);
+    await until(() => st.launches.length >= n0 + 1, 5000, "the resume").catch(() => {});
     if (st.launches.length !== n0 + 1) fail(tag + "a resume was not allowed again after the bound");
     await p.evaluate(() => { openingEnd("shelf-1"); RESUME_BOUND_MS = 30000; });
 
@@ -28885,9 +28888,9 @@ async function mAgentIdleSection(browser) {
     // the permission ask above already rang once; what follows is counted from there
     const logged = () => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.toastlog") || "[]").map(r => r.title + " " + r.body));
     const waits = async () => (await logged()).filter(l => /is waiting for you/.test(l));
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: absence, a ring for the first load would land here
     if ((await waits()).length) fail(tag + "the first load rang for a wait: " + (await waits()).join("|"));
-    const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForTimeout(800); };
+    const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForFunction(id => window.mStore.card(id), t.id, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2); };
     await push(agent("a-new-idle", { waiting_since: mIso(0) }));
     if ((await waits()).length !== 1) fail(tag + "a live agent card waiting on the operator did not ring the bell: " + (await waits()).join("|"));
     await push(agent("a-new-gone", { waiting_since: mIso(0), supervised: false }));
@@ -28999,7 +29002,7 @@ async function mPrefsEverywhereSection(browser) {
     try { await b.waitForFunction(() => document.getElementById("m-card").style.getPropertyValue("--m-fs") === "19px", null, { timeout: SPAN }); }
     catch (e) { fail("mPrefsEverywhere: the text size did not reach the other tab"); }
     await a.evaluate(() => { const o = JSON.parse(localStorage.getItem("atrium.sound") || "{}"); o.muted = true; localStorage.setItem("atrium.sound", JSON.stringify(o)); });
-    await b.waitForTimeout(300);
+    await b.waitForTimeout(300); // wait: absence, a reload would land here
     if (!(await b.evaluate(() => window.__noReload === true))) fail("mPrefsEverywhere: the other tab reloaded");
     if (errors.length) fail("mPrefsEverywhere: page errors: " + errors.join(" | "));
     await ctx.close();
@@ -29117,8 +29120,10 @@ async function mCardSection(browser) {
       if (st.hits.filter(h => h === "card-a?50").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
       await mShot(p, "card-dark-" + vp.width);
       // refetch only when the turn ends
-      st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
-      await p.waitForTimeout(600);
+      const lastAct = mIso(1000);
+      st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: lastAct }));
+      await p.waitForFunction(at => (window.mStore.card("card-a") || {}).last_activity_at === at, lastAct, { timeout: slow(5000) }).catch(() => {});
+      await frames(p, 2);
       if (st.hits.filter(h => h === "card-a?50").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
       st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
       st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
@@ -29177,7 +29182,7 @@ async function mCardSection(browser) {
       await lt.p.waitForSelector("#m-list .row", { timeout: slow(8000) });
       await lt.p.tap('#m-list .row[data-id="card-a"]');
       await lt.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-      await lt.p.waitForTimeout(500);
+      await settleStyle(lt.p);
       await mShot(lt.p, "card-light-" + vp.width);
       await lt.ctx.close();
     }
@@ -30809,7 +30814,7 @@ async function mCleanUpForeignSection(browser) {
     if (closes.length) fail(tag + "cancel still closed the card");
     await menu();
     await p.tap('#m-rmenu [data-ans="go"]');
-    for (let i = 0; i < 50 && !closes.length; i++) await p.waitForTimeout(100);
+    await until(() => closes.length, 5000, "the terminate").catch(() => {});
     if (closes.length !== 1 || closes[0].confirm !== true) fail(tag + "terminate posted " + JSON.stringify(closes));
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
