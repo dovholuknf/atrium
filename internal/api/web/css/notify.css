@@ -325,6 +325,25 @@
     flex: 1 1 auto; min-width: 0; color: var(--label); font-size: var(--fs-xs); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
   }
+  #switcher [hidden] { display: none; }
+  /* The worktree name a pasted repo starts on (js/repolink.js), asked in place of the field. */
+  #switcher .swnm {
+    padding: 8px 14px 0; background: var(--bg-2); border-bottom: 1px solid var(--stroke-dim);
+    color: var(--label); font-size: var(--fs-xs);
+  }
+  #switcher .swnmq { display: flex; align-items: center; font-size: var(--fs-lg); color: var(--dim); }
+  #switcher .swnmq input {
+    flex: 1 1 auto; min-width: 0; padding: 4px 0 12px; font-size: inherit; background: none; color: var(--head);
+    border: 0; border-radius: 0; outline: none; box-shadow: none;
+  }
+  #switcher .swnmq input::-webkit-search-cancel-button { display: none; }
+  #switcher .swnmhint {
+    display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; padding: 6px 12px 8px;
+    font-size: var(--fs-xs); color: var(--label);
+  }
+  #switcher .swnmhint b { font-weight: 600; color: var(--dim); }
+  #switcher .swnmhint code { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #switcher .swnmhint code.swnmdir { direction: rtl; text-align: left; }
   #switcher .swpaste { padding: 2px 10px; font-size: var(--fs-xs); font-weight: 500; }
   #switcher .swpaste:hover { transform: none; }
   /* One terminal in its own window: the same page with everything that is not the terminal hidden.

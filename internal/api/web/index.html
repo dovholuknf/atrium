@@ -1358,8 +1358,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
        own autofill since 2015. A search field is skipped outright. -->
   <input type="search" id="sw-q" class="swq" spellcheck="false" autocomplete="off"
     placeholder="go to a session, or paste a link: name, directory, tag or url">
+  <div id="sw-name" class="swnm" hidden>
+    <label for="sw-nm">worktree name</label>
+    <div class="swnmq"><span>claude/</span><input type="search" id="sw-nm" spellcheck="false" autocomplete="off"></div>
+  </div>
   <div id="sw-list" class="swlist"></div>
-  <div class="swfoot">
+  <div id="sw-nmfoot" class="swfoot" hidden>
+    <span><kbd>enter</kbd> start</span>
+    <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>
+    <span><kbd>esc</kbd> back</span>
+    <span class="grow"></span>
+    <span id="sw-nmkey"></span>
+  </div>
+  <div id="sw-foot" class="swfoot">
     <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> pick</span>
     <span><kbd>enter</kbd> go</span>
     <span><kbd>shift</kbd><kbd>enter</kbd> edit first</span>

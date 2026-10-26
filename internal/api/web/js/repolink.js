@@ -107,7 +107,7 @@ async function repoSeenBy(rk, room) {
 }
 
 // Enter on a repo link, with the card already drawn under `id`.
-async function repoNewGo(id, rk, got) {
+async function repoNewGo(id, rk, got, name) {
   linkOpeningName(id, rk.org + "/" + rk.repo);
   const picker = document.getElementById("l-harness");
   const harness = (document.getElementById("l-pick-field").hidden ? launchTarget && launchTarget.harness : picker.value) || "";
@@ -119,7 +119,7 @@ async function repoNewGo(id, rk, got) {
     if (room) headers["X-Atrium-Room"] = room;
     linkOpeningStep(id, "finding " + rk.slug);
     const seen = await repoSeenBy(rk, room);
-    if (seen.room || seen.hub) { await repoNewStart(id, rk, harness, headers, room); return; }
+    if (seen.room || seen.hub) { await repoNewStart(id, rk, harness, headers, room, name); return; }
     if (typeof hubIsHub !== "undefined" && hubIsHub) {
       linkOpeningStep(id, "the hub is fetching " + rk.slug);
       await api("/_hub/git/init", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -128,17 +128,17 @@ async function repoNewGo(id, rk, got) {
     linkOpeningStep(id, "cloning " + rk.slug);
     await api("/v1/new", { method: "POST", headers, body: JSON.stringify({ repo: rk.slug, prepare: true, progress: id }) });
     linkOpeningConfirm(id, "new repository from " + rk.host + ": its project settings and hooks will run.",
-      () => repoNewStart(id, rk, harness, headers, room));
+      () => repoNewStart(id, rk, harness, headers, room, name));
   } catch (e) {
     linkOpeningFail(id, (e && e.message) || String(e));
   }
 }
 
 // The worktree and the card, once the repo is somewhere this room can use it and somebody said so.
-async function repoNewStart(id, rk, harness, headers, room) {
+async function repoNewStart(id, rk, harness, headers, room, name) {
   try {
     const out = await api("/v1/new", { method: "POST", headers, body: JSON.stringify({
-      repo: rk.slug, name: repoWorkBranch(), title: rk.org + "/" + rk.repo, harness, progress: id }) });
+      repo: rk.slug, name: name || repoWorkBranch(), title: rk.org + "/" + rk.repo, harness, progress: id }) });
     linkOpeningEnd(id);
     rememberLaunchRoom(room, out.card);
     const warn = [out.fetch_error && "fetching origin failed, so the base is what was last fetched",
@@ -155,15 +155,75 @@ async function repoNewStart(id, rk, harness, headers, room) {
 }
 
 // Shift-Enter: the launch dialog is open, and "start new work" is filled in with this repo and a branch name.
-async function repoNewEdit(rk) {
+async function repoNewEdit(rk, name) {
   await openNewWork();
   const sel = document.getElementById("l-nw-repo");
   if (![...sel.options].some(o => o.value.toLowerCase() === rk.slug)) {
     sel.insertAdjacentHTML("afterbegin", `<option value="${esc(rk.slug)}">${esc(rk.slug)}</option>`);
   }
   sel.value = [...sel.options].find(o => o.value.toLowerCase() === rk.slug).value;
-  const name = document.getElementById("l-nw-name");
-  name.value = repoWorkBranch();
-  name.focus();
-  name.select();
+  const box = document.getElementById("l-nw-name");
+  box.value = name || repoWorkBranch();
+  box.focus();
+  box.select();
 }
+
+// THE NAME FIRST. Enter on a repo link in the switcher asks for the worktree name, `claude/` fixed and the rest
+// editable, before anything starts. Enter starts it, shift-Enter is "start new work" filled in, Esc is the list again.
+let repoNaming = null;
+
+function repoNameAsk(url, rk) {
+  repoNaming = { url, rk };
+  repoNameShow(true);
+  document.getElementById("sw-nmkey").textContent = comboName(switchKey());
+  const box = document.getElementById("sw-nm");
+  box.value = repoWorkBranch().slice("claude/".length);
+  paintSwitcher();
+  box.focus();
+  box.select();
+}
+
+function repoNameShow(on) {
+  document.getElementById("sw-q").hidden = on;
+  document.getElementById("sw-name").hidden = !on;
+  document.getElementById("sw-foot").hidden = on;
+  document.getElementById("sw-nmfoot").hidden = !on;
+}
+
+function repoNameEnd() {
+  if (!repoNaming) return;
+  repoNaming = null;
+  repoNameShow(false);
+}
+
+function repoNameBranch() {
+  return "claude/" + (document.getElementById("sw-nm").value.trim() || repoWorkBranch().slice("claude/".length));
+}
+
+function repoNamePaint(host) {
+  const branch = repoNameBranch();
+  const folder = "<scm>/worktrees/" + repoNaming.rk.slug + "/" + branch.replace(/\//g, "-");
+  setHTML(host, `<div class="swrow swopen on seen" data-kind="repo">${quickPasteRow(repoNaming.url).html}</div>
+    <div class="swnmhint"><b>branch</b><code>${esc(branch)}</code><b>off</b><code>origin's default branch</code>
+      <b>folder</b><code class="swnmdir">&lrm;${esc(folder)}&lrm;</code></div>`);
+}
+
+(function wireRepoName() {
+  const box = document.getElementById("sw-nm");
+  if (!box) return;
+  box.addEventListener("input", () => { if (repoNaming) paintSwitcher(); });
+  box.addEventListener("keydown", e => {
+    if (!repoNaming) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      quickPasteGo(repoNaming.url, e.shiftKey, repoNameBranch());
+    } else if (e.key === "Escape") {
+      // Kept from the dialog, whose Escape would close the whole bar.
+      e.preventDefault();
+      repoNameEnd();
+      paintSwitcher();
+      document.getElementById("sw-q").focus();
+    }
+  });
+  switcherDlg().addEventListener("close", repoNameEnd);
+})();

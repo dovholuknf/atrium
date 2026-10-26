@@ -228,10 +228,13 @@ function quickPasteRoom(want) {
 // fills the launch dialog in out of sight with the defaults it would have had, and opens the link: clone if needed,
 // worktree, card. A link that leaves something to fix fails on that card with the reason, and its `edit` is the way
 // to the dialog. Shift-Enter (`edit`) is the dialog first, filled in and left open.
-async function quickPasteGo(url, edit) {
+async function quickPasteGo(url, edit, name) {
   clearTimeout(quickPasteTimer);
   quickPasteSeq++;
   if (!QUICKPASTE_URL.test(url)) return;
+  const ask = !edit && name === undefined && switcherDlg().open && quickPasteKnown && quickPasteKnown.url === url
+    ? pastedRepoKind(quickPasteKnown.got) : null;
+  if (ask) { repoNameAsk(url, ask); return; }
   closeSwitcher();
   const known = quickPasteKnown && quickPasteKnown.url === url ? quickPasteKnown.got : null;
   if (edit) {
@@ -242,7 +245,7 @@ async function quickPasteGo(url, edit) {
       if (launch.open) launch.close();
       openQuickPaste(url, document.getElementById("l-link-note").textContent);
     } else if (read && pastedRepoKind(read)) {
-      await repoNewEdit(pastedRepoKind(read));
+      await repoNewEdit(pastedRepoKind(read), name);
     }
     return;
   }
@@ -260,7 +263,7 @@ async function quickPasteGo(url, edit) {
   }
   // A link to a repository itself starts new work (js/repolink.js), the open verb having no card for it.
   const rk = got && got !== "none" ? pastedRepoKind(got) : null;
-  if (rk) { await repoNewGo(id, rk, got); return; }
+  if (rk) { await repoNewGo(id, rk, got, name); return; }
   if (got && got.title) linkOpeningName(id, got.title);
   // Not read, or a link with something left to fix: said in the bar and the bell, never as a row left sitting.
   // A missing worktree is a problem the launch itself solves for every kind the open verb takes.

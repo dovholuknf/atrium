@@ -367,6 +367,7 @@ function swSetQuery(text) {
 function paintSwitcher() {
   const host = document.getElementById("sw-list");
   if (!host) return;
+  if (repoNaming) { repoNamePaint(host); return; }
   const link = swLinkOf(swQuery);
   swRows = (link ? [{ link }] : []).concat(switcherRows(), swRunnerRows(swQuery));
   if (swSel >= swRows.length) swSel = Math.max(0, swRows.length - 1);

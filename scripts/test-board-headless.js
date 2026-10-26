@@ -20939,6 +20939,8 @@ async function repoPasteSection(browser, base) {
     let release; st.hold = new Promise(r => { release = r; });
     await row(urls[0]);
     await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    await p.keyboard.press("Enter");
     await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
       .catch(() => fail("repoPaste: no card from the keypress"));
     if (!/openziti-test-kitchen\/ziti-tv/.test(await p.textContent(".card.linkopen"))) fail("repoPaste: the card did not name the repo");
@@ -20956,6 +20958,8 @@ async function repoPasteSection(browser, base) {
     await p.evaluate(() => { hubIsHub = true; });
     await row(urls[0]);
     await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    await p.keyboard.press("Enter");
     await p.waitForFunction(() => /start/.test((document.querySelector(".card.linkopen") || {}).textContent || ""), null, { timeout: slow(5000) })
       .catch(() => fail("repoPaste: an unseen repo did not stop at a confirm"));
     const txt = await p.textContent(".card.linkopen");
@@ -20971,6 +20975,8 @@ async function repoPasteSection(browser, base) {
     // start finishes it
     st.calls = [];
     await row(urls[0]);
+    await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
     await p.keyboard.press("Enter");
     await p.waitForSelector('.card.linkopen [data-op-act="start"]', { timeout: slow(5000) });
     await p.click('.card.linkopen [data-op-act="start"]');
@@ -20989,6 +20995,97 @@ async function repoPasteSection(browser, base) {
     if (errors.length) fail("repoPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("repoPaste ok");
+}
+
+// Enter on a pasted repo asks the worktree name first: claude/ fixed, work-<yymmdd>-<hhmm> selected, a live preview,
+// Enter starts on that branch, shift-Enter fills "start new work", Esc goes back to the list.
+async function pasteRepoNameSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const news = [];
+  await ctx.addInitScript(() => {
+    window.__clip = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
+  });
+  await ctx.route(/\/(v1\/(recognise|new|scm\/has|checkouts|tasks\/t-n)|_hub\/git\/repos)(\/|\?|$)/, async route => {
+    const req = route.request();
+    const p = new URL(req.url()).pathname;
+    if (p === "/v1/tasks/t-n") return json(route, 200, { id: "t-n", status: "running", title: "o/r" });
+    if (p === "/v1/checkouts") return json(route, 200, { checkouts: [] });
+    if (p === "/_hub/git/repos") return json(route, 200, { repos: [] });
+    if (p === "/v1/scm/has") return json(route, 200, { has: true });
+    if (p === "/v1/new") {
+      news.push(JSON.parse(req.postData() || "{}"));
+      return json(route, 201, { card: "t-n", worktree: "/wt/o/r/x", repo: "github.com/o/r", created: true });
+    }
+    const url = JSON.parse(req.postData() || "{}").url || "";
+    return json(route, 200, { recogniser: "github-repo", label: "a repository", url, host: "github.com",
+      title: "", prompt: "", tags: [], vars: { org: "openziti-test-kitchen", repo: "zssh", host: "github.com" } });
+  });
+  const url = "https://github.com/openziti-test-kitchen/zssh";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof repoNameAsk === "function" && typeof openLaunch === "function", null, { timeout: slow(15000) });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) }).catch(() => {});
+    const ask = async () => {
+      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      await p.evaluate(u => { window.__clip = u; }, url);
+      await p.keyboard.press("Control+Alt+KeyR");
+      await p.waitForSelector("#sw-open.seen", { timeout: slow(5000) });
+      await p.keyboard.press("Enter");
+      await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    };
+
+    await ask();
+    const st = await p.evaluate(() => {
+      const box = document.getElementById("sw-nm");
+      const vis = id => document.getElementById(id).checkVisibility();
+      return { value: box.value, all: box.selectionStart === 0 && box.selectionEnd === box.value.length,
+        focused: document.activeElement === box, q: vis("sw-q"), foot: vis("sw-foot"),
+        nmfoot: document.getElementById("sw-nmfoot").textContent.replace(/\s+/g, " ").trim(),
+        label: document.getElementById("sw-name").textContent, hint: document.querySelector(".swnmhint").textContent };
+    });
+    if (!/^work-\d{6}-\d{4}$/.test(st.value) || !st.all || !st.focused) fail("pasteRepoName: the default name is not selected: " + JSON.stringify(st));
+    if (st.q || st.foot || !/worktree name/.test(st.label) || !/claude\//.test(st.label)) fail("pasteRepoName: the name step drew: " + JSON.stringify(st));
+    if (!/^enter start shift enter edit first esc back\b/.test(st.nmfoot)) fail("pasteRepoName: the footer says " + st.nmfoot);
+    if (!/origin's default branch/.test(st.hint) || st.hint.indexOf("claude/" + st.value) < 0) fail("pasteRepoName: the preview said " + st.hint);
+    if (news.length) fail("pasteRepoName: Enter on the row started work before the name");
+
+    await p.keyboard.type("fix/thing");
+    const hint = await p.textContent(".swnmhint");
+    if (hint.indexOf("claude/fix/thing") < 0 || hint.indexOf("worktrees/github.com/openziti-test-kitchen/zssh/claude-fix-thing") < 0)
+      fail("pasteRepoName: the preview did not follow the typing: " + hint);
+
+    await p.keyboard.press("Escape");
+    const back = await p.evaluate(() => ({ open: document.getElementById("switcher").open,
+      q: document.getElementById("sw-q").checkVisibility(), name: document.getElementById("sw-name").checkVisibility(),
+      row: !!document.getElementById("sw-open") }));
+    if (!back.open || !back.q || back.name || !back.row) fail("pasteRepoName: esc did not go back to the list: " + JSON.stringify(back));
+
+    await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    await p.keyboard.type("fix/thing");
+    const started = p.waitForResponse(r => /\/v1\/new$/.test(new URL(r.url()).pathname), { timeout: slow(5000) }).catch(() => {});
+    await p.keyboard.press("Enter");
+    await started;
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) }).catch(() => {});
+    if (news.length !== 1 || news[0].name !== "claude/fix/thing" || news[0].repo !== "github.com/openziti-test-kitchen/zssh")
+      fail("pasteRepoName: enter started " + JSON.stringify(news));
+
+    await ask();
+    await p.keyboard.type("edited");
+    await p.keyboard.press("Shift+Enter");
+    await p.waitForFunction(() => document.getElementById("launch").open && !document.getElementById("l-nw").hidden &&
+      document.getElementById("l-nw-name").value === "claude/edited", null, { timeout: slow(5000) })
+      .catch(() => fail("pasteRepoName: shift-enter did not fill start new work with the name"));
+    if (news.length !== 1) fail("pasteRepoName: shift-enter started work");
+    if (errors.length) fail("pasteRepoName: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pasteRepoName ok");
 }
 
 async function quickPasteSection(browser, base) {
@@ -28243,6 +28340,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("prMove", bu("prMove"));
     await unit("quickPaste", () => quickPasteSection(browser, base));
     await unit("repoPaste", () => repoPasteSection(browser, base));
+    await unit("pasteRepoName", () => pasteRepoNameSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
     await unit("roomsMenuScroll", bu("roomsMenuScroll"));
     await unit("notifyTrayFill", () => notifyTrayFillSection(browser, base));
