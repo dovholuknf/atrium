@@ -1,6 +1,4 @@
 {
-  "internal/daemon/conpty_claude_repro_integration_test.go": 7,
-  "internal/daemon/conpty_scroll_repro_integration_test.go": 16,
   "scripts/board-tests/backlog.js": 1,
   "scripts/board-tests/boot.js": 1,
   "scripts/board-tests/items.js": 1,

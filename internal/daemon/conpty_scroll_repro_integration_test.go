@@ -50,9 +50,9 @@ func TestConPTYScrollChild(t *testing.T) {
 		fmt.Sscan(s, &n)
 		for i := 1; i <= n; i++ {
 			w(fmt.Sprintf("new %02d\r\n", i))
-			time.Sleep(3 * time.Millisecond)
+			time.Sleep(3 * time.Millisecond) // wait: the stream pace is the scenario
 		}
-		time.Sleep(600 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond) // wait: lets conpty render the last frame before the child exits
 		return
 	}
 	if s := os.Getenv("ATRIUM_CONPTY_LOOP"); s != "" {
@@ -68,7 +68,7 @@ func TestConPTYScrollChild(t *testing.T) {
 		k := 0
 		for l := 0; l < loops; l++ {
 			for tick := 0; tick < 4; tick++ {
-				time.Sleep(15 * time.Millisecond)
+				time.Sleep(15 * time.Millisecond) // wait: the spinner tick pace is the scenario
 				w(fmt.Sprintf("\x1b[?2026h\x1b[s\x1b[3A\r* spinner %d\x1b[K\x1b[u\x1b[?2026l", tick))
 			}
 			var b strings.Builder
@@ -84,7 +84,7 @@ func TestConPTYScrollChild(t *testing.T) {
 			b.WriteString(eol + block() + "\x1b[2A\r\x1b[2C\x1b[?2026l")
 			w(b.String())
 		}
-		time.Sleep(600 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond) // wait: lets conpty render the last frame before the child exits
 		return
 	}
 	park := os.Getenv("ATRIUM_CONPTY_PARK") != ""
@@ -101,7 +101,7 @@ func TestConPTYScrollChild(t *testing.T) {
 		// claude parks its cursor on the prompt row, 2 above the bottom
 		w("\x1b[2A\r\x1b[2C")
 	}
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond) // wait: two frames apart, the gap is the scenario
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
 	up := rows - 1
@@ -187,7 +187,7 @@ func TestConPTYScrollChild(t *testing.T) {
 		if ms := os.Getenv("ATRIUM_CONPTY_SPAWN_MS"); ms != "" {
 			var d int
 			fmt.Sscan(ms, &d)
-			time.Sleep(time.Duration(d) * time.Millisecond)
+			time.Sleep(time.Duration(d) * time.Millisecond) // wait: the configured spawn delay is the scenario
 		}
 	}
 	defer func() {
@@ -198,7 +198,7 @@ func TestConPTYScrollChild(t *testing.T) {
 	defer func() {
 		if after {
 			spawn()
-			time.Sleep(600 * time.Millisecond)
+			time.Sleep(600 * time.Millisecond) // wait: lets conpty render the last frame before the child exits
 		}
 	}()
 	switch os.Getenv("ATRIUM_CONPTY_SPLIT") {
@@ -206,16 +206,16 @@ func TestConPTYScrollChild(t *testing.T) {
 		// BSU, the frame, and ESU as three writes, a moment apart
 		body := strings.TrimSuffix(strings.TrimPrefix(frame, "\x1b[?2026h"), "\x1b[?2026l")
 		w("\x1b[?2026h")
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: the split writes a moment apart are the scenario
 		w(body)
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // wait: the split writes a moment apart are the scenario
 		w("\x1b[?2026l")
 	case "nosync":
 		w(strings.ReplaceAll(strings.ReplaceAll(frame, "\x1b[?2026h", ""), "\x1b[?2026l", ""))
 	default:
 		w(frame)
 	}
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond) // wait: lets conpty render the last frame before the child exits
 }
 
 func TestConPTYScrollRepro(t *testing.T) {
@@ -287,7 +287,7 @@ func TestConPTYScrollRepro(t *testing.T) {
 	}
 	if mode := os.Getenv("ATRIUM_CONPTY_RESIZE"); mode != "" && via != nil {
 		go func() {
-			time.Sleep(time.Second)
+			time.Sleep(time.Second) // wait: resizes start after the child has drawn, the delay is the scenario
 			for {
 				select {
 				case <-stop:
@@ -296,14 +296,14 @@ func TestConPTYScrollRepro(t *testing.T) {
 				}
 				_ = via.setViewport("flip", 120, flipRows)
 				if flipHold > 0 {
-					time.Sleep(time.Duration(flipHold) * time.Millisecond)
+					time.Sleep(time.Duration(flipHold) * time.Millisecond) // wait: the configured hold is the scenario
 				}
 				via.dropViewport("flip")
 			}
 		}()
 	} else if mode != "" {
 		go func() {
-			time.Sleep(time.Second)
+			time.Sleep(time.Second) // wait: resizes start after the child has drawn, the delay is the scenario
 			for {
 				select {
 				case <-stop:
@@ -313,7 +313,7 @@ func TestConPTYScrollRepro(t *testing.T) {
 				if mode == "focus" {
 					// what xterm sends on blur and focus, forwarded by the board
 					_, _ = p.Write([]byte("\x1b[O"))
-					time.Sleep(20 * time.Millisecond)
+					time.Sleep(20 * time.Millisecond) // wait: blur and focus a moment apart, as xterm sends them
 					_, _ = p.Write([]byte("\x1b[I"))
 					resizes++
 					continue
@@ -337,7 +337,7 @@ func TestConPTYScrollRepro(t *testing.T) {
 					mark(120, flipRows)
 					_ = p.Resize(120, flipRows)
 					if flipHold > 0 {
-						time.Sleep(time.Duration(flipHold) * time.Millisecond)
+						time.Sleep(time.Duration(flipHold) * time.Millisecond) // wait: the configured hold is the scenario
 					}
 				}
 				mark(120, 50)
@@ -354,7 +354,7 @@ func TestConPTYScrollRepro(t *testing.T) {
 		via.resizeMu.Unlock()
 	}
 	t.Logf("resizes %d", resizes)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // wait: a settle, conpty raises no event once its last output is read
 	p.Close()
 	select {
 	case <-done:
