@@ -53,7 +53,7 @@ func TestBackgroundWorkEndingStartsTheSilentStopClock(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopTurnWithBackground(t, d, "worker", 2)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	stopTurnWithBackground(t, d, "worker", 0)
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("the launcher heard of the silent stop %d times, want once", n)
@@ -62,7 +62,7 @@ func TestBackgroundWorkEndingStartsTheSilentStopClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.turnResumed(worker.ID)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	stopTurnWithBackground(t, d, "worker", 0)
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("the launcher has %d notices after the work ended, want one", n)

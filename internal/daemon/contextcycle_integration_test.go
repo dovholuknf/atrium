@@ -47,7 +47,7 @@ func prompts(f *fakePTY) int { return strings.Count(f.written(), limitPrompt) }
 func statuslines(d *Daemon, id string, n int) {
 	for i := 0; i < n; i++ {
 		d.cycleOnStatusline(id)
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the burst like real statusline updates, which have no event
 	}
 }
 
@@ -158,7 +158,7 @@ func TestAckThenClearThenWake(t *testing.T) {
 	if out["message"] != ReadyLine || out["path"] != path || out["stored"] != true {
 		t.Fatalf("ready answered %v", out)
 	}
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(80 * time.Millisecond) // wait: a negative check, /clear must not be typed inside the turn
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("/clear was typed into the turn that ran atrium ready: %q", f.written())
 	}
@@ -202,7 +202,7 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 	}
 	statuslines(d, id, 3)
 	watch(t, d)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the card must not be cycled
 	if d.newContextFor(id) != nil || prompts(f) != 0 {
 		t.Fatalf("a card switched off was cycled: %v %q", d.newContextFor(id), f.written())
 	}
@@ -215,7 +215,7 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	statuslines(d, id, 3)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the card must not be cycled
 	if d.newContextFor(id) != nil {
 		t.Fatalf("a card under its own limit was cycled: %v", d.newContextFor(id))
 	}
@@ -304,7 +304,7 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	if rec := post(); rec.Code != http.StatusConflict {
 		t.Fatalf("ready with an empty file answered %d %s", rec.Code, rec.Body)
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, a refused ack must not move the cycle
 	if step(d, id) != NewContextLimit || strings.Contains(f.written(), "/clear") {
 		t.Fatalf("a refused ack moved the cycle: %v", d.newContextFor(id))
 	}

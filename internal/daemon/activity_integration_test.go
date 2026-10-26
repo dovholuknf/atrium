@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -149,15 +150,14 @@ func postJSON(t *testing.T, url string, body any) *http.Response {
 // it records.
 func waitForActivity(t *testing.T, d *Daemon, taskID string) *Activity {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if a := d.act.get(taskID); a != nil && a.What != "" {
-			return a
-		}
-		time.Sleep(5 * time.Millisecond)
+	var a *Activity
+	if !testwait.Poll(3*time.Second, func() bool {
+		a = d.act.get(taskID)
+		return a != nil && a.What != ""
+	}) {
+		t.Fatalf("no activity ever arrived for %s", taskID)
 	}
-	t.Fatalf("no activity ever arrived for %s", taskID)
-	return nil
+	return a
 }
 
 // The whole point is that a session with no card, or one atrium has never
@@ -238,14 +238,12 @@ func TestActivityEndpointRecordsAgainstACard(t *testing.T) {
 	// A tool ending hands the floor back to the model.
 	resp = postJSON(t, url, ActivityEvent{Agent: "act-test", Event: "tool-end"})
 	resp.Body.Close()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if a := d.act.get(task.ID); a != nil && a.What == ActivityThinking {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	if !testwait.Poll(3*time.Second, func() bool {
+		a := d.act.get(task.ID)
+		return a != nil && a.What == ActivityThinking
+	}) {
+		t.Fatalf("a finished tool left the card showing %v", d.act.get(task.ID))
 	}
-	t.Fatalf("a finished tool left the card showing %v", d.act.get(task.ID))
 }
 
 // SubagentStart takes the count up and SubagentStop takes it down. A Task tool
@@ -275,27 +273,22 @@ func TestSubagentCountFollowsTheSubagentHooks(t *testing.T) {
 		})
 		resp.Body.Close()
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if a := d.act.get(task.ID); a != nil && a.Subagents == 2 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testwait.Poll(3*time.Second, func() bool {
+		a := d.act.get(task.ID)
+		return a != nil && a.Subagents == 2
+	})
 	if a := d.act.get(task.ID); a == nil || a.Subagents != 2 {
 		t.Fatalf("two subagents produced %v, wanted 2", a)
 	}
 
 	resp := postJSON(t, url, ActivityEvent{Agent: "sub-test", Event: "subagent-end"})
 	resp.Body.Close()
-	deadline = time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if a := d.act.get(task.ID); a != nil && a.Subagents == 1 {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	if !testwait.Poll(3*time.Second, func() bool {
+		a := d.act.get(task.ID)
+		return a != nil && a.Subagents == 1
+	}) {
+		t.Fatalf("a subagent ending left the count at %v", d.act.get(task.ID))
 	}
-	t.Fatalf("a subagent ending left the count at %v", d.act.get(task.ID))
 }
 
 // A session ending has to take its activity with it, or its card claims to be
