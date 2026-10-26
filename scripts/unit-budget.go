@@ -16,6 +16,9 @@
 // Over 10ms is printed. Over 20ms fails the run. A test in `fine` is printed and never fails it: each is pure
 // in-memory work that Windows scheduling pushes past 10ms now and then.
 //
+// A test over 20ms is run once more on its own and fails the run only when it is over 20ms again: a loaded machine
+// pushes a fast test over once, a slow test is over every time. -tags is the build tags that rerun needs.
+//
 // -times writes every top-level test's time and result to a table, slowest first. -budget=false turns the 10ms
 // and 20ms checks off, which an integration run needs.
 //
@@ -28,6 +31,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -57,12 +61,14 @@ type event struct {
 type over struct {
 	pkg, test string
 	took      time.Duration
+	full      string
 }
 
 var (
 	verbose  = flag.Bool("v", false, "print every test's output, as go test -v does")
 	enforce  = flag.Bool("budget", true, "print the tests over 10ms and fail the run on one over 20ms")
 	timesTSV = flag.String("times", "", "write every top-level test's time and result here, slowest first")
+	tags     = flag.String("tags", "", "the build tags of the run, for the rerun of a test over 20ms")
 )
 
 // ran is every top-level test, written to -times.
@@ -114,6 +120,10 @@ func main() {
 			case fine[s.pkg+" "+s.test]:
 				mark = "fine"
 			case s.took > limit:
+				if again, err := rerun(s.full, s.test); err == nil && again <= limit {
+					fmt.Printf("  load %6.1fms  %s  %s  (%.1fms run again alone)\n", float64(s.took.Microseconds())/1000, s.pkg, s.test, float64(again.Microseconds())/1000)
+					continue
+				}
 				mark = "FAIL"
 				failed = true
 			}
@@ -157,11 +167,37 @@ func handle(e event, started map[string]time.Time, paused map[string]bool, slow 
 		pkg := strings.TrimPrefix(e.Package, "github.com/dovholuknf/atrium/")
 		ran = append(ran, result{pkg, e.Test, e.Action, took})
 		if e.Action != "skip" && took > budget {
-			*slow = append(*slow, over{pkg, e.Test, took})
+			*slow = append(*slow, over{pkg, e.Test, took, e.Package})
 		}
 		return e.Action == "fail"
 	}
 	return false
+}
+
+// rerun runs one top-level test again on its own and returns its time, measured as handle measures it.
+func rerun(pkg, test string) (time.Duration, error) {
+	args := []string{"test", "-json", "-count=1", "-run", "^" + test + "$"}
+	if *tags != "" {
+		args = append(args, "-tags", *tags)
+	}
+	out, _ := exec.Command("go", append(args, pkg)...).Output()
+	var start time.Time
+	for _, line := range strings.Split(string(out), "\n") {
+		var e event
+		if json.Unmarshal([]byte(line), &e) != nil || e.Test != test {
+			continue
+		}
+		switch e.Action {
+		case "run":
+			start = e.Time
+		case "pass":
+			if start.IsZero() {
+				return time.Duration(e.Elapsed * float64(time.Second)), nil
+			}
+			return e.Time.Sub(start), nil
+		}
+	}
+	return 0, fmt.Errorf("no pass for %s %s", pkg, test)
 }
 
 // writeTimes writes ran as a table: milliseconds, result, package, test, slowest first.
