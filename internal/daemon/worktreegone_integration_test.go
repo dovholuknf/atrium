@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -54,15 +55,8 @@ func liveDir(t *testing.T) string {
 
 func (g goneRig) waitAsked(t *testing.T, want int32) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if g.asked.Load() == want {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if got := g.asked.Load(); got != want {
-		t.Fatalf("asked %d times, want %d", got, want)
+	if !testwait.Poll(2*time.Second, func() bool { return g.asked.Load() == want }) {
+		t.Fatalf("asked %d times, want %d", g.asked.Load(), want)
 	}
 }
 
@@ -76,7 +70,7 @@ func TestARemovedWorktreeIsActedOnAtTheSecondTick(t *testing.T) {
 	}
 
 	g.d.reapGoneWorktrees()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, one tick must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked after one tick (%d)", n)
 	}
@@ -112,8 +106,8 @@ func TestADirectoryThatHadGitAndLostItIsGoneOnTheSecondTick(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, ".git")); err != nil {
 		t.Fatal(err)
 	}
-	g.d.reapGoneWorktrees() // first sighting
-	time.Sleep(50 * time.Millisecond)
+	g.d.reapGoneWorktrees()           // first sighting
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, one tick must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked after one tick (%d)", n)
 	}
@@ -130,7 +124,7 @@ func TestADirectoryThatNeverHadGitIsLeftAloneUntilItIsDeleted(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		g.d.reapGoneWorktrees()
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, these ticks must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times about a directory that never had a .git", n)
 	}
@@ -149,7 +143,7 @@ func TestALiveWorktreeIsLeftAlone(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		g.d.reapGoneWorktrees()
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, these ticks must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times about a live worktree", n)
 	}
@@ -162,7 +156,7 @@ func TestACardNotTaggedSubagentIsLeftAlone(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		g.d.reapGoneWorktrees()
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, these ticks must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times about an untagged card", n)
 	}
@@ -182,7 +176,7 @@ func TestAShellIsLeftAlone(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		g.d.reapGoneWorktrees()
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, these ticks must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times about a shell", n)
 	}
@@ -205,8 +199,8 @@ func TestADirectoryThatComesBackResetsTheGuard(t *testing.T) {
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
-	g.d.reapGoneWorktrees() // missing again: a first sighting, not a second
-	time.Sleep(50 * time.Millisecond)
+	g.d.reapGoneWorktrees()           // missing again: a first sighting, not a second
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, a first sighting must not ask
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times across a reappearance", n)
 	}

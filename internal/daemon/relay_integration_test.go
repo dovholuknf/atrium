@@ -392,7 +392,7 @@ func TestAHeldMessageExpires(t *testing.T) {
 	}
 	settle(d)
 	d.hk.RelayKeep = time.Nanosecond
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(2 * time.Millisecond) // wait: lets the nanosecond keep run out, no event marks it
 	d.drainRelays()
 	if len(owed(t, d)) != 0 {
 		t.Fatal("an expired message was kept")

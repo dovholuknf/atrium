@@ -270,7 +270,7 @@ func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
 	joined := make(chan WrapReport, 1)
 	go func() { joined <- d.wrapUpForRestart(context.Background(), time.Hour, "a second stop") }()
 	d.handleShutdown(httptest.NewRecorder(), wrapShutdownReq(""))
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the second stop must not return while the wrap-up runs
 	select {
 	case <-joined:
 		t.Fatal("the second stop did not wait for the running wrap-up")

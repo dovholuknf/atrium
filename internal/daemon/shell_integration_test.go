@@ -182,7 +182,7 @@ func TestClosingAShellDoesNotTouchTheCard(t *testing.T) {
 	d.CloseShell(task.ID)
 	// The exit path is a goroutine, so give it the chance to do the wrong
 	// thing rather than passing because it had not run yet.
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond) // wait: a negative check, the exit goroutine must not move the card
 
 	after, err := d.st.Get(task.ID)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -169,13 +170,10 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 
 	// The shell's end is marked filed and writes nothing to the card.
 	d.CloseShell(task.ID)
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if got, _ := d.st.Run(sh.runID); got != nil && got.Filed {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool {
+		got, _ := d.st.Run(sh.runID)
+		return got != nil && got.Filed
+	})
 	if got, _ := d.st.Run(sh.runID); got == nil || !got.Filed {
 		t.Fatal("the shell's run was never marked filed")
 	}
@@ -188,10 +186,7 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 
 	// The runner's own exit files against the runner's run.
 	windDown(r, time.Second, nil, windDownKeyGap)
-	deadline = time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) && len(filedExits(t, d, task.ID)) == 0 {
-		time.Sleep(50 * time.Millisecond)
-	}
+	testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool { return len(filedExits(t, d, task.ID)) != 0 })
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("%d exit events after the runner ended, want 1", n)
 	}
@@ -225,7 +220,7 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 		case <-time.After(10 * time.Second):
 		}
 		// The directory is released a beat after the process is reaped.
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond) // wait: the directory is released after the reap, no event marks it
 	})
 	got, err := d.st.Run(r.runID)
 	if err != nil {

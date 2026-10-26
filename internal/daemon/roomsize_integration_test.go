@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 func TestAFreshCardOpensAtTheRoomsLastViewport(t *testing.T) {
@@ -123,15 +125,8 @@ func TestASecondViewersHeightStillWaitsOutTheHold(t *testing.T) {
 
 	holdAttach(t, d, "second-hold", 170, 34)
 	// The width moved at once, the height is still 50.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if c, _ := r.buf.CurrentSize(); c == 170 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the width never moved: %+v", f.resized())
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !testwait.Poll(2*time.Second, func() bool { c, _ := r.buf.CurrentSize(); return c == 170 }) {
+		t.Fatalf("the width never moved: %+v", f.resized())
 	}
 	if _, rows := r.buf.CurrentSize(); rows != 50 {
 		t.Fatalf("the second viewer's height %d was applied at once, want it held at 50", rows)
@@ -217,12 +212,8 @@ func freshCardAttachedElsewhere(t *testing.T, recordRoom bool) (map[string]int, 
 	r := d.sup.get(task.ID)
 	t.Cleanup(func() { r.closePTY() })
 	waitFor := func(what, want string) {
-		deadline := time.Now().Add(20 * time.Second)
-		for !strings.Contains(string(r.buf.Snapshot()), want) {
-			if time.Now().After(deadline) {
-				t.Fatalf("%s: %q never appeared", what, want)
-			}
-			time.Sleep(50 * time.Millisecond)
+		if !testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool { return strings.Contains(string(r.buf.Snapshot()), want) }) {
+			t.Fatalf("%s: %q never appeared", what, want)
 		}
 	}
 	waitFor("before the attach", "L60")
@@ -234,7 +225,7 @@ func freshCardAttachedElsewhere(t *testing.T, recordRoom bool) (map[string]int, 
 	}
 	holdAttach(t, d, task.ID, 177, 48)
 	waitFor("after the attach", "L90")
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) // wait: a settle, a duplicated repaint after L90 raises no event
 
 	text := scrollbackText(t, d, task.ID)
 	counts := numberedLines(text)
