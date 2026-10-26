@@ -2,17 +2,21 @@ package link
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dovholuknf/atrium/internal/link/wire"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
@@ -246,3 +250,118 @@ func (h *Hub) RoomSaysGit(room string) bool {
 	a := h.rooms[keyOf(room)]
 	return a != nil && a.git
 }
+
+// Forge asks the hub a forge question over the git kind: in is posted to path and the answer decoded into out. A
+// refusal comes back as a *forge.HubError with the hub's sentence. A hub that cannot be asked is an error that says
+// so, and the room never falls back to a forge of its own.
+func (r *Room) Forge(ctx context.Context, path string, in, out any) error {
+	if !r.HubServesGit() {
+		return errors.New("the hub cannot be asked about the forge right now: this room is not attached, or its hub " +
+			"serves no git. a room reads pull requests and issues only through its hub")
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	if r.claimRT == nil {
+		r.claimRT = r.GitTransport()
+	}
+	rt := r.claimRT
+	r.mu.Unlock()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://hub"+path, strings.NewReader(string(raw)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := rt.RoundTrip(req)
+	if err != nil {
+		return fmt.Errorf("the hub could not be asked about the forge: %w", err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, 32<<20))
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		var he forge.HubError
+		if json.Unmarshal(body, &he) == nil && he.Message != "" {
+			return &he
+		}
+		if res.StatusCode == http.StatusNotFound {
+			return errors.New("the hub does not run a forge for its rooms. it is older than this room, or has no " +
+				"store: update the hub")
+		}
+		return fmt.Errorf("the hub answered %d to a forge question", res.StatusCode)
+	}
+	return json.Unmarshal(body, out)
+}
+
+// ClaimPR asks the hub to claim a PR key over the git kind. An error is a hub that could not be asked, which the
+// caller records as `claim: pending`.
+func (r *Room) ClaimPR(ctx context.Context, ask any) (PRClaimAnswer, error) {
+	var ans PRClaimAnswer
+	if !r.HubServesGit() {
+		return ans, ErrNoGit
+	}
+	raw, err := json.Marshal(ask)
+	if err != nil {
+		return ans, err
+	}
+	r.mu.Lock()
+	if r.claimRT == nil {
+		r.claimRT = r.GitTransport()
+	}
+	rt := r.claimRT
+	r.mu.Unlock()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://hub"+PRClaimPrefix, bytes.NewReader(raw))
+	if err != nil {
+		return ans, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := rt.RoundTrip(req)
+	if err != nil {
+		return ans, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
+		return ans, errStatus(res.StatusCode)
+	}
+	err = json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&ans)
+	return ans, err
+}
+
+// PRClaimAnswer is the hub's answer to a claim. Forward is the owner's own answer to the paste, when the hub handed
+// the paste to it.
+type PRClaimAnswer struct {
+	Key           string          `json:"key"`
+	Owner         string          `json:"owner"`
+	Made          bool            `json:"made"`
+	Forwarded     bool            `json:"forwarded,omitempty"`
+	ForwardStatus int             `json:"forward_status,omitempty"`
+	Forward       json.RawMessage `json:"forward,omitempty"`
+	// Live is the card the owner has live for the key, the id on the owner's room, when a Take found one. The claim did
+	// not move, and nothing is to be launched.
+	Live string `json:"live,omitempty"`
+	// Holder is the owner's live card for the key when the owner is another room and nothing moved, so a refusal can
+	// say where to go. Live is the Take's answer, which launches nothing. Holder only decorates a refusal.
+	Holder string `json:"holder,omitempty"`
+}
+
+type errStatus int
+
+func (e errStatus) Error() string { return "the room answered " + http.StatusText(int(e)) }
+
+// ForgePrefix is where a room's forge questions are served on the git kind. ForgeRoomHeader carries the room the
+// hello named.
+const (
+	ForgePrefix     = "/_forge/"
+	ForgeRoomHeader = "X-Atrium-Forge-Room"
+)
+
+// PRClaimPrefix is where a room's claim is served on the git kind. PRClaimRoomHeader carries the room the hello named.
+const (
+	PRClaimPrefix     = "/_claim/pr"
+	PRClaimRoomHeader = "X-Atrium-Claim-Room"
+)

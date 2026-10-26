@@ -42,12 +42,6 @@ import (
 // the owner, which makes the row. NOTHING IS EVER RE-PLACED BY ITSELF: a claim whose room is offline stays, and the
 // board's growler says so. See prWarnSweep. Only the operator's move changes an owner.
 
-// PRClaimPrefix is where a room's claim is served on the git kind. PRClaimRoomHeader carries the room the hello named.
-const (
-	PRClaimPrefix     = "/_claim/pr"
-	PRClaimRoomHeader = "X-Atrium-Claim-Room"
-)
-
 // SetPRClaims wires the claim table. Without it the claim route answers 404 and a PR is placed by nobody.
 func (p *Proxy) SetPRClaims(st *hubstore.Store) {
 	p.mu.Lock()
@@ -252,23 +246,6 @@ type prClaimAsk struct {
 	// Take says the operator picked the asking room for this link by name. The claim moves to the asker, unless the
 	// room that holds it has a live card for the key.
 	Take bool `json:"take"`
-}
-
-// PRClaimAnswer is the hub's answer to a claim. Forward is the owner's own answer to the paste, when the hub handed
-// the paste to it.
-type PRClaimAnswer struct {
-	Key           string          `json:"key"`
-	Owner         string          `json:"owner"`
-	Made          bool            `json:"made"`
-	Forwarded     bool            `json:"forwarded,omitempty"`
-	ForwardStatus int             `json:"forward_status,omitempty"`
-	Forward       json.RawMessage `json:"forward,omitempty"`
-	// Live is the card the owner has live for the key, the id on the owner's room, when a Take found one. The claim did
-	// not move, and nothing is to be launched.
-	Live string `json:"live,omitempty"`
-	// Holder is the owner's live card for the key when the owner is another room and nothing moved, so a refusal can
-	// say where to go. Live is the Take's answer, which launches nothing. Holder only decorates a refusal.
-	Holder string `json:"holder,omitempty"`
 }
 
 // roomLive is the live card a room has for a claim key, or "". A room on a build with no such question reads as having
@@ -536,38 +513,3 @@ func (p *Proxy) prWarnSweep(g *Growler) bool {
 }
 
 // ── the room's side ─────────────────────────────────────
-
-// ClaimPR asks the hub to claim a PR key over the git kind. An error is a hub that could not be asked, which the
-// caller records as `claim: pending`.
-func (r *Room) ClaimPR(ctx context.Context, ask any) (PRClaimAnswer, error) {
-	var ans PRClaimAnswer
-	if !r.HubServesGit() {
-		return ans, ErrNoGit
-	}
-	raw, err := json.Marshal(ask)
-	if err != nil {
-		return ans, err
-	}
-	r.mu.Lock()
-	if r.claimRT == nil {
-		r.claimRT = r.GitTransport()
-	}
-	rt := r.claimRT
-	r.mu.Unlock()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://hub"+PRClaimPrefix, bytes.NewReader(raw))
-	if err != nil {
-		return ans, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := rt.RoundTrip(req)
-	if err != nil {
-		return ans, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
-		return ans, errStatus(res.StatusCode)
-	}
-	err = json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&ans)
-	return ans, err
-}
