@@ -14,7 +14,7 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   clean.** `test-board-sharded.js` exits 0 and prints `PASSED ON RETRY (slow or stalled, first try failed)` with the
   first-try error and both timings, and the flaky board jobs give their units that one retry. `ci.sh` writes
   `retried.tsv` and a summary section, `ci-rollup.js` and `ci-flake-ledger.js` list it. An unlisted unit that passes
-  on retry is `LOAD`, listed the same way, not clean, and passes the run. Go has no rerun, and a unit that fails both tries still fails.
+  on retry is `LOAD`, listed the same way, not clean, and passes the run. A unit that fails both tries still fails.
   `test-board-sharded-retry.js` pins it.
 - **`flaky-sync.js <run id>` keeps `flaky-suite.json` to the tests that failed in the last 15 main runs.** It records the
   run's failed jobs in `flaky-jobs.jsonl` (from the `failing-tests` artifact `ci-rollup.js` uploads, else the job list and
@@ -24,8 +24,8 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
   entries `ci-select.sh` prints `false` for every `flaky_<os>_<go|playwright>` job (`FLAKY_SUITE_FILE` points it at another file), `ci.yml`
   skips the six flaky jobs, and the check jobs still start because a skipped need is not `failure`. `flaky-sync.js`
   adding an entry turns them on again. `test-ci-select.js` and `test-flaky-sync.js` pin both cases.
-- **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms. The
-  fix is to move the test into an integration file, not to raise the number.
+- **A unit test is under 10ms.** `unit-budget.go` prints each test over 10ms and fails the run on one over 20ms
+  that is over 20ms again when run alone, which it marks `load` when it is not. The fix is to move the test into an integration file, not to raise the number.
 - **Every run is kept** under `build.claude/test-runs/` (the raw `-json` stream and a table, slowest first), so the
   time of a test is never a reason to run the suite again.
 - **A manual dispatch can run one os and one suite.** `scripts/ci-select.sh --os all|ubuntu|macos|windows --suite
