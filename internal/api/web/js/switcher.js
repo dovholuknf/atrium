@@ -199,6 +199,7 @@ function swScore(t, q) {
   const name = (String(t.display_title || t.title || "") + " " + String(terminalLabel(t) || "")).trim().toLowerCase();
   const dir = String(t.worktree || "").toLowerCase().replace(/\\/g, "/");
   const tags = (t.tags || []).join(" ").toLowerCase();
+  const other = [t.runner, t.branch, t.room].join(" ").toLowerCase();
   let total = 0;
   for (const term of terms) {
     let s = -1;
@@ -207,7 +208,8 @@ function swScore(t, q) {
     else if (at > 0) s = 70;
     else if (tags.includes(term)) s = 50;
     else if (dir.includes(term)) s = 40;
-    else if (swSubseq(name, term)) s = 10;
+    else if (other.includes(term)) s = 30;
+    else if (swFuzzy(name, term)) s = 10;
     if (s < 0) return -1;
     total += s;
   }
@@ -219,7 +221,7 @@ function swScore(t, q) {
 function swReal(t, q) {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return false;
-  const hay = [t.display_title, t.title, terminalLabel(t), (t.tags || []).join(" "), String(t.worktree || "").replace(/\\/g, "/")]
+  const hay = [t.display_title, t.title, terminalLabel(t), (t.tags || []).join(" "), String(t.worktree || "").replace(/\\/g, "/"), t.runner, t.branch, t.room]
     .join(" ").toLowerCase();
   return terms.every(term => hay.includes(term));
 }
@@ -252,6 +254,12 @@ function swRunnerRows(q) {
     const hay = (String(h.label || "") + " " + h.id).toLowerCase();
     return h.enabled && terms.every(term => hay.includes(term));
   }).map(h => ({ harness: h.id, label: h.label || h.id }));
+}
+
+// A scattered match is for abbreviations like `atsw`. A long term or one with a separator is a name typed in full, and
+// letters scattered across an unrelated title are not what it asked for.
+function swFuzzy(hay, needle) {
+  return needle.length <= 6 && !/[-_./:]/.test(needle) && swSubseq(hay, needle);
 }
 
 function swSubseq(hay, needle) {

@@ -183,7 +183,7 @@ function lift(name) {
 const COMBO_TABLE = /^const COMBO_NAMES = \{[\s\S]*?^\};/m.exec(html);
 const FORGE_TABLE = /^const FORGE_HOST_LABELS = \{.*\};/m.exec(html);
 const src = [COMBO_TABLE ? COMBO_TABLE[0] : "", FORGE_TABLE ? FORGE_TABLE[0] : "", lift("forgeHostLabel"), lift("comboOf"), lift("comboName"),
-  lift("swSubseq"), lift("terminalLabel"), lift("swScore")];
+  lift("swSubseq"), lift("swFuzzy"), lift("terminalLabel"), lift("swScore")];
 if (src.some(s => !s)) {
   fail("comboOf, comboName, swSubseq, terminalLabel or swScore could not be lifted out of the " +
     "page, so what they actually do went unchecked. They are top-level functions on purpose.");

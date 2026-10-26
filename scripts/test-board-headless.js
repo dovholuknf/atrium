@@ -22325,9 +22325,11 @@ async function switcherRankSection(browser, base) {
     if (sub[0] && sub[0].name !== "Config screens") fail("switcherRank: the row's main text is " + JSON.stringify(sub[0].name) + ", want the card's title");
     if (sub[0] && !/ziti-console/.test(sub[0].dir)) fail("switcherRank: the dim text is " + JSON.stringify(sub[0].dir) + ", want the short path");
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "switcher-" + tag + ".png") }); }
-    // With no real match, the scattered one is all there is and stays.
-    const scatter = await rows("uixtlsfig");
+    // With no real match, a short scattered abbreviation stays and a long name typed in full finds nothing.
+    const scatter = await rows("uixtl");
     if (scatter.map(r => r.id).join() !== "sw-c") fail("switcherRank: a scattered query with no real match should keep sw-c, got " + scatter.map(r => r.id).join());
+    const noise = await rows("uixtlsfig");
+    if (noise.length) fail("switcherRank: a long scattered query should list nothing, got " + noise.map(r => r.id).join());
     // The typed text is marked in the title, and a runner is a row that opens the launch dialog on it.
     const marked = await p.evaluate(() => {
       allHarnesses = [{ id: "claude-slim", label: "claude slim (orchestrator)", enabled: true, found: true }];
