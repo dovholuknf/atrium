@@ -34,7 +34,7 @@ func TestAClearMarkSurvivesAReadoptOfAPtyHostTerminal(t *testing.T) {
 	r1.markClear()
 	hostWait(t, 5*time.Second, "the mark in the first daemon's ring", func() bool { return ringHas(r1, screen.ClearMarkOSC) })
 	// The mark reaches the host on its own round trip, well inside the gap before BBB.
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // wait: the mark's round trip to the host raises no event on this side
 
 	d2 := restarted(t, d1, dir)
 	d2.reattachRuns()

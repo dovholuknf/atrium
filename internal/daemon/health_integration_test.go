@@ -7,16 +7,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // healthEvents reads `health` events off the board stream until it has want of
 // them or gives up.
-func healthEvents(t *testing.T, d *Daemon, want int, trigger func()) []map[string]any {
+func healthEvents(t *testing.T, d *Daemon, want int, trigger func(heard func(n int))) []map[string]any {
 	t.Helper()
 	ts := httptest.NewServer(d.ap.Handler())
 	defer ts.Close()
@@ -25,10 +29,10 @@ func healthEvents(t *testing.T, d *Daemon, want int, trigger func()) []map[strin
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	time.Sleep(100 * time.Millisecond)
-	trigger()
 
-	got := make(chan map[string]any, 8)
+	var mu sync.Mutex
+	var out []map[string]any
+	pinged := make(chan struct{}, 1)
 	go func() {
 		sc := bufio.NewScanner(resp.Body)
 		kind := ""
@@ -37,24 +41,43 @@ func healthEvents(t *testing.T, d *Daemon, want int, trigger func()) []map[strin
 			if strings.HasPrefix(line, "event: ") {
 				kind = strings.TrimPrefix(line, "event: ")
 			}
+			if strings.HasPrefix(line, "data: ") && kind == "ping" {
+				select {
+				case pinged <- struct{}{}:
+				default:
+				}
+			}
 			if strings.HasPrefix(line, "data: ") && kind == "health" {
 				body := map[string]any{}
 				_ = json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &body)
-				got <- body
+				mu.Lock()
+				out = append(out, body)
+				mu.Unlock()
 			}
 		}
 	}()
-	var out []map[string]any
-	deadline := time.After(5 * time.Second)
-	for len(out) < want {
+	testwait.EventuallyHTTP(t, 5*time.Second, "the event stream to subscribe", func() bool {
+		d.ap.Broadcast("ping", nil)
 		select {
-		case b := <-got:
-			out = append(out, b)
-		case <-deadline:
-			t.Fatalf("got %d health events, want %d: %v", len(out), want, out)
+		case <-pinged:
+			return true
+		default:
+			return false
 		}
+	})
+	heard := func(n int) {
+		t.Helper()
+		testwait.Eventually(t, 5*time.Second, fmt.Sprintf("%d health events", n), func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(out) >= n
+		})
 	}
-	return out
+	trigger(heard)
+	heard(want)
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]map[string]any(nil), out[:want]...)
 }
 
 // r-017: a storage halt is pushed as `health`, since the stream stays up and the
@@ -64,7 +87,7 @@ func TestAHaltIsPublishedAsHealth(t *testing.T) {
 	cause := errors.New("disk full")
 	d.hk.healthHalted = func(*Daemon) (bool, error) { return true, cause }
 
-	evs := healthEvents(t, d, 1, func() { d.onHalt(cause) })
+	evs := healthEvents(t, d, 1, func(func(int)) { d.onHalt(cause) })
 	if evs[0]["halted"] != true || evs[0]["cause"] != "disk full" {
 		t.Fatalf("health after a halt: %v", evs[0])
 	}
@@ -85,10 +108,9 @@ func TestTheSettleWindowOpeningAndClosingIsPublished(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	evs := healthEvents(t, d, 2, func() {
+	evs := healthEvents(t, d, 2, func(heard func(int)) {
 		go d.watchSettle(ctx)
-		// Close the window: nothing pending and past the floor.
-		time.Sleep(200 * time.Millisecond)
+		heard(1)
 		d.settle.done()
 	})
 	if evs[0]["settling"] != true {

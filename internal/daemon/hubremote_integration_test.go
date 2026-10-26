@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -29,23 +30,19 @@ func launchDump(t *testing.T, d *Daemon, req LaunchRequest) map[string]string {
 	dir := t.TempDir()
 	req.Harness, req.Cwd, req.SpawnedBy, req.Env = "envdump", dir, store.HumanLauncher, nil
 	_, _ = d.Launch(req)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		raw, err := os.ReadFile(filepath.Join(dir, "env.txt"))
-		if err == nil {
-			seen := map[string]string{}
-			for _, kv := range strings.Split(string(raw), "\n") {
-				if i := strings.Index(kv, "="); i > 0 {
-					seen[strings.ToUpper(kv[:i])] = kv[i+1:]
-				}
-			}
-			return seen
+	var raw []byte
+	testwait.Eventually(t, 10*time.Second, "the runner to write its environment", func() bool {
+		b, err := os.ReadFile(filepath.Join(dir, "env.txt"))
+		raw = b
+		return err == nil
+	})
+	seen := map[string]string{}
+	for _, kv := range strings.Split(string(raw), "\n") {
+		if i := strings.Index(kv, "="); i > 0 {
+			seen[strings.ToUpper(kv[:i])] = kv[i+1:]
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the runner never wrote its environment: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
+	return seen
 }
 
 // testGitIsolation is a GIT_CONFIG_ variable that internal/testguard sets for every test, and not one of the
@@ -93,19 +90,12 @@ func TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder(t *testing.T) {
 	// The helper exits at once, and a card that exits loses its token: the room forgets it and the forwarder
 	// stops accepting it. (Revoked when the card exits.)
 	tok := strings.TrimPrefix(v, gitsync.HeaderCardToken+": ")
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testwait.Eventually(t, 10*time.Second, "the room to let go of the exited card's git token", func() bool {
 		d.hubGit.mu.Lock()
+		defer d.hubGit.mu.Unlock()
 		_, held := d.hubGit.issued[id]
-		d.hubGit.mu.Unlock()
-		if !held {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the card exited and the room still holds its git token")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return !held
+	})
 	if _, ok := d.hubGit.cards.Check(tok); ok {
 		t.Fatal("an exited card's token is still accepted by the forwarder")
 	}
@@ -297,7 +287,7 @@ func TestAnOldRunsExitDoesNotRevokeTheTokenOfAResume(t *testing.T) {
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "resumer")
 	oldStarted := time.Now()
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	into := map[string]string{}
 	d.hubGitEnv(task.ID, false, nil, into) // the resume's launch
 	tok := strings.TrimPrefix(into["GIT_CONFIG_VALUE_0"], gitsync.HeaderCardToken+": ")

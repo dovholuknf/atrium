@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/ptyhost"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -80,13 +81,7 @@ func scriptArgv(t *testing.T, script string) (string, []string) {
 
 func hostWait(t *testing.T, d time.Duration, what string, f func() bool) {
 	t.Helper()
-	end := time.Now().Add(d)
-	for !f() {
-		if time.Now().After(end) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
+	testwait.EventuallyEvery(t, 25*time.Millisecond, d, what, f)
 }
 
 func ringHas(r *runner, s string) bool {
@@ -332,7 +327,7 @@ func TestALiveExitIsFiledOnceAndCollectedAfterIt(t *testing.T) {
 		_, still := listOf(t, d)[runID]
 		return !still
 	})
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: no second exit may be filed
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("%d exits filed", n)
 	}
@@ -699,7 +694,7 @@ func TestStrayCleanupSparesTheRunThisDaemonHolds(t *testing.T) {
 	}
 	r := d.sup.get(task.ID)
 	d.killStrays(task.ID, store.RunKindRunner)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // wait: the stray cleanup must not end this run
 	if listOf(t, d)[r.runID].Exited {
 		t.Fatal("the daemon's own runner was ended as a stray")
 	}

@@ -159,7 +159,7 @@ func TestARepeatDoneAfterALauncherStopIsSilent(t *testing.T) {
 		t.Fatalf("%d pending after draining", n)
 	}
 
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	if rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, SHA: "abc1234", Ended: true}); rec.Code != http.StatusOK {
 		t.Fatalf("code %d: %v", rec.Code, out)
@@ -199,7 +199,7 @@ func TestAResidentDoneNeitherExitsNorRingsOnSilence(t *testing.T) {
 	if err := d.st.MarkDelivered(launcher.ID, "terminal", ids); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	stopSilently(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
