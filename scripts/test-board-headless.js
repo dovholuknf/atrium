@@ -3829,6 +3829,7 @@ async function termHiddenRedrawSection(browser, base) {
       if (!slot) return { err: "hid-a is not kept" };
       dropWebgl(slot.term);
       for (const t = Date.now(); !(slot.term._core._renderService._renderer.value || {})._widthCache && Date.now() - t < 5000;) await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestIdleCallback(() => r()));
       const rd = slot.term._core._renderService._renderer.value;
       const wc = rd && rd._widthCache;
       if (!wc) return { err: "no DOM renderer width cache on the kept terminal" };
@@ -7674,7 +7675,7 @@ async function phoneTermBarSection(browser, base) {
     const shown = (q, sel) => q.evaluate(s => { const e = document.querySelector(s); return !!e && getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; }, sel);
     for (const mode of ["normal", "full"]) {
       const tag = "phoneTermBar " + mode + ": ";
-      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await frames(p, 2); }
+      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await settleStyle(p); }
       if (await shown(p, ".term-bar")) fail(tag + "the tray shows by default");
       if (!(await vis(p, "#t-tray-handle"))) fail(tag + "the handle is missing");
       const hb = await box(p, "#t-tray-handle");
@@ -8718,7 +8719,7 @@ async function copySelectSection(browser, base) {
     await p.keyboard.type("alpha", { delay: 20 });
     await p.evaluate(() => { runFind(true); runFind(true); runFind(true, true); });
     await p.evaluate(() => termSock.onmessage({ data: "alpha zeta\r\n" }));
-    await termWrite(p, ""); await frames(p, 2);
+    await p.waitForFunction(() => / of 4$/.test(document.getElementById("t-find-n").textContent), null, { timeout: slow(5000) }).catch(() => {});
     const find = await p.evaluate(() => ({ sel: term.getSelection(), clip: window.__clip.slice() }));
     if (find.sel !== "alpha") fail("the find bar did not select its match, so this proves nothing: " + JSON.stringify(find));
     if (find.clip.length) fail("copy on select copied from the find bar: " + JSON.stringify(find.clip));
