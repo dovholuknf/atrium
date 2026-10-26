@@ -40,8 +40,7 @@ func newOpenHandler() *cobra.Command {
 				return err
 			}
 			fmt.Printf("registered atrium-open: for this user, handled by %s\n", filepath.ToSlash(exe))
-			fmt.Println("run this again if that file moves. in the browser console, once: " +
-				"localStorage.atriumOpenLink = \"1\"")
+			fmt.Println("run this again if that file moves")
 			return nil
 		},
 	}, &cobra.Command{

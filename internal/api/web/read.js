@@ -111,8 +111,8 @@ function extMain(id, path) {
     btn.disabled = true;
     let msg = "";
     try {
-      // On the room's own machine with the handler installed, the desktop user's link. See `launchByLink` in notes-files.js.
-      if (localStorage.getItem("atriumOpenLink") === "1" && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
+      // A bare card id on a loopback board is on this machine, so the desktop user's link. See `launchByLink` in notes-files.js.
+      if (!room && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
         const l = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files/launch-link", {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: path })
         });
@@ -120,7 +120,7 @@ function extMain(id, path) {
         if (j && j.url) {
           location.href = j.url;
           btn.disabled = false;
-          note.textContent = "Asked your desktop to open it.";
+          note.textContent = "Asked your desktop to open it. If nothing opens, run once as the desktop user: atrium open-handler install";
           note.hidden = false;
           return;
         }

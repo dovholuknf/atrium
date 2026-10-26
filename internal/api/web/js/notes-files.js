@@ -720,16 +720,34 @@ async function openOnDaemon(id, path) {
   toast("opening", path.split(/[\\/]/).pop() + " on the machine running this session");
 }
 
-// On the room's own machine, with `atrium open-handler install` done and localStorage.atriumOpenLink = "1", the room
-// issues an `atrium-open:` link and the browser hands it to the desktop user's handler. False means use `files/launch`.
+// A board loaded from loopback is on the hub's machine, so a card is on this machine when it has no room prefix (one
+// room) or its room is the hub's own (`local` in `/_hub/rooms`). A card on another room goes to `files/launch`.
+function cardOnThisMachine(id) {
+  if (!/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) return false;
+  const room = roomOf(id);
+  return !room || !!(hubRooms.find(r => r.name === room) || {}).local;
+}
+
+// On the room's own machine the room issues an `atrium-open:` link and the browser hands it to the desktop user's
+// handler (`atrium open-handler install`). False means use `files/launch`. A browser with no handler does nothing
+// on an unknown scheme, so a link that moved no focus in 3s is taken as not picked up and the install command is shown.
 async function launchByLink(id, path) {
-  if (localStorage.getItem("atriumOpenLink") !== "1" || !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) return false;
+  if (!cardOnThisMachine(id)) return false;
   try {
     const r = await api(`/v1/tasks/${id}/files/launch-link`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path })
     });
     if (!r || !r.url) return false;
+    let picked = false;
+    const saw = () => { picked = true; };
+    window.addEventListener("blur", saw, { once: true });
+    document.addEventListener("visibilitychange", saw, { once: true });
+    setTimeout(() => {
+      window.removeEventListener("blur", saw);
+      document.removeEventListener("visibilitychange", saw);
+      if (!picked) toast("nothing opened it", "to open files here, run once as the desktop user: atrium open-handler install");
+    }, 3000);
     location.href = r.url;
     return true;
   } catch (e) {
