@@ -447,6 +447,14 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"cancel it.",
 	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
+	addTool(s, class, &mcp.Tool{
+		Name: "atrium_need",
+		Description: "Say what a lean worker lacks: `mcp:<name>`, `agent:<name>` or `skill:<name>`.\n\n" +
+			"Atrium adds it to your card, restarts you on this conversation and types `continue` once you are back. " +
+			"End your turn after calling this. Anything else, such as a tool or a program on PATH, is logged and " +
+			"refused: ask your launcher with `atrium_say`. Every call is logged on your card.",
+	}, c.needHandler)
+
 	c.registerGit(s, class)
 	c.registerDeps(s, class)
 	c.registerBacklog(s, class)
@@ -2515,6 +2523,29 @@ func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	out.Queued, out.Replaced, out.Note = res.Queued, res.Replaced, res.Note
 	return nil, out, nil
+}
+
+type needInput struct {
+	Needs []string `json:"needs" jsonschema:"what you lack, each as mcp:<name>, agent:<name> or skill:<name>"`
+}
+
+// needHandler files the caller's own need with its room, which adds it and restarts the card.
+func (c *controlMCP) needHandler(ctx context.Context, req *mcp.CallToolRequest, in needInput) (
+	*mcp.CallToolResult, map[string]any, error) {
+
+	out := map[string]any{}
+	me := agentOf(req)
+	if me == "" {
+		return nil, out, fmt.Errorf("atrium_need is for a session atrium knows. this call did not say which one it is")
+	}
+	room := roomOf(req)
+	id, _, err := c.resolvePeer(ctx, room, me)
+	if err != nil {
+		return nil, out, err
+	}
+	err = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/need", room,
+		map[string]any{"needs": in.Needs, "by": me}, &out)
+	return nil, out, err
 }
 
 // ── mounting ──────────────────────────────────────────────────────────────────────
