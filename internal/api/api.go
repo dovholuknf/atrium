@@ -222,6 +222,8 @@ type Server struct {
 	// runner is back after a restart. Owned by the daemon, which owns the
 	// terminal. See internal/daemon/restartwake.go.
 	RestartWake http.HandlerFunc
+	// Need is a lean worker naming what it lacks, which the daemon adds and restarts it with.
+	Need http.HandlerFunc
 	// GitClone is `atrium_git_clone`: a clone in the scm folder for a card. Owned by the daemon,
 	// which holds the settings and asks the one yes. See internal/daemon/gitclone.go.
 	GitClone http.HandlerFunc
@@ -931,6 +933,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
+	}
+	if s.Need != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/need", s.Need)
 	}
 	if s.LoginHandler != nil {
 		mux.HandleFunc("GET /v1/login-needed", s.LoginHandler)

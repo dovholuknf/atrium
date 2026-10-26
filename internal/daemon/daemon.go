@@ -534,6 +534,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.ItemAct = d.handleItemAct
 	d.ap.PoolSubmit = d.handlePoolSubmit
 	d.ap.RestartWake = d.handleRestartWake
+	d.ap.Need = d.handleNeed
 	d.ap.Hold = d.handleHold
 	d.ap.NewContext = d.handleNewContext
 	d.ap.Resume = d.handleResume

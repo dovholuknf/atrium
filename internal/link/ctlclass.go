@@ -59,6 +59,8 @@ var workerTools = map[string]bool{
 	"atrium_record": true,
 	"atrium_task":   true,
 	"atrium_alias":  true,
+	// A lean worker names what it lacks. See needHandler.
+	"atrium_need": true,
 	// Workers write the reports, so a worker publishes. See docs_mcp.go.
 	"atrium_publish": true,
 	// Workers hand files between rooms. See files_mcp.go.
