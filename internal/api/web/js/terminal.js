@@ -451,6 +451,13 @@ async function openOlderScrollback(id) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+async function setTermContextLimit(t, k) {
+  const v = String(k);
+  if (await patchTask(t.id, { overrides: { context_limit_k: v } })) {
+    t.overrides = Object.assign({}, t.overrides, { context_limit_k: v });
+  }
+}
+
 async function termSettings(e) {
   // Without this the menu opens and closes in the same event: `showMenu` draws
   // it, the click keeps bubbling to the document listener that dismisses any
@@ -466,6 +473,8 @@ async function termSettings(e) {
   // request, once per page, and only the first click waits for it.
   if (!allActions.length) await loadActions();
   const own = readSize("atrium.popout." + t.id);
+  const ctxMax = (t.context_size && t.context_size.ceiling_k) || 2000;
+  let ctxK = peekThresholdK(t);
   const items = [
     // Reachable from the terminal you are looking at, which is where saying
     // something to a session is a thing you want to do.
@@ -506,6 +515,17 @@ async function termSettings(e) {
       label: "reset text size", note: `back to ${TERM_FONT_DEFAULT}px`,
       act: () => setTermFont(TERM_FONT_DEFAULT)
     } : null,
+    // The card's own context limit, in thousands of tokens. Unlike text size it is saved on the card, and the row
+    // opens on the limit in force, so an unset card shows the hub's default.
+    { step: true, label: "context limit (k)",
+      min: 10, max: ctxMax,
+      help: "In thousands of tokens. Past it atrium cycles this card's context. Saved on the card and wins " +
+        "over the hub's limit for its harness.",
+      get: () => ctxK,
+      set: (n) => { ctxK = Math.min(ctxMax, Math.max(10, Math.round(n) || 10)); setTermContextLimit(t, ctxK); } },
+    t.overrides && t.overrides.context_limit_k ? {
+      label: "use the default context limit", note: "the hub's, for its harness",
+      act: () => setTermContextLimit(t, "") } : null,
     { sep: true },
     // WHAT THIS TERMINAL SAID BEFORE THE LAST RESTART.
     //
