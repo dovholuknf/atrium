@@ -24836,6 +24836,37 @@ async function attachAtOnceSection(browser, base) {
   } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
+// AN EXITED PANE SHOWS ITS CARD'S ID, and the copy button beside it, the one bar button left with close and copy
+// mode, puts the bare id (no room tag) on the clipboard.
+async function deadCardIdSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  try {
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForFunction(() => typeof markTermDead === "function" && typeof copyPath === "function",
+      null, { timeout: slow(15000) });
+    const st = await wp.evaluate(async () => {
+      window.__copied = [];
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { writeText: async s => { window.__copied.push(s); } } });
+      termTask = { id: "lab~0f3c-dead-id", display_title: "row dead" };
+      markTermDead();
+      const chip = document.querySelector("#t-chips .t-deadid");
+      const btn = chip && chip.querySelector("button");
+      const shown = !!btn && !btn.hidden && getComputedStyle(btn).display !== "none";
+      if (btn) btn.click();
+      await new Promise(r => setTimeout(r, 0));
+      return { text: chip ? chip.textContent.trim() : "", shown, copied: window.__copied.slice() };
+    });
+    if (st.text !== "0f3c-dead-id" || !st.shown) fail("deadCardId: the exited pane does not show the id with its copy button (" + JSON.stringify(st) + ").");
+    if (st.copied.join("|") !== "0f3c-dead-id") fail("deadCardId: the copy button did not copy the bare id (" + JSON.stringify(st) + ").");
+    if (errors.length) fail("deadCardId: page errors " + errors.join("; "));
+    if (!bad) console.log("deadCardId ok");
+  } finally { await ctx.close(); }
+}
+
 // AN OPEN FILE BELONGS TO ITS CARD. Opened on A, hidden on B (whose terminal shows), back on A with the edited text
 // and scroll, closed on A only. And the editor reaches down to the footer hint line at two window heights.
 // `FILEVIEW_SHOTS=dir` also writes the pictures for the item file.
@@ -26029,7 +26060,7 @@ async function main() {
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
       u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -28239,6 +28270,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("termDeadCard", () => termDeadCardSection(browser, base));
+    await unit("deadCardId", () => deadCardIdSection(browser, base));
     await unit("fileView", () => fileViewSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pinNow", () => pinNowSection(browser, base));
