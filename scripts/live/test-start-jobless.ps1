@@ -11,7 +11,7 @@ $said = [System.Collections.Generic.List[string]]::new()
 function Say($m) { $said.Add("$m") }
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile("$PSScriptRoot\live-common.ps1", [ref]$null, [ref]$null)
-foreach ($n in 'Get-StartRoute', 'New-LaunchScript', 'Start-Jobless') {
+foreach ($n in 'Get-StartRoute', 'New-LaunchScript', 'Get-PathRecord', 'Start-Jobless') {
   $def = $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq $n }, $true) |
     Select-Object -First 1
   . ([scriptblock]::Create($def.Extent.Text))
@@ -19,6 +19,7 @@ foreach ($n in 'Get-StartRoute', 'New-LaunchScript', 'Start-Jobless') {
 
 $Base = Join-Path ([IO.Path]::GetTempPath()) "start-jobless-$PID"
 New-Item -ItemType Directory $Base | Out-Null
+$ToolchainDir = $Base
 try {
   Check 'in a job the route is wmi' ((Get-StartRoute $true) -eq 'wmi')
   Check 'outside any job the route is breakaway' ((Get-StartRoute $false) -eq 'breakaway')
@@ -58,6 +59,25 @@ try {
   $p = Start-Jobless '"x.exe" room > out 2> err' 'room'
   Check 'from a job it starts through WMI and returns that pid' ($p -eq 200 -and $calls.Count -eq 1 -and $calls[0] -like 'wmi cmd.exe /c *launch-room.cmd*')
   Check 'it says the result is in no job' (($said -join "`n") -match 'in no job object')
+  Check 'with no record it says so and names room-toolchain.ps1' (($said -join "`n") -match 'no PATH record at .*path\.txt.*room-toolchain\.ps1')
+
+  New-LaunchScript $cmd '"x.exe" room' @('C:\tools\go\bin', 'C:\tools\100%jq', 'C:\bad"dir')
+  $body = Get-Content $cmd -Raw
+  Check 'the launch script puts the record ahead of PATH' ($body -match [regex]::Escape('set "PATH=C:\tools\go\bin;C:\tools\100%%jq;%PATH%"'))
+  New-LaunchScript $cmd '"x.exe" room'
+  Check 'no record sets no PATH' ((Get-Content $cmd -Raw) -notmatch 'set "PATH=')
+
+  Set-Content (Join-Path $Base 'path.txt') "C:\tools\go\bin`r`n`r`n  C:\tools\jq  `r`n"
+  $oldPath = $env:Path
+  try {
+    $env:Path = "C:\Windows;C:\tools\jq"
+    Reset $true $false $false $false
+    $null = Start-Jobless '"x.exe" room > out 2> err' 'room'
+    $launch = Get-Content (Join-Path $Base 'launch-room.cmd') -Raw
+    Check 'a WMI start carries the room''s record, not the caller''s profile' ($launch -match [regex]::Escape('set "PATH=C:\tools\go\bin;C:\tools\jq;%PATH%"'))
+    Check 'a breakaway start inherits the record first, once each' ($env:Path -eq 'C:\tools\go\bin;C:\tools\jq;C:\Windows')
+    Check 'it says the record it used' (($said -join "`n") -match [regex]::Escape('PATH record first: C:\tools\go\bin;C:\tools\jq'))
+  } finally { $env:Path = $oldPath }
 
   Reset $false $false $false $true
   $p = Start-Jobless '"x.exe" room > out 2> err' 'room'

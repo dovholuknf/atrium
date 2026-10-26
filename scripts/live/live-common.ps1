@@ -43,6 +43,9 @@ $CtlBinDir    = 'C:\Users\claude\.atrium\ctl-bin'
 $CtlDir       = Join-Path $Base 'ctl'
 $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
+$CtlServes    = 'http://127.0.0.1:7791/v1/settings'
+# The room's own PATH record, written by room-toolchain.ps1, so a start never leans on the profile of whoever ran it.
+$ToolchainDir = Join-Path (Split-Path $AtriumBinDir) 'toolchain'
 
 # The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
 # The address rooms are told to dial: ATRIUM_LINK_ADVERTISE (host:port) when set, else this machine's IPv4 address on the
@@ -536,8 +539,8 @@ function Install-Atrium([string]$From = $AtriumNew) {
 # The room first asks each working card to wrap up and queues a wake on it (r-graceful-room-restart), bounded by its
 # restart_wrap_wait_s setting, so the force waits that long plus 45s. -Immediate on the calling script ($Immediate)
 # posts ?now=1 and skips the wrap-up.
-function Get-WrapWait {
-  try { return [int](Invoke-RestMethod $RoomServes -TimeoutSec 5).restart_wrap_wait_s } catch { return 300 }
+function Get-WrapWait([string]$Url = $RoomServes) {
+  try { return [int](Invoke-RestMethod $Url -TimeoutSec 5).restart_wrap_wait_s } catch { return 300 }
 }
 #
 # A 409 from the room means the pty host would die with the room's task, so this stop would end every runner and
@@ -597,13 +600,16 @@ function Stop-Room {
 function Stop-Control {
   $ctl = Find-Control
   if (-not $ctl) { Say 'no running sg4-control room found'; return }
+  $post = $CtlShutdown
+  $wait = 45
+  if ($Immediate) { $post = "$CtlShutdown`?now=1" } else { $wait = 45 + (Get-WrapWait $CtlServes) }
   foreach ($p in $ctl) {
-    Invoke-Step "stop sg4-control pid $($p.ProcessId): POST $CtlShutdown, wait up to 45s, then force" {
-      try { Invoke-RestMethod $CtlShutdown -Method Post -TimeoutSec 8 | Out-Null }
+    Invoke-Step "stop sg4-control pid $($p.ProcessId): POST $post, wait up to ${wait}s, then force" {
+      try { Invoke-RestMethod $post -Method Post -TimeoutSec 8 | Out-Null }
       catch { Say "sg4-control shutdown post: $($_.Exception.Message)" }
-      try { Wait-Process -Id $p.ProcessId -Timeout 45 -ErrorAction Stop } catch {}
+      try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
-        Say 'sg4-control still up after 45s, force stop'
+        Say "sg4-control still up after ${wait}s, force stop"
         Stop-Process -Id $p.ProcessId -Force
       }
     }
@@ -733,25 +739,41 @@ function Start-Wmi([string]$CommandLine) {
 # New-LaunchScript writes the .cmd a WMI start runs: WMI hands the child no copy of this process's environment, so the
 # ATRIUM_* variables it needs (ATRIUM_HOSTS, ATRIUM_DEBUG_INPUTLAG, ATRIUM_PRIORITY) are set in the script, and nothing
 # else is, so no credential in this shell is written to disk. A value that cannot sit inside set "..." is skipped.
-function New-LaunchScript([string]$Path, [string]$Command) {
+function New-LaunchScript([string]$Path, [string]$Command, [string[]]$PathRecord = @()) {
   $lines = @('@echo off')
   foreach ($e in (Get-ChildItem Env: | Where-Object { $_.Name -like 'ATRIUM_*' })) {
     if ($e.Value -match '["\r\n]') { continue }
     $lines += ('set "{0}={1}"' -f $e.Name, ($e.Value -replace '%', '%%'))
   }
+  $dirs = @($PathRecord | Where-Object { $_ -notmatch '["\r\n]' } | ForEach-Object { $_ -replace '%', '%%' })
+  if ($dirs) { $lines += ('set "PATH={0};%PATH%"' -f ($dirs -join ';')) }
   $lines += $Command
   Set-Content -Path $Path -Value $lines -Encoding ASCII
+}
+
+# Get-PathRecord answers the folders in the room's path.txt, go and jq among them, or none when there is no record.
+function Get-PathRecord([string]$Dir = $ToolchainDir) {
+  $f = Join-Path $Dir 'path.txt'
+  if (-not (Test-Path -LiteralPath $f)) { return @() }
+  return @(Get-Content -LiteralPath $f | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 # Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
 # when the result is still in one. Returns the pid of the cmd that runs it. Throws only when neither route could start it.
 function Start-Jobless([string]$Command, [string]$Tag) {
   $route = Get-StartRoute (Test-ProcessInJob $PID)
+  $record = Get-PathRecord
+  if ($record) {
+    Say "$Tag gets the room's PATH record first: $($record -join ';')"
+    $env:Path = (@($record) + @($env:Path -split ';' | Where-Object { $_ -and $record -notcontains $_ })) -join ';'
+  } else {
+    Say "no PATH record at $(Join-Path $ToolchainDir 'path.txt'), so $Tag gets no go or jq it did not inherit. room-toolchain.ps1 writes one"
+  }
   $procId = $null
   if ($route -eq 'wmi') {
     try {
       $launch = Join-Path $Base "launch-$Tag.cmd"
-      New-LaunchScript $launch $Command
+      New-LaunchScript $launch $Command $record
       $procId = Start-Wmi "cmd.exe /c `"$launch`""
     } catch {
       Say "WARNING: could not start $Tag through WMI ($($_.Exception.Message)). falling back to breakaway, which leaves it in any outer job"
