@@ -27864,6 +27864,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
     await unit("launchThrowaway", bu("launchThrowaway"));
     await unit("launchSetup", bu("launchSetup"));
+    await unit("launchPresets", bu("launchPresets"));
     await unit("newWorkDialog", bu("newWorkDialog"));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
