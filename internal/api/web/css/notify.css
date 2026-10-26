@@ -61,6 +61,7 @@
   .tlrow.blocker.resolved, .tlrow.blocker.resolved.fresh { background: none; box-shadow: none; opacity: .6; }
   .tlrow.blocker.resolved .tlwhen, .tlrow.blocker.resolved .tlwhat b { color: var(--dim); }
   .tlrow .tlresolved { color: var(--dim); font-style: italic; }
+  .tlrow.agent:not(.pinned) { opacity: .55; }
   .tlrow.pinned { position: sticky; top: 0; z-index: 1; background: var(--lift); }
   .tlrow.pinned.blocker { background-image: linear-gradient(rgba(var(--danger-rgb),.14), rgba(var(--danger-rgb),.14)); }
   :is(#toastlog-open, #t-bell).blocked-now { color: var(--danger); }

@@ -53,11 +53,19 @@ function recordToLog(title, body, goTo, key, taskFor, growl) {
   const last = list[list.length - 1];
   const kind = logKind;
   const sig = kind + " " + title + " " + (body || "");
-  if (last && last.sig === sig) {
-    if (growl) last.growl = growl;
-    if (taskFor) last.taskFor = taskFor;
-    last.n = (last.n || 1) + 1;
-    last.at = Date.now();
+  // One card's alert of one kind is one row whatever its minute count says, so digits are not part of the key.
+  const mk = taskFor ? taskFor + " " + sig.replace(/\d+/g, "#") : "";
+  const at = mk ? list.findIndex(e => e.taskFor && e.taskFor + " " + e.sig.replace(/\d+/g, "#") === mk) : -1;
+  if (at >= 0 && at < list.length - 1) list.push(list.splice(at, 1)[0]);
+  const same = at >= 0 ? list[list.length - 1] : last && last.sig === sig ? last : null;
+  if (same) {
+    if (growl) same.growl = growl;
+    if (taskFor) same.taskFor = taskFor;
+    same.sig = sig;
+    same.title = title;
+    same.body = body || "";
+    same.n = (same.n || 1) + 1;
+    same.at = Date.now();
   } else {
     // `key` rides along with the rest. It is the pending item a permission
     // toast points at, and without it a permission opened from here lands on
@@ -78,6 +86,24 @@ function recordToLog(title, body, goTo, key, taskFor, growl) {
 // localStorage, and are recorded by the wrapper.
 function logNotification(title, body, goTo, key, taskFor) {
   recordToLog(title, body, goTo, key, taskFor);
+}
+
+const TRAY_MINE_KEY = "atrium.tray.mine";
+function trayMineOnly() { return localStorage.getItem(TRAY_MINE_KEY) === "1"; }
+
+// A row about a card another session launched is its launcher's, unless it asks the human something.
+function trayAgentRow(t) {
+  if (!t.taskFor || typeof lastTasks === "undefined") return false;
+  const c = lastTasks.find(x => sameCard(x.id, t.taskFor));
+  if (!c || !(c.spawned_by || c.spawned_by_id)) return false;
+  if (t.key || / asked (a question|\d+ questions)$/.test(t.title)) return false;
+  const g = typeof growlSet === "undefined" ? null : growlSet.find(x => x.id === t.growl);
+  return !(g && (g.reason === "permission" || g.reason === "question"));
+}
+
+function trayMineToggle() {
+  try { localStorage.setItem(TRAY_MINE_KEY, trayMineOnly() ? "0" : "1"); } catch (e) {}
+  openToastLog();
 }
 
 function trayIsOpen() {
@@ -168,6 +194,9 @@ function openToastLog() {
   const host = document.getElementById("toastlog-list");
   if (!host) return;
   const seen = toastLogSeen();
+  const mine = trayMineOnly();
+  const tog = document.getElementById("toastlog-mine");
+  if (tog) { tog.textContent = mine ? "mine only" : "all"; tog.setAttribute("aria-pressed", String(mine)); }
   // A growler that is still open or reminded gets its control on its newest row only; an ended one gets none.
   const lined = new Set();
   const remind = t => {
@@ -205,7 +234,7 @@ function openToastLog() {
       </div>
     </div>`).join("");
   setHTML(host, pinned + (list.length
-    ? list.map(t => {
+    ? list.filter(t => !(mine && trayAgentRow(t))).map(t => {
         // What the copy button hands to the clipboard: the title, then the body
         // on a second line when there is one. The same shape that arrived as a
         // toast, so pasting into a bug report or a chat message reads as the
@@ -214,7 +243,7 @@ function openToastLog() {
         const qs = questions(t);
         const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
         const gone = t.kind === "blocker" && t.taskFor ? blockerGone(t.taskFor, t.body) : "";
-        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}${gone ? " resolved" : ""}"${
+        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}${gone ? " resolved" : ""}${trayAgentRow(t) ? " agent" : ""}"${
           gone ? ` data-gone="${esc(gone)}"` : ""}${
           t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
           t.goTo ? ` data-goto="${esc(t.goTo)}"` : ""}${
