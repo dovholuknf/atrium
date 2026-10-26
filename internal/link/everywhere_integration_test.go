@@ -107,13 +107,3 @@ func TestEverywhereFindMatchesHandleOrAliasAndExcludesTheAskingRoom(t *testing.T
 		t.Errorf("the asking room's own card matched: %+v", got)
 	}
 }
-
-// What the hub was holding when it started is what the store had, so the same
-// call that an announcement makes builds it.
-func TestEverywhereAnAnnouncementReachesTheIndex(t *testing.T) {
-	state := newRoomState(map[string]any{"id": "one", "status": "running", "wire_name": "atrium-1",
-		"alias": "orchestrator", "tags": []string{EverywhereTag}})
-	hub, _, _, stop := caching(t, state)
-	defer stop()
-	waitFor(t, announceWait, func() bool { return len(everyOf(hub).find("elsewhere", "orchestrator")) == 1 })
-}

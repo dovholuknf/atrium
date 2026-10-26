@@ -124,7 +124,7 @@ const ownedBy = (b, f) => { const o = buckets.ownersOfFile(bk, f); return o.leng
 const walkFiles = d => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap(e =>
   e.isDirectory() ? (e.name === "vendor" || e.name === "icons" ? [] : walkFiles(d + "/" + e.name)) : [d + "/" + e.name]);
 const allFiles = [...walkFiles("internal/api/web").filter(f => /\.(js|css|html)$/.test(f)),
-  ...["internal/api", "internal/link", "internal/link/transport", "internal/link/wire", "internal/daemon", "internal/daemon/screen", "internal/store", "internal/hubstore", "internal/gitsync", "internal/base/claudeconf", "internal/ptyhost", "internal/cli", "internal/worktrees"]
+  ...["internal/api", "internal/link", "internal/link/conn", "internal/link/transport", "internal/link/wire", "internal/daemon", "internal/daemon/screen", "internal/store", "internal/hubstore", "internal/gitsync", "internal/base/claudeconf", "internal/ptyhost", "internal/cli", "internal/worktrees"]
     .flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith(".go") && !f.endsWith("_test.go")).map(f => d + "/" + f))];
 for (const b of bk.buckets) {
   const f = allFiles.find(x => ownedBy(b, x));
@@ -175,7 +175,7 @@ check("lint: a unit matching one glob passes", r.status === 0, r.stderr);
 r = lint(["--probe-go-test", "internal/api/zzz_new_integration_test.go"]);
 check("lint: a new api test file in no bucket grows rest past its ceiling and fails", r.status === 1 && /api\/rest holds 30 test files, over its ceiling of 29/.test(r.stderr), r.stderr);
 r = lint(["--probe-go-test", "internal/link/zzz_new_integration_test.go"]);
-check("lint: a new link test file in no bucket fails", r.status === 1 && /hub\/rest holds 30 test files, over its ceiling/.test(r.stderr), r.stderr);
+check("lint: a new link test file in no bucket fails", r.status === 1 && /hub\/rest holds 28 test files, over its ceiling/.test(r.stderr), r.stderr);
 r = lint(["--probe-go-test", "internal/api/prs_zzz_integration_test.go"]);
 check("lint: a new test file a bucket glob owns passes and leaves rest alone", r.status === 0, r.stderr);
 r = spawnSync(process.execPath, [path.join(__dirname, "test-buckets.js"), "--go-run", "hub/backlog"], { encoding: "utf8" });

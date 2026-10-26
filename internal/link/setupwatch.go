@@ -218,13 +218,14 @@ func (p *Proxy) setupIssues(ctx context.Context, f *RoomSetup) []SetupIssue {
 	}
 	switch {
 	case f.HooksUnreadable != "":
-		issues = append(issues, SetupIssue{"hooks", "claude settings.json cannot be read, so atrium cannot check its hooks"})
+		issues = append(issues, SetupIssue{Kind: "hooks",
+			Text: "claude settings.json cannot be read, so atrium cannot check its hooks"})
 	default:
 		// The two-gates row is counted once in Missing. It gets its own text, and the count of the rest excludes it.
 		missing := f.HooksMissing
 		if f.HooksTwoGates {
-			issues = append(issues, SetupIssue{"hooks",
-				"two permission gates: atrium-perm-hook.ps1 and atrium hook. every tool call asks twice"})
+			issues = append(issues, SetupIssue{Kind: "hooks",
+				Text: "two permission gates: atrium-perm-hook.ps1 and atrium hook. every tool call asks twice"})
 			missing--
 		}
 		if missing > 0 {
@@ -232,11 +233,11 @@ func (p *Proxy) setupIssues(ctx context.Context, f *RoomSetup) []SetupIssue {
 			if f.HooksStale > 0 {
 				text += fmt.Sprintf(", %d stale", f.HooksStale)
 			}
-			issues = append(issues, SetupIssue{"hooks", text})
+			issues = append(issues, SetupIssue{Kind: "hooks", Text: text})
 		}
 	}
 	if text := p.buildIssue(ctx, f); text != "" {
-		issues = append(issues, SetupIssue{"build", text})
+		issues = append(issues, SetupIssue{Kind: "build", Text: text})
 	}
 	return issues
 }
