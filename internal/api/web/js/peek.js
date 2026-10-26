@@ -232,8 +232,8 @@ function peekRows(t) {
 // THE CARD'S ID, copyable on click, so it can still be read once the runner has exited.
 function peekIdHtml(t) {
   if (!t || !t.id) return "";
-  return `<div class="peek-sec"><div class="peek-row"><b>id</b><span>${esc(t.id)}</span></div>` +
-    `<div class="peek-row"><button type="button" class="peek-copyid link" data-id="${esc(t.id)}" data-tip="copy the card id">copy id</button></div></div>`;
+  return `<div class="peek-sec"><div class="peek-row"><b>id</b><span>${esc(t.id)}</span>` +
+    `<button type="button" class="peek-copyid link" data-id="${esc(t.id)}" data-tip="copy the card id">copy id</button></div></div>`;
 }
 document.addEventListener("click", async ev => {
   const b = ev.target && ev.target.closest && ev.target.closest(".peek-copyid");
