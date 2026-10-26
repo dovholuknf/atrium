@@ -29819,10 +29819,13 @@ async function trayMergeSection(browser, base) {
   try { h = await growlBoard(browser, base, true, GROWL_STUBS); } finally { growlBoard.off = false; }
   const { p } = h;
   try {
+    // Every refresh replaces lastTasks, so the two cards are served rather than set.
+    await h.ctx.route("**/v1/tasks", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ tasks: [{ id: "kid", spawned_by: "boss@room", display_title: "kid" }, { id: "solo", display_title: "solo" }] }) }));
+    await p.waitForFunction(() => lastTasks.some(t => t.id === "kid") && lastTasks.some(t => t.id === "solo"), null, { timeout: slow(15000) });
     await p.evaluate(() => {
       localStorage.removeItem("atrium.toastlog");
       localStorage.removeItem("atrium.tray.mine");
-      lastTasks = [{ id: "kid", spawned_by: "boss@room", display_title: "kid" }, { id: "solo", display_title: "solo" }];
       logKind = "blocker";
       [6, 11, 30, 31].forEach(m => recordToLog("kid", "BLOCKED: no activity since launch (" + m + " min)", "stack", "", "kid"));
       logKind = "";
