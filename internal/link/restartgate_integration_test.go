@@ -5,12 +5,15 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // gateUnderTest is a gate whose boards and events the test controls.
@@ -87,17 +90,8 @@ func (c *gateClock) start() {
 // taking another look.
 func (c *gateClock) waitRead(tb testing.TB, n int) {
 	tb.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		c.mu.Lock()
-		reads := c.reads
-		c.mu.Unlock()
-		if reads > n {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	tb.Fatalf("the gate never looked at the clock again after %d reads", n)
+	testwait.Eventually(tb, 5*time.Second, fmt.Sprintf("the gate to look at the clock again after %d reads", n),
+		func() bool { return c.readCount() > n })
 }
 
 func (c *gateClock) readCount() int {
@@ -115,16 +109,14 @@ func (t *gateUnderTest) said() []string {
 // waitSaid waits for a state to have been said.
 func (t *gateUnderTest) waitSaid(tb testing.TB, state string) {
 	tb.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	testwait.Eventually(tb, 5*time.Second, fmt.Sprintf("the gate to say %q", state), func() bool {
 		for _, s := range t.said() {
 			if s == state {
-				return
+				return true
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	tb.Fatalf("the gate never said %q, it said %v", state, t.said())
+		return false
+	})
 }
 
 type answer struct {
@@ -261,7 +253,7 @@ func TestResumeLetsAHeldRestartThrough(t *testing.T) {
 	gt.waitSaid(t, "countdown")
 	gt.g.pause()
 	gt.waitSaid(t, "paused")
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // wait: a negative check, nothing must answer while paused
 	select {
 	case a := <-ch:
 		t.Fatalf("a paused restart answered %q before it was resumed", a.said)
@@ -290,7 +282,7 @@ func TestAPatientPauseOutlastsTheWaitThenGoesOnResume(t *testing.T) {
 	gt.g.pause()
 	gt.waitSaid(t, "paused")
 	// Three waits' worth, where an impatient ask would have said `paused`.
-	time.Sleep(3 * wait)
+	time.Sleep(3 * wait) // wait: the time passing while paused is what is under test
 	select {
 	case a := <-ch:
 		t.Fatalf("a held restart answered %q %v before it was resumed", a.said, a.err)
@@ -317,7 +309,7 @@ func TestAPatientAskMadeWhilePausedWaitsForResume(t *testing.T) {
 	gt.g.pause()
 	ch := gt.askPatient(context.Background(), 50*time.Millisecond, 20*time.Millisecond,
 		100*time.Millisecond, true)
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond) // wait: a negative check, nothing must answer while paused
 	select {
 	case a := <-ch:
 		t.Fatalf("an ask made during a pause answered %q before the resume", a.said)
@@ -348,7 +340,7 @@ func TestAResumeStartsTheWaitOver(t *testing.T) {
 	const wait = 300 * time.Millisecond
 	ch := gt.askPatient(context.Background(), 5*time.Second, time.Hour, wait, true)
 	gt.g.pause()
-	time.Sleep(2 * wait)
+	time.Sleep(2 * wait) // wait: the time passing while paused is what is under test
 	gt.g.resume()
 	resumed := time.Now()
 	a := got(t, ch)
