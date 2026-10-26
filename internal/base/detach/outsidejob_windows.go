@@ -46,8 +46,8 @@ func startOutsideJob(exe string, args []string, log string) (*os.Process, error)
 	}
 	p, err := holdProcess(pid)
 	if err != nil {
-		return nil, fmt.Errorf("start outside the job through WMI: %s started as pid %d and had ended before it could be held: %w",
-			filepath.Base(exe), pid, err)
+		return nil, fmt.Errorf("start outside the job through WMI: %s started as pid %d and had ended before it could be held, "+
+			"as it does when cmd cannot open the log %q: %w", filepath.Base(exe), pid, log, err)
 	}
 	return p, nil
 }
