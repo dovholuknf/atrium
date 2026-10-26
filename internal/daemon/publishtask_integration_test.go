@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -36,8 +37,19 @@ func TestPublishTaskSendsTheDecoratedRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	time.Sleep(100 * time.Millisecond)
-	d.publishTask(card.ID)
+	stop := make(chan struct{})
+	defer close(stop)
+	// The stream subscribes after it answers, so publish until the subscriber hears one.
+	go func() {
+		for {
+			d.publishTask(card.ID)
+			select {
+			case <-stop:
+				return
+			case <-time.After(testwait.HTTP):
+			}
+		}
+	}()
 
 	sc := bufio.NewScanner(resp.Body)
 	kind := ""

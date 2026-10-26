@@ -136,7 +136,7 @@ func TestCloseStopsAPendingOutputCheck(t *testing.T) {
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))
 	d.outputSoon(f.task.ID)
 	d.stopOutput()
-	time.Sleep(outputCheckDelay + 200*time.Millisecond)
+	time.Sleep(outputCheckDelay + 200*time.Millisecond) // wait: a negative check, a check armed before Close must not run
 	if d.outputAtFor(f.task.ID) != "" {
 		t.Fatal("a check armed before Close read the transcript")
 	}

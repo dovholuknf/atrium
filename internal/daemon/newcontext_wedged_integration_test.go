@@ -44,7 +44,7 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	d.act.set(id, ActivityThinking, "")
 	for i := 0; i < 5; i++ {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // wait: a negative check, typing must stay held while no ack comes
 		if !d.nctx.typingHeld(id) {
 			t.Fatal("typing not held while the cycle waits for an ack that never comes")
 		}

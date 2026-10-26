@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -300,16 +301,11 @@ func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 	now := time.Now()
 	d.owedPass(now)
 	d.owedPass(now.Add(owedPushAfter + time.Second))
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	testwait.Poll(3*time.Second, func() bool {
 		rl.mu.Lock()
-		n := len(rl.got)
-		rl.mu.Unlock()
-		if n > 0 {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		defer rl.mu.Unlock()
+		return len(rl.got) > 0
+	})
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	if len(rl.got) != 1 || rl.got[0].To != "chief" || rl.got[0].Room != "sg4-control" ||
@@ -497,15 +493,12 @@ func orphanEndedAndPushed(t *testing.T, d *Daemon) {
 }
 
 func waitSays(rl *fakeRelay, want int) []RelaySay {
-	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+	testwait.Poll(2*time.Second, func() bool {
 		rl.mu.Lock()
-		n := len(rl.got)
-		rl.mu.Unlock()
-		if n >= want {
-			break
-		}
-	}
-	time.Sleep(100 * time.Millisecond)
+		defer rl.mu.Unlock()
+		return len(rl.got) >= want
+	})
+	time.Sleep(100 * time.Millisecond) // wait: a negative check, no further say may come
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	return append([]RelaySay(nil), rl.got...)
@@ -584,7 +577,7 @@ func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
 	}
 	d.owedPass(time.Now())
 	d.closeOwed(worker.ID, "dismissed")
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond) // wait: spaces the new question's stamp after the close, no event marks it
 	d.peerSaid(worker.WireName, launcher, askColumn, KindNeeds)
 	d.owedPass(time.Now().Add(time.Second))
 	if n, _, _ := d.owedFor(launcher); n != 1 {
@@ -725,7 +718,7 @@ func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
 		if n, _, _ := d.owedFor(launcher); n != 1 {
 			t.Fatalf("typed %v: the first ending opened %d", typed, n)
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the retask's stamp after the first ending, no event marks it
 		retask := func() {
 			if err := d.st.SetStatus(worker.ID, store.StatusRunning); err != nil {
 				t.Fatal(err)
@@ -744,13 +737,13 @@ func TestARetaskedWorkerOwesAgainInTheTypedAndTheQueuedOrder(t *testing.T) {
 			say()
 		} else {
 			say()
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond) // wait: spaces the retask's stamp after the say, no event marks it
 			retask()
 		}
 		if n, _, _ := d.owedFor(launcher); n != 0 {
 			t.Fatalf("typed %v: the say left %d open", typed, n)
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // wait: spaces the second ending's stamp after the retask, no event marks it
 		endWorker(t, d, worker)
 		d.owedPass(time.Now().Add(time.Second))
 		if n, _, _ := d.owedFor(launcher); n != 1 {
@@ -769,9 +762,9 @@ func TestAQuestionAskedWhileAnItemIsOpenIsClosedWithIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.owedPass(time.Now())
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the second question's stamp after the pass, no event marks it
 	d.peerSaid(worker.WireName, launcher, askColumn, KindNeeds)
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the close's stamp after the second question, no event marks it
 	d.closeOwed(worker.ID, "dismissed")
 	d.owedPass(time.Now().Add(time.Minute))
 	if n, _, _ := d.owedFor(launcher); n != 0 {
@@ -794,7 +787,7 @@ func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
 	if it == nil || it.Reason != owedPermission {
 		t.Fatalf("item = %+v", it)
 	}
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the close's stamp after the item opened, no event marks it
 	d.closeOwed(worker.ID, "dismissed")
 	if err := d.st.SetStatus(worker.ID, store.StatusNeedsInput); err != nil {
 		t.Fatal(err)
@@ -816,7 +809,7 @@ func TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain(t *testing.T) {
 	if n := len(heldOn(t, d, orch.ID)); n != 1 {
 		t.Fatalf("the report made %d notices", n)
 	}
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond) // wait: spaces the prompt's stamp after the report, no event marks it
 	prompt(t, d, w.ID)
 	endWorker(t, d, w)
 	d.owedPass(time.Now().Add(time.Second))

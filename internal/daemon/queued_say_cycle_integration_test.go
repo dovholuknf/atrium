@@ -55,7 +55,7 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	ncAck(t, d, task)
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: lets the ack's handoff run before the turn's Stop, no event marks it
 	// The Stop of the turn that ran the handoff.
 	if msgs, _ := d.takeMessages(id, "stop"); len(msgs) != 0 {
 		t.Fatalf("the stop hook carried %d message(s) into the context about to be cleared", len(msgs))
@@ -67,7 +67,7 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
 	// The wake's own turn runs and ends.
 	d.act.set(id, ActivityThinking, "")
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond) // wait: the wake's turn runs a while, no event marks it
 	d.act.set(id, ActivityIdle, "")
 	ncTurnEnds(d, id)
 
@@ -77,7 +77,7 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 	}
 	// Typed is not recorded: the injector marks each say delivered after it types it.
 	until(t, "every say to be marked delivered", func() bool { return len(pendingFrom(t, d, id)) == 0 })
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: a negative check, no say may be typed twice
 	got := f.written()
 	wake := strings.Index(got, ncWakeMark)
 	for _, s := range []string{"SAYDONEONE", "SAYDONETWO", "SAYNOW"} {
