@@ -60,10 +60,10 @@ func step(d *Daemon, id string) string {
 	return s
 }
 
-// Plan 5 and 7: past the limit mid-turn, the prompt is typed at once, and then again
-// once per turn however many statusline updates arrive inside one. Never cleared
-// without the ack.
-func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
+// Plan 5 and 7, f-new-context-nudge-repeats: past the limit mid-turn, the prompt is
+// typed at once and not again, across statusline bursts, the turn it ends and the
+// turn it starts when read. Never cleared without the ack.
+func TestTheLimitMidTurnTypesThePromptOncePerCycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
@@ -80,22 +80,16 @@ func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
 		t.Fatalf("no automatic cycle on the limit step: %v", d.newContextFor(id))
 	}
 
-	for turn := 1; turn < maxLimitAsks; turn++ {
-		// A burst inside the turn types nothing more.
+	for turn := 1; turn <= maxLimitAsks; turn++ {
 		statuslines(d, id, 20)
-		if got := prompts(f); got != turn {
-			t.Fatalf("turn %d: %d prompts after a burst of statusline updates, want %d", turn, got, turn)
+		if got := prompts(f); got != 1 {
+			t.Fatalf("turn %d: %d prompts mid-turn, want 1", turn, got)
 		}
-		// The turn ends with no ack: it is typed again, once.
 		ncTurnEnds(d, id)
-		until(t, "the prompt again after the turn", func() bool {
-			return prompts(f) == turn+1 && strings.HasSuffix(f.written(), "\r")
-		})
 		statuslines(d, id, 20)
-		if got := prompts(f); got != turn+1 {
-			t.Fatalf("turn %d: %d prompts between turns, want %d", turn, got, turn+1)
+		if got := prompts(f); got != 1 {
+			t.Fatalf("turn %d: %d prompts between turns, want 1", turn, got)
 		}
-		// The prompt starts the next turn.
 		midTurn(d, id)
 	}
 	if strings.Contains(f.written(), "/clear") {
@@ -104,8 +98,8 @@ func TestTheLimitMidTurnTypesThePromptOncePerTurn(t *testing.T) {
 	if step(d, id) != NewContextLimit {
 		t.Fatalf("the cycle left the limit step with no ack: %v", d.newContextFor(id))
 	}
-	if v, _ := d.newContextFor(id).(map[string]any); v["prompted"] != maxLimitAsks {
-		t.Fatalf("the chip counts %v prompts, want %d", v["prompted"], maxLimitAsks)
+	if v, _ := d.newContextFor(id).(map[string]any); v["prompted"] != 1 {
+		t.Fatalf("the chip counts %v prompts, want 1", v["prompted"])
 	}
 }
 

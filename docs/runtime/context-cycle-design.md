@@ -45,14 +45,11 @@ and its file in the cwd goes. Steps, as the chip shows them:
    the gate check is the one an immediate say uses (`typeLabelledGuarded`, no dialog on screen, the operator not
    typing), with no turn check. A runner that does not take input mid-turn (`midTurnInputFor` false) waits for the
    turn to end, since mid-turn the line would be lost.
-
-   **Retry (plan 7)**: while no ack has come, the prompt is due again when the turn that carried it has ended:
-   - typed mid-turn in turn N: due once turn N is over (the card is between turns, `turnsBegun` still N), or once a
-     later turn has begun that has not had it,
-   - typed between turns: it starts turn N+1, and is due again when that turn is over, or a later one begins.
-   So it is typed **at most once per turn**, however many statusline updates arrive inside one. A floor of
-   `ncTiming.promptGap` (30 s) between two prompts covers a runner whose turns are not counted. Statusline updates
-   and the tick poke the run (`kick`), so a due prompt goes at once rather than on the next poll.
+   **Retry (plan 7, f-new-context-nudge-repeats)**: one prompt per cycle. While no ack has come, it is typed again
+   only when the session sits at an idle prompt `ncTiming.promptLost` (10 min) after the last one, never mid-turn.
+   A prompt queued mid-turn starts a turn of its own when it is read, and the session may be inside `atrium ready`,
+   so a turn count says nothing about whether it was ignored. A floor of `ncTiming.promptGap` (30 s) still holds.
+   Statusline updates and the tick poke the run (`kick`), so a due prompt goes at once rather than on the next poll.
 
    There is **no timeout** on this step. It waits for the ack for as long as it takes, and never clears without
    one (plan 7). An automatic cycle whose card drops back under its limit before the ack (the runner compacted)

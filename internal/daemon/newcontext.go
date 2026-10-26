@@ -28,8 +28,8 @@ import (
 // step until the one before it is over, and types nothing further when a step fails.
 //
 //  1. limit: type the limit prompt, which names the handoff file and `atrium ready`.
-//     Typed as soon as the input line is free, mid-turn included, and again at most
-//     once per turn until the ack comes. Never cleared without it.
+//     Typed as soon as the input line is free, mid-turn included, and again only at
+//     an idle prompt promptLost later. Never cleared without the ack.
 //  2. clear: after `atrium ready` (ready.go), type `/clear` between turns and wait
 //     for the new session's SessionStart.
 //  3. wake: type `read <path> and continue.`
@@ -309,8 +309,8 @@ type ncTimings struct {
 	// promptGap is the least time between two limit prompts, for a runner whose
 	// turns are not counted.
 	promptGap time.Duration
-	// promptLost is how long a limit prompt typed between turns may go without
-	// starting the turn it was typed for before it is taken as lost and typed again.
+	// promptLost is how long a limit prompt may go unanswered before it is typed
+	// again, at an idle prompt only.
 	promptLost time.Duration
 }
 
@@ -330,7 +330,7 @@ func defaultNCTiming() ncTimings {
 		logEvery:      30 * time.Second,
 		sessionSettle: wakeSettle,
 		promptGap:     30 * time.Second,
-		promptLost:    2 * time.Minute,
+		promptLost:    10 * time.Minute,
 	}
 }
 
@@ -980,26 +980,17 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 	}
 }
 
-// cyclePromptDue is whether the limit prompt goes now. AT MOST ONCE PER TURN:
+// cyclePromptDue is whether the limit prompt goes now. ONCE PER CYCLE: the first goes
+// as soon as the line is free, mid-turn included, unless the runner loses input typed
+// mid-turn, when it waits for the turn to end. Another goes only at an idle prompt
+// promptLost after the last. Never mid-turn: a prompt queued mid-turn starts a turn of
+// its own when it is read, and the agent may be inside `atrium ready` (f-new-context-nudge-repeats).
 //
-//   - the first goes as soon as the line is free, mid-turn included, unless the
-//     runner loses input typed mid-turn, when it waits for the turn to end,
-//   - one typed mid-turn in turn N is due again once turn N is over, or once a
-//     later turn has begun,
-//   - one typed between turns starts turn N+1, and is due again when that turn is
-//     over, or a later one begins. Should it never start a turn, it is taken as lost
-//     after promptLost.
-//
-// Never closer than promptGap, for a runner whose turns are not counted. Never with
-// a dialog on screen, whose Enter it would answer.
+// Never closer than promptGap. Never with a dialog on screen, whose Enter it would answer.
 func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 	if d.act.dialogOpen(taskID) || c.prompted >= maxLimitAsks {
 		return false
 	}
-	// The turn count is read BEFORE busy. A turn that begins between the two reads then shows as busy, or as a count
-	// that is still the old one. Read the other way round, the count includes that turn while busy does not, and the
-	// prompt just typed is taken as having been answered by it and typed again.
-	turns := d.act.turnsBegun(taskID)
 	busy := d.ncBusy(taskID)
 	if c.prompted == 0 {
 		return !busy || d.midTurnInputFor(taskID)
@@ -1008,14 +999,7 @@ func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 	if since < d.hk.ncTiming.promptGap {
 		return false
 	}
-	switch {
-	case turns > c.promptTurn:
-		return !busy || d.midTurnInputFor(taskID)
-	case turns == c.promptTurn:
-		return !busy
-	default:
-		return !busy && since >= d.hk.ncTiming.promptLost
-	}
+	return !busy && since >= d.hk.ncTiming.promptLost
 }
 
 // cyclePrompt types the limit prompt through the gate, with no turn check for a
