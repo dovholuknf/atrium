@@ -29560,6 +29560,7 @@ async function growlActionsSection(browser, base) {
     await p.click('#growl button[data-do="snooze"]');
     await p.click('#growl .gr-snooze button[data-snooze="0"]');
     await until(() => h.posts.some(x => x.body.do === "snooze" && x.body.minutes !== 15), 5000, "the tomorrow snooze post").catch(() => {});
+    await p.waitForFunction(id => growlSet.some(g => g.id === id && g.state === "snoozed"), q.id, { timeout: slow(5000) }).catch(() => {});
     last = h.posts[h.posts.length - 1];
     if (!(last.body.minutes >= 1 && last.body.minutes <= 2 * 24 * 60 - 1) || last.body.minutes % 1) fail("growlActions: tomorrow snooze sent " + last.body.minutes);
     // a 409 says already handled and drops the row
@@ -29601,7 +29602,7 @@ async function growlActionsSection(browser, base) {
     h.answer = null;
     await h.say([perm, q]);
     await p.click('#growl .gr-full button[data-do="dismiss"]');
-    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
+    await p.waitForFunction(id => growlUndo.has(id), perm.id, { timeout: slow(3000) });
     await h.say([perm, q]);
     await p.waitForFunction(() => !document.querySelector(".toast .gr-undo"), null, { timeout: slow(2000) })
       .catch(() => fail("growlActions: the undo toast stayed after the growler came back another way."));
@@ -29780,7 +29781,7 @@ async function growlRemindSection(browser, base) {
     r = await rows();
     if (r.find(x => x.t.startsWith("question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
     await p.click('#toastlog-list .tlremind[data-remind="60"]');
-    await until(() => h.posts.some(x => x.id === q.id), 5000, "the remind post").catch(() => {});
+    await p.waitForFunction(id => growlSet.some(g => g.id === id && g.state === "snoozed"), q.id, { timeout: slow(5000) }).catch(() => {});
     const post = h.posts.find(x => x.id === q.id);
     if (!post || post.body.do !== "snooze" || post.body.minutes !== 60) fail("growlRemind: the post was " + JSON.stringify(h.posts));
     if (await p.$("#growl")) fail("growlRemind: a reminded row drew a growler.");
