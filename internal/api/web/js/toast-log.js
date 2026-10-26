@@ -262,6 +262,8 @@ function openToastLog() {
   });
   host.querySelectorAll(".tlrow").forEach(r => {
     const task = r.dataset.task, go = r.dataset.goto, key = r.dataset.key;
+    // setHTML keeps the row node, so a row that opens nothing would keep the handler of the row painted there before.
+    r.onclick = null;
     if (!task && !go && !key) return;
     r.classList.add("clickable");
     r.onclick = async e => {
