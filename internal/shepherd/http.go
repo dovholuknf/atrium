@@ -115,6 +115,13 @@ func (h *HubHTTP) CardStatus(ctx context.Context, card string) (string, error) {
 	return t.Status, err
 }
 
+// Profile reads the operator's profile.
+func (h *HubHTTP) Profile(ctx context.Context) (Profile, error) {
+	var p Profile
+	_, err := h.call(ctx, http.MethodGet, "/_hub/profile", nil, &p)
+	return p, err
+}
+
 // ExecRunner runs commands for real, with each stream bounded while it is read.
 type ExecRunner struct{}
 
@@ -177,7 +184,7 @@ func SleepCtx(ctx context.Context, d time.Duration) error {
 
 // DefaultRules is the block every worker's brief ends with. It is the recipe's, so the two do not drift.
 var DefaultRules = strings.TrimSpace(`
-RULES: commit as Clint Dovholuk (configured), one short subject line per commit, no body, no trailers. Do not edit
+RULES: commit as {operator} (configured), one short subject line per commit, no body, no trailers. Do not edit
 CLAUDE.md. Go builds go to build.claude/ (go build -o build.claude/...). gofmt -l internal/ cmd/ must be empty; go run
 scripts/check-test-globals.go exit 0 (tests may not assign package vars). Unit tests stay under the 10ms budget (disk,
 socket or store tests go in *_integration_test.go with //go:build integration). Add a changelog entry and

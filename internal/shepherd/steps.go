@@ -114,7 +114,11 @@ func (worktreeStep) Run(ctx context.Context, e *Env, st *State) (Outcome, error)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("read the backlog item for the brief: %w", err)
 	}
-	brief := fmt.Sprintf("# %s\n\n%s\n\n%s\n", it.ID+": "+it.Title, strings.TrimSpace(it.Body), strings.TrimSpace(e.Cfg.Rules))
+	prof, err := operator(ctx, e)
+	if err != nil {
+		return Outcome{}, err
+	}
+	brief := fmt.Sprintf("# %s\n\n%s\n\n%s\n", it.ID+": "+it.Title, strings.TrimSpace(it.Body), strings.TrimSpace(strings.ReplaceAll(e.Cfg.Rules, "{operator}", prof.Display)))
 	if err := e.Files.Write(path.Join(wt, "BRIEF.md"), []byte(brief)); err != nil {
 		return Outcome{}, fmt.Errorf("write the brief: %w", err)
 	}
@@ -134,8 +138,24 @@ func hasWorktree(ctx context.Context, e *Env, wt string) (bool, error) {
 	return false, nil
 }
 
-// configureWorktree gives a worktree Clint as its author, in the worktree's own config so no other checkout changes.
+// operator is the hub's operator profile, shown by name when it has no display name.
+func operator(ctx context.Context, e *Env) (Profile, error) {
+	p, err := e.Hub.Profile(ctx)
+	if err != nil {
+		return p, fmt.Errorf("read the operator profile: %w", err)
+	}
+	if p.Display == "" {
+		p.Display = p.Name
+	}
+	return p, nil
+}
+
+// configureWorktree gives a worktree the operator as its author, in the worktree's own config so no other checkout changes.
 func configureWorktree(ctx context.Context, e *Env, wt string) error {
+	prof, err := operator(ctx, e)
+	if err != nil {
+		return err
+	}
 	for _, kv := range [][]string{
 		{"extensions.worktreeConfig", "true"},
 	} {
@@ -144,8 +164,8 @@ func configureWorktree(ctx context.Context, e *Env, wt string) error {
 		}
 	}
 	for _, kv := range [][]string{
-		{"user.name", "Clint Dovholuk"},
-		{"user.email", "46322585+dovholuknf@users.noreply.github.com"},
+		{"user.name", prof.Name},
+		{"user.email", prof.Email},
 	} {
 		if _, err := git(ctx, e, wt, "config", "--worktree", kv[0], kv[1]); err != nil {
 			return err

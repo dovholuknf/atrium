@@ -62,6 +62,9 @@ func (h *fakeHub) ItemForCard(context.Context, string) (WorkItem, bool, error) {
 	h.reads++
 	return WorkItem{ID: "it-1", Card: h.card, State: h.states[i], Note: "need a key"}, true, nil
 }
+func (h *fakeHub) Profile(context.Context) (Profile, error) {
+	return Profile{Name: "Op", Email: "op@x", Display: "Op"}, nil
+}
 func (h *fakeHub) CardStatus(context.Context, string) (string, error) { return "running", nil }
 
 type fakeFiles struct{ files map[string][]byte }
