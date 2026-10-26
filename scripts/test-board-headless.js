@@ -22704,6 +22704,60 @@ async function selectedHeadSection(browser, base) {
   if (!bad) console.log("selectedHead ok");
 }
 
+// THE QUESTIONS UNDER A TERMINALS ROW. Every row whose chip says `? n` draws n question lines under it, attached or
+// not, with the question arriving on a later poll, each line inside the row and set no bigger than the row's path.
+async function termQuestionsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof renderTermList === "function" && typeof seenQuestionLines === "function", null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const at = new Date(Date.now() - 3600e3).toISOString();
+      const asked = qs => ({ turn_ended_at: at, unseen: false, open_questions: qs, questions_at: at, answered: false });
+      const card = (id, extra) => ({ id, status: "needs-input", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: "2026-09-01T10:00:00Z", worktree: "/r/" + id, ...extra });
+      const cards = [card("og", { pinned: true }),
+        card("kid1", { spawned_by_id: "og", status: "running", tags: ["atrium:subagent"] }),
+        card("kid2", { spawned_by_id: "og", status: "running", tags: ["atrium:subagent"] }),
+        card("dot", { pinned: true, seen: asked(["Replace the `docker ps` probe in `add-docker` (`common-tools.ps1:446`) with a 200 ms TCP connect check (recommended)?",
+          "Load the Chocolatey profile module on first `refreshenv` / `choco` (recommended)?", "Label the statusline segment `rd / wr / out` (recommended)?"]) })];
+      boardCards = async () => cards;
+      if (!termSubsOn()) toggleTermShow("subagents");
+      term = term || { options: {}, dispose() {} };
+      termTask = cards[0];
+      switchView("terms");
+      window.__askOg = () => { cards[0] = Object.assign({}, cards[0], { seen: asked(["Ship it now?"]) }); termTask = cards[0]; };
+    });
+    await p.evaluate(() => renderTermList());
+    await p.waitForSelector('#term-list .card.tab[data-id="og"]', { timeout: slow(5000) });
+    // The question arrives on a later poll, so the row is patched rather than drawn.
+    await p.evaluate(() => { __askOg(); return renderTermList(); });
+    await p.waitForSelector('#term-list .card.tab[data-id="dot"]', { timeout: slow(5000) });
+    const shots = process.env.TERM_QUESTIONS_SHOTS || "";
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "term-questions.png") }); }
+    const got = await p.evaluate(() => [...document.querySelectorAll("#term-list .card.tab")].map(r => {
+      const chip = r.querySelector(":scope .chip.questions");
+      const lines = [...r.querySelectorAll(".seenq")];
+      const rr = r.getBoundingClientRect();
+      return { id: r.dataset.id, chip: chip ? chip.textContent.trim() : "", lines: lines.length,
+        shown: lines.filter(l => { const b = l.getBoundingClientRect(); return b.height > 0 && b.bottom <= rr.bottom + 1 && b.right <= rr.right + 1; }).length,
+        px: lines.length ? parseFloat(getComputedStyle(lines[0]).fontSize) : 0,
+        name: parseFloat(getComputedStyle(r.querySelector(".tname")).fontSize),
+        path: r.querySelector(".tpath") ? parseFloat(getComputedStyle(r.querySelector(".tpath")).fontSize) : 0 };
+    }));
+    for (const r of got) {
+      const n = Number((r.chip.match(/\d+/) || [0])[0]);
+      if (n && r.shown !== n) fail("termQuestions: " + r.id + " wears " + r.chip + " and shows " + r.shown + " question lines: " + JSON.stringify(r));
+      if (r.lines && (r.px >= r.name || r.px > r.path)) fail("termQuestions: " + r.id + "'s question lines are not set in the row's small type: " + JSON.stringify(r));
+    }
+    if (errors.length) fail("termQuestions: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termQuestions ok");
+}
+
 async function collapsedBridgeSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
@@ -26150,7 +26204,7 @@ async function main() {
       termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedHead: selectedHeadSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, selectedHead: selectedHeadSection, termQuestions: termQuestionsSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
       quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
@@ -28288,6 +28342,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
     await unit("selectedFits", () => selectedFitsSection(browser, base));
     await unit("selectedHead", () => selectedHeadSection(browser, base));
+    await unit("termQuestions", () => termQuestionsSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));
