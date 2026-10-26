@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 func sendFrame(t *testing.T, h *heldAttach, in attachIn) {
@@ -21,18 +23,14 @@ func sendFrame(t *testing.T, h *heldAttach, in attachIn) {
 
 func focusSeqIs(t *testing.T, r *runner, want uint64) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
+	var got uint64
+	if !testwait.Poll(3*time.Second, func() bool {
 		r.mu.Lock()
-		got := r.activeSeq
+		got = r.activeSeq
 		r.mu.Unlock()
-		if got >= want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the daemon never took the focus frame: active seq %d, want %d", got, want)
-		}
-		time.Sleep(5 * time.Millisecond)
+		return got >= want
+	}) {
+		t.Fatalf("the daemon never took the focus frame: active seq %d, want %d", got, want)
 	}
 }
 

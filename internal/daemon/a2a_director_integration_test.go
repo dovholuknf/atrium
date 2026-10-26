@@ -155,7 +155,7 @@ func TestWorkerSilentStopUnchanged(t *testing.T) {
 	}
 	liveRunner(d, worker.ID)
 	d.turnResumed(worker.ID)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	stopTurn(t, d, "worker")
 	if n := len(pendingFrom(t, d, worker.SpawnedByID)); n != 1 {
 		t.Fatalf("the worker's launcher got %d notices, want one", n)

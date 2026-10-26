@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -65,13 +66,7 @@ func TestAGlobalAutoDecisionWithNoHookParkedIsRecordedTheSame(t *testing.T) {
 	id := parkedID(t, d, task.ID)
 	hangUp()
 	<-answer
-	deadline := time.Now().Add(3 * time.Second)
-	for d.liveStoreIDs()[id] {
-		if time.Now().After(deadline) {
-			t.Fatal("the hung-up request is still live")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, 3*time.Second, "the hung-up request to leave the live set", func() bool { return !d.liveStoreIDs()[id] })
 
 	p, err := d.decideBy(id, "approve", "hub global auto", "", DecidedByHubAuto)
 	if err != nil {

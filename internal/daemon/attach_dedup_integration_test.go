@@ -51,8 +51,7 @@ func TestAttachDoesNotSeeAChunkTwiceOnASubscribeRace(t *testing.T) {
 		for i := 0; i < chunks; i++ {
 			payload := []byte("chunk-" + strconv.Itoa(i) + "\r\n")
 			r.deliverOutput(payload)
-			// Yield so subscribers have room to interleave.
-			time.Sleep(50 * time.Microsecond)
+			time.Sleep(50 * time.Microsecond) // wait: a yield so subscribers interleave, the race is what is under test
 		}
 	}()
 
@@ -64,9 +63,7 @@ func TestAttachDoesNotSeeAChunkTwiceOnASubscribeRace(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			// Space subscribes over the writer's lifetime so at least some of
-			// them land mid-stream, which is when the race used to fire.
-			time.Sleep(time.Duration(i) * 50 * time.Microsecond)
+			time.Sleep(time.Duration(i) * 50 * time.Microsecond) // wait: spaces subscribes so some land mid-stream, where the race fired
 			backlog, _, _, _, _, updates := r.subscribeSized()
 			// Count backlog tags.
 			for _, tag := range extractTags(string(backlog)) {
@@ -248,8 +245,6 @@ func TestUnsafeWriteThenFanoutStillRaces(t *testing.T) {
 	}()
 
 	<-stop
-	// Give the last subscribe a moment to drain.
-	time.Sleep(10 * time.Millisecond)
 	<-done
 
 	mu.Lock()

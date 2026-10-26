@@ -57,7 +57,7 @@ func TestAWorkerThatMovesIntoARepoAndBackIsLeftAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	tick()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the worker must not be asked
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times about a worker that only changed directory", n)
 	}
@@ -107,7 +107,7 @@ func TestGitSeenInOneDirectoryDoesNotCountForAnother(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		g.d.reapGoneWorktrees()
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // wait: a negative check, the worker must not be asked
 	if n := g.asked.Load(); n != 0 {
 		t.Fatalf("asked %d times", n)
 	}

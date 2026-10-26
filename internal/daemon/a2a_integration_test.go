@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -52,8 +53,17 @@ func stopSilently(t *testing.T, d *Daemon, agent string) {
 func stopSilentlyByID(t *testing.T, d *Daemon, id string) {
 	t.Helper()
 	d.turnResumed(id)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	d.turnEnded(id)
+}
+
+// clockMoves waits for the millisecond the store stamps to pass, so the next stamp sorts after every one before it.
+func clockMoves(t *testing.T) {
+	t.Helper()
+	was := time.Now().Truncate(time.Millisecond)
+	testwait.EventuallyEvery(t, time.Millisecond, time.Second, "the clock to pass a millisecond", func() bool {
+		return time.Now().Truncate(time.Millisecond).After(was)
+	})
 }
 
 func pendingFrom(t *testing.T, d *Daemon, id string) []*store.Message {
@@ -141,7 +151,7 @@ func TestAHumanTurnIsNotASilentStop(t *testing.T) {
 		t.Fatalf("the launcher heard of a human turn: %d messages", n)
 	}
 
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	stopTurn(t, d, "worker")
 	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
@@ -157,7 +167,7 @@ func TestATerminalTypedTurnIsNotASilentStop(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	if err := d.st.TouchHuman(worker.ID, "typed", time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +180,7 @@ func TestATerminalTypedTurnIsNotASilentStop(t *testing.T) {
 		t.Fatalf("the launcher heard of a human turn: %d messages", n)
 	}
 
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	stopTurn(t, d, "worker")
 	if n := len(pendingFrom(t, d, worker.ID)); n != 0 {
@@ -187,7 +197,7 @@ func TestEachPromptGetsItsOwnSilentStop(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := launchedPair(t, d)
 	stopSilently(t, d, "worker")
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	prompt(t, d, worker.ID)
 	stopSilently(t, d, "worker")
 	if n := len(pendingFrom(t, d, launcher.ID)); n != 2 {
@@ -435,7 +445,7 @@ func TestASlashCommandAndARestartAreNotASilentStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.turnEnded(worker.ID)
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 
 	// The slash command: typed and recorded, and the card never leaves the prompt.
 	if err := d.st.AppendEvent(worker.ID, store.EventPrompted,
@@ -475,7 +485,7 @@ func TestASilentStopKeepsItsClockAcrossAResume(t *testing.T) {
 	if err != nil || ended == nil {
 		t.Fatalf("no turn end recorded: %v", err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	for _, s := range []string{store.StatusDone, store.StatusNeedsInput} {
 		if err := d.st.SetStatus(worker.ID, s); err != nil {
 			t.Fatal(err)
@@ -762,7 +772,7 @@ func TestASilentStopAfterADoneSayIsNotNudged(t *testing.T) {
 	if _, err := d.st.CreateWorkItem(mustTask(t, d, worker.ID), store.NewWorkItem{Brief: "do the thing"}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
+	clockMoves(t)
 	if _, err := d.st.LogWorkMessage(worker.ID, launcher.ID, worker.WireName, "done abc1234"); err != nil {
 		t.Fatal(err)
 	}

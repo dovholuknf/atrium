@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 func holdAttach(t *testing.T, d *Daemon, taskID string, cols, rows int) *heldAttach {
@@ -47,25 +49,22 @@ func holdAttach(t *testing.T, d *Daemon, taskID string, cols, rows int) *heldAtt
 // cuts on and the pty is what the runner draws into.
 func ptyIs(t *testing.T, f *fakePTY, r *runner, want viewport) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		sizes := f.resized()
-		cols, rows := r.buf.CurrentSize()
-		if len(sizes) > 0 && sizes[len(sizes)-1] == want && cols == want.cols && rows == want.rows {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("want the pty at %dx%d, pty was resized to %+v and the ring says %dx%d",
-				want.cols, want.rows, sizes, cols, rows)
-		}
-		time.Sleep(10 * time.Millisecond)
+	var sizes []viewport
+	var cols, rows int
+	if !testwait.Poll(3*time.Second, func() bool {
+		sizes = f.resized()
+		cols, rows = r.buf.CurrentSize()
+		return len(sizes) > 0 && sizes[len(sizes)-1] == want && cols == want.cols && rows == want.rows
+	}) {
+		t.Fatalf("want the pty at %dx%d, pty was resized to %+v and the ring says %dx%d",
+			want.cols, want.rows, sizes, cols, rows)
 	}
 }
 
 // resizesAfterAMoment gives the daemon time to do something it should NOT do,
 // and reports how many resizes had happened by the end of it.
 func resizesAfterAMoment(f *fakePTY) int {
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: a negative check, the pty must not be resized
 	return len(f.resized())
 }
 
