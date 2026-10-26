@@ -37,7 +37,7 @@ func TestACycleOnARunnerWithoutMidTurnInputWaitsForTheTurnToEnd(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: no limit prompt may be typed while the card runs
 	if strings.Contains(f.written(), limitPrompt) {
 		t.Fatalf("the limit prompt was typed while the card was running: %q", f.written())
 	}

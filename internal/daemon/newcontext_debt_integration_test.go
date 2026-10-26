@@ -88,7 +88,7 @@ func TestACycledWorkerThatOwesStillGetsASilentStop(t *testing.T) {
 
 	cycleToWake(t, d, worker, f)
 	// The launcher prompts the fresh context, and it ends its turn with nothing said.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond) // wait: the prompt must land after the cycle, no event marks it
 	prompt(t, d, worker.ID)
 	stopSilently(t, d, "worker")
 	if got := pendingFrom(t, d, launcher.ID); len(got) != 1 || !strings.Contains(got[0].Text, "ended its turn without reporting") {
@@ -112,9 +112,9 @@ func TestTheContinuePromptListsTheSaysAlreadySent(t *testing.T) {
 		d.recordSay(rec, text)
 	}
 	say("STALE-ANSWER-BEFORE-THE-PROMPT")
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // wait: the prompt must land after the stale say, no event marks it
 	prompt(t, d, worker.ID)
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // wait: the answers must land after the prompt, no event marks it
 	say("ANSWER-ALPHA to the errand")
 	say("ANSWER-BETA with\nnewlines")
 

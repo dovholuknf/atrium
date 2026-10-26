@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -53,18 +54,11 @@ func TestALaunchedRunnerDoesNotInheritTheRoomsDebugSwitches(t *testing.T) {
 	_, _ = d.Launch(LaunchRequest{Harness: "envdump", Cwd: dir, SpawnedBy: store.HumanLauncher})
 
 	var raw []byte
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testwait.Eventually(t, 10*time.Second, "the runner to write its environment", func() bool {
 		b, err := os.ReadFile(filepath.Join(dir, "env.txt"))
-		if err == nil {
-			raw = b
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the runner never wrote its environment: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		raw = b
+		return err == nil
+	})
 	seen := map[string]string{}
 	for _, kv := range strings.Split(string(raw), "\n") {
 		if i := strings.Index(kv, "="); i > 0 {

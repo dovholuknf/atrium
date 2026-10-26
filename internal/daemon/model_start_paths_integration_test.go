@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -42,9 +43,7 @@ func modelShellCard(t *testing.T, d *Daemon) *store.Task {
 		if r := d.sup.get(task.ID); r != nil {
 			windDown(r, time.Second, d.exitKeysFor(task.ID), d.hk.windDownKeyGap)
 		}
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(task.ID) != nil; {
-			time.Sleep(50 * time.Millisecond)
-		}
+		testwait.Poll(10*time.Second, func() bool { return d.sup.get(task.ID) == nil })
 	})
 	return task
 }

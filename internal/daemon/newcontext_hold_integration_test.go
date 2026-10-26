@@ -53,7 +53,7 @@ func finishCycle(t *testing.T, d *Daemon, id, dir string, f *fakePTY) {
 		t.Fatal(err)
 	}
 	ncAck(t, d, task)
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // wait: the turn must not end in the ack's own tick
 	ncTurnEnds(d, id)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 }

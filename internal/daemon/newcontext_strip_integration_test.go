@@ -54,7 +54,7 @@ func TestNewContextStepsAdvanceAndTheEndFrameCarriesNoChip(t *testing.T) {
 			}
 		}
 	}()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // wait: let the frame recorder start, no event marks it
 
 	stepIs := func(n int, label string) func() bool {
 		return func() bool {
