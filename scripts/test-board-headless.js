@@ -24858,9 +24858,10 @@ async function deadCardIdSection(browser, base) {
       const btn = chip && chip.querySelector("button");
       const shown = !!btn && !btn.hidden && getComputedStyle(btn).display !== "none";
       if (btn) btn.click();
-      await new Promise(r => setTimeout(r, 0));
-      return { text: chip ? chip.textContent.trim() : "", shown, copied: window.__copied.slice() };
+      return { text: chip ? chip.textContent.trim() : "", shown };
     });
+    await wp.waitForFunction(() => window.__copied.length > 0, null, { timeout: slow(5000) }).catch(() => {});
+    st.copied = await wp.evaluate(() => window.__copied.slice());
     if (st.text !== "0f3c-dead-id" || !st.shown) fail("deadCardId: the exited pane does not show the id with its copy button (" + JSON.stringify(st) + ").");
     if (st.copied.join("|") !== "0f3c-dead-id") fail("deadCardId: the copy button did not copy the bare id (" + JSON.stringify(st) + ").");
     if (errors.length) fail("deadCardId: page errors " + errors.join("; "));
