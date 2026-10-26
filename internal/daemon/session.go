@@ -181,7 +181,26 @@ func (d *Daemon) sessionScratchLine(in SessionEvent) string {
 	if t == nil {
 		return ""
 	}
-	return d.scratchLine(t)
+	return strings.TrimSpace(d.scratchLine(t) + "\n" + d.roomLines(t))
+}
+
+// roomLines are what every session on the room is told at its start: where to read code that is not in its
+// directory, where the machines are listed, and its tools. gh is left out on a room with a hub, which has no forge
+// access.
+func (d *Daemon) roomLines(t *store.Task) string {
+	var lines []string
+	if !isOutsideCode(LaunchRequest{}, t) {
+		lines = append(lines, gitURLLine)
+	}
+	lines = append(lines, resourcesLine)
+	var refused []string
+	if d.HubForge() != nil {
+		refused = append(refused, "gh")
+	}
+	if tools := toolsLine(os.Getenv("PATH"), refused...); tools != "" {
+		lines = append(lines, tools)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (d *Daemon) onSession(in SessionEvent) error {

@@ -1136,12 +1136,17 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			briefDir = homeDir.Dir
 			briefName = filepath.ToSlash(filepath.Join(homeDir.Dir, briefFileName))
 		}
-		p, err := writeBriefFile(briefDir, brief, !outside)
+		write := writeBriefFile
+		if isClaude(h) {
+			write = func(dir, brief string, _ bool) (string, error) { return writeBrief(dir, brief) }
+		}
+		p, err := write(briefDir, brief, !outside)
 		if err != nil {
 			return nil, err
 		}
 		briefPath = filepath.ToSlash(p)
-		if hasTag(req.Tags, InterviewTag) {
+		// A card opened from a link is the operator's, so its prompt only points at the brief.
+		if hasTag(req.Tags, InterviewTag) || req.SourceKind != "" {
 			wanted = briefPromptEnding(briefName, wanted, "")
 		} else {
 			if req.Item || hasTag(req.Tags, ItemTag) {
@@ -1159,14 +1164,15 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 				vcancel()
 			}
 		}
-	} else if req.Resume == "" && wanted != "" && !outside {
+	} else if req.Resume == "" && wanted != "" && !outside && !isClaude(h) {
 		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
 		// instead, on a fresh start only, like the brief.
 		wanted = withGitURLLine(wanted)
 	}
 	// THE RESOURCES LINE rides on every fresh start with a prompt, an outside-code card included: it names a tool
-	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile).
-	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" {
+	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile). A claude session is told
+	// the room's lines at its start instead (roomLines).
+	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" && !isClaude(h) {
 		wanted = withToolsLine(withResourcesLine(wanted))
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
@@ -1975,12 +1981,16 @@ const briefFileName = "BRIEF.md"
 // Launch has stat'd cwd by the time this runs, so a missing one is a launch
 // failure that happened earlier and not here.
 func writeBriefFile(cwd, brief string, gitURL bool) (string, error) {
-	path := filepath.Join(cwd, briefFileName)
 	body := brief
 	if gitURL {
 		body = withGitURLLine(brief)
 	}
-	body = withToolsLine(withResourcesLine(body))
+	return writeBrief(cwd, withToolsLine(withResourcesLine(body)))
+}
+
+// writeBrief is writeBriefFile without the room's lines, for a claude session, which is told them at its start.
+func writeBrief(cwd, body string) (string, error) {
+	path := filepath.Join(cwd, briefFileName)
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}

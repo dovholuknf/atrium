@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -46,11 +47,11 @@ func ToolLocations() map[string]string {
 	return toolLocations(os.Getenv("PATH"))
 }
 
-// toolsLine is the brief line naming the room's tool locations, "" when none are found.
-func toolsLine(path string) string {
+// toolsLine is the brief line naming the room's tool locations less the refused ones, "" when none are found.
+func toolsLine(path string, refused ...string) string {
 	var parts []string
 	for _, n := range toolNames {
-		if p, ok := toolLocations(path)[n]; ok {
+		if p, ok := toolLocations(path)[n]; ok && !slices.Contains(refused, n) {
 			parts = append(parts, n+"="+p)
 		}
 	}

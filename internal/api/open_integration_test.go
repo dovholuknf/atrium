@@ -117,20 +117,20 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		t.Fatalf("launched %d", len(oh.launched))
 	}
 	var sent struct {
-		Cwd, Prompt, Title, Why, Branch string
-		Tags                            []string
-		SourceURL                       string `json:"source_url"`
+		Cwd, Prompt, Brief, Title, Why, Branch string
+		Tags                                   []string
+		SourceURL                              string `json:"source_url"`
 	}
 	_ = json.Unmarshal(oh.launched[0], &sent)
-	if sent.Cwd != path || !strings.HasPrefix(sent.Prompt, "review it") || sent.Title != "review o/r#7" || sent.Why != "look" ||
+	if sent.Cwd != path || sent.Prompt != "" || !strings.HasPrefix(sent.Brief, "review it") || sent.Title != "review o/r#7" || sent.Why != "look" ||
 		sent.Branch != "feat/x" || sent.SourceURL != openURL ||
 		strings.Join(sent.Tags, ",") != "pull-request,pr,pr:o/r#7,link:github.com/o/r/7" {
 		t.Errorf("the launch was %s", oh.launched[0])
 	}
 	for _, want := range []string{"Fix the thing", "Base branch: main", "abc123def456", "Do not fetch, pull or run gh",
 		prBriefFile} {
-		if !strings.Contains(sent.Prompt, want) {
-			t.Errorf("the prompt lacks %q: %s", want, sent.Prompt)
+		if !strings.Contains(sent.Brief, want) {
+			t.Errorf("the brief lacks %q: %s", want, sent.Brief)
 		}
 	}
 	md, err := os.ReadFile(filepath.Join(filepath.FromSlash(path), ".atrium", "PR.md"))

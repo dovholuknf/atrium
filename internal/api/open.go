@@ -441,7 +441,7 @@ func (s *Server) openLaunchBody(in openRequest, got *rules.Resolved, wt prWorktr
 		title = fmt.Sprintf("%s/%s#%d", org, repo, num)
 	}
 	body, _ := json.Marshal(map[string]any{
-		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "prompt": or(in.Prompt, got.Prompt) + prBrief(wt.PR, wt.BriefFile),
+		"harness": harness, "cwd": wt.Path, "title": title, "why": in.Why, "brief": or(in.Prompt, got.Prompt) + prBrief(wt.PR, wt.BriefFile),
 		"tags": tags, "model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"repo": repo, "org": org, "host": got.Host, "branch": wt.Branch, "window": got.Window, "theme": got.Theme,
 		"source_kind": got.Kind, "source_url": in.URL,

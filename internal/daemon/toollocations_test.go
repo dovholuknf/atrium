@@ -47,3 +47,12 @@ func TestWithToolDirsPrependsOnlyWhatTheRunnerLacks(t *testing.T) {
 		t.Fatalf("env = %v", same)
 	}
 }
+
+func TestToolsLineLeavesOutARefusedTool(t *testing.T) {
+	dir := t.TempDir()
+	fakeTool(t, dir, "git")
+	fakeTool(t, dir, "gh")
+	if got := toolsLine(dir, "gh"); strings.Contains(got, "gh=") || !strings.Contains(got, "git=") {
+		t.Fatalf("toolsLine = %q", got)
+	}
+}
