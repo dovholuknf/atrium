@@ -316,15 +316,17 @@ function wireScrollActs(screen) {
   // A wheel or a drag on the scrollbar ends any position atrium is holding.
   // See `holdScrollAt`: it re-asserts where you were while a runner repaints,
   // and the one thing it must never do is fight the operator doing it by hand.
-  screen.addEventListener("wheel", () => {
+  screen.addEventListener("wheel", e => {
     noteScrollAct("wheel");
     releaseScrollHold();
-  }, { passive: true });
+    if (e.deltaY < 0) stopFollow();
+  }, { passive: true, capture: true });
   // BEFORE the focus, which is the only moment the position is still true.
   // Capture phase so it runs ahead of anything that might focus the textarea.
   screen.addEventListener("pointerdown", () => {
     noteScrollAct("click");
     releaseScrollHold();
+    stopFollow();
   }, true);
   screen.addEventListener("focusin", () => noteScrollAct("focus"));
   screen.addEventListener("focusout", () => noteScrollAct("blur"));
@@ -1251,6 +1253,7 @@ function openTerm(task) {
   term.attachCustomKeyEventHandler(e => {
     if (e.type !== "keydown") return true;
     const ctrl = e.ctrlKey || e.metaKey;
+    if (e.shiftKey && (e.key === "PageUp" || e.key === "ArrowUp" || e.key === "Home")) stopFollow();
 
     // Anything typed puts the candidate list away. It sits over the terminal
     // and a list that outstays its welcome is in the way.
