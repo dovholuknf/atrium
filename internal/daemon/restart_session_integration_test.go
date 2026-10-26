@@ -88,7 +88,8 @@ func TestRestartRunnerLeavesAStubbornRunnerUp(t *testing.T) {
 	if r.leaving.Load() {
 		t.Fatal("the runner is still marked as leaving after it refused to")
 	}
-	_ = d.StopRunner(taskID)
+	_ = r.tm().Kill()
+	<-r.done
 }
 
 // A RESTART TYPES ITS HARNESS'S EXIT KEYS AND NOTHING ELSE INTO THE OLD TERMINAL.
