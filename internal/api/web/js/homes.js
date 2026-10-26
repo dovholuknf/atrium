@@ -26,6 +26,7 @@ function homesLoaded(rows) {
 // loadHomes reads the ledger. A room that does not have the route answers 404 and the board shows cwd as it always did.
 async function loadHomes(force) {
   if (homesBusy || (!force && Date.now() - homesAt < HOMES_EVERY)) return;
+  if (typeof roomUnnamed === "function" && roomUnnamed()) return;
   homesBusy = true;
   try {
     const v = await api("/v1/homes");

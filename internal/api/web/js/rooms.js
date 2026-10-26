@@ -73,6 +73,12 @@ function roomNow() {
   try { return localStorage.getItem(ROOM_KEY) || ""; } catch (e) { return ""; }
 }
 
+// roomUnnamed is the all-rooms view of a hub with more than one room, where the hub answers a read it neither merges
+// nor borrows with a 409 asking for a room.
+function roomUnnamed() {
+  return hubIsHub && hubRooms.length > 1 && !roomNow();
+}
+
 // pickRoom changes what the whole board is looking at.
 //
 // A RELOAD, AND THAT IS THE DESIGN RATHER THAN A SHORTCUT. Scoping changes the

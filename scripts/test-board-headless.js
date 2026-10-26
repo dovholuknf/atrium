@@ -27673,6 +27673,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("homesRoot", bu("homesRoot"));
     await unit("homesDisk", bu("homesDisk"));
     await unit("homesLaunch", bu("homesLaunch"));
+    await unit("homesAllRooms", bu("homesAllRooms"));
     await unit("termRowChips", () => termRowChipsSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
