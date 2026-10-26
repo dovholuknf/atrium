@@ -483,7 +483,7 @@ func TestKeepaliveRefreshesUpToTheBudget(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	f.reply(f.now.Add(-5*time.Hour), replyOpt{})
-	f.seed(4, 0.05, 56*time.Minute)
+	f.seed(4, 0.06, 56*time.Minute)
 	f.tick()
 	if f.forks() != 1 {
 		t.Fatal("the last refresh inside the budget was not sent")
