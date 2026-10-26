@@ -269,7 +269,7 @@
     if (s.answered !== false) return "";
     const qs = s.open_questions || [];
     if (!qs.length && !s.questions_unparsed) return "";
-    return '<section class="block questions"><h2>Open questions</h2>' + (qs.length
+    return '<section class="block questions"><h2>Open questions' + (s.questions_at ? " <small>waiting " + U.esc(U.ago(Date.now() - U.ts(s.questions_at))) + "</small>" : "") + "</h2>" + (qs.length
       ? "<ol>" + qs.map(x => "<li>" + MD.inline(x) + "</li>").join("") + "</ol>"
       : '<p class="quiet">Its last turn asked questions atrium could not read. Look at the terminal.</p>') + "</section>";
   }

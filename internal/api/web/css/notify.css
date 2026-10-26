@@ -390,3 +390,8 @@
 .alerts-table td { padding: 5px 8px; border-top: 1px solid var(--hairline); text-align: center; vertical-align: top; }
 .alerts-table td:first-child { text-align: left; }
 .alerts-table .hintline { display: block; }
+
+.seenqs { margin-top: 4px; font-size: .85em; }
+.seenq { display: flex; gap: 8px; justify-content: space-between; color: var(--dim); }
+.seenq span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seenq time { flex: none; }

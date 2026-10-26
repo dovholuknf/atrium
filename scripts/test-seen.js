@@ -22,11 +22,12 @@ const make = new Function("document", "WebSocket", "api", "esc", `
   let term = null, termTask = null, termSock = null, termKind = "runner";
   let termListOpen = false, lastTasks = [];
   const termNarrow = () => false;
+  const ago = s => Math.floor(s / 60) + "m";
   const refreshSoon = () => {};
   const bareId = id => String(id).replace(/^[^~]*~/, "");
   ${src}
   return {
-    seenTick, seenChips, seenBlockedBy, SEEN_DWELL_MS,
+    seenTick, seenChips, seenQuestionLines, seenBlockedBy, SEEN_DWELL_MS,
     set: o => {
       if ("term" in o) term = o.term;
       if ("termTask" in o) termTask = o.termTask;
@@ -134,6 +135,10 @@ for (const [what, drop] of drops) {
   if (!/\? 3/.test(asked) || /chip unseen/.test(asked)) fail("three open questions did not draw `? 3` alone: " + asked);
   const unreadable = b.seenChips({ seen: { answered: false, questions_unparsed: true } });
   if (!/>\?</.test(unreadable.replace(/\s+/g, ""))) fail("an unreadable block did not draw a bare ?: " + unreadable);
+  const at = new Date(Date.now() - 125000).toISOString();
+  const lines = b.seenQuestionLines({ seen: { answered: false, questions_at: at, open_questions: ["a?", "b?"] } });
+  if ((lines.match(/class="seenq"/g) || []).length !== 2 || !/<time>2m/.test(lines)) fail("open questions drew no line each with an age: " + lines);
+  if (b.seenQuestionLines({ seen: { answered: true, open_questions: ["a?"] } }) !== "") fail("answered questions still drew lines");
   const answered = b.seenChips({ seen: { unseen: false, answered: true } });
   if (answered !== "") fail("an answered card still drew a chip");
 }

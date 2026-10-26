@@ -119,7 +119,8 @@ function peekQuestionsHtml(t) {
       `${a ? `<em>${esc(a)}</em>` : ""}</span></button>` +
       `<button type="button" class="qa-exp" data-gi="${gi}" data-qi="${i}" hidden></button>`;
   };
-  let html = "";
+  const waited = typeof seenWaited === "function" ? seenWaited(t.seen) : "";
+  let html = waited ? `<div class="qa-old">waiting ${esc(waited)}</div>` : "";
   groups.forEach((g, gi) => {
     if (!g.current) html += `<div class="qa-old">earlier turn${qaClock(g.at) ? ", " + esc(qaClock(g.at)) : ""}</div>`;
     g.qs.forEach((_, i) => { if (g.current || String(g.a[i] || "").trim()) html += q(g, gi, i); });
