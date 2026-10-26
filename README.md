@@ -114,6 +114,10 @@ It never overrides a **never** rule or a shelved card.
 **Terminals atrium owns.** Anything atrium launches runs in a pseudo terminal it owns: attach in the browser, type,
 pop it out into its own window, or stop it. With the `pty_host` setting on, the terminals outlive a room restart.
 
+**A merge queue.** A worker pushes its branch and runs `atrium merge`. The hub merges it onto `claude/main`, runs the
+tests and answers merged, red, conflict or refused. The Terminals tab shows what needs a person, and **Land now** puts
+`claude/main` on the hub's `main` as one commit.
+
 **Agents that talk to each other.** `atrium_say` reaches another session on the board, `name@room` one on another
 machine. A message is typed when the other session's input line is clear, or carried on its next hook, and always
 framed as a peer speaking.

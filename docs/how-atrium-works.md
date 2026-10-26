@@ -146,6 +146,14 @@ A few commands exist because atrium could not infer them:
 
 They are commands rather than MCP tools because a command is the one channel every runner has.
 
+## Landing work
+
+A card cannot push `claude/main`. It pushes its branch to the hub and runs `atrium merge` (or `atrium_merge`). The hub
+queues the request, merges the branch onto `claude/main`, runs `bash scripts/test-touched.sh` in the room named by the
+`merge_room` setting, else the room on the hub's own machine, and answers merged, red, conflict or refused. The
+operator's **Land now**, or `atrium merge land`, puts `claude/main` on the hub's `main` as one commit. The hub never
+pushes to the forge. `docs/rnd/merge-queue.md`.
+
 ## State
 
 One SQLite file per room, pure Go driver, schema kept Postgres portable. `internal/store` is the only code that
