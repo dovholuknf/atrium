@@ -34,14 +34,26 @@ if ($env:ATRIUM_TASK_ID -and -not $Force -and -not $WhatIf) {
 }
 
 $withControl = $Control -and $IKnowItKillsMyShell
-if ($withControl) { Stop-Control }
-Say 'this ends the room, its pty host with every runner it holds (typed text not sent is lost), and the hub'
-if (-not (Stop-Room)) { Say 'the room refused to stop. nothing was stopped'; exit 1 }
-Stop-Hub
-
-if (-not $WhatIf) {
-  $left = @(Find-Atrium run) + @(Find-Atrium room) + @(Find-Atrium ptyhost)
-  if ($withControl) { $left += @(Find-Control) }
-  if ($left.Count) { Say "still running: $(($left | ForEach-Object { $_.ProcessId }) -join ', ')" }
-  else { Say 'atrium stopped. start it again with start-atrium.ps1' }
+$finished = $false
+# The finally runs on exit and Ctrl+C too, so every run ends with what is left.
+try {
+  if ($withControl) { Stop-Control }
+  Say 'this ends the room, its pty host with every runner it holds (typed text not sent is lost), and the hub'
+  if (-not (Stop-Room)) { Say 'the room refused to stop. nothing was stopped'; exit 1 }
+  Stop-Hub
+  $finished = $true
+} finally {
+  if (-not $WhatIf) {
+    $why = if ($finished) { 'it did not exit after its stop' } else { 'this script ended before it stopped it' }
+    for ($i = 0; $i -lt 10; $i++) {
+      $left = @(Find-Atrium run | ForEach-Object { "hub pid $($_.ProcessId)" }) +
+        @(Find-Atrium room | ForEach-Object { "room pid $($_.ProcessId)" }) +
+        @(Find-Atrium ptyhost | ForEach-Object { "pty host pid $($_.ProcessId)" })
+      if ($withControl) { $left += @(Find-Control | ForEach-Object { "sg4-control pid $($_.ProcessId)" }) }
+      if (-not $left.Count -or -not $finished) { break }
+      Start-Sleep -Seconds 1
+    }
+    if ($left.Count) { Say "still running: $($left -join ', '). $why. see $LiveLog" }
+    else { Say 'atrium stopped. start it again with start-atrium.ps1' }
+  }
 }
