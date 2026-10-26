@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/userenv"
+	"github.com/dovholuknf/atrium/internal/daemon/launch"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -1463,7 +1464,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	env := childEnvFrom(base, launchEnv, atrium)
 	// Before anything is spawned: a runner that cannot run a tool must not make
 	// a card that looks alive. See gitbash.go.
-	if add, err := checkGitBash(h.ID, env); err != nil {
+	if add, err := launch.CheckGitBash(h.ID, env); err != nil {
 		d.launchFailed(task.ID, err.Error())
 		return nil, err
 	} else if add != "" {
