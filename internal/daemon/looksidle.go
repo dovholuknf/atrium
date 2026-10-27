@@ -143,21 +143,24 @@ var (
 func (d *Daemon) trustReattachedLines(now time.Time) {
 	for _, run := range d.sup.all() {
 		d.trustReattachedLine(run, now)
-		d.trustUnsureLine(run, now)
+		d.trustEmptyPrompt(run, now)
 	}
 }
 
-// trustUnsureLine reads the screen of a claude runner whose line a key made unsure, like control-p recalling a line.
-// Once keys and output have both been quiet for reattachQuiet, an empty prompt on screen proves the line empty, so a
-// say is not held until the next keystroke. A key since the read keeps it unsure.
-func (d *Daemon) trustUnsureLine(run *runner, now time.Time) {
+// trustEmptyPrompt clears a tracked line the screen contradicts. Keystroke bookkeeping drifts by whatever path atrium
+// never saw (the compose bar, a submit, a recall), and a claude prompt that is visibly empty and quiet holds nothing
+// to protect, so a line atrium still counts there is a phantom that would hold every say until the next turn.
+func (d *Daemon) trustEmptyPrompt(run *runner, now time.Time) {
 	if run.buf == nil || d.act.dialogOpen(run.taskID) || d.act.onSubagents(run.taskID) {
 		return
 	}
 	run.typeMu.Lock()
-	why, seq, typed := run.line.unsure, run.keySeq, run.lastTyped
+	run.line.settle()
+	phantom := !run.line.empty()
+	seq := run.keySeq
+	quiet := run.lastTyped.IsZero() || now.Sub(run.lastTyped) >= reattachQuiet
 	run.typeMu.Unlock()
-	if why == "" || why == reattachLineKey || now.Sub(typed) < reattachQuiet || now.Sub(run.lastOutputAt()) < reattachQuiet {
+	if !phantom || !quiet || now.Sub(run.lastOutputAt()) < reattachQuiet {
 		return
 	}
 	t, err := d.st.Get(run.taskID)
@@ -170,14 +173,15 @@ func (d *Daemon) trustUnsureLine(run *runner, now time.Time) {
 		return
 	}
 	run.typeMu.Lock()
-	if run.line.unsure != why || run.keySeq != seq {
+	if run.keySeq != seq || run.line.empty() {
 		run.typeMu.Unlock()
 		return
 	}
+	n := run.line.count()
 	run.line.clear()
 	run.typeMu.Unlock()
-	log.Printf("[atrium] %s: line unsure after %s, quiet for %s and the screen shows an empty prompt, so it is taken as empty",
-		run.taskID, why, reattachQuiet)
+	log.Printf("[atrium] %s: %d char(s) tracked on the line but the prompt on screen is empty, so the line is taken as empty",
+		run.taskID, n)
 	if d.pending != nil {
 		d.pending.reset(run.taskID)
 	}
