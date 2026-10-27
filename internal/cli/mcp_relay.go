@@ -60,7 +60,7 @@ func newMCPRelay() *cobra.Command {
 				room = os.Getenv("ATRIUM_ROOM")
 			}
 			r := &mcpRelay{
-				url: url, client: &http.Client{}, retryFor: retryFor,
+				url: url, client: relayClient(), retryFor: retryFor,
 				headers: map[string]string{"X-Atrium-Agent": agent, "X-Atrium-Room": room},
 				out:     os.Stdout,
 			}
@@ -72,6 +72,14 @@ func newMCPRelay() *cobra.Command {
 	c.Flags().StringVar(&room, "room", "", "X-Atrium-Room (default $ATRIUM_ROOM)")
 	c.Flags().DurationVar(&retryFor, "retry-for", 10*time.Minute, "how long one request keeps redialing a hub that is down")
 	return c
+}
+
+// relayClient bounds the dial only, so a hub that does not take the connection is retried as a dial failure. A tool
+// call the hub has taken may run for minutes.
+func relayClient() *http.Client {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DialContext = (&net.Dialer{Timeout: 3 * time.Second}).DialContext
+	return &http.Client{Transport: t}
 }
 
 type mcpRelay struct {

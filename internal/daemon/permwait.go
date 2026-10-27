@@ -164,6 +164,9 @@ func (d *Daemon) handlePermission(w http.ResponseWriter, r *http.Request) {
 
 	// Only the caller owns the deadline because a human may take minutes.
 	w.Header().Set("Content-Type", "application/json")
+	// The headers go now so the hook can tell a parked request from a room that does not answer.
+	w.WriteHeader(http.StatusOK)
+	_ = http.NewResponseController(w).Flush()
 	select {
 	case dec := <-pp.reply:
 		_ = json.NewEncoder(w).Encode(PermissionResponse{

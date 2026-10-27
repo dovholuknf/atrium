@@ -441,6 +441,49 @@ func TestPermissionHookRetriesThroughARestart(t *testing.T) {
 	}
 }
 
+// A room that answers /gate and then never answers /permission, as one starting up after a restart does, lets the
+// call through within the bound. A room that parks the request sends its headers first and is waited on.
+func TestPermissionHookFailsOpenOnARoomThatDoesNotAnswer(t *testing.T) {
+	permEnv(t, "force")
+	shortPermRetry(t, 300*time.Millisecond)
+	t.Setenv("ATRIUM_PERM_HEADER_TIMEOUT", "200ms")
+
+	release := make(chan struct{})
+	defer close(release)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/gate", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"gate":true}`)) })
+	mux.HandleFunc("/permission", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+	mute := httptest.NewServer(mux)
+	defer mute.Close()
+
+	start := time.Now()
+	if out := runPermissionHook(mute.URL, []byte(bashPayload), 1); out != nil {
+		t.Fatalf("expected silence, got %q", out)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("the hook waited %s on a room that does not answer", took)
+	}
+
+	parked := http.NewServeMux()
+	parked.HandleFunc("/gate", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"gate":true}`)) })
+	parked.HandleFunc("/permission", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = http.NewResponseController(w).Flush()
+		time.Sleep(time.Second) // wait: a human slower than the header bound
+		_, _ = w.Write([]byte(`{"decision":"approve"}`))
+	})
+	human := httptest.NewServer(parked)
+	defer human.Close()
+	if out := runPermissionHook(human.URL, []byte(bashPayload), 1); out == nil || !strings.Contains(string(out), `"allow"`) {
+		t.Fatalf("a parked request must wait past the header bound for its decision, got %q", out)
+	}
+}
+
 func TestPermissionHookSaysWhichCardItsRunnerIs(t *testing.T) {
 	h := newFakeHub(t, true, 200, `{"decision":"approve"}`)
 	permEnv(t, "force")

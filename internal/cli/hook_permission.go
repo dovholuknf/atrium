@@ -40,8 +40,8 @@ var permSkipTools = map[string]bool{
 const permMaxDetails = 6000
 
 // defaultProbeTimeout is how long /gate may take. The POST below has no
-// deadline, so this probe is what stops one frozen room holding every gated
-// call on the machine.
+// deadline once the room has taken it, so this probe and permHeaderTimeout
+// are what stop one frozen room holding every gated call on the machine.
 const defaultProbeTimeout = 2 * time.Second
 
 type permissionPayload struct {
@@ -181,6 +181,16 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 func permRetryFor() time.Duration { return envDuration("ATRIUM_PERM_RETRY_FOR", 4*time.Second) }
 
 func permRetryEvery() time.Duration { return envDuration("ATRIUM_PERM_RETRY_EVERY", time.Second) }
+
+// permHeaderTimeout bounds how long the room may take to send the headers of /permission. The room sends them as soon
+// as it parks a request for a human, so only a room that does not answer runs into it.
+func permHeaderTimeout() time.Duration { return envDuration("ATRIUM_PERM_HEADER_TIMEOUT", 3*time.Second) }
+
+func permClient() *http.Client {
+	c := hookClient(permPostTimeout())
+	c.Transport.(*http.Transport).ResponseHeaderTimeout = permHeaderTimeout()
+	return c
+}
 
 func envDuration(name string, def time.Duration) time.Duration {
 	if d, err := time.ParseDuration(strings.TrimSpace(os.Getenv(name))); err == nil && d > 0 {
