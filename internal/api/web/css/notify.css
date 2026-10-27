@@ -294,6 +294,8 @@
   #switcher .swrow.on { background: var(--lift-strong); border-color: var(--stroke-dim); }
   #switcher .swrow.on .swname { color: var(--teal); }
   #switcher .swrow .rmark, #switcher .swrow .chip { flex: none; }
+  #switcher .swrow.swrevive { margin-top: 6px; border-top: 1px solid var(--stroke-dim); border-radius: 0 0 8px 8px; }
+  #switcher .swrow.swrevive .swname { font-weight: 600; }
   #switcher .swfoot {
     display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     padding: 8px 12px; border-top: 1px solid var(--stroke-dim);

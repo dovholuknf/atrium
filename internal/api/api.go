@@ -1104,6 +1104,9 @@ type view struct {
 	// Starting marks a card atrium is launching whose runner is not up yet. The board draws it as starting, not as
 	// joined from a terminal atrium does not hold.
 	Starting bool `json:"starting,omitempty"`
+	// Revive marks a card a failure killed: it had a runner, has none, and nobody closed, paused or parked it. The
+	// room starts it again on its next start, and the switcher offers it now. See daemon/reopen.go.
+	Revive bool `json:"revive,omitempty"`
 	// Shell marks a card that already has a plain shell open beside its runner,
 	// so the board can offer to go to it rather than to open a second one.
 	//
@@ -1389,6 +1392,17 @@ func (s *Server) toViews(ts []*store.Task) []view {
 // "and two more" is worth serving; a board that answers 500 because a count
 // query failed is not.
 func (s *Server) withAskCounts(vs []view) []view {
+	if live, err := s.st.LiveCards(); err == nil && len(live) > 0 {
+		was := make(map[string]bool, len(live))
+		for _, id := range live {
+			was[id] = true
+		}
+		for i := range vs {
+			t := vs[i].Task
+			vs[i].Revive = t != nil && was[t.ID] && !vs[i].Supervised && !vs[i].Starting &&
+				t.Status != store.StatusPaused && t.ParkedAt == nil && !t.Throwaway
+		}
+	}
 	if disk, err := s.st.CardDisk(); err == nil && len(disk) > 0 {
 		for i := range vs {
 			if vs[i].Task != nil {

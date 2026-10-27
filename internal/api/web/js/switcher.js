@@ -304,10 +304,11 @@ function switcherRows() {
   const recent = swRecent();
   const here = swHere();
   const scored = [];
-  // A card with nothing running is listed only once something is typed: with nothing typed the list is where to GO.
+  // A card with nothing running is listed only once something is typed, unless a failure killed it: that one is
+  // somewhere to go back to.
   const known = new Set(swTasks.map(t => bareId(t.id)));
   const pool = swQuery ? swTasks.concat(swGone.filter(t => !known.has(bareId(t.id))))
-    : swTasks.filter(t => t.supervised);
+    : swTasks.filter(t => t.supervised || t.revive);
   pool.forEach(t => {
     const s = swScore(t, swQuery);
     if (s < 0) return;
@@ -369,7 +370,12 @@ function paintSwitcher() {
   if (!host) return;
   if (repoNaming) { repoNamePaint(host); return; }
   const link = swLinkOf(swQuery);
-  swRows = (link ? [{ link }] : []).concat(switcherRows(), swRunnerRows(swQuery));
+  const rows = switcherRows();
+  // Every killed card, not only the ones drawn: SWITCH_DEAD_KEEP cuts the list and revive all must not.
+  const killed = swTasks.filter(t => !t.supervised && t.revive);
+  const at = rows.findIndex(t => !t.supervised && t.revive);
+  if (at >= 0) rows.splice(at, 0, { reviveAll: killed.map(t => t.id) });
+  swRows = (link ? [{ link }] : []).concat(rows, swRunnerRows(swQuery));
   if (swSel >= swRows.length) swSel = Math.max(0, swRows.length - 1);
   const here = swHere();
   setHTML(host, swRows.length
@@ -379,6 +385,13 @@ function paintSwitcher() {
         return `
       <div class="swrow swopen ${i === swSel ? "on" : ""} ${r.warn ? "warn" : ""} ${r.seen ? "seen" : ""}"
         id="sw-open" data-link="${esc(t.link)}" data-kind="${esc(r.kind)}">${r.html}</div>`;
+      }
+      if (t.reviveAll) {
+        return `
+      <div class="swrow swrevive ${i === swSel ? "on" : ""}" data-revive="1">
+        <span class="swname">revive all ${t.reviveAll.length}</span>
+        <span class="swdir">killed by a reboot, a crash or a lost link, not closed by anybody</span>
+      </div>`;
       }
       if (t.harness) {
         return `
@@ -396,7 +409,8 @@ function paintSwitcher() {
         ${poppedOut(t.id) && !sameCard(t.id, here)
           ? `<span class="chip accent" data-tip="this one is in a window of its own">&#8599;</span>` : ""}
         ${isWaiting(t) ? `<span class="chip warn">wants you</span>` : ""}
-        ${t.supervised ? "" : `<span class="chip">${t.archived_at ? "archived" : "ended"}</span>`}
+        ${t.supervised ? "" : `<span class="chip ${t.revive ? "warn" : ""}">${t.archived_at ? "archived" : t.revive ? "killed" : "ended"}</span>`}
+        ${!t.supervised && roomOf(t.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(t.id))}">${esc(roomOf(t.id))}</span>` : ""}
         <span class="swdir" data-tip="${esc(t.worktree || "")}">${esc(terminalLabel(t) || t.worktree || "")}</span>
       </div>`;
     }).join("")
@@ -405,11 +419,26 @@ function paintSwitcher() {
   // The id travels in a data attribute and comes back through the DOM, never
   // through an inline handler. The house rule, and it costs nothing here.
   host.querySelectorAll(".swrow").forEach(el => {
-    el.onclick = e => el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey)
+    el.onclick = e => el.dataset.revive ? swReviveAll()
+      : el.dataset.link ? quickPasteGo(el.dataset.link, e.shiftKey)
       : el.dataset.harness ? swLaunch(el.dataset.harness) : switchTo(el.dataset.id);
   });
   const on = host.querySelector(".swrow.on");
   if (on) on.scrollIntoView({ block: "nearest" });
+}
+
+// Every card a failure killed, resumed on its own room. One that fails is reported and the rest still go.
+async function swReviveAll() {
+  const row = swRows.find(t => t.reviveAll);
+  if (!row) return;
+  closeSwitcher();
+  const failed = [];
+  for (const id of row.reviveAll) {
+    try { await api(`/v1/tasks/${encodeURIComponent(id)}/resume`, { method: "POST" }); }
+    catch (e) { failed.push(id); }
+  }
+  if (failed.length) toast("could not revive " + failed.length + " of " + row.reviveAll.length, failed.join(", "));
+  else toast("revived " + row.reviveAll.length, "each card resumes its conversation on its own room.");
 }
 
 function swLaunch(harness) {
@@ -523,7 +552,8 @@ async function soloSwitch(id) {
       e.preventDefault();
       const t = swRows[swSel];
       // Shift-Enter on a link stops at the launch dialog. On a session it is Enter.
-      if (t && t.link) quickPasteGo(t.link, e.shiftKey);
+      if (t && t.reviveAll) swReviveAll();
+      else if (t && t.link) quickPasteGo(t.link, e.shiftKey);
       else if (t && t.harness) swLaunch(t.harness);
       else if (t) switchTo(t.id);
     }
