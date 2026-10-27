@@ -17,7 +17,7 @@ $LiveLog = Join-Path $Base 'room-restart.log'
 $running = Find-Atrium room | Select-Object -First 1
 if ($running) { Say "room already running, pid $($running.ProcessId). nothing to do."; exit 0 }
 
-Backup 'room.err'
+Backup 'room.err' $RoomLogs 20
 if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 if (-not (Start-Room)) { exit 0 }
 Say "room started (lag log $(if ($NoLagLog) { 'off' } else { 'on' }))"
@@ -27,6 +27,6 @@ if (-not $WhatIf) {
   Say "room reattached: $([bool]$h) (hub build $($h.build), rooms=$($h.rooms))"
   if (-not $h) {
     Say 'room did not reattach. last lines of room.err:'
-    Get-Content (Join-Path $Base 'room.err') -Tail 20
+    Get-Content (Join-Path $RoomLogs 'room.err') -Tail 20
   }
 }

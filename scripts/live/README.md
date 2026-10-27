@@ -13,8 +13,11 @@ pwsh -File D:\git\github\dovholuknf\atrium\scripts\live\install-live-scripts.ps1
 | Process | Binary | Ports | Directory |
 | --- | --- | --- | --- |
 | the hub (`run --no-room`) | `C:\Users\claude\.atrium\bin\atrium.exe` | board 7778, link 7779 | `.atrium2\hub` |
-| the claude-sg4 room | the same binary | board 7781, agents 7777 | `.atrium2\room` |
-| the sg4-control room (`--isolated`) | `C:\Users\claude\.atrium\ctl-bin\atrium.exe` | board 7791, agents 7787 | `.atrium2\ctl` |
+| the claude-sg4 room | the same binary | board 7781, agents 7777 | `D:\atrium\claude-sg4` |
+| the sg4-control room (`--isolated`) | `C:\Users\claude\.atrium\ctl-bin\atrium.exe` | board 7791, agents 7787 | `D:\atrium\sg4-control` |
+
+Each room folder holds `config` (keys, database, scrollback and the rest the room keeps beside its database), `logs`
+(`room.out`, `room.err` and the newest 20 kept) and `cards` (card homes, unless the room's `card_root` names another).
 
 The board you open is the hub's, http://127.0.0.1:7778. It shows every room, including the ones on m1mini and sg3,
 which run on their own machines and are not started or stopped by anything here.

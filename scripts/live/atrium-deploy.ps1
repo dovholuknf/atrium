@@ -397,7 +397,7 @@ if ($want -contains 'sg4-control') {
   }
   & "$PSScriptRoot\start-atrium-control.ps1" -WhatIf:$WhatIf
   $results['sg4-control'] = if ($WhatIf) { 'success (WhatIf)' }
-    elseif (-not (Test-Up $CtlHealth)) { 'failed - not answering after start, see ctl\room.err' }
+    elseif (-not (Test-Up $CtlHealth)) { "failed - not answering after start, see $CtlLogs\room.err" }
     elseif (-not (Test-Unheld 'http://127.0.0.1:7791/v1/hold')) { $heldMsg }
     else { 'success' }
 }

@@ -24,13 +24,15 @@ $GoFallbackBin = 'V:\work\tools\go\current\bin'
 if ($env:ATRIUM_NEW_BUILD) { $AtriumNew = $env:ATRIUM_NEW_BUILD }
 $Base         = 'C:\Users\claude\.atrium2'
 $HubDir       = Join-Path $Base 'hub'
-$RoomDir      = Join-Path $Base 'room'
-$RoomDb       = 'C:\Users\claude\.atrium\atrium.db'
-$HubHealth    = 'http://127.0.0.1:7778/_hub/health'
+# Every room on this machine is <root>\<room>: config (keys, database, what the room keeps beside it), logs, cards.
+# `atrium room --root --name` finds it there. See internal/cli/roomlayout.go.
+$AtriumRoot   = 'D:\atrium'
+$HubHealth   = 'http://127.0.0.1:7778/_hub/health'
 $HubRooms     = 'http://127.0.0.1:7778/_hub/rooms'
 # What the hub calls the room these scripts restart. A room COUNT says nothing about it: m1mini and sg4-wsl attach to
 # the same hub, so "rooms >= 1" passed on 2026-09-29 17:05 while this room was being refused.
 $RoomName     = 'claude-sg4'
+$RoomLogs     = Join-Path $AtriumRoot "$RoomName\logs"
 $RoomShutdown = 'http://127.0.0.1:7781/v1/shutdown'
 $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
 # A request the room answers from its store. `/v1/health` and the hub's view of the room both answer while the store is
@@ -40,7 +42,8 @@ $RoomServes   = 'http://127.0.0.1:7781/v1/settings'
 # The sg4-control room: a second room on this machine, for the orchestrator. Its own binary directory on purpose, so
 # Find-Atrium never matches it and a deploy of claude-sg4 never stops it. start-atrium-control.ps1 starts it.
 $CtlBinDir    = 'C:\Users\claude\.atrium\ctl-bin'
-$CtlDir       = Join-Path $Base 'ctl'
+$CtlName      = 'sg4-control'
+$CtlLogs      = Join-Path $AtriumRoot "$CtlName\logs"
 $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 $CtlServes    = 'http://127.0.0.1:7791/v1/settings'
@@ -87,7 +90,7 @@ if (Test-Path $HubZitiIdentity) {
   $HubArgs += @('--board-transport', 'ziti', '--board-service', 'atrium-board')
   $HubArgs += @('--ci-hook-service', 'ziti-hook')
 }
-$RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
+$RoomArgs = @('room', '--root', $AtriumRoot, '--name', $RoomName, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.
 if (-not (Test-Path variable:WhatIf)) { $WhatIf = $false }
@@ -356,7 +359,7 @@ function Test-NewBuildStamped([string]$Path = $AtriumNew) {
 # Returns 'up', 'down' or '' when it has said neither yet. The room has no endpoint for this: /v1/settings and
 # /v1/health answer from the room itself whether or not the hub has it.
 function Get-RoomLink {
-  $err = Join-Path $Base 'room.err'
+  $err = Join-Path $RoomLogs 'room.err'
   if (-not (Test-Path $err)) { return '' }
   $last = Select-String -Path $err -Pattern '\[link\] (attached to hub|hub \S+: )' | Select-Object -Last 1
   if (-not $last) { return '' }
@@ -628,12 +631,16 @@ function Stop-Hub {
   }
 }
 
-# Backup keeps the previous run's log, since a redirect overwrites it.
-function Backup([string]$Name) {
-  $p = Join-Path $Base $Name
+# Backup keeps the previous run's log, since a redirect overwrites it. -Keep prunes to the newest that many copies.
+function Backup([string]$Name, [string]$Dir = $Base, [int]$Keep = 0) {
+  $p = Join-Path $Dir $Name
   if (Test-Path $p) {
     Invoke-Step "keep $p as $Name.<timestamp>" {
-      Copy-Item $p (Join-Path $Base "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+      Copy-Item $p (Join-Path $Dir "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+      if ($Keep -gt 0) {
+        Get-ChildItem $Dir -Filter "$Name.*" | Sort-Object LastWriteTime -Descending | Select-Object -Skip $Keep |
+          ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+      }
     }
   }
 }
@@ -825,7 +832,8 @@ function Start-Room {
     Clear-SessionEnv
     Set-LiveHosts $h
     # Through cmd for the redirects, and in no job object, so stopping a room never takes this one with it and closing the terminal never takes the room.
-    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') > $Base\room.out 2> $Base\room.err" 'room'
+    New-Item -ItemType Directory -Force $RoomLogs | Out-Null
+    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') > $RoomLogs\room.out 2> $RoomLogs\room.err" 'room'
   }
   return $true
 }
