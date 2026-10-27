@@ -129,16 +129,16 @@ const terminalParts = (t) => {
 // `isWaiting` and `over` decide whether a row's mark is drawn as working, and
 // a mark is not nesting: both answer false so every fixture takes the same
 // path through `termRunnerMark` and the markup this parses stays the markup
-// the nesting is about. `seenChips` (js/seen.js) draws nothing here for the
-// same reason: an unread mark is not a heading.
+// the nesting is about. `seenChips` (js/seen.js) and `memChip` draw nothing here for the
+// same reason: an unread mark or a memory chip is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
-  "themeFor", "themeSource", "NO_WEAR", "termWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
+  "themeFor", "themeSource", "NO_WEAR", "termWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips", "memChip",
   "newCardClass", "newCardChip", "isFolded", "attachIsInFlight", "ctxLine", "ctxWarnMark", "isMinion", "cardLead",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => ({ cursor: "#fff", background: "#000" }), { cls: "", style: "" },
   () => ({ cls: "", style: "" }), () => "", () => false, null,
-  () => false, () => false, () => "", () => "", () => "", () => false, () => false, () => "", () => "", () => false, t => ({ main: String(t.display_title || "").trim(), other: "" }));
+  () => false, () => false, () => "", () => "", () => "", () => "", () => false, () => false, () => "", () => "", () => false, t => ({ main: String(t.display_title || "").trim(), other: "" }));
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────
