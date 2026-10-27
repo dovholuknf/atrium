@@ -79,6 +79,7 @@ type prRunner struct {
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
+	ctxs    map[string]context.Context
 	wg      sync.WaitGroup
 }
 
@@ -92,6 +93,7 @@ func newPRRunner(st *store.Store, publish func(string)) *prRunner {
 		baseEnv:      os.Environ,
 		userSettings: func() []byte { return r.hk.readUserSettings() },
 		cancels:      map[string]context.CancelFunc{},
+		ctxs:         map[string]context.Context{},
 		agentsDir: func() string {
 			home, _ := os.UserHomeDir()
 			return filepath.Join(home, ".claude", "agents")
@@ -110,7 +112,7 @@ func (r *prRunner) Start(id string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r.mu.Lock()
-	r.cancels[id] = cancel
+	r.cancels[id], r.ctxs[id] = cancel, ctx
 	r.mu.Unlock()
 	r.publish(id)
 	r.wg.Add(1)
@@ -118,7 +120,11 @@ func (r *prRunner) Start(id string) {
 		defer r.wg.Done()
 		defer func() {
 			r.mu.Lock()
-			delete(r.cancels, id)
+			// A retry may have started a newer run of this row while this aborted one wound down.
+			if r.ctxs[id] == ctx {
+				delete(r.cancels, id)
+				delete(r.ctxs, id)
+			}
 			r.mu.Unlock()
 			cancel()
 		}()

@@ -529,6 +529,64 @@ func TestPRRunnerAbortMidStepLeavesAborted(t *testing.T) {
 	}
 }
 
+func TestPRRunnerAbortStopsARunStartedWhileAnAbortedOneWindsDown(t *testing.T) {
+	t.Parallel()
+	f := newPRFix(t)
+	inGH, release := make(chan struct{}, 1), make(chan struct{})
+	inFork := make(chan struct{}, 8)
+	run := f.r.run
+	var first sync.Once
+	f.r.run = func(ctx context.Context, c prCmd) ([]byte, error) {
+		first.Do(func() { inGH <- struct{}{}; <-release })
+		return run(ctx, c)
+	}
+	f.r.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
+		inFork <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	f.r.Start(f.id)
+	<-inGH
+	abort := func() {
+		if _, err := f.st.MovePR(f.id, []string{store.PRQueued, store.PRFetching, store.PRRunning},
+			store.PRAborted, "", ""); err != nil {
+			t.Fatal(err)
+		}
+		f.r.Abort(f.id)
+	}
+	abort()
+	// The aborted run is still winding down when the row is retried.
+	if _, err := f.st.ResetPR(f.id, mustPath(t, filepath.ToSlash(f.st.DefaultReviewsRoot)), store.PRFailed, store.PRAborted); err != nil {
+		t.Fatal(err)
+	}
+	f.r.Start(f.id)
+	close(release)
+	select {
+	case <-inFork:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the second run never reached a fork")
+	}
+	// The first run's exit must not take the second run's cancel with it.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		f.r.mu.Lock()
+		n := len(f.r.cancels)
+		f.r.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond) // wait: poll for the first run's exit, which has no event
+	}
+	abort()
+	done := make(chan struct{})
+	go func() { f.r.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("an abort did not stop the run")
+	}
+}
+
 func TestPRRunnerResendRound(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
