@@ -96,9 +96,7 @@ func TestNoRecordIsNormal(t *testing.T) {
 	}
 }
 
-// A daemon killed mid-write, or a file from a format that no longer exists.
-// Nothing, never an error: this is a convenience over disposable state and
-// refusing to start over it would be a self-inflicted outage.
+// An unreadable old file is removed and refuses nothing: refusing to start over it would be a self-inflicted outage.
 func TestAnUnreadableRecordIsIgnored(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
@@ -108,16 +106,31 @@ func TestAnUnreadableRecordIsIgnored(t *testing.T) {
 	if got := d.readReopen(); got != nil {
 		t.Fatalf("accepted a corrupt record: %v", got)
 	}
+	if _, err := os.Stat(d.reopenPath()); !os.IsNotExist(err) {
+		t.Fatal("left the corrupt file behind")
+	}
 }
 
-// WRITTEN ASIDE AND RENAMED, so a kill during the write leaves the last good
-// list rather than half of this one.
-func TestTheRecordIsWrittenAtomically(t *testing.T) {
+// A room upgraded from the file keeps what the file named, once, and the file goes.
+func TestAnOldReopenFileIsTakenIntoTheDatabase(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
-	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
-	if _, err := os.Stat(d.reopenPath() + ".tmp"); !os.IsNotExist(err) {
-		t.Fatal("left the temporary file behind")
+	a := reopenCard(t, d, "on-the-old-file")
+	raw, err := json.Marshal(map[string]any{"saved_at": "2026-10-20T23:23:21Z", "cards": []string{a, "pruned-since"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(d.reopenPath(), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{a}) {
+		t.Fatalf("took %v from the old file, want %v", got, []string{a})
+	}
+	if _, err := os.Stat(d.reopenPath()); !os.IsNotExist(err) {
+		t.Fatal("left the old file behind")
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{a}) {
+		t.Fatalf("a second read gave %v", got)
 	}
 }
 
@@ -221,7 +234,7 @@ func TestAStaleResumeIsDroppedRatherThanUsed(t *testing.T) {
 	}
 }
 
-// The record lives beside the database, so naming another database isolates it
+// The old file is read from beside the database, so naming another database isolates it
 // and a test can never reach the machine's real one.
 func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
 	t.Parallel()
@@ -229,24 +242,5 @@ func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
 	d := &Daemon{hk: *testHooks(), opts: Options{DBPath: filepath.ToSlash(filepath.Join(dir, "a.db"))}}
 	if filepath.Dir(d.reopenPath()) != dir {
 		t.Fatalf("the record went to %q, outside the database's directory", d.reopenPath())
-	}
-}
-
-// The shape on disk, locked so a future reader can tell an old file from a new
-// one rather than guessing.
-func TestTheRecordSaysWhenItWasWritten(t *testing.T) {
-	t.Parallel()
-	d := reopenDaemon(t)
-	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
-	raw, err := os.ReadFile(d.reopenPath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rec reopenRecord
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		t.Fatal(err)
-	}
-	if rec.SavedAt.IsZero() {
-		t.Fatal("wrote a record with no time on it")
 	}
 }
