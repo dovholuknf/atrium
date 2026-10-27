@@ -2508,6 +2508,13 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 			x.runID, x.taskID)
 		return true, err
 	}
+	// A clean exit nobody asked for is the session quitting on purpose. A kill, a crash or a reboot ends non-zero
+	// and stays live, to come back.
+	if code == 0 && x.cause == "" {
+		if err := d.st.ClearLive(x.taskID); err != nil {
+			log.Printf("[atrium] could not take %s off the live cards: %v", x.taskID, err)
+		}
+	}
 
 	d.taskRunnerEnded(x)
 	// The room announces the exit with its reason, which the hub cannot see: it

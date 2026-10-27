@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -242,5 +243,49 @@ func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
 	d := &Daemon{hk: *testHooks(), opts: Options{DBPath: filepath.ToSlash(filepath.Join(dir, "a.db"))}}
 	if filepath.Dir(d.reopenPath()) != dir {
 		t.Fatalf("the record went to %q, outside the database's directory", d.reopenPath())
+	}
+}
+
+// A session that quits by itself is closed. A kill, a crash and a wind-down are not.
+func TestAQuitLeavesTheLiveCardsAndAKillOrAStopStays(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	quit, killed, stopped := reopenCard(t, d, "quit"), reopenCard(t, d, "killed"), reopenCard(t, d, "stopped")
+	for _, x := range []runExit{
+		{taskID: quit, runID: "r-quit", code: 0, lived: time.Hour},
+		{taskID: killed, runID: "r-killed", code: 1073807364, lived: time.Hour},
+		{taskID: stopped, runID: "r-stopped", code: 0, lived: time.Hour, cause: store.CauseShutdown},
+	} {
+		d.noteOpen(x.taskID)
+		if !d.fileExit(x) {
+			t.Fatalf("%s was not filed", x.runID)
+		}
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{killed, stopped}) {
+		t.Fatalf("live after the exits: %v, want the killed and the stopped card", got)
+	}
+}
+
+// 2026-10-27: the sweep archived the seven cards the room did not revive 17 seconds after it started, which took them
+// off the board and off any list.
+func TestTheSweepLeavesAKilledLiveCard(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	killed, closed, never := reopenCard(t, d, "killed"), reopenCard(t, d, "closed"), reopenCard(t, d, "never-ran")
+	d.noteOpen(killed)
+	d.noteOpen(closed)
+	for _, id := range []string{killed, closed, never} {
+		if err := d.st.SetStatus(id, store.StatusDead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.st.SetExitAsked(closed); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := d.st.Archive(-time.Hour, store.StatusDead); err != nil || n != 2 {
+		t.Fatalf("archived %d (%v), want the closed card and the one that never ran", n, err)
+	}
+	if got := d.readReopen(); !slices.Equal(got, []string{killed}) {
+		t.Fatalf("live after the sweep: %v", got)
 	}
 }

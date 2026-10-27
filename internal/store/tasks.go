@@ -936,6 +936,14 @@ func (s *Store) MarkLive(taskID string) error {
 	})
 }
 
+// ClearLive takes the card off LiveCards: its runner ended on its own, which is a close.
+func (s *Store) ClearLive(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET live_at = '' WHERE id = ?`, taskID)
+		return err
+	})
+}
+
 // LiveCards is every card a runner started on that nobody closed on purpose and that is not archived, oldest start
 // first. A card a failure killed is on it, whatever its status.
 func (s *Store) LiveCards() ([]string, error) {
@@ -1855,7 +1863,8 @@ var _ = time.Time{}
 // cannot answer what has been running this week.
 //
 // Same rules as Prune about what may be taken, for the same reason: shelving
-// says the work is coming back.
+// says the work is coming back. A card a failure killed is coming back too, so a
+// live card nobody closed stays (see LiveCards).
 func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error) {
 	want := statuses
 	if len(want) == 0 {
@@ -1881,7 +1890,8 @@ func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error
 			`UPDATE task SET archived_at = ?
 			 WHERE archived_at = ''
 			   AND status IN (`+placeholders(len(keep))+`)
-			   AND last_activity_at <= ?`, args...)
+			   AND last_activity_at <= ?
+			   AND (live_at = '' OR exit_asked_at != '')`, args...)
 		if err != nil {
 			return err
 		}
