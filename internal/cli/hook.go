@@ -58,7 +58,8 @@ func unreachable(hook, addr string, err error) string {
 		why = err.Error()
 	}
 	return fmt.Sprintf("atrium's hook `atrium %s` could not reach atrium at %s (%s). The session goes on without "+
-		"atrium. Start atrium with `atrium run`, or set ATRIUM_PERM_GATE=off to turn atrium's hooks off.", hook, addr, why)
+		"atrium. Start atrium with `atrium run`, or set ATRIUM_PERM_GATE=off to turn atrium's hooks off. "+
+		"If you cannot do either, tell the user.", hook, addr, why)
 }
 
 // hookWarning is what a hook prints when atrium did not answer: a systemMessage for the user, and additionalContext
