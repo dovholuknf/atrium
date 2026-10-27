@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"unsafe"
 
@@ -50,18 +51,24 @@ func runnerPID() int {
 		}
 	}
 
+	// A launched card's window shell stands in when no runner is named, so terminate has a tree to kill.
+	launched := os.Getenv("ATRIUM_TASK_ID") != ""
+	shell := 0
 	walk := uint32(windows.GetCurrentProcessId())
 	for i := 0; i < maxHops && walk != 0; i++ {
 		p, ok := procs[walk]
 		if !ok {
-			return 0
+			break
 		}
 		if i > 0 && runnerNames[baseName(p.name)] {
 			return int(walk)
 		}
+		if i > 0 && shell == 0 && launched && shellNames[baseName(p.name)] {
+			shell = int(walk)
+		}
 		walk = p.parent
 	}
-	return 0
+	return shell
 }
 
 // baseName strips the extension and lowercases, so claude.exe and claude both

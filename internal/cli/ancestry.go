@@ -12,6 +12,9 @@ package cli
 // whatever claude or node started the room.
 var runnerNames = map[string]bool{"claude": true, "node": true, "opencode": true}
 
+// shellNames are the shells a window-mode launch starts in its terminal window.
+var shellNames = map[string]bool{"cmd": true, "powershell": true, "pwsh": true, "bash": true}
+
 // maxHops bounds the walk. A hook is two or three processes below its runner,
 // and a bound means a corrupt or cyclic parent chain cannot spin here.
 const maxHops = 6

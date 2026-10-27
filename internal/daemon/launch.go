@@ -2151,18 +2151,16 @@ func childEnvFrom(base []string, harnessEnv map[string]string, atrium map[string
 
 // Kill stops the runner behind a card.
 //
-// This only works when atrium knows the runner's own process id. A window-mode
-// launch does not qualify: the terminal wrapper hands the session off and
-// exits, so its pid belongs to a process that is already gone. Only pty mode
-// owns the process, and only an owned process can be stopped reliably.
+// This only works when atrium knows a process id for the card. A window-mode
+// launch has none at spawn, since the terminal wrapper hands off and exits, so
+// the session hook reports the runner's, or failing that its shell's.
 func (d *Daemon) Kill(taskID string) error {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return err
 	}
 	if t.PID <= 0 {
-		return errors.New("atrium does not know this runner's process. " +
-			"a window-mode launch is handed to the terminal and owns itself, so close it there")
+		return errors.New("no process is recorded for it yet, close its terminal window")
 	}
 	// A process that is already gone is not a failure. The request was "make
 	// this stop running", and it is not running, so the card converges to dead

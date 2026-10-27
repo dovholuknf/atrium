@@ -467,7 +467,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		if err := s.Kill(t.ID); err != nil {
 			res.SessionErr = err.Error()
-			warn("the session did not stop: %v. a worktree it holds open may not remove", err)
+			warn("the session did not stop: %v", err)
 			steps.problem("%v", err)
 		} else {
 			maps.Copy(tree, sub)
@@ -637,7 +637,9 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			failed(r, err)
 			keptBranch[r.Detail+"\x00"+a.Branch] = true
 			leftover[r] = a.Branch
-			warn("%s did not remove, atrium tries again later: %v", r.Ref, err)
+			if line := removeNote(r.Ref, err); line != "" {
+				warn("%s", line)
+			}
 			steps.problem("%v", err)
 			continue
 		}
@@ -854,6 +856,17 @@ func branchStillThere(repo, branch string) bool {
 // removeWorktree removes a worktree the inventory names, through git and only through git, so a path that is not a
 // worktree of repo is never deleted. A worktree already gone is pruned. A Windows file a stopped session still held
 // is tried again briefly.
+// removeNote is the one line a failed worktree removal earns, "" when the sweep will retry it and a human has nothing
+// to do. A file in use is the retry's case, and git's raw text names the path a second time.
+func removeNote(path string, err error) string {
+	m := strings.ToLower(err.Error())
+	if strings.Contains(m, "used by another process") || strings.Contains(m, "unlinkat") ||
+		strings.Contains(m, "permission denied") {
+		return ""
+	}
+	return filepath.Base(path) + " did not remove, see the card's inventory"
+}
+
 func removeWorktree(repo, path string) error {
 	if strings.TrimSpace(repo) == "" {
 		return errors.New("the inventory does not say which repository it belongs to")
