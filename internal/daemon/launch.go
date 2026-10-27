@@ -1412,6 +1412,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	atrium := map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
+		"ATRIUM_CARD":       d.cardLabel(task.ID),
 		// Which harness this is, for the hooks it will run.
 		//
 		// A hook knows which file it was registered in and nothing else, and

@@ -3,11 +3,14 @@
 package ptyhost
 
 import (
+	"strings"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+var openJobObject = windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenJobObjectW")
 
 // tree is the job object one runner lives in, so a kill ends what the runner started too.
 type tree struct {
@@ -16,10 +19,11 @@ type tree struct {
 }
 
 // newTree puts pid in a job that ends its processes when the handle closes. The job belongs to the runner alone: the
-// room exiting never closes it. A failure leaves a tree that only kills the runner.
-func newTree(pid int) *tree {
+// room exiting never closes it. A failure leaves a tree that only kills the runner. The job is named after label, so
+// Process Explorer's Job tab says whose the runner is.
+func newTree(pid int, label, runID string) *tree {
 	t := &tree{}
-	job, err := windows.CreateJobObject(nil, nil)
+	job, err := windows.CreateJobObject(nil, jobName(label, runID))
 	if err != nil {
 		return t
 	}
@@ -115,4 +119,38 @@ func (t *tree) kill() {
 		_ = windows.CloseHandle(t.job)
 		t.job = 0
 	}
+}
+
+// jobName is label as a job name, or nil for none. A name already taken gets the run id after it, since creating a
+// job under a taken name opens that job instead.
+func jobName(label, runID string) *uint16 {
+	if label == "" {
+		return nil
+	}
+	name := strings.ReplaceAll(label, `\`, "/")
+	if r := []rune(name); len(r) > 200 {
+		name = string(r[:200])
+	}
+	if jobExists(name) {
+		name += " " + runID
+	}
+	p, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return nil
+	}
+	return p
+}
+
+func jobExists(name string) bool {
+	p, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return false
+	}
+	const jobObjectQuery = 0x0004
+	h, _, _ := openJobObject.Call(jobObjectQuery, 0, uintptr(unsafe.Pointer(p)))
+	if h == 0 {
+		return false
+	}
+	_ = windows.CloseHandle(windows.Handle(h))
+	return true
 }

@@ -58,6 +58,8 @@ type Request struct {
 	Env  []string `json:"env,omitempty"`
 	Cwd  string   `json:"cwd,omitempty"`
 	Ring int      `json:"ring,omitempty"`
+	// Label names the runner's job object, so a process viewer shows whose it is.
+	Label string `json:"label,omitempty"`
 
 	// spawn and resize
 	Cols int `json:"cols,omitempty"`

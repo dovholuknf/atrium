@@ -42,7 +42,12 @@ func Start(stateDir string, o StartOptions) (*os.Process, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, err
 	}
-	return detach.Start(copyPath, startArgs(stateDir, o), filepath.Join(stateDir, "ptyhost.log"))
+	logPath := filepath.Join(stateDir, "ptyhost.log")
+	if o.Args != nil {
+		return detach.Start(copyPath, o.Args, logPath)
+	}
+	// The host opens its own log, so a start through WMI needs no cmd.exe to redirect it and the host heads its tree.
+	return detach.Start(copyPath, append(startArgs(stateDir, o), "--log", logPath), "")
 }
 
 func startArgs(stateDir string, o StartOptions) []string {

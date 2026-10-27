@@ -2,7 +2,9 @@ package ptyhost
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"runtime/debug"
 	"time"
 )
 
@@ -12,6 +14,7 @@ type RunOptions struct {
 	Build    string
 	IdleExit time.Duration // DefaultIdleExit when zero
 	Logf     func(format string, args ...any)
+	Log      string // a file the standard logger and a crash append to
 }
 
 // Listen starts a host in this process on Address(stateDir) and serves it in the background. It is what a test
@@ -38,6 +41,15 @@ func Run(o RunOptions) error {
 	}
 	if err := os.MkdirAll(o.StateDir, 0o700); err != nil {
 		return err
+	}
+	if o.Log != "" {
+		f, err := os.OpenFile(o.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return err
+		}
+		os.Stdout, os.Stderr = f, f
+		log.SetOutput(f)
+		_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 	}
 	addr := Address(o.StateDir)
 	ln, err := listenChannel(addr)

@@ -267,7 +267,7 @@ func (d *Daemon) shellEnv(taskID string) []string {
 		}
 		out = append(out, kv)
 	}
-	extra := map[string]string{"ATRIUM_TASK_ID": taskID}
+	extra := map[string]string{"ATRIUM_TASK_ID": taskID, "ATRIUM_CARD": d.cardLabel(taskID)}
 	if row, ok := d.homeOf(taskID); ok {
 		for k, v := range homeEnv(dirsOf(row.Path)) {
 			extra[k] = v

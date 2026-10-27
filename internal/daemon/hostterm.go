@@ -201,7 +201,7 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 	ring := min(api.ScrollbackBytes(d.st), hostMaxRing)
 	sp, err := cl.Spawn(ptyhost.SpawnArgs{
 		ID: taskID, Kind: kind, Argv: append([]string{resolved}, args...), Env: env, Cwd: cwd,
-		Cols: cols, Rows: rows, Ring: ring,
+		Cols: cols, Rows: rows, Ring: ring, Label: d.procLabel(taskID, kind),
 	})
 	if err != nil {
 		var re *ptyhost.RemoteError

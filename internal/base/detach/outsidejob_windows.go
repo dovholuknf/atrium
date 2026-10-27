@@ -68,7 +68,8 @@ func holdProcess(pid int) (*os.Process, error) {
 	return nil, err
 }
 
-// cmd.exe, because WMI hands the child no handles and the redirect is the only way its output reaches a log.
+// cmd.exe, because WMI hands the child no handles and the redirect is the only way its output reaches a log. With no
+// log there is nothing to redirect, and the program is started itself, so it heads its own process tree.
 func outsideJobCommandLine(exe string, args []string, log string) string {
 	parts := []string{`"` + exe + `"`}
 	for _, a := range args {
@@ -76,17 +77,19 @@ func outsideJobCommandLine(exe string, args []string, log string) string {
 	}
 	line := strings.Join(parts, " ")
 	if log == "" {
-		return `cmd.exe /c "` + line + ` >NUL 2>&1"`
+		return line
 	}
 	return `cmd.exe /c "` + line + ` >> "` + log + `" 2>&1"`
 }
 
 // Answers the child's pid, not cmd's, skipping conhost.exe, and exits 4 when cmd is gone before any child appeared.
+// A command line that is not cmd's answers its own pid.
 func outsideJobScript() string {
 	return `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; ` +
 		`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:ATRIUM_DETACH_CMD; ProcessStartupInformation=$si}; ` +
 		`if ($r.ReturnValue -ne 0) { exit 3 }; ` +
 		`$p = $r.ProcessId; ` +
+		`if (-not $env:ATRIUM_DETACH_CMD.StartsWith('cmd.exe ')) { [Console]::Out.Write($p); exit 0 }; ` +
 		`$sw = [Diagnostics.Stopwatch]::StartNew(); ` +
 		`while ($sw.ElapsedMilliseconds -lt 5000) { ` +
 		`$k = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.ProcessId)" | Where-Object { $_.Name -ne 'conhost.exe' } | Select-Object -First 1; ` +
