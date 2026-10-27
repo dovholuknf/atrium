@@ -203,24 +203,14 @@ $waitFree = '$n = 0 ; while ($n -lt ' + $portWait + ') { $c = New-Object Net.Soc
 $winWaitStore = New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium\atrium.db'')'
 $sg3WaitStore = New-StoreWaitScript 'windows' '''C:/Users/claude/.atrium/atrium.db'''
 $macWaitStore = New-StoreWaitScript 'mac' '~/.atrium/atrium.db'
-$winEnv ='$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
-  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
 $winSwap = $winEnv + '& $b stop ; ' +
   $waitFree + $winWaitStore +
   'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
   'Move-Item -Force (Join-Path $HOME ''atrium.new.exe'') $b ; & $b room --detach'
-$sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
-  '--db C:/Users/claude/.atrium/atrium.db'
 $macWait = 'for i in {1..' + $portWait + '}; do lsof -iTCP:7781 -sTCP:LISTEN >/dev/null || break ; sleep 1 ; done ; ' +
   'if lsof -iTCP:7781 -sTCP:LISTEN >/dev/null ; then echo ' + $portTimeout + ' ; exit 3 ; fi ; '
-$macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
-  '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
 # sgg-zrok keeps its address beside its own --dir (--isolated), so a bare `atrium stop` would reach sgg: it names its board.
-$zrokEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
-  '$b = Join-Path $HOME ''.atrium-zrok\bin\atrium.exe'' ; '
 $zrokWait = $waitFree.Replace('7781', '7791') + (New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium-zrok\atrium.db'')')
-$zrokDetach = '& $b room --detach --isolated --dir (Join-Path $HOME ''.atrium-zrok\room'') ' +
-  '--db (Join-Path $HOME ''.atrium-zrok\atrium.db'') --agent 127.0.0.1:7787 --http 127.0.0.1:7791'
 # Retry is run when the detach after the swap found the old room still answering. It waits for the port again, then detaches.
 # Log is how to read the room's own log over ssh, for Get-RoomLink.
 $remote = @{

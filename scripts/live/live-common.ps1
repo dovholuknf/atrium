@@ -47,6 +47,24 @@ $CtlLogs      = Join-Path $AtriumRoot "$CtlName\logs"
 $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
 $CtlServes    = 'http://127.0.0.1:7791/v1/settings'
+# How each remote room is started, detached, over ssh: atrium-deploy.ps1 after a swap, start-atrium-remote.ps1 after a
+# failure. A start that finds the room's port answering leaves it alone and exits.
+$winEnv ='$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
+$sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
+  '--db C:/Users/claude/.atrium/atrium.db'
+$macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
+  '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
+$zrokEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+  '$b = Join-Path $HOME ''.atrium-zrok\bin\atrium.exe'' ; '
+$zrokDetach = '& $b room --detach --isolated --dir (Join-Path $HOME ''.atrium-zrok\room'') ' +
+  '--db (Join-Path $HOME ''.atrium-zrok\atrium.db'') --agent 127.0.0.1:7787 --http 127.0.0.1:7791'
+$RemoteStart = [ordered]@{
+  'sg3'      = @{ Ssh = 'sg3'; Cmd = $sg3Detach }
+  'sgg'      = @{ Ssh = 'sgg'; Cmd = $winEnv + '& $b room --detach' }
+  'sgg-zrok' = @{ Ssh = 'sgg'; Cmd = $zrokEnv + $zrokDetach }
+  'm1mini'   = @{ Ssh = 'm1mini'; Cmd = 'zsh -lic "' + $macDetach + '"' }
+}
 # The room's own PATH record, written by room-toolchain.ps1, so a start never leans on the profile of whoever ran it.
 $ToolchainDir = Join-Path (Split-Path $AtriumBinDir) 'toolchain'
 

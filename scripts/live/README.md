@@ -55,7 +55,8 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 
 | Script | What it does |
 | --- | --- |
-| `start-atrium.ps1` | Hub, claude-sg4 and sg4-control, which exits 1 if sg4-control does not answer on 7791. `-NoControl` skips it. |
+| `start-atrium.ps1` | Hub, claude-sg4, sg4-control and the remote rooms. Exits 1 if sg4-control does not answer on 7791 or a remote room does not come back on the hub. `-NoControl` and `-NoRemote` skip them. |
+| `start-atrium-remote.ps1` | Each remote room the hub does not list (sg3, sgg, sgg-zrok, m1mini), started over ssh. `-Rooms` picks some. |
 | `stop-atrium.ps1` | claude-sg4, hub. sg4-control too, first, only with both `-Control` and `-IKnowItKillsMyShell`. |
 | `start-atrium-hub.ps1` | The hub alone. |
 | `start-atrium-room.ps1` | The claude-sg4 room alone, when the hub is up and the room is not. |
