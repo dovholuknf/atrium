@@ -419,12 +419,19 @@ func (s *Server) openRow(r *http.Request, in openRequest, got *rules.Resolved) (
 	return out.PR, out.Created, rec.Code, nil
 }
 
+// runnerStartable is whether this room has the runner enabled and its command found, as /v1/harnesses reports it.
+func (s *Server) runnerStartable(id string) bool {
+	h, err := s.st.Harness(id)
+	return err == nil && h != nil && h.Enabled && RunnerFound(h) != ""
+}
+
 // openLaunchBody is the card's launch: the worktree, what the recogniser filled in, and the tags that tie it to the
-// link. The harness is the caller's, else the review recipe's for the repo.
+// link. The harness is the caller's, else the review recipe's for the repo, which also stands in for a caller's this
+// room cannot start while the recipe's can be.
 func (s *Server) openLaunchBody(in openRequest, got *rules.Resolved, wt prWorktreeResult, key, org, repo string, num int) []byte {
 	harness := strings.TrimSpace(in.Harness)
-	if harness == "" {
-		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil {
+	if harness == "" || !s.runnerStartable(harness) {
+		if rec, err := s.st.RecipeFor(org + "/" + repo); err == nil && rec != nil && (harness == "" || s.runnerStartable(rec.Harness)) {
 			harness = rec.Harness
 		}
 	}

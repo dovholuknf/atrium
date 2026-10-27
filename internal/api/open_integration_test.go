@@ -219,6 +219,40 @@ func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 	}
 }
 
+func TestOpenFallsBackToTheRecipesRunnerWhenTheRequestedOneIsNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.checkout(t, "o", "r")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []store.Harness{
+		{ID: "here", Enabled: true, Cmd: "here", BinPath: filepath.ToSlash(exe), LaunchMode: store.LaunchPTY},
+		{ID: "gone", Enabled: true, Cmd: "atrium-no-such-runner", LaunchMode: store.LaunchPTY},
+	} {
+		if _, err := oh.srv.st.SaveHarness(h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := oh.srv.st.SavePRRecipe(store.PRRecipe{Name: "default", Harness: "here", Panel: store.DefaultPRPanel,
+		WalkerBrief: "walk", BudgetUSD: 1, TurnsCap: 5}); err != nil {
+		t.Fatal(err)
+	}
+	rec := post(t, oh.h, "/v1/open", map[string]any{"url": openURL, "why": "look", "harness": "gone"})
+	if rec.Code != 201 || len(oh.launched) != 1 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var sent struct{ Harness string }
+	_ = json.Unmarshal(oh.launched[0], &sent)
+	if sent.Harness != "here" {
+		t.Errorf("the launch asked for %q, want the recipe's here", sent.Harness)
+	}
+}
+
 func TestOpenUndoesTheWorktreeAndTheRowWhenTheCardDoesNotStart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")
