@@ -2420,7 +2420,7 @@ func (d *Daemon) awaitExit(r *runner) {
 	ck, cb := r.endCause()
 	_, err := d.fileExitChecked(runExit{
 		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
-		resumed: r.resumed, spec: r.spec, cause: ck, causeBy: cb,
+		resumed: r.resumed, spec: r.spec, cause: ck, causeBy: cb, leaving: r.leaving.Load(),
 	})
 	// Collected only after the filing committed. Ahead of it, a crash would lose an exit nobody had recorded.
 	if ht != nil && err == nil {
@@ -2453,6 +2453,8 @@ type runExit struct {
 	superseded bool
 	// cause is why atrium ended the run, when it did. See runner.cause.
 	cause, causeBy string
+	// leaving is atrium typing the exit itself (windDown), which is not the session quitting on purpose.
+	leaving bool
 }
 
 // fileExit records a runner's end and marks its card dead, AT MOST ONCE per
@@ -2509,8 +2511,8 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		return true, err
 	}
 	// A clean exit nobody asked for is the session quitting on purpose. A kill, a crash or a reboot ends non-zero
-	// and stays live, to come back.
-	if code == 0 && x.cause == "" {
+	// and stays live, to come back, and so does an exit atrium typed, as a wind-down does.
+	if code == 0 && x.cause == "" && !x.leaving && !d.windingDown.Load() {
 		if err := d.st.ClearLive(x.taskID); err != nil {
 			log.Printf("[atrium] could not take %s off the live cards: %v", x.taskID, err)
 		}
