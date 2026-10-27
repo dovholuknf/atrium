@@ -467,7 +467,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		if err := s.Kill(t.ID); err != nil {
 			res.SessionErr = err.Error()
-			warn("the session did not stop: %v", err)
+			warn("%v", err)
 			steps.problem("%v", err)
 		} else {
 			maps.Copy(tree, sub)

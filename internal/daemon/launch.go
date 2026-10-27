@@ -2160,7 +2160,7 @@ func (d *Daemon) Kill(taskID string) error {
 		return err
 	}
 	if t.PID <= 0 {
-		return errors.New("no process is recorded for it yet, close its terminal window")
+		return errors.New("not stopped, close its window")
 	}
 	// A process that is already gone is not a failure. The request was "make
 	// this stop running", and it is not running, so the card converges to dead
