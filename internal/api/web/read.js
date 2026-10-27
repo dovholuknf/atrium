@@ -203,6 +203,7 @@ function readMain() {
   const oops = msg => { text.className = "oops"; text.textContent = msg; };
   if (kind === "image") {
     const pic = document.getElementById("pic");
+    document.documentElement.classList.add("plain");
     pic.alt = path;
     pic.onload = () => { what.textContent = pic.naturalWidth + " × " + pic.naturalHeight; };
     pic.onerror = () => { pic.hidden = true; text.hidden = false; oops("Could not show it as a picture."); };
