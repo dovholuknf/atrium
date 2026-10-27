@@ -29,6 +29,7 @@ $HubDir       = Join-Path $Base 'hub'
 $AtriumRoot   = 'D:\atrium'
 $HubHealth   = 'http://127.0.0.1:7778/_hub/health'
 $HubRooms     = 'http://127.0.0.1:7778/_hub/rooms'
+$HubInventory = 'http://127.0.0.1:7778/_hub/inventory'
 # What the hub calls the room these scripts restart. A room COUNT says nothing about it: m1mini and sg4-wsl attach to
 # the same hub, so "rooms >= 1" passed on 2026-09-29 17:05 while this room was being refused.
 $RoomName     = 'claude-sg4'
@@ -913,6 +914,64 @@ function Test-RoomBackOnHub([string]$Name, [datetime]$After, [string]$Commit = '
   if (-not $r -or ([datetime]$r.since).ToUniversalTime() -lt $After.ToUniversalTime()) { return $false }
   if ($Commit -and $r.commit -and -not ($r.commit.StartsWith($Commit.Substring(0, [Math]::Min(7, $Commit.Length))))) { return $false }
   return $true
+}
+
+# Get-RoomSkew is one row per room the hub knows (the inventory, as the board's rooms tab reads it), judged against
+# $HubCommit by the commit each attached room says it runs (the same field the "set up inconsistently" tooltip compares).
+# A room never connected is inventory, not a room, and is left out. State is ok, STALE or offline.
+function Get-RoomSkew($Attached, $Inventory, [string]$HubCommit) {
+  $live = @{}
+  foreach ($a in @($Attached)) { $live[$a.name] = $a }
+  $names = @(@($Inventory) | Where-Object { $_.attached -or $_.first_seen } | ForEach-Object { $_.name }) + @($live.Keys)
+  foreach ($n in ($names | Sort-Object -Unique)) {
+    $a = $live[$n]
+    if (-not $a) { [pscustomobject]@{ Name = $n; Commit = ''; State = 'offline' }; continue }
+    $c = if ($a.commit) { [string]$a.commit } elseif ($a.setup -and $a.setup.commit) { [string]$a.setup.commit } else { '' }
+    $same = $c -and $HubCommit -and $c.StartsWith($HubCommit.Substring(0, [Math]::Min(7, $HubCommit.Length)))
+    [pscustomobject]@{ Name = $n; Commit = $c; State = $(if ($same) { 'ok' } else { 'STALE' }) }
+  }
+}
+
+# Format-RoomSkew is the line for one Get-RoomSkew row: `<room>  <commit>  ok`, `... STALE (hub <commit>)` or `<room>  offline`.
+function Format-RoomSkew($Row, [string]$HubCommit) {
+  $short = { param($c) if ($c) { $c.Substring(0, [Math]::Min(8, $c.Length)) } else { 'unknown' } }
+  switch ($Row.State) {
+    'offline' { "$($Row.Name)  offline" }
+    'ok' { "$($Row.Name)  $(& $short $Row.Commit)  ok" }
+    default { "$($Row.Name)  $(& $short $Row.Commit)  STALE (hub $(& $short $HubCommit))" }
+  }
+}
+
+# Get-DeployNext is the command that deploys the rooms Get-RoomSkew found stale or offline. sg4-control takes the
+# opt-in form and a room deploy does not know is named on its own line, to be done by hand.
+function Get-DeployNext([string[]]$Names, [string]$Script) {
+  $deployable = 'hub', 'claude-sg4', 'sg3', 'm1mini', 'sgg'
+  $rooms = @($Names | Where-Object { $_ -in $deployable })
+  $cmds = @()
+  if ($rooms.Count) { $cmds += "pwsh -NoProfile -File $Script -Rooms $($rooms -join ',')" }
+  if ($Names -contains 'sg4-control') { $cmds += "pwsh -NoProfile -File $Script -Control -IKnowItKillsMyShell" }
+  foreach ($n in ($Names | Where-Object { $_ -notin $deployable -and $_ -ne 'sg4-control' })) {
+    $cmds += "$n has no deploy target in atrium-deploy.ps1, redeploy it by hand"
+  }
+  $cmds
+}
+
+# Get-RoomSkewReport reads the hub and answers the lines, the rooms to deploy next and whether all is well. The hub's
+# commit is its local room's when it has one, else $Fallback (the commit just built).
+function Get-RoomSkewReport([string]$Fallback = '') {
+  try {
+    $att = @((Invoke-RestMethod $HubRooms -TimeoutSec 5).rooms)
+    $inv = @((Invoke-RestMethod $HubInventory -TimeoutSec 5).rooms)
+  } catch { return [pscustomobject]@{ Ok = $false; Lines = @("hub unreachable, rooms not checked: $($_.Exception.Message)"); Bad = @() } }
+  $hubCommit = $Fallback
+  $loc = $att | Where-Object { $_.local -and $_.commit } | Select-Object -First 1
+  if ($loc) { $hubCommit = [string]$loc.commit }
+  $rows = @(Get-RoomSkew $att $inv $hubCommit)
+  [pscustomobject]@{
+    Ok = -not ($rows | Where-Object { $_.State -ne 'ok' })
+    Lines = @($rows | ForEach-Object { Format-RoomSkew $_ $hubCommit })
+    Bad = @($rows | Where-Object { $_.State -ne 'ok' } | ForEach-Object { $_.Name })
+  }
 }
 
 # Get-RoomSshUser is the ssh login a room needs when it is not the caller's own, or '' to let ssh choose. The hub's room

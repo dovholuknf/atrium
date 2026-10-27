@@ -36,14 +36,44 @@
 #
 # Remote rooms are built for their platform with the same stamp, copied over with scp, stopped with `atrium stop`, and
 # swapped with the old binary kept as atrium.prev. m1mini runs through `zsh -lic`, or the room cannot find claude.
+#
+# THE SKEW CHECK ends every deploy: the hub is asked for every room it knows and the commit each runs, one line per room
+# (`<room>  <commit>  ok`, `<room>  <commit>  STALE (hub <commit>)`, `<room>  offline`). Any stale or offline room exits 1
+# and the exact command to deploy it is printed, so a room the -Rooms list left out is reported, never skipped silently.
+# -CheckOnly runs just that check, from any shell, changing nothing.
 param([string[]]$Rooms = @('local'), [switch]$NoBuild, [switch]$WhatIf, [switch]$Immediate, [switch]$KillRunners, [switch]$Detached,
-  [string]$ReportTo, [switch]$Control, [switch]$IKnowItKillsMyShell)
+  [string]$ReportTo, [switch]$Control, [switch]$IKnowItKillsMyShell, [switch]$CheckOnly)
 
 $ErrorActionPreference = 'Continue'
 $LiveTag = 'DEPLOY'
 . "$PSScriptRoot\refuse-supervised.ps1"
 . "$PSScriptRoot\live-common.ps1"
 $LiveLog = if ($env:ATRIUM_LIVE_LOG) { $env:ATRIUM_LIVE_LOG } else { Join-Path $Base 'atrium-deploy.log' }
+
+# Test-RoomSkew says the check's lines and the next commands, and answers whether every room runs the hub's commit.
+# Rooms are given a minute to reattach after a deploy, since the hub may just have restarted.
+function Test-RoomSkew([string]$Fallback, [int]$WaitSeconds = 0) {
+  $until = (Get-Date).AddSeconds($WaitSeconds)
+  do {
+    $rep = Get-RoomSkewReport $Fallback
+    if ($rep.Ok -or (Get-Date) -ge $until) { break }
+    Start-Sleep -Seconds 10
+  } while ($true)
+  $rep.Lines | ForEach-Object { Say $_ }
+  if (-not $rep.Ok -and $rep.Bad.Count) {
+    Say 'rooms not on the hub''s commit. deploy them next with:'
+    Get-DeployNext $rep.Bad $PSCommandPath | ForEach-Object { Say "  $_" }
+  }
+  return $rep.Ok
+}
+
+if ($CheckOnly) {
+  if (-not (Test-RoomSkew (git -C $Repo rev-parse HEAD))) { exit 1 }
+  exit 0
+}
+if (-not $PSBoundParameters.ContainsKey('Rooms')) {
+  Say 'warning: -Rooms not given, so only hub and claude-sg4 are deployed. rooms the hub knows and this leaves out are checked at the end and reported STALE or offline, not skipped silently'
+}
 
 if (-not $ReportTo -and $env:ATRIUM_TASK_ID) {
   $ReportTo = if ($env:ATRIUM_ROOM) { "$env:ATRIUM_TASK_ID@$env:ATRIUM_ROOM" } else { $env:ATRIUM_TASK_ID }
@@ -394,4 +424,6 @@ if ($want -contains 'sg4-control') {
 
 Say "commit $($commit.Substring(0, 8))"
 Report
+$skewOk = $WhatIf -or (Test-RoomSkew $commit 60)
 if ($results.Values | Where-Object { $_ -like 'failed*' }) { exit 1 }
+if (-not $skewOk) { exit 1 }
