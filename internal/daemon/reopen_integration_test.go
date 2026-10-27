@@ -20,39 +20,70 @@ func reopenDaemon(t *testing.T) *Daemon {
 	return testDaemon(t)
 }
 
+func reopenCard(t *testing.T, d *Daemon, name string) string {
+	t.Helper()
+	task, _, err := d.st.Register(store.Observed{WireName: name, Worktree: t.TempDir(), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return task.ID
+}
+
 // THE BUG: a card with a runner that was not a fixture was left behind.
 func TestWhatWasOpenIsRecordedAtTheWindDown(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
+	a, b := reopenCard(t, d, "card-a"), reopenCard(t, d, "card-b")
 	live := []*runner{
-		{taskID: "card-a", buf: newRing(64, 80)},
-		{taskID: "card-b", buf: newRing(64, 80)},
+		{taskID: a, buf: newRing(64, 80)},
+		{taskID: b, buf: newRing(64, 80)},
 	}
 	d.saveReopen(live)
 
 	got := d.readReopen()
-	if !slices.Equal(got, []string{"card-a", "card-b"}) {
+	if !slices.Equal(got, []string{a, b}) {
 		t.Fatalf("recorded %v", got)
 	}
 }
 
-// AN EMPTY LIST IS A FACT, not an absence.
-//
-// Closing every terminal and then stopping must not reopen yesterday's set.
-// Skipping the write when there is nothing open would leave the last list in
-// place and do exactly that.
-func TestStoppingWithNothingOpenClearsTheList(t *testing.T) {
+// 2026-10-27: a reboot gave the wind-down no chance to write, the list was the one from the last clean stop a week
+// before, and the seven cards started since stayed dead.
+func TestACardStartedSinceTheLastStopIsReopenedAfterACrash(t *testing.T) {
 	t.Parallel()
 	d := reopenDaemon(t)
-	d.saveReopen([]*runner{{taskID: "card-a", buf: newRing(64, 80)}})
-	if len(d.readReopen()) != 1 {
-		t.Fatal("the fixture did not record anything")
+	old, started := reopenCard(t, d, "open-at-the-last-stop"), reopenCard(t, d, "started-since")
+	d.saveReopen([]*runner{{taskID: old, buf: newRing(64, 80)}})
+
+	d.noteOpen(started)
+	d.noteOpen(started)
+
+	var ids []string
+	for _, task := range d.reopenWanted() {
+		ids = append(ids, task.ID)
+	}
+	if !slices.Equal(ids, []string{old, started}) {
+		t.Fatalf("would reopen %v, want both cards", ids)
+	}
+}
+
+// A stop with nothing running keeps a card a failure killed and drops one closed on purpose.
+func TestAStopKeepsAKilledCardAndDropsAClosedOne(t *testing.T) {
+	t.Parallel()
+	d := reopenDaemon(t)
+	killed, closed := reopenCard(t, d, "killed-by-a-failure"), reopenCard(t, d, "closed-on-purpose")
+	d.noteOpen(killed)
+	d.noteOpen(closed)
+	if err := d.st.SetStatus(killed, store.StatusDead); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetExitAsked(closed); err != nil {
+		t.Fatal(err)
 	}
 
 	d.saveReopen(nil)
 
-	if got := d.readReopen(); len(got) != 0 {
-		t.Fatalf("a stop with nothing open left %v behind", got)
+	if got := d.readReopen(); !slices.Equal(got, []string{killed}) {
+		t.Fatalf("a stop left %v, want only the killed card", got)
 	}
 }
 

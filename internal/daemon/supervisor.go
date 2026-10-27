@@ -2289,6 +2289,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	// DURABLE BEFORE THE LAUNCH COUNTS AS COMPLETE. See `recordRun`.
 	d.recordRun(r, store.RunKindRunner)
 	d.sup.add(r)
+	d.noteOpen(taskID)
 
 	// A card that was lent out gets its address back the moment it has a
 	// terminal to serve. Cheap and silent for the overwhelming majority that

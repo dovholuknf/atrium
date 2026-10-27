@@ -119,6 +119,8 @@ type Daemon struct {
 	// bootResumes is resume id to the card on the reopen list that takes it,
 	// for the length of one reopen pass. See reopenSaved.
 	bootResumes sync.Map
+	// reopenMu serialises the read and rewrite of the reopen list. See noteOpen.
+	reopenMu sync.Mutex
 	// modelWaits is card id to a /model switch the input gate has not let through
 	// yet. See modelswitch.go.
 	modelWaits sync.Map

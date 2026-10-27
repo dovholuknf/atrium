@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,47 +58,88 @@ func (d *Daemon) reopenPath() string {
 	return filepath.Join(filepath.Dir(d.opts.DBPath), reopenFile)
 }
 
-// saveReopen records which cards had a runner atrium owned.
+// saveReopen adds the cards that had a runner atrium owned to the list.
 //
 // Called from the wind-down beside `saveCarryover`, and best effort in the
 // same way: every failure is logged and stepped over. A shutdown must not fail
 // or hang over this, and the cost of it not being written is the behaviour
 // that existed before it did.
 //
-// WRITTEN EVEN WHEN THE LIST IS EMPTY, and that is deliberate. An empty file
-// means "the last daemon had nothing open", which is a different fact from no
-// file at all, and leaving yesterday's list in place would reopen terminals
-// somebody closed on purpose before stopping.
+// ADDED TO, NEVER REPLACED. A card a reboot or a pty host crash killed is on the list and has no runner now, and
+// replacing the list left it dead. A card closed on purpose drops off through `openCards`.
 func (d *Daemon) saveReopen(rs []*runner) {
-	rec := reopenRecord{SavedAt: time.Now()}
+	d.reopenMu.Lock()
+	defer d.reopenMu.Unlock()
+	cards := d.readReopen()
 	for _, r := range rs {
 		if r != nil && r.taskID != "" {
-			rec.Cards = append(rec.Cards, r.taskID)
+			cards = append(cards, r.taskID)
 		}
 	}
+	if n, ok := d.writeReopen(cards); ok {
+		log.Printf("[atrium] recorded %d open terminal(s) to reopen", n)
+	}
+}
+
+// noteOpen puts a card on the list the moment its runner starts. A reboot, an OOM or a crash gives the wind-down no
+// chance to write, and a list written only there named the cards open at the last clean stop, a week old on
+// 2026-10-27.
+func (d *Daemon) noteOpen(taskID string) {
+	d.reopenMu.Lock()
+	defer d.reopenMu.Unlock()
+	cards := d.readReopen()
+	if slices.Contains(cards, taskID) {
+		return
+	}
+	d.writeReopen(append(cards, taskID))
+}
+
+// openCards is the list without repeats and without the cards that are closed for good: pruned, archived, or
+// exited on purpose. Everything else stays, since a card a failure killed is the one this list exists for.
+func (d *Daemon) openCards(cards []string) []string {
+	var kept []string
+	for _, id := range cards {
+		if slices.Contains(kept, id) {
+			continue
+		}
+		t, err := d.st.Get(id)
+		if err != nil || t.ArchivedAt != nil {
+			continue
+		}
+		if asked, err := d.st.ExitAsked(id); err == nil && asked {
+			continue
+		}
+		kept = append(kept, id)
+	}
+	return kept
+}
+
+// writeReopen writes the list through `openCards` and returns how many it kept. Callers hold reopenMu.
+func (d *Daemon) writeReopen(cards []string) (int, bool) {
+	rec := reopenRecord{SavedAt: time.Now(), Cards: d.openCards(cards)}
 	raw, err := json.Marshal(rec)
 	if err != nil {
 		log.Printf("[atrium] could not record what was open: %v", err)
-		return
+		return 0, false
 	}
 	path := d.reopenPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		log.Printf("[atrium] could not make a place to record what was open: %v", err)
-		return
+		return 0, false
 	}
 	// Written aside and renamed, so a daemon killed mid-write leaves the last
 	// good list rather than half of this one.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
 		log.Printf("[atrium] could not record what was open: %v", err)
-		return
+		return 0, false
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		log.Printf("[atrium] could not record what was open: %v", err)
-		return
+		return 0, false
 	}
-	log.Printf("[atrium] recorded %d open terminal(s) to reopen", len(rec.Cards))
+	return len(rec.Cards), true
 }
 
 // readReopen returns the cards the last daemon had open, or nothing.
@@ -216,7 +258,7 @@ func (d *Daemon) reopenWanted() []*store.Task {
 			continue
 		}
 		t, err := d.st.Get(id)
-		if err != nil {
+		if err != nil || t.ArchivedAt != nil {
 			// The card was pruned or archived while the daemon was down. Not
 			// worth a warning: the work is gone, which is an answer.
 			continue

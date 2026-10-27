@@ -577,6 +577,7 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 		d.sup.addShell(r)
 	} else {
 		d.sup.add(r)
+		d.noteOpen(row.TaskID)
 		d.EnsureCardShare(row.TaskID)
 		// The reattach is this runner's session start as far as a restart wake can tell: no SessionStart hook is
 		// coming, and the wake would otherwise wait out wakeNoHook. The wake's own settle delay follows.

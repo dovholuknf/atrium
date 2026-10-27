@@ -66,8 +66,8 @@ func TestStopLeavesHostRunnersUp(t *testing.T) {
 	if n := len(filedExits(t, d2, task.ID)); n != 0 {
 		t.Fatalf("a stop that left the runner up filed %d exits", n)
 	}
-	if got := d2.readReopen(); len(got) != 0 {
-		t.Fatalf("the reopen list holds %v, but nothing was closed", got)
+	if got := d2.readReopen(); len(got) != 1 || got[0] != task.ID {
+		t.Fatalf("the reopen list is %v, want the held card in case the pty host goes too", got)
 	}
 }
 
