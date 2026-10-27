@@ -20946,7 +20946,11 @@ async function pasteRepoNameSection(browser, base) {
       const vis = id => document.getElementById(id).checkVisibility();
       return { value: box.value, all: box.selectionStart === 0 && box.selectionEnd === box.value.length,
         focused: document.activeElement === box, q: vis("sw-q"), foot: vis("sw-foot"),
-        nmfoot: document.getElementById("sw-nmfoot").textContent.replace(/\s+/g, " ").trim(),
+        nmfoot: (() => {
+          const w = document.createTreeWalker(document.getElementById("sw-nmfoot"), NodeFilter.SHOW_TEXT), t = [];
+          while (w.nextNode()) t.push(w.currentNode.data);
+          return t.join(" ").replace(/\s+/g, " ").trim();
+        })(),
         label: document.getElementById("sw-name").textContent, hint: document.querySelector(".swnmhint").textContent };
     });
     if (!/^work-\d{6}-\d{4}$/.test(st.value) || !st.all || !st.focused) fail("pasteRepoName: the default name is not selected: " + JSON.stringify(st));
@@ -29943,10 +29947,14 @@ async function growlQuietSection(browser, base) {
     if (l.some(t => /^growler ended/.test(t))) fail("growlQuiet: ending logged " + JSON.stringify(l));
     // a snooze coming back open is raised again
     await h.say([Object.assign({}, row, { state: "snoozed" })]);
+    const raises = () => p.evaluate(() => toastLog().filter(e => e.title === "permission a").map(e => e.n || 1));
+    const was = await raises();
     // the hub resets raised_at when a snooze ends
     await h.say([Object.assign({}, row, { raised_at: new Date(GR_T0 + 99 * 60000).toISOString() })], { remind: [row.id] });
-    l = await log();
-    if (l.filter(t => t === "permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
+    // one card's repeats fold into one row, so the raise and its reminder are two more on its count
+    const now = await raises();
+    if (was.length !== 1 || now.length !== 1 || now[0] !== was[0] + 2)
+      fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify([was, now]));
     // a hub never asks for the set, at load or later
     await fakeTick(p, 1500);
     if (h.gets) fail("growlQuiet: the board fetched /_hub/growls " + h.gets + " times.");
