@@ -432,8 +432,12 @@ func (c *client) handle(q *Request) {
 		list := make([]PtyInfo, 0, len(ps))
 		for _, p := range ps {
 			p.mu.Lock()
-			list = append(list, p.infoLocked())
+			info := p.infoLocked()
 			p.mu.Unlock()
+			if !info.Exited {
+				info.Mem = p.tree.mem()
+			}
+			list = append(list, info)
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].RunID < list[j].RunID })
 		c.reply(q, Reply{OK: true, List: list})

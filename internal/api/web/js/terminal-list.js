@@ -1311,7 +1311,7 @@ function termRowChips(t, lead) {
   const minion = isMinion(t) ? `<span class="chip" data-tip="a throwaway session an item launched. it is listed because it needs you">minion</span>` : "";
   const landed = t.landed_kept
     ? `<span class="chip warn" aria-label="${esc(t.landed_kept)}" data-tip="${esc(t.landed_kept)}">landed</span>` : "";
-  const inner = (lead || "") + minion + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined + landed;
+  const inner = (lead || "") + minion + stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + memChip(t) + room + popped + joined + landed;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

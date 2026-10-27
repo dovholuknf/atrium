@@ -730,6 +730,13 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
+// What the card's runner, its shell and everything they started hold now, from the pty host's job object or cgroup.
+function memChip(t) {
+  if (!t.mem || over(t) || typeof bytes !== "function") return "";
+  const tip = "memory this card's processes hold now. Process Explorer's Job tab names their job after the card";
+  return `<span class="chip mem" data-tip="${esc(tip)}">${esc(bytes(t.mem))}</span>`;
+}
+
 // Past its context limit (the daemon's `warn`: the card's own limit, else the hub's for its harness, 200k for
 // claude by default) a card gets the small amber mark, and atrium cycles its context. The row's context line
 // (ctxLine) turns danger at the land-the-plane line. Never stored. The number is also in the card's details.
@@ -886,6 +893,7 @@ function cardHTML(t, wearAs) {
       ${activityChip(t)}
       ${ctxWarnMark(t)}
       ${contextChip(t)}
+      ${memChip(t)}
       ${seenChips(t)}
       ${w
         ? `<span class="chip state owed" data-tip="${t.status === "needs-permission"

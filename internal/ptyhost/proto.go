@@ -58,7 +58,7 @@ type Request struct {
 	Env  []string `json:"env,omitempty"`
 	Cwd  string   `json:"cwd,omitempty"`
 	Ring int      `json:"ring,omitempty"`
-	// Label names the runner's job object, so a process viewer shows whose it is.
+	// Label names the runner's job, scope or cgroup, so a process viewer shows whose it is.
 	Label string `json:"label,omitempty"`
 
 	// spawn and resize
@@ -98,6 +98,8 @@ type PtyInfo struct {
 	ExitCode  int    `json:"exit_code"`
 	RingStart int64  `json:"ring_start"`
 	OutOffset int64  `json:"out_offset"`
+	// Mem is the bytes the runner and what it started hold, from its job, cgroup or process group. `list` only.
+	Mem int64 `json:"mem,omitempty"`
 }
 
 // Reply answers a Request, matched by Seq. Only the fields of the verb are set.

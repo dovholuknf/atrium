@@ -1154,6 +1154,9 @@ type view struct {
 	// and never stored, and whether it is past the threshold. Absent on a card
 	// that is not Claude or has no transcript yet. See docs/runtime/activity-design.md.
 	ContextSize any `json:"context_size,omitempty"`
+	// Mem is what the card's processes hold in bytes, from the pty host's job objects or cgroups. Absent with
+	// pty_host off.
+	Mem int64 `json:"mem,omitempty"`
 	// Autocompact is the limit atrium holds the card to and the compaction window its
 	// runner is started with, both in thousands of tokens. Absent for a runner that
 	// takes no such flag. Worked out by the daemon, never stored.
@@ -1253,6 +1256,9 @@ var TelemetryOf func(taskID string) any
 // memory. See internal/daemon/a2a.go.
 var EscalationOf func(taskID string) any
 
+// MemOf returns what a card's processes hold in bytes, or 0. Supplied by the daemon, from the pty host.
+var MemOf func(taskID string) int64
+
 // BudgetOf returns a card's crossed worker budget, or nil. Supplied by the daemon, which holds it in memory.
 var BudgetOf func(taskID string) any
 
@@ -1339,6 +1345,9 @@ func (s *Server) toView(t *store.Task) view {
 	}
 	if ContextSizeOf != nil {
 		v.ContextSize = ContextSizeOf(t.ID)
+	}
+	if MemOf != nil {
+		v.Mem = MemOf(t.ID)
 	}
 	if AutocompactOf != nil {
 		v.Autocompact = AutocompactOf(t)

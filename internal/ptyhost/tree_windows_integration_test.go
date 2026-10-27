@@ -28,6 +28,9 @@ func TestTheJobIsNamedAfterTheLabelAndATakenNameGetsTheRunID(t *testing.T) {
 	if !jobExists(label + " R2") {
 		t.Fatalf("the second run did not take %q", label+" R2")
 	}
+	if n := trees[0].mem(); n < 1<<20 {
+		t.Fatalf("the job holds %d bytes, want a running ping's working set", n)
+	}
 	for _, tr := range trees {
 		tr.kill()
 	}

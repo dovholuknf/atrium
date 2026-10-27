@@ -151,6 +151,8 @@ type Daemon struct {
 
 	// The pty host link. See hostterm.go.
 	ph hostLink
+	// cmem is each card's memory, read from the pty host. See cardmem.go.
+	cmem cardMem
 	// stopRunners is set by a stop that was asked to end every runner, host-held ones included (`atrium stop
 	// --runners`). Unset, a stop leaves the runners the pty host holds up. See stopSupervised.
 	stopRunners atomic.Bool
@@ -741,6 +743,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// The worker budget is checked as each row lands. See workerpolicy.go.
 	d.usage.afterRow = d.checkBudget
 	api.BudgetOf = d.budgetFor
+	api.MemOf = d.memFor
 	// A keep-alive refresh's row is announced the same way as a turn's.
 	d.ka.spent = func(u *store.SessionUsage) error {
 		d.usage.stamp(u)
@@ -1284,6 +1287,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// The room's own stats, pushed to the board. See roomstats.go.
 	d.startRoomStats(ctx)
 	go d.sizeLoop(ctx)
+	go d.cardMemLoop(ctx)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
 	// database not in incremental auto_vacuum mode. See vacuum.go.
