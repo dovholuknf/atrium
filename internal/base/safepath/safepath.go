@@ -47,7 +47,23 @@ var ErrOutside = errors.New("that path is outside where this card is allowed to 
 // missed, because the obvious implementation calls EvalSymlinks on the whole
 // path and returns an error that reads like a permission problem.
 func Contained(root, path string) (string, error) {
-	return containedWith(filepath.EvalSymlinks, root, path)
+	return containedWith(evalLinks, root, path)
+}
+
+// evalLinks is EvalSymlinks that also follows a Windows junction, which Go 1.23 and later no longer follows.
+func evalLinks(path string) (string, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil || runtime.GOOS != "windows" {
+		return real, err
+	}
+	walked, err := walkLinks(real)
+	if err != nil {
+		return "", err
+	}
+	if walked == real {
+		return real, nil
+	}
+	return filepath.EvalSymlinks(walked)
 }
 
 func containedWith(evalSymlinks func(string) (string, error), root, path string) (string, error) {

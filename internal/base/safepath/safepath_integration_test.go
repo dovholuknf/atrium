@@ -5,6 +5,7 @@ package safepath
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -110,6 +111,28 @@ func TestASymlinkPointingOutIsRefused(t *testing.T) {
 
 	if _, err := Contained(dir, filepath.Join(link, "secret.txt")); !errors.Is(err, ErrOutside) {
 		t.Fatalf("a symlink out of the root was followed and allowed: %v", err)
+	}
+}
+
+// A junction needs no privilege to make, so on Windows it is the link that is there.
+func TestAJunctionPointingOutIsRefused(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junctions are Windows only")
+	}
+	dir := root(t)
+	outside := root(t)
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "escape")
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, outside).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J: %v %s", err, out)
+	}
+
+	for _, p := range []string{link, filepath.Join(link, "secret.txt"), filepath.Join(link, "new.txt")} {
+		if _, err := Contained(dir, p); !errors.Is(err, ErrOutside) {
+			t.Fatalf("%s: a junction out of the root was allowed: %v", p, err)
+		}
 	}
 }
 
