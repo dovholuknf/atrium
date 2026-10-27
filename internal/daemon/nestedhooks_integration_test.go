@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -133,5 +134,58 @@ func TestANestedPermissionIsGatedButDoesNotMoveTheParentsPid(t *testing.T) {
 		if got.PID != 100 {
 			t.Fatalf("pid %d: the parent's pid became %d", pid, got.PID)
 		}
+	}
+}
+
+func TestANestedSessionBeforeTheRunnersOwnHookCannotEndTheCard(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() { cancel(); <-errCh }()
+	task, _, err := d.st.Register(store.Observed{WireName: "parent", Worktree: "D:/git/atrium", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.sup.runners[task.ID] = &runner{taskID: task.ID, pid: 100}
+	was := procAncestors
+	procAncestors = func(pid, _ int) []cardproc.Proc {
+		if pid == 200 {
+			return []cardproc.Proc{{PID: 150, Name: "bash"}, {PID: 100, Name: "claude"}, {PID: 50, Name: "atrium-pty"}}
+		}
+		return nil
+	}
+	defer func() { procAncestors = was }()
+	before, _ := d.st.Get(task.ID)
+
+	for _, ev := range []string{"start", "end"} {
+		if err := d.onSession(SessionEvent{Agent: "parent", Event: ev, TaskID: task.ID, PID: 200}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := d.st.Get(task.ID)
+	if got.Status != before.Status || got.PID == 200 {
+		t.Fatalf("a nested session took the card: status %s pid %d", got.Status, got.PID)
+	}
+	if err := d.onSession(SessionEvent{Agent: "parent", Event: "start", TaskID: task.ID, PID: 100}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.st.Get(task.ID); got.PID != 100 {
+		t.Fatalf("the runner's own start was refused: pid %d", got.PID)
+	}
+}
+
+func TestAShimsRunnerStillAnnouncesItself(t *testing.T) {
+	d, _, cancel, errCh := startDaemon(t)
+	defer func() { cancel(); <-errCh }()
+	task, _, err := d.st.Register(store.Observed{WireName: "parent", Worktree: "D:/git/atrium", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.sup.runners[task.ID] = &runner{taskID: task.ID, pid: 100}
+	was := procAncestors
+	procAncestors = func(int, int) []cardproc.Proc {
+		return []cardproc.Proc{{PID: 100, Name: "cmd"}, {PID: 50, Name: "atrium-pty"}}
+	}
+	defer func() { procAncestors = was }()
+	if !d.ownsSession(task, 300) {
+		t.Fatal("the runner a shim started was taken for a nested session")
 	}
 }

@@ -94,3 +94,27 @@ func Excluded() []Range {
 	}
 	return parseExcluded(string(out))
 }
+
+// Ancestors is pid's parent, its parent's parent and so on, up to hops of them, each with its executable's name.
+// Empty when pid is not running.
+func Ancestors(pid, hops int) []Proc {
+	type entry struct {
+		name   string
+		parent int
+	}
+	procs := map[int]entry{}
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil
+	}
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		procs[int(e.ProcessID)] = entry{name: windows.UTF16ToString(e.ExeFile[:]), parent: int(e.ParentProcessID)}
+	}
+	_ = windows.CloseHandle(snap)
+	return ancestorsOf(pid, hops, func(p int) (string, int, bool) {
+		en, ok := procs[p]
+		return en.name, en.parent, ok
+	})
+}

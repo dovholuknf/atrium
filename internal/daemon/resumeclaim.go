@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -107,8 +108,9 @@ func (d *Daemon) anyAnnounced(taskID string) bool {
 //
 //   - A supervised card: the pid atrium started, or the first pid the runner's
 //     own hook announced. The second covers a harness that is a shim starting the
-//     real runner, whose pid is not the one atrium spawned, and it cannot be a
-//     nested session because the parent starts first.
+//     real runner, whose pid is not the one atrium spawned. A pid with a runner
+//     between it and the one atrium started is nested and never announces: the
+//     parent's own hook can be late or lost, as after a restart.
 //   - An unsupervised card: when it has no live session, or the same process.
 //   - A hook that found no pid cannot be judged and is believed.
 func (d *Daemon) ownsSession(t *store.Task, pid int) bool {
@@ -120,10 +122,35 @@ func (d *Daemon) ownsSession(t *store.Task, pid int) bool {
 			run.announced.CompareAndSwap(0, int64(pid))
 			return true
 		}
+		if nestedUnder(run.pid, pid) {
+			return false
+		}
 		if run.announced.CompareAndSwap(0, int64(pid)) {
 			return true
 		}
 		return run.announced.Load() == int64(pid)
 	}
 	return t.PID <= 0 || t.PID == pid || !processAlive(t.PID)
+}
+
+// runnerNames are the executables a session hook takes for its runner, as internal/cli/ancestry.go names them.
+var runnerNames = map[string]bool{"claude": true, "node": true, "opencode": true}
+
+// procAncestors is cardproc.Ancestors, a seam for tests.
+var procAncestors = cardproc.Ancestors
+
+// nestedUnder is whether pid descends from root with a runner at root or between them, which makes it a session
+// started inside the card's own runner. A pid not under root, or a tree that cannot be read, is not judged nested.
+func nestedUnder(root, pid int) bool {
+	if root <= 0 {
+		return false
+	}
+	runner := false
+	for _, p := range procAncestors(pid, 16) {
+		runner = runner || runnerNames[p.Name]
+		if p.PID == root {
+			return runner
+		}
+	}
+	return false
 }

@@ -63,6 +63,42 @@ func treeOf(root int, kids map[int][]int, after func(child, parent string) bool)
 	return out
 }
 
+// Proc is one process: its pid and its executable's base name, lowercased and without an extension.
+type Proc struct {
+	PID  int
+	Name string
+}
+
+// ancestorsOf walks up from pid through look, which answers a pid's executable and parent. A cyclic or corrupt parent
+// chain stops at hops.
+func ancestorsOf(pid, hops int, look func(int) (string, int, bool)) []Proc {
+	_, at, ok := look(pid)
+	if !ok {
+		return nil
+	}
+	var out []Proc
+	for i := 0; i < hops && at > 0; i++ {
+		name, parent, ok := look(at)
+		if !ok {
+			break
+		}
+		out = append(out, Proc{PID: at, Name: baseName(name)})
+		at = parent
+	}
+	return out
+}
+
+func baseName(exe string) string {
+	n := strings.ToLower(exe)
+	if i := strings.LastIndexAny(n, `/\`); i >= 0 {
+		n = n[i+1:]
+	}
+	if i := strings.LastIndex(n, "."); i > 0 {
+		n = n[:i]
+	}
+	return n
+}
+
 // Range is a closed range of ports.
 type Range struct{ Lo, Hi int }
 
