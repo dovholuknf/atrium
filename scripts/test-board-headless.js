@@ -20872,37 +20872,18 @@ async function repoPasteSection(browser, base) {
       fail("repoPaste: a held repo opened as " + JSON.stringify(news));
     if (st.calls.some(c => c.indexOf("_hub/git/init") >= 0)) fail("repoPaste: a held repo asked the hub to fetch it");
 
-    // A REPO NOBODY HOLDS: the hub fetches, the room clones, and the card stops for a confirm. Nothing starts until start.
+    // A REPO NOBODY HOLDS: the hub fetches, the room clones, and the work starts with no confirm in between.
     st.has = false; st.calls = [];
     await p.evaluate(() => { hubIsHub = true; });
     await row(urls[0]);
     await p.keyboard.press("Enter");
     await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
     await p.keyboard.press("Enter");
-    await p.waitForFunction(() => /start/.test((document.querySelector(".card.linkopen") || {}).textContent || ""), null, { timeout: slow(5000) })
-      .catch(() => fail("repoPaste: an unseen repo did not stop at a confirm"));
-    const txt = await p.textContent(".card.linkopen");
-    if (!/new repository from github\.com.*hooks will run/.test(txt)) fail("repoPaste: the confirm said: " + txt);
-    await shot(p, "repo-confirm");
-    const sent = st.calls.map(c => c.split(" ").slice(0, 2).join(" "));
-    if (sent.join(",") !== "POST /_hub/git/init,POST /v1/new" || !/"prepare":true/.test(st.calls[1]))
-      fail("repoPaste: an unseen repo went " + sent.join(" > "));
-    await p.click('.card.linkopen [data-op-act="cancel"]');
-    await p.waitForTimeout(300);
-    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("repoPaste: cancel left the card");
-    if (st.calls.filter(c => c.indexOf("POST /v1/new") === 0).length !== 1) fail("repoPaste: cancel still started the work");
-    // start finishes it
-    st.calls = [];
-    await row(urls[0]);
-    await p.keyboard.press("Enter");
-    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
-    await p.keyboard.press("Enter");
-    await p.waitForSelector('.card.linkopen [data-op-act="start"]', { timeout: slow(5000) });
-    await p.click('.card.linkopen [data-op-act="start"]');
     await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) })
-      .catch(() => fail("repoPaste: start did not finish the card"));
-    const started = st.calls.filter(c => c.indexOf("POST /v1/new") === 0 && !/"prepare":true/.test(c));
-    if (started.length !== 1) fail("repoPaste: start made " + started.length + " starts");
+      .catch(() => fail("repoPaste: an unseen repo did not finish without a confirm"));
+    const sent = st.calls.map(c => c.split(" ").slice(0, 2).join(" "));
+    if (sent.join(",") !== "POST /_hub/git/init,POST /v1/new,POST /v1/new" || !/"prepare":true/.test(st.calls[1]) || /"prepare":true/.test(st.calls[2]))
+      fail("repoPaste: an unseen repo went " + sent.join(" > "));
 
     // SHIFT-ENTER: the dialog with start new work open, the repo picked and a branch name in
     await row(urls[0]);
@@ -20978,6 +20959,10 @@ async function pasteRepoNameSection(browser, base) {
     const hint = await p.textContent(".swnmhint");
     if (hint.indexOf("claude/fix/thing") < 0 || hint.indexOf("worktrees/github.com/openziti-test-kitchen/zssh/claude-fix-thing") < 0)
       fail("pasteRepoName: the preview did not follow the typing: " + hint);
+
+    await p.mouse.click(5, 5);
+    const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-nm").value }));
+    if (!kept.open || kept.value !== "fix/thing") fail("pasteRepoName: a click on the backdrop dismissed the dialog: " + JSON.stringify(kept));
 
     await p.keyboard.press("Escape");
     const back = await p.evaluate(() => ({ open: document.getElementById("switcher").open,

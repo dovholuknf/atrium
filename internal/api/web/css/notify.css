@@ -331,9 +331,9 @@
     padding: 8px 14px 0; background: var(--bg-2); border-bottom: 1px solid var(--stroke-dim);
     color: var(--label); font-size: var(--fs-xs);
   }
-  #switcher .swnmq { display: flex; align-items: center; font-size: var(--fs-lg); color: var(--dim); }
+  #switcher .swnmq { display: flex; align-items: baseline; font-size: var(--fs-lg); color: var(--dim); }
   #switcher .swnmq input {
-    flex: 1 1 auto; min-width: 0; padding: 4px 0 12px; font-size: inherit; background: none; color: var(--head);
+    flex: 1 1 auto; min-width: 0; padding: 4px 0 12px; font: inherit; background: none; color: var(--head);
     border: 0; border-radius: 0; outline: none; box-shadow: none;
   }
   #switcher .swnmq input::-webkit-search-cancel-button { display: none; }

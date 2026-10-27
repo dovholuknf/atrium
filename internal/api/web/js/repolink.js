@@ -127,8 +127,7 @@ async function repoNewGo(id, rk, got, name) {
     }
     linkOpeningStep(id, "cloning " + rk.slug);
     await api("/v1/new", { method: "POST", headers, body: JSON.stringify({ repo: rk.slug, prepare: true, progress: id }) });
-    linkOpeningConfirm(id, "new repository from " + rk.host + ": its project settings and hooks will run.",
-      () => repoNewStart(id, rk, harness, headers, room, name));
+    await repoNewStart(id, rk, harness, headers, room, name);
   } catch (e) {
     linkOpeningFail(id, (e && e.message) || String(e));
   }

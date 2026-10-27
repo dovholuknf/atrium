@@ -257,7 +257,14 @@ document.addEventListener("click", e => {
   const r = dlg.getBoundingClientRect();
   const inside = e.clientX >= r.left && e.clientX <= r.right &&
     e.clientY >= r.top && e.clientY <= r.bottom;
-  if (!inside) dlg.close();
+  if (inside) return;
+  // The bar holds a typed name or query, and the click took focus off its field, so Escape would hit the dialog.
+  if (dlg.id === "switcher") {
+    const f = [dlg.querySelector("#sw-q"), dlg.querySelector("#sw-nm")].find(x => x && x.checkVisibility());
+    if (f) f.focus();
+    return;
+  }
+  dlg.close();
 });
 
 // Closes every open dialog, for a click that is leaving whatever is on screen.
