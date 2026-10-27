@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -225,6 +226,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			task = t
 		}
 	}
+	if task == nil && in.TaskID == "" {
+		task = d.heldConversation(in)
+	}
 	bound := task != nil
 	if bound {
 		// A report that did not come from the card's own runner is a `claude`
@@ -247,16 +251,23 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	created := false
 	if !bound {
 		t, made, err := d.st.Register(obs)
-		created = made
 		if errors.Is(err, store.ErrStaleName) {
-			// Not an error: a directory name that only a finished card holds says
-			// nothing about which session this is. Recorded in the log and dropped.
-			log.Printf("[atrium] session %s from %q dropped: %v", in.Event, in.Agent, err)
-			return nil
+			// A directory name that only a finished card holds says nothing about which session this is, so a start
+			// gets a card of its own. Dropped, a session started by hand ran with no card on the board at all.
+			if in.Event != "" && in.Event != "start" {
+				log.Printf("[atrium] session %s from %q dropped: %v", in.Event, in.Agent, err)
+				return nil
+			}
+			obs.WireName, obs.NameSource = obs.WireName+"-"+outsideSuffix(in), ""
+			if t, made, err = d.st.Register(obs); err == nil {
+				log.Printf("[atrium] a session started outside atrium in %s is on its own card %s", obs.Worktree,
+					t.WireName)
+			}
 		}
 		if err != nil {
 			return err
 		}
+		created = made
 		task = t
 		// A session atrium had never heard of is adopted onto a new card. A join names it from its own title below.
 		if created && in.Event != "join" {
@@ -576,4 +587,24 @@ func endedAs(task *store.Task) string {
 		return store.StatusDead
 	}
 	return store.StatusDone
+}
+
+// heldConversation is the card on this room that holds a session's conversation, for a session started by hand with
+// no task id: `claude --resume <id>` of a card's conversation lands back on that card. Nil when no card holds it, or
+// when the card has a live runner of its own, which makes this a second copy and not the card's session.
+func (d *Daemon) heldConversation(in SessionEvent) *store.Task {
+	t, err := d.st.GetByResumeID(in.Resume)
+	if err != nil || t.ArchivedAt != nil || t.MovedTo != "" || d.sup.get(t.ID) != nil {
+		return nil
+	}
+	log.Printf("[atrium] a session started outside atrium resumed %s, adopted onto its card %s", in.Resume, t.ID)
+	return t
+}
+
+// outsideSuffix tells apart the card of a session started outside atrium from the finished card holding its name.
+func outsideSuffix(in SessionEvent) string {
+	if len(in.Resume) >= 8 {
+		return in.Resume[:8]
+	}
+	return strconv.Itoa(in.PID)
 }
