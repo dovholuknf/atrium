@@ -111,3 +111,6 @@ session and a dropped session is no verdict, so the hub decides. Either way the 
 candidate, so sgg is tried as `localai@sgg`, then `localai@sgg.atrium`. A host that answers and rejects the key is
 reported as `failed - ssh refused as <user>`, not offline. The connect allows 25s because a cold connect to sgg takes
 about 10s.
+
+sgg-zrok is a second room on sgg, so its row in `atrium-deploy.ps1` carries `SshName = 'sgg'` and it is reached, user
+included, by sgg's name and never its own.

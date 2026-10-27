@@ -5,12 +5,16 @@
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms sg3,m1mini,sgg   # remote rooms only
 #   pwsh -NoProfile -File ...\atrium-deploy.ps1 -Rooms all -WhatIf      # say every step, change nothing
 #
-# -Rooms takes any of hub, claude-sg4, sg3, m1mini, sgg, or `local` (hub, claude-sg4, the default) or `all`. The order
-# is fixed whatever order they are given in: remote rooms first, because they touch no terminal here, then the hub and
-# claude-sg4 (deploy-batch.ps1, or deploy-hub-only.ps1 when claude-sg4 is not named), then sg4-control.
+# -Rooms takes any of hub, claude-sg4, sg3, m1mini, sgg, sgg-zrok, or `local` (hub, claude-sg4, the default) or `all`.
+# The order is fixed whatever order they are given in: remote rooms first, because they touch no terminal here, then the
+# hub and claude-sg4 (deploy-batch.ps1, or deploy-hub-only.ps1 when claude-sg4 is not named), then sg4-control.
 #
-# sg4-control is OPT-IN. It is in no default and not in `all`, and takes both -Control and -IKnowItKillsMyShell,
-# because stopping it kills the shell of the orchestrator that holds its terminal. One without the other is refused.
+# sgg-zrok is a second, --isolated room on sgg, as localai, in ~/.atrium-zrok, on 7787 and 7791, linking over zrok. It
+# is reached over sgg's ssh route, never its own name.
+#
+# sg4-control is OPT-IN. It is in no default and not in `all`, and takes both -Control and -IKnowItKillsMyShell, because
+# the orchestrator works in it. Its claude.exe runs under the pty host (atrium-pty.exe), not the room, so a stop keeps
+# it (2026-10-26 22:44). One switch without the other is refused.
 #
 # THE RESULT is one line per room, printed last and logged:
 #
@@ -61,11 +65,11 @@ if ($why) { Stop-Early "refusing: $why" }
 $noGo = Find-Go
 if ($noGo) { Stop-Early $noGo }
 
-$remoteNames = 'sg3', 'm1mini', 'sgg'
+$remoteNames = 'sg3', 'm1mini', 'sgg', 'sgg-zrok'
 try { $want = Resolve-DeployRooms -Rooms $Rooms -Control:$Control -IKnowItKillsMyShell:$IKnowItKillsMyShell }
 catch { Stop-Early "FATAL: $($_.Exception.Message)" }
 $local = @($want | Where-Object { $_ -in 'hub', 'claude-sg4', 'sg4-control' })
-# Only a deploy that stops something on this machine can end the shell it runs in. A deploy of only sg3, m1mini or sgg
+# Only a deploy that stops something on this machine can end the shell it runs in. A deploy of only remote rooms
 # stops nothing here, so it runs from any shell, a room's included.
 # The hub holds no shell, so stopping it ends none: only the local ROOMS named here are checked against this shell's.
 $localRooms = @($local | Where-Object { $_ -ne 'hub' })
@@ -211,6 +215,12 @@ $macWait = 'for i in {1..' + $portWait + '}; do lsof -iTCP:7781 -sTCP:LISTEN >/d
   'if lsof -iTCP:7781 -sTCP:LISTEN >/dev/null ; then echo ' + $portTimeout + ' ; exit 3 ; fi ; '
 $macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
   '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
+# sgg-zrok keeps its address beside its own --dir (--isolated), so a bare `atrium stop` would reach sgg: it names its board.
+$zrokEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+  '$b = Join-Path $HOME ''.atrium-zrok\bin\atrium.exe'' ; '
+$zrokWait = $waitFree.Replace('7781', '7791') + (New-StoreWaitScript 'windows' '(Join-Path $HOME ''.atrium-zrok\atrium.db'')')
+$zrokDetach = '& $b room --detach --isolated --dir (Join-Path $HOME ''.atrium-zrok\room'') ' +
+  '--db (Join-Path $HOME ''.atrium-zrok\atrium.db'') --agent 127.0.0.1:7787 --http 127.0.0.1:7791'
 # Retry is run when the detach after the swap found the old room still answering. It waits for the port again, then detaches.
 # Log is how to read the room's own log over ssh, for Get-RoomLink.
 $remote = @{
@@ -223,6 +233,12 @@ $remote = @{
   'sgg'    = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium.new.exe'; Swap = $winSwap
     Retry = $winEnv + $waitFree + $winWaitStore + '& $b room --detach'
     Log = 'Get-Content (Join-Path $HOME ''.atrium\room\room.log'') -Tail 300' }
+  'sgg-zrok' = @{ GOOS = 'windows'; GOARCH = 'amd64'; Dest = 'atrium-zrok.new.exe'; SshName = 'sgg'
+    Swap = $zrokEnv + '& $b stop --url http://127.0.0.1:7791 ; ' + $zrokWait +
+      'Move-Item -Force $b ($b -replace ''atrium.exe$'', ''atrium.prev.exe'') ; ' +
+      'Move-Item -Force (Join-Path $HOME ''atrium-zrok.new.exe'') $b ; ' + $zrokDetach
+    Retry = $zrokEnv + $zrokWait + $zrokDetach
+    Log = 'Get-Content (Join-Path $HOME ''.atrium-zrok\room\room.log'') -Tail 300' }
   'm1mini' = @{ GOOS = 'darwin'; GOARCH = 'arm64'; Dest = '.local/bin/atrium.new'
     Swap = 'zsh -lic "~/.local/bin/atrium stop ; ' + $macWait + $macWaitStore +
       'mv -f ~/.local/bin/atrium ~/.local/bin/atrium.prev && ' +
@@ -252,8 +268,9 @@ foreach ($name in $remoteNames) {
   if ($want -notcontains $name) { continue }
   $r = $remote[$name]
   $hubRoom = try { (Invoke-RestMethod $HubRooms -TimeoutSec 3).rooms | Where-Object { $_.name -eq $name } | Select-Object -First 1 } catch { $null }
-  $sshUser = Get-RoomSshUser $name $hubRoom
-  $route = Resolve-SshRoute $name {
+  $sshName = if ($r.SshName) { $r.SshName } else { $name }
+  $sshUser = Get-RoomSshUser $sshName $hubRoom
+  $route = Resolve-SshRoute $sshName {
     param($h)
     if (-not $h.EndsWith('.atrium')) { return Invoke-Capped $ssh ($bareOpts + @($h, 'echo ok')) $bareCap }
     Invoke-Ssh "ssh $h probe" @($h, 'echo ok') $probeCap
