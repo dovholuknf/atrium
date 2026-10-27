@@ -65,6 +65,7 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 | `deploy-ready.ps1`, `deploy-batch.ps1` | Restart the room on a new build when the board is idle. Both first print the hub's deploy queue and save it as `DEPLOY-QUEUE.md` for HANDOFF. |
 | `maintenance-window.ps1` | Hold the room restart for a window. |
 | `install-live-scripts.ps1` | Copy this directory over the live copies. |
+| `cutover-room-layout.ps1` | Once: stop everything, `atrium room move` both rooms under `D:\atrium`, install, start. |
 | `live-common.ps1` | Shared paths and functions. Dot-sourced by the others, never run alone. |
 
 ## Rules every script here keeps
