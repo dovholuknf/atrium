@@ -27,6 +27,12 @@ type Env struct {
 
 var system = Env{GOOS: runtime.GOOS, HomeDir: os.UserHomeDir}
 
+// roomDefault is <ATRIUM_ROOT>/<room>/cards for a room started by name, set once before the room opens.
+var roomDefault string
+
+// SetRoomDefault is the card root Resolve answers when the setting is unset, ahead of WORKTREE_ROOT.
+func SetRoomDefault(path string) { roomDefault = strings.TrimSpace(path) }
+
 // StateDir is where atrium keeps its own state: under WORKTREE_ROOT when it is set, else the home folder.
 func StateDir() string { return system.StateDir() }
 
@@ -41,8 +47,8 @@ func (e Env) StateDir() string {
 	return ".atrium"
 }
 
-// Resolve is the card root for a stored setting: the setting when set, else atrium-cards under WORKTREE_ROOT, else
-// ~/atrium/cards off Windows. It is derived on every read and never written back. scmRoot is the effective
+// Resolve is the card root for a stored setting: the setting when set, else the room's own folder when it was started
+// by name, else atrium-cards under WORKTREE_ROOT, else ~/atrium/cards off Windows. It is derived on every read and never written back. scmRoot is the effective
 // git.scm_root, "" when there is none. The result is refused by Check when it is not safe to remove folders in.
 func Resolve(set, scmRoot string) (string, error) { return system.Resolve(set, scmRoot) }
 
@@ -50,7 +56,9 @@ func Resolve(set, scmRoot string) (string, error) { return system.Resolve(set, s
 func (e Env) Resolve(set, scmRoot string) (string, error) {
 	root := strings.TrimSpace(set)
 	if root == "" {
-		if w := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); w != "" {
+		if roomDefault != "" {
+			root = roomDefault
+		} else if w := strings.TrimRight(os.Getenv("WORKTREE_ROOT"), `\/`); w != "" {
 			root = filepath.Join(w, "atrium-cards")
 		} else if e.GOOS != "windows" {
 			home, err := e.HomeDir()

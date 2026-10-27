@@ -59,6 +59,8 @@ const (
 type roomLaunch struct {
 	dir, db, human, agent string
 	isolated, upgrades    bool
+	// root and name are the room's layout, which also gives it its card root. See roomlayout.go.
+	root, name string
 }
 
 // restartArgs is the command line the detached restarter runs.
@@ -83,6 +85,9 @@ func (l roomLaunch) args(extra ...string) []string {
 	}
 	if l.upgrades {
 		args = append(args, "--accept-upgrades")
+	}
+	if l.name != "" {
+		args = append(args, "--root", l.root, "--name", l.name)
 	}
 	return args
 }

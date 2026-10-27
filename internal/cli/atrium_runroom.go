@@ -183,7 +183,14 @@ func startRoom(l roomLaunch) (*os.Process, string, error) {
 	if err := os.MkdirAll(l.dir, 0o700); err != nil {
 		return nil, "", err
 	}
-	logPath := filepath.Join(l.dir, roomLogName)
+	logDir := l.dir
+	if l.name != "" {
+		logDir = roomLayout{root: l.root, name: l.name}.logs()
+		if err := os.MkdirAll(logDir, 0o700); err != nil {
+			return nil, "", err
+		}
+	}
+	logPath := filepath.Join(logDir, roomLogName)
 	p, err := startDetached(self, l.startArgs(), logPath)
 	return p, logPath, err
 }

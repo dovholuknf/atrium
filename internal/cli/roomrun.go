@@ -163,7 +163,7 @@ func joinCmd() *cobra.Command {
 			}
 			fmt.Println("  starting the room. `" + atriumCmd("room") + "` is all it takes from now on.")
 			fmt.Println()
-			return runRoom(keys, db, human, agent, 0, isolated, "")
+			return runRoom(keys, db, human, agent, 0, isolated, "", roomLayout{})
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
@@ -223,7 +223,7 @@ func startedByFlag(c *cobra.Command, v *string) {
 }
 
 func roomCmd() *cobra.Command {
-	var dir, db, human, agent, startedBy string
+	var dir, db, human, agent, startedBy, root, name string
 	var isolated, detach bool
 	c := &cobra.Command{
 		Use:   "room",
@@ -234,14 +234,24 @@ func roomCmd() *cobra.Command {
 			"working atrium at its own address and your agents never noticed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			lay, err := newRoomLayout(root, name)
+			if err != nil {
+				return err
+			}
+			if lay.on() {
+				dir, db = orDefault(dir, lay.config()), orDefault(db, lay.db())
+			}
 			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			if err := lay.checkJoined(keys); err != nil {
+				return err
+			}
 			if detach {
 				return detachRoom(roomLaunch{
 					dir: keys.Dir, db: db, human: human, agent: agent,
-					isolated: isolated, upgrades: acceptUpgrades,
+					isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
 				})
 			}
-			err := runRoom(keys, db, human, agent, restartAfter, isolated, startedBy)
+			err = runRoom(keys, db, human, agent, restartAfter, isolated, startedBy, lay)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
 			if err != nil && restartAfter > 0 {
@@ -252,6 +262,9 @@ func roomCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
 	c.Flags().StringVar(&db, "db", "", "the room's database")
+	c.Flags().StringVar(&name, "name", "",
+		"this room's name: --dir and --db default to <root>/<name>/config, card_root to <root>/<name>/cards")
+	c.Flags().StringVar(&root, "root", "", "the folder every room on this machine lives under (default $"+rootEnv+")")
 	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report")
 	isolatedFlag(c, &isolated)
@@ -274,6 +287,7 @@ func roomCmd() *cobra.Command {
 	c.AddCommand(roomHubCmd())
 	c.AddCommand(roomRemoteAccessCmd())
 	c.AddCommand(roomSSHCmd())
+	c.AddCommand(roomMoveCmd())
 	return c
 }
 
@@ -295,7 +309,8 @@ func askToStop() {
 }
 
 // runRoom starts the daemon and attaches it to the hub.
-func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string) error {
+func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string,
+	lay roomLayout) error {
 	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
 	// the ports. Wait for it to let go before anything tries to bind, or the new
 	// room fails to listen and exits, which looks like the restart doing nothing.
@@ -338,6 +353,9 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	}
 	if strings.TrimSpace(db) == "" {
 		db = defaultRoomDB()
+	}
+	if lay.on() {
+		cardroot.SetRoomDefault(lay.cards())
 	}
 
 	// BEFORE ANYTHING OPENS. These are the lines that stop a room hijacking the
@@ -447,7 +465,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		// down. The hub only forwards the ask. See restart.go.
 		OnRestart: onHubRestart("http://"+human, roomLaunch{
 			dir: keys.Dir, db: db, human: human, agent: agent,
-			isolated: isolated, upgrades: acceptUpgrades,
+			isolated: isolated, upgrades: acceptUpgrades, root: lay.root, name: lay.name,
 		}, stop),
 	}
 	// MESSAGES TO OTHER ROOMS go through this link, and what is owed goes the

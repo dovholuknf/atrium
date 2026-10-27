@@ -123,6 +123,9 @@ func sameDBPath(a, b string) bool {
 // Any failure answers -1, which reads as "could not say" rather than "empty".
 // A missing file, a locked one and a schema that predates the task table all
 // land here and none of them is worth a second warning.
+// CountCards is the number of cards in the database at path, read only, or -1 when it cannot be read.
+func CountCards(path string) int { return countCards(path) }
+
 func countCards(path string) int {
 	if strings.TrimSpace(path) == "" {
 		return -1

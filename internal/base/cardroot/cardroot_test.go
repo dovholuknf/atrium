@@ -68,6 +68,23 @@ func TestResolveDefaults(t *testing.T) {
 	}
 }
 
+func TestARoomStartedByNameDefaultsToItsOwnCardsFolder(t *testing.T) {
+	base := t.TempDir()
+	env := envAt(filepath.Join(base, "home"), "windows")
+	own := filepath.Join(base, "atrium", "room-a", "cards")
+	SetRoomDefault(own)
+	t.Cleanup(func() { SetRoomDefault("") })
+
+	t.Setenv("WORKTREE_ROOT", filepath.Join(base, "wt"))
+	if got, err := env.Resolve("", ""); err != nil || got != own {
+		t.Fatalf("unset with a room default: %q, %v, want %q", got, err, own)
+	}
+	set := filepath.Join(base, "mine")
+	if got, err := env.Resolve(set, ""); err != nil || got != set {
+		t.Fatalf("the setting lost to the room default: %q, %v", got, err)
+	}
+}
+
 func TestCheckRefusesARootWithAnUnreadableAncestor(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Getuid() == 0 {
 		t.Skip("needs a folder this process cannot search")
