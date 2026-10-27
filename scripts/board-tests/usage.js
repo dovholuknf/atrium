@@ -914,7 +914,7 @@ async function ctxLineSection(browser, base) {
       const shared = document.createElement("div");
       shared.innerHTML = ctxMeter(201000, 200000, "", "201k of 200k (land the plane)");
       const memOf = t => { const d = document.createElement("div"); d.innerHTML = peekBody(t, { context_now: 1000, totals: {} }); const r = d.querySelector(".peek-row[data-tip*='Process Explorer']"); return r ? r.textContent : null; };
-      const mem = { live: memOf({ id: "x", resume_id: "r", status: "running", mem: 250 * 1048576 }), none: memOf({ id: "x", resume_id: "r", status: "running" }),
+      const mem = { live: memOf({ id: "x", resume_id: "r", status: "running", pid: 1234, mem: 250 * 1048576 }), none: memOf({ id: "x", resume_id: "r", status: "running" }),
         over: memOf({ id: "x", resume_id: "r", status: "done", mem: 250 * 1048576 }) };
       return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML, mem };
     });
@@ -1101,7 +1101,7 @@ async function ctxLineSection(browser, base) {
       if (c.chip || c.landchip) fail("a cycling card draws the limit chip or badge instead of the cycle.");
       if (!c.cycle) fail("a cycling card does not show the new-context chip.");
     }
-    if (!/^memory\s*250(\.0)?\s*M/.test(got.mem.live || "")) fail("the details popover has no memory line for a live card: " + got.mem.live);
+    if (!/^memory\s*250(\.0)?M\s+pid 1234$/.test(got.mem.live || "")) fail("the details popover has no memory line for a live card: " + got.mem.live);
     if (got.mem.none || got.mem.over) fail("the memory line is drawn for a card with no figure or one that is over: " + JSON.stringify(got.mem));
     if (!got.popover) fail("the details popover lost its .peek-bar.");
     else if (got.popover !== got.meter) fail("the popover's meter is not ctxMeter's drawing:\n" + got.popover + "\n" + got.meter);

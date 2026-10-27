@@ -234,7 +234,7 @@ function peekRows(t) {
 function peekMemHtml(t) {
   if (!t || !t.mem || over(t) || typeof bytes !== "function") return "";
   const tip = "memory this card's processes hold now. Process Explorer's Job tab names their job after the card";
-  return `<div class="peek-sec"><div class="peek-row" data-tip="${esc(tip)}"><b>memory</b><span>${esc(bytes(t.mem))}</span></div></div>`;
+  return `<div class="peek-sec"><div class="peek-row" data-tip="${esc(tip)}"><b>memory</b><span>${esc(bytes(t.mem))}${t.pid ? `  pid ${esc(t.pid)}` : ""}</span></div></div>`;
 }
 
 // THE CARD'S ID, copyable on click, so it can still be read once the runner has exited.
