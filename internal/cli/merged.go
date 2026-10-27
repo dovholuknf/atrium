@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -22,7 +21,7 @@ import (
 
 // mergedTimeout is short on purpose. A merge waits on this hook, and a room
 // that does not answer at once is one that will be told next merge.
-const mergedTimeout = 3 * time.Second
+const mergedTimeout = hookBudget
 
 func newMerged() *cobra.Command {
 	var into, boardURL string
@@ -68,7 +67,8 @@ func reportMerged(out io.Writer, boardURL, into string) error {
 	url := boardAddress(boardURL) + "/v1/merged"
 	resp, err := (&http.Client{Timeout: mergedTimeout}).Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("no daemon answered at %s: %w", url, err)
+		return fmt.Errorf("no daemon answered at %s: %w. The merge is done. Start atrium with `atrium run`, "+
+			"and the next merge tells it", url, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))

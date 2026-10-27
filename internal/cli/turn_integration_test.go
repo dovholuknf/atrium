@@ -121,19 +121,21 @@ func TestTurnInsideABlockedTurnKeepsGoingWhenAtriumIsNotThere(t *testing.T) {
 	restore := withStdin(t, `{"cwd":"/w","stop_hook_active":true}`)
 	defer restore()
 
-	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
-		t.Fatalf("got %q, wanted a plain continue with no daemon", got)
+	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); !strings.Contains(got, "systemMessage") ||
+		strings.Contains(got, "block") {
+		t.Fatalf("got %q, wanted the warning and no block with no daemon", got)
 	}
 }
 
 // The daemon being down is the ordinary case on a machine where atrium is not
-// running, and it must cost a session nothing.
+// running, and it must cost a session nothing but the warning.
 func TestTurnKeepsGoingWhenAtriumIsNotThere(t *testing.T) {
 	restore := withStdin(t, `{"cwd":"/w","session_id":"abc"}`)
 	defer restore()
 
-	if got := turnEnded("http://127.0.0.1:1", "end", "probe", ""); got != keepGoing {
-		t.Fatalf("got %q, wanted a plain continue with no daemon", got)
+	got := turnEnded("http://127.0.0.1:1", "end", "probe", "")
+	if !strings.Contains(got, "turn --event end") || strings.Contains(got, "block") || strings.Contains(got, "additionalContext") {
+		t.Fatalf("got %q, wanted the warning alone with no daemon", got)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -57,14 +58,11 @@ func TestEveryHookFailsOpenInsideItsBudget(t *testing.T) {
 		budget time.Duration
 		run    func(url string) string
 	}{
-		{"activity", 1500 * time.Millisecond, func(u string) string { reportActivity(u, "tool-start", "tester"); return "" }},
-		{"permission", 3500 * time.Millisecond, func(u string) string {
+		{"activity", 1500 * time.Millisecond, func(u string) string { return reportActivity(u, "tool-start", "tester") }},
+		{"permission", 2500 * time.Millisecond, func(u string) string {
 			return string(permissionHook(u, []byte(bashPayload), func() int { return 1 }))
 		}},
-		{"session", 3500 * time.Millisecond, func(u string) string {
-			_ = reportSession(u, "start", "tester", "claude")
-			return ""
-		}},
+		{"session", 2500 * time.Millisecond, func(u string) string { return reportSession(u, "start", "tester", "claude").warn }},
 		{"turn", 2500 * time.Millisecond, func(u string) string { return turnEnded(u, "end", "tester", "claude") }},
 	}
 	targets := map[string]string{"silent": silentListener(t), "nothing listening": closedAddress(t)}
@@ -79,8 +77,11 @@ func TestEveryHookFailsOpenInsideItsBudget(t *testing.T) {
 				if took := time.Since(start); took > h.budget {
 					t.Errorf("%s hook against %s took %s, budget %s", h.name, kind, took, h.budget)
 				}
-				if out != "" && out != keepGoing {
-					t.Errorf("%s hook against %s printed %q, want nothing", h.name, kind, out)
+				if !strings.Contains(out, "could not reach atrium at "+url) || !strings.Contains(out, "atrium run") {
+					t.Errorf("%s hook against %s printed %q, want the address and what to do", h.name, kind, out)
+				}
+				if strings.Contains(out, "permissionDecision") || strings.Contains(out, `"decision"`) {
+					t.Errorf("%s hook against %s decided something: %q", h.name, kind, out)
 				}
 			}()
 		}
@@ -106,10 +107,26 @@ func TestPermissionHookStopsRetryingAReplyThatKeepsDying(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	start := time.Now()
-	if out := permissionHook(srv.URL, []byte(bashPayload), func() int { return 1 }); out != nil {
-		t.Fatalf("said %s, want nothing", out)
+	if out := permissionHook(srv.URL, []byte(bashPayload), func() int { return 1 }); !strings.Contains(string(out), "systemMessage") {
+		t.Fatalf("said %s, want the warning", out)
 	}
 	if took := time.Since(start); took > 7*time.Second {
 		t.Fatalf("retried for %s over %d posts", took, posts.Load())
+	}
+}
+
+// additionalContext only where claude takes it, and never for codex.
+func TestHookWarningTellsTheModelOnlyWhereItCan(t *testing.T) {
+	for _, c := range []struct {
+		event, runner string
+		model         bool
+	}{
+		{"PreToolUse", "", true}, {"SessionStart", "claude", true}, {"PreToolUse", "codex", false},
+		{"Stop", "", false}, {"SessionEnd", "", false}, {"", "", false},
+	} {
+		out := string(hookWarning(c.event, c.runner, "down"))
+		if !strings.Contains(out, `"systemMessage":"down"`) || strings.Contains(out, "additionalContext") != c.model {
+			t.Errorf("%s %q: %s", c.event, c.runner, out)
+		}
 	}
 }

@@ -8,12 +8,13 @@ must not import each other are wired together. Defaults (ports, directories) are
 
 `hook.go`, `session.go`, `turn.go`, `hook_permission.go`, `hook_nopoll.go`, `hook_leanagents.go`, and `merged.go`
 for git. The rules are `docs/runtime/hooks.md`, "rules every atrium hook follows", and `hook.go` enforces them: exit 0
-whatever happens, one attempt, a bound on everything, silence on success.
+whatever happens, one attempt, a bound on everything (`hookBudget`, so a session never waits 2s on atrium),
+silence on success, and a `systemMessage` naming the hook, the address and the fix when atrium cannot be reached.
 
 - **`hook` runs before every tool call in every session.** Its timeout is the operator's latency. Do not add a retry.
   Do not raise the timeout.
-- **The permission hook fails OPEN.** Every failure returns nil, prints nothing and exits 0, and Claude Code runs its
-  own permission flow. A daemon that is down lets work through rather than bricking every session.
+- **The permission hook fails OPEN.** Every failure exits 0 with no decision, and Claude Code runs its own
+  permission flow. Only a room it could not reach is warned about. A daemon that is down lets work through rather than bricking every session.
 - **`turn` is the one hook that writes to stdout**, because that is how a Stop hook says anything, and a broken one
   is a session that will not stop. Three things hold that line and none may be removed: every failure prints
   `{"continue":true}` and exits 0, `stop_hook_active` is honoured so it never blocks twice, and the daemon's answer

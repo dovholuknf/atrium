@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -134,6 +135,8 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 		resp, err := http.Post("http://"+d.opts.AgentAddr+"/permission",
 			"application/json", strings.NewReader(body))
 		if err == nil {
+			// The headers come at once, so the agent is parked until the body ends, as the hook is.
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
 	}()

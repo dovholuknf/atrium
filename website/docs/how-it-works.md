@@ -64,8 +64,9 @@ A runner's hooks are how a session reports in: `SessionStart` opens the card, `S
 moves the badge and asks the gate, `Notification` says the session is blocked on you. The board writes them for
 claude and codex with one button. [Hooks](./hooks.md).
 
-**A hook never fails a session.** When atrium is not listening, the permission hook fails open and every other hook
-is ignored. A session must never fail to start, end a turn or run a tool because atrium was down.
+**A hook never fails a session.** When atrium is not listening, every hook gives up within 2 seconds, the permission
+hook fails open, and each one says which hook could not reach which address and what to do. A session must never fail
+to start, end a turn or run a tool because atrium was down.
 
 ## The permission chain
 

@@ -169,3 +169,8 @@ Restate these in any hook you add. They are why the gate is safe to leave on.
 3. **Nothing is retried on the hot path.** `PreToolUse` runs constantly. The activity hook gets one second and
    one attempt.
 4. **Nothing is logged on success.** A hook that prints on every tool call is a hook you turn off.
+5. **Unreachable is said, within 2 seconds.** A hook that cannot reach atrium gives up inside `hookBudget` (1.5
+   seconds, the rest is the process starting) and prints a `systemMessage` naming the hook command, the address and
+   what to do. For claude it also goes to the model as `additionalContext` on `PreToolUse`, `PostToolUse`,
+   `SessionStart` and `UserPromptSubmit`, the events that take it. A room that answers without a decision is not
+   unreachable and stays silent.

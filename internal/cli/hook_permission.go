@@ -5,7 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,10 +23,11 @@ import (
 //
 // The wire shape is the contract in the header of internal/daemon/permwait.go.
 //
-// A HOOK MUST NEVER FAIL A SESSION. Every failure below returns nil, which
-// prints nothing and exits 0, and Claude Code then runs its own permission
-// flow. That is the whole posture: a daemon that is down, frozen or confused
-// lets work through rather than bricking every session.
+// A HOOK MUST NEVER FAIL A SESSION. Every failure below exits 0 with no
+// decision, and Claude Code then runs its own permission flow. A room that
+// cannot be reached within hookBudget is also said in a systemMessage. That is
+// the whole posture: a daemon that is down, frozen or confused lets work
+// through rather than bricking every session.
 
 // permissionEvent is the --event value that selects this hook.
 const permissionEvent = "permission"
@@ -68,6 +72,7 @@ func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 }
 
 func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runner string) []byte {
+	start := time.Now()
 	gate := strings.ToLower(strings.TrimSpace(os.Getenv("ATRIUM_PERM_GATE")))
 	if gate == "off" {
 		return nil
@@ -90,9 +95,16 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 	agent, nameSource := agentNameSource("")
 	base := hubAddress(hubURL)
 
-	joined, ok := probeGate(base, agent)
-	if !ok {
+	hookEvent := "PreToolUse"
+	if native {
+		hookEvent = in.HookEventName
+	}
+	joined, err := probeGate(base, agent, hookLeft(start))
+	if errors.Is(err, errAnswered) {
 		return nil
+	}
+	if err != nil {
+		return hookWarning(hookEvent, runner, unreachable("hook --event permission", base, err))
 	}
 	if !force && !joined && !mcpWired() {
 		return nil
@@ -132,12 +144,15 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 
 	var ans permissionAnswer
 	if native {
-		ans, ok = postPermissionOnce(hookClient(permPostTimeout()), base, body)
+		ans, err = postPermissionOnce(permClient(hookLeft(start)), base, body)
 	} else {
-		ans, ok = postPermission(base, body)
+		ans, err = postPermission(base, body, start.Add(hookBudget))
 	}
-	if !ok {
+	if errors.Is(err, errAnswered) {
 		return nil
+	}
+	if err != nil {
+		return hookWarning(hookEvent, runner, unreachable("hook --event permission", base, err))
 	}
 
 	if native {
@@ -178,17 +193,22 @@ func permissionHookForRunner(hubURL string, stdin []byte, pidOf func() int, runn
 // takes a few seconds and the daemon upserts the request row by its dedup key before it waits, so asking again with
 // the same key is answered once by the new daemon. ATRIUM_PERM_RETRY_FOR and ATRIUM_PERM_RETRY_EVERY (durations)
 // shorten them, which is how a test does it without assigning a package variable.
-func permRetryFor() time.Duration { return envDuration("ATRIUM_PERM_RETRY_FOR", 4*time.Second) }
+func permRetryFor() time.Duration { return envDuration("ATRIUM_PERM_RETRY_FOR", hookBudget) }
 
 func permRetryEvery() time.Duration { return envDuration("ATRIUM_PERM_RETRY_EVERY", time.Second) }
 
 // permHeaderTimeout bounds how long the room may take to send the headers of /permission. The room sends them as soon
 // as it parks a request for a human, so only a room that does not answer runs into it.
-func permHeaderTimeout() time.Duration { return envDuration("ATRIUM_PERM_HEADER_TIMEOUT", 3*time.Second) }
+func permHeaderTimeout() time.Duration { return envDuration("ATRIUM_PERM_HEADER_TIMEOUT", hookBudget) }
 
-func permClient() *http.Client {
+// permClient waits on a parked request as long as ATRIUM_PERM_TIMEOUT allows, and on the headers no longer than left.
+func permClient(left time.Duration) *http.Client {
 	c := hookClient(permPostTimeout())
-	c.Transport.(*http.Transport).ResponseHeaderTimeout = permHeaderTimeout()
+	// Zero would mean no bound at all, so a spent budget still gets a tenth of a second.
+	left = max(left, 100*time.Millisecond)
+	t := c.Transport.(*http.Transport)
+	t.DialContext = (&net.Dialer{Timeout: min(time.Second, left)}).DialContext
+	t.ResponseHeaderTimeout = min(permHeaderTimeout(), left)
 	return c
 }
 
@@ -199,6 +219,9 @@ func envDuration(name string, def time.Duration) time.Duration {
 	return def
 }
 
+// errAnswered marks a room that answered without a decision. Only a room that could not be reached is warned about.
+var errAnswered = errors.New("atrium answered")
+
 type permissionAnswer struct {
 	Decision string `json:"decision"`
 	Reason   string `json:"reason"`
@@ -208,44 +231,47 @@ type permissionAnswer struct {
 // postPermission asks the room for a decision. ANY answer that is not one is retried with the same body, so the
 // same dedup key: a refused or reset connection, a timeout, a non-2xx status, or a 2xx with no decision in it, which
 // are what a room on its way down or not yet migrated gives. After permRetryFor it gives up and the caller fails
-// open, recording an allow nowhere.
-func postPermission(base string, body []byte) (permissionAnswer, bool) {
-	client := hookClient(permPostTimeout())
+// open, recording an allow nowhere. No retry starts after budget, the end of the hook's hookBudget.
+func postPermission(base string, body []byte, budget time.Time) (permissionAnswer, error) {
 	every := permRetryEvery()
 	deadline := time.Now().Add(permRetryFor())
+	if budget.Before(deadline) {
+		deadline = budget
+	}
 	for {
-		if ans, ok := postPermissionOnce(client, base, body); ok {
-			return ans, true
+		ans, err := postPermissionOnce(permClient(time.Until(deadline)), base, body)
+		if err == nil {
+			return ans, nil
 		}
 		if !time.Now().Add(every).Before(deadline) {
-			return permissionAnswer{}, false
+			return permissionAnswer{}, err
 		}
 		time.Sleep(every)
 	}
 }
 
-func postPermissionOnce(client *http.Client, base string, body []byte) (permissionAnswer, bool) {
+func postPermissionOnce(client *http.Client, base string, body []byte) (permissionAnswer, error) {
 	var ans permissionAnswer
 	resp, err := client.Post(base+"/permission", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return ans, false
+		return ans, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ans, false
+		return ans, fmt.Errorf("%w %s", errAnswered, resp.Status)
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&ans) != nil {
-		return ans, false
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&ans); err != nil {
+		return ans, fmt.Errorf("%w something that did not parse: %v", errAnswered, err)
 	}
 	if ans.Decision != "approve" && ans.Decision != "block" {
-		return ans, false
+		return ans, fmt.Errorf("%w with no decision", errAnswered)
 	}
-	return ans, true
+	return ans, nil
 }
 
-// probeGate asks /gate whether this session is joined. ok is false when atrium
-// does not answer within the deadline, which means fail open.
-func probeGate(base, agent string) (joined, ok bool) {
+// probeGate asks /gate whether this session is joined, within left. Any error
+// means fail open, and one that is not errAnswered means atrium was not reached.
+func probeGate(base, agent string, left time.Duration) (joined bool, err error) {
 	timeout := defaultProbeTimeout
 	if v := strings.TrimSpace(os.Getenv("ATRIUM_PERM_PROBE_TIMEOUT")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -254,22 +280,22 @@ func probeGate(base, agent string) (joined, ok bool) {
 	}
 	// The client timeout covers the body too, so a daemon that sends headers
 	// and stalls is still cut off.
-	client := hookClient(timeout)
+	client := hookClient(min(timeout, left))
 	resp, err := client.Get(base + "/gate?agent=" + url.QueryEscape(agent))
 	if err != nil {
-		return false, false
+		return false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false, false
+		return false, fmt.Errorf("%w %s", errAnswered, resp.Status)
 	}
 	var g struct {
 		Gate bool `json:"gate"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&g) != nil {
-		return false, false
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&g); err != nil {
+		return false, fmt.Errorf("%w something that did not parse: %v", errAnswered, err)
 	}
-	return g.Gate, true
+	return g.Gate, nil
 }
 
 // permPostTimeout is zero (none) unless ATRIUM_PERM_TIMEOUT says otherwise,

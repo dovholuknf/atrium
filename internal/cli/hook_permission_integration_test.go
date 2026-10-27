@@ -136,9 +136,9 @@ func TestPermProbeNotGatedAndTimeout(t *testing.T) {
 	permEnv(t, "force")
 	t.Setenv("ATRIUM_PERM_PROBE_TIMEOUT", "1")
 	start := time.Now()
-	out := runPermissionHook(frozen.URL, []byte(bashPayload), 1)
-	if out != nil {
-		t.Fatalf("frozen probe must fail open, got %q", out)
+	out := string(runPermissionHook(frozen.URL, []byte(bashPayload), 1))
+	if !strings.Contains(out, "systemMessage") || strings.Contains(out, "permissionDecision") {
+		t.Fatalf("frozen probe must fail open with a warning, got %q", out)
 	}
 	if d := time.Since(start); d > 2500*time.Millisecond {
 		t.Fatalf("hook held %v past a 1s probe deadline", d)
@@ -308,9 +308,10 @@ func TestPermFailuresFailOpen(t *testing.T) {
 			}
 		})
 	}
-	// Nothing listening at all.
-	if out := runPermissionHook("http://127.0.0.1:1", []byte(bashPayload), 1); out != nil {
-		t.Fatalf("expected silence, got %q", out)
+	// Nothing listening at all: no decision, and the warning says where.
+	if out := string(runPermissionHook("http://127.0.0.1:1", []byte(bashPayload), 1)); !strings.Contains(out, "http://127.0.0.1:1") ||
+		strings.Contains(out, "permissionDecision") {
+		t.Fatalf("expected the warning alone, got %q", out)
 	}
 }
 
@@ -358,7 +359,7 @@ func TestPermissionHookFindsThePidOnlyWhenPosting(t *testing.T) {
 }
 
 // A whereami left pointing at a dead room must not hold a hook: the probe is
-// refused or times out and the hook prints nothing.
+// refused or times out and the hook prints only the warning.
 func TestPermissionHookFailsOpenOnADeadAddress(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -370,9 +371,9 @@ func TestPermissionHookFailsOpenOnADeadAddress(t *testing.T) {
 	t.Setenv("ATRIUM_PERM_PROBE_TIMEOUT", "1")
 
 	start := time.Now()
-	out := runPermissionHook("http://"+addr, []byte(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`), 1)
-	if out != nil {
-		t.Fatalf("expected no output, got %s", out)
+	out := string(runPermissionHook("http://"+addr, []byte(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`), 1))
+	if !strings.Contains(out, `"additionalContext"`) || !strings.Contains(out, addr) || strings.Contains(out, "permissionDecision") {
+		t.Fatalf("expected the warning alone, got %s", out)
 	}
 	if time.Since(start) > 4*time.Second {
 		t.Fatalf("the hook waited %s on a dead address", time.Since(start))
@@ -449,7 +450,6 @@ func TestPermissionHookFailsOpenOnARoomThatDoesNotAnswer(t *testing.T) {
 	t.Setenv("ATRIUM_PERM_HEADER_TIMEOUT", "200ms")
 
 	release := make(chan struct{})
-	defer close(release)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/gate", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"gate":true}`)) })
 	mux.HandleFunc("/permission", func(w http.ResponseWriter, r *http.Request) {
@@ -460,10 +460,13 @@ func TestPermissionHookFailsOpenOnARoomThatDoesNotAnswer(t *testing.T) {
 	})
 	mute := httptest.NewServer(mux)
 	defer mute.Close()
+	// Released before Close, which waits on the handler: an unread body never cancels its context.
+	defer close(release)
 
 	start := time.Now()
-	if out := runPermissionHook(mute.URL, []byte(bashPayload), 1); out != nil {
-		t.Fatalf("expected silence, got %q", out)
+	if out := string(runPermissionHook(mute.URL, []byte(bashPayload), 1)); !strings.Contains(out, "systemMessage") ||
+		strings.Contains(out, "permissionDecision") {
+		t.Fatalf("expected the warning alone, got %q", out)
 	}
 	if took := time.Since(start); took > 2*time.Second {
 		t.Fatalf("the hook waited %s on a room that does not answer", took)
