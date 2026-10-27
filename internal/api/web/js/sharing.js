@@ -1001,13 +1001,29 @@ async function cleanUpNow(id, t) {
     (out.stashes || []).forEach(s => said.push("stashed " + s.branch + (s.expires ? ", on the hub until " + s.expires : "")));
     if (out.left) said.push(out.left + " left on the card");
     (out.warnings || []).forEach(w => said.push(w));
-    if (out.session_error) toast("could not terminate " + title, said.join(". "));
+    if (out.session_error) toastWhy("could not terminate " + title, out.session_error, out.log);
     else if (closeNotDone(out)) toast("not cleaned up yet: " + title, said.join(". "));
     else toast((out.items || []).length ? "cleaned up " + title : "terminated " + title, said.join(". "));
   } catch (e) {
     toast("could not clean up", e.message);
   }
   refresh();
+}
+
+// A toast that says the summary and keeps the raw errors behind a "why" link, so the line stays one line.
+function toastWhy(title, summary, log) {
+  const el = toast(title, summary);
+  if (!el || !(log || []).length) return el;
+  const a = document.createElement("a");
+  a.textContent = " why";
+  a.href = "#";
+  a.addEventListener("click", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    askUser({ title: "close log", body: `<pre>${esc(log.join("\n"))}</pre>`, buttons: [{ label: "ok", value: true }] });
+  });
+  el.querySelector(".what").appendChild(a);
+  return el;
 }
 
 function endCardKeeping(id, t) { return oneAtATime("close:" + id, () => endCardKeepingNow(id, t)); }

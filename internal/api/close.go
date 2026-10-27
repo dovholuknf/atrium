@@ -158,6 +158,8 @@ type closeResult struct {
 	Warnings []string `json:"warnings"`
 	// SessionErr is why the session is still running after the close.
 	SessionErr string `json:"session_error,omitempty"`
+	// Log is each failure as the system said it, for the toast's why link.
+	Log []string `json:"log,omitempty"`
 }
 
 // closing holds the cards a close is running on, so a second press does not race the first.
@@ -467,6 +469,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 		}
 		if err := s.Kill(t.ID); err != nil {
 			res.SessionErr = err.Error()
+			res.Log = append(res.Log, err.Error())
 			warn("%v", err)
 			steps.problem("%v", err)
 		} else {
@@ -637,6 +640,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 			failed(r, err)
 			keptBranch[r.Detail+"\x00"+a.Branch] = true
 			leftover[r] = a.Branch
+			res.Log = append(res.Log, r.Ref+": "+err.Error())
 			if line := removeNote(r.Ref, err); line != "" {
 				warn("%s", line)
 			}
@@ -761,7 +765,7 @@ func (s *Server) closeCard(t *store.Task, pv *closePreview, answers map[string]s
 	}
 	// A notified event with its own by, as a deploy hold's lift is: the event table takes a fixed set of kinds.
 	if err := s.st.AppendEvent(t.ID, store.EventNotified, map[string]any{"by": closedBy, "left": res.Left,
-		"stashes": res.Stashes, "warnings": res.Warnings}); err != nil {
+		"stashes": res.Stashes, "warnings": res.Warnings, "log": res.Log}); err != nil {
 		log.Printf("[atrium api] close %s: the event: %v", t.ID, err)
 	}
 	if nt, err := s.st.Get(t.ID); err == nil {
