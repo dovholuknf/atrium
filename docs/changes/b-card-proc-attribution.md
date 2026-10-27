@@ -26,9 +26,9 @@ A shell opened on the same card is in a job named `atrium <card title>@<room> sh
 ### @LETTER@4. A card shows what its processes hold
 
 1. With `pty_host` on, launch a card and let it run a build or a test.
-2. Look at the card on the Terminals tab and on the board.
+2. Hover the card on the Terminals tab or on the board, and read its details panel.
 
-**Expected:** a chip shows the memory of the card's runner, its shell and what they started, for example `612 MB`.
+**Expected:** a `memory` line under the recap shows the memory of the card's runner, its shell and what they started, for example `612 MB`.
 Within 15 seconds it follows a large change. It matches the sum of the job's processes in Process Explorer on Windows,
 or `memory.current` of the card's `atrium-*.scope` under `systemctl --user` on Linux. A card on a room with `pty_host`
-off, and a done card, show no chip.
+off, and a done card, show no line. The card itself carries no memory chip.

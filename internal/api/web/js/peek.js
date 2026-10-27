@@ -226,7 +226,15 @@ function peekRows(t) {
     peekIdHtml(t) +
     peekScratchHtml(t) +
     (recap ? `<div class="peek-recap" data-drawer="recap" data-label="recap" data-sum="${esc(recap.split("\n")[0])}">${age ? `<div class="peek-rage">${esc(age)}</div>` : ""}<div class="peek-rtext">${esc(recap)}</div>` +
-      `<button type="button" class="peek-more" hidden>more</button></div>` : "");
+      `<button type="button" class="peek-more" hidden>more</button></div>` : "") +
+    peekMemHtml(t);
+}
+
+// What the card's runner, its shell and everything they started hold now, from the pty host's job object or cgroup.
+function peekMemHtml(t) {
+  if (!t || !t.mem || over(t) || typeof bytes !== "function") return "";
+  const tip = "memory this card's processes hold now. Process Explorer's Job tab names their job after the card";
+  return `<div class="peek-sec"><div class="peek-row" data-tip="${esc(tip)}"><b>memory</b><span>${esc(bytes(t.mem))}</span></div></div>`;
 }
 
 // THE CARD'S ID, copyable on click, so it can still be read once the runner has exited.

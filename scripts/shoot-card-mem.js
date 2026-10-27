@@ -1,9 +1,10 @@
-// The memory chip on a card: none (PREFIX=before) and the card's memory from its job or cgroup (after).
+// The card's memory, from its job or cgroup: a chip on the card (before) and a line in its hover details (after).
 // docs/changes/b-card-proc-attribution.md.
 //
 //   NODE_PATH=<dir with playwright> PREFIX=before node scripts/shoot-card-mem.js
 //
-// The Terminals list and the Board tab at 1280px and 390px. Writes docs/changes/img/card-mem/<PREFIX>-<what>-<width>.png.
+// The Terminals list, the hover details and the Board tab at 1280px, and the lists at 390px. Writes
+// docs/changes/img/card-mem/<PREFIX>-<what>-<width>.png, or into $OUT.
 
 const http = require("http");
 const fs = require("fs");
@@ -16,7 +17,7 @@ try { ({ chromium } = require("@playwright/test")); } catch (e) {
 }
 
 const WEB = path.join(__dirname, "..", "internal", "api", "web");
-const OUT = path.join(__dirname, "..", "docs", "changes", "img", "card-mem");
+const OUT = process.env.OUT || path.join(__dirname, "..", "docs", "changes", "img", "card-mem");
 const PREFIX = process.env.PREFIX || "after";
 const HTML = wholeBoard();
 const TYPES = { ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".gif": "image/gif", ".woff2": "font/woff2" };
@@ -67,9 +68,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.goto("http://127.0.0.1:" + server.address().port + "/");
     await page.waitForFunction(() => typeof switchView === "function" && document.querySelectorAll(".card, .stackrow").length > 0, null, { timeout: 15000 });
     const shot = what => page.screenshot({ path: path.join(OUT, `${PREFIX}-${what}-${width}.png`) });
-    if (PREFIX === "before") await page.evaluate(() => { window.memChip = () => ""; });
     await page.evaluate(() => switchView("terms")); await sleep(900);
     await shot("terms");
+    if (!mobile) {
+      const box = await page.locator('.card[data-id="a"], .stackrow[data-id="a"]').first().boundingBox();
+      await page.mouse.move(box.x + 40, box.y + box.height / 2); await page.mouse.move(box.x + 44, box.y + box.height / 2);
+      await page.waitForSelector(".peek.on", { timeout: 5000 }); await sleep(600);
+      await shot("hover");
+      await page.mouse.move(1, 1); await sleep(500);
+    }
     await page.evaluate(() => switchView("board")); await sleep(900);
     await shot("board");
     await ctx.close();
