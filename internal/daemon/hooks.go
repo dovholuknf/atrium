@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -69,6 +70,7 @@ type hooks struct {
 	// setPriorityClass raises a process. Windows only, see priority_windows.go.
 	setPriorityClass func(h uintptr, class uint32) error
 	pidAlive         func(pid int) bool
+	taskExitWait     time.Duration
 
 	// Finish, health, relay, orphans and the rest.
 	commitExists  func(dir, sha string) bool
@@ -131,6 +133,7 @@ func defaultHooks() hooks {
 		opencodeLookPath:      opencodeLookPath,
 		updateRegistry:        updateRegistry,
 		pidAlive:              pidAlive,
+		taskExitWait:          taskExitWait,
 		commitExists:          commitExists,
 		commitInDir:           commitInDir,
 		commitOnHub:           commitOnHub,

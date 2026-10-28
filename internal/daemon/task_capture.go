@@ -20,7 +20,7 @@ import (
 
 // CAPTURING A TASK'S RESULT.
 
-var taskExitWait = 60 * time.Second
+const taskExitWait = 60 * time.Second
 
 const (
 	taskCaptureFiles   = 20
@@ -101,8 +101,8 @@ func (d *Daemon) captureTask(task *store.Task, in FinishRequest, cancelled bool)
 	if err != nil || !ok || row.State != store.CardHomeLive {
 		return
 	}
-	if !d.waitRunnerGone(task.ID, taskExitWait) {
-		d.captureFailed(task, row, "the worker's runner was still alive after "+taskExitWait.String(), cancelled)
+	if !d.waitRunnerGone(task.ID, d.hk.taskExitWait) {
+		d.captureFailed(task, row, "the worker's runner was still alive after "+d.hk.taskExitWait.String(), cancelled)
 		return
 	}
 	line := ""

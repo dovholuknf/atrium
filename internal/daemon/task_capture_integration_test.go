@@ -291,10 +291,8 @@ func TestATaskLedgerPathOutsideTheCardRootIsNotRemoved(t *testing.T) {
 }
 
 func TestARunnerStillAliveAfterTheWaitIsCaptureFailedWithTheFolderKept(t *testing.T) {
-	was := taskExitWait
-	taskExitWait = 100 * time.Millisecond
-	t.Cleanup(func() { taskExitWait = was })
 	x := newTaskRig(t, "out.txt")
+	x.d.hk.taskExitWait = 100 * time.Millisecond
 	x.write(t, "out.txt", 1)
 	r := &runner{taskID: x.card.ID}
 	x.d.sup.add(r)
