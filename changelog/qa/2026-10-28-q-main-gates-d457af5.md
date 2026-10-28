@@ -1,0 +1,1 @@
+The test-wait, import-layer and no-window gates are green on main again: the cardproc poll is marked, the board wait baseline is lowered to 121, the layer table lists docs/runtime/contract and the edges the code already had, and the macOS memory probe hides its `ps` window (q-main-gates-d457af5).

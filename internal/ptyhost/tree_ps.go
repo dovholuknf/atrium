@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 // intoScope has nothing to move pid into here. The process group and ATRIUM_TASK_ID say whose it is.
@@ -13,7 +15,9 @@ func intoScope(int, string, string) string { return "" }
 
 // treeMem is the resident memory of pid's process group, from ps.
 func treeMem(pid int, _ string) int64 {
-	out, err := exec.Command("ps", "-A", "-o", "pgid=,rss=").Output()
+	cmd := exec.Command("ps", "-A", "-o", "pgid=,rss=")
+	nowindow.Hide(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return 0
 	}
