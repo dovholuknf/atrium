@@ -31035,6 +31035,7 @@ async function mGrowlQuestionSection(browser) {
     await p.keyboard.press("Enter");
     await until(() => msgs.length, 5000, "the send").catch(() => {});
     if (msgs.length !== 1 || msgs[0] !== "x\ny") fail(tag + "Enter sent " + JSON.stringify(msgs));
+    await p.waitForSelector("#m-growl .gm-note", { timeout: slow(5000) });
     // the bigger box
     await p.fill(box, "half a thought");
     await p.tap('#m-growl button[data-do="compose"]');
