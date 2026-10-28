@@ -1,0 +1,1 @@
+The test-globals gate is green on main again: the advisory fork url and protocol live on the api Server, and the process-ancestors seam and the task exit wait on the daemon's hooks, so a test sets its own instance and not a shared variable (q-test-globals-d457af5).
