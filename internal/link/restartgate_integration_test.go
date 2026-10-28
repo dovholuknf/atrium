@@ -461,13 +461,15 @@ func TestABroadcastReachesARoomScopedBoard(t *testing.T) {
 	s := p.feeds.add("beta")
 	defer p.feeds.drop(s)
 	p.feeds.broadcast(Event{Kind: restartEvent, Data: []byte(`{"state":"countdown"}`)})
-	select {
-	case e := <-s.ch:
-		if e.Kind != restartEvent {
-			t.Fatalf("a scoped board heard %q", e.Kind)
+	// The reconciler can put its own events on the channel first, so read until the restart or the deadline.
+	deadline := time.After(5 * time.Second)
+	for heard := false; !heard; {
+		select {
+		case e := <-s.ch:
+			heard = e.Kind == restartEvent
+		case <-deadline:
+			t.Fatal("a board scoped to a room did not hear the hub restart")
 		}
-	case <-time.After(time.Second):
-		t.Fatal("a board scoped to a room did not hear the hub restart")
 	}
 	if n := p.feeds.watchers(); n != 1 {
 		t.Errorf("one board open counted as %d", n)

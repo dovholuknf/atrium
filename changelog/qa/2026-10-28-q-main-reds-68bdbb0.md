@@ -1,0 +1,1 @@
+Two Windows go tests no longer fail under load: the scoped-board broadcast test reads past the reconciler's own events to the restart, and the touch throttle test runs serially so another test's write is not counted (q-main-reds-68bdbb0).

@@ -178,8 +178,8 @@ func TestHumanTouchPermissionByHuman(t *testing.T) {
 	notStamped(t, d, other.ID)
 }
 
+// Serial on purpose: touchWrites is shared, and a parallel test's humanTouch would be counted here.
 func TestHumanTouchThrottled(t *testing.T) {
-	t.Parallel()
 	d := testDaemon(t)
 	card := peerCard(t, d, "hammer")
 	before := touchWrites.Load()
