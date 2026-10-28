@@ -2699,7 +2699,7 @@ async function toastsTopSection(browser, base) {
 
     // 3. A paste on its way: the indicator is not under a toast.
     await p.evaluate(() => { pasteShow({ n: 300 * 1024 }); toast("during a paste", "third"); });
-    await p.waitForFunction(() => document.querySelectorAll("#toasts .toast:not(.leaving)").length === 3 && document.getElementById("t-pasting").getBoundingClientRect().height, null, { timeout: slow(5000) }).catch(() => {});
+    await p.waitForFunction(() => window.__starts >= 3 && document.querySelectorAll("#toasts .toast:not(.leaving)").length === 3 && document.getElementById("t-pasting").getBoundingClientRect().height, null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     const paste = await p.evaluate(() => {
       const r = document.getElementById("t-pasting").getBoundingClientRect();
