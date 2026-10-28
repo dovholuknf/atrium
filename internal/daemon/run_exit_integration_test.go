@@ -214,7 +214,8 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 	}
 	r := d.sup.get(task.ID)
 	t.Cleanup(func() {
-		_ = r.tm().Kill()
+		// Not Kill: its taskkill takes seconds on a loaded Windows runner, and the runner here has no children.
+		_ = r.cmd.Process.Kill()
 		select {
 		case <-r.done:
 		case <-time.After(10 * time.Second):
