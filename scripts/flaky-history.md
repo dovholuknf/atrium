@@ -188,3 +188,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-24 | 40095604569 | TestAHubPushesChangedPathsToAnAttachedRoom | ADD | no | 0 |
 | 2026-10-28 | 40693981369 | mGrowlQuestion | ADD | no | 0 |
 | 2026-10-28 | 40695088450 | resumeSpinner | ADD | yes | 0 |
+| 2026-10-28 | 40701167091 | TestAFetchThatKeepsMakingProgressIsNotCut | ADD | no | 0 |
