@@ -66,7 +66,7 @@ type Room struct {
 	// Login says why this room's claude login needs doing, "" when it does not. Nil says nothing.
 	Login func() string
 	// OnPaths is handed the hub's list of transports, in its order, each time a
-	// welcome carries one, in its own goroutine. It is how the room writes the
+	// welcome carries one, in order, on its own goroutine. It is how the room writes the
 	// fallback down for a start when the hub cannot be reached. Nil ignores it.
 	OnPaths func([]Path)
 	// OnUnreachable runs after a climb on which every rung failed, so the room reads its hub's address from disk again.
@@ -321,8 +321,23 @@ func (r *Room) attach(ctx context.Context) error {
 	if r.OnAttach != nil {
 		go r.OnAttach()
 	}
-	if r.OnPaths != nil && len(w.Paths) > 0 {
-		go r.OnPaths(w.Paths)
+	var heard chan []Path
+	if r.OnPaths != nil {
+		heard = make(chan []Path, 8)
+		// One goroutine so a stale list never lands after a newer one.
+		go func() {
+			for {
+				select {
+				case ps := <-heard:
+					r.OnPaths(ps)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		if len(w.Paths) > 0 {
+			heard <- w.Paths
+		}
 	}
 	// ON A FALLBACK, KEEP ASKING THE BETTER ONES. Closing the control
 	// connection is how the reader below learns it is time to move.
@@ -355,8 +370,11 @@ func (r *Room) attach(ctx context.Context) error {
 			return errors.New("the hub said: " + n.Bye)
 		case len(n.Paths) > 0:
 			// The hub's addresses changed while this room was attached. Heard as the welcome's list is.
-			if r.OnPaths != nil {
-				go r.OnPaths(n.Paths)
+			if heard != nil {
+				select {
+				case heard <- n.Paths:
+				case <-ctx.Done():
+				}
 			}
 		case n.Offer != nil:
 			// A hub saying what it is running. Considered, which usually means
