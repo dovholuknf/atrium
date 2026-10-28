@@ -507,7 +507,7 @@
      distance between a heading and its own first row as between two unrelated groups, and then each heading
      added a top margin on top of that. The space now belongs to `.tnest`, which is the thing that ends. */
   .tgroup {
-    display: flex; width: fit-content; align-items: center; gap: 3px;
+    display: flex; width: fit-content; max-width: 100%; min-width: 0; align-items: center; gap: 3px;
     padding: 5px 8px 5px 3px; min-height: calc(26px * var(--uiscale));
     border: none; border-radius: var(--r-sm); background: transparent;
     color: var(--label); cursor: pointer;
