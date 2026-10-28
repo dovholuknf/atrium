@@ -339,18 +339,29 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 	}
 }
 
-// The limit prompt names the binary and the path, in clint's words.
+// The limit prompt names atrium's limit with both numbers, the binary and the path, in clint's words.
 func TestTheLimitPromptWording(t *testing.T) {
 	t.Parallel()
-	got := newContextLimitPrompt("/tmp/atrium/handoffs/c1.md", "/usr/local/bin/atrium", false)
-	want := "you are at context limit. wrap what is in flight, then either write your handoff to " +
-		"/tmp/atrium/handoffs/c1.md and run /usr/local/bin/atrium ready, or call the atrium_ready tool with the handoff text."
+	got := newContextLimitPrompt("/data/handoffs/c1.md", "/usr/local/bin/atrium", false, 157_400, 150_000)
+	want := "This card is over its configured atrium context limit (157k of 150k). Pause your work now. Write a " +
+		"handoff to /data/handoffs/c1.md that says what is complete, what is in flight, and what's still to be done. " +
+		"Then run /usr/local/bin/atrium ready. Atrium clears your context when this turn ends and starts a new one " +
+		"from your handoff."
 	if got != want {
 		t.Fatalf("got %q", got)
 	}
-	if got := newContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true); strings.Contains(got, "/tmp/c1.md") ||
-		!strings.Contains(got, "atrium_ready") {
+	if strings.Contains(got, "atrium_ready") {
+		t.Fatalf("a runner with a shell was offered the tool: %q", got)
+	}
+	got = newContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true, 157_400, 150_000)
+	if strings.Contains(got, "/tmp/c1.md") || strings.Contains(got, " ready.") || !strings.Contains(got, "atrium_ready") ||
+		!strings.Contains(got, "(157k of 150k)") {
 		t.Fatalf("a runner with no shell was told %q", got)
+	}
+	// A cycle started by hand has no limit to name.
+	if got := newContextLimitPrompt("/tmp/c1.md", "atrium", false, 0, 0); !strings.HasPrefix(got,
+		"Atrium is starting a new context on this card. Pause your work now.") {
+		t.Fatalf("a manual cycle was told %q", got)
 	}
 }
 

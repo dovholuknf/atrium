@@ -40,8 +40,13 @@ sequence** (plan 2: "exactly as if clint pressed ctrl-alt-n"). The old capture w
 and its file in the cwd goes. Steps, as the chip shows them:
 
 1. **`limit`**: atrium types the limit prompt
-   `you are at context limit. wrap what is in flight, write your handoff to <path>, then run <atrium> ready.`
-   (plan 3, wording from "Details"). It is typed **as soon as the input line is free, mid-turn included** (plan 5):
+   `This card is over its configured atrium context limit (<used>k of <limit>k). Pause your work now. Write a handoff
+   to <path> that says what is complete, what is in flight, and what's still to be done. Then run <atrium> ready.
+   Atrium clears your context when this turn ends and starts a new one from your handoff.`
+   (clint's wording, b-context-limit-prompt-wording-and-temp-path). A cycle started by hand has no limit to name and
+   opens `Atrium is starting a new context on this card.` instead. A runner with no shell is told to call the
+   `atrium_ready` tool in place of the CLI; a runner with a shell is told only the CLI, since the tool is not on every
+   card's list. It is typed **as soon as the input line is free, mid-turn included** (plan 5):
    the gate check is the one an immediate say uses (`typeLabelledGuarded`, no dialog on screen, the operator not
    typing), with no turn check. A runner that does not take input mid-turn (`midTurnInputFor` false) waits for the
    turn to end, since mid-turn the line would be lost.
@@ -84,8 +89,9 @@ the card and no hook carries a message (brief: keep it). The cycle's own typing 
 
 ## The handoff path (plan 4, 8)
 
-`handoffPath(t)` = `<dir>/<card-id>.md`, where `<dir>` is the room setting `context_handoff_dir` when set, else
-`os.TempDir()/atrium/handoffs` (`$TMPDIR` on macOS, `%TEMP%` on Windows, `/tmp` on Linux). The daemon makes the
+`handoffPath(t)` = `<dir>/<card-id>.md`, where `<dir>` is the room setting `context_handoff_dir` when set, else the
+card's home (`<home>/.atrium/handoff.md`), else `handoffs` beside the room's database. Never the system temp folder:
+the handoff is the only record of the work in flight, and temp is swept. The daemon makes the
 directory before typing the prompt. The prompt names the absolute path and the absolute path of the atrium binary
 (`os.Executable()`), because the CLI is not on PATH in every room. The path is fixed when the cycle is claimed, so
 a setting changed mid-cycle cannot split the prompt, the ack and the wake.
@@ -216,8 +222,7 @@ the launcher notice pulled the orchestrator in, which stopped a card instead of 
   `atrium:subagent` exclusion, `atrium:auto-new-context` / `atrium:no-auto-new-context` / ceiling tags. Old tags on
   existing cards are ignored, not migrated.
 - The limit prompt names the handoff path and the full path of the atrium binary, because the CLI is not on PATH on
-  every room: `you are at context limit. wrap what is in flight, write your handoff to <path>, then run <atrium>
-  ready.`
+  every room. Its wording is under step 1 above (b-context-limit-prompt-wording-and-temp-path).
 - The wake prompt is `read <path> and continue.`
 - CLAUDE.md reloads by itself after `/clear`, so the wake carries nothing else.
 - A cycle in flight still holds queued messages, as today (`holdingMessages`), so nothing is typed into the clear.

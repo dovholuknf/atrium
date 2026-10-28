@@ -379,7 +379,7 @@ func DefaultDBPath() string {
 // RoomDataNames is everything a room keeps beside its database, which `atrium room move` carries with it. A name the
 // daemon joins onto filepath.Dir(DBPath) belongs here, except scrap, which is emptied on every start.
 var RoomDataNames = []string{store.LedgerFileName, reopenFile, carryDirName, "reviews", "icons", "cards",
-	"lean-plugins", "docshares", "identities", "zrok"}
+	"lean-plugins", "docshares", "identities", "zrok", handoffDirName}
 
 // New opens the store and builds the daemon. A storage failure here is fatal
 // by design: the daemon refuses to start rather than run without durable state.

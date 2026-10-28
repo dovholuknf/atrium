@@ -138,14 +138,29 @@ func HandoffName(t *store.Task) string {
 // newContextClear clears the session.
 const newContextClear = "/clear"
 
-// newContextLimitPrompt is the limit prompt: where the handoff goes and how to say
-// it is written. The binary is named in full, since the CLI is not on PATH in every room.
-func newContextLimitPrompt(path, bin string, noShell bool) string {
-	if noShell {
-		return "you are at context limit. wrap what is in flight, then call the atrium_ready tool with your handoff as its text."
+// newContextLimitPrompt is the limit prompt: why the card is cycling, where the handoff goes and how to say it is
+// written. The binary is named in full, since the CLI is not on PATH in every room.
+//
+// THE LIMIT IS ATRIUM'S, NOT THE MODEL'S, and an agent told only "you are at context limit" reads it as the window
+// being full and rushes. So an automatic cycle names both numbers. A cycle somebody started by hand has none.
+//
+// PAUSE, NOT FINISH. "Wrap what is in flight" let the agent decide its step was nearly done and keep going, further
+// over the limit. The handoff says what is in flight instead, and the next context picks it up.
+//
+// ONE WAY TO SAY IT IS WRITTEN. A card with a shell has `atrium ready`; atrium_ready is not on every card's tool
+// list, so it is named only to a card with no shell, which is the card it exists for.
+func newContextLimitPrompt(path, bin string, noShell bool, tokens, limit int64) string {
+	why := "Atrium is starting a new context on this card."
+	if limit > 0 {
+		why = fmt.Sprintf("This card is over its configured atrium context limit (%dk of %dk).", tokens/1000, limit/1000)
 	}
-	return "you are at context limit. wrap what is in flight, then either write your handoff to " + path +
-		" and run " + bin + " ready, or call the atrium_ready tool with the handoff text."
+	write, then := "Write a handoff to "+path, "Then run "+bin+" ready."
+	if noShell {
+		write, then = "Write a handoff", "Then call the atrium_ready tool with your handoff as its text."
+	}
+	return why + " Pause your work now. " + write + " that says what is complete, what is in flight, and what's " +
+		"still to be done. " + then + " Atrium clears your context when this turn ends and starts a new one from " +
+		"your handoff."
 }
 
 // runnerHasNoShell is whether the card's launch withholds both shells, so the prompt names the tool alone.
@@ -236,8 +251,11 @@ var atriumBinary = func() string {
 	return "atrium"
 }
 
-// handoffPath is where a card's cycle writes its handoff: the room's
-// context_handoff_dir, else the card's home (<home>/.atrium/handoff.md), else <temp>/atrium/handoffs, then <card-id>.md.
+// handoffPath is where a card's cycle writes its handoff: the room's context_handoff_dir, else the card's home
+// (<home>/.atrium/handoff.md), else the handoffs folder beside the room's database, then <card-id>.md.
+//
+// NOT THE SYSTEM TEMP FOLDER. A handoff is the only record of the work in flight, and temp is swept by the OS and
+// sits on a drive the operator may keep clean of working files on purpose.
 func (d *Daemon) handoffPath(t *store.Task) string {
 	dir := d.st.ContextHandoffDir()
 	if dir == "" {
@@ -246,10 +264,13 @@ func (d *Daemon) handoffPath(t *store.Task) string {
 		}
 	}
 	if dir == "" {
-		dir = filepath.Join(os.TempDir(), "atrium", "handoffs")
+		dir = filepath.Join(filepath.Dir(d.opts.DBPath), handoffDirName)
 	}
 	return filepath.Join(dir, t.ID+".md")
 }
+
+// handoffDirName is the handoffs folder beside the database, for a card with no home. See handoffPath.
+const handoffDirName = "handoffs"
 
 // prepareHandoff is handoffPath stamped with the time, with its directory made, so the agent can write there.
 // A new name each cycle, since an agent that overwrites must read the old file first.
@@ -967,7 +988,7 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 		if !cur.armed {
 			d.ncArm(taskID, gen)
 		} else if d.cyclePromptDue(taskID, cur) {
-			if err := d.cyclePrompt(taskID, gen, cur.file); err != nil {
+			if err := d.cyclePrompt(taskID, gen, cur); err != nil {
 				return err
 			}
 		}
@@ -1005,7 +1026,7 @@ func (d *Daemon) cyclePromptDue(taskID string, c *newContext) bool {
 // cyclePrompt types the limit prompt through the gate, with no turn check for a
 // runner that takes input mid-turn. A closed gate writes nothing, and the next
 // poll tries again.
-func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
+func (d *Daemon) cyclePrompt(taskID string, gen uint64, c *newContext) error {
 	run := d.sup.get(taskID)
 	if run == nil {
 		return nil
@@ -1030,7 +1051,7 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, path string) error {
 		}
 		return mid || !busy
 	}
-	text := newContextLimitPrompt(path, d.hk.atriumBinary(), d.runnerHasNoShell(taskID))
+	text := newContextLimitPrompt(c.file, d.hk.atriumBinary(), d.runnerHasNoShell(taskID), c.tokens, c.limit)
 	d.nctx.setTyping(taskID, gen, true)
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, text, ok)
 	if gone {
