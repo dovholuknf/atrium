@@ -29,6 +29,7 @@ type row struct {
 // Layer is one above the highest layer a package imports, so a new edge to the same layer or above is a cycle risk.
 var table = []row{
 	{0, "cmd/ptyhost-spike", nil},
+	{0, "docs/runtime/contract", nil},
 	{0, "internal/base/address", nil},
 	{0, "internal/base/cardcolors", nil},
 	{0, "internal/base/cardroot", nil},
@@ -72,9 +73,9 @@ var table = []row{
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
 	{1, "internal/base/claudeconf", []string{"internal/base/mcprule", "internal/base/rolebin"}},
 	{1, "internal/base/detach", []string{"internal/base/nowindow"}},
-	{1, "internal/link/transport", []string{"internal/link/wire", "internal/zitictx"}},
+	{1, "internal/link/transport", []string{"internal/base/testwait", "internal/link/wire", "internal/zitictx"}},
 	{1, "internal/guard", []string{"internal/base/nowindow"}},
-	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/rolebin"}},
+	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/nowindow", "internal/base/rolebin"}},
 	{1, "internal/sshwizard", []string{
 		"internal/base/nowindow", "internal/base/remoteaccess", "internal/base/sshcfg", "internal/base/sshkey",
 	}},
@@ -84,6 +85,7 @@ var table = []row{
 	{2, "internal/cardreview", []string{"internal/base/nowindow", "internal/base/safepath", "internal/store"}},
 	{2, "internal/gitsync", []string{
 		"internal/base/claudeconf", "internal/base/nowindow", "internal/base/safepath", "internal/base/testguard",
+		"internal/base/testwait",
 	}},
 	{2, "internal/roomstats", []string{"internal/store", "internal/zitictx"}},
 	{2, "internal/runnerprofile", []string{"internal/store"}},
@@ -125,6 +127,7 @@ var table = []row{
 		"internal/zitictx",
 	}},
 	{6, "internal/cli", []string{
+		"docs/runtime/contract", "internal/base/dblock", "internal/base/testwait", "internal/worktrees",
 		"internal/base/address", "internal/api", "internal/base/cardcolors", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/daemon", "internal/daemon/screen", "internal/deployready", "internal/base/detach", "internal/base/docshare", "internal/base/edge", "internal/base/forge", "internal/gitsync",
 		"internal/guard", "internal/hubstore", "internal/link", "internal/base/nowindow", "internal/ptyhost",
