@@ -3082,10 +3082,11 @@ async function resumeSpinnerSection(browser, base) {
 
     // 4. No output inside the bound: it turns to the reason, and a resume is allowed again.
     if (isNew) {
-      await p.evaluate(() => { RESUME_BOUND_MS = 400; openingStart("land-res"); });
+      await p.evaluate(() => { RESUME_BOUND_MS = 30000; openingStart("land-res"); });
       await frames(p, 2);
       let st = await state(p);
       if (!st.chip.length || /no output/.test(st.chip[0])) fail("before the bound it was not still spinning: " + JSON.stringify(st));
+      await p.evaluate(() => { RESUME_BOUND_MS = 400; openingStart("land-res"); });
       await p.waitForFunction(() => /no output after/.test((document.querySelector('.stackrow[data-id="land-res"] .chip.opening') || {}).textContent || "") && /no output after/.test(document.getElementById("t-wait-say").textContent), null, { timeout: slow(5000) }).catch(() => {});
       await shot(p, "5-slow");
       st = await p.evaluate(() => ({ chip: [...document.querySelectorAll(".stackrow[data-id=\"land-res\"] .chip.opening")].map(e => e.textContent.trim()),
