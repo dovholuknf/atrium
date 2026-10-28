@@ -85,6 +85,10 @@ type Server struct {
 	Recognise func(url string) (*rules.Resolved, error)
 	// PRForge picks the forge for a host, for making a worktree of a pull request. Owned by the daemon.
 	PRForge func(host string) (forge.Forge, error)
+	// advisoryForkURL is where the fork of org/repo for an advisory is, and advisoryForkProtocol the one protocol its
+	// fetch may use. A test points them at a local repo.
+	advisoryForkURL      func(host, org, repo, ghsa string) string
+	advisoryForkProtocol string
 	// SCMClone is the scm clone path (atrium_git_clone), for a PR on a repo with no checkout.
 	SCMClone func(ctx context.Context, url string) (gitsync.SCMResult, error)
 	// SCMHas is whether the scm folder already holds a clone of the repo at a url. Nil reads as no. It lets a PR
@@ -502,7 +506,7 @@ func (s *Server) forever(permID, decision, reason, prefix, kind string) error {
 
 // New builds a server over a store.
 func New(st *store.Store) *Server {
-	return &Server{st: st, bus: newBus()}
+	return &Server{st: st, bus: newBus(), advisoryForkURL: advisoryForkURL, advisoryForkProtocol: "https"}
 }
 
 // NotOnRoom words a card this room does not hold, naming the card and the room,

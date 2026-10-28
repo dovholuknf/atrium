@@ -392,19 +392,10 @@ func advisoryForkOf(got *rules.Resolved) *advisoryFork {
 
 func (f *advisoryFork) remote() string { return "ghsa-" + f.ghsa }
 
-// advisoryForkURL is where the fork of org/repo for an advisory is. A test points it at a local repo, with
-// advisoryForkProtocol, the one protocol its fetch may use.
-var (
-	advisoryForkURL = func(host, org, repo, ghsa string) string {
-		return "https://" + host + "/" + org + "/" + repo + "-ghsa-" + ghsa
-	}
-	advisoryForkProtocol = "https"
-)
-
 // fetchAdvisoryFork adds the fork's remote to repoPath when it is missing and fetches the one ref the link names into
 // the remote's own namespace, so removing the remote deletes it too. It answers that ref and whether it added the
 // remote, which a failed fetch removes again.
-func fetchAdvisoryFork(ctx context.Context, repoPath, host, org, repo string, f *advisoryFork, helper string) (string, bool, error) {
+func (s *Server) fetchAdvisoryFork(ctx context.Context, repoPath, host, org, repo string, f *advisoryFork, helper string) (string, bool, error) {
 	remote := f.remote()
 	src, dst := "refs/heads/"+f.branch, "refs/remotes/"+remote+"/"+f.branch
 	if f.pr > 0 {
@@ -412,7 +403,7 @@ func fetchAdvisoryFork(ctx context.Context, repoPath, host, org, repo string, f 
 	}
 	added := false
 	if _, err := gitIn(ctx, repoPath, "remote", "get-url", remote); err != nil {
-		if _, err := gitIn(ctx, repoPath, "remote", "add", remote, advisoryForkURL(host, org, repo, f.ghsa)); err != nil {
+		if _, err := gitIn(ctx, repoPath, "remote", "add", remote, s.advisoryForkURL(host, org, repo, f.ghsa)); err != nil {
 			return "", false, err
 		}
 		added = true
@@ -421,7 +412,7 @@ func fetchAdvisoryFork(ctx context.Context, repoPath, host, org, repo string, f 
 	cmd.Dir = filepath.FromSlash(repoPath)
 	nowindow.Hide(cmd)
 	// GIT_ALLOW_PROTOCOL overrides the protocol settings fetchArgs gives.
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL="+advisoryForkProtocol)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL="+s.advisoryForkProtocol)
 	cmd.WaitDelay = 5 * time.Second
 	if out, err := cmd.CombinedOutput(); err != nil {
 		if added {
@@ -467,4 +458,8 @@ func (s *Server) providerByHost(host string) *store.Provider {
 		}
 	}
 	return nil
+}
+
+func advisoryForkURL(host, org, repo, ghsa string) string {
+	return "https://" + host + "/" + org + "/" + repo + "-ghsa-" + ghsa
 }

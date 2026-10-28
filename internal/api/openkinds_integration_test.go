@@ -377,10 +377,8 @@ func TestOpenAnAdvisoryForkAddsItsRemoteAndTheLastCloseRemovesIt(t *testing.T) {
 	git(t, oh.up, "init", "-q", "--bare", fork)
 	git(t, oh.up, "push", "-q", fork, "refs/pull/7/head:refs/pull/7/head", "refs/pull/7/head:refs/heads/fix-it")
 	head := git(t, fork, "rev-parse", "refs/pull/7/head")
-	url, proto := advisoryForkURL, advisoryForkProtocol
-	advisoryForkURL = func(host, org, repo, ghsa string) string { return fork }
-	advisoryForkProtocol = "file"
-	defer func() { advisoryForkURL, advisoryForkProtocol = url, proto }()
+	oh.srv.advisoryForkURL = func(host, org, repo, ghsa string) string { return fork }
+	oh.srv.advisoryForkProtocol = "file"
 	inner := oh.srv.Recognise
 	oh.srv.Recognise = func(u string) (*rules.Resolved, error) {
 		if !strings.Contains(u, "-ghsa-") {

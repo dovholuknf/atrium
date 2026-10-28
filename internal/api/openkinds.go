@@ -385,7 +385,7 @@ func (s *Server) branchWorktreeFrom(ctx context.Context, p *store.Provider, host
 		if p != nil {
 			forgeCmd = p.ForgeCmd
 		}
-		from, added, err := fetchAdvisoryFork(ctx, repoPath, host, org, repo, opts.fork, credentialHelper(forge.GitHub, forgeCmd))
+		from, added, err := s.fetchAdvisoryFork(ctx, repoPath, host, org, repo, opts.fork, credentialHelper(forge.GitHub, forgeCmd))
 		if err != nil {
 			return res, http.StatusBadRequest, errors.New("could not fetch from the advisory's fork: " + err.Error())
 		}
