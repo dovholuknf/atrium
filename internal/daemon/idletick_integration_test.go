@@ -311,10 +311,10 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 	quickPark(t, d)
 	card := idleAgent(t, d, "donecard", store.StatusDone)
 	// The wind-down would file it dead. It must come back as done.
-	go func() {
-		time.Sleep(20 * time.Millisecond) // wait: lands the dead filing inside the park's wind-down, the race under test
-		_ = d.st.SetStatus(card.ID, store.StatusDead)
-	}()
+	d.hk.idleLeave = func(d *Daemon, r *runner, id string) {
+		_ = d.st.SetStatus(id, store.StatusDead)
+		endRunner(d, id)
+	}
 	d.parkIdle(idleAfter(3 * time.Hour))
 	if !settles(t, d, card.ID) {
 		t.Fatal("not parked")
