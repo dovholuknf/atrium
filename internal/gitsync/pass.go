@@ -81,11 +81,19 @@ func ReaderFrom(ctx context.Context) (Reader, bool) {
 	return r, ok
 }
 
+// IdleTimer is the part of a timer the watchdog uses.
+type IdleTimer interface {
+	Reset(d time.Duration) bool
+	Stop() bool
+}
+
 // Pass is the pass-through handler. Get it from Hub.PassHandler.
 type Pass struct {
 	h *Hub
 	// Now is the clock. Nil is time.Now.
 	Now func() time.Time
+	// AfterFunc starts the room's idle watchdog. Nil is time.AfterFunc. A test drives it with its own clock.
+	AfterFunc func(d time.Duration, f func()) IdleTimer
 	// FetchesPerMinute, RoundsPerMinute and PerRoom override the limits above when above zero. A test sets them.
 	FetchesPerMinute, RoundsPerMinute, PerRoom int
 	// BodyIdle, RoomHeaderWait, RoomIdle and WriteIdle override the deadlines above when above zero. A test sets them.
@@ -130,6 +138,13 @@ func (i *idleReader) Read(b []byte) (int, error) {
 }
 
 func (i *idleReader) Close() error { return i.body.Close() }
+
+func (p *Pass) afterFunc(d time.Duration, f func()) IdleTimer {
+	if p.AfterFunc != nil {
+		return p.AfterFunc(d, f)
+	}
+	return time.AfterFunc(d, f)
+}
 
 func (p *Pass) now() time.Time {
 	if p.Now != nil {
@@ -265,7 +280,7 @@ func (p *Pass) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	var stalled atomic.Bool
 	roomIdle := dur(p.RoomIdle, passRoomIdle)
-	watchdog := time.AfterFunc(dur(p.RoomHeaderWait, passRoomHeaderWait), func() { stalled.Store(true); cancel() })
+	watchdog := p.afterFunc(dur(p.RoomHeaderWait, passRoomHeaderWait), func() { stalled.Store(true); cancel() })
 	defer watchdog.Stop()
 
 	out, err := http.NewRequestWithContext(ctx, r.Method, target, body)

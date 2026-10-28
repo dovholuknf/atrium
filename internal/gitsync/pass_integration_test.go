@@ -367,6 +367,84 @@ func TestABodyThatStopsGivesTheSlotBack(t *testing.T) {
 	}
 }
 
+// fakeIdleClock is the watchdog's clock: time moves only when a test advances it.
+type fakeIdleClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers []*fakeIdleTimer
+}
+
+type fakeIdleTimer struct {
+	c      *fakeIdleClock
+	at     time.Time
+	f      func()
+	active bool
+}
+
+func (c *fakeIdleClock) afterFunc(d time.Duration, f func()) IdleTimer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &fakeIdleTimer{c: c, at: c.now.Add(d), f: f, active: true}
+	c.timers = append(c.timers, t)
+	return t
+}
+
+func (t *fakeIdleTimer) Reset(d time.Duration) bool {
+	t.c.mu.Lock()
+	defer t.c.mu.Unlock()
+	was := t.active
+	t.at, t.active = t.c.now.Add(d), true
+	return was
+}
+
+func (t *fakeIdleTimer) Stop() bool {
+	t.c.mu.Lock()
+	defer t.c.mu.Unlock()
+	was := t.active
+	t.active = false
+	return was
+}
+
+func (c *fakeIdleClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	var due []func()
+	for _, t := range c.timers {
+		if t.active && !t.at.After(c.now) {
+			t.active = false
+			due = append(due, t.f)
+		}
+	}
+	c.mu.Unlock()
+	for _, f := range due {
+		f()
+	}
+}
+
+// chunkedPass serves ten byte chunks from a room that writes one only when the test sends on next.
+func chunkedPass(clock *fakeIdleClock, next <-chan struct{}) *Pass {
+	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			for {
+				select {
+				case <-next:
+					if _, err := pw.Write([]byte("0123456789")); err != nil {
+						return
+					}
+				case <-r.Context().Done():
+					return
+				}
+			}
+		}()
+		// Like the real transport's body, it fails once the request's context is cancelled.
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: &ctxReader{ctx: r.Context(), rc: pr}}, nil
+	}))
+	p.AfterFunc = clock.afterFunc
+	return p
+}
+
 // A fetch that keeps moving is not cut, though it takes far longer than any one deadline.
 func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 	if testing.Short() {
@@ -374,33 +452,55 @@ func TestAFetchThatKeepsMakingProgressIsNotCut(t *testing.T) {
 	}
 	t.Parallel()
 	const chunks = 60
-	p := quickPass(rtFunc(func(r *http.Request) (*http.Response, error) {
-		pr, pw := io.Pipe()
-		go func() {
-			for i := 0; i < chunks; i++ {
-				time.Sleep(10 * time.Millisecond) // wait: a fetch that keeps moving slowly is what is under test
-				if _, err := pw.Write([]byte("0123456789")); err != nil {
-					return
-				}
-			}
-			pw.Close()
-		}()
-		// Like the real transport's body, it fails once the request's context is cancelled.
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: &ctxReader{ctx: r.Context(), rc: pr}}, nil
-	}))
+	clock := &fakeIdleClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
+	start := clock.now
+	next := make(chan struct{})
+	p := chunkedPass(clock, next)
 	srv := servePass(t, p)
-	start := time.Now()
+	go func() { next <- struct{}{} }() // the reader's headers come with the first chunk
 	resp, err := http.Get(srv.URL + refsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil || resp.StatusCode != 200 || len(b) != chunks*10 {
-		t.Fatalf("%d, %d bytes, %v", resp.StatusCode, len(b), err)
+	defer resp.Body.Close()
+	buf := make([]byte, 10)
+	for i := 0; i < chunks; i++ {
+		if i > 0 {
+			next <- struct{}{}
+		}
+		if _, err := io.ReadFull(resp.Body, buf); err != nil {
+			t.Fatalf("chunk %d: %v", i, err)
+		}
+		clock.advance(10 * time.Millisecond)
 	}
-	if time.Since(start) < 2*p.BodyIdle {
-		t.Fatalf("it was not slower than the deadlines (%v), so it proved nothing", time.Since(start))
+	if clock.now.Sub(start) < 2*p.RoomIdle {
+		t.Fatalf("it was not slower than the deadlines (%v), so it proved nothing", clock.now.Sub(start))
+	}
+}
+
+// A room that goes quiet for longer than the idle window is cut, and what it had sent is all the reader gets.
+func TestAFetchThatGoesQuietIsCut(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	clock := &fakeIdleClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
+	next := make(chan struct{})
+	p := chunkedPass(clock, next)
+	srv := servePass(t, p)
+	go func() { next <- struct{}{} }() // the reader's headers come with the first chunk
+	resp, err := http.Get(srv.URL + refsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, 10)
+	if _, err := io.ReadFull(resp.Body, buf); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(p.RoomIdle + time.Millisecond)
+	if rest, _ := io.ReadAll(resp.Body); len(rest) != 0 {
+		t.Fatalf("%d more bytes after the silence", len(rest))
 	}
 }
 
