@@ -31045,7 +31045,9 @@ async function mGrowlQuestionSection(browser) {
       .catch(() => fail(tag + "Escape did not fold the box."));
     if ((await size()).v !== "half a thought") fail(tag + "folding lost the text.");
     // a choice sends its line
+    await p.evaluate(() => { window.__before = document.querySelector("#m-growl .gm-full"); });
     await p.tap('#m-growl .gm-choices button:has-text("Do not run it")');
+    await p.waitForFunction(() => document.querySelector("#m-growl .gm-full") !== window.__before, null, { timeout: slow(5000) }).catch(() => {});
     await until(() => msgs[msgs.length - 1] === "2. Do not run it", 5000, "the choice").catch(() => {});
     if (msgs[msgs.length - 1] !== "2. Do not run it") fail(tag + "a choice sent " + JSON.stringify(msgs));
     // the face is not rebuilt for unrelated news
