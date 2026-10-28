@@ -24,7 +24,7 @@ func TestStopInDirEndsAProcessThatLeftItsParentInsideTheDir(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("InDir missed %d", cmd.Process.Pid)
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) // wait: poll for the process to show under one 5s deadline
 	}
 	if left := WaitGone(StopInDir(dir), 10*time.Second); len(left) > 0 {
 		t.Fatalf("still running: %v", left)
