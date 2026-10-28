@@ -442,11 +442,13 @@ async function parentSection(browser, base) {
       lastTasks = [Object.assign({}, t1, { id: "a1", wire_name: "orch" }), Object.assign({}, t1, { id: "b2", wire_name: "hook" }),
         Object.assign({}, t1, { id: "x~c3", wire_name: "far" })];
       const m = parentMenuItem(Object.assign({}, t1, { id: "b2", spawned_by: "orch" }));
-      return { label: m.label, note: m.note, values: parentChoices({ id: "b2" }).map(c => c.value) };
+      const values = parentChoices({ id: "b2" }).map(c => c.value);
+      // Same tick as the seed: a poll refresh would replace lastTasks and the dialog would list no a1.
+      window.__parentDone = changeParent("b2", { id: "b2" });
+      return { label: m.label, note: m.note, values };
     }, T1);
     if (item.label !== "change parent…" || item.note !== "orch") fail("the parent menu item reads wrong: " + JSON.stringify(item));
     if (item.values.join() !== "a1") fail("the parent choices are not the room's other cards: " + JSON.stringify(item));
-    await pp.evaluate(() => { window.__parentDone = changeParent("b2", { id: "b2" }); });
     await pp.waitForSelector("#ask[open] #ask-choices", { timeout: slow(5000) });
     await pp.selectOption("#ask-choices", "a1");
     await pp.click("#ask-actions button.go");
