@@ -6,6 +6,7 @@
   {"kind": "board", "name": "resumeSpinner", "reason": "failed in run 40695088450 job check (macos-latest, go-checks-visual)"},
   {"kind": "go", "package": "internal/gitsync", "name": "TestAFetchThatKeepsMakingProgressIsNotCut", "reason": "failed in run 40701167091 job check (windows-latest, go-test-1): pass_integration_test.go:400: 200, 430 bytes, <nil>"},
   {"kind": "go", "package": "internal/daemon", "name": "TestAStartWritesItsRunRowBeforeTheLaunchIsComplete", "reason": "failed in run 40705697185 job check (windows-latest, go-test-1): daemon_integration_test.go:57: LEAK TestAStartWritesItsRunRowBeforeTheLaunchIsComplete: a runner was still running or filing its exit 10s after the test ended"},
-  {"kind": "go", "package": "internal/cli", "name": "TestEveryInstalledHookFailsOpenFastAndSaysWhy", "reason": "failed in run 40711067521 job check (windows-latest, go-test-2): hook_unreachable_integration_test.go:71: Stop turn --event end against silent: took 2.0290846s, budget 2s"}
+  {"kind": "go", "package": "internal/cli", "name": "TestEveryInstalledHookFailsOpenFastAndSaysWhy", "reason": "failed in run 40711067521 job check (windows-latest, go-test-2): hook_unreachable_integration_test.go:71: Stop turn --event end against silent: took 2.0290846s, budget 2s"},
+  {"kind": "go", "package": "internal/link/conn", "name": "TestAHubPushesChangedPathsToAnAttachedRoom", "reason": "failed in run 40733926693 job check (ubuntu-latest, go-all): pathspush_integration_test.go:53: timed out waiting for the condition"}
  ]
 }
