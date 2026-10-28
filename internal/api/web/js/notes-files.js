@@ -1750,7 +1750,7 @@ async function saveIdlePark() {
     toast("that did not save", e.message);
     return;
   }
-  afterMachineSave();
+  await afterMachineSave();
   toast("saved", v === "off" ? "idle cards are not parked" : "an idle card is parked after " + (Number(v) / 60) + " minutes");
 }
 

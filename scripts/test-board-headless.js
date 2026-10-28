@@ -9235,6 +9235,8 @@ async function idleParkSection(browser, base) {
 
     await edit("45", null);
     await until(() => mock.idleParkWrites.length >= 1, 5000, "the 45 minute write").catch(() => {});
+    // The toast lands after the pane's refill, so the next edit is not overwritten by a stale one.
+    await ip.waitForFunction(() => /parked after 45 minutes/.test(document.body.textContent), null, { timeout: slow(5000) }).catch(() => {});
     let w = mock.idleParkWrites[0];
     if (!w || w.body.idle_park_after !== "2700" || Object.keys(w.body).length !== 1) {
       fail("45 minutes did not post {idle_park_after:\"2700\"}: " + JSON.stringify(mock.idleParkWrites));
@@ -9243,6 +9245,7 @@ async function idleParkSection(browser, base) {
 
     await edit(null, false);
     await until(() => mock.idleParkWrites.length >= 2, 5000, "the off write").catch(() => {});
+    await ip.waitForFunction(() => /idle cards are not parked/.test(document.body.textContent), null, { timeout: slow(5000) }).catch(() => {});
     w = mock.idleParkWrites[1];
     if (!w || w.body.idle_park_after !== "off") fail("turning it off did not post \"off\": " + JSON.stringify(mock.idleParkWrites));
     if (w && w.room !== "alpha") fail("the off write did not name the room: " + JSON.stringify(w.room));
@@ -9252,6 +9255,7 @@ async function idleParkSection(browser, base) {
 
     await edit(null, true);
     await until(() => mock.idleParkWrites.length >= 3, 5000, "the on write").catch(() => {});
+    await ip.waitForFunction(() => /parked after 120 minutes/.test(document.body.textContent), null, { timeout: slow(5000) }).catch(() => {});
     const before = mock.idleParkWrites.length;
     // The board shows three toasts and queues the rest, so clear the saved ones before looking for the refusal.
     await ip.evaluate(() => { document.getElementById("toasts").innerHTML = ""; });
