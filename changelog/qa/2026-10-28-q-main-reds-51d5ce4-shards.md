@@ -1,0 +1,1 @@
+Four board units that failed in the CI shards and passed alone now wait on the state they read: parent opens its dialog in the same tick that seeds the cards, growlPhone waits for the undismiss response, mGroupMenus waits for the filing PATCH before the reload, and toastsTop waits for the third toast's entrance before counting animation starts (q-main-reds-51d5ce4).
