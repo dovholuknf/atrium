@@ -11,6 +11,7 @@ package testguard
 
 import (
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,7 @@ func Scrub() string {
 			_ = os.Unsetenv(kv[:i])
 		}
 	}
+	keepGoCaches()
 	dir, err := os.MkdirTemp("", "atrium-testguard-")
 	if err != nil {
 		return ""
@@ -41,6 +43,21 @@ func Scrub() string {
 	Git(dir)
 	_ = os.Setenv(marker, "1")
 	return dir
+}
+
+// keepGoCaches pins the module and build caches, which default to paths under HOME, before Git and Home move HOME, so
+// a go build a test runs reuses them and does not download every module again.
+func keepGoCaches() {
+	for _, k := range []string{"GOMODCACHE", "GOCACHE"} {
+		if os.Getenv(k) != "" {
+			continue
+		}
+		if out, err := exec.Command("go", "env", k).Output(); err == nil {
+			if v := strings.TrimSpace(string(out)); v != "" {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
 }
 
 // marker says this process's environment was scrubbed already.
