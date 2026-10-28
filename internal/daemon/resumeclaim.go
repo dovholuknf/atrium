@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/dovholuknf/atrium/internal/base/cardproc"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -122,7 +121,7 @@ func (d *Daemon) ownsSession(t *store.Task, pid int) bool {
 			run.announced.CompareAndSwap(0, int64(pid))
 			return true
 		}
-		if nestedUnder(run.pid, pid) {
+		if d.nestedUnder(run.pid, pid) {
 			return false
 		}
 		if run.announced.CompareAndSwap(0, int64(pid)) {
@@ -136,17 +135,14 @@ func (d *Daemon) ownsSession(t *store.Task, pid int) bool {
 // runnerNames are the executables a session hook takes for its runner, as internal/cli/ancestry.go names them.
 var runnerNames = map[string]bool{"claude": true, "node": true, "opencode": true}
 
-// procAncestors is cardproc.Ancestors, a seam for tests.
-var procAncestors = cardproc.Ancestors
-
 // nestedUnder is whether pid descends from root with a runner at root or between them, which makes it a session
 // started inside the card's own runner. A pid not under root, or a tree that cannot be read, is not judged nested.
-func nestedUnder(root, pid int) bool {
+func (d *Daemon) nestedUnder(root, pid int) bool {
 	if root <= 0 {
 		return false
 	}
 	runner := false
-	for _, p := range procAncestors(pid, 16) {
+	for _, p := range d.hk.procAncestors(pid, 16) {
 		runner = runner || runnerNames[p.Name]
 		if p.PID == root {
 			return runner

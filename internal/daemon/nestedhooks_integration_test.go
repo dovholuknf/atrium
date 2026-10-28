@@ -145,14 +145,12 @@ func TestANestedSessionBeforeTheRunnersOwnHookCannotEndTheCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.sup.runners[task.ID] = &runner{taskID: task.ID, pid: 100}
-	was := procAncestors
-	procAncestors = func(pid, _ int) []cardproc.Proc {
+	d.hk.procAncestors = func(pid, _ int) []cardproc.Proc {
 		if pid == 200 {
 			return []cardproc.Proc{{PID: 150, Name: "bash"}, {PID: 100, Name: "claude"}, {PID: 50, Name: "atrium-pty"}}
 		}
 		return nil
 	}
-	defer func() { procAncestors = was }()
 	before, _ := d.st.Get(task.ID)
 
 	for _, ev := range []string{"start", "end"} {
@@ -180,11 +178,9 @@ func TestAShimsRunnerStillAnnouncesItself(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.sup.runners[task.ID] = &runner{taskID: task.ID, pid: 100}
-	was := procAncestors
-	procAncestors = func(int, int) []cardproc.Proc {
+	d.hk.procAncestors = func(int, int) []cardproc.Proc {
 		return []cardproc.Proc{{PID: 100, Name: "cmd"}, {PID: 50, Name: "atrium-pty"}}
 	}
-	defer func() { procAncestors = was }()
 	if !d.ownsSession(task, 300) {
 		t.Fatal("the runner a shim started was taken for a nested session")
 	}

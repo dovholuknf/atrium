@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/cardproc"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -70,6 +71,7 @@ type hooks struct {
 	// setPriorityClass raises a process. Windows only, see priority_windows.go.
 	setPriorityClass func(h uintptr, class uint32) error
 	pidAlive         func(pid int) bool
+	procAncestors    func(pid, max int) []cardproc.Proc
 	taskExitWait     time.Duration
 
 	// Finish, health, relay, orphans and the rest.
@@ -133,6 +135,7 @@ func defaultHooks() hooks {
 		opencodeLookPath:      opencodeLookPath,
 		updateRegistry:        updateRegistry,
 		pidAlive:              pidAlive,
+		procAncestors:         cardproc.Ancestors,
 		taskExitWait:          taskExitWait,
 		commitExists:          commitExists,
 		commitInDir:           commitInDir,
