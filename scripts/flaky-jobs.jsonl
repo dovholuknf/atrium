@@ -200,3 +200,4 @@
 {"run":"40098592776","date":"2026-10-24T13:32:42Z","sha":"7b160b845","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"40100596267","date":"2026-10-24T14:00:46Z","sha":"24e95ef0d","job":0,"name":"(no failed job)","tests":[],"retried":[]}
 {"run":"40193874441","date":"2026-10-25T12:36:45Z","sha":"b085d37b4","job":0,"name":"(no failed job)","tests":[],"retried":[]}
+{"run":"40693981369","date":"2026-10-28T13:10:11Z","sha":"bfc2db4fd","job":0,"name":"check (macos-latest, go-checks-visual)","tests":["mGrowlQuestion"],"retried":[],"errors":{"mGrowlQuestion":"expanding lost the text."}}
