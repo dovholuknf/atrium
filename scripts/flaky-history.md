@@ -190,3 +190,4 @@ Every move of `scripts/flaky-suite.json`, appended by `node scripts/flaky-sync.j
 | 2026-10-28 | 40695088450 | resumeSpinner | ADD | yes | 0 |
 | 2026-10-28 | 40701167091 | TestAFetchThatKeepsMakingProgressIsNotCut | ADD | no | 0 |
 | 2026-10-28 | 40705697185 | TestAStartWritesItsRunRowBeforeTheLaunchIsComplete | ADD | no | 0 |
+| 2026-10-28 | 40711067521 | TestEveryInstalledHookFailsOpenFastAndSaysWhy | ADD | no | 0 |
