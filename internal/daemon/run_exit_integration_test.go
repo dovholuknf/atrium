@@ -183,9 +183,9 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 	if got, _ := d.st.Run(r.runID); got == nil || got.Filed {
 		t.Fatalf("the runner's run was marked filed by the shell: %+v", got)
 	}
-
 	// The runner's own exit files against the runner's run.
-	_ = r.tm().Kill()
+	// Not Kill: its taskkill takes seconds on a loaded Windows runner, and the runner here has no children.
+	_ = r.cmd.Process.Kill()
 	testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool { return len(filedExits(t, d, task.ID)) != 0 })
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("%d exit events after the runner ended, want 1", n)
