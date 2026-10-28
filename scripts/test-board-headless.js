@@ -13740,11 +13740,14 @@ async function mGroupMenusSection(browser) {
     await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).tap();
     await p.locator("#m-rmenu .rmenu-name-in").fill(" Zeta ");
     if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-phone-create.png") });
+    // A reload while the PATCH is in flight rejects it, and the page then takes the group back.
+    await p.evaluate(() => { const real = window.fetch; window.fetch = function (u, o) { const r = real.apply(this, arguments); if (o && o.method === "PATCH") r.then(() => { window.__patched = true; }, () => {}); return r; }; });
     await p.keyboard.press("Enter");
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
       .catch(() => fail(tag + "the group was not made"));
     await until(() => st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x)), 5000, "the PATCH filing gm-1 into zeta").catch(() => {});
     if (!st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x))) fail(tag + "the card was not filed into zeta: " + JSON.stringify(st.patches));
+    await p.waitForFunction(() => window.__patched, null, { timeout: slow(5000) });
     const made = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).made.zeta);
     if (!(Date.now() - made < 60000)) fail(tag + "no creation time on zeta");
     // After a reload the group is still there, and the sheet lists it as new, after the clock moves on it is not.
