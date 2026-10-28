@@ -1,0 +1,1 @@
+The windows cardproc gate no longer misses a process whose working directory is spelled differently from the card dir, as with the 8.3 RUNNER~1 temp path on a CI runner or a junction (q-main-reds-51d5ce4-cardproc).

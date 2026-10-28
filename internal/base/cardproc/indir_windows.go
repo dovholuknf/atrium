@@ -19,9 +19,7 @@ func InDir(dir string) map[int]string {
 	if strings.TrimSpace(dir) == "" {
 		return out
 	}
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
-	}
+	dir = resolved(dir)
 	dir = strings.ToLower(filepath.Clean(dir))
 	self, _ := os.Executable()
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
@@ -40,7 +38,7 @@ func InDir(dir string) map[int]string {
 		if sameExe(image, self) || strings.HasPrefix(strings.ToLower(filepath.Base(image)), "atrium") {
 			continue
 		}
-		if !under(image, dir) && !under(cwd, dir) && !strings.Contains(strings.ToLower(cmdline), dir) {
+		if !under(image, dir) && !under(cwd, dir) && !under(resolved(image), dir) && !under(resolved(cwd), dir) && !strings.Contains(strings.ToLower(cmdline), dir) {
 			continue
 		}
 		if st, err := StartTime(pid); err == nil {
@@ -48,6 +46,29 @@ func InDir(dir string) map[int]string {
 		}
 	}
 	return out
+}
+
+// resolved is p with symlinks, junctions and 8.3 short names expanded, the way InDir spells dir.
+func resolved(p string) string {
+	if p == "" {
+		return ""
+	}
+	u, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return p
+	}
+	// backup semantics lets CreateFile open a directory
+	h, err := windows.CreateFile(u, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		return p
+	}
+	defer windows.CloseHandle(h)
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)
+	if err != nil || n == 0 || n > uint32(len(buf)) {
+		return p
+	}
+	return strings.TrimPrefix(windows.UTF16ToString(buf[:n]), `\\?\`)
 }
 
 func under(p, dir string) bool {

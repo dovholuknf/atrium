@@ -3,15 +3,33 @@
 package cardproc
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestStopInDirEndsAProcessThatLeftItsParentInsideTheDir(t *testing.T) {
+	stopInDirEnds(t, t.TempDir(), "")
+}
+
+func TestStopInDirFindsAProcessWhoseCwdIsSpelledThroughAJunction(t *testing.T) {
 	dir := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, dir).CombinedOutput(); err != nil {
+		t.Skipf("no junction: %v %s", err, out)
+	}
+	t.Cleanup(func() { _ = os.Remove(link) })
+	stopInDirEnds(t, dir, link)
+}
+
+func stopInDirEnds(t *testing.T, dir, startIn string) {
+	if startIn == "" {
+		startIn = dir
+	}
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", "Start-Sleep 300")
-	cmd.Dir = dir
+	cmd.Dir = startIn
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
