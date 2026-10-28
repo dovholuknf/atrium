@@ -30168,7 +30168,8 @@ async function growlPhoneSection(browser, base) {
     last = h.posts[h.posts.length - 1];
     if (last.body.do !== "undismiss" || last.body.via !== "phone") fail("growlPhone: undo posted " + JSON.stringify(last));
     if (await p.$("#growl-phone .gp-undo")) fail("growlPhone: the undo line stayed after undo.");
-    if (!(await p.textContent("#growl-phone")).includes("question c")) fail("growlPhone: undo did not bring the growler back.");
+    await p.waitForFunction(() => document.getElementById("growl-phone").textContent.includes("question c"), null, { timeout: slow(5000) })
+      .catch(() => fail("growlPhone: undo did not bring the growler back."));
     // the undo line leaves by itself
     await p.tap('#growl-phone .gr-full[data-id="' + c.id + '"] button[data-do="dismiss"]');
     await p.waitForSelector("#growl-phone .gp-undo", { timeout: slow(3000) });
