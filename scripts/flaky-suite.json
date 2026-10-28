@@ -4,6 +4,7 @@
  "entries": [
   {"kind": "board", "name": "mGrowlQuestion", "reason": "failed in run 40693981369 job check (macos-latest, go-checks-visual): expanding lost the text."},
   {"kind": "board", "name": "resumeSpinner", "reason": "failed in run 40695088450 job check (macos-latest, go-checks-visual)"},
-  {"kind": "go", "package": "internal/gitsync", "name": "TestAFetchThatKeepsMakingProgressIsNotCut", "reason": "failed in run 40701167091 job check (windows-latest, go-test-1): pass_integration_test.go:400: 200, 430 bytes, <nil>"}
+  {"kind": "go", "package": "internal/gitsync", "name": "TestAFetchThatKeepsMakingProgressIsNotCut", "reason": "failed in run 40701167091 job check (windows-latest, go-test-1): pass_integration_test.go:400: 200, 430 bytes, <nil>"},
+  {"kind": "go", "package": "internal/daemon", "name": "TestAStartWritesItsRunRowBeforeTheLaunchIsComplete", "reason": "failed in run 40705697185 job check (windows-latest, go-test-1): daemon_integration_test.go:57: LEAK TestAStartWritesItsRunRowBeforeTheLaunchIsComplete: a runner was still running or filing its exit 10s after the test ended"}
  ]
 }
