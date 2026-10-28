@@ -29,3 +29,5 @@ js/terminal.js:o\.title = t # native option tooltip
 read.js:btn\.title = "Opens it # read page has no styled tooltips
 # An iframe title is its accessible name for screen readers, not a tooltip.
 read.html:id="pdf" # iframe title is for screen readers
+# A property of a plain data object (the toast log row's title), not an element's tooltip.
+js/toast-log.js:same\.title = title # data, not a tooltip
