@@ -147,7 +147,7 @@ if (relAt < 0 || !/popOuts\.delete\(m\.task\)/.test(html.slice(relAt, relAt + 70
 // Check coordinates against the rectangle: backdrop and padding can both
 // report the dialog as the event target. Guarded dialogs stay open to
 // preserve unsaved edits.
-const lightAt = html.indexOf("if (!inside) dlg.close();");
+const lightAt = html.indexOf("if (inside) return;");
 if (lightAt < 0) {
   fail("no dialog light-dismisses on a click outside it. The switcher is opened by reflex and " +
     "has to be leavable by reflex, and the rule is set for every dialog at once or it is set " +
