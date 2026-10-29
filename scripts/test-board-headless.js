@@ -5572,7 +5572,7 @@ async function markdownTabSection(browser, base) {
     if (r.hrefs.some(h => /javascript:/i.test(h || ""))) fail("a javascript: link survived: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fother.md")) fail("a relative .md link did not stay in the tab: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fdata%2Fa.txt")) fail("a relative file link did not go to the viewer: " + JSON.stringify(r.hrefs));
-    if (!r.hrefs.includes("https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.some(h => h === "https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
     if (JSON.stringify(r.imgs) !== JSON.stringify(["/v1/tasks/land-live/files/view?path=docs%2Fimg%2Fp.png"])) fail("images were " + JSON.stringify(r.imgs));
     if (tabReqs.some(u => /evil\.test/.test(u))) fail("a remote image was fetched");
     if (!/<script>window\.__pwn/.test(r.text)) fail("raw HTML was dropped rather than shown as text: " + r.text.slice(0, 200));
@@ -20037,7 +20037,7 @@ async function growlLinksSection(browser, base) {
         return { links: b.querySelectorAll("a").length, strong: b.querySelectorAll("strong, b, em").length, text: b.textContent };
       }, root);
       if (f.links || f.strong) fail(tag + "the body drew markup: " + JSON.stringify(f));
-      if (!f.text.includes("https://example.com/y") || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
+      if (!/https:\/\/example\.com\/y/.test(f.text) || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
       if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
     } finally { await h.close(); }
   }
@@ -23764,7 +23764,7 @@ async function mViewerSection(browser) {
       if (!st.ifRanges.length) fail(tag + "the range was not tied to the file with If-Range");
       await back();
       // a server that ignores Range answers the whole file, and the read stops at the cap
-      st.streamed = {};
+      st.streamed = Object.create(null);
       await p.evaluate(s => document.querySelector(s).click(), file("ignores.log"));
       await settle();
       v = await viewer();
@@ -28602,7 +28602,7 @@ function mServer(state) {
         // The whole file, written as the client takes it, so how much was read can be told.
         res.writeHead(200, head);
         let at = 0;
-        const rec = (state.streamed = state.streamed || {});
+        const rec = (state.streamed = state.streamed || Object.create(null));
         rec[want] = { sent: 0, aborted: false };
         res.on("close", () => { if (at < body.length) rec[want].aborted = true; });
         // One chunk a millisecond, not as fast as loopback takes it: a loaded runner can read a whole 25 MB image before
