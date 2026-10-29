@@ -117,6 +117,15 @@ let swLoaded = false;
 
 function switcherDlg() { return document.getElementById("switcher"); }
 
+// The field on show: the query, or the worktree name on the name step.
+function swField() { return document.getElementById(repoNaming ? "sw-nm" : "sw-q"); }
+
+// Whether closing would lose something typed. A name step still on its default has lost nothing.
+function swDirty() {
+  const v = swField().value.trim();
+  return repoNaming ? v !== repoWorkBranch().slice("claude/".length) : v !== "";
+}
+
 function toggleSwitcher() {
   const dlg = switcherDlg();
   if (!dlg) return;

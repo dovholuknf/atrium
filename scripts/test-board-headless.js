@@ -20973,8 +20973,15 @@ async function pasteRepoNameSection(browser, base) {
       fail("pasteRepoName: the preview did not follow the typing: " + hint);
 
     await p.mouse.click(5, 5);
+    if (process.env.DISMISSSHOTS) {
+      fs.mkdirSync(process.env.DISMISSSHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.DISMISSSHOTS, "dirty-click-outside-" + (process.env.DISMISSTAG || "after") + ".png") });
+    }
+    await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("pasteRepoName: a click on the backdrop with a typed name did not ask"));
+    await p.click("#ask-actions button:first-child");
     const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-nm").value }));
-    if (!kept.open || kept.value !== "fix/thing") fail("pasteRepoName: a click on the backdrop dismissed the dialog: " + JSON.stringify(kept));
+    if (!kept.open || kept.value !== "fix/thing") fail("pasteRepoName: no did not keep the dialog and the name: " + JSON.stringify(kept));
 
     await p.keyboard.press("Escape");
     const back = await p.evaluate(() => ({ open: document.getElementById("switcher").open,
@@ -22317,7 +22324,7 @@ async function switcherRankSection(browser, base) {
   if (!bad) console.log("switcherRank ok");
 }
 
-// THE SWITCHER CLOSES ON ESCAPE, EVEN WITH THE FIELD FOCUSED, AND ON A CLICK OUTSIDE ITS FORM. A click inside leaves it open.
+// THE SWITCHER CLOSES ON ESCAPE, EVEN WITH THE FIELD FOCUSED, AND ON A CLICK OUTSIDE ITS FORM. A click inside leaves it open, and outside a typed query it asks first.
 async function switcherDismissSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   try {
@@ -22342,7 +22349,21 @@ async function switcherDismissSection(browser, base) {
     if (!(await isOpen())) fail("switcherDismiss: a click inside the form closed the switcher");
     await p.mouse.click(4, 4);
     await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
-      .catch(() => fail("switcherDismiss: a click outside the form did not close the switcher"));
+      .catch(() => fail("switcherDismiss: a click outside a clean form did not close the switcher"));
+    await open();
+    await p.keyboard.type("zz");
+    await p.mouse.click(4, 4);
+    await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: a click outside a typed query did not ask"));
+    if (!(await isOpen())) fail("switcherDismiss: a click outside a typed query closed the switcher before the answer");
+    await p.click("#ask-actions button:first-child");
+    const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-q").value }));
+    if (!kept.open || kept.value !== "zz") fail("switcherDismiss: no did not keep the query: " + JSON.stringify(kept));
+    await p.mouse.click(4, 4);
+    await p.waitForSelector("#ask-actions button.go", { state: "visible", timeout: slow(5000) });
+    await p.click("#ask-actions button.go");
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: yes did not close the switcher"));
     if (errors.length) fail("switcherDismiss: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("switcherDismiss ok");
