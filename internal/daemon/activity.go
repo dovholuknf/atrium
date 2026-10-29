@@ -897,13 +897,13 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// A submit emptied the runner's prompt, so a model that still holds text
 		// was wrong, a swallowed Enter in a stuck paste above all. See resetLine.
 		if run := d.sup.get(taskID); run != nil {
-			if run.resetLine() {
+			if run.ResetLine() {
 				log.Printf("[atrium] %s: prompt hook, typing model reset", taskID)
 			}
 		}
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
-		if run := d.sup.get(taskID); run == nil || !run.promptWasOwn(time.Now()) {
+		if run := d.sup.get(taskID); run == nil || !run.PromptWasOwn(time.Now()) {
 			d.ka.coldRearm(taskID)
 		}
 		d.usage.prompted(taskID, cause)
@@ -937,7 +937,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityIdle, "")
 		// A turn that ran means its prompt was sent. See resetLineAtStop.
 		if in.Event == "idle" {
-			if run := d.sup.get(taskID); run != nil && run.resetLineAtStop() {
+			if run := d.sup.get(taskID); run != nil && run.ResetLineAtStop() {
 				log.Printf("[atrium] %s: stop hook, typing model reset", taskID)
 			}
 		}

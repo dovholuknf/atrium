@@ -55,7 +55,7 @@ func (d *Daemon) runnerLive(t *store.Task) bool {
 		return false
 	}
 	select {
-	case <-run.done:
+	case <-run.Done():
 		return false
 	default:
 	}

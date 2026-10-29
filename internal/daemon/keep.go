@@ -82,13 +82,13 @@ func (d *Daemon) injectKept(taskID string) {
 
 // keptRunnerReady reports whether the runner now on a card can take input: its SessionStart hook has fired and settled,
 // or a runner with no hooks has been up a minute. The after-restart wake asks the same question.
-func (d *Daemon) keptRunnerReady(taskID string, run *runner, now time.Time) bool {
+func (d *Daemon) keptRunnerReady(taskID string, run Runner, now time.Time) bool {
 	if d.wake != nil {
-		if at, ok := d.wake.sessionStarted(taskID); ok && !at.Before(run.started) {
+		if at, ok := d.wake.sessionStarted(taskID); ok && !at.Before(run.Started()) {
 			return now.Sub(at) >= d.hk.keptSettle
 		}
 	}
-	return now.Sub(run.started) >= wakeNoHook
+	return now.Sub(run.Started()) >= wakeNoHook
 }
 
 // deliverKept waits for the card's runner, then types every pending message as one turn.

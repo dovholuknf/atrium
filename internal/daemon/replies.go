@@ -164,7 +164,7 @@ func (d *Daemon) screenReply(taskID string) []Reply {
 	if run == nil {
 		return []Reply{}
 	}
-	backlog, cuts, rows, _ := run.buf.ReplayCuts()
+	backlog, cuts, rows, _ := run.ReplayCuts()
 	text := strings.TrimSpace(string(screen.StripSGR(screen.ReplayCut(backlog, "screen", cuts, rows))))
 	if text == "" {
 		return []Reply{}

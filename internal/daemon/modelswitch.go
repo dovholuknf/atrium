@@ -212,7 +212,7 @@ func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
 	}
 	// No paste markers: it is one short line, and a slash command is read as one
 	// from keystrokes without depending on how the runner treats a paste.
-	return run.injectPeer("", "/model "+model)
+	return run.InjectPeer("", "/model "+model)
 }
 
 // modelLock is the card's switch lock. The handler holds it across replacing a wait,
@@ -266,7 +266,7 @@ func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
 			gone := run == nil
 			if !gone {
 				select {
-				case <-run.done:
+				case <-run.Done():
 					gone = true
 				default:
 				}

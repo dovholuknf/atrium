@@ -299,14 +299,14 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 // THE RUNNER MUST HAVE STARTED AFTER THE WAKE WAS QUEUED. The wake is queued
 // while the old runner is still alive, and typing into it would be the forced
 // turn this is not.
-func (d *Daemon) wakeRunnerReady(w *store.RestartWake, run *runner, now time.Time) bool {
+func (d *Daemon) wakeRunnerReady(w *store.RestartWake, run Runner, now time.Time) bool {
 	// A runner picked up from the pty host after a restart is the runner the wake was queued for, since the restart
 	// did not end it. It counts from when this daemon took it over.
-	started := run.started
-	if !run.reattachedAt.IsZero() {
-		started = run.reattachedAt
+	started := run.Started()
+	if !run.ReattachedAt().IsZero() {
+		started = run.ReattachedAt()
 	}
-	if !started.After(w.QueuedAt) && run.reattachedAt.IsZero() {
+	if !started.After(w.QueuedAt) && run.ReattachedAt().IsZero() {
 		return false
 	}
 	if at, ok := d.wake.sessionStarted(w.TaskID); ok && !at.Before(started) {

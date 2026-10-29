@@ -364,7 +364,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	d.act.setBackgroundWork(task.ID, in.BackgroundRunning)
 	// A runner picked up from the pty host has now said what it is running, so idle parking may judge it.
 	if run := d.sup.get(task.ID); run != nil {
-		run.reattached.Store(false)
+		run.ClearReattached()
 	}
 	// What the turn spent, read off its transcript once it settles. Every Stop
 	// ends a row, the one a message is about to continue included. See usage.go.
@@ -970,7 +970,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 // ONE GATE FOR EVERY AUTOMATED WRITE. A peer's text carries its banner. The
 // operator's channel, a note and an action carry none, so a slash command still
 // reaches the runner as one.
-func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, error) {
+func (d *Daemon) typeThroughGate(run Runner, taskID, from, text string) (bool, error) {
 	banner := ""
 	if from != "" {
 		banner = peerBanner(from)
@@ -985,19 +985,19 @@ func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, 
 
 // typeLabelledThroughGate is typeThroughGate with the label given whole, for
 // text that is not a peer's but is not the operator's either. See atriumLabel.
-func (d *Daemon) typeLabelledThroughGate(run *runner, taskID, banner, text string) (bool, error) {
+func (d *Daemon) typeLabelledThroughGate(run Runner, taskID, banner, text string) (bool, error) {
 	return d.typeLabelledGuarded(run, taskID, banner, text, nil)
 }
 
 // typeLabelledGuarded is typeLabelledThroughGate with one more check, run under
 // the input lock at the moment of writing. See `runner.injectPeerIf`.
-func (d *Daemon) typeLabelledGuarded(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
+func (d *Daemon) typeLabelledGuarded(run Runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	return d.typeLabelledGuardedAs(run, taskID, banner, text, ok, bannerKind(banner))
 }
 
 // typeLabelledGuardedAs is typeLabelledGuarded that records the delivery under kind when it wrote, and records
 // nothing for an empty one. See turncost.go.
-func (d *Daemon) typeLabelledGuardedAs(run *runner, taskID, banner, text string, ok func() bool, kind string) (bool, error) {
+func (d *Daemon) typeLabelledGuardedAs(run Runner, taskID, banner, text string, ok func() bool, kind string) (bool, error) {
 	wrote, err := d.typePayload(run, taskID, banner, text, ok)
 	if wrote && err == nil && kind != "" && kind != store.DeliveryOperator {
 		d.noteDelivery(taskID, "atrium", kind)
@@ -1005,12 +1005,12 @@ func (d *Daemon) typeLabelledGuardedAs(run *runner, taskID, banner, text string,
 	return wrote, err
 }
 
-func (d *Daemon) typePayload(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
+func (d *Daemon) typePayload(run Runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
 		payload = screen.BracketedPaste(text)
 	}
-	return run.injectPeerIf(banner, payload, ok)
+	return run.InjectPeerIf(banner, payload, ok)
 }
 
 func writeJSONErr(w http.ResponseWriter, code int, err error) {

@@ -188,7 +188,7 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 	start := time.Now()
 	var cards []*store.Task
 	for _, r := range d.sup.all() {
-		t, err := d.st.Get(r.taskID)
+		t, err := d.st.Get(r.TaskID())
 		if err != nil || t == nil {
 			continue
 		}

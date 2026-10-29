@@ -660,7 +660,7 @@ func usageOfRefresh(r *store.KeepaliveRefresh) *store.SessionUsage {
 // atrium just typed, or the operator.
 func (d *Daemon) promptCause(taskID string) string {
 	if run := d.sup.get(taskID); run != nil {
-		if c := run.peerPromptCause(time.Now()); c != "" {
+		if c := run.PeerPromptCause(time.Now()); c != "" {
 			return c
 		}
 	}

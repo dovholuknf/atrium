@@ -698,7 +698,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	// and never blocks the operator's keystrokes. A closed gate writes nothing,
 	// and the caller defers the message onto the backoff. See injectPeer and
 	// pendingInjector.
-	wrote, err := run.injectPeer(banner, body)
+	wrote, err := run.InjectPeer(banner, body)
 	if err != nil || !wrote {
 		return false, ""
 	}

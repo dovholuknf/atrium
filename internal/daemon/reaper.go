@@ -73,7 +73,7 @@ const QuietAfter = 15 * time.Minute
 // took away comes back onto the board.
 func (d *Daemon) reviveOwnedDead() error {
 	for _, r := range d.sup.all() {
-		t, err := d.st.Get(r.taskID)
+		t, err := d.st.Get(r.TaskID())
 		if err != nil {
 			// A card deleted out from under its runner is not this job's
 			// problem to report. Terminating it is.

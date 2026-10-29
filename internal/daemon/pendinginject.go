@@ -209,7 +209,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		// A keystroke on this terminal re-arms the backoff to the front, so an
 		// operator who is back gets an early retry. Cleared in drop.
 		reset := func() { pi.reset(taskID) }
-		run.onKey.Store(&reset)
+		run.SetOnKey(reset)
 		ht.timer = time.AfterFunc(pi.d.hk.backoffSteps[0], func() { pi.attempt(taskID) })
 		ht.stuck = time.AfterFunc(pi.d.hk.stuckAfter, func() { pi.flagStuck(taskID) })
 	}
@@ -239,7 +239,7 @@ func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	case pi.d.turnHoldsAged(taskID, m.waitTurn, m.at):
 		return HeldForTurn
 	}
-	if run := pi.d.sup.get(taskID); run != nil && !run.peerGateOpen() {
+	if run := pi.d.sup.get(taskID); run != nil && !run.PeerGateOpen() {
 		return HeldForLine
 	}
 	return ""
@@ -502,7 +502,7 @@ func (pi *pendingInjector) try(taskID string) {
 		if escalated {
 			body = pi.d.escalatedBody(taskID, e)
 		}
-		wrote, err := run.injectPeer(e.banner, body)
+		wrote, err := run.InjectPeer(e.banner, body)
 		if err != nil {
 			log.Printf("[atrium] retrying a held message into %s failed: %v", taskID, err)
 			break
@@ -606,7 +606,7 @@ func (pi *pendingInjector) drop(taskID string) {
 	pi.d.act.clearHeld(taskID)
 	pi.mu.Unlock()
 	if run := pi.d.sup.get(taskID); run != nil {
-		run.onKey.Store(nil)
+		run.SetOnKey(nil)
 	}
 	pi.d.publishTask(taskID)
 }

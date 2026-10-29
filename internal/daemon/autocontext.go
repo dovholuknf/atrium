@@ -66,7 +66,7 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	if limit <= 0 || tokens < limit {
 		return
 	}
-	if run := d.sup.get(t.ID); run != nil && !run.peerGateOpen() {
+	if run := d.sup.get(t.ID); run != nil && !run.PeerGateOpen() {
 		return
 	}
 	d.startCycle(t, tokens, limit)

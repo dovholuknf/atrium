@@ -234,9 +234,9 @@ func (d *Daemon) holdableCards() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range d.sup.all() {
-		if !seen[r.taskID] {
-			seen[r.taskID] = true
-			out = append(out, r.taskID)
+		if !seen[r.TaskID()] {
+			seen[r.TaskID()] = true
+			out = append(out, r.TaskID())
 		}
 	}
 	if open, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission); err == nil {

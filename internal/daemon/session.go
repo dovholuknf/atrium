@@ -484,7 +484,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// stays down across a restart like an asked exit. A wind-down ends every
 		// session the same way, so only an ending outside one counts.
 		if run := d.sup.get(task.ID); in.Reason == "prompt_input_exit" && !d.windingDown.Load() &&
-			run != nil && !run.leaving.Load() {
+			run != nil && !run.Leaving() {
 			if err := d.st.SetExitAsked(task.ID); err != nil {
 				return err
 			}

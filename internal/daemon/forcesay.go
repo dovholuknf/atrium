@@ -67,7 +67,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	}
 	delivered := 0
 	for _, e := range entries {
-		wrote, err := run.injectForced(e.banner, e.body, nil)
+		wrote, err := run.InjectForced(e.banner, e.body, nil)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return
@@ -112,11 +112,11 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 			writeJSONCode(w, http.StatusForbidden, errBody("force refused: only the operator or the launcher of that session may force a say"))
 			return true
 		}
-		if why := run.forceRefusal(); why != "" {
+		if why := run.ForceRefusal(); why != "" {
 			writeJSONCode(w, http.StatusConflict, errBody("force refused: "+why+". force only types past a line atrium cannot read"))
 			return true
 		}
-		banner, ok = peerBanner(from), run.peerForceOK
+		banner, ok = peerBanner(from), run.PeerForceOK
 	}
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
@@ -124,7 +124,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	}
 	// Read before the write: whether it lands in a queued box depends on the state the line is typed into.
 	inBox := d.typedWouldQueue(taskID)
-	wrote, err := run.injectForced(banner, payload, ok)
+	wrote, err := run.InjectForced(banner, payload, ok)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return true

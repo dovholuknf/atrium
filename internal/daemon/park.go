@@ -239,7 +239,7 @@ func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.T
 			continue
 		}
 		if run := d.sup.get(t.ID); run != nil {
-			_ = run.writeOperatorInput([]byte(in.D))
+			_ = run.WriteOperatorInput([]byte(in.D))
 		}
 		c.Close(websocket.StatusNormalClosure, "restarting")
 		return
