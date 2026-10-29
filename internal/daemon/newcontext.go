@@ -1446,3 +1446,20 @@ func ncJSON(w http.ResponseWriter, code int, v any) {
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// newContextHooks are the seams of the new-context and restart-wrap sequences.
+type newContextHooks struct {
+	ncTiming       ncTimings
+	wrapTiming     wrapTimings
+	wrapJoinMargin time.Duration
+	atriumBinary   func() string
+}
+
+func defaultNewContextHooks() newContextHooks {
+	return newContextHooks{
+		ncTiming:       defaultNCTiming(),
+		wrapTiming:     wrapTimings{poll: 250 * time.Millisecond},
+		wrapJoinMargin: wrapJoinMargin,
+		atriumBinary:   atriumBinary,
+	}
+}

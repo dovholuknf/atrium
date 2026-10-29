@@ -166,7 +166,7 @@ func TestADoneReportOwesOnlyWhenItCarriesAnAsk(t *testing.T) {
 		want int
 	}{"no ask": {"", 0}, "an ask": {"which table, from the launcher", 1}} {
 		d := testDaemon(t)
-		d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+		d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 		launcher, _ := launchedPair(t, d)
 		rec, _ := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research",
 			Recap: "written up", Ask: c.ask})
@@ -346,7 +346,7 @@ func TestAPermissionItemClosesWithoutAPushWhenApprovedInTime(t *testing.T) {
 
 func TestAReportThatReachesNobodyIsNotStampedAndTheOrchestratorHearsOfIt(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	worker := orphanWorker(t, d, "worker", store.HumanLauncher)
 	orch := orchCard(t, d, "chief")
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research",
@@ -389,7 +389,7 @@ func TestAnAnsweredQuestionBeforeTheWorkerStopsOwesNothing(t *testing.T) {
 
 func TestAReportWithNoAskWithdrawsAnEarlierQuestion(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	launcher, worker := launchedPair(t, d)
 	d.peerSaid(worker.WireName, launcher, askTable, KindNeeds)
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done anyway"})
@@ -455,7 +455,7 @@ func TestNoListingLineWhenNothingIsOwedOrWhenTheItemIsTheWorkersOwn(t *testing.T
 
 func TestAnOrchestratorsOwnWorkNeverReachesTheOrchestratorsRow(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	other := orchCard(t, d, "chief")
 	w := orphanWorker(t, d, "second-chief", "ghost")
 	if err := d.st.SetTags(w.ID, []string{OriginAgentTag, OrchestratorTag}); err != nil {
@@ -587,7 +587,7 @@ func TestANewQuestionAfterAClosedOneOpensANewItem(t *testing.T) {
 
 func TestAnOrphansDoneReportIsTheOnlyNoticeTheOrchestratorGets(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	w := orphanWorker(t, d, "worker", "ghost")
 	if got, _ := d.st.Get(w.ID); !got.OwesReport() {
 		t.Fatal("the fixture does not owe a report, so it proves nothing")
@@ -665,7 +665,7 @@ func TestAnOrphanWithNoOrchestratorHoldsNothingOnItsOwnCard(t *testing.T) {
 
 func TestACardTheOperatorLaunchedStillStampsItsReport(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	w := peerCard(t, d, "worker")
 	if err := d.st.SetLineage(w.ID, store.HumanLauncher, ""); err != nil {
 		t.Fatal(err)
@@ -801,7 +801,7 @@ func TestADifferentReasonFromBeforeTheCloseDoesNotReopen(t *testing.T) {
 // An orphan's report was its one notice. Re-tasked, and ending silent again, it owes again.
 func TestAnOrphanThatIsRetaskedAfterItsReportOwesAgain(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	w := orphanWorker(t, d, "worker", "ghost")
 	orch := orchCard(t, d, "chief")
 	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "research", Recap: "done"})

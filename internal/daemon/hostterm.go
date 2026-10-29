@@ -634,3 +634,12 @@ func (d *Daemon) fileGone(cl *ptyhost.Client, row *store.PtyRun, info ptyhost.Pt
 		log.Printf("[atrium] collect run %s: %v", row.RunID, err)
 	}
 }
+
+// hostHooks are the seams of the pty host at startup. See waitForHost.
+type hostHooks struct {
+	hostStartWait, hostStartPoll time.Duration
+}
+
+func defaultHostHooks() hostHooks {
+	return hostHooks{hostStartWait: hostStartWait, hostStartPoll: hostStartPoll}
+}

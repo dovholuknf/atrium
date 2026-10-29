@@ -322,3 +322,12 @@ func (d *Daemon) giveUpOnModel(taskID string, mw *modelWait) {
 	}
 	d.publishTask(taskID)
 }
+
+// modelHooks are the seams of model switches.
+type modelHooks struct {
+	modelRetryEvery, modelWaitMax time.Duration
+}
+
+func defaultModelHooks() modelHooks {
+	return modelHooks{modelRetryEvery: modelRetryEvery, modelWaitMax: modelWaitMax}
+}

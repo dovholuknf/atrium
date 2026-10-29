@@ -714,3 +714,29 @@ var readUserSettings = func() []byte {
 	b, _ := os.ReadFile(p)
 	return b
 }
+
+// leanHooks are the seams of lean cards.
+type leanHooks struct {
+	readUserSettings func() []byte
+	userAgentsDir    func() string
+	userSkillsDir    func() string
+	// leanPluginRoot is where the plugin directories are written: in atrium's own state, set from the database's
+	// directory when a daemon starts. Never a worktree, which has to stay clean for the cull.
+	leanPluginRoot        string
+	leanAgentsHookCommand func(agents []string) string
+	noPollHookCommand     func() string
+	nowHookCommand        func() string
+	stopHookCommand       func() string
+}
+
+func defaultLeanHooks() leanHooks {
+	return leanHooks{
+		readUserSettings:      readUserSettings,
+		userAgentsDir:         userAgentsDir,
+		userSkillsDir:         userSkillsDir,
+		leanAgentsHookCommand: leanAgentsHookCommand,
+		noPollHookCommand:     noPollHookCommand,
+		nowHookCommand:        nowHookCommand,
+		stopHookCommand:       stopHookCommand,
+	}
+}

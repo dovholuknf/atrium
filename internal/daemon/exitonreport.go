@@ -30,7 +30,7 @@ import (
 var exitOnReportDelay = 5 * time.Second
 
 // stopAfterReport is the exit itself. A variable so a test can watch it without owning a terminal.
-var stopAfterReport = func(d *Daemon, taskID string) error { return d.StopRunnerBy(taskID, "atrium after its report") }
+var stopAfterReport = func(d runnerStopper, taskID string) error { return d.StopRunnerBy(taskID, "atrium after its report") }
 
 // exitsOnReport says whether this report ends the card's runner. A done report that carries an ask is a question
 // in a done report's clothes: the launcher's answer has to reach a running card, so it stays.
@@ -131,4 +131,19 @@ func (d *Daemon) exitAfterReport(taskID string) {
 	if err := d.hk.stopAfterReport(d, taskID); err != nil {
 		log.Printf("[atrium] could not exit %s after its done report: %v", taskID, err)
 	}
+}
+
+// exitHooks are the seams of the exit on report.
+type exitHooks struct {
+	exitOnReportDelay time.Duration
+	stopAfterReport   func(r runnerStopper, taskID string) error
+}
+
+// runnerStopper is the part of the daemon the exit asks the runner to go through.
+type runnerStopper interface {
+	StopRunnerBy(taskID, by string) error
+}
+
+func defaultExitHooks() exitHooks {
+	return exitHooks{exitOnReportDelay: exitOnReportDelay, stopAfterReport: stopAfterReport}
 }

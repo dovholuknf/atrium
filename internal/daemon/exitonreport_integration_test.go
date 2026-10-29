@@ -21,8 +21,8 @@ func watchExits(t *testing.T, d *Daemon, launcherID string, fail error) chan [2]
 	d.hk.exitOnReportDelay = 10 * time.Millisecond
 	got := make(chan [2]any, 4)
 	// The hook is this daemon's own, so a timer another test's report left running cannot reach this recorder.
-	d.hk.stopAfterReport = func(dd *Daemon, id string) error {
-		got <- [2]any{id, len(pendingFrom(t, dd, launcherID))}
+	d.hk.stopAfterReport = func(dd runnerStopper, id string) error {
+		got <- [2]any{id, len(pendingFrom(t, dd.(*Daemon), launcherID))}
 		return fail
 	}
 	return got
@@ -199,8 +199,8 @@ func TestAWorkWorkerIsExitedByDoneAndAWakeSayResumesIt(t *testing.T) {
 	}
 	exited := make(chan string, 1)
 	d.hk.exitOnReportDelay = 10 * time.Millisecond
-	d.hk.stopAfterReport = func(dd *Daemon, id string) error {
-		dd.sup.remove(id)
+	d.hk.stopAfterReport = func(dd runnerStopper, id string) error {
+		dd.(*Daemon).sup.remove(id)
 		exited <- id
 		return nil
 	}

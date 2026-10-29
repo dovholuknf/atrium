@@ -185,3 +185,13 @@ func (d *Daemon) wakeGone(taskID, via string) error {
 	d.publishTask(taskID)
 	return nil
 }
+
+// keptHooks are the seams of waking a kept card.
+type keptHooks struct {
+	keptTick, keptSettle, keptGiveUp time.Duration
+	settleWindow                     time.Duration
+}
+
+func defaultKeptHooks() keptHooks {
+	return keptHooks{keptTick: keptTick, keptSettle: keptSettle, keptGiveUp: keptGiveUp, settleWindow: settleWindow}
+}

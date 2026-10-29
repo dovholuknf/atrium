@@ -209,7 +209,7 @@ var commitInDir = func(dir, sha string) bool {
 
 // commitOnHub says whether the hub has a commit, asked as atrium_git_url asks: for every branch of the card's
 // repository, whose tips are listed with their shas. A variable so a test does not need a hub.
-var commitOnHub = func(d *Daemon, task *store.Task, sha string) bool {
+var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), gitsync.LookupRoomWait)
 	defer cancel()
 	// ANY BRANCH OF ANY REPOSITORY THE HUB HAS, whatever the worker's directory is. Naming the repository from the
@@ -637,3 +637,20 @@ func (d *Daemon) ownCard(id string) *store.Task {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// finishHooks are the seams of finishing a card.
+type finishHooks struct {
+	commitExists func(dir, sha string) bool
+	commitInDir  func(dir, sha string) bool
+	commitOnHub  func(h hubAsker, task *store.Task, sha string) bool
+}
+
+// hubAsker is the part of the daemon commitOnHub asks the hub through.
+type hubAsker interface {
+	hubTransport() (http.RoundTripper, error)
+	cloneRoots() []string
+}
+
+func defaultFinishHooks() finishHooks {
+	return finishHooks{commitExists: commitExists, commitInDir: commitInDir, commitOnHub: commitOnHub}
+}

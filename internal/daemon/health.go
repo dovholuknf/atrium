@@ -17,7 +17,7 @@ import (
 
 // healthHalted is where the halt is read. A variable so a test can say halted
 // without breaking a real database.
-var healthHalted = func(d *Daemon) (bool, error) { return d.st.Halted() }
+var healthHalted = func(d haltReader) (bool, error) { return d.Halted() }
 
 // settleWatchEvery is how often the settle watcher looks for the window closing.
 const settleWatchEvery = 500 * time.Millisecond
@@ -26,7 +26,7 @@ const settleWatchEvery = 500 * time.Millisecond
 // `/v1/health` answers, without the build id, which does not change while this
 // process runs.
 func (d *Daemon) healthBody() map[string]any {
-	halted, cause := d.hk.healthHalted(d)
+	halted, cause := d.hk.healthHalted(d.st)
 	body := map[string]any{"halted": halted, "settling": d.Settling()}
 	if halted {
 		body["cause"] = fmt.Sprint(cause)
@@ -60,4 +60,18 @@ func (d *Daemon) watchSettle(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// healthHooks are the seams of the health report.
+type healthHooks struct {
+	healthHalted func(h haltReader) (bool, error)
+}
+
+// haltReader is the part of the store healthHalted reads the halt from.
+type haltReader interface {
+	Halted() (bool, error)
+}
+
+func defaultHealthHooks() healthHooks {
+	return healthHooks{healthHalted: healthHalted}
 }

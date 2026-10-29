@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"io"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
@@ -15,43 +14,15 @@ import (
 // never this test's. Nothing here is a package variable a test assigns: scripts/check-test-globals.go fails
 // the build when one does.
 type hooks struct {
-	// Exit on report.
-	exitOnReportDelay time.Duration
-	stopAfterReport   func(d *Daemon, taskID string) error
-
-	// The new-context and restart-wrap sequences.
-	ncTiming       ncTimings
-	wrapTiming     wrapTimings
-	wrapJoinMargin time.Duration
-	atriumBinary   func() string
-
-	// Waking a kept card.
-	keptTick, keptSettle, keptGiveUp time.Duration
-	settleWindow                     time.Duration
-
-	// Model switches.
-	modelRetryEvery, modelWaitMax time.Duration
-
-	// Lean cards.
-	readUserSettings func() []byte
-	userAgentsDir    func() string
-	userSkillsDir    func() string
-	// leanPluginRoot is where the plugin directories are written: in atrium's own state, set from the database's
-	// directory when a daemon starts. Never a worktree, which has to stay clean for the cull.
-	leanPluginRoot        string
-	leanAgentsHookCommand func(agents []string) string
-	noPollHookCommand     func() string
-	nowHookCommand        func() string
-	stopHookCommand       func() string
-
-	// Preflight.
-	preflightLook     func(string) (string, error)
-	preflightRun      func(ctx context.Context, exe string, args []string, out io.Writer) error
-	preflightEachFor  time.Duration
-	preflightTotalFor time.Duration
-
-	// The pty host at startup. See waitForHost.
-	hostStartWait, hostStartPoll time.Duration
+	exitHooks
+	newContextHooks
+	keptHooks
+	modelHooks
+	leanHooks
+	preflightHooks
+	hostHooks
+	finishHooks
+	healthHooks
 
 	// Runners.
 	helpRunner        func(exe string) (string, error)
@@ -75,10 +46,6 @@ type hooks struct {
 	taskExitWait     time.Duration
 
 	// Finish, health, relay, orphans and the rest.
-	commitExists  func(dir, sha string) bool
-	commitInDir   func(dir, sha string) bool
-	commitOnHub   func(d *Daemon, task *store.Task, sha string) bool
-	healthHalted  func(d *Daemon) (bool, error)
 	backoffSteps  []time.Duration
 	stuckAfter    time.Duration
 	silentNudges  int
@@ -95,62 +62,42 @@ type hooks struct {
 // defaultHooks is what production runs with. The package level values it copies are never assigned.
 func defaultHooks() hooks {
 	hk := hooks{
-		exitOnReportDelay:     exitOnReportDelay,
-		stopAfterReport:       stopAfterReport,
-		ncTiming:              defaultNCTiming(),
-		wrapTiming:            wrapTimings{poll: 250 * time.Millisecond},
-		wrapJoinMargin:        wrapJoinMargin,
-		atriumBinary:          atriumBinary,
-		keptTick:              keptTick,
-		keptSettle:            keptSettle,
-		keptGiveUp:            keptGiveUp,
-		settleWindow:          settleWindow,
-		modelRetryEvery:       modelRetryEvery,
-		modelWaitMax:          modelWaitMax,
-		readUserSettings:      readUserSettings,
-		userAgentsDir:         userAgentsDir,
-		userSkillsDir:         userSkillsDir,
-		leanAgentsHookCommand: leanAgentsHookCommand,
-		noPollHookCommand:     noPollHookCommand,
-		nowHookCommand:        nowHookCommand,
-		stopHookCommand:       stopHookCommand,
-		preflightLook:         preflightLook,
-		preflightRun:          preflightRun,
-		preflightEachFor:      preflightEachFor,
-		preflightTotalFor:     preflightTotalFor,
-		hostStartWait:         hostStartWait,
-		hostStartPoll:         hostStartPoll,
-		helpRunner:            helpRunner,
-		runnerFound:           runnerFound,
-		agentSpawn:            agentSpawn,
-		agentFork:             agentFork,
-		windDownKeyGap:        windDownKeyGap,
-		idleLeave:             idleLeave,
-		idleGoneWait:          idleGoneWait,
-		shelveGrace:           shelveGrace,
-		restartAskGrace:       restartAskGrace,
-		opencodeTTL:           opencodeTTL,
-		opencodeWaitDelay:     opencodeWaitDelay,
-		opencodeExec:          opencodeExec,
-		opencodeLookPath:      opencodeLookPath,
-		updateRegistry:        updateRegistry,
-		pidAlive:              pidAlive,
-		procAncestors:         cardproc.Ancestors,
-		taskExitWait:          taskExitWait,
-		commitExists:          commitExists,
-		commitInDir:           commitInDir,
-		commitOnHub:           commitOnHub,
-		healthHalted:          healthHalted,
-		backoffSteps:          append([]time.Duration(nil), backoffSteps...),
-		stuckAfter:            heldStuckAfter,
-		silentNudges:          silentNudges,
-		OrphanGrace:           OrphanGrace,
-		RelayKeep:             RelayKeep,
-		listMax:               listMax,
-		repliesWindow:         repliesWindow,
-		repliesReach:          repliesReach,
-		repliesCap:            repliesCap,
-		repliesAllBudget:      repliesAllBudget,
+		exitHooks:         defaultExitHooks(),
+		newContextHooks:   defaultNewContextHooks(),
+		keptHooks:         defaultKeptHooks(),
+		modelHooks:        defaultModelHooks(),
+		leanHooks:         defaultLeanHooks(),
+		preflightHooks:    defaultPreflightHooks(),
+		hostHooks:         defaultHostHooks(),
+		finishHooks:       defaultFinishHooks(),
+		healthHooks:       defaultHealthHooks(),
+		helpRunner:        helpRunner,
+		runnerFound:       runnerFound,
+		agentSpawn:        agentSpawn,
+		agentFork:         agentFork,
+		windDownKeyGap:    windDownKeyGap,
+		idleLeave:         idleLeave,
+		idleGoneWait:      idleGoneWait,
+		shelveGrace:       shelveGrace,
+		restartAskGrace:   restartAskGrace,
+		opencodeTTL:       opencodeTTL,
+		opencodeWaitDelay: opencodeWaitDelay,
+		opencodeExec:      opencodeExec,
+		opencodeLookPath:  opencodeLookPath,
+		updateRegistry:    updateRegistry,
+		pidAlive:          pidAlive,
+		procAncestors:     cardproc.Ancestors,
+		taskExitWait:      taskExitWait,
+		backoffSteps:      append([]time.Duration(nil), backoffSteps...),
+		stuckAfter:        heldStuckAfter,
+		silentNudges:      silentNudges,
+		OrphanGrace:       OrphanGrace,
+		RelayKeep:         RelayKeep,
+		listMax:           listMax,
+		repliesWindow:     repliesWindow,
+		repliesReach:      repliesReach,
+		repliesCap:        repliesCap,
+		repliesAllBudget:  repliesAllBudget,
 	}
 	platformHooks(&hk)
 	return hk

@@ -85,7 +85,7 @@ func healthEvents(t *testing.T, d *Daemon, want int, trigger func(heard func(n i
 func TestAHaltIsPublishedAsHealth(t *testing.T) {
 	d := testDaemon(t)
 	cause := errors.New("disk full")
-	d.hk.healthHalted = func(*Daemon) (bool, error) { return true, cause }
+	d.hk.healthHalted = func(haltReader) (bool, error) { return true, cause }
 
 	evs := healthEvents(t, d, 1, func(func(int)) { d.onHalt(cause) })
 	if evs[0]["halted"] != true || evs[0]["cause"] != "disk full" {

@@ -226,3 +226,20 @@ func writeJSONBody(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// preflightHooks are the seams of preflight.
+type preflightHooks struct {
+	preflightLook     func(string) (string, error)
+	preflightRun      func(ctx context.Context, exe string, args []string, out io.Writer) error
+	preflightEachFor  time.Duration
+	preflightTotalFor time.Duration
+}
+
+func defaultPreflightHooks() preflightHooks {
+	return preflightHooks{
+		preflightLook:     preflightLook,
+		preflightRun:      preflightRun,
+		preflightEachFor:  preflightEachFor,
+		preflightTotalFor: preflightTotalFor,
+	}
+}
