@@ -2,6 +2,7 @@ package gitsync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -180,8 +181,9 @@ func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candi
 		return err
 	}
 	defer unlock()
-	if why := s.mirrorKeeps(dir, ClaudeMainRef); why != "" {
-		return refuse("%s", why)
+	mirror, adopted := s.adoptedMirror(dir)
+	if adopted && (mirror.Checkout == "" || mirror.Branch != IntegrationBranch) {
+		return refuse("%s", mirrorLandSentence(name, "the queue has no checkout of it that follows claude/main"))
 	}
 	ctx, cancel := context.WithTimeout(ctx, readBound)
 	defer cancel()
@@ -200,8 +202,42 @@ func (s *Store) MergeLand(ctx context.Context, name string, n int64, base, candi
 	} else if !ok {
 		return refuse("%s does not have claude/main under it", short(candidate))
 	}
+	if adopted {
+		return s.landInCheckout(ctx, dir, mirror, n, base, candidate)
+	}
 	_, err = s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d", n), ClaudeMainRef, candidate, base)
 	return err
+}
+
+// landInCheckout lands on an adopted mirror, whose pass force-fetches the checkout over claude/main: the checkout is
+// fast-forwarded to candidate with the pass's own followCheckout, from the hub's ref, which is put back at base when
+// the checkout cannot follow. A checkout that is not at base, as the mirror pass left it, is a claude/main that moved.
+func (s *Store) landInCheckout(ctx context.Context, dir string, r Repo, n int64, base, candidate string) error {
+	ck := slash(r.Checkout)
+	at, _ := s.h.runner().Git(ctx, ck, "-c", "safe.directory="+ck, "rev-parse", "--verify", "-q", "refs/heads/"+r.Branch+"^{commit}")
+	if at = strings.TrimSpace(at); at != base {
+		return conflict("the checkout %s has claude/main at %s and not %s while request %d was tested", r.Checkout, short(at), short(base), n)
+	}
+	if _, err := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d", n), ClaudeMainRef, candidate, base); err != nil {
+		return err
+	}
+	err := s.h.followCheckout(ctx, r, dir, candidate, base)
+	if err == nil {
+		return nil
+	}
+	if _, rerr := s.git(ctx, dir, "update-ref", "-m", fmt.Sprintf("merge queue %d undone", n), ClaudeMainRef, base, candidate); rerr != nil {
+		return rerr
+	}
+	var stuck *followStuck
+	if errors.As(err, &stuck) {
+		return refuse("%s", mirrorLandSentence(r.Name, "the checkout "+r.Checkout+" cannot be fast-forwarded: "+stuck.why))
+	}
+	return err
+}
+
+// mirrorLandSentence is the refusal of a land the queue cannot make on an adopted mirror, and who makes it.
+func mirrorLandSentence(name, why string) string {
+	return name + " is a mirror of a checkout on the hub machine and " + why + ", so the operator lands it there: merge the branch into claude/main in that checkout"
 }
 
 // MergeDrop removes request n's candidate ref. One that is not there is not an error.
@@ -273,6 +309,18 @@ func (s *Store) lockMerge(name, dir string) (func(), error) {
 		}
 		l.Unlock()
 	}, nil
+}
+
+// adoptedMirror is the git_repos entry of an adopted mirror, for what the queue lands in its checkout.
+func (s *Store) adoptedMirror(dir string) (Repo, bool) {
+	if markerKind(dir) != KindAdopted {
+		return Repo{}, false
+	}
+	r, _ := s.mirrorOf(dir)
+	if r.Checkout != "" && r.Branch == "" {
+		r.Branch = IntegrationBranch
+	}
+	return r, true
 }
 
 // mirrorKeeps is why the queue may not move ref: an adopted mirror's pass force-fetches over what it keeps in step.

@@ -359,6 +359,17 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 	return mirrored{sha: want, moved: true}, nil
 }
 
+// followStuck is why a checkout did not follow the hub's tip, and why a land that needed it was refused.
+type followStuck struct {
+	r         Repo
+	have, why string
+}
+
+func (e *followStuck) Error() string {
+	return fmt.Sprintf("the hub holds %s at %s, which the checkout %s has not followed, and %s. nothing is mirrored from it until it is in step",
+		e.r.Branch, short(e.have), e.r.Checkout, e.why)
+}
+
 // followCheckout brings the checkout's branch up to `have`, a tip the hub took by a push, and only by fast-forward. A
 // branch checked out in a worktree that is clean is merged with --ff-only. A branch that is checked out nowhere has its
 // ref moved. A dirty worktree, or a branch that is not behind `have`, is not touched, and the answer says why.
@@ -369,10 +380,7 @@ func (h *Hub) followCheckout(ctx context.Context, r Repo, bare, have, want strin
 	git := func(dir string, args ...string) (string, error) {
 		return run.Git(ctx, dir, append(append([]string{}, safe...), args...)...)
 	}
-	stuck := func(why string) error {
-		return fmt.Errorf("the hub holds %s at %s, which the checkout %s has not followed, and %s. nothing is mirrored from it until it is in step",
-			r.Branch, short(have), r.Checkout, why)
-	}
+	stuck := func(why string) error { return &followStuck{r: r, have: have, why: why} }
 	ref := "refs/heads/" + r.Branch
 	if _, err := git(ck, "fetch", "-q", "--no-tags", slash(bare), ref); err != nil {
 		return stuck("the hub's commits could not be fetched into it: " + err.Error())

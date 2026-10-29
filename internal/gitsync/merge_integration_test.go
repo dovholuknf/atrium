@@ -5,6 +5,8 @@ package gitsync
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -171,4 +173,85 @@ func must(s string, err error) string {
 		panic(err)
 	}
 	return s
+}
+
+type mirrorLand struct {
+	st         *Store
+	ck, bare   string
+	base, cand string
+	h          *Hub
+}
+
+func mirrorLandRig(t *testing.T) *mirrorLand {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow: git subprocesses")
+	}
+	x := &mirrorLand{ck: filepath.ToSlash(t.TempDir())}
+	x.h = &Hub{Dir: t.TempDir(), Runner: NewRunner()}
+	x.h.Repos = func() ([]Repo, error) {
+		return []Repo{{Name: hubRepo, Checkout: x.ck, Branch: "claude/main"}}, nil
+	}
+	git(t, x.ck, "init", "-q", "-b", "claude/main")
+	x.base = commit(t, x.ck, "base.txt", "base")
+	if _, err := x.h.Mirror(bg); err != nil {
+		t.Fatal(err)
+	}
+	x.bare = x.h.Bare(hubRepo)
+	if err := writeMarker(x.bare, KindAdopted); err != nil {
+		t.Fatal(err)
+	}
+	git(t, x.ck, "switch", "-q", "-c", "cand")
+	x.cand = commit(t, x.ck, "cand.txt", "cand")
+	git(t, x.ck, "switch", "-q", "claude/main")
+	git(t, x.bare, "fetch", "-q", x.ck, "refs/heads/cand:refs/atrium/merge/7")
+	x.st = x.h.Store()
+	return x
+}
+
+func TestMergeLandOnAMirrorFastForwardsTheCheckoutToTheTestedCandidate(t *testing.T) {
+	x := mirrorLandRig(t)
+	if err := x.st.MergeLand(bg, hubRepo, 7, x.base, x.cand); err != nil {
+		t.Fatal(err)
+	}
+	if got := git(t, x.ck, "rev-parse", "claude/main"); got != x.cand {
+		t.Fatalf("the checkout's claude/main is %s, want %s", got, x.cand)
+	}
+	if got := git(t, x.bare, "rev-parse", ClaudeMainRef); got != x.cand {
+		t.Fatalf("the hub's claude/main is %s, want %s", got, x.cand)
+	}
+	if got := git(t, x.ck, "show", "claude/main:cand.txt"); got != "cand" {
+		t.Fatalf("the worktree was not moved: %q", got)
+	}
+	if moved, err := x.h.Mirror(bg); err != nil || len(moved) != 0 {
+		t.Fatalf("the pass after a land: %v %v", moved, err)
+	}
+}
+
+func TestMergeLandOnAMirrorRefusesADirtyCheckoutAndLeavesBothTips(t *testing.T) {
+	x := mirrorLandRig(t)
+	if err := os.WriteFile(filepath.Join(x.ck, "base.txt"), []byte("edited"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := x.st.MergeLand(bg, hubRepo, 7, x.base, x.cand)
+	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "not committed") || !strings.Contains(err.Error(), "the operator lands it") {
+		t.Fatalf("a dirty checkout: %v", err)
+	}
+	if got := git(t, x.ck, "rev-parse", "claude/main"); got != x.base {
+		t.Fatalf("the checkout moved to %s", got)
+	}
+	if got := git(t, x.bare, "rev-parse", ClaudeMainRef); got != x.base {
+		t.Fatalf("the hub's claude/main was left at %s", got)
+	}
+}
+
+func TestMergeLandOnAMirrorIsAConflictWhenTheCheckoutsTipMoved(t *testing.T) {
+	x := mirrorLandRig(t)
+	commit(t, x.ck, "other.txt", "other")
+	if err := x.st.MergeLand(bg, hubRepo, 7, x.base, x.cand); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a moved checkout: %v", err)
+	}
+	if got := git(t, x.bare, "rev-parse", ClaudeMainRef); got != x.base {
+		t.Fatalf("the hub's claude/main moved to %s", got)
+	}
 }
