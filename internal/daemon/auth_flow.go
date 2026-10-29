@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -42,24 +41,24 @@ type discovery struct {
 	JWKSURL  string `json:"jwks_uri"`
 }
 
-// discovered caches provider metadata, which does not change and costs a round
+// providerCache caches provider metadata, which does not change and costs a round
 // trip nobody should pay per login.
-var discovered struct {
+type providerCache struct {
 	sync.Mutex
 	at  map[string]*discovery
 	got map[string]time.Time
 }
 
 // discoverFor reads a provider's metadata, or returns what it read earlier.
-func discoverFor(ctx context.Context, issuer string) (*discovery, error) {
+func (c *providerCache) discoverFor(ctx context.Context, issuer string) (*discovery, error) {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 
-	discovered.Lock()
-	if d, ok := discovered.at[issuer]; ok && time.Since(discovered.got[issuer]) < time.Hour {
-		discovered.Unlock()
+	c.Lock()
+	if d, ok := c.at[issuer]; ok && time.Since(c.got[issuer]) < time.Hour {
+		c.Unlock()
 		return d, nil
 	}
-	discovered.Unlock()
+	c.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		issuer+"/.well-known/openid-configuration", nil)
@@ -83,12 +82,12 @@ func discoverFor(ctx context.Context, issuer string) (*discovery, error) {
 		return nil, fmt.Errorf("the provider's metadata has no authorization or token endpoint")
 	}
 
-	discovered.Lock()
-	if discovered.at == nil {
-		discovered.at, discovered.got = map[string]*discovery{}, map[string]time.Time{}
+	c.Lock()
+	if c.at == nil {
+		c.at, c.got = map[string]*discovery{}, map[string]time.Time{}
 	}
-	discovered.at[issuer], discovered.got[issuer] = &d, time.Now()
-	discovered.Unlock()
+	c.at[issuer], c.got[issuer] = &d, time.Now()
+	c.Unlock()
 	return &d, nil
 }
 
@@ -381,7 +380,7 @@ func (d *Daemon) serveAuth(w http.ResponseWriter, r *http.Request, cfg AuthConfi
 // ONE FUNCTION FOR BOTH, because the two requests differ by a single parameter
 // and a second copy is how the renewal path ends up without PKCE on it.
 func (d *Daemon) authStart(w http.ResponseWriter, r *http.Request, cfg AuthConfig, silent bool) {
-	disc, err := discoverFor(r.Context(), cfg.Issuer)
+	disc, err := d.discovered.discoverFor(r.Context(), cfg.Issuer)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -438,7 +437,7 @@ func (d *Daemon) authCallback(w http.ResponseWriter, r *http.Request, cfg AuthCo
 		http.Error(w, "the provider sent no code", http.StatusBadRequest)
 		return
 	}
-	disc, err := discoverFor(r.Context(), cfg.Issuer)
+	disc, err := d.discovered.discoverFor(r.Context(), cfg.Issuer)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -530,7 +529,7 @@ func (d *Daemon) claimsOf(ctx context.Context, disc *discovery, cfg AuthConfig, 
 		return "", "", fmt.Errorf("the provider publishes no signing keys, so nothing it " +
 			"sends can be verified")
 	}
-	keys, err := publish.JwksFor(ctx, disc.JWKSURL)
+	keys, err := d.jwks.For(ctx, disc.JWKSURL)
 	if err != nil {
 		return "", "", err
 	}

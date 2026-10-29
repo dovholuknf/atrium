@@ -17,7 +17,7 @@ import (
 // Every turn re-reads the whole context, so a worker at 300k pays for 300k on
 // every turn, and neither the model nor the board says so. The size is the
 // keep-alive's own figure, the last main reply's input plus cache writes plus
-// cache reads, read by the same `readLastReply`.
+// cache reads, read by the same `lastReplies.read`.
 //
 // NEVER STORED, like activity (docs/runtime/activity-design.md). It lives in a map
 // here and dies with the process; the next tick reads it again.
@@ -68,8 +68,10 @@ type contextSeen struct {
 }
 
 type contextSizes struct {
-	mu sync.Mutex
-	m  map[string]contextSeen
+	// replies is the transcript read cache. The daemon points it at its own.
+	replies *lastReplies
+	mu      sync.Mutex
+	m       map[string]contextSeen
 	// judged is the threshold each card was last held against. A changed
 	// threshold is a new look at an unchanged size: a card now under a raised
 	// line is re-armed before it grows past it.
@@ -84,7 +86,7 @@ type contextSizes struct {
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
+	return &contextSizes{replies: &lastReplies{}, m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
 		transcript: api.TranscriptPath, latest: api.LatestSession}
 }
 
@@ -183,7 +185,7 @@ func (c *contextSizes) read(t *store.Task) (int64, bool) {
 	if ok && last.path == path && last.mod.Equal(info.ModTime()) && last.size == info.Size() {
 		return last.tokens, false
 	}
-	r, err := readLastReply(path)
+	r, err := c.replies.read(path)
 	if err != nil {
 		return 0, false
 	}

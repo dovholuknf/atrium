@@ -59,7 +59,7 @@ func (k *keepalive) coldCheck(t *store.Task, card *store.KeepaliveCard, warming 
 	if path == "" {
 		return
 	}
-	r, err := readLastReply(path)
+	r, err := k.replies.read(path)
 	if err != nil || r.TTL != time.Hour || r.Context < keepaliveMinContext {
 		return
 	}

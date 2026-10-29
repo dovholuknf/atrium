@@ -373,7 +373,7 @@ func TestATokenSignedBySomebodyElseIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disc, err := discoverFor(t.Context(), idp.srv.URL)
+	disc, err := d.discovered.discoverFor(t.Context(), idp.srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

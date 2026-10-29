@@ -29,6 +29,7 @@ func appendTo(t testing.TB, path, s string, mtime time.Time) {
 // BenchmarkLastReply30Cards reads 30 cards' 2 MB transcripts, as one board
 // poll does. Cached, the run is 30 stats. Uncached, 30 decodes of 2 MB.
 func BenchmarkLastReply30Cards(b *testing.B) {
+	var replies lastReplies
 	dir := b.TempDir()
 	now := time.Now()
 	pad := `{"type":"user","message":{"content":"` + strings.Repeat("x", 800) + `"}}` + "\n"
@@ -49,7 +50,7 @@ func BenchmarkLastReply30Cards(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, p := range paths {
-			if _, err := readLastReply(p); err != nil {
+			if _, err := replies.read(p); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -59,6 +60,7 @@ func BenchmarkLastReply30Cards(b *testing.B) {
 // BenchmarkLastReply30CardsUncached is the same poll with the cache emptied
 // first, which is what every poll cost before the cache.
 func BenchmarkLastReply30CardsUncached(b *testing.B) {
+	var replies lastReplies
 	dir := b.TempDir()
 	now := time.Now()
 	pad := `{"type":"user","message":{"content":"` + strings.Repeat("x", 800) + `"}}` + "\n"
@@ -79,8 +81,8 @@ func BenchmarkLastReply30CardsUncached(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, p := range paths {
-			lastReplyDrop(p)
-			if _, err := readLastReply(p); err != nil {
+			replies.drop(p)
+			if _, err := replies.read(p); err != nil {
 				b.Fatal(err)
 			}
 		}

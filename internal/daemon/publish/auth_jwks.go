@@ -24,9 +24,9 @@ import (
 // using something else fails with a sentence saying so, which is better than
 // silently falling through to a weaker check.
 
-// jwksCache holds the keys, because they change rarely and a fetch per login is
-// a round trip per login.
-var jwksCache struct {
+// JwksCache holds the keys, because they change rarely and a fetch per login is
+// a round trip per login. The zero value is ready.
+type JwksCache struct {
 	sync.Mutex
 	keys map[string]map[string]*rsa.PublicKey
 	got  map[string]time.Time
@@ -38,14 +38,14 @@ var jwksCache struct {
 // they use it, so an hour is well inside the window where both are listed.
 const jwksFresh = time.Hour
 
-// JwksFor fetches a provider's keys, or returns what was fetched recently.
-func JwksFor(ctx context.Context, url string) (map[string]*rsa.PublicKey, error) {
-	jwksCache.Lock()
-	if k, ok := jwksCache.keys[url]; ok && time.Since(jwksCache.got[url]) < jwksFresh {
-		jwksCache.Unlock()
+// For fetches a provider's keys, or returns what was fetched recently.
+func (c *JwksCache) For(ctx context.Context, url string) (map[string]*rsa.PublicKey, error) {
+	c.Lock()
+	if k, ok := c.keys[url]; ok && time.Since(c.got[url]) < jwksFresh {
+		c.Unlock()
 		return k, nil
 	}
-	jwksCache.Unlock()
+	c.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -103,11 +103,11 @@ func JwksFor(ctx context.Context, url string) (map[string]*rsa.PublicKey, error)
 			"verifies nothing else")
 	}
 
-	jwksCache.Lock()
-	if jwksCache.keys == nil {
-		jwksCache.keys, jwksCache.got = map[string]map[string]*rsa.PublicKey{}, map[string]time.Time{}
+	c.Lock()
+	if c.keys == nil {
+		c.keys, c.got = map[string]map[string]*rsa.PublicKey{}, map[string]time.Time{}
 	}
-	jwksCache.keys[url], jwksCache.got[url] = out, time.Now()
-	jwksCache.Unlock()
+	c.keys[url], c.got[url] = out, time.Now()
+	c.Unlock()
 	return out, nil
 }

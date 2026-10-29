@@ -27,6 +27,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
 	"github.com/dovholuknf/atrium/internal/base/shellpick"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -105,6 +106,12 @@ type Daemon struct {
 	hk hooks
 	// logins are the sign-ins this daemon has started and not finished. See auth_flow.go.
 	logins loginStates
+	// replies is the transcript read cache every reader of a last reply shares. See keepalive.go.
+	replies lastReplies
+	// discovered caches provider metadata. See auth_flow.go.
+	discovered providerCache
+	// jwks caches the providers' signing keys. See auth_flow.go.
+	jwks publish.JwksCache
 	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
 	wakeLaunch func(LaunchRequest) (*store.Task, error)
 	// authLim bounds password guessing on the published board. See auth_limit.go.
@@ -722,6 +729,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// and the per-card switch the board flips. See keepalive.go.
 	d.ka = newKeepalive(st)
 	d.ka.hk = &d.hk
+	d.ka.replies = &d.replies
 	d.ka.broadcast = d.ap.Broadcast
 	d.ka.window = func(taskID string) int {
 		if t := d.act.telemetry(taskID); t != nil {
@@ -734,6 +742,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.SetKeepalive = d.keepaliveSet
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
+	d.ctx.replies = &d.replies
 	d.ka.holding = d.nctx.holding
 	d.ka.deployHeld = d.deployHeld
 	d.ka.cold = d.coldHandoff

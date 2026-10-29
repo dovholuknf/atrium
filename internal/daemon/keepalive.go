@@ -309,31 +309,32 @@ type lastReplyEntry struct {
 	ttl    time.Duration
 }
 
-// lastReplyCache is readLastReply's memory. It has its own lock and never k.mu,
-// so the list handler's view stays cheap.
-var lastReplyCache = struct {
+// lastReplies is readLastReply's memory, one per daemon. It has its own lock and never k.mu,
+// so the list handler's view stays cheap. The zero value is ready.
+type lastReplies struct {
 	mu    sync.Mutex
 	m     map[string]*lastReplyEntry
 	order []string
-}{m: map[string]*lastReplyEntry{}}
+	// scans counts transcript scans, for tests.
+	scans atomic.Int64
+}
 
-// lastReplyScans counts transcript scans, for tests.
-var lastReplyScans atomic.Int64
-
-func lastReplyLoad(path string) (lastReplyEntry, bool) {
-	lastReplyCache.mu.Lock()
-	defer lastReplyCache.mu.Unlock()
-	e := lastReplyCache.m[path]
+func (c *lastReplies) load(path string) (lastReplyEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e := c.m[path]
 	if e == nil {
 		return lastReplyEntry{}, false
 	}
 	return *e, true
 }
 
-func lastReplyStore(path string, e lastReplyEntry) {
-	c := &lastReplyCache
+func (c *lastReplies) store(path string, e lastReplyEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]*lastReplyEntry{}
+	}
 	if _, ok := c.m[path]; !ok {
 		c.order = append(c.order, path)
 		for len(c.order) > lastReplyCap {
@@ -344,8 +345,7 @@ func lastReplyStore(path string, e lastReplyEntry) {
 	c.m[path] = &e
 }
 
-func lastReplyDrop(path string) {
-	c := &lastReplyCache
+func (c *lastReplies) drop(path string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.m[path]; !ok {
@@ -360,17 +360,17 @@ func lastReplyDrop(path string) {
 	}
 }
 
-// readLastReply finds the last main-thread assistant reply with usage in a
+// read finds the last main-thread assistant reply with usage in a
 // transcript. The answer is cached per path on the file's size and mtime. A
 // grown file is scanned from the cached offset when the whole file is inside the
 // tail window, where that gives the same answer as a whole read. A file that
 // shrank or whose mtime went back is read whole.
-func readLastReply(path string) (*lastReply, error) {
+func (c *lastReplies) read(path string) (*lastReply, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	prev, have := lastReplyLoad(path)
+	prev, have := c.load(path)
 	if have && prev.size == info.Size() && prev.mtime.Equal(info.ModTime()) {
 		r := prev.reply
 		r.TTL = prev.ttl
@@ -400,7 +400,7 @@ func readLastReply(path string) (*lastReply, error) {
 			return nil, err
 		}
 	}
-	lastReplyScans.Add(1)
+	c.scans.Add(1)
 	done, err := scanMainReplies(f, func(r *mainReply) {
 		switch {
 		case r.Write1h > 0:
@@ -411,16 +411,16 @@ func readLastReply(path string) (*lastReply, error) {
 		out = &lastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
 	})
 	if err != nil {
-		lastReplyDrop(path)
+		c.drop(path)
 		return nil, err
 	}
 	if out == nil {
-		lastReplyDrop(path)
+		c.drop(path)
 		return nil, errors.New("no main reply in the transcript")
 	}
 	// Size and mtime are from before the read. A write landing mid-read makes
 	// the next call see a change and scan again, never a stale answer.
-	lastReplyStore(path, lastReplyEntry{
+	c.store(path, lastReplyEntry{
 		size: info.Size(), mtime: info.ModTime(), offset: start + done, from: start,
 		reply: *out, ttl: ttl,
 	})
@@ -558,6 +558,8 @@ type keepaliveCardView struct {
 // keepalive holds the loop's collaborators, so a test can run a tick with a fake
 // fork, a fake clock and hand-written transcripts.
 type keepalive struct {
+	// replies is the transcript read cache. The daemon points it at its own.
+	replies *lastReplies
 	// hk is the seams a fork reads. The daemon points it at its own, see hooks.go.
 	hk  *hooks
 	st  *store.Store
@@ -617,9 +619,10 @@ func newKeepalive(st *store.Store) *keepalive {
 	hk := defaultHooks()
 	var k *keepalive
 	k = &keepalive{
-		st:  st,
-		hk:  &hk,
-		now: func() time.Time { return time.Now().UTC() },
+		st:      st,
+		hk:      &hk,
+		replies: &lastReplies{},
+		now:     func() time.Time { return time.Now().UTC() },
 		fork: func(ctx context.Context, spec forkSpec) ([]byte, error) {
 			return runForkProcess(ctx, spec, k.hk.agentFork)
 		},
@@ -776,7 +779,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if path == "" {
 		return skip("no transcript")
 	}
-	r, err := readLastReply(path)
+	r, err := k.replies.read(path)
 	if err != nil {
 		return skip("no transcript")
 	}
@@ -1002,7 +1005,7 @@ func (k *keepalive) clearOnRealTurn(t *store.Task, card *store.KeepaliveCard) *s
 	if path == "" {
 		return card
 	}
-	r, err := readLastReply(path)
+	r, err := k.replies.read(path)
 	if err != nil || !r.At.After(card.StateAt) {
 		return card
 	}
@@ -1204,7 +1207,7 @@ func (k *keepalive) viewOf(t *store.Task, card *store.KeepaliveCard, out *keepal
 	if path == "" {
 		return out
 	}
-	r, err := readLastReply(path)
+	r, err := k.replies.read(path)
 	if err != nil {
 		return out
 	}
