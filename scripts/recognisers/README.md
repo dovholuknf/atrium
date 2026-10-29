@@ -82,7 +82,7 @@ number with more than that is reporting a repository.
 
 | File | What it recognises |
 | --- | --- |
-| `github.json` | Pull requests, issues, and a bare repository as the shrug at the bottom. |
+| `github.json` | Pull requests, issues, and a bare repository (https or `git@` ssh) as the shrug at the bottom. |
 | `bitbucket.json` | Pull requests, which are the same thing spelled differently in the path. |
 | `support.json` | Zendesk tickets and Discourse topics. Its rows default to the openziti/ziti worktree. |
 | `load.ps1` | Loads a file of rows into atrium. A loop over `PUT /v1/recognisers/{id}`. |

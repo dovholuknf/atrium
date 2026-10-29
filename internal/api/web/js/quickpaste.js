@@ -37,7 +37,7 @@ addEventListener("keydown", e => {
   else openQuickPaste();
 }, true);
 
-const QUICKPASTE_URL = /^https?:\/\/\S+$/;
+const QUICKPASTE_URL = /^(?:https?:\/\/\S+|git@[\w.-]+:\S+)$/;
 
 const QUICKPASTE_HELP = "paste a link: a pull request, an issue, a branch or a support ticket.";
 

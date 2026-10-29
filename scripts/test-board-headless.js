@@ -21133,6 +21133,12 @@ async function quickPasteSection(browser, base) {
     await p.press("#sw-q", "Enter");
     if (await p.evaluate(() => !!document.querySelector("#sw-list #sw-open"))) fail("quickPaste: text that is not a link got an open row");
     if (st.calls.length) fail("quickPaste: text that is not a link still called: " + st.calls.join(" | "));
+    // an ssh clone url is a link: it gets an open row and is read
+    await p.fill("#sw-q", "git@github.com:netfoundry/docusaurus-shared.git");
+    await p.waitForFunction(() => !!document.querySelector("#sw-list #sw-open"), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: an ssh clone url got no open row"));
+    await until(() => st.calls.some(c => c.indexOf("POST /v1/recognise") === 0 && c.indexOf("git@github.com:netfoundry") > 0), 5000,
+      "the ssh read").catch(() => fail("quickPaste: an ssh clone url was not read: " + st.calls.join(" | ")));
     // the paste button puts the clipboard's link in the bar, and reads it
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.click("#sw-paste");
