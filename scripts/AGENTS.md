@@ -104,6 +104,6 @@ that.
 | `live/` | sg4's own start, stop and deploy scripts. Its README is the rules |
 | `release.sh` / `cut-release.sh` / `publish-release.sh` / `package-*` | building and publishing a release |
 | `scrub-history.go` / `land-history.go` | rewriting messages and authors before a push to GitHub. Never pushes |
-| `fold-changes.ps1` / `backlog-*.ps1` | folding change files into the test plan, and the backlog's file layout |
+| `backlog-*.ps1` | the backlog's file layout |
 | `sources/` / `notify/` / `recognisers/` | example sources and notify commands, and the recogniser rows a hub seeds |
 | `atrium-service.*` / `atrium-autostart.ps1` / `start-atrium.ps1` | running atrium as a scheduled task or service |

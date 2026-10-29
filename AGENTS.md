@@ -26,7 +26,8 @@ terminals. A card outlives its process, state lives on disk, and storage failure
 
 - Never edit a shipped migration. A hook never fails a session. Never reorder the permission chain. Files leave
   a card only to the card, an atrium path or an `open_paths` folder.
-- Never edit `CHANGELOG.md`, `docs/test-plan.md` or `docs/backlog.md`. The backlog is on the hub.
+- Never edit `CHANGELOG.md` or `docs/backlog.md`. The weekly roll-up card owns `CHANGELOG.md`, and the backlog is on
+  the hub.
 - Before handing back, run `bash scripts/test-touched.sh` and nothing else.
 - Branch off `claude/main`. Never push `main` or a tag.
 - Build with `make build` into `build.claude/`, never the repo root.
