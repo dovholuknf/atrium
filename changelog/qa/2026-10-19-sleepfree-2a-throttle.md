@@ -1,1 +1,0 @@
-`HEADLESS_CPU_THROTTLE=<rate>` slows every page and popup of a local headless board run, so a flake from a slow CI runner can reproduce here. A missing playwright now fails the run under FULL_SUITE, CI or the throttle (sleepfree-2a).

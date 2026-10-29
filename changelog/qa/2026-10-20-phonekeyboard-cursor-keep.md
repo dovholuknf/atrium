@@ -1,1 +1,0 @@
-The phone cursor follow reruns once the keyboard's `--vvh` is applied and after each terminal fit, so a follow queued before the keyboard resize no longer leaves the cursor row under the key bar. The phoneKeyboard unit queues that follow to pin it.

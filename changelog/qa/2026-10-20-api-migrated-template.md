@@ -1,1 +1,0 @@
-The api integration tests copy one already-migrated database per test instead of migrating a fresh one, so `TestARunningRowArrivesQueuedAndIsStarted` no longer runs three full migrations and leaves the flaky suite (api-migrated-template).

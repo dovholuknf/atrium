@@ -1,1 +1,0 @@
-Going to a terminal no longer opens the groups it sits in on the Terminals tab. When its group is shut, the bridge to the pane runs from the group's heading, which wears the attached frame, and opening the group moves the bridge back to the card's row. (group-bridge)

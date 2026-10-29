@@ -1,1 +1,0 @@
-The new-context strip under a terminal and its "let me type" button now follow the card's own update, so a finished cycle no longer leaves "1/3: waiting for atrium ready" on screen, in a popped-out window too. r-new-context-strip-stuck-at-1of3.

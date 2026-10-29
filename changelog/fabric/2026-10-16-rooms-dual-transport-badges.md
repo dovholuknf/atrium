@@ -1,2 +1,0 @@
-A room's direct path badge now reads mTLS when the room really presents a client certificate, every path badge tip shows its connect time (the connected one included), and the room card's "lag" tile is renamed "timer drift" with a tip saying it is not network latency. Path probes are bounded to one dial in flight per rung. (f-rooms-dual-transport-badges)
-Docs: none, covered by docs/changes/f-rooms-dual-transport-badges.md

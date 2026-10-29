@@ -1,1 +1,0 @@
-A room's settings cog has a control for the idle park timer: off, or a number of minutes. It shows the default and the 30 minute floor, and a value under the floor is refused in the pane. Before this the timer could only be changed with a hand-typed request. (u-idle-park-setting-on-cog)

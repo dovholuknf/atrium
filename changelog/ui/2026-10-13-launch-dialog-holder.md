@@ -1,1 +1,0 @@
-The launch dialog says when another room already holds a pasted link, and a room picked by name takes the link over unless that room has a card live on it, in which case go brings the live card up instead of launching. The terminal behind the open dialog stops drawing on the GPU until it closes. (u-005)

@@ -1,1 +1,0 @@
-Terminate and clean up no longer promises a removal it will not make. When a card's folder was not created by atrium (a gwt worktree, say), the board and the phone now say "Nothing here was created by atrium, so nothing is removed" with the folder and branch that stay, and stop the session only on "terminate". Atrium still deletes only what its ledger says it created.

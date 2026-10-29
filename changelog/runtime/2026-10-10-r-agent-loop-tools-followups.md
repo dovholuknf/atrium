@@ -1,1 +1,0 @@
-Tests now cover atrium_done and atrium_blocked reaching a launcher on another room through the hub, and a launcher tagged `atrium:hold-notices` having the ending held on its card. No behaviour change. (r-agent-loop-tools-followups)

@@ -1,1 +1,0 @@
-The repos tab has a Branches view: every repository's branches as orphaned, open or landed chips with counts, landed folded until you ask, with how main carries each and what kind of orphan it is. Read-only. (f-branch-status-view, phase 2)

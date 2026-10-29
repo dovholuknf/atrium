@@ -1,1 +1,0 @@
-- **`atrium_git_url` answers `claude/main` and `main`.** A remote worker asking for the hub's integration branch used to get "not found". Both now answer as a `hub` source with `readOnly` true, so a worker can fetch them and base on them. Pushes to either are still refused. (f-git-url-hides-integration-branch)

@@ -1,1 +1,0 @@
-A card an agent launched now wears its launcher's colour when its own repo has no colour entry, and a launcher's explicit theme passes down to its children. Before, those children came up in the default colour beside their parent. A child in a repo with a colour of its own, or with a theme set on it, keeps its own. (u-subagent-parent-theme)

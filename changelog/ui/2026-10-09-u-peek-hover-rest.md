@@ -1,1 +1,0 @@
-The card peek no longer pops while the mouse is still travelling across a card. The second before it opens now counts from when the pointer comes to rest, and hand jitter under 10 pixels does not restart it. (u-peek-hover-rest)

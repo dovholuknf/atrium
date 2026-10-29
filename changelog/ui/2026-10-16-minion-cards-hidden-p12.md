@@ -1,1 +1,0 @@
-An item's minion session (tagged `atrium:minion`) no longer fills the Terminals tab: it is hidden until it has a question, a permission or is stuck, or you have it open, then it shows with a `minion` chip. A resting minion no longer rings the ready alert. (u-minion-cards-hidden, phases 1 and 2)

@@ -1,1 +1,0 @@
-A terminal shown in two board windows now follows the window you used last: its size moves to that window when it gains focus or you type in it, and returns to the remaining window's size when the other one detaches. One window behaves as before. (u-two-window-terminal-size)

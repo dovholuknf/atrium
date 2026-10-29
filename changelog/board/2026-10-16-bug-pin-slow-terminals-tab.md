@@ -1,1 +1,0 @@
-Pinning or unpinning a card, from the star, the card menu or a drop in the Terminals list, now shows at once and no longer waits on the room. A refused pin puts the star back. bug-pin-slow-terminals-tab.

@@ -1,1 +1,0 @@
-A path in a terminal is a link again after the card is respelled by a room flip. The link provider kept the id it was registered with and refused every row once the pane's card was retagged in place, so a path the room could open was plain text. It now compares by bare id and probes under the pane's current id. (bug-terminal-path-no-link)

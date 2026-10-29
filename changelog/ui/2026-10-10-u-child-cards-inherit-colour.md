@@ -1,1 +1,0 @@
-A card an agent launched now wears its launcher's repo colour when its own folder is no repo, such as a scratch folder under `C:/temp`. Before, a review panel's children came up plain beside their purple parent. A child in a repo of its own keeps that repo's colour, and a theme set on the card still wins over both. (u-child-cards-inherit-colour)

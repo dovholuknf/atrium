@@ -1,1 +1,0 @@
-Design for a branch status view: each hub branch is landed, open, orphaned or room-only, decided by content (patch-id, then subject, then changelog) and shown on the repos tab. Design only, nothing built. (f-branch-status-view)

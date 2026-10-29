@@ -1,1 +1,0 @@
-The launch dialog has a `setup` select for a claude runner: full setup (the default, sends nothing), lean, or superlean. It posts `lean: true` or `superlean: true` for that launch only, resets to full each time, and is hidden for other runners and for a resume. (r-superlean-launch, phase 3)

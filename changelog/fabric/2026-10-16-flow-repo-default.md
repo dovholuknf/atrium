@@ -1,1 +1,0 @@
-An unset `flow_repo` no longer leaves every item's landed, deployed and pushed steps pending in silence: the hub now uses its one repository when it holds exactly one, and says "flow_repo is unset" on each pending step when none can be chosen. (bug-flow-repo-default)
