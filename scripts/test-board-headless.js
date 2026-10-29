@@ -22311,6 +22311,37 @@ async function switcherRankSection(browser, base) {
   if (!bad) console.log("switcherRank ok");
 }
 
+// THE SWITCHER CLOSES ON ESCAPE, EVEN WITH THE FIELD FOCUSED, AND ON A CLICK OUTSIDE ITS FORM. A click inside leaves it open.
+async function switcherDismissSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+    const open = async () => {
+      await p.evaluate(() => openSwitcher());
+      await p.waitForFunction(() => document.getElementById("switcher").open && document.activeElement === document.getElementById("sw-q"),
+        null, { timeout: slow(5000) });
+    };
+    const isOpen = () => p.evaluate(() => document.getElementById("switcher").open);
+    await open();
+    await p.keyboard.press("Escape");
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: Escape did not close the switcher"));
+    await open();
+    await p.click("#sw-q");
+    await p.click("#sw-foot", { position: { x: 2, y: 2 } });
+    if (!(await isOpen())) fail("switcherDismiss: a click inside the form closed the switcher");
+    await p.mouse.click(4, 4);
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: a click outside the form did not close the switcher"));
+    if (errors.length) fail("switcherDismiss: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("switcherDismiss ok");
+}
+
 // GOING TO A CARD OPENS EVERY FOLD IT SITS IN, except the terminals list's headings. Its heading path, its project group
 // and its column on the board are all folded, then the switcher goes to it: the board's are open afterwards and the
 // list's stay shut, carrying the bridge.
@@ -28166,6 +28197,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("boardDocs", () => boardDocsSection(browser, base));
     await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
+    await unit("switcherDismiss", () => switcherDismissSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("revealChip", () => revealChipSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
