@@ -50,7 +50,7 @@ func (d *Daemon) sessionGone(t *store.Task) bool {
 // runnerLive reports whether atrium owns a terminal for the card whose process is
 // still running and whose session has not ended.
 func (d *Daemon) runnerLive(t *store.Task) bool {
-	run := d.sup.get(t.ID)
+	run := d.sup.Get(t.ID)
 	if run == nil {
 		return false
 	}

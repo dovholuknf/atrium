@@ -81,7 +81,7 @@ func (d *Daemon) launcherSeen(taskID string) string {
 // seenPrompted is a prompt submitted to this card. The operator's answers the
 // card's questions and sees its turn. A peer's does neither.
 func (d *Daemon) seenPrompted(taskID string) {
-	if run := d.sup.get(taskID); run != nil && run.PromptWasPeer(time.Now()) {
+	if run := d.sup.Get(taskID); run != nil && run.PromptWasPeer(time.Now()) {
 		return
 	}
 	d.seenAnswered(taskID, store.SeenPrompt)

@@ -140,7 +140,7 @@ func (d *Daemon) unpark(taskID, via string) error {
 	if !isParked(t) {
 		return nil
 	}
-	if d.sup.get(taskID) == nil {
+	if d.sup.Get(taskID) == nil {
 		if t.Runner == "" || t.Worktree == "" {
 			return fmt.Errorf("%s cannot be resumed: nothing records which runner or directory it used",
 				t.DisplayTitle())
@@ -238,7 +238,7 @@ func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.T
 			_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[31m[atrium] "+err.Error()+"\x1b[0m\r\n"))
 			continue
 		}
-		if run := d.sup.get(t.ID); run != nil {
+		if run := d.sup.Get(t.ID); run != nil {
 			_ = run.WriteOperatorInput([]byte(in.D))
 		}
 		c.Close(websocket.StatusNormalClosure, "restarting")
@@ -258,7 +258,7 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 	// A CARD THAT IS NOT PARKED AND HAS NO RUNNER IS STARTED TOO. This answered
 	// ok and started nothing for one, which is what every card a restart failed
 	// to bring back was (2026-09-30).
-	if !isParked(t) && d.sup.get(id) == nil {
+	if !isParked(t) && d.sup.Get(id) == nil {
 		if t.Runner == "" || t.Worktree == "" {
 			writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s cannot be resumed: nothing records which "+
 				"runner or directory it used", t.DisplayTitle()))

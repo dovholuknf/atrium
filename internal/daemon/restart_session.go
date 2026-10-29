@@ -34,7 +34,7 @@ var restartAskGrace = 8 * time.Second
 // when the runner ignores the keys it stays up, marked as no longer leaving, and
 // the error names the card and how long it was given.
 func (d *Daemon) askExit(taskID string, grace time.Duration) error {
-	r := d.sup.get(taskID)
+	r := d.sup.Get(taskID)
 	if r == nil || !r.HasTerm() {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is nothing here to exit",
 			d.taskTitle(taskID))
@@ -94,7 +94,7 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	// Only a session atrium owns can be restarted from here. A window-mode
 	// launch owns itself and a session that joined by hand belongs to whoever
 	// started it, so there is no terminal here to exit and nothing to relaunch.
-	if d.sup.get(taskID) == nil {
+	if d.sup.Get(taskID) == nil {
 		return nil, fmt.Errorf("atrium does not own a terminal for %s, so there is nothing "+
 			"here to restart. it may be a window-mode session, which owns itself", t.DisplayTitle())
 	}
@@ -147,11 +147,11 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 func (d *Daemon) waitRunnerGone(taskID string, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for {
-		if d.sup.get(taskID) == nil {
+		if d.sup.Get(taskID) == nil {
 			return true
 		}
 		if time.Now().After(deadline) {
-			return d.sup.get(taskID) == nil
+			return d.sup.Get(taskID) == nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

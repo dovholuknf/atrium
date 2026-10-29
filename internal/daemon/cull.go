@@ -207,7 +207,7 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool, prior *cullPlan
 // directory in use cannot be removed.
 func (d *Daemon) leaveForCull(t *store.Task, res *CullResult) error {
 	taskID := t.ID
-	if d.sup.get(taskID) != nil {
+	if d.sup.Get(taskID) != nil {
 		if err := d.StopRunnerBy(taskID, "atrium (cull)"); err != nil {
 			return err
 		}

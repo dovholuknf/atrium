@@ -339,7 +339,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 			// nothing has spoken for and that holds nothing yet: a session that
 			// began before the session hook was wired has no other way to say.
 			announced := d.wasAnnounced(task.ID, in.Resume)
-			bare := task.ResumeID == "" && !d.anyAnnounced(task.ID) && d.sup.get(task.ID) == nil
+			bare := task.ResumeID == "" && !d.anyAnnounced(task.ID) && d.sup.Get(task.ID) == nil
 			if !announced && !bare {
 				rejected = true
 				log.Printf("[atrium] a turn on %s named conversation %s, which no session start "+
@@ -363,7 +363,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	d.act.setBackground(task.ID, in.SubagentsRunning)
 	d.act.setBackgroundWork(task.ID, in.BackgroundRunning)
 	// A runner picked up from the pty host has now said what it is running, so idle parking may judge it.
-	if run := d.sup.get(task.ID); run != nil {
+	if run := d.sup.Get(task.ID); run != nil {
 		run.ClearReattached()
 	}
 	// What the turn spent, read off its transcript once it settles. Every Stop
@@ -741,7 +741,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if _, waking := d.kept.Load(taskID); waking {
 		woke = true
 	}
-	if run := d.sup.get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	if run := d.sup.Get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -916,7 +916,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	// operator's line is part written, or mid-turn for a note that waits for
 	// the turn. Same gate as `handleMessage` above.
 	typed := false
-	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	if run := d.sup.Get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		var err error
 		if typed, err = d.typeThroughGate(run, taskID, "", note); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)

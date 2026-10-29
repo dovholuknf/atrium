@@ -192,7 +192,7 @@ func (d *Daemon) reopenWanted() []*store.Task {
 
 	var wanted []*store.Task
 	for _, id := range cards {
-		if d.sup.get(id) != nil {
+		if d.sup.Get(id) != nil {
 			// A fixture already brought this one up, or a runner reconnected.
 			continue
 		}

@@ -71,7 +71,7 @@ func (d *Daemon) doneWorkers(olderThan time.Duration) (take []*store.Task, kept 
 		case t.Pinned, fixtureCards[t.ID]:
 			kept++
 			continue
-		case d.sup.get(t.ID) != nil:
+		case d.sup.Get(t.ID) != nil:
 			kept++
 			continue
 		}

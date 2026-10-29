@@ -35,7 +35,33 @@ type Runner interface {
 	ReplayCuts() (backlog []byte, cuts []screen.SizeCut, rows int, wrapped bool)
 }
 
+// Registry is how a concern finds the runners atrium owns, keyed by card. A card with no runner answers a nil Runner.
+type Registry interface {
+	Get(taskID string) Runner
+	Has(taskID string) bool
+	All() []Runner
+}
+
+var _ Registry = (*supervisor)(nil)
 var _ Runner = (*runner)(nil)
+
+func (s *supervisor) Get(taskID string) Runner {
+	if r := s.get(taskID); r != nil {
+		return r
+	}
+	return nil
+}
+
+func (s *supervisor) Has(taskID string) bool { return s.has(taskID) }
+
+func (s *supervisor) All() []Runner {
+	rs := s.all()
+	out := make([]Runner, len(rs))
+	for i, r := range rs {
+		out[i] = r
+	}
+	return out
+}
 
 func (r *runner) TaskID() string                    { return r.taskID }
 func (r *runner) Done() <-chan struct{}             { return r.done }

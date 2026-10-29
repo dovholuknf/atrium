@@ -106,7 +106,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 			t.WireName, t.Runner))
 		return
 	}
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run == nil || d.sessionGone(t) {
 		writeJSONErr(w, http.StatusConflict, fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nowhere to type /model. relaunch it under atrium first", t.WireName))
@@ -206,7 +206,7 @@ func (d *Daemon) noteTypedModel(taskID, line string) {
 // typeModel types `/model <model>` and Enter through the say gate. False and no
 // error when the gate was shut and nothing was written.
 func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run == nil || d.holdingFrom(taskID, "") || d.act.dialogOpen(taskID) || d.turnHolds(taskID, waitTurn) {
 		return false, nil
 	}
@@ -262,7 +262,7 @@ func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
 				mu.Unlock()
 				return
 			}
-			run := d.sup.get(taskID)
+			run := d.sup.Get(taskID)
 			gone := run == nil
 			if !gone {
 				select {

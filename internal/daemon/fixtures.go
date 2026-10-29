@@ -174,7 +174,7 @@ func (d *Daemon) startFixture(f *store.Fixture) error {
 	// over: two sessions in one directory both write to the same files, and
 	// the conversation the fixture was meant to continue is now open in the
 	// one it is not attached to.
-	if onto != "" && d.sup.get(onto) != nil {
+	if onto != "" && d.sup.Get(onto) != nil {
 		log.Printf("[atrium] fixture %q is already running, leaving it alone", name)
 		return nil
 	}

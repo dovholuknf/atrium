@@ -67,7 +67,7 @@ func (d *Daemon) DiskView() (any, error) {
 			hi.Orphaned = true
 		} else {
 			hi.Title, hi.Status = t.DisplayTitle(), t.Status
-			hi.Running = d.sup.get(t.ID) != nil
+			hi.Running = d.sup.Get(t.ID) != nil
 		}
 		v.Bytes += r.Bytes
 		v.Homes = append(v.Homes, hi)
@@ -133,7 +133,7 @@ func (d *Daemon) RemoveHome(id string) (any, error) {
 		}
 	}
 	if t != nil {
-		if d.sup.get(t.ID) != nil {
+		if d.sup.Get(t.ID) != nil {
 			return nil, errors.New("its runner is still up. exit it first")
 		}
 		if row.State != store.CardHomeKept {

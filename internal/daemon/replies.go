@@ -160,7 +160,7 @@ func logRepliesFallback(path string, err error) {
 // screenReply is the card's screen as text, as one reply: the codex card and the
 // card with no readable transcript. Empty when atrium holds no terminal for it.
 func (d *Daemon) screenReply(taskID string) []Reply {
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run == nil {
 		return []Reply{}
 	}

@@ -252,7 +252,7 @@ func (d *Daemon) ShareCard(taskID, mode string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !d.sup.has(taskID) {
+	if !d.sup.Has(taskID) {
 		return nil, fmt.Errorf("%s has no terminal to share. atrium only owns the "+
 			"terminals it started", task.DisplayTitle())
 	}
@@ -529,7 +529,7 @@ func (d *Daemon) RestoreCardShares() {
 			rec := recs[i]
 			// No terminal, no share. The row stays `wanted`, so this card gets
 			// its address back if a runner turns up later.
-			if !d.sup.has(rec.TaskID) {
+			if !d.sup.Has(rec.TaskID) {
 				log.Printf("[atrium] %s was shared but has no terminal yet, so its "+
 					"address waits for one", rec.TaskID)
 				continue

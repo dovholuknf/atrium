@@ -175,7 +175,7 @@ func (d *Daemon) hasOutstandingLiveWorker(launcherID string) bool {
 		return true
 	}
 	for _, id := range ids {
-		if d.sup.get(id) != nil {
+		if d.sup.Get(id) != nil {
 			return true
 		}
 	}
@@ -241,7 +241,7 @@ func (d *Daemon) parkIdle(now time.Time) {
 
 // startIdleHandoff asks a card to write its handoff, on its own goroutine.
 func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
-	if d.sup.get(t.ID) == nil {
+	if d.sup.Get(t.ID) == nil {
 		return
 	}
 	// One capture at a time in a directory, as for the operator's own: the typing
@@ -321,7 +321,7 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 		r.noteCause(store.CauseIdlePark, "")
 		d.hk.idleLeave(d, r, id)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
-		for d.sup.get(id) != nil && time.Now().Before(deadline) {
+		for d.sup.Get(id) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
 		if err := d.parkCard(id, was, extra); err != nil {

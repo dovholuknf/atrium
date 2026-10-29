@@ -42,7 +42,7 @@ const forcedHow = "typed anyway, past the typing gate"
 // read the line and let-through refuses. A dialog or a new-context cycle refuses it, as for a forced say.
 func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if d.pending == nil || run == nil {
 		writeJSONCode(w, http.StatusNotFound, errBody("no supervised terminal on this card"))
 		return
@@ -89,7 +89,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 // should carry on (no terminal of ours to type into).
 func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKind string, reply, holding, waitTurn bool,
 	rec *store.Say, target *store.Task) bool {
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run == nil {
 		return false
 	}

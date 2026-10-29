@@ -517,9 +517,9 @@ func (d *Daemon) sweepHomes() error {
 		}
 		switch {
 		case row.Kind == store.CardHomeThrowaway && !t.Throwaway:
-		case row.Kind == store.CardHomeThrowaway && d.sup.get(t.ID) == nil && t.PID <= 0:
+		case row.Kind == store.CardHomeThrowaway && d.sup.Get(t.ID) == nil && t.PID <= 0:
 			d.endThrowaway(t.ID)
-		case row.State == store.CardHomeKept && strings.HasPrefix(row.Reason, "the folder could not be removed") && d.sup.get(t.ID) == nil:
+		case row.State == store.CardHomeKept && strings.HasPrefix(row.Reason, "the folder could not be removed") && d.sup.Get(t.ID) == nil:
 			d.reclaimHome(t, row, false)
 		}
 	}

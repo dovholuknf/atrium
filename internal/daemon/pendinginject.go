@@ -185,7 +185,7 @@ func (d *Daemon) reholdPending(taskID string) {
 // terminal to type into, so there is nothing to retry. The message is still
 // safe in the store.
 func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
-	run := pi.d.sup.get(taskID)
+	run := pi.d.sup.Get(taskID)
 	if run == nil {
 		return
 	}
@@ -239,7 +239,7 @@ func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	case pi.d.turnHoldsAged(taskID, m.waitTurn, m.at):
 		return HeldForTurn
 	}
-	if run := pi.d.sup.get(taskID); run != nil && !run.PeerGateOpen() {
+	if run := pi.d.sup.Get(taskID); run != nil && !run.PeerGateOpen() {
 		return HeldForLine
 	}
 	return ""
@@ -353,7 +353,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 
 // try is the body of an attempt.
 func (pi *pendingInjector) try(taskID string) {
-	run := pi.d.sup.get(taskID)
+	run := pi.d.sup.Get(taskID)
 	if run == nil {
 		// The terminal went away. The hooks still deliver from the queue, so the
 		// message is not lost, but there is nothing here to type into.
@@ -605,7 +605,7 @@ func (pi *pendingInjector) drop(taskID string) {
 	}
 	pi.d.act.clearHeld(taskID)
 	pi.mu.Unlock()
-	if run := pi.d.sup.get(taskID); run != nil {
+	if run := pi.d.sup.Get(taskID); run != nil {
 		run.SetOnKey(nil)
 	}
 	pi.d.publishTask(taskID)

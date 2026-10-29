@@ -72,7 +72,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 	// And queued rather than typed while a dialog is on that screen, for the
 	// reason `handleMessage` gives: `Say` ends with an Enter, and an Enter
 	// answers a dialog.
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run != nil && d.act.dialogOpen(taskID) {
 		run = nil
 	}

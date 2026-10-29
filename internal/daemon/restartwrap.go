@@ -187,7 +187,7 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 
 	start := time.Now()
 	var cards []*store.Task
-	for _, r := range d.sup.all() {
+	for _, r := range d.sup.All() {
 		t, err := d.st.Get(r.TaskID())
 		if err != nil || t == nil {
 			continue
@@ -325,7 +325,7 @@ func (d *Daemon) wrapCard(ctx context.Context, t *store.Task, path string, ack <
 			return wrapReady
 		case <-tick.C:
 		}
-		run := d.sup.get(id)
+		run := d.sup.Get(id)
 		if run == nil {
 			return wrapSkipped
 		}

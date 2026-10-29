@@ -72,7 +72,7 @@ const QuietAfter = 15 * time.Minute
 // Moving the status also clears `archived_at`, so a card the sweep already
 // took away comes back onto the board.
 func (d *Daemon) reviveOwnedDead() error {
-	for _, r := range d.sup.all() {
+	for _, r := range d.sup.All() {
 		t, err := d.st.Get(r.TaskID())
 		if err != nil {
 			// A card deleted out from under its runner is not this job's
@@ -118,7 +118,7 @@ func (d *Daemon) reapOnce() error {
 		// may be a hook's report of some other process, or 0) nor silence is asked
 		// about it. Asking silence first is what filed a live supervised card dead
 		// one tick before `reviveOwnedDead` brought it back.
-		if d.sup.get(t.ID) != nil {
+		if d.sup.Get(t.ID) != nil {
 			continue
 		}
 		// A parked card has no process by design, and its pid is a stale hint.

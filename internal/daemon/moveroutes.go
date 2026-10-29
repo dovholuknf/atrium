@@ -215,7 +215,7 @@ func (d *Daemon) moveCapture(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		return
 	}
 	file := HandoffName(t)
-	if d.sup.get(t.ID) == nil {
+	if d.sup.Get(t.ID) == nil {
 		// Parked or gone: nothing to type into. A handoff already in the cwd stays the read-me.
 		_, err := os.Stat(filepath.Join(t.Worktree, file))
 		writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file, "skipped": "no runner", "exists": err == nil})
@@ -324,7 +324,7 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		writeJSONErr(w, http.StatusConflict, store.ErrNotFrozen)
 		return
 	}
-	if isParked(t) && d.sup.get(t.ID) == nil {
+	if isParked(t) && d.sup.Get(t.ID) == nil {
 		writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
 		return
 	}
@@ -337,10 +337,10 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		defer d.idle.parking.Delete(t.ID)
 		d.hk.idleLeave(d, r, t.ID)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
-		for d.sup.get(t.ID) != nil && time.Now().Before(deadline) {
+		for d.sup.Get(t.ID) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 		}
-		if d.sup.get(t.ID) != nil {
+		if d.sup.Get(t.ID) != nil {
 			writeJSONErr(w, http.StatusGatewayTimeout, errors.New("the runner did not leave"))
 			return
 		}

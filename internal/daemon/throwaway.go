@@ -138,7 +138,7 @@ func (d *Daemon) sweepThrowaways() {
 		return
 	}
 	for _, t := range tasks {
-		if !t.Throwaway || d.sup.get(t.ID) != nil {
+		if !t.Throwaway || d.sup.Get(t.ID) != nil {
 			continue
 		}
 		d.endThrowaway(t.ID)

@@ -101,7 +101,7 @@ func (d *Daemon) deliverKept(taskID string) {
 			return
 		}
 		now := time.Now()
-		run := d.sup.get(taskID)
+		run := d.sup.Get(taskID)
 		ready := run != nil && d.keptRunnerReady(taskID, run, now)
 		// NOTHING HELD IS NOT THE END UNTIL THE RUNNER IS READY. The say that woke the card is queued just after the
 		// resume returns, so an empty look at the start is a look too early. Giving up then would leave that say to

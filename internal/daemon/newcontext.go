@@ -747,7 +747,7 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	if err != nil {
 		return err
 	}
-	if d.sup.get(taskID) == nil {
+	if d.sup.Get(taskID) == nil {
 		return errNoTerminal
 	}
 	// Two cycles at once in one directory are refused: the typing of both would interleave.
@@ -963,7 +963,7 @@ func (d *Daemon) cycleAwaitAck(taskID string, gen uint64) error {
 		if cur == nil || cur.gen != gen {
 			return errNewContextGone
 		}
-		if d.sup.get(taskID) == nil {
+		if d.sup.Get(taskID) == nil {
 			return errors.New("the terminal closed")
 		}
 		if cur.acked {
@@ -1221,7 +1221,7 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 		if !d.nctx.mine(taskID, gen) {
 			return errNewContextGone
 		}
-		if d.sup.get(taskID) == nil {
+		if d.sup.Get(taskID) == nil {
 			return errors.New("the terminal closed")
 		}
 		ok, err := cond()
@@ -1286,7 +1286,7 @@ func (d *Daemon) ncBusyAfterAck(taskID string) bool {
 // ncBlocker says what keeps a step from typing now, for the log and the card's reason.
 func (d *Daemon) ncBlocker(taskID string, busy func(string) bool) string {
 	switch {
-	case d.sup.get(taskID) == nil:
+	case d.sup.Get(taskID) == nil:
 		return "no terminal"
 	case d.act.dialogOpen(taskID):
 		return "a dialog is open on the screen"

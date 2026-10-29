@@ -125,7 +125,7 @@ func (d *Daemon) hasOutstandingWorker(launcherID string) bool {
 // being around. A parked worker counts: it is idle, not finished, and its
 // launcher is still waiting on it.
 func (d *Daemon) workerOutstanding(id string) bool {
-	if d.sup.get(id) != nil {
+	if d.sup.Get(id) != nil {
 		return true
 	}
 	t, err := d.st.Get(id)
@@ -613,7 +613,7 @@ func runnerDelivers(runner string) bool {
 // reachability says whether a message queued to a card will ever arrive, and
 // if not why not.
 func (d *Daemon) reachability(t *store.Task) (string, string) {
-	if t.PeerTyping && d.sup.get(t.ID) != nil {
+	if t.PeerTyping && d.sup.Get(t.ID) != nil {
 		return ReachTyped, ""
 	}
 	if t.ToolHookSeenAt != nil || t.StopHookSeenAt != nil {

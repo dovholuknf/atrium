@@ -483,7 +483,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// /exit TYPED IN A SUPERVISED CARD'S OWN TERMINAL is somebody deciding, and
 		// stays down across a restart like an asked exit. A wind-down ends every
 		// session the same way, so only an ending outside one counts.
-		if run := d.sup.get(task.ID); in.Reason == "prompt_input_exit" && !d.windingDown.Load() &&
+		if run := d.sup.Get(task.ID); in.Reason == "prompt_input_exit" && !d.windingDown.Load() &&
 			run != nil && !run.Leaving() {
 			if err := d.st.SetExitAsked(task.ID); err != nil {
 				return err
@@ -594,7 +594,7 @@ func endedAs(task *store.Task) string {
 // when the card has a live runner of its own, which makes this a second copy and not the card's session.
 func (d *Daemon) heldConversation(in SessionEvent) *store.Task {
 	t, err := d.st.GetByResumeID(in.Resume)
-	if err != nil || t.ArchivedAt != nil || t.MovedTo != "" || d.sup.get(t.ID) != nil {
+	if err != nil || t.ArchivedAt != nil || t.MovedTo != "" || d.sup.Get(t.ID) != nil {
 		return nil
 	}
 	log.Printf("[atrium] a session started outside atrium resumed %s, adopted onto its card %s", in.Resume, t.ID)

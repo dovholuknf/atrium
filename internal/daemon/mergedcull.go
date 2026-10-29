@@ -143,7 +143,7 @@ func (d *Daemon) exitMergedWork(items []*store.WorkItem, into string, branches [
 		if err != nil || t.Lifetime != store.LifetimeWork || !d.isWorker(t) || w.HeldBy != "" {
 			continue
 		}
-		if d.sup.get(t.ID) == nil || strings.TrimSpace(t.Worktree) == "" {
+		if d.sup.Get(t.ID) == nil || strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
 		if into != DefaultCullInto && !d.launcherOn(w, into) {

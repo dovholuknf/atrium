@@ -262,7 +262,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	}
 
 	// A card atrium does not supervise has no runner here, and its wake waits.
-	run := d.sup.get(w.TaskID)
+	run := d.sup.Get(w.TaskID)
 	if run == nil || !d.wakeRunnerReady(w, run, now) {
 		return
 	}

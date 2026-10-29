@@ -657,7 +657,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	if d.holdingFrom(target.ID, from) {
 		return false, ""
 	}
-	run := d.sup.get(target.ID)
+	run := d.sup.Get(target.ID)
 	if run == nil {
 		return false, ""
 	}

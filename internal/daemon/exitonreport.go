@@ -121,7 +121,7 @@ const exitReportWhy = "it reported done and was not launched resident. the card,
 // quiet period, reportTypedQuiet.
 func (d *Daemon) exitAfterReport(taskID string) {
 	time.Sleep(d.hk.exitOnReportDelay)
-	if run := d.sup.get(taskID); run != nil && run.TypedWithin(reportTypedQuiet) {
+	if run := d.sup.Get(taskID); run != nil && run.TypedWithin(reportTypedQuiet) {
 		log.Printf("[atrium] %s reported done and was typed in lately, so it keeps running", taskID)
 		return
 	}

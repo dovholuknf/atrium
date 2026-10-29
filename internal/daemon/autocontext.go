@@ -28,7 +28,7 @@ const cycleBy = "context-cycle"
 
 // cycleSubject is whether the trigger reaches a card at all.
 func (d *Daemon) cycleSubject(t *store.Task) bool {
-	if t == nil || d.sup.get(t.ID) == nil || isParked(t) || !api.ContextCycleOn(t) {
+	if t == nil || d.sup.Get(t.ID) == nil || isParked(t) || !api.ContextCycleOn(t) {
 		return false
 	}
 	switch t.Status {
@@ -66,7 +66,7 @@ func (d *Daemon) cycleCheck(t *store.Task, tokens int64) {
 	if limit <= 0 || tokens < limit {
 		return
 	}
-	if run := d.sup.get(t.ID); run != nil && !run.PeerGateOpen() {
+	if run := d.sup.Get(t.ID); run != nil && !run.PeerGateOpen() {
 		return
 	}
 	d.startCycle(t, tokens, limit)

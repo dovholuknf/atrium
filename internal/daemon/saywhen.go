@@ -81,7 +81,7 @@ func (d *Daemon) midTurnInputFor(taskID string) bool {
 // Stop hook is optional and off by default. Without it the message waits
 // forever while the sender is told `queued`.
 func (d *Daemon) turnReachWarning(t *store.Task) string {
-	if t == nil || (t.PeerTyping && d.sup.get(t.ID) != nil) || t.StopHookSeenAt != nil {
+	if t == nil || (t.PeerTyping && d.sup.Get(t.ID) != nil) || t.StopHookSeenAt != nil {
 		return ""
 	}
 	return fmt.Sprintf("queued until %s's turn ends, but it has never been heard from on its Stop "+

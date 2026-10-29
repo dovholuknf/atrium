@@ -26,7 +26,7 @@ import (
 // with no pid that atrium does not own, or a window-mode session whose process
 // atrium never held. Nothing is moved on a guess.
 func (d *Daemon) liveness(t *store.Task) store.Liveness {
-	if d.sup.get(t.ID) != nil {
+	if d.sup.Get(t.ID) != nil {
 		return store.Live
 	}
 	if t.PID > 0 {

@@ -575,7 +575,7 @@ func (d *Daemon) resumeIsFree(resume string) error {
 		return nil
 	}
 	for _, t := range tasks {
-		if t.ResumeID != resume || d.sup.get(t.ID) == nil {
+		if t.ResumeID != resume || d.sup.Get(t.ID) == nil {
 			continue
 		}
 		return &ResumeBusy{
@@ -767,7 +767,7 @@ func ontoRefusal(t *store.Task, live bool) error {
 // true about somebody else's process entirely, and believing it there would
 // refuse the relaunch this whole change exists to make work.
 func (d *Daemon) runnerIsLive(t *store.Task) bool {
-	if d.sup.get(t.ID) != nil {
+	if d.sup.Get(t.ID) != nil {
 		return true
 	}
 	switch t.Status {
@@ -911,7 +911,7 @@ func (d *Daemon) repeatLaunch(taskID string) *store.Task {
 		return nil
 	}
 	at, ok := d.startedAt.Load(taskID)
-	if !ok || time.Since(at.(time.Time)) > repeatWindow || d.sup.get(taskID) == nil {
+	if !ok || time.Since(at.(time.Time)) > repeatWindow || d.sup.Get(taskID) == nil {
 		return nil
 	}
 	t, err := d.st.Get(taskID)
@@ -1087,7 +1087,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			// work already filed here, and starting a second process onto one
 			// card is not that: both would write to the same directory and the
 			// card would describe whichever spoke last.
-			switch handOverTo(req.IfRunning, d.sup.get(here) != nil) {
+			switch handOverTo(req.IfRunning, d.sup.Get(here) != nil) {
 			case handBack:
 				log.Printf("[atrium] not starting a second runner in %s, %s is already there",
 					cwd, t.DisplayTitle())

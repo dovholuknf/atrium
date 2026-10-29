@@ -233,7 +233,7 @@ func (d *Daemon) startDeployHold(in holdStart) (*store.RoomHold, error) {
 func (d *Daemon) holdableCards() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, r := range d.sup.all() {
+	for _, r := range d.sup.All() {
 		if !seen[r.TaskID()] {
 			seen[r.TaskID()] = true
 			out = append(out, r.TaskID())
@@ -438,7 +438,7 @@ func (d *Daemon) heldBusy(h *store.RoomHold) map[string]string {
 		if a := d.act.get(id); a != nil {
 			what = a.What
 		}
-		if BusyCard(d.sup.get(id) != nil, t.Status, time.Since(t.LastActivityAt), what) {
+		if BusyCard(d.sup.Get(id) != nil, t.Status, time.Since(t.LastActivityAt), what) {
 			out[id] = t.DisplayTitle()
 		}
 	}

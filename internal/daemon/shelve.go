@@ -38,7 +38,7 @@ func (d *Daemon) StopRunnerBy(taskID, by string) error {
 	if err != nil {
 		return err
 	}
-	if d.sup.get(taskID) == nil {
+	if d.sup.Get(taskID) == nil {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nothing here to exit", t.DisplayTitle())
 	}
@@ -111,7 +111,7 @@ func (d *Daemon) Unshelve(taskID string) (started bool, why string, err error) {
 	if err != nil {
 		return false, "", err
 	}
-	if d.sup.get(taskID) != nil {
+	if d.sup.Get(taskID) != nil {
 		return false, "it is already running", nil
 	}
 	if t.ResumeID == "" {

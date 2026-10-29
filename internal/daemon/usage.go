@@ -659,7 +659,7 @@ func usageOfRefresh(r *store.KeepaliveRefresh) *store.SessionUsage {
 // promptCause is what a prompt submitted now was: the peer message or wake
 // atrium just typed, or the operator.
 func (d *Daemon) promptCause(taskID string) string {
-	if run := d.sup.get(taskID); run != nil {
+	if run := d.sup.Get(taskID); run != nil {
 		if c := run.PeerPromptCause(time.Now()); c != "" {
 			return c
 		}
