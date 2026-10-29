@@ -38,8 +38,8 @@ type JwksCache struct {
 // they use it, so an hour is well inside the window where both are listed.
 const jwksFresh = time.Hour
 
-// For fetches a provider's keys, or returns what was fetched recently.
-func (c *JwksCache) For(ctx context.Context, url string) (map[string]*rsa.PublicKey, error) {
+// JwksFor fetches a provider's keys, or returns what was fetched recently.
+func (c *JwksCache) JwksFor(ctx context.Context, url string) (map[string]*rsa.PublicKey, error) {
 	c.Lock()
 	if k, ok := c.keys[url]; ok && time.Since(c.got[url]) < jwksFresh {
 		c.Unlock()

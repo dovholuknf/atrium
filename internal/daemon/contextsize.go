@@ -17,7 +17,7 @@ import (
 // Every turn re-reads the whole context, so a worker at 300k pays for 300k on
 // every turn, and neither the model nor the board says so. The size is the
 // keep-alive's own figure, the last main reply's input plus cache writes plus
-// cache reads, read by the same `lastReplies.read`.
+// cache reads, read by the same `lastReplies.readLastReply`.
 //
 // NEVER STORED, like activity (docs/runtime/activity-design.md). It lives in a map
 // here and dies with the process; the next tick reads it again.
@@ -86,8 +86,8 @@ type contextSizes struct {
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{replies: &lastReplies{}, m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
-		transcript: api.TranscriptPath, latest: api.LatestSession}
+	return &contextSizes{replies: &lastReplies{}, m: map[string]contextSeen{}, judged: map[string]int64{},
+		session: map[string]string{}, transcript: api.TranscriptPath, latest: api.LatestSession}
 }
 
 // started records the session a card's runner says it has just started.
@@ -185,7 +185,7 @@ func (c *contextSizes) read(t *store.Task) (int64, bool) {
 	if ok && last.path == path && last.mod.Equal(info.ModTime()) && last.size == info.Size() {
 		return last.tokens, false
 	}
-	r, err := c.replies.read(path)
+	r, err := c.replies.readLastReply(path)
 	if err != nil {
 		return 0, false
 	}

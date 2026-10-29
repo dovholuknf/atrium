@@ -529,7 +529,7 @@ func (d *Daemon) claimsOf(ctx context.Context, disc *discovery, cfg AuthConfig, 
 		return "", "", fmt.Errorf("the provider publishes no signing keys, so nothing it " +
 			"sends can be verified")
 	}
-	keys, err := d.jwks.For(ctx, disc.JWKSURL)
+	keys, err := d.jwks.JwksFor(ctx, disc.JWKSURL)
 	if err != nil {
 		return "", "", err
 	}

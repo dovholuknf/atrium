@@ -319,7 +319,7 @@ type lastReplies struct {
 	scans atomic.Int64
 }
 
-func (c *lastReplies) load(path string) (lastReplyEntry, bool) {
+func (c *lastReplies) lastReplyLoad(path string) (lastReplyEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e := c.m[path]
@@ -329,7 +329,7 @@ func (c *lastReplies) load(path string) (lastReplyEntry, bool) {
 	return *e, true
 }
 
-func (c *lastReplies) store(path string, e lastReplyEntry) {
+func (c *lastReplies) lastReplyStore(path string, e lastReplyEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.m == nil {
@@ -345,7 +345,7 @@ func (c *lastReplies) store(path string, e lastReplyEntry) {
 	c.m[path] = &e
 }
 
-func (c *lastReplies) drop(path string) {
+func (c *lastReplies) lastReplyDrop(path string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.m[path]; !ok {
@@ -360,17 +360,17 @@ func (c *lastReplies) drop(path string) {
 	}
 }
 
-// read finds the last main-thread assistant reply with usage in a
+// readLastReply finds the last main-thread assistant reply with usage in a
 // transcript. The answer is cached per path on the file's size and mtime. A
 // grown file is scanned from the cached offset when the whole file is inside the
 // tail window, where that gives the same answer as a whole read. A file that
 // shrank or whose mtime went back is read whole.
-func (c *lastReplies) read(path string) (*lastReply, error) {
+func (c *lastReplies) readLastReply(path string) (*lastReply, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	prev, have := c.load(path)
+	prev, have := c.lastReplyLoad(path)
 	if have && prev.size == info.Size() && prev.mtime.Equal(info.ModTime()) {
 		r := prev.reply
 		r.TTL = prev.ttl
@@ -411,16 +411,16 @@ func (c *lastReplies) read(path string) (*lastReply, error) {
 		out = &lastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
 	})
 	if err != nil {
-		c.drop(path)
+		c.lastReplyDrop(path)
 		return nil, err
 	}
 	if out == nil {
-		c.drop(path)
+		c.lastReplyDrop(path)
 		return nil, errors.New("no main reply in the transcript")
 	}
 	// Size and mtime are from before the read. A write landing mid-read makes
 	// the next call see a change and scan again, never a stale answer.
-	c.store(path, lastReplyEntry{
+	c.lastReplyStore(path, lastReplyEntry{
 		size: info.Size(), mtime: info.ModTime(), offset: start + done, from: start,
 		reply: *out, ttl: ttl,
 	})
@@ -779,7 +779,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if path == "" {
 		return skip("no transcript")
 	}
-	r, err := k.replies.read(path)
+	r, err := k.replies.readLastReply(path)
 	if err != nil {
 		return skip("no transcript")
 	}
@@ -1005,7 +1005,7 @@ func (k *keepalive) clearOnRealTurn(t *store.Task, card *store.KeepaliveCard) *s
 	if path == "" {
 		return card
 	}
-	r, err := k.replies.read(path)
+	r, err := k.replies.readLastReply(path)
 	if err != nil || !r.At.After(card.StateAt) {
 		return card
 	}
@@ -1207,7 +1207,7 @@ func (k *keepalive) viewOf(t *store.Task, card *store.KeepaliveCard, out *keepal
 	if path == "" {
 		return out
 	}
-	r, err := k.replies.read(path)
+	r, err := k.replies.readLastReply(path)
 	if err != nil {
 		return out
 	}

@@ -50,7 +50,7 @@ func BenchmarkLastReply30Cards(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, p := range paths {
-			if _, err := replies.read(p); err != nil {
+			if _, err := replies.readLastReply(p); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -81,8 +81,8 @@ func BenchmarkLastReply30CardsUncached(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, p := range paths {
-			replies.drop(p)
-			if _, err := replies.read(p); err != nil {
+			replies.lastReplyDrop(p)
+			if _, err := replies.readLastReply(p); err != nil {
 				b.Fatal(err)
 			}
 		}

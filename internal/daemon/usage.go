@@ -725,7 +725,7 @@ func (d *Daemon) usageFor(taskID string, limit int) (any, error) {
 		}
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
-				if r, err := d.replies.read(path); err == nil {
+				if r, err := d.replies.readLastReply(path); err == nil {
 					v.ContextNow, v.Model = r.Context, r.Model
 				}
 			}
