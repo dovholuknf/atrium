@@ -1,4 +1,4 @@
-package daemon
+package roomconf
 
 import (
 	"net"
@@ -35,7 +35,7 @@ import (
 //
 // Importing `net/http/pprof` also registers it on `http.DefaultServeMux`.
 // Nothing in atrium serves that mux, and nothing may start to.
-func withProfiling(board http.Handler, ln net.Listener) http.Handler {
+func WithProfiling(board http.Handler, ln net.Listener) http.Handler {
 	if ln == nil || !isLoopbackAddr(ln.Addr()) {
 		return board
 	}

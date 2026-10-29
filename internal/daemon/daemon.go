@@ -27,6 +27,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
 	"github.com/dovholuknf/atrium/internal/base/shellpick"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -1239,7 +1240,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 		// The profiler, on this listener only and only when it is loopback.
 		// See pprof.go.
-		humanSrv.Handler = withProfiling(humanSrv.Handler, humanLn)
+		humanSrv.Handler = roomconf.WithProfiling(humanSrv.Handler, humanLn)
 	}
 
 	// `addressOf`, not concatenation. An address that already names a host,
