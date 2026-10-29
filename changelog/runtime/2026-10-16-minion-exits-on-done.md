@@ -1,1 +1,0 @@
-A per-item minion (tagged atrium:minion and atrium:director) is now asked to leave on its final done report, after the usual delay. A plain director, or a minion tagged keep-open or resident, still stays.

@@ -1,1 +1,0 @@
-`atrium-deploy.ps1` probes a remote room by its bare name, then `<room>.atrium`, and uses the route that answered for every later ssh and scp call. "offline" now means no route worked. Item bug-deploy-bare-ssh-names.

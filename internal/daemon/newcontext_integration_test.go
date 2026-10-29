@@ -65,7 +65,7 @@ func ncCard(t *testing.T, d *Daemon) (*store.Task, *fakePTY, string) {
 }
 
 // limitPrompt is the start of the limit prompt, to look for in what was typed.
-const limitPrompt = "you are at context limit."
+const limitPrompt = "Pause your work now."
 
 // cycleFile is the handoff file the card's cycle asked for.
 func cycleFile(d *Daemon, id string) string {
@@ -143,12 +143,13 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	}
 
 	// 1. The limit prompt, naming the file and the binary, and only that.
-	want := newContextLimitPrompt(path, "/opt/atrium/atrium", false)
+	want := newContextLimitPrompt(path, "/opt/atrium/atrium", false, 0, 0)
 	until(t, "the limit prompt", func() bool {
 		return strings.Contains(f.written(), want) && strings.HasSuffix(f.written(), "\r")
 	})
-	if want != "you are at context limit. wrap what is in flight, then either write your handoff to "+path+
-		" and run /opt/atrium/atrium ready, or call the atrium_ready tool with the handoff text." {
+	if want != "Atrium is starting a new context on this card. Pause your work now. Write a handoff to "+path+
+		" that says what is complete, what is in flight, and what's still to be done. Then run /opt/atrium/atrium "+
+		"ready. Atrium clears your context when this turn ends and starts a new one from your handoff." {
 		t.Fatalf("the prompt reads %q", want)
 	}
 

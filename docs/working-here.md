@@ -6,8 +6,8 @@ branching and landing, and the conventions. Read it before a first change, a mer
 ## Documentation
 
 - **The backlog is on the hub.** Use `atrium_backlog` or `atrium backlog`. `docs/backlog.md` is frozen.
-- **A change ships its own notes.** Never edit `CHANGELOG.md` or `docs/test-plan.md`. Write
-  `changelog/<dept>/<yyyy-mm-dd>-<item>.md` and `docs/changes/<item>.md` (its test plan section).
+- **A change ships its own notes.** A branch never edits `CHANGELOG.md`: a weekly roll-up card owns it. Write
+  `changelog/<dept>/<yyyy-mm-dd>-<item>.md` and `docs/changes/<item>.md` (its `Docs:` line).
   `docs/changes/README.md` has the format.
 
 ## Testing

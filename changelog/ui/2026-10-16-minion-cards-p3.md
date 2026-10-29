@@ -1,1 +1,0 @@
-Resting item minions no longer clutter the board, the stack or the phone's home. A minion (tagged `atrium:minion`) is left out of the columns, the rows and every count taken from them, and comes back the moment it asks a question or needs a permission, or while its terminal is attached. The header working count still includes it. (u-minion-cards-hidden, phase 3)

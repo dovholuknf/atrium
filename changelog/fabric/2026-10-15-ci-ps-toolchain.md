@@ -1,1 +1,0 @@
-﻿The toolchain script's Windows payloads are back under the cmd.exe limit (the MinGit check and the loader shed bytes), and the C-profile test no longer depends on what the host has: a fake C:\msys64 probe root, fake tools that run on Windows, and no commit signing in its scratch repo.

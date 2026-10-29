@@ -1,11 +1,62 @@
 # Changelog
 
-**Frozen 2026-09-29.** New entries go in `changelog/<dept>/<yyyy-mm-dd>-<item>.md`, one file each.
-See `changelog/README.md`. Nothing folds those files back in here, so this file stops at 2026-09-29. For anything
-newer, read `changelog/`.
+New entries go in `changelog/<dept>/<yyyy-mm-dd>-<item>.md`, one file each. See `changelog/README.md`. A weekly
+roll-up folds those files into one dated section here and removes them, so for anything newer than the top section,
+read `changelog/`.
 
 A running log of what's been built. Newest first. No formal version cuts yet (everything is `v0.0.0-dev`); each
 section heading is just "what landed in this iteration."
+
+## 2026-10-29
+
+Everything since 2026-09-29, in broad buckets.
+
+- **Board and phone.** The board paints less while idle and no longer re-reads every card every few seconds. Rooms
+  show as a panel of tiles, and the bell tray opens under the header, counts only what you have not seen, and opens a
+  card's terminal on click. Cards are plain until you colour them, and colours now live on the hub. Every tab keeps its
+  own grouping and sort, the top tabs can be reordered, and the address carries the view so a link reaches a card.
+  The Terminals list gained folding parents, a started sort, paused cards and a quieter row. A new chat tab, a
+  backlog tab with a view bar and a new-item button, and a card peek made of drawers sit beside them. The phone got
+  a real message box, a hidden terminal tray, a card picker, multi-file attach, an in-page file viewer and approvals
+  on a hub with two rooms. Many small phone overlaps and sideways scrolls are fixed.
+
+- **Terminals.** A file path in a code span, quotes or a table cell is a link, and hovering one underlines it without
+  a popup. A history after a resize no longer shows rows twice or skips rows, the last row is no longer cut off,
+  and a fresh card no longer repeats its banner. A phone can watch a card without resizing it. With the `pty_host`
+  setting on, runners and shells live in `atrium ptyhost` and a restarted room reattaches to them. On Windows the
+  runner and its console host start outside the job and at a normal priority.
+
+- **Cards, workers and context.** A worker ends one way, `atrium_done` with a sha or artifact, or `atrium_blocked`
+  with a reason, and one that stops silently is nudged twice. Atrium cycles a card's context at its limit, with a
+  handoff file per card, before the runner compacts it. A card has an address made of names, and `atrium_say`,
+  `atrium_exit` and `atrium_cull` take `name@room` and `alias@room`. Launches name the backlog item they work on,
+  and workers can be lean or superlean. A worker whose branch landed is reclaimed on its own, and closing a card
+  stashes by default and frees its disk. Keep-alive refreshes Sonnet 5.5 cards. The usage tab counts calls and
+  groups by department or director, and a turn over 45 minutes is flagged.
+
+- **Rooms, hub and transports.** The hub keeps its own git store, takes pushes, fetches code to and from rooms and
+  answers where a card can fetch what it lacks. A worker lands its branch with `atrium merge`. The hub holds the
+  backlog, the director reports, documents and the operator profile, and reads CI for rooms. Rooms reach it over
+  direct mTLS, ziti or zrok, with a badge per transport, several addresses and a reattach after 15 seconds of
+  silence. Rooms can log in to each other over ssh, and a room can be set up from a spec with
+  `atrium room setup`. The `provision-room.ps1`, `room-git.ps1`, `room-gate.ps1` and `room-toolchain.ps1` scripts
+  bring a Windows, macOS or Linux room up with go, node, git and one permission gate.
+
+- **Items, pull requests and review.** The Items tab is redrawn to the lifecycle design, with steps, a blocked
+  question on the list, cost per item, pools of resident cards and an efficacy page. The pulls tab groups cards by
+  what you must do, adds a PR faster and gives a PR a worktree, and a pasted link opens as a card at once. A
+  branch's status says whether it landed, is open or is orphaned.
+
+- **Tests, CI and deploy.** `go test ./...` runs the unit tests only, and `scripts/test-touched.sh` tests what a
+  branch touched. CI runs fewer, parallel jobs with a rollup on the run page and fails when the Go suite gets slow.
+  The board suite runs in shards and many flaky board and daemon tests now wait on state instead of a clock. Deploys
+  refuse to restart the room their own shell runs under, wait for the old room to release its store and are checked
+  by what the room answers.
+
+- **Docs and design.** `docs/` is sorted into one folder per owning area. New pages cover the pty host, how a card
+  gets code and hands it back, trying atrium from your own agent and a help agent. Design notes cover the review tab,
+  scheduled launches, item dependencies, room deploy holds and rooms that restart by themselves. Correctness reviews
+  cr2 and cr48 are in `docs/review/`.
 
 ## Unreleased
 

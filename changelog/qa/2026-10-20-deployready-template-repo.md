@@ -1,1 +1,0 @@
-The deployready git tests copy a base repository built once instead of building one per test, and a commit helper runs git twice instead of three times. The nine tests leave the flaky suite (deployready-template-repo).

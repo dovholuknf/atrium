@@ -1,1 +1,0 @@
-A board unit on the flaky list that fails its first try and passes the retry is now a pass marked PASSED ON RETRY and never read as clean, in the shard report, the run summary, the rollup and the flake ledger, and the flaky job gives its board units that one retry. An unlisted unit that passes on retry still fails the run (board-retry-pass).

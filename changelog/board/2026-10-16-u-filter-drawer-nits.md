@@ -1,1 +1,0 @@
-Going to a card from the switcher, a toast or a card link now turns on the column or subagents chip that was hiding it, in the view you are on, and leaves your other filters alone. (u-filter-drawer-nits)

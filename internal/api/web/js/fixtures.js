@@ -1217,7 +1217,7 @@ document.addEventListener("paste", async e => {
   if ((t && (t.closest ? t.closest("input, textarea, select, [contenteditable], .xterm") : null)) ||
       document.querySelector("dialog[open]")) return;
   const text = ((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
-  if (!/^https?:\/\/\S+$/.test(text)) return;
+  if (!QUICKPASTE_URL.test(text)) return;
   e.preventDefault();
   await quickPasteGo(text, false);
 });

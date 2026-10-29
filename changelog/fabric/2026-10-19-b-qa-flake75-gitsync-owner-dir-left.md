@@ -1,1 +1,0 @@
-A repository a push made and that took nothing now has its empty owner and host directories removed with the same bounded retry as the repository, so one left in delete-pending on Windows no longer strands them. Item b-qa-flake75-gitsync-owner-dir-left.

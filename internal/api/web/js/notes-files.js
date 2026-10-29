@@ -1941,7 +1941,7 @@ async function saveHandoffDir() {
   afterMachineSave();
   toast("saved", el.value.trim()
     ? "the next context cycle writes its handoff there"
-    : "handoffs go to $TEMP/atrium/handoffs");
+    : "handoffs go to the card's folder, else to handoffs beside the room's database");
 }
 
 // The land-the-plane line's box. A per-browser pref (landThePlaneK, js/peek.js), so no daemon call: write it,

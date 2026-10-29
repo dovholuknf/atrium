@@ -258,10 +258,9 @@ document.addEventListener("click", e => {
   const inside = e.clientX >= r.left && e.clientX <= r.right &&
     e.clientY >= r.top && e.clientY <= r.bottom;
   if (inside) return;
-  // The bar holds a typed name or query, and the click took focus off its field, so Escape would hit the dialog.
-  if (dlg.id === "switcher") {
-    const f = [dlg.querySelector("#sw-q"), dlg.querySelector("#sw-nm")].find(x => x && x.checkVisibility());
-    if (f) f.focus();
+  if (dlg.id === "switcher" && swDirty()) {
+    confirmUser("discard what you typed?", "Clicking outside closes the bar and what is in its field goes with it.", "discard")
+      .then(yes => { if (yes) dlg.close(); else if (dlg.open) swField().focus(); });
     return;
   }
   dlg.close();

@@ -1,1 +1,0 @@
-The `details` pill on a card's footer strip keeps a readable label when you hover it, in every skin and on a themed card. It takes the terminal's text colour and no fill, where the board's button hover could leave it hard to read. (u-details-button-hover-text)

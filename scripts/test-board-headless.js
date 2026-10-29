@@ -5572,7 +5572,7 @@ async function markdownTabSection(browser, base) {
     if (r.hrefs.some(h => /javascript:/i.test(h || ""))) fail("a javascript: link survived: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fother.md")) fail("a relative .md link did not stay in the tab: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fdata%2Fa.txt")) fail("a relative file link did not go to the viewer: " + JSON.stringify(r.hrefs));
-    if (!r.hrefs.includes("https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.some(h => h === "https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
     if (JSON.stringify(r.imgs) !== JSON.stringify(["/v1/tasks/land-live/files/view?path=docs%2Fimg%2Fp.png"])) fail("images were " + JSON.stringify(r.imgs));
     if (tabReqs.some(u => /evil\.test/.test(u))) fail("a remote image was fetched");
     if (!/<script>window\.__pwn/.test(r.text)) fail("raw HTML was dropped rather than shown as text: " + r.text.slice(0, 200));
@@ -20037,7 +20037,7 @@ async function growlLinksSection(browser, base) {
         return { links: b.querySelectorAll("a").length, strong: b.querySelectorAll("strong, b, em").length, text: b.textContent };
       }, root);
       if (f.links || f.strong) fail(tag + "the body drew markup: " + JSON.stringify(f));
-      if (!f.text.includes("https://example.com/y") || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
+      if (!/https:\/\/example\.com\/y/.test(f.text) || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
       if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
     } finally { await h.close(); }
   }
@@ -20973,8 +20973,15 @@ async function pasteRepoNameSection(browser, base) {
       fail("pasteRepoName: the preview did not follow the typing: " + hint);
 
     await p.mouse.click(5, 5);
+    if (process.env.DISMISSSHOTS) {
+      fs.mkdirSync(process.env.DISMISSSHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.DISMISSSHOTS, "dirty-click-outside-" + (process.env.DISMISSTAG || "after") + ".png") });
+    }
+    await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("pasteRepoName: a click on the backdrop with a typed name did not ask"));
+    await p.click("#ask-actions button:first-child");
     const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-nm").value }));
-    if (!kept.open || kept.value !== "fix/thing") fail("pasteRepoName: a click on the backdrop dismissed the dialog: " + JSON.stringify(kept));
+    if (!kept.open || kept.value !== "fix/thing") fail("pasteRepoName: no did not keep the dialog and the name: " + JSON.stringify(kept));
 
     await p.keyboard.press("Escape");
     const back = await p.evaluate(() => ({ open: document.getElementById("switcher").open,
@@ -21133,6 +21140,12 @@ async function quickPasteSection(browser, base) {
     await p.press("#sw-q", "Enter");
     if (await p.evaluate(() => !!document.querySelector("#sw-list #sw-open"))) fail("quickPaste: text that is not a link got an open row");
     if (st.calls.length) fail("quickPaste: text that is not a link still called: " + st.calls.join(" | "));
+    // an ssh clone url is a link: it gets an open row and is read
+    await p.fill("#sw-q", "git@github.com:netfoundry/docusaurus-shared.git");
+    await p.waitForFunction(() => !!document.querySelector("#sw-list #sw-open"), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: an ssh clone url got no open row"));
+    await until(() => st.calls.some(c => c.indexOf("POST /v1/recognise") === 0 && c.indexOf("git@github.com:netfoundry") > 0), 5000,
+      "the ssh read").catch(() => fail("quickPaste: an ssh clone url was not read: " + st.calls.join(" | ")));
     // the paste button puts the clipboard's link in the bar, and reads it
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.click("#sw-paste");
@@ -22309,6 +22322,51 @@ async function switcherRankSection(browser, base) {
     if (errors.length) fail("switcherRank: page errors: " + errors.join(" | "));
   } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("switcherRank ok");
+}
+
+// THE SWITCHER CLOSES ON ESCAPE, EVEN WITH THE FIELD FOCUSED, AND ON A CLICK OUTSIDE ITS FORM. A click inside leaves it open, and outside a typed query it asks first.
+async function switcherDismissSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+    const open = async () => {
+      await p.evaluate(() => openSwitcher());
+      await p.waitForFunction(() => document.getElementById("switcher").open && document.activeElement === document.getElementById("sw-q"),
+        null, { timeout: slow(5000) });
+    };
+    const isOpen = () => p.evaluate(() => document.getElementById("switcher").open);
+    await open();
+    await p.keyboard.press("Escape");
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: Escape did not close the switcher"));
+    await open();
+    await p.click("#sw-q");
+    await p.click("#sw-foot", { position: { x: 2, y: 2 } });
+    if (!(await isOpen())) fail("switcherDismiss: a click inside the form closed the switcher");
+    await p.mouse.click(4, 4);
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: a click outside a clean form did not close the switcher"));
+    await open();
+    await p.keyboard.type("zz");
+    await p.mouse.click(4, 4);
+    await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: a click outside a typed query did not ask"));
+    if (!(await isOpen())) fail("switcherDismiss: a click outside a typed query closed the switcher before the answer");
+    await p.click("#ask-actions button:first-child");
+    const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-q").value }));
+    if (!kept.open || kept.value !== "zz") fail("switcherDismiss: no did not keep the query: " + JSON.stringify(kept));
+    await p.mouse.click(4, 4);
+    await p.waitForSelector("#ask-actions button.go", { state: "visible", timeout: slow(5000) });
+    await p.click("#ask-actions button.go");
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: yes did not close the switcher"));
+    if (errors.length) fail("switcherDismiss: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("switcherDismiss ok");
 }
 
 // GOING TO A CARD OPENS EVERY FOLD IT SITS IN, except the terminals list's headings. Its heading path, its project group
@@ -23706,7 +23764,7 @@ async function mViewerSection(browser) {
       if (!st.ifRanges.length) fail(tag + "the range was not tied to the file with If-Range");
       await back();
       // a server that ignores Range answers the whole file, and the read stops at the cap
-      st.streamed = {};
+      st.streamed = Object.create(null);
       await p.evaluate(s => document.querySelector(s).click(), file("ignores.log"));
       await settle();
       v = await viewer();
@@ -28166,6 +28224,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("boardDocs", () => boardDocsSection(browser, base));
     await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
+    await unit("switcherDismiss", () => switcherDismissSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("revealChip", () => revealChipSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
@@ -28543,7 +28602,7 @@ function mServer(state) {
         // The whole file, written as the client takes it, so how much was read can be told.
         res.writeHead(200, head);
         let at = 0;
-        const rec = (state.streamed = state.streamed || {});
+        const rec = (state.streamed = state.streamed || Object.create(null));
         rec[want] = { sent: 0, aborted: false };
         res.on("close", () => { if (at < body.length) rec[want].aborted = true; });
         // One chunk a millisecond, not as fast as loopback takes it: a loaded runner can read a whole 25 MB image before

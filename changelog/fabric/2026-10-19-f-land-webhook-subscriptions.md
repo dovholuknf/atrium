@@ -1,1 +1,0 @@
-Hub events and card subscriptions. `scripts/atrium-event.ps1` (or `.sh`) posts a landing to the hub, and every card subscribed to `land` gets one short fyi from `land@<hub>` instead of the land script telling the orchestrator. A card subscribes with `atrium_subscribe` or `atrium subscribe land`, or on the board's new Hears line. Item f-land-webhook-subscriptions.

@@ -214,7 +214,7 @@ func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 	}
 }
 
-func TestALongSayAndTheHandoffKeepTheOldPlacesForACardWithNoHome(t *testing.T) {
+func TestALongSayAndTheHandoffPlacesForACardWithNoHome(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "plain", Worktree: filepath.ToSlash(t.TempDir()), Runner: "claude"})
@@ -228,7 +228,8 @@ func TestALongSayAndTheHandoffKeepTheOldPlacesForACardWithNoHome(t *testing.T) {
 	if want := filepath.Join(os.TempDir(), "atrium-says", task.ID+".md"); !strings.Contains(say, want) {
 		t.Fatalf("say %q, want the old place %s", say, want)
 	}
-	if got, want := d.handoffPath(task), filepath.Join(os.TempDir(), "atrium", "handoffs", task.ID+".md"); got != want {
+	// The handoff is never in the system temp folder: beside the room's database instead.
+	if got, want := d.handoffPath(task), filepath.Join(filepath.Dir(d.opts.DBPath), handoffDirName, task.ID+".md"); got != want {
 		t.Fatalf("handoff at %s, want %s", got, want)
 	}
 }

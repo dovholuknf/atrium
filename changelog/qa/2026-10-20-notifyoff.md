@@ -1,1 +1,0 @@
-The notifyOff board unit waits for the board to be live and the drawer open before clicking the toggle, and for the switch to flip before reading the labels. It is listed in the flaky suite (notifyoff).

@@ -1,1 +1,0 @@
-TestAStartWritesItsRunRowBeforeTheLaunchIsComplete no longer leaks a runner on a loaded Windows runner: its cleanup ends the lone runner with a plain process kill, not the taskkill tree walk that took 5s here and longer under load (q-go-flaky-det).

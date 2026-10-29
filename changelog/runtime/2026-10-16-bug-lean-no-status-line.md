@@ -1,1 +1,0 @@
-A lean card on Windows now runs a `bash <script>` status line as `bash -c '<script>'`, the form that draws where Claude Code drew nothing for the operator's own command (sg3). Item bug-lean-no-status-line.

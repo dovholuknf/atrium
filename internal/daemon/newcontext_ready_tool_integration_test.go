@@ -80,7 +80,8 @@ func TestReadyWithEmptyTextIsRefused(t *testing.T) {
 	}
 }
 
-func TestTheLimitPromptNamesTheToolAndAShellessRunnerGetsOnlyTheTool(t *testing.T) {
+// The tool is not on every card's list, so a runner with a shell is told only the CLI.
+func TestTheLimitPromptNamesOnlyTheCLIAndAShellessRunnerGetsOnlyTheTool(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, f, _ := ncCard(t, d)
@@ -88,7 +89,7 @@ func TestTheLimitPromptNamesTheToolAndAShellessRunnerGetsOnlyTheTool(t *testing.
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	if w := f.written(); !strings.Contains(w, "atrium_ready") || !strings.Contains(w, "/opt/atrium/atrium ready") {
+	if w := f.written(); strings.Contains(w, "atrium_ready") || !strings.Contains(w, "/opt/atrium/atrium ready") {
 		t.Fatalf("an ordinary runner was told %q", w)
 	}
 

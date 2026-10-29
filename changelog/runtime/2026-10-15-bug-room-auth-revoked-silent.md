@@ -1,1 +1,0 @@
-A room whose claude login is revoked (`OAuth token revoked · Please run /login` on any card) is now marked `login needed` on the board and in `/_hub/rooms`, refuses new claude launches with that reason, and rings the notifier once. Pressing the chip lifts it. Item bug-room-auth-revoked-silent.

@@ -1,1 +1,0 @@
-Two repo checks fixed after the orchestrator's picks: the card root code takes its home folder and OS through an Env instead of package vars a test assigns, and the added flat waits in the chat, pulls and hears board tests wait on a condition (pickfallout).

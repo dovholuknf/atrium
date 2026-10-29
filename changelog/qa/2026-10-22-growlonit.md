@@ -1,1 +1,0 @@
-The growlOnIt board unit stubbed the pop-out's terminal before the pop-out had attached its own, so the real attach could replace the stub and the focused pop-out stopped silencing its card: it now waits for the pop-out's attach first (growlonit).

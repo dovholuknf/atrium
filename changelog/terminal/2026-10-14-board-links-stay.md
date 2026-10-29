@@ -1,1 +1,0 @@
-A link in a terminal that points at this board (`http://127.0.0.1:7778/#term=<id>`, or a card's `/alias/` address) now routes inside the board instead of opening a browser tab beside the installed app. A popped-out terminal hands it to the main board and opens one only when none answers. Every other URL opens as before.
