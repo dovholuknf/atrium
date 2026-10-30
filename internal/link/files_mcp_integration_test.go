@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // dropSeen is one PUT the fake room took.
@@ -48,7 +49,7 @@ func newFilesHarness(t *testing.T) *filesHarness {
 	ph := &publishHarness{t: t, st: st, work: work}
 	h := &filesHarness{publishHarness: ph, older: map[string]bool{}}
 	board := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		room := r.Header.Get(RoomHeader)
+		room := r.Header.Get(wire.RoomHeader)
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/tasks":

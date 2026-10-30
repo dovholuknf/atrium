@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // OPEN A LINK, ON THE HUB. Design: docs/rnd/card-lifecycle-design.md, section 3. Item r-open-verb-pr.
@@ -163,7 +164,7 @@ func (p *Proxy) retagOpen(res *http.Response, room string) error {
 			room = owner
 		}
 		if id, ok := obj["card"].(string); ok && id != "" {
-			obj["card"] = tagFor(room, id)
+			obj["card"] = wire.TagFor(room, id)
 		}
 		out, err := json.Marshal(obj)
 		if err != nil {
@@ -178,7 +179,7 @@ func (p *Proxy) retagOpen(res *http.Response, room string) error {
 	obj["room"] = room
 	for _, field := range []string{"card", "pr"} {
 		if id, ok := obj[field].(string); ok && id != "" {
-			obj[field] = tagFor(room, id)
+			obj[field] = wire.TagFor(room, id)
 		}
 	}
 	out, err := json.Marshal(obj)

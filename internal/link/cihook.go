@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub hears CI. See docs/fabric/ci-hook-design.md.
@@ -647,7 +648,7 @@ func (d proxyCIDeliverer) Resolve(ctx context.Context, to string) (CITarget, CIA
 		}
 		return CITarget{}, CIAnswer{State: hubstore.CIPending, Detail: err.Error()}
 	}
-	return CITarget{Card: tagFor(scope, id), Room: scope, Handle: handle, ID: id}, CIAnswer{}
+	return CITarget{Card: wire.TagFor(scope, id), Room: scope, Handle: handle, ID: id}, CIAnswer{}
 }
 
 func (d proxyCIDeliverer) Send(ctx context.Context, t CITarget, from, text, kind string, wake bool) CIAnswer {

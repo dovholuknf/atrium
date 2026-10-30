@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -73,7 +74,7 @@ func TestHubTaskListLeavesOutTheLaunchCommand(t *testing.T) {
 		t.Fatalf("the list is %d bytes, want at most %d", len(raw), max)
 	}
 
-	res, err = http.Get(front.URL + "/v1/tasks/" + tagFor("alpha", id))
+	res, err = http.Get(front.URL + "/v1/tasks/" + wire.TagFor("alpha", id))
 	if err != nil {
 		t.Fatal(err)
 	}

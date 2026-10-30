@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's notify trigger and its one sink, an operator-written command.
@@ -802,7 +803,7 @@ func (n *Notifier) Announced(room string, cards []CardState) {
 	}
 	for _, id := range fire {
 		c := info[id]
-		n.enqueue(Notice{Name: c.Name, Reason: c.Reason, Card: tagFor(room, id), Room: room})
+		n.enqueue(Notice{Name: c.Name, Reason: c.Reason, Card: wire.TagFor(room, id), Room: room})
 	}
 }
 

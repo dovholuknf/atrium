@@ -28,7 +28,7 @@ first, then `docs/fabric/hub-and-rooms.md`.
 
 ## Scoped versus aggregate
 
-`rooms.go` has the two modes. **Scoped** names a room and the hub is a byte pipe to it: nothing parsed, nothing merged.
+`wire/rooms.go` has the two modes. **Scoped** names a room and the hub is a byte pipe to it: nothing parsed, nothing merged.
 **Aggregate** (the ALL view) names none, and the hub fans out and merges, which the archived federation design warned
 against and the operator chose on purpose.
 
@@ -94,7 +94,7 @@ against and the operator chose on purpose.
 | `transport/direct.go` / `certs.go` / `overlaytls.go` | mutual TLS, the hub's own CA, the join string, TLS inside an overlay |
 | `transport/ziti.go` / `zrok.go` | the overlay transports |
 | `proxy.go` | what the hub answers with, and what it refuses to pass to a room |
-| `rooms.go` / `fanout.go` / `cardroute.go` | scoped versus aggregate, merging lists, routing by card |
+| `wire/rooms.go` / `fanout.go` / `cardroute.go` | scoped versus aggregate, merging lists, routing by card |
 | `events.go` / `conn/announce.go` / `roomsevent.go` | the event stream fan-in, the room's cache announcements, the `rooms` event |
 | `control_mcp.go` / `ctlclass.go` / `ctlaudit.go` | the control MCP served by the hub, who sees which tools, the audit line |
 | `ctl_end.go` / `control_alias.go` / `*_mcp.go` | individual control tools. `*_door.go` is one code shared with the stdio server |

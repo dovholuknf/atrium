@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub file drop's four tools: atrium_put, atrium_files, atrium_get and atrium_export. The store is
@@ -266,7 +267,7 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		}
 	}
 	row, err := st.FileAdd(hubstore.FileInput{
-		Name: name, Note: in.Note, Origin: "card", By: callerName(req), Card: tagFor(room, card.ID), Room: room,
+		Name: name, Note: in.Note, Origin: "card", By: callerName(req), Card: wire.TagFor(room, card.ID), Room: room,
 		Data: data, TTLDays: in.TTLDays, Rate: true,
 	})
 	if err != nil {
@@ -289,7 +290,7 @@ func (c *controlMCP) filesHandler(ctx context.Context, req *mcp.CallToolRequest,
 		if err != nil {
 			return nil, out, err
 		}
-		card = tagFor(room, cd.ID)
+		card = wire.TagFor(room, cd.ID)
 	}
 	rows, err := st.FileList(card)
 	if err != nil {
@@ -358,7 +359,7 @@ func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	hr.Header.Set("Content-Type", "application/octet-stream")
 	if room != "" {
-		hr.Header.Set(RoomHeader, room)
+		hr.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := dropHTTP.Do(hr)
 	if err != nil {
@@ -443,7 +444,7 @@ func (c *controlMCP) exportHandler(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return nil, out, err
 	}
-	callerTag := tagFor(roomOf(req), card.ID)
+	callerTag := wire.TagFor(roomOf(req), card.ID)
 	stamp := time.Now().UTC().Format("20060102-1504")
 
 	for _, room := range rooms {
@@ -496,7 +497,7 @@ func (c *controlMCP) exportFetch(ctx context.Context, room, p string, limit int6
 	if err != nil {
 		return nil, err.Error()
 	}
-	hr.Header.Set(RoomHeader, room)
+	hr.Header.Set(wire.RoomHeader, room)
 	res, err := dropHTTP.Do(hr)
 	if err != nil {
 		return nil, "could not reach the room: " + err.Error()

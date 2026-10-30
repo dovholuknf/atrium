@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // soloHub is a hub with one room attached, which is `only` mode: a bare
@@ -133,9 +135,9 @@ func TestTheGateCountsEveryStreamOnASingleRoomHub(t *testing.T) {
 		{"merged", byURL("/v1/events/hub")},
 		{"room path", byURL("/v1/events/room/solo")},
 		{"bare, only mode", byURL("/v1/events")},
-		{"room param", byURL("/v1/events?" + RoomParam + "=solo")},
+		{"room param", byURL("/v1/events?" + wire.RoomParam + "=solo")},
 		{"room header", func(t *testing.T, base string) (<-chan Event, func()) {
-			return listenWith(t, base+"/v1/events", RoomHeader, "solo")
+			return listenWith(t, base+"/v1/events", wire.RoomHeader, "solo")
 		}},
 	})
 }
@@ -148,9 +150,9 @@ func TestTheGateCountsEveryStreamOnATwoRoomHub(t *testing.T) {
 		{"merged", byURL("/v1/events/hub")},
 		{"bare, merged", byURL("/v1/events")},
 		{"alpha path", byURL("/v1/events/room/alpha")},
-		{"beta param", byURL("/v1/events?" + RoomParam + "=beta")},
+		{"beta param", byURL("/v1/events?" + wire.RoomParam + "=beta")},
 		{"beta header", func(t *testing.T, base string) (<-chan Event, func()) {
-			return listenWith(t, base+"/v1/events", RoomHeader, "beta")
+			return listenWith(t, base+"/v1/events", wire.RoomHeader, "beta")
 		}},
 	})
 }
@@ -194,11 +196,11 @@ func TestInputFromAScopedBoardReachesTheGate(t *testing.T) {
 	for _, how := range []string{"header", "param"} {
 		url := front.URL + "/_hub/restart/input"
 		if how == "param" {
-			url += "?" + RoomParam + "=solo"
+			url += "?" + wire.RoomParam + "=solo"
 		}
 		req, _ := http.NewRequest(http.MethodPost, url, nil)
 		if how == "header" {
-			req.Header.Set(RoomHeader, "solo")
+			req.Header.Set(wire.RoomHeader, "solo")
 		}
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {

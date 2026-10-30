@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The persistent growler: something waiting on a human, shown on every screen
@@ -596,7 +597,7 @@ func (g *Growler) tick(ctx context.Context) {
 		if name == "" {
 			name = r.CardID
 		}
-		g.phone(Notice{Name: name, Reason: r.Reason, Card: tagFor(r.Room, r.CardID), Room: r.Room})
+		g.phone(Notice{Name: name, Reason: r.Reason, Card: wire.TagFor(r.Room, r.CardID), Room: r.Room})
 	}
 	for _, r := range live {
 		if r.Reason == ReasonPermission && r.Subject == "" {
@@ -768,7 +769,7 @@ func (g *Growler) view() ([]GrowlRow, error) {
 func (g *Growler) decorate(r *GrowlRow) {
 	r.Urgency = growlUrgency[r.Reason]
 	if r.CardID != "" {
-		r.Card = tagFor(r.Room, r.CardID)
+		r.Card = wire.TagFor(r.Room, r.CardID)
 	}
 	r.RoomOffline = g.attached != nil && !g.attached(r.Room)
 }

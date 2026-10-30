@@ -15,6 +15,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // atrium_publish, the control tool that puts a document on the hub. See docs_api.go for the
@@ -212,7 +213,7 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 
 	res, err := st.DocAdd(hubstore.DocInput{
 		Slug: slug, Title: in.Title, Name: name, Data: data,
-		Origin: "card", By: by, Card: tagFor(room, card.ID),
+		Origin: "card", By: by, Card: wire.TagFor(room, card.ID),
 		Rate: true,
 	})
 	if err != nil {
@@ -270,7 +271,7 @@ func (c *controlMCP) readCardFileWith(ctx context.Context, client *http.Client, 
 		return nil, "", err
 	}
 	if room != "" {
-		hr.Header.Set(RoomHeader, room)
+		hr.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := client.Do(hr)
 	if err != nil {

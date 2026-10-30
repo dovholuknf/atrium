@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // holds is a room that holds some cards, answers a card read only for those,
@@ -54,7 +56,7 @@ func send(t *testing.T, method, url, header, body string) (int, served) {
 	req, _ := http.NewRequest(method, url, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if header != "" {
-		req.Header.Set(RoomHeader, header)
+		req.Header.Set(wire.RoomHeader, header)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

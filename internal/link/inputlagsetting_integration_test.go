@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // lagRoom records every settings write it is sent.
@@ -79,7 +80,7 @@ func TestTheInputLagSwitchScopedToARoomStillSwitchesTheHub(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, front.URL+"/v1/settings",
 		strings.NewReader(`{"input_lag_log":true}`))
-	req.Header.Set(RoomHeader, "alpha")
+	req.Header.Set(wire.RoomHeader, "alpha")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

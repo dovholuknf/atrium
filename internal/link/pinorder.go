@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The order of a pinned strip, saved from a view that holds more than one room.
@@ -54,7 +56,7 @@ func pinOrderIn(r *http.Request) (ids []string, found bool) {
 func (p *Proxy) fanPinOrder(w http.ResponseWriter, r *http.Request, ids []string) {
 	bare := make([]string, len(ids))
 	for i, id := range ids {
-		_, bare[i] = splitTag(id)
+		_, bare[i] = wire.SplitTag(id)
 	}
 	payload, _ := json.Marshal(map[string][]string{"ids": bare})
 

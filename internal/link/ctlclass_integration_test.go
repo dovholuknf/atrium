@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // headerTransport stamps a session's identity on every request, as Claude Code
@@ -27,7 +29,7 @@ func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		r.Header.Set(AgentHeader, h.agent)
 	}
 	if h.room != "" {
-		r.Header.Set(RoomHeader, h.room)
+		r.Header.Set(wire.RoomHeader, h.room)
 	}
 	return http.DefaultTransport.RoundTrip(r)
 }
@@ -213,7 +215,7 @@ func TestClassCacheIsBounded(t *testing.T) {
 	for i := 0; i < classCacheMax+50; i++ {
 		r, _ := http.NewRequest(http.MethodPost, "/", nil)
 		r.Header.Set(AgentHeader, "worker1")
-		r.Header.Set(RoomHeader, "room"+strings.Repeat("x", i))
+		r.Header.Set(wire.RoomHeader, "room"+strings.Repeat("x", i))
 		h.c.classOf(r)
 	}
 	if n := len(h.c.classes); n > classCacheMax {

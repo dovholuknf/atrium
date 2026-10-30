@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The aggregate view: every room, one board.
@@ -219,12 +220,12 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 			obj["room"] = a.room
 			if m.idField != "" {
 				if id, ok := obj[m.idField].(string); ok {
-					obj[m.idField] = tagFor(a.room, id)
+					obj[m.idField] = wire.TagFor(a.room, id)
 				}
 			}
 			if m.taskField != "" {
 				if id, ok := obj[m.taskField].(string); ok {
-					obj[m.taskField] = tagFor(a.room, id)
+					obj[m.taskField] = wire.TagFor(a.room, id)
 				}
 			}
 			all = append(all, obj)
@@ -312,7 +313,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 			// THE SAME TAGGING A LIVE CARD GETS, so the board builds the same
 			// urls from it. Those urls will be refused, by name, which is
 			// better than a card whose buttons quietly do nothing.
-			obj["id"] = tagFor(name, c.ID)
+			obj["id"] = wire.TagFor(name, c.ID)
 			// WHAT A ROOM WOULD HAVE COMPUTED ON THE WAY OUT.
 			//
 			// The cache holds the stored row, which is the rule: never what the
@@ -447,7 +448,7 @@ func (p *Proxy) history(w http.ResponseWriter, r *http.Request) {
 			}
 			obj["room"] = a.room
 			if id, ok := obj["id"].(string); ok {
-				obj["id"] = tagFor(a.room, id)
+				obj["id"] = wire.TagFor(a.room, id)
 			}
 			all = append(all, obj)
 		}

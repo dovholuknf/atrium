@@ -1,4 +1,4 @@
-package link
+package wire
 
 import (
 	"strings"
@@ -33,15 +33,15 @@ const RoomHeader = "X-Atrium-Room"
 // RoomParam is the same thing for a websocket, which cannot set a header.
 const RoomParam = "atrium_room"
 
-// idJoin separates a room from a card id in aggregate mode.
+// IDJoin separates a room from a card id in aggregate mode.
 //
 // A TILDE, because it survives a URL path segment unescaped and appears in no
 // ULID, no directory name and no room name this can produce. A slash would be
 // read as a path separator by every router in the chain, and a colon is taken
 // by a Windows drive letter in the places these ids end up beside paths.
-const idJoin = "~"
+const IDJoin = "~"
 
-// tagFor is a card ID as the aggregate view addresses it.
+// TagFor is a card ID as the aggregate view addresses it.
 //
 // THE HUB REWRITES IDS ON THE WAY OUT AND UNDOES IT ON THE WAY IN, which is
 // what makes the aggregate board work with a board that was never told about
@@ -51,17 +51,17 @@ const idJoin = "~"
 //
 // Two rooms can mint the same card id, so without this a click in the aggregate
 // view would reach whichever room answered first.
-func tagFor(room, id string) string {
+func TagFor(room, id string) string {
 	if room == "" || id == "" {
 		return id
 	}
-	return room + idJoin + id
+	return room + IDJoin + id
 }
 
-// splitTag pulls a room back off an id. Answers an empty room for an id that
+// SplitTag pulls a room back off an id. Answers an empty room for an id that
 // carries none, which is every id in scoped mode.
-func splitTag(id string) (room, bare string) {
-	i := strings.Index(id, idJoin)
+func SplitTag(id string) (room, bare string) {
+	i := strings.Index(id, IDJoin)
 	if i <= 0 {
 		return "", id
 	}
