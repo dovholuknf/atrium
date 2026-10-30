@@ -234,6 +234,6 @@ func (d *Daemon) forgeFacts(ctx context.Context, args []string, vars map[string]
 		if hf := d.HubForge(); hf != nil {
 			return hf, nil
 		}
-		return d.prr.forgeFor(host)
+		return d.prr.ForgeFor(host)
 	})
 }

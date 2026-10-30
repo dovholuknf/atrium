@@ -143,9 +143,8 @@ func TestAPRRunnersCommandsAndForksHaveNoGitTokenInTheirEnv(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "http.http://127.0.0.1:7777/git/.extraHeader")
 	t.Setenv("GIT_CONFIG_VALUE_0", gitsync.HeaderCardToken+": C1.abc")
-	r := newPRRunner(nil, func(string) {})
 	for _, env := range [][]string{
-		childEnvFrom(r.baseEnv(), nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}),
+		childEnvFrom(os.Environ(), nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}),
 		childEnvFrom(os.Environ(), nil, map[string]string{"ATRIUM_PERM_GATE": "off"}),
 	} {
 		for _, kv := range env {

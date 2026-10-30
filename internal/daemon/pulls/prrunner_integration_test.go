@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package pulls
 
 import (
 	"context"
@@ -23,16 +23,16 @@ const prTestHead = "ad5ddf4c0e7d1b2a9f3e4d5c6b7a8f9e0d1c2b3a"
 type prFix struct {
 	t      *testing.T
 	st     *store.Store
-	r      *prRunner
+	r      *PRRunner
 	id     string
 	mu     sync.Mutex
 	calls  []string // "gh pr view", "git fetch", ...
-	forks  []forkSpec
+	forks  []ForkSpec
 	events []string
 	// ghErr, when set, fails `gh pr view`.
 	ghErr error
 	// claude answers a call from its prompt. The default is a clean review.
-	claude func(f *prFix, spec forkSpec, prompt string) ([]byte, error)
+	claude func(f *prFix, spec ForkSpec, prompt string) ([]byte, error)
 	// merges counts the merge-step calls.
 	merges int
 	final  []prrender.Finding
@@ -40,7 +40,7 @@ type prFix struct {
 
 func prFindingsFixture(t *testing.T) []prrender.Finding {
 	t.Helper()
-	b, err := os.ReadFile("../base/prreview/render/testdata/findings.json")
+	b, err := os.ReadFile("../../base/prreview/render/testdata/findings.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func newPRFix(t *testing.T) *prFix {
 	}
 	f := &prFix{t: t, st: st}
 	fixture := prFindingsFixture(t)
-	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+	f.claude = func(f *prFix, spec ForkSpec, prompt string) ([]byte, error) {
 		switch {
 		case !containsArg(spec.Args, "--resume"):
 			return prReceipt("prime-1", "ok", 42_000, 10_000), nil
@@ -115,17 +115,17 @@ func newPRFix(t *testing.T) *prFix {
 			return prReceipt("fork", `{"findings": []}`, 3_000, 55_000), nil
 		}
 	}
-	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := newPRRunner(st, func(id string) {
+	r := NewPRRunner(st, func(id string) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		if p, err := st.PRByID(id); err == nil {
 			f.events = append(f.events, p.State+"/"+p.RunState)
 		}
-	})
+	}, testConfig())
 	r.agentsDir = func() string { return agents }
 	r.userSettings = func() []byte { return nil }
 	r.baseEnv = func() []string { return []string{"PATH=/bin", "ATRIUM_PERM_GATE=on", "ATRIUM_TASK_ID=x"} }
@@ -163,7 +163,7 @@ func newPRFix(t *testing.T) *prFix {
 		}
 		return nil, nil
 	}
-	r.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
+	r.fork = func(ctx context.Context, spec ForkSpec) ([]byte, error) {
 		f.mu.Lock()
 		f.forks = append(f.forks, spec)
 		f.mu.Unlock()
@@ -410,7 +410,7 @@ func TestPRRunnerPanelWithNoReviewerLeavesTheReviewNotFailed(t *testing.T) {
 func TestPRRunnerEveryReviewerFailingLeavesTheReviewNotFailed(t *testing.T) {
 	f := newPRFix(t)
 	inner := f.claude
-	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+	f.claude = func(f *prFix, spec ForkSpec, prompt string) ([]byte, error) {
 		if containsArg(spec.Args, "--resume") && strings.Contains(prompt, "Review this pull request.") {
 			return nil, errors.New("the reviewer crashed")
 		}
@@ -495,7 +495,7 @@ func TestPRRunnerAbortMidStepLeavesAborted(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
 	inFork := make(chan struct{}, 8)
-	f.r.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
+	f.r.fork = func(ctx context.Context, spec ForkSpec) ([]byte, error) {
 		if !containsArg(spec.Args, "--resume") {
 			return prReceipt("prime-1", "ok", 42_000, 10_000), nil
 		}
@@ -540,7 +540,7 @@ func TestPRRunnerAbortStopsARunStartedWhileAnAbortedOneWindsDown(t *testing.T) {
 		first.Do(func() { inGH <- struct{}{}; <-release })
 		return run(ctx, c)
 	}
-	f.r.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
+	f.r.fork = func(ctx context.Context, spec ForkSpec) ([]byte, error) {
 		inFork <- struct{}{}
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -592,7 +592,7 @@ func TestPRRunnerResendRound(t *testing.T) {
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)
 	base := f.claude
-	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+	f.claude = func(f *prFix, spec ForkSpec, prompt string) ([]byte, error) {
 		if strings.Contains(prompt, "You are the merge step") {
 			// Finding 1's fix is two changes, which rule 36 refuses.
 			out := make([]prrender.Finding, len(fixture))
@@ -637,7 +637,7 @@ func TestPRRunnerFailsMergeAfterOneResend(t *testing.T) {
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)
 	base := f.claude
-	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+	f.claude = func(f *prFix, spec ForkSpec, prompt string) ([]byte, error) {
 		if strings.Contains(prompt, "You are the merge step") || strings.Contains(prompt, "The renderer refused") {
 			// A MED with no exposure, in both answers: rule 26 is hard.
 			out := make([]prrender.Finding, len(fixture))
@@ -744,7 +744,7 @@ func TestPRRunnerReplaysTheResentListAfterARetry(t *testing.T) {
 	f := newPRFix(t)
 	fixture := prFindingsFixture(t)
 	base := f.claude
-	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+	f.claude = func(f *prFix, spec ForkSpec, prompt string) ([]byte, error) {
 		if strings.Contains(prompt, "You are the merge step") {
 			out := make([]prrender.Finding, len(fixture))
 			copy(out, fixture)

@@ -28,6 +28,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
 	"github.com/dovholuknf/atrium/internal/base/shellpick"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -140,7 +141,7 @@ type Daemon struct {
 	st   *store.Store
 	ap   *api.Server
 	// prr runs pull request reviews. See prrunner.go.
-	prr *prRunner
+	prr *pulls.PRRunner
 
 	// mergedCulling is set while the sweep is culling due workers, so a slow
 	// exit is not started twice by the next tick. See mergedcull.go.
@@ -494,12 +495,9 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
-	d.prr = newPRRunner(st, d.ap.PublishPR)
+	d.prr = pulls.NewPRRunner(st, d.ap.PublishPR, d.prConfig())
 	d.ap.PRRunner = d.prr
-	d.prr.hk = &d.hk
-	d.prr.onAccess, d.prr.onWorked = d.ForgeAccessFrom, d.ForgeWorked
-	d.prr.hub, d.prr.hubSource = d.HubForge, d.hubSource
-	d.ap.PRForge = d.prr.forgeFor
+	d.ap.PRForge = d.prr.ForgeFor
 	d.ap.HubSource = func(ctx context.Context, name string) (string, func(), error) {
 		if d.HubForge() == nil {
 			return "", nil, errNoHub

@@ -13,6 +13,9 @@ from the daemon and holds no daemon state, so a change there runs only its own t
 `launch/` (the Git Bash lookup) and `publish/` (the ziti SDK enrol, the login provider key fetch) are the same: they
 import nothing from the daemon, and the daemon calls their exported names.
 
+`pulls/` (the pulls view: the PR review runner and the changes answer) and `promptline/` (reading a prompt from a transcript line)
+take what they need from the daemon as a `Config` or a `Changes` and import nothing from it.
+
 ## The permission chain: order is critical
 
 `onPermRequest` in `daemon.go`. Each step can answer and stop. **Reordering changes what the tool means**, so

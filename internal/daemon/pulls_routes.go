@@ -2,12 +2,57 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 	"github.com/dovholuknf/atrium/internal/store"
 )
+
+// prConfig is what the pulls runner reads from the daemon: its forks, its lean command line and environment, and the
+// board alert hooks.
+func (d *Daemon) prConfig() pulls.Config {
+	return pulls.Config{
+		Fork: func(ctx context.Context, spec pulls.ForkSpec) ([]byte, error) {
+			return runForkProcess(ctx, forkSpec(spec), d.hk.agentFork)
+		},
+		UserSettings: func() []byte { return d.hk.readUserSettings() },
+		LeanArgs: func(args []string, userSettings []byte, gateway string) ([]string, error) {
+			return leanArgs(args, userSettings, "", nil, leanKit{}, gateway, os.ReadFile, &d.hk)
+		},
+		ForkEnv: func(extra, harnessEnv map[string]string) {
+			leanEnv(extra)
+			if _, set := harnessEnv[keepaliveTTLVar]; !set {
+				extra[keepaliveTTLVar] = "1h"
+			}
+		},
+		ChildEnv: childEnvFrom,
+		Cost:     prCost,
+		OnAccess: d.ForgeAccessFrom, OnWorked: d.ForgeWorked,
+		Hub: d.HubForge, HubSource: d.hubSource,
+	}
+}
+
+func prPrice(rec *forkReceipt) keepalivePrice {
+	for m := range rec.ModelUsage {
+		if p, ok := usagePriceFor(m); ok {
+			return p
+		}
+	}
+	p, _ := usagePriceFor("claude-sonnet-5-5")
+	return p
+}
+
+// prCost prices one fork from its receipt, 0 when the receipt has no usage.
+func prCost(raw []byte) float64 {
+	var rec forkReceipt
+	if json.Unmarshal(raw, &rec) != nil || rec.Usage == nil {
+		return 0
+	}
+	return receiptCost(&rec, prPrice(&rec))
+}
 
 // changesFor answers the endpoint for one card.
 func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn time.Time) (any, error) {

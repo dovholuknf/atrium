@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package pulls
 
 import (
 	"context"
@@ -43,7 +43,7 @@ func (f *fakeForge) PRURL(r forge.Ref) string { return "https://example.test/o/r
 func TestPRRunnerWorksWithNoGh(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
-	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,11 +102,11 @@ func TestPRRunnerPicksForgeFromProviderHost(t *testing.T) {
 		Forge: "github", ForgeCmd: "ghw", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := f.r.forgeFor("ghe.example")
+	got, err := f.r.ForgeFor("ghe.example")
 	if err != nil || got.Kind() != forge.GitHub {
 		t.Fatalf("%v %v", got, err)
 	}
-	if _, err := f.r.forgeFor("unknown.example"); err == nil || !strings.Contains(err.Error(), "unknown.example") {
+	if _, err := f.r.ForgeFor("unknown.example"); err == nil || !strings.Contains(err.Error(), "unknown.example") {
 		t.Fatalf("%v", err)
 	}
 }
@@ -141,7 +141,7 @@ func TestPRRunnerTellsTheDaemonOfAnAccessErrorAndOfASuccess(t *testing.T) {
 func TestPRRunnerWithAHubAsksTheHubAndFetchesFromItsStore(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
-	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,12 +202,12 @@ func TestPRRunnerForgeForIsTheHubsWhenThereIsOne(t *testing.T) {
 	remote := forge.NewRemote(nil)
 	f.r.hub = func() *forge.Remote { return remote }
 	for _, host := range []string{"github.com", "bitbucket.org", "unknown.example", ""} {
-		if got, err := f.r.forgeFor(host); err != nil || got != forge.Forge(remote) {
+		if got, err := f.r.ForgeFor(host); err != nil || got != forge.Forge(remote) {
 			t.Fatalf("%q: %v %v", host, got, err)
 		}
 	}
 	f.r.hub = func() *forge.Remote { return nil }
-	if got, err := f.r.forgeFor("github.com"); err != nil || got.Kind() != forge.GitHub {
+	if got, err := f.r.ForgeFor("github.com"); err != nil || got.Kind() != forge.GitHub {
 		t.Fatalf("a room with no hub: %v %v", got, err)
 	}
 }

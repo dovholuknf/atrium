@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package pulls
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 func TestPRRunLogSaysEachSubStepWithItsSeconds(t *testing.T) {
 	t.Parallel()
 	f := newPRFix(t)
-	diff, err := os.ReadFile("../base/prreview/render/testdata/run/pr.diff")
+	diff, err := os.ReadFile("../../base/prreview/render/testdata/run/pr.diff")
 	if err != nil {
 		t.Fatal(err)
 	}

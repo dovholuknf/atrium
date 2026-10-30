@@ -1,4 +1,4 @@
-package daemon
+package pulls
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	prrender "github.com/dovholuknf/atrium/internal/base/prreview/render"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -52,12 +53,12 @@ var prSteps = []string{"fetch", "prime", "panel", "verify", "critics", "merge", 
 // prCmd is one named outbound command.
 type prCmd = forge.Cmd
 
-// prRunner is the daemon's PRRunner.
-type prRunner struct {
+// PRRunner is the daemon's PRRunner.
+type PRRunner struct {
 	st      *store.Store
 	publish func(id string)
 	// fork runs one claude call. run runs the forge's CLI and git. Both are seams for tests.
-	fork func(ctx context.Context, spec forkSpec) ([]byte, error)
+	fork func(ctx context.Context, spec ForkSpec) ([]byte, error)
 	run  func(ctx context.Context, c prCmd) ([]byte, error)
 	// forgeOf, when set, picks the forge for a host instead of the providers. A seam for tests.
 	forgeOf func(host string) (forge.Forge, error)
@@ -75,8 +76,12 @@ type prRunner struct {
 	// agentsDir is where the panel's agent definitions are.
 	agentsDir    func() string
 	userSettings func() []byte
-	// hk is the seams a fork reads. The daemon points it at its own, see hooks.go.
-	hk *hooks
+	// leanArgs, forkEnv, childEnv and cost are the daemon's lean command line, fork environment, child environment
+	// and receipt pricing, see pulls_fork.go.
+	leanArgs func(args []string, userSettings []byte, gateway string) ([]string, error)
+	forkEnv  func(extra, harnessEnv map[string]string)
+	childEnv func(base []string, harnessEnv map[string]string, atrium map[string]string) []string
+	cost     func(raw []byte) float64
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -84,17 +89,30 @@ type prRunner struct {
 	wg      sync.WaitGroup
 }
 
-func newPRRunner(st *store.Store, publish func(string)) *prRunner {
-	hk := defaultHooks()
-	var r *prRunner
-	r = &prRunner{hk: &hk,
-		st: st, publish: publish, fork: func(ctx context.Context, spec forkSpec) ([]byte, error) {
-			return runForkProcess(ctx, spec, r.hk.agentFork)
-		}, now: func() time.Time { return time.Now().UTC() },
+// Config is what the daemon passes in: the seams a run reads and the board alert hooks. See pulls_fork.go.
+type Config struct {
+	Fork         func(ctx context.Context, spec ForkSpec) ([]byte, error)
+	UserSettings func() []byte
+	LeanArgs     func(args []string, userSettings []byte, gateway string) ([]string, error)
+	ForkEnv      func(extra, harnessEnv map[string]string)
+	ChildEnv     func(base []string, harnessEnv map[string]string, atrium map[string]string) []string
+	Cost         func(raw []byte) float64
+	OnAccess     func(kind string, err error) bool
+	OnWorked     func(kind, host string)
+	Hub          func() *forge.Remote
+	HubSource    func(ctx context.Context, name string) (string, func(), error)
+}
+
+func NewPRRunner(st *store.Store, publish func(string), c Config) *PRRunner {
+	var r *PRRunner
+	r = &PRRunner{
+		st: st, publish: publish, fork: c.Fork, now: func() time.Time { return time.Now().UTC() },
 		baseEnv:      os.Environ,
-		userSettings: func() []byte { return r.hk.readUserSettings() },
-		cancels:      map[string]context.CancelFunc{},
-		ctxs:         map[string]context.Context{},
+		userSettings: c.UserSettings,
+		leanArgs:     c.LeanArgs, forkEnv: c.ForkEnv, childEnv: c.ChildEnv, cost: c.Cost,
+		onAccess: c.OnAccess, onWorked: c.OnWorked, hub: c.Hub, hubSource: c.HubSource,
+		cancels: map[string]context.CancelFunc{},
+		ctxs:    map[string]context.Context{},
 		agentsDir: func() string {
 			home, _ := os.UserHomeDir()
 			return filepath.Join(home, ".claude", "agents")
@@ -104,9 +122,12 @@ func newPRRunner(st *store.Store, publish func(string)) *prRunner {
 	return r
 }
 
+// Wired says whether the daemon filled the board alert hooks.
+func (r *PRRunner) Wired() bool { return r.onAccess != nil && r.onWorked != nil }
+
 // Start moves a queued row to fetching and runs it in the background. A row that
 // is not queued is somebody else's run and is left alone.
-func (r *prRunner) Start(id string) {
+func (r *PRRunner) Start(id string) {
 	if _, err := r.st.MovePR(id, []string{store.PRQueued}, store.PRFetching, "fetch", ""); err != nil {
 		log.Printf("[atrium] pr %s: not started: %v", id, err)
 		return
@@ -135,7 +156,7 @@ func (r *prRunner) Start(id string) {
 
 // Abort cancels the run, which kills its forks. The API has already marked the
 // row aborted and deletes the folder.
-func (r *prRunner) Abort(id string) {
+func (r *PRRunner) Abort(id string) {
 	r.mu.Lock()
 	cancel := r.cancels[id]
 	r.mu.Unlock()
@@ -145,10 +166,10 @@ func (r *prRunner) Abort(id string) {
 }
 
 // Wait blocks until every run has ended. For tests.
-func (r *prRunner) Wait() { r.wg.Wait() }
+func (r *PRRunner) Wait() { r.wg.Wait() }
 
 // Stop cancels every run, for the daemon's shutdown.
-func (r *prRunner) Stop() {
+func (r *PRRunner) Stop() {
 	r.mu.Lock()
 	for _, c := range r.cancels {
 		c()
@@ -158,7 +179,7 @@ func (r *prRunner) Stop() {
 
 // runBounded runs a command with a time bound and a read bound, as sources do:
 // the output is cut as it is read, not after it has all been held.
-func (r *prRunner) runBounded(ctx context.Context, c prCmd) ([]byte, error) {
+func (r *PRRunner) runBounded(ctx context.Context, c prCmd) ([]byte, error) {
 	if c.Timeout <= 0 {
 		c.Timeout = prGHTimeout
 	}
@@ -169,9 +190,9 @@ func (r *prRunner) runBounded(ctx context.Context, c prCmd) ([]byte, error) {
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, c.Name, c.Args...)
 	cmd.Dir = c.Dir
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	// git must never stop to ask for a credential nobody is there to type.
-	cmd.Env = childEnvFrom(r.baseEnv(), nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"})
+	cmd.Env = r.childEnv(r.baseEnv(), nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"})
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &out, left: c.Limit + 1}
 	cmd.Stderr = &limitedWriter{w: &errOut, left: 8 << 10}
@@ -257,7 +278,7 @@ type prReviewFile struct {
 // ---- one run ----
 
 type prRun struct {
-	r       *prRunner
+	r       *PRRunner
 	ctx     context.Context
 	id      string
 	row     *store.PRReview
@@ -302,7 +323,7 @@ func (e *budgetErr) Error() string {
 	return fmt.Sprintf("spent $%.2f of the $%.2f budget, retry raises it once", e.spent, e.cap)
 }
 
-func (r *prRunner) execute(ctx context.Context, id string) {
+func (r *PRRunner) execute(ctx context.Context, id string) {
 	row, err := r.st.PRByID(id)
 	if err != nil {
 		log.Printf("[atrium] pr %s: %v", id, err)
@@ -556,10 +577,10 @@ func (pr *prRun) forge() (forge.Forge, error) {
 	if pr.r.forgeOf != nil {
 		return pr.r.forgeOf(pr.row.Host)
 	}
-	return pr.r.forgeFor(pr.row.Host)
+	return pr.r.ForgeFor(pr.row.Host)
 }
 
-func (r *prRunner) forgeFor(host string) (forge.Forge, error) {
+func (r *PRRunner) ForgeFor(host string) (forge.Forge, error) {
 	if host == "" {
 		host = "github.com"
 	}
@@ -853,7 +874,7 @@ you traced. Return ONLY one JSON object in this schema, no prose and no code fen
 `
 
 // agentBody reads ~/.claude/agents/<name>.md without its frontmatter.
-func (r *prRunner) agentBody(name string) (string, error) {
+func (r *PRRunner) agentBody(name string) (string, error) {
 	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
 		return "", fmt.Errorf("agent name %q", name)
 	}
@@ -880,7 +901,7 @@ func (pr *prRun) forkCommon() error {
 	}
 	h := pr.harness
 	args := append([]string{}, h.Args...)
-	lean, err := leanArgs(args, pr.r.userSettings(), "", nil, leanKit{}, pr.r.st.LeanWorkerGateway(), os.ReadFile, pr.r.hk)
+	lean, err := pr.r.leanArgs(args, pr.r.userSettings(), pr.r.st.LeanWorkerGateway())
 	if err != nil {
 		return err
 	}
@@ -910,34 +931,21 @@ func (pr *prRun) forkCommon() error {
 	// forks do, and permission_denials in the receipt is how a run shows it never
 	// blocked.
 	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
-	leanEnv(extra)
-	if _, set := h.Env[keepaliveTTLVar]; !set {
-		extra[keepaliveTTLVar] = "1h"
-	}
+	pr.r.forkEnv(extra, h.Env)
 	base := make([]string, 0, 64)
 	for _, kv := range pr.r.baseEnv() {
 		if !strings.HasPrefix(strings.ToUpper(kv), "ATRIUM_PERM_GATE=") {
 			base = append(base, kv)
 		}
 	}
-	pr.env = childEnvFrom(base, h.Env, extra)
+	pr.env = pr.r.childEnv(base, h.Env, extra)
 	return nil
-}
-
-func prPrice(rec *forkReceipt) keepalivePrice {
-	for m := range rec.ModelUsage {
-		if p, ok := usagePriceFor(m); ok {
-			return p
-		}
-	}
-	p, _ := usagePriceFor("claude-sonnet-5-5")
-	return p
 }
 
 // call runs one claude call in src/ with the prompt on stdin, records its cost
 // and returns its receipt. dir is the step's folder under steps/, and a prompt.md
 // and the answer are kept in it.
-func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*forkReceipt, error) {
+func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*Receipt, error) {
 	if err := pr.forkCommon(); err != nil {
 		return nil, err
 	}
@@ -945,7 +953,7 @@ func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*f
 	if err := pr.write(rel+"/prompt.md", []byte(prompt)); err != nil {
 		return nil, err
 	}
-	spec := forkSpec{Exe: pr.harness.Exe(), Dir: pr.workDir, Env: pr.env,
+	spec := ForkSpec{Exe: pr.harness.Exe(), Dir: pr.workDir, Env: pr.env,
 		Args: append(append([]string{"-p"}, args...), pr.common...), Stdin: []byte(prompt), Timeout: prForkTimeout}
 	answered := pr.timed(step, "launching the agent "+label)
 	out, runErr := pr.r.fork(pr.ctx, spec)
@@ -953,9 +961,9 @@ func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*f
 	if pr.ctx.Err() != nil {
 		return nil, errStopped
 	}
-	var rec *forkReceipt
+	var rec *Receipt
 	if t := bytes.TrimSpace(out); len(t) > 0 {
-		var x forkReceipt
+		var x Receipt
 		if json.Unmarshal(t, &x) == nil {
 			rec = &x
 		}
@@ -964,8 +972,7 @@ func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*f
 	fr := prForkRec{Label: label}
 	var cost float64
 	if rec != nil && rec.Usage != nil {
-		p := prPrice(rec)
-		cost = receiptCost(rec, p)
+		cost = pr.r.cost(bytes.TrimSpace(out))
 		fr.Cost, fr.Input, fr.CacheWrite, fr.CacheRead, fr.Output = cost, rec.Usage.Input, rec.Usage.CacheWrite,
 			rec.Usage.CacheRead, rec.Usage.Output
 	}

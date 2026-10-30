@@ -199,7 +199,7 @@ func TestForgeAccessFromRaisesAndForgeWorkedClears(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	d.opts.Room = "sg3"
-	if d.prr.onAccess == nil || d.prr.onWorked == nil || d.ap.ForgeFailed == nil || d.ap.ForgeWorked == nil {
+	if !d.prr.Wired() || d.ap.ForgeFailed == nil || d.ap.ForgeWorked == nil {
 		t.Fatal("the daemon did not fill the forge seams")
 	}
 	if d.ForgeAccessFrom("github", errors.New("boom")) || len(d.ForgeAlerts().([]ForgeAlert)) != 0 {

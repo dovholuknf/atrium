@@ -65,6 +65,7 @@ var table = []row{
 	{0, "internal/base/userenv", nil},
 	{0, "internal/base/webasset", nil},
 	{0, "internal/daemon/launch", nil},
+	{0, "internal/daemon/promptline", nil},
 	{0, "internal/daemon/publish", nil},
 	{0, "internal/daemon/roomconf", nil},
 	{0, "internal/daemon/screen", nil},
@@ -117,10 +118,14 @@ var table = []row{
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
+	{5, "internal/daemon/pulls", []string{
+		"internal/api", "internal/base/forge", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
+		"internal/daemon/promptline", "internal/gitsync", "internal/small", "internal/store",
+	}},
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
-		"internal/daemon/launch", "internal/daemon/publish",
+		"internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
 		"internal/daemon/roomconf", "internal/daemon/screen", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",
