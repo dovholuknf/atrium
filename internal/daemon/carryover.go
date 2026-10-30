@@ -420,7 +420,7 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 	}
 	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
 	if mode == "" {
-		mode = replayMode(d.st)
+		mode = screen.ReplayMode(d.st)
 	}
 	out := screen.ReplayCut(backlog, mode, cuts, rows)
 	if r.URL.Query().Get("ansi") != "1" {

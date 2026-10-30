@@ -629,7 +629,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		// tests alone and had to be reverted, so there is a switch rather than
 		// a rebuild between the operator and the behaviour they had.
 		var body []byte
-		mode := replayMode(d.st)
+		mode := screen.ReplayMode(d.st)
 		switch mode {
 		case "raw":
 			// UNTOUCHED, and xterm.js is the terminal. The bytes the runner

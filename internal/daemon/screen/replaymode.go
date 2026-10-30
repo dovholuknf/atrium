@@ -1,4 +1,4 @@
-package daemon
+package screen
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// replayMode is how this daemon has been asked to replay history.
+// ReplayMode is how this daemon has been asked to replay history.
 //
 // Read on every attach rather than cached, so flipping it takes effect on the
 // next attach instead of on the next restart. An attach is a websocket upgrade
@@ -15,7 +15,7 @@ import (
 // A STORE THAT CANNOT ANSWER GETS THE DEFAULT. A halted store means the daemon
 // is already reporting a failure, and picking some other rendering on top of
 // that would be a second surprise.
-func replayMode(st *store.Store) string {
+func ReplayMode(st *store.Store) string {
 	v, err := st.Setting(store.SettingReplayMode)
 	if err != nil {
 		return "screen"
