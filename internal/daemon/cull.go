@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/wtfree"
@@ -450,7 +451,7 @@ func isAncestor(dir, commit, of string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cullGitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "merge-base", "--is-ancestor", commit, of)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -595,7 +596,7 @@ func gitIn(dir string, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

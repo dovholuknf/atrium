@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -59,7 +60,7 @@ var stampGit = func(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", filepath.FromSlash(dir)}, args...)...)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }

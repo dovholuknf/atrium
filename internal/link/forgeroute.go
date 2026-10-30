@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
@@ -109,7 +110,7 @@ func (f *hubForge) takePeek(ref forge.Ref, fetching bool) *forge.PR {
 // 404, which a room reads as a hub that cannot be asked.
 func (p *Proxy) SetForge(st ForgeSettings, run forge.Runner) {
 	if run == nil {
-		run = forge.Exec(hideWindow)
+		run = forge.Exec(nowindow.Hide)
 	}
 	p.mu.Lock()
 	p.fg = &hubForge{st: st, run: run, open: map[string]string{}}

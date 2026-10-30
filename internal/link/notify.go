@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 // The hub's notify trigger and its one sink, an operator-written command.
@@ -470,7 +472,7 @@ func (c CommandSink) Send(ctx context.Context, n Notice) Result {
 	runCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	line, _ := json.Marshal(n)
 	// A NUL CANNOT BE IN AN ENVIRONMENT VALUE, and exec refuses the whole run
 	// for one, which three times over switched notify off because of a card's

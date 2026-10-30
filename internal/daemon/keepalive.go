@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -522,7 +523,7 @@ func runForkProcess(ctx context.Context, spec forkSpec, agentFork func(exe strin
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	err := cmd.Run()
 	if err != nil && out.Len() == 0 {
 		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(small.FirstLine(errb.String())))

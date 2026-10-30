@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -164,7 +165,7 @@ func moveGit(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	if err := cmd.Run(); err != nil {
 		return out.String(), fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(errb.String()))
 	}

@@ -26,7 +26,7 @@ import (
 //
 //  1. IT RAN THE RUNNER TO ASK ITS VERSION. `claude --version` and
 //     `codex --version` are whole agent binaries starting up to print one
-//     line, and on Windows each one allocated a console window: `hideWindow`
+//     line, and on Windows each one allocated a console window: `nowindow.Hide`
 //     covers the command atrium spawns and not its grandchildren, so the
 //     source's `pwsh` was quiet and the runners it shelled out to were not.
 //     Now the version is read out of the installed package's own metadata,

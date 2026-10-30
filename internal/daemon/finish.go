@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -191,7 +192,7 @@ var commitExists = func(dir, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "cat-file", "-e", sha+"^{commit}")
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	return cmd.Run() == nil
 }
 
@@ -204,7 +205,7 @@ var commitInDir = func(dir, sha string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", filepath.FromSlash(dir), "rev-parse", "--verify", "--quiet", sha+"^{commit}")
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	return cmd.Run() == nil
 }
 

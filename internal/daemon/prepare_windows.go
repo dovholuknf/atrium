@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/small"
 )
 
@@ -68,8 +69,8 @@ Write-Output ` + fence
 	cmd.Dir = cwd
 	// `-NonInteractive` already says nobody is going to type into this, so the
 	// console it would otherwise open is there to be looked at and cannot be
-	// used. See hideWindow.
-	hideWindow(cmd)
+	// used. See nowindow.Hide.
+	nowindow.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {

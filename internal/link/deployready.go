@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
@@ -159,7 +160,7 @@ func installedCommit(ctx context.Context, p *Proxy) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, deployVersionRun)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "version")
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("the installed binary did not answer `version`: %v", err)
