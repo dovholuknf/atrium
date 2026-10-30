@@ -111,6 +111,10 @@ func copyTree(t *testing.T, src, dst string) {
 		if err != nil {
 			return err
 		}
+		// a lock is transient, and one that vanishes between the listing and the stat fails the copy
+		if strings.HasSuffix(p, ".lock") {
+			return nil
+		}
 		rel, _ := filepath.Rel(src, p)
 		to := filepath.Join(dst, rel)
 		info, err := d.Info()
