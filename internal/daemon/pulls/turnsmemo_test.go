@@ -1,4 +1,4 @@
-package daemon
+package pulls
 
 import (
 	"path/filepath"
@@ -11,7 +11,7 @@ func TestEditedChipRemembersEachResolvedPath(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.ToSlash(dir)
 	calls := []editCall{{path: root + "/a/x.go"}, {path: root + "/a/x.go"}, {path: root + "/b.go"}, {path: filepath.ToSlash(filepath.Dir(dir)) + "/out.go"}}
-	rels, outside := insideWorktreeVia(root, calls, resolveInsideMemo)
+	rels, outside := InsideWorktreeVia(root, calls, ResolveInsideMemo)
 	if len(rels) != 2 || outside != 1 {
 		t.Fatalf("rels %v outside %d", rels, outside)
 	}

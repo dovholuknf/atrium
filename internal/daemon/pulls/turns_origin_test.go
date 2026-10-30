@@ -1,4 +1,4 @@
-package daemon
+package pulls
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 // The cut note's reason carries no counts, since the sheet words those itself.
 func TestCutWhyHoldsNoCounts(t *testing.T) {
 	t.Parallel()
-	files := make([]ChangeFile, changesFilesMax+5)
+	files := make([]ChangeFile, ChangesFilesMax+5)
 	for i := range files {
 		files[i].Hunks = "x"
 	}

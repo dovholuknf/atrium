@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -93,7 +94,7 @@ func defaultHooks() hooks {
 		silentNudges:      silentNudges,
 		OrphanGrace:       OrphanGrace,
 		RelayKeep:         RelayKeep,
-		listMax:           listMax,
+		listMax:           pulls.ListMax,
 		repliesWindow:     repliesWindow,
 		repliesReach:      repliesReach,
 		repliesCap:        repliesCap,

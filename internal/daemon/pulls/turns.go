@@ -1,4 +1,4 @@
-package daemon
+package pulls
 
 import (
 	"bufio"
@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
-	"github.com/dovholuknf/atrium/internal/store"
+	"github.com/dovholuknf/atrium/internal/daemon/promptline"
 )
 
 // A TURN is what lies between one real prompt and the next, in the card's transcript. The
@@ -45,9 +45,9 @@ type turnIndex struct {
 	edits   []editCall
 }
 
-// span is the turn holding `at`: from the latest prompt at or before it to the next
+// Span is the turn holding `at`: from the latest prompt at or before it to the next
 // prompt after it. A zero end means the turn is still open.
-func (x *turnIndex) span(at time.Time) (start, end time.Time) {
+func (x *turnIndex) Span(at time.Time) (start, end time.Time) {
 	i := sort.Search(len(x.prompts), func(i int) bool { return x.prompts[i].After(at) })
 	if i > 0 {
 		start = x.prompts[i-1]
@@ -64,8 +64,8 @@ func (x *turnIndex) hasReply(at time.Time) bool {
 	return i < len(x.texts) && x.texts[i].Equal(at)
 }
 
-// editsIn is the edit calls made in [start, end), end zero meaning no end.
-func (x *turnIndex) editsIn(start, end time.Time) []editCall {
+// EditsIn is the edit calls made in [start, end), end zero meaning no end.
+func (x *turnIndex) EditsIn(start, end time.Time) []editCall {
 	var out []editCall
 	for _, e := range x.edits {
 		if e.at.Before(start) || (!end.IsZero() && !e.at.Before(end)) {
@@ -137,7 +137,7 @@ func (x *turnIndex) feed(line []byte) {
 	if len(line) > 8<<20 {
 		return
 	}
-	if p, ok := queuedPromptOf(line); ok {
+	if p, ok := promptline.QueuedPromptOf(line); ok {
 		x.prompts = append(x.prompts, p.At)
 		return
 	}
@@ -177,7 +177,7 @@ func (x *turnIndex) feed(line []byte) {
 		if json.Unmarshal(rec.Message.Content, &content) != nil {
 			return
 		}
-		if _, ok := promptOf(content); ok {
+		if _, ok := promptline.PromptOf(content); ok {
 			x.prompts = append(x.prompts, at)
 		}
 	case "assistant":
@@ -248,7 +248,7 @@ func fingerprint(path string, offset int64) []byte {
 	return buf
 }
 
-func turnsOf(path string) (*turnIndex, error) {
+func TurnsOf(path string) (*turnIndex, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -284,7 +284,7 @@ func turnsOf(path string) (*turnIndex, error) {
 // transcript's tool calls name absolute ones, and a relative one means whatever the
 // reader's directory is.
 func insideWorktree(worktree string, calls []editCall) (rels []string, outside int) {
-	return insideWorktreeVia(worktree, calls, resolveInside)
+	return InsideWorktreeVia(worktree, calls, resolveInside)
 }
 
 // resolveInside is one path resolved against the worktree's real root: its relative form and true when it is inside.
@@ -300,7 +300,7 @@ func resolveInside(worktree, realRoot, p string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
-func insideWorktreeVia(worktree string, calls []editCall, resolve func(worktree, realRoot, p string) (string, bool)) (rels []string, outside int) {
+func InsideWorktreeVia(worktree string, calls []editCall, resolve func(worktree, realRoot, p string) (string, bool)) (rels []string, outside int) {
 	worktree = strings.TrimSpace(worktree)
 	if worktree == "" {
 		return nil, len(distinctPaths(calls))
@@ -350,7 +350,7 @@ type insideVal struct {
 	at  time.Time
 }
 
-func resolveInsideMemo(worktree, realRoot, p string) (string, bool) {
+func ResolveInsideMemo(worktree, realRoot, p string) (string, bool) {
 	k := insideKey{worktree, p}
 	now := time.Now()
 	insideMemo.mu.Lock()
@@ -395,43 +395,4 @@ func under(root, target string) (string, bool) {
 		return "", false
 	}
 	return target[len(root)+1:], true
-}
-
-// cardTranscript is the transcript a card's replies are read from, or "" when atrium
-// cannot read one (a runner that is not Claude, or no file). The same choice /replies makes.
-func (d *Daemon) cardTranscript(t *store.Task) string {
-	if d.usage == nil || !d.usage.isClaude(t.Runner) {
-		return ""
-	}
-	session := strings.TrimSpace(t.ResumeID)
-	if d.ctx != nil {
-		session = d.ctx.sessionOf(t)
-	}
-	if session == "" {
-		return ""
-	}
-	return d.usage.transcript(t.Worktree, session)
-}
-
-// fillEdited sets each reply's `edited`: how many files the edit calls of its turn named
-// inside the worktree. From the transcript alone, no git. A failure leaves the counts 0.
-func fillEdited(t *store.Task, transcript string, replies []Reply) {
-	if len(replies) == 0 {
-		return
-	}
-	x, err := turnsOf(transcript)
-	if err != nil {
-		return
-	}
-	byTurn := map[time.Time]int{}
-	for i := range replies {
-		start, end := x.span(replies[i].At)
-		n, ok := byTurn[start]
-		if !ok {
-			rels, _ := insideWorktreeVia(t.Worktree, x.editsIn(start, end), resolveInsideMemo)
-			n = len(rels)
-			byTurn[start] = n
-		}
-		replies[i].Edited = n
-	}
 }

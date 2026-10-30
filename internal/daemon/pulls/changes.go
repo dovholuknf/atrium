@@ -1,8 +1,9 @@
-package daemon
+package pulls
 
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,14 +33,14 @@ import (
 // GIT_LITERAL_PATHSPECS=1 makes a file named `:(top)x` or `*.go` a file and not a pattern.
 
 const (
-	changesFilesMax = 400
-	changesHunksMax = 2 << 20
-	changesFileMax  = 256 << 10
+	ChangesFilesMax = 400
+	ChangesHunksMax = 2 << 20
+	ChangesFileMax  = 256 << 10
 	// untrackedReadMax is the biggest untracked file read to count its lines.
 	untrackedReadMax = 8 << 20
 	// listMax bounds the file lists git prints, which are paths and counts and never hunks.
-	// patchMax is what is read of one patch: the total hunk bound, a file that would be cut anyway, and slack.
-	patchMax = changesHunksMax + changesFileMax + 64<<10
+	// PatchMax is what is read of one patch: the total hunk bound, a file that would be cut anyway, and slack.
+	PatchMax = ChangesHunksMax + ChangesFileMax + 64<<10
 	// argvMax is how many characters of paths go on one command line, each counted with its quotes and space. Windows stops at 32767.
 	argvMax         = 24000
 	changesBound    = 30 * time.Second
@@ -117,17 +118,24 @@ func (g gitAt) capped(max int, args ...string) (string, error) {
 	return g.run.GitCapped(g.ctx, g.dir, []string{"GIT_LITERAL_PATHSPECS=1"}, max, full...)
 }
 
-// listMax is a variable so a test can use a small cap.
-var listMax = 16 << 20
+// ListMax is a variable so a test can use a small cap.
+var ListMax = 16 << 20
 
-// changesFor answers the endpoint for one card.
-func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn time.Time) (any, error) {
-	t, err := d.st.Get(taskID)
+// Changes is what answering for one card reads from the daemon: the card, its transcript and the list bound.
+type Changes struct {
+	Get        func(id string) (*store.Task, error)
+	Transcript func(t *store.Task) string
+	ListMax    int
+}
+
+// For answers the endpoint for one card.
+func (c Changes) For(ctx context.Context, taskID, against string, turn time.Time) (any, error) {
+	t, err := c.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
 	if t == nil {
-		return nil, errNoSuchCard
+		return nil, sql.ErrNoRows
 	}
 	ctx, cancel := context.WithTimeout(ctx, changesBound)
 	defer cancel()
@@ -138,7 +146,7 @@ func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn ti
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, refused(http.StatusNotFound, notAWorktree)
 	}
-	g := gitAt{ctx: ctx, run: gitsync.Default, dir: dir, listMax: d.hk.listMax}
+	g := gitAt{ctx: ctx, run: gitsync.Default, dir: dir, listMax: c.ListMax}
 	if out, err := g.git("rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(out) != "true" {
 		return nil, refused(http.StatusNotFound, notAWorktree)
 	}
@@ -154,7 +162,7 @@ func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn ti
 	v.Base = v.Head
 
 	if !turn.IsZero() {
-		return d.turnChanges(g, t, v, ref, turn)
+		return c.turnChanges(g, t, v, ref, turn)
 	}
 	if against == "base" {
 		if mb, branch := mergeBase(g, v.Head); mb != "" {
@@ -195,21 +203,21 @@ func mergeBase(g gitAt, head string) (string, string) {
 }
 
 // turnChanges is the files one reply's turn changed, found from its edit tool calls.
-func (d *Daemon) turnChanges(g gitAt, t *store.Task, v *ChangesView, ref string, turn time.Time) (any, error) {
+func (c Changes) turnChanges(g gitAt, t *store.Task, v *ChangesView, ref string, turn time.Time) (any, error) {
 	turn = turn.UTC()
-	path := d.cardTranscript(t)
+	path := c.Transcript(t)
 	if path == "" {
 		return nil, refused(http.StatusNotFound, "this card has no transcript atrium can read, so there is no turn to show")
 	}
-	x, err := turnsOf(path)
+	x, err := TurnsOf(path)
 	if err != nil {
 		return nil, refused(http.StatusNotFound, "this card's transcript could not be read, so there is no turn to show")
 	}
 	if !x.hasReply(turn) {
 		return nil, refused(http.StatusNotFound, "no reply of this card was written at "+turn.Format(time.RFC3339Nano))
 	}
-	start, end := x.span(turn)
-	rels, outside := insideWorktree(t.Worktree, x.editsIn(start, end))
+	start, end := x.Span(turn)
+	rels, outside := insideWorktree(t.Worktree, x.EditsIn(start, end))
 	yes := true
 	v.Against, v.Partial, v.Why, v.Outside = "turn", &yes, shellNotCounted, outside
 	why := []string{shellNotCounted}
@@ -467,7 +475,7 @@ func fileDiffOne(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
 		files[n].Added, _ = strconv.Atoi(parts[0])
 		files[n].Removed, _ = strconv.Atoi(parts[1])
 	}
-	patch, err := run(patchMax)
+	patch, err := run(PatchMax)
 	blocks := splitPatch(patch)
 	if errors.Is(err, gitsync.ErrOutputCap) {
 		// Git was stopped partway. The last block is incomplete and the files after the complete ones
@@ -562,7 +570,7 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 		if p == "" {
 			continue
 		}
-		if len(files) >= changesFilesMax {
+		if len(files) >= ChangesFilesMax {
 			// The list is cut at this many, so reading more files would only be thrown away.
 			files = append(files, ChangeFile{Path: p, Status: "added", HunksCut: true})
 			continue
@@ -621,14 +629,14 @@ func bound(files []ChangeFile) ([]ChangeFile, *ChangesCut) {
 		return []ChangeFile{}, nil
 	}
 	cut := &ChangesCut{}
-	if len(files) > changesFilesMax {
-		cut.Files = len(files) - changesFilesMax
-		files = files[:changesFilesMax]
+	if len(files) > ChangesFilesMax {
+		cut.Files = len(files) - ChangesFilesMax
+		files = files[:ChangesFilesMax]
 	}
 	total := 0
 	for i := range files {
 		f := &files[i]
-		if len(f.Hunks) > changesFileMax || total+len(f.Hunks) > changesHunksMax {
+		if len(f.Hunks) > ChangesFileMax || total+len(f.Hunks) > ChangesHunksMax {
 			f.Hunks, f.HunksCut = "", true
 		}
 		total += len(f.Hunks)
@@ -641,11 +649,11 @@ func bound(files []ChangeFile) ([]ChangeFile, *ChangesCut) {
 	}
 	var why []string
 	if cut.Files > 0 {
-		why = append(why, fmt.Sprintf("only the first %d files are listed", changesFilesMax))
+		why = append(why, fmt.Sprintf("only the first %d files are listed", ChangesFilesMax))
 	}
 	if cut.Hunks > 0 {
 		why = append(why, fmt.Sprintf("a file over %d KB or hunks past %d MB are not sent",
-			changesFileMax>>10, changesHunksMax>>20))
+			ChangesFileMax>>10, ChangesHunksMax>>20))
 	}
 	cut.Why = strings.Join(why, "; ")
 	return files, cut
