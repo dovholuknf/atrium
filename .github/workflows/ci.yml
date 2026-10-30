@@ -61,7 +61,7 @@ jobs:
       check_windows: ${{ steps.pick.outputs.check_windows }}
       skipped: ${{ steps.pick.outputs.skipped }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: pick
         shell: bash
         env:
@@ -86,7 +86,7 @@ jobs:
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -95,7 +95,7 @@ jobs:
           node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-flaky-go-attempt-${{ github.run_attempt }}
@@ -114,7 +114,7 @@ jobs:
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -123,7 +123,7 @@ jobs:
           node: true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-flaky-board-attempt-${{ github.run_attempt }}
@@ -137,7 +137,7 @@ jobs:
     name: flaky-macos-go
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -146,7 +146,7 @@ jobs:
           node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-flaky-go-attempt-${{ github.run_attempt }}
@@ -160,7 +160,7 @@ jobs:
     name: flaky-macos-playwright
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -169,7 +169,7 @@ jobs:
           node: true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-flaky-board-attempt-${{ github.run_attempt }}
@@ -183,7 +183,7 @@ jobs:
     name: flaky-windows-go
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -192,7 +192,7 @@ jobs:
           node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-flaky-go-attempt-${{ github.run_attempt }}
@@ -206,7 +206,7 @@ jobs:
     name: flaky-windows-playwright
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -215,7 +215,7 @@ jobs:
           node: true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-flaky-board-attempt-${{ github.run_attempt }}
@@ -251,7 +251,7 @@ jobs:
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -259,7 +259,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -277,7 +277,7 @@ jobs:
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -285,7 +285,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -303,7 +303,7 @@ jobs:
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -311,7 +311,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -332,14 +332,14 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: rollup
         continue-on-error: true
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" --failing-json failing-tests.json || true
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: failing-tests
@@ -359,7 +359,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: body
         env:
           NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
