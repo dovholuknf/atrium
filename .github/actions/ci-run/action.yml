@@ -15,14 +15,14 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v6
+    - uses: actions/setup-go@v7
       if: inputs.go == 'true'
       with:
         go-version-file: go.mod
         cache: true
 
     # ci.sh stops when node is not major 22, so this version is the one it checks.
-    - uses: actions/setup-node@v5
+    - uses: actions/setup-node@v7
       if: inputs.node == 'true'
       with:
         node-version: "22"
