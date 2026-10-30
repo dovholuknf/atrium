@@ -15,7 +15,7 @@ func testConfig() Config {
 		Fork:         func(ctx context.Context, spec ForkSpec) ([]byte, error) { return nil, nil },
 		UserSettings: func() []byte { return nil },
 		LeanArgs: func(args []string, userSettings []byte, gateway string) ([]string, error) {
-			return append(args, "--fork-session", "--no-session-persistence", "--max-turns", "12", "--setting-sources", "project,local"), nil
+			return append(args, "--strict-mcp-config", "--setting-sources", "project,local"), nil
 		},
 		ForkEnv: func(extra, harnessEnv map[string]string) {},
 		ChildEnv: func(base []string, harnessEnv map[string]string, atrium map[string]string) []string {
