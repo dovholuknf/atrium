@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -249,7 +250,7 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 		// A source that fails is usually a source whose command said why on
 		// stderr, and the exit status alone is not worth reading.
 		if errOut.Len() > 0 {
-			return nil, fmt.Errorf("%v: %s", err, firstLine(errOut.String()))
+			return nil, fmt.Errorf("%v: %s", err, small.FirstLine(errOut.String()))
 		}
 		return nil, err
 	}

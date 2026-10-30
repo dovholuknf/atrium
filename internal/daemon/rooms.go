@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // One board, many machines. The hub's side.
@@ -508,12 +510,12 @@ func (d *Daemon) RoomDecide(room, perm string, dec RoomDecision) error {
 func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	var rep RoomReport
 	if err := json.Unmarshal(body, &rep); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	// The stored copy is keyed on the trimmed name, so the handout has to look
@@ -522,7 +524,7 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 	rep.Name = strings.TrimSpace(rep.Name)
 	decisions, err := d.RoomCheckIn(rep)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	// WORK RIDES THE REPLY TOO. This is the entire outward path: the hub never
@@ -564,7 +566,7 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) handleRoomDecide(w http.ResponseWriter, r *http.Request) {
 	var dec RoomDecision
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&dec); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	room, perm := r.PathValue("room"), r.PathValue("id")
@@ -573,10 +575,10 @@ func (d *Daemon) handleRoomDecide(w http.ResponseWriter, r *http.Request) {
 		// queue reports with a 409, and it reads the same way on the board: a
 		// button that was drawn from a poll one moment out of date.
 		if errors.Is(err, errRoomStaleDecision) {
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return
 		}
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -617,7 +619,7 @@ func (d *Daemon) RoomForget(name string) (bool, error) {
 func (d *Daemon) handleRoomForget(w http.ResponseWriter, r *http.Request) {
 	had, err := d.RoomForget(r.PathValue("name"))
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

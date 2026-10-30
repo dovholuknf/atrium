@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // typedLine is atrium's model of the operator's current input line: the TEXT,
@@ -601,7 +602,7 @@ func (d *Daemon) handleTypingState(w http.ResponseWriter, r *http.Request) {
 		run = d.sup.getShell(taskID)
 	}
 	if run == nil {
-		writeJSONErr(w, http.StatusNotFound, errors.New("no supervised terminal on this card"))
+		small.WriteJSONErr(w, http.StatusNotFound, errors.New("no supervised terminal on this card"))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

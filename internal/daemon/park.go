@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -75,9 +76,6 @@ func (d *Daemon) humanTouch(taskID, via string) {
 	}()
 }
 
-// isParked reports whether a card is parked.
-func isParked(t *store.Task) bool { return t != nil && t.ParkedAt != nil }
-
 // parkCard marks a card parked, with the status it had put back. One
 // `status-changed` event says so. Published once, with no toast: the board draws
 // a mark on the card.
@@ -129,7 +127,7 @@ func (d *Daemon) unpark(taskID, via string) error {
 	if err != nil {
 		return err
 	}
-	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 
 	// Read again inside the lock: whoever held it first has done the work.
@@ -137,7 +135,7 @@ func (d *Daemon) unpark(taskID, via string) error {
 	if err != nil {
 		return err
 	}
-	if !isParked(t) {
+	if !small.IsParked(t) {
 		return nil
 	}
 	if d.sup.Get(taskID) == nil {
@@ -189,7 +187,7 @@ func (d *Daemon) sayGate(t *store.Task) string {
 	if d.frozenForMove(t.ID) {
 		return sayOK
 	}
-	if isParked(t) {
+	if small.IsParked(t) {
 		return sayParked
 	}
 	if d.sessionGone(t) {
@@ -252,15 +250,15 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	t, err := d.st.Get(id)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	// A CARD THAT IS NOT PARKED AND HAS NO RUNNER IS STARTED TOO. This answered
 	// ok and started nothing for one, which is what every card a restart failed
 	// to bring back was (2026-09-30).
-	if !isParked(t) && d.sup.Get(id) == nil {
+	if !small.IsParked(t) && d.sup.Get(id) == nil {
 		if t.Runner == "" || t.Worktree == "" {
-			writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s cannot be resumed: nothing records which "+
+			small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("%s cannot be resumed: nothing records which "+
 				"runner or directory it used", t.DisplayTitle()))
 			return
 		}
@@ -271,7 +269,7 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 			if _, busy := err.(interface{ ResumeConflict() map[string]any }); busy {
 				code = http.StatusConflict
 			}
-			writeJSONErr(w, code, err)
+			small.WriteJSONErr(w, code, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -279,7 +277,7 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.unpark(id, ViaResume); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

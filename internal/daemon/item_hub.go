@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -66,7 +67,7 @@ func resolveItemOwner(spec, creator string) (kind, owner string, err error) {
 
 // checkItemLaunch refuses an item launch whose owner cannot be, BEFORE a card exists. Nothing else is its business.
 func checkItemLaunch(req LaunchRequest) error {
-	if !req.Item && !hasTag(req.Tags, ItemTag) && workOfTags(req.Tags) == "" {
+	if !req.Item && !small.HasTag(req.Tags, ItemTag) && workOfTags(req.Tags) == "" {
 		return nil
 	}
 	_, _, err := resolveItemOwner(itemOwnerSpec(req.Tags), req.SpawnedBy)
@@ -310,7 +311,7 @@ func (d *Daemon) itemQueue(worker *store.Task, toID, key, text string) {
 		log.Printf("[atrium] could not queue item notice %s: %v", key, err)
 		return
 	}
-	if to, err := d.st.Get(toID); err == nil && isParked(to) {
+	if to, err := d.st.Get(toID); err == nil && small.IsParked(to) {
 		if err := d.unpark(to.ID, "report"); err != nil {
 			log.Printf("[atrium] could not resume %s for an item notice: %v", to.DisplayTitle(), err)
 		}
@@ -510,7 +511,7 @@ func (d *Daemon) handleItemAct(w http.ResponseWriter, r *http.Request) {
 		By     string `json:"by"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	var out map[string]any
@@ -524,11 +525,11 @@ func (d *Daemon) handleItemAct(w http.ResponseWriter, r *http.Request) {
 	case "sendback":
 		out, code, err = d.itemSendBack(r.PathValue("id"), in.Answer, in.By)
 	default:
-		writeJSONErr(w, http.StatusNotFound, errors.New("an item is unblocked, cancelled or sent back"))
+		small.WriteJSONErr(w, http.StatusNotFound, errors.New("an item is unblocked, cancelled or sent back"))
 		return
 	}
 	if err != nil {
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

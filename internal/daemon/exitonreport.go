@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -49,13 +50,13 @@ func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
 		return false
 	}
 	for _, tag := range []string{ResidentTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
-		if hasTag(task.Tags, tag) {
+		if small.HasTag(task.Tags, tag) {
 			return false
 		}
 	}
 	// A per-item minion is launched as a director so it can end itself, and it has nothing to do once it has
 	// landed: it exits on done like any worker. See docs/changes/bug-idle-minion-spins-a-core.md.
-	if hasTag(task.Tags, DirectorTag) && !hasTag(task.Tags, MinionTag) {
+	if small.HasTag(task.Tags, DirectorTag) && !small.HasTag(task.Tags, MinionTag) {
 		return false
 	}
 	if isLinkCard(task) || staysOpen(task) {
@@ -80,7 +81,7 @@ const MinionTag = "atrium:minion"
 
 // isResident says whether a set of tags is a resident card's: the tag itself, or a director or the orchestrator.
 func isResident(t []string) bool {
-	return hasTag(t, ResidentTag) || hasTag(t, DirectorTag) || hasTag(t, OrchestratorTag)
+	return small.HasTag(t, ResidentTag) || small.HasTag(t, DirectorTag) || small.HasTag(t, OrchestratorTag)
 }
 
 // KeepOpenTag and InvestigationTag are the two tags that say a card is not closed by a done report and is never
@@ -93,7 +94,7 @@ const (
 
 // staysOpen says whether a card is tagged to stay open or is an investigation.
 func staysOpen(t *store.Task) bool {
-	return t != nil && (hasTag(t.Tags, KeepOpenTag) || hasTag(t.Tags, InvestigationTag) || hasTag(t.Tags, ResidentTag))
+	return t != nil && (small.HasTag(t.Tags, KeepOpenTag) || small.HasTag(t.Tags, InvestigationTag) || small.HasTag(t.Tags, ResidentTag))
 }
 
 // LinkTagPrefix marks a card a link opened (`link:<key>`, internal/api/open.go). Its lifetime is the link's: a done

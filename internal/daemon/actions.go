@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -139,16 +140,16 @@ func (d *Daemon) handleRunAction(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if body.Action == "" {
-		writeJSONErr(w, http.StatusBadRequest, errString("say which action to run"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which action to run"))
 		return
 	}
 	res, err := d.runAction(r.PathValue("id"), body.Action)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -94,7 +95,7 @@ func (p *idleParks) drop(id string) {
 // director, the orchestrator, or a card opted in. A subagent does not: its brief
 // and its branch are its state, and it has reported.
 func takesHandoff(t *store.Task) bool {
-	return hasTag(t.Tags, DirectorTag) || hasTag(t.Tags, ParkIdleTag) || hasTag(t.Tags, OrchestratorTag)
+	return small.HasTag(t.Tags, DirectorTag) || small.HasTag(t.Tags, ParkIdleTag) || small.HasTag(t.Tags, OrchestratorTag)
 }
 
 // rawIdleSince is the latest of the last turn end, the last prompt and the last
@@ -131,7 +132,7 @@ func (d *Daemon) idleSince(t *store.Task) time.Time {
 
 // idleParkEligible is the card's part of the rule: everything but the clock.
 func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
-	if isParked(t) || !d.mayIdlePark(t) {
+	if small.IsParked(t) || !d.mayIdlePark(t) {
 		return false
 	}
 	if t.Status != store.StatusNeedsInput && t.Status != store.StatusDone {

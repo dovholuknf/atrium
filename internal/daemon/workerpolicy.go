@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -27,13 +28,13 @@ func (d *Daemon) workerDefaultModel(h *store.Harness, req LaunchRequest, task *s
 	if req.Resume != "" || task != nil || !isClaude(h) {
 		return ""
 	}
-	if hasTag(req.Tags, InterviewTag) {
+	if small.HasTag(req.Tags, InterviewTag) {
 		if m := d.st.WorkerPolicy().InterviewModel; m != "" {
 			return m
 		}
 		return DefaultInterviewModel
 	}
-	if !hasTag(req.Tags, OriginAgentTag) && reportTo == "" {
+	if !small.HasTag(req.Tags, OriginAgentTag) && reportTo == "" {
 		return ""
 	}
 	return d.st.WorkerPolicy().Model

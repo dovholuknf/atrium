@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -182,7 +183,7 @@ func (d *Daemon) handleDispatchResult(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	var res struct {
@@ -193,7 +194,7 @@ func (d *Daemon) handleDispatchResult(w http.ResponseWriter, r *http.Request) {
 		Error   string `json:"error"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	state := store.DispatchFailed
@@ -205,7 +206,7 @@ func (d *Daemon) handleDispatchResult(w http.ResponseWriter, r *http.Request) {
 		// 409 rather than 400. The request was well formed and the item has
 		// moved on, which is a thing the room should say once in its log and
 		// then stop retrying.
-		writeJSONErr(w, http.StatusConflict, err)
+		small.WriteJSONErr(w, http.StatusConflict, err)
 		return
 	}
 	if res.OK {

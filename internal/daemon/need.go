@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // needRestartTries is how many times a need's restart is tried, because the asking worker is mid-turn when it asks
@@ -39,7 +41,7 @@ func (d *Daemon) handleNeed(w http.ResponseWriter, r *http.Request) {
 		task, err = d.st.GetByWireName(d.st.Qualify(r.PathValue("id")))
 	}
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, errString("no card called "+r.PathValue("id")))
+		small.WriteJSONErr(w, http.StatusNotFound, small.ErrString("no card called "+r.PathValue("id")))
 		return
 	}
 	var in struct {
@@ -47,12 +49,12 @@ func (d *Daemon) handleNeed(w http.ResponseWriter, r *http.Request) {
 		By    string   `json:"by"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil || len(in.Needs) == 0 {
-		writeJSONErr(w, http.StatusBadRequest, errString("say what you lack, like mcp:name, agent:name or skill:name"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say what you lack, like mcp:name, agent:name or skill:name"))
 		return
 	}
 	tags, refused := needTags(in.Needs)
 	if err := d.st.AppendEvent(task.ID, "need", map[string]any{"needs": in.Needs, "by": in.By, "refused": refused}); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	log.Printf("[atrium] %s needs %s", task.ID, strings.Join(in.Needs, ", "))
@@ -60,15 +62,15 @@ func (d *Daemon) handleNeed(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(tags) == 0:
 		out["note"] = "atrium can add an mcp server, an agent or a skill. for anything else, atrium_say your launcher."
-	case !hasTag(task.Tags, LeanTag):
+	case !small.HasTag(task.Tags, LeanTag):
 		out["note"] = "this card is not lean, so it already has what its harness has. nothing was added."
 	default:
 		if err := d.st.SetTags(task.ID, mergeTags(task.Tags, tags)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if _, _, err := d.queueWake(task.ID, "you now have "+strings.Join(in.Needs, ", ")+". continue.", "atrium"); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		go d.restartForNeed(task.ID)

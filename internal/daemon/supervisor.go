@@ -16,6 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -2489,7 +2490,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		payload["output"] = tail
 		// Not on a card that has a newer run alive: it did not fail to start, its old start did.
 		if !x.superseded {
-			why = "failed to start: " + firstLine(tail)
+			why = "failed to start: " + small.FirstLine(tail)
 		}
 	}
 	filed, err := d.st.FileExit(store.ExitFiling{
@@ -2524,7 +2525,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	exitLine := fmt.Sprintf("%s exited with code %d after %s",
 		d.taskTitle(x.taskID), code, lived.Round(time.Millisecond))
 	if lived < startupFailureWindow && tail != "" {
-		exitLine += ", " + firstLine(tail)
+		exitLine += ", " + small.FirstLine(tail)
 	}
 	d.emitLifecycle("session-exit", exitLine)
 	// The runner's last turns, for a worker that has no Stop hook. See usage.go.
@@ -2544,10 +2545,10 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	// somebody deliberately closed.
 	if x.resumed && x.spec != nil && code != 0 && lived < startupFailureWindow {
 		log.Printf("[atrium] %s could not resume, starting it fresh: %s",
-			x.taskID, firstLine(tail))
+			x.taskID, small.FirstLine(tail))
 		if err := d.st.AppendEvent(x.taskID, store.EventLaunched, map[string]any{
 			"by": "supervisor", "retried": "without the stored resume id",
-			"because": firstLine(tail),
+			"because": small.FirstLine(tail),
 		}); err != nil {
 			log.Printf("[atrium] record retry for %s: %v", x.taskID, err)
 		}
@@ -2569,7 +2570,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 
 	// A card put down by hand stays where it was put.
 	if t, err := d.st.Get(x.taskID); err == nil &&
-		t.Status != store.StatusPaused && t.Status != store.StatusDone && !isParked(t) {
+		t.Status != store.StatusPaused && t.Status != store.StatusDone && !small.IsParked(t) {
 		if err := d.st.SetStatus(x.taskID, store.StatusDead); err != nil {
 			log.Printf("[atrium] status after exit for %s: %v", x.taskID, err)
 		}

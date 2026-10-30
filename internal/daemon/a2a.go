@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"strconv"
 )
@@ -93,15 +94,6 @@ func envDuration(name string, def time.Duration) time.Duration {
 	return def
 }
 
-func hasTag(tags []string, want string) bool {
-	for _, t := range tags {
-		if strings.EqualFold(strings.TrimSpace(t), want) {
-			return true
-		}
-	}
-	return false
-}
-
 // DirectorTag marks a resident session that launches workers and waits on them.
 const DirectorTag = "atrium:director"
 
@@ -129,11 +121,11 @@ func (d *Daemon) workerOutstanding(id string) bool {
 		return true
 	}
 	t, err := d.st.Get(id)
-	return err == nil && isParked(t)
+	return err == nil && small.IsParked(t)
 }
 
 // agentLaunched reports whether a card was started by `atrium_launch`.
-func agentLaunched(t *store.Task) bool { return t != nil && hasTag(t.Tags, OriginAgentTag) }
+func agentLaunched(t *store.Task) bool { return t != nil && small.HasTag(t.Tags, OriginAgentTag) }
 
 // launcherFor is who to record as a launch's parent. A launch through the
 // board's endpoint with no launcher named and no agent marker is the board's
@@ -144,7 +136,7 @@ func launcherFor(req LaunchRequest) string {
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
 		return by
 	}
-	if hasTag(req.Tags, OriginAgentTag) {
+	if small.HasTag(req.Tags, OriginAgentTag) {
 		return ""
 	}
 	return store.HumanLauncher
@@ -337,14 +329,14 @@ const HoldNoticesTag = "atrium:hold-notices"
 // they go on the launcher's card, on the worker's work item and on the board's
 // bell, and `atrium_task` with `notices` reads them back in one call.
 func holdsNotices(launcher *store.Task) bool {
-	return launcher != nil && (hasTag(launcher.Tags, OrchestratorTag) || hasTag(launcher.Tags, HoldNoticesTag))
+	return launcher != nil && (small.HasTag(launcher.Tags, OrchestratorTag) || small.HasTag(launcher.Tags, HoldNoticesTag))
 }
 
 // holdsReports reports whether a launcher's workers' reports are held the same
 // way. Only HoldNoticesTag does it: a card that asked for its terminal to be left
 // alone meant reports too, but OrchestratorTag alone keeps today's delivery.
 func holdsReports(launcher *store.Task) bool {
-	return launcher != nil && hasTag(launcher.Tags, HoldNoticesTag)
+	return launcher != nil && small.HasTag(launcher.Tags, HoldNoticesTag)
 }
 
 // holdNotice records one automatic notice where a launcher that holds them reads
@@ -546,14 +538,14 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	}
 	// A PARKED CARD IS NEVER SILENT: it was put down on purpose, with no process
 	// to have stopped.
-	if isParked(t) {
+	if small.IsParked(t) {
 		return time.Time{}, false
 	}
 	// A DIRECTOR IS NOT A WORKER OWING A REPORT. It is resident: it ends a turn
 	// waiting for work or for its workers, and its launcher prompting it created
 	// the debt this checks. The tag is what atrium_launch sets for it. Its real
 	// blockers (a menu, a stuck tool) have their own escalations.
-	if hasTag(t.Tags, DirectorTag) || hasTag(t.Tags, InterviewTag) || hasTag(t.Tags, ReviewTag) || hasTag(t.Tags, ResidentTag) {
+	if small.HasTag(t.Tags, DirectorTag) || small.HasTag(t.Tags, InterviewTag) || small.HasTag(t.Tags, ReviewTag) || small.HasTag(t.Tags, ResidentTag) {
 		return time.Time{}, false
 	}
 	// A PERSON TYPED AT THE CARD'S TERMINAL after the launcher's prompt: the turn is theirs, as for a board

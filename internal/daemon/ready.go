@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -46,16 +47,16 @@ const handoffKeep = 256 << 10
 
 func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSONErr(w, http.StatusMethodNotAllowed, errString("POST"))
+		small.WriteJSONErr(w, http.StatusMethodNotAllowed, small.ErrString("POST"))
 		return
 	}
 	var in ReadyRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if strings.TrimSpace(in.Agent) == "" && in.TaskID == "" {
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session this is, with agent or task_id"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session this is, with agent or task_id"))
 		return
 	}
 	task, err := d.taskFor(in.Agent, in.TaskID)
@@ -64,13 +65,13 @@ func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 		if who == "" {
 			who = in.TaskID
 		}
-		writeJSONErr(w, http.StatusNotFound, fmt.Errorf("atrium has no card for this session: looked up %q as a card id, "+
+		small.WriteJSONErr(w, http.StatusNotFound, fmt.Errorf("atrium has no card for this session: looked up %q as a card id, "+
 			"wire name and alias on this room", who))
 		return
 	}
 	out, code, err := d.readyHandoff(task, in.Handoff)
 	if err != nil {
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 		return
 	}
 	ncJSON(w, http.StatusOK, out)
@@ -90,13 +91,13 @@ func (d *Daemon) readyHandoff(task *store.Task, handoff *string) (map[string]any
 		return map[string]any{"ok": true, "task_id": task.ID, "message": WrapReadyLine}, 0, nil
 	}
 	if cur == nil || cur.step != NewContextLimit || cur.acked {
-		return nil, http.StatusConflict, errString("no context cycle is waiting for atrium ready on this card")
+		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
 	}
 	path := cur.file
 	if handoff != nil {
 		text := *handoff
 		if strings.TrimSpace(text) == "" {
-			return nil, http.StatusConflict, errString("the handoff text is empty: write what a fresh session needs to carry on")
+			return nil, http.StatusConflict, small.ErrString("the handoff text is empty: write what a fresh session needs to carry on")
 		}
 		if len(text) > handoffKeep {
 			text = text[:handoffKeep]
@@ -133,7 +134,7 @@ func (d *Daemon) readyHandoff(task *store.Task, handoff *string) (map[string]any
 	}
 	// The run may have moved on between the look and here: only an ack that took counts.
 	if !d.nctx.ack(task.ID) {
-		return nil, http.StatusConflict, errString("no context cycle is waiting for atrium ready on this card")
+		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
 	}
 	log.Printf("[atrium] atrium ready from %s, %d bytes in %s", task.DisplayTitle(), len(b), path)
 	d.publishTask(task.ID)

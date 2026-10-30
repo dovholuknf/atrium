@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -105,7 +106,7 @@ func (d *Daemon) reapGoneWorktrees() {
 	for _, r := range d.sup.all() {
 		live[r.taskID] = true
 		t, err := d.st.Get(r.taskID)
-		if err != nil || !hasTag(t.Tags, SubagentTag) {
+		if err != nil || !small.HasTag(t.Tags, SubagentTag) {
 			continue
 		}
 		dir := runnerDir(r, t)

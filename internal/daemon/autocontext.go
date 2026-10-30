@@ -7,6 +7,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -28,7 +29,7 @@ const cycleBy = "context-cycle"
 
 // cycleSubject is whether the trigger reaches a card at all.
 func (d *Daemon) cycleSubject(t *store.Task) bool {
-	if t == nil || d.sup.Get(t.ID) == nil || isParked(t) || !api.ContextCycleOn(t) {
+	if t == nil || d.sup.Get(t.ID) == nil || small.IsParked(t) || !api.ContextCycleOn(t) {
 		return false
 	}
 	switch t.Status {

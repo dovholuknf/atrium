@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -87,12 +88,12 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 		URL string `json:"url"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	task, err := d.st.Get(r.PathValue("id"))
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), cloneTimeout)
@@ -111,7 +112,7 @@ func (d *Daemon) handleGitClone(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, gitsync.ErrStopped):
 			code = http.StatusServiceUnavailable
 		}
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

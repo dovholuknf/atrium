@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -199,7 +200,7 @@ func (d *Daemon) handleTaskSays(w http.ResponseWriter, r *http.Request) {
 	const page = 20
 	rows, err := d.st.SaysBefore(r.PathValue("id"), r.URL.Query().Get("before"), page+1)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	more := len(rows) > page
@@ -223,14 +224,14 @@ func (d *Daemon) handleSays(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 		f.Since = t.UTC().Format(store.TimeFormat)
 	}
 	rows, err := d.st.SaysWhere(f, q.Get("before"), page+1)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	more := len(rows) > page

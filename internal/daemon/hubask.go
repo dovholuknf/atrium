@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // HubAsker is a Relay that can also ask the hub's backlog and reports endpoints. Optional, so a Relay that predates it
@@ -26,7 +28,7 @@ func (d *Daemon) handleHubAsk(w http.ResponseWriter, r *http.Request) {
 		Body   json.RawMessage `json:"body"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	code, data, msg := d.hubCall(r.Context(), strings.TrimSpace(in.From), in.Method, in.Path, in.Body)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -71,7 +72,7 @@ func TestLaunchSerializesOnTheCardLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unlock := d.launching.lock(launchTaskKey(task.ID))
+	unlock := d.launching.Lock(small.LaunchTaskKey(task.ID))
 	done := make(chan struct{})
 	go func() {
 		// The command does not exist, so this fails as soon as it gets past the
@@ -107,7 +108,7 @@ func TestLaunchSerializesOnTheResumeLock(t *testing.T) {
 	h := briefHarness(t, d)
 	resume := "sess-locked"
 
-	unlock := d.launching.lock(launchResumeKey(resume))
+	unlock := d.launching.Lock(small.LaunchResumeKey(resume))
 	done := make(chan struct{})
 	go func() {
 		_, _ = d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Resume: resume})

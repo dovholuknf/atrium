@@ -17,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	prrender "github.com/dovholuknf/atrium/internal/base/prreview/render"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -191,7 +192,7 @@ func (r *prRunner) runBounded(ctx context.Context, c prCmd) ([]byte, error) {
 		return nil, fmt.Errorf("%s printed more than %d bytes and was stopped", label, c.Limit)
 	case err != nil:
 		if errOut.Len() > 0 {
-			return nil, fmt.Errorf("%s: %s", label, firstLine(errOut.String()))
+			return nil, fmt.Errorf("%s: %s", label, small.FirstLine(errOut.String()))
 		}
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -440,7 +441,7 @@ func (pr *prRun) step(name string, fn func() error) error {
 		return errStopped
 	}
 	if err != nil {
-		pr.logf("%s error %s", name, firstLine(err.Error()))
+		pr.logf("%s error %s", name, small.FirstLine(err.Error()))
 	} else {
 		pr.logf("%s end %.2f", name, cost)
 	}
@@ -518,9 +519,9 @@ func (pr *prRun) fail(step string, err error) {
 	if pr.ctx.Err() != nil {
 		return
 	}
-	pr.logf("%s failed %s", step, firstLine(err.Error()))
+	pr.logf("%s failed %s", step, small.FirstLine(err.Error()))
 	if _, merr := pr.r.st.MovePR(pr.id, []string{store.PRFetching, store.PRRunning}, store.PRFailed, "",
-		step+": "+firstLine(err.Error())); merr != nil {
+		step+": "+small.FirstLine(err.Error())); merr != nil {
 		log.Printf("[atrium] pr %s: could not record the failure of %s: %v", pr.id, step, merr)
 		return
 	}
@@ -1212,7 +1213,7 @@ func (pr *prRun) panel() error {
 				return e
 			}
 			failed++
-			pr.logf("panel %s failed %s", jobs[i].agent, firstLine(e.Error()))
+			pr.logf("panel %s failed %s", jobs[i].agent, small.FirstLine(e.Error()))
 		}
 	}
 	if failed == len(jobs) {
@@ -1346,7 +1347,7 @@ func (pr *prRun) verify() error {
 		if failed := firstErr(errs); failed != nil {
 			// A verify that failed leaves its findings unverified, which the merge
 			// step is told. It does not fail the run.
-			pr.logf("verify: a fork failed %s", firstLine(failed.Error()))
+			pr.logf("verify: a fork failed %s", small.FirstLine(failed.Error()))
 		}
 	}
 	return pr.writeJSON("steps/verify/out.json", map[string]any{"verdicts": pr.verd})
@@ -1407,7 +1408,7 @@ func (pr *prRun) critics() error {
 			if errors.Is(e, errStopped) {
 				return e
 			}
-			pr.logf("critics %s failed %s", names[i], firstLine(e.Error()))
+			pr.logf("critics %s failed %s", names[i], small.FirstLine(e.Error()))
 		}
 	}
 	var all []prrender.Finding

@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -35,7 +36,7 @@ import (
 // the card's column.
 func (d *Daemon) sessionGone(t *store.Task) bool {
 	// A parked card is asleep, not gone: it can be woken, and the answer differs.
-	if isParked(t) {
+	if small.IsParked(t) {
 		return false
 	}
 	if t.Status != store.StatusDone && t.Status != store.StatusDead {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1414,7 +1415,7 @@ func (d *Daemon) handoffWritten(taskID, file string, since time.Time, token stri
 func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, err := d.st.Get(id); err != nil {
-		writeJSONErr(w, http.StatusNotFound, errString("no card "+id))
+		small.WriteJSONErr(w, http.StatusNotFound, small.ErrString("no card "+id))
 		return
 	}
 	switch r.Method {
@@ -1428,16 +1429,16 @@ func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		switch err := d.StartNewContext(id); {
 		case errors.Is(err, errNoTerminal), errors.Is(err, errNewContextBusy), isSharedErr(err):
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 		case err != nil:
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		default:
 			ncJSON(w, http.StatusAccepted, map[string]any{
 				"card": id, "started": true, "new_context": d.newContextFor(id),
 			})
 		}
 	default:
-		writeJSONErr(w, http.StatusMethodNotAllowed, errString("GET, POST or DELETE"))
+		small.WriteJSONErr(w, http.StatusMethodNotAllowed, small.ErrString("GET, POST or DELETE"))
 	}
 }
 

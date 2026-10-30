@@ -16,6 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -262,7 +263,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 		run = d.sup.get(taskID)
 		if run == nil {
 			// A parked card has no runner and is looked at anyway. See attachParked.
-			if t, err := d.st.Get(taskID); err == nil && isParked(t) {
+			if t, err := d.st.Get(taskID); err == nil && small.IsParked(t) {
 				d.attachParked(w, r, t)
 				return
 			}

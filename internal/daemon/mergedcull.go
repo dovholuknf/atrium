@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -65,13 +66,13 @@ func (d *Daemon) mergedGrace() (time.Duration, bool) {
 // or launched by an agent with a recorded launcher and not asked to be a
 // director. A director is never a worker, tag or no tag.
 func (d *Daemon) isWorker(t *store.Task) bool {
-	if t == nil || hasTag(t.Tags, DirectorTag) {
+	if t == nil || small.HasTag(t.Tags, DirectorTag) {
 		return false
 	}
-	if hasTag(t.Tags, SubagentTag) || t.Lifetime == store.LifetimeWork || isItem(t) {
+	if small.HasTag(t.Tags, SubagentTag) || t.Lifetime == store.LifetimeWork || isItem(t) {
 		return true
 	}
-	if !hasTag(t.Tags, OriginAgentTag) {
+	if !small.HasTag(t.Tags, OriginAgentTag) {
 		return false
 	}
 	w, err := d.st.WorkItem(t.ID)

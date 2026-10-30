@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -17,7 +18,7 @@ const ItemTag = "atrium:item"
 
 // isItem is whether a card was launched ISOLATED: the toolset and the endings above. Since item lifecycle L1 this is no
 // longer what makes a card an item. The attachment is, and it is the tag below.
-func isItem(t *store.Task) bool { return t != nil && hasTag(t.Tags, ItemTag) }
+func isItem(t *store.Task) bool { return t != nil && small.HasTag(t.Tags, ItemTag) }
 
 // WorkTagPrefix starts the tag that attaches a card to an item, `atrium:item:<backlog id>`. It is NOT ItemTag: that is
 // whole-string and means isolated, and this one only ever has an id after it. The same prefix as link.WorkTagPrefix.
@@ -72,7 +73,7 @@ func ItemBriefPrompt(file, prompt string) string {
 // is what makes the first turn owe it a report, and nobody for the operator's own launch. An item's is atrium, so
 // nothing the worker reads names a launcher. atrium is not the card's launcher, so the first turn owes nothing.
 func openingSender(req LaunchRequest) string {
-	if req.Item || hasTag(req.Tags, ItemTag) {
+	if req.Item || small.HasTag(req.Tags, ItemTag) {
 		return store.ReservedHandle
 	}
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" && by != store.HumanLauncher {
@@ -105,7 +106,7 @@ const itemSayRefusal = "item workers cannot say anything. end with atrium_done w
 
 // writeItemSayRefused answers a say that itemSayRefused refused.
 func writeItemSayRefused(w http.ResponseWriter) {
-	writeJSONErr(w, http.StatusForbidden, errString(itemSayRefusal))
+	small.WriteJSONErr(w, http.StatusForbidden, small.ErrString(itemSayRefusal))
 }
 
 // itemResultKey is the notice key of an item's result: the card, the generation of its session and the word. A

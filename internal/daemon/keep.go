@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -35,7 +36,7 @@ func (d *Daemon) keepOnCard(w http.ResponseWriter, from string, target *store.Ta
 	reply bool, why string) {
 	m, err := d.st.QueuePeerKind(target.ID, text, from, promptKind(kind, reply), false)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	rec := sayRecordFor(from, target, sayTrace{}, false, verb, when, reply)
@@ -159,7 +160,7 @@ func (d *Daemon) wakeGone(taskID, via string) error {
 	if err != nil {
 		return err
 	}
-	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 	t, err = d.st.Get(taskID)
 	if err != nil {

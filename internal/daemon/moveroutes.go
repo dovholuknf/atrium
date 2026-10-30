@@ -17,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -84,12 +85,12 @@ func (d *Daemon) moveHandler() http.Handler {
 		mux.HandleFunc("POST /v1/move/"+name, func(w http.ResponseWriter, r *http.Request) {
 			raw, err := io.ReadAll(io.LimitReader(r.Body, maxMoveBundle+(1<<20)))
 			if err != nil {
-				writeJSONErr(w, http.StatusBadRequest, err)
+				small.WriteJSONErr(w, http.StatusBadRequest, err)
 				return
 			}
 			var in moveAsk
 			if err := json.Unmarshal(raw, &in); err != nil {
-				writeJSONErr(w, http.StatusBadRequest, err)
+				small.WriteJSONErr(w, http.StatusBadRequest, err)
 				return
 			}
 			in.rawBundle = raw
@@ -106,12 +107,12 @@ func (d *Daemon) moveCard(w http.ResponseWriter, in *moveAsk) *store.Task {
 		id = id[i+1:]
 	}
 	if id == "" {
-		writeJSONErr(w, http.StatusBadRequest, errors.New("say which card"))
+		small.WriteJSONErr(w, http.StatusBadRequest, errors.New("say which card"))
 		return nil
 	}
 	t, err := d.st.Get(id)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, fmt.Errorf("no card %s here", id))
+		small.WriteJSONErr(w, http.StatusNotFound, fmt.Errorf("no card %s here", id))
 		return nil
 	}
 	in.ID = t.ID
@@ -126,7 +127,7 @@ func moveRefusal(w http.ResponseWriter, err error) {
 		errors.Is(err, store.ErrNotFrozen), errors.Is(err, store.ErrFrozenByOther):
 		code = http.StatusConflict
 	}
-	writeJSONErr(w, code, err)
+	small.WriteJSONErr(w, code, err)
 }
 
 func (d *Daemon) moveFreeze(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
@@ -223,14 +224,14 @@ func (d *Daemon) moveCapture(w http.ResponseWriter, _ *http.Request, in *moveAsk
 	}
 	gen, ok := d.nctx.beginCaptureOnly(t.ID, file, d.conversationOf(t))
 	if !ok {
-		writeJSONErr(w, http.StatusConflict, errors.New("busy: a capture is already running on this card"))
+		small.WriteJSONErr(w, http.StatusConflict, errors.New("busy: a capture is already running on this card"))
 		return
 	}
 	step, err := d.ncCapture(t.ID, gen, file)
 	d.nctx.finish(t.ID, gen)
 	d.releaseHeld(t.ID)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadGateway, fmt.Errorf("capture failed at %s: %w", step, err))
+		small.WriteJSONErr(w, http.StatusBadGateway, fmt.Errorf("capture failed at %s: %w", step, err))
 		return
 	}
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file})
@@ -267,7 +268,7 @@ func (d *Daemon) moveBundle(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 		if errors.Is(err, errTooLarge) {
 			code = http.StatusRequestEntityTooLarge
 		}
-		writeJSONErr(w, code, err)
+		small.WriteJSONErr(w, code, err)
 	}
 	proj, err := api.ProjectDirFor(t.Worktree)
 	if err == nil && b.Conversation != "" && moveConvName.MatchString(b.Conversation) {
@@ -321,17 +322,17 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		return
 	}
 	if f, _ := d.st.Frozen(t.ID); f == nil {
-		writeJSONErr(w, http.StatusConflict, store.ErrNotFrozen)
+		small.WriteJSONErr(w, http.StatusConflict, store.ErrNotFrozen)
 		return
 	}
-	if isParked(t) && d.sup.Get(t.ID) == nil {
+	if small.IsParked(t) && d.sup.Get(t.ID) == nil {
 		writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
 		return
 	}
 	was := t.Status
 	if r := d.sup.get(t.ID); r != nil {
 		if _, dup := d.idle.parking.LoadOrStore(t.ID, true); dup {
-			writeJSONErr(w, http.StatusConflict, errors.New("a park is already running on this card"))
+			small.WriteJSONErr(w, http.StatusConflict, errors.New("a park is already running on this card"))
 			return
 		}
 		defer d.idle.parking.Delete(t.ID)
@@ -341,12 +342,12 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 			time.Sleep(50 * time.Millisecond)
 		}
 		if d.sup.Get(t.ID) != nil {
-			writeJSONErr(w, http.StatusGatewayTimeout, errors.New("the runner did not leave"))
+			small.WriteJSONErr(w, http.StatusGatewayTimeout, errors.New("the runner did not leave"))
 			return
 		}
 	}
 	if err := d.parkCard(t.ID, was, map[string]any{"by": "move"}); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
@@ -363,7 +364,7 @@ func (d *Daemon) moveMoved(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		return
 	}
 	if _, _, ok := splitMovedTo(in.To); !ok {
-		writeJSONErr(w, http.StatusBadRequest, errors.New("to is room~card"))
+		small.WriteJSONErr(w, http.StatusBadRequest, errors.New("to is room~card"))
 		return
 	}
 	if err := d.st.SetMovedTo(t.ID, in.MoveID, in.To); err != nil {
@@ -381,7 +382,7 @@ func (d *Daemon) moveQueue(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 	}
 	q, err := d.st.FreezeQueue(t.ID)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if q == nil {
@@ -396,7 +397,7 @@ func (d *Daemon) moveAck(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		return
 	}
 	if err := d.st.AckFrozen(t.ID, in.MsgIDs...); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
@@ -410,25 +411,25 @@ func (d *Daemon) moveRelease(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		return
 	}
 	if t.MovedTo == "" {
-		writeJSONErr(w, http.StatusConflict, errors.New("the card has not moved: moved_to is not set"))
+		small.WriteJSONErr(w, http.StatusConflict, errors.New("the card has not moved: moved_to is not set"))
 		return
 	}
 	q, err := d.st.FreezeQueue(t.ID)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if len(q) > 0 {
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf("%d messages are not forwarded yet", len(q)))
+		small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("%d messages are not forwarded yet", len(q)))
 		return
 	}
 	if err := d.st.ReleaseAlias(t.ID, "moved to "+t.MovedTo); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if t.Status != store.StatusDone {
 		if err := d.st.SetStatus(t.ID, store.StatusDone); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -477,17 +478,17 @@ func (d *Daemon) undoCard(id, moveID string) error {
 func (d *Daemon) moveReceive(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 	var b moveBundle
 	if err := json.Unmarshal(in.rawBundle, &b); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	cwdDir := strings.TrimSpace(in.Cwd)
 	if fi, err := os.Stat(cwdDir); err != nil || !fi.IsDir() {
-		writeJSONErr(w, http.StatusBadRequest, errors.New("cwd is not a folder here"))
+		small.WriteJSONErr(w, http.StatusBadRequest, errors.New("cwd is not a folder here"))
 		return
 	}
 	proj, err := api.ProjectDirFor(cwdDir)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	write := func(root, name string, data []byte) error {
@@ -503,33 +504,33 @@ func (d *Daemon) moveReceive(w http.ResponseWriter, _ *http.Request, in *moveAsk
 	wrote := 0
 	if len(b.Jsonl) > 0 {
 		if !moveConvName.MatchString(b.Conversation) {
-			writeJSONErr(w, http.StatusBadRequest, errors.New("that conversation name is not allowed"))
+			small.WriteJSONErr(w, http.StatusBadRequest, errors.New("that conversation name is not allowed"))
 			return
 		}
 		if err := write(proj, b.Conversation+".jsonl", b.Jsonl); err != nil {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 		wrote++
 	}
 	for _, f := range b.Memory {
 		if f.Name != safepath.SafeName(f.Name) || !moveMemoryName.MatchString(f.Name) {
-			writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("memory file %q is not allowed", f.Name))
+			small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("memory file %q is not allowed", f.Name))
 			return
 		}
 		if err := write(filepath.Join(proj, "memory"), f.Name, f.Data); err != nil {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 		wrote++
 	}
 	for _, f := range b.Files {
 		if !moveFileName.MatchString(f.Name) {
-			writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("file %q is not allowed", f.Name))
+			small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("file %q is not allowed", f.Name))
 			return
 		}
 		if err := write(cwdDir, f.Name, f.Data); err != nil {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 		wrote++
@@ -544,12 +545,12 @@ func (d *Daemon) moveDeliver(w http.ResponseWriter, r *http.Request, in *moveAsk
 		return
 	}
 	if strings.TrimSpace(in.MsgID) == "" || strings.TrimSpace(in.Text) == "" {
-		writeJSONErr(w, http.StatusBadRequest, errors.New("a delivery needs msg_id and text"))
+		small.WriteJSONErr(w, http.StatusBadRequest, errors.New("a delivery needs msg_id and text"))
 		return
 	}
 	fresh, err := d.st.SeenMove(in.MsgID, t.ID)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if !fresh {
@@ -568,7 +569,7 @@ func (d *Daemon) moveDeliver(w http.ResponseWriter, r *http.Request, in *moveAsk
 	inner, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "/v1/tasks/"+t.ID+"/message", bytes.NewReader(raw))
 	if err != nil {
 		_ = d.st.ForgetMove(in.MsgID)
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	inner.SetPathValue("id", t.ID)
@@ -590,22 +591,22 @@ func (d *Daemon) moveAdopt(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 	}
 	if alias := strings.TrimSpace(in.Alias); alias != "" {
 		if err := d.st.SetAlias(t.ID, alias); err != nil {
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return
 		}
 	}
 	if in.Pinned {
 		if err := d.st.SetPinSlot(t.ID, in.PinOrder); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
 	if err := d.st.SetGated(t.ID, in.Gated); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if err := d.st.SetAutoApprove(t.ID, in.Auto); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.publishTask(t.ID)

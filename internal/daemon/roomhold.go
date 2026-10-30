@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -192,7 +193,7 @@ type holdStart struct {
 }
 
 // errHoldExempt is more exempt cards than a hold allows.
-var errHoldExempt = errString("at most three exempt cards")
+var errHoldExempt = small.ErrString("at most three exempt cards")
 
 // startDeployHold sets the hold on every card here with a live session, but the
 // deployer's and the exempt ones.
@@ -241,7 +242,7 @@ func (d *Daemon) holdableCards() []string {
 	}
 	if open, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission); err == nil {
 		for _, t := range open {
-			if !seen[t.ID] && !isParked(t) {
+			if !seen[t.ID] && !small.IsParked(t) {
 				seen[t.ID] = true
 				out = append(out, t.ID)
 			}
@@ -339,7 +340,7 @@ func (d *Daemon) launchHeld(req LaunchRequest) error {
 	if t := d.cardNamed(by); t != nil && !h.Holds(t.ID) && (t.ID == h.ByCard || containsID(h.Exempt, t.ID)) {
 		return nil
 	}
-	return errString(d.roomWord() + " is being redeployed: launch when the hold lifts")
+	return small.ErrString(d.roomWord() + " is being redeployed: launch when the hold lifts")
 }
 
 func containsID(ids []string, id string) bool {
@@ -464,7 +465,7 @@ func (d *Daemon) handleHold(w http.ResponseWriter, r *http.Request) {
 			Why     string `json:"why"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 		switch in.Action {
@@ -472,13 +473,13 @@ func (d *Daemon) handleHold(w http.ResponseWriter, r *http.Request) {
 			_, err := d.startDeployHold(in.holdStart)
 			switch {
 			case errors.Is(err, store.ErrHoldExists):
-				writeJSONErr(w, http.StatusConflict, errString("this room is already held for a deploy"))
+				small.WriteJSONErr(w, http.StatusConflict, small.ErrString("this room is already held for a deploy"))
 				return
 			case errors.Is(err, errHoldExempt):
-				writeJSONErr(w, http.StatusBadRequest, err)
+				small.WriteJSONErr(w, http.StatusBadRequest, err)
 				return
 			case err != nil:
-				writeJSONErr(w, http.StatusInternalServerError, err)
+				small.WriteJSONErr(w, http.StatusInternalServerError, err)
 				return
 			}
 		case "lift":
@@ -488,20 +489,20 @@ func (d *Daemon) handleHold(w http.ResponseWriter, r *http.Request) {
 			}
 			h, err := d.liftDeployHold(outcome)
 			if err != nil {
-				writeJSONErr(w, http.StatusInternalServerError, err)
+				small.WriteJSONErr(w, http.StatusInternalServerError, err)
 				return
 			}
 			if h == nil {
-				writeJSONErr(w, http.StatusNotFound, errString("this room is not held for a deploy"))
+				small.WriteJSONErr(w, http.StatusNotFound, small.ErrString("this room is not held for a deploy"))
 				return
 			}
 		default:
-			writeJSONErr(w, http.StatusBadRequest, errString(`action is "start" or "lift"`))
+			small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString(`action is "start" or "lift"`))
 			return
 		}
 		_ = json.NewEncoder(w).Encode(d.holdView())
 	default:
-		writeJSONErr(w, http.StatusMethodNotAllowed, errString("GET or POST"))
+		small.WriteJSONErr(w, http.StatusMethodNotAllowed, small.ErrString("GET or POST"))
 	}
 }
 

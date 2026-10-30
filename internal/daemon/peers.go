@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -218,7 +219,7 @@ func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := d.rosterWithin(q.Get("me"), fleet, within)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -232,10 +233,10 @@ func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {
 func checkPeerText(w http.ResponseWriter, text, nothing string) bool {
 	switch {
 	case text == "":
-		writeJSONErr(w, http.StatusBadRequest, errString(nothing))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString(nothing))
 		return false
 	case len(text) > maxPeerMessage:
-		writeJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf(
+		small.WriteJSONErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf(
 			"that is %d characters, over the %d limit. write it to a file and say where it is",
 			len(text), maxPeerMessage))
 		return false
@@ -269,15 +270,15 @@ func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, whe
 func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text, when, kind string, reply, wake bool) *store.Task {
 	switch {
 	case from == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session is sending"))
 		return nil
 	case to == "":
-		writeJSONErr(w, http.StatusBadRequest, errString("say which session to "+verb))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session to "+verb))
 		return nil
 	case from == to:
 		// Not an error worth a stack trace, but worth refusing: a model
 		// messaging itself is a loop with extra steps.
-		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("a session cannot "+verb+" itself"))
 		return nil
 	}
 
@@ -296,7 +297,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	}
 	// The same self-check as above, for a session that named itself by alias.
 	if target.WireName == d.st.Qualify(from) {
-		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("a session cannot "+verb+" itself"))
 		return nil
 	}
 	// The same test the message endpoint uses, so `atrium tell` and `atrium_say`
@@ -306,7 +307,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 		end, err := d.followMoved(target)
 		switch {
 		case err != nil:
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return nil
 		case end.Live != nil:
 			target, gate = end.Live, d.sayGate(end.Live)
@@ -321,7 +322,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	wakeGone := gate == sayGone && (wake || (kind != "fyi" && d.fromFamily(from, target))) && resumable(target)
 	if gate == sayGone && !wakeGone {
 		if text == "" {
-			writeJSONErr(w, http.StatusConflict, fmt.Errorf(
+			small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf(
 				"%s has ended, so nothing would read this", to))
 			return nil
 		}
@@ -348,20 +349,20 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	}
 
 	if !d.peerLimit.allow(from) {
-		writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+		small.WriteJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
 			"%s has sent %d messages in the last minute, which is the limit",
 			from, peerSendsPerMinute))
 		return nil
 	}
 	if gate == sayParked {
 		if err := d.unpark(target.ID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return nil
 		}
 	}
 	if wakeGone {
 		if err := d.wakeGone(target.ID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return nil
 		}
 		// Handed back as found, marked like a card this say woke, so the caller queues and does not type into a
@@ -395,12 +396,12 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	when, err := parseWhen(in.When)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -496,7 +497,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	waitTurn := d.waitsForTurn(target.ID, when)
 	typed, msgID, err := d.deliverPeerWhenID(target, from, text, promptKind(in.Kind, in.Reply), waitTurn)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.recordTell(from, target, text, in.When, in.Reply, typed, msgID)
@@ -587,7 +588,7 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 	// and carried by the ordinary path, never typed into a session that has only
 	// just started.
 	// The same for a say that arrives while an earlier wake is still waiting for its runner: injectKept takes it.
-	if _, waking := d.kept.Load(target.ID); isParked(target) || waking {
+	if _, waking := d.kept.Load(target.ID); small.IsParked(target) || waking {
 		// fall through to the queue
 	} else if typed, _ := d.tellByTyping(target, from, text, kind, waitTurn); typed {
 		d.noteDelivery(target.ID, from, store.DeliveryKind(from, cause))

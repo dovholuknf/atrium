@@ -30,6 +30,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -328,7 +329,7 @@ type Daemon struct {
 	// card and the resume id. Without it two restarts or launches onto one card
 	// both pass the "is a runner live" guard before either registers, and both
 	// resume the same conversation. See keyedmutex.go and launch.go.
-	launching *keyedMutex
+	launching *small.KeyedMutex
 	// startedAt is when a launch last put a runner onto a card, keyed by card id,
 	// so a repeat of that launch answers with the card rather than a refusal. See
 	// repeatLaunch in launch.go.
@@ -426,7 +427,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
 		nats:      map[overlayKind]*native{},
 		peerLimit: newPeerLimiter(),
-		launching: newKeyedMutex(),
+		launching: small.NewKeyedMutex(),
 	}
 	d.ph.opts.Build = opts.HostBuild
 	if tune != nil {

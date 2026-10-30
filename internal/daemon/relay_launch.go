@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // A launch on another room, for this room's atrium_launch with `room`. See
@@ -67,7 +69,7 @@ type roomLaunchIn struct {
 func (d *Daemon) handleRoomLaunch(w http.ResponseWriter, r *http.Request) {
 	var in roomLaunchIn
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	other := d.otherRoom(in.Room)

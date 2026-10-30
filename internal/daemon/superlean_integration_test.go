@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -136,7 +137,7 @@ func TestSuperleanOptionsFromTheRequestAndFromTheCard(t *testing.T) {
 		t.Fatalf("superlean:true starts lean and superlean: %v %v %+v", lean, sl, kit)
 	}
 	card := &store.Task{Tags: leanTags(nil, kit)}
-	if !hasTag(card.Tags, LeanTag) || !hasTag(card.Tags, SuperleanTag) {
+	if !small.HasTag(card.Tags, LeanTag) || !small.HasTag(card.Tags, SuperleanTag) {
 		t.Fatalf("tags %v", card.Tags)
 	}
 	if lean, _, _, sl = leanOptions(LaunchRequest{}, card, ""); !lean || !sl {
@@ -165,7 +166,7 @@ func TestSuperleanTagsComeOffTheWayTheDesignSays(t *testing.T) {
 		t.Fatalf("lean:false takes both off, got %v", got)
 	}
 	only := withoutSuperleanTag(tags)
-	if hasTag(only, SuperleanTag) || !hasTag(only, LeanTag) || !hasTag(only, leanMCPTagPrefix+"ziti") {
+	if small.HasTag(only, SuperleanTag) || !small.HasTag(only, LeanTag) || !small.HasTag(only, leanMCPTagPrefix+"ziti") {
 		t.Fatalf("superlean:false takes only its own tag off, got %v", only)
 	}
 }
@@ -285,7 +286,7 @@ func TestSuperleanFalseOnALaunchTakesOnlyTheSuperleanTagOff(t *testing.T) {
 			t.Fatalf("%q: tags are %q, want %q", c.extra, got.Tags, want)
 		}
 		for _, tag := range want {
-			if !hasTag(got.Tags, tag) {
+			if !small.HasTag(got.Tags, tag) {
 				t.Fatalf("%q: tags are %q, want %q", c.extra, got.Tags, want)
 			}
 		}

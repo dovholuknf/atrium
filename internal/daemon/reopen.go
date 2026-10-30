@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -223,7 +224,7 @@ func (d *Daemon) reopenWanted() []*store.Task {
 			continue
 		}
 		// Parked is put down the same way: it wakes when something asks it to.
-		if isParked(t) {
+		if small.IsParked(t) {
 			continue
 		}
 		// Do not reopen throwaways. Their directories may be gone or awaiting

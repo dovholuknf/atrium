@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -390,18 +391,18 @@ func (d *Daemon) cloneRoots() []string {
 func (d *Daemon) handleHubGitURL(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if strings.TrimSpace(q.Get("repo")) == "" {
-		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("say which repository"))
+		small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("say which repository"))
 		return
 	}
 	rt, err := d.hubTransport()
 	if err != nil {
-		writeJSONErr(w, http.StatusBadGateway, err)
+		small.WriteJSONErr(w, http.StatusBadGateway, err)
 		return
 	}
 	ans, err := gitsync.AskHubLookup(r.Context(), rt, gitsync.URLQuery{Repo: q.Get("repo"), Branch: q.Get("branch"),
 		Room: q.Get("room")})
 	if err != nil {
-		writeJSONErr(w, http.StatusBadGateway, err)
+		small.WriteJSONErr(w, http.StatusBadGateway, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

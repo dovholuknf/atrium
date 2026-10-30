@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -197,7 +198,7 @@ func usageGroups(st *store.Store, t *store.Task) (dept, launcher, launcherID str
 		}
 		return c.WireName
 	}
-	if hasTag(t.Tags, DirectorTag) {
+	if small.HasTag(t.Tags, DirectorTag) {
 		return dept, name(t), t.ID
 	}
 	if !t.Launched() {

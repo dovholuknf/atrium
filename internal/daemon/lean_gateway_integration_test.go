@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -90,7 +91,7 @@ func TestLeanGatewayUnknownNameIsRefusedWithTheList(t *testing.T) {
 func TestLeanGatewayRestartKeepsWhatTheCardHad(t *testing.T) {
 	t.Parallel()
 	launched := leanTags([]string{"mercurius"}, leanKit{})
-	if !hasTag(launched, leanMCPTagPrefix+"mercurius") {
+	if !small.HasTag(launched, leanMCPTagPrefix+"mercurius") {
 		t.Fatalf("a wide launch did not tag the card: %v", launched)
 	}
 	for _, c := range []struct {

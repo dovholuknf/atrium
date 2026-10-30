@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -546,16 +547,16 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		Force bool `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if strings.TrimSpace(body.Text) == "" {
-		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("a message needs some text"))
+		small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("a message needs some text"))
 		return
 	}
 	when, err := parseWhen(body.When)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	taskID := r.PathValue("id")
@@ -594,7 +595,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !d.peerLimit.allow(from) {
-			writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+			small.WriteJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
 				"%s has sent %d messages in the last minute, which is the limit",
 				from, peerSendsPerMinute))
 			return
@@ -624,7 +625,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		end, err := d.followMoved(gated)
 		switch {
 		case err != nil:
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return
 		case end.Live != nil:
 			taskID, gated = end.Live.ID, end.Live
@@ -636,7 +637,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if gate == sayParked && (from == "" || body.Wake || d.fromFamily(from, gated)) {
 		if err := d.unpark(taskID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		woke, gate = true, sayOK
@@ -645,7 +646,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if gate == sayGone && gated != nil && resumable(gated) &&
 		(from == "" || body.Wake || (parseKind(body.Kind) != KindFYI && d.fromFamily(from, gated))) {
 		if err := d.wakeGone(taskID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		woke, gate = true, sayOK
@@ -667,7 +668,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			km, kerr = d.st.QueueMessage(taskID, body.Text)
 		}
 		if kerr != nil {
-			writeJSONErr(w, http.StatusInternalServerError, kerr)
+			small.WriteJSONErr(w, http.StatusInternalServerError, kerr)
 			return
 		}
 		out := map[string]any{
@@ -744,7 +745,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if run := d.sup.Get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if wrote {
@@ -756,7 +757,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				ev["kind"] = k
 			}
 			if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
-				writeJSONErr(w, http.StatusInternalServerError, err)
+				small.WriteJSONErr(w, http.StatusInternalServerError, err)
 				return
 			}
 			d.askAnswered(taskID, "the operator")
@@ -800,7 +801,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		m, err = d.st.QueueMessage(taskID, body.Text)
 	}
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	// Only once the message is somewhere. The operator saying something to a
@@ -884,12 +885,12 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	task, err := d.st.Get(taskID)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	note := strings.TrimSpace(task.Note)
 	if note == "" {
-		writeJSONErr(w, http.StatusBadRequest, errString("there is nothing written down to send"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("there is nothing written down to send"))
 		return
 	}
 
@@ -900,13 +901,13 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.ContentLength != 0 {
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil && err != io.EOF {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 	}
 	when, err := parseWhen(body.When)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	waitTurn := d.waitsForTurn(taskID, when)
@@ -919,7 +920,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	if run := d.sup.Get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		var err error
 		if typed, err = d.typeThroughGate(run, taskID, "", note); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -927,7 +928,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
 			"text": note, "via": "terminal", "from": "note",
 		}); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		delivered = "terminal"
@@ -938,7 +939,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		}
 		m, err := queue(taskID, note)
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		d.deferPeerInjection(taskID, m.ID, "", note, "", waitTurn)
@@ -1011,10 +1012,4 @@ func (d *Daemon) typePayload(run Runner, taskID, banner, text string, ok func() 
 		payload = screen.BracketedPaste(text)
 	}
 	return run.InjectPeerIf(banner, payload, ok)
-}
-
-func writeJSONErr(w http.ResponseWriter, code int, err error) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }

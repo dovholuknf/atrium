@@ -16,6 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/linkfetch"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // Turning a pasted URL into a filled-in launch dialog.
@@ -80,7 +81,7 @@ func (d *Daemon) Recognise(url string) (*rules.Resolved, error) {
 	}
 	out := r.Resolve(vars, facts, nil)
 	if fetchErr != nil {
-		out.FetchError = firstLine(fetchErr.Error())
+		out.FetchError = small.FirstLine(fetchErr.Error())
 	}
 	// ATRIUM DOES NOT CREATE THE DIRECTORY. See rules.DescribeCwd.
 	rules.DescribeCwd(out, os.Stat)
@@ -166,7 +167,7 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	}
 	if err != nil {
 		if errOut.Len() > 0 {
-			return nil, fmt.Errorf("%v: %s", err, firstLine(errOut.String()))
+			return nil, fmt.Errorf("%v: %s", err, small.FirstLine(errOut.String()))
 		}
 		return nil, err
 	}

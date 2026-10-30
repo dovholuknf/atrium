@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // Running a shell command and keeping the environment it produced.
@@ -78,7 +80,7 @@ Write-Output ` + fence
 		var ee *exec.ExitError
 		if ok := asExitError(err, &ee); ok && len(ee.Stderr) > 0 {
 			return nil, fmt.Errorf("the prepare command failed: %s",
-				firstLine(string(ee.Stderr)))
+				small.FirstLine(string(ee.Stderr)))
 		}
 		return nil, fmt.Errorf("the prepare command failed: %w", err)
 	}

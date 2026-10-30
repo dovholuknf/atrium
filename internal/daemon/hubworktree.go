@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // scopeHubRemote leaves the launch cwd with exactly one effective `remote.hub.url`, this room's forwarder.
@@ -32,7 +33,7 @@ func (d *Daemon) scopeHubRemote(cwd string) {
 	defer cancel()
 	g := gitsync.Default
 	fail := func(err error) {
-		log.Printf("[atrium] hub remote for %s not scoped: %s", cwd, firstLine(err.Error()))
+		log.Printf("[atrium] hub remote for %s not scoped: %s", cwd, small.FirstLine(err.Error()))
 	}
 	have, err := g.Git(ctx, cwd, "config", "--get", "remote.hub.url")
 	have = strings.TrimSpace(have)

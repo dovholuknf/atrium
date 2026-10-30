@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/wtfree"
 )
@@ -140,7 +141,7 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool, prior *cullPlan
 
 	// Held so a restart or a launch onto this card cannot start a runner in the
 	// worktree while it is being removed. See RestartRunner.
-	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 
 	if row, ok := d.homeOf(taskID); ok {

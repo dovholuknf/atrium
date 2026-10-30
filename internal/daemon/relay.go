@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -219,7 +220,7 @@ type sayIn struct {
 func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	var in sayIn
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if d.itemSayRefused(in.From) {
@@ -228,7 +229,7 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	}
 	name, room, err := address.SplitAddress(in.To)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if other := d.otherRoom(room); other != "" {
@@ -252,7 +253,7 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	inner, err := http.NewRequestWithContext(withSayTrace(r.Context(), name, via), http.MethodPost,
 		"/v1/tasks/"+target.ID+"/message", bytes.NewReader(raw))
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	inner.SetPathValue("id", target.ID)
@@ -630,7 +631,7 @@ func (d *Daemon) giveUpRelay(r store.RelayRow, why string) {
 func (d *Daemon) handleRoomPeers(w http.ResponseWriter, r *http.Request) {
 	rl := d.relay()
 	if rl == nil {
-		writeJSONErr(w, http.StatusServiceUnavailable, errString("this atrium is not a room linked to a hub, "+
+		small.WriteJSONErr(w, http.StatusServiceUnavailable, small.ErrString("this atrium is not a room linked to a hub, "+
 			"so it has no other rooms to list"))
 		return
 	}
@@ -640,7 +641,7 @@ func (d *Daemon) handleRoomPeers(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	list, note, err := rl.Peers(ctx, all, everywhere)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadGateway, err)
+		small.WriteJSONErr(w, http.StatusBadGateway, err)
 		return
 	}
 	if everywhere {
@@ -773,7 +774,7 @@ func (d *Daemon) handleRoomExit(w http.ResponseWriter, r *http.Request) {
 		Force bool   `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	d.acrossRoom(w, r.Context(), in.To, func(ctx context.Context, rl Relay, name, room string) (RelayResult, error) {
@@ -790,7 +791,7 @@ func (d *Daemon) acrossRoom(w http.ResponseWriter, ctx context.Context, to strin
 
 	name, room, err := address.SplitAddress(to)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	other := d.otherRoom(room)

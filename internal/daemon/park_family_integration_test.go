@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -38,7 +39,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if out["delivered"] == "parked" {
 			t.Fatalf("answer %v", out)
 		}
-		if got, _ := d.st.Get(worker.ID); isParked(got) {
+		if got, _ := d.st.Get(worker.ID); small.IsParked(got) {
 			t.Fatal("the launcher's say left the worker parked")
 		}
 	})
@@ -53,7 +54,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if out["delivered"] == "parked" {
 			t.Fatalf("answer %v", out)
 		}
-		if got, _ := d.st.Get(launcher.ID); isParked(got) {
+		if got, _ := d.st.Get(launcher.ID); small.IsParked(got) {
 			t.Fatal("the worker's say left the launcher parked")
 		}
 	})
@@ -70,7 +71,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("answered %d: %s", w.Code, w.Body.String())
 		}
-		if got, _ := d.st.Get(worker.ID); isParked(got) {
+		if got, _ := d.st.Get(worker.ID); small.IsParked(got) {
 			t.Fatal("the launcher's tell left the worker parked")
 		}
 	})
@@ -86,7 +87,7 @@ func TestFamilySayWakesParked(t *testing.T) {
 		if out["delivered"] != "queued" || out["reachable"] != "kept" {
 			t.Fatalf("answer %v", out)
 		}
-		if got, _ := d.st.Get(worker.ID); !isParked(got) {
+		if got, _ := d.st.Get(worker.ID); !small.IsParked(got) {
 			t.Fatal("a stranger's say woke it")
 		}
 		if n := len(pendingFrom(t, d, worker.ID)); n != 1 {

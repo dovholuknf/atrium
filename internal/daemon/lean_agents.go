@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // A lean launch may keep the Agent tool and a NAMED list of the operator's
@@ -137,7 +139,7 @@ func leanDisallowedFor(k leanKit) []string {
 	}
 	if len(k.Agents) > 0 {
 		for _, b := range builtinAgents {
-			if !hasTag(k.Agents, b) {
+			if !small.HasTag(k.Agents, b) {
 				out = append(out, "Agent("+b+")")
 			}
 		}

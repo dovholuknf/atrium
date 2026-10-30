@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -329,9 +330,9 @@ func (d *Daemon) noteOnCard(id, line string) {
 // landedHeld is why a landed worker is kept, or "".
 func (d *Daemon) landedHeld(t *store.Task, plan *cullPlan) string {
 	switch {
-	case hasTag(t.Tags, KeepOpenTag):
+	case small.HasTag(t.Tags, KeepOpenTag):
 		return "tagged " + KeepOpenTag
-	case hasTag(t.Tags, InvestigationTag):
+	case small.HasTag(t.Tags, InvestigationTag):
 		return "tagged " + InvestigationTag
 	case staysOpen(t):
 		return "tagged to stay open"

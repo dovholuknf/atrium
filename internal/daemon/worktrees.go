@@ -11,6 +11,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/worktrees"
 )
@@ -134,7 +135,7 @@ func (d *Daemon) worktreeJudge() func(string) worktrees.Judgment {
 		for _, t := range tasks {
 			if worktrees.SamePath(t.Worktree, path) {
 				add(t)
-				if hasTag(t.Tags, OriginAgentTag) && hasTag(t.Tags, SubagentTag) {
+				if small.HasTag(t.Tags, OriginAgentTag) && small.HasTag(t.Tags, SubagentTag) {
 					j.Atriums = true
 				}
 			}

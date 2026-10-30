@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -69,7 +70,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		wrote, err := run.InjectForced(e.banner, e.body, nil)
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if !wrote {
@@ -126,7 +127,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	inBox := d.typedWouldQueue(taskID)
 	wrote, err := run.InjectForced(banner, payload, ok)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return true
 	}
 	if !wrote {
@@ -141,7 +142,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 		ev["kind"] = kind
 	}
 	if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return true
 	}
 	if from != "" {

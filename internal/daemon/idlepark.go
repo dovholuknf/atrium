@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -48,7 +49,7 @@ func (d *Daemon) idleParkSubject(t *store.Task) bool {
 	if t == nil || t.Throwaway || d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil {
 		return false
 	}
-	return hasTag(t.Tags, OriginAgentTag)
+	return small.HasTag(t.Tags, OriginAgentTag)
 }
 
 // othersLive reports whether any card other than `except` has a live runner.
@@ -67,7 +68,7 @@ func (d *Daemon) othersLive(except string) bool {
 		if id == except || fixtures[id] {
 			continue
 		}
-		if t, err := d.st.Get(id); err == nil && isParked(t) {
+		if t, err := d.st.Get(id); err == nil && small.IsParked(t) {
 			continue
 		}
 		return true
@@ -79,7 +80,7 @@ func (d *Daemon) othersLive(except string) bool {
 // is free to park only when no other card has a live runner. A card without the
 // tag has no such condition.
 func (d *Daemon) orchestratorMayPark(t *store.Task) bool {
-	if t == nil || !hasTag(t.Tags, OrchestratorTag) {
+	if t == nil || !small.HasTag(t.Tags, OrchestratorTag) {
 		return true
 	}
 	return !d.othersLive(t.ID)

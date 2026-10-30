@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -524,7 +525,7 @@ func runForkProcess(ctx context.Context, spec forkSpec, agentFork func(exe strin
 	hideWindow(cmd)
 	err := cmd.Run()
 	if err != nil && out.Len() == 0 {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(firstLine(errb.String())))
+		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(small.FirstLine(errb.String())))
 	}
 	return out.Bytes(), err
 }
@@ -763,7 +764,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 		return skip("not a Claude card")
 	}
 	// A parked card's cache is meant to go cold: the park chose to let it go.
-	if isParked(t) {
+	if small.IsParked(t) {
 		return skip("parked")
 	}
 	if strings.TrimSpace(t.ResumeID) == "" || strings.TrimSpace(t.Worktree) == "" {

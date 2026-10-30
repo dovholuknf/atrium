@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -22,7 +23,7 @@ import (
 // resolveReportTo turns a launch's `report_to` into a card on this room, or
 // refuses with the handles that would have worked. Nothing is created yet.
 func (d *Daemon) resolveReportTo(req LaunchRequest, name string) (*store.Task, error) {
-	if hasTag(req.Tags, OriginAgentTag) {
+	if small.HasTag(req.Tags, OriginAgentTag) {
 		return nil, fmt.Errorf("report_to is for the board and `atrium launch --report-to`. " +
 			"a session's launch reports to the session that made it")
 	}

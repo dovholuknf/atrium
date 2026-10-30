@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -230,11 +231,11 @@ func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool
 	kit = leanKit{Agents: cleanKitNames(req.LeanAgents), Skills: cleanKitNames(req.LeanSkills)}
 	superlean = req.Superlean != nil && *req.Superlean
 	lean = lean || !kit.empty() || superlean
-	kit.Interview = hasTag(req.Tags, InterviewTag) || (task != nil && hasTag(task.Tags, InterviewTag))
-	if task != nil && hasTag(task.Tags, LeanTag) {
+	kit.Interview = small.HasTag(req.Tags, InterviewTag) || (task != nil && small.HasTag(task.Tags, InterviewTag))
+	if task != nil && small.HasTag(task.Tags, LeanTag) {
 		lean = true
 		// The request says `superlean: false` to bring a superlean card back lean. Absent leaves it to the card.
-		superlean = superlean || (req.Superlean == nil && hasTag(task.Tags, SuperleanTag))
+		superlean = superlean || (req.Superlean == nil && small.HasTag(task.Tags, SuperleanTag))
 		var agents, skills []string
 		for _, t := range task.Tags {
 			t = strings.TrimSpace(t)
@@ -308,7 +309,7 @@ func withoutSuperleanTag(tags []string) []string {
 func mergeTags(base, add []string) []string {
 	out := append([]string{}, base...)
 	for _, t := range add {
-		if !hasTag(out, t) {
+		if !small.HasTag(out, t) {
 			out = append(out, t)
 		}
 	}

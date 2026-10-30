@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -324,7 +325,7 @@ func (d *Daemon) handleRestartWake(w http.ResponseWriter, r *http.Request) {
 		task, err = d.st.GetByWireName(d.st.Qualify(r.PathValue("id")))
 	}
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, errString("no card called "+r.PathValue("id")))
+		small.WriteJSONErr(w, http.StatusNotFound, small.ErrString("no card called "+r.PathValue("id")))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -338,7 +339,7 @@ func (d *Daemon) handleRestartWake(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		gone, err := d.clearWake(task.ID, r.URL.Query().Get("by"))
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"card": task.ID, "cleared": gone})
@@ -348,7 +349,7 @@ func (d *Daemon) handleRestartWake(w http.ResponseWriter, r *http.Request) {
 			By   string `json:"by"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 		by := strings.TrimSpace(in.By)
@@ -358,13 +359,13 @@ func (d *Daemon) handleRestartWake(w http.ResponseWriter, r *http.Request) {
 		nw, old, err := d.queueWake(task.ID, in.Text, by)
 		switch {
 		case errors.Is(err, store.ErrWakeText):
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		case errors.Is(err, sql.ErrNoRows):
-			writeJSONErr(w, http.StatusNotFound, errString("no card called "+r.PathValue("id")))
+			small.WriteJSONErr(w, http.StatusNotFound, small.ErrString("no card called "+r.PathValue("id")))
 			return
 		case err != nil:
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		out := map[string]any{
@@ -377,6 +378,6 @@ func (d *Daemon) handleRestartWake(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(out)
 	default:
-		writeJSONErr(w, http.StatusMethodNotAllowed, errString("GET, POST or DELETE"))
+		small.WriteJSONErr(w, http.StatusMethodNotAllowed, small.ErrString("GET, POST or DELETE"))
 	}
 }

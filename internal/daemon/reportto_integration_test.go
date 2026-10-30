@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -48,7 +49,7 @@ func TestAReportToLaunchSetsTheLauncherAndKeepsTheName(t *testing.T) {
 			t.Fatalf("report_to kept as %q, want %q", d.st.ReportTo(got.ID), name)
 		}
 		// It sets the launcher and nothing else.
-		if hasTag(got.Tags, OriginAgentTag) || len(got.Tags) != 0 {
+		if small.HasTag(got.Tags, OriginAgentTag) || len(got.Tags) != 0 {
 			t.Fatalf("tags %v, want none: report_to must not add origin:agent", got.Tags)
 		}
 		if !d.reportsToLauncher(got) {
@@ -196,7 +197,7 @@ func TestAReportToChildIsNotCountedAsAnAgentSession(t *testing.T) {
 	got, _ := d.st.Get(launchTo(t, d, "review").ID)
 	// The launch cap and a director's worker limit count cards carrying the
 	// agent and subagent tags. This one carries neither.
-	if hasTag(got.Tags, OriginAgentTag) || hasTag(got.Tags, SubagentTag) {
+	if small.HasTag(got.Tags, OriginAgentTag) || small.HasTag(got.Tags, SubagentTag) {
 		t.Fatalf("tags %v would count against the launcher's limits", got.Tags)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -67,17 +68,17 @@ var stampGit = func(dir string, args ...string) (string, error) {
 func (d *Daemon) handleStamp(w http.ResponseWriter, r *http.Request) {
 	var in stampRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 2<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	task, err := d.st.Get(r.PathValue("id"))
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	rep, err := stamp(StateDir(), task, in)
 	if err != nil {
-		writeJSONErr(w, http.StatusConflict, err)
+		small.WriteJSONErr(w, http.StatusConflict, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

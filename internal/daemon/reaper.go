@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -122,7 +123,7 @@ func (d *Daemon) reapOnce() error {
 			continue
 		}
 		// A parked card has no process by design, and its pid is a stale hint.
-		if isParked(t) {
+		if small.IsParked(t) {
 			continue
 		}
 		// No pid to ask about, so fall back to silence. A card waiting on a

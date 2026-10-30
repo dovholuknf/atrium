@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -64,7 +65,7 @@ func (d *Daemon) doneWorkers(olderThan time.Duration) (take []*store.Task, kept 
 	cutoff := time.Now().Add(-olderThan)
 	for _, t := range tasks {
 		switch {
-		case !hasTag(t.Tags, OriginAgentTag), !d.isWorker(t):
+		case !small.HasTag(t.Tags, OriginAgentTag), !d.isWorker(t):
 			continue
 		case olderThan > 0 && t.LastActivityAt.After(cutoff):
 			continue

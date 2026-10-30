@@ -88,7 +88,7 @@ func (d *Daemon) gateBusy() string {
 	if id := d.nctx.busyCard(); id != "" {
 		return "a new-context cycle on " + id
 	}
-	if key := d.launching.heldKey(); key != "" {
+	if key := d.launching.HeldKey(); key != "" {
 		return "a launch in progress (" + key + ")"
 	}
 	if d.wake != nil && !d.wake.deliver.TryLock() {
@@ -122,22 +122,6 @@ func (n *newContexts) busyCard() string {
 		if cur != nil && cur.step != NewContextFailed {
 			return id
 		}
-	}
-	return ""
-}
-
-// heldKey is a key whose mutex is held now, or "".
-func (k *keyedMutex) heldKey() string {
-	if k == nil {
-		return ""
-	}
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	for key, m := range k.locks {
-		if !m.TryLock() {
-			return key
-		}
-		m.Unlock()
 	}
 	return ""
 }

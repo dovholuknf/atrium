@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -84,18 +85,18 @@ type HelpRequest struct {
 func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	var in HelpRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if strings.TrimSpace(in.Agent) == "" && in.TaskID == "" {
-		writeJSONErr(w, http.StatusBadRequest,
-			errString("say which session this is, with agent or task_id"))
+		small.WriteJSONErr(w, http.StatusBadRequest,
+			small.ErrString("say which session this is, with agent or task_id"))
 		return
 	}
 	ask := strings.TrimSpace(in.Ask)
 	if ask == "" {
-		writeJSONErr(w, http.StatusBadRequest,
-			errString("say what you need. an empty ask is what needs-input already means"))
+		small.WriteJSONErr(w, http.StatusBadRequest,
+			small.ErrString("say what you need. an empty ask is what needs-input already means"))
 		return
 	}
 
@@ -128,7 +129,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 		var err error
 		typed, err = d.deliverPeer(target, from, askEnvelope(from, ask, in.Blocked))
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		d.peerSaid(from, target, askEnvelope(from, ask, in.Blocked), KindNeeds)
@@ -146,13 +147,13 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	// nothing recording it had been asked. A row per question, and the oldest
 	// outstanding one is what the card draws.
 	if _, err := d.st.AddAsk(task.ID, ask, peer); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	if err := d.st.AppendEvent(task.ID, store.EventSubmitted, map[string]any{
 		"by": "agent", "kind": "asked", "ask": ask, "blocked": in.Blocked, "peer": peer,
 	}); err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -181,7 +182,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 		task.Status != store.StatusNeedsInput {
 		if err := d.st.SetStatusBecause(task.ID, store.StatusNeedsInput,
 			store.WaitingAsked); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		moved = true
@@ -244,7 +245,7 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -278,7 +279,7 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	// answer would never arrive.
 	typed, err := d.deliverPeer(target, from, body)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.peerSaid(from, target, body, KindFYI)
@@ -368,7 +369,7 @@ func (d *Daemon) handleDismissAsks(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	settled, err := d.st.AnswerAllAsks(taskID, askDismissed)
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	d.askSettled(taskID, askDismissed, settled)

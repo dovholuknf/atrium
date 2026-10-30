@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -86,29 +87,29 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	model, ok := validModel(body.Model)
 	if !ok {
-		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("a model is sonnet, opus, haiku, fable or an id "+
+		small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("a model is sonnet, opus, haiku, fable or an id "+
 			"like claude-opus-4-7, got %q", body.Model))
 		return
 	}
 	taskID := r.PathValue("id")
 	t, err := d.st.Get(taskID)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	if !d.runsClaude(t) {
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s runs %q and only a claude card takes /model",
+		small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("%s runs %q and only a claude card takes /model",
 			t.WireName, t.Runner))
 		return
 	}
 	run := d.sup.Get(taskID)
 	if run == nil || d.sessionGone(t) {
-		writeJSONErr(w, http.StatusConflict, fmt.Errorf("atrium does not own a terminal for %s, so there is "+
+		small.WriteJSONErr(w, http.StatusConflict, fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nowhere to type /model. relaunch it under atrium first", t.WireName))
 		return
 	}
@@ -135,7 +136,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Unlock()
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	state := "waiting"

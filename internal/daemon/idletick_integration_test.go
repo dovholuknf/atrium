@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -49,7 +50,7 @@ func parkedNow(t *testing.T, d *Daemon, id string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return isParked(got)
+	return small.IsParked(got)
 }
 
 // settles waits for a park in flight, or for it to have not happened.
@@ -321,7 +322,7 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 	}
 	time.Sleep(300 * time.Millisecond) // wait: the wind-down must not file it dead
 	got, _ := d.st.Get(card.ID)
-	if got.Status == store.StatusDead && !isParked(got) {
+	if got.Status == store.StatusDead && !small.IsParked(got) {
 		t.Fatal("filed dead")
 	}
 }

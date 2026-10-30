@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -214,7 +215,7 @@ func TestLeanOptionsCarryTheKitOnTheCardAndTheRequestReplacesIt(t *testing.T) {
 		t.Fatalf("lean off takes the kit tags too, got %q", got)
 	}
 	if got := withoutKitTags(card.Tags); strings.Contains(strings.Join(got, ","), "atrium:agent:") ||
-		strings.Contains(strings.Join(got, ","), "atrium:skill:") || !hasTag(got, LeanTag) {
+		strings.Contains(strings.Join(got, ","), "atrium:skill:") || !small.HasTag(got, LeanTag) {
 		t.Fatalf("got %q", got)
 	}
 }

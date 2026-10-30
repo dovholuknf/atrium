@@ -16,6 +16,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/wtfree"
 )
@@ -359,7 +360,7 @@ func homeWorkState(row store.CardHome, dd homeDirs) (why, branch string, onHub b
 	}
 	status, err := gitIn(dd.Work, "status", "--porcelain=v1", "--untracked-files=normal")
 	if err != nil {
-		return "work/ could not be read: " + firstLine(err.Error()), "", false
+		return "work/ could not be read: " + small.FirstLine(err.Error()), "", false
 	}
 	if status != "" {
 		lines := 0
@@ -456,7 +457,7 @@ func (d *Daemon) reclaimHomeBranch(t *store.Task, row store.CardHome, force bool
 		}
 	}
 	if err := removeTree(path); err != nil {
-		return keep("the folder could not be removed: " + firstLine(err.Error()))
+		return keep("the folder could not be removed: " + small.FirstLine(err.Error()))
 	}
 	_ = d.st.CardHomeSet(row.Path, store.CardHomeRemoved, "", row.Owed)
 	log.Printf("[atrium] removed the home %s", row.Path)
@@ -564,7 +565,7 @@ func (d *Daemon) launchHome(kind string, req *LaunchRequest) (store.CardHome, ho
 		}
 		req.Branch = branch
 	}
-	if kind == store.CardHomeScratch && !hasTag(req.Tags, KeepOpenTag) {
+	if kind == store.CardHomeScratch && !small.HasTag(req.Tags, KeepOpenTag) {
 		req.Tags = append(append([]string{}, req.Tags...), KeepOpenTag)
 	}
 	return row, dd, nil

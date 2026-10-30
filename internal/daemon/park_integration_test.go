@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -246,8 +247,8 @@ func TestParkKeepsStatusAndWritesOneEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := d.st.Get(card.ID)
-	if !isParked(got) || got.Status != store.StatusNeedsInput {
-		t.Fatalf("parked=%v status=%s, want parked at needs-input", isParked(got), got.Status)
+	if !small.IsParked(got) || got.Status != store.StatusNeedsInput {
+		t.Fatalf("parked=%v status=%s, want parked at needs-input", small.IsParked(got), got.Status)
 	}
 	evs, err := d.st.Events(card.ID, 100)
 	if err != nil {
@@ -311,7 +312,7 @@ func TestUnparkClearsFlagAndStamps(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := d.st.Get(card.ID)
-	if isParked(got) {
+	if small.IsParked(got) {
 		t.Fatal("still parked")
 	}
 	stamped(t, d, card.ID, ViaResume)
@@ -375,7 +376,7 @@ func TestUnparkFailureLeavesItParked(t *testing.T) {
 		t.Fatal("unpark with nothing to launch reported success")
 	}
 	got, _ := d.st.Get(card.ID)
-	if !isParked(got) {
+	if !small.IsParked(got) {
 		t.Fatal("a failed resume cleared the flag")
 	}
 }
@@ -401,8 +402,8 @@ func TestReaperAndReopenSkipParked(t *testing.T) {
 	}
 	d.reapOnce()
 	after, _ := d.st.Get(card.ID)
-	if after.Status != store.StatusRunning || !isParked(after) {
-		t.Fatalf("the reaper touched a parked card: %s parked=%v", after.Status, isParked(after))
+	if after.Status != store.StatusRunning || !small.IsParked(after) {
+		t.Fatalf("the reaper touched a parked card: %s parked=%v", after.Status, small.IsParked(after))
 	}
 }
 
@@ -452,7 +453,7 @@ func TestAttachAloneDoesNotUnparkButAKeyDoes(t *testing.T) {
 	// Looking, with reports only: stays parked.
 	sendFrames(t, d, "/v1/tasks/"+card.ID+"/attach", "\x1b[I", "\x1b[?62;c")
 	got, _ := d.st.Get(card.ID)
-	if !isParked(got) {
+	if !small.IsParked(got) {
 		t.Fatal("an attach with no key resumed the card")
 	}
 
@@ -495,7 +496,7 @@ func TestSayToParkedIsKeptAndDoesNotWake(t *testing.T) {
 		t.Fatalf("%d messages kept for a parked card, want 1", n)
 	}
 	got, _ := d.st.Get(card.ID)
-	if !isParked(got) {
+	if !small.IsParked(got) {
 		t.Fatal("a say without wake resumed it")
 	}
 }
@@ -523,7 +524,7 @@ func TestSayToParkedWithWakeResumesThenQueuesNotTyped(t *testing.T) {
 		t.Fatalf("answer %v", out)
 	}
 	got, _ := d.st.Get(card.ID)
-	if isParked(got) {
+	if small.IsParked(got) {
 		t.Fatal("wake=true did not resume")
 	}
 	if strings.Contains(f.written(), "WAKETEXT") {
@@ -548,7 +549,7 @@ func TestOperatorSayResumesImmediately(t *testing.T) {
 		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
 	}
 	got, _ := d.st.Get(card.ID)
-	if isParked(got) {
+	if small.IsParked(got) {
 		t.Fatal("the operator's say did not resume")
 	}
 	if n := len(pendingFrom(t, d, card.ID)); n != 1 {
@@ -569,7 +570,7 @@ func TestWakeIgnoredWhenNotParked(t *testing.T) {
 	}
 	_ = f
 	got, _ := d.st.Get(card.ID)
-	if isParked(got) {
+	if small.IsParked(got) {
 		t.Fatal("parked by a say")
 	}
 }
@@ -601,7 +602,7 @@ func TestTellWakeResumesThenQueuesNotTyped(t *testing.T) {
 		t.Fatalf("answered %d: %s", w.Code, w.Body.String())
 	}
 	got, _ := d.st.Get(card.ID)
-	if isParked(got) {
+	if small.IsParked(got) {
 		t.Fatal("still parked")
 	}
 	if strings.Contains(f.written(), "TELLWAKE") {
@@ -648,7 +649,7 @@ func TestReportToParkedLauncherWakes(t *testing.T) {
 		t.Fatalf("the report answered %d: %v", rec.Code, out)
 	}
 	got, _ := d.st.Get(launcher.ID)
-	if isParked(got) {
+	if small.IsParked(got) {
 		t.Fatal("a report did not resume its parked launcher")
 	}
 }

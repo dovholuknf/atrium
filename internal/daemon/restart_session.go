@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -88,7 +89,7 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	// holds it may be mid stop-then-start, when this card momentarily owns no
 	// runner, and checking before the lock would read that gap as "nothing to
 	// restart" and refuse a card that is about to have a runner again.
-	unlock := d.launching.lock(launchKeys(taskID, t.ResumeID)...)
+	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 
 	// Only a session atrium owns can be restarted from here. A window-mode

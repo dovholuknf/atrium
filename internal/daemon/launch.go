@@ -23,6 +23,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/launch"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -836,14 +837,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		req.Item = true
 	}
 	// AN ITEM CARRIES ITS TAG, wherever the request came from: the tag is what the rest reads. See item.go.
-	if req.Item && !hasTag(req.Tags, ItemTag) {
+	if req.Item && !small.HasTag(req.Tags, ItemTag) {
 		req.Tags = append(append([]string{}, req.Tags...), ItemTag)
 	}
 	// AN OWNER THAT CANNOT BE is refused here, before a card or a worktree exists. See item_hub.go.
 	if err := checkItemLaunch(req); err != nil {
 		return nil, err
 	}
-	keys := launchKeys(req.TaskID, req.Resume)
+	keys := small.LaunchKeys(req.TaskID, req.Resume)
 	if req.MovedFrom != "" {
 		keys = append(keys, "move:"+req.MovedFrom)
 	}
@@ -856,7 +857,7 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if lk != "" {
 		keys = append(keys, "launchkey:"+lk)
 	}
-	unlock := d.launching.lock(keys...)
+	unlock := d.launching.Lock(keys...)
 	defer unlock()
 	// A REPEAT FOR ONE MOVE returns the card the first made.
 	if req.MovedFrom != "" {
@@ -1041,7 +1042,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
-	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) &&
+	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) &&
 		d.st.CardRootRequiredOn() {
 		if root, err := d.cardRoot(); err == nil && !insideRoot(root, cwd) {
 			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or home: true) so the "+
@@ -1049,7 +1050,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	launchBranch := ""
-	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
+	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) {
 		branch, why := agentCheckoutBranch(cwd)
 		launchBranch = branch
 		if why != "" {
@@ -1146,17 +1147,17 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 		briefPath = filepath.ToSlash(p)
 		// A card opened from a link is the operator's, so its prompt only points at the brief.
-		if hasTag(req.Tags, InterviewTag) || req.SourceKind != "" {
+		if small.HasTag(req.Tags, InterviewTag) || req.SourceKind != "" {
 			wanted = briefPromptEnding(briefName, wanted, "")
 		} else {
-			if req.Item || hasTag(req.Tags, ItemTag) {
+			if req.Item || small.HasTag(req.Tags, ItemTag) {
 				wanted = ItemBriefPrompt(briefName, wanted)
 			} else if isResident(req.Tags) {
 				wanted = briefPromptEnding(briefName, wanted, ResidentEndingLine)
 			} else {
 				wanted = BriefPrompt(briefName, wanted)
 			}
-			if !outside && !req.Item && !hasTag(req.Tags, ItemTag) {
+			if !outside && !req.Item && !small.HasTag(req.Tags, ItemTag) {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, req.SpawnedByDir, cwd); l != nil {
 					wanted = withCommitVisible(wanted, commitVisibleLine(l.WireName))
@@ -1216,7 +1217,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	if task != nil {
 		probe.Tags = append(probe.Tags, task.Tags...)
 	}
-	if hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" {
+	if small.HasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" {
 		probe.Tags = append(probe.Tags, OriginAgentTag)
 	}
 	if d.autocompactArgsFor(h) != nil {
@@ -1235,7 +1236,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// marker is on the request for a new launch and on the card for a reopen.
 	// A card told who to report to gets the Stop hook too, so its silent stops
 	// are seen, and still does NOT get the agent marker.
-	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
+	agent := small.HasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
 		(task != nil && d.reportsToLauncher(task))
 	if len(cleanKitNames(req.LeanAgents)) > 0 || len(cleanKitNames(req.LeanSkills)) > 0 {
 		if !isClaude(h) {
@@ -1406,7 +1407,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			base = append(base, k+"="+v)
 		}
 		log.Printf("[atrium] prepared the environment for %s with: %s",
-			h.ID, firstLine(h.Prepare))
+			h.ID, small.FirstLine(h.Prepare))
 	}
 
 	atrium := map[string]string{
@@ -1676,7 +1677,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// dialog gets none: clint did not ask for a queue of verdicts. See
 	// internal/store/ledger.go.
 	madeItem := false
-	if req.Resume == "" && (hasTag(req.Tags, OriginAgentTag) || reportTo != "") {
+	if req.Resume == "" && (small.HasTag(req.Tags, OriginAgentTag) || reportTo != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.st.CreateWorkItem(t, store.NewWorkItem{
 				Brief: briefHead(req.Brief, req.Prompt), BriefPath: briefPath,
@@ -1687,7 +1688,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	// AN ITEM, for a fresh item launch: its mirror row, its owner and the push the hub is owed. See item_hub.go.
-	if req.Resume == "" && (req.Item || hasTag(req.Tags, ItemTag) || workOfTags(req.Tags) != "") {
+	if req.Resume == "" && (req.Item || small.HasTag(req.Tags, ItemTag) || workOfTags(req.Tags) != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.createItem(t, itemOwnerSpec(req.Tags)); err != nil {
 				return nil, err
@@ -1906,26 +1907,14 @@ func (d *Daemon) launchFailed(taskID, reason string) {
 	}
 	// Prefixed so it reads as atrium reporting rather than as something typed
 	// into the why field.
-	if err := d.st.SetWhy(taskID, "failed to start: "+firstLine(reason)); err != nil {
+	if err := d.st.SetWhy(taskID, "failed to start: "+small.FirstLine(reason)); err != nil {
 		log.Printf("[atrium] note launch failure for %s: %v", taskID, err)
 	}
 	if err := d.st.SetStatus(taskID, store.StatusDead); err != nil {
 		log.Printf("[atrium] status after launch failure for %s: %v", taskID, err)
 	}
-	log.Printf("[atrium] %s never started: %s", taskID, firstLine(reason))
+	log.Printf("[atrium] %s never started: %s", taskID, small.FirstLine(reason))
 	d.publishTask(taskID)
-}
-
-// firstLine keeps a card's one line summary to one line.
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	s = strings.TrimSpace(s)
-	if len(s) > 200 {
-		s = s[:200] + "..."
-	}
-	return s
 }
 
 // inheritedTaint names environment variables that must not reach a launched

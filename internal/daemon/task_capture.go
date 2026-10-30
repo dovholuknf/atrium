@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -332,7 +333,7 @@ func (d *Daemon) taskRunnerEnded(x runExit) {
 	}
 	reason := fmt.Sprintf("the worker ended with no done (exit code %d)", x.code)
 	if x.tail != "" {
-		reason += ": " + firstLine(x.tail)
+		reason += ": " + small.FirstLine(x.tail)
 	}
 	d.owePost(row, store.CardHomeKept, reason, d.taskEvent(row, "failed", map[string]any{"reason": reason}))
 }

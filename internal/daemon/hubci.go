@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 var errBadCIAsk = errors.New("that is not a CI question")
@@ -16,17 +17,17 @@ var errBadCIAsk = errors.New("that is not a CI question")
 func (d *Daemon) handleHubCI(w http.ResponseWriter, r *http.Request) {
 	var ask forge.HubCIAsk
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&ask); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, errBadCIAsk)
+		small.WriteJSONErr(w, http.StatusBadRequest, errBadCIAsk)
 		return
 	}
 	hf := d.HubForge()
 	if hf == nil {
-		writeJSONErr(w, http.StatusBadGateway, errNoHub)
+		small.WriteJSONErr(w, http.StatusBadGateway, errNoHub)
 		return
 	}
 	ans, err := hf.CI(r.Context(), ask)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadGateway, err)
+		small.WriteJSONErr(w, http.StatusBadGateway, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

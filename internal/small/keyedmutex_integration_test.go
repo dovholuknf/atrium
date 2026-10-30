@@ -1,6 +1,6 @@
 //go:build integration
 
-package daemon
+package small
 
 import (
 	"sync"
@@ -12,12 +12,12 @@ import (
 // the mutual exclusion that makes a launch's check-then-spawn region atomic.
 func TestKeyedMutexSerializesSameKey(t *testing.T) {
 	t.Parallel()
-	k := newKeyedMutex()
+	k := NewKeyedMutex()
 
-	unlock := k.lock("task:one")
+	unlock := k.Lock("task:one")
 	ran := make(chan struct{})
 	go func() {
-		u := k.lock("task:one")
+		u := k.Lock("task:one")
 		close(ran)
 		u()
 	}()
@@ -39,14 +39,14 @@ func TestKeyedMutexSerializesSameKey(t *testing.T) {
 // dragged into a queue behind one another.
 func TestKeyedMutexAllowsDifferentKeys(t *testing.T) {
 	t.Parallel()
-	k := newKeyedMutex()
+	k := NewKeyedMutex()
 
-	unlock := k.lock("task:one")
+	unlock := k.Lock("task:one")
 	defer unlock()
 
 	ran := make(chan struct{})
 	go func() {
-		u := k.lock("task:two")
+		u := k.Lock("task:two")
 		close(ran)
 		u()
 	}()
@@ -62,7 +62,7 @@ func TestKeyedMutexAllowsDifferentKeys(t *testing.T) {
 // the other wants.
 func TestKeyedMutexMultiKeyNoDeadlock(t *testing.T) {
 	t.Parallel()
-	k := newKeyedMutex()
+	k := NewKeyedMutex()
 
 	done := make(chan struct{})
 	go func() {
@@ -71,13 +71,13 @@ func TestKeyedMutexMultiKeyNoDeadlock(t *testing.T) {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				u := k.lock("task:a", "resume:b")
+				u := k.Lock("task:a", "resume:b")
 				u()
 			}()
 			go func() {
 				defer wg.Done()
 				// The other order. lock sorts, so both take a then b.
-				u := k.lock("resume:b", "task:a")
+				u := k.Lock("resume:b", "task:a")
 				u()
 			}()
 		}
@@ -96,13 +96,13 @@ func TestKeyedMutexMultiKeyNoDeadlock(t *testing.T) {
 // a resume is serialized against nothing.
 func TestKeyedMutexEmptyIsANoOp(t *testing.T) {
 	t.Parallel()
-	k := newKeyedMutex()
-	unlock := k.lock(launchKeys("", "")...)
+	k := NewKeyedMutex()
+	unlock := k.Lock(LaunchKeys("", "")...)
 	unlock()
 
 	ran := make(chan struct{})
 	go func() {
-		u := k.lock(launchKeys("", "")...)
+		u := k.Lock(LaunchKeys("", "")...)
 		close(ran)
 		u()
 	}()

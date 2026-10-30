@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // Stopping the daemon from somewhere other than its own terminal.
@@ -67,7 +68,7 @@ const launchRefusedStopping = "this room is stopping: nothing was launched. retr
 // answered `running` for a runner the restart takes with its first prompt.
 func (d *Daemon) launchWhileStopping() error {
 	if d.stop.stopping() {
-		return errString(launchRefusedStopping)
+		return small.ErrString(launchRefusedStopping)
 	}
 	return nil
 }
