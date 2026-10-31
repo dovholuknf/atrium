@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 )
 
 // roomsTable is `atrium rooms` with no verb: one row per room the running hub knows, offline ones included.
@@ -59,7 +60,7 @@ func roomRow(r link.Known) []string {
 	var dials, kinds []string
 	for _, p := range r.Paths {
 		kinds = append(kinds, p.Kind)
-		if p.State == link.PathUp && p.Addr != "" {
+		if p.State == conn.PathUp && p.Addr != "" {
 			dials = append(dials, p.Addr)
 		}
 	}

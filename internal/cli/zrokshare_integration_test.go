@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type fakeShares struct {
@@ -49,7 +51,7 @@ func (f *fakeShares) Dial(string) (net.Conn, error) { return nil, os.ErrInvalid 
 
 func (f *fakeShares) Access(string) error { return nil }
 
-func hubStart(t *testing.T, keys link.Keys, api link.ZrokAPI) (token string, stop func()) {
+func hubStart(t *testing.T, keys transport.Keys, api transport.ZrokAPI) (token string, stop func()) {
 	t.Helper()
 	side, err := newZrokHub(keys, nil, api)
 	if err != nil {
@@ -63,7 +65,7 @@ func hubStart(t *testing.T, keys link.Keys, api link.ZrokAPI) (token string, sto
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := link.ParseToken(line)
+	j, err := transport.ParseToken(line)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +73,7 @@ func hubStart(t *testing.T, keys link.Keys, api link.ZrokAPI) (token string, sto
 }
 
 func TestAHubRestartKeepsItsZrokShareAndItsRoomsToken(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	api := &fakeShares{live: map[string]bool{}}
 	first, stop := hubStart(t, keys, api)
 	stop()
@@ -89,7 +91,7 @@ func TestAHubRestartKeepsItsZrokShareAndItsRoomsToken(t *testing.T) {
 }
 
 func TestAHubReservesANewZrokShareOnlyWhenTheOldIsGone(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	api := &fakeShares{live: map[string]bool{}}
 	first, stop := hubStart(t, keys, api)
 	stop()
@@ -105,7 +107,7 @@ func TestAHubReservesANewZrokShareOnlyWhenTheOldIsGone(t *testing.T) {
 }
 
 func TestRetireShareDeletesItAndForgetsIt(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	api := &fakeShares{live: map[string]bool{}}
 	first, stop := hubStart(t, keys, api)
 	stop()
@@ -133,7 +135,7 @@ func TestRoomZrokSeedIsOnOnlyWhenTransportNamesZrok(t *testing.T) {
 }
 
 func TestAZrokFirstHubStartsWithTheControllerDownAndRebindsWhenItsShareGoes(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	if err := writeZrokShare(keys, "old"); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +145,7 @@ func TestAZrokFirstHubStartsWithTheControllerDownAndRebindsWhenItsShareGoes(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := link.NewHub(link.Timings{})
+	h := link.NewHub(wire.Timings{})
 	waited, goOn := make(chan struct{}), make(chan struct{})
 	b := zrokBinder(side, h, nil)
 	b.Wait = func(ctx context.Context, _ time.Duration) bool {
@@ -182,7 +184,7 @@ func TestAZrokFirstHubStartsWithTheControllerDownAndRebindsWhenItsShareGoes(t *t
 
 func shareOf(t *testing.T, line string) string {
 	t.Helper()
-	j, err := link.ParseToken(line)
+	j, err := transport.ParseToken(line)
 	if err != nil {
 		t.Fatal(err)
 	}

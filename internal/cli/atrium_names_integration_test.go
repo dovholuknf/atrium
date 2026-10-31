@@ -17,6 +17,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // parses finds the command a line names and parses its flags the way cobra
@@ -220,7 +222,7 @@ func TestRunLeavesAnAnsweringRoomAlone(t *testing.T) {
 // room after the machine, mints it a secret, and enrols it over its own link,
 // leaving keys a room can start from. A second run reuses the row.
 func TestRunMakesThisMachinesRoomOverItsOwnLink(t *testing.T) {
-	hubKeys := link.Keys{Dir: filepath.Join(t.TempDir(), "hub")}
+	hubKeys := transport.Keys{Dir: filepath.Join(t.TempDir(), "hub")}
 	store, err := hubstore.Open(filepath.Join(hubKeys.Dir, "hub.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -248,18 +250,18 @@ func TestRunMakesThisMachinesRoomOverItsOwnLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := link.NewHub(link.Timings{})
+	h := link.NewHub(wire.Timings{})
 	h.Enrol = side.enrol
 	h.Authenticated = side.auth
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = h.Serve(ctx, ln) }()
 
-	if err := mintOwnRoom(store, side, "ziti", link.Keys{Dir: t.TempDir()}); err == nil {
+	if err := mintOwnRoom(store, side, "ziti", transport.Keys{Dir: t.TempDir()}); err == nil {
 		t.Error("a ziti link made a room on its own")
 	}
 
-	roomKeys := link.Keys{Dir: filepath.Join(t.TempDir(), "room")}
+	roomKeys := transport.Keys{Dir: filepath.Join(t.TempDir(), "room")}
 	if err := mintOwnRoom(store, side, "direct", roomKeys); err != nil {
 		t.Fatalf("making this machine's room: %v", err)
 	}
@@ -274,7 +276,7 @@ func TestRunMakesThisMachinesRoomOverItsOwnLink(t *testing.T) {
 		t.Errorf("the room dials %q, want this atrium's link %q", saved.Hub, side.says)
 	}
 
-	again := link.Keys{Dir: filepath.Join(t.TempDir(), "room2")}
+	again := transport.Keys{Dir: filepath.Join(t.TempDir(), "room2")}
 	if err := mintOwnRoom(store, side, "direct", again); err != nil {
 		t.Fatalf("a second mint for the same machine: %v", err)
 	}

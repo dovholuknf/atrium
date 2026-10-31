@@ -13,7 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +61,7 @@ func newRun() *cobra.Command {
 			l.db = orDefault(l.db, defaultRoomDB())
 			l.isolated = isolated
 			l.upgrades = acceptUpgrades
-			return serveAtrium(f, func(store *hubstore.Store, _ link.Keys, side *hubSide) error {
+			return serveAtrium(f, func(store *hubstore.Store, _ linktransport.Keys, side *hubSide) error {
 				return ensureRoom(store, side, side.kind, l)
 			})
 		},
@@ -86,7 +86,7 @@ func ensureRoom(store *hubstore.Store, side *hubSide, transport string, l roomLa
 		log.Printf("[hub] this machine's room answers at %s. left alone", board)
 		return nil
 	}
-	keys := link.Keys{Dir: l.dir}
+	keys := linktransport.Keys{Dir: l.dir}
 	if _, err := keys.Joined(); err != nil {
 		if err := mintOwnRoom(store, side, transport, keys); err != nil {
 			return fmt.Errorf("could not make this machine's room: %w. `atrium rooms add` "+
@@ -140,7 +140,7 @@ func roomAnswers(path string) (string, bool) {
 //
 // DIRECT ONLY. Over ziti or zrok the network decides who may connect, and
 // this process cannot enrol an identity on a controller it does not run.
-func mintOwnRoom(store *hubstore.Store, side *hubSide, transport string, keys link.Keys) error {
+func mintOwnRoom(store *hubstore.Store, side *hubSide, transport string, keys linktransport.Keys) error {
 	if t := strings.TrimSpace(transport); t != "" && t != hubstore.TransportDirect {
 		return fmt.Errorf("the room link is over %s, and only a direct link can make a room "+
 			"on its own", t)
@@ -160,13 +160,13 @@ func mintOwnRoom(store *hubstore.Store, side *hubSide, transport string, keys li
 	if err != nil {
 		return err
 	}
-	j, err := link.ParseToken(line)
+	j, err := linktransport.ParseToken(line)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
+	d := linktransport.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
 	got, err := d.Enrol(ctx, r.Name, j.Secret)
 	if err != nil {
 		return err

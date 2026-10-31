@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
 	"github.com/dovholuknf/atrium/internal/zitictx"
 )
@@ -35,8 +35,8 @@ func (r *rungCounts) rung() countedRung {
 func joinedOverZiti(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	j := link.Join{Transport: "ziti", Service: "atrium-hub"}
-	if err := (link.Keys{Dir: dir}).SaveOverlayRoom(j, "vm1", "vm1.json"); err != nil {
+	j := transport.Join{Transport: "ziti", Service: "atrium-hub"}
+	if err := (transport.Keys{Dir: dir}).SaveOverlayRoom(j, "vm1", "vm1.json"); err != nil {
 		t.Fatal(err)
 	}
 	return dir

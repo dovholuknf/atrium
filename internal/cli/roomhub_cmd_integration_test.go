@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 func runRoomHub(t *testing.T, args ...string) (string, error) {
@@ -83,9 +83,9 @@ func TestARoomThatCannotReachItsHubTakesTheNewAddressWithoutARestart(t *testing.
 	if err := os.WriteFile(filepath.Join(dir, "room.json"), []byte(`{"hub": "192.168.1.68:7779", "room": "sgg"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	keys := link.Keys{Dir: dir}
+	keys := transport.Keys{Dir: dir}
 	saved, _ := keys.Joined()
-	l, _, err := roomLadder(keys, saved, link.RoomTransports{})
+	l, _, err := roomLadder(keys, saved, transport.RoomTransports{})
 	if err != nil {
 		t.Fatal(err)
 	}

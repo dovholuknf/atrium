@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // The board has no login, so it must never bind anywhere a room, or anyone
@@ -93,8 +93,8 @@ func TestTheLinkDerivesLoopbackWithoutAdvertise(t *testing.T) {
 // wide bind, an advertise host, and a token a remote room can read the address
 // back out of.
 func TestTheMintedTokenCarriesTheAdvertiseAddress(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
-	if err := keys.EnsureCA(link.Hosts("10.1.2.3")); err != nil {
+	keys := transport.Keys{Dir: t.TempDir()}
+	if err := keys.EnsureCA(transport.Hosts("10.1.2.3")); err != nil {
 		t.Fatalf("EnsureCA: %v", err)
 	}
 	adv, err := advertiseFor("0.0.0.0:7801", "10.1.2.3:7801")
@@ -105,7 +105,7 @@ func TestTheMintedTokenCarriesTheAdvertiseAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MintToken: %v", err)
 	}
-	j, err := link.ParseToken(line)
+	j, err := transport.ParseToken(line)
 	if err != nil {
 		t.Fatalf("ParseToken: %v", err)
 	}

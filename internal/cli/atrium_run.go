@@ -23,6 +23,9 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
+	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
 )
 
@@ -115,7 +118,7 @@ const hubLong = "Serves the board on a port your browser opens, and listens on a
 // atriumUp is called once the atrium is listening on both ports, before it
 // starts serving the board. `atrium run` uses it to make sure this machine has
 // a room. The store is open and stays open for as long as the atrium runs.
-type atriumUp func(store *hubstore.Store, keys link.Keys, side *hubSide) error
+type atriumUp func(store *hubstore.Store, keys linktransport.Keys, side *hubSide) error
 
 // serveAtrium runs the central process until it is stopped.
 func serveAtrium(f atriumFlags, up atriumUp) error {
@@ -132,7 +135,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	raisePriority()
-	keys := link.Keys{Dir: orDefault(dir, hubDir())}
+	keys := linktransport.Keys{Dir: orDefault(dir, hubDir())}
 
 	// THE HUB'S OWN STORE, and opening it is the first thing that can
 	// refuse to start.
@@ -200,7 +203,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	defer set.release()
 
 	// THE HUB'S ZITI TRANSPORTS, each a switch in the gear. A flag seeds one. See link/hubtransports.go.
-	var h *link.Hub
+	var h *conn.Hub
 	ht := &link.HubTransports{
 		Store:            store,
 		IdentityFallback: f.identity,
@@ -238,10 +241,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if zitiSide == nil {
 		d, err := overlayDirect(keys, nil)
 		if err == nil {
-			z := &link.Ziti{Identity: zitiIdentity, Service: service}
+			z := &linktransport.Ziti{Identity: zitiIdentity, Service: service}
 			zitiSide = &hubSide{
-				kind: "ziti", path: link.Path{Transport: "ziti", Service: service},
-				enrol: d.ServeEnrolment, auth: link.OverlayAuthenticated,
+				kind: "ziti", path: wire.Path{Transport: "ziti", Service: service},
+				enrol: d.ServeEnrolment, auth: linktransport.OverlayAuthenticated,
 				release: z.Close, says: "the ziti service " + service,
 			}
 			set.sides = append(set.sides, zitiSide)
@@ -256,7 +259,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// rooms either, since nothing answers on it.
 	var lns []net.Listener
 	var lnVia []string
-	var sideStates []link.ListenerState
+	var sideStates []conn.ListenerState
 	var zrokFirst *hubSide
 	for i, s := range set.sides {
 		if s.kind == "ziti" && i > 0 {
@@ -272,14 +275,14 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			if i == 0 {
 				return fmt.Errorf("listening for rooms over %s: %w", s.kind, err)
 			}
-			sideStates = append(sideStates, link.ListenerState{Kind: s.kind, LastError: err.Error()})
+			sideStates = append(sideStates, conn.ListenerState{Kind: s.kind, LastError: err.Error()})
 			log.Printf("[hub] not listening for rooms over %s, the hub runs without it: %v", s.kind, err)
 			s.enabled = func() bool { return false }
 			continue
 		}
 		defer ln.Close()
 		log.Printf("[hub] listening for rooms over %s: %s", s.kind, s.says)
-		sideStates = append(sideStates, link.ListenerState{Kind: s.kind, Up: true})
+		sideStates = append(sideStates, conn.ListenerState{Kind: s.kind, Up: true})
 		lns = append(lns, ln)
 		lnVia = append(lnVia, s.kind)
 	}
@@ -340,7 +343,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			"a room it did not know is refused. the agents on every room are unaffected and keep running")
 	}
 
-	h = link.NewHub(link.Timings{})
+	h = link.NewHub(wire.Timings{})
 	ht.Hub = h
 	for _, s := range sideStates {
 		var why error
@@ -401,7 +404,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	h.Authenticated = func(c net.Conn) bool { return set.auth()(c) }
 	// WHAT ROOMS ARE TOLD, in the order the store holds, read at every attach so
 	// `atrium rooms transports` needs no restart.
-	h.Paths = func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }
+	h.Paths = func() []wire.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }
 	// A ROOM THIS HUB HAS NO RECORD OF DOES NOT ATTACH, even holding a
 	// certificate this hub signed, because a certificate is not a
 	// record: a room that was forced out still has its papers. The
@@ -442,7 +445,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// was keeping for that room and is not in this is discarded,
 	// because it is no longer there, and the discard is written down
 	// rather than being silent. See `Announce` in internal/hubstore.
-	h.Cached = func(name string, cards []link.CardState) error {
+	h.Cached = func(name string, cards []conn.CardState) error {
 		r, err := store.ByName(name)
 		if errors.Is(err, hubstore.ErrHalted) {
 			// Attaching already let it in from memory. See below.
@@ -480,9 +483,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			if err != nil {
 				continue
 			}
-			cards := make([]link.CardState, 0, len(held))
+			cards := make([]conn.CardState, 0, len(held))
 			for _, c := range held {
-				cards = append(cards, link.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
+				cards = append(cards, conn.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
 			}
 			h.IndexEverywhere(r.Name, cards)
 		}
@@ -616,7 +619,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	ht.Add(link.TransportItem{
 		Name: link.TransportBoardZiti, Label: "Board over ziti", Kind: "board-ziti", DefaultService: "atrium-board",
 		Listen: func(svc, identity string) (net.Listener, error) {
-			return (&link.Ziti{Identity: identity, Service: svc}).ListenService(svc)
+			return (&linktransport.Ziti{Identity: identity, Service: svc}).ListenService(svc)
 		},
 		Serve: func(ctx context.Context, ln net.Listener) error {
 			_, svc := ht.Effective(link.TransportBoardZiti)
@@ -714,7 +717,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 
 	// THE ADDRESSES ROOMS ARE TOLD, recomputed on a timer. A change is pushed to every attached room, so one
 	// standing on another rung learns a hub that moved. See advertiseset.go.
-	go watchPaths(ctx, pathsEvery, func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }, h.PushPaths)
+	go watchPaths(ctx, pathsEvery, func() []wire.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }, h.PushPaths)
 
 	// HANDING FREED PAGES BACK TO DISK, a bounded batch at a time while
 	// the hub stays live. The room cache is rewritten wholesale on every

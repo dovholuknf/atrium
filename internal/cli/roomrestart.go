@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -112,8 +112,8 @@ func restartLog(dir, format string, args ...any) {
 }
 
 // onHubRestart is the room's OnRestart handler: park, schedule, wind down.
-func onHubRestart(boardURL string, l roomLaunch, stop func()) func(link.RestartAsk) {
-	return func(ask link.RestartAsk) {
+func onHubRestart(boardURL string, l roomLaunch, stop func()) func(wire.RestartAsk) {
+	return func(ask wire.RestartAsk) {
 		why := strings.TrimSpace(ask.Why)
 		if why != "" {
 			log.Printf("[atrium] the hub asked this room to restart, for: %s", why)

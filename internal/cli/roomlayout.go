@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // roomLayout is one room's folders under the machine's root: <root>/<room>/config holds the database and everything
@@ -47,7 +47,7 @@ func newRoomLayout(root, name string) (roomLayout, error) {
 }
 
 // checkJoined refuses a key folder that belongs to another room, so --name cannot start one room under another's name.
-func (l roomLayout) checkJoined(keys link.Keys) error {
+func (l roomLayout) checkJoined(keys transport.Keys) error {
 	if !l.on() {
 		return nil
 	}

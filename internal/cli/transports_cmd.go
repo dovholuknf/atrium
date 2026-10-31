@@ -8,7 +8,8 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
 )
 
@@ -44,15 +45,15 @@ func roomTransportsCmd(prefix string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				order, _ := link.ParseOrder(v)
+				order, _ := transport.ParseOrder(v)
 				if len(order) == 0 {
-					fmt.Fprintln(out, strings.Join(link.DefaultOrder, ",")+"   (the default)")
+					fmt.Fprintln(out, strings.Join(transport.DefaultOrder, ",")+"   (the default)")
 					return nil
 				}
 				fmt.Fprintln(out, strings.Join(order, ","))
 				return nil
 			}
-			order, err := link.ParseOrder(args[0])
+			order, err := transport.ParseOrder(args[0])
 			if err != nil {
 				return err
 			}
@@ -79,7 +80,7 @@ func roomTransportsCmd(prefix string) *cobra.Command {
 // it is needed. A running room reads it at its next start.
 func roomTransportsLocalCmd() *cobra.Command {
 	var dir string
-	keysOf := func() link.Keys { return link.Keys{Dir: orDefault(dir, roomDir())} }
+	keysOf := func() transport.Keys { return transport.Keys{Dir: orDefault(dir, roomDir())} }
 
 	c := &cobra.Command{
 		Use:   "transports",
@@ -99,7 +100,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			paths, skipped := link.Candidates(saved, tr)
+			paths, skipped := transport.Candidates(saved, tr)
 			for i, p := range paths {
 				fmt.Fprintf(out, "%d. %s\n", i+1, describePath(p))
 			}
@@ -135,7 +136,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 				if len(args) == 0 {
 					return errors.New("name the order, such as ziti,direct, or pass --clear")
 				}
-				if tr.Order, err = link.ParseOrder(args[0]); err != nil {
+				if tr.Order, err = transport.ParseOrder(args[0]); err != nil {
 					return err
 				}
 			}
@@ -209,7 +210,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 		},
 	}
 	ziti.Flags().StringVar(&identity, "identity", "", "an enrolled identity .json, or a JWT or a path to one")
-	ziti.Flags().StringVar(&service, "service", "", "the ziti service the hub binds, default "+link.DefaultZitiService)
+	ziti.Flags().StringVar(&service, "service", "", "the ziti service the hub binds, default "+transport.DefaultZitiService)
 
 	var token string
 	zrok := &cobra.Command{
@@ -275,7 +276,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 }
 
 // describePath says one rung for a person.
-func describePath(p link.Path) string {
+func describePath(p wire.Path) string {
 	s := p.Transport
 	switch p.Transport {
 	case "direct":
@@ -283,7 +284,7 @@ func describePath(p link.Path) string {
 	case "ziti":
 		svc := p.Service
 		if svc == "" {
-			svc = link.DefaultZitiService
+			svc = transport.DefaultZitiService
 		}
 		s += " service " + svc
 		if p.Identity != "" {
