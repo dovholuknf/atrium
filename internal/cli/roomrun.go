@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/roomstats"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -62,7 +63,7 @@ func joinCmd() *cobra.Command {
 			"arguments at all.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			j, err := link.ParseToken(args[0])
+			j, err := transport.ParseToken(args[0])
 			if err != nil {
 				return err
 			}
@@ -75,7 +76,7 @@ func joinCmd() *cobra.Command {
 				return err
 			}
 			identity = ident
-			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			keys := transport.Keys{Dir: orDefault(dir, roomDir())}
 
 			// A PATH TO A .jwt IS READ, so a provisioner can hand the token over
 			// as a file rather than as an argument anything on the machine can
@@ -117,7 +118,7 @@ func joinCmd() *cobra.Command {
 			// its overlay. An old-form overlay string has nothing to enrol: joining
 			// is writing down where the hub is and starting.
 			if j.Transport == "direct" {
-				d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
+				d := transport.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
 				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 				// THE NAME COMES BACK OUT OF THE SIGNED CERTIFICATE rather than
 				// out of the string that was pasted. They are the same name
@@ -139,7 +140,7 @@ func joinCmd() *cobra.Command {
 						return err
 					}
 					ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-					name, err = link.EnrolOver(ctx, raw, keys, j.Pin, self, j.Secret)
+					name, err = transport.EnrolOver(ctx, raw, keys, j.Pin, self, j.Secret)
 					cancel()
 					if err != nil {
 						return err
@@ -242,7 +243,7 @@ func roomCmd() *cobra.Command {
 			if lay.on() {
 				dir, db = orDefault(dir, lay.config()), orDefault(db, lay.db())
 			}
-			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			keys := transport.Keys{Dir: orDefault(dir, roomDir())}
 			if err := lay.checkJoined(keys); err != nil {
 				return err
 			}
@@ -310,7 +311,7 @@ func askToStop() {
 }
 
 // runRoom starts the daemon and attaches it to the hub.
-func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string,
+func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string,
 	lay roomLayout) error {
 	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
 	// the ports. Wait for it to let go before anything tries to bind, or the new
@@ -335,7 +336,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	tr, err := keys.Transports()
 	if err != nil {
 		log.Printf("[link] %v. using the join alone", err)
-		tr = link.RoomTransports{}
+		tr = transport.RoomTransports{}
 	}
 	dial, skipped, err := roomLadder(keys, saved, tr)
 	for _, s := range skipped {

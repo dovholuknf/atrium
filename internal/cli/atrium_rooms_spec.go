@@ -14,6 +14,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
 )
@@ -142,7 +143,7 @@ func roomLinkFor(dir string) (string, wire.Dialer, error) {
 }
 
 func roomLinkAt(dir string, location func() (daemon.Location, bool)) (string, wire.Dialer, error) {
-	keys := link.Keys{Dir: orDefault(dir, roomDir())}
+	keys := transport.Keys{Dir: orDefault(dir, roomDir())}
 	saved, err := keys.Joined()
 	if err != nil {
 		return "", nil, err

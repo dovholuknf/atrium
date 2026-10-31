@@ -23,6 +23,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
 )
@@ -116,7 +117,7 @@ const hubLong = "Serves the board on a port your browser opens, and listens on a
 // atriumUp is called once the atrium is listening on both ports, before it
 // starts serving the board. `atrium run` uses it to make sure this machine has
 // a room. The store is open and stays open for as long as the atrium runs.
-type atriumUp func(store *hubstore.Store, keys link.Keys, side *hubSide) error
+type atriumUp func(store *hubstore.Store, keys linktransport.Keys, side *hubSide) error
 
 // serveAtrium runs the central process until it is stopped.
 func serveAtrium(f atriumFlags, up atriumUp) error {
@@ -133,7 +134,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return err
 	}
 	raisePriority()
-	keys := link.Keys{Dir: orDefault(dir, hubDir())}
+	keys := linktransport.Keys{Dir: orDefault(dir, hubDir())}
 
 	// THE HUB'S OWN STORE, and opening it is the first thing that can
 	// refuse to start.
@@ -239,10 +240,10 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if zitiSide == nil {
 		d, err := overlayDirect(keys, nil)
 		if err == nil {
-			z := &link.Ziti{Identity: zitiIdentity, Service: service}
+			z := &linktransport.Ziti{Identity: zitiIdentity, Service: service}
 			zitiSide = &hubSide{
 				kind: "ziti", path: wire.Path{Transport: "ziti", Service: service},
-				enrol: d.ServeEnrolment, auth: link.OverlayAuthenticated,
+				enrol: d.ServeEnrolment, auth: linktransport.OverlayAuthenticated,
 				release: z.Close, says: "the ziti service " + service,
 			}
 			set.sides = append(set.sides, zitiSide)
@@ -617,7 +618,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	ht.Add(link.TransportItem{
 		Name: link.TransportBoardZiti, Label: "Board over ziti", Kind: "board-ziti", DefaultService: "atrium-board",
 		Listen: func(svc, identity string) (net.Listener, error) {
-			return (&link.Ziti{Identity: identity, Service: svc}).ListenService(svc)
+			return (&linktransport.Ziti{Identity: identity, Service: svc}).ListenService(svc)
 		},
 		Serve: func(ctx context.Context, ln net.Listener) error {
 			_, svc := ht.Effective(link.TransportBoardZiti)

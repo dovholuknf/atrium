@@ -10,16 +10,16 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // oldRoom is a room laid out the old way: keys in one folder, the database and its neighbours in another, with
 // two cards.
-func oldRoom(t *testing.T, name string) (link.Keys, string) {
+func oldRoom(t *testing.T, name string) (transport.Keys, string) {
 	t.Helper()
 	base := t.TempDir()
-	keys := link.Keys{Dir: filepath.Join(base, "room")}
+	keys := transport.Keys{Dir: filepath.Join(base, "room")}
 	dbDir := filepath.Join(base, "data")
 	for _, d := range []string{keys.Dir, filepath.Join(keys.Dir, "identities"), filepath.Join(dbDir, "scrollback"),
 		filepath.Join(dbDir, "identities")} {
@@ -92,7 +92,7 @@ func TestRoomMoveCopiesTheRoomIntoItsOwnFolder(t *testing.T) {
 	if _, err := os.Stat(db); err != nil {
 		t.Errorf("the old database is gone: %v", err)
 	}
-	if err := lay.checkJoined(link.Keys{Dir: lay.config()}); err != nil {
+	if err := lay.checkJoined(transport.Keys{Dir: lay.config()}); err != nil {
 		t.Errorf("the moved keys do not start as room-a: %v", err)
 	}
 }

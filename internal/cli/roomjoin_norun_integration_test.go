@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // `room join --no-run` saves the join and returns, which is what lets a
@@ -14,7 +14,7 @@ import (
 // the command runs the room and never returns, so a hang here is the failure.
 func TestRoomJoinNoRunSavesAndReturns(t *testing.T) {
 	dir := t.TempDir()
-	tok, err := link.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
+	tok, err := transport.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestRoomJoinNoRunSavesAndReturns(t *testing.T) {
 		t.Fatal("join --no-run did not return, so it went on to run the room")
 	}
 
-	saved, err := link.Keys{Dir: dir}.Joined()
+	saved, err := transport.Keys{Dir: dir}.Joined()
 	if err != nil {
 		t.Fatalf("nothing saved: %v", err)
 	}

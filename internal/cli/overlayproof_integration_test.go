@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // runLegacy runs `rooms legacy` against a store in dir. The board address points
@@ -76,7 +76,7 @@ func TestRoomsLegacyVerbRejectsJunk(t *testing.T) {
 
 // writeStrayRoomCert puts a valid room.crt and room.key in keys.Dir, the way an
 // earlier direct enrolment to some other hub would have left them.
-func writeStrayRoomCert(t *testing.T, keys link.Keys) {
+func writeStrayRoomCert(t *testing.T, keys transport.Keys) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -106,9 +106,9 @@ func writeStrayRoomCert(t *testing.T, keys link.Keys) {
 	}
 }
 
-func provenZitiJoin(t *testing.T) link.Join {
+func provenZitiJoin(t *testing.T) transport.Join {
 	t.Helper()
-	hub := link.Keys{Dir: t.TempDir()}
+	hub := transport.Keys{Dir: t.TempDir()}
 	if err := hub.EnsureCA(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func provenZitiJoin(t *testing.T) link.Join {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := link.ParseToken(tok)
+	j, err := transport.ParseToken(tok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,16 +127,16 @@ func provenZitiJoin(t *testing.T) link.Join {
 // room.crt from a direct enrolment, maybe to another hub, must not start a TLS
 // handshake against the wrong CA and drop the room.
 func TestRoomDialerNeverWrapsAnOldFormJoin(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	writeStrayRoomCert(t, keys)
 	if !keys.HasRoomCert() {
 		t.Fatal("the stray certificate was not readable, so the test proves nothing")
 	}
-	old, err := link.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
+	old, err := transport.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := link.ParseToken(old)
+	j, err := transport.ParseToken(old)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestRoomDialerNeverWrapsAnOldFormJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, wrapped := d.(link.Proven); wrapped {
+	if _, wrapped := d.(transport.Proven); wrapped {
 		t.Fatal("an old-form overlay join with a stray room.crt was wrapped in TLS")
 	}
 }
@@ -154,13 +154,13 @@ func TestRoomDialerWrapsANewFormJoinOnlyWithACertificate(t *testing.T) {
 	if !j.Proven() {
 		t.Fatal("a new-form join did not parse as proven")
 	}
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 
 	d, err := roomDialer(j, keys, "vm1.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, wrapped := d.(link.Proven); wrapped {
+	if _, wrapped := d.(transport.Proven); wrapped {
 		t.Fatal("a room with no certificate yet was wrapped, and it has nothing to present")
 	}
 
@@ -169,13 +169,13 @@ func TestRoomDialerWrapsANewFormJoinOnlyWithACertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, wrapped := d.(link.Proven); !wrapped {
+	if _, wrapped := d.(transport.Proven); !wrapped {
 		t.Fatal("a new-form join with a certificate was not wrapped")
 	}
 }
 
 func TestJoinStringForZitiMintsTheProvenForm(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	store, err := hubstore.Open(filepath.Join(keys.Dir, "hub.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestJoinStringForZitiMintsTheProvenForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := link.ParseToken(line)
+	j, err := transport.ParseToken(line)
 	if err != nil {
 		t.Fatal(err)
 	}

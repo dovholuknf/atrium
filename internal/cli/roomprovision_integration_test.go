@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // A zrok join string comes from the share the running hub wrote down, and with
 // no hub running there is none to mint from.
 func TestRoomsTokenOverZrokReadsTheRunningHubsShare(t *testing.T) {
-	keys := link.Keys{Dir: t.TempDir()}
+	keys := transport.Keys{Dir: t.TempDir()}
 	store, err := hubstore.Open(filepath.Join(keys.Dir, "hub.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestRoomsTokenOverZrokReadsTheRunningHubsShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := link.ParseToken(line)
+	j, err := transport.ParseToken(line)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestRoomsTokenOverZrokReadsTheRunningHubsShare(t *testing.T) {
 // what is checked is that the error is about the token's contents.
 func TestRoomJoinReadsAJwtFromAFile(t *testing.T) {
 	dir := t.TempDir()
-	tok, err := link.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
+	tok, err := transport.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,15 +90,15 @@ func TestRoomDetachRefusesUnjoinedAndLeavesARunningRoom(t *testing.T) {
 		t.Fatalf("unjoined, got %v", err)
 	}
 
-	tok, err := link.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
+	tok, err := transport.MintOverlayToken("ziti", "vm1", "atrium-hub", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := link.ParseToken(tok)
+	j, err := transport.ParseToken(tok)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := (link.Keys{Dir: dir}).SaveOverlayRoom(j, "vm1", "x.json"); err != nil {
+	if err := (transport.Keys{Dir: dir}).SaveOverlayRoom(j, "vm1", "x.json"); err != nil {
 		t.Fatal(err)
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

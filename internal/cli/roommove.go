@@ -11,7 +11,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/dblock"
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -39,7 +39,7 @@ func roomMoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return moveRoom(cmd.OutOrStdout(), link.Keys{Dir: orDefault(dir, roomDir())}, orDefault(db, defaultRoomDB()),
+			return moveRoom(cmd.OutOrStdout(), transport.Keys{Dir: orDefault(dir, roomDir())}, orDefault(db, defaultRoomDB()),
 				lay)
 		},
 	}
@@ -50,7 +50,7 @@ func roomMoveCmd() *cobra.Command {
 	return c
 }
 
-func moveRoom(w io.Writer, keys link.Keys, db string, lay roomLayout) error {
+func moveRoom(w io.Writer, keys transport.Keys, db string, lay roomLayout) error {
 	if err := lay.checkJoined(keys); err != nil {
 		return err
 	}

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // The transport half of `atrium room join`, split out so it can be tested without a
@@ -66,7 +66,7 @@ func (f joinFlags) chosen() (string, error) {
 // With no transport flag the token decides, exactly as it did before this
 // existed, so a string minted by a hub that still encodes the transport keeps
 // working unchanged.
-func (f joinFlags) resolve(j link.Join) (out link.Join, identity, jwtToEnrol string, err error) {
+func (f joinFlags) resolve(j transport.Join) (out transport.Join, identity, jwtToEnrol string, err error) {
 	out = j
 	pick, err := f.chosen()
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -209,7 +209,7 @@ func (f *hubStoreFlags) nudge() {
 	resp.Body.Close()
 }
 
-func (f *hubStoreFlags) keys() link.Keys { return link.Keys{Dir: orDefault(f.dir, hubDir())} }
+func (f *hubStoreFlags) keys() transport.Keys { return transport.Keys{Dir: orDefault(f.dir, hubDir())} }
 
 func (f *hubStoreFlags) open() (*hubstore.Store, error) {
 	return hubstore.OpenShared(f.path())
@@ -372,7 +372,7 @@ func roomRetireShareCmd(prefix string) *cobra.Command {
 // command that only meant to print a line would stand up a second way in and
 // then tear it down. What that costs is worth avoiding for a `token` command
 // somebody might run twice by accident.
-func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
+func joinStringFor(keys transport.Keys, store *hubstore.Store, r *hubstore.Room,
 	port, advertise, transport, service string) (string, error) {
 	if strings.TrimSpace(transport) == "" {
 		transport = r.Transport

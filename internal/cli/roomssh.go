@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
 )
@@ -131,13 +132,13 @@ func localSSHMachineAt(dir string, shared wire.Dialer, location func() (daemon.L
 	return sshwizard.LocalMachine{
 		KeyDir: dir,
 		JoinedFn: func() sshwizard.Joined {
-			saved, err := link.Keys{Dir: dir}.Joined()
+			saved, err := transport.Keys{Dir: dir}.Joined()
 			if err != nil {
 				return sshwizard.Joined{Err: err}
 			}
 			j := sshwizard.Joined{Room: saved.Room, Hub: saved.Hub, Proven: saved.Transport == "direct" || saved.Proven}
 			if !j.Proven {
-				j.Rejoin = link.RejoinSentence(saved.Room)
+				j.Rejoin = transport.RejoinSentence(saved.Room)
 			}
 			return j
 		},
@@ -164,7 +165,7 @@ type hubSSH struct {
 // closed after it, since a ziti dialer holds a context whose goroutines live until it is.
 func (h *hubSSH) link() (string, wire.Dialer, func(), error) {
 	if h.shared != nil {
-		saved, err := link.Keys{Dir: h.dir}.Joined()
+		saved, err := transport.Keys{Dir: h.dir}.Joined()
 		if err != nil {
 			return "", nil, nil, err
 		}

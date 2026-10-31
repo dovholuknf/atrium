@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -74,7 +75,7 @@ func (s *hubSide) on() bool { return s.enabled == nil || s.enabled() }
 // `spend` answers a join secret with the room the hub minted it for. It comes
 // from the hub's store and is handed in here rather than reached for, because
 // `internal/link` must not learn that the hub has a database.
-func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
+func openHub(kind string, keys linktransport.Keys, linkAddr, advertise, service string,
 	spend func(string) (string, error)) (*hubSide, error) {
 	switch kind {
 	case "", "direct":
@@ -86,15 +87,15 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 		if err != nil {
 			return nil, err
 		}
-		if err := keys.EnsureCA(link.Hosts(adv)); err != nil {
+		if err := keys.EnsureCA(linktransport.Hosts(adv)); err != nil {
 			return nil, fmt.Errorf("could not set this hub up: %w", err)
 		}
-		d := link.Direct{Addr: linkAddr, Keys: keys, Spend: spend}
+		d := linktransport.Direct{Addr: linkAddr, Keys: keys, Spend: spend}
 		return &hubSide{
 			kind: "direct", path: wire.Path{Transport: "direct", Addr: adv},
 			listen: d.Listen,
 			enrol:  d.ServeEnrolment,
-			auth:   link.DirectAuthenticated,
+			auth:   linktransport.DirectAuthenticated,
 			joinString: func(name, secret string) (string, error) {
 				return keys.MintToken(adv, name, secret)
 			},
@@ -111,7 +112,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 		}, nil
 
 	case "ziti":
-		z := &link.Ziti{Identity: zitiIdentity, Service: service}
+		z := &linktransport.Ziti{Identity: zitiIdentity, Service: service}
 		d, err := overlayDirect(keys, spend)
 		if err != nil {
 			return nil, err
@@ -122,7 +123,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			// THE CERTIFICATE NAMES THE ROOM, as it does over direct. The overlay
 			// decides only who may reach this service, so enrolment runs inside it.
 			enrol: d.ServeEnrolment,
-			auth:  link.OverlayAuthenticated,
+			auth:  linktransport.OverlayAuthenticated,
 			joinString: func(name, secret string) (string, error) {
 				return keys.MintProvenOverlayToken("ziti", name, service, "", secret)
 			},
@@ -148,13 +149,13 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 // AN AUTHORITY ALREADY THERE IS LEFT ALONE. `EnsureCA` re-mints the hub's own
 // certificate against the hosts it is given, and a hub serving direct beside the
 // overlay minted it with the hosts direct needs.
-func overlayDirect(keys link.Keys, spend func(string) (string, error)) (link.Direct, error) {
+func overlayDirect(keys linktransport.Keys, spend func(string) (string, error)) (linktransport.Direct, error) {
 	if _, _, err := keys.CA(); err != nil {
 		if err := keys.EnsureCA(nil); err != nil {
-			return link.Direct{}, fmt.Errorf("could not set this hub up: %w", err)
+			return linktransport.Direct{}, fmt.Errorf("could not set this hub up: %w", err)
 		}
 	}
-	return link.Direct{Keys: keys, Spend: spend}, nil
+	return linktransport.Direct{Keys: keys, Spend: spend}, nil
 }
 
 // hubSet is a hub on every transport `--transport` named, at once. The first is
@@ -165,9 +166,9 @@ type hubSet struct {
 }
 
 // openHubs opens a side for each transport in a comma list, `direct,ziti`.
-func openHubs(kinds string, keys link.Keys, linkAddr, advertise, service string,
+func openHubs(kinds string, keys linktransport.Keys, linkAddr, advertise, service string,
 	spend func(string) (string, error)) (hubSet, error) {
-	order, err := link.ParseOrder(kinds)
+	order, err := linktransport.ParseOrder(kinds)
 	if err != nil {
 		return hubSet{}, err
 	}
@@ -223,7 +224,7 @@ func (s hubSet) auth() func(net.Conn) bool {
 	if len(s.sides) == 1 || !s.overlay() {
 		return s.primary().auth
 	}
-	return link.OverlayAuthenticated
+	return linktransport.OverlayAuthenticated
 }
 
 // paths is what a welcome tells rooms: every side but zrok, in `order`, and never
@@ -247,7 +248,7 @@ func (s hubSet) paths(order []string) []wire.Path {
 		p.Share, p.Identity, p.From = "", "", ""
 		out = append(out, p)
 	}
-	return link.Arrange(out, order)
+	return linktransport.Arrange(out, order)
 }
 
 // hubOrder reads the hub's order from its store. A stored order that no longer
@@ -257,7 +258,7 @@ func hubOrder(read func() (string, error)) []string {
 	if err != nil {
 		return nil
 	}
-	order, err := link.ParseOrder(v)
+	order, err := linktransport.ParseOrder(v)
 	if err != nil {
 		return nil
 	}
@@ -270,7 +271,7 @@ func hubOrder(read func() (string, error)) []string {
 // ONLY THIS LISTENER. The board is served over an overlay by a different
 // listener, built under internal/daemon and by the board share in atrium_run.go,
 // and neither goes through here: a browser has no client certificate.
-func overlayListen(inner func() (net.Listener, error), d link.Direct, transport string) func() (net.Listener, error) {
+func overlayListen(inner func() (net.Listener, error), d linktransport.Direct, transport string) func() (net.Listener, error) {
 	return func() (net.Listener, error) {
 		cfg, err := d.ServerTLS()
 		if err != nil {
@@ -280,18 +281,18 @@ func overlayListen(inner func() (net.Listener, error), d link.Direct, transport 
 		if err != nil {
 			return nil, err
 		}
-		return link.MixedListener(ln, cfg, transport), nil
+		return linktransport.MixedListener(ln, cfg, transport), nil
 	}
 }
 
 // roomZitiListen binds the room link's ziti service with a fresh context per call, for the hub's transport switch.
-func roomZitiListen(keys link.Keys, spend func(string) (string, error)) func(service, identity string) (net.Listener, error) {
+func roomZitiListen(keys linktransport.Keys, spend func(string) (string, error)) func(service, identity string) (net.Listener, error) {
 	return func(service, identity string) (net.Listener, error) {
 		d, err := overlayDirect(keys, spend)
 		if err != nil {
 			return nil, err
 		}
-		z := &link.Ziti{Identity: identity, Service: service}
+		z := &linktransport.Ziti{Identity: identity, Service: service}
 		return overlayListen(z.Listen, d, "ziti")()
 	}
 }
@@ -303,22 +304,22 @@ func roomZitiListen(keys link.Keys, spend func(string) (string, error)) func(ser
 // is still there, uses it when it is, and reserves a new one only when it is gone. A clean stop deletes nothing. The
 // share ends with `atrium rooms retire-share`.
 type zrokHub struct {
-	keys link.Keys
-	z    *link.Zrok
-	d    link.Direct
+	keys linktransport.Keys
+	z    *linktransport.Zrok
+	d    linktransport.Direct
 }
 
-func newZrokHub(keys link.Keys, spend func(string) (string, error), api link.ZrokAPI) (*hubSide, error) {
+func newZrokHub(keys linktransport.Keys, spend func(string) (string, error), api linktransport.ZrokAPI) (*hubSide, error) {
 	d, err := overlayDirect(keys, spend)
 	if err != nil {
 		return nil, err
 	}
-	h := &zrokHub{keys: keys, z: &link.Zrok{API: api}, d: d}
+	h := &zrokHub{keys: keys, z: &linktransport.Zrok{API: api}, d: d}
 	return &hubSide{
 		kind: "zrok", path: wire.Path{Transport: "zrok"},
 		listen: h.listen,
 		enrol:  d.ServeEnrolment,
-		auth:   link.OverlayAuthenticated,
+		auth:   linktransport.OverlayAuthenticated,
 		joinString: func(name, secret string) (string, error) {
 			token := h.z.Reserved()
 			if token == "" {
@@ -392,12 +393,12 @@ func zrokBinder(s *hubSide, h *link.Hub, audit func(kind, detail string)) *link.
 }
 
 // retireZrokShare deletes the share this hub saved and forgets it, so the next hub start reserves a new one.
-func retireZrokShare(keys link.Keys, api link.ZrokAPI) (string, error) {
+func retireZrokShare(keys linktransport.Keys, api linktransport.ZrokAPI) (string, error) {
 	token, err := readZrokShare(keys)
 	if err != nil {
 		return "", err
 	}
-	if err := (&link.Zrok{API: api}).Retire(token); err != nil {
+	if err := (&linktransport.Zrok{API: api}).Retire(token); err != nil {
 		return "", fmt.Errorf("could not delete the share: %w", err)
 	}
 	clearZrokShare(keys)
@@ -410,19 +411,19 @@ func retireZrokShare(keys link.Keys, api link.ZrokAPI) (string, error) {
 // THE HUB'S OWN SHARE, not somebody else's credential. It sits in the hub's key directory, 0600, beside the CA key
 // that is already the more valuable secret there. A share deleted outside atrium leaves it naming one that is gone:
 // the next hub start sees that and reserves a new one.
-func zrokShareFile(keys link.Keys) string { return filepath.Join(keys.Dir, "zrok-share") }
-func writeZrokShare(keys link.Keys, token string) error {
+func zrokShareFile(keys linktransport.Keys) string { return filepath.Join(keys.Dir, "zrok-share") }
+func writeZrokShare(keys linktransport.Keys, token string) error {
 	if err := os.MkdirAll(keys.Dir, 0o700); err != nil {
 		return err
 	}
 	return os.WriteFile(zrokShareFile(keys), []byte(token), 0o600)
 }
 
-func clearZrokShare(keys link.Keys) { _ = os.Remove(zrokShareFile(keys)) }
+func clearZrokShare(keys linktransport.Keys) { _ = os.Remove(zrokShareFile(keys)) }
 
 // readZrokShare is the share a running zrok hub wrote down, or an error saying
 // there is none.
-func readZrokShare(keys link.Keys) (string, error) {
+func readZrokShare(keys linktransport.Keys) (string, error) {
 	raw, err := os.ReadFile(zrokShareFile(keys))
 	if err != nil || strings.TrimSpace(string(raw)) == "" {
 		return "", errors.New("no hub is running over zrok from " + keys.Dir +
@@ -439,32 +440,32 @@ func readZrokShare(keys link.Keys) (string, error) {
 // here, so none can skip it. An old-form join never wraps, whatever is in the keys
 // directory: a stray room.crt from an earlier direct enrolment, maybe to another
 // hub, would otherwise start a handshake against the wrong CA and drop the room.
-func roomDialer(j link.Join, keys link.Keys, identity string) (wire.Dialer, error) {
+func roomDialer(j linktransport.Join, keys linktransport.Keys, identity string) (wire.Dialer, error) {
 	d, err := rawRoomDialer(j, keys, identity)
 	if err != nil {
 		return nil, err
 	}
 	if j.Transport != "direct" && j.Proven() && keys.HasRoomCert() {
-		return link.Proven{Dialer: d, Keys: keys}, nil
+		return linktransport.Proven{Dialer: d, Keys: keys}, nil
 	}
 	return d, nil
 }
 
 // rawRoomDialer is the transport with nothing wrapped round it. Enrolment dials
 // this, because the pinned handshake it runs is not the room's own.
-func rawRoomDialer(j link.Join, keys link.Keys, identity string) (wire.Dialer, error) {
+func rawRoomDialer(j linktransport.Join, keys linktransport.Keys, identity string) (wire.Dialer, error) {
 	switch j.Transport {
 	case "direct":
-		return link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}, nil
+		return linktransport.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}, nil
 	case "ziti":
 		if strings.TrimSpace(identity) == "" {
 			return nil, fmt.Errorf(
 				"this join string is for the ziti service %q, so this room needs an enrolled "+
 					"identity. pass --identity <file>", j.Service)
 		}
-		return &link.Ziti{Identity: identity, Service: j.Service}, nil
+		return &linktransport.Ziti{Identity: identity, Service: j.Service}, nil
 	case "zrok":
-		return &link.Zrok{Token: j.ShareToken}, nil
+		return &linktransport.Zrok{Token: j.ShareToken}, nil
 	}
 	return nil, fmt.Errorf("no transport called %q", j.Transport)
 }
@@ -474,7 +475,7 @@ func rawRoomDialer(j link.Join, keys link.Keys, identity string) (wire.Dialer, e
 // Built from the join, the hub's list as last heard and what was told to this
 // room on its own machine (`atrium room transports`). `skipped` names what could
 // not be a rung and why, for the log. See docs/rnd/room-transport-order.md.
-func roomLadder(keys link.Keys, saved link.Saved, tr link.RoomTransports) (*link.Ladder, []string, error) {
+func roomLadder(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports) (*link.Ladder, []string, error) {
 	rungs, skipped := roomRungs(keys, saved, tr, nil)
 	if len(rungs) == 0 {
 		return nil, skipped, fmt.Errorf("this room has no transport it can reach its hub on: %s",
@@ -485,8 +486,8 @@ func roomLadder(keys link.Keys, saved link.Saved, tr link.RoomTransports) (*link
 
 // roomRungs builds the rungs, reusing a dialer from `had` for a path that has not
 // changed, so learning the hub's list does not open a second ziti session.
-func roomRungs(keys link.Keys, saved link.Saved, tr link.RoomTransports, had []link.Rung) ([]link.Rung, []string) {
-	paths, skipped := link.Candidates(saved, tr)
+func roomRungs(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports, had []link.Rung) ([]link.Rung, []string) {
+	paths, skipped := linktransport.Candidates(saved, tr)
 	var rungs []link.Rung
 	for _, p := range paths {
 		if d := reuse(had, p); d != nil {
@@ -521,15 +522,15 @@ func reuse(had []link.Rung, p wire.Path) wire.Dialer {
 // The hub refuses a name that enrolled a certificate on the old path, so a
 // direct room falling back to ziti without it would be turned away by name. An
 // old-form overlay join never wraps, for the reason `roomDialer` gives.
-func rungDialer(keys link.Keys, saved link.Saved, p wire.Path) (wire.Dialer, error) {
-	d, err := rawRoomDialer(link.Join{
+func rungDialer(keys linktransport.Keys, saved linktransport.Saved, p wire.Path) (wire.Dialer, error) {
+	d, err := rawRoomDialer(linktransport.Join{
 		Transport: p.Transport, Addr: p.Addr, Service: p.Service, ShareToken: p.Share,
 	}, keys, p.Identity)
 	if err != nil {
 		return nil, err
 	}
 	if p.Transport != "direct" && (saved.Transport == "direct" || saved.Proven) && keys.HasRoomCert() {
-		return link.Proven{Dialer: d, Keys: keys}, nil
+		return linktransport.Proven{Dialer: d, Keys: keys}, nil
 	}
 	return d, nil
 }
@@ -567,7 +568,7 @@ func ladderSays(rungs []link.Rung) string {
 // learnHubPaths writes the hub's list down when it changed and rebuilds the
 // ladder from it, so the next start knows the fallback even when the hub cannot
 // be reached. Best effort: a room that cannot write keeps what it has.
-func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []wire.Path) {
+func learnHubPaths(keys linktransport.Keys, saved linktransport.Saved, l *link.Ladder, ps []wire.Path) {
 	tr, err := keys.Transports()
 	if err != nil {
 		log.Printf("[link] could not read %s: %v", keys.TransportsPath(), err)
@@ -594,7 +595,7 @@ func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []wire.P
 }
 
 // reloadRungs rebuilds the ladder from disk, so an address `atrium room hub` changed is tried without a restart.
-func reloadRungs(keys link.Keys, l *link.Ladder) {
+func reloadRungs(keys linktransport.Keys, l *link.Ladder) {
 	saved, err := keys.Joined()
 	if err != nil {
 		log.Printf("[link] could not read this room's join: %v", err)
@@ -635,7 +636,7 @@ func onSeed(service, identity string) link.TransportSeed {
 
 // roomZrokSeed is what --transport says of the room link's zrok: on when it names zrok.
 func roomZrokSeed(transport string) link.TransportSeed {
-	order, _ := link.ParseOrder(transport)
+	order, _ := linktransport.ParseOrder(transport)
 	for _, k := range order {
 		if k == "zrok" {
 			return onSeed("", "")
@@ -646,7 +647,7 @@ func roomZrokSeed(transport string) link.TransportSeed {
 
 // roomZitiSeed is what --transport says of the room link's ziti: on when it names ziti.
 func roomZitiSeed(transport, service, identity string) link.TransportSeed {
-	order, _ := link.ParseOrder(transport)
+	order, _ := linktransport.ParseOrder(transport)
 	for _, k := range order {
 		if k == "ziti" {
 			return onSeed(service, identity)
