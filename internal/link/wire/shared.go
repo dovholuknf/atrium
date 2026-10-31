@@ -158,3 +158,73 @@ var DocsCrossOrigin = http.NewCrossOriginProtection()
 
 // KeyOf is the key a room's name is kept under.
 func KeyOf(s string) string { return LowerASCII(s) }
+
+// RelayAnswer is the hub's answer.
+type RelayAnswer struct {
+	OK bool `json:"ok"`
+	// Code and Error are a refusal, in the target room's words where it gave
+	// some. Unreachable marks one the sender's room may hold and try again,
+	// rather than one that will never succeed.
+	Code        int    `json:"code,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Unreachable bool   `json:"unreachable,omitempty"`
+	// Unconfirmed is a failure AFTER the message may have reached the target,
+	// so sending it again could deliver it twice. Never held for a say.
+	Unconfirmed bool `json:"unconfirmed,omitempty"`
+	// What the target room said about a delivered message.
+	Delivered string `json:"delivered,omitempty"`
+	When      string `json:"when,omitempty"`
+	Warning   string `json:"warning,omitempty"`
+	// To is the resolved `handle@room` and Card the tagged `room~id`.
+	To    string      `json:"to,omitempty"`
+	Card  string      `json:"card,omitempty"`
+	Peers []RelayPeer `json:"peers,omitempty"`
+	// Task is the card `card` read, named across, or the one `launch` started.
+	Task *RelayTask `json:"task,omitempty"`
+	// What `launch` started: where to watch it, where its briefing was written on the
+	// target's disk, and the model and effort the room says it ran with.
+	Watch  string `json:"watch,omitempty"`
+	Brief  string `json:"brief,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+	// Data is the hub endpoint's own JSON answer, for `hub`.
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
+// RelayTask is one card on another room, as atrium_task reports it. Card is
+// `room~id` and Handle `name@room`.
+type RelayTask struct {
+	Card    string       `json:"card"`
+	Handle  string       `json:"handle,omitempty"`
+	Title   string       `json:"title,omitempty"`
+	Status  string       `json:"status"`
+	Doing   string       `json:"doing,omitempty"`
+	Where   string       `json:"where,omitempty"`
+	Why     string       `json:"why,omitempty"`
+	Idle    int          `json:"idle_seconds,omitempty"`
+	Waiting int          `json:"waiting_seconds,omitempty"`
+	Owned   bool         `json:"atrium_owns_terminal"`
+	Events  []RelayEvent `json:"events,omitempty"`
+}
+
+// RelayEvent is one event on a RelayTask.
+type RelayEvent struct {
+	At   string `json:"at"`
+	Kind string `json:"kind"`
+}
+
+// RelayPeer is one session on another room.
+type RelayPeer struct {
+	Handle  string `json:"handle"`
+	Alias   string `json:"alias,omitempty"`
+	Card    string `json:"card"`
+	Room    string `json:"room"`
+	Title   string `json:"title,omitempty"`
+	Status  string `json:"status"`
+	Doing   string `json:"doing,omitempty"`
+	Where   string `json:"where,omitempty"`
+	Waiting int    `json:"waiting_seconds,omitempty"`
+	Owned   bool   `json:"atrium_owns_terminal"`
+	// Everywhere marks a card that is here because it carries atrium:everywhere.
+	Everywhere bool `json:"everywhere,omitempty"`
+}

@@ -46,7 +46,7 @@ func TestALaunchWhoseAnswerIsLostReturnsTheCardItMade(t *testing.T) {
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
-	out, err := c.launchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", "")
+	out, err := c.LaunchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("a launch that started was reported as failed: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestARelayedLaunchWhoseAnswerIsLostIsAnswered(t *testing.T) {
 	srv, _ := lostAnswerBoard(true, func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadGateway) })
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
-	out, err := c.launchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", "")
+	out, err := c.LaunchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", "")
 	if err != nil || out.Card != "c9" {
 		t.Fatalf("out = %+v, %v", out, err)
 	}
@@ -77,7 +77,7 @@ func TestALaunchThatMadeNothingStaysFailed(t *testing.T) {
 	srv, _ := lostAnswerBoard(false, func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadGateway) })
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
-	if _, err := c.launchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", ""); err == nil {
+	if _, err := c.LaunchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", ""); err == nil {
 		t.Fatal("a launch that made no card succeeded")
 	}
 }
@@ -92,7 +92,7 @@ func TestALaunchWhoseConnectionDropsReturnsTheCardItMade(t *testing.T) {
 	})
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
-	out, err := c.launchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", "")
+	out, err := c.LaunchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/dir"}, "claude", "", "", "", "", "")
 	if err != nil || out.Card != "c9" || !out.Recovered {
 		t.Fatalf("out = %+v, %v", out, err)
 	}

@@ -1581,7 +1581,7 @@ func (p *Proxy) SetControl(boardAddr string) {
 	// board, so a relayed message is resolved and delivered exactly the way a
 	// hub-side atrium_say is. See control_relay.go.
 	if p.hub != nil {
-		p.hub.Relay = c.relay
+		p.hub.Relay = c.Relay
 	}
 }
 

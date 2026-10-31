@@ -99,7 +99,7 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if item == "" || len(in.WaitsOn) == 0 {
 			return nil, out, &ctl.RefusedError{Msg: "add needs item and waits_on"}
 		}
-		err := c.ask(ctx, http.MethodPost, "/_hub/deps", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/deps", "", map[string]any{
 			"repo": in.Repo, "item": item, "waits_on": in.WaitsOn, "why": in.Why,
 			"added_by": callerName(req)}, &out)
 		return nil, out, err
@@ -117,7 +117,7 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if open {
 			q.Set("open", "1")
 		}
-		if err := c.ask(ctx, http.MethodGet, "/_hub/deps?"+q.Encode(), "", nil, &out); err != nil {
+		if err := c.Ask(ctx, http.MethodGet, "/_hub/deps?"+q.Encode(), "", nil, &out); err != nil {
 			return nil, out, err
 		}
 		if in.Action == "check" {
@@ -133,7 +133,7 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			return nil, out, &ctl.RefusedError{Msg: "ready needs dept"}
 		}
 		q.Set("dept", strings.TrimSpace(in.Dept))
-		err := c.ask(ctx, http.MethodGet, "/_hub/deps/ready?"+q.Encode(), "", nil, &out)
+		err := c.Ask(ctx, http.MethodGet, "/_hub/deps/ready?"+q.Encode(), "", nil, &out)
 		if err == nil && len(out.Items) == 0 {
 			out.Note = "nothing in docs/backlog/" + strings.TrimSpace(in.Dept) + " is ready"
 		}
@@ -146,7 +146,7 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if by == "" {
 			by = "control"
 		}
-		err := c.ask(ctx, http.MethodPost, "/_hub/deps/rename", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/deps/rename", "", map[string]any{
 			"repo": in.Repo, "from": in.From, "to": in.To, "by": by}, &out)
 		return nil, out, err
 	case "clear":

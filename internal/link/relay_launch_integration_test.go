@@ -247,7 +247,7 @@ func TestARelayedLaunchOnAKnownRoomThatIsDownIsUnreachable(t *testing.T) {
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1})
 	c := newControl(srv.URL, hub, nil)
 
-	ans := c.relay(relayCtx(t), "m1mini", wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "SG3", Launch: launchSpec()})
+	ans := c.Relay(relayCtx(t), "m1mini", wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "SG3", Launch: launchSpec()})
 	if ans.OK || !ans.Unreachable || ans.Code != http.StatusServiceUnavailable || !strings.Contains(ans.Error, "SG3") ||
 		!strings.Contains(ans.Error, "not attached") {
 		t.Fatalf("down room = %+v", ans)

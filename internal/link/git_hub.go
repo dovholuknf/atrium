@@ -438,7 +438,7 @@ func (c *controlMCP) gitDoor() GitDoor {
 			if me == "" {
 				return "", fmt.Errorf("this pushes for a card, and nothing says which card is asking")
 			}
-			id, _, err := c.resolvePeer(ctx, ctl.RoomOf(req), me)
+			id, _, err := c.ResolvePeer(ctx, ctl.RoomOf(req), me)
 			return id, err
 		},
 		IsCard: func(req *mcp.CallToolRequest) bool { return ctl.AgentOf(req) != "" },
@@ -447,11 +447,11 @@ func (c *controlMCP) gitDoor() GitDoor {
 			if long {
 				cl = c.longClient()
 			}
-			return cl.ask(ctx, method, path, ctl.RoomOf(req), body, out)
+			return cl.Ask(ctx, method, path, ctl.RoomOf(req), body, out)
 		},
 		Lookup: func(ctx context.Context, _ *mcp.CallToolRequest, q url.Values) (gitsync.URLAnswer, error) {
 			var ans gitsync.URLAnswer
-			err := c.ask(ctx, http.MethodGet, "/_hub/git/url?"+q.Encode(), "", nil, &ans)
+			err := c.Ask(ctx, http.MethodGet, "/_hub/git/url?"+q.Encode(), "", nil, &ans)
 			return ans, err
 		},
 		Older: func(err error) bool {
@@ -472,7 +472,7 @@ func (c *controlMCP) gitSyncHandler(ctx context.Context, _ *mcp.CallToolRequest,
 	if strings.TrimSpace(in.Room) == "" {
 		return nil, out, fmt.Errorf("say which room to sync")
 	}
-	err := c.longClient().ask(ctx, http.MethodPost, "/_hub/git/sync", "", map[string]any{
+	err := c.longClient().Ask(ctx, http.MethodPost, "/_hub/git/sync", "", map[string]any{
 		"room": in.Room, "name": in.Name, "init": in.Init}, &out)
 	return nil, out, err
 }
@@ -484,6 +484,6 @@ func (c *controlMCP) gitCollectHandler(ctx context.Context, _ *mcp.CallToolReque
 	if strings.TrimSpace(in.Room) == "" {
 		return nil, out, fmt.Errorf("say which room to collect from")
 	}
-	err := c.longClient().ask(ctx, http.MethodPost, "/_hub/git/collect", "", map[string]any{"room": in.Room}, &out)
+	err := c.longClient().Ask(ctx, http.MethodPost, "/_hub/git/collect", "", map[string]any{"room": in.Room}, &out)
 	return nil, out, err
 }

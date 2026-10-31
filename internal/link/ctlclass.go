@@ -187,7 +187,7 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctl.C
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return ctl.ClassFull, false
 	}
 	best := pickCard(body.Tasks, agent)

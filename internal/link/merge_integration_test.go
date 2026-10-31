@@ -260,7 +260,7 @@ func TestMergeToolAsksForTheWorktreesBranch(t *testing.T) {
 	sha := x.branch(t, "door", "door.txt", "door")
 	d := MergeDoor{
 		Call: func(ctx context.Context, method, path string, body, out any) error {
-			return (&controlMCP{board: x.boardURL(t), client: http.DefaultClient}).ask(ctx, method, path, "", body, out)
+			return (&controlMCP{board: x.boardURL(t), client: http.DefaultClient}).Ask(ctx, method, path, "", body, out)
 		},
 		By: func(*mcp.CallToolRequest) string { return "w1@sg4" },
 		Here: func(context.Context) (string, string, string, error) {

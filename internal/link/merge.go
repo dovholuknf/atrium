@@ -439,7 +439,7 @@ func (p *Proxy) mergeCardOf(ctx context.Context, room, agent string) *mergeCard 
 	var body struct {
 		Tasks []mergeCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return nil
 	}
 	cards := make([]ctlCard, len(body.Tasks))
@@ -669,7 +669,7 @@ func (p *Proxy) mergeCardState(ctx context.Context, room, agent string) (string,
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return "", false
 	}
 	if best := pickCard(body.Tasks, agent); best != nil {
@@ -896,7 +896,7 @@ func (p *Proxy) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest, 
 	}
 	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 	defer cancel()
-	out, err := c.launchOnRoom(lctx, in, "claude", m.Room, m.RequesterRoom, spawnedBy, spawnedByID, "")
+	out, err := c.LaunchOnRoom(lctx, in, "claude", m.Room, m.RequesterRoom, spawnedBy, spawnedByID, "")
 	if err != nil {
 		return "", err
 	}
@@ -1252,7 +1252,7 @@ func (p *Proxy) mergeTell(ctx context.Context, m hubstore.MergeRequest) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 			defer cancel()
-			if ans := c.deliverAs(ctx, t.room, t.card, mergeFrom, text, "", kind, false, false); !ans.OK {
+			if ans := c.DeliverAs(ctx, t.room, t.card, mergeFrom, text, "", kind, false, false); !ans.OK {
 				log.Printf("[hub] merge %d: could not tell %s@%s: %s", m.N, t.card, t.room, ans.Error)
 			}
 		}()
@@ -1272,7 +1272,7 @@ func (p *Proxy) mergeTellMerger(ctx context.Context, m hubstore.MergeRequest) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
-		if ans := c.deliverAs(ctx, room, handle, mergeFrom, text, "", "fyi", false, false); !ans.OK {
+		if ans := c.DeliverAs(ctx, room, handle, mergeFrom, text, "", "fyi", false, false); !ans.OK {
 			log.Printf("[hub] merge %d: could not tell the merger %s: %s", m.N, m.Merger, ans.Error)
 		}
 	}()

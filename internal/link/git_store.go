@@ -99,7 +99,7 @@ func (p *Proxy) GitCards(ctx context.Context, room, card string) (gitsync.CardSt
 	if c == nil || p.hub == nil || !p.hub.Has(room) {
 		return gitsync.CardState{}, gitsync.ErrRoomUnreachable
 	}
-	ans := c.relay(ctx, "", wire.RelayRequest{Op: RelayCard, Room: room, To: card})
+	ans := c.Relay(ctx, "", wire.RelayRequest{Op: RelayCard, Room: room, To: card})
 	switch {
 	case ans.OK && ans.Task != nil:
 		return gitsync.CardState{Status: ans.Task.Status, IdleSeconds: ans.Task.Idle}, nil

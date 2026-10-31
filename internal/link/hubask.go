@@ -109,7 +109,7 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req wire.RelayRequ
 		body = m
 	}
 	var data json.RawMessage
-	if err := c.ask(ctx, method, req.Path, "", body, &data); err != nil {
+	if err := c.Ask(ctx, method, req.Path, "", body, &data); err != nil {
 		var be *ctl.BoardError
 		if errors.As(err, &be) {
 			return RelayAnswer{Code: be.Code, Error: be.Msg, Unreachable: be.Code == http.StatusBadGateway}

@@ -187,7 +187,7 @@ func (c *controlMCP) loadRequests(ctx context.Context, room string) (deployReque
 			rec = deployRequests{}
 		}
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/hold", room, nil, &view); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/hold", room, nil, &view); err != nil {
 		var be *ctl.BoardError
 		if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
 			return rec, view, fmt.Errorf("%s is older than the room deploy hold. update the room", room)
@@ -275,11 +275,11 @@ func (c *controlMCP) isOwner(ctx context.Context, req *mcp.CallToolRequest, owne
 	if !wire.EqualFold(ownerRoom, ctl.RoomOf(req)) {
 		return false
 	}
-	want, _, err := c.resolvePeer(ctx, ownerRoom, name)
+	want, _, err := c.ResolvePeer(ctx, ownerRoom, name)
 	if err != nil {
 		return false
 	}
-	got, _, err := c.resolvePeer(ctx, ctl.RoomOf(req), me)
+	got, _, err := c.ResolvePeer(ctx, ctl.RoomOf(req), me)
 	return err == nil && got == want
 }
 
@@ -304,7 +304,7 @@ func (c *controlMCP) deployStart(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	me := ctl.AgentOf(req)
 	var view roomHoldView
-	if err := c.ask(ctx, http.MethodPost, "/v1/hold", out.Room, map[string]any{
+	if err := c.Ask(ctx, http.MethodPost, "/v1/hold", out.Room, map[string]any{
 		"action": "start", "by": me, "by_card": me, "whys": whys, "exempt": in.Exempt,
 	}, &view); err != nil {
 		return nil, out, err
@@ -338,7 +338,7 @@ func (c *controlMCP) deployWait(ctx context.Context, req *mcp.CallToolRequest, i
 	deadline := time.Now().Add(limit)
 	for {
 		var view roomHoldView
-		if err := c.ask(ctx, http.MethodGet, "/v1/hold", out.Room, nil, &view); err != nil {
+		if err := c.Ask(ctx, http.MethodGet, "/v1/hold", out.Room, nil, &view); err != nil {
 			return nil, out, err
 		}
 		out.Hold, out.Busy, out.Ungated = view.Hold, view.Busy, view.Ungated
@@ -377,7 +377,7 @@ func (c *controlMCP) deployCancel(ctx context.Context, req *mcp.CallToolRequest,
 		return nil, out, err
 	}
 	var view roomHoldView
-	if err := c.ask(ctx, http.MethodPost, "/v1/hold", out.Room, map[string]any{
+	if err := c.Ask(ctx, http.MethodPost, "/v1/hold", out.Room, map[string]any{
 		"action": "lift", "outcome": "cancelled", "by": ctl.AgentOf(req), "why": strings.TrimSpace(in.Why),
 	}, &view); err != nil {
 		return nil, out, err

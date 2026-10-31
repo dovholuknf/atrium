@@ -91,7 +91,7 @@ func (c *controlMCP) ciHandler(ctx context.Context, req *mcp.CallToolRequest, in
 	*mcp.CallToolResult, forge.HubCI, error) {
 	return CIDoor{Ask: func(ctx context.Context, req *mcp.CallToolRequest, a forge.HubCIAsk) (forge.HubCI, error) {
 		var ans forge.HubCI
-		err := c.longClient().ask(ctx, "POST", "/_hub/forge/ci", ctl.RoomOf(req), a, &ans)
+		err := c.longClient().Ask(ctx, "POST", "/_hub/forge/ci", ctl.RoomOf(req), a, &ans)
 		return ans, err
 	}}.Call(ctx, req, in)
 }

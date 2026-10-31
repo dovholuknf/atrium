@@ -53,7 +53,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 	// another room's card.
 	spawnedBy, spawnedByID, spawnedByDir := strings.TrimSpace(req.From), "", ""
 	if spawnedBy != "" {
-		if id, _, err := c.resolvePeer(ctx, from, spawnedBy); err == nil {
+		if id, _, err := c.ResolvePeer(ctx, from, spawnedBy); err == nil {
 			spawnedByID = wire.TagFor(from, id)
 			spawnedByDir = c.launcherDir(ctx, from, id)
 		}
@@ -64,7 +64,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.Rel
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
 		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: relaySuperlean(spec.Superlean), Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
 	}
-	out, err := c.launchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
+	out, err := c.LaunchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)
 	if err != nil {
 		return launchRefusal(err)

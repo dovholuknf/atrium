@@ -643,7 +643,7 @@ func (p *Proxy) NewEventHook(st *hubstore.Store, from string, audit func(kind, d
 		var out struct {
 			Exist []string `json:"exist"`
 		}
-		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/exist", room, map[string]any{"ids": ids}, &out); err != nil {
+		if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/exist", room, map[string]any{"ids": ids}, &out); err != nil {
 			return nil, err
 		}
 		return out.Exist, nil

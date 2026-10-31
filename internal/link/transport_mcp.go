@@ -62,11 +62,11 @@ func (c *controlMCP) transportHandler(ctx context.Context, req *mcp.CallToolRequ
 	var err error
 	switch {
 	case in.On == nil && strings.TrimSpace(in.Transport) == "":
-		err = long.ask(ctx, http.MethodGet, "/v1/link/transports", room, nil, &out)
+		err = long.Ask(ctx, http.MethodGet, "/v1/link/transports", room, nil, &out)
 	case in.On == nil || strings.TrimSpace(in.Transport) == "":
 		return nil, out, &ctl.RefusedError{Msg: "give both transport and on, or neither to read the states"}
 	default:
-		err = long.ask(ctx, http.MethodPost, "/v1/link/transports", room,
+		err = long.Ask(ctx, http.MethodPost, "/v1/link/transports", room,
 			TransportAsk{Transport: in.Transport, On: *in.On}, &out)
 	}
 	if err != nil {
