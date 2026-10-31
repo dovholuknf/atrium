@@ -106,7 +106,7 @@ func newCRRig(t *testing.T) *crRig {
 		return sha, ok, nil
 	}
 	// A board watching, added by hand so no stream to the fake rooms is started.
-	x.feed = &sub{ch: make(chan Event, 256)}
+	x.feed = &sub{ch: make(chan wire.Event, 256)}
 	p.feeds.mu.Lock()
 	p.feeds.subs[x.feed] = struct{}{}
 	p.feeds.mu.Unlock()

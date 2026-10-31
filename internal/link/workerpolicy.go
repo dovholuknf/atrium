@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The default worker model and the per-worker budget, on the hub's side. The same shape as contextlimits.go: the hub
@@ -144,7 +145,7 @@ func (p *Proxy) postWorkerPolicy(ctx context.Context, room, stored string) error
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errStatus(res.StatusCode)
+		return wire.ErrStatus(res.StatusCode)
 	}
 	return nil
 }

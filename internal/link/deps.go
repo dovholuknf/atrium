@@ -24,6 +24,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/itemgate"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Item gates as the hub serves and checks them. See docs/runtime/item-dependencies-design.md.
@@ -267,7 +268,7 @@ func (p *Proxy) evaluate(ctx context.Context, d *deps, g itemgate.Gate) (bool, s
 				return false, "this hub has no link, so no room is attached"
 			}
 			for _, a := range p.hub.Rooms() {
-				if equalFold(a.Name, arg) {
+				if wire.EqualFold(a.Name, arg) {
 					return true, arg + " attached to the hub"
 				}
 			}
@@ -378,7 +379,7 @@ func (p *Proxy) depsChanged(repo, item, what string) {
 	if err != nil {
 		return
 	}
-	p.feeds.emit(Event{Kind: "deps", Data: payload})
+	p.feeds.emit(wire.Event{Kind: "deps", Data: payload})
 }
 
 // ── the launch refusal ──────────────────────────────────

@@ -7,6 +7,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/dovholuknf/atrium/internal/link/conn"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Every room this hub knows about, whether or not it is answering.
@@ -46,7 +47,7 @@ func (i inventory) Known() ([]link.Known, error) {
 	}
 	// Indexed by the same folded name the hub routes on, so a room typed with
 	// different capitals in two places is still one room.
-	live := map[string]conn.Attached{}
+	live := map[string]wire.Attached{}
 	for _, a := range i.hub.Rooms() {
 		live[fold(a.Name)] = a
 	}

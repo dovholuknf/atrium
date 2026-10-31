@@ -859,7 +859,7 @@ func (c *controlMCP) resolveCardOpt(ctx context.Context, room, who string, stric
 // namedFrom is a card's id and handle as a caller on `room` names it: bare on
 // its own room, `room~id` and `handle@room` from anywhere else.
 func namedFrom(room, scope, id, handle string) (string, string) {
-	if scope == "" || equalFold(scope, room) {
+	if scope == "" || wire.EqualFold(scope, room) {
 		return id, handle
 	}
 	if handle != "" {
@@ -1553,7 +1553,7 @@ func (c *controlMCP) reserveSlot(room string, live, limit int) (id string, ok bo
 	for _, r := range c.reservations {
 		if now.Sub(r.at) < reservationTTL {
 			kept = append(kept, r)
-			if equalFold(r.room, room) {
+			if wire.EqualFold(r.room, room) {
 				pending++
 			}
 		}
@@ -1791,7 +1791,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// card as `myroom~id`, so the worker's reports and notices come back across
 	// to exactly this card. See docs/fabric/cross-room-say-design.md.
 	spawnedBy, spawnedByID, spawnedByDir := ctl.AgentOf(req), "", ""
-	if r := strings.TrimSpace(in.Room); r != "" && !equalFold(r, room) {
+	if r := strings.TrimSpace(in.Room); r != "" && !wire.EqualFold(r, room) {
 		if room != "" && spawnedBy != "" {
 			if id, _, err := c.resolvePeer(ctx, room, spawnedBy); err == nil {
 				spawnedByID = wire.TagFor(room, id)
@@ -2168,7 +2168,7 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	var body map[string]any
 	if me != "" {
 		body = map[string]any{"from": me, "force": in.Force}
-		if !equalFold(scope, room) {
+		if !wire.EqualFold(scope, room) {
 			body["from"], body["foreign"] = me+"@"+room, true
 		}
 	}
@@ -2286,7 +2286,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	out.Card, out.Handle = namedFrom(room, scope, id, handle)
 	// Only a card on the caller's own room can be the caller.
-	if me := ctl.AgentOf(req); me != "" && equalFold(scope, room) {
+	if me := ctl.AgentOf(req); me != "" && wire.EqualFold(scope, room) {
 		if myID, _, err := c.resolvePeer(ctx, room, me); err == nil && myID == id {
 			return nil, out, fmt.Errorf("a worker cannot cull itself. whoever accepts the work culls it")
 		}

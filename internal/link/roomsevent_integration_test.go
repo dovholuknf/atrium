@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // stock is an Inventory whose answers a test can change under a running hub. The
@@ -103,7 +105,7 @@ func (b *bench) attach(name string, h http.Handler) {
 }
 
 // roomsEvent waits for the next `rooms` event and returns its fields.
-func roomsEvent(t *testing.T, ch <-chan Event, within time.Duration) map[string]any {
+func roomsEvent(t *testing.T, ch <-chan wire.Event, within time.Duration) map[string]any {
 	t.Helper()
 	deadline := time.After(within)
 	for {

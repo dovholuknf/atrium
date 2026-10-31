@@ -15,6 +15,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // atrium_deploy: one call asks for a room deploy, the deploy owner holds the
@@ -271,7 +272,7 @@ func (c *controlMCP) isOwner(ctx context.Context, req *mcp.CallToolRequest, owne
 	if ownerRoom == "" {
 		ownerRoom = ctl.RoomOf(req)
 	}
-	if !equalFold(ownerRoom, ctl.RoomOf(req)) {
+	if !wire.EqualFold(ownerRoom, ctl.RoomOf(req)) {
 		return false
 	}
 	want, _, err := c.resolvePeer(ctx, ownerRoom, name)

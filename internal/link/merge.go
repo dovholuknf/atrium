@@ -171,7 +171,7 @@ func (p *Proxy) serveMerge(w http.ResponseWriter, r *http.Request, sub string) {
 		case r.Method != http.MethodPost:
 			crFail(w, http.StatusMethodNotAllowed, "that has to be a GET or a POST")
 			return
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return
 		case !edge.LocalOperator(r):

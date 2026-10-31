@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // gateUnderTest is a gate whose boards and events the test controls.
@@ -460,7 +461,7 @@ func TestABroadcastReachesARoomScopedBoard(t *testing.T) {
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
 	s := p.feeds.add("beta")
 	defer p.feeds.drop(s)
-	p.feeds.broadcast(Event{Kind: restartEvent, Data: []byte(`{"state":"countdown"}`)})
+	p.feeds.broadcast(wire.Event{Kind: restartEvent, Data: []byte(`{"state":"countdown"}`)})
 	// The reconciler can put its own events on the channel first, so read until the restart or the deadline.
 	deadline := time.After(5 * time.Second)
 	for heard := false; !heard; {

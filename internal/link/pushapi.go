@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's Web Push endpoints, under /_hub/push, JSON.
@@ -112,7 +113,7 @@ func (p *Proxy) servePush(w http.ResponseWriter, r *http.Request, rest string) {
 	// A page on another origin cannot write here, as the documents routes do it. A browser on the operator's machine
 	// that opens somebody's page must not be made to turn push on.
 	if write {
-		if err := docsCrossOrigin.Check(r); err != nil {
+		if err := wire.DocsCrossOrigin.Check(r); err != nil {
 			fail(http.StatusForbidden, "a page on another origin cannot write push settings here")
 			return
 		}

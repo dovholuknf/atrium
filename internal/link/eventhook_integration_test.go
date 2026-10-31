@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type eventRig struct {
@@ -301,7 +302,7 @@ func TestARoomsRelayedSubscribeIsStampedFromTheLink(t *testing.T) {
 	defer st.Close()
 	x.proxy.SetEvents(NewEventHook(st, x.proxy.Deliverer(), nil))
 	ask := func(path, body string) RelayAnswer {
-		ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayHub, From: "sa1", Method: "POST", Path: path, Body: json.RawMessage(body)})
+		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayHub, From: "sa1", Method: "POST", Path: path, Body: json.RawMessage(body)})
 		if err != nil {
 			t.Fatal(err)
 		}

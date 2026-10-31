@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // A room's atrium_backlog and atrium_reports, answered by the hub it is attached to. See
@@ -64,7 +65,7 @@ func mergeAskPath(rest string) bool {
 }
 
 // hubAsk answers one `hub` relay from the room `from`.
-func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) RelayAnswer {
+func (c *controlMCP) hubAsk(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer {
 	method := strings.ToUpper(strings.TrimSpace(req.Method))
 	if method != http.MethodGet && method != http.MethodPost {
 		return RelayAnswer{Code: http.StatusBadRequest, Error: "the hub relays GET and POST only"}
@@ -120,7 +121,7 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 
 // publishAsk answers a room's atrium_publish. FROM THE LINK: the room is the one that attached and the card is the
 // sender it names on that room, which is the trust every other relayed write already has.
-func (c *controlMCP) publishAsk(ctx context.Context, from, method string, req RelayRequest) RelayAnswer {
+func (c *controlMCP) publishAsk(ctx context.Context, from, method string, req wire.RelayRequest) RelayAnswer {
 	var in publishInput
 	if method != http.MethodPost || json.Unmarshal(req.Body, &in) != nil {
 		return RelayAnswer{Code: http.StatusBadRequest, Error: "a publish is a POST of a JSON object"}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Whether the rooms are set up alike, which the rooms pill says.
@@ -50,14 +51,14 @@ const (
 
 type setupWatch struct {
 	mu    sync.Mutex
-	facts map[string]*RoomSetup
+	facts map[string]*wire.RoomSetup
 }
 
 // setupFor is the facts to put on a room's row, or nil when none were read yet.
-func (p *Proxy) setupFor(room string) *RoomSetup {
+func (p *Proxy) setupFor(room string) *wire.RoomSetup {
 	p.setup.mu.Lock()
 	defer p.setup.mu.Unlock()
-	f := p.setup.facts[keyOf(room)]
+	f := p.setup.facts[wire.KeyOf(room)]
 	if f == nil {
 		return nil
 	}
@@ -81,11 +82,11 @@ func (p *Proxy) RunSetupWatch(ctx context.Context) {
 
 // setupSweep checks every attached room that is due, and says `rooms` if anything a board draws changed.
 func (p *Proxy) setupSweep(ctx context.Context, now time.Time) {
-	var due []Attached
+	var due []wire.Attached
 	live := map[string]bool{}
 	p.setup.mu.Lock()
 	for _, a := range p.hub.Rooms() {
-		k := keyOf(a.Name)
+		k := wire.KeyOf(a.Name)
 		live[k] = true
 		f := p.setup.facts[k]
 		if f == nil || !f.Since.Equal(a.Since) || now.Sub(f.Checked) >= setupEvery {
@@ -104,7 +105,7 @@ func (p *Proxy) setupSweep(ctx context.Context, now time.Time) {
 	changed := make(chan bool, len(due))
 	for _, a := range due {
 		wg.Add(1)
-		go func(a Attached) {
+		go func(a wire.Attached) {
 			defer wg.Done()
 			changed <- p.checkSetup(ctx, a)
 		}(a)
@@ -120,17 +121,17 @@ func (p *Proxy) setupSweep(ctx context.Context, now time.Time) {
 }
 
 // checkSetup reads one room and stores what it said. True when what a board draws changed.
-func (p *Proxy) checkSetup(ctx context.Context, a Attached) bool {
+func (p *Proxy) checkSetup(ctx context.Context, a wire.Attached) bool {
 	ctx, cancel := context.WithTimeout(ctx, setupBound)
 	defer cancel()
 	f := p.readSetup(ctx, a.Name)
 	f.Since = a.Since
 	f.Issues = p.setupIssues(ctx, f)
-	k := keyOf(a.Name)
+	k := wire.KeyOf(a.Name)
 	p.setup.mu.Lock()
 	defer p.setup.mu.Unlock()
 	if p.setup.facts == nil {
-		p.setup.facts = map[string]*RoomSetup{}
+		p.setup.facts = map[string]*wire.RoomSetup{}
 	}
 	old := p.setup.facts[k]
 	p.setup.facts[k] = f
@@ -138,15 +139,15 @@ func (p *Proxy) checkSetup(ctx context.Context, a Attached) bool {
 }
 
 // steadySetup is the facts without the moment they were read, to compare by.
-func steadySetup(s RoomSetup) string {
+func steadySetup(s wire.RoomSetup) string {
 	s.Checked = time.Time{}
 	b, _ := json.Marshal(s)
 	return string(b)
 }
 
 // readSetup asks the room. A room that fails any of the three reads is not answering.
-func (p *Proxy) readSetup(ctx context.Context, room string) *RoomSetup {
-	f := &RoomSetup{Checked: time.Now().UTC()}
+func (p *Proxy) readSetup(ctx context.Context, room string) *wire.RoomSetup {
+	f := &wire.RoomSetup{Checked: time.Now().UTC()}
 	var hooks struct {
 		Missing    int    `json:"missing"`
 		Unreadable string `json:"unreadable"`
@@ -205,26 +206,26 @@ func (p *Proxy) setupGet(ctx context.Context, room, path string, out any) error 
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
-		return errStatus(res.StatusCode)
+		return wire.ErrStatus(res.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
 }
 
 // setupIssues names what is wrong with an answering room. A build is only compared when both sides say one.
-func (p *Proxy) setupIssues(ctx context.Context, f *RoomSetup) []SetupIssue {
-	issues := []SetupIssue{}
+func (p *Proxy) setupIssues(ctx context.Context, f *wire.RoomSetup) []wire.SetupIssue {
+	issues := []wire.SetupIssue{}
 	if !f.Answering {
 		return issues
 	}
 	switch {
 	case f.HooksUnreadable != "":
-		issues = append(issues, SetupIssue{Kind: "hooks",
+		issues = append(issues, wire.SetupIssue{Kind: "hooks",
 			Text: "claude settings.json cannot be read, so atrium cannot check its hooks"})
 	default:
 		// The two-gates row is counted once in Missing. It gets its own text, and the count of the rest excludes it.
 		missing := f.HooksMissing
 		if f.HooksTwoGates {
-			issues = append(issues, SetupIssue{Kind: "hooks",
+			issues = append(issues, wire.SetupIssue{Kind: "hooks",
 				Text: "two permission gates: atrium-perm-hook.ps1 and atrium hook. every tool call asks twice"})
 			missing--
 		}
@@ -233,11 +234,11 @@ func (p *Proxy) setupIssues(ctx context.Context, f *RoomSetup) []SetupIssue {
 			if f.HooksStale > 0 {
 				text += fmt.Sprintf(", %d stale", f.HooksStale)
 			}
-			issues = append(issues, SetupIssue{Kind: "hooks", Text: text})
+			issues = append(issues, wire.SetupIssue{Kind: "hooks", Text: text})
 		}
 	}
 	if text := p.buildIssue(ctx, f); text != "" {
-		issues = append(issues, SetupIssue{Kind: "build", Text: text})
+		issues = append(issues, wire.SetupIssue{Kind: "build", Text: text})
 	}
 	return issues
 }
@@ -253,7 +254,7 @@ func (p *Proxy) SetHubCode(code string) {
 // buildIssue is the text of the build issue, or "" when there is none. When both sides carry a code fingerprint it alone
 // decides: a board-only difference is the same room code and says nothing. A room with no fingerprint (an old build)
 // keeps the board-hash compare.
-func (p *Proxy) buildIssue(ctx context.Context, f *RoomSetup) string {
+func (p *Proxy) buildIssue(ctx context.Context, f *wire.RoomSetup) string {
 	p.mu.Lock()
 	hubCode, hubCommit, g := p.hubCode, p.hubBuild, p.landGit
 	p.mu.Unlock()
@@ -307,7 +308,7 @@ func (p *Proxy) serveSetupCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Query().Get("room")
 	for _, a := range p.hub.Rooms() {
-		if keyOf(a.Name) != keyOf(name) {
+		if wire.KeyOf(a.Name) != wire.KeyOf(name) {
 			continue
 		}
 		if p.checkSetup(r.Context(), a) {

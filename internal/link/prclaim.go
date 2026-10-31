@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // WHICH ROOM RUNS A PR, AND ONE ROW PER PR ACROSS ROOMS. Design: docs/rnd/scm-forge-design.md section 6 and the answers
@@ -92,7 +93,7 @@ func (p *Proxy) markedRooms() map[string]bool {
 	}
 	for _, k := range known {
 		if k.State == "marked-for-deletion" {
-			out[keyOf(k.Name)] = true
+			out[wire.KeyOf(k.Name)] = true
 		}
 	}
 	return out
@@ -124,7 +125,7 @@ func (l roomLoad) lessLoaded(o roomLoad) bool {
 	if l.idle != nil && *l.idle != *o.idle {
 		return *l.idle > *o.idle
 	}
-	return keyOf(l.room) < keyOf(o.room)
+	return wire.KeyOf(l.room) < wire.KeyOf(o.room)
 }
 
 // placePRRoom picks the room for a new PR: the least busy online room, a tie to the one with more idle CPU, then the
@@ -165,7 +166,7 @@ func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[
 	var wg sync.WaitGroup
 	for i, a := range rooms {
 		got[i].room, got[i].idle = a.Name, a.IdleCPU
-		if _, passed := skip[keyOf(a.Name)]; passed || marked[keyOf(a.Name)] || p.isDeaf(a) {
+		if _, passed := skip[wire.KeyOf(a.Name)]; passed || marked[wire.KeyOf(a.Name)] || p.isDeaf(a) {
 			got[i].n = -1
 			continue
 		}
@@ -289,7 +290,7 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 	ans := PRClaimAnswer{Key: ask.Key}
 	if c, err := st.PRClaimOf(ask.Key); err == nil {
 		ans.Owner = c.Room
-		if ask.Take && keyOf(c.Room) != keyOf(asker) {
+		if ask.Take && wire.KeyOf(c.Room) != wire.KeyOf(asker) {
 			// THE ROOM THE OPERATOR PICKED WINS, unless the owner has a card on the link that is live: that card is the
 			// answer, and nothing is made beside it.
 			if card := p.roomLive(ctx, c.Room, ask.Key); card != "" {
@@ -307,7 +308,7 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 				ans.Owner = asker
 			}
 			p.RecordAudit(asker, "link-claim-taken", ask.Key+" from "+c.Room)
-		} else if keyOf(c.Room) != keyOf(asker) {
+		} else if wire.KeyOf(c.Room) != wire.KeyOf(asker) {
 			ans.Holder = p.roomLive(ctx, c.Room, ask.Key)
 		}
 		return ans, nil
@@ -326,7 +327,7 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 		return ans, err
 	}
 	ans.Owner, ans.Made = c.Room, made
-	if !made || keyOf(c.Room) == keyOf(asker) || strings.TrimSpace(ask.URL) == "" {
+	if !made || wire.KeyOf(c.Room) == wire.KeyOf(asker) || strings.TrimSpace(ask.URL) == "" {
 		return ans, nil
 	}
 	status, body, ferr := p.forwardPR(ctx, c.Room, ask)
@@ -359,7 +360,7 @@ func (p *Proxy) forwardPR(ctx context.Context, room string, ask prClaimAsk) (int
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 4<<20))
 	if res.StatusCode >= 500 {
-		return res.StatusCode, nil, errStatus(res.StatusCode)
+		return res.StatusCode, nil, wire.ErrStatus(res.StatusCode)
 	}
 	if !json.Valid(body) {
 		body = nil
@@ -403,7 +404,7 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 		}
 		crJSON(w, http.StatusOK, out)
 	case rest == "move" && r.Method == http.MethodPost:
-		if err := docsCrossOrigin.Check(r); err != nil {
+		if err := wire.DocsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot move a pr here")
 			return
 		}

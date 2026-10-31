@@ -17,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub hears a local script and tells the cards that asked. See docs/fabric/land-webhook-design.md.
@@ -667,7 +668,7 @@ func (p *Proxy) serveHubEvents(w http.ResponseWriter, r *http.Request, sub strin
 	case sub == "events" && r.Method == http.MethodPost:
 		h.Receive(w, r)
 	case sub == "events/subs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		if r.Method == http.MethodPost && docsCrossOrigin.Check(r) != nil {
+		if r.Method == http.MethodPost && wire.DocsCrossOrigin.Check(r) != nil {
 			subFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return
 		}

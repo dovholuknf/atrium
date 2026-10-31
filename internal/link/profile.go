@@ -5,6 +5,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The operator's profile over /_hub/profile.
@@ -30,7 +31,7 @@ func (p *Proxy) serveProfile(w http.ResponseWriter, r *http.Request) {
 		crJSON(w, http.StatusOK, pr)
 	case http.MethodPost:
 		switch {
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return
 		case !edge.LocalOperator(r):

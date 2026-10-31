@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Input-lag logging as a gear setting, on the hub's side. See internal/inputlag
@@ -143,7 +144,7 @@ func (p *Proxy) postInputLag(ctx context.Context, room string, on bool) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errStatus(res.StatusCode)
+		return wire.ErrStatus(res.StatusCode)
 	}
 	return nil
 }

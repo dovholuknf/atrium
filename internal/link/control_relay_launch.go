@@ -27,11 +27,11 @@ import (
 // known and not attached is `unreachable` (reachable), found out before anything is posted.
 
 // launchAcross starts the session `req.Launch` describes on `req.Room`, for the room `from`.
-func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayRequest) RelayAnswer {
+func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer {
 	target := strings.TrimSpace(req.Room)
 	spec := req.Launch
 	switch {
-	case target == "" || equalFold(target, from):
+	case target == "" || wire.EqualFold(target, from):
 		return RelayAnswer{Code: http.StatusBadRequest,
 			Error: "the relay launches on another room. this one names the room it came from"}
 	case spec == nil || strings.TrimSpace(spec.Cwd) == "":

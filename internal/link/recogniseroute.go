@@ -17,6 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/linkfetch"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // THE HUB RECOGNISES A PASTE ITSELF. Item r-recognisers-gwt.
@@ -140,17 +141,17 @@ func (p *Proxy) placePaste(r *http.Request, room string) *http.Request {
 }
 
 // isDeaf is whether a room is remembered as not reading the hub's rows, on the build it runs now.
-func (p *Proxy) isDeaf(a Attached) bool {
+func (p *Proxy) isDeaf(a wire.Attached) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	commit, ok := p.deaf[keyOf(a.Name)]
+	commit, ok := p.deaf[wire.KeyOf(a.Name)]
 	return ok && commit == a.Commit
 }
 
 func (p *Proxy) markDeaf(room string) {
 	commit := ""
 	for _, a := range p.hub.Rooms() {
-		if keyOf(a.Name) == keyOf(room) {
+		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
 			commit = a.Commit
 		}
 	}
@@ -159,7 +160,7 @@ func (p *Proxy) markDeaf(room string) {
 	if p.deaf == nil {
 		p.deaf = map[string]string{}
 	}
-	p.deaf[keyOf(room)] = commit
+	p.deaf[wire.KeyOf(room)] = commit
 }
 
 // deafAnswer is whether a room's answer is "no recogniser" for a link the hub's own rows match.
@@ -231,7 +232,7 @@ func (p *Proxy) retryDeaf(res *http.Response) (string, error) {
 			if pp.passed == nil {
 				pp.passed = map[string]string{}
 			}
-			pp.passed[keyOf(room)] = why
+			pp.passed[wire.KeyOf(room)] = why
 		} else if p.deafAnswer(res.StatusCode, raw, pp.body) {
 			p.markDeaf(room)
 		} else {
@@ -248,7 +249,7 @@ func (p *Proxy) retryDeaf(res *http.Response) (string, error) {
 			res.Body = io.NopCloser(bytes.NewReader(raw))
 			return room, nil
 		}
-		if m, ok := res.Request.Context().Value(prMadeKey{}).(*prMade); ok && keyOf(m.room) == keyOf(room) {
+		if m, ok := res.Request.Context().Value(prMadeKey{}).(*prMade); ok && wire.KeyOf(m.room) == wire.KeyOf(room) {
 			if st := p.prClaims(); st != nil {
 				if c, err := st.MovePRClaim(m.key, next); err == nil {
 					m.room = c.Room
@@ -283,7 +284,7 @@ func (p *Proxy) noRoomCan(res *http.Response, pp *placedPaste, last string) {
 	marked := p.markedRooms()
 	var parts []string
 	for _, a := range p.hub.Rooms() {
-		k := keyOf(a.Name)
+		k := wire.KeyOf(a.Name)
 		switch why, passed := pp.passed[k]; {
 		case passed:
 			parts = append(parts, a.Name+": "+why)
@@ -307,7 +308,7 @@ func (p *Proxy) noRoomCan(res *http.Response, pp *placedPaste, last string) {
 
 func (p *Proxy) isDeafName(room string) bool {
 	for _, a := range p.hub.Rooms() {
-		if keyOf(a.Name) == keyOf(room) {
+		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
 			return p.isDeaf(a)
 		}
 	}
@@ -334,7 +335,7 @@ func (p *Proxy) answerFrom(res *http.Response, room string, body []byte) error {
 		return err
 	}
 	if got.StatusCode >= 500 {
-		return errStatus(got.StatusCode)
+		return wire.ErrStatus(got.StatusCode)
 	}
 	res.StatusCode, res.Status = got.StatusCode, got.Status
 	res.Header.Set("Content-Type", got.Header.Get("Content-Type"))

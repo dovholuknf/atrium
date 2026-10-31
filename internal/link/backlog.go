@@ -10,6 +10,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's backlog and its director reports, which every room reads and writes through the hub. See
@@ -72,7 +73,7 @@ func (p *Proxy) serveBacklog(w http.ResponseWriter, r *http.Request, sub string)
 		case r.Method != http.MethodPost:
 			crFail(w, http.StatusMethodNotAllowed, "that has to be a GET or a POST")
 			return
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return
 		case !edge.LocalOperator(r):
@@ -379,6 +380,6 @@ func orUnset(s string) string {
 
 func (p *Proxy) backlogEvent(kind string, v any) {
 	if data, err := json.Marshal(v); err == nil {
-		p.feeds.broadcast(Event{Kind: kind, Data: data})
+		p.feeds.broadcast(wire.Event{Kind: kind, Data: data})
 	}
 }

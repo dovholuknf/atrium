@@ -18,6 +18,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // testGrowlStore is internal/cli's growlStore, again, because link cannot
@@ -174,7 +175,7 @@ func newGrowlRig(t *testing.T) *growlRig {
 		defer rig.mu.Unlock()
 		return rig.online
 	}
-	g.say = func(e Event) {
+	g.say = func(e wire.Event) {
 		var m map[string]any
 		_ = json.Unmarshal(e.Data, &m)
 		rig.mu.Lock()

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // THE REVIEW MOVES WITH THE CLAIM. A PR's review lives on the room that owns the PR: a row and a run folder. The hub
@@ -68,7 +69,7 @@ func (p *Proxy) MovePRClaimWith(ctx context.Context, key, to, walker string) (PR
 		return PRClaimMove{}, err
 	}
 	out := PRClaimMove{PRClaim: old, Review: "none"}
-	if keyOf(old.Room) == keyOf(to) {
+	if wire.KeyOf(old.Room) == wire.KeyOf(to) {
 		return out, nil
 	}
 	switch {

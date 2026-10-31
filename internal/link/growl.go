@@ -236,7 +236,7 @@ type Growler struct {
 
 	// Wired by the proxy. Each is safe to leave nil in a test.
 	attached func(room string) bool
-	say      func(Event)
+	say      func(wire.Event)
 	health   func(ctx context.Context, room string) roomHealth
 	hold     func(ctx context.Context, room string) roomHold
 	alert    func(ctx context.Context, room string) roomAlert
@@ -808,7 +808,7 @@ func (g *Growler) publish(remind []string) {
 	if same && len(remind) == 0 {
 		return
 	}
-	g.say(Event{Kind: "growls", Data: data})
+	g.say(wire.Event{Kind: "growls", Data: data})
 }
 
 // act is one POST, validated.
@@ -1066,7 +1066,7 @@ func (p *Proxy) openGrowls(s *sub) {
 	// Waited for, briefly: `publish` sends nothing for a set that has not
 	// changed, so a tab that missed this would see no growler for hours.
 	select {
-	case s.ch <- Event{Kind: "growls", Data: data}:
+	case s.ch <- wire.Event{Kind: "growls", Data: data}:
 	case <-time.After(time.Second):
 	}
 }

@@ -40,7 +40,7 @@ func soloHub(t *testing.T, name string) (*httptest.Server, func()) {
 }
 
 // listenWith opens a stream with a header set, which `listen` cannot.
-func listenWith(t *testing.T, url, header, value string) (<-chan Event, func()) {
+func listenWith(t *testing.T, url, header, value string) (<-chan wire.Event, func()) {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set(header, value)
@@ -88,18 +88,18 @@ func askGo(t *testing.T, base string) <-chan map[string]any {
 
 type boardStream struct {
 	name string
-	open func(t *testing.T, base string) (<-chan Event, func())
+	open func(t *testing.T, base string) (<-chan wire.Event, func())
 }
 
-func byURL(path string) func(*testing.T, string) (<-chan Event, func()) {
-	return func(t *testing.T, base string) (<-chan Event, func()) { return listen(t, base+path) }
+func byURL(path string) func(*testing.T, string) (<-chan wire.Event, func()) {
+	return func(t *testing.T, base string) (<-chan wire.Event, func()) { return listen(t, base+path) }
 }
 
 // countsAndHears opens every stream, checks the gate counts each one, then
 // runs an ask and checks each one hears the countdown and the restart.
 func countsAndHears(t *testing.T, base string, streams []boardStream) {
 	t.Helper()
-	chans := make([]<-chan Event, len(streams))
+	chans := make([]<-chan wire.Event, len(streams))
 	for i, s := range streams {
 		ch, shut := s.open(t, base)
 		defer shut()
@@ -136,7 +136,7 @@ func TestTheGateCountsEveryStreamOnASingleRoomHub(t *testing.T) {
 		{"room path", byURL("/v1/events/room/solo")},
 		{"bare, only mode", byURL("/v1/events")},
 		{"room param", byURL("/v1/events?" + wire.RoomParam + "=solo")},
-		{"room header", func(t *testing.T, base string) (<-chan Event, func()) {
+		{"room header", func(t *testing.T, base string) (<-chan wire.Event, func()) {
 			return listenWith(t, base+"/v1/events", wire.RoomHeader, "solo")
 		}},
 	})
@@ -151,7 +151,7 @@ func TestTheGateCountsEveryStreamOnATwoRoomHub(t *testing.T) {
 		{"bare, merged", byURL("/v1/events")},
 		{"alpha path", byURL("/v1/events/room/alpha")},
 		{"beta param", byURL("/v1/events?" + wire.RoomParam + "=beta")},
-		{"beta header", func(t *testing.T, base string) (<-chan Event, func()) {
+		{"beta header", func(t *testing.T, base string) (<-chan wire.Event, func()) {
 			return listenWith(t, base+"/v1/events", wire.RoomHeader, "beta")
 		}},
 	})

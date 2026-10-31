@@ -13,6 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // RECORDING A TEST, AND TAKING A REVIEW (item lifecycle L4, docs/rnd/item-lifecycle-design.md sections 3 and 4). The change
@@ -204,7 +205,7 @@ func (p *Proxy) serveWorkRecord(w http.ResponseWriter, r *http.Request, st *hubs
 // serveWorkReview is `POST /_hub/work/<id>/review`: a review atrium took. The hub pins it to the branch tip it reads itself.
 func (p *Proxy) serveWorkReview(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string) {
 	switch {
-	case docsCrossOrigin.Check(r) != nil:
+	case wire.DocsCrossOrigin.Check(r) != nil:
 		crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 		return
 	case !edge.LocalOperator(r):

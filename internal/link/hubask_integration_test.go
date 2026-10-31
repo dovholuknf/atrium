@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // roomSession is a room's stdio control server, with its hub calls going over the room's real link, and a client on it.
@@ -25,7 +26,7 @@ func roomSession(t *testing.T, x *relayPair, r *Room, by, room string) *mcp.Clie
 		if err != nil {
 			return err
 		}
-		ans, err := r.Relay(ctx, RelayRequest{Op: RelayHub, From: by, Method: method, Path: path, Body: raw})
+		ans, err := r.Relay(ctx, wire.RelayRequest{Op: RelayHub, From: by, Method: method, Path: path, Body: raw})
 		if err != nil {
 			return err
 		}
@@ -125,7 +126,7 @@ func TestTheHubRelaysOnlyTheBacklogAndReportsEndpoints(t *testing.T) {
 		{"GET", "/v1/tasks"},
 		{"DELETE", "/_hub/backlog"},
 	} {
-		ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayHub, From: "sa1", Method: c.method, Path: c.path})
+		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayHub, From: "sa1", Method: c.method, Path: c.path})
 		if err != nil || ans.OK || ans.Code != http.StatusBadRequest {
 			t.Errorf("%s %s: %+v %v", c.method, c.path, ans, err)
 		}

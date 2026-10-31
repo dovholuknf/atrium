@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The context limit per harness, on the hub's side. See docs/runtime/context-cycle-design.md,
@@ -153,7 +154,7 @@ func (p *Proxy) postContextLimits(ctx context.Context, room, stored string) erro
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errStatus(res.StatusCode)
+		return wire.ErrStatus(res.StatusCode)
 	}
 	return nil
 }

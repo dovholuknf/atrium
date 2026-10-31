@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func TestProbePathsSaysOnUpDownAndNone(t *testing.T) {
@@ -197,9 +199,9 @@ func TestMutualIsReportedOnlyWhenTheRungSaysSo(t *testing.T) {
 
 func TestOnlyViaSkipsARoomWithAnotherPathUp(t *testing.T) {
 	h := NewHub(Timings{})
-	h.rooms[keyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
+	h.rooms[wire.KeyOf("m1mini")] = &attached{name: "m1mini", via: "ziti",
 		paths: []PathState{{Kind: "direct", State: PathDown}, {Kind: "ziti", State: PathOn}}}
-	h.rooms[keyOf("sg3")] = &attached{name: "sg3", via: "ziti",
+	h.rooms[wire.KeyOf("sg3")] = &attached{name: "sg3", via: "ziti",
 		paths: []PathState{{Kind: "direct", State: PathUp}, {Kind: "ziti", State: PathOn}}}
 	got := h.OnlyVia("ziti")
 	if len(got) != 1 || got[0] != "m1mini" {

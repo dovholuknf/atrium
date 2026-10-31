@@ -237,7 +237,7 @@ func (p *Proxy) serveChangeRequests(w http.ResponseWriter, r *http.Request, sub 
 	write := r.Method != http.MethodGet && r.Method != http.MethodHead
 	// THE CROSS-ORIGIN CHECK COMES FIRST, as the documents routes do it: a page on another origin cannot write here.
 	if write {
-		if err := docsCrossOrigin.Check(r); err != nil {
+		if err := wire.DocsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write change requests here")
 			return
 		}
@@ -591,7 +591,7 @@ type crEvent struct {
 func (p *Proxy) crAnnounce(c hubstore.ChangeRequest, by crActor, created bool) {
 	if data, err := json.Marshal(crEvent{ID: c.ID, State: c.State, Repo: c.Repo, Title: c.Title, Source: c.Source,
 		Target: c.Target, Owner: c.Owner}); err == nil {
-		p.feeds.broadcast(Event{Kind: "change-request", Data: data})
+		p.feeds.broadcast(wire.Event{Kind: "change-request", Data: data})
 	}
 	toMain := c.Target.Branch == "main"
 	if g := p.growler(); g != nil {

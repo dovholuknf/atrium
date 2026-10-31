@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type backlogRig struct {
@@ -30,7 +31,7 @@ func newBacklogRig(t *testing.T) *backlogRig {
 	t.Cleanup(func() { st.Close() })
 	t.Cleanup(func() { p.WaitWork(10 * time.Second) })
 	p.SetBacklog(st)
-	x := &backlogRig{p: p, feed: &sub{ch: make(chan Event, 16)}}
+	x := &backlogRig{p: p, feed: &sub{ch: make(chan wire.Event, 16)}}
 	p.feeds.mu.Lock()
 	p.feeds.subs[x.feed] = struct{}{}
 	p.feeds.mu.Unlock()

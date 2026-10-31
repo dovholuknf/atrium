@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardcolors"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // remembering is an Inventory holding cards for rooms that are not here.
@@ -35,7 +36,7 @@ func (r *remembering) MarkRoom(string, bool) error { return nil }
 // an error, and a known one leaves the list.
 func (r *remembering) ForgetRoom(name string) error {
 	for i, k := range r.rooms {
-		if equalFold(k.Name, name) {
+		if wire.EqualFold(k.Name, name) {
 			r.rooms = append(r.rooms[:i:i], r.rooms[i+1:]...)
 			r.forgot = append(r.forgot, name)
 			return nil
@@ -399,7 +400,7 @@ func TestForgettingAStaleRoomCullsItAndRefusesAnAttachedOne(t *testing.T) {
 		t.Fatalf("the store was not told to forget athens: %+v", stock.forgot)
 	}
 	for _, k := range stock.rooms {
-		if equalFold(k.Name, "athens") {
+		if wire.EqualFold(k.Name, "athens") {
 			t.Fatal("athens is still in the known set after being forgotten")
 		}
 	}
@@ -420,7 +421,7 @@ func TestForgettingAStaleRoomCullsItAndRefusesAnAttachedOne(t *testing.T) {
 		t.Fatalf("the refusal does not say to detach first: %s", body)
 	}
 	for _, n := range stock.forgot {
-		if equalFold(n, "testroom") {
+		if wire.EqualFold(n, "testroom") {
 			t.Fatal("an attached room was forgotten in the store, which the endpoint must refuse")
 		}
 	}
