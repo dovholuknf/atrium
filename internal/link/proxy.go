@@ -25,6 +25,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/webasset"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/deploy"
 	"github.com/dovholuknf/atrium/internal/link/docs"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
@@ -163,9 +164,9 @@ type Proxy struct {
 	taskMu sync.Mutex
 	// merges is the merge queue's runner. See merge.go.
 	merges mergeQueue
-	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
-	// /_hub/deploy-ready 404. See deployready.go.
-	ready *deployReadyState
+	// deploySvc is the deploy readiness, queue and owner. See deploy_forward.go.
+	deploySvc  *deploy.Service
+	deployOnce sync.Once
 	// docsSvc is the hub.s documents and file drop. See docs_forward.go.
 	docsSvc  *docs.Service
 	docsOnce sync.Once
@@ -1771,7 +1772,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	case "deploy-queue":
 		p.hubRoutes().DeployQueue(w, r)
 	case "new-contexts":
-		p.serveNewContexts(w, r)
+		p.deployService().ServeNewContexts(w, r)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":
 		p.hubRoutes().Deps(w, r, sub)
 	case "presence":

@@ -1,4 +1,4 @@
-package link
+package deploy
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,7 +64,7 @@ type deployRequests struct {
 	HoldID  string      `json:"hold_id,omitempty"`
 }
 
-type deployInput struct {
+type DeployInput struct {
 	Action     string   `json:"action" jsonschema:"request, start, wait, cancel or status"`
 	Room       string   `json:"room,omitempty" jsonschema:"the room to deploy. default: your own"`
 	Why        string   `json:"why,omitempty" jsonschema:"request: what the deploy is for. cancel: why it is called off"`
@@ -72,7 +73,7 @@ type deployInput struct {
 	MaxSeconds int      `json:"max_seconds,omitempty" jsonschema:"wait: how long to wait for the room to go quiet, at most 600"`
 }
 
-type deployOutput struct {
+type DeployOutput struct {
 	Room    string          `json:"room"`
 	State   string          `json:"state"`
 	Owner   string          `json:"owner,omitempty"`
@@ -113,12 +114,23 @@ const deployToolDesc = "Ask for a room deploy, or, as the deploy owner, run one 
 	"`cancel` lifts the hold with no restart and wakes them the same way.\n\n" +
 	"`status` (anyone): the waiting requests, the hold, and who is busy."
 
-func (c *controlMCP) registerDeploy(s *mcp.Server, class ctl.Class) {
-	addTool(s, class, &mcp.Tool{Name: "atrium_deploy", Description: deployToolDesc},
-		audited(c, "ctl-deploy", describeDeploy, c.deployHandler))
+// MCP is the deploy tool. The Caller is the hub's control server.
+type MCP struct {
+	ctl.Caller
+	// Settings is the hub's settings, where requests and the owner are kept. Nil on a hub with no store.
+	Settings func() Settings
+	// Mu serialises a room's requests. It is the control server's, so every MCP made from it shares one.
+	Mu *sync.Mutex
+	// Say sends a message to a card as the caller.
+	Say func(ctx context.Context, req *mcp.CallToolRequest, to, text string) error
 }
 
-func describeDeploy(req *mcp.CallToolRequest, in deployInput, out deployOutput) (string, string, bool) {
+func (c *MCP) RegisterDeploy(s *mcp.Server, class ctl.Class) {
+	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_deploy", Description: deployToolDesc},
+		ctl.Audited(c, "ctl-deploy", DescribeDeploy, c.DeployHandler))
+}
+
+func DescribeDeploy(req *mcp.CallToolRequest, in DeployInput, out DeployOutput) (string, string, bool) {
 	if in.Action == "status" || in.Action == "wait" {
 		return "", "", false
 	}
@@ -129,18 +141,18 @@ func describeDeploy(req *mcp.CallToolRequest, in deployInput, out deployOutput) 
 	return room, "deploy " + in.Action, true
 }
 
-func (c *controlMCP) deployHandler(ctx context.Context, req *mcp.CallToolRequest, in deployInput) (
-	*mcp.CallToolResult, deployOutput, error) {
+func (c *MCP) DeployHandler(ctx context.Context, req *mcp.CallToolRequest, in DeployInput) (
+	*mcp.CallToolResult, DeployOutput, error) {
 
 	room := strings.TrimSpace(in.Room)
 	if room == "" {
 		room = ctl.RoomOf(req)
 	}
-	out := deployOutput{Room: room, Owner: c.deployOwner()}
+	out := DeployOutput{Room: room, Owner: c.deployOwner()}
 	if room == "" {
 		return nil, out, errors.New("no room named, and this session has none. pass room")
 	}
-	if c.settings == nil {
+	if c.Settings == nil {
 		return nil, out, errors.New("this hub keeps no settings, so it cannot hold a deploy request")
 	}
 	switch strings.TrimSpace(in.Action) {
@@ -158,11 +170,11 @@ func (c *controlMCP) deployHandler(ctx context.Context, req *mcp.CallToolRequest
 	return nil, out, errors.New(`action is request, start, wait, cancel or status`)
 }
 
-func (c *controlMCP) deployOwner() string {
-	if c.settings == nil {
+func (c *MCP) deployOwner() string {
+	if c.Settings == nil {
 		return ""
 	}
-	st := c.settings()
+	st := c.Settings()
 	if st == nil {
 		return ""
 	}
@@ -173,10 +185,10 @@ func (c *controlMCP) deployOwner() string {
 // loadRequests reads a room's record, and settles a running deploy whose hold
 // has ended: the hold is the room's, and a room without one is a deploy that is
 // over whichever way it went.
-func (c *controlMCP) loadRequests(ctx context.Context, room string) (deployRequests, roomHoldView, error) {
+func (c *MCP) loadRequests(ctx context.Context, room string) (deployRequests, roomHoldView, error) {
 	var rec deployRequests
 	var view roomHoldView
-	st := c.settings()
+	st := c.Settings()
 	if st == nil {
 		return rec, view, errors.New("this hub keeps no settings")
 	}
@@ -200,16 +212,16 @@ func (c *controlMCP) loadRequests(ctx context.Context, room string) (deployReque
 	return rec, view, nil
 }
 
-func (c *controlMCP) saveRequests(room string, rec deployRequests) error {
+func (c *MCP) saveRequests(room string, rec deployRequests) error {
 	raw, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	return c.settings().SetHubSetting(deployRequestKey(room), string(raw))
+	return c.Settings().SetHubSetting(deployRequestKey(room), string(raw))
 }
 
-func (c *controlMCP) deployRequest(ctx context.Context, req *mcp.CallToolRequest, in deployInput, out deployOutput) (
-	*mcp.CallToolResult, deployOutput, error) {
+func (c *MCP) deployRequest(ctx context.Context, req *mcp.CallToolRequest, in DeployInput, out DeployOutput) (
+	*mcp.CallToolResult, DeployOutput, error) {
 
 	if out.Owner == "" {
 		return nil, out, &ctl.RefusedError{Msg: "no deploy owner is set: ask the human"}
@@ -218,17 +230,17 @@ func (c *controlMCP) deployRequest(ctx context.Context, req *mcp.CallToolRequest
 	if why == "" {
 		return nil, out, errors.New("say what the deploy is for")
 	}
-	c.deployMu.Lock()
+	c.Mu.Lock()
 	rec, view, err := c.loadRequests(ctx, out.Room)
 	if err != nil {
-		c.deployMu.Unlock()
+		c.Mu.Unlock()
 		return nil, out, err
 	}
 	first := len(rec.Pending) == 0
 	rec.Pending = append(rec.Pending, deployAsk{By: orUnnamed(ctl.AgentOf(req)), Why: why,
 		SHA: strings.TrimSpace(in.SHA), At: time.Now().UTC().Format(time.RFC3339)})
 	err = c.saveRequests(out.Room, rec)
-	c.deployMu.Unlock()
+	c.Mu.Unlock()
 	if err != nil {
 		return nil, out, err
 	}
@@ -253,14 +265,14 @@ func (c *controlMCP) deployRequest(ctx context.Context, req *mcp.CallToolRequest
 
 // tellOwner is the one say to the owner, on the existing say path. Best effort:
 // a request is recorded whether or not the owner could be told.
-func (c *controlMCP) tellOwner(ctx context.Context, req *mcp.CallToolRequest, owner, text string) {
-	if _, _, err := c.sayHandler(ctx, req, sayInput{To: owner, Text: text}); err != nil && c.audit != nil {
-		c.audit(ctl.RoomOf(req), "ctl-deploy", "could not tell the deploy owner "+owner+": "+auditOutcome(err))
+func (c *MCP) tellOwner(ctx context.Context, req *mcp.CallToolRequest, owner, text string) {
+	if err := c.Say(ctx, req, owner, text); err != nil {
+		c.Audit(ctl.RoomOf(req), "ctl-deploy", "could not tell the deploy owner "+owner+": "+ctl.AuditOutcome(err))
 	}
 }
 
 // isOwner reports whether the caller is the deploy owner.
-func (c *controlMCP) isOwner(ctx context.Context, req *mcp.CallToolRequest, owner string) bool {
+func (c *MCP) isOwner(ctx context.Context, req *mcp.CallToolRequest, owner string) bool {
 	me := ctl.AgentOf(req)
 	if me == "" || owner == "" {
 		return false
@@ -283,14 +295,14 @@ func (c *controlMCP) isOwner(ctx context.Context, req *mcp.CallToolRequest, owne
 	return err == nil && got == want
 }
 
-func (c *controlMCP) deployStart(ctx context.Context, req *mcp.CallToolRequest, in deployInput, out deployOutput) (
-	*mcp.CallToolResult, deployOutput, error) {
+func (c *MCP) deployStart(ctx context.Context, req *mcp.CallToolRequest, in DeployInput, out DeployOutput) (
+	*mcp.CallToolResult, DeployOutput, error) {
 
 	if !c.isOwner(ctx, req, out.Owner) {
 		return nil, out, &ctl.RefusedError{Msg: "only the deploy owner (" + orUnnamed(out.Owner) + ") starts a deploy"}
 	}
-	c.deployMu.Lock()
-	defer c.deployMu.Unlock()
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
 	rec, _, err := c.loadRequests(ctx, out.Room)
 	if err != nil {
 		return nil, out, err
@@ -325,8 +337,8 @@ func (c *controlMCP) deployStart(ctx context.Context, req *mcp.CallToolRequest, 
 	return nil, out, nil
 }
 
-func (c *controlMCP) deployWait(ctx context.Context, req *mcp.CallToolRequest, in deployInput, out deployOutput) (
-	*mcp.CallToolResult, deployOutput, error) {
+func (c *MCP) deployWait(ctx context.Context, req *mcp.CallToolRequest, in DeployInput, out DeployOutput) (
+	*mcp.CallToolResult, DeployOutput, error) {
 
 	if !c.isOwner(ctx, req, out.Owner) {
 		return nil, out, &ctl.RefusedError{Msg: "only the deploy owner waits on a deploy"}
@@ -363,14 +375,14 @@ func (c *controlMCP) deployWait(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 }
 
-func (c *controlMCP) deployCancel(ctx context.Context, req *mcp.CallToolRequest, in deployInput, out deployOutput) (
-	*mcp.CallToolResult, deployOutput, error) {
+func (c *MCP) deployCancel(ctx context.Context, req *mcp.CallToolRequest, in DeployInput, out DeployOutput) (
+	*mcp.CallToolResult, DeployOutput, error) {
 
 	if !c.isOwner(ctx, req, out.Owner) {
 		return nil, out, &ctl.RefusedError{Msg: "only the deploy owner calls a deploy off"}
 	}
-	c.deployMu.Lock()
-	defer c.deployMu.Unlock()
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
 	// Read before the lift, which would otherwise settle the running deploy as over.
 	rec, _, err := c.loadRequests(ctx, out.Room)
 	if err != nil {
@@ -393,13 +405,13 @@ func (c *controlMCP) deployCancel(ctx context.Context, req *mcp.CallToolRequest,
 	return nil, out, nil
 }
 
-func (c *controlMCP) deployStatus(ctx context.Context, out deployOutput) (*mcp.CallToolResult, deployOutput, error) {
-	c.deployMu.Lock()
+func (c *MCP) deployStatus(ctx context.Context, out DeployOutput) (*mcp.CallToolResult, DeployOutput, error) {
+	c.Mu.Lock()
 	rec, view, err := c.loadRequests(ctx, out.Room)
 	if err == nil {
 		err = c.saveRequests(out.Room, rec)
 	}
-	c.deployMu.Unlock()
+	c.Mu.Unlock()
 	if err != nil {
 		return nil, out, err
 	}
@@ -415,17 +427,15 @@ func (c *controlMCP) deployStatus(ctx context.Context, out deployOutput) (*mcp.C
 	return nil, out, nil
 }
 
-// serveDeployOwner answers GET and PUT /_hub/deploy-owner, `{"owner": "merge"}`.
+// ServeDeployOwner answers GET and PUT /_hub/deploy-owner, `{"owner": "merge"}`.
 // Set from the hub's machine only, like the launch caps: who may take a room down
 // is not something a board reached over an overlay decides. Empty clears it.
-func (p *Proxy) serveDeployOwner(w http.ResponseWriter, r *http.Request) {
+func (p *Service) ServeDeployOwner(w http.ResponseWriter, r *http.Request) {
 	fail := func(code int, msg string) {
 		w.WriteHeader(code)
 		fmt.Fprintf(w, `{"error":%q}`, msg)
 	}
-	p.mu.Lock()
-	st := p.capStore
-	p.mu.Unlock()
+	st := p.Settings()
 	if st == nil {
 		http.NotFound(w, r)
 		return
