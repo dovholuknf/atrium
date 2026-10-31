@@ -175,4 +175,5 @@ type Caller interface {
 	DeliverAs(ctx context.Context, room, to, fromWire, text, when, kind string, wake, force bool) wire.RelayAnswer
 	LaunchOnRoom(ctx context.Context, in LaunchInput, harness, room, callerRoom,
 		spawnedBy, spawnedByID, spawnedByDir string) (LaunchOutput, error)
+	Audit(room, kind, detail string)
 }
