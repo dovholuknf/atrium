@@ -12,8 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -108,27 +110,27 @@ type roomconfService = roomconf.Service
 // hublinkService names the embedded hub link, which would otherwise clash with publish.Service.
 type hublinkService = hublink.Service
 
+// homeService names the embedded card homes, which would otherwise clash with publish.Service.
+type homeService = home.Service
+
 // Daemon owns the store and both listeners.
 type Daemon struct {
 	// Service is the published board. See overlay_service.go.
 	*publish.Service
 	// roomconfService is the room's own configuration. See roomconf/roomconf_service.go.
 	*roomconfService
-	// hublinkSvc is the link to the hub and the other rooms. See hublink_service.go.
+	// hublinkService is the link to the hub and the other rooms. See hublink/hublink_service.go.
 	*hublinkService
+	// homeService is the card homes, the hub remote and the hub forge. See home/home_service.go.
+	*homeService
 	// Publish sends one card to the board. See publishCard.
 	Publish func(id string)
-	// homeSize is the size walk over the card homes. See homesize.go.
-	homeSize homeSizer
 	// hk is this daemon's own seams, delays and limits. A test changes its daemon's copy. See hooks.go.
 	hk hooks
 	// replies is the transcript read cache every reader of a last reply shares. See keepalive.go.
 	replies lastReplies
 	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
 	wakeLaunch func(shared.LaunchRequest) (*store.Task, error)
-	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
-	forgeMu   sync.Mutex
-	forgeOpen map[string]ForgeAlert
 	// acProbe knows which runners take --autocompact. See autocompact.go.
 	acProbe *autocompactProbe
 	// windingDown is set when shutdown begins. A session ending after it is the
@@ -327,11 +329,6 @@ type Daemon struct {
 	// worktreegone.go.
 	gone goneWatch
 
-	// hubGit is the room's stable hub remote. See hubremote.go.
-	hubGit hubGit
-	// hubForge is the hub's forge, for a room with a hub. See hubforge.go.
-	hubForge hubForge
-
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -418,8 +415,8 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
 		}
 	}
-	d.hubGit.cards = &gitsync.CardTokens{Live: d.cardLive}
-	d.restoreHubGit()
+	d.HubGit.Cards = &gitsync.CardTokens{Live: d.CardLive}
+	d.RestoreHubGit()
 	d.pending = newPendingInjector(d)
 	d.wake = newWakes()
 	d.holds = newHoldState()
@@ -477,14 +474,14 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.PRForge = d.prr.ForgeFor
 	d.ap.HubSource = func(ctx context.Context, name string) (string, func(), error) {
 		if d.HubForge() == nil {
-			return "", nil, errNoHub
+			return "", nil, home.ErrNoHub
 		}
-		return d.hubSource(ctx, name)
+		return d.HubSource(ctx, name)
 	}
 	d.ap.ForgeFailed, d.ap.ForgeWorked = d.ForgeAccessFrom, d.ForgeWorked
-	d.ap.SCMClone = d.prWorktreeClone
-	d.ap.SCMHas = d.prWorktreeHas
-	d.ap.CloneFromHub = d.cloneFromHub
+	d.ap.SCMClone = d.PrWorktreeClone
+	d.ap.SCMHas = d.PrWorktreeHas
+	d.ap.CloneFromHub = d.CloneFromHub
 	d.ap.ScopeHub = d.scopeHubRemote
 	d.ap.Stash = d.StashTo
 	d.ap.HubDelete = d.HubDeleteBranch
@@ -516,10 +513,10 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.RoomLaunch = d.HandleRoomLaunch
 	d.ap.Report = d.handleReport
 	d.ap.Stamp = d.handleStamp
-	d.ap.GitClone = d.handleGitClone
+	d.ap.GitClone = d.HandleGitClone
 	d.ap.HubRemote = d.HubRemoteBase
-	d.ap.HubGitURL = d.handleHubGitURL
-	d.ap.HubCI = pulls.HubCI(d.HubForge, errNoHub)
+	d.ap.HubGitURL = d.HandleHubGitURL
+	d.ap.HubCI = pulls.HubCI(d.HubForge, home.ErrNoHub)
 	d.ap.HubAsk = d.HandleHubAsk
 	d.ap.HubCall = d.HubCallFrom
 	d.ap.ItemAct = d.handleItemAct
@@ -1193,7 +1190,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/hooks-changed", d.HandleHooksChanged)
 	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
 	// the token opens this route and no other. See hubremote.go.
-	agentMux.Handle(gitsync.HubRemotePrefix, d.hubRemote())
+	agentMux.Handle(gitsync.HubRemotePrefix, d.HubRemote())
 
 	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
 	// rebind a name onto it, or open a terminal. See internal/edge.
@@ -1208,7 +1205,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent listener: %w", err)
 	}
-	d.setAgentAddr(agentLn.Addr())
+	d.SetAgentAddr(agentLn.Addr())
 	// NO BOARD OF ITS OWN, when asked for with `-`.
 	//
 	// A room attached to a hub is reached through that hub, and its loopback
@@ -1280,7 +1277,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
 	d.startRoomStats(ctx)
-	go d.sizeLoop(ctx)
+	go d.SizeLoop(ctx)
 	go d.cardMemLoop(ctx)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
@@ -1674,6 +1671,31 @@ func (d *Daemon) initServices() {
 			WrapAck:  func(id string) bool { return d.wrap.ack(id) },
 			CycleBy:  cycleBy,
 			Publish:  func(id string) { d.Publish(id) },
+		},
+	})
+	d.homeService = home.New(home.Config{
+		St: d.st, Ap: d.ap,
+		Calls: home.Calls{
+			Publish:        func(id string) { d.Publish(id) },
+			OptAgentAddr:   func() string { return d.opts.AgentAddr },
+			Room:           func() string { return d.opts.Room },
+			HasSession:     func(id string) bool { return d.sup != nil && d.sup.Get(id) != nil },
+			NotifyLauncher: func(w *store.Task, source, key, body string) bool { return d.notifyLauncher(w, source, key, body) },
+			WaitRunnerGone: func(id string, within time.Duration) bool { return d.waitRunnerGone(id, within) },
+			CloseShell:     func(id string) { d.CloseShell(id) },
+			LeaveForCull:   func(t *store.Task, res *CullResult) error { return d.leaveForCull(t, res) },
+			Culled:         func(t *store.Task, res *CullResult) *CullResult { return d.culled(t, res) },
+			EndThrowaway:   func(id string) { d.endThrowaway(id) },
+			VisibleLauncher: func(ctx context.Context, w *store.Task, byID, byName, byDir, dir string) *store.Task {
+				return d.visibleLauncher(ctx, w, byID, byName, byDir, dir)
+			},
+			LandedInto:      func(dir, branch, into string) (bool, error) { return landedInto(dir, branch, into) },
+			RecordHubBranch: func(card, branch, hubRepo string) { d.recordHubBranch(card, branch, hubRepo) },
+			PreflightLook:   func(cmd string) (string, error) { return d.hk.preflightLook(cmd) },
+			PreflightRun: func(ctx context.Context, exe string, args []string, out io.Writer) error {
+				return d.hk.preflightRun(ctx, exe, args, out)
+			},
+			PreflightEachFor: func() time.Duration { return d.hk.preflightEachFor },
 		},
 	})
 }

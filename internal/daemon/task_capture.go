@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io/fs"
 	"log"
@@ -250,9 +251,9 @@ func resolveTaskOutputs(folder string, outputs []string) (files []capFile, missi
 }
 
 func (d *Daemon) reapTaskFolder(row store.CardHome) {
-	path, err := d.homeGuard(row)
+	path, err := d.HomeGuard(row)
 	if err == nil {
-		err = removeTree(path)
+		err = home.RemoveTree(path)
 	}
 	if err != nil {
 		_ = d.st.CardHomeSet(row.Path, store.CardHomeKept, "captured, and the folder could not be removed: "+err.Error(), "")
@@ -263,7 +264,7 @@ func (d *Daemon) reapTaskFolder(row store.CardHome) {
 	older, _ := d.st.CardHomesOf(row.BacklogID, row.TaskID)
 	for _, o := range older {
 		if o.Attempt < row.Attempt && o.State == store.CardHomeKept {
-			if p, err := d.homeGuard(o); err == nil && removeTree(p) == nil {
+			if p, err := d.HomeGuard(o); err == nil && home.RemoveTree(p) == nil {
 				_ = d.st.CardHomeSet(o.Path, store.CardHomeRemoved, "a later attempt took its place", "")
 			}
 		}

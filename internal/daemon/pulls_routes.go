@@ -31,7 +31,7 @@ func (d *Daemon) prConfig() pulls.Config {
 		ChildEnv: childEnvFrom,
 		Cost:     prCost,
 		OnAccess: d.ForgeAccessFrom, OnWorked: d.ForgeWorked,
-		Hub: d.HubForge, HubSource: d.hubSource,
+		Hub: d.HubForge, HubSource: d.HubSource,
 	}
 }
 

@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"net/http/cgi"
 	"net/http/httptest"
 	"os"
@@ -99,23 +100,23 @@ func TestGitPushReachesThisRoomsForwarderWhenTheHubRemoteIsAnotherRoomsAndTheLau
 	srv := httptest.NewServer(&cgi.Handler{Path: backend, Root: "/git/", Env: []string{
 		"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1", "GIT_HTTP_RECEIVE_PACK=true"}})
 	defer srv.Close()
-	d.setAgentAddr(srv.Listener.Addr())
+	d.SetAgentAddr(srv.Listener.Addr())
 	visGit(t, launcher.Worktree, "remote", "add", "origin", "https://github.com/o/r.git")
 	const other = "http://127.0.0.1:8888/git/hub/github/o/r.git"
 	visGit(t, launcher.Worktree, "remote", "add", "hub", other)
 	if err := d.st.SetSetting(store.SettingGitPush, "hub"); err != nil {
 		t.Fatal(err)
 	}
-	tok, err := d.hubGit.cards.Mint(worker.ID)
+	tok, err := d.HubGit.Cards.Mint(worker.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.hubGit.mu.Lock()
-	if d.hubGit.issued == nil {
-		d.hubGit.issued = map[string]issuedToken{}
+	d.HubGit.Mu.Lock()
+	if d.HubGit.Issued == nil {
+		d.HubGit.Issued = map[string]home.IssuedToken{}
 	}
-	d.hubGit.issued[worker.ID] = issuedToken{tok: tok}
-	d.hubGit.mu.Unlock()
+	d.HubGit.Issued[worker.ID] = home.IssuedToken{Tok: tok}
+	d.HubGit.Mu.Unlock()
 	if err := d.st.SetStatus(worker.ID, store.StatusRunning); err != nil {
 		t.Fatal(err)
 	}

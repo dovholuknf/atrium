@@ -116,7 +116,7 @@ var table = []row{
 		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
-	{3, "internal/daemon/shared", []string{"internal/store"}},
+	{3, "internal/daemon/shared", []string{"internal/base/nowindow", "internal/store"}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
 	{5, "internal/daemon/pulls", []string{
 		"internal/api", "internal/base/forge", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
@@ -132,10 +132,13 @@ var table = []row{
 	{5, "internal/daemon/hublink", []string{
 		"internal/base/address", "internal/daemon/publish", "internal/daemon/shared", "internal/roomstats", "internal/small", "internal/store",
 	}},
+	{5, "internal/daemon/home", []string{
+		"internal/api", "internal/base/cardroot", "internal/base/forge", "internal/base/safepath", "internal/daemon/shared", "internal/gitsync", "internal/roomstats", "internal/small", "internal/store", "internal/wtfree",
+	}},
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
-		"internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
+		"internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
 		"internal/daemon/roomconf", "internal/daemon/screen", "internal/daemon/shared", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",

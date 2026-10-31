@@ -157,15 +157,6 @@ func describeActivity(a *Activity) string {
 	return out
 }
 
-// plural writes a count with its noun, which is one `if` nobody should write
-// twice.
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return itoa(n) + " " + noun + "s"
-}
-
 // shortDuration writes an age the way a person says it: `40s`, `12m`, `3h`.
 //
 // Never more than two units and never fractional. This is read at a glance in

@@ -131,7 +131,7 @@ func (d *Daemon) taskFolder(spec *taskSpec) (string, error) {
 			}
 		}
 	}
-	root, err := d.cardRoot()
+	root, err := d.CardRoot()
 	if err != nil {
 		return "", err
 	}

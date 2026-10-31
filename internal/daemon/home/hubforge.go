@@ -1,4 +1,4 @@
-package daemon
+package home
 
 import (
 	"context"
@@ -17,38 +17,38 @@ import (
 // fails with the sentence the link gives and never falls back to a forge of its own: that would break the rule. A
 // room with no link is its own hub and keeps the local forge.
 
-type hubForge struct {
-	mu     sync.Mutex
-	remote *forge.Remote
+type HubForge struct {
+	Mu     sync.Mutex
+	Remote *forge.Remote
 }
 
 // SetHubForge gives the room the hub's forge. Called once the link is built, as SetHubGit is. Nil is a room with no hub.
-func (d *Daemon) SetHubForge(r *forge.Remote) {
-	d.hubForge.mu.Lock()
-	d.hubForge.remote = r
-	d.hubForge.mu.Unlock()
+func (d *Service) SetHubForge(r *forge.Remote) {
+	d.ForgeState.Mu.Lock()
+	d.ForgeState.Remote = r
+	d.ForgeState.Mu.Unlock()
 }
 
 // HubForge is the hub's forge, or nil for a room with no hub.
-func (d *Daemon) HubForge() *forge.Remote {
-	d.hubForge.mu.Lock()
-	defer d.hubForge.mu.Unlock()
-	return d.hubForge.remote
+func (d *Service) HubForge() *forge.Remote {
+	d.ForgeState.Mu.Lock()
+	defer d.ForgeState.Mu.Unlock()
+	return d.ForgeState.Remote
 }
 
-func (d *Daemon) hubTransport() (http.RoundTripper, error) {
-	d.hubGit.mu.Lock()
-	t := d.hubGit.transport
-	d.hubGit.mu.Unlock()
+func (d *Service) HubTransport() (http.RoundTripper, error) {
+	d.HubGit.Mu.Lock()
+	t := d.HubGit.Transport
+	d.HubGit.Mu.Unlock()
 	if t == nil {
-		return nil, errNoHub
+		return nil, ErrNoHub
 	}
 	return t()
 }
 
 // hubSource is a loopback to one repository of the hub's store, for a git fetch the room makes of what the hub holds.
-func (d *Daemon) hubSource(ctx context.Context, name string) (string, func(), error) {
-	rt, err := d.hubTransport()
+func (d *Service) HubSource(ctx context.Context, name string) (string, func(), error) {
+	rt, err := d.HubTransport()
 	if err != nil {
 		return "", nil, err
 	}
@@ -57,10 +57,10 @@ func (d *Daemon) hubSource(ctx context.Context, name string) (string, func(), er
 
 // hubClone is where a room with a hub clones a repository from: the hub holds it first, cloning it from the forge
 // when it does not, and the room reads the hub's copy.
-func (d *Daemon) hubClone(ctx context.Context, r gitsync.Ref) (string, func(), error) {
+func (d *Service) HubClone(ctx context.Context, r gitsync.Ref) (string, func(), error) {
 	hf := d.HubForge()
 	if hf == nil {
-		return "", nil, errNoHub
+		return "", nil, ErrNoHub
 	}
 	host := r.Host
 	if host == gitsync.DefaultHost {
@@ -70,5 +70,5 @@ func (d *Daemon) hubClone(ctx context.Context, r gitsync.Ref) (string, func(), e
 	if err != nil {
 		return "", nil, err
 	}
-	return d.hubSource(ctx, name)
+	return d.HubSource(ctx, name)
 }

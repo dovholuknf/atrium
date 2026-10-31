@@ -1,4 +1,4 @@
-package daemon
+package home
 
 import (
 	"context"
@@ -30,51 +30,51 @@ import (
 const OutsideCodeTag = "atrium:outside-code"
 
 // hubGit is the daemon's state for the hub remote.
-type hubGit struct {
+type HubGit struct {
 	// cards is the token table. TWO THINGS ARE REPLACED BY THE SECURITY DESIGN'S 2c: this and nothing else. See
 	// gitsync.CardAuth.
-	cards gitsync.CardAuth
+	Cards gitsync.CardAuth
 
-	mu sync.Mutex
+	Mu sync.Mutex
 	// issued is the token each card was launched with, IN THE CLEAR, so the room can push for a card that asked it to
 	// (atrium_git_push) with the same token. This is the one place the room holds a usable token: the forwarder's
 	// table (gitsync.CardTokens) keeps only a hash. Memory only, and dropped with the card.
-	issued    map[string]issuedToken
-	transport func() (http.RoundTripper, error)
+	Issued    map[string]IssuedToken
+	Transport func() (http.RoundTripper, error)
 	// agent is `127.0.0.1:<port>` of the agent listener, set when it is bound.
-	agent string
+	Agent string
 	// stashing holds the cards a close is pushing a stash for, which may push though their session ended. See
 	// closestash.go.
-	stashing sync.Map
+	Stashing sync.Map
 }
 
 // issuedToken is a card's token and when it was minted. A runner's exit revokes only a token minted no later than the
 // runner started, so a resume's new token is not taken away by the old run's late exit.
-type issuedToken struct {
-	tok string
-	at  time.Time
+type IssuedToken struct {
+	Tok string
+	At  time.Time
 }
 
 // SetHubGit gives the forwarder its way to the hub: the room's git transport, or an error saying why there is none
 // right now. Called once the link is built, as SetRelay is.
-func (d *Daemon) SetHubGit(transport func() (http.RoundTripper, error)) {
-	d.hubGit.mu.Lock()
-	d.hubGit.transport = transport
-	d.hubGit.mu.Unlock()
+func (d *Service) SetHubGit(transport func() (http.RoundTripper, error)) {
+	d.HubGit.Mu.Lock()
+	d.HubGit.Transport = transport
+	d.HubGit.Mu.Unlock()
 }
 
 // hubRemote is the handler mounted on the agent listener at gitsync.HubRemotePrefix.
-func (d *Daemon) hubRemote() http.Handler {
+func (d *Service) HubRemote() http.Handler {
 	return &gitsync.HubForwarder{
-		Auth: d.hubGit.cards,
-		Push: d.st.GitPush,
-		Kin:  d.pushKin,
+		Auth: d.HubGit.Cards,
+		Push: d.St.GitPush,
+		Kin:  d.PushKin,
 		Transport: func() (http.RoundTripper, error) {
-			d.hubGit.mu.Lock()
-			t := d.hubGit.transport
-			d.hubGit.mu.Unlock()
+			d.HubGit.Mu.Lock()
+			t := d.HubGit.Transport
+			d.HubGit.Mu.Unlock()
 			if t == nil {
-				return nil, errNoHub
+				return nil, ErrNoHub
 			}
 			return t()
 		},
@@ -84,13 +84,13 @@ func (d *Daemon) hubRemote() http.Handler {
 // pushKin is the branch a card was launched on and who handed it over: its launcher, then each earlier card the
 // launcher launched on that branch, newest first, at most gitsync.MaxChain in all. "" when the card was not launched on
 // a branch or has no launcher, so a lookup that fails sends nothing and the hub's own rule stands.
-func (d *Daemon) pushKin(card string) (string, []string) {
-	t, err := d.st.Get(card)
+func (d *Service) PushKin(card string) (string, []string) {
+	t, err := d.St.Get(card)
 	if err != nil || t.LaunchBranch == "" || t.SpawnedByID == "" {
 		return "", nil
 	}
 	kin := []string{t.SpawnedByID}
-	ids, err := d.st.WorkerIDs(t.SpawnedByID)
+	ids, err := d.St.WorkerIDs(t.SpawnedByID)
 	if err != nil {
 		return t.LaunchBranch, kin
 	}
@@ -99,7 +99,7 @@ func (d *Daemon) pushKin(card string) (string, []string) {
 		if id == card {
 			continue
 		}
-		if o, err := d.st.Get(id); err == nil && o.LaunchBranch == t.LaunchBranch && o.CreatedAt.Before(t.CreatedAt) {
+		if o, err := d.St.Get(id); err == nil && o.LaunchBranch == t.LaunchBranch && o.CreatedAt.Before(t.CreatedAt) {
 			earlier = append(earlier, o)
 		}
 	}
@@ -113,23 +113,23 @@ func (d *Daemon) pushKin(card string) (string, []string) {
 	return t.LaunchBranch, kin
 }
 
-type hubErr string
+type HubErr string
 
-func (e hubErr) Error() string { return string(e) }
+func (e HubErr) Error() string { return string(e) }
 
-const errNoHub = hubErr("this room is not attached to a hub")
+const ErrNoHub = HubErr("this room is not attached to a hub")
 
 // cardLive says whether a card may still use its git token: it exists and has not ended. A card that finished,
 // was paused or died loses the token even before anything revokes it.
-func (d *Daemon) cardLive(id string) bool {
-	if _, ok := d.hubGit.stashing.Load(id); ok {
+func (d *Service) CardLive(id string) bool {
+	if _, ok := d.HubGit.Stashing.Load(id); ok {
 		return true
 	}
 	// A done card woken by a say keeps that status until it acts, and its first fetch comes before that.
-	if d.sup != nil && d.sup.Get(id) != nil {
+	if d.HasSession(id) {
 		return true
 	}
-	t, err := d.st.Get(id)
+	t, err := d.St.Get(id)
 	if err != nil || t == nil {
 		return false
 	}
@@ -142,7 +142,7 @@ func (d *Daemon) cardLive(id string) bool {
 
 // setAgentAddr records where the agent listener really is, from the bound listener, so a port of 0 is the port
 // that was given.
-func (d *Daemon) setAgentAddr(a net.Addr) {
+func (d *Service) SetAgentAddr(a net.Addr) {
 	host, port, err := net.SplitHostPort(a.String())
 	if err != nil {
 		return
@@ -152,38 +152,38 @@ func (d *Daemon) setAgentAddr(a net.Addr) {
 	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
 		host = "127.0.0.1"
 	}
-	d.hubGit.mu.Lock()
-	d.hubGit.agent = net.JoinHostPort(host, port)
-	d.hubGit.mu.Unlock()
+	d.HubGit.Mu.Lock()
+	d.HubGit.Agent = net.JoinHostPort(host, port)
+	d.HubGit.Mu.Unlock()
 }
 
 // agentAddr is where the agent listener is: the bound address once it is listening (so a port of 0 is the port that
 // was given), else the configured one. gitsync.StableHubURL makes a host:port or ":port" or "0.0.0.0:port" into one
 // a client can reach.
-func (d *Daemon) agentAddr() string {
-	d.hubGit.mu.Lock()
-	agent := d.hubGit.agent
-	d.hubGit.mu.Unlock()
+func (d *Service) AgentAddr() string {
+	d.HubGit.Mu.Lock()
+	agent := d.HubGit.Agent
+	d.HubGit.Mu.Unlock()
 	if agent == "" {
-		agent = strings.TrimSpace(d.opts.AgentAddr)
+		agent = strings.TrimSpace(d.OptAgentAddr())
 	}
 	return agent
 }
 
 // HubRemoteURL is the stable URL of a repository on this room's hub forwarder, with the host in its canonical
 // spelling (`github`, not `github.com`). The one helper the scm clone and the sync of a room's clones both use.
-func (d *Daemon) HubRemoteURL(name string) string {
+func (d *Service) HubRemoteURL(name string) string {
 	ref, err := gitsync.ParseName(strings.Trim(name, "/"))
-	if err != nil || d.agentAddr() == "" {
+	if err != nil || d.AgentAddr() == "" {
 		return ""
 	}
-	return gitsync.StableHubURL(d.agentAddr(), ref)
+	return gitsync.StableHubURL(d.AgentAddr(), ref)
 }
 
 // HubRemoteBase is `http://127.0.0.1:<agent port>/git/`, what a remote's push URL has to start with to be the
 // forwarder's. Empty until the agent listener is bound.
-func (d *Daemon) HubRemoteBase() string {
-	a := d.agentAddr()
+func (d *Service) HubRemoteBase() string {
+	a := d.AgentAddr()
 	if a == "" {
 		return ""
 	}
@@ -201,29 +201,29 @@ func (d *Daemon) HubRemoteBase() string {
 //   - `outside` is a card that runs code that is not the room's own. It gets nothing, so no token to read.
 //
 // harness is the env the card is launched with, whose own GIT_CONFIG_COUNT is continued rather than replaced.
-func (d *Daemon) hubGitEnv(card string, outside bool, harness map[string]string, into map[string]string) {
-	if outside || d.hubGit.cards == nil {
+func (d *Service) HubGitEnv(card string, outside bool, harness map[string]string, into map[string]string) {
+	if outside || d.HubGit.Cards == nil {
 		return
 	}
 	base := d.HubRemoteBase()
 	if base == "" {
 		return
 	}
-	tok, err := d.hubGit.cards.Mint(card)
+	tok, err := d.HubGit.Cards.Mint(card)
 	if err != nil {
 		return
 	}
-	d.hubGit.mu.Lock()
-	if d.hubGit.issued == nil {
-		d.hubGit.issued = map[string]issuedToken{}
+	d.HubGit.Mu.Lock()
+	if d.HubGit.Issued == nil {
+		d.HubGit.Issued = map[string]IssuedToken{}
 	}
 	now := time.Now()
-	d.hubGit.issued[card] = issuedToken{tok: tok, at: now}
-	d.hubGit.mu.Unlock()
-	if d.st != nil {
+	d.HubGit.Issued[card] = IssuedToken{Tok: tok, At: now}
+	d.HubGit.Mu.Unlock()
+	if d.St != nil {
 		_, hash, ok := gitsync.TokenHash(tok)
 		if ok {
-			if err := d.st.SaveGitToken(card, hash, now); err != nil {
+			if err := d.St.SaveGitToken(card, hash, now); err != nil {
 				log.Printf("atrium: could not keep the git token for %s: %v", card, err)
 			}
 		}
@@ -243,7 +243,7 @@ func (d *Daemon) hubGitEnv(card string, outside bool, harness map[string]string,
 }
 
 // isOutsideCode says whether a launch is of a card that runs code that is not the room's own.
-func isOutsideCode(req shared.LaunchRequest, t *store.Task) bool {
+func IsOutsideCode(req shared.LaunchRequest, t *store.Task) bool {
 	if req.OutsideCode {
 		return true
 	}
@@ -265,37 +265,37 @@ func isOutsideCode(req shared.LaunchRequest, t *store.Task) bool {
 // revokeHubGit takes a card's git token away: the forwarder stops accepting it, and the room forgets it. `since` is
 // when the run that ended started: a token minted after that belongs to a newer run of the same card (a resume
 // mints before it registers the new runner) and is left alone. A zero `since` revokes whatever there is.
-func (d *Daemon) revokeHubGit(card string, since time.Time) {
-	d.hubGit.mu.Lock()
-	defer d.hubGit.mu.Unlock()
-	if it, ok := d.hubGit.issued[card]; ok && !since.IsZero() && it.at.After(since) {
+func (d *Service) RevokeHubGit(card string, since time.Time) {
+	d.HubGit.Mu.Lock()
+	defer d.HubGit.Mu.Unlock()
+	if it, ok := d.HubGit.Issued[card]; ok && !since.IsZero() && it.At.After(since) {
 		return
 	}
-	if d.hubGit.cards != nil {
-		d.hubGit.cards.Revoke(card)
+	if d.HubGit.Cards != nil {
+		d.HubGit.Cards.Revoke(card)
 	}
-	delete(d.hubGit.issued, card)
-	if d.st != nil {
-		d.st.DeleteGitToken(card)
+	delete(d.HubGit.Issued, card)
+	if d.St != nil {
+		d.St.DeleteGitToken(card)
 	}
 }
 
 // restoreHubGit puts back the tokens cards were launched with, so a runner the pty host kept through a room restart can
 // still fetch. Only the hash is kept, so `issued` (the clear token atrium_git_push sends) is not restored: GitPush for
 // such a card is refused until it is relaunched. A token whose card is gone is dropped.
-func (d *Daemon) restoreHubGit() {
-	ct, ok := d.hubGit.cards.(*gitsync.CardTokens)
-	if !ok || d.st == nil {
+func (d *Service) RestoreHubGit() {
+	ct, ok := d.HubGit.Cards.(*gitsync.CardTokens)
+	if !ok || d.St == nil {
 		return
 	}
-	toks, err := d.st.GitTokens()
+	toks, err := d.St.GitTokens()
 	if err != nil {
 		log.Printf("atrium: could not read the kept git tokens: %v", err)
 		return
 	}
 	for _, g := range toks {
-		if t, err := d.st.Get(g.Card); err != nil || t == nil || !ct.RestoreHash(g.Card, g.Hash) {
-			d.st.DeleteGitToken(g.Card)
+		if t, err := d.St.Get(g.Card); err != nil || t == nil || !ct.RestoreHash(g.Card, g.Hash) {
+			d.St.DeleteGitToken(g.Card)
 		}
 	}
 }
@@ -304,23 +304,23 @@ func (d *Daemon) restoreHubGit() {
 // with no shell, under the same rules. A plain branch only. The clone's hub remote has to push to this room's
 // forwarder after every rewrite (gitsync.PushToHub), the room's git.push has to be `hub`, and a card that runs
 // outside code is refused. The push uses the room's own token for the card, so a runner kept through a restart can ask for it.
-func (d *Daemon) GitPush(taskID, branch string) (any, error) {
-	t, err := d.st.Get(taskID)
+func (d *Service) GitPush(taskID, branch string) (any, error) {
+	t, err := d.St.Get(taskID)
 	if err != nil || t == nil {
 		return nil, fmt.Errorf("no card %s on this room", taskID)
 	}
 	// atrium_done ends the work, not the process: a resident runner between tasks still pushes.
-	if !d.cardLive(t.ID) && !(t.PID > 0 && processAlive(t.PID)) {
+	if !d.CardLive(t.ID) && !(t.PID > 0 && shared.ProcessAlive(t.PID)) {
 		return nil, fmt.Errorf("that card is not running, so it pushes nothing")
 	}
-	if d.st.GitPush() != store.GitPushHub {
+	if d.St.GitPush() != store.GitPushHub {
 		return nil, fmt.Errorf("this room does not let cards push to the hub (git.push is none)")
 	}
-	if isOutsideCode(shared.LaunchRequest{}, t) {
+	if IsOutsideCode(shared.LaunchRequest{}, t) {
 		return nil, fmt.Errorf("this card runs code that is not the room's own, so it does not push")
 	}
 	base := d.HubRemoteBase()
-	ct, _ := d.hubGit.cards.(*gitsync.CardTokens)
+	ct, _ := d.HubGit.Cards.(*gitsync.CardTokens)
 	if base == "" || ct == nil {
 		return nil, fmt.Errorf("this room has no hub remote to push to")
 	}
@@ -334,7 +334,7 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 	defer cancel()
 	dir := filepath.FromSlash(t.Worktree)
-	hubName := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
+	hubName := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.CloneRoots()...)
 	// A hub remote that is another room's forwarder on this machine, in a repository the launcher shares: the commit
 	// is on the launcher's disk, but the hub does not hold it, and a worker on another room fetches from the hub. So
 	// it is pushed by URL to THIS room's forwarder, the shared config untouched, and the launcher's view is a note.
@@ -343,9 +343,9 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	if other {
 		by := t.SpawnedBy
 		if by == "" {
-			by = d.st.ReportTo(t.ID)
+			by = d.St.ReportTo(t.ID)
 		}
-		if l := d.visibleLauncher(ctx, t, t.SpawnedByID, by, t.SpawnedByDir, dir); l != nil {
+		if l := d.VisibleLauncher(ctx, t, t.SpawnedByID, by, t.SpawnedByDir, dir); l != nil {
 			note = l.WireName + " sees this commit already on disk"
 		}
 		if hubName == "" {
@@ -359,7 +359,7 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 		report, err = gitsync.PushToHub(ctx, gitsync.Default, dir, base, tok, strings.TrimSpace(branch), hubName)
 	}
 	if err == nil {
-		d.recordHubBranch(t.ID, strings.TrimSpace(branch), hubName)
+		d.RecordHubBranch(t.ID, strings.TrimSpace(branch), hubName)
 	}
 	if err != nil {
 		// git's own words, which carry the hub's `remote: atrium: ...` sentence.
@@ -376,10 +376,10 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 
 // cloneRoots are the folders a clone made by hand is laid out under as `<host>/<owner>/<repo>`: the scm folder and
 // the git root synced clones go in (~/git when unset). A clone with no hub remote is named by its place under one.
-func (d *Daemon) cloneRoots() []string {
+func (d *Service) CloneRoots() []string {
 	var out []string
 	for _, k := range []string{gitsync.SettingSCMRoot, gitsync.SettingGitRoot} {
-		if v, err := d.st.Setting(k); err == nil && strings.TrimSpace(v) != "" {
+		if v, err := d.St.Setting(k); err == nil && strings.TrimSpace(v) != "" {
 			out = append(out, strings.TrimSpace(v))
 		}
 	}
@@ -389,13 +389,13 @@ func (d *Daemon) cloneRoots() []string {
 // handleHubGitURL is GET /v1/hub/git/url: the lookup atrium_git_url gives, asked of the hub over the link
 // (gitsync.AskHubLookup, which reads the hub's store alone when the hub is older). The URLs are on the link's base:
 // the tool puts a card's on this room's forwarder.
-func (d *Daemon) handleHubGitURL(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleHubGitURL(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if strings.TrimSpace(q.Get("repo")) == "" {
 		small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("say which repository"))
 		return
 	}
-	rt, err := d.hubTransport()
+	rt, err := d.HubTransport()
 	if err != nil {
 		small.WriteJSONErr(w, http.StatusBadGateway, err)
 		return

@@ -30,19 +30,19 @@ func fillHome(t *testing.T, dir string, files int, size int) {
 func TestTheSizeWalkStopsAtItsBudgetAndResumes(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fillHome(t, dd.Dir, 6, 100)
 
-	if d.walkHome(row.Path, time.Now().Add(-time.Second)) {
+	if d.WalkHome(row.Path, time.Now().Add(-time.Second)) {
 		t.Fatal("a walk past its deadline said it was done")
 	}
 	if got, _, _ := d.st.CardHomeByPath(row.Path); got.MeasuredAt != "" {
 		t.Fatalf("an unfinished walk wrote a size: %+v", got)
 	}
-	if !d.walkHome(row.Path, time.Now().Add(time.Minute)) {
+	if !d.WalkHome(row.Path, time.Now().Add(time.Minute)) {
 		t.Fatal("the walk did not finish with time")
 	}
 	got, _, _ := d.st.CardHomeByPath(row.Path)
@@ -54,7 +54,7 @@ func TestTheSizeWalkStopsAtItsBudgetAndResumes(t *testing.T) {
 func TestTheSizeWalkDoesNotFollowALink(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestTheSizeWalkDoesNotFollowALink(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dd.Work, "link")); err != nil {
 		t.Skipf("no links here: %v", err)
 	}
-	if !d.walkHome(row.Path, time.Now().Add(time.Minute)) {
+	if !d.WalkHome(row.Path, time.Now().Add(time.Minute)) {
 		t.Fatal("the walk did not finish")
 	}
 	if got, _, _ := d.st.CardHomeByPath(row.Path); got.Bytes >= 5000 {
@@ -74,18 +74,18 @@ func TestTheSizeWalkDoesNotFollowALink(t *testing.T) {
 func TestTheDiskViewListsHomesBySizeAndWhatIsNotAtriums(t *testing.T) {
 	t.Parallel()
 	d, root := homeRoom(t)
-	small, ds, err := d.makeHome(store.CardHomeScratch, "small", "w")
+	small, ds, err := d.MakeHome(store.CardHomeScratch, "small", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
-	big, db, err := d.makeHome(store.CardHomeScratch, "big", "w")
+	big, db, err := d.MakeHome(store.CardHomeScratch, "big", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fillHome(t, ds.Dir, 1, 10)
 	fillHome(t, db.Dir, 3, 4000)
-	d.walkHome(small.Path, time.Now().Add(time.Minute))
-	d.walkHome(big.Path, time.Now().Add(time.Minute))
+	d.WalkHome(small.Path, time.Now().Add(time.Minute))
+	d.WalkHome(big.Path, time.Now().Add(time.Minute))
 	if err := os.MkdirAll(filepath.Join(root, "stray"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestTheDiskViewListsHomesBySizeAndWhatIsNotAtriums(t *testing.T) {
 func TestRemoveHomeRefusesALiveCardAndRemovesAKeptOrphan(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestCullKeepsTheBranchWhenTheHubDoesNotHaveIt(t *testing.T) {
 	cullGit(t, repo, "cherry-pick", tip)
 	cullGit(t, repo, "checkout", "-q", "main")
 
-	res, err := d.cullHome(task, DefaultCullInto, row)
+	res, err := d.CullHome(task, DefaultCullInto, row)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestCullKeepsTheBranchWhenTheHubDoesNotHaveIt(t *testing.T) {
 func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	say := launcherSayBody(d.saysDir(task.ID), task.ID, "line one\nline two")
+	say := launcherSayBody(d.SaysDir(task.ID), task.ID, "line one\nline two")
 	want := filepath.Join(dd.Meta, "says", task.ID+".md")
 	if say != "read "+want+" and do what it says." {
 		t.Fatalf("say %q, want a file at %s", say, want)
@@ -222,10 +222,10 @@ func TestALongSayAndTheHandoffPlacesForACardWithNoHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir := d.saysDir(task.ID); dir != "" {
+	if dir := d.SaysDir(task.ID); dir != "" {
 		t.Fatalf("a card with no home has a says dir %q", dir)
 	}
-	say := launcherSayBody(d.saysDir(task.ID), task.ID, "line one\nline two")
+	say := launcherSayBody(d.SaysDir(task.ID), task.ID, "line one\nline two")
 	if want := filepath.Join(os.TempDir(), "atrium-says", task.ID+".md"); !strings.Contains(say, want) {
 		t.Fatalf("say %q, want the old place %s", say, want)
 	}

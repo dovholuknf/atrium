@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ func TestAStashIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 	if _, _, err := d.StashTo(ctx, "no-such-card", t.TempDir(), "fix/x"); err == nil {
 		t.Fatal("stashed for a card that is not there")
 	}
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	if err := d.st.SetSetting(store.SettingGitPush, "none"); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +33,7 @@ func TestAStashIsRefusedWhenTheRoomOrTheCardSaysNo(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingGitPush, "hub"); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetTags(task.ID, []string{OutsideCodeTag}); err != nil {
+	if err := d.st.SetTags(task.ID, []string{home.OutsideCodeTag}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := d.StashTo(ctx, task.ID, t.TempDir(), "fix/x"); err == nil || !strings.Contains(err.Error(), "not the room's own") {
@@ -48,7 +49,7 @@ func TestAStashCommitsTheDirtyFilesAndLeavesNoLocalStashBranch(t *testing.T) {
 	}
 	t.Parallel()
 	d := testDaemon(t)
-	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
+	d.SetAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
 	task := plainTask(t, d, "closer")
 	dir := t.TempDir()
 	gitT(t, dir, time.Time{}, "init", "-q", "-b", "fix/x")
@@ -78,19 +79,19 @@ func TestAClosedCardsTokenIsGoodOnlyWhileItsStashIsPushed(t *testing.T) {
 	if err := d.st.SetStatus(task.ID, store.StatusDead); err != nil {
 		t.Fatal(err)
 	}
-	tok, err := d.hubGit.cards.Mint(task.ID)
+	tok, err := d.HubGit.Cards.Mint(task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := d.hubGit.cards.Check(tok); ok {
+	if _, ok := d.HubGit.Cards.Check(tok); ok {
 		t.Fatal("a dead card's token was accepted")
 	}
-	d.hubGit.stashing.Store(task.ID, true)
-	if _, ok := d.hubGit.cards.Check(tok); !ok {
+	d.HubGit.Stashing.Store(task.ID, true)
+	if _, ok := d.HubGit.Cards.Check(tok); !ok {
 		t.Fatal("a stashing card's token was refused")
 	}
-	d.hubGit.stashing.Delete(task.ID)
-	if _, ok := d.hubGit.cards.Check(tok); ok {
+	d.HubGit.Stashing.Delete(task.ID)
+	if _, ok := d.HubGit.Cards.Check(tok); ok {
 		t.Fatal("the token outlived the stash")
 	}
 }

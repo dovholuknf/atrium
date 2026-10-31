@@ -264,7 +264,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
 		// And the home ledger: folders already gone, removals to try again, a throwaway the room restarted past.
-		if err := d.sweepHomes(); err != nil {
+		if err := d.SweepHomes(); err != nil {
 			log.Printf("[atrium] sweeping card homes: %v", err)
 		}
 		// And the scrollback saved for cards that are no longer here. Same

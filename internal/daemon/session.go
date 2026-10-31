@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"log"
 	"net/http"
@@ -191,7 +192,7 @@ func (d *Daemon) sessionScratchLine(in SessionEvent) string {
 // access.
 func (d *Daemon) roomLines(t *store.Task) string {
 	var lines []string
-	if !isOutsideCode(shared.LaunchRequest{}, t) {
+	if !home.IsOutsideCode(shared.LaunchRequest{}, t) {
 		lines = append(lines, gitURLLine)
 	}
 	lines = append(lines, resourcesLine)

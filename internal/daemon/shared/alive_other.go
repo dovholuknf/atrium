@@ -1,16 +1,16 @@
 //go:build !windows
 
-package daemon
+package shared
 
 import (
 	"os"
 	"syscall"
 )
 
-// processAlive reports whether a pid is still running. Signal 0 performs the
+// ProcessAlive reports whether a pid is still running. Signal 0 performs the
 // permission and existence checks without delivering anything, which is the
 // portable way to ask.
-func processAlive(pid int) bool {
+func ProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}

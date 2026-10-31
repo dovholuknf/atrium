@@ -2417,7 +2417,7 @@ func (d *Daemon) awaitExit(r *runner) {
 	// The runner is gone, and so is its right to push. Unless a newer start of the same card has already taken over:
 	// its token was minted after this one's runner began, and is not this exit's to revoke.
 	if d.sup.get(r.taskID) == nil {
-		d.revokeHubGit(r.taskID, r.started)
+		d.RevokeHubGit(r.taskID, r.started)
 	}
 	ck, cb := r.endCause()
 	_, err := d.fileExitChecked(runExit{

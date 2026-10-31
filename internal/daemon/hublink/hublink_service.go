@@ -10,7 +10,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// hublinkSvc is the link to the hub and the other rooms: relays, ssh streams, the hub dial and the rooms reporting in.
+// Service is the link to the hub and the other rooms: relays, ssh streams, the hub dial and the rooms reporting in.
 type Service struct {
 	St *store.Store
 	Calls
@@ -29,7 +29,7 @@ type Service struct {
 	HubDial HubDialHolder
 }
 
-// hublinkCalls is every call out of the hub link into another feature.
+// Calls is every call out of the hub link into another feature.
 type Calls struct {
 	RecordSay           func(v store.Say, text string) string
 	OtherRoom           func(room string) string
@@ -53,7 +53,7 @@ type Calls struct {
 	HumanAddr           func() string
 }
 
-// hublinkConfig is what the root hands the service.
+// Config is what the root hands the service.
 type Config struct {
 	St *store.Store
 	Calls

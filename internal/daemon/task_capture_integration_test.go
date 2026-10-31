@@ -282,7 +282,7 @@ func TestATaskLedgerPathOutsideTheCardRootIsNotRemoved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	root, _ := x.d.cardRoot()
+	root, _ := x.d.CardRoot()
 	for _, p := range []string{outside, root} {
 		x.d.reapTaskFolder(store.CardHome{Path: filepath.ToSlash(p), BacklogID: "f-x", TaskID: "t1", Attempt: 1})
 		if gone(p) {

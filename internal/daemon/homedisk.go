@@ -3,6 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"os"
 	"os/exec"
@@ -46,13 +47,13 @@ const outsideCap = 200
 // DiskView is the homes sorted by size, the folders under the root that have no row, and the cards working outside it.
 func (d *Daemon) DiskView() (any, error) {
 	v := DiskView{Homes: []HomeInfo{}, NotAtriums: []string{}, Outside: []OutsideCard{}}
-	root, err := d.cardRoot()
+	root, err := d.CardRoot()
 	if err != nil {
 		v.Error = err.Error()
 	}
 	if err == nil {
 		v.Root = filepath.ToSlash(root)
-		_, v.FreeBytes, v.TotalBytes = d.rootDisk()
+		_, v.FreeBytes, v.TotalBytes = d.RootDisk()
 	}
 	rows, err := d.st.CardHomesOpen()
 	if err != nil {
@@ -138,8 +139,8 @@ func (d *Daemon) RemoveHome(id string) (any, error) {
 			return nil, fmt.Errorf("%s is not kept. cull the card and atrium removes its home when the checks pass", t.DisplayTitle())
 		}
 	}
-	freed := homeBytes(row.Path)
-	removed, kept, _ := d.reclaimHome(t, row, true)
+	freed := home.HomeBytes(row.Path)
+	removed, kept, _ := d.ReclaimHome(t, row, true)
 	res := HomeRemoved{Removed: removed, Kept: kept}
 	if removed {
 		res.Freed = freed
@@ -157,7 +158,7 @@ func (d *Daemon) OpenHome(id string) (any, error) {
 	if !ok || row.State == store.CardHomeRemoved {
 		return nil, errors.New("that home is not on the ledger")
 	}
-	path, err := d.homeGuard(row)
+	path, err := d.HomeGuard(row)
 	if err != nil {
 		return nil, err
 	}

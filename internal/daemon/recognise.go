@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"os"
 	"os/exec"
@@ -154,8 +155,8 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	cmd.Env = childEnv(nil, nil)
 
 	var out, errOut bytes.Buffer
-	cmd.Stdout = &limitedWriter{w: &out, left: recogniserFetchLimit + 1}
-	cmd.Stderr = &limitedWriter{w: &errOut, left: 8 << 10}
+	cmd.Stdout = &shared.LimitedWriter{W: &out, Left: recogniserFetchLimit + 1}
+	cmd.Stderr = &shared.LimitedWriter{W: &errOut, Left: 8 << 10}
 
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {

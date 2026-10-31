@@ -45,7 +45,7 @@ func (d *Daemon) endThrowaway(taskID string) {
 	// Somebody decided this mattered while it was running. The directory moves
 	// instead of going, which is the whole reason it is safe to start work in
 	// a throwaway before knowing whether the work matters.
-	if row, ok := d.homeOf(t.ID); ok && row.Kind == store.CardHomeThrowaway {
+	if row, ok := d.HomeOf(t.ID); ok && row.Kind == store.CardHomeThrowaway {
 		d.endHomeThrowaway(t, row)
 		return
 	}
@@ -163,7 +163,7 @@ func (d *Daemon) endHomeThrowaway(t *store.Task, row store.CardHome) {
 	if err := api.ForgetTranscripts(t.Worktree); err != nil {
 		log.Printf("[atrium] could not delete the conversations for %s: %v", t.ID, err)
 	}
-	if removed, kept, _ := d.reclaimHome(t, row, true); !removed {
+	if removed, kept, _ := d.ReclaimHome(t, row, true); !removed {
 		log.Printf("[atrium] could not delete the home of throwaway %s: %s", t.ID, kept)
 		return
 	}

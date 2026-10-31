@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,11 +31,11 @@ func (d *Daemon) StashTo(ctx context.Context, card, dir, branch string) (string,
 	if d.st.GitPush() != store.GitPushHub {
 		return "", "", fmt.Errorf("this room does not let cards push to the hub (git.push is none)")
 	}
-	if isOutsideCode(shared.LaunchRequest{}, t) {
+	if home.IsOutsideCode(shared.LaunchRequest{}, t) {
 		return "", "", fmt.Errorf("this card runs code that is not the room's own, so it does not push")
 	}
 	base := d.HubRemoteBase()
-	if base == "" || d.hubGit.cards == nil {
+	if base == "" || d.HubGit.Cards == nil {
 		return "", "", fmt.Errorf("this room has no hub remote to stash to")
 	}
 	branch = strings.TrimSpace(branch)
@@ -67,14 +68,14 @@ func (d *Daemon) StashTo(ctx context.Context, card, dir, branch string) (string,
 	defer g.Git(context.Background(), dir, "branch", "-D", name)
 
 	// The token is good only while the card is live, and a card being closed is let push this once.
-	d.hubGit.stashing.Store(card, true)
-	defer d.hubGit.stashing.Delete(card)
-	tok, err := d.hubGit.cards.Mint(card)
+	d.HubGit.Stashing.Store(card, true)
+	defer d.HubGit.Stashing.Delete(card)
+	tok, err := d.HubGit.Cards.Mint(card)
 	if err != nil {
 		return "", "", err
 	}
-	defer d.revokeHubGit(card, time.Time{})
-	hubName := gitsync.HubNameOf(ctx, g, dir, d.cloneRoots()...)
+	defer d.RevokeHubGit(card, time.Time{})
+	hubName := gitsync.HubNameOf(ctx, g, dir, d.CloneRoots()...)
 	report, err := gitsync.PushToHub(ctx, g, dir, base, tok, name, hubName)
 	if err != nil {
 		if strings.TrimSpace(report) != "" {

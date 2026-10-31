@@ -1,10 +1,10 @@
 //go:build windows
 
-package daemon
+package shared
 
 import "golang.org/x/sys/windows"
 
-// processAlive reports whether a pid is still running.
+// ProcessAlive reports whether a pid is still running.
 //
 // This is a kernel question, so it costs nothing: no model turn, no token, no
 // round trip to the runner. On Windows os.FindProcess always succeeds and
@@ -12,7 +12,7 @@ import "golang.org/x/sys/windows"
 //
 // PROCESS_QUERY_LIMITED_INFORMATION is the least access that can answer it and
 // is granted for processes the caller could not otherwise touch.
-func processAlive(pid int) bool {
+func ProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}

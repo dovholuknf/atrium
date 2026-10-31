@@ -42,19 +42,19 @@ func (d *Daemon) HubDeleteBranch(ctx context.Context, card, dir, hubRepo, branch
 		return fmt.Errorf("this room does not let cards push to the hub (git.push is none)")
 	}
 	base := d.HubRemoteBase()
-	if base == "" || d.hubGit.cards == nil {
+	if base == "" || d.HubGit.Cards == nil {
 		return fmt.Errorf("this room has no hub remote to delete from")
 	}
 	if strings.TrimSpace(dir) == "" {
 		return fmt.Errorf("the card has no directory to push the delete from")
 	}
-	d.hubGit.stashing.Store(card, true)
-	defer d.hubGit.stashing.Delete(card)
-	tok, err := d.hubGit.cards.Mint(card)
+	d.HubGit.Stashing.Store(card, true)
+	defer d.HubGit.Stashing.Delete(card)
+	tok, err := d.HubGit.Cards.Mint(card)
 	if err != nil {
 		return err
 	}
-	defer d.revokeHubGit(card, time.Time{})
+	defer d.RevokeHubGit(card, time.Time{})
 	report, err := gitsync.DeleteFromHub(ctx, gitsync.Default, filepath.FromSlash(dir), base, tok, branch, hubRepo)
 	if err != nil {
 		if strings.TrimSpace(report) != "" {

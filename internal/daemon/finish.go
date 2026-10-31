@@ -217,7 +217,7 @@ var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 	defer cancel()
 	// ANY BRANCH OF ANY REPOSITORY THE HUB HAS, whatever the worker's directory is. Naming the repository from the
 	// directory missed every worker whose directory is not a clone the room can name. See gitsync/lookup_commit.go.
-	if rt, err := d.hubTransport(); err == nil {
+	if rt, err := d.HubTransport(); err == nil {
 		if ans, err := gitsync.AskHubLookup(ctx, rt, gitsync.URLQuery{Commit: sha}); err == nil {
 			if ans.State == gitsync.URLFound {
 				return true
@@ -225,11 +225,11 @@ var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 		}
 	}
 	dir := filepath.FromSlash(task.Worktree)
-	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
+	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.CloneRoots()...)
 	if repo == "" {
 		return false
 	}
-	rt, err := d.hubTransport()
+	rt, err := d.HubTransport()
 	if err != nil {
 		return false
 	}
@@ -637,8 +637,8 @@ type finishHooks struct {
 
 // hubAsker is the part of the daemon commitOnHub asks the hub through.
 type hubAsker interface {
-	hubTransport() (http.RoundTripper, error)
-	cloneRoots() []string
+	HubTransport() (http.RoundTripper, error)
+	CloneRoots() []string
 }
 
 func defaultFinishHooks() finishHooks {

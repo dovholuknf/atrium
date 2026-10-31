@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"log"
 	"net/http"
@@ -259,8 +260,8 @@ var atriumBinary = func() string {
 func (d *Daemon) handoffPath(t *store.Task) string {
 	dir := d.st.ContextHandoffDir()
 	if dir == "" {
-		if h, ok := d.homeOf(t.ID); ok {
-			return filepath.Join(dirsOf(h.Path).Meta, "handoff.md")
+		if h, ok := d.HomeOf(t.ID); ok {
+			return filepath.Join(home.DirsOf(h.Path).Meta, "handoff.md")
 		}
 	}
 	if dir == "" {
