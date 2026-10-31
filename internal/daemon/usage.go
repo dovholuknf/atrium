@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -218,7 +219,7 @@ func newUsageTracker(st *store.Store) *usageTracker {
 		transcript: api.TranscriptPath,
 		isClaude: func(runner string) bool {
 			h, err := st.Harness(runner)
-			return err == nil && isClaude(h)
+			return err == nil && shared.IsClaude(h)
 		},
 		started: time.Now().UTC(),
 		settle:  usageSettle,

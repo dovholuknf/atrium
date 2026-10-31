@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -40,7 +41,7 @@ func homeRepo(t *testing.T) string {
 
 func worktreeHome(t *testing.T, d *Daemon, repo string) (*store.Task, store.CardHome, homeDirs) {
 	t.Helper()
-	req := LaunchRequest{Repo: repo, Title: "Fix The Thing"}
+	req := shared.LaunchRequest{Repo: repo, Title: "Fix The Thing"}
 	row, dd, err := d.launchHome(store.CardHomeWorktree, &req)
 	if err != nil {
 		t.Fatal(err)
@@ -126,13 +127,13 @@ func TestARepoLaunchMakesWorkAsAWorktree(t *testing.T) {
 
 func TestCwdWithARepoIsRefused(t *testing.T) {
 	t.Parallel()
-	if err := homeLaunchRefusal(LaunchRequest{Repo: "github.com/o/r"}, "/x"); err == nil {
+	if err := homeLaunchRefusal(shared.LaunchRequest{Repo: "github.com/o/r"}, "/x"); err == nil {
 		t.Fatal("cwd with repo was accepted")
 	}
-	if err := homeLaunchRefusal(LaunchRequest{Repo: "o/r"}, "/x"); err != nil {
+	if err := homeLaunchRefusal(shared.LaunchRequest{Repo: "o/r"}, "/x"); err != nil {
 		t.Fatalf("a label repo with cwd: %v", err)
 	}
-	if err := homeLaunchRefusal(LaunchRequest{}, "/x"); err != nil {
+	if err := homeLaunchRefusal(shared.LaunchRequest{}, "/x"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -282,7 +283,7 @@ func TestRemovalDoesNotFollowALink(t *testing.T) {
 
 func aHomeThrowaway(t *testing.T, d *Daemon) (*store.Task, store.CardHome, homeDirs) {
 	t.Helper()
-	req := LaunchRequest{Title: "tryout", Throwaway: true}
+	req := shared.LaunchRequest{Title: "tryout", Throwaway: true}
 	row, dd, err := d.launchHome(store.CardHomeThrowaway, &req)
 	if err != nil {
 		t.Fatal(err)

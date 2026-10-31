@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -221,7 +222,7 @@ func TestAWorkWorkerIsExitedByDoneAndAWakeSayResumesIt(t *testing.T) {
 	}
 
 	launched := make(chan string, 1)
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		launched <- req.TaskID
 		typedRunner(t, d, worker.ID)
 		return d.st.Get(worker.ID)

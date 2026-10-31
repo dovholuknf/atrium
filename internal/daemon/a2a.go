@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 	"strconv"
@@ -132,7 +132,7 @@ func agentLaunched(t *store.Task) bool { return t != nil && small.HasTag(t.Tags,
 // own dialog, so the human is the parent. An agent launch carries the marker,
 // and one that lost its sender stays unnamed rather than being filed as the
 // human's.
-func launcherFor(req LaunchRequest) string {
+func launcherFor(req shared.LaunchRequest) string {
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
 		return by
 	}
@@ -142,31 +142,11 @@ func launcherFor(req LaunchRequest) string {
 	return store.HumanLauncher
 }
 
-// ── the Stop hook for launched sessions ─────────────────────────────────────────
-
-// isClaude reports whether a runner row runs Claude Code, which is the one
-// runner `--settings` means anything to.
-func isClaude(h *store.Harness) bool {
-	return runsAs(h, "claude")
-}
+// â”€â”€ the Stop hook for launched sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // isCodex reports whether a runner row runs the codex CLI.
 func isCodex(h *store.Harness) bool {
-	return runsAs(h, "codex")
-}
-
-func runsAs(h *store.Harness, name string) bool {
-	if h == nil {
-		return false
-	}
-	if strings.EqualFold(h.ID, name) {
-		return true
-	}
-	leaf := strings.ToLower(filepath.Base(filepath.FromSlash(strings.TrimSpace(h.Cmd))))
-	for _, ext := range []string{".exe", ".cmd", ".bat", ".ps1"} {
-		leaf = strings.TrimSuffix(leaf, ext)
-	}
-	return leaf == name
+	return shared.RunsAs(h, "codex")
 }
 
 // stopHookCommand is the Stop hook an agent-launched claude session should
@@ -242,13 +222,13 @@ func stopHookSettings(command string) string {
 //
 // In front of the rest, so it can never land after the positional prompt.
 func withStopHook(h *store.Harness, args []string, stopCmd string) []string {
-	if !isClaude(h) {
+	if !shared.IsClaude(h) {
 		return args
 	}
 	return append([]string{"--settings", stopHookSettings(stopCmd)}, args...)
 }
 
-// ── telling the launcher ────────────────────────────────────────────────────────
+// â”€â”€ telling the launcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // launcherOf is the card that launched this one, or nil.
 func (d *Daemon) launcherOf(worker *store.Task) *store.Task {
@@ -431,7 +411,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text, kind string) {
 	d.doneBySay(sender, text)
 }
 
-// ── silent stops ────────────────────────────────────────────────────────────────
+// â”€â”€ silent stops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // silentNudgeText is what atrium says to a worker whose turn ended silently.
 const silentNudgeText = "Your turn ended without a report. Continue with your brief. If something blocks it, say what with " +
@@ -577,7 +557,7 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	return *ended, true
 }
 
-// ── reachability (F15) ──────────────────────────────────────────────────────────
+// â”€â”€ reachability (F15) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // How a message can reach a card.
 const (
@@ -637,7 +617,7 @@ func deliveredWord(reach string) string {
 	return "queued"
 }
 
-// ── the watchdog and the board ──────────────────────────────────────────────────
+// â”€â”€ the watchdog and the board â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Escalation is a worker the board should hear about, served on the card. The
 // board rings each time Count goes up.
@@ -801,7 +781,7 @@ func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
 	if err != nil || !fresh {
 		return
 	}
-	text := truncatePeer(fmt.Sprintf("%s has been stuck for %d minutes (%s). card %s", t.WireName, x.Minutes,
+	text := shared.TruncatePeer(fmt.Sprintf("%s has been stuck for %d minutes (%s). card %s", t.WireName, x.Minutes,
 		x.Source, t.ID))
 	if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, text); err != nil {
 		log.Printf("[atrium] could not wake %s for stuck %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)

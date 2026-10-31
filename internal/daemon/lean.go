@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -107,7 +108,7 @@ func checkLeanGateway(st *store.Store, name string, readFile func(string) ([]byt
 	have := map[string]bool{}
 	checked := false
 	for _, h := range hs {
-		if !h.Enabled || !isClaude(h) {
+		if !h.Enabled || !shared.IsClaude(h) {
 			continue
 		}
 		args, _, err := runnerArgsWith(h, "", "", launchOptions{})
@@ -222,7 +223,7 @@ func hasToolsFlag(args []string) bool {
 // gateway is the lean_worker_gateway setting. With it set, `mercurius` named in
 // the request or carried by a tag is the WIDE-server override and is kept, where
 // with it empty `mercurius` is a default server and is dropped as it always was.
-func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
+func leanOptions(req shared.LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
 	if req.Lean != nil && !*req.Lean {
 		return false, nil, leanKit{}, false
 	}

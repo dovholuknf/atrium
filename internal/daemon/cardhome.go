@@ -15,6 +15,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -104,7 +105,7 @@ func (d *Daemon) saysDir(cardID string) string {
 
 // homeRequest says which kind of home a launch wants, "" for none: a launch with a directory of its own, a launch onto
 // a card that exists and a resume get none.
-func homeRequest(req LaunchRequest, cwd string, onto bool) string {
+func homeRequest(req shared.LaunchRequest, cwd string, onto bool) string {
 	if cwd != "" || onto || req.Resume != "" {
 		return ""
 	}
@@ -131,7 +132,7 @@ func RepoIsRef(repo string) bool {
 }
 
 // homeLaunchRefusal is why a launch cannot have the home it asked for, before anything is made.
-func homeLaunchRefusal(req LaunchRequest, cwd string) error {
+func homeLaunchRefusal(req shared.LaunchRequest, cwd string) error {
 	if cwd != "" && RepoIsRef(req.Repo) {
 		return errors.New("pass cwd for a directory you made, or repo for one atrium makes, not both")
 	}
@@ -534,7 +535,7 @@ func homeBytes(path string) int64 {
 
 // launchHome makes the home a launch asked for. A worktree home adds `work/` to the clone named by repo, a scratch home
 // wears the keep-open tag as a scratch launch does, and a throwaway home is removed when its runner exits.
-func (d *Daemon) launchHome(kind string, req *LaunchRequest) (store.CardHome, homeDirs, error) {
+func (d *Daemon) launchHome(kind string, req *shared.LaunchRequest) (store.CardHome, homeDirs, error) {
 	clone := ""
 	if kind == store.CardHomeWorktree {
 		ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)

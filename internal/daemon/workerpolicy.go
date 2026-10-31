@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -24,8 +25,8 @@ const NoticeBudget = "budget"
 
 // workerDefaultModel is the model an agent-launched fresh launch gets when it named none, or "" to leave the
 // runner's own default.
-func (d *Daemon) workerDefaultModel(h *store.Harness, req LaunchRequest, task *store.Task, reportTo string) string {
-	if req.Resume != "" || task != nil || !isClaude(h) {
+func (d *Daemon) workerDefaultModel(h *store.Harness, req shared.LaunchRequest, task *store.Task, reportTo string) string {
+	if req.Resume != "" || task != nil || !shared.IsClaude(h) {
 		return ""
 	}
 	if small.HasTag(req.Tags, InterviewTag) {

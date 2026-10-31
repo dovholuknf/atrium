@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -194,7 +195,7 @@ func TestTheLaunchPathRefusesAShelvedCard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = d.Launch(LaunchRequest{Harness: "claude", Cwd: t.TempDir(), TaskID: task.ID})
+	_, err = d.Launch(shared.LaunchRequest{Harness: "claude", Cwd: t.TempDir(), TaskID: task.ID})
 	if err == nil {
 		t.Fatal("a launch onto a shelved card succeeded")
 	}

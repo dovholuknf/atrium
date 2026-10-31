@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -72,7 +73,7 @@ func ItemBriefPrompt(file, prompt string) string {
 // openingSender is who the opening prompt is recorded as coming from: the session that asked for the launch, which
 // is what makes the first turn owe it a report, and nobody for the operator's own launch. An item's is atrium, so
 // nothing the worker reads names a launcher. atrium is not the card's launcher, so the first turn owes nothing.
-func openingSender(req LaunchRequest) string {
+func openingSender(req shared.LaunchRequest) string {
 	if req.Item || small.HasTag(req.Tags, ItemTag) {
 		return store.ReservedHandle
 	}

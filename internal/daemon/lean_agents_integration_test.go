@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -194,20 +195,20 @@ func TestLeanKitRefusesAnUnknownOrUnsafeName(t *testing.T) {
 
 func TestLeanOptionsCarryTheKitOnTheCardAndTheRequestReplacesIt(t *testing.T) {
 	t.Parallel()
-	lean, _, kit, _ := leanOptions(LaunchRequest{LeanAgents: []string{" b", "a", "a"}, LeanSkills: []string{"s"}}, nil, "")
+	lean, _, kit, _ := leanOptions(shared.LaunchRequest{LeanAgents: []string{" b", "a", "a"}, LeanSkills: []string{"s"}}, nil, "")
 	if !lean || strings.Join(kit.Agents, ",") != "a,b" || strings.Join(kit.Skills, ",") != "s" {
 		t.Fatalf("lean_agents implies lean, got %v %+v", lean, kit)
 	}
 	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}, leanKit{Agents: []string{"a", "b"}, Skills: []string{"s"}}))}
-	lean, mcp, kit, _ := leanOptions(LaunchRequest{}, card, "")
+	lean, mcp, kit, _ := leanOptions(shared.LaunchRequest{}, card, "")
 	if !lean || strings.Join(kit.Agents, ",") != "a,b" || strings.Join(kit.Skills, ",") != "s" || len(mcp) != 1 {
 		t.Fatalf("a restart keeps the lists, got %v %q %+v", lean, mcp, kit)
 	}
-	if _, _, kit, _ = leanOptions(LaunchRequest{LeanAgents: []string{"c"}}, card, ""); strings.Join(kit.Agents, ",") != "c" || strings.Join(kit.Skills, ",") != "s" {
+	if _, _, kit, _ = leanOptions(shared.LaunchRequest{LeanAgents: []string{"c"}}, card, ""); strings.Join(kit.Agents, ",") != "c" || strings.Join(kit.Skills, ",") != "s" {
 		t.Fatalf("a request naming agents replaces the card's agents only, got %+v", kit)
 	}
 	off := false
-	if lean, _, kit, _ = leanOptions(LaunchRequest{Lean: &off}, card, ""); lean || !kit.empty() {
+	if lean, _, kit, _ = leanOptions(shared.LaunchRequest{Lean: &off}, card, ""); lean || !kit.empty() {
 		t.Fatalf("lean: false drops them, got %v %+v", lean, kit)
 	}
 	got, cut := withoutLeanTags(card.Tags)
@@ -294,7 +295,7 @@ func TestLaunchKeepsTheKitOnTheCardForARestartAndWritesNothingInTheWorktree(t *t
 		t.Fatal("no card")
 	}
 	t.Cleanup(func() { _ = d.StopRunner(card.ID) })
-	lean, _, kit, _ := leanOptions(LaunchRequest{}, card, "")
+	lean, _, kit, _ := leanOptions(shared.LaunchRequest{}, card, "")
 	if !lean || strings.Join(kit.Agents, ",") != "codebase-steward,go-security-reviewer" || strings.Join(kit.Skills, ",") != "review-panel" {
 		t.Fatalf("the card should keep the lists for a restart, tags %q -> %v %+v", card.Tags, lean, kit)
 	}

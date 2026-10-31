@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -70,7 +71,7 @@ func TestASuperleanLaunchDeliversItsPrompt(t *testing.T) {
 	}
 	d, spawned := spawnedClaude(t)
 	on := true
-	card, err := d.Launch(LaunchRequest{Harness: "claude", Cwd: t.TempDir(), Prompt: "fix the bug", Superlean: &on})
+	card, err := d.Launch(shared.LaunchRequest{Harness: "claude", Cwd: t.TempDir(), Prompt: "fix the bug", Superlean: &on})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +92,7 @@ func TestALaunchWhosePromptAnOptionWouldTakeSaysSo(t *testing.T) {
 	}
 	d, spawned := spawnedClaude(t)
 	for _, extra := range [][]string{{"--add-dir", "../shared"}, {"--allowedTools", "Bash"}, {"--debug"}} {
-		_, err := d.Launch(LaunchRequest{Harness: "claude", Cwd: t.TempDir(), Prompt: "fix the bug", Args: extra})
+		_, err := d.Launch(shared.LaunchRequest{Harness: "claude", Cwd: t.TempDir(), Prompt: "fix the bug", Args: extra})
 		if err == nil || !strings.Contains(err.Error(), "would never reach") || !strings.Contains(err.Error(), extra[0]) {
 			t.Fatalf("%q: err = %v", extra, err)
 		}
@@ -99,7 +100,7 @@ func TestALaunchWhosePromptAnOptionWouldTakeSaysSo(t *testing.T) {
 			t.Fatalf("%q: a runner was started: %q", extra, spawned())
 		}
 	}
-	card, err := d.Launch(LaunchRequest{Harness: "claude", Cwd: t.TempDir(), Prompt: "fix the bug",
+	card, err := d.Launch(shared.LaunchRequest{Harness: "claude", Cwd: t.TempDir(), Prompt: "fix the bug",
 		Args: []string{"--add-dir=../shared"}})
 	if err != nil {
 		t.Fatalf("the one-token form is the way to write it: %v", err)

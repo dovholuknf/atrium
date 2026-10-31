@@ -117,6 +117,7 @@ var table = []row{
 		"internal/base/linkfetch", "internal/link/conn", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
+	{3, "internal/daemon/shared", []string{"internal/store"}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
 	{5, "internal/daemon/pulls", []string{
 		"internal/api", "internal/base/forge", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
@@ -126,7 +127,7 @@ var table = []row{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
 		"internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
-		"internal/daemon/roomconf", "internal/daemon/screen", "internal/small",
+		"internal/daemon/roomconf", "internal/daemon/screen", "internal/daemon/shared", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",
 		"internal/base/rules", "internal/runnerprofile", "internal/runnersetup", "internal/base/safepath",

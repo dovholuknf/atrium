@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,7 +125,7 @@ func (d *Daemon) Unshelve(taskID string) (started bool, why string, err error) {
 
 	// The card is the launch spec: runner is the harness, worktree is where it
 	// ran, resume id is the conversation.
-	if _, err := d.Launch(LaunchRequest{
+	if _, err := d.Launch(shared.LaunchRequest{
 		Harness: t.Runner,
 		Cwd:     t.Worktree,
 		Resume:  t.ResumeID,

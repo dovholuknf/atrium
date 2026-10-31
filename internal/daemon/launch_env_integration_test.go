@@ -11,6 +11,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -51,7 +52,7 @@ func TestALaunchedRunnerDoesNotInheritTheRoomsDebugSwitches(t *testing.T) {
 	dir := t.TempDir()
 	// The helper exits at once, so the launch may say it never settled. What
 	// is checked is the environment it started with.
-	_, _ = d.Launch(LaunchRequest{Harness: "envdump", Cwd: dir, SpawnedBy: store.HumanLauncher})
+	_, _ = d.Launch(shared.LaunchRequest{Harness: "envdump", Cwd: dir, SpawnedBy: store.HumanLauncher})
 
 	var raw []byte
 	testwait.Eventually(t, 10*time.Second, "the runner to write its environment", func() bool {

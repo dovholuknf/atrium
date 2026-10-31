@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -454,7 +455,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		write.Notice = &store.NoticeSpec{
 			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
 			Key:  key,
-			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
+			Text: shared.TruncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
 	} else if !in.viaSay && itemEnd == nil {
 		// A launcher on another room hears it the same way, held in the relay
@@ -554,14 +555,6 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		out["work_state"] = res.Item.State
 	}
 	return out, http.StatusOK, nil
-}
-
-// truncatePeer bounds a notice to what a peer message may carry.
-func truncatePeer(text string) string {
-	if len(text) > maxPeerMessage {
-		return text[:maxPeerMessage]
-	}
-	return text
 }
 
 // reportBody is what a launcher reads when a worker reports.

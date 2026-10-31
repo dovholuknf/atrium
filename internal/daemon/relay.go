@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -478,7 +479,7 @@ func (d *Daemon) remoteLauncher(worker *store.Task) (name, room string, ok bool)
 }
 
 // remoteLauncherCard is the launcher's bare card id on its room, when the
-// lineage recorded it as `room~id`. See LaunchRequest.SpawnedByID.
+// lineage recorded it as `room~id`. See shared.LaunchRequest.SpawnedByID.
 func (d *Daemon) remoteLauncherCard(worker *store.Task) (room, id string, ok bool) {
 	tag := strings.TrimSpace(worker.SpawnedByID)
 	i := strings.Index(tag, "~")
@@ -500,7 +501,7 @@ func (d *Daemon) launcherRelay(worker *store.Task, text string) *store.RelaySpec
 	}
 	return &store.RelaySpec{
 		FromTask: worker.ID, FromWire: worker.WireName, ToRoom: room, ToName: name, ToCard: card,
-		Text: truncatePeer(text),
+		Text: shared.TruncatePeer(text),
 	}
 }
 

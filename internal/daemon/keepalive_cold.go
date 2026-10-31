@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -44,7 +45,7 @@ func (k *keepalive) coldCheck(t *store.Task, card *store.KeepaliveCard, warming 
 	if k.deployHeld != nil && k.deployHeld(t.ID) {
 		return
 	}
-	if h, err := k.st.Harness(t.Runner); err != nil || !isClaude(h) {
+	if h, err := k.st.Harness(t.Runner); err != nil || !shared.IsClaude(h) {
 		return
 	}
 	if small.IsParked(t) || strings.TrimSpace(t.ResumeID) == "" || strings.TrimSpace(t.Worktree) == "" {

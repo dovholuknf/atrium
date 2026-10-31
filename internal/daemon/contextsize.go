@@ -9,6 +9,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -235,7 +236,7 @@ func (d *Daemon) watchContext() error {
 		if strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
-		if h, err := d.st.Harness(t.Runner); err != nil || !isClaude(h) {
+		if h, err := d.st.Harness(t.Runner); err != nil || !shared.IsClaude(h) {
 			continue
 		}
 		// For a runner whose hooks are not wired. See outputat.go.

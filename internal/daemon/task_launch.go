@@ -14,6 +14,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -41,7 +42,7 @@ type taskSpec struct {
 }
 
 type taskLaunchBody struct {
-	LaunchRequest
+	shared.LaunchRequest
 	Task *taskSpec `json:"task"`
 }
 

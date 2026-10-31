@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -190,7 +191,7 @@ func (d *Daemon) sessionScratchLine(in SessionEvent) string {
 // access.
 func (d *Daemon) roomLines(t *store.Task) string {
 	var lines []string
-	if !isOutsideCode(LaunchRequest{}, t) {
+	if !isOutsideCode(shared.LaunchRequest{}, t) {
 		lines = append(lines, gitURLLine)
 	}
 	lines = append(lines, resourcesLine)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -43,7 +44,7 @@ func slowHarness(t *testing.T, d *Daemon) string {
 func launchSlow(t *testing.T, d *Daemon) string {
 	t.Helper()
 	h := slowHarness(t, d)
-	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir()})
+	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir()})
 	if err != nil {
 		t.Skipf("could not spawn a slow test runner on this machine: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestLaunchSerializesOnTheCardLock(t *testing.T) {
 	go func() {
 		// The command does not exist, so this fails as soon as it gets past the
 		// lock. What matters is that it cannot get past it while the lock is held.
-		_, _ = d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID})
+		_, _ = d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID})
 		close(done)
 	}()
 
@@ -111,7 +112,7 @@ func TestLaunchSerializesOnTheResumeLock(t *testing.T) {
 	unlock := d.launching.Lock(small.LaunchResumeKey(resume))
 	done := make(chan struct{})
 	go func() {
-		_, _ = d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Resume: resume})
+		_, _ = d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Resume: resume})
 		close(done)
 	}()
 

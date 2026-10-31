@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -49,7 +50,7 @@ func BackfillUsage(st *store.Store, since time.Time, dry bool, transcript func(c
 		if t.ResumeID == "" || t.Worktree == "" {
 			continue
 		}
-		if h, err := st.Harness(t.Runner); err != nil || !isClaude(h) {
+		if h, err := st.Harness(t.Runner); err != nil || !shared.IsClaude(h) {
 			continue
 		}
 		path := transcript(t.Worktree, t.ResumeID)

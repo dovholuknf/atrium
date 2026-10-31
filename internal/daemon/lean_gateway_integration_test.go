@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -48,7 +49,7 @@ func TestLeanGatewayEmptySettingLeavesTheConfigUnchanged(t *testing.T) {
 		t.Fatalf("got %s\nwant %s", a, want)
 	}
 	// Naming mercurius with the setting off is dropped, as it always was.
-	if _, mcp, _, _ := leanOptions(LaunchRequest{MCP: []string{"mercurius"}}, nil, ""); len(mcp) != 0 {
+	if _, mcp, _, _ := leanOptions(shared.LaunchRequest{MCP: []string{"mercurius"}}, nil, ""); len(mcp) != 0 {
 		t.Fatalf("mcp = %v", mcp)
 	}
 }
@@ -64,7 +65,7 @@ func TestLeanGatewayDefaultLaunchGetsTheNarrowEntry(t *testing.T) {
 func TestLeanGatewayExplicitNameOrTagGetsTheWideEntry(t *testing.T) {
 	t.Parallel()
 	on := true
-	_, mcp, _, _ := leanOptions(LaunchRequest{Lean: &on, MCP: []string{"mercurius"}}, nil, "mercurius-worker")
+	_, mcp, _, _ := leanOptions(shared.LaunchRequest{Lean: &on, MCP: []string{"mercurius"}}, nil, "mercurius-worker")
 	if len(mcp) != 1 || mcp[0] != "mercurius" {
 		t.Fatalf("mcp = %v", mcp)
 	}
@@ -72,7 +73,7 @@ func TestLeanGatewayExplicitNameOrTagGetsTheWideEntry(t *testing.T) {
 		t.Fatalf("explicit name got %v", s)
 	}
 	card := &store.Task{Tags: []string{LeanTag, leanMCPTagPrefix + "mercurius"}}
-	_, mcp, _, _ = leanOptions(LaunchRequest{}, card, "mercurius-worker")
+	_, mcp, _, _ = leanOptions(shared.LaunchRequest{}, card, "mercurius-worker")
 	if s := leanGatewayServers(t, mcp, "mercurius-worker"); s["mercurius"]["url"] != "http://127.0.0.1:8088/mcp" {
 		t.Fatalf("tag got %v", s)
 	}
@@ -103,7 +104,7 @@ func TestLeanGatewayRestartKeepsWhatTheCardHad(t *testing.T) {
 		{leanTags(nil, leanKit{}), "8089", "mercurius: mercurius-worker"},
 	} {
 		card := &store.Task{Tags: c.tags}
-		_, mcp, _, _ := leanOptions(LaunchRequest{}, card, "mercurius-worker")
+		_, mcp, _, _ := leanOptions(shared.LaunchRequest{}, card, "mercurius-worker")
 		if s := leanGatewayServers(t, mcp, "mercurius-worker"); !strings.Contains(s["mercurius"]["url"], c.url) {
 			t.Errorf("tags %v got %v", c.tags, s)
 		}
@@ -152,7 +153,7 @@ func TestLeanKitAndGatewayTogetherReachTheLaunchAndTheFork(t *testing.T) {
 	if gateway != "mercurius-worker" {
 		t.Fatalf("gateway = %q", gateway)
 	}
-	lean, mcp, kit, _ := leanOptions(LaunchRequest{LeanAgents: []string{"codebase-steward"}}, nil, gateway)
+	lean, mcp, kit, _ := leanOptions(shared.LaunchRequest{LeanAgents: []string{"codebase-steward"}}, nil, gateway)
 	if !lean || kit.empty() {
 		t.Fatalf("lean_agents should start lean, got %v %+v", lean, kit)
 	}

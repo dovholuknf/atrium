@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -132,7 +133,7 @@ func TestPlainLeanHasNoToolsFlag(t *testing.T) {
 func TestSuperleanOptionsFromTheRequestAndFromTheCard(t *testing.T) {
 	t.Parallel()
 	on, off := true, false
-	lean, _, kit, sl := leanOptions(LaunchRequest{Superlean: &on}, nil, "")
+	lean, _, kit, sl := leanOptions(shared.LaunchRequest{Superlean: &on}, nil, "")
 	if !lean || !sl || !kit.Superlean {
 		t.Fatalf("superlean:true starts lean and superlean: %v %v %+v", lean, sl, kit)
 	}
@@ -140,20 +141,20 @@ func TestSuperleanOptionsFromTheRequestAndFromTheCard(t *testing.T) {
 	if !small.HasTag(card.Tags, LeanTag) || !small.HasTag(card.Tags, SuperleanTag) {
 		t.Fatalf("tags %v", card.Tags)
 	}
-	if lean, _, _, sl = leanOptions(LaunchRequest{}, card, ""); !lean || !sl {
+	if lean, _, _, sl = leanOptions(shared.LaunchRequest{}, card, ""); !lean || !sl {
 		t.Fatalf("a reopen reads the tag: %v %v", lean, sl)
 	}
-	if lean, _, _, sl = leanOptions(LaunchRequest{Superlean: &off}, card, ""); !lean || sl {
+	if lean, _, _, sl = leanOptions(shared.LaunchRequest{Superlean: &off}, card, ""); !lean || sl {
 		t.Fatalf("superlean:false comes back lean: %v %v", lean, sl)
 	}
-	if lean, _, _, sl = leanOptions(LaunchRequest{Lean: &off}, card, ""); lean || sl {
+	if lean, _, _, sl = leanOptions(shared.LaunchRequest{Lean: &off}, card, ""); lean || sl {
 		t.Fatalf("lean:false is neither: %v %v", lean, sl)
 	}
-	lean, _, _, sl = leanOptions(LaunchRequest{}, &store.Task{Tags: []string{LeanTag}}, "")
+	lean, _, _, sl = leanOptions(shared.LaunchRequest{}, &store.Task{Tags: []string{LeanTag}}, "")
 	if !lean || sl {
 		t.Fatalf("a plain lean card is not superlean: %v %v", lean, sl)
 	}
-	if _, _, _, sl = leanOptions(LaunchRequest{}, &store.Task{Tags: []string{SuperleanTag}}, ""); sl {
+	if _, _, _, sl = leanOptions(shared.LaunchRequest{}, &store.Task{Tags: []string{SuperleanTag}}, ""); sl {
 		t.Fatal("the superlean tag alone, without the lean tag, is not read: lean is the card's gate")
 	}
 }
@@ -192,7 +193,7 @@ func TestForkOfASuperleanCardCarriesToolsAndMatchesTheLaunch(t *testing.T) {
 		flagValue(t, fork, "--append-system-prompt") != superleanSystemPrompt {
 		t.Fatalf("fork argv misses the superlean flags: %q", fork)
 	}
-	lean, mcp, kit, _ := leanOptions(LaunchRequest{}, card, f.st.LeanWorkerGateway())
+	lean, mcp, kit, _ := leanOptions(shared.LaunchRequest{}, card, f.st.LeanWorkerGateway())
 	if !lean {
 		t.Fatal("the card is lean")
 	}

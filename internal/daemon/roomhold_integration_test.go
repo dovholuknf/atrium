@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -138,11 +139,11 @@ func TestAnAgentsSayIsHeldAndTheOperatorsIsNot(t *testing.T) {
 func TestALaunchOntoAHeldRoomIsRefusedAndTheDeployersIsNot(t *testing.T) {
 	t.Parallel()
 	d, _, _ := heldRoom(t)
-	if err := d.launchHeld(LaunchRequest{SpawnedBy: "worker"}); err == nil ||
+	if err := d.launchHeld(shared.LaunchRequest{SpawnedBy: "worker"}); err == nil ||
 		!strings.Contains(err.Error(), "launch when the hold lifts") {
 		t.Fatalf("a held card's launch answered %v", err)
 	}
-	if err := d.launchHeld(LaunchRequest{SpawnedBy: "merge"}); err != nil {
+	if err := d.launchHeld(shared.LaunchRequest{SpawnedBy: "merge"}); err != nil {
 		t.Fatalf("the deployer's launch was refused: %v", err)
 	}
 }
@@ -296,7 +297,7 @@ func TestWithNoHoldNothingChanges(t *testing.T) {
 	if _, auto := ask(t, d, "worker", "Bash", "ls"); auto != nil {
 		t.Fatalf("a call with no hold was answered %+v", auto)
 	}
-	if err := d.launchHeld(LaunchRequest{SpawnedBy: "worker"}); err != nil {
+	if err := d.launchHeld(shared.LaunchRequest{SpawnedBy: "worker"}); err != nil {
 		t.Fatal(err)
 	}
 }

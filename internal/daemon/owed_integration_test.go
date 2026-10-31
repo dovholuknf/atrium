@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -224,7 +225,7 @@ func TestExitingTheWorkerClosesItsItem(t *testing.T) {
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
 	h := slowHarness(t, d)
-	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
+	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
 		SpawnedBy: "orchestrator"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)

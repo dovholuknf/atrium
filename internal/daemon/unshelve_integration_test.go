@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -95,7 +96,7 @@ func TestLaunchOntoAMissingCardSaysSo(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	_, err := d.Launch(LaunchRequest{
+	_, err := d.Launch(shared.LaunchRequest{
 		Harness: "claude", Cwd: t.TempDir(), TaskID: "no-such-card",
 	})
 	if err == nil {

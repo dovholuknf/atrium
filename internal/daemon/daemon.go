@@ -30,6 +30,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -115,7 +116,7 @@ type Daemon struct {
 	// jwks caches the providers' signing keys. See auth_flow.go.
 	jwks publish.JwksCache
 	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
-	wakeLaunch func(LaunchRequest) (*store.Task, error)
+	wakeLaunch func(shared.LaunchRequest) (*store.Task, error)
 	// authLim bounds password guessing on the published board. See auth_limit.go.
 	authLim authLimiter
 	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
@@ -781,7 +782,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 }
 
 func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
-	var req LaunchRequest
+	var req shared.LaunchRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
 	}
@@ -1163,6 +1164,9 @@ func (d *Daemon) publishTask(id string) {
 	}
 	d.ap.PublishTask(t)
 }
+
+// PublishTaskFunc is publishTask as the value a feature package takes in place of the Daemon.
+func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.publishTask }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
 // BoardHandler is the human-facing surface: the JSON API, the event stream, the

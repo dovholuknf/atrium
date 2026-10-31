@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -132,7 +133,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		t.Fatalf("BRIEF.md on B: %q %v", bs, err)
 	}
 	h := slowHarness(t, b)
-	req := LaunchRequest{Harness: h, Cwd: newWt, Title: "old", Repo: "dovholuknf/atrium",
+	req := shared.LaunchRequest{Harness: h, Cwd: newWt, Title: "old", Repo: "dovholuknf/atrium",
 		MovedFrom: "sg3~" + old.ID, Pinned: true, PinOrder: 2, SpawnedBy: "boss@sg3", SpawnedByID: "sg3~BOSS"}
 	nc, err := b.Launch(req)
 	if err != nil {

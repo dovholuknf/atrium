@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // launchDump launches the env-dump helper as a runner and answers its environment, upper-cased by name.
-func launchDump(t *testing.T, d *Daemon, req LaunchRequest) map[string]string {
+func launchDump(t *testing.T, d *Daemon, req shared.LaunchRequest) map[string]string {
 	t.Helper()
 	t.Setenv("ATRIUM_TEST_ENV_DUMP", "1")
 	if _, err := d.st.SaveHarness(store.Harness{
@@ -70,7 +71,7 @@ func TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder(t *testing.T) {
 	t.Setenv("GIT_CONFIG_KEY_0", "http.http://127.0.0.1:7777/git/.extraHeader")
 	t.Setenv("GIT_CONFIG_VALUE_0", gitsync.HeaderCardToken+": other-card.deadbeef")
 
-	seen := launchDump(t, d, LaunchRequest{})
+	seen := launchDump(t, d, shared.LaunchRequest{})
 	id := seen["ATRIUM_TASK_ID"]
 	g := gitEnvOf(seen)
 	if g["GIT_CONFIG_COUNT"] != "1" ||
@@ -108,7 +109,7 @@ func TestACardsLaunchEnvCarriesItsGitTokenScopedToTheForwarder(t *testing.T) {
 func TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv(t *testing.T) {
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
-	for name, req := range map[string]LaunchRequest{
+	for name, req := range map[string]shared.LaunchRequest{
 		"flag": {OutsideCode: true},
 		"tag":  {Tags: []string{OutsideCodeTag}},
 	} {
@@ -128,7 +129,7 @@ func TestACardThatRunsOutsideCodeGetsNoGitTokenInItsEnv(t *testing.T) {
 func TestAHarnessGitConfigIsContinuedNotReplaced(t *testing.T) {
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7777})
-	seen := launchDump(t, d, LaunchRequest{Env: map[string]string{
+	seen := launchDump(t, d, shared.LaunchRequest{Env: map[string]string{
 		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "Worker"}})
 	g := gitEnvOf(seen)
 	if g["GIT_CONFIG_COUNT"] != "2" || g["GIT_CONFIG_KEY_0"] != "user.name" || g["GIT_CONFIG_VALUE_0"] != "Worker" ||
@@ -429,10 +430,10 @@ func TestARunnerIsLaunchedWithItsOwnRoomsAgentAddress(t *testing.T) {
 	d := testDaemon(t)
 	d.setAgentAddr(&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7787})
 	t.Setenv("ATRIUM_HUB_URL", "http://127.0.0.1:7777")
-	if got := launchDump(t, d, LaunchRequest{})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:7787" {
+	if got := launchDump(t, d, shared.LaunchRequest{})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:7787" {
 		t.Fatalf("the runner's hooks are aimed at %q, want this room's http://127.0.0.1:7787", got)
 	}
-	if got := launchDump(t, d, LaunchRequest{Env: map[string]string{"ATRIUM_HUB_URL": "http://127.0.0.1:1"}})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:1" {
+	if got := launchDump(t, d, shared.LaunchRequest{Env: map[string]string{"ATRIUM_HUB_URL": "http://127.0.0.1:1"}})["ATRIUM_HUB_URL"]; got != "http://127.0.0.1:1" {
 		t.Fatalf("a harness that names ATRIUM_HUB_URL was overridden: %q", got)
 	}
 }

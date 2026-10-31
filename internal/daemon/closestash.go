@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -29,7 +30,7 @@ func (d *Daemon) StashTo(ctx context.Context, card, dir, branch string) (string,
 	if d.st.GitPush() != store.GitPushHub {
 		return "", "", fmt.Errorf("this room does not let cards push to the hub (git.push is none)")
 	}
-	if isOutsideCode(LaunchRequest{}, t) {
+	if isOutsideCode(shared.LaunchRequest{}, t) {
 		return "", "", fmt.Errorf("this card runs code that is not the room's own, so it does not push")
 	}
 	base := d.HubRemoteBase()

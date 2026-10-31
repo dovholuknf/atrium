@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -43,7 +44,7 @@ func TestLaunchWritesBriefFile(t *testing.T) {
 	h := briefHarness(t, d)
 	// The launch fails at the spawn: the command does not exist. The brief is
 	// written before that, which is the point.
-	_, _ = d.Launch(LaunchRequest{
+	_, _ = d.Launch(shared.LaunchRequest{
 		Harness: h, Cwd: dir, Brief: "hello from the orchestrator",
 	})
 
@@ -67,7 +68,7 @@ func TestLaunchSkipsBriefOnResume(t *testing.T) {
 
 	dir := t.TempDir()
 	h := briefHarness(t, d)
-	_, _ = d.Launch(LaunchRequest{
+	_, _ = d.Launch(shared.LaunchRequest{
 		Harness: h, Cwd: dir, Brief: "should not land", Resume: "sess-x",
 	})
 
@@ -136,7 +137,7 @@ func TestABriefThatAlreadyHasTheLineIsNotDoubled(t *testing.T) {
 
 // promptSeenBy launches `req` on a runner that writes the first prompt it was
 // given to a file, and returns what it wrote ("" if it was never started).
-func promptSeenBy(t *testing.T, d *Daemon, req LaunchRequest) string {
+func promptSeenBy(t *testing.T, d *Daemon, req shared.LaunchRequest) string {
 	t.Helper()
 	// forward slashes: sh on Windows reads a backslash in the redirect as an escape
 	out := filepath.ToSlash(filepath.Join(t.TempDir(), "prompt.txt"))
@@ -168,11 +169,11 @@ func TestALaunchWithNoBriefCarriesTheLineOnItsPromptOnce(t *testing.T) {
 	}
 	t.Parallel()
 	d := testDaemon(t)
-	got := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it"})
+	got := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "just do it"})
 	if !strings.HasPrefix(got, "just do it") || strings.Count(got, "atrium_git_url") != 1 {
 		t.Fatalf("prompt %q", got)
 	}
-	again := promptSeenBy(t, d, LaunchRequest{Prompt: withGitURLLine("already")})
+	again := promptSeenBy(t, d, shared.LaunchRequest{Prompt: withGitURLLine("already")})
 	if strings.Count(again, "atrium_git_url") != 1 {
 		t.Fatalf("doubled: %q", again)
 	}
@@ -186,7 +187,7 @@ func TestAResumeTakesNoGitURLLine(t *testing.T) {
 	d := testDaemon(t)
 	h := briefHarness(t, d)
 	dir := t.TempDir()
-	_, err := d.Launch(LaunchRequest{Harness: h, Cwd: dir, Prompt: "carry on", Resume: "sess-y"})
+	_, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: dir, Prompt: "carry on", Resume: "sess-y"})
 	if err == nil || !strings.Contains(err.Error(), "already has its instruction") {
 		t.Fatalf("a resume with a prompt was not refused: %v", err)
 	}
@@ -209,11 +210,11 @@ func TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine(t *testing.T) {
 		t.Fatalf("brief %q", raw)
 	}
 	d := testDaemon(t)
-	got := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it", OutsideCode: true})
+	got := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "just do it", OutsideCode: true})
 	if got == "" || strings.Contains(got, "atrium_git_url") {
 		t.Fatalf("prompt %q", got)
 	}
-	tagged := promptSeenBy(t, d, LaunchRequest{Prompt: "just do it", Tags: []string{OutsideCodeTag}})
+	tagged := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "just do it", Tags: []string{OutsideCodeTag}})
 	if tagged == "" || strings.Contains(tagged, "atrium_git_url") {
 		t.Fatalf("tagged prompt %q", tagged)
 	}
@@ -237,7 +238,7 @@ func TestALaunchedOutsideCodeCardsBriefFileHasNoGitURLLine(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 	h := briefHarness(t, d)
-	for name, req := range map[string]LaunchRequest{
+	for name, req := range map[string]shared.LaunchRequest{
 		"flag": {OutsideCode: true},
 		"tag":  {Tags: []string{OutsideCodeTag}},
 	} {
@@ -261,7 +262,7 @@ func TestAResidentLaunchEndsOnTheResidentLine(t *testing.T) {
 	}
 	t.Parallel()
 	d := testDaemon(t)
-	got := promptSeenBy(t, d, LaunchRequest{Prompt: "do it" + "\n\n" + LaunchEndingLine, Brief: "context",
+	got := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "do it" + "\n\n" + LaunchEndingLine, Brief: "context",
 		Tags: []string{ResidentTag}})
 	if !strings.HasSuffix(got, ResidentEndingLine) || strings.Contains(got, LaunchEndingLine) {
 		t.Fatalf("prompt %q", got)

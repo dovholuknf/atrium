@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -328,7 +329,7 @@ func (d *Daemon) liftAtStartup() {
 
 // launchHeld refuses a launch onto a held room, which would start a runner the
 // restart ends a minute later. The deployer and its exempt cards may still launch.
-func (d *Daemon) launchHeld(req LaunchRequest) error {
+func (d *Daemon) launchHeld(req shared.LaunchRequest) error {
 	h := d.deployHold()
 	if h == nil {
 		return nil
