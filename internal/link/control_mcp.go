@@ -54,6 +54,13 @@ import (
 
 var _ ctl.Caller = (*controlMCP)(nil)
 
+// Audit writes one audit line. It does nothing on a hub that keeps no log.
+func (c *controlMCP) Audit(room, kind, detail string) {
+	if c.audit != nil {
+		c.audit(room, kind, detail)
+	}
+}
+
 // controlMCP holds what the hub-side tools need: where to reach the hub's own
 // board, a client to do it with, and the hub to forward a restart over.
 type controlMCP struct {
@@ -519,66 +526,13 @@ func (c *controlMCP) Ask(ctx context.Context, method, path, room string, body, o
 	return json.NewDecoder(res.Body).Decode(out)
 }
 
-// ctlCard is the part of a task these tools report. The board's own shape is
-// much larger and most of it is for drawing.
-type ctlCard struct {
-	ID string `json:"id"`
-	// LaunchReplay: the room answered with the card an earlier attempt filed under the same launch key.
-	LaunchReplay bool     `json:"launch_replay"`
-	Title        string   `json:"display_title"`
-	Wire         string   `json:"wire_name"`
-	Alias        string   `json:"alias"`
-	Created      string   `json:"created_at"`
-	Status       string   `json:"status"`
-	Worktree     string   `json:"worktree"`
-	Runner       string   `json:"runner"`
-	Why          string   `json:"why"`
-	Idle         int      `json:"idle_seconds"`
-	Wait         int      `json:"wait_seconds"`
-	Superv       bool     `json:"supervised"`
-	Tags         []string `json:"tags"`
-	// What the card was launched with. See docs/runtime/launch-options-design.md.
-	Model         string   `json:"model"`
-	Effort        string   `json:"effort"`
-	LaunchArgs    []string `json:"launch_args"`
-	LaunchEnvKeys []string `json:"launch_env_keys"`
-	Activity      struct {
-		What string `json:"what"`
-	} `json:"activity"`
-	Seen *ctlSeen `json:"seen,omitempty"`
-}
+// ctlCard and ctlSeen are the card shapes the control tools read, kept in internal/link/ctl.
+type (
+	ctlCard = ctl.Card
+	ctlSeen = ctl.Seen
+)
 
-// ctlSeen is whether the operator has seen a card's latest turn and answered
-// its Open Questions. The room's `store.SeenView`, mirrored so internal/link
-// learns nothing of the store. See docs/runtime/seen-design.md.
-type ctlSeen struct {
-	TurnEndedAt string `json:"turn_ended_at,omitempty"`
-	SeenAt      string `json:"seen_at,omitempty"`
-	SeenVia     string `json:"seen_via,omitempty"`
-	// Unseen is the latest turn having ended with nobody looking at it since.
-	Unseen        bool     `json:"unseen"`
-	OpenQuestions []string `json:"open_questions,omitempty"`
-	// QuestionsUnparsed is a turn that had an Open Questions heading whose
-	// items could not be read. They exist, and their text is not known.
-	QuestionsUnparsed bool   `json:"questions_unparsed,omitempty"`
-	QuestionsAt       string `json:"questions_at,omitempty"`
-	AnsweredAt        string `json:"answered_at,omitempty"`
-	AnsweredVia       string `json:"answered_via,omitempty"`
-	// Answered is absent when no turn ever asked anything.
-	Answered *bool `json:"answered,omitempty"`
-}
-
-// openCount is how many questions are owed, counting an unreadable block as
-// one so it is never reported as none.
-func (s *ctlSeen) openCount() int {
-	if s == nil || s.Answered == nil || *s.Answered {
-		return 0
-	}
-	if len(s.OpenQuestions) == 0 && s.QuestionsUnparsed {
-		return 1
-	}
-	return len(s.OpenQuestions)
-}
+var pickCard = ctl.PickCard
 
 // ── status ────────────────────────────────────────────────────────────────────
 
@@ -718,7 +672,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 			Handle: t.Wire, Alias: t.Alias, Card: t.ID, Title: t.Title, Status: t.Status,
 			Doing: t.Activity.What, Where: t.Worktree,
 			Waiting: t.Wait, Owned: t.Superv,
-			Unseen: t.Seen != nil && t.Seen.Unseen, OpenQuestions: t.Seen.openCount(),
+			Unseen: t.Seen != nil && t.Seen.Unseen, OpenQuestions: t.Seen.OpenCount(),
 		})
 	}
 	// OTHER ROOMS, marked, when asked. Only for a caller with a room: without one
