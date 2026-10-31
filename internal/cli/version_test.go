@@ -5,16 +5,18 @@ import (
 	"testing"
 )
 
-// An unstamped build says `dev`, and saying so is the point.
-//
-// The tempting alternative is the nearest tag plus a commit count, which reads
-// like a version and is not one. A package manager compares this string to
-// decide whether you already have it, so a working-tree build claiming a number
-// near a release is worse than one admitting it is not a release at all.
-func TestAnUnstampedBuildAdmitsIt(t *testing.T) {
-	if Version != "dev" {
-		t.Fatalf("the default version is %q, not dev. it is stamped by the linker, "+
-			"and a value edited into the source is wrong on every build off a branch", Version)
+// An unstamped build is the base number plus the short commit, and never sorts as a release.
+func TestAnUnstampedBuildIsBasePlusCommit(t *testing.T) {
+	if Version != "" {
+		t.Fatalf("the default version is %q. it is stamped by the linker", Version)
+	}
+	commit := "99e2d8e51ecdd19b4fe6f9048e06b40c7cae6937"
+	want := strings.TrimSpace(baseVersion) + "+99e2d8e"
+	if v, _, _ := versionInfoOf(commit, "clean"); v != want {
+		t.Fatalf("version is %q, want %q", v, want)
+	}
+	if v, _, _ := versionInfoOf(commit, "modified"); v != want {
+		t.Fatalf("a modified tree changed the version to %q", v)
 	}
 }
 

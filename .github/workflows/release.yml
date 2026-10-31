@@ -69,6 +69,10 @@ jobs:
       - name: build, prove, and publish
         run: bash scripts/cut-release.sh "$ATRIUM_VERSION" --from-tag --skip-ci --execute
 
+      # Moves VERSION on main to the next patch. The script decides, and does nothing when main has moved on.
+      - name: bump VERSION on main
+        run: bash scripts/bump-version.sh --push main
+
       # Kept whether or not the publish worked. When it did, this is how you
       # check a hash without downloading a release. When it did not, it is the
       # only copy of what was built, including the scoop manifest, which is the
