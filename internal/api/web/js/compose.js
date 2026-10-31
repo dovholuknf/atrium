@@ -1,13 +1,12 @@
-// ── typing while atrium is typing ───────────────────────
+// ── the new context panel ───────────────────────────────
 //
-// For the whole of a new context the room drops what the board types into the card's terminal, and says
-// `in-refused`. Dropping it silently lost keystrokes, so the first refused key opens this box over the terminal,
-// seeded with that key. Enter queues the text on the card as an ordinary message, which the room holds for the
-// cycle and types, submitted once, when it ends. Escape discards it.
+// For the whole of a new context the room drops what the board types into the card's terminal. One panel over the
+// terminal shows the step and takes a message: Enter queues it on the card, which types it, submitted once, when the
+// cycle ends. Pasting an image into it uploads the file and puts its path in the text.
 //
-// THE WAY OUT IS ALWAYS HERE: "let me type" stops the cycle the way dismissing its chip does (DELETE
-// /v1/tasks/{id}/new-context), which also sends what was queued and gives the terminal back at once. It does not
-// wait for any step, so a wedged cycle cannot lock the operator out. See internal/daemon/newcontext.go.
+// THE WAY OUT IS ALWAYS HERE: the x, Escape and "let me type" stop the cycle (DELETE /v1/tasks/{id}/new-context),
+// which sends what was queued and gives the terminal back at once, whatever step it is on. A key typed into the
+// terminal does the same and goes through. See internal/daemon/newcontext.go.
 
 // The last printable thing typed and when, so the key the room refused can seed the box.
 let composeLast = { d: "", at: 0 };
@@ -43,7 +42,10 @@ function composeRefused() {
   const box = document.getElementById("t-ctxbox");
   const ta = document.getElementById("t-ctxbox-in");
   if (!box || !ta || !termTask || termKind === "shell") return false;
-  if (composeOpen()) return true;
+  if (composeOpen()) {
+    if (!ta.value && Date.now() - composeLast.at < 2000) ta.value = composeLast.d;
+    return true;
+  }
   composeWire();
   box.dataset.card = termTask.id;
   box.hidden = false;
@@ -89,29 +91,33 @@ async function composeFree() {
   const ta = document.getElementById("t-ctxbox-in");
   const id = box && box.dataset.card;
   const text = ta ? ta.value : "";
-  if (!id) { composeClose(); return; }
-  try {
-    await api("/v1/tasks/" + encodeURIComponent(id) + "/new-context", { method: "DELETE" });
-  } catch (e) {
-    toast("could not stop the new context", e.message);
-    return;
-  }
-  composeClose();
+  if (!id || !termTask || termTask.id !== id) { composeClose(); return; }
+  if (!(await composeStop())) return;
   // Not the box's text through the message queue: the line is free now, so it goes where it was aimed.
   if (text && typeof sendInput === "function") sendInput(text);
-  if (typeof refresh === "function") refresh();
 }
 
-// The do-not-enter sign over the terminal for as long as the room refuses its keys: from the moment the cycle finds
-// the input line clear (`held`). The idle parking's capture and a failed cycle hold nothing, so they draw none.
+// Whether the room refuses the card's keys: from the moment the cycle finds the input line clear (`held`). The idle parking's capture and a failed cycle hold nothing, so they draw none.
 function composeHeld(n) { return !!n && n.held !== false && n.step !== "failed" && n.step !== "capture"; }
 
+// The card whose panel was dismissed, so the next row of the same cycle does not open it again.
+let composeDismissedFor = "";
+
+// The panel opens with the hold and shows the step. It does not take focus, so the terminal stays typeable.
 function composeNoEntry(n) {
-  const el = document.getElementById("t-nodev");
+  const el = document.getElementById("t-ctxbox");
   if (!el) return;
   const held = composeHeld(n);
-  el.hidden = !held;
-  if (!held) return;
+  if (!held) {
+    composeDismissedFor = "";
+    const ta = document.getElementById("t-ctxbox-in");
+    if (!el.hidden && ta && !ta.value) el.hidden = true;
+    return;
+  }
+  if (!termTask || composeDismissedFor === termTask.id) return;
+  composeWire();
+  el.dataset.card = termTask.id;
+  el.hidden = false;
   const say = document.getElementById("t-nodev-say");
   say.textContent = "step " + n.n + "/" + n.of + ": " + (n.step === "wake" ? "waking it to read the handoff" : n.label);
   say.dataset.tip = say.textContent;
@@ -159,19 +165,67 @@ function composeFollow(row) {
 }
 
 async function composeStop() {
-  if (!termTask) return;
+  if (!termTask) return false;
   try {
     await api("/v1/tasks/" + encodeURIComponent(termTask.id) + "/new-context", { method: "DELETE" });
   } catch (e) {
     toast("could not stop the new context", e.message);
-    return;
+    return false;
   }
   termTask.new_context = null;
   const bar = document.getElementById("t-ncbar");
   if (bar) bar.hidden = true;
   composeNoEntry(null);
-  if (term) term.focus();
+  composeClose();
   if (typeof refresh === "function") refresh();
+  return true;
+}
+
+// The x and Escape: the panel goes away and the hold with it, at any step. What was typed in it is dropped.
+async function composeDismiss() {
+  if (termTask) composeDismissedFor = termTask.id;
+  const box = document.getElementById("t-ctxbox");
+  if (box) box.hidden = true;
+  if (!(await composeStop())) composeDismissedFor = "";
+  composeClose();
+}
+
+// A key or paste typed into the terminal while it is held: the hold is released and the bytes go through.
+let composeTyped = null;
+async function composeRelease(d, pasted) {
+  if (composeTyped) { composeTyped.d += d; composeTyped.pasted = composeTyped.pasted || !!pasted; return; }
+  composeTyped = { d, pasted: !!pasted };
+  composeDismissedFor = termTask.id;
+  const ok = await composeStop();
+  const typed = composeTyped;
+  composeTyped = null;
+  if (ok) { sendInput(typed.d, false, typed.pasted); return; }
+  composeDismissedFor = "";
+  composeNoteTyped(typed.d);
+  composeRefused();
+}
+
+// Pasting a file into the panel goes up the way a paste into the terminal does, and its path lands in the text.
+async function composePasteFiles(files) {
+  const id = termTask && termTask.id;
+  const ta = document.getElementById("t-ctxbox-in");
+  if (!id || !ta) return;
+  const form = new FormData();
+  for (const f of files) form.append("file", f, f.name);
+  let res;
+  try {
+    res = await api("/v1/tasks/" + encodeURIComponent(id) + "/files", { method: "POST", body: form });
+  } catch (e) {
+    toast("that did not go up", e.message);
+    return;
+  }
+  const paths = (res.paths || []).join(" ");
+  if (!paths) return;
+  const pre = preambleOf(await pasteSettings());
+  const at = ta.selectionStart == null ? ta.value.length : ta.selectionStart;
+  const ins = pre + paths + " ";
+  ta.value = ta.value.slice(0, at) + ins + ta.value.slice(ta.selectionEnd);
+  ta.setSelectionRange(at + ins.length, at + ins.length);
 }
 
 function composeWire() {
@@ -179,8 +233,21 @@ function composeWire() {
   const ta = document.getElementById("t-ctxbox-in");
   if (!box || !ta || box.dataset.wired) return;
   box.dataset.wired = "1";
+  ta.addEventListener("paste", e => {
+    const dt = e.clipboardData;
+    const files = [];
+    for (const item of (dt && dt.items) || []) {
+      const f = item.kind === "file" ? item.getAsFile() : null;
+      if (f && f.size > 0) files.push(f);
+    }
+    if (!files.length || isGuest()) return;
+    e.preventDefault();
+    composePasteFiles(files);
+  });
+  box.addEventListener("keydown", e => {
+    if (e.key === "Escape") { e.preventDefault(); composeDismiss(); }
+  });
   ta.addEventListener("keydown", e => {
-    if (e.key === "Escape") { e.preventDefault(); composeClose(); return; }
     // Enter queues and Shift+Enter is a newline, as in the card's say box. Ctrl+Enter queues too.
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); composeSend(); }
   });
@@ -190,7 +257,6 @@ function composeWire() {
 // The first one opens the compose box seeded with it, the same as a key the room refused.
 function composeGate(d, pasted) {
   if (typeof termTask === "undefined" || !termTask || termKind === "shell" || !composeHeld(termTask.new_context)) return false;
-  if (!pasted) composeNoteTyped(d);
-  composeRefused();
+  composeRelease(d, pasted);
   return true;
 }
