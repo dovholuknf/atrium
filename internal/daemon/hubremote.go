@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -242,7 +243,7 @@ func (d *Daemon) hubGitEnv(card string, outside bool, harness map[string]string,
 }
 
 // isOutsideCode says whether a launch is of a card that runs code that is not the room's own.
-func isOutsideCode(req LaunchRequest, t *store.Task) bool {
+func isOutsideCode(req shared.LaunchRequest, t *store.Task) bool {
 	if req.OutsideCode {
 		return true
 	}
@@ -315,7 +316,7 @@ func (d *Daemon) GitPush(taskID, branch string) (any, error) {
 	if d.st.GitPush() != store.GitPushHub {
 		return nil, fmt.Errorf("this room does not let cards push to the hub (git.push is none)")
 	}
-	if isOutsideCode(LaunchRequest{}, t) {
+	if isOutsideCode(shared.LaunchRequest{}, t) {
 		return nil, fmt.Errorf("this card runs code that is not the room's own, so it does not push")
 	}
 	base := d.HubRemoteBase()

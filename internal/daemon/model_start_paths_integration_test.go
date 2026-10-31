@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -35,7 +36,7 @@ func modelShellCard(t *testing.T, d *Daemon) *store.Task {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	task, err := d.Launch(LaunchRequest{Harness: "modeltest", Cwd: dir})
+	task, err := d.Launch(shared.LaunchRequest{Harness: "modeltest", Cwd: dir})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestALaunchOntoACardNamingNoModelKeepsTheCardsModel(t *testing.T) {
 	}
 	waitGone(t, d, task.ID)
 
-	if _, err := d.Launch(LaunchRequest{Harness: "modeltest", Cwd: task.Worktree, TaskID: task.ID}); err != nil {
+	if _, err := d.Launch(shared.LaunchRequest{Harness: "modeltest", Cwd: task.Worktree, TaskID: task.ID}); err != nil {
 		t.Fatal(err)
 	}
 	cmd, model, n := lastLaunch(t, d, task.ID)

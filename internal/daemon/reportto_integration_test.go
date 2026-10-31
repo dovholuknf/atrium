@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -24,7 +25,7 @@ func reviewCard(t *testing.T, d *Daemon, name string) *store.Task {
 func launchTo(t *testing.T, d *Daemon, to string) *store.Task {
 	t.Helper()
 	h := slowHarness(t, d)
-	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: to})
+	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: to})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestAnUnknownOrForeignReportToRefusesAndCreatesNoCard(t *testing.T) {
 		{"review@claude-sg4", "another room"},
 		{"claude-sg4~L1", "another room"},
 	} {
-		_, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: c.to})
+		_, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: c.to})
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("%s: err %v, want it to mention %q", c.to, err, c.want)
 		}
@@ -129,7 +130,7 @@ func TestAnAgentLaunchCannotCarryReportTo(t *testing.T) {
 	d := testDaemon(t)
 	reviewCard(t, d, "reviewer")
 	h := slowHarness(t, d)
-	_, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: "review",
+	_, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), ReportTo: "review",
 		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator"})
 	if err == nil || !strings.Contains(err.Error(), "board") {
 		t.Fatalf("err %v, want a refusal", err)

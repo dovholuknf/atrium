@@ -223,7 +223,7 @@ func hasToolsFlag(args []string) bool {
 // gateway is the lean_worker_gateway setting. With it set, `mercurius` named in
 // the request or carried by a tag is the WIDE-server override and is kept, where
 // with it empty `mercurius` is a default server and is dropped as it always was.
-func leanOptions(req LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
+func leanOptions(req shared.LaunchRequest, task *store.Task, gateway string) (lean bool, mcp []string, kit leanKit, superlean bool) {
 	if req.Lean != nil && !*req.Lean {
 		return false, nil, leanKit{}, false
 	}

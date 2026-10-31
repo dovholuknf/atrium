@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 	"strings"
 	"testing"
@@ -139,7 +140,7 @@ func TestARepeatLaunchForOneMoveAnswersTheSameCard(t *testing.T) {
 		<-errCh
 	}()
 	h := slowHarness(t, d)
-	req := LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "sg3~OLD1", Pinned: true, PinOrder: 3}
+	req := shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Title: "moved", MovedFrom: "sg3~OLD1", Pinned: true, PinOrder: 3}
 	a, err := d.Launch(req)
 	if err != nil {
 		t.Skipf("could not spawn a slow test runner on this machine: %v", err)

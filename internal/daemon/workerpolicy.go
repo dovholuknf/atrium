@@ -25,7 +25,7 @@ const NoticeBudget = "budget"
 
 // workerDefaultModel is the model an agent-launched fresh launch gets when it named none, or "" to leave the
 // runner's own default.
-func (d *Daemon) workerDefaultModel(h *store.Harness, req LaunchRequest, task *store.Task, reportTo string) string {
+func (d *Daemon) workerDefaultModel(h *store.Harness, req shared.LaunchRequest, task *store.Task, reportTo string) string {
 	if req.Resume != "" || task != nil || !shared.IsClaude(h) {
 		return ""
 	}

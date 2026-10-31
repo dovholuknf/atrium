@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -136,10 +137,10 @@ func TestTheOwnerOfALaunchIsReadFromItsTag(t *testing.T) {
 		t.Fatalf("spec: %q", got)
 	}
 	// refused BEFORE a card exists, so a tester owner costs nothing
-	if err := checkItemLaunch(LaunchRequest{Item: true, SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err == nil {
+	if err := checkItemLaunch(shared.LaunchRequest{Item: true, SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err == nil {
 		t.Fatal("a tester owner was taken")
 	}
-	if err := checkItemLaunch(LaunchRequest{SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err != nil {
+	if err := checkItemLaunch(shared.LaunchRequest{SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err != nil {
 		t.Fatalf("an ordinary launch is none of this: %v", err)
 	}
 }

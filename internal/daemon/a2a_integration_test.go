@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -628,12 +629,12 @@ func TestOnlyAnAgentLaunchedClaudeGetsTheStopHook(t *testing.T) {
 func TestTheBoardDialogIsTheHuman(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
-		req  LaunchRequest
+		req  shared.LaunchRequest
 		want string
 	}{
-		{LaunchRequest{}, store.HumanLauncher},
-		{LaunchRequest{Tags: []string{OriginAgentTag}}, ""},
-		{LaunchRequest{Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator"}, "orchestrator"},
+		{shared.LaunchRequest{}, store.HumanLauncher},
+		{shared.LaunchRequest{Tags: []string{OriginAgentTag}}, ""},
+		{shared.LaunchRequest{Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator"}, "orchestrator"},
 	} {
 		if got := launcherFor(c.req); got != c.want {
 			t.Errorf("%+v: launcher %q, want %q", c.req, got, c.want)
@@ -650,7 +651,7 @@ func TestALaunchRecordsItsLauncher(t *testing.T) {
 	d := testDaemon(t)
 	parent := peerCard(t, d, "orchestrator")
 	h := slowHarness(t, d)
-	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(),
+	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(),
 		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
@@ -685,7 +686,7 @@ func TestAFirstTurnWithoutAReportIsASilentStop(t *testing.T) {
 		Cmd: cmd, LaunchMode: store.LaunchPTY, PromptArgs: args}); err != nil {
 		t.Fatal(err)
 	}
-	task, err := d.Launch(LaunchRequest{Harness: "prompttest", Cwd: t.TempDir(), Prompt: "do item 42",
+	task, err := d.Launch(shared.LaunchRequest{Harness: "prompttest", Cwd: t.TempDir(), Prompt: "do item 42",
 		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)

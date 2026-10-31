@@ -67,7 +67,7 @@ func resolveItemOwner(spec, creator string) (kind, owner string, err error) {
 }
 
 // checkItemLaunch refuses an item launch whose owner cannot be, BEFORE a card exists. Nothing else is its business.
-func checkItemLaunch(req LaunchRequest) error {
+func checkItemLaunch(req shared.LaunchRequest) error {
 	if !req.Item && !small.HasTag(req.Tags, ItemTag) && workOfTags(req.Tags) == "" {
 		return nil
 	}

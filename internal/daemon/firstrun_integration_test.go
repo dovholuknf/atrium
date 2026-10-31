@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -61,7 +62,7 @@ func TestALaunchedClaudeStartsOnTheClassicRenderer(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	_, _ = d.Launch(LaunchRequest{Harness: "claude", Cwd: dir, SpawnedBy: store.HumanLauncher})
+	_, _ = d.Launch(shared.LaunchRequest{Harness: "claude", Cwd: dir, SpawnedBy: store.HumanLauncher})
 
 	var raw []byte
 	testwait.Eventually(t, 10*time.Second, "the runner to write its environment", func() bool {

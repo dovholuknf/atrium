@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -20,11 +21,11 @@ func TestLaunchRefusedInADirectoryACardHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := slowHarness(t, d)
-	_, err = d.Launch(LaunchRequest{Harness: h, Cwd: filepath.ToSlash(dir)})
+	_, err = d.Launch(shared.LaunchRequest{Harness: h, Cwd: filepath.ToSlash(dir)})
 	if err == nil || !strings.Contains(err.Error(), held.ID) {
 		t.Fatalf("err = %v, want a refusal naming %s", err, held.ID)
 	}
-	got, err := d.Launch(LaunchRequest{Harness: h, Cwd: filepath.ToSlash(dir), IfRunning: "skip"})
+	got, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: filepath.ToSlash(dir), IfRunning: "skip"})
 	if err != nil || got.ID != held.ID {
 		t.Fatalf("skip = %v, %v, want the card already there", got, err)
 	}

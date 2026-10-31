@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -117,7 +118,7 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 		d, launcher, worker := finished(t)
 		var f *fakePTY
 		launched := 0
-		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 			launched++
 			_, f = typedRunner(t, d, worker.ID)
 			return d.st.Get(worker.ID)
@@ -137,7 +138,7 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 	t.Run("the launcher's fyi is kept and does not wake it", func(t *testing.T) {
 		d, launcher, worker := finished(t)
 		launched := 0
-		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 			launched++
 			return d.st.Get(worker.ID)
 		}
@@ -158,7 +159,7 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 		d, _, worker := finished(t)
 		peerCard(t, d, "stranger")
 		launched := 0
-		d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+		d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 			launched++
 			return d.st.Get(worker.ID)
 		}

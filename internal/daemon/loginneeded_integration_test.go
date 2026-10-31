@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +24,11 @@ func TestARevokedLoginOnAnyScreenFlagsTheRoomAndRefusesClaudeLaunches(t *testing
 	if d.LoginNeededReason() == "" || d.loginHealth() == nil || d.healthBody()["login_needed"] == nil {
 		t.Fatal("the flag did not reach the reason, the health answer and the health event")
 	}
-	err := d.launchNeedsLogin(LaunchRequest{Harness: "claude"})
+	err := d.launchNeedsLogin(shared.LaunchRequest{Harness: "claude"})
 	if err == nil || !strings.Contains(err.Error(), "/login") {
 		t.Fatalf("launch answered %v, wanted a refusal naming /login", err)
 	}
-	if err := d.launchNeedsLogin(LaunchRequest{Harness: "no-such-runner"}); err != nil {
+	if err := d.launchNeedsLogin(shared.LaunchRequest{Harness: "no-such-runner"}); err != nil {
 		t.Fatalf("a harness that is not claude was refused: %v", err)
 	}
 
@@ -45,7 +46,7 @@ func TestARevokedLoginOnAnyScreenFlagsTheRoomAndRefusesClaudeLaunches(t *testing
 	if d.loginNeeded() != nil {
 		t.Fatal("still flagged after the screen stopped showing the line")
 	}
-	if err := d.launchNeedsLogin(LaunchRequest{Harness: "claude"}); err != nil {
+	if err := d.launchNeedsLogin(shared.LaunchRequest{Harness: "claude"}); err != nil {
 		t.Fatalf("launch still refused: %v", err)
 	}
 }

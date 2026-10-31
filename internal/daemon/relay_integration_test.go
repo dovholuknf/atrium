@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -406,7 +407,7 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 	t.Parallel()
 	d, _ := roomDaemon(t)
 	h := slowHarness(t, d)
-	task, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
+	task, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
 		SpawnedBy: "orch@claude-sg4", SpawnedByID: "claude-sg4~L1"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
@@ -427,7 +428,7 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 	}
 
 	local := peerCard(t, d, "here")
-	task2, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
+	task2, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), Tags: []string{OriginAgentTag},
 		SpawnedBy: "here", SpawnedByID: local.ID + "x"})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -119,8 +120,8 @@ func TestTheDefaultWorkerModelOnlyReachesAFreshAgentLaunchThatNamedNone(t *testi
 	t.Parallel()
 	d := testDaemon(t)
 	claude := &store.Harness{ID: "claude"}
-	agent := LaunchRequest{Tags: []string{OriginAgentTag}}
-	human := LaunchRequest{}
+	agent := shared.LaunchRequest{Tags: []string{OriginAgentTag}}
+	human := shared.LaunchRequest{}
 
 	if got := d.workerDefaultModel(claude, agent, nil, ""); got != "" {
 		t.Fatalf("model %q with the setting empty", got)

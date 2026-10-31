@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -101,7 +102,7 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 
 	var f *fakePTY
 	launched := 0
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		launched++
 		if req.TaskID != target.ID {
 			t.Errorf("launched %q, want the done card", req.TaskID)
@@ -171,7 +172,7 @@ func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
 	}
 	d.hk.keptGiveUp = 200 * time.Millisecond
 	var f *fakePTY
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		_, f = typedRunner(t, d, target.ID)
 		return d.st.Get(target.ID)
 	}
@@ -218,7 +219,7 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 
 	var f *fakePTY
 	launched := 0
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		launched++
 		_, f = typedRunner(t, d, target.ID)
 		return d.st.Get(target.ID)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -106,7 +107,7 @@ func TestALaunchMakesTheItemAndAFailedStartEndsItOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	_, launchErr := d.Launch(LaunchRequest{
+	_, launchErr := d.Launch(shared.LaunchRequest{
 		Harness: "quick", Cwd: dir, Title: "sa99", Brief: "the brief", Prompt: "go",
 		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator", Scratch: true,
 	})
@@ -156,7 +157,7 @@ func TestABoardLaunchGetsNoWorkItem(t *testing.T) {
 	h := briefHarness(t, d)
 	// Fails at the spawn, before any item could be made, and a board launch
 	// would not make one anyway. What is checked is that nothing appears.
-	_, _ = d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), SpawnedBy: store.HumanLauncher})
+	_, _ = d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), SpawnedBy: store.HumanLauncher})
 	v, err := d.st.Ledger()
 	if err != nil || len(v.Open) != 0 {
 		t.Fatalf("ledger = %+v err=%v", v, err)

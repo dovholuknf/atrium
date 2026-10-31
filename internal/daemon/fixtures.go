@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -179,7 +180,7 @@ func (d *Daemon) startFixture(f *store.Fixture) error {
 		return nil
 	}
 
-	req := LaunchRequest{
+	req := shared.LaunchRequest{
 		Harness: f.Harness,
 		Cwd:     f.Cwd,
 		Title:   f.Label,

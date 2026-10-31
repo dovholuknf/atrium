@@ -132,7 +132,7 @@ func agentLaunched(t *store.Task) bool { return t != nil && small.HasTag(t.Tags,
 // own dialog, so the human is the parent. An agent launch carries the marker,
 // and one that lost its sender stays unnamed rather than being filed as the
 // human's.
-func launcherFor(req LaunchRequest) string {
+func launcherFor(req shared.LaunchRequest) string {
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
 		return by
 	}

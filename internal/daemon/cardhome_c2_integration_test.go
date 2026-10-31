@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -254,7 +255,7 @@ func requiredRoom(t *testing.T, on bool) (*Daemon, string) {
 }
 
 func launchOutside(d *Daemon, cwd string, tags []string, scratch bool) error {
-	_, err := d.Launch(LaunchRequest{Harness: "quick", Cwd: cwd, Title: "outside", Prompt: "go", Tags: tags, Scratch: scratch})
+	_, err := d.Launch(shared.LaunchRequest{Harness: "quick", Cwd: cwd, Title: "outside", Prompt: "go", Tags: tags, Scratch: scratch})
 	return err
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 )
 
@@ -111,7 +112,7 @@ func (d *Daemon) LoginNeededReason() string {
 }
 
 // launchNeedsLogin refuses a claude launch while the flag is up. A runner that is not claude has its own login.
-func (d *Daemon) launchNeedsLogin(req LaunchRequest) error {
+func (d *Daemon) launchNeedsLogin(req shared.LaunchRequest) error {
 	if d.loginNeeded() == nil {
 		return nil
 	}

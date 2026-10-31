@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -98,8 +99,8 @@ func (d *Daemon) parkCard(taskID, was string, extra map[string]any) error {
 // THE MODEL COMES BACK TOO. This rebuilds a launch out of the card, so anything
 // not named here reverts to the runner's default, and a session started on one
 // model would move back on the next resume.
-func (d *Daemon) reopenRequest(t *store.Task) LaunchRequest {
-	return LaunchRequest{
+func (d *Daemon) reopenRequest(t *store.Task) shared.LaunchRequest {
+	return shared.LaunchRequest{
 		Harness: t.Runner,
 		Cwd:     t.Worktree,
 		TaskID:  t.ID,

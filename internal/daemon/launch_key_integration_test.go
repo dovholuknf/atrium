@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"strings"
 	"testing"
 )
@@ -22,7 +23,7 @@ func TestALaunchKeyReturnsTheCardAlreadyFiledUnderIt(t *testing.T) {
 	h := slowHarness(t, d)
 	dir := t.TempDir()
 
-	first, err := d.Launch(LaunchRequest{Harness: h, Cwd: dir, LaunchKey: "key-one"})
+	first, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: dir, LaunchKey: "key-one"})
 	if err != nil {
 		t.Skipf("could not spawn a slow test runner on this machine: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestALaunchKeyReturnsTheCardAlreadyFiledUnderIt(t *testing.T) {
 	}
 	before, _ := d.st.List()
 
-	again, err := d.Launch(LaunchRequest{Harness: h, Cwd: dir, LaunchKey: "key-one"})
+	again, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: dir, LaunchKey: "key-one"})
 	if err != nil {
 		t.Fatalf("the repeat failed: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestALaunchKeyReturnsTheCardAlreadyFiledUnderIt(t *testing.T) {
 		t.Fatalf("the answer does not say it is a replay: %s", raw)
 	}
 
-	other, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), LaunchKey: "key-two"})
+	other, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), LaunchKey: "key-two"})
 	if err != nil {
 		t.Fatalf("a different key was refused: %v", err)
 	}
@@ -59,12 +60,12 @@ func TestALaunchKeyReturnsTheCardAlreadyFiledUnderIt(t *testing.T) {
 	}
 
 	// No key: each launch is its own, as before.
-	a, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir()})
+	a, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = d.StopRunner(a.ID) }()
-	b, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir()})
+	b, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
