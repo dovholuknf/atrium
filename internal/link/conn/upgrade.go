@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -156,7 +157,7 @@ func forRoom(builds []Build, hi hello) *Build {
 		// that shortcut: two `dev` builds are different binaries most of the
 		// time, and during development handing a room the build you just made
 		// is the entire point.
-		if hi.Version == b.Version && b.Version != "dev" {
+		if hi.Version == b.Version && isRelease(b.Version) {
 			return nil
 		}
 		return b
@@ -305,7 +306,7 @@ func (r *Room) consider(ctx context.Context, o *Offer) {
 	if r.Upgrades.SHA256 != "" && o.SHA256 == r.Upgrades.SHA256 {
 		return
 	}
-	if o.Version == r.Upgrades.Version && o.Version != "dev" {
+	if o.Version == r.Upgrades.Version && isRelease(o.Version) {
 		return
 	}
 	if !r.taking.start(o.SHA256) {
@@ -397,3 +398,6 @@ func (r *Room) fetchUpgrade(ctx context.Context, o Offer) error {
 	tmp = ""
 	return nil
 }
+
+// isRelease is false for dev and for <base>+<shorthash>, where the same string can still be two different binaries.
+func isRelease(v string) bool { return v != "dev" && !strings.Contains(v, "+") }

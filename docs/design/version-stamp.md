@@ -1,92 +1,61 @@
 # Version stamp
 
-Every room and the hub report `dev` today. This gives every build a real version and a commit hash.
+Every room and the hub reported `dev`. Every build now carries a real version and a commit hash.
 
 ## The base number
 
-A `VERSION` file at the repo root holds one line, `0.0.3`, no `v`. It is the number of the NEXT release. Cutting a
-release tags `v0.0.3` and the same commit set (or the next one) moves `VERSION` to `0.0.4`. `scripts/cut-release.sh`
-refuses a tag whose number differs from `VERSION` at that commit, so the file and the tag cannot drift.
+`internal/cli/VERSION` holds one line, `0.0.3`, no `v`. It is the number of the NEXT release. It lives beside
+`version.go` because `go:embed` cannot reach outside the package. `scripts/bump-version.sh` moves it (the next patch, or
+a number given) and commits nothing. A release workflow calls that script, so no person edits the file.
+`scripts/cut-release.sh` refuses a tag whose number differs from the file.
 
 ## What a build reports
 
-| Build | Version | Example |
-| --- | --- | --- |
-| tag build, clean tree | the tag, without `v` | `0.0.3` |
-| branch build, clean tree | `<base>-dev+<shorthash>` | `0.0.3-dev+6c943f4` |
-| branch build, tracked files changed | `<base>-dev+<shorthash>.modified` | `0.0.3-dev+6c943f4.modified` |
-| `go build` with no flags | same as a branch build, from Go's embedded `vcs.revision` and `vcs.modified` | |
-| no git and no flags | `<base>-dev` with no hash | `0.0.3-dev` |
+| Build | Version |
+| --- | --- |
+| tag on HEAD | the tag without `v`: `0.0.3` |
+| anything else | `<base>+<shorthash>`: `0.0.3+6c943f4` |
+| `go build` with no flags | the same, from the embedded base and Go's `vcs.revision` |
+| no git and no flags | `<base>` alone |
 
-`<shorthash>` is 7 characters. The full 40-character commit stays in `Commit` and keeps going to the hub, because the
-deploy queue compares it with the branch. `Version` is what a person and a package manager read.
+The short hash is 7 characters. A dirty tree does not change the version. It shows on the commit line only, as
+`modified`, over tracked files. The full commit stays in `Commit` and keeps going to the hub. Dev builds are not
+packaged, but the MSI keeps its numeric rule and takes the part before `+`.
 
-SemVer ordering holds: `0.0.2 < 0.0.3-dev+x < 0.0.3`. A pre-release sorts below its release and build metadata is
-ignored in comparison, so a dev build never sorts above the 0.0.3 release. Packagers that do not speak SemVer map the
-dash: deb and rpm use `0.0.3~dev+<shorthash>` (tilde sorts below empty), and the MSI keeps its existing numeric rule in
-`package-windows.ps1`, which never carries the suffix. Dev builds are not packaged, so this only matters if someone does.
+SemVer note: `0.0.3+x` is EQUAL to `0.0.3` when build metadata is ignored, and a tool that sorts by it may rank it above.
+That is the cost of the format Clint chose over `0.0.3-dev+x`.
 
-## Where it is computed
+## One rule
 
-One place decides, so the paths cannot disagree. A new `scripts/version.sh` prints `version commit tree` for the
-current checkout using the table above, and every shell path calls it. PowerShell paths run it through `bash`, which
-every build machine here has, and fall back to the same rule written inline only if bash is missing. The Go side stays
-as it is: `cli.Version`, `cli.Commit` and `cli.Tree` are still set by `-ldflags`.
-
-`internal/cli/version.go` changes in one spot. The default `Version` becomes empty instead of `dev`, and
-`versionInfoOf` fills an empty `Version` from the `VERSION` file embedded with `//go:embed`, plus `-dev+<shorthash>`
-built from the commit it already resolves, plus `.modified` from the dirty flag. That is the no-flags fallback. Because
-it is derived from `vcs.revision` it needs no stamping, and a stamped build is untouched.
+`scripts/version.sh [version|commit|tree]` is the rule. `scripts/version.ps1` is the same rule for PowerShell, because
+`bash` on a Windows PATH may be the WSL stub. `ATRIUM_COMMIT` stands in for git in an export with no `.git`.
+`cli.Version`, `cli.Commit` and `cli.Tree` are still set by `-ldflags`, and an empty `Version` is filled in
+`versionInfoOf` as `<base>+<shorthash>`.
 
 ## `atrium version`
 
 ```
-atrium   0.0.3-dev+6c943f4.modified
+atrium   0.0.3+6c943f4
 commit   6c943f4be3a1... (modified)
-board    ...
-platform windows/amd64
-go       1.26.10
 ```
 
-`--short` prints the version only. `VersionLine` gives `atrium 0.0.3-dev+6c943f4.modified (6c943f4be3a1, modified)`,
-so the hash shows in logs even though it is in the version too. A tag build prints `atrium 0.0.3` and `commit` as now.
+`--short` prints the version only. `VersionLine` is `atrium 0.0.3+6c943f4 (6c943f4be3a1, modified)`.
 
 ## Hub, board and `atrium_resources`
 
-Rooms already send a version string at check-in (`atrium_inventory.go`) and the hub reports its own. These now carry
-the stamped version, so `dev` disappears with no protocol change. Showing the hash means adding the short commit next
-to it: the check-in already sends the full commit (`api.RunningCommit`), so the hub shows `Version` plus the first 7
-characters of that commit for each room, and the same for itself. The board shows `0.0.3-dev+6c943f4` as one string.
-`atrium_resources` lists `version` and `commit` as two fields, so a tag build still shows its hash. A room on an old
-binary that sends `dev` and no commit shows `dev` as now.
+Rooms and the hub send the stamped version and the full commit already, so `dev` goes away with no protocol change.
+`conn/upgrade.go` used `dev` to mean "never skip an upgrade on equal versions". A `+` version means the same, so
+`isRelease` is false for both.
 
 ## Every build path
 
 | Path | Change |
 | --- | --- |
-| `Makefile` | `VERSION`, `COMMIT`, `TREE` come from `scripts/version.sh`. The comment about not claiming a number stays true |
-| `scripts/release.sh`, `package-linux.sh`, `package-macos.sh` | replace `git describe ... or dev` with `scripts/version.sh` |
-| `scripts/cut-release.sh` | keeps `--exact-match`, adds the `VERSION` file check, and still verifies the binary reports the tagged commit |
-| `scripts/package-windows.ps1` | tag build as now, otherwise the `VERSION` base for the MSI number, stamped through ldflags |
-| `scripts/live/atrium-deploy.ps1`, `scripts/live/build-deploy.ps1`, `scripts/provision-room.ps1` | the same `version.sh` call in place of `describe ... $null` |
-| `.github/workflows/release.yml` | unchanged, it goes through `cut-release.sh` |
-| plain `go build` / `go install` | the embedded fallback above |
+| `Makefile` | `VERSION` from `scripts/version.sh` |
+| `scripts/release.sh`, `package-linux.sh`, `package-macos.sh` | the default version from `scripts/version.sh` |
+| `scripts/package-windows.ps1` | the default from `version.ps1`, and `0.0.3+hash` maps to MSI `0.0.3` |
+| `scripts/live/build-deploy.ps1`, `atrium-deploy.ps1`, `provision-room.ps1` | `version.ps1` |
+| `scripts/cut-release.sh` | checks the tag against `VERSION`. `check-release.sh` pins it |
+| plain `go build` | the embedded fallback |
 
-Every one of them keeps stamping `Commit` as the full hash and `Tree` as `clean` or `modified` over tracked files only,
-for the reason in `version.go`.
-
-## Tests
-
-Unit tests on `versionInfoOf` for the table rows (tag stamp, empty stamp with a revision, dirty, no build info), and a
-shell test that `scripts/version.sh` prints a tag on an exact tag, `-dev+hash` off one, and `.modified` after touching
-a tracked file.
-
-## Open questions
-
-1. Decided: a release CI workflow bumps `VERSION`, not a person. The logic lives in a locally runnable script
-   (`scripts/bump-version.sh`) and the workflow only calls it. `cut-release.sh` still checks tag against `VERSION`.
-   Still open: whether the dev format is `0.0.3-dev+<hash>` or just `0.0.3+<hash>`. Note the second sorts ABOVE the
-   release under SemVer ordering rules that read build metadata, and equal under strict SemVer, so it breaks the
-   rule that a dev build never sorts above 0.0.3.
-2. Is `+` and `.modified` acceptable in file names and the board? Proposed yes, nothing here puts the version in a
-   path except packaging, which never sees a dev build.
+Not done: the release workflow does not call `bump-version.sh` yet. Doing it means a commit pushed to main from CI.

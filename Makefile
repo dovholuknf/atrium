@@ -6,14 +6,10 @@ PKG      := ./cmd/atrium
 
 # What this build calls itself.
 #
-# A tag when the tree is on one, otherwise `dev`. NOT the nearest tag plus a
-# count: a binary built from a working tree is not a release and should not
-# claim a number close to one, because the number is what a package manager
-# compares to decide whether you already have it.
-#
-# `git describe --exact-match` answers nothing and fails when there is no tag on
-# HEAD, which is the ordinary case, so the failure is the answer.
-VERSION  := $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
+# A tag when the tree is on one, otherwise the base number plus the short commit, from scripts/version.sh. NOT the
+# nearest tag plus a count: a binary built from a working tree is not a release and should not claim a number close
+# to one, because the number is what a package manager compares to decide whether you already have it.
+VERSION  := $(shell bash scripts/version.sh)
 COMMIT   := $(shell git rev-parse HEAD 2>/dev/null)
 # Tracked files only. Go's own dirty flag counts untracked ones, and this
 # checkout always has some. See `Tree` in internal/cli/version.go.
