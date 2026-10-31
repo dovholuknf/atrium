@@ -1,6 +1,6 @@
 //go:build windows
 
-package daemon
+package shared
 
 import (
 	"os"
@@ -19,10 +19,10 @@ import (
 // The error names the wrong cause, which sends you to PATH, permissions and the
 // inherited environment. A shell has to go in front of it instead.
 
-// viaShellIfScript rewrites a resolved command into something CreateProcess can
+// ViaShellIfScript rewrites a resolved command into something CreateProcess can
 // start, when what was resolved is a script. A real executable passes through
 // unchanged.
-func viaShellIfScript(resolved string, args []string) (string, []string) {
+func ViaShellIfScript(resolved string, args []string) (string, []string) {
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".cmd", ".bat":
 		// cmd.exe, not PowerShell: PowerShell re-parses the arguments it
@@ -34,7 +34,7 @@ func viaShellIfScript(resolved string, args []string) (string, []string) {
 		// inside the pseudo terminal atrium is watching.
 		return comspec(), append([]string{"/c", resolved}, args...)
 	case ".ps1":
-		return powershell(), append([]string{
+		return Powershell(), append([]string{
 			"-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", resolved,
 		}, args...)
 	default:
@@ -51,9 +51,9 @@ func comspec() string {
 	return "cmd.exe"
 }
 
-// powershell prefers pwsh when installed, falling back to the one every
+// Powershell prefers pwsh when installed, falling back to the one every
 // Windows install has.
-func powershell() string {
+func Powershell() string {
 	if p, err := exec.LookPath("pwsh.exe"); err == nil {
 		return p
 	}

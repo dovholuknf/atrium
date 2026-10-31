@@ -62,9 +62,9 @@ func TestSaysQueuedBeforeACycleArriveOnceAfterTheWake(t *testing.T) {
 	}
 	ncTurnEnds(d, id)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 	// The wake's own turn runs and ends.
 	d.act.set(id, ActivityThinking, "")
 	time.Sleep(30 * time.Millisecond) // wait: the wake's turn runs a while, no event marks it

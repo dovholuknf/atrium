@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,18 +20,18 @@ import (
 func TestHandoffName(t *testing.T) {
 	t.Parallel()
 	withAlias := &store.Task{ID: "01a0ede4-945c-aaaa", Alias: "Merge"}
-	if got := HandoffName(withAlias); got != "HANDOFF.merge.md" {
+	if got := cycle.HandoffName(withAlias); got != "HANDOFF.merge.md" {
 		t.Fatalf("alias name: %q", got)
 	}
 	a := &store.Task{ID: "01a0ede4-945c-aaaa"}
 	b := &store.Task{ID: "01a0ede4-9999-bbbb"}
-	if got := HandoffName(a); got != "HANDOFF.01a0ede4-945c.md" {
+	if got := cycle.HandoffName(a); got != "HANDOFF.01a0ede4-945c.md" {
 		t.Fatalf("id name: %q", got)
 	}
-	if HandoffName(a) == HandoffName(b) {
-		t.Fatalf("two cards sharing an 8 character prefix share a file: %q", HandoffName(a))
+	if cycle.HandoffName(a) == cycle.HandoffName(b) {
+		t.Fatalf("two cards sharing an 8 character prefix share a file: %q", cycle.HandoffName(a))
 	}
-	if got := HandoffName(&store.Task{ID: "x", Alias: "a/b"}); strings.ContainsAny(got, `/\`) {
+	if got := cycle.HandoffName(&store.Task{ID: "x", Alias: "a/b"}); strings.ContainsAny(got, `/\`) {
 		t.Fatalf("unsafe name: %q", got)
 	}
 }
@@ -80,8 +81,8 @@ func TestNewContextUsesOnePathThroughTheCycle(t *testing.T) {
 		t.Fatalf("ready refused the path the prompt named: %v", err)
 	}
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
-	d.wake.sawSession(task.ID, time.Now())
-	until(t, "the wake", func() bool { return strings.Contains(f.written(), newContextWake(first)) })
+	d.Wake.SawSession(task.ID, time.Now())
+	until(t, "the wake", func() bool { return strings.Contains(f.written(), cycle.NewContextWakeText(first)) })
 	if strings.Contains(f.written(), other) {
 		t.Fatalf("the path changed mid-cycle: %q", f.written())
 	}
@@ -95,22 +96,22 @@ func TestHandoffWrittenIsPerCard(t *testing.T) {
 	b := ncSibling(t, d, dir, "other")
 	since := time.Now()
 
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(b)), []byte("b"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, cycle.HandoffName(b)), []byte("b"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err == nil {
+	if err := d.HandoffWritten(a.ID, cycle.HandoffName(a), since, "tok"); err == nil {
 		t.Fatal("card B's handoff satisfied card A")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.md"), []byte("plain"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err == nil {
+	if err := d.HandoffWritten(a.ID, cycle.HandoffName(a), since, "tok"); err == nil {
 		t.Fatal("a plain HANDOFF.md satisfied card A")
 	}
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(a)), handoffBody, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, cycle.HandoffName(a)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err != nil {
+	if err := d.HandoffWritten(a.ID, cycle.HandoffName(a), since, "tok"); err != nil {
 		t.Fatalf("A's own file was refused: %v", err)
 	}
 }
@@ -127,18 +128,18 @@ func TestNewContextRefusedWhileASiblingInTheDirectoryIsMidCycle(t *testing.T) {
 		t.Fatalf("refused merely because a sibling exists: %v", err)
 	}
 	err := d.StartNewContext(b.ID)
-	if !isSharedErr(err) || !strings.Contains(err.Error(), a.DisplayTitle()) {
+	if !cycle.IsSharedErr(err) || !strings.Contains(err.Error(), a.DisplayTitle()) {
 		t.Fatalf("not refused naming the other card: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+b.ID+"/new-context", nil)
 	req.SetPathValue("id", b.ID)
 	rec := httptest.NewRecorder()
-	d.handleNewContext(rec, req)
+	d.HandleNewContext(rec, req)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("answered %d, not a conflict", rec.Code)
 	}
 
-	d.nctx.clear(a.ID)
+	d.Nctx.Clear(a.ID)
 	if err := d.StartNewContext(b.ID); err != nil {
 		t.Fatalf("refused after the sibling finished: %v", err)
 	}

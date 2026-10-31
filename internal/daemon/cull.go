@@ -97,7 +97,7 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool, prior *cullPlan
 	}
 	// A new context in progress is not culled under: the run would fail on a closed
 	// terminal after the capture, and nothing would be cleared. Try again after it.
-	if d.nctx.holding(taskID) {
+	if d.Nctx.Holding(taskID) {
 		return nil, fmt.Errorf("%s was not culled: %w", t.DisplayTitle(), errCullNewContext)
 	}
 	block := d.reclaimBlock

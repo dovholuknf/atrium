@@ -257,7 +257,7 @@ func (d *Daemon) landedPass(grace time.Duration, now time.Time) {
 			d.landedSet(t.ID, "")
 			continue
 		}
-		if !d.landed.due(t.ID, now, every) || d.nctx.holding(t.ID) {
+		if !d.landed.due(t.ID, now, every) || d.Nctx.Holding(t.ID) {
 			continue
 		}
 		d.landedOne(t, grace, now)
@@ -291,7 +291,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 	case why != "":
 		d.keepLanded(t, "landed, kept: "+why)
 		return
-	case now.Sub(idleSince) < grace || d.deployHeld(t.ID):
+	case now.Sub(idleSince) < grace || d.DeployHeld(t.ID):
 		d.landedSet(t.ID, "")
 		return
 	}

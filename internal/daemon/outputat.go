@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"io"
 	"os"
 	"strings"
@@ -129,8 +130,8 @@ func (d *Daemon) outputMoved(t *store.Task) bool {
 	// matters, and a pasted image stored in one line can put megabytes between
 	// two checks. A window that starts mid-line skips that line, which does not
 	// parse.
-	if info.Size()-start > transcriptTail {
-		start = info.Size() - transcriptTail
+	if info.Size()-start > cycle.TranscriptTail {
+		start = info.Size() - cycle.TranscriptTail
 	}
 	f, err := os.Open(path)
 	if err != nil {

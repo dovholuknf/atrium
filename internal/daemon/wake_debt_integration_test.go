@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -22,18 +23,18 @@ func TestARestartWakeOwesNothingAndIsNoSilentStop(t *testing.T) {
 	}
 	before, _ := d.st.Get(worker.ID)
 
-	w, _, err := d.queueWake(worker.ID, "we up", launcher.WireName)
+	w, _, err := d.QueueWake(worker.ID, "we up", launcher.WireName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := d.sup.get(worker.ID)
 	r.started = w.QueuedAt.Add(time.Second)
 	started := r.started.Add(time.Second)
-	d.wake.sawSession(worker.ID, started)
+	d.Wake.SawSession(worker.ID, started)
 	r.typeMu.Lock()
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
-	d.wakeTick(started.Add(wakeSettle))
+	d.WakeTick(started.Add(cycle.WakeSettle))
 	if !strings.Contains(f.written(), "we up") {
 		t.Fatalf("the wake was not typed: %q", f.written())
 	}

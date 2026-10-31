@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"time"
@@ -18,7 +19,7 @@ import (
 // the build when one does.
 type hooks struct {
 	exitHooks
-	newContextHooks
+	cycle.NewContextHooks
 	keptHooks
 	modelHooks
 	leanHooks
@@ -90,7 +91,7 @@ type repliesHooks struct {
 func defaultHooks() hooks {
 	hk := hooks{
 		exitHooks:       defaultExitHooks(),
-		newContextHooks: defaultNewContextHooks(),
+		NewContextHooks: cycle.DefaultNewContextHooks(),
 		keptHooks:       defaultKeptHooks(),
 		modelHooks:      defaultModelHooks(),
 		leanHooks:       defaultLeanHooks(),
@@ -102,7 +103,7 @@ func defaultHooks() hooks {
 			helpRunner:  helpRunner,
 			runnerFound: runnerFound,
 			agentSpawn:  agentSpawn,
-			agentFork:   agentFork,
+			agentFork:   cycle.AgentFork,
 		},
 		idleHooks: idleHooks{idleLeave: idleLeave, idleGoneWait: idleGoneWait},
 		windDownHooks: windDownHooks{

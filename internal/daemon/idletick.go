@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"log"
 	"strconv"
 	"strings"
@@ -144,7 +145,7 @@ func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
 	if r := d.sup.get(id); r != nil && r.reattached.Load() {
 		return false
 	}
-	if d.nctx.holding(id) || d.frozenForMove(id) || d.deployHeld(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
+	if d.Nctx.Holding(id) || d.FrozenForMove(id) || d.DeployHeld(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
 		return false
 	}
 	// Work the last Stop said is still running: shells and the like. Subagents
@@ -247,11 +248,11 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 	}
 	// One capture at a time in a directory, as for the operator's own: the typing
 	// of two would interleave. Tried again at the next tick.
-	if other := d.nctx.sameDirBusy(d, t); other != "" {
+	if other := d.Nctx.SameDirBusy(d.st, t); other != "" {
 		return
 	}
-	file := HandoffName(t)
-	gen, ok := d.nctx.beginCaptureOnly(t.ID, file, d.conversationOf(t))
+	file := cycle.HandoffName(t)
+	gen, ok := d.Nctx.BeginCaptureOnly(t.ID, file, d.ConversationOf(t))
 	if !ok {
 		return
 	}
@@ -261,7 +262,7 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 		t.DisplayTitle(), idle.Round(time.Minute))
 	d.Publish(t.ID)
 	go func() {
-		step, err := d.ncCapture(t.ID, gen, file)
+		step, err := d.NcCapture(t.ID, gen, file)
 		done := *mark
 		done.capturing = false
 		done.end = time.Now()
@@ -273,14 +274,14 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 		} else {
 			done.written = true
 		}
-		if d.nctx.mine(t.ID, gen) {
+		if d.Nctx.Mine(t.ID, gen) {
 			d.idle.put(t.ID, &done)
 		} else {
 			// Dismissed from the board: the operator is looking at it.
 			d.idle.drop(t.ID)
 		}
-		d.nctx.finish(t.ID, gen)
-		d.releaseHeld(t.ID)
+		d.Nctx.Finish(t.ID, gen)
+		d.ReleaseHeld(t.ID)
 	}()
 }
 

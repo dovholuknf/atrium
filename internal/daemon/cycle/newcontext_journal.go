@@ -1,4 +1,4 @@
-package daemon
+package cycle
 
 import (
 	"encoding/json"
@@ -22,10 +22,10 @@ import (
 // way one does: a SessionStart naming another conversation, a rerun, or a dismissal.
 
 // settingNewContextJournal is the settings key. One value, the whole map.
-const settingNewContextJournal = "new_context_journal"
+const SettingNewContextJournal = "new_context_journal"
 
 // ncJournalRow is what a restart needs to know about one run.
-type ncJournalRow struct {
+type NcJournalRow struct {
 	Step  string    `json:"step"`
 	File  string    `json:"file"`
 	Conv  string    `json:"conv"`
@@ -34,92 +34,92 @@ type ncJournalRow struct {
 
 // beginCaptureOnly is begin for the idle parking's run. It is marked before the
 // claim saves, so it is never journalled, not even for a moment.
-func (n *newContexts) beginCaptureOnly(taskID, file, conv string) (uint64, bool) {
-	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv, capOnly: true})
+func (n *NewContexts) BeginCaptureOnly(taskID, file, conv string) (uint64, bool) {
+	return n.Claim(taskID, &NewContext{Step: NewContextCapture, File: file, Conv: conv, CapOnly: true})
 }
 
 // typingHeld reports whether board typing is refused: for the whole cycle, from the moment it is armed, because
 // a key typed while it waits lands between its steps and in the context about to be cleared. The way out never
 // depends on a step finishing: "let me type" ends the run. A failed run and the idle parking's capture hold nothing.
-func (n *newContexts) typingHeld(taskID string) bool {
+func (n *NewContexts) TypingHeld(taskID string) bool {
 	if n == nil {
 		return false
 	}
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	cur := n.by[taskID]
-	return cur != nil && cur.step != NewContextFailed && !cur.capOnly && cur.armed
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	cur := n.By[taskID]
+	return cur != nil && cur.Step != NewContextFailed && !cur.CapOnly && cur.Armed
 }
 
 // arm marks gen's run as holding input. It reports whether the run is armed, and whether this call armed it.
-func (n *newContexts) arm(taskID string, gen uint64) (armed, changed bool) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	cur := n.by[taskID]
-	if cur == nil || cur.gen != gen || cur.step == NewContextFailed {
+func (n *NewContexts) Arm(taskID string, gen uint64) (armed, changed bool) {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	cur := n.By[taskID]
+	if cur == nil || cur.Gen != gen || cur.Step == NewContextFailed {
 		return false, false
 	}
-	changed = !cur.armed
-	cur.armed = true
+	changed = !cur.Armed
+	cur.Armed = true
 	return true, changed
 }
 
 // setWaiting puts what a step waits on on the card's chip, or takes it off with "". It reports whether the text
 // changed, so the caller publishes only then. Never on a failed chip, whose reason is its own.
-func (n *newContexts) setWaiting(taskID string, gen uint64, why string) bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	cur := n.by[taskID]
-	if cur == nil || cur.gen != gen || cur.step == NewContextFailed || cur.reason == why {
+func (n *NewContexts) SetWaiting(taskID string, gen uint64, why string) bool {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	cur := n.By[taskID]
+	if cur == nil || cur.Gen != gen || cur.Step == NewContextFailed || cur.Reason == why {
 		return false
 	}
-	cur.reason = why
+	cur.Reason = why
 	return true
 }
 
 // setTyping marks atrium's own write to the terminal as under way or over, for
 // gen's run only. It reports whether the run is still the card's.
-func (n *newContexts) setTyping(taskID string, gen uint64, on bool) bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	cur := n.by[taskID]
-	if cur == nil || cur.gen != gen {
+func (n *NewContexts) SetTyping(taskID string, gen uint64, on bool) bool {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	cur := n.By[taskID]
+	if cur == nil || cur.Gen != gen {
 		return false
 	}
-	cur.typing = on
+	cur.Typing = on
 	return true
 }
 
 // typingNow reports whether atrium's own write to the terminal is under way.
-func (n *newContexts) typingNow(taskID string) bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	cur := n.by[taskID]
-	return cur != nil && cur.typing
+func (n *NewContexts) TypingNow(taskID string) bool {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	cur := n.By[taskID]
+	return cur != nil && cur.Typing
 }
 
 // save hands persist the runs now in flight. A failed chip is not in flight.
-func (n *newContexts) save() {
-	if n == nil || n.persist == nil {
+func (n *NewContexts) Save() {
+	if n == nil || n.Persist == nil {
 		return
 	}
-	n.saveMu.Lock()
-	defer n.saveMu.Unlock()
-	n.mu.Lock()
-	snap := map[string]ncJournalRow{}
-	for id, c := range n.by {
-		if c.step == NewContextFailed || c.capOnly {
+	n.SaveMu.Lock()
+	defer n.SaveMu.Unlock()
+	n.Mu.Lock()
+	snap := map[string]NcJournalRow{}
+	for id, c := range n.By {
+		if c.Step == NewContextFailed || c.CapOnly {
 			continue
 		}
-		snap[id] = ncJournalRow{Step: c.step, File: c.file, Conv: c.conv, Since: c.since}
+		snap[id] = NcJournalRow{Step: c.Step, File: c.File, Conv: c.Conv, Since: c.Since}
 	}
-	n.mu.Unlock()
-	n.persist(snap)
+	n.Mu.Unlock()
+	n.Persist(snap)
 }
 
 // saveNewContextJournal writes the snapshot. A store that cannot take it has
 // halted, which says so on its own, so this only logs.
-func (d *Daemon) saveNewContextJournal(snap map[string]ncJournalRow) {
+func (d *Service) SaveNewContextJournal(snap map[string]NcJournalRow) {
 	val := ""
 	if len(snap) > 0 {
 		b, err := json.Marshal(snap)
@@ -129,7 +129,7 @@ func (d *Daemon) saveNewContextJournal(snap map[string]ncJournalRow) {
 		}
 		val = string(b)
 	}
-	if err := d.st.SetSetting(settingNewContextJournal, val); err != nil {
+	if err := d.St.SetSetting(SettingNewContextJournal, val); err != nil {
 		log.Printf("[atrium] could not journal the new contexts under way: %v", err)
 	}
 }
@@ -139,25 +139,25 @@ func (d *Daemon) saveNewContextJournal(snap map[string]ncJournalRow) {
 // failed chip naming the step, an event in the card's history, and the journal
 // emptied. Nothing is typed. The card's terminal is not back yet, and a clear
 // that may or may not have happened is not something to guess at.
-func (d *Daemon) endAbandonedNewContexts() {
-	raw, err := d.st.Setting(settingNewContextJournal)
+func (d *Service) EndAbandonedNewContexts() {
+	raw, err := d.St.Setting(SettingNewContextJournal)
 	if err != nil || raw == "" {
 		return
 	}
-	var rows map[string]ncJournalRow
+	var rows map[string]NcJournalRow
 	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
 		log.Printf("[atrium] the new context journal is unreadable, dropping it: %v", err)
-		d.saveNewContextJournal(nil)
+		d.SaveNewContextJournal(nil)
 		return
 	}
 	for id, row := range rows {
-		if _, err := d.st.Get(id); err != nil {
+		if _, err := d.St.Get(id); err != nil {
 			continue
 		}
 		// Cut off before the ack: nothing was cleared and nothing was promised, so no
 		// chip. The card is still past its limit, and the trigger starts it again.
 		if row.Step == NewContextLimit || row.Step == NewContextCapture {
-			if err := d.st.AppendEvent(id, store.EventNotified, map[string]any{"by": newContextBy,
+			if err := d.St.AppendEvent(id, store.EventNotified, map[string]any{"by": NewContextBy,
 				"dropped": "the room restarted before atrium ready came"}); err != nil {
 				log.Printf("[atrium] could not record the abandoned new context on %s: %v", id, err)
 			}
@@ -167,25 +167,25 @@ func (d *Daemon) endAbandonedNewContexts() {
 		reason := fmt.Sprintf("the room restarted during step %d of 3 (%s), after %s, so the new context was "+
 			"abandoned. Its handoff is %s, and running it again resumes from the clear",
 			n, row.Step, time.Since(row.Since).Round(time.Second), row.File)
-		d.nctx.seedFailed(id, row, reason)
-		if err := d.st.AppendEvent(id, store.EventNotified, map[string]any{"by": newContextBy, "failed": reason}); err != nil {
+		d.Nctx.SeedFailed(id, row, reason)
+		if err := d.St.AppendEvent(id, store.EventNotified, map[string]any{"by": NewContextBy, "failed": reason}); err != nil {
 			log.Printf("[atrium] could not record the abandoned new context on %s: %v", id, err)
 		}
 		log.Printf("[atrium] new context on %s ended at startup, %s", id, reason)
 		d.Publish(id)
 	}
-	d.saveNewContextJournal(nil)
+	d.SaveNewContextJournal(nil)
 }
 
 // seedFailed puts a failed chip on a card for a run that no goroutine owns.
-func (n *newContexts) seedFailed(taskID string, row ncJournalRow, reason string) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	n.gens++
+func (n *NewContexts) SeedFailed(taskID string, row NcJournalRow, reason string) {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	n.Gens++
 	// abandoned: the run began in row.Conv, and after a /clear the card resumes on
 	// another, so its SessionStart would otherwise read as proof the clear happened
 	// and delete this chip seconds after startup. See sessionStarted.
 	// Past the ack, so a rerun resumes from the clear, or the wake once it was typed.
-	n.by[taskID] = &newContext{step: NewContextFailed, file: row.File, conv: row.Conv, reason: reason,
-		since: time.Now(), gen: n.gens, abandoned: true, acked: true, cleared: row.Step == NewContextWake}
+	n.By[taskID] = &NewContext{Step: NewContextFailed, File: row.File, Conv: row.Conv, Reason: reason,
+		Since: time.Now(), Gen: n.Gens, Abandoned: true, Acked: true, Cleared: row.Step == NewContextWake}
 }

@@ -127,7 +127,7 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	if got := f.written(); strings.Contains(got, "WAKETEXT") || strings.Contains(got, "KEPTEARLIER") {
 		t.Fatalf("typed before the session started: %q", got)
 	}
-	d.wakeSawSession(target.ID, "conv-1")
+	d.WakeSawSession(target.ID, "conv-1")
 	testwait.Poll(5*time.Second, func() bool { return strings.Contains(f.written(), "\r") })
 	got := f.written()
 	i, j := strings.Index(got, "KEPTEARLIER"), strings.Index(got, "WAKETEXT")
@@ -239,7 +239,7 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 	if got := f.written(); got != "" {
 		t.Fatalf("typed before the runner was ready: %q", got)
 	}
-	d.wakeSawSession(target.ID, "conv-1")
+	d.WakeSawSession(target.ID, "conv-1")
 	testwait.Poll(5*time.Second, func() bool { return strings.Contains(f.written(), "\r") })
 	time.Sleep(10 * d.hk.keptTick) // wait: no second turn may be typed
 	got := f.written()

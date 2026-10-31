@@ -1,4 +1,4 @@
-package daemon
+package cycle
 
 import (
 	"bufio"
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/base/cardroot"
 	"io"
 	"log"
 	"os"
@@ -50,42 +51,42 @@ import (
 
 // keepaliveTick is how often cards are looked at. A refresh is due inside a five
 // minute margin, so once a minute is plenty.
-const keepaliveTick = time.Minute
+const KeepaliveTick = time.Minute
 
 // keepaliveForkTimeout bounds one refresh. A fork is a process start and one
 // API call.
-const keepaliveForkTimeout = 120 * time.Second
+const KeepaliveForkTimeout = 120 * time.Second
 
 // Policy defaults. See the design's "Policy" and "The stop rule".
 const (
 	// keepaliveMargin is how close to expiry a refresh fires.
-	keepaliveMargin = 5 * time.Minute
+	KeepaliveMargin = 5 * time.Minute
 	// keepaliveMinContext is the smallest context worth keeping warm. Below it
 	// a saved wake is worth under $0.40 on Opus 5.5.
-	keepaliveMinContext = 50_000
+	KeepaliveMinContext = 50_000
 	// keepaliveBudgetFraction is the stop rule: refresh spend since the card
 	// went idle may reach this fraction of one full 1h rehydration of its
 	// context. 1/8 fits the resume data best across models.
-	keepaliveBudgetFraction = 0.125
+	KeepaliveBudgetFraction = 0.125
 	// keepaliveWarmRead is the receipt threshold, as a fraction of the card's
 	// context. There is no write threshold: a fork always writes its own tail,
 	// the card's last reply and the prompt, and on a 55k card that tail alone
 	// passed the old 5% while the fork read 99.99%.
-	keepaliveWarmRead = 0.90
+	KeepaliveWarmRead = 0.90
 	// keepaliveForkTail is the tokens a fork writes at the 1h price on top of its read: the card's last
 	// reply and the prompt, measured near 2,000 in the ledger.
-	keepaliveForkTail = 2_000
+	KeepaliveForkTail = 2_000
 )
 
 // keepalivePrompt is what the fork is asked. The words do not matter to the
 // cache, only to what the model does with its one turn.
-const keepalivePrompt = "Automated cache refresh from atrium. Reply with the single word OK. " +
+const KeepalivePrompt = "Automated cache refresh from atrium. Reply with the single word OK. " +
 	"Do not use tools. Do not continue any task."
 
 // keepaliveHookSettings is the settings file layered onto every fork: one
 // PreToolUse hook that refuses every tool. Hooks are not part of the request, so
 // this keeps the prefix whole where a deny rule would not.
-const keepaliveHookSettings = `{
+const KeepaliveHookSettings = `{
   "hooks": {
     "PreToolUse": [
       {
@@ -101,18 +102,18 @@ const keepaliveHookSettings = `{
 
 // keepalivePricesVersion names the price table below, and is written on every
 // ledger row so a stale table shows.
-const keepalivePricesVersion = "usageprices-2026-09-27"
+const KeepalivePricesVersion = "usageprices-2026-09-27"
 
 // keepalivePrice is per million tokens: the 5m and 1h writes and the cache read, plus
 // plain input and output for the fork's own few tokens. Cw5m is 1.25 times input,
 // Anthropic's list rule, and is written out so a row's price is read and not derived.
-type keepalivePrice struct{ In, Cw5m, Cw1h, Cr, Out float64 }
+type KeepalivePrice struct{ In, Cw5m, Cw1h, Cr, Out float64 }
 
 // keepalivePrices mirrors `$UsagePrices` in dotfiles/claude/usage/UsageCommon.ps1
 // for the models a card may be refreshed on. Only models whose effort level is
 // not part of the cache key are here, because atrium cannot know a card's
 // current effort, and a fork at another effort would write the whole context.
-var keepalivePrices = map[string]keepalivePrice{
+var KeepalivePrices = map[string]KeepalivePrice{
 	"claude-opus-5-5":   {In: 4, Cw5m: 5, Cw1h: 8, Cr: 0.20, Out: 20},
 	"claude-fable-5-1":  {In: 10, Cw5m: 12.5, Cw1h: 20, Cr: 0.25, Out: 50},
 	"claude-sonnet-5-5": {In: 2, Cw5m: 2.5, Cw1h: 4, Cr: 0.10, Out: 10},
@@ -120,22 +121,22 @@ var keepalivePrices = map[string]keepalivePrice{
 
 // keepalivePriceFor looks a model up with any `[1m]` style suffix and date
 // stamp tolerated.
-func keepalivePriceFor(model string) (keepalivePrice, bool) {
+func KeepalivePriceFor(model string) (KeepalivePrice, bool) {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.IndexByte(m, '['); i >= 0 {
 		m = m[:i]
 	}
-	for k, p := range keepalivePrices {
+	for k, p := range KeepalivePrices {
 		if m == k || strings.HasPrefix(m, k+"-") {
 			return p, true
 		}
 	}
-	return keepalivePrice{}, false
+	return KeepalivePrice{}, false
 }
 
 // lastReply is what a card's transcript says about its last main reply. Every
 // fact the policy needs about the card comes from here and never from a fork.
-type lastReply struct {
+type LastReply struct {
 	Model   string
 	At      time.Time
 	Speed   string
@@ -148,13 +149,13 @@ type lastReply struct {
 
 // transcriptTail bounds how much of a transcript is read. The last main reply
 // is at the end, and a transcript reaches ninety megabytes in a day.
-const transcriptTail = 2 << 20
+const TranscriptTail = 2 << 20
 
 // mainReply is one line of a transcript that carries a main-thread assistant
 // reply's usage. A reply written in several content blocks is several lines
 // with the same MessageID and the same usage, so a caller that sums keeps one
 // per id.
-type mainReply struct {
+type MainReply struct {
 	MessageID string
 	Model     string
 	At        time.Time
@@ -175,11 +176,11 @@ type mainReply struct {
 }
 
 // Context is the whole prompt the reply was answered on.
-func (r *mainReply) Context() int64 { return r.Input + r.CacheWrite + r.CacheRead }
+func (r *MainReply) Context() int64 { return r.Input + r.CacheWrite + r.CacheRead }
 
 // replyContent is the words and whether there was a tool call in an assistant reply's content blocks. Best effort:
 // content that is not a list of blocks says nothing.
-func replyContent(raw json.RawMessage) (string, bool) {
+func ReplyContent(raw json.RawMessage) (string, bool) {
 	if len(raw) == 0 || raw[0] != '[' {
 		return "", false
 	}
@@ -214,8 +215,8 @@ func replyContent(raw json.RawMessage) (string, bool) {
 //
 // The one transcript reader: the keep-alive's last reply and the usage record
 // are both built on it.
-func scanMainReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
-	return scanReplies(r, func(m *mainReply) {
+func ScanMainReplies(r io.Reader, fn func(*MainReply)) (int64, error) {
+	return ScanReplies(r, func(m *MainReply) {
 		if !m.Sidechain {
 			fn(m)
 		}
@@ -224,7 +225,7 @@ func scanMainReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 
 // scanReplies is scanMainReplies with the inline subagent replies offered too,
 // marked Sidechain. The usage record counts those as the subagent's.
-func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
+func ScanReplies(r io.Reader, fn func(*MainReply)) (int64, error) {
 	type usage struct {
 		Input         int64  `json:"input_tokens"`
 		CacheWrite    int64  `json:"cache_creation_input_tokens"`
@@ -260,8 +261,8 @@ func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 			return
 		}
 		u := e.Message.Usage
-		text, tool := replyContent(e.Message.Content)
-		fn(&mainReply{
+		text, tool := ReplyContent(e.Message.Content)
+		fn(&MainReply{
 			Text: text, ToolUse: tool,
 			MessageID: e.Message.ID, Model: e.Message.Model, At: at, Speed: u.Speed,
 			Input: u.Input, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead,
@@ -299,65 +300,65 @@ func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 }
 
 // lastReplyCap bounds the read cache by count. The oldest entry goes first.
-const lastReplyCap = 400
+const LastReplyCap = 400
 
 // lastReplyEntry is what one transcript read found, and where in the file it
 // stopped, so a grown file is read from there and an unchanged one not at all.
-type lastReplyEntry struct {
-	size   int64
-	mtime  time.Time
-	offset int64 // bytes of complete lines scanned, from the start of the file
-	from   int64 // where the scan began, nonzero when the file was over the tail
-	reply  lastReply
-	ttl    time.Duration
+type LastReplyEntry struct {
+	Size   int64
+	Mtime  time.Time
+	Offset int64 // bytes of complete lines scanned, from the start of the file
+	From   int64 // where the scan began, nonzero when the file was over the tail
+	Reply  LastReply
+	Ttl    time.Duration
 }
 
 // lastReplies is readLastReply's memory, one per daemon. It has its own lock and never k.mu,
 // so the list handler's view stays cheap. The zero value is ready.
-type lastReplies struct {
-	mu    sync.Mutex
-	m     map[string]*lastReplyEntry
-	order []string
+type LastReplies struct {
+	Mu    sync.Mutex
+	M     map[string]*LastReplyEntry
+	Order []string
 	// scans counts transcript scans, for tests.
-	scans atomic.Int64
+	Scans atomic.Int64
 }
 
-func (c *lastReplies) lastReplyLoad(path string) (lastReplyEntry, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	e := c.m[path]
+func (c *LastReplies) LastReplyLoad(path string) (LastReplyEntry, bool) {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	e := c.M[path]
 	if e == nil {
-		return lastReplyEntry{}, false
+		return LastReplyEntry{}, false
 	}
 	return *e, true
 }
 
-func (c *lastReplies) lastReplyStore(path string, e lastReplyEntry) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.m == nil {
-		c.m = map[string]*lastReplyEntry{}
+func (c *LastReplies) LastReplyStore(path string, e LastReplyEntry) {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	if c.M == nil {
+		c.M = map[string]*LastReplyEntry{}
 	}
-	if _, ok := c.m[path]; !ok {
-		c.order = append(c.order, path)
-		for len(c.order) > lastReplyCap {
-			delete(c.m, c.order[0])
-			c.order = c.order[1:]
+	if _, ok := c.M[path]; !ok {
+		c.Order = append(c.Order, path)
+		for len(c.Order) > LastReplyCap {
+			delete(c.M, c.Order[0])
+			c.Order = c.Order[1:]
 		}
 	}
-	c.m[path] = &e
+	c.M[path] = &e
 }
 
-func (c *lastReplies) lastReplyDrop(path string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, ok := c.m[path]; !ok {
+func (c *LastReplies) LastReplyDrop(path string) {
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
+	if _, ok := c.M[path]; !ok {
 		return
 	}
-	delete(c.m, path)
-	for i, p := range c.order {
+	delete(c.M, path)
+	for i, p := range c.Order {
 		if p == path {
-			c.order = append(c.order[:i], c.order[i+1:]...)
+			c.Order = append(c.Order[:i], c.Order[i+1:]...)
 			break
 		}
 	}
@@ -368,30 +369,30 @@ func (c *lastReplies) lastReplyDrop(path string) {
 // grown file is scanned from the cached offset when the whole file is inside the
 // tail window, where that gives the same answer as a whole read. A file that
 // shrank or whose mtime went back is read whole.
-func (c *lastReplies) readLastReply(path string) (*lastReply, error) {
+func (c *LastReplies) ReadLastReply(path string) (*LastReply, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	prev, have := c.lastReplyLoad(path)
-	if have && prev.size == info.Size() && prev.mtime.Equal(info.ModTime()) {
-		r := prev.reply
-		r.TTL = prev.ttl
+	prev, have := c.LastReplyLoad(path)
+	if have && prev.Size == info.Size() && prev.Mtime.Equal(info.ModTime()) {
+		r := prev.Reply
+		r.TTL = prev.Ttl
 		return &r, nil
 	}
 	var (
 		start int64
-		out   *lastReply
+		out   *LastReply
 		ttl   time.Duration
 	)
 	switch {
-	case have && info.Size() > prev.size && !info.ModTime().Before(prev.mtime) &&
-		prev.from == 0 && info.Size() <= transcriptTail:
-		start = prev.offset
-		r := prev.reply
-		out, ttl = &r, prev.ttl
-	case info.Size() > transcriptTail:
-		start = info.Size() - transcriptTail
+	case have && info.Size() > prev.Size && !info.ModTime().Before(prev.Mtime) &&
+		prev.From == 0 && info.Size() <= TranscriptTail:
+		start = prev.Offset
+		r := prev.Reply
+		out, ttl = &r, prev.Ttl
+	case info.Size() > TranscriptTail:
+		start = info.Size() - TranscriptTail
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -403,36 +404,36 @@ func (c *lastReplies) readLastReply(path string) (*lastReply, error) {
 			return nil, err
 		}
 	}
-	c.scans.Add(1)
-	done, err := scanMainReplies(f, func(r *mainReply) {
+	c.Scans.Add(1)
+	done, err := ScanMainReplies(f, func(r *MainReply) {
 		switch {
 		case r.Write1h > 0:
 			ttl = time.Hour
 		case r.Write5m > 0:
 			ttl = 5 * time.Minute
 		}
-		out = &lastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
+		out = &LastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
 	})
 	if err != nil {
-		c.lastReplyDrop(path)
+		c.LastReplyDrop(path)
 		return nil, err
 	}
 	if out == nil {
-		c.lastReplyDrop(path)
+		c.LastReplyDrop(path)
 		return nil, errors.New("no main reply in the transcript")
 	}
 	// Size and mtime are from before the read. A write landing mid-read makes
 	// the next call see a change and scan again, never a stale answer.
-	c.lastReplyStore(path, lastReplyEntry{
-		size: info.Size(), mtime: info.ModTime(), offset: start + done, from: start,
-		reply: *out, ttl: ttl,
+	c.LastReplyStore(path, LastReplyEntry{
+		Size: info.Size(), Mtime: info.ModTime(), Offset: start + done, From: start,
+		Reply: *out, Ttl: ttl,
 	})
 	out.TTL = ttl
 	return out, nil
 }
 
 // forkReceipt is the part of `claude -p --output-format json` a refresh reads.
-type forkReceipt struct {
+type ForkReceipt struct {
 	Subtype           string            `json:"subtype"`
 	IsError           bool              `json:"is_error"`
 	Result            string            `json:"result"`
@@ -453,34 +454,34 @@ type forkReceipt struct {
 // Receipt outcomes, in the order they are tested. See the design's "Reading the
 // receipt".
 const (
-	outcomeActed   = "acted"
-	outcomeRefused = "refused"
-	outcomeFailed  = "failed"
-	outcomeWarmed  = "warmed"
-	outcomeMiss    = "miss"
+	OutcomeActed   = "acted"
+	OutcomeRefused = "refused"
+	OutcomeFailed  = "failed"
+	OutcomeWarmed  = "warmed"
+	OutcomeMiss    = "miss"
 )
 
 // classifyReceipt scores one fork. ctx is the card's context from its own
 // transcript. A nil receipt, or one with no usage, is `failed`.
-func classifyReceipt(r *forkReceipt, runErr error, ctx int64) string {
+func ClassifyReceipt(r *ForkReceipt, runErr error, ctx int64) string {
 	if r != nil && r.NumTurns > 1 && len(r.PermissionDenials) == 0 {
-		return outcomeActed
+		return OutcomeActed
 	}
 	if r != nil && len(r.PermissionDenials) > 0 {
-		return outcomeRefused
+		return OutcomeRefused
 	}
 	if runErr != nil || r == nil || r.Usage == nil || r.Subtype != "success" {
-		return outcomeFailed
+		return OutcomeFailed
 	}
-	if ctx > 0 && float64(r.Usage.CacheRead) >= keepaliveWarmRead*float64(ctx) {
-		return outcomeWarmed
+	if ctx > 0 && float64(r.Usage.CacheRead) >= KeepaliveWarmRead*float64(ctx) {
+		return OutcomeWarmed
 	}
-	return outcomeMiss
+	return OutcomeMiss
 }
 
 // receiptCost prices a fork's tokens. Cache writes are priced at the 1h rate,
 // because only cards on the 1h cache are refreshed.
-func receiptCost(r *forkReceipt, p keepalivePrice) float64 {
+func ReceiptCost(r *ForkReceipt, p KeepalivePrice) float64 {
 	if r == nil || r.Usage == nil {
 		return 0
 	}
@@ -490,7 +491,7 @@ func receiptCost(r *forkReceipt, p keepalivePrice) float64 {
 }
 
 // forkSpec is one refresh's command line.
-type forkSpec struct {
+type ForkSpec struct {
 	Exe  string
 	Args []string
 	Dir  string
@@ -503,8 +504,8 @@ type forkSpec struct {
 }
 
 // runForkProcess runs a fork and returns its stdout. The default fork runner.
-func runForkProcess(ctx context.Context, spec forkSpec, agentFork func(exe string, args []string) (string, []string)) ([]byte, error) {
-	timeout := keepaliveForkTimeout
+func RunForkProcess(ctx context.Context, spec ForkSpec, agentFork func(exe string, args []string) (string, []string)) ([]byte, error) {
+	timeout := KeepaliveForkTimeout
 	if spec.Timeout > 0 {
 		timeout = spec.Timeout
 	}
@@ -512,7 +513,7 @@ func runForkProcess(ctx context.Context, spec forkSpec, agentFork func(exe strin
 	defer cancel()
 	exe, args := agentFork(spec.Exe, spec.Args)
 	if resolved, err := exec.LookPath(exe); err == nil {
-		exe, args = viaShellIfScript(resolved, args)
+		exe, args = shared.ViaShellIfScript(resolved, args)
 	}
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = spec.Dir
@@ -533,7 +534,7 @@ func runForkProcess(ctx context.Context, spec forkSpec, agentFork func(exe strin
 }
 
 // keepaliveCardView is what the board draws for one card.
-type keepaliveCardView struct {
+type KeepaliveCardView struct {
 	State   string    `json:"state"`
 	StateAt time.Time `json:"state_at"`
 	// Why is the reason a card cannot be warmed, for the greyed switch, or the
@@ -560,105 +561,108 @@ type keepaliveCardView struct {
 
 // keepalive holds the loop's collaborators, so a test can run a tick with a fake
 // fork, a fake clock and hand-written transcripts.
-type keepalive struct {
+type Keepalive struct {
 	// replies is the transcript read cache. The daemon points it at its own.
-	replies *lastReplies
-	// hk is the seams a fork reads. The daemon points it at its own, see hooks.go.
-	hk  *hooks
-	st  *store.Store
-	now func() time.Time
+	Replies *LastReplies
+	// agentFork and cardArgs are the seams a fork reads. The daemon points them at its hooks.
+	AgentFork func(exe string, args []string) (string, []string)
+	CardArgs  func(h *store.Harness, t *store.Task) ([]string, error)
+	// EffortArgs is the card's launch effort in the shape its harness declares.
+	EffortArgs func(h *store.Harness, t *store.Task) ([]string, error)
+	// ForkEnvOf is the fork's environment over base: the one a launch builds, minus the card's identity.
+	ForkEnvOf func(h *store.Harness, t *store.Task, base []string) ([]string, error)
+	St        *store.Store
+	Now       func() time.Time
 	// fork runs one refresh and returns the receipt's bytes.
-	fork func(ctx context.Context, spec forkSpec) ([]byte, error)
+	Fork func(ctx context.Context, spec ForkSpec) ([]byte, error)
 	// transcript finds a card's transcript from its directory and session id.
-	transcript func(cwd, sessionID string) string
+	Transcript func(cwd, sessionID string) string
 	// window is the card's context window from telemetry, or 0.
-	window func(taskID string) int
+	Window func(taskID string) int
 	// broadcast tells the board, and toast raises one on it.
-	broadcast func(event string, payload any)
+	Broadcast func(event string, payload any)
 	// hookFile is the path of the block-all settings file.
-	hookFile string
+	HookFile string
 	// baseEnv is the environment a fork starts from.
-	baseEnv func() []string
+	BaseEnv func() []string
 	// record saves one refresh's ledger row.
-	record func(*store.KeepaliveRefresh) error
+	Record func(*store.KeepaliveRefresh) error
 	// spent saves one refresh's row in the card's usage record. See usage.go.
-	spent func(*store.SessionUsage) error
+	Spent func(*store.SessionUsage) error
 	// holding says a new-context cycle is under way on the card, and session is the
 	// session its runner last started, which moves on at a `/clear` while the resume
 	// id lags. Both nil in a test that has no daemon.
-	holding func(taskID string) bool
-	session func(t *store.Task) string
+	Holding func(taskID string) bool
+	Session func(t *store.Task) string
 	// deployHeld says the card is held for a room deploy, which ends its runner
 	// and resumes it cold, so a refresh buys nothing. Nil in a test with no daemon.
-	deployHeld func(taskID string) bool
+	DeployHeld func(taskID string) bool
 	// cold starts the new-context cycle on a card whose cache is going cold. Nil in a test that has no daemon.
 	// See keepalive_cold.go.
-	cold func(t *store.Task) error
+	Cold func(t *store.Task) error
 
-	mu sync.Mutex
+	Mu sync.Mutex
 	// cooled is the last reply a card was handed off on, per card.
-	cooled map[string]time.Time
+	Cooled map[string]time.Time
 	// lastMissCard is the card of the room's most recent attempt when that
 	// attempt was a miss, for "two misses on different cards in a row".
-	lastMissCard string
+	LastMissCard string
 	// why is the last skip reason per card, for the board.
-	why map[string]string
+	Why map[string]string
 	// inFlight stops a slow fork from being started twice.
-	inFlight map[string]bool
+	InFlight map[string]bool
 	// unsaved holds back a card whose last refresh row could not be saved. The
 	// warm window and the budget come from saved rows, so without it the next
 	// tick would see the old expiry and fork again.
-	unsaved map[string]unsavedRefresh
+	Unsaved map[string]UnsavedRefresh
 }
 
 // unsavedRefresh holds a card's refreshes back until its cache would expire, or
 // until the card takes a real turn after the fork.
-type unsavedRefresh struct {
-	at, until time.Time
-	why       string
+type UnsavedRefresh struct {
+	At, Until time.Time
+	Why       string
 }
 
-func newKeepalive(st *store.Store) *keepalive {
-	hk := defaultHooks()
-	var k *keepalive
-	k = &keepalive{
-		st:      st,
-		hk:      &hk,
-		replies: &lastReplies{},
-		now:     func() time.Time { return time.Now().UTC() },
-		fork: func(ctx context.Context, spec forkSpec) ([]byte, error) {
-			return runForkProcess(ctx, spec, k.hk.agentFork)
+func NewKeepalive(st *store.Store) *Keepalive {
+	var k *Keepalive
+	k = &Keepalive{
+		St:      st,
+		Replies: &LastReplies{},
+		Now:     func() time.Time { return time.Now().UTC() },
+		Fork: func(ctx context.Context, spec ForkSpec) ([]byte, error) {
+			return RunForkProcess(ctx, spec, k.AgentFork)
 		},
-		transcript: api.TranscriptPath,
-		window:     func(string) int { return 0 },
-		broadcast:  func(string, any) {},
-		hookFile:   filepath.Join(StateDir(), "keepalive-block-tools.json"),
-		baseEnv:    os.Environ,
-		why:        map[string]string{},
-		inFlight:   map[string]bool{},
-		unsaved:    map[string]unsavedRefresh{},
-		cooled:     map[string]time.Time{},
-		record:     st.AddKeepaliveRefresh,
-		spent:      st.AddSessionUsage,
+		Transcript: api.TranscriptPath,
+		Window:     func(string) int { return 0 },
+		Broadcast:  func(string, any) {},
+		HookFile:   filepath.Join(cardroot.StateDir(), "keepalive-block-tools.json"),
+		BaseEnv:    os.Environ,
+		Why:        map[string]string{},
+		InFlight:   map[string]bool{},
+		Unsaved:    map[string]UnsavedRefresh{},
+		Cooled:     map[string]time.Time{},
+		Record:     st.AddKeepaliveRefresh,
+		Spent:      st.AddSessionUsage,
 	}
 	return k
 }
 
 // ensureHookFile writes the block-all settings file if it is missing or wrong.
-func (k *keepalive) ensureHookFile() error {
-	if got, err := os.ReadFile(k.hookFile); err == nil && string(got) == keepaliveHookSettings {
+func (k *Keepalive) EnsureHookFile() error {
+	if got, err := os.ReadFile(k.HookFile); err == nil && string(got) == KeepaliveHookSettings {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(k.hookFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(k.HookFile), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(k.hookFile, []byte(keepaliveHookSettings), 0o600)
+	return os.WriteFile(k.HookFile, []byte(KeepaliveHookSettings), 0o600)
 }
 
 // localHasHooks reports whether a card's `.claude/settings.local.json` names
 // hooks. `--setting-sources local` still loads that file, so its hooks would run
 // in the fork.
-func localHasHooks(cwd string) bool {
+func LocalHasHooks(cwd string) bool {
 	b, err := os.ReadFile(filepath.Join(cwd, ".claude", "settings.local.json"))
 	if err != nil {
 		return false
@@ -674,18 +678,18 @@ func localHasHooks(cwd string) bool {
 }
 
 // verdict is one card's decision on one tick.
-type verdict struct {
-	act     string // "refresh", "skip", "break-even"
-	why     string
-	reply   *lastReply
-	h       *store.Harness
-	price   keepalivePrice
-	budget  float64
-	spent   float64
-	count   int
-	expiry  time.Time
-	anchor  time.Time
-	history []*store.KeepaliveRefresh
+type Verdict struct {
+	Act     string // "refresh", "skip", "break-even"
+	Why     string
+	Reply   *LastReply
+	H       *store.Harness
+	Price   KeepalivePrice
+	Budget  float64
+	Spent   float64
+	Count   int
+	Expiry  time.Time
+	Anchor  time.Time
+	History []*store.KeepaliveRefresh
 }
 
 // stretchState reads the current idle stretch of a card: the refreshes since
@@ -696,7 +700,7 @@ type verdict struct {
 // fresh budget. The WARM WINDOW counts every warmed refresh since the last real
 // reply, because a refresh made before a hand re-enable still refreshed the
 // cache.
-func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *lastReply) (
+func (k *Keepalive) StretchState(taskID string, card *store.KeepaliveCard, r *LastReply) (
 	anchor time.Time, rows []*store.KeepaliveRefresh, spent float64, count, missed int, expiry time.Time, last time.Time) {
 	anchor = r.At
 	// Only a switch turned ON moves the anchor. A stop is stamped too, and the
@@ -704,13 +708,13 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 	if card != nil && card.State == store.KeepaliveOn && card.StateAt.After(anchor) {
 		anchor = card.StateAt
 	}
-	all, _ := k.st.KeepaliveRefreshesSince(taskID, r.At)
+	all, _ := k.St.KeepaliveRefreshesSince(taskID, r.At)
 	warm := r.At
 	for _, row := range all {
 		if row.At.After(last) {
 			last = row.At
 		}
-		if row.Outcome == outcomeWarmed && row.At.After(warm) {
+		if row.Outcome == OutcomeWarmed && row.At.After(warm) {
 			warm = row.At
 		}
 		if !row.At.After(anchor) {
@@ -719,9 +723,9 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 		rows = append(rows, row)
 		spent += row.Cost
 		switch row.Outcome {
-		case outcomeWarmed:
+		case OutcomeWarmed:
 			count++
-		case outcomeMiss:
+		case OutcomeMiss:
 			missed++
 		}
 	}
@@ -731,11 +735,11 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 // followSession is the card with its resume id moved to the session its runner last
 // started. After a new context the cache worth keeping warm is the new session's, and
 // the stored id names the old one until the next Stop.
-func (k *keepalive) followSession(t *store.Task) *store.Task {
-	if k.session == nil {
+func (k *Keepalive) FollowSession(t *store.Task) *store.Task {
+	if k.Session == nil {
 		return t
 	}
-	s := k.session(t)
+	s := k.Session(t)
 	if s == "" || s == t.ResumeID {
 		return t
 	}
@@ -746,22 +750,22 @@ func (k *keepalive) followSession(t *store.Task) *store.Task {
 
 // decide applies the design's seven rules to one card. It reads, and writes
 // nothing.
-func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
-	skip := func(why string) verdict { return verdict{act: "skip", why: why} }
+func (k *Keepalive) Decide(t *store.Task, card *store.KeepaliveCard) Verdict {
+	skip := func(why string) Verdict { return Verdict{Act: "skip", Why: why} }
 	if card == nil || card.State != store.KeepaliveOn {
 		return skip("")
 	}
-	if k.coldSpent(t.ID) {
-		return skip(whyColdHandedOff)
+	if k.ColdSpent(t.ID) {
+		return skip(WhyColdHandedOff)
 	}
 	// Its context is about to be cleared, and after it the cache is a new one.
-	if k.holding != nil && k.holding(t.ID) {
+	if k.Holding != nil && k.Holding(t.ID) {
 		return skip("new context running")
 	}
-	if k.deployHeld != nil && k.deployHeld(t.ID) {
+	if k.DeployHeld != nil && k.DeployHeld(t.ID) {
 		return skip("room deploy hold")
 	}
-	h, err := k.st.Harness(t.Runner)
+	h, err := k.St.Harness(t.Runner)
 	if err != nil || !shared.IsClaude(h) {
 		return skip("not a Claude card")
 	}
@@ -775,18 +779,18 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if t.Status != store.StatusNeedsInput {
 		return skip("not idle")
 	}
-	if pend, _ := k.st.PendingForTask(t.ID); len(pend) > 0 {
+	if pend, _ := k.St.PendingForTask(t.ID); len(pend) > 0 {
 		return skip("a permission dialog is open")
 	}
-	path := k.transcript(t.Worktree, t.ResumeID)
+	path := k.Transcript(t.Worktree, t.ResumeID)
 	if path == "" {
 		return skip("no transcript")
 	}
-	r, err := k.replies.readLastReply(path)
+	r, err := k.Replies.ReadLastReply(path)
 	if err != nil {
 		return skip("no transcript")
 	}
-	price, ok := keepalivePriceFor(r.Model)
+	price, ok := KeepalivePriceFor(r.Model)
 	if !ok {
 		return skip("model " + r.Model + " keys its cache on effort")
 	}
@@ -796,92 +800,59 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if r.TTL != time.Hour {
 		return skip("not on the 1h cache")
 	}
-	if r.Context < keepaliveMinContext {
+	if r.Context < KeepaliveMinContext {
 		return skip("context under 50k")
 	}
-	if localHasHooks(t.Worktree) {
+	if LocalHasHooks(t.Worktree) {
 		return skip("local hooks")
 	}
-	anchor, rows, spent, count, _, expiry, _ := k.stretchState(t.ID, card, r)
-	now := k.now()
+	anchor, rows, spent, count, _, expiry, _ := k.StretchState(t.ID, card, r)
+	now := k.Now()
 	if !now.Before(expiry) {
 		return skip("cache already cold")
 	}
-	if now.Before(refreshDueAt(expiry)) {
-		return verdict{act: "skip", why: "not due", expiry: expiry, spent: spent, count: count, reply: r,
-			price: price, budget: budgetFor(r.Context, price)}
+	if now.Before(RefreshDueAt(expiry)) {
+		return Verdict{Act: "skip", Why: "not due", Expiry: expiry, Spent: spent, Count: count, Reply: r,
+			Price: price, Budget: BudgetFor(r.Context, price)}
 	}
-	v := verdict{
-		act: "refresh", reply: r, h: h, price: price, budget: budgetFor(r.Context, price),
-		spent: spent, count: count, expiry: expiry, anchor: anchor, history: rows,
+	v := Verdict{
+		Act: "refresh", Reply: r, H: h, Price: price, Budget: BudgetFor(r.Context, price),
+		Spent: spent, Count: count, Expiry: expiry, Anchor: anchor, History: rows,
 	}
-	next := (float64(r.Context)*price.Cr + keepaliveForkTail*price.Cw1h) / 1e6
-	if spent+next > v.budget {
-		v.act, v.why = "break-even", "budget spent"
+	next := (float64(r.Context)*price.Cr + KeepaliveForkTail*price.Cw1h) / 1e6
+	if spent+next > v.Budget {
+		v.Act, v.Why = "break-even", "budget spent"
 	}
 	return v
 }
 
 // refreshDueAt is when a card whose cache expires at expiry becomes due for a
 // refresh. decide() and the card view both read it, so they cannot drift.
-func refreshDueAt(expiry time.Time) time.Time { return expiry.Add(-keepaliveMargin) }
+func RefreshDueAt(expiry time.Time) time.Time { return expiry.Add(-KeepaliveMargin) }
 
 // budgetFor is the stop rule's cap: a fraction of one full 1h rehydration.
-func budgetFor(ctx int64, p keepalivePrice) float64 {
-	return keepaliveBudgetFraction * float64(ctx) * p.Cw1h / 1e6
+func BudgetFor(ctx int64, p KeepalivePrice) float64 {
+	return KeepaliveBudgetFraction * float64(ctx) * p.Cw1h / 1e6
 }
 
 // modelArg is the model to fork on. A card whose telemetry says it has a window
 // over 200k runs the 1M variant, which is a different request.
-func (k *keepalive) modelArg(taskID, model string) string {
-	if w := k.window(taskID); w > 200_000 && !strings.Contains(model, "[") {
+func (k *Keepalive) ModelArg(taskID, model string) string {
+	if w := k.Window(taskID); w > 200_000 && !strings.Contains(model, "[") {
 		return model + "[1m]"
 	}
 	return model
 }
 
-// forkEnv is the fork's environment: the one a launch builds, minus the card's
-// identity, with atrium's hooks off and the card's 1h cache pin.
-//
-// THE CARD'S OWN LAUNCH ENV AND EFFORT GO IN TOO, layered as a launch layers
-// them (see launchOptionEnv). A fork without the card's env can reach a
-// different endpoint or account than the card it is warming, and then it warms
-// nothing and bills somebody else. The model is not passed here: the fork names
-// it as `--model`, from the card's last reply.
-func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
-	added, err := launchOptionEnv(h, t.LaunchEnv, "", t.Effort)
-	if err != nil {
-		return nil, err
-	}
-	env := overEnv(h.Env, added)
-	base := make([]string, 0, 64)
-	for _, kv := range k.baseEnv() {
-		if !strings.HasPrefix(strings.ToUpper(kv), "ATRIUM_PERM_GATE=") {
-			base = append(base, kv)
-		}
-	}
-	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
-	// The memory section of the system prompt is in the cache key.
-	if lean, _, _, _ := leanOptions(shared.LaunchRequest{}, t, ""); lean {
-		leanEnv(extra)
-	}
-	if _, set := env[keepaliveTTLVar]; !set {
-		extra[keepaliveTTLVar] = "1h"
-	}
-	return childEnvFrom(base, env, extra), nil
-}
-
-// forkEffortArgs is the card's launch effort in the shape its harness declares,
-// appended to the fork's command line. Empty when the card was launched on the
-// runner's default. The card's extra args are carried by forkCardArgs, filtered.
-func forkEffortArgs(h *store.Harness, t *store.Task) ([]string, error) {
-	return withMapped(h, nil, "effort", "level", h.EffortArgs, h.EffortEnv, t.Effort)
+// ForkEnv is the fork's environment, built by the launch code the root points ForkEnvOf at.
+func (k *Keepalive) ForkEnv(h *store.Harness, t *store.Task) ([]string, error) {
+	return k.ForkEnvOf(h, t, k.BaseEnv())
 }
 
 // forkCarried are the launch flags that shape the cached request, which is the
 // system prompt and the tool list. Everything else in a card's launch is dropped
 // from a fork on purpose: see docs/runtime/keepalive-fork-args-design.md.
-var forkCarried = map[string]bool{
+var ForkCarried = map[string]bool{
 	"--append-system-prompt": true, "--system-prompt": true,
 	"--append-system-prompt-file": true, "--system-prompt-file": true,
 	"--disallowedtools": true, "--disallowed-tools": true, "--tools": true,
@@ -893,13 +864,13 @@ var forkCarried = map[string]bool{
 // are the tokens up to the next flag, and `--flag=value` is one token. An unknown
 // flag is dropped along with its values, and a bare token before any flag (a
 // prompt) is dropped.
-func keepFlags(args []string) []string {
+func KeepFlags(args []string) []string {
 	var out []string
 	keeping := false
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") && a != "-" {
 			name, _, _ := strings.Cut(a, "=")
-			keeping = forkCarried[strings.ToLower(name)]
+			keeping = ForkCarried[strings.ToLower(name)]
 		}
 		if keeping {
 			out = append(out, a)
@@ -908,40 +879,22 @@ func keepFlags(args []string) []string {
 	return out
 }
 
-// forkCardArgs is the card's restart command line, cut down to what the cache
-// depends on. It is built by the code a restart uses: the harness's resume args,
-// the card's stored extra args, and for a lean card the lean set. Model and effort
-// are left to the fork, which names its own.
-func forkCardArgs(st *store.Store, h *store.Harness, t *store.Task, hk *hooks) ([]string, error) {
-	args, _, err := runnerArgsWith(h, t.ResumeID, "", launchOptions{Args: t.LaunchArgs})
-	if err != nil {
-		return nil, err
-	}
-	gateway := st.LeanWorkerGateway()
-	if lean, mcp, kit, _ := leanOptions(shared.LaunchRequest{}, t, gateway); lean {
-		if args, err = leanArgs(args, hk.readUserSettings(), "", mcp, kit, gateway, os.ReadFile, hk); err != nil {
-			return nil, err
-		}
-	}
-	return keepFlags(args), nil
-}
-
 // forkArgs is the refresh command line. Kept in one place so the test pins it.
-func (k *keepalive) forkArgs(sessionID, model string) []string {
+func (k *Keepalive) ForkArgs(sessionID, model string) []string {
 	return []string{
-		"-p", keepalivePrompt,
+		"-p", KeepalivePrompt,
 		"--resume", sessionID, "--fork-session", "--no-session-persistence",
 		"--model", model,
 		"--setting-sources", "local",
-		"--settings", k.hookFile,
+		"--settings", k.HookFile,
 		"--max-turns", "1",
 		"--output-format", "json",
 	}
 }
 
 // tick looks at every card with keep-alive on, once.
-func (k *keepalive) tick(ctx context.Context) {
-	cards, err := k.st.KeepaliveCards()
+func (k *Keepalive) Tick(ctx context.Context) {
+	cards, err := k.St.KeepaliveCards()
 	if err != nil {
 		return
 	}
@@ -949,48 +902,48 @@ func (k *keepalive) tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		t, err := k.st.Get(card.TaskID)
+		t, err := k.St.Get(card.TaskID)
 		if err != nil || t == nil {
 			continue
 		}
-		t = k.followSession(t)
-		card = k.clearOnRealTurn(t, card)
+		t = k.FollowSession(t)
+		card = k.ClearOnRealTurn(t, card)
 		// A suspended room refreshes nothing, but its cards still clear on a real
 		// turn: otherwise a stopped badge stays stuck while the card works.
 		// The suspension itself is not cleared by a turn. It follows two misses on
 		// two cards, which says the cache is not holding for a reason a turn does
 		// not fix, and a refresh after it spends real money. A person clears it.
-		if k.st.KeepaliveSuspended() != "" {
-			k.coldCheck(t, card, false)
+		if k.St.KeepaliveSuspended() != "" {
+			k.ColdCheck(t, card, false)
 			continue
 		}
-		v := k.decide(t, card)
-		k.mu.Lock()
+		v := k.Decide(t, card)
+		k.Mu.Lock()
 		holding := false
-		if u, held := k.unsaved[t.ID]; held {
-			if !k.now().Before(u.until) || (v.reply != nil && v.reply.At.After(u.at)) {
-				delete(k.unsaved, t.ID)
-			} else if v.act != "skip" || v.why == "not due" {
-				v = verdict{act: "skip", why: u.why}
+		if u, held := k.Unsaved[t.ID]; held {
+			if !k.Now().Before(u.Until) || (v.Reply != nil && v.Reply.At.After(u.At)) {
+				delete(k.Unsaved, t.ID)
+			} else if v.Act != "skip" || v.Why == "not due" {
+				v = Verdict{Act: "skip", Why: u.Why}
 				holding = true
 			}
 		}
-		k.why[t.ID] = v.why
-		busy := k.inFlight[t.ID]
-		k.mu.Unlock()
-		switch v.act {
+		k.Why[t.ID] = v.Why
+		busy := k.InFlight[t.ID]
+		k.Mu.Unlock()
+		switch v.Act {
 		case "break-even":
-			k.stop(t, store.KeepaliveBreakEven, v)
-			k.coldCheck(t, card, false)
+			k.Stop(t, store.KeepaliveBreakEven, v)
+			k.ColdCheck(t, card, false)
 		case "refresh":
 			if busy {
 				continue
 			}
-			k.refresh(ctx, t, v)
+			k.Refresh(ctx, t, v)
 		default:
-			k.coldCheck(t, card, holding || v.why == "not due")
+			k.ColdCheck(t, card, holding || v.Why == "not due")
 		}
-		if k.st.KeepaliveSuspended() != "" {
+		if k.St.KeepaliveSuspended() != "" {
 			return
 		}
 	}
@@ -998,79 +951,79 @@ func (k *keepalive) tick(ctx context.Context) {
 
 // clearOnRealTurn puts a self-clearing stopped card back on once the card has
 // taken a real turn since it stopped.
-func (k *keepalive) clearOnRealTurn(t *store.Task, card *store.KeepaliveCard) *store.KeepaliveCard {
+func (k *Keepalive) ClearOnRealTurn(t *store.Task, card *store.KeepaliveCard) *store.KeepaliveCard {
 	switch card.State {
 	case store.KeepaliveBreakEven, store.KeepaliveMiss, store.KeepaliveFailing:
 	default:
 		return card
 	}
-	path := k.transcript(t.Worktree, t.ResumeID)
+	path := k.Transcript(t.Worktree, t.ResumeID)
 	if path == "" {
 		return card
 	}
-	r, err := k.replies.readLastReply(path)
+	r, err := k.Replies.ReadLastReply(path)
 	if err != nil || !r.At.After(card.StateAt) {
 		return card
 	}
-	next, err := k.st.SetKeepaliveStateAt(t.ID, store.KeepaliveOn, k.now())
+	next, err := k.St.SetKeepaliveStateAt(t.ID, store.KeepaliveOn, k.Now())
 	if err != nil {
 		return card
 	}
-	k.broadcast("keepalive", map[string]any{"task_id": t.ID, "state": next.State})
+	k.Broadcast("keepalive", map[string]any{"task_id": t.ID, "state": next.State})
 	return next
 }
 
 // refresh runs one fork, records it, and applies what the receipt says.
-func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
-	k.mu.Lock()
-	k.inFlight[t.ID] = true
-	k.mu.Unlock()
+func (k *Keepalive) Refresh(ctx context.Context, t *store.Task, v Verdict) {
+	k.Mu.Lock()
+	k.InFlight[t.ID] = true
+	k.Mu.Unlock()
 	defer func() {
-		k.mu.Lock()
-		delete(k.inFlight, t.ID)
-		k.mu.Unlock()
+		k.Mu.Lock()
+		delete(k.InFlight, t.ID)
+		k.Mu.Unlock()
 	}()
-	if err := k.ensureHookFile(); err != nil {
-		log.Printf("[atrium] keep-alive: could not write %s: %v", k.hookFile, err)
+	if err := k.EnsureHookFile(); err != nil {
+		log.Printf("[atrium] keep-alive: could not write %s: %v", k.HookFile, err)
 		return
 	}
-	model := k.modelArg(t.ID, v.reply.Model)
+	model := k.ModelArg(t.ID, v.Reply.Model)
 	// Refused, never forked without them: a fork on the wrong env or effort
 	// writes a cache the card never reads.
-	env, err := k.forkEnv(v.h, t)
+	env, err := k.ForkEnv(v.H, t)
 	var effort, carried []string
 	if err == nil {
-		effort, err = forkEffortArgs(v.h, t)
+		effort, err = k.EffortArgs(v.H, t)
 	}
 	if err == nil {
-		carried, err = forkCardArgs(k.st, v.h, t, k.hk)
+		carried, err = k.CardArgs(v.H, t)
 	}
 	if err != nil {
 		log.Printf("[atrium] keep-alive: not refreshing %s: %v", t.ID, err)
-		k.mu.Lock()
-		k.why[t.ID] = "launch options: " + err.Error()
-		k.mu.Unlock()
+		k.Mu.Lock()
+		k.Why[t.ID] = "launch options: " + err.Error()
+		k.Mu.Unlock()
 		return
 	}
-	spec := forkSpec{
-		Exe: v.h.Exe(), Dir: t.Worktree, Env: env,
-		Args: append(append(k.forkArgs(t.ResumeID, model), carried...), effort...),
+	spec := ForkSpec{
+		Exe: v.H.Exe(), Dir: t.Worktree, Env: env,
+		Args: append(append(k.ForkArgs(t.ResumeID, model), carried...), effort...),
 	}
-	sent := k.now()
-	out, runErr := k.fork(ctx, spec)
-	var rec *forkReceipt
+	sent := k.Now()
+	out, runErr := k.Fork(ctx, spec)
+	var rec *ForkReceipt
 	if len(bytes.TrimSpace(out)) > 0 {
-		var r forkReceipt
+		var r ForkReceipt
 		if err := json.Unmarshal(bytes.TrimSpace(out), &r); err == nil {
 			rec = &r
 		}
 	}
-	outcome := classifyReceipt(rec, runErr, v.reply.Context)
+	outcome := ClassifyReceipt(rec, runErr, v.Reply.Context)
 	row := &store.KeepaliveRefresh{
 		TaskID: t.ID, ResumeID: t.ResumeID, At: sent, Model: model, Outcome: outcome,
-		Context: v.reply.Context, TTLLeftS: int64(v.expiry.Sub(sent).Seconds()),
-		SpentBefore: v.spent, Budget: v.budget, Prices: keepalivePricesVersion,
-		Cost: receiptCost(rec, v.price),
+		Context: v.Reply.Context, TTLLeftS: int64(v.Expiry.Sub(sent).Seconds()),
+		SpentBefore: v.Spent, Budget: v.Budget, Prices: KeepalivePricesVersion,
+		Cost: ReceiptCost(rec, v.Price),
 	}
 	if rec != nil {
 		row.ForkSession = rec.SessionID
@@ -1082,169 +1035,169 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 	// The card's usage record too, where it sits beside the turns. A fork that
 	// never reached the API spent nothing and is not a row there.
 	if rec != nil && rec.Usage != nil {
-		if err := k.spent(usageOfRefresh(row)); err != nil {
+		if err := k.Spent(shared.UsageOfRefresh(row)); err != nil {
 			log.Printf("[atrium] keep-alive: could not record the token use of a refresh of %s: %v", t.ID, err)
 		}
 	}
-	if err := k.record(row); err != nil {
+	if err := k.Record(row); err != nil {
 		log.Printf("[atrium] keep-alive: could not record a refresh of %s: %v", t.ID, err)
 		// The fork may have warmed the cache, so hold until that cache would expire.
-		until := sent.Add(v.reply.TTL)
-		if v.expiry.After(until) {
-			until = v.expiry
+		until := sent.Add(v.Reply.TTL)
+		if v.Expiry.After(until) {
+			until = v.Expiry
 		}
-		u := unsavedRefresh{at: sent, until: until,
-			why: "a refresh could not be saved, paused until " + until.Local().Format("15:04")}
-		k.mu.Lock()
-		k.unsaved[t.ID] = u
-		k.why[t.ID] = u.why
-		k.mu.Unlock()
+		u := UnsavedRefresh{At: sent, Until: until,
+			Why: "a refresh could not be saved, paused until " + until.Local().Format("15:04")}
+		k.Mu.Lock()
+		k.Unsaved[t.ID] = u
+		k.Why[t.ID] = u.Why
+		k.Mu.Unlock()
 	}
 	if runErr != nil {
 		log.Printf("[atrium] keep-alive: fork for %s: %v", t.ID, runErr)
 	}
-	k.apply(t, outcome, v)
-	k.broadcast("keepalive", map[string]any{"task_id": t.ID, "outcome": outcome})
+	k.Apply(t, outcome, v)
+	k.Broadcast("keepalive", map[string]any{"task_id": t.ID, "outcome": outcome})
 }
 
 // apply moves a card, or the room, on what one receipt said.
-func (k *keepalive) apply(t *store.Task, outcome string, v verdict) {
-	k.mu.Lock()
-	prevMiss := k.lastMissCard
-	if outcome == outcomeMiss {
-		k.lastMissCard = t.ID
+func (k *Keepalive) Apply(t *store.Task, outcome string, v Verdict) {
+	k.Mu.Lock()
+	prevMiss := k.LastMissCard
+	if outcome == OutcomeMiss {
+		k.LastMissCard = t.ID
 	} else {
-		k.lastMissCard = ""
+		k.LastMissCard = ""
 	}
-	k.mu.Unlock()
+	k.Mu.Unlock()
 
 	switch outcome {
-	case outcomeActed:
-		k.stop(t, store.KeepaliveActed, v)
-		k.suspend("a refresh fork on " + t.DisplayTitle() + " took a second turn with nothing refused")
-	case outcomeRefused:
-		k.stop(t, store.KeepaliveActed, v)
-	case outcomeMiss:
-		k.stop(t, store.KeepaliveMiss, v)
+	case OutcomeActed:
+		k.Stop(t, store.KeepaliveActed, v)
+		k.Suspend("a refresh fork on " + t.DisplayTitle() + " took a second turn with nothing refused")
+	case OutcomeRefused:
+		k.Stop(t, store.KeepaliveActed, v)
+	case OutcomeMiss:
+		k.Stop(t, store.KeepaliveMiss, v)
 		if prevMiss != "" && prevMiss != t.ID {
-			k.suspend("two refreshes in a row on two cards missed the cache")
+			k.Suspend("two refreshes in a row on two cards missed the cache")
 		}
-	case outcomeFailed:
+	case OutcomeFailed:
 		// Two failures in a row in this stretch stop the card.
 		n := 0
-		for i := len(v.history) - 1; i >= 0 && v.history[i].Outcome == outcomeFailed; i-- {
+		for i := len(v.History) - 1; i >= 0 && v.History[i].Outcome == OutcomeFailed; i-- {
 			n++
 		}
 		if n >= 1 {
-			k.stop(t, store.KeepaliveFailing, v)
+			k.Stop(t, store.KeepaliveFailing, v)
 		}
 	}
 }
 
 // stop sets a card's stopped state, and for break-even raises the toast.
-func (k *keepalive) stop(t *store.Task, state string, v verdict) {
-	if _, err := k.st.SetKeepaliveStateAt(t.ID, state, k.now()); err != nil {
+func (k *Keepalive) Stop(t *store.Task, state string, v Verdict) {
+	if _, err := k.St.SetKeepaliveStateAt(t.ID, state, k.Now()); err != nil {
 		return
 	}
 	payload := map[string]any{
 		"task_id": t.ID, "title": t.DisplayTitle(), "state": state,
-		"refreshes": v.count,
+		"refreshes": v.Count,
 	}
 	if state == store.KeepaliveBreakEven {
 		payload["toast"] = fmt.Sprintf("keep-alive stopped on %s at break-even after %d refreshes",
-			t.DisplayTitle(), v.count)
-		payload["cold_at"] = v.expiry
+			t.DisplayTitle(), v.Count)
+		payload["cold_at"] = v.Expiry
 	}
-	k.broadcast("keepalive", payload)
+	k.Broadcast("keepalive", payload)
 }
 
 // suspend stops keep-alive for the room and says so.
-func (k *keepalive) suspend(reason string) {
-	if err := k.st.SetKeepaliveSuspended(reason); err != nil {
+func (k *Keepalive) Suspend(reason string) {
+	if err := k.St.SetKeepaliveSuspended(reason); err != nil {
 		return
 	}
 	log.Printf("[atrium] keep-alive suspended: %s", reason)
-	k.broadcast("keepalive", map[string]any{
+	k.Broadcast("keepalive", map[string]any{
 		"suspended": reason, "toast": "keep-alive suspended for this room: " + reason,
 	})
 }
 
 // view is a card's keep-alive as the board reads it, or nil for a card with no
 // switch.
-func (k *keepalive) view(taskID string) any {
-	card, err := k.st.KeepaliveCardOf(taskID)
+func (k *Keepalive) View(taskID string) any {
+	card, err := k.St.KeepaliveCardOf(taskID)
 	if err != nil || card == nil {
 		return nil
 	}
-	out := &keepaliveCardView{State: card.State, StateAt: card.StateAt, Suspended: k.st.KeepaliveSuspended()}
-	k.mu.Lock()
-	out.Why = k.why[taskID]
-	k.mu.Unlock()
-	t, err := k.st.Get(taskID)
+	out := &KeepaliveCardView{State: card.State, StateAt: card.StateAt, Suspended: k.St.KeepaliveSuspended()}
+	k.Mu.Lock()
+	out.Why = k.Why[taskID]
+	k.Mu.Unlock()
+	t, err := k.St.Get(taskID)
 	if err != nil || t == nil {
 		return out
 	}
-	return k.viewOf(t, card, out)
+	return k.ViewOf(t, card, out)
 }
 
 // viewTask is view for a caller that already holds the card's row.
-func (k *keepalive) viewTask(t *store.Task) any {
-	card, err := k.st.KeepaliveCardOf(t.ID)
+func (k *Keepalive) ViewTask(t *store.Task) any {
+	card, err := k.St.KeepaliveCardOf(t.ID)
 	if err != nil || card == nil {
 		return nil
 	}
-	out := &keepaliveCardView{State: card.State, StateAt: card.StateAt, Suspended: k.st.KeepaliveSuspended()}
-	k.mu.Lock()
-	out.Why = k.why[t.ID]
-	k.mu.Unlock()
-	return k.viewOf(t, card, out)
+	out := &KeepaliveCardView{State: card.State, StateAt: card.StateAt, Suspended: k.St.KeepaliveSuspended()}
+	k.Mu.Lock()
+	out.Why = k.Why[t.ID]
+	k.Mu.Unlock()
+	return k.ViewOf(t, card, out)
 }
 
-func (k *keepalive) viewOf(t *store.Task, card *store.KeepaliveCard, out *keepaliveCardView) any {
+func (k *Keepalive) ViewOf(t *store.Task, card *store.KeepaliveCard, out *KeepaliveCardView) any {
 	taskID := t.ID
 	// As tick does, so the view after a new context reads the new session.
-	if t = k.followSession(t); t.ResumeID == "" {
+	if t = k.FollowSession(t); t.ResumeID == "" {
 		return out
 	}
-	path := k.transcript(t.Worktree, t.ResumeID)
+	path := k.Transcript(t.Worktree, t.ResumeID)
 	if path == "" {
 		return out
 	}
-	r, err := k.replies.readLastReply(path)
+	r, err := k.Replies.ReadLastReply(path)
 	if err != nil {
 		return out
 	}
-	_, _, spent, count, missed, expiry, last := k.stretchState(taskID, card, r)
+	_, _, spent, count, missed, expiry, last := k.StretchState(taskID, card, r)
 	out.Spent, out.Refreshes, out.Missed = spent, count, missed
 	if !last.IsZero() {
 		out.LastRefreshAt = &last
 	}
-	if v := k.decide(t, card); v.act == "skip" && v.why == "not due" {
-		next := refreshDueAt(v.expiry)
+	if v := k.Decide(t, card); v.Act == "skip" && v.Why == "not due" {
+		next := RefreshDueAt(v.Expiry)
 		out.NextRefreshAt = &next
 	}
-	if p, ok := keepalivePriceFor(r.Model); ok {
-		out.Budget = budgetFor(r.Context, p)
+	if p, ok := KeepalivePriceFor(r.Model); ok {
+		out.Budget = BudgetFor(r.Context, p)
 	}
 	if r.TTL > 0 {
 		out.WarmUntil = &expiry
 	}
-	if at, ok := k.coldSpentAt(taskID); ok {
-		out.WarmUntil, out.Why = &at, whyColdHandedOff
+	if at, ok := k.ColdSpentAt(taskID); ok {
+		out.WarmUntil, out.Why = &at, WhyColdHandedOff
 	}
 	return out
 }
 
 // loop runs the tick until the daemon stops.
-func (k *keepalive) loop(ctx context.Context) {
-	t := time.NewTicker(keepaliveTick)
+func (k *Keepalive) Loop(ctx context.Context) {
+	t := time.NewTicker(KeepaliveTick)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			k.tick(ctx)
+			k.Tick(ctx)
 		}
 	}
 }
@@ -1256,40 +1209,40 @@ func (k *keepalive) loop(ctx context.Context) {
 // A card that already has a switch keeps it. Launch also runs when a card is
 // reopened after a restart or resumed, and the board default applies to new
 // cards only: a card somebody turned off stays off.
-func (d *Daemon) keepaliveAtLaunch(taskID string, h *store.Harness, env map[string]string) {
+func (d *Service) KeepaliveAtLaunch(taskID string, h *store.Harness, env map[string]string) {
 	if !shared.IsClaude(h) {
 		return
 	}
 	state := store.KeepaliveOff
-	if card, err := d.st.KeepaliveCardOf(taskID); err == nil && card != nil {
+	if card, err := d.St.KeepaliveCardOf(taskID); err == nil && card != nil {
 		state = card.State
 	} else {
-		if d.st.KeepaliveDefaultOn() {
+		if d.St.KeepaliveDefaultOn() {
 			state = store.KeepaliveOn
 		}
-		if _, err := d.st.SetKeepaliveState(taskID, state); err != nil {
+		if _, err := d.St.SetKeepaliveState(taskID, state); err != nil {
 			log.Printf("[atrium] keep-alive: could not set %s on %s: %v", state, taskID, err)
 			return
 		}
 	}
 	// The runner row's own choice wins. An inherited value never reaches the
 	// runner anyway: childEnvFrom drops every CLAUDE_CODE_ key from the base.
-	if _, set := h.Env[keepaliveTTLVar]; state != store.KeepaliveOff && !set && env != nil {
-		env[keepaliveTTLVar] = "1h"
+	if _, set := h.Env[KeepaliveTTLVar]; state != store.KeepaliveOff && !set && env != nil {
+		env[KeepaliveTTLVar] = "1h"
 	}
 }
 
 // keepaliveTTLVar is Claude Code's choice of TTL for the main conversation.
-const keepaliveTTLVar = "CLAUDE_CODE_PROMPT_CACHE_TTL"
+const KeepaliveTTLVar = "CLAUDE_CODE_PROMPT_CACHE_TTL"
 
 // keepaliveSet is the per-card switch from the board. Turning it on by hand
 // clears any stopped state and restarts the budget.
-func (d *Daemon) keepaliveSet(taskID string, on bool) (any, error) {
-	t, err := d.st.Get(taskID)
+func (d *Service) KeepaliveSet(taskID string, on bool) (any, error) {
+	t, err := d.St.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
-	h, _ := d.st.Harness(t.Runner)
+	h, _ := d.St.Harness(t.Runner)
 	if !shared.IsClaude(h) {
 		return nil, errors.New("keep-alive is for Claude cards only")
 	}
@@ -1297,16 +1250,16 @@ func (d *Daemon) keepaliveSet(taskID string, on bool) (any, error) {
 	if on {
 		state = store.KeepaliveOn
 	}
-	if _, err := d.st.SetKeepaliveStateAt(taskID, state, d.ka.now()); err != nil {
+	if _, err := d.St.SetKeepaliveStateAt(taskID, state, d.Ka.Now()); err != nil {
 		return nil, err
 	}
 	// A hand on the switch also lifts a hold from an unsaved refresh.
-	d.ka.mu.Lock()
-	delete(d.ka.unsaved, taskID)
-	d.ka.mu.Unlock()
-	return d.ka.view(taskID), nil
+	d.Ka.Mu.Lock()
+	delete(d.Ka.Unsaved, taskID)
+	d.Ka.Mu.Unlock()
+	return d.Ka.View(taskID), nil
 }
 
 // agentFork is agentSpawn for a keep-alive fork, which is a one-shot model call.
 // A test's TestMain makes it a command that fails at once.
-var agentFork = func(exe string, args []string) (string, []string) { return exe, args }
+var AgentFork = func(exe string, args []string) (string, []string) { return exe, args }

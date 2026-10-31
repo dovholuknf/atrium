@@ -206,10 +206,10 @@ func TestAPendingOwnerNoticeIsRedeliveredOnceAfterAClear(t *testing.T) {
 	if err := d.markDelivered(launcher.ID, "stop", messageIDs(pendingFrom(t, d, launcher.ID))); err != nil {
 		t.Fatal(err)
 	}
-	carried := []deliveredSay{{from: store.ReservedHandle, text: notice}}
+	carried := []deliveredSay{{From: store.ReservedHandle, Text: notice}}
 
 	got := d.itemMissed(launcher.ID, carried)
-	if len(got) != 1 || !strings.Contains(got[0].text, "in case you missed it") || !strings.Contains(got[0].text, notice) {
+	if len(got) != 1 || !strings.Contains(got[0].Text, "in case you missed it") || !strings.Contains(got[0].Text, notice) {
 		t.Fatalf("the redelivery: %+v", got)
 	}
 	if again := d.itemMissed(launcher.ID, carried); len(again) != 0 {
@@ -225,7 +225,7 @@ func TestAnOwnerNoticeTheOwnerActedOnIsNotRedelivered(t *testing.T) {
 	if _, _, err := d.itemUnblock(it.ID, "use KEY-9", "orchestrator"); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.itemMissed(launcher.ID, []deliveredSay{{from: store.ReservedHandle, text: notice}}); len(got) != 0 {
+	if got := d.itemMissed(launcher.ID, []deliveredSay{{From: store.ReservedHandle, Text: notice}}); len(got) != 0 {
 		t.Fatalf("redelivered a notice already answered: %+v", got)
 	}
 }
@@ -238,10 +238,10 @@ func TestAPendingAnswerIsRedeliveredToTheWorkerOnceAfterAClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	answer := pendingFrom(t, d, worker.ID)[0].Text
-	carried := []deliveredSay{{from: store.ReservedHandle, text: answer}}
+	carried := []deliveredSay{{From: store.ReservedHandle, Text: answer}}
 
 	got := d.itemMissed(worker.ID, carried)
-	if len(got) != 1 || !strings.Contains(got[0].text, "in case you missed it") || !strings.Contains(got[0].text, "use KEY-9") {
+	if len(got) != 1 || !strings.Contains(got[0].Text, "in case you missed it") || !strings.Contains(got[0].Text, "use KEY-9") {
 		t.Fatalf("the redelivery: %+v", got)
 	}
 	if again := d.itemMissed(worker.ID, carried); len(again) != 0 {
@@ -253,7 +253,7 @@ func TestAPendingAnswerIsRedeliveredToTheWorkerOnceAfterAClear(t *testing.T) {
 func TestAClearLeavesOrdinarySaysAlone(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _, _ := itemRunning(t, d, "")
-	in := []deliveredSay{{from: "someone", text: "hello"}, {from: store.ReservedHandle, text: "not an item notice"}}
+	in := []deliveredSay{{From: "someone", Text: "hello"}, {From: store.ReservedHandle, Text: "not an item notice"}}
 	if got := d.itemMissed(launcher.ID, in); len(got) != 2 {
 		t.Fatalf("%+v", got)
 	}

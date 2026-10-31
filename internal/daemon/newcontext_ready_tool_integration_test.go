@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,7 +58,7 @@ func TestReadyWithTextIsRefusedWithNoCycle(t *testing.T) {
 	if err == nil || code != http.StatusConflict || !strings.Contains(err.Error(), "no context cycle") {
 		t.Fatalf("got %d, %v", code, err)
 	}
-	if _, statErr := os.Stat(d.handoffPath(task)); statErr == nil {
+	if _, statErr := os.Stat(d.HandoffPath(task)); statErr == nil {
 		t.Fatal("a handoff was written for a card with no cycle")
 	}
 }
@@ -75,7 +76,7 @@ func TestReadyWithEmptyTextIsRefused(t *testing.T) {
 	if err == nil || code != http.StatusConflict || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("got %d, %v", code, err)
 	}
-	if !d.nctx.waitingForAck(task.ID) {
+	if !d.Nctx.WaitingForAck(task.ID) {
 		t.Fatal("an empty handoff acked the cycle")
 	}
 }
@@ -112,21 +113,21 @@ func TestTheLimitPromptNamesOnlyTheCLIAndAShellessRunnerGetsOnlyTheTool(t *testi
 func TestTheCycleStopsAskingAfterThreeAsks(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = 40 * time.Millisecond
+	d.hk.NcTiming.PromptLost = 40 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "three asks", func() bool { return strings.Count(f.written(), limitPrompt) >= maxLimitAsks })
+	until(t, "three asks", func() bool { return strings.Count(f.written(), limitPrompt) >= cycle.MaxLimitAsks })
 	time.Sleep(400 * time.Millisecond) // wait: proving a fourth ask never comes, so there is no condition to spin on
-	if n := strings.Count(f.written(), limitPrompt); n != maxLimitAsks {
+	if n := strings.Count(f.written(), limitPrompt); n != cycle.MaxLimitAsks {
 		t.Fatalf("asked %d times", n)
 	}
-	v, _ := d.newContextFor(task.ID).(map[string]any)
+	v, _ := d.NewContextFor(task.ID).(map[string]any)
 	if v == nil || v["label"] != "new context waiting: the session did not call ready after 3 asks" {
 		t.Fatalf("the card says %v", v)
 	}
-	if !d.nctx.waitingForAck(task.ID) {
+	if !d.Nctx.WaitingForAck(task.ID) {
 		t.Fatal("the cycle gave up the card instead of leaving it waiting")
 	}
 	text := string(handoffBody)

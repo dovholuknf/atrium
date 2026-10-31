@@ -179,7 +179,7 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	reason := "a shutdown request from " + from
 	if now {
 		log.Printf("[atrium] shutdown requested by %s, now: no wrap-up", from)
-		d.wrap.cancelRunning()
+		d.Wrap.CancelRunning()
 		go d.stop.request(reason)
 		return
 	}
@@ -194,7 +194,7 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Off the request goroutine, so the response is written and the connection
 	// free before the listener starts closing. The wrap-up is bounded by the wait.
 	go func() {
-		d.wrapUpForRestart(context.Background(), wait, reason)
+		d.WrapUpForRestart(context.Background(), wait, reason)
 		d.stop.request(reason)
 	}()
 }

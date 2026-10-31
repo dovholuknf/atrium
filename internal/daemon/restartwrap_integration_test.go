@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,26 +19,26 @@ const wrapPrompt = "the room is restarting."
 func fastWrap(t *testing.T, d *Daemon) {
 	t.Helper()
 	fastNewContext(t, d)
-	d.hk.wrapTiming.poll = 5 * time.Millisecond
+	d.hk.WrapTiming.Poll = 5 * time.Millisecond
 }
 
 func wraps(f *fakePTY) int { return strings.Count(f.written(), wrapPrompt) }
 
 // runWrap runs the wrap-up in the background and returns where its report lands.
-func runWrap(d *Daemon, wait time.Duration) chan WrapReport {
-	out := make(chan WrapReport, 1)
-	go func() { out <- d.wrapUpForRestart(context.Background(), wait, "a test") }()
+func runWrap(d *Daemon, wait time.Duration) chan cycle.WrapReport {
+	out := make(chan cycle.WrapReport, 1)
+	go func() { out <- d.WrapUpForRestart(context.Background(), wait, "a test") }()
 	return out
 }
 
-func report(t *testing.T, ch chan WrapReport) WrapReport {
+func report(t *testing.T, ch chan cycle.WrapReport) cycle.WrapReport {
 	t.Helper()
 	select {
 	case r := <-ch:
 		return r
 	case <-time.After(5 * time.Second):
 		t.Fatal("the wrap-up never finished")
-		return WrapReport{}
+		return cycle.WrapReport{}
 	}
 }
 
@@ -59,7 +60,7 @@ func TestWrapAskedCardSaysReadyAndIsWoken(t *testing.T) {
 
 	ch := runWrap(d, time.Minute)
 	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 && strings.Contains(f.written(), "/opt/atrium/atrium ready") })
-	if !d.wrap.waiting(task.ID) {
+	if !d.Wrap.Waiting(task.ID) {
 		t.Fatal("the wrap-up is not waiting on the card's ack")
 	}
 	if _, _, err := d.Ready(task); err != nil {
@@ -70,7 +71,7 @@ func TestWrapAskedCardSaysReadyAndIsWoken(t *testing.T) {
 		t.Fatalf("report = %+v", rep)
 	}
 	w := wakeOf(d, task.ID)
-	if w == nil || w.By != wrapBy || !strings.Contains(w.Text, "carry on") {
+	if w == nil || w.By != cycle.WrapBy || !strings.Contains(w.Text, "carry on") {
 		t.Fatalf("wake = %+v", w)
 	}
 	if strings.Contains(f.written(), "/clear") {
@@ -130,7 +131,7 @@ func TestWrapTimeoutNamesTheCardAndWakesIt(t *testing.T) {
 	if !found {
 		t.Fatal("the card's history does not say it never answered")
 	}
-	if d.wrap.waiting(task.ID) {
+	if d.Wrap.Waiting(task.ID) {
 		t.Fatal("the wrap-up still waits on the card's ack after it ended")
 	}
 }
@@ -151,7 +152,7 @@ func TestWrapKeepsACardsOwnWake(t *testing.T) {
 	d := testDaemon(t)
 	fastWrap(t, d)
 	task, f, _ := ncCard(t, d)
-	if _, _, err := d.queueWake(task.ID, "my own wake", "me"); err != nil {
+	if _, _, err := d.QueueWake(task.ID, "my own wake", "me"); err != nil {
 		t.Fatal(err)
 	}
 	midTurn(d, task.ID)
@@ -267,8 +268,8 @@ func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
 
 	d.handleShutdown(httptest.NewRecorder(), wrapShutdownReq(""))
 	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
-	joined := make(chan WrapReport, 1)
-	go func() { joined <- d.wrapUpForRestart(context.Background(), time.Hour, "a second stop") }()
+	joined := make(chan cycle.WrapReport, 1)
+	go func() { joined <- d.WrapUpForRestart(context.Background(), time.Hour, "a second stop") }()
 	d.handleShutdown(httptest.NewRecorder(), wrapShutdownReq(""))
 	time.Sleep(50 * time.Millisecond) // wait: a negative check, the second stop must not return while the wrap-up runs
 	select {
@@ -291,23 +292,23 @@ func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
 
 func TestJoinGivesUpPastTheRunningDeadline(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.wrapJoinMargin = 20 * time.Millisecond
-	run, mine := d.wrap.begin(func() {}, time.Now().Add(20*time.Millisecond))
+	d.hk.WrapJoinMargin = 20 * time.Millisecond
+	run, mine := d.Wrap.Begin(func() {}, time.Now().Add(20*time.Millisecond))
 	if !mine {
 		t.Fatal("begin refused")
 	}
 	start := time.Now()
-	rep := d.joinWrapUp(context.Background(), run)
+	rep := d.JoinWrapUp(context.Background(), run)
 	if !rep.Already || time.Since(start) > 2*time.Second {
 		t.Fatalf("join = %+v after %s", rep, time.Since(start))
 	}
 }
 
 func TestCapWrapWait(t *testing.T) {
-	if got := capWrapWait(99999 * time.Second); got != time.Hour {
+	if got := cycle.CapWrapWait(99999 * time.Second); got != time.Hour {
 		t.Fatalf("over-cap = %s", got)
 	}
-	if got := capWrapWait(90 * time.Second); got != 90*time.Second {
+	if got := cycle.CapWrapWait(90 * time.Second); got != 90*time.Second {
 		t.Fatalf("under-cap = %s", got)
 	}
 }

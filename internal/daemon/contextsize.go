@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"strings"
 	"sync"
@@ -70,7 +71,7 @@ type contextSeen struct {
 
 type contextSizes struct {
 	// replies is the transcript read cache. The daemon points it at its own.
-	replies *lastReplies
+	replies *cycle.LastReplies
 	mu      sync.Mutex
 	m       map[string]contextSeen
 	// judged is the threshold each card was last held against. A changed
@@ -87,7 +88,7 @@ type contextSizes struct {
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{replies: &lastReplies{}, m: map[string]contextSeen{}, judged: map[string]int64{},
+	return &contextSizes{replies: &cycle.LastReplies{}, m: map[string]contextSeen{}, judged: map[string]int64{},
 		session: map[string]string{}, transcript: api.TranscriptPath, latest: api.LatestSession}
 }
 
@@ -186,7 +187,7 @@ func (c *contextSizes) read(t *store.Task) (int64, bool) {
 	if ok && last.path == path && last.mod.Equal(info.ModTime()) && last.size == info.Size() {
 		return last.tokens, false
 	}
-	r, err := c.replies.readLastReply(path)
+	r, err := c.replies.ReadLastReply(path)
 	if err != nil {
 		return 0, false
 	}

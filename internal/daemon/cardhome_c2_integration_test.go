@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -206,10 +207,10 @@ func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 	if b, err := os.ReadFile(want); err != nil || string(b) != "line one\nline two" {
 		t.Fatalf("say file: %q %v", b, err)
 	}
-	if got := d.handoffPath(task); got != filepath.Join(dd.Meta, "handoff.md") {
+	if got := d.HandoffPath(task); got != filepath.Join(dd.Meta, "handoff.md") {
 		t.Fatalf("handoff at %s", got)
 	}
-	path, err := d.prepareHandoff(task)
+	path, err := d.PrepareHandoff(task)
 	if err != nil || filepath.Dir(path) != dd.Meta || !regexp.MustCompile(`^handoff-\d{14}\.md$`).MatchString(filepath.Base(path)) {
 		t.Fatalf("prepare: %q %v", path, err)
 	}
@@ -230,7 +231,7 @@ func TestALongSayAndTheHandoffPlacesForACardWithNoHome(t *testing.T) {
 		t.Fatalf("say %q, want the old place %s", say, want)
 	}
 	// The handoff is never in the system temp folder: beside the room's database instead.
-	if got, want := d.handoffPath(task), filepath.Join(filepath.Dir(d.opts.DBPath), handoffDirName, task.ID+".md"); got != want {
+	if got, want := d.HandoffPath(task), filepath.Join(filepath.Dir(d.opts.DBPath), cycle.HandoffDirName, task.ID+".md"); got != want {
 		t.Fatalf("handoff at %s, want %s", got, want)
 	}
 }

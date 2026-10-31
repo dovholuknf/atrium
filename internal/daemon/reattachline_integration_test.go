@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"testing"
 	"time"
 )
@@ -25,7 +26,7 @@ func TestAReattachedRunnerAtAnEmptyIdlePromptOpensItsGateAndTakesTheCyclePrompt(
 	if !r.peerGateOpen() {
 		t.Fatal("the gate stayed shut on an empty idle prompt")
 	}
-	if !d.cyclePromptDue(task.ID, &newContext{}) {
+	if !d.CyclePromptDue(task.ID, &cycle.NewContext{}) {
 		t.Fatal("the cycle prompt was still held after the reattach")
 	}
 }

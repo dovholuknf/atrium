@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP(t *testing.T) {
 		"--tools", "Bash,Read"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	f.k.hk.readUserSettings = func() []byte { return []byte(`{"permissions":{"allow":["Bash"]}}`) }
+	f.hk.readUserSettings = func() []byte { return []byte(`{"permissions":{"allow":["Bash"]}}`) }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
 	if f.forks() != 1 {
@@ -77,7 +78,7 @@ func TestKeepaliveRefusesALeanForkItCannotRebuild(t *testing.T) {
 
 func TestKeepFlags(t *testing.T) {
 	t.Parallel()
-	got := keepFlags([]string{"--resume", "x", "--mcp-config", "a.json", "b.json", "--verbose", "--tools=Bash",
+	got := cycle.KeepFlags([]string{"--resume", "x", "--mcp-config", "a.json", "b.json", "--verbose", "--tools=Bash",
 		"--settings", "{}", "--strict-mcp-config", "--model", "m", "prompt"})
 	want := []string{"--mcp-config", "a.json", "b.json", "--tools=Bash", "--strict-mcp-config"}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {

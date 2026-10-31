@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ func heldRoom(t *testing.T) (d *Daemon, worker, deployer *store.Task) {
 	if err := d.st.SetStatus(worker.ID, store.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	h, err := d.startDeployHold(holdStart{By: "merge", ByCard: deployer.ID, Whys: []string{"r-hold-notices"}})
+	h, err := d.StartDeployHold(cycle.HoldStart{By: "merge", ByCard: deployer.ID, Whys: []string{"r-hold-notices"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,14 +43,14 @@ func TestADeployHoldRefusesAHeldCallAndNotTheDeployers(t *testing.T) {
 		!strings.Contains(auto.Reason, "r-hold-notices") {
 		t.Fatalf("held call answered %+v", auto)
 	}
-	if len(auto.Reason) > maxHoldLine {
-		t.Fatalf("refusal is %d bytes, over %d", len(auto.Reason), maxHoldLine)
+	if len(auto.Reason) > cycle.MaxHoldLine {
+		t.Fatalf("refusal is %d bytes, over %d", len(auto.Reason), cycle.MaxHoldLine)
 	}
 	p, err := d.st.GetPermission(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.DecidedBy != DecidedByDeployHold {
+	if p.DecidedBy != cycle.DecidedByDeployHold {
 		t.Fatalf("recorded as decided by %q", p.DecidedBy)
 	}
 	if _, auto := ask(t, d, "merge", "Bash", "go build ./..."); auto != nil && strings.Contains(auto.Reason, "redeployed") {
@@ -65,7 +66,7 @@ func TestAHoldLiftsWhenAHeldCardWasRemoved(t *testing.T) {
 	if err := d.st.Forget(worker.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.liftDeployHold(HoldOutcomeCancelled); err != nil {
+	if _, err := d.LiftDeployHold(cycle.HoldOutcomeCancelled); err != nil {
 		t.Fatalf("lift: %v", err)
 	}
 	if hs, _ := d.st.RoomHolds(); len(hs) != 0 {
@@ -78,14 +79,14 @@ func TestAnExemptCardIsNotHeld(t *testing.T) {
 	d := testDaemon(t)
 	peerCard(t, d, "worker")
 	watcher := peerCard(t, d, "watcher")
-	h, err := d.startDeployHold(holdStart{By: "merge", Exempt: []string{"watcher"}})
+	h, err := d.StartDeployHold(cycle.HoldStart{By: "merge", Exempt: []string{"watcher"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if h.Holds(watcher.ID) {
 		t.Fatal("an exempt card is held")
 	}
-	if _, err := d.startDeployHold(holdStart{By: "merge", Exempt: []string{"a", "b", "c", "d"}}); err == nil {
+	if _, err := d.StartDeployHold(cycle.HoldStart{By: "merge", Exempt: []string{"a", "b", "c", "d"}}); err == nil {
 		t.Fatal("four exempt cards were taken")
 	}
 }
@@ -95,7 +96,7 @@ func TestASecondHoldIsRefused(t *testing.T) {
 	d, _, _ := heldRoom(t)
 	r := httptest.NewRequest(http.MethodPost, "/v1/hold", strings.NewReader(`{"action":"start","by":"merge"}`))
 	w := httptest.NewRecorder()
-	d.handleHold(w, r)
+	d.HandleHold(w, r)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("second start answered %d: %s", w.Code, w.Body)
 	}
@@ -119,7 +120,7 @@ func TestAnAgentsSayIsHeldAndTheOperatorsIsNot(t *testing.T) {
 	}
 
 	ask(t, d, "worker", "Bash", "ls")
-	if _, err := d.liftDeployHold(HoldOutcomeCancelled); err != nil {
+	if _, err := d.LiftDeployHold(cycle.HoldOutcomeCancelled); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err = d.takeMessages(worker.ID, "permission")
@@ -139,11 +140,11 @@ func TestAnAgentsSayIsHeldAndTheOperatorsIsNot(t *testing.T) {
 func TestALaunchOntoAHeldRoomIsRefusedAndTheDeployersIsNot(t *testing.T) {
 	t.Parallel()
 	d, _, _ := heldRoom(t)
-	if err := d.launchHeld(shared.LaunchRequest{SpawnedBy: "worker"}); err == nil ||
+	if err := d.LaunchHeld(shared.LaunchRequest{SpawnedBy: "worker"}); err == nil ||
 		!strings.Contains(err.Error(), "launch when the hold lifts") {
 		t.Fatalf("a held card's launch answered %v", err)
 	}
-	if err := d.launchHeld(shared.LaunchRequest{SpawnedBy: "merge"}); err != nil {
+	if err := d.LaunchHeld(shared.LaunchRequest{SpawnedBy: "merge"}); err != nil {
 		t.Fatalf("the deployer's launch was refused: %v", err)
 	}
 }
@@ -164,7 +165,7 @@ func noMessageTo(t *testing.T, d *Daemon, ids ...string) {
 		if msgs := pendingFrom(t, d, id); len(msgs) != 0 {
 			t.Fatalf("card %s was sent %+v by the lift", id, msgs)
 		}
-		if w := d.wake.get(id); w != nil {
+		if w := d.Wake.Get(id); w != nil {
 			t.Fatalf("card %s has a wake %+v from the lift", id, w)
 		}
 		if n := resumeEvents(t, d, id); n != 0 {
@@ -200,24 +201,24 @@ func TestTheStartupLiftSendsNothingToAnyCard(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := d.startDeployHold(holdStart{By: "merge"}); err != nil {
+	if _, err := d.StartDeployHold(cycle.HoldStart{By: "merge"}); err != nil {
 		t.Fatal(err)
 	}
 	ask(t, d, "refused", "Bash", "ls")
 	restartUnder(t, d, busy.ID, idle.ID, refused.ID)
-	d.build = "newbuild"
+	d.Build = "newbuild"
 
-	d.liftAtStartup()
-	if d.deployHold() != nil {
+	d.LiftAtStartup()
+	if d.DeployHold() != nil {
 		t.Fatal("still held after the startup lift")
 	}
 	noMessageTo(t, d, busy.ID, idle.ID, refused.ID)
 	for _, id := range []string{busy.ID, idle.ID, refused.ID} {
-		if d.deployHeld(id) {
+		if d.DeployHeld(id) {
 			t.Fatalf("card %s is still held for messages", id)
 		}
 	}
-	d.liftAtStartup()
+	d.LiftAtStartup()
 	noMessageTo(t, d, busy.ID, idle.ID, refused.ID)
 }
 
@@ -225,8 +226,8 @@ func TestTheSameBuildComingBackSendsNothing(t *testing.T) {
 	t.Parallel()
 	d, worker, _ := heldRoom(t)
 	restartUnder(t, d, worker.ID)
-	d.liftAtStartup()
-	if d.deployHold() != nil {
+	d.LiftAtStartup()
+	if d.DeployHold() != nil {
 		t.Fatal("still held")
 	}
 	noMessageTo(t, d, worker.ID)
@@ -235,13 +236,13 @@ func TestTheSameBuildComingBackSendsNothing(t *testing.T) {
 func TestALiftLeavesACardsOwnWakeAlone(t *testing.T) {
 	t.Parallel()
 	d, worker, _ := heldRoom(t)
-	if _, _, err := d.queueWake(worker.ID, "pick up r-038", "worker"); err != nil {
+	if _, _, err := d.QueueWake(worker.ID, "pick up r-038", "worker"); err != nil {
 		t.Fatal(err)
 	}
 	restartUnder(t, d, worker.ID)
-	d.build = "newbuild"
-	d.liftAtStartup()
-	w := d.wake.get(worker.ID)
+	d.Build = "newbuild"
+	d.LiftAtStartup()
+	w := d.Wake.Get(worker.ID)
 	if w == nil || w.Text != "pick up r-038" || w.By != "worker" {
 		t.Fatalf("worker's wake = %+v", w)
 	}
@@ -251,8 +252,8 @@ func TestAHoldThatRunsOutSendsNothing(t *testing.T) {
 	t.Parallel()
 	d, worker, _ := heldRoom(t)
 	ask(t, d, "worker", "Bash", "ls")
-	d.holdTick(time.Now().Add(2 * time.Hour))
-	if d.deployHold() != nil {
+	d.HoldTick(time.Now().Add(2 * time.Hour))
+	if d.DeployHold() != nil {
 		t.Fatal("still held after its expiry")
 	}
 	noMessageTo(t, d, worker.ID)
@@ -270,18 +271,18 @@ func TestACalledOffHoldSendsNothingToWorkingOrIdleCards(t *testing.T) {
 		}
 		cards = append(cards, c)
 	}
-	if _, err := d.startDeployHold(holdStart{By: "merge"}); err != nil {
+	if _, err := d.StartDeployHold(cycle.HoldStart{By: "merge"}); err != nil {
 		t.Fatal(err)
 	}
 	ask(t, d, "refused", "Bash", "ls")
 	ask(t, d, "working", "Bash", "ls")
 
-	if _, err := d.liftDeployHold(HoldOutcomeCancelled); err != nil {
+	if _, err := d.LiftDeployHold(cycle.HoldOutcomeCancelled); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range cards {
 		noMessageTo(t, d, c.ID)
-		if d.deployHeld(c.ID) {
+		if d.DeployHeld(c.ID) {
 			t.Fatalf("%s is still held", c.DisplayTitle())
 		}
 	}
@@ -291,13 +292,13 @@ func TestWithNoHoldNothingChanges(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	worker := peerCard(t, d, "worker")
-	if d.deployHeld(worker.ID) {
+	if d.DeployHeld(worker.ID) {
 		t.Fatal("held with no hold")
 	}
 	if _, auto := ask(t, d, "worker", "Bash", "ls"); auto != nil {
 		t.Fatalf("a call with no hold was answered %+v", auto)
 	}
-	if err := d.launchHeld(shared.LaunchRequest{SpawnedBy: "worker"}); err != nil {
+	if err := d.LaunchHeld(shared.LaunchRequest{SpawnedBy: "worker"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -315,11 +316,11 @@ func TestBusyCardIsTheRoomsRule(t *testing.T) {
 		{"working", true, store.StatusRunning, time.Second, ActivityTool, true},
 		{"not supervised", false, store.StatusRunning, time.Second, ActivityTool, false},
 		{"waiting on a human", true, store.StatusNeedsInput, time.Second, ActivityTool, false},
-		{"stale", true, store.StatusRunning, BusyIdleAfter + time.Second, ActivityTool, false},
+		{"stale", true, store.StatusRunning, cycle.BusyIdleAfter + time.Second, ActivityTool, false},
 		{"thinking", true, store.StatusRunning, time.Second, ActivityThinking, false},
 	}
 	for _, c := range cases {
-		if got := BusyCard(c.supervised, c.status, c.idle, c.activity); got != c.want {
+		if got := cycle.BusyCard(c.supervised, c.status, c.idle, c.activity); got != c.want {
 			t.Errorf("%s: busy = %v, want %v", c.name, got, c.want)
 		}
 	}
