@@ -25944,7 +25944,7 @@ async function newContextSseSection(browser, base) {
       const readFrom = Date.now() - 50;
       onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "running",
         new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } }) });
-      const held = { sign: !document.getElementById("t-nodev").hidden, box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
+      const held = { sign: composeOpen(), box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
       sendInput("more");
       const dropped = frames.length === before;
       (typeof composeFromList === "function" ? composeFromList : r => { termTask.new_context = r.new_context; })({ id: "c-sse", new_context: null }, readFrom);
@@ -25954,7 +25954,7 @@ async function newContextSseSection(browser, base) {
       window.sendInput = t => { typed.push(t); };
       onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "idle" }) });
       window.sendInput = realSend;
-      return { before, held, dropped, clears, stillHeld, typed, after: { box: composeOpen(), sign: !document.getElementById("t-nodev").hidden } };
+      return { before, held, dropped, clears, stillHeld, typed, after: { box: composeOpen(), sign: composeOpen() } };
     });
     if (shots) {
       await p.evaluate(() => {

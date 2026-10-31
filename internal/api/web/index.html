@@ -618,24 +618,18 @@ Exports honor whatever filter is applied.">?</span>
             <button onclick="closePasteBox()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
           </div>
         </div>
-        <!-- The compose box: atrium is typing into this card for a new context, so a key typed now would be
-             dropped. It opens on the first one, seeded with it, and the text is queued on the card and typed when
-             the cycle ends. The button is the way out: it stops the cycle and gives the terminal back. See
-             js/compose.js. -->
-        <div class="term-nodev" id="t-nodev" role="status" hidden>
-          <div class="nodev-line"><span class="nodev-sign" aria-hidden="true">&#9940;</span><span>typing is held for the new context</span></div>
-          <div class="nodev-line" id="t-nodev-say"></div>
-          <button type="button" tabindex="-1" onclick="composeStop()"
-            data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
-        </div>
-        <div class="pastebox" id="t-ctxbox" hidden role="dialog" aria-label="message to send when the new context is ready">
+        <!-- The compose panel: atrium is typing into this card for a new context. It shows the step, and what is
+             typed here is queued on the card and typed when the cycle ends. It never blocks the terminal: a key
+             typed there releases the hold. The x and Escape release it too. See js/compose.js. -->
+        <div class="pastebox" id="t-ctxbox" hidden role="dialog" aria-label="starting a new context">
           <div class="pastebox-say">starting a new context, this is sent when it is ready</div>
+          <div class="pastebox-say" id="t-nodev-say" role="status"></div>
           <textarea id="t-ctxbox-in" spellcheck="false" autocomplete="off"></textarea>
           <div class="pastebox-row">
             <button id="t-ctxbox-free" onclick="composeFree()"
               data-tip="stop the new context, send what is queued and type in the terminal now">let me type</button>
             <button onclick="composeSend()" data-tip="queue it (enter)">queue</button>
-            <button onclick="composeClose()" aria-label="discard (escape)" data-tip="discard (escape)">&times;</button>
+            <button onclick="composeDismiss()" aria-label="dismiss (escape)" data-tip="dismiss and type (escape)">&times;</button>
           </div>
         </div>
         <!-- The walk drawer sits BESIDE the one terminal and never replaces it: a second xterm on a card is the
