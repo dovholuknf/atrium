@@ -48,6 +48,9 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// handlers are what serveHubAPI dispatches through. See hubroutes.go.
+	handlersOnce sync.Once
+	handlers     hubHandlers
 	// work is the goroutines that read or write the hub's store off a request's path. WaitWork waits for them
 	// before the store closes.
 	work sync.WaitGroup
@@ -1647,23 +1650,23 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "files" || strings.HasPrefix(sub, "files/") {
-		p.serveFiles(w, r, sub)
+		p.hubRoutes().Files(w, r, sub)
 		return
 	}
 	if sub == "docs" || strings.HasPrefix(sub, "docs/") {
-		p.serveDocs(w, r, sub)
+		p.hubRoutes().Docs(w, r, sub)
 		return
 	}
 	if sub == "push" || strings.HasPrefix(sub, "push/") {
-		p.servePush(w, r, strings.Trim(strings.TrimPrefix(sub, "push"), "/"))
+		p.hubRoutes().Push(w, r, strings.Trim(strings.TrimPrefix(sub, "push"), "/"))
 		return
 	}
 	if strings.HasPrefix(sub, "growls/") {
-		p.serveGrowls(w, r, sub)
+		p.hubRoutes().Growls(w, r, sub)
 		return
 	}
 	if sub == "ci-hook" || sub == "ci-hook/routes" {
-		p.serveCIHook(w, r, sub)
+		p.hubRoutes().CIHook(w, r, sub)
 		return
 	}
 	if sub == "events" || sub == "events/subs" {
@@ -1671,11 +1674,11 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "forge" || strings.HasPrefix(sub, "forge/") {
-		p.serveForgeAdmin(w, r, strings.Trim(strings.TrimPrefix(sub, "forge"), "/"))
+		p.hubRoutes().ForgeAdmin(w, r, strings.Trim(strings.TrimPrefix(sub, "forge"), "/"))
 		return
 	}
 	if sub == "pr-claims" || strings.HasPrefix(sub, "pr-claims/") {
-		p.servePRClaims(w, r, sub)
+		p.hubRoutes().PRClaims(w, r, sub)
 		return
 	}
 	if sub == "change-requests" || strings.HasPrefix(sub, "change-requests/") {
@@ -1683,7 +1686,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "backlog" || strings.HasPrefix(sub, "backlog/") || sub == "reports" || strings.HasPrefix(sub, "reports/") {
-		p.serveBacklog(w, r, sub)
+		p.hubRoutes().Backlog(w, r, sub)
 		return
 	}
 	if sub == "doc-debt" {
@@ -1691,7 +1694,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "items" || strings.HasPrefix(sub, "items/") {
-		p.serveItems(w, r, sub)
+		p.hubRoutes().Items(w, r, sub)
 		return
 	}
 	if sub == "shepherds" || strings.HasPrefix(sub, "shepherds/") {
@@ -1703,7 +1706,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "work" || strings.HasPrefix(sub, "work/") {
-		p.serveWork(w, r, sub)
+		p.hubRoutes().Work(w, r, sub)
 		return
 	}
 	if sub == "prices" {
@@ -1711,19 +1714,19 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {
-		p.serveFlow(w, r, sub)
+		p.hubRoutes().Flow(w, r, sub)
 		return
 	}
 	if sub == "merge" || strings.HasPrefix(sub, "merge/") {
-		p.serveMerge(w, r, sub)
+		p.hubRoutes().Merge(w, r, sub)
 		return
 	}
 	if strings.HasPrefix(sub, "rooms/") {
-		p.serveRoomSpecBoard(w, r, sub)
+		p.hubRoutes().RoomSpecBoard(w, r, sub)
 		return
 	}
 	if sub == "sshkeys" {
-		p.serveSSHKeysBoard(w, r)
+		p.hubRoutes().SSHKeysBoard(w, r)
 		return
 	}
 	switch sub {
@@ -1751,31 +1754,31 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	case "inventory/forget":
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
-		p.serveNotify(w, r, sub)
+		p.hubRoutes().Notify(w, r, sub)
 	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url":
-		p.serveGit(w, r, sub)
+		p.hubRoutes().Git(w, r, sub)
 	case "launch-caps":
-		p.serveLaunchCaps(w, r)
+		p.hubRoutes().LaunchCaps(w, r)
 	case "hosts":
-		p.serveHosts(w, r)
+		p.hubRoutes().Hosts(w, r)
 	case "transports":
-		p.serveTransports(w, r)
+		p.hubRoutes().Transports(w, r)
 	case "deploy-owner":
-		p.serveDeployOwner(w, r)
+		p.hubRoutes().DeployOwner(w, r)
 	case "deploy-ready", "deploy-ready/deploy":
-		p.serveDeployReady(w, r, sub)
+		p.hubRoutes().DeployReady(w, r, sub)
 	case "deploy-queue":
-		p.serveDeployQueue(w, r)
+		p.hubRoutes().DeployQueue(w, r)
 	case "new-contexts":
 		p.serveNewContexts(w, r)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":
-		p.serveDeps(w, r, sub)
+		p.hubRoutes().Deps(w, r, sub)
 	case "presence":
 		p.servePresence(w, r)
 	case "growls":
-		p.serveGrowls(w, r, sub)
+		p.hubRoutes().Growls(w, r, sub)
 	case "growl-ladder":
-		p.serveGrowlLadder(w, r)
+		p.hubRoutes().GrowlLadder(w, r)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.
