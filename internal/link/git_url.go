@@ -2,13 +2,9 @@ package link
 
 import (
 	"context"
-	"encoding/json"
 	"net"
-	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,38 +24,6 @@ import (
 // THE URLS ARE BUILT ON THE HOST THE CALLER REACHED THE HUB BY (the request's Host, which the listener has already
 // checked is a name the hub answers to), never on a name made up here. Nothing in the query is given to git: a
 // repository is looked up in the list the hub knows, and a branch is compared with the names that were listed.
-
-// hostForURL is a Host header that is fit to be put in a URL: a hostname or an address, and a port.
-var hostForURL = regexp.MustCompile(`^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:[0-9]{1,5})?$`)
-
-// serveGitURL answers GET /_hub/git/url.
-func (p *Proxy) serveGitURL(w http.ResponseWriter, r *http.Request, g *gitsync.Hub, fail func(int, string)) {
-	if _, ok := gitReach(w, r); !ok {
-		return
-	}
-	if r.Method != http.MethodGet {
-		fail(http.StatusMethodNotAllowed, "that has to be a GET")
-		return
-	}
-	q := r.URL.Query()
-	repo := strings.TrimSpace(q.Get("repo"))
-	if repo == "" {
-		fail(http.StatusBadRequest, "say which repository: repo=<owner>/<repo>, <host>/<owner>/<repo> or its name")
-		return
-	}
-	if !hostForURL.MatchString(r.Host) {
-		fail(http.StatusBadRequest, "the hub cannot tell what name you reached it by")
-		return
-	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	ans := g.Lookup(r.Context(), gitsync.URLQuery{
-		Repo: repo, Branch: q.Get("branch"), Room: q.Get("room"), Base: scheme + "://" + r.Host,
-	})
-	_ = json.NewEncoder(w).Encode(ans)
-}
 
 const gitURLToolDesc = "Get the URL to fetch code that is not in your cwd. Call this, then `git fetch <url> <branch>`. " +
 	"NEVER ASK FOR A PASTE.\n\n" +

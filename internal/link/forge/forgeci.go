@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"context"
@@ -23,13 +23,13 @@ import (
 // question does (forgeRefusal). Bitbucket answers `not_supported`. See ci_door.go for the tool.
 
 // SetCIDir is the hub's folder an artifact is downloaded under. Unset, it is a folder in the hub machine's temp.
-func (p *Proxy) SetCIDir(dir string) {
+func (p *Service) SetCIDir(dir string) {
 	p.mu.Lock()
 	p.ciDir = dir
 	p.mu.Unlock()
 }
 
-func (p *Proxy) ciRoot() string {
+func (p *Service) ciRoot() string {
 	p.mu.Lock()
 	dir := p.ciDir
 	p.mu.Unlock()
@@ -64,7 +64,7 @@ func ciValid(a forge.HubCIAsk) string {
 }
 
 // forgeCI runs one CI question.
-func (p *Proxy) forgeCI(ctx context.Context, f *hubForge, ask forge.HubCIAsk) (forge.HubCI, error) {
+func (p *Service) ForgeCI(ctx context.Context, f *HubForge, ask forge.HubCIAsk) (forge.HubCI, error) {
 	var ans forge.HubCI
 	fg, err := f.forgeFor(strings.ToLower(ask.Host))
 	if err != nil {
@@ -75,7 +75,7 @@ func (p *Proxy) forgeCI(ctx context.Context, f *hubForge, ask forge.HubCIAsk) (f
 		if err == nil {
 			return nil
 		}
-		return &forgeAccess{kind: ans.Kind, err: err}
+		return &ForgeAccess{Kind: ans.Kind, Err: err}
 	}
 	rd, err := forge.CIOf(fg)
 	if err != nil {
@@ -130,13 +130,13 @@ func ciDownloadNote(d *forge.CIDownload, read bool) string {
 }
 
 // ciFail answers a CI question's failure the way a pull request question's is: the hub's sentence, and the alert.
-func (p *Proxy) ciFail(w http.ResponseWriter, f *hubForge, room string, ask forge.HubCIAsk, err error) {
-	code, he := p.forgeRefusal(f, room, forge.HubAsk{Host: strings.ToLower(ask.Host), Org: ask.Org, Repo: ask.Repo}, err)
+func (p *Service) ciFail(w http.ResponseWriter, f *HubForge, room string, ask forge.HubCIAsk, err error) {
+	code, he := p.ForgeRefusal(f, room, forge.HubAsk{Host: strings.ToLower(ask.Host), Org: ask.Org, Repo: ask.Repo}, err)
 	forgeFail(w, code, he)
 }
 
 // serveCI answers a CI question: the room's, on the link, or the hub's own control MCP's.
-func (p *Proxy) serveCI(w http.ResponseWriter, r *http.Request, f *hubForge, room string) {
+func (p *Service) serveCI(w http.ResponseWriter, r *http.Request, f *HubForge, room string) {
 	var ask forge.HubCIAsk
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&ask); err != nil {
 		forgeFail(w, http.StatusBadRequest, &forge.HubError{Code: forge.CodeOther, Message: "that is not a CI question"})
@@ -146,7 +146,7 @@ func (p *Proxy) serveCI(w http.ResponseWriter, r *http.Request, f *hubForge, roo
 		forgeFail(w, http.StatusBadRequest, &forge.HubError{Code: forge.CodeOther, Message: why})
 		return
 	}
-	ans, err := p.forgeCI(r.Context(), f, ask)
+	ans, err := p.ForgeCI(r.Context(), f, ask)
 	if err != nil {
 		p.ciFail(w, f, room, ask, err)
 		return

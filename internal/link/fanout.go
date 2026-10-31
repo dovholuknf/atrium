@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"io"
 	"log"
 	"net"
@@ -1089,16 +1090,10 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-func writeJSONBody(w http.ResponseWriter, code int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeErrBody(w http.ResponseWriter, code int, msg string) {
-	writeJSONBody(w, code, map[string]any{"error": msg})
-}
+var (
+	writeJSONBody = jsonio.WriteJSONBody
+	writeErrBody  = jsonio.WriteErrBody
+)
 
 // needsARoom is the refusal for a write with no room to land in.
 //

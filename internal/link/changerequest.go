@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -79,33 +79,14 @@ func (p *Proxy) changeRequests() *changeRequests {
 
 var crIDRe = regexp.MustCompile(`^cr_[1-9][0-9]{0,17}$`)
 
-// crBody is the most a request body may carry: a why is at most 4000 characters.
-const crBody = 64 << 10
+const crBody = jsonio.Body
 
-func crJSON(w http.ResponseWriter, code int, v any) {
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func crFail(w http.ResponseWriter, code int, msg string) {
-	crJSON(w, code, map[string]string{"error": msg})
-}
-
-// crDecode reads one JSON object, refusing a field it does not know and anything after the object.
-func crDecode(r *http.Request, into any) error { return crDecodeMax(r, into, crBody) }
-
-// crDecodeMax is crDecode with a body of at most max bytes.
-func crDecodeMax(r *http.Request, into any, max int64) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, max))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(into); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return errors.New("there is more after the object")
-	}
-	return nil
-}
+var (
+	crJSON      = jsonio.JSON
+	crFail      = jsonio.Fail
+	crDecode    = jsonio.Decode
+	crDecodeMax = jsonio.DecodeMax
+)
 
 // ── who is asking ───────────────────────────────────────
 

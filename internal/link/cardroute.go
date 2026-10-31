@@ -48,7 +48,7 @@ var notCards = map[string]bool{"prune": true, "pin-order": true, "archive-worker
 
 // cardRoomKey carries the room the named card was placed on, ahead of every
 // other way `roomFor` has of choosing one.
-type cardRoomKey struct{}
+type cardRoomKey = wire.CardRoomKey
 
 // placeCard routes a request that names a card to the room holding it.
 //

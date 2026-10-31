@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"context"
@@ -28,8 +28,8 @@ import (
 // operator's, with no room and no card.
 
 // serveGitStore answers anything under /git/ on the board's listeners.
-func (p *Proxy) serveGitStore(w http.ResponseWriter, r *http.Request) {
-	g := p.git()
+func (p *Service) ServeGitStore(w http.ResponseWriter, r *http.Request) {
+	g := p.Git()
 	store, pass := strings.HasPrefix(r.URL.Path, gitsync.StorePrefix), strings.HasPrefix(r.URL.Path, gitsync.PassPrefix)
 	if g == nil || (!store && !pass) {
 		http.NotFound(w, r)
@@ -42,7 +42,7 @@ func (p *Proxy) serveGitStore(w http.ResponseWriter, r *http.Request) {
 	// A FETCH PASSED THROUGH TO A ROOM, for the operator. A card on a room is not served here (it would come in
 	// on the link's git kind, which does not route /git/room/), so there is no card to name and none is read.
 	if pass {
-		ctx := gitsync.WithReader(r.Context(), gitsync.Reader{Reach: reach, Key: readerKey(reach, r.RemoteAddr)})
+		ctx := gitsync.WithReader(r.Context(), gitsync.Reader{Reach: reach, Key: ReaderKey(reach, r.RemoteAddr)})
 		g.PassHandler().ServeHTTP(w, r.WithContext(ctx))
 		return
 	}
@@ -81,7 +81,7 @@ func gitReach(w http.ResponseWriter, r *http.Request) (reach string, ok bool) {
 // an IP is counted as the whole reach: every reader on the overlay or a private share shares one budget, which
 // is a fairness cost (one busy phone can use up another's six fetches a minute) and not a hole, and every reader
 // there is the operator anyway. The rate is per peer address on loopback, and per reach on the overlays.
-func readerKey(reach, remote string) string {
+func ReaderKey(reach, remote string) string {
 	host, _, err := net.SplitHostPort(remote)
 	if err != nil || net.ParseIP(host) == nil {
 		return reach
@@ -92,11 +92,9 @@ func readerKey(reach, remote string) string {
 // GitCards answers gitsync.CardLookup through the hub's own relay, which asks the room the way a card on
 // another room does. A room that is not attached, or does not answer, cannot be asked. A room that answers 404
 // has no such card, which is a card that was culled.
-func (p *Proxy) GitCards(ctx context.Context, room, card string) (gitsync.CardState, error) {
-	p.mu.Lock()
-	c := p.ctl
-	p.mu.Unlock()
-	if c == nil || p.hub == nil || !p.hub.Has(room) {
+func (p *Service) GitCards(ctx context.Context, room, card string) (gitsync.CardState, error) {
+	c := p.ctlCaller()
+	if c == nil || !p.HubUp() || !p.Has(room) {
 		return gitsync.CardState{}, gitsync.ErrRoomUnreachable
 	}
 	ans := c.Relay(ctx, "", wire.RelayRequest{Op: RelayCard, Room: room, To: card})

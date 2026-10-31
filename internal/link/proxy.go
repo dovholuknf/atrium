@@ -23,7 +23,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/cardurl"
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/webasset"
-	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/deploy"
 	"github.com/dovholuknf/atrium/internal/link/docs"
@@ -64,9 +63,6 @@ type Proxy struct {
 	// launchProbe is how long a room has to say whether it has a launch directory, launchProbeWait unless a test
 	// shortens it.
 	launchProbe time.Duration
-	// warnGrace is how long a claim's room must stay offline before the board is warned, prWarnGrace unless a test
-	// shortens it.
-	warnGrace time.Duration
 	// resourcesDir is the state dir resources.md is read from. See resources_mcp.go.
 	resourcesDir string
 	hub          *Hub
@@ -85,9 +81,6 @@ type Proxy struct {
 	// single transport.
 	mu      sync.Mutex
 	clients map[string]*http.Client
-	// deaf is the rooms whose build does not read the hub's recognisers, by room key, with the commit they ran when
-	// one said so. Placement passes them over. See recogniseroute.go.
-	deaf map[string]string
 	// stock is every room this hub knows about, attached or not.
 	stock Inventory
 
@@ -124,20 +117,9 @@ type Proxy struct {
 	// See restartgate.go.
 	restart *restartGate
 
-	// ci is the hub's CI hook. Nil until SetCIHook wires it, and a hub without one answers /_hub/ci-hook 404.
-	ci *CIHook
 	// transports is the hub's ziti binds, switchable from the gear. See hubtransports.go.
 	transports *HubTransports
-	// ev is the hub's event hook. Nil until SetEvents wires it, and a hub without one answers /_hub/events 404.
-	ev *EventHook
 
-	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
-	// a hub without one answers /_hub/git 404. See git_hub.go.
-	gitHub *gitsync.Hub
-	// gitSettings and gitDir are the git.store and git.create_on_push settings and the hub's
-	// directory, for /_hub/git/settings. Nil until SetGitSettings.
-	gitSettings GitSettings
-	gitDir      string
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
 	capStore HubSettings
@@ -152,12 +134,11 @@ type Proxy struct {
 	ctl *controlMCP
 	// taskMu serialises the task scheduler. See tasks.go.
 	taskMu sync.Mutex
-	// merges is the merge queue's runner. See merge.go.
-	merges mergeQueue
 	// deploySvc is the deploy readiness, queue and owner. See deploy_forward.go.
 	deploySvc  *deploy.Service
 	notifyH    notifyHolder
 	settingsH  settingsHolder
+	forgeH     forgeHolder
 	deployOnce sync.Once
 	// docsSvc is the hub.s documents and file drop. See docs_forward.go.
 	docsSvc  *docs.Service
@@ -181,14 +162,6 @@ type Proxy struct {
 	hubCode string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
-	// prc is the PR claim table. See prclaim.go.
-	prc *hubstore.Store
-	// prGone is when each claim's room was first seen offline, for prWarnSweep.
-	prGone map[string]time.Time
-	// fg is the forge the hub runs for its rooms. Nil until SetForge. See forgeroute.go.
-	fg *hubForge
-	// ciDir is the folder a CI artifact is downloaded under. See forgeci.go.
-	ciDir string
 	// setup is what each attached room's setup was last read as. See setupwatch.go.
 	setup setupWatch
 }
@@ -199,7 +172,7 @@ type Proxy struct {
 // which is right for a test and wrong for a running hub.
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
 	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room,
-		hostname: os.Hostname, launchProbe: launchProbeWait, warnGrace: prWarnGrace}
+		hostname: os.Hostname, launchProbe: launchProbeWait}
 	if board != nil {
 		p.assets = webasset.New(board)
 	}
@@ -327,23 +300,9 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 // roomKey carries the chosen room from the rewrite into the dial.
 type roomKey struct{}
 
-// taggedKey carries the room when it came from a `room~id` in the path or in a
-// launch's `task_id`, the cases where the answer is tagged on the way back out. A
-// board that named its room in a header asked that room directly and wants the
-// room's own ids. See `retagCard`.
-type taggedKey struct{}
+type taggedKey = wire.TaggedKey
 
-// hostFor is the synthetic host a room's requests are addressed to.
-//
-// It exists to key the connection pool, and nothing ever resolves it. Lowercase
-// because a host is case-insensitive and `Alpha` and `alpha` are one room, and
-// because two spellings would be two pools to the same place.
-func hostFor(room string) string {
-	if room == "" {
-		return "room.atrium.internal"
-	}
-	return wire.KeyOf(room) + ".room.atrium.internal"
-}
+func hostFor(room string) string { return wire.HostFor(room) }
 
 // roomFor answers which room a request is for, and whether it named one.
 //

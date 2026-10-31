@@ -746,7 +746,7 @@ func TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL(t *testing.T) {
 		req.Host, req.RemoteAddr = host, offLoopback
 		rec := httptest.NewRecorder()
 		edge.MarkReach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			x.proxy.serveGitURL(w, r, x.g, func(code int, msg string) { w.WriteHeader(code) })
+			x.proxy.forgeService().ServeGitURL(w, r, x.g, func(code int, msg string) { w.WriteHeader(code) })
 		}), edge.ReachOverlay).ServeHTTP(rec, req)
 		return rec.Code
 	}

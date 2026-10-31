@@ -1,10 +1,11 @@
-package link
+package forge
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"io"
 	"log"
 	"net/http"
@@ -54,17 +55,17 @@ type ForgeSettings interface {
 	SetHubSetting(name, value string) error
 }
 
-type hubForge struct {
+type HubForge struct {
 	st  ForgeSettings
 	run forge.Runner
 	// forgeOf, when set, picks the forge for a host instead of the entries. A seam for tests.
-	forgeOf func(host string) (forge.Forge, error)
+	ForgeOf func(host string) (forge.Forge, error)
 	// seed, when set, is the built-in recogniser rows instead of the shipped ones. A seam for tests.
-	seed seedFunc
+	Seed SeedFunc
 
-	mu sync.Mutex
+	Mu sync.Mutex
 	// open is the growler id of each raised alert, by `tool@host`.
-	open map[string]string
+	Open map[string]string
 	// peeks is the last read of each pull request that fetched nothing, for the open that follows it. See takePeek.
 	peeks map[forge.Ref]peekedPR
 }
@@ -77,9 +78,9 @@ type peekedPR struct {
 	at time.Time
 }
 
-func (f *hubForge) keepPeek(ref forge.Ref, pr *forge.PR) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (f *HubForge) keepPeek(ref forge.Ref, pr *forge.PR) {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
 	if f.peeks == nil {
 		f.peeks = map[forge.Ref]peekedPR{}
 	}
@@ -92,12 +93,12 @@ func (f *hubForge) keepPeek(ref forge.Ref, pr *forge.PR) {
 }
 
 // takePeek is the read a moment ago for a request that fetches the head, or nil. It is taken once.
-func (f *hubForge) takePeek(ref forge.Ref, fetching bool) *forge.PR {
+func (f *HubForge) takePeek(ref forge.Ref, fetching bool) *forge.PR {
 	if !fetching {
 		return nil
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
 	v, ok := f.peeks[ref]
 	delete(f.peeks, ref)
 	if !ok || time.Since(v.at) > peekWindow || v.pr == nil {
@@ -109,26 +110,26 @@ func (f *hubForge) takePeek(ref forge.Ref, fetching bool) *forge.PR {
 
 // SetForge wires the hub's forge. run runs the forge CLIs and nil is forge.Exec. Without it the forge route answers
 // 404, which a room reads as a hub that cannot be asked.
-func (p *Proxy) SetForge(st ForgeSettings, run forge.Runner) {
+func (p *Service) SetForge(st ForgeSettings, run forge.Runner) {
 	if run == nil {
 		run = forge.Exec(nowindow.Hide)
 	}
 	p.mu.Lock()
-	p.fg = &hubForge{st: st, run: run, open: map[string]string{}}
+	p.fg = &HubForge{st: st, run: run, Open: map[string]string{}}
 	p.mu.Unlock()
-	if p.hub != nil {
-		p.hub.Forge = http.HandlerFunc(p.serveForge)
+	if p.HubUp() {
+		p.MountForge(http.HandlerFunc(p.ServeForge))
 	}
 }
 
-func (p *Proxy) forgeSide() *hubForge {
+func (p *Service) ForgeSide() *HubForge {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.fg
 }
 
 // entries is the hub's forge per host. A list that does not read is the built-in table, and the log says so.
-func (f *hubForge) entries() []forge.Entry {
+func (f *HubForge) entries() []forge.Entry {
 	raw, err := f.st.HubSetting(SettingForgeEntries)
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return nil
@@ -141,15 +142,15 @@ func (f *hubForge) entries() []forge.Entry {
 	return out
 }
 
-func (f *hubForge) forgeFor(host string) (forge.Forge, error) {
-	if f.forgeOf != nil {
-		return f.forgeOf(host)
+func (f *HubForge) forgeFor(host string) (forge.Forge, error) {
+	if f.ForgeOf != nil {
+		return f.ForgeOf(host)
 	}
 	return forge.For(host, f.entries(), f.run)
 }
 
 // toolOf is the CLI a forge kind runs through, and the command it is called by on this hub.
-func (f *hubForge) toolOf(kind, host string) (tool, cmd string) {
+func (f *HubForge) ToolOf(kind, host string) (tool, cmd string) {
 	tool = map[string]string{forge.GitHub: "gh", forge.Bitbucket: "bb", forge.GitLab: "glab"}[kind]
 	cmd = tool
 	if _, c, err := forge.Pick(host, f.entries()); err == nil && c != "" {
@@ -159,18 +160,18 @@ func (f *hubForge) toolOf(kind, host string) (tool, cmd string) {
 }
 
 // helperOf is the git credential helper line of a forge kind's CLI on this hub, or "" when the kind has none.
-func (f *hubForge) helperOf(kind, host string) string {
+func (f *HubForge) helperOf(kind, host string) string {
 	if kind != forge.GitHub {
 		return ""
 	}
-	_, cmd := f.toolOf(kind, host)
+	_, cmd := f.ToolOf(kind, host)
 	return "!" + cmd + " auth git-credential"
 }
 
 // ForgeHelper is the credential helper for a forge host's git fetches, for the store's forge branch fetches
 // (gitsync.Hub.ForgeHelper): the same helper a PR head fetch uses, and "" when the hub has no forge, or none for the host.
-func (p *Proxy) ForgeHelper(host string) string {
-	f := p.forgeSide()
+func (p *Service) ForgeHelper(host string) string {
+	f := p.ForgeSide()
 	if f == nil {
 		return ""
 	}
@@ -207,9 +208,9 @@ func validAsk(a forge.HubAsk, numbered bool) string {
 
 var forgeHost = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$`)
 
-func (p *Proxy) serveForge(w http.ResponseWriter, r *http.Request) {
+func (p *Service) ServeForge(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	f := p.forgeSide()
+	f := p.ForgeSide()
 	if f == nil || r.Method != http.MethodPost {
 		http.NotFound(w, r)
 		return
@@ -261,7 +262,7 @@ func (p *Proxy) serveForge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		code, he := p.forgeRefusal(f, room, ask, err)
+		code, he := p.ForgeRefusal(f, room, ask, err)
 		forgeFail(w, code, he)
 		return
 	}
@@ -272,15 +273,15 @@ func (p *Proxy) serveForge(w http.ResponseWriter, r *http.Request) {
 }
 
 // forgeAccess is an access failure on the hub: the forge, which CLI, and why.
-type forgeAccess struct {
-	kind string
-	err  error
+type ForgeAccess struct {
+	Kind string
+	Err  error
 }
 
-func (e *forgeAccess) Error() string { return e.err.Error() }
-func (e *forgeAccess) Unwrap() error { return e.err }
+func (e *ForgeAccess) Error() string { return e.Err.Error() }
+func (e *ForgeAccess) Unwrap() error { return e.Err }
 
-func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (forge.HubPR, error) {
+func (p *Service) forgePR(ctx context.Context, f *HubForge, ask forge.HubAsk) (forge.HubPR, error) {
 	var ans forge.HubPR
 	fg, err := f.forgeFor(ask.Host)
 	if err != nil {
@@ -288,7 +289,7 @@ func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (for
 	}
 	ans.Kind = fg.Kind()
 	ref := forge.Ref{Host: ask.Host, Org: ask.Org, Repo: ask.Repo, Number: ask.Number}
-	wrap := func(err error) error { return &forgeAccess{kind: ans.Kind, err: err} }
+	wrap := func(err error) error { return &ForgeAccess{Kind: ans.Kind, Err: err} }
 	if ask.HeadOnly {
 		head, err := fg.Head(ctx, ref)
 		if err != nil {
@@ -320,7 +321,7 @@ func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (for
 		if err != nil {
 			return ans, err
 		}
-		g := p.git()
+		g := p.Git()
 		spec := fg.FetchSpec(ref)
 		if _, err := g.Store().FetchPR(ctx, name, spec.Remote, spec.Refspec, forge.PRRef(ask.Number), ans.PR.BaseRef,
 			f.helperOf(ans.Kind, ask.Host)); err != nil {
@@ -332,7 +333,7 @@ func (p *Proxy) forgePR(ctx context.Context, f *hubForge, ask forge.HubAsk) (for
 	return ans, nil
 }
 
-func (p *Proxy) forgeIssue(ctx context.Context, f *hubForge, ask forge.HubAsk) (forge.HubIssue, error) {
+func (p *Service) forgeIssue(ctx context.Context, f *HubForge, ask forge.HubAsk) (forge.HubIssue, error) {
 	var ans forge.HubIssue
 	fg, err := f.forgeFor(ask.Host)
 	if err != nil {
@@ -345,12 +346,12 @@ func (p *Proxy) forgeIssue(ctx context.Context, f *hubForge, ask forge.HubAsk) (
 	}
 	ans.Issue, err = ir.Issue(ctx, forge.Ref{Host: ask.Host, Org: ask.Org, Repo: ask.Repo, Number: ask.Number})
 	if err != nil {
-		return ans, &forgeAccess{kind: ans.Kind, err: err}
+		return ans, &ForgeAccess{Kind: ans.Kind, Err: err}
 	}
 	return ans, nil
 }
 
-func (p *Proxy) forgeViewer(ctx context.Context, f *hubForge, ask forge.HubAsk) (forge.HubViewer, error) {
+func (p *Service) forgeViewer(ctx context.Context, f *HubForge, ask forge.HubAsk) (forge.HubViewer, error) {
 	var ans forge.HubViewer
 	fg, err := f.forgeFor(ask.Host)
 	if err != nil {
@@ -363,14 +364,14 @@ func (p *Proxy) forgeViewer(ctx context.Context, f *hubForge, ask forge.HubAsk) 
 	}
 	ans.Login, err = vr.Viewer(ctx, forge.Ref{Host: ask.Host, Org: ask.Org, Repo: ask.Repo, Number: ask.Number})
 	if err != nil {
-		return ans, &forgeAccess{kind: ans.Kind, err: err}
+		return ans, &ForgeAccess{Kind: ans.Kind, Err: err}
 	}
 	return ans, nil
 }
 
 // forgeHold puts the repository in the hub's store, cloning it from the forge when the store does not hold it.
-func (p *Proxy) forgeHold(ctx context.Context, ask forge.HubAsk) (string, error) {
-	g := p.git()
+func (p *Service) forgeHold(ctx context.Context, ask forge.HubAsk) (string, error) {
+	g := p.Git()
 	if g == nil {
 		return "", errors.New("this hub has no git store, so it cannot hold the repository for a room")
 	}
@@ -379,16 +380,16 @@ func (p *Proxy) forgeHold(ctx context.Context, ask forge.HubAsk) (string, error)
 
 // forgeRefusal is the answer to a failed question, and raises the hub's alert when the failure is a login the hub is
 // missing: a CLI that is not installed or not logged in, or a head fetch the forge refused a credential for.
-func (p *Proxy) forgeRefusal(f *hubForge, room string, ask forge.HubAsk, err error) (int, *forge.HubError) {
+func (p *Service) ForgeRefusal(f *HubForge, room string, ask forge.HubAsk, err error) (int, *forge.HubError) {
 	var (
 		nf *forge.NoForgeError
 		ae *forge.AccessError
 		fe *gitsync.FetchError
-		fa *forgeAccess
+		fa *ForgeAccess
 	)
 	kind := ""
 	if errors.As(err, &fa) {
-		kind = fa.kind
+		kind = fa.Kind
 	}
 	var ns *forge.NotSupportedError
 	switch {
@@ -398,14 +399,14 @@ func (p *Proxy) forgeRefusal(f *hubForge, room string, ask forge.HubAsk, err err
 		return http.StatusUnprocessableEntity, &forge.HubError{Code: forge.CodeNoForge, Message: nf.Error(),
 			Host: ask.Host}
 	case errors.As(err, &ae):
-		tool, _ := f.toolOf(kind, ask.Host)
+		tool, _ := f.ToolOf(kind, ask.Host)
 		if tool == "" {
 			tool = ae.Tool
 		}
 		msg := f.raise(p, room, tool, ae.Tool, ask.Host, ae.NotInstalled, ae.Login)
 		return http.StatusBadGateway, &forge.HubError{Code: forge.CodeAccess, Message: msg, Tool: tool, Host: ask.Host}
 	case errors.As(err, &fe) && fe.Auth:
-		tool, cmd := f.toolOf(kind, ask.Host)
+		tool, cmd := f.ToolOf(kind, ask.Host)
 		if tool == "" {
 			return http.StatusBadGateway, &forge.HubError{Code: forge.CodeFetch, Message: fe.Error(), Host: ask.Host}
 		}
@@ -457,13 +458,13 @@ func forgeAlertPrefix(tool, host string) string { return "forge|" + tool + "@" +
 
 // raise raises the hub's alert for a CLI, hung on the room that asked, once ever per `tool@host`. It answers the
 // sentence the room is told.
-func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bool, login string) string {
+func (f *HubForge) raise(p *Service, room, tool, cmd, host string, notInstalled bool, login string) string {
 	state := forgeLoggedOut
 	if notInstalled {
 		state = forgeNotInstalled
 	}
 	msg, _ := forgeSay(tool, cmd, host, state, nil, login)
-	g := p.growler()
+	g := p.Growler()
 	if g == nil || room == "" {
 		return msg
 	}
@@ -472,8 +473,8 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 		return msg
 	}
 	key := tool + "@" + host
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
 	alerted, err := f.alerted()
 	if err != nil {
 		log.Printf("[hub] the forge alerts already raised do not read: %v", err)
@@ -482,18 +483,18 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 	if slices.Contains(alerted, key) {
 		return msg
 	}
-	if id := f.open[key]; id != "" || f.openIn(g, tool, host) != "" {
+	if id := f.Open[key]; id != "" || f.openIn(g, tool, host) != "" {
 		f.markAlerted(alerted, key)
 		return msg
 	}
 	id := forgeAlertID(tool, host, time.Now())
-	raised, err := rs.Raise(room, GrowlRow{ID: id, Reason: ReasonQuestion, Subject: key,
+	raised, err := rs.Raise(room, notify.GrowlRow{ID: id, Reason: notify.ReasonQuestion, Subject: key,
 		Title: "The hub cannot use " + cmd + " for " + host, Body: msg})
 	if err != nil {
 		log.Printf("[hub] growlers could not raise the forge alert for %s: %v", key, err)
 		return msg
 	}
-	f.open[key] = id
+	f.Open[key] = id
 	f.markAlerted(alerted, key)
 	if raised {
 		g.Publish()
@@ -502,8 +503,8 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 	return msg
 }
 
-// alerted is each `tool@host` whose alert was ever raised. Called with f.mu held.
-func (f *hubForge) alerted() ([]string, error) {
+// alerted is each `tool@host` whose alert was ever raised. Called with f.Mu held.
+func (f *HubForge) alerted() ([]string, error) {
 	raw, err := f.st.HubSetting(SettingForgeAlerted)
 	if err != nil || raw == "" {
 		return nil, err
@@ -513,8 +514,8 @@ func (f *hubForge) alerted() ([]string, error) {
 	return keys, err
 }
 
-// markAlerted saves key as raised. Called with f.mu held.
-func (f *hubForge) markAlerted(alerted []string, key string) {
+// markAlerted saves key as raised. Called with f.Mu held.
+func (f *HubForge) markAlerted(alerted []string, key string) {
 	raw, _ := json.Marshal(append(alerted, key))
 	if err := f.st.SetHubSetting(SettingForgeAlerted, string(raw)); err != nil {
 		log.Printf("[hub] could not save the forge alert for %s as raised: %v", key, err)
@@ -522,15 +523,15 @@ func (f *hubForge) markAlerted(alerted []string, key string) {
 }
 
 // openIn finds an alert raised before this hub started, so a restart neither raises it again nor leaves it open
-// after the login is fixed. Called with f.mu held.
-func (f *hubForge) openIn(g *Growler, tool, host string) string {
+// after the login is fixed. Called with f.Mu held.
+func (f *HubForge) openIn(g *notify.Growler, tool, host string) string {
 	rows, err := g.Live()
 	if err != nil {
 		return ""
 	}
 	for _, r := range rows {
 		if strings.HasPrefix(r.ID, forgeAlertPrefix(tool, host)) {
-			f.open[tool+"@"+host] = r.ID
+			f.Open[tool+"@"+host] = r.ID
 			return r.ID
 		}
 	}
@@ -538,27 +539,27 @@ func (f *hubForge) openIn(g *Growler, tool, host string) string {
 }
 
 // worked ends the alert of a forge that just answered. Nothing open means nothing is said.
-func (f *hubForge) worked(p *Proxy, kind, host string) {
-	tool, _ := f.toolOf(kind, host)
+func (f *HubForge) worked(p *Service, kind, host string) {
+	tool, _ := f.ToolOf(kind, host)
 	if tool == "" {
 		return
 	}
 	f.end(p, tool, host)
 }
 
-func (f *hubForge) end(p *Proxy, tool, host string) {
-	g := p.growler()
+func (f *HubForge) end(p *Service, tool, host string) {
+	g := p.Growler()
 	if g == nil {
 		return
 	}
 	key := tool + "@" + host
-	f.mu.Lock()
-	id := f.open[key]
+	f.Mu.Lock()
+	id := f.Open[key]
 	if id == "" {
 		id = f.openIn(g, tool, host)
 	}
-	delete(f.open, key)
-	f.mu.Unlock()
+	delete(f.Open, key)
+	f.Mu.Unlock()
 	if id != "" {
 		g.EndAbout(id)
 	}
@@ -613,7 +614,7 @@ func forgeScopesIn(out string) (have map[string]bool, ok bool) {
 
 // check asks one CLI on the hub whether it is logged in to host. It is the CLI's own status command, never a token
 // read. An ok ends the alert. A failure is answered and raises nothing, since no room is waiting on it.
-func (f *hubForge) check(ctx context.Context, p *Proxy, tool, host string, scopes []string) ForgeStatus {
+func (f *HubForge) check(ctx context.Context, p *Service, tool, host string, scopes []string) ForgeStatus {
 	st := ForgeStatus{Tool: tool, Host: host}
 	argsFor, known := forgeStatusArgs[tool]
 	if !known {
@@ -629,7 +630,7 @@ func (f *hubForge) check(ctx context.Context, p *Proxy, tool, host string, scope
 		return st
 	}
 	kind := map[string]string{"gh": forge.GitHub, "bb": forge.Bitbucket, "glab": forge.GitLab}[tool]
-	_, cmd := f.toolOf(kind, host)
+	_, cmd := f.ToolOf(kind, host)
 	out, err := f.run(ctx, forge.Cmd{Name: cmd, Args: argsFor(host), Timeout: 20 * time.Second, Limit: 64 << 10})
 	switch {
 	case ctx.Err() != nil:
@@ -662,8 +663,8 @@ func (f *hubForge) check(ctx context.Context, p *Proxy, tool, host string, scope
 }
 
 // serveForgeAdmin is the operator's side: the entries per host, and the check of the hub's logins.
-func (p *Proxy) serveForgeAdmin(w http.ResponseWriter, r *http.Request, rest string) {
-	f := p.forgeSide()
+func (p *Service) ServeForgeAdmin(w http.ResponseWriter, r *http.Request, rest string) {
+	f := p.ForgeSide()
 	if f == nil {
 		http.NotFound(w, r)
 		return

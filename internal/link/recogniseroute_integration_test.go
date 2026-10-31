@@ -74,7 +74,7 @@ func gwtHub(t *testing.T) *claimHub {
 		return nil, errors.New("no CLI in a test")
 	})
 	ff := &fakeForge{kind: forge.GitHub, pr: forge.PR{Title: "a fix", HeadRef: "fix-branch", BaseRef: "main"}}
-	x.proxy.forgeSide().forgeOf = func(string) (forge.Forge, error) { return ff, nil }
+	x.proxy.forgeSide().ForgeOf = func(string) (forge.Forge, error) { return ff, nil }
 	discourseRedirects(t, map[string]string{
 		"mfa-posture-check-keeps-failing-after-successful-mfa-enrollment-auth-an-mfa-enrollment-already": "5123",
 	})

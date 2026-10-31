@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"bytes"
@@ -44,7 +44,7 @@ const (
 
 // hubSubsPath is the one events path a room may ask. A room never posts an event. hubAsk stamps `room` and `by` from the
 // link, so a room can only write subscriptions of its own cards.
-const hubSubsPath = "/_hub/events/subs"
+const HubSubsPath = "/_hub/events/subs"
 
 // eventKinds is the closed list of kinds, each with a parser that checks its own fields and builds its one line.
 var eventKinds = map[string]func(raw []byte) (hubstore.HubEvent, string, error){
@@ -610,33 +610,33 @@ func (h *EventHook) checkExist(ctx context.Context) {
 // ── the hub's door ─────────────────────────────────────
 
 // SetEvents turns events on for this hub. A hub that never calls it answers /_hub/events 404.
-func (p *Proxy) SetEvents(h *EventHook) {
+func (p *Service) SetEvents(h *EventHook) {
 	p.mu.Lock()
 	p.ev = h
 	p.mu.Unlock()
 }
 
-func (p *Proxy) eventHook() *EventHook {
+func (p *Service) EventHookOf() *EventHook {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.ev
 }
 
 // NewEventHook is the hub's event hook with its say path, its rooms and its existence check wired.
-func (p *Proxy) NewEventHook(st *hubstore.Store, from string, audit func(kind, detail string)) *EventHook {
+func (p *Service) NewEventHook(st *hubstore.Store, from string, audit func(kind, detail string)) *EventHook {
 	h := NewEventHook(st, p.Deliverer(), audit)
 	if strings.TrimSpace(from) != "" {
 		h.From = from
 	}
 	h.Rooms = func() []string {
 		var out []string
-		for _, r := range p.hub.Rooms() {
+		for _, r := range p.Rooms() {
 			out = append(out, r.Name)
 		}
 		return out
 	}
 	h.Exist = func(ctx context.Context, room string, ids []string) ([]string, error) {
-		c := proxyCIDeliverer{p}.ctl()
+		c := p.ctlCaller()
 		if c == nil {
 			return nil, errors.New("the hub's control server is not up")
 		}
@@ -653,8 +653,8 @@ func (p *Proxy) NewEventHook(st *hubstore.Store, from string, audit func(kind, d
 
 // serveHubEvents answers POST /_hub/events and GET or POST /_hub/events/subs. Loopback only: a share or an overlay request is
 // a 403.
-func (p *Proxy) serveHubEvents(w http.ResponseWriter, r *http.Request, sub string) {
-	h := p.eventHook()
+func (p *Service) ServeHubEvents(w http.ResponseWriter, r *http.Request, sub string) {
+	h := p.EventHookOf()
 	if h == nil {
 		http.NotFound(w, r)
 		return

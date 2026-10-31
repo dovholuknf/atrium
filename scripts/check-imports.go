@@ -120,13 +120,19 @@ var table = []row{
 		"internal/base/edge", "internal/base/nowindow", "internal/base/testguard", "internal/base/testwait", "internal/hubstore",
 		"internal/link/conn", "internal/link/ctl", "internal/link/wire",
 	}},
+	{4, "internal/link/jsonio", []string{"internal/hubstore"}},
+	{4, "internal/link/forge", []string{
+		"internal/base/edge", "internal/base/forge", "internal/base/land", "internal/base/linkfetch", "internal/base/nowindow", "internal/base/rules",
+		"internal/base/testguard", "internal/base/testwait", "internal/gitsync", "internal/hubstore", "internal/link/conn", "internal/link/ctl",
+		"internal/link/jsonio", "internal/link/notify", "internal/link/wire", "scripts/recognisers",
+	}},
 	{4, "internal/link/settings", []string{
 		"internal/base/inputlag", "internal/base/rules", "internal/link/wire",
 	}},
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{3, "internal/daemon/shared", []string{"internal/base/nowindow", "internal/daemon/screen", "internal/store"}},

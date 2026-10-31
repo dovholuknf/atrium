@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"bytes"
@@ -39,7 +39,7 @@ import (
 // JSON values, and only `pr.id`, `pr.walker_task` and `pr.room` are replaced. See retagPR.
 
 // prIDIn pulls the row id out of `/v1/prs/<id>/...`, which is the only shape that carries one.
-func prIDIn(path string) string {
+func PRIDIn(path string) string {
 	const pre = "/v1/prs/"
 	if !strings.HasPrefix(path, pre) {
 		return ""
@@ -54,7 +54,7 @@ func prIDIn(path string) string {
 // walkerLaunch reports whether r is `POST /v1/prs/<id>/walker` asking to LAUNCH, which makes a card and so is new work.
 // `action` is `launch` by default, and an empty body is a launch. `set` and `clear` only record a card that exists.
 // The body is read and put back for the room. A body that is not JSON is left to the room to refuse, and is not a launch.
-func walkerLaunch(r *http.Request) bool {
+func WalkerLaunch(r *http.Request) bool {
 	if r.Method != http.MethodPost || !strings.HasPrefix(r.URL.Path, "/v1/prs/") || !strings.HasSuffix(r.URL.Path, "/walker") ||
 		strings.Count(strings.TrimPrefix(r.URL.Path, "/v1/prs/"), "/") != 1 {
 		return false
@@ -85,25 +85,25 @@ func walkerLaunch(r *http.Request) bool {
 //  3. Otherwise, with two or more rooms, the holder is looked for. See roomHoldingPR.
 //
 // It returns the request to carry on with, or false once it has answered.
-func (p *Proxy) placePR(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
-	id := prIDIn(r.URL.Path)
+func (p *Service) PlacePR(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	id := PRIDIn(r.URL.Path)
 	if id == "" {
 		return r, true
 	}
 	if room, _ := wire.SplitTag(id); room != "" {
-		r = r.WithContext(context.WithValue(r.Context(), taggedKey{}, room))
-		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room)), true
+		r = r.WithContext(context.WithValue(r.Context(), wire.TaggedKey{}, room))
+		return r.WithContext(context.WithValue(r.Context(), wire.CardRoomKey{}, room)), true
 	}
 	if strings.TrimSpace(r.Header.Get(wire.RoomHeader)) != "" || strings.TrimSpace(r.URL.Query().Get(wire.RoomParam)) != "" {
 		return r, true
 	}
-	rooms := p.hub.Rooms()
+	rooms := p.Rooms()
 	if len(rooms) < 2 {
 		// ONE ROOM IS NOTHING TO CHOOSE BETWEEN. The dial goes to it and it answers for itself.
 		return r, true
 	}
 	if owner, ok := p.roomHoldingPR(r, id, rooms); ok {
-		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, owner)), true
+		return r.WithContext(context.WithValue(r.Context(), wire.CardRoomKey{}, owner)), true
 	}
 	names := make([]string, 0, len(rooms))
 	for _, a := range rooms {
@@ -123,8 +123,8 @@ func (p *Proxy) placePR(w http.ResponseWriter, r *http.Request) (*http.Request, 
 // the first that says yes. The twin of `roomHolding`, and for the same reasons: a quiet room is skipped rather than
 // failing the lookup, and the first yes wins because an id is unique. The answer is cached briefly, in the same
 // table the cards use. A `pr_` id never collides with a card's.
-func (p *Proxy) roomHoldingPR(r *http.Request, bare string, rooms []wire.Attached) (string, bool) {
-	if room, ok := p.cachedCardRoom(bare); ok {
+func (p *Service) roomHoldingPR(r *http.Request, bare string, rooms []wire.Attached) (string, bool) {
+	if room, ok := p.CachedCardRoom(bare); ok {
 		return room, true
 	}
 	type held struct {
@@ -137,7 +137,7 @@ func (p *Proxy) roomHoldingPR(r *http.Request, bare string, rooms []wire.Attache
 	}
 	for range rooms {
 		if h := <-results; h.has {
-			p.rememberCardRoom(bare, h.room)
+			p.RememberCardRoom(bare, h.room)
 			return h.room, true
 		}
 	}
@@ -146,14 +146,14 @@ func (p *Proxy) roomHoldingPR(r *http.Request, bare string, rooms []wire.Attache
 
 // roomHasPR asks one room for one row and reads the status and the id. A room on a build with no pulls answers 404,
 // which is a no here and nothing more.
-func (p *Proxy) roomHasPR(ctx context.Context, room, bare string) bool {
+func (p *Service) roomHasPR(ctx context.Context, room, bare string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+hostFor(room)+"/v1/prs/"+bare, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+wire.HostFor(room)+"/v1/prs/"+bare, nil)
 	if err != nil {
 		return false
 	}
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return false
 	}
@@ -178,11 +178,11 @@ const prRetagLimit = 16 << 20
 // the room's own ids, and an error body names no row. `pr.id` and `pr.walker_task` (a card id) are tagged and `pr.room`
 // is set. A walker answer's top-level `task` is a card id too and is tagged the same way. Everything else in the body
 // is passed on as the raw JSON the room wrote.
-func (p *Proxy) retagPR(res *http.Response) error {
+func (p *Service) RetagPR(res *http.Response) error {
 	if res.Request == nil || res.StatusCode < 200 || res.StatusCode > 299 || res.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	room, _ := res.Request.Context().Value(taggedKey{}).(string)
+	room, _ := res.Request.Context().Value(wire.TaggedKey{}).(string)
 	if room == "" || !strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
 		return nil
 	}
@@ -270,11 +270,11 @@ func tagRaw(room string, v json.RawMessage) json.RawMessage {
 // quiet. It is named in `rooms_without` instead, so the board can say why a room is missing rather than guess.
 //
 // Returns false to fall through, which is what a hub with no room attached wants.
-func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
+func (p *Service) PullsList(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != "/v1/prs" || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 		return false
 	}
-	rooms := p.hub.Rooms()
+	rooms := p.Rooms()
 	if len(rooms) == 0 {
 		return false
 	}
@@ -333,7 +333,7 @@ func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
 		n, _ := a.body["nav_count"].(float64)
 		nav += n
 	}
-	all = p.foldPRRows(all, counts)
+	all = p.FoldPRRows(all, counts)
 	// NO ROOM ANSWERED 200, so there is no pulls view to show. The board opens the pulls tab on any 200 with a `prs`
 	// array, and a hub over rooms without the store would otherwise show an empty tab. 404 in the contract's error
 	// shape, with the rooms that were asked and why each did not answer.
@@ -378,14 +378,14 @@ func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
 // other failure is an error and the room is quiet.
 //
 // BOUNDED LIKE `askRoom`, at 20 seconds, on the request and not on the client, which carries the event streams.
-func (p *Proxy) askPulls(r *http.Request, room string) (body map[string]any, without bool, err error) {
+func (p *Service) askPulls(r *http.Request, room string) (body map[string]any, without bool, err error) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+hostFor(room)+r.URL.RequestURI(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+wire.HostFor(room)+r.URL.RequestURI(), nil)
 	if err != nil {
 		return nil, false, err
 	}
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return nil, false, err
 	}
@@ -408,7 +408,7 @@ func (p *Proxy) askPulls(r *http.Request, room string) (body map[string]any, wit
 // room, id and state. Nothing is deleted on a room, since a finished review is worth more shown twice than lost.
 // `counts` loses the folded rows' states, so the tabs add up to the rows drawn. Rows of one room are never folded,
 // a re-review at another head being its own run.
-func (p *Proxy) foldPRRows(all []map[string]any, counts map[string]float64) []map[string]any {
+func (p *Service) FoldPRRows(all []map[string]any, counts map[string]float64) []map[string]any {
 	rowKey := func(row map[string]any) string {
 		host, _ := row["host"].(string)
 		org, _ := row["org"].(string)
@@ -432,7 +432,7 @@ func (p *Proxy) foldPRRows(all []map[string]any, counts map[string]float64) []ma
 		rooms[k][room] = true
 	}
 	owner := map[string]string{}
-	st := p.prClaims()
+	st := p.PRClaims()
 	for k, rs := range rooms {
 		if len(rs) < 2 {
 			continue
