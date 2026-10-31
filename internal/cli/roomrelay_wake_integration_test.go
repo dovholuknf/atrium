@@ -30,10 +30,10 @@ func (p tcpDial) Describe() string { return p.addr }
 // against a real hub and reads `wake` off the request the hub received.
 func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	var mu sync.Mutex
-	var got []conn.RelayRequest
+	var got []wire.RelayRequest
 	tm := wire.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1, Backoff: 50 * time.Millisecond}
 	hub := link.NewHub(tm)
-	hub.Relay = func(_ context.Context, _ string, req conn.RelayRequest) conn.RelayAnswer {
+	hub.Relay = func(_ context.Context, _ string, req wire.RelayRequest) conn.RelayAnswer {
 		mu.Lock()
 		got = append(got, req)
 		mu.Unlock()

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The shepherd's row over /_hub/shepherds. See docs/rnd/script-minion.md, recommendation 5.
@@ -40,7 +41,7 @@ func (p *Proxy) serveShepherds(w http.ResponseWriter, r *http.Request, sub strin
 		crJSON(w, http.StatusOK, row)
 	case http.MethodPost:
 		switch {
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return
 		case !edge.LocalOperator(r):

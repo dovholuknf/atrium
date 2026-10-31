@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // A room too old for the merged cull.
@@ -68,7 +70,7 @@ func buildOf(h *Hub, room string) string {
 		return ""
 	}
 	for _, a := range h.Rooms() {
-		if equalFold(a.Name, room) {
+		if wire.EqualFold(a.Name, room) {
 			return a.Version
 		}
 	}

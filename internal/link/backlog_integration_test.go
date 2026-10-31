@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type backlogRig struct {
@@ -29,7 +31,7 @@ func newBacklogRig(t *testing.T) *backlogRig {
 	t.Cleanup(func() { st.Close() })
 	t.Cleanup(func() { p.WaitWork(10 * time.Second) })
 	p.SetBacklog(st)
-	x := &backlogRig{p: p, feed: &sub{ch: make(chan Event, 16)}}
+	x := &backlogRig{p: p, feed: &sub{ch: make(chan wire.Event, 16)}}
 	p.feeds.mu.Lock()
 	p.feeds.subs[x.feed] = struct{}{}
 	p.feeds.mu.Unlock()
@@ -206,10 +208,10 @@ func TestBacklogAndReportsToolsReachTheHub(t *testing.T) {
 
 // The backlog is the full class's. Reports are filed by workers too, for the work ledger.
 func TestBacklogToolsAreForTheFullClassOnly(t *testing.T) {
-	if inClass("atrium_backlog", classWorker) || !inClass("atrium_backlog", classFull) {
+	if inClass("atrium_backlog", ctl.ClassWorker) || !inClass("atrium_backlog", ctl.ClassFull) {
 		t.Errorf("atrium_backlog is in the wrong classes")
 	}
-	if !inClass("atrium_reports", classWorker) || !inClass("atrium_reports", classFull) {
+	if !inClass("atrium_reports", ctl.ClassWorker) || !inClass("atrium_reports", ctl.ClassFull) {
 		t.Errorf("atrium_reports is in the wrong classes")
 	}
 }

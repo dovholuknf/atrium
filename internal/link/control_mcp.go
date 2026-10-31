@@ -22,6 +22,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -50,15 +51,6 @@ import (
 // the way the CLI did, these call the hub's OWN board over loopback and set
 // `X-Atrium-Room` from the caller's header. That inherits the proxy's scoping,
 // aggregation and offline-room behaviour whole, instead of a second copy of it.
-
-// AgentHeader names the calling session. The room header is `RoomHeader`, shared
-// with the scoped-board path in proxy.go, so a control call scopes exactly the
-// way a board request does.
-//
-// LANDMINE THAT PICKED THESE NAMES: Claude Code blanks any header whose name
-// contains TOKEN, SECRET, KEY, PASSWORD or AUTH. `X-Atrium-Agent` and
-// `X-Atrium-Room` avoid all five.
-const AgentHeader = "X-Atrium-Agent"
 
 // controlMCP holds what the hub-side tools need: where to reach the hub's own
 // board, a client to do it with, and the hub to forward a restart over.
@@ -143,8 +135,8 @@ func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *
 // FOUR SERVERS, BUILT ONCE, and `getServer` picks one per request by the caller's
 // class. See ctlclass.go, which says why this is tidiness and not a boundary.
 func (c *controlMCP) handler() http.Handler {
-	servers := map[ctlClass]*mcp.Server{}
-	for _, class := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident, classWorkerItem, classWorkerReview} {
+	servers := map[ctl.Class]*mcp.Server{}
+	for _, class := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassFullResident, ctl.ClassWorkerResident, ctl.ClassWorkerItem, ctl.ClassWorkerReview} {
 		servers[class] = c.server(class)
 	}
 	return mcp.NewStreamableHTTPHandler(
@@ -162,7 +154,7 @@ func (c *controlMCP) handler() http.Handler {
 // ONE LIST, FILTERED. Every tool is registered here through `addTool`, which
 // skips it when the class does not include it, so a tool's description and its
 // `audited` wrapping are written once whichever servers it lands on.
-func (c *controlMCP) server(class ctlClass) *mcp.Server {
+func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
 
 	addTool(s, class, &mcp.Tool{
@@ -251,7 +243,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	if residentClass(class) {
 		doneDesc, blockedDesc = residentDoneToolDesc, residentBlockedToolDesc
 	}
-	if class == classWorkerItem {
+	if class == ctl.ClassWorkerItem {
 		doneDesc, blockedDesc = itemDoneToolDesc, itemBlockedToolDesc
 	}
 	addTool(s, class, &mcp.Tool{Name: "atrium_done", Description: doneDesc}, end.Done)
@@ -505,8 +497,8 @@ func (c *controlMCP) ask(ctx context.Context, method, path, room string, body, o
 	if err != nil {
 		// A 502 in all but name, kept as one so the relay reads it as a hub
 		// that is not answering rather than a refusal.
-		return &boardError{code: http.StatusBadGateway,
-			msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
+		return &ctl.BoardError{Code: http.StatusBadGateway,
+			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
@@ -515,50 +507,14 @@ func (c *controlMCP) ask(ctx context.Context, method, path, room string, body, o
 		}
 		_ = json.NewDecoder(res.Body).Decode(&e)
 		if strings.TrimSpace(e.Error) != "" {
-			return &boardError{code: res.StatusCode, msg: e.Error}
+			return &ctl.BoardError{Code: res.StatusCode, Msg: e.Error}
 		}
-		return &boardError{code: res.StatusCode, msg: "the board answered " + res.Status, bare: true}
+		return &ctl.BoardError{Code: res.StatusCode, Msg: "the board answered " + res.Status, NoSentence: true}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.NewDecoder(res.Body).Decode(out)
-}
-
-// boardError is a refusal from the board, with its status kept. The sentence
-// is the whole of what a tool shows. The code is what the relay reads to tell
-// a room that is not answering from a refusal that will never succeed.
-type boardError struct {
-	code int
-	msg  string
-	// bare is an answer with no sentence in it, which is what a route the room
-	// does not have looks like. A room older than an endpoint answers a bare 404.
-	bare bool
-}
-
-func (e *boardError) Error() string { return e.msg }
-
-// HTTPStatus is what the board answered, for a caller that reads a 404 as "no such thing".
-func (e *boardError) HTTPStatus() int { return e.code }
-
-// Bare is whether the answer carried no sentence, which is a route that is not there rather than a thing that is not.
-func (e *boardError) Bare() bool { return e.bare }
-
-// agentOf and roomOf read the per-request identity headers the go-sdk hands a
-// tool on `Extra`. Absent when the caller is not one of atrium's sessions,
-// which is an ordinary way to use these tools and not an error.
-func agentOf(req *mcp.CallToolRequest) string {
-	if req == nil || req.Extra == nil || req.Extra.Header == nil {
-		return ""
-	}
-	return strings.TrimSpace(req.Extra.Header.Get(AgentHeader))
-}
-
-func roomOf(req *mcp.CallToolRequest) string {
-	if req == nil || req.Extra == nil || req.Extra.Header == nil {
-		return ""
-	}
-	return strings.TrimSpace(req.Extra.Header.Get(wire.RoomHeader))
 }
 
 // ctlCard is the part of a task these tools report. The board's own shape is
@@ -646,7 +602,7 @@ type statusOutput struct {
 func (c *controlMCP) statusHandler(ctx context.Context, req *mcp.CallToolRequest, _ statusInput) (
 	*mcp.CallToolResult, statusOutput, error) {
 
-	out := statusOutput{Board: c.board, Room: roomOf(req)}
+	out := statusOutput{Board: c.board, Room: ctl.RoomOf(req)}
 	room := out.Room
 
 	var health map[string]any
@@ -736,8 +692,8 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 
 	out := peersOutput{Peers: []peer{}}
 	// The header names this session, which is how a runner learns its own handle.
-	out.Me = agentOf(req)
-	room := roomOf(req)
+	out.Me = ctl.AgentOf(req)
+	room := ctl.RoomOf(req)
 
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
@@ -903,7 +859,7 @@ func (c *controlMCP) resolveCardOpt(ctx context.Context, room, who string, stric
 // namedFrom is a card's id and handle as a caller on `room` names it: bare on
 // its own room, `room~id` and `handle@room` from anywhere else.
 func namedFrom(room, scope, id, handle string) (string, string) {
-	if scope == "" || equalFold(scope, room) {
+	if scope == "" || wire.EqualFold(scope, room) {
 		return id, handle
 	}
 	if handle != "" {
@@ -954,7 +910,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	if strings.TrimSpace(in.Text) == "" {
 		return nil, out, fmt.Errorf("nothing to say")
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	// ANOTHER ROOM, named as `name@room`. Only for a caller with a room: one
 	// without keeps the aggregate list, where `room~id` already reaches
 	// anywhere. See docs/fabric/cross-room-say-design.md.
@@ -988,7 +944,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	// as the operator's own message channel rather than a peer, so no broken
 	// attribution is ever rendered. The room frames it, not the hub, so a peer
 	// message is not double-framed as coming from the operator.
-	from := agentOf(req)
+	from := ctl.AgentOf(req)
 
 	var res struct {
 		Delivered string `json:"delivered"`
@@ -1058,11 +1014,11 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	*mcp.CallToolResult, reportOutput, error) {
 
 	out := reportOutput{}
-	me := agentOf(req)
+	me := ctl.AgentOf(req)
 	if me == "" {
 		return nil, out, fmt.Errorf("atrium_report is for a session atrium knows. this call did not say which one it is")
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	id, _, err := c.resolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err
@@ -1099,11 +1055,11 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 // endReport files atrium_done and atrium_blocked as the caller's report, by the path reportHandler takes.
 func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, body map[string]any) (EndOutput, error) {
 	out := EndOutput{}
-	me := agentOf(req)
+	me := ctl.AgentOf(req)
 	if me == "" {
 		return out, fmt.Errorf("this is for a session atrium knows. this call did not say which one it is")
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	id, _, err := c.resolvePeer(ctx, room, me)
 	if err != nil {
 		return out, err
@@ -1197,12 +1153,12 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	*mcp.CallToolResult, taskOutput, error) {
 
 	out := taskOutput{}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	who := strings.TrimSpace(in.Card)
 	scope, id := room, ""
 	var err error
 	if who == "" {
-		if who = agentOf(req); who == "" {
+		if who = ctl.AgentOf(req); who == "" {
 			return nil, out, fmt.Errorf("say which card. this session is not on the board, " +
 				"so it has no card of its own to default to")
 		}
@@ -1597,7 +1553,7 @@ func (c *controlMCP) reserveSlot(room string, live, limit int) (id string, ok bo
 	for _, r := range c.reservations {
 		if now.Sub(r.at) < reservationTTL {
 			kept = append(kept, r)
-			if equalFold(r.room, room) {
+			if wire.EqualFold(r.room, room) {
 				pending++
 			}
 		}
@@ -1819,23 +1775,23 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 
 	out := launchOutput{}
 	if strings.TrimSpace(in.Cwd) == "" && strings.TrimSpace(in.Repo) == "" && !in.Home {
-		return nil, out, &refusedError{"say where to run it: cwd for a directory you made, or repo (with branch) so atrium " +
+		return nil, out, &ctl.RefusedError{Msg: "say where to run it: cwd for a directory you made, or repo (with branch) so atrium " +
 			"makes the card's own folder, or home for an empty one"}
 	}
 	if strings.TrimSpace(in.Cwd) != "" && strings.TrimSpace(in.Repo) != "" {
-		return nil, out, &refusedError{"pass cwd for a directory you made, or repo for one atrium makes, not both"}
+		return nil, out, &ctl.RefusedError{Msg: "pass cwd for a directory you made, or repo for one atrium makes, not both"}
 	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
 		harness = "claude"
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	callerRoom := room
 	// ANOTHER ROOM. The lineage then names the launcher as `me@myroom`, and its
 	// card as `myroom~id`, so the worker's reports and notices come back across
 	// to exactly this card. See docs/fabric/cross-room-say-design.md.
-	spawnedBy, spawnedByID, spawnedByDir := agentOf(req), "", ""
-	if r := strings.TrimSpace(in.Room); r != "" && !equalFold(r, room) {
+	spawnedBy, spawnedByID, spawnedByDir := ctl.AgentOf(req), "", ""
+	if r := strings.TrimSpace(in.Room); r != "" && !wire.EqualFold(r, room) {
 		if room != "" && spawnedBy != "" {
 			if id, _, err := c.resolvePeer(ctx, room, spawnedBy); err == nil {
 				spawnedByID = wire.TagFor(room, id)
@@ -1904,7 +1860,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	// accident. There is no override: a human clears the gate on the board first.
 	if c.gate != nil {
 		if msg, blocked := c.gate(ctx, in.Title); blocked {
-			return out, &refusedError{msg}
+			return out, &ctl.RefusedError{Msg: msg}
 		}
 	}
 
@@ -1926,7 +1882,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 				where = "every room together"
 			}
 			// A refusal, so `audited` writes it as `refused: ...` on ctl-launch.
-			return out, &refusedError{fmt.Sprintf("at the launch cap of %d running workers on %s. "+
+			return out, &ctl.RefusedError{Msg: fmt.Sprintf("at the launch cap of %d running workers on %s. "+
 				"wait for one to finish, exit one, or launch on another room", limit, where)}
 		}
 	}
@@ -2047,8 +2003,8 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if err := long.ask(ctx, http.MethodPost, launchPath, room, reqBody, &t); err != nil {
 		// THE ANSWER MAY BE LOST WHILE THE CARD EXISTS. Look for it before reporting a failure, so
 		// a retry is not a duplicate worker in the same directory.
-		var be *boardError
-		if !errors.As(err, &be) || be.code != http.StatusBadGateway {
+		var be *ctl.BoardError
+		if !errors.As(err, &be) || be.Code != http.StatusBadGateway {
 			// The room said no, so nothing was started and the key is not worth keeping. Any other failure, a
 			// timeout among them, leaves the outcome unknown and the key for the retry.
 			if be != nil {
@@ -2191,8 +2147,8 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	*mcp.CallToolResult, exitOutput, error) {
 
 	out := exitOutput{}
-	room := roomOf(req)
-	me := agentOf(req)
+	room := ctl.RoomOf(req)
+	me := ctl.AgentOf(req)
 	// NO CARD IS YOU. The id an atrium_say reply gives is the recipient's, and a
 	// worker once took it for its own and exited the director that launched it.
 	who := strings.TrimSpace(in.Card)
@@ -2212,7 +2168,7 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	var body map[string]any
 	if me != "" {
 		body = map[string]any{"from": me, "force": in.Force}
-		if !equalFold(scope, room) {
+		if !wire.EqualFold(scope, room) {
 			body["from"], body["foreign"] = me+"@"+room, true
 		}
 	}
@@ -2250,14 +2206,14 @@ func (c *controlMCP) modelHandler(ctx context.Context, req *mcp.CallToolRequest,
 	*mcp.CallToolResult, modelOutput, error) {
 
 	out := modelOutput{}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle = namedFrom(room, scope, id, handle)
 	body := map[string]string{"model": strings.TrimSpace(in.Model)}
-	if me := agentOf(req); me != "" {
+	if me := ctl.AgentOf(req); me != "" {
 		body["from"] = me
 	}
 	var res struct {
@@ -2323,14 +2279,14 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	*mcp.CallToolResult, cullOutput, error) {
 
 	out := cullOutput{}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	scope, id, handle, err := c.resolveCardStrict(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle = namedFrom(room, scope, id, handle)
 	// Only a card on the caller's own room can be the caller.
-	if me := agentOf(req); me != "" && equalFold(scope, room) {
+	if me := ctl.AgentOf(req); me != "" && wire.EqualFold(scope, room) {
 		if myID, _, err := c.resolvePeer(ctx, room, me); err == nil && myID == id {
 			return nil, out, fmt.Errorf("a worker cannot cull itself. whoever accepts the work culls it")
 		}
@@ -2338,15 +2294,15 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	if in.Hold {
 		// A route of its own, so a room that predates the hold answers 404
 		// rather than reading the flag as an ordinary cull.
-		by := agentOf(req)
+		by := ctl.AgentOf(req)
 		if by == "" {
 			by = "atrium_cull"
 		}
 		// To the card's own room, which is not the caller's for name@room (f-010).
 		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull/hold", scope,
 			map[string]string{"by": by}, nil); err != nil {
-			var be *boardError
-			if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+			var be *ctl.BoardError
+			if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
 				return nil, out, fmt.Errorf("that room is older than the merged-cull hold. nothing was culled " +
 					"and nothing was held. update the room")
 			}
@@ -2365,8 +2321,8 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	err = long.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", scope, body, &res)
 	if err != nil {
-		var be *boardError
-		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+		var be *ctl.BoardError
+		if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
 			return nil, out, errors.New(predatesCull(scope, buildOf(c.hub, scope)))
 		}
 		return nil, out, err
@@ -2403,7 +2359,7 @@ func (c *controlMCP) closeHandler(ctx context.Context, req *mcp.CallToolRequest,
 	*mcp.CallToolResult, map[string]any, error) {
 
 	out := map[string]any{}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	scope, id, handle, err := c.resolveCardStrict(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
@@ -2417,8 +2373,8 @@ func (c *controlMCP) closeHandler(ctx context.Context, req *mcp.CallToolRequest,
 		err = long.ask(ctx, http.MethodPost, path, scope, map[string]any{"confirm": true, "answers": in.Answers}, &out)
 	}
 	if err != nil {
-		var be *boardError
-		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+		var be *ctl.BoardError
+		if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
 			return nil, out, fmt.Errorf("that room cannot close cards yet. it needs a newer build")
 		}
 		return nil, out, err
@@ -2452,7 +2408,7 @@ type restartOutput struct {
 func (c *controlMCP) restartHandler(_ context.Context, req *mcp.CallToolRequest, in restartInput) (
 	*mcp.CallToolResult, restartOutput, error) {
 
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	out := restartOutput{Room: room}
 	if room == "" {
 		return nil, out, fmt.Errorf("no room named. a restart has to name the room to restart, " +
@@ -2495,12 +2451,12 @@ func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	*mcp.CallToolResult, wakeOutput, error) {
 
 	out := wakeOutput{}
-	me := agentOf(req)
+	me := ctl.AgentOf(req)
 	if me == "" {
 		return nil, out, fmt.Errorf("atrium_wake_after_restart is for a session atrium knows. this call did " +
 			"not say which one it is")
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	id, _, err := c.resolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err
@@ -2545,11 +2501,11 @@ func (c *controlMCP) needHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	*mcp.CallToolResult, map[string]any, error) {
 
 	out := map[string]any{}
-	me := agentOf(req)
+	me := ctl.AgentOf(req)
 	if me == "" {
 		return nil, out, fmt.Errorf("atrium_need is for a session atrium knows. this call did not say which one it is")
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	id, _, err := c.resolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err

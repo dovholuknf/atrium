@@ -23,6 +23,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/itemgate"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Item gates as the hub serves and checks them. See docs/runtime/item-dependencies-design.md.
@@ -266,7 +268,7 @@ func (p *Proxy) evaluate(ctx context.Context, d *deps, g itemgate.Gate) (bool, s
 				return false, "this hub has no link, so no room is attached"
 			}
 			for _, a := range p.hub.Rooms() {
-				if equalFold(a.Name, arg) {
+				if wire.EqualFold(a.Name, arg) {
 					return true, arg + " attached to the hub"
 				}
 			}
@@ -377,7 +379,7 @@ func (p *Proxy) depsChanged(repo, item, what string) {
 	if err != nil {
 		return
 	}
-	p.feeds.emit(Event{Kind: "deps", Data: payload})
+	p.feeds.emit(wire.Event{Kind: "deps", Data: payload})
 }
 
 // ── the launch refusal ──────────────────────────────────
@@ -530,8 +532,8 @@ func (p *Proxy) tell(ctx context.Context, who, text string) (retry bool) {
 	if err == nil {
 		return false
 	}
-	var be *boardError
-	if errors.As(err, &be) && be.code >= 500 {
+	var be *ctl.BoardError
+	if errors.As(err, &be) && be.Code >= 500 {
 		return true
 	}
 	log.Printf("[hub] could not tell %s that a gate cleared, and will not try again: %v", who, err)
@@ -626,7 +628,7 @@ func (p *Proxy) serveDeps(w http.ResponseWriter, r *http.Request, sub string) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"gates": p.refresh(r.Context(), d, gates)})
 	case sub == "deps/clear" && write:
 		// FROM THE BOARD ONLY. See the note at the top of this file.
-		if strings.TrimSpace(r.Header.Get(AgentHeader)) != "" {
+		if strings.TrimSpace(r.Header.Get(ctl.AgentHeader)) != "" {
 			fail(http.StatusForbidden, "a gate is cleared by a human on the board, never by an agent. "+
 				"if a gate is wrong, ask the human")
 			return

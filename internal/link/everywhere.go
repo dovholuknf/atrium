@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -127,11 +128,11 @@ func indexed(room string, cards []CardState) []everyCard {
 		tagged := false
 		for _, t := range row.Tags {
 			t = strings.TrimSpace(t)
-			if equalFold(t, OriginTag) {
+			if wire.EqualFold(t, OriginTag) {
 				tagged = false
 				break
 			}
-			if equalFold(t, EverywhereTag) {
+			if wire.EqualFold(t, EverywhereTag) {
 				tagged = true
 			}
 		}
@@ -208,7 +209,7 @@ func (e *everywhere) Replace(room string, cards []CardState) bool {
 
 func (e *everywhere) swap(room string, cards []CardState) bool {
 	next := indexed(room, cards)
-	key := keyOf(room)
+	key := wire.KeyOf(room)
 	every := liveNamed(room, cards)
 	trees := liveTrees(room, cards)
 	e.mu.Lock()
@@ -261,7 +262,7 @@ func (e *everywhere) holds(room string) bool {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return len(e.byRoom[keyOf(room)]) > 0
+	return len(e.byRoom[wire.KeyOf(room)]) > 0
 }
 
 func (e *everywhere) has(room, id string) bool {
@@ -270,7 +271,7 @@ func (e *everywhere) has(room, id string) bool {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for _, c := range e.byRoom[keyOf(room)] {
+	for _, c := range e.byRoom[wire.KeyOf(room)] {
 		if c.ID == id {
 			return true
 		}
@@ -296,14 +297,14 @@ func (e *everywhere) all(besides string) []everyCard {
 	defer e.mu.Unlock()
 	var out []everyCard
 	for key, cards := range e.byRoom {
-		if key == keyOf(besides) || (held != nil && !held[key]) {
+		if key == wire.KeyOf(besides) || (held != nil && !held[key]) {
 			continue
 		}
 		out = append(out, cards...)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Room != out[j].Room {
-			return keyOf(out[i].Room) < keyOf(out[j].Room)
+			return wire.KeyOf(out[i].Room) < wire.KeyOf(out[j].Room)
 		}
 		return out[i].ID < out[j].ID
 	})
@@ -313,7 +314,7 @@ func (e *everywhere) all(besides string) []everyCard {
 // drop forgets one room's cards, for a room whose record has just gone.
 func (e *everywhere) drop(room string) bool {
 	e.mu.Lock()
-	key := keyOf(room)
+	key := wire.KeyOf(room)
 	_, had := e.byRoom[key]
 	delete(e.byRoom, key)
 	delete(e.named, key)
@@ -378,14 +379,14 @@ func (e *everywhere) allNamed(besides string) []everyCard {
 	defer e.mu.Unlock()
 	var out []everyCard
 	for key, cards := range e.named {
-		if key == keyOf(besides) || (held != nil && !held[key]) {
+		if key == wire.KeyOf(besides) || (held != nil && !held[key]) {
 			continue
 		}
 		out = append(out, cards...)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Room != out[j].Room {
-			return keyOf(out[i].Room) < keyOf(out[j].Room)
+			return wire.KeyOf(out[i].Room) < wire.KeyOf(out[j].Room)
 		}
 		return out[i].ID < out[j].ID
 	})
@@ -417,10 +418,10 @@ func (e *everywhere) allTrees() []everyCard {
 // atrium's prefix, or its alias.
 func (c everyCard) answersTo(name string) bool {
 	if c.Wire != "" {
-		if equalFold(c.Wire, name) {
+		if wire.EqualFold(c.Wire, name) {
 			return true
 		}
-		if i := strings.LastIndex(c.Wire, "/"); i >= 0 && equalFold(c.Wire[i+1:], name) {
+		if i := strings.LastIndex(c.Wire, "/"); i >= 0 && wire.EqualFold(c.Wire[i+1:], name) {
 			return true
 		}
 	}
@@ -478,7 +479,7 @@ func (c everyCard) sendName() string {
 // A miss that is the room not answering is not a miss, and a caller with no room
 // reads the aggregate list, where every room is already looked at.
 func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyCard, error) {
-	var be *boardError
+	var be *ctl.BoardError
 	if room == "" || c.hub == nil || errors.As(miss, &be) {
 		return everyCard{}, miss
 	}
@@ -522,7 +523,7 @@ func (e *everywhere) setHolding(s Inventory) {
 		}
 		held := make(map[string]bool, len(names))
 		for _, n := range names {
-			held[keyOf(n)] = true
+			held[wire.KeyOf(n)] = true
 		}
 		return held
 	}

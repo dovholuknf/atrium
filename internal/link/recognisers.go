@@ -12,6 +12,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/scripts/recognisers"
 )
 
@@ -270,7 +271,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 		}
 		crJSON(w, http.StatusOK, HubRecognisers{Recognisers: rows})
 	case id != "" && !strings.Contains(id, "/") && r.Method == http.MethodPut:
-		if docsCrossOrigin.Check(r) != nil {
+		if wire.DocsCrossOrigin.Check(r) != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return true
 		}
@@ -288,7 +289,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 		p.recognisersChanged(saved)
 		crJSON(w, http.StatusOK, saved)
 	case id != "" && !strings.Contains(id, "/") && r.Method == http.MethodDelete:
-		if docsCrossOrigin.Check(r) != nil {
+		if wire.DocsCrossOrigin.Check(r) != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return true
 		}
@@ -307,6 +308,6 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 // recognisersChanged tells every open board, as a room's save does.
 func (p *Proxy) recognisersChanged(v any) {
 	if data, err := json.Marshal(v); err == nil {
-		p.feeds.broadcast(Event{Kind: "recognisers", Data: data})
+		p.feeds.broadcast(wire.Event{Kind: "recognisers", Data: data})
 	}
 }

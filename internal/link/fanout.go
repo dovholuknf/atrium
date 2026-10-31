@@ -270,7 +270,7 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 // their own collapsed group and to refuse to open any of them. Nothing here is
 // counted anywhere: every badge on the board is live only, because a number you
 // cannot act on is a number that makes you look.
-func (p *Proxy) remembered(spec string, live []Attached) []any {
+func (p *Proxy) remembered(spec string, live []wire.Attached) []any {
 	if spec != "/v1/tasks" {
 		return nil
 	}
@@ -288,7 +288,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 	}
 	here := map[string]bool{}
 	for _, a := range live {
-		here[keyOf(a.Name)] = true
+		here[wire.KeyOf(a.Name)] = true
 	}
 
 	var out []any
@@ -296,7 +296,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 		// A ROOM THAT IS HERE ANSWERS FOR ITSELF. The cache is written while a
 		// room is connected and read only when it is not, so a live room's
 		// remembered cards are never drawn beside its real ones.
-		if here[keyOf(name)] {
+		if here[wire.KeyOf(name)] {
 			continue
 		}
 		cards, err := stock.Remembered(name)
@@ -423,7 +423,7 @@ func (p *Proxy) history(w http.ResponseWriter, r *http.Request) {
 			out[i].room = name
 			body := p.askRoomBody(scan, name)
 			if body == nil {
-				out[i].err = errStatus(http.StatusBadGateway)
+				out[i].err = wire.ErrStatus(http.StatusBadGateway)
 				return
 			}
 			out[i].rows, _ = body["tasks"].([]any)
@@ -600,7 +600,7 @@ func (p *Proxy) askRoom(r *http.Request, room, field string) ([]any, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, errStatus(res.StatusCode)
+		return nil, wire.ErrStatus(res.StatusCode)
 	}
 	var body map[string]any
 	// Bounded. A room's task list is large and a room that answers with
@@ -818,7 +818,7 @@ func (p *Proxy) saveHubCardColors(w http.ResponseWriter, r *http.Request, payloa
 	ev := p.boardAutoView(stock)
 	p.applyCardColors(ev, stock)
 	if data, err := json.Marshal(ev); err == nil {
-		p.feeds.broadcast(Event{Kind: "settings", Data: data})
+		p.feeds.broadcast(wire.Event{Kind: "settings", Data: data})
 	}
 	if body, ok := p.hubSettingsBody(r, stock); ok {
 		writeJSONBody(w, http.StatusOK, body)
@@ -1104,7 +1104,7 @@ func writeErrBody(w http.ResponseWriter, code int, msg string) {
 //
 // The alternative is spreading a machine-shaped setting across every machine,
 // which is a guess wearing the clothes of a feature.
-func needsARoom(w http.ResponseWriter, rooms []Attached) {
+func needsARoom(w http.ResponseWriter, rooms []wire.Attached) {
 	names := make([]string, 0, len(rooms))
 	for _, r := range rooms {
 		names = append(names, r.Name)

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -495,16 +496,16 @@ func (p *Proxy) taskLaunchDone(st *hubstore.Store, t hubstore.Task, room string,
 		p.RecordAudit(room, "task-launch", t.BacklogID+"/"+t.TaskID)
 		return
 	}
-	var ref *refusedError
-	var be *boardError
+	var ref *ctl.RefusedError
+	var be *ctl.BoardError
 	switch {
 	case errors.As(err, &ref):
-		_ = st.TaskWait(t.BacklogID, t.TaskID, ref.msg)
-	case errors.As(err, &be) && be.code == http.StatusNotFound && be.Bare():
+		_ = st.TaskWait(t.BacklogID, t.TaskID, ref.Msg)
+	case errors.As(err, &be) && be.Code == http.StatusNotFound && be.Bare():
 		_ = st.TaskLaunchFailed(t.BacklogID, t.TaskID, "the room "+room+" is too old to run tasks: update it")
-	case errors.As(err, &be) && be.code != http.StatusBadGateway && be.code != http.StatusServiceUnavailable &&
-		be.code != http.StatusGatewayTimeout && be.code >= 400 && be.code < 500:
-		_ = st.TaskLaunchFailed(t.BacklogID, t.TaskID, be.msg)
+	case errors.As(err, &be) && be.Code != http.StatusBadGateway && be.Code != http.StatusServiceUnavailable &&
+		be.Code != http.StatusGatewayTimeout && be.Code >= 400 && be.Code < 500:
+		_ = st.TaskLaunchFailed(t.BacklogID, t.TaskID, be.Msg)
 	default:
 		_ = st.TaskLaunched(t.BacklogID, t.TaskID, "", true, "the launch went out and its answer was lost: "+err.Error())
 	}

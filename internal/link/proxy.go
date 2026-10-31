@@ -234,7 +234,7 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 		if err != nil {
 			return
 		}
-		p.feeds.broadcast(Event{Kind: restartEvent, Data: data})
+		p.feeds.broadcast(wire.Event{Kind: restartEvent, Data: data})
 	}, p.feeds.watchers, func(kind, detail string) { p.RecordAudit("", kind, detail) })
 
 	p.proxy = &httputil.ReverseProxy{
@@ -345,7 +345,7 @@ func hostFor(room string) string {
 	if room == "" {
 		return "room.atrium.internal"
 	}
-	return keyOf(room) + ".room.atrium.internal"
+	return wire.KeyOf(room) + ".room.atrium.internal"
 }
 
 // roomFor answers which room a request is for, and whether it named one.
@@ -419,7 +419,7 @@ func (p *Proxy) rememberingOthers(besides string) bool {
 		return false
 	}
 	for _, n := range names {
-		if !equalFold(n, besides) {
+		if !wire.EqualFold(n, besides) {
 			return true
 		}
 	}
@@ -494,7 +494,7 @@ const cardRoomTTL = 2 * time.Minute
 // to wait for: the first room to answer yes is the owner, so a slow non-owner
 // can no longer stall the attach. The all-miss case still drains every answer,
 // which is correct - a card no room claims is genuinely gone.
-func (p *Proxy) roomHolding(r *http.Request, bare string, rooms []Attached) (string, bool) {
+func (p *Proxy) roomHolding(r *http.Request, bare string, rooms []wire.Attached) (string, bool) {
 	if room, ok := p.cachedCardRoom(bare); ok {
 		return room, true
 	}
@@ -1422,7 +1422,7 @@ func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	for _, k := range known {
-		if !equalFold(k.Name, room) || k.State != "marked-for-deletion" {
+		if !wire.EqualFold(k.Name, room) || k.State != "marked-for-deletion" {
 			continue
 		}
 		w.Header().Set("Content-Type", "application/json")

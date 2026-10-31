@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 func TestTheReviewTagIsTheOneTheRoomReads(t *testing.T) {
@@ -62,12 +63,12 @@ func TestAReviewLaunchWritesTheRulesAndTheBaseAheadOfTheCallersBrief(t *testing.
 }
 
 func TestOnlyTheReviewClassIsServedAtriumReview(t *testing.T) {
-	for _, c := range []ctlClass{classFull, classWorker, classFullResident, classWorkerResident, classWorkerItem} {
+	for _, c := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker, ctl.ClassFullResident, ctl.ClassWorkerResident, ctl.ClassWorkerItem} {
 		if inClass("atrium_review", c) {
 			t.Errorf("class %d is served atrium_review", c)
 		}
 	}
-	if !inClass("atrium_review", classWorkerReview) || !inClass("atrium_done", classWorkerReview) || inClass("atrium_launch", classWorkerReview) {
+	if !inClass("atrium_review", ctl.ClassWorkerReview) || !inClass("atrium_done", ctl.ClassWorkerReview) || inClass("atrium_launch", ctl.ClassWorkerReview) {
 		t.Error("the review class is the worker set and atrium_review")
 	}
 }

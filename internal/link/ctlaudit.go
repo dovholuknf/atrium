@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // The audit line for a mutating control call.
@@ -39,13 +40,6 @@ const auditErrMax = 200
 // alias or a branch name.
 const auditWhatMax = 200
 
-// refusedError is a call turned away by a rule rather than one that failed, such
-// as the launch cap. The audit line says `refused:` for it, which is the line
-// somebody looks for, and a plain error is written as it came.
-type refusedError struct{ msg string }
-
-func (e *refusedError) Error() string { return e.msg }
-
 // auditDescribe turns one call into the two things a line needs: the target room
 // and a short "what". record false writes nothing, for a call that turned out to
 // be a read.
@@ -73,11 +67,11 @@ func audited[In, Out any](c *controlMCP, kind string, describe auditDescribe[In,
 func auditDetail(req *mcp.CallToolRequest, what string, err error) string {
 	// The agent and room come from headers anybody on loopback can set, so they
 	// are cleaned like the text is.
-	by := auditWhat(agentOf(req))
+	by := auditWhat(ctl.AgentOf(req))
 	if by == "" {
 		by = "unnamed"
 	}
-	if r := auditWhat(roomOf(req)); r != "" {
+	if r := auditWhat(ctl.RoomOf(req)); r != "" {
 		by += "@" + r
 	}
 	return "by " + by + " (claimed): " + auditWhat(what) + ", " + auditOutcome(err)
@@ -112,7 +106,7 @@ func auditOutcome(err error) string {
 	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
 		msg = strings.TrimSpace(msg[:i])
 	}
-	var ref *refusedError
+	var ref *ctl.RefusedError
 	if errors.As(err, &ref) {
 		msg = "refused: " + msg
 	}
@@ -125,7 +119,7 @@ func auditOutcome(err error) string {
 // cardRoom is the room a card address acts on: the room it names when that is
 // not the caller's own, else the caller's.
 func cardRoom(req *mcp.CallToolRequest, addr string) string {
-	own := roomOf(req)
+	own := ctl.RoomOf(req)
 	if _, target, err := address.SplitAddress(addr); err == nil {
 		if other := otherRoom(target, own); other != "" {
 			return other
@@ -143,7 +137,7 @@ func namedOr(got, asked string) string {
 }
 
 func describeLaunch(req *mcp.CallToolRequest, in launchInput, out launchOutput) (string, string, bool) {
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	if r := strings.TrimSpace(in.Room); r != "" {
 		room = r
 	}
@@ -198,7 +192,7 @@ func describeRestart(req *mcp.CallToolRequest, in restartInput, _ restartOutput)
 	if in.Force {
 		what += " (force)"
 	}
-	return roomOf(req), what, true
+	return ctl.RoomOf(req), what, true
 }
 
 func describeWake(req *mcp.CallToolRequest, in wakeInput, out wakeOutput) (string, string, bool) {
@@ -209,7 +203,7 @@ func describeWake(req *mcp.CallToolRequest, in wakeInput, out wakeOutput) (strin
 	if out.Card != "" {
 		what += " " + out.Card
 	}
-	return roomOf(req), what, true
+	return ctl.RoomOf(req), what, true
 }
 
 // describeAlias records a set or a clear. A read writes nothing.
@@ -228,7 +222,7 @@ func describeAlias(req *mcp.CallToolRequest, in aliasInput, out aliasOutput) (st
 	}
 	// The room of the card it names, like exit and cull, so a cross-room alias
 	// is written where the card is.
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	if strings.TrimSpace(in.Card) != "" {
 		room = cardRoom(req, in.Card)
 	}

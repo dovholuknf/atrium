@@ -130,12 +130,12 @@ func looksLikeCardID(s string) bool {
 
 // placeByName resolves a name on `target`, or on every attached room when
 // target is empty, and carries the request on to the card it found.
-func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, target string, rooms []Attached) (
+func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, target string, rooms []wire.Attached) (
 	*http.Request, bool) {
 	if target != "" {
 		found := ""
 		for _, a := range rooms {
-			if equalFold(a.Name, target) {
+			if wire.EqualFold(a.Name, target) {
 				found = a.Name
 			}
 		}
@@ -144,7 +144,7 @@ func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, t
 				"error": fmt.Sprintf("no room called %q is attached", target)})
 			return r, false
 		}
-		rooms = []Attached{{Name: found}}
+		rooms = []wire.Attached{{Name: found}}
 	}
 	lists := map[string][]ctlCard{}
 	var quiet []string
@@ -350,7 +350,7 @@ func (p *Proxy) rememberedOn(bare string) string {
 
 // cardUnplaced is the 404 for a card no attached room holds. It names the card
 // and every room that was asked, so nobody is left reading "no rows".
-func cardUnplaced(w http.ResponseWriter, bare string, asked []Attached, offline string) {
+func cardUnplaced(w http.ResponseWriter, bare string, asked []wire.Attached, offline string) {
 	names := make([]string, 0, len(asked))
 	for _, a := range asked {
 		names = append(names, a.Name)

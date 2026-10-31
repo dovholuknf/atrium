@@ -9,6 +9,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's git store on the board: `/git/hub/<host>/<owner>/<repo>.git/...`, for the operator. See
@@ -98,7 +99,7 @@ func (p *Proxy) GitCards(ctx context.Context, room, card string) (gitsync.CardSt
 	if c == nil || p.hub == nil || !p.hub.Has(room) {
 		return gitsync.CardState{}, gitsync.ErrRoomUnreachable
 	}
-	ans := c.relay(ctx, "", RelayRequest{Op: RelayCard, Room: room, To: card})
+	ans := c.relay(ctx, "", wire.RelayRequest{Op: RelayCard, Room: room, To: card})
 	switch {
 	case ans.OK && ans.Task != nil:
 		return gitsync.CardState{Status: ans.Task.Status, IdleSeconds: ans.Task.Idle}, nil

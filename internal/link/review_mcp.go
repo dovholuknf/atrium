@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 const reviewToolDesc = "The review of the branch in your directory, held by atrium. Served to a card launched as a review only.\n\n" +
@@ -69,16 +71,16 @@ func (c *controlMCP) reviewHandler(ctx context.Context, req *mcp.CallToolRequest
 	*mcp.CallToolResult, map[string]any, error) {
 
 	out := map[string]any{}
-	agent := agentOf(req)
+	agent := ctl.AgentOf(req)
 	if agent == "" {
-		return nil, out, &refusedError{"atrium_review is for a review card, and this call names no card"}
+		return nil, out, &ctl.RefusedError{Msg: "atrium_review is for a review card, and this call names no card"}
 	}
 	switch in.Action {
 	case "start", "finding", "batch", "apply", "close":
 	default:
-		return nil, out, &refusedError{"action is start, finding, batch, apply or close"}
+		return nil, out, &ctl.RefusedError{Msg: "action is start, finding, batch, apply or close"}
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	scope, id, _, err := c.resolveCardStrict(ctx, room, agent)
 	if err != nil {
 		return nil, out, err
@@ -87,9 +89,9 @@ func (c *controlMCP) reviewHandler(ctx context.Context, req *mcp.CallToolRequest
 	path := "/v1/tasks/" + url.PathEscape(id) + "/atrium-review"
 	var raw map[string]any
 	if err := long.ask(ctx, http.MethodPost, path, scope, in, &raw); err != nil {
-		var be *boardError
-		if errors.As(err, &be) && be.code == http.StatusForbidden {
-			return nil, out, &refusedError{"this card was not launched as a review. start one with kind review"}
+		var be *ctl.BoardError
+		if errors.As(err, &be) && be.Code == http.StatusForbidden {
+			return nil, out, &ctl.RefusedError{Msg: "this card was not launched as a review. start one with kind review"}
 		}
 		return nil, out, err
 	}
@@ -110,5 +112,5 @@ func describeReview(req *mcp.CallToolRequest, in reviewInput, _ map[string]any) 
 	if s := strings.TrimSpace(in.State); s != "" {
 		what += " " + s
 	}
-	return roomOf(req), what, true
+	return ctl.RoomOf(req), what, true
 }

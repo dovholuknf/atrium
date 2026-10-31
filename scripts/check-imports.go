@@ -74,6 +74,7 @@ var table = []row{
 	{1, "internal/base/cardproc", []string{"internal/base/nowindow"}},
 	{1, "internal/base/claudeconf", []string{"internal/base/mcprule", "internal/base/rolebin"}},
 	{1, "internal/base/detach", []string{"internal/base/nowindow"}},
+	{1, "internal/link/ctl", []string{"internal/link/wire"}},
 	{1, "internal/link/transport", []string{"internal/base/testwait", "internal/link/wire", "internal/zitictx"}},
 	{1, "internal/guard", []string{"internal/base/nowindow"}},
 	{1, "internal/ptyhost", []string{"internal/base/detach", "internal/base/nowindow", "internal/base/rolebin"}},
@@ -114,7 +115,7 @@ var table = []row{
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/conn", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{3, "internal/daemon/shared", []string{"internal/store"}},

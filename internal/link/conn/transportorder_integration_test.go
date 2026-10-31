@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // A hub on two listeners, and a room with a ladder over both. The "direct" and
@@ -37,13 +39,13 @@ func (s *switchable) Dial(ctx context.Context) (net.Conn, error) {
 
 func (s *switchable) Describe() string { return s.addr }
 
-func attachedAs(h *Hub, name string) (Attached, bool) {
+func attachedAs(h *Hub, name string) (wire.Attached, bool) {
 	for _, a := range h.Rooms() {
 		if a.Name == name {
 			return a, true
 		}
 	}
-	return Attached{}, false
+	return wire.Attached{}, false
 }
 
 func TestRoomFallsBackInOrderAndComesBack(t *testing.T) {

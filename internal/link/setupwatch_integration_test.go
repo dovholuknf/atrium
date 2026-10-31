@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // setupRoom answers the three reads a room is asked. A zero `missing` and `build` equal to the hub's is a room set up
@@ -44,7 +46,7 @@ func itoa(n int) string {
 	return s
 }
 
-func setupOf(t *testing.T, b *bench, room string) *RoomSetup {
+func setupOf(t *testing.T, b *bench, room string) *wire.RoomSetup {
 	t.Helper()
 	for _, a := range b.proxy.attachedView() {
 		if a.Name == room {

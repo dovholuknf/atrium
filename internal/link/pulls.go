@@ -123,7 +123,7 @@ func (p *Proxy) placePR(w http.ResponseWriter, r *http.Request) (*http.Request, 
 // the first that says yes. The twin of `roomHolding`, and for the same reasons: a quiet room is skipped rather than
 // failing the lookup, and the first yes wins because an id is unique. The answer is cached briefly, in the same
 // table the cards use. A `pr_` id never collides with a card's.
-func (p *Proxy) roomHoldingPR(r *http.Request, bare string, rooms []Attached) (string, bool) {
+func (p *Proxy) roomHoldingPR(r *http.Request, bare string, rooms []wire.Attached) (string, bool) {
 	if room, ok := p.cachedCardRoom(bare); ok {
 		return room, true
 	}
@@ -395,7 +395,7 @@ func (p *Proxy) askPulls(r *http.Request, room string) (body map[string]any, wit
 		return nil, true, nil
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, false, errStatus(res.StatusCode)
+		return nil, false, wire.ErrStatus(res.StatusCode)
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 32<<20)).Decode(&body); err != nil {
 		return nil, false, err

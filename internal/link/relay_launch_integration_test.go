@@ -11,10 +11,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-func launchSpec() *RelayLaunchSpec {
-	return &RelayLaunchSpec{Cwd: "/srv/atrium", Title: "review", Why: "check it", Prompt: "do the review",
+func launchSpec() *wire.RelayLaunchSpec {
+	return &wire.RelayLaunchSpec{Cwd: "/srv/atrium", Title: "review", Why: "check it", Prompt: "do the review",
 		Brief: "the whole brief", Tags: []string{"mine", "atrium:item:f-test"}, Model: "opus", Env: map[string]string{"A": "b"}}
 }
 
@@ -39,7 +41,7 @@ func TestARelayedLaunchLandsOnTheTargetWithTheLaunchersLineage(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
 	if err != nil || !ans.OK {
 		t.Fatalf("launch = %+v, %v", ans, err)
 	}
@@ -89,7 +91,7 @@ func TestARelayedLaunchIsTheHubsOwnLaunchByAnotherDoor(t *testing.T) {
 	defer x.stop()
 
 	spec := launchSpec()
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: spec})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: spec})
 	if err != nil || !ans.OK {
 		t.Fatalf("relay = %+v, %v", ans, err)
 	}
@@ -122,7 +124,7 @@ func TestARelayedLaunchNamesTheLauncherOnTheRoomItCameFrom(t *testing.T) {
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, err := x.sg4R.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "orch", Room: "M1MINI", Launch: launchSpec()})
+	ans, err := x.sg4R.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "orch", Room: "M1MINI", Launch: launchSpec()})
 	if err != nil || !ans.OK || ans.Card != "M1MINI~kid" {
 		t.Fatalf("launch = %+v, %v", ans, err)
 	}
@@ -141,20 +143,20 @@ func TestARelayedLaunchRefusesItsOwnRoomNoDirectoryAndAnUnknownRoom(t *testing.T
 	x := newRelayPair(t)
 	defer x.stop()
 
-	ans, _ := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "M1Mini", Launch: launchSpec()})
+	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "M1Mini", Launch: launchSpec()})
 	if ans.OK || ans.Code != http.StatusBadRequest {
 		t.Fatalf("own room = %+v", ans)
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
-		Launch: &RelayLaunchSpec{Brief: "b"}})
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4",
+		Launch: &wire.RelayLaunchSpec{Brief: "b"}})
 	if ans.OK || ans.Code != http.StatusBadRequest || !strings.Contains(ans.Error, "where to run it") {
 		t.Fatalf("no cwd = %+v", ans)
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4"})
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4"})
 	if ans.OK || ans.Code != http.StatusBadRequest {
 		t.Fatalf("no launch = %+v", ans)
 	}
-	ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "atlantis", Launch: launchSpec()})
+	ans, _ = x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "atlantis", Launch: launchSpec()})
 	if ans.OK || ans.Unreachable || ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, `"atlantis"`) ||
 		!strings.Contains(ans.Error, "m1mini") || !strings.Contains(ans.Error, "sg4") {
 		t.Fatalf("unknown room = %+v, want it to name atlantis and list the rooms", ans)
@@ -186,7 +188,7 @@ func TestARelayedLaunchIsCappedPerTargetRoom(t *testing.T) {
 	}
 	x.sg4.mu.Unlock()
 
-	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+	ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
 	if err != nil || ans.OK || ans.Unreachable || ans.Unconfirmed || ans.Code != http.StatusConflict ||
 		!strings.Contains(ans.Error, "at the launch cap of 2 running workers on room sg4") {
 		t.Fatalf("over the cap = %+v, %v", ans, err)
@@ -195,7 +197,7 @@ func TestARelayedLaunchIsCappedPerTargetRoom(t *testing.T) {
 		t.Fatal("a launch over the cap was posted to the room")
 	}
 	// The other direction, to a room with room to spare: sg4 being full is no matter to it.
-	ans, err = x.sg4R.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "orch", Room: "m1mini", Launch: launchSpec()})
+	ans, err = x.sg4R.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "orch", Room: "m1mini", Launch: launchSpec()})
 	if err != nil || !ans.OK {
 		t.Fatalf("under the cap = %+v, %v", ans, err)
 	}
@@ -211,7 +213,7 @@ func TestARelayedLaunchThatFailsAfterThePostIsUnconfirmed(t *testing.T) {
 		x.sg4.mu.Lock()
 		x.sg4.launchCode = code
 		x.sg4.mu.Unlock()
-		ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
 		if err != nil || ans.OK || ans.Unreachable || !ans.Unconfirmed || ans.Code != code {
 			t.Fatalf("%d = %+v, %v", code, ans, err)
 		}
@@ -219,7 +221,7 @@ func TestARelayedLaunchThatFailsAfterThePostIsUnconfirmed(t *testing.T) {
 	x.sg4.mu.Lock()
 	x.sg4.launchCode = http.StatusBadRequest
 	x.sg4.mu.Unlock()
-	ans, _ := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
+	ans, _ := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()})
 	if ans.OK || ans.Unconfirmed || ans.Unreachable || ans.Code != http.StatusBadRequest ||
 		!strings.Contains(ans.Error, "the room fell over") {
 		t.Fatalf("a refusal = %+v", ans)
@@ -245,7 +247,7 @@ func TestARelayedLaunchOnAKnownRoomThatIsDownIsUnreachable(t *testing.T) {
 	hub := NewHub(Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1})
 	c := newControl(srv.URL, hub, nil)
 
-	ans := c.relay(relayCtx(t), "m1mini", RelayRequest{Op: RelayLaunch, From: "sa1", Room: "SG3", Launch: launchSpec()})
+	ans := c.relay(relayCtx(t), "m1mini", wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "SG3", Launch: launchSpec()})
 	if ans.OK || !ans.Unreachable || ans.Code != http.StatusServiceUnavailable || !strings.Contains(ans.Error, "SG3") ||
 		!strings.Contains(ans.Error, "not attached") {
 		t.Fatalf("down room = %+v", ans)
@@ -272,7 +274,7 @@ func TestARelayedLaunchIsAuditedOnTheTargetWithNoPayload(t *testing.T) {
 	}
 	x.proxy.mu.Unlock()
 
-	if ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()}); err != nil || !ans.OK {
+	if ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelayLaunch, From: "sa1", Room: "sg4", Launch: launchSpec()}); err != nil || !ans.OK {
 		t.Fatalf("launch = %+v, %v", ans, err)
 	}
 	mu.Lock()

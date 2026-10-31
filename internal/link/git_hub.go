@@ -14,6 +14,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -369,7 +370,7 @@ const gitCollectToolDesc = "Ask the hub to fetch a room's claude/* branches now,
 
 // registerGit adds the two tools to the control server being built. Through
 // `addTool`, so they land on the full server only: neither is in `workerTools`.
-func (c *controlMCP) registerGit(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerGit(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_git_sync", Description: gitSyncToolDesc},
 		audited(c, "ctl-git-sync", describeGitSync, c.gitSyncHandler))
 	addTool(s, class, &mcp.Tool{Name: "atrium_git_collect", Description: gitCollectToolDesc},
@@ -433,20 +434,20 @@ func (c *controlMCP) gitPushHandler(ctx context.Context, req *mcp.CallToolReques
 func (c *controlMCP) gitDoor() GitDoor {
 	return GitDoor{
 		Card: func(ctx context.Context, req *mcp.CallToolRequest) (string, error) {
-			me := agentOf(req)
+			me := ctl.AgentOf(req)
 			if me == "" {
 				return "", fmt.Errorf("this pushes for a card, and nothing says which card is asking")
 			}
-			id, _, err := c.resolvePeer(ctx, roomOf(req), me)
+			id, _, err := c.resolvePeer(ctx, ctl.RoomOf(req), me)
 			return id, err
 		},
-		IsCard: func(req *mcp.CallToolRequest) bool { return agentOf(req) != "" },
+		IsCard: func(req *mcp.CallToolRequest) bool { return ctl.AgentOf(req) != "" },
 		Room: func(ctx context.Context, req *mcp.CallToolRequest, long bool, method, path string, body, out any) error {
 			cl := c
 			if long {
 				cl = c.longClient()
 			}
-			return cl.ask(ctx, method, path, roomOf(req), body, out)
+			return cl.ask(ctx, method, path, ctl.RoomOf(req), body, out)
 		},
 		Lookup: func(ctx context.Context, _ *mcp.CallToolRequest, q url.Values) (gitsync.URLAnswer, error) {
 			var ans gitsync.URLAnswer
@@ -454,8 +455,8 @@ func (c *controlMCP) gitDoor() GitDoor {
 			return ans, err
 		},
 		Older: func(err error) bool {
-			var be *boardError
-			return errors.As(err, &be) && be.bare && be.code == http.StatusNotFound
+			var be *ctl.BoardError
+			return errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound
 		},
 	}
 }

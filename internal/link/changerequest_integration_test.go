@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // crAudit is a thread-safe AuditLog: the relay records from its own goroutine.
@@ -106,7 +107,7 @@ func newCRRig(t *testing.T) *crRig {
 		return sha, ok, nil
 	}
 	// A board watching, added by hand so no stream to the fake rooms is started.
-	x.feed = &sub{ch: make(chan Event, 256)}
+	x.feed = &sub{ch: make(chan wire.Event, 256)}
 	p.feeds.mu.Lock()
 	p.feeds.subs[x.feed] = struct{}{}
 	p.feeds.mu.Unlock()

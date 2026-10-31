@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_item, the control tool an item's OWNER uses over /_hub/items. Full class only: `workerTools` does not name it,
@@ -77,7 +78,7 @@ type ownerItemTools struct {
 	by   func(req *mcp.CallToolRequest) string
 }
 
-func (c *controlMCP) registerItems(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerItems(s *mcp.Server, class ctl.Class) {
 	t := ownerItemTools{
 		call: func(ctx context.Context, method, path string, body, out any) error {
 			return c.ask(ctx, method, path, "", body, out)
@@ -121,7 +122,7 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		return nil, out, err
 	case "get":
 		if id == "" {
-			return nil, out, &refusedError{"get needs id"}
+			return nil, out, &ctl.RefusedError{Msg: "get needs id"}
 		}
 		var it hubstore.Item
 		if err := t.call(ctx, http.MethodGet, "/_hub/items/"+url.PathEscape(id), nil, &it); err != nil {
@@ -131,7 +132,7 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		return nil, out, nil
 	case "show":
 		if id == "" {
-			return nil, out, &refusedError{"show needs id: the backlog id, as at the top of your brief"}
+			return nil, out, &ctl.RefusedError{Msg: "show needs id: the backlog id, as at the top of your brief"}
 		}
 		d, err := FetchWorkDetail(ctx, t.call, id)
 		if err != nil {
@@ -142,12 +143,12 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		return nil, out, nil
 	case "unblock":
 		if id == "" || strings.TrimSpace(in.Answer) == "" {
-			return nil, out, &refusedError{"unblock needs id and answer"}
+			return nil, out, &ctl.RefusedError{Msg: "unblock needs id and answer"}
 		}
 		return t.act(ctx, req, id, "unblock", in.Answer, "unblock typed to the worker. the item is running again once its turn starts from it")
 	case "submit":
 		if strings.TrimSpace(in.Pool) == "" || strings.TrimSpace(in.Brief) == "" {
-			return nil, out, &refusedError{"submit needs pool and brief"}
+			return nil, out, &ctl.RefusedError{Msg: "submit needs pool and brief"}
 		}
 		body := map[string]any{"do": "submit", "pool": in.Pool, "brief": in.Brief, "owner": in.Owner, "room": in.Room, "by": t.by(req)}
 		var res struct {
@@ -161,14 +162,14 @@ func (t ownerItemTools) itemHandler(ctx context.Context, req *mcp.CallToolReques
 		return nil, out, nil
 	case "cancel":
 		if id == "" {
-			return nil, out, &refusedError{"cancel needs id"}
+			return nil, out, &ctl.RefusedError{Msg: "cancel needs id"}
 		}
 		return t.act(ctx, req, id, "cancel", "", "cancel asked of the worker's room")
 	}
 	if strings.HasPrefix(strings.TrimSpace(in.Action), "task_") {
 		return t.taskAction(ctx, req, in)
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of list, get, show, unblock, cancel, submit, task_add, task_list, "+
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of list, get, show, unblock, cancel, submit, task_add, task_list, "+
 		"task_hold, task_release, task_cancel, task_retry, task_context", in.Action)}
 }
 
@@ -179,7 +180,7 @@ func (t ownerItemTools) taskAction(ctx context.Context, req *mcp.CallToolRequest
 	id := strings.TrimSpace(in.ID)
 	action := strings.TrimPrefix(strings.TrimSpace(in.Action), "task_")
 	if id == "" {
-		return nil, out, &refusedError{in.Action + " needs id: the backlog id of the item"}
+		return nil, out, &ctl.RefusedError{Msg: in.Action + " needs id: the backlog id of the item"}
 	}
 	path := "/_hub/items/" + url.PathEscape(id) + "/tasks"
 	switch action {
@@ -202,7 +203,7 @@ func (t ownerItemTools) taskAction(ctx context.Context, req *mcp.CallToolRequest
 		return nil, out, nil
 	case "add":
 		if strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.Brief) == "" {
-			return nil, out, &refusedError{"task_add needs title and brief"}
+			return nil, out, &ctl.RefusedError{Msg: "task_add needs title and brief"}
 		}
 		body := map[string]any{"do": "add", "by": t.by(req), "title": in.Title, "brief": in.Brief, "kind": in.Kind,
 			"repo": in.Repo, "base": in.Base, "after": in.After, "outputs": in.Outputs, "room": in.Room, "model": in.Model,
@@ -224,7 +225,7 @@ func (t ownerItemTools) taskAction(ctx context.Context, req *mcp.CallToolRequest
 		return nil, out, nil
 	case "hold", "release", "cancel", "retry":
 		if strings.TrimSpace(in.Task) == "" {
-			return nil, out, &refusedError{in.Action + " needs task, like t1"}
+			return nil, out, &ctl.RefusedError{Msg: in.Action + " needs task, like t1"}
 		}
 		var res struct {
 			Task hubstore.Task `json:"task"`
@@ -240,7 +241,7 @@ func (t ownerItemTools) taskAction(ctx context.Context, req *mcp.CallToolRequest
 		}
 		return nil, out, nil
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of task_add, task_list, task_hold, task_release, task_cancel, "+
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of task_add, task_list, task_hold, task_release, task_cancel, "+
 		"task_retry, task_context", in.Action)}
 }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Hub documents, the HTTP half. The design is docs/rnd/hub-documents-design.md and the
@@ -75,8 +76,6 @@ func (p *Proxy) docStore() *hubstore.Store {
 
 // docFormOverhead is what a multipart body may carry beyond the file itself.
 const docFormOverhead = 1 << 20
-
-var docsCrossOrigin = http.NewCrossOriginProtection()
 
 // docBy is who a write says it was by. `operator` only for a request the machine's own user made,
 // and `share` for anything that came in another way, so the history never calls a share upload
@@ -166,7 +165,7 @@ func (p *Proxy) serveDocs(w http.ResponseWriter, r *http.Request, sub string) {
 	// write that is refused here cannot have been refused for some other reason, and one
 	// that reaches a handler has passed it.
 	if write {
-		if err := docsCrossOrigin.Check(r); err != nil {
+		if err := wire.DocsCrossOrigin.Check(r); err != nil {
 			docSay(w, http.StatusForbidden, "a page on another origin cannot write documents here")
 			return
 		}

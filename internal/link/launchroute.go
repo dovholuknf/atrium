@@ -146,7 +146,7 @@ func launchCwdKind(cwd string) int {
 // nothing new (`startsNothing`, which reads the same inventory), so asking it
 // whether it has the directory would only find a room the launch is then refused
 // on. A hub with no inventory has no marks.
-func (p *Proxy) leavingOut(rooms []Attached) []Attached {
+func (p *Proxy) leavingOut(rooms []wire.Attached) []wire.Attached {
 	stock := p.inventory()
 	if stock == nil {
 		return rooms
@@ -155,11 +155,11 @@ func (p *Proxy) leavingOut(rooms []Attached) []Attached {
 	if err != nil {
 		return rooms
 	}
-	var out []Attached
+	var out []wire.Attached
 	for _, a := range rooms {
 		leaving := false
 		for _, k := range known {
-			if equalFold(k.Name, a.Name) && k.State == "marked-for-deletion" {
+			if wire.EqualFold(k.Name, a.Name) && k.State == "marked-for-deletion" {
 				leaving = true
 			}
 		}
@@ -186,7 +186,7 @@ func (p *Proxy) leavingOut(rooms []Attached) []Attached {
 // A host filter that matches no room is no filter, for the same reason. Rooms
 // that never reported a host, or spell it otherwise, would otherwise make every
 // launch fail on a machine that has the directory.
-func launchCandidates(r *http.Request, rooms []Attached, hostname func() (string, error)) []Attached {
+func launchCandidates(r *http.Request, rooms []wire.Attached, hostname func() (string, error)) []wire.Attached {
 	if !edge.LocalOperator(r) {
 		return rooms
 	}
@@ -194,9 +194,9 @@ func launchCandidates(r *http.Request, rooms []Attached, hostname func() (string
 	if err != nil || strings.TrimSpace(here) == "" {
 		return rooms
 	}
-	var same []Attached
+	var same []wire.Attached
 	for _, a := range rooms {
-		if a.Host != "" && equalFold(a.Host, here) {
+		if a.Host != "" && wire.EqualFold(a.Host, here) {
 			same = append(same, a)
 		}
 	}
@@ -208,7 +208,7 @@ func launchCandidates(r *http.Request, rooms []Attached, hostname func() (string
 
 // roomsWithDir asks each room, at once, whether it has the directory. Returns the
 // rooms that do, sorted, and the ones that did not answer, sorted.
-func (p *Proxy) roomsWithDir(ctx context.Context, rooms []Attached, dir string) (has, quiet []string) {
+func (p *Proxy) roomsWithDir(ctx context.Context, rooms []wire.Attached, dir string) (has, quiet []string) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, a := range rooms {
@@ -284,7 +284,7 @@ func launchCwdIn(r *http.Request) string {
 	return strings.TrimSpace(body.Cwd)
 }
 
-func attachedNames(rooms []Attached) []string {
+func attachedNames(rooms []wire.Attached) []string {
 	names := make([]string, 0, len(rooms))
 	for _, a := range rooms {
 		names = append(names, a.Name)

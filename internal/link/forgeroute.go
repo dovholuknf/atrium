@@ -676,7 +676,7 @@ func (p *Proxy) serveForgeAdmin(w http.ResponseWriter, r *http.Request, rest str
 		}
 		crJSON(w, http.StatusOK, map[string]any{"entries": entries, "defaults": forge.DefaultHosts})
 	case rest == "" && r.Method == http.MethodPut:
-		if err := docsCrossOrigin.Check(r); err != nil {
+		if err := wire.DocsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot change the hub's forges")
 			return
 		}
@@ -716,7 +716,7 @@ func (p *Proxy) serveForgeAdmin(w http.ResponseWriter, r *http.Request, rest str
 		// The hub's own control MCP, for `atrium_ci` called on the hub. The room is the caller's, from its header.
 		p.serveCI(w, r, f, strings.TrimSpace(r.Header.Get(wire.RoomHeader)))
 	case rest == "check" && r.Method == http.MethodPost:
-		if err := docsCrossOrigin.Check(r); err != nil {
+		if err := wire.DocsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot run the hub's forge check")
 			return
 		}

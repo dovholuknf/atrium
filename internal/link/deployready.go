@@ -19,6 +19,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's "deploy ready" state, and the one-click deploy behind it. See
@@ -316,7 +317,7 @@ func (p *Proxy) deployReadyChanged() {
 	if err != nil {
 		return
 	}
-	p.feeds.broadcast(Event{Kind: deployReadyEvent, Data: payload})
+	p.feeds.broadcast(wire.Event{Kind: deployReadyEvent, Data: payload})
 }
 
 // serveDeployReady answers /_hub/deploy-ready and /_hub/deploy-ready/deploy.

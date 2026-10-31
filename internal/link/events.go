@@ -66,13 +66,6 @@ import (
 // recovery, and it is a better recovery than a replay buffer because it also
 // repairs anything missed while the hub itself was down.
 
-// Event is one thing a room said.
-type Event struct {
-	Room string
-	Kind string
-	Data []byte
-}
-
 // taggedFields is which payload fields carry a card id, per event kind.
 //
 // A TABLE, MATCHING `merged` IN fanout.go, and for the same reason: the two
@@ -135,7 +128,7 @@ type sub struct {
 	// tagged atrium:everywhere on the others (`?everywhere=1`). False for every
 	// board that did not, which is what keeps their stream as it always was.
 	everywhere bool
-	ch         chan Event
+	ch         chan wire.Event
 	// closed guards against a double close when a slow client is dropped at
 	// the same moment it disconnects.
 	once sync.Once
@@ -173,7 +166,7 @@ func (f *feeds) add(room string) *sub { return f.addWith(room, false) }
 func (f *feeds) addWith(room string, everywhere bool) *sub {
 	// Deep enough for a burst of activity events, which arrive one per tool
 	// call across every session on a machine.
-	s := &sub{room: room, everywhere: everywhere, ch: make(chan Event, 128)}
+	s := &sub{room: room, everywhere: everywhere, ch: make(chan wire.Event, 128)}
 	f.mu.Lock()
 	f.subs[s] = struct{}{}
 	// NOBODY WATCHING MEANS NOTHING STREAMING. The upstreams exist to serve
@@ -306,7 +299,7 @@ func (f *feeds) sayRooms(last *string) {
 		return
 	}
 	*last = fp
-	f.broadcast(Event{Kind: "rooms", Data: payload})
+	f.broadcast(wire.Event{Kind: "rooms", Data: payload})
 }
 
 // wanted reports whether anybody is listening for a room. One subscriber
@@ -349,7 +342,7 @@ func (f *feeds) everywhereChanged() {
 			continue
 		}
 		select {
-		case s.ch <- Event{Kind: "everywhere", Data: []byte("{}")}:
+		case s.ch <- wire.Event{Kind: "everywhere", Data: []byte("{}")}:
 		default:
 			delete(f.subs, s)
 			s.shut()
@@ -364,7 +357,7 @@ var everywhereKinds = map[string]string{
 }
 
 // cardOf is the id an event names, for the kinds a foreign card sends.
-func cardOf(e Event) string {
+func cardOf(e wire.Event) string {
 	field, ok := everywhereKinds[e.Kind]
 	if !ok {
 		return ""
@@ -466,7 +459,7 @@ func (f *feeds) read(ctx context.Context, room string) {
 			// A blank line ends an event. A comment-only keepalive produces
 			// none, which is what makes `: ping` free.
 			if data != nil {
-				f.emit(Event{Room: room, Kind: kind, Data: data})
+				f.emit(wire.Event{Room: room, Kind: kind, Data: data})
 				// AND, FOR A FEW KINDS, AN AUDIT LINE. A room winding down, a
 				// permission raised or answered, a session starting, finishing or
 				// exiting: these are operational, so the hub records them beside
@@ -520,13 +513,13 @@ func readLine(br *bufio.Reader, max int) ([]byte, error) {
 }
 
 // emit hands an event to everybody who asked for that room.
-func (f *feeds) emit(e Event) {
+func (f *feeds) emit(e wire.Event) {
 	// THE FOREIGN CARD, WHEN A BOARD ASKED FOR ONE. Built once, and only for an
 	// event of one of the four kinds from a room that holds an indexed card.
-	var foreign *Event
+	var foreign *wire.Event
 	if e.Room != "" && f.index().holds(e.Room) {
 		if id := cardOf(e); id != "" && f.index().has(e.Room, id) {
-			foreign = &Event{Room: e.Room, Kind: e.Kind, Data: tagEvent(e)}
+			foreign = &wire.Event{Room: e.Room, Kind: e.Kind, Data: tagEvent(e)}
 		}
 	}
 	f.mu.Lock()
@@ -585,7 +578,7 @@ func (f *feeds) emit(e Event) {
 // at `serveEvents`. If a hub ever serves a guest listener, the filter goes HERE,
 // skipping those subscribers for `rooms` and `room-stats`, before that listener
 // exists rather than after.
-func (f *feeds) broadcast(e Event) {
+func (f *feeds) broadcast(e wire.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for s := range f.subs {
@@ -683,7 +676,7 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 //
 // The mirror of what `aggregate` does to a list row, and it has to stay the
 // mirror. See `taggedFields`.
-func tagEvent(e Event) []byte {
+func tagEvent(e wire.Event) []byte {
 	if e.Room == "" || len(e.Data) == 0 {
 		return e.Data
 	}

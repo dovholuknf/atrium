@@ -98,23 +98,17 @@ var (
 )
 
 type (
-	CardState       = conn.CardState
-	PRClaimAnswer   = conn.PRClaimAnswer
-	Hub             = conn.Hub
-	Attached        = conn.Attached
-	RoomSetup       = conn.RoomSetup
-	SetupIssue      = conn.SetupIssue
-	RelayRequest    = conn.RelayRequest
-	RelayLaunchSpec = conn.RelayLaunchSpec
-	RelayAnswer     = conn.RelayAnswer
-	RelayTask       = conn.RelayTask
-	RelayEvent      = conn.RelayEvent
-	RelayPeer       = conn.RelayPeer
-	Room            = conn.Room
-	StreamError     = conn.StreamError
-	TransportAsk    = conn.TransportAsk
-	TransportState  = conn.TransportState
-	errStatus       = conn.ErrStatus
+	CardState      = conn.CardState
+	PRClaimAnswer  = conn.PRClaimAnswer
+	Hub            = conn.Hub
+	RelayAnswer    = conn.RelayAnswer
+	RelayTask      = conn.RelayTask
+	RelayEvent     = conn.RelayEvent
+	RelayPeer      = conn.RelayPeer
+	Room           = conn.Room
+	StreamError    = conn.StreamError
+	TransportAsk   = conn.TransportAsk
+	TransportState = conn.TransportState
 )
 
 const (
@@ -141,7 +135,6 @@ var (
 	ErrRelayDown = conn.ErrRelayDown
 	CleanClaim   = conn.CleanClaim
 	newHub       = conn.NewHub
-	keyOf        = conn.KeyOf
 	headerHas    = conn.HeaderHas
 	pathClip     = conn.PathClip
 	newBuffered  = conn.Buffered

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // streamer is a room that answers `/v1/events` and says what it is told to.
@@ -51,7 +52,7 @@ func streamer(say <-chan string) http.Handler {
 func sse(kind, data string) string { return "event: " + kind + "\ndata: " + data + "\n\n" }
 
 // listen opens a stream and reads events off it.
-func listen(t *testing.T, url string) (<-chan Event, func()) {
+func listen(t *testing.T, url string) (<-chan wire.Event, func()) {
 	t.Helper()
 	// The wait for the stream's headers is bounded: with none the request would
 	// block until the whole run timed out. The bound is off once they arrive.
@@ -75,8 +76,8 @@ func listen(t *testing.T, url string) (<-chan Event, func()) {
 }
 
 // readSSE reads events off a stream already open.
-func readSSE(res *http.Response) <-chan Event {
-	out := make(chan Event, 16)
+func readSSE(res *http.Response) <-chan wire.Event {
+	out := make(chan wire.Event, 16)
 	go func() {
 		defer close(out)
 		br := bufio.NewReader(res.Body)
@@ -90,7 +91,7 @@ func readSSE(res *http.Response) <-chan Event {
 			switch {
 			case line == "":
 				if data != "" {
-					out <- Event{Kind: kind, Data: []byte(data)}
+					out <- wire.Event{Kind: kind, Data: []byte(data)}
 				}
 				kind, data = "", ""
 			case strings.HasPrefix(line, "event: "):
@@ -103,7 +104,7 @@ func readSSE(res *http.Response) <-chan Event {
 	return out
 }
 
-func waitEvent(t *testing.T, ch <-chan Event, kind string) Event {
+func waitEvent(t *testing.T, ch <-chan wire.Event, kind string) wire.Event {
 	t.Helper()
 	// An upper bound, not a wait: it returns the moment the event arrives. Some callers start a PowerShell script first,
 	// and on a loaded runner that alone takes longer than 5s.
@@ -124,7 +125,7 @@ func waitEvent(t *testing.T, ch <-chan Event, kind string) Event {
 }
 
 // sayUntil says again every poll until got takes an event off the stream, since a pump takes a moment to attach.
-func sayUntil(t *testing.T, ch <-chan Event, limit time.Duration, what string, say func(), got func(Event) bool) {
+func sayUntil(t *testing.T, ch <-chan wire.Event, limit time.Duration, what string, say func(), got func(wire.Event) bool) {
 	t.Helper()
 	tick := time.NewTicker(testwait.HTTP)
 	defer tick.Stop()
@@ -146,10 +147,10 @@ func sayUntil(t *testing.T, ch <-chan Event, limit time.Duration, what string, s
 	}
 }
 
-func waitEventSaying(t *testing.T, ch <-chan Event, kind string, say func()) Event {
+func waitEventSaying(t *testing.T, ch <-chan wire.Event, kind string, say func()) wire.Event {
 	t.Helper()
-	var out Event
-	sayUntil(t, ch, 30*time.Second, fmt.Sprintf("no %q event arrived", kind), say, func(e Event) bool {
+	var out wire.Event
+	sayUntil(t, ch, 30*time.Second, fmt.Sprintf("no %q event arrived", kind), say, func(e wire.Event) bool {
 		out = e
 		return e.Kind == kind
 	})
@@ -187,7 +188,7 @@ func TestTheHubStreamCarriesEveryRoomTagged(t *testing.T) {
 	sayUntil(t, ch, 8*time.Second, "both rooms to be seen", func() {
 		offer(a, sse("task", `{"id":"card1","title":"from alpha"}`))
 		offer(b, sse("task", `{"id":"card2","title":"from beta"}`))
-	}, func(e Event) bool {
+	}, func(e wire.Event) bool {
 		if e.Kind != "task" {
 			return false
 		}
@@ -387,7 +388,7 @@ func TestTaggingFollowsMembershipOnAnOpenStream(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("beta") })
 
 	sayUntil(t, ch, 8*time.Second, "the stream never started tagging after a second room attached", sayFirst,
-		func(e Event) bool { return e.Kind == "task" && fields(t, e.Data)["id"] == "alpha~card1" })
+		func(e wire.Event) bool { return e.Kind == "task" && fields(t, e.Data)["id"] == "alpha~card1" })
 }
 
 // A ROOM WHOSE LISTENER STOPS IS GONE, not frozen in the list.
@@ -430,13 +431,13 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 	// Registered directly rather than through `add`, which would start the
 	// reconciler and reach for an upstream this test does not stand up.
 	f := newFeeds(nil)
-	merged := &sub{room: "", ch: make(chan Event, 4)}
-	scoped := &sub{room: "sg4", ch: make(chan Event, 4)}
+	merged := &sub{room: "", ch: make(chan wire.Event, 4)}
+	scoped := &sub{room: "sg4", ch: make(chan wire.Event, 4)}
 	f.subs[merged] = struct{}{}
 	f.subs[scoped] = struct{}{}
 
-	f.emit(Event{Room: "sg4", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
-	f.emit(Event{Room: "sg4", Kind: "task", Data: []byte(`{"id":"c1"}`)})
+	f.emit(wire.Event{Room: "sg4", Kind: "going-down", Data: []byte(`{"why":"shutdown","at":1}`)})
+	f.emit(wire.Event{Room: "sg4", Kind: "task", Data: []byte(`{"id":"c1"}`)})
 
 	// The scoped board hears both, in order.
 	if e := <-scoped.ch; e.Kind != "going-down" {
@@ -467,8 +468,8 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 // lists do, so two rooms' cards with one id are two cards.
 func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
 	data := []byte(`{"task_id":"c1","output":5}`)
-	a := fields(t, tagEvent(Event{Room: "sg4", Kind: "usage", Data: data}))
-	b := fields(t, tagEvent(Event{Room: "sg5", Kind: "usage", Data: data}))
+	a := fields(t, tagEvent(wire.Event{Room: "sg4", Kind: "usage", Data: data}))
+	b := fields(t, tagEvent(wire.Event{Room: "sg5", Kind: "usage", Data: data}))
 	if a["task_id"] != "sg4~c1" || a["room"] != "sg4" || b["task_id"] != "sg5~c1" || b["room"] != "sg5" {
 		t.Fatalf("usage events came out %v and %v", a, b)
 	}
@@ -477,7 +478,7 @@ func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
 // A room's own tagging table has to agree with the list one, because the board
 // builds a url from whichever it saw last.
 func TestEventTaggingMatchesTheListTagging(t *testing.T) {
-	e := Event{Room: "sg4", Kind: "permission", Data: []byte(`{"id":"p1","task_id":"c1"}`)}
+	e := wire.Event{Room: "sg4", Kind: "permission", Data: []byte(`{"id":"p1","task_id":"c1"}`)}
 	obj := fields(t, tagEvent(e))
 	if obj["id"] != "sg4~p1" || obj["task_id"] != "sg4~c1" {
 		t.Fatalf("a permission came out %v", obj)
@@ -487,7 +488,7 @@ func TestEventTaggingMatchesTheListTagging(t *testing.T) {
 	}
 
 	// An event with no ids still says where it came from.
-	plain := fields(t, tagEvent(Event{Room: "sg4", Kind: "settings", Data: []byte(`{"auto":true}`)}))
+	plain := fields(t, tagEvent(wire.Event{Room: "sg4", Kind: "settings", Data: []byte(`{"auto":true}`)}))
 	if plain["room"] != "sg4" || plain["auto"] != true {
 		t.Fatalf("a payload with no ids was mangled: %v", plain)
 	}
@@ -496,7 +497,7 @@ func TestEventTaggingMatchesTheListTagging(t *testing.T) {
 // A `null` payload decodes into a nil map without an error. Writing the room
 // onto it panicked the stream, eleven times on the live hub.
 func TestANullEventPassesThroughUntagged(t *testing.T) {
-	e := Event{Room: "sg4", Kind: "settings", Data: []byte(`null`)}
+	e := wire.Event{Room: "sg4", Kind: "settings", Data: []byte(`null`)}
 	if got := string(tagEvent(e)); got != "null" {
 		t.Fatalf("a null payload came out %q", got)
 	}

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // ── alias ───────────────────────────────────────────────────────────────────────
@@ -54,10 +56,10 @@ func (c *controlMCP) aliasHandler(ctx context.Context, req *mcp.CallToolRequest,
 	*mcp.CallToolResult, aliasOutput, error) {
 
 	out := aliasOutput{}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	who := strings.TrimSpace(in.Card)
 	if who == "" {
-		if who = agentOf(req); who == "" {
+		if who = ctl.AgentOf(req); who == "" {
 			return nil, out, fmt.Errorf("say which card. this session is not on the board, " +
 				"so it has no card of its own to default to")
 		}

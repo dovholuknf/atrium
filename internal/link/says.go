@@ -81,7 +81,7 @@ func (p *Proxy) says(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if room, bare := wire.SplitTag(v); room != "" {
-			if only != "" && keyOf(only) != keyOf(room) {
+			if only != "" && wire.KeyOf(only) != wire.KeyOf(room) {
 				only = "\x00" // two different rooms named: nothing can match
 			} else {
 				only = room
@@ -99,7 +99,7 @@ func (p *Proxy) says(w http.ResponseWriter, r *http.Request) {
 	}
 	var asked []string
 	for _, room := range rooms {
-		if only != "" && keyOf(room.Name) != keyOf(only) {
+		if only != "" && wire.KeyOf(room.Name) != wire.KeyOf(only) {
 			continue
 		}
 		if pos[room.Name] == saysDone {

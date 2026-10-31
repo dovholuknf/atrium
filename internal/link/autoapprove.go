@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub-side enforcement of board-wide "approve everything".
@@ -255,7 +257,7 @@ func (a *autoApprover) listen(s *sub) {
 
 // onPermission is one event. A request nobody has answered is approved. The
 // same event says so again when it is decided, and that one is left alone.
-func (a *autoApprover) onPermission(e Event) {
+func (a *autoApprover) onPermission(e wire.Event) {
 	var p struct {
 		ID       string `json:"id"`
 		Decision string `json:"decision"`

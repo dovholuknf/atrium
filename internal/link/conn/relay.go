@@ -60,65 +60,6 @@ const (
 	RelayHub = "hub"
 )
 
-// RelayRequest is what a room asks its hub to carry.
-type RelayRequest struct {
-	Op string `json:"op"`
-	// From is the sender's handle ON THE ASKING ROOM. The hub adds the room from
-	// the connection, never from here, so a room cannot speak for another.
-	From string `json:"from,omitempty"`
-	// Room and To are the target: a room other than the asking one, and a
-	// handle, alias or card id on it.
-	Room string `json:"room,omitempty"`
-	To   string `json:"to,omitempty"`
-	Text string `json:"text,omitempty"`
-	When string `json:"when,omitempty"`
-	// Kind is `fyi` or empty, for `say`: a launcher's fyi makes no report owed on
-	// the target room. An older hub ignores it and the say goes as `needs`.
-	Kind string `json:"kind,omitempty"`
-	// Wake resumes a parked target before the message is delivered, for `say`. An older hub
-	// ignores it, and the target answers `parked` as it always did.
-	Wake bool `json:"wake,omitempty"`
-	// All includes cards with no session, for `peers`.
-	All bool `json:"all,omitempty"`
-	// Everywhere asks `peers` for the cards tagged atrium:everywhere on other
-	// rooms and nothing else. An older hub ignores it.
-	Everywhere bool `json:"everywhere,omitempty"`
-	// Events includes the card's recent events, for `card`.
-	Events bool `json:"events,omitempty"`
-	// Launch is the session to start, for `launch`. An older hub ignores it and
-	// refuses the op by name.
-	Launch *RelayLaunchSpec `json:"launch,omitempty"`
-	// Force, for `exit`, is the asker overriding the guard on a card that is
-	// neither theirs nor their own. The room that owns the card records it.
-	Force bool `json:"force,omitempty"`
-	// Method, Path and Body are the hub call, for `hub`. Only /_hub/backlog and /_hub/reports are served.
-	Method string          `json:"method,omitempty"`
-	Path   string          `json:"path,omitempty"`
-	Body   json.RawMessage `json:"body,omitempty"`
-}
-
-// RelayLaunchSpec is one launch for another room, field for field what the hub's own
-// atrium_launch takes beside `room`. Room is the target, From (on the request) the
-// launcher on the asking room.
-type RelayLaunchSpec struct {
-	Cwd        string            `json:"cwd"`
-	Title      string            `json:"title,omitempty"`
-	Why        string            `json:"why,omitempty"`
-	Prompt     string            `json:"prompt,omitempty"`
-	Brief      string            `json:"brief,omitempty"`
-	Runner     string            `json:"runner,omitempty"`
-	Tags       []string          `json:"tags,omitempty"`
-	Model      string            `json:"model,omitempty"`
-	Effort     string            `json:"effort,omitempty"`
-	Args       []string          `json:"args,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	LeanAgents []string          `json:"lean_agents,omitempty"`
-	LeanSkills []string          `json:"lean_skills,omitempty"`
-	Superlean  bool              `json:"superlean,omitempty"`
-	Lifetime   string            `json:"lifetime,omitempty"`
-	Item       bool              `json:"item,omitempty"`
-}
-
 // RelayAnswer is the hub's answer.
 type RelayAnswer struct {
 	OK bool `json:"ok"`
@@ -206,7 +147,7 @@ var ErrRelayUnconfirmed = errors.New("the hub took the message and did not say w
 //
 // An error is ErrRelayOld, or wraps ErrRelayDown or ErrRelayUnconfirmed. A refusal from the target is
 // not an error: it is an answer with OK false, which the caller reads.
-func (r *Room) Relay(ctx context.Context, req RelayRequest) (RelayAnswer, error) {
+func (r *Room) Relay(ctx context.Context, req wire.RelayRequest) (RelayAnswer, error) {
 	var ans RelayAnswer
 	r.mu.Lock()
 	up, session := r.up, r.session
@@ -268,7 +209,7 @@ func (h *Hub) serveRelay(ctx context.Context, name string, conn net.Conn, br *bu
 	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
 		return
 	}
-	var req RelayRequest
+	var req wire.RelayRequest
 	if err := readJSONLimit(br, &req, announceMax); err != nil {
 		log.Printf("[hub] could not read %q's relay: %v", name, err)
 		return

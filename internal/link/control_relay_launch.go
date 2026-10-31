@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -26,11 +27,11 @@ import (
 // known and not attached is `unreachable` (reachable), found out before anything is posted.
 
 // launchAcross starts the session `req.Launch` describes on `req.Room`, for the room `from`.
-func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayRequest) RelayAnswer {
+func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer {
 	target := strings.TrimSpace(req.Room)
 	spec := req.Launch
 	switch {
-	case target == "" || equalFold(target, from):
+	case target == "" || wire.EqualFold(target, from):
 		return RelayAnswer{Code: http.StatusBadRequest,
 			Error: "the relay launches on another room. this one names the room it came from"}
 	case spec == nil || strings.TrimSpace(spec.Cwd) == "":
@@ -81,15 +82,15 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 // UNCONFIRMED, never unreachable: the post may have started the session before the answer
 // was lost, and a second launch would start a second one.
 func launchRefusal(err error) RelayAnswer {
-	var ref *refusedError
+	var ref *ctl.RefusedError
 	if errors.As(err, &ref) {
-		return RelayAnswer{Code: http.StatusConflict, Error: ref.msg}
+		return RelayAnswer{Code: http.StatusConflict, Error: ref.Msg}
 	}
-	var be *boardError
+	var be *ctl.BoardError
 	if errors.As(err, &be) {
-		switch be.code {
+		switch be.Code {
 		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			return RelayAnswer{Unconfirmed: true, Code: be.code, Error: be.msg}
+			return RelayAnswer{Unconfirmed: true, Code: be.Code, Error: be.Msg}
 		}
 	}
 	return refusal(err)
