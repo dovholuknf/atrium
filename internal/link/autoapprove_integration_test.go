@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -110,7 +111,7 @@ func TestHubApprovesAPendingRequestWhenBoardWideAutoIsOn(t *testing.T) {
 	if by != "global-auto" {
 		t.Errorf("the decide body carried by=%q, wanted global-auto", by)
 	}
-	if reason != hubAutoReason {
+	if reason != notify.HubAutoReason {
 		t.Errorf("the request was approved with reason %q, wanted the board-wide one", reason)
 	}
 }

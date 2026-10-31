@@ -1,4 +1,4 @@
-package link
+package notify
 
 import (
 	"bytes"
@@ -23,7 +23,6 @@ func TestMain(m *testing.M) {
 	// helper check, which is this binary run as a child with its own variables.
 	dir := testguard.Scrub()
 	code := m.Run()
-	removeSnapshots()
 	if dir != "" {
 		_ = os.RemoveAll(dir)
 	}

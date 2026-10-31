@@ -1,6 +1,6 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"crypto/aes"
@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"math/big"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -179,7 +180,7 @@ func verifyVAPID(jwt, pub, aud, sub string, at time.Time) error {
 	}
 	claims := string(unbStr(segs[1]))
 	for _, want := range []string{`"aud":"` + aud + `"`, `"sub":"` + sub + `"`,
-		`"exp":` + itoaN(int(at.Add(12*time.Hour).Unix()))} {
+		`"exp":` + strconv.Itoa(int(at.Add(12*time.Hour).Unix()))} {
 		if !strings.Contains(claims, want) {
 			return vapidErr("claims lack " + want + ": " + claims)
 		}

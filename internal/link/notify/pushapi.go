@@ -1,4 +1,4 @@
-package link
+package notify
 
 import (
 	"context"
@@ -37,14 +37,14 @@ import (
 // the list says the push service's host and nothing more of the endpoint.
 
 // SetPush wires Web Push. Optional: a hub without it answers the push routes 404.
-func (p *Proxy) SetPush(x *Push) {
+func (p *Service) SetPush(x *Push) {
 	x.announce = p.pushNewDevice
 	p.mu.Lock()
 	p.push = x
 	p.mu.Unlock()
 }
 
-func (p *Proxy) pusher() *Push {
+func (p *Service) Pusher() *Push {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.push
@@ -52,18 +52,18 @@ func (p *Proxy) pusher() *Push {
 
 // pushNewDevice puts a new device in front of the operator: the audit feed, and a growler on the desktop board, so a
 // stranger who has the share's password and subscribes is seen.
-func (p *Proxy) pushNewDevice(id, label, origin string) {
+func (p *Service) pushNewDevice(id, label, origin string) {
 	line := "a new device subscribed to alerts: " + label + ", from " + origin
 	p.RecordAudit("", "push-subscribed", line)
-	g := p.growler()
+	g := p.Growler()
 	if g == nil {
 		return
 	}
-	rs, ok := g.st.(growlRaiser)
+	rs, ok := g.Raiser()
 	if !ok {
 		return
 	}
-	rooms := p.hub.Rooms()
+	rooms := p.Rooms()
 	if len(rooms) == 0 {
 		return
 	}
@@ -99,8 +99,8 @@ func pushViewOf(s hubstore.PushSub) pushSubView {
 		Failures: s.Failures, DisabledReason: s.DisabledReason}
 }
 
-func (p *Proxy) servePush(w http.ResponseWriter, r *http.Request, rest string) {
-	x := p.pusher()
+func (p *Service) ServePush(w http.ResponseWriter, r *http.Request, rest string) {
+	x := p.Pusher()
 	if x == nil {
 		http.NotFound(w, r)
 		return
@@ -201,10 +201,10 @@ func (p *Proxy) servePush(w http.ResponseWriter, r *http.Request, rest string) {
 		}
 		x.dropped(id)
 		p.RecordAudit("", "push-removed", "a device was removed from alerts")
-		if g := p.growler(); g != nil {
-			if rs, ok := g.st.(growlRaiser); ok {
+		if g := p.Growler(); g != nil {
+			if rs, ok := g.Raiser(); ok {
 				if changed, _ := rs.End("push|" + id); changed {
-					g.publish(nil)
+					g.Publish()
 				}
 			}
 		}
@@ -214,7 +214,7 @@ func (p *Proxy) servePush(w http.ResponseWriter, r *http.Request, rest string) {
 	}
 }
 
-func (p *Proxy) pushStatus(w http.ResponseWriter, x *Push) {
+func (p *Service) pushStatus(w http.ResponseWriter, x *Push) {
 	subs, err := x.st.PushSubs()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -232,7 +232,7 @@ func (p *Proxy) pushStatus(w http.ResponseWriter, x *Push) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (p *Proxy) pushConfigure(w http.ResponseWriter, r *http.Request, x *Push, fail func(int, string)) {
+func (p *Service) pushConfigure(w http.ResponseWriter, r *http.Request, x *Push, fail func(int, string)) {
 	var body struct {
 		Enabled *bool   `json:"enabled"`
 		Contact *string `json:"contact"`
@@ -266,7 +266,7 @@ func (p *Proxy) pushConfigure(w http.ResponseWriter, r *http.Request, x *Push, f
 	p.pushStatus(w, x)
 }
 
-func (p *Proxy) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, fail func(int, string)) {
+func (p *Service) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, fail func(int, string)) {
 	if !x.On() {
 		fail(http.StatusConflict, "push is not turned on at this hub")
 		return
@@ -298,7 +298,7 @@ func (p *Proxy) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, f
 	// phone's switch.
 	// A repeat of a known endpoint is the phone renaming itself, which must not buzz it.
 	if added {
-		p.goWork(func() {
+		p.GoWork(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*pushSendTimeout)
 			defer cancel()
 			x.Test(ctx, id)
@@ -308,7 +308,7 @@ func (p *Proxy) pushSubscribe(w http.ResponseWriter, r *http.Request, x *Push, f
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
 
-func (p *Proxy) pushUnsubscribe(w http.ResponseWriter, r *http.Request, x *Push, fail func(int, string)) {
+func (p *Service) pushUnsubscribe(w http.ResponseWriter, r *http.Request, x *Push, fail func(int, string)) {
 	var body struct {
 		Endpoint string `json:"endpoint"`
 	}

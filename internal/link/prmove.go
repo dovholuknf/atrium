@@ -93,7 +93,7 @@ func (p *Proxy) MovePRClaimWith(ctx context.Context, key, to, walker string) (PR
 	out.PRClaim = c
 	if old.Warned {
 		if g := p.growler(); g != nil {
-			g.endAbout(prWaitID(key, old.WarnN))
+			g.EndAbout(prWaitID(key, old.WarnN))
 		}
 	}
 	p.RecordAudit(to, "pr-claim-moved", key+" from "+old.Room)

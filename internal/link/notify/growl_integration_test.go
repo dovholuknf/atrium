@@ -1,11 +1,12 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -120,15 +121,15 @@ func (g testGrowlStore) Rooms() ([]string, error) {
 	return out, err
 }
 
-func (g testGrowlStore) Cards(room string) ([]CardState, error) {
+func (g testGrowlStore) Cards(room string) ([]conn.CardState, error) {
 	id, err := g.id(room)
 	if err != nil {
 		return nil, err
 	}
 	cards, err := g.s.Cards(id)
-	var out []CardState
+	var out []conn.CardState
 	for _, c := range cards {
-		out = append(out, CardState{ID: c.ID, Status: c.Status, Payload: json.RawMessage(c.Payload)})
+		out = append(out, conn.CardState{ID: c.ID, Status: c.Status, Payload: json.RawMessage(c.Payload)})
 	}
 	return out, err
 }
@@ -212,7 +213,7 @@ func newGrowlRig(t *testing.T) *growlRig {
 }
 
 // announce is what the hub does: the cache first, then the growler.
-func (r *growlRig) announce(t *testing.T, cards ...CardState) {
+func (r *growlRig) announce(t *testing.T, cards ...conn.CardState) {
 	t.Helper()
 	out := make([]hubstore.Card, 0, len(cards))
 	for _, c := range cards {
@@ -249,17 +250,17 @@ func (r *growlRig) live(t *testing.T) []GrowlRow {
 	return rows
 }
 
-func growlCard(id, body string) CardState {
-	return CardState{ID: id, Payload: json.RawMessage(body)}
+func growlCard(id, body string) conn.CardState {
+	return conn.CardState{ID: id, Payload: json.RawMessage(body)}
 }
 
-func growlPermCard(id string, since time.Time, tags ...string) CardState {
+func growlPermCard(id string, since time.Time, tags ...string) conn.CardState {
 	b, _ := json.Marshal(map[string]any{"title": "worker " + id, "status": "needs-permission",
 		"waiting_since": since.Format(time.RFC3339Nano), "tags": tags, "seen": map[string]any{}})
 	return growlCard(id, string(b))
 }
 
-func growlQuestionCard(id string, tags ...string) CardState {
+func growlQuestionCard(id string, tags ...string) conn.CardState {
 	b, _ := json.Marshal(map[string]any{"title": "worker " + id, "status": "needs-input", "tags": tags,
 		"seen": map[string]any{"questions_at": "2026-09-30T10:00:00Z", "open_questions": []string{"Which?\nmore"},
 			"turn_ended_at": "2026-09-30T10:00:00Z"}})
@@ -271,7 +272,7 @@ func growlQuestionCard(id string, tags ...string) CardState {
 func TestGrowlDerivation(t *testing.T) {
 	rig := newGrowlRig(t)
 	now := rig.g.now()
-	rig.g.Announced("sparta", []CardState{
+	rig.g.Announced("sparta", []conn.CardState{
 		growlPermCard("young", now.Add(-time.Minute)),
 		growlPermCard("old", now.Add(-3*time.Minute)),
 		growlPermCard("agent", now.Add(-3*time.Minute), "origin:agent"),
@@ -418,14 +419,14 @@ func TestGrowlHaltFromHealth(t *testing.T) {
 // the row, an unknown one 404, a bad one 400, and every change said as an event.
 func TestGrowlEndpoints(t *testing.T) {
 	rig := newGrowlRig(t)
-	p := &Proxy{growl: rig.g}
+	p := &Service{growl: rig.g}
 	rig.announce(t, growlQuestionCard("q"))
 	id := rig.live(t)[0].ID
 
 	do := func(method, path, body string) (int, map[string]any) {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		w := httptest.NewRecorder()
-		p.serveGrowls(w, req, strings.TrimPrefix(req.URL.Path, "/_hub/"))
+		p.ServeGrowls(w, req, strings.TrimPrefix(req.URL.Path, "/_hub/"))
 		var m map[string]any
 		_ = json.Unmarshal(w.Body.Bytes(), &m)
 		return w.Code, m
@@ -475,7 +476,7 @@ func TestGrowlEndpoints(t *testing.T) {
 	}
 }
 
-func growlReportCard(id, report, since string, tags ...string) CardState {
+func growlReportCard(id, report, since string, tags ...string) conn.CardState {
 	b, _ := json.Marshal(map[string]any{"title": "worker " + id, "status": "needs-input", "tags": tags,
 		"waiting_since": since, "waiting_reason": report, "recap": "did a thing\n\nneeds: the prod token",
 		"seen": map[string]any{}})

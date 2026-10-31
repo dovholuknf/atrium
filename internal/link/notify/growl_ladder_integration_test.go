@@ -1,10 +1,11 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -226,13 +227,12 @@ func TestGrowlLadderSettingChangeTakesEffect(t *testing.T) {
 
 func TestGrowlLadderEndpoint(t *testing.T) {
 	rig := newGrowlRig(t)
-	p := &Proxy{growl: rig.g}
-	p.feeds = newFeeds(p)
+	p := &Service{growl: rig.g, Calls: Calls{RecordAudit: func(string, string, string) {}}}
 	do := func(method, body string) (int, map[string]any) {
 		req := httptest.NewRequest(method, "http://127.0.0.1/_hub/growl-ladder", strings.NewReader(body))
 		req.RemoteAddr = "127.0.0.1:50000"
 		w := httptest.NewRecorder()
-		p.serveGrowlLadder(w, req)
+		p.ServeGrowlLadder(w, req)
 		var m map[string]any
 		_ = json.Unmarshal(w.Body.Bytes(), &m)
 		return w.Code, m
@@ -261,7 +261,7 @@ func TestGrowlLadderEndpoint(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:50000"
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
 	w := httptest.NewRecorder()
-	p.serveGrowlLadder(w, req)
+	p.ServeGrowlLadder(w, req)
 	if w.Code != 403 || !rig.g.ladder()[ReasonQuestion] {
 		t.Fatalf("a PUT through a proxy answered %d", w.Code)
 	}
@@ -280,13 +280,13 @@ func TestGrowlEndedCardEndsItsGrowlers(t *testing.T) {
 	if _, err := rig.g.st.Act(snoozed, "snoozed", time.Now().Add(time.Hour), "board", ""); err != nil {
 		t.Fatal(err)
 	}
-	ended := func(id, status string) CardState {
+	ended := func(id, status string) conn.CardState {
 		c := growlQuestionCard(id)
 		var m map[string]any
 		_ = json.Unmarshal(c.Payload, &m)
 		m["status"] = status
 		b, _ := json.Marshal(m)
-		return CardState{ID: id, Status: status, Payload: b}
+		return conn.CardState{ID: id, Status: status, Payload: b}
 	}
 	// One card done, one dead, one still waiting.
 	rig.announce(t, ended("q", "done"), ended("s", "dead"), growlQuestionCard("x"))

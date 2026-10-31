@@ -27,6 +27,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/deploy"
 	"github.com/dovholuknf/atrium/internal/link/docs"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -116,23 +117,11 @@ type Proxy struct {
 	// approver enforces the hub-wide auto-approve flag on the permission relay.
 	// Nil until an inventory is wired, because the flag it reads lives in the
 	// hub's store. See autoapprove.go.
-	approver *autoApprover
+	approver *notify.AutoApprover
 
 	// restart is the gate a hub-only deploy asks before it restarts this hub.
 	// See restartgate.go.
 	restart *restartGate
-
-	// notify is the trigger and its sink. Nil until SetNotify wires it. See
-	// notify.go.
-	notify *Notifier
-
-	// push is Web Push, the notifier's second sink. Nil until SetPush wires it, and a hub without one answers
-	// /_hub/push 404. See push.go and pushapi.go.
-	push *Push
-
-	// growl is the persistent growlers. Nil until SetGrowler wires it, and a hub
-	// without one answers /_hub/growls 404. See growl.go.
-	growl *Growler
 
 	// ci is the hub's CI hook. Nil until SetCIHook wires it, and a hub without one answers /_hub/ci-hook 404.
 	ci *CIHook
@@ -166,6 +155,7 @@ type Proxy struct {
 	merges mergeQueue
 	// deploySvc is the deploy readiness, queue and owner. See deploy_forward.go.
 	deploySvc  *deploy.Service
+	notifyH    notifyHolder
 	deployOnce sync.Once
 	// docsSvc is the hub.s documents and file drop. See docs_forward.go.
 	docsSvc  *docs.Service
@@ -231,7 +221,7 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 	// See autoapprove.go.
 	p.feeds.connected = func(room string) {
 		if ap := p.autoApprover(); ap != nil {
-			ap.sweepRoomIfOn(context.Background(), room)
+			ap.SweepRoomIfOn(context.Background(), room)
 		}
 	}
 	p.restart = newRestartGate(func(state map[string]any) {
@@ -1359,14 +1349,14 @@ func (p *Proxy) SetInventory(s Inventory) {
 	p.mu.Lock()
 	p.stock = s
 	if p.approver == nil {
-		p.approver = newAutoApprover(p)
+		p.approver = notify.NewAutoApprover(p.notifyCalls())
 	}
 	ap := p.approver
 	p.mu.Unlock()
-	ap.start()
+	ap.Start()
 }
 
-func (p *Proxy) autoApprover() *autoApprover {
+func (p *Proxy) autoApprover() *notify.AutoApprover {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.approver

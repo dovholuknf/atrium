@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -597,9 +597,9 @@ func (p *Proxy) crAnnounce(c hubstore.ChangeRequest, by crActor, created bool) {
 	if g := p.growler(); g != nil {
 		switch {
 		case created && toMain:
-			g.askAbout(c)
+			askAbout(g, c)
 		case !created:
-			g.endAbout("cr|" + c.ID)
+			g.EndAbout("cr|" + c.ID)
 		}
 	}
 	// A REQUEST INTO main IS THE OPERATOR'S TO DECIDE. It is the growler that says so, and the owner is not told
@@ -701,52 +701,16 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 
 // ── the question growler ────────────────────────────────
 
-// growlRaiser is what a growl store that can hold a question about no card adds to GrowlStore. A store without it
-// raises none, and the event still goes out.
-type growlRaiser interface {
-	// Raise raises the row under its own id on a room, once. See hubstore.Store.GrowlRaise.
-	Raise(room string, g GrowlRow) (raised bool, err error)
-	// End ends the row with that id. See hubstore.Store.GrowlEnd.
-	End(id string) (changed bool, err error)
-}
-
 // askAbout raises the question that a request into main is. Its room is the one the work is on, or whose card owns
 // it, or whose card made the request: the growler needs a room to hang on, and a request none of whose three is a
 // room is the operator's own and needs no question.
-func (g *Growler) askAbout(c hubstore.ChangeRequest) {
-	rs, ok := g.st.(growlRaiser)
-	if !ok {
-		return
-	}
+func askAbout(g *Growler, c hubstore.ChangeRequest) {
 	room := firstOf(c.Source.Room, c.Owner.Room, c.CreatedBy.Room)
 	if room == "" {
 		return
 	}
-	raised, err := rs.Raise(room, GrowlRow{ID: "cr|" + c.ID, Reason: ReasonQuestion, Subject: c.ID,
-		Title: "Change request " + c.ID + " into " + c.Target.Branch, Body: clip(c.Title)})
-	if err != nil {
-		log.Printf("[hub] growlers could not raise change request %s: %v", c.ID, err)
-		return
-	}
-	if raised {
-		g.publish(nil)
-	}
-}
-
-// endAbout ends the question when its request is over.
-func (g *Growler) endAbout(id string) {
-	rs, ok := g.st.(growlRaiser)
-	if !ok {
-		return
-	}
-	changed, err := rs.End(id)
-	if err != nil {
-		log.Printf("[hub] growlers could not end %s: %v", id, err)
-		return
-	}
-	if changed {
-		g.publish(nil)
-	}
+	g.Ask(room, GrowlRow{ID: "cr|" + c.ID, Reason: ReasonQuestion, Subject: c.ID,
+		Title: "Change request " + c.ID + " into " + c.Target.Branch, Body: notify.Clip(c.Title)})
 }
 
 func firstOf(s ...string) string {

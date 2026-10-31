@@ -39,8 +39,8 @@ func (p *Proxy) hubRoutes() *hubHandlers {
 		p.handlers = hubHandlers{
 			Files:         p.docsService().ServeFiles,
 			Docs:          p.docsService().ServeDocs,
-			Push:          p.servePush,
-			Growls:        p.serveGrowls,
+			Push:          p.notifyService().ServePush,
+			Growls:        p.notifyService().ServeGrowls,
 			CIHook:        p.serveCIHook,
 			ForgeAdmin:    p.serveForgeAdmin,
 			PRClaims:      p.servePRClaims,
@@ -50,7 +50,7 @@ func (p *Proxy) hubRoutes() *hubHandlers {
 			Merge:         p.serveMerge,
 			RoomSpecBoard: p.serveRoomSpecBoard,
 			Git:           p.serveGit,
-			Notify:        p.serveNotify,
+			Notify:        p.notifyService().ServeNotify,
 			DeployReady:   p.deployService().ServeDeployReady,
 			Deps:          p.serveDeps,
 			Work:          p.serveWork,
@@ -60,7 +60,7 @@ func (p *Proxy) hubRoutes() *hubHandlers {
 			DeployOwner:   p.deployService().ServeDeployOwner,
 			DeployQueue:   p.deployService().ServeDeployQueue,
 			SSHKeysBoard:  p.serveSSHKeysBoard,
-			GrowlLadder:   p.serveGrowlLadder,
+			GrowlLadder:   p.notifyService().ServeGrowlLadder,
 		}
 	})
 	return &p.handlers

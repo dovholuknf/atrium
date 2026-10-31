@@ -786,7 +786,7 @@ func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inven
 	// empties the queue". Told either way: turning it OFF is what lets the
 	// approver stop watching every room.
 	if ap := p.autoApprover(); ap != nil {
-		ap.nudge()
+		ap.Nudge()
 	}
 	writeJSONBody(w, http.StatusOK, p.boardAutoView(stock))
 	return true

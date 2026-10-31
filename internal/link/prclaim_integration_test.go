@@ -468,7 +468,6 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 	fg := &fakeGrowls{}
 	g := NewGrowler(fg)
 	x.proxy.SetGrowler(g)
-	g.st = fg
 	x.rooms["beta"].stop()
 	waitFor(t, 5*time.Second, func() bool { return !x.hub.Has("beta") })
 	x.proxy.prWarnSweep(g)

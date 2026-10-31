@@ -1,12 +1,13 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -449,7 +450,7 @@ func TestPushAndCommandCountFailuresApart(t *testing.T) {
 // does notify. The command is off throughout.
 func TestPushArmsTheTriggerWithoutTheCommand(t *testing.T) {
 	st := newFakeStore()
-	st.cache["r"] = []CardState{permCard("old", "T1")}
+	st.cache["r"] = []conn.CardState{permCard("old", "T1")}
 	n := NewNotifier(st)
 	pushed := &recSink{}
 	on := false
@@ -457,7 +458,7 @@ func TestPushArmsTheTriggerWithoutTheCommand(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	n.Start(ctx)
-	n.Announced("r", []CardState{permCard("old", "T1")})
+	n.Announced("r", []conn.CardState{permCard("old", "T1")})
 	if st.records != 0 {
 		t.Fatal("the trigger ran while nothing was listening")
 	}
@@ -465,7 +466,7 @@ func TestPushArmsTheTriggerWithoutTheCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	on = true
-	n.Announced("r", []CardState{permCard("old", "T1"), permCard("new", "T2")})
+	n.Announced("r", []conn.CardState{permCard("old", "T1"), permCard("new", "T2")})
 	until(t, "the new card to be pushed", func() bool { return pushed.count() == 1 })
 	settle()
 	if pushed.count() != 1 || pushed.got[0].Card != "r~new" {

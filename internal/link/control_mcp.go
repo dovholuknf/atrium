@@ -1252,7 +1252,7 @@ func lastN[T any](s []T, n int) []T {
 // store.SetTags), so nothing in internal/daemon has to learn the marker. A tag
 // rather than a new field because tags already flow end to end, and one already
 // lowercase and free of commas and spaces survives NormalizeTags unchanged.
-const OriginTag = "origin:agent"
+const OriginTag = ctl.OriginTag
 
 // reportLine is appended to every agent launch's prompt. See launchHandler. How a worker ends: atrium_done or
 // atrium_blocked. The same text as daemon.LaunchEndingLine, which a test keeps equal.
@@ -1399,14 +1399,7 @@ const ResidentTag = "atrium:resident"
 func hasOriginTag(tags []string) bool { return hasTag(tags, OriginTag) }
 
 // hasTag reports whether tags holds want, trimmed and case-insensitively.
-func hasTag(tags []string, want string) bool {
-	for _, t := range tags {
-		if strings.EqualFold(strings.TrimSpace(t), want) {
-			return true
-		}
-	}
-	return false
-}
+func hasTag(tags []string, want string) bool { return ctl.HasTag(tags, want) }
 
 // DefaultLaunchCap is how many concurrent mid-turn workers atrium_launch allows
 // before it refuses. It is the HARD backstop under the advisory soft nudge in the

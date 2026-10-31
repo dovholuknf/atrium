@@ -1,4 +1,4 @@
-package link
+package notify
 
 import (
 	"context"
@@ -8,12 +8,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -176,7 +178,7 @@ type GrowlStore interface {
 	Setting(name string) (string, error)
 	SetSetting(name, value string) error
 	Rooms() ([]string, error)
-	Cards(room string) ([]CardState, error)
+	Cards(room string) ([]conn.CardState, error)
 }
 
 // roomHealth is one room's answer to /v1/health. ok is false for a room that
@@ -299,7 +301,7 @@ func (g *Growler) ladder() map[string]bool {
 
 // growlEnded is a card whose session is over. It wants no growler whatever it
 // asked or was blocked on, because nobody is left to answer.
-func growlEnded(c CardState) bool {
+func growlEnded(c conn.CardState) bool {
 	status := c.Status
 	if status == "" {
 		var p struct {
@@ -348,7 +350,7 @@ func (g *Growler) growlSince() time.Time {
 	return since
 }
 
-func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, present map[string]bool) {
+func (g *Growler) derive(room string, cards []conn.CardState) (want []GrowlRow, present map[string]bool) {
 	present = map[string]bool{}
 	after := g.permAfter()
 	at := g.now()
@@ -390,7 +392,7 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 				row.Title = fmt.Sprintf("%s asked %d questions", nc.Name, len(nc.Questions))
 			}
 			if len(nc.Questions) > 0 {
-				row.Body = clip(nc.Questions[0])
+				row.Body = Clip(nc.Questions[0])
 			}
 		case ReasonInput:
 			// A REPORT, which the notifier reads as input. The identity is the
@@ -404,7 +406,7 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 			if nc.Report == ReasonQuestion {
 				row.Title = nc.Name + " has a question"
 			}
-			row.Body = clip(nc.Ask)
+			row.Body = Clip(nc.Ask)
 		default:
 			continue
 		}
@@ -414,7 +416,7 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 }
 
 // clip is one line, bounded.
-func clip(s string) string {
+func Clip(s string) string {
 	s = firstLineOf(s)
 	if r := []rune(s); len(r) > growlBodyMax {
 		s = string(r[:growlBodyMax-1]) + "…"
@@ -424,14 +426,14 @@ func clip(s string) string {
 
 // Announced is called after a room's announcement is cached. One transaction,
 // and a fill of any new permission off this goroutine.
-func (g *Growler) Announced(room string, cards []CardState) {
+func (g *Growler) Announced(room string, cards []conn.CardState) {
 	if g.sync(room, cards) {
 		g.publish(nil)
 	}
 }
 
 // sync derives and stores one room. Reports whether the live set changed.
-func (g *Growler) sync(room string, cards []CardState) bool {
+func (g *Growler) sync(room string, cards []conn.CardState) bool {
 	want, present := g.derive(room, cards)
 	raised, changed, err := g.st.Sync(room, growlCardReasons, want, present)
 	if err != nil {
@@ -499,7 +501,7 @@ func (g *Growler) fill(ctx context.Context, room string) {
 			g.mu.Unlock()
 			continue
 		}
-		body := clip(p.Command)
+		body := Clip(p.Command)
 		if body == "" {
 			body = p.Tool
 		}
@@ -710,14 +712,14 @@ func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 		if h := got[i].health; h.ok {
 			record(room, "halt", h.halted, GrowlRow{
 				ID: room + "|halt|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: "halt",
-				Title: room + " has halted", Body: clip(h.cause),
+				Title: room + " has halted", Body: Clip(h.cause),
 			})
 		}
 		if a := got[i].alert; a.ok {
 			record(room, reasonRoomCPU, a.HotSince != "", hotGrowl(room, a))
 			record(room, reasonRunnerMissing, len(a.RunnersMissing) > 0, GrowlRow{
 				ID: room + "|runner-missing|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: reasonRunnerMissing,
-				Title: room + ": enabled runner not found", Body: clip(strings.Join(a.RunnersMissing, ", ")),
+				Title: room + ": enabled runner not found", Body: Clip(strings.Join(a.RunnersMissing, ", ")),
 			})
 		}
 		if h := got[i].hold; h.ok {
@@ -732,7 +734,7 @@ func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 			}
 			record(room, "deploy-hold", h.on, GrowlRow{
 				ID: room + "|deploy-hold|" + h.id, Room: room, Reason: "deploy-hold",
-				Title: room + " is still held for a deploy", Body: clip(body), Subject: h.id,
+				Title: room + " is still held for a deploy", Body: Clip(body), Subject: h.id,
 			})
 		}
 	}
@@ -861,39 +863,39 @@ func (g *Growler) act(id, do string, minutes int, via, tab string) (GrowlRow, in
 
 // SetGrowler wires the growler to this hub: which rooms are attached, the
 // event stream, each room's health and pending requests, and the phone.
-func (p *Proxy) SetGrowler(g *Growler) {
-	g.attached = p.hub.Has
-	g.say = p.feeds.broadcast
+func (p *Service) SetGrowler(g *Growler) {
+	g.attached = p.Has
+	g.say = p.Broadcast
 	g.health = p.roomHealth
 	g.hold = p.roomHold
 	g.alert = p.roomAlert
 	g.pending = p.roomPending
 	g.phone = func(x Notice) {
-		if n := p.notifier(); n != nil {
+		if n := p.Notifier(); n != nil {
 			n.Remind(x)
 		}
 	}
-	g.prWait = func() bool { return p.prWarnSweep(g) }
+	g.prWait = func() bool { return p.PRWarnSweep(g) }
 	p.mu.Lock()
 	p.growl = g
 	p.mu.Unlock()
 }
 
-func (p *Proxy) growler() *Growler {
+func (p *Service) Growler() *Growler {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.growl
 }
 
-// roomGet is one GET against one room, bounded, decoded into out.
-func (p *Proxy) roomGet(ctx context.Context, room, path string, out any) bool {
+// RoomGet is one GET against one room, bounded, decoded into out.
+func (p *Service) RoomGet(ctx context.Context, room, path string, out any) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+hostFor(room)+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+p.HostFor(room)+path, nil)
 	if err != nil {
 		return false
 	}
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return false
 	}
@@ -905,12 +907,12 @@ func (p *Proxy) roomGet(ctx context.Context, room, path string, out any) bool {
 	return json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(out) == nil
 }
 
-func (p *Proxy) roomHealth(ctx context.Context, room string) roomHealth {
+func (p *Service) roomHealth(ctx context.Context, room string) roomHealth {
 	var body struct {
 		Halted bool `json:"halted"`
 		Cause  any  `json:"cause"`
 	}
-	if !p.roomGet(ctx, room, "/v1/health", &body) {
+	if !p.RoomGet(ctx, room, "/v1/health", &body) {
 		return roomHealth{}
 	}
 	h := roomHealth{ok: true, halted: body.Halted}
@@ -920,7 +922,7 @@ func (p *Proxy) roomHealth(ctx context.Context, room string) roomHealth {
 	return h
 }
 
-func (p *Proxy) roomHold(ctx context.Context, room string) roomHold {
+func (p *Service) roomHold(ctx context.Context, room string) roomHold {
 	var body struct {
 		Hold *struct {
 			ID        string    `json:"id"`
@@ -929,7 +931,7 @@ func (p *Proxy) roomHold(ctx context.Context, room string) roomHold {
 			StartedAt time.Time `json:"started_at"`
 		} `json:"hold"`
 	}
-	if !p.roomGet(ctx, room, "/v1/hold", &body) {
+	if !p.RoomGet(ctx, room, "/v1/hold", &body) {
 		return roomHold{}
 	}
 	if body.Hold == nil {
@@ -939,22 +941,22 @@ func (p *Proxy) roomHold(ctx context.Context, room string) roomHold {
 		startedAt: body.Hold.StartedAt}
 }
 
-func (p *Proxy) roomPending(ctx context.Context, room string) []pendingPerm {
+func (p *Service) roomPending(ctx context.Context, room string) []pendingPerm {
 	var body struct {
 		Permissions []pendingPerm `json:"permissions"`
 	}
-	if !p.roomGet(ctx, room, "/v1/permissions", &body) {
+	if !p.RoomGet(ctx, room, "/v1/permissions", &body) {
 		return nil
 	}
 	return body.Permissions
 }
 
-// serveGrowls answers GET /_hub/growls and POST /_hub/growls/{id}.
+// ServeGrowls answers GET /_hub/growls and POST /_hub/growls/{id}.
 //
 // OPEN LIKE PRESENCE, NOT LOOPBACK ONLY: dismissing from the phone over an
 // overlay is the point. Nothing here runs a program or names one.
-func (p *Proxy) serveGrowls(w http.ResponseWriter, r *http.Request, sub string) {
-	g := p.growler()
+func (p *Service) ServeGrowls(w http.ResponseWriter, r *http.Request, sub string) {
+	g := p.Growler()
 	if g == nil {
 		http.NotFound(w, r)
 		return
@@ -1001,11 +1003,11 @@ func (p *Proxy) serveGrowls(w http.ResponseWriter, r *http.Request, sub string) 
 	}
 }
 
-// serveGrowlLadder answers GET and PUT /_hub/growl-ladder: which reasons remind
+// ServeGrowlLadder answers GET and PUT /_hub/growl-ladder: which reasons remind
 // on the backoff, every reason named, true or false. A PUT sets only the
 // reasons it names and is for the machine the hub runs on, like /_hub/hosts.
-func (p *Proxy) serveGrowlLadder(w http.ResponseWriter, r *http.Request) {
-	g := p.growler()
+func (p *Service) ServeGrowlLadder(w http.ResponseWriter, r *http.Request) {
+	g := p.Growler()
 	if g == nil {
 		http.NotFound(w, r)
 		return
@@ -1028,7 +1030,7 @@ func (p *Proxy) serveGrowlLadder(w http.ResponseWriter, r *http.Request) {
 		}
 		next := g.ladder()
 		for reason, on := range set {
-			if !contains(growlLadderReasons, reason) {
+			if !slices.Contains(growlLadderReasons, reason) {
 				fail(http.StatusBadRequest, "a reason is one of "+strings.Join(growlLadderReasons, ", "))
 				return
 			}
@@ -1052,10 +1054,10 @@ func (p *Proxy) serveGrowlLadder(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-// openGrowls hands one stream the live set as it opens, so a fresh tab has it
+// OpenGrowls hands one stream the live set as it opens, so a fresh tab has it
 // without a fetch.
-func (p *Proxy) openGrowls(s *sub) {
-	g := p.growler()
+func (p *Service) OpenGrowls(ch chan wire.Event) {
+	g := p.Growler()
 	if g == nil {
 		return
 	}
@@ -1066,7 +1068,7 @@ func (p *Proxy) openGrowls(s *sub) {
 	// Waited for, briefly: `publish` sends nothing for a set that has not
 	// changed, so a tab that missed this would see no growler for hours.
 	select {
-	case s.ch <- wire.Event{Kind: "growls", Data: data}:
+	case ch <- wire.Event{Kind: "growls", Data: data}:
 	case <-time.After(time.Second):
 	}
 }
@@ -1101,11 +1103,11 @@ func hotGrowl(room string, a roomAlert) GrowlRow {
 	}
 }
 
-func (p *Proxy) roomAlert(ctx context.Context, room string) roomAlert {
+func (p *Service) roomAlert(ctx context.Context, room string) roomAlert {
 	var body struct {
 		Alert *roomAlert `json:"alert"`
 	}
-	if !p.roomGet(ctx, room, "/v1/room/stats", &body) {
+	if !p.RoomGet(ctx, room, "/v1/room/stats", &body) {
 		return roomAlert{}
 	}
 	if body.Alert == nil {
