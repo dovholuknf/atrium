@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/deploy"
 )
 
 type memSettings struct {
@@ -92,15 +93,15 @@ func deployControl(t *testing.T, owner string) (*controlMCP, *fakeDeployRoom) {
 	return c, room
 }
 
-func deploy(t *testing.T, c *controlMCP, agent string, in deployInput) (deployOutput, error) {
+func callDeploy(t *testing.T, c *controlMCP, agent string, in deploy.DeployInput) (deploy.DeployOutput, error) {
 	t.Helper()
-	_, out, err := c.deployHandler(context.Background(), ctlReq(agent, "beta"), in)
+	_, out, err := c.deployMCP().DeployHandler(context.Background(), ctlReq(agent, "beta"), in)
 	return out, err
 }
 
 func TestARequestWithNoOwnerIsRefused(t *testing.T) {
 	c, _ := deployControl(t, "")
-	_, err := deploy(t, c, "runtime", deployInput{Action: "request", Why: "r-hold-notices"})
+	_, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "request", Why: "r-hold-notices"})
 	var ref *ctl.RefusedError
 	if !errors.As(err, &ref) || !strings.Contains(err.Error(), "no deploy owner is set") {
 		t.Fatalf("answered %v", err)
@@ -109,11 +110,11 @@ func TestARequestWithNoOwnerIsRefused(t *testing.T) {
 
 func TestTwoRequestsTellTheOwnerOnceAndMakeOneList(t *testing.T) {
 	c, room := deployControl(t, "merge")
-	out, err := deploy(t, c, "runtime", deployInput{Action: "request", Why: "r-hold-notices"})
+	out, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "request", Why: "r-hold-notices"})
 	if err != nil || out.State != "requested" {
 		t.Fatalf("first request: %+v %v", out, err)
 	}
-	out, err = deploy(t, c, "worker", deployInput{Action: "request", Why: "r-038"})
+	out, err = callDeploy(t, c, "worker", deploy.DeployInput{Action: "request", Why: "r-038"})
 	if err != nil || out.State != "added" || len(out.Pending) != 2 {
 		t.Fatalf("second request: %+v %v", out, err)
 	}
@@ -124,13 +125,13 @@ func TestTwoRequestsTellTheOwnerOnceAndMakeOneList(t *testing.T) {
 
 func TestOnlyTheOwnerStartsAndTheHoldCarriesEveryReason(t *testing.T) {
 	c, room := deployControl(t, "merge")
-	if _, err := deploy(t, c, "runtime", deployInput{Action: "request", Why: "r-hold-notices"}); err != nil {
+	if _, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "request", Why: "r-hold-notices"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := deploy(t, c, "runtime", deployInput{Action: "start"}); err == nil {
+	if _, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "start"}); err == nil {
 		t.Fatal("a director started a deploy")
 	}
-	out, err := deploy(t, c, "merge", deployInput{Action: "start", Exempt: []string{"watcher"}})
+	out, err := callDeploy(t, c, "merge", deploy.DeployInput{Action: "start", Exempt: []string{"watcher"}})
 	if err != nil || out.State != "held" {
 		t.Fatalf("start: %+v %v", out, err)
 	}
@@ -139,7 +140,7 @@ func TestOnlyTheOwnerStartsAndTheHoldCarriesEveryReason(t *testing.T) {
 		t.Fatalf("the room was asked to hold with %v", room.start)
 	}
 	// A request during the hold is the next one, not part of this deploy.
-	out, err = deploy(t, c, "worker", deployInput{Action: "request", Why: "late"})
+	out, err = callDeploy(t, c, "worker", deploy.DeployInput{Action: "request", Why: "late"})
 	if err != nil || out.State != "next" {
 		t.Fatalf("request during the hold: %+v %v", out, err)
 	}
@@ -147,20 +148,20 @@ func TestOnlyTheOwnerStartsAndTheHoldCarriesEveryReason(t *testing.T) {
 
 func TestWaitAnswersQuietOrTheBusyList(t *testing.T) {
 	c, room := deployControl(t, "merge")
-	if _, err := deploy(t, c, "merge", deployInput{Action: "start"}); err != nil {
+	if _, err := callDeploy(t, c, "merge", deploy.DeployInput{Action: "start"}); err != nil {
 		t.Fatal(err)
 	}
 	room.mu.Lock()
 	room.busy = []map[string]string{{"card": "w1", "title": "worker"}}
 	room.mu.Unlock()
-	out, err := deploy(t, c, "merge", deployInput{Action: "wait", MaxSeconds: 1})
+	out, err := callDeploy(t, c, "merge", deploy.DeployInput{Action: "wait", MaxSeconds: 1})
 	if err != nil || out.State != "busy" || len(out.Busy) != 1 {
 		t.Fatalf("busy wait: %+v %v", out, err)
 	}
 	room.mu.Lock()
 	room.busy = nil
 	room.mu.Unlock()
-	out, err = deploy(t, c, "merge", deployInput{Action: "wait", MaxSeconds: 1})
+	out, err = callDeploy(t, c, "merge", deploy.DeployInput{Action: "wait", MaxSeconds: 1})
 	if err != nil || out.State != "quiet" {
 		t.Fatalf("quiet wait: %+v %v", out, err)
 	}
@@ -168,13 +169,13 @@ func TestWaitAnswersQuietOrTheBusyList(t *testing.T) {
 
 func TestCancelPutsTheRequestsBack(t *testing.T) {
 	c, room := deployControl(t, "merge")
-	if _, err := deploy(t, c, "runtime", deployInput{Action: "request", Why: "r-hold-notices"}); err != nil {
+	if _, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "request", Why: "r-hold-notices"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := deploy(t, c, "merge", deployInput{Action: "start"}); err != nil {
+	if _, err := callDeploy(t, c, "merge", deploy.DeployInput{Action: "start"}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := deploy(t, c, "merge", deployInput{Action: "cancel", Why: "build broke"})
+	out, err := callDeploy(t, c, "merge", deploy.DeployInput{Action: "cancel", Why: "build broke"})
 	if err != nil || out.State != "cancelled" || len(out.Pending) != 1 || room.held != nil {
 		t.Fatalf("cancel: %+v %v, room held %v", out, err, room.held)
 	}
@@ -182,17 +183,17 @@ func TestCancelPutsTheRequestsBack(t *testing.T) {
 
 func TestADeployThatEndedIsSettledOnTheNextLook(t *testing.T) {
 	c, room := deployControl(t, "merge")
-	if _, err := deploy(t, c, "runtime", deployInput{Action: "request", Why: "r-hold-notices"}); err != nil {
+	if _, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "request", Why: "r-hold-notices"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := deploy(t, c, "merge", deployInput{Action: "start"}); err != nil {
+	if _, err := callDeploy(t, c, "merge", deploy.DeployInput{Action: "start"}); err != nil {
 		t.Fatal(err)
 	}
 	// The room restarted and lifted its own hold.
 	room.mu.Lock()
 	room.held = nil
 	room.mu.Unlock()
-	out, err := deploy(t, c, "runtime", deployInput{Action: "status"})
+	out, err := callDeploy(t, c, "runtime", deploy.DeployInput{Action: "status"})
 	if err != nil || out.State != "idle" || len(out.Running) != 0 {
 		t.Fatalf("status after the deploy: %+v %v", out, err)
 	}

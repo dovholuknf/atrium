@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/deploy"
 )
 
 func TestDeployClickWaitsForANewContextAndNamesTheCard(t *testing.T) {
@@ -18,8 +20,8 @@ func TestDeployClickWaitsForANewContextAndNamesTheCard(t *testing.T) {
 	r.commit("Review\n\nAtrium-Verdict: hub-ok "+code, map[string]string{"docs/backlog/rt/r-new-review-a.md": "ok"})
 	tip := r.git("rev-parse", "HEAD")
 	p, started := readyProxy(t, r, base, scriptFile(t))
-	runs := []newContextRun{{Room: "sg4", Card: "01a0f2da", Name: "orchestrator", Step: "clear", N: 2}}
-	p.deployReady().clearing = func(context.Context) []newContextRun { return runs }
+	runs := []deploy.NewContextRun{{Room: "sg4", Card: "01a0f2da", Name: "orchestrator", Step: "clear", N: 2}}
+	p.deployReady().Clearing = func(context.Context) []deploy.NewContextRun { return runs }
 
 	body := `{"tip":"` + tip + `"}`
 	rec := postDeploy(p, loopbackReq(http.MethodPost, "/_hub/deploy-ready/deploy", body))
@@ -45,8 +47,8 @@ func TestNewContextsRouteAnswersEmptyWithNoRooms(t *testing.T) {
 		t.Fatalf("GET = %d %s", rec.Code, rec.Body)
 	}
 	var got struct {
-		UnderWay []newContextRun `json:"under_way"`
-		Count    int             `json:"count"`
+		UnderWay []deploy.NewContextRun `json:"under_way"`
+		Count    int                    `json:"count"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Count != 0 || got.UnderWay == nil {
 		t.Fatalf("body %s, err %v", rec.Body, err)
