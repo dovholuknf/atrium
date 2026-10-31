@@ -58,4 +58,5 @@ Rooms and the hub send the stamped version and the full commit already, so `dev`
 | `scripts/cut-release.sh` | checks the tag against `VERSION`. `check-release.sh` pins it |
 | plain `go build` | the embedded fallback |
 
-The release workflow ends with `bash scripts/bump-version.sh --push main`, which moves VERSION on main to the next patch\nand does nothing when main no longer holds the released number.
+The release workflow ends with `bash scripts/bump-version.sh --push main`, which moves VERSION on main to the next patch
+and does nothing when main no longer holds the released number.
