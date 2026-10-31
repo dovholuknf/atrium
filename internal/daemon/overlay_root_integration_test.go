@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,12 +38,12 @@ func TestSameZrokInstance(t *testing.T) {
 		{"", "https://api-v2.zrok.io", false},
 	}
 	for _, tc := range cases {
-		if got := sameZrokInstance(tc.a, tc.b); got != tc.want {
+		if got := publish.SameZrokInstance(tc.a, tc.b); got != tc.want {
 			t.Errorf("sameZrokInstance(%q, %q) = %v, wanted %v", tc.a, tc.b, got, tc.want)
 		}
 		// Symmetric: which one is "current" and which is "requested" must not
 		// change the answer.
-		if got := sameZrokInstance(tc.b, tc.a); got != tc.want {
+		if got := publish.SameZrokInstance(tc.b, tc.a); got != tc.want {
 			t.Errorf("sameZrokInstance(%q, %q) = %v, wanted %v (reversed)", tc.b, tc.a, got, tc.want)
 		}
 	}
@@ -90,7 +91,7 @@ func enableMachineZrokEnv(t *testing.T, apiEndpoint string) {
 // is what makes the absence of an error mean what the test says it means.
 func requireEnabled(t *testing.T, d *Daemon) {
 	t.Helper()
-	root, err := d.zrokRoot()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		t.Fatalf("the fixture's zrok root would not load: %v", err)
 	}

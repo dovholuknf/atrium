@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"fmt"
@@ -45,7 +45,7 @@ import (
 
 // zrokSays wraps an error from any zrok call with an explanation when it can
 // recognise one, and returns it unchanged when it cannot.
-func zrokSays(what string, err error) error {
+func ZrokSays(what string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -59,7 +59,7 @@ func zrokSays(what string, err error) error {
 	// Matched on the words and NOT on a status. `limit reached` is the only
 	// thing zrok says that names which ceiling was hit, so it is the only thing
 	// that earns a message naming one.
-	case has(s, "limit reached"):
+	case Has(s, "limit reached"):
 		return fmt.Errorf("%s: your zrok account is holding as many reserved names as it is "+
 			"allowed. release one you are not using. the zrok panel under settings, expose "+
 			"the board, counts them and says how many are atrium's. (%w)", what, err)
@@ -67,7 +67,7 @@ func zrokSays(what string, err error) error {
 	// A limit with nothing saying which. zrok v2 does not send these, so this
 	// is here for an instance that does and must not claim to know more than
 	// the status does.
-	case has(s, "429", "too many requests"):
+	case Has(s, "429", "too many requests"):
 		return fmt.Errorf("%s: the zrok instance says this account is at a limit and does not "+
 			"say which. the zrok panel under settings, expose the board, counts what the "+
 			"account is holding. (%w)", what, err)
@@ -75,7 +75,7 @@ func zrokSays(what string, err error) error {
 	// The token is wrong, the environment was disabled on the other end, OR
 	// the account is at a share or environment ceiling. All three are 401 with
 	// no body, so all three are named. See the header.
-	case has(s, "401", "403", "unauthorized", "forbidden", "invalid token"):
+	case Has(s, "401", "403", "unauthorized", "forbidden", "invalid token"):
 		return fmt.Errorf("%s: zrok refused this environment, and it answers the same way for "+
 			"two different reasons. either the account is at a limit, on shares open at once, "+
 			"on environments enabled, or on the transfer allowance for this period, or the "+
@@ -84,19 +84,19 @@ func zrokSays(what string, err error) error {
 			"is what tells the two apart. (%w)", what, err)
 
 	// The name is taken. Only reachable on a reserved share.
-	case has(s, "409", "conflict", "already exists", "not available"):
+	case Has(s, "409", "conflict", "already exists", "not available"):
 		return fmt.Errorf("%s: that name is taken. names are unique across the whole zrok "+
 			"instance, not just your account, so a short one is usually gone. try a "+
 			"longer one. (%w)", what, err)
 
 	// Nothing answered. The instance, the network, or a proxy in between.
-	case has(s, "connection refused", "no such host", "timeout", "timed out",
+	case Has(s, "connection refused", "no such host", "timeout", "timed out",
 		"i/o timeout", "eof", "dial tcp"):
 		return fmt.Errorf("%s: could not reach the zrok instance. check that you are online "+
 			"and that the api endpoint under settings is the instance you enabled "+
 			"against. (%w)", what, err)
 
-	case has(s, "500", "502", "503", "504", "internal server error", "bad gateway"):
+	case Has(s, "500", "502", "503", "504", "internal server error", "bad gateway"):
 		return fmt.Errorf("%s: the zrok instance answered with an error of its own. nothing "+
 			"here is misconfigured, so this is worth trying again in a minute. (%w)",
 			what, err)
@@ -104,7 +104,7 @@ func zrokSays(what string, err error) error {
 	return fmt.Errorf("%s: %w", what, err)
 }
 
-func has(s string, any ...string) bool {
+func Has(s string, any ...string) bool {
 	for _, a := range any {
 		if strings.Contains(s, a) {
 			return true

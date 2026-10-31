@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ import (
 // zrokDefaultRootDir is what the SDK uses when nothing has moved it. Restored
 // explicitly rather than assumed, because the global is shared and the last
 // caller wins.
-const zrokDefaultRootDir = ".zrok2"
+const ZrokDefaultRootDir = ".zrok2"
 
 // zrokRootMu guards the SDK's global while a root is being loaded.
 //
@@ -55,7 +55,7 @@ const zrokDefaultRootDir = ".zrok2"
 //
 // Held only across the load. The `Root` that comes back carries its own path,
 // so everything after that is free of the global.
-var zrokRootMu sync.Mutex
+var ZrokRootMu sync.Mutex
 
 // zrokRootDir is the directory this daemon's zrok environment lives in.
 //
@@ -67,12 +67,12 @@ var zrokRootMu sync.Mutex
 // environment belongs to this daemon's state. A second daemon on a second
 // database gets a second environment, and neither can enable over the other,
 // which is the same rule the icons and the scrap directory already follow.
-func (d *Daemon) zrokRootDir() string {
-	cfg := d.zrokConfig()
+func (d *Service) ZrokRootDir() string {
+	cfg := d.ZrokConfig()
 	if !cfg.OwnEnvironment {
 		return ""
 	}
-	dir := filepath.Dir(d.opts.DBPath)
+	dir := filepath.Dir(d.opts().DBPath)
 	if dir == "" || dir == "." {
 		return ""
 	}
@@ -94,13 +94,13 @@ func (d *Daemon) zrokRootDir() string {
 // reads whatever the global happens to say, which is correct exactly until
 // something else moves it, and the failure is silent: the call succeeds
 // against the wrong account.
-func (d *Daemon) zrokRoot() (env_core.Root, error) {
-	dir := d.zrokRootDir()
+func (d *Service) ZrokRoot() (env_core.Root, error) {
+	dir := d.ZrokRootDir()
 
-	zrokRootMu.Lock()
-	defer zrokRootMu.Unlock()
+	ZrokRootMu.Lock()
+	defer ZrokRootMu.Unlock()
 	if dir == "" {
-		environment.SetRootDirName(zrokDefaultRootDir)
+		environment.SetRootDirName(ZrokDefaultRootDir)
 	} else {
 		// Created here rather than at enable time. `SetConfig` writes a file
 		// into this directory and does not make it, and the first thing that
@@ -113,7 +113,7 @@ func (d *Daemon) zrokRoot() (env_core.Root, error) {
 	root, err := environment.LoadRoot()
 	// Put it back whatever happened, so a failure here cannot leave every
 	// later caller pointed at a directory this one was told to use.
-	environment.SetRootDirName(zrokDefaultRootDir)
+	environment.SetRootDirName(ZrokDefaultRootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -125,9 +125,9 @@ func (d *Daemon) zrokRoot() (env_core.Root, error) {
 // Names the DIRECTORY as well as the instance, because the question this
 // answers is "which of the two am I looking at", and two environments against
 // the same instance are told apart by nothing else.
-func (d *Daemon) zrokWhere() string {
-	cfg := d.zrokConfig()
-	root, err := d.zrokRoot()
+func (d *Service) ZrokWhere() string {
+	cfg := d.ZrokConfig()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		return "unreadable"
 	}
@@ -155,7 +155,7 @@ func (d *Daemon) zrokWhere() string {
 // which is the CLI's default. Two environments from one machine sit next to
 // each other in that list, and the one somebody just made needs to be
 // identifiable without counting rows.
-func (d *Daemon) describeEnvironment(description string) (string, string) {
+func (d *Service) DescribeEnvironment(description string) (string, string) {
 	host, err := os.Hostname()
 	if err != nil || host == "" {
 		host = "unknown-host"
@@ -190,15 +190,15 @@ func (d *Daemon) describeEnvironment(description string) (string, string) {
 // A trailing slash, a host's letter case, and a default port spelled out
 // explicitly are the three ways two people (or a CLI default and a compiled-in
 // one) write the same address differently. All three fold away here.
-func sameZrokInstance(a, b string) bool {
+func SameZrokInstance(a, b string) bool {
 	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	if a == b {
 		// Also covers "both empty", which is not a same-instance question at
 		// all but must not be reported as a mismatch either.
 		return true
 	}
-	na, oka := normalizeZrokEndpoint(a)
-	nb, okb := normalizeZrokEndpoint(b)
+	na, oka := NormalizeZrokEndpoint(a)
+	nb, okb := NormalizeZrokEndpoint(b)
 	if !oka || !okb {
 		// A string that will not parse as a URL is not provably the same
 		// instance as anything. Falling through to "different" here is the
@@ -214,14 +214,14 @@ func sameZrokInstance(a, b string) bool {
 // spelled out, and no trailing slash on the path. The bool says whether `s`
 // parsed as a URL with a host at all, because "" and "not a URL" must not
 // normalize to the same string and then compare equal by accident.
-func normalizeZrokEndpoint(s string) (string, bool) {
+func NormalizeZrokEndpoint(s string) (string, bool) {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
 		return "", false
 	}
 	scheme := strings.ToLower(u.Scheme)
 	host := strings.ToLower(u.Hostname())
-	if port := u.Port(); port != "" && port != defaultPortForScheme(scheme) {
+	if port := u.Port(); port != "" && port != DefaultPortForScheme(scheme) {
 		host = host + ":" + port
 	}
 	path := strings.TrimRight(u.Path, "/")
@@ -230,7 +230,7 @@ func normalizeZrokEndpoint(s string) (string, bool) {
 
 // defaultPortForScheme is the port a scheme implies when none is written, so
 // ":443" on an "https" address normalizes the same as no port at all.
-func defaultPortForScheme(scheme string) string {
+func DefaultPortForScheme(scheme string) string {
 	switch scheme {
 	case "http":
 		return "80"
@@ -253,20 +253,20 @@ func defaultPortForScheme(scheme string) string {
 // that root is NOT enabled. Moving an enabled environment leaves a token
 // issued by one instance being sent to another, which fails in a way that
 // reads as a broken token rather than a wrong address.
-func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
+func (d *Service) SetZrokEnvironment(own bool, endpoint string) error {
 	endpoint = strings.TrimSpace(endpoint)
 
 	// WHICH ENVIRONMENT IS SAVED FIRST AND ON ITS OWN. Switching between the
 	// two is always legal, and `zrokRoot` reads this setting to decide which
 	// one to load, so the address below has to be checked against the root that
 	// is now selected rather than the one that was.
-	cfg := d.zrokConfig()
+	cfg := d.ZrokConfig()
 	cfg.OwnEnvironment = own
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
 		return err
 	}
 
-	root, err := d.zrokRoot()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		return fmt.Errorf("could not read that zrok environment: %w", err)
 	}
@@ -287,7 +287,7 @@ func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
 		// written) and `endpoint` is whatever text a caller had on hand; a
 		// trailing slash or a default port spelled out differently between
 		// the two is not a request to move anywhere. See `sameZrokInstance`.
-		if endpoint != "" && !sameZrokInstance(current, endpoint) {
+		if endpoint != "" && !SameZrokInstance(current, endpoint) {
 			label := "this machine's zrok environment"
 			if cfg.OwnEnvironment {
 				label = "atrium's own zrok environment"
@@ -299,23 +299,23 @@ func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
 				"then set the address, then enable again", label, current, endpoint)
 		}
 		cfg.ApiEndpoint = current
-		if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+		if err := d.SaveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
 			return err
 		}
-		log.Printf("[atrium] zrok: using %s", d.zrokWhere())
+		log.Printf("[atrium] zrok: using %s", d.ZrokWhere())
 		return nil
 	}
 
 	// Nothing is enabled here yet, so the address is atrium's to set.
 	cfg.ApiEndpoint = endpoint
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
 		return err
 	}
 	if endpoint == "" && !own {
 		// Back on the machine's environment with nothing to say about where it
 		// points. Its config is the machine's business and atrium does not
 		// clear it on the way past.
-		log.Printf("[atrium] zrok: using %s", d.zrokWhere())
+		log.Printf("[atrium] zrok: using %s", d.ZrokWhere())
 		return nil
 	}
 
@@ -327,6 +327,6 @@ func (d *Daemon) SetZrokEnvironment(own bool, endpoint string) error {
 	if err := root.SetConfig(c); err != nil {
 		return fmt.Errorf("could not save that address: %w", err)
 	}
-	log.Printf("[atrium] zrok: using %s", d.zrokWhere())
+	log.Printf("[atrium] zrok: using %s", d.ZrokWhere())
 	return nil
 }

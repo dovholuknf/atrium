@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"sort"
 	"strings"
 )
@@ -212,27 +213,27 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 	// imported shape over it would erase the account token and the identity
 	// path with values that were deliberately absent from the file, and the
 	// machine would look configured and refuse to share.
-	zrok := d.zrokConfig()
+	zrok := d.ZrokConfig()
 	before := zrok
 	zrok.Public, zrok.Private = in.Overlays.Zrok.Public, in.Overlays.Zrok.Private
 	zrok.OwnEnvironment = in.Overlays.Zrok.OwnEnvironment
 	if in.Overlays.Zrok.ApiEndpoint != "" {
 		zrok.ApiEndpoint = in.Overlays.Zrok.ApiEndpoint
 	}
-	zrok.normalise()
+	zrok.Normalise()
 	if zrok != before {
 		res.Changes = append(res.Changes, ImportChange{
 			Kind: "overlay", Name: "zrok", Action: "replace",
 			Why: "sharing options and instance only. the account token here is untouched",
 		})
 		if apply {
-			if err := d.saveOverlayConfig(SettingOverlayZrok, zrok); err != nil {
+			if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, zrok); err != nil {
 				return nil, err
 			}
 		}
 	}
 	if svc := strings.TrimSpace(in.Overlays.Ziti.Service); svc != "" {
-		ziti := d.zitiConfig()
+		ziti := d.ZitiConfig()
 		if ziti.Service != svc {
 			res.Changes = append(res.Changes, ImportChange{
 				Kind: "overlay", Name: "ziti", Action: "replace",
@@ -240,7 +241,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			})
 			if apply {
 				ziti.Service = svc
-				if err := d.saveOverlayConfig(SettingOverlayZiti, ziti); err != nil {
+				if err := d.SaveOverlayConfig(publish.SettingOverlayZiti, ziti); err != nil {
 					return nil, err
 				}
 			}

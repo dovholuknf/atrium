@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"fmt"
@@ -39,14 +39,14 @@ import (
 // after the first stop. Creating one that exists is not an error worth
 // reporting, so a conflict on step one is carried into step two rather than
 // returned.
-func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
+func (d *Service) ReserveZrokName(namespace, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", fmt.Errorf("a reservation needs a name")
 	}
 	namespace = strings.TrimSpace(namespace)
 
-	root, err := d.zrokRoot()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		return "", fmt.Errorf("could not read the zrok environment: %w", err)
 	}
@@ -66,7 +66,7 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 
 	zrok, err := root.Client()
 	if err != nil {
-		return "", zrokSays("could not reach the zrok api", err)
+		return "", ZrokSays("could not reach the zrok api", err)
 	}
 	auth := httptransport.APIKeyAuth("X-TOKEN", "header", root.Environment().AccountToken)
 
@@ -75,8 +75,8 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 	if _, err := zrok.Share.CreateShareName(create, auth); err != nil {
 		// Already existing is the ordinary case on the second press, and the
 		// reservation below is what actually matters. Anything else is real.
-		if !alreadyThere(err) {
-			return "", zrokSays(fmt.Sprintf("could not create the name %q", name), err)
+		if !AlreadyThere(err) {
+			return "", ZrokSays(fmt.Sprintf("could not create the name %q", name), err)
 		}
 	}
 
@@ -85,7 +85,7 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 		NamespaceToken: namespace, Name: name, Reserved: true,
 	}
 	if _, err := zrok.Share.UpdateShareName(reserve, auth); err != nil {
-		return "", zrokSays(fmt.Sprintf("the name %q exists but could not be reserved", name), err)
+		return "", ZrokSays(fmt.Sprintf("the name %q exists but could not be reserved", name), err)
 	}
 
 	// What the start path wants in its config, so the answer can be pasted
@@ -105,14 +105,14 @@ func (d *Daemon) ReserveZrokName(namespace, name string) (string, error) {
 // and there is exactly one state either of them wants: the name is not on the
 // account. Reporting a failure for having arrived at that state early would
 // leave the row behind and try again forever.
-func (d *Daemon) ReleaseZrokName(namespace, name string) error {
+func (d *Service) ReleaseZrokName(namespace, name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
 	namespace = strings.TrimSpace(namespace)
 
-	root, err := d.zrokRoot()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		return fmt.Errorf("could not read the zrok environment: %w", err)
 	}
@@ -130,17 +130,17 @@ func (d *Daemon) ReleaseZrokName(namespace, name string) error {
 
 	zrok, err := root.Client()
 	if err != nil {
-		return zrokSays("could not reach the zrok api", err)
+		return ZrokSays("could not reach the zrok api", err)
 	}
 	auth := httptransport.APIKeyAuth("X-TOKEN", "header", root.Environment().AccountToken)
 
 	del := share.NewDeleteShareNameParams()
 	del.Body = share.DeleteShareNameBody{NamespaceToken: namespace, Name: name}
 	if _, err := zrok.Share.DeleteShareName(del, auth); err != nil {
-		if notThere(err) {
+		if NotThere(err) {
 			return nil
 		}
-		return zrokSays(fmt.Sprintf("could not release the name %q", name), err)
+		return ZrokSays(fmt.Sprintf("could not release the name %q", name), err)
 	}
 	return nil
 }
@@ -150,7 +150,7 @@ func (d *Daemon) ReleaseZrokName(namespace, name string) error {
 // Matched on the message for the same reason as `alreadyThere`: the generated
 // client has a type per status code and a type switch would name several and
 // miss the one a later zrok adds.
-func notThere(err error) bool {
+func NotThere(err error) bool {
 	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "notfound") || strings.Contains(s, "not found") ||
 		strings.Contains(s, "404")
@@ -170,7 +170,7 @@ func notThere(err error) bool {
 // Swallowed, it reaches the update, which refuses for the same reason and gets
 // reported as a name collision, so somebody is told to try a longer name when
 // no name of any length would have worked.
-func alreadyThere(err error) bool {
+func AlreadyThere(err error) bool {
 	s := strings.ToLower(err.Error())
 	if strings.Contains(s, "limit reached") {
 		return false
@@ -201,7 +201,7 @@ func alreadyThere(err error) bool {
 // screen and typed, and it is not the secret: the board behind it is either
 // deliberately public or behind the sign-in. A lent session's address IS the
 // credential, which is why the two differ.
-const boardShareNameLen = 8
+const BoardShareNameLen = 8
 
 // parseShareName turns what is in the settings box into what zrok wants.
 //
@@ -224,12 +224,12 @@ const boardShareNameLen = 8
 // zrok's own spelling, a slash is what atrium wrote into this box for months,
 // and a bare name is what anybody types. The namespace defaults to `public`,
 // which is the only one a board is shared in.
-func parseShareName(s string) (zroksdk.NameSelection, error) {
+func ParseShareName(s string) (zroksdk.NameSelection, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return zroksdk.NameSelection{}, fmt.Errorf("a share needs a name")
 	}
-	ns, name := publicNamespace, s
+	ns, name := PublicNamespace, s
 	for _, sep := range []string{":", "/"} {
 		if i := strings.Index(s, sep); i >= 0 {
 			ns, name = strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:])
@@ -237,7 +237,7 @@ func parseShareName(s string) (zroksdk.NameSelection, error) {
 		}
 	}
 	if ns == "" {
-		ns = publicNamespace
+		ns = PublicNamespace
 	}
 	if name == "" {
 		return zroksdk.NameSelection{}, fmt.Errorf(
@@ -246,21 +246,21 @@ func parseShareName(s string) (zroksdk.NameSelection, error) {
 	return zroksdk.NameSelection{NamespaceToken: ns, Name: name}, nil
 }
 
-func (d *Daemon) boardShareName(cfg *ZrokConfig) (zroksdk.NameSelection, error) {
+func (d *Service) BoardShareName(cfg *ZrokConfig) (zroksdk.NameSelection, error) {
 	var sel zroksdk.NameSelection
 
 	if n := strings.TrimSpace(cfg.Name); n != "" {
-		parsed, err := parseShareName(n)
+		parsed, err := ParseShareName(n)
 		if err != nil {
 			return sel, err
 		}
 		sel = parsed
 	} else {
-		name, err := newShareNameOf(boardShareNameLen)
+		name, err := NewShareNameOf(BoardShareNameLen)
 		if err != nil {
 			return sel, err
 		}
-		sel = zroksdk.NameSelection{NamespaceToken: publicNamespace, Name: name}
+		sel = zroksdk.NameSelection{NamespaceToken: PublicNamespace, Name: name}
 		// STORED BARE, without the namespace. `public/atrium-4pcddxxx9aez` is
 		// what zrok wants and not what anybody wants to read in a settings box,
 		// and the namespace is the default one anyway: the parse above fills it
@@ -271,14 +271,14 @@ func (d *Daemon) boardShareName(cfg *ZrokConfig) (zroksdk.NameSelection, error) 
 		// knows it exists, so nothing ever releases it. Saved and not reserved
 		// is the harmless direction, since the next start reserves it.
 		cfg.Name = name
-		if err := d.saveOverlayConfig(SettingOverlayZrok, *cfg); err != nil {
+		if err := d.SaveOverlayConfig(SettingOverlayZrok, *cfg); err != nil {
 			return sel, fmt.Errorf("could not remember the address: %w", err)
 		}
 	}
 
 	// The namespace is filled in by both paths above, so nothing defaults it
 	// here. A guard that did used to sit at this spot and could never fire.
-	d.overlayStep("zrok", "name", "reserving the address "+sel.Name)
+	d.OverlayStep("zrok", "name", "reserving the address "+sel.Name)
 	if _, err := d.ReserveZrokName(sel.NamespaceToken, sel.Name); err != nil {
 		return sel, err
 	}

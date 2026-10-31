@@ -173,7 +173,7 @@ func (k *keepalive) coldDone(taskID string, replyAt time.Time) bool {
 
 // coldHandoff is the daemon's side of the seam: the cycle, with the guards a lent or moving card needs.
 func (d *Daemon) coldHandoff(t *store.Task) error {
-	if d.guests.get(t.ID) != nil || d.frozenForMove(t.ID) || d.nctx.get(t.ID) != nil {
+	if d.Guests.Get(t.ID) != nil || d.frozenForMove(t.ID) || d.nctx.get(t.ID) != nil {
 		return errNewContextBusy
 	}
 	return d.StartNewContext(t.ID)

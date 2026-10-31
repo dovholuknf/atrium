@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"strings"
@@ -46,13 +46,13 @@ import (
 // zrokLimitsTimeout bounds the call. Read on the way into a dialog, so a zrok
 // instance that has stopped answering has to fail rather than hold the panel
 // open. Longer than a page load and shorter than anybody's patience.
-const zrokLimitsTimeout = 15 * time.Second
+const ZrokLimitsTimeout = 15 * time.Second
 
 // atriumNamePrefix is what `newShareNameOf` puts on the front of every name
 // atrium invents. Matched here to attribute reservations, and nothing else
 // depends on it: a name somebody typed by hand is theirs whatever it starts
 // with, and simply does not count towards atrium's share.
-const atriumNamePrefix = "atrium-"
+const AtriumNamePrefix = "atrium-"
 
 // ZrokAccountUse is what the zrok panel shows about the account behind it.
 type ZrokAccountUse struct {
@@ -97,10 +97,10 @@ type ZrokAccountUse struct {
 }
 
 // ZrokAccount reports what the configured zrok account is using.
-func (d *Daemon) ZrokAccount() ZrokAccountUse {
+func (d *Service) ZrokAccount() ZrokAccountUse {
 	var out ZrokAccountUse
 
-	root, err := d.zrokRoot()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		out.Err = "could not read the zrok environment: " + err.Error()
 		return out
@@ -114,15 +114,15 @@ func (d *Daemon) ZrokAccount() ZrokAccountUse {
 
 	zrok, err := root.Client()
 	if err != nil {
-		out.Err = zrokSays("could not reach the zrok api", err).Error()
+		out.Err = ZrokSays("could not reach the zrok api", err).Error()
 		return out
 	}
 	auth := httptransport.APIKeyAuth("X-TOKEN", "header", env.AccountToken)
 
-	params := metadata.NewOverviewParams().WithTimeout(zrokLimitsTimeout)
+	params := metadata.NewOverviewParams().WithTimeout(ZrokLimitsTimeout)
 	ovr, err := zrok.Metadata.Overview(params, auth)
 	if err != nil {
-		out.Err = zrokSays("could not read the zrok account", err).Error()
+		out.Err = ZrokSays("could not read the zrok account", err).Error()
 		return out
 	}
 	if ovr.Payload == nil {
@@ -157,7 +157,7 @@ func (d *Daemon) ZrokAccount() ZrokAccountUse {
 			continue
 		}
 		out.ReservedNames++
-		if strings.HasPrefix(n.Name, atriumNamePrefix) {
+		if strings.HasPrefix(n.Name, AtriumNamePrefix) {
 			out.AtriumNames++
 		}
 	}

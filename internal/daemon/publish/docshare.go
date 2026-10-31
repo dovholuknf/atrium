@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"context"
@@ -33,195 +33,195 @@ import (
 // `docs/changes/f-share-doc-zrok-stage1.md` has the design.
 
 const (
-	docShareMaxDoc     = 2 << 20
-	docShareMaxTotal   = 32 << 20
-	docShareMaxImages  = 200
-	docShareMaxLive    = 20
-	docShareDefaultTTL = 7
-	docShareMaxTTL     = 30
+	DocShareMaxDoc     = 2 << 20
+	DocShareMaxTotal   = 32 << 20
+	DocShareMaxImages  = 200
+	DocShareMaxLive    = 20
+	DocShareDefaultTTL = 7
+	DocShareMaxTTL     = 30
 )
 
-const docShareSpeedBump = "this looks like it holds a secret, so it was not shared. That check is a speed bump, " +
+const DocShareSpeedBump = "this looks like it holds a secret, so it was not shared. That check is a speed bump, " +
 	"not a guarantee: it cannot see a secret in a picture or a password written as a sentence"
 
 // docShareBinder puts a snapshot on the network. The zrok one is the default and a test replaces it.
-type docShareBinder interface {
-	bind(rec *store.DocShare, h http.Handler) (ln net.Listener, token, address string, err error)
-	release(token string)
-	reserve(namespace, name string) error
-	unreserve(namespace, name string)
+type DocShareBinder interface {
+	Bind(rec *store.DocShare, h http.Handler) (ln net.Listener, token, address string, err error)
+	Release(token string)
+	Reserve(namespace, name string) error
+	Unreserve(namespace, name string)
 }
 
-type docShareLive struct {
-	srv   *http.Server
-	token string
+type DocShareLive struct {
+	Srv   *http.Server
+	Token string
 }
 
-type docShares struct {
-	mu   sync.Mutex
-	live map[string]*docShareLive
+type DocShares struct {
+	Mu   sync.Mutex
+	Live map[string]*DocShareLive
 	// make serialises making a share, so the cap and the one-per-document rule cannot be raced past.
-	make sync.Mutex
-	b    docShareBinder
+	Make sync.Mutex
+	B    DocShareBinder
 }
 
-func (s *docShares) put(id string, l *docShareLive) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.live == nil {
-		s.live = map[string]*docShareLive{}
+func (s *DocShares) Put(id string, l *DocShareLive) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if s.Live == nil {
+		s.Live = map[string]*DocShareLive{}
 	}
-	s.live[id] = l
+	s.Live[id] = l
 }
 
-func (s *docShares) take(id string) *docShareLive {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	l := s.live[id]
-	delete(s.live, id)
+func (s *DocShares) Take(id string) *DocShareLive {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	l := s.Live[id]
+	delete(s.Live, id)
 	return l
 }
 
-func (s *docShares) has(id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.live[id] != nil
+func (s *DocShares) Has(id string) bool {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	return s.Live[id] != nil
 }
 
-func (d *Daemon) docShareBinder() docShareBinder {
-	if d.docs.b != nil {
-		return d.docs.b
+func (d *Service) DocShareBinder() DocShareBinder {
+	if d.Docs.B != nil {
+		return d.Docs.B
 	}
-	return zrokDocBinder{d}
+	return ZrokDocBinder{d}
 }
 
-func (d *Daemon) docShareRoot() string {
-	return filepath.Join(filepath.Dir(d.opts.DBPath), "docshares")
+func (d *Service) DocShareRoot() string {
+	return filepath.Join(filepath.Dir(d.opts().DBPath), "docshares")
 }
 
-func (d *Daemon) docShareDir(id string) string { return filepath.Join(d.docShareRoot(), id) }
+func (d *Service) DocShareDir(id string) string { return filepath.Join(d.DocShareRoot(), id) }
 
-func docShareErr(code int, format string, a ...any) error {
+func DocShareErr(code int, format string, a ...any) error {
 	return &api.DocShareError{Code: code, Msg: fmt.Sprintf(format, a...)}
 }
 
-type docSnapshot struct {
+type DocSnapshot struct {
 	Path   string         `json:"path"`
 	Images map[string]int `json:"images"`
 	Types  []string       `json:"types"`
 }
 
 // MakeDocShare snapshots one document of a card and puts it on a public share.
-func (d *Daemon) MakeDocShare(taskID string, req api.DocShareRequest) (any, error) {
-	d.docs.make.Lock()
-	defer d.docs.make.Unlock()
+func (d *Service) MakeDocShare(taskID string, req api.DocShareRequest) (any, error) {
+	d.Docs.Make.Lock()
+	defer d.Docs.Make.Unlock()
 
 	task, err := d.st.Get(taskID)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(task.Worktree) == "" {
-		return nil, docShareErr(http.StatusBadRequest, "this card has no directory")
+		return nil, DocShareErr(http.StatusBadRequest, "this card has no directory")
 	}
 	rel := strings.TrimSpace(req.Path)
 	if rel == "" {
-		return nil, docShareErr(http.StatusBadRequest, "say which file")
+		return nil, DocShareErr(http.StatusBadRequest, "say which file")
 	}
 	ext := strings.ToLower(filepath.Ext(rel))
 	if ext != ".md" && ext != ".markdown" {
-		return nil, docShareErr(http.StatusBadRequest, "only a markdown file can be shared")
+		return nil, DocShareErr(http.StatusBadRequest, "only a markdown file can be shared")
 	}
 
 	if old, err := d.st.DocShareFor(taskID, rel); err != nil {
 		return nil, err
-	} else if old != nil && d.docShareLiveOrDue(old) {
-		return d.docShareView(*old), nil
+	} else if old != nil && d.DocShareLiveOrDue(old) {
+		return d.DocShareView(*old), nil
 	}
 	if n, err := d.st.LiveDocShareCount(); err != nil {
 		return nil, err
-	} else if n >= docShareMaxLive {
-		return nil, docShareErr(http.StatusBadRequest,
-			"this room already has %d documents shared. stop one first", docShareMaxLive)
+	} else if n >= DocShareMaxLive {
+		return nil, DocShareErr(http.StatusBadRequest,
+			"this room already has %d documents shared. stop one first", DocShareMaxLive)
 	}
 
 	ttl := req.TTLDays
 	if ttl <= 0 {
-		ttl = docShareDefaultTTL
+		ttl = DocShareDefaultTTL
 	}
-	if ttl > docShareMaxTTL {
-		ttl = docShareMaxTTL
+	if ttl > DocShareMaxTTL {
+		ttl = DocShareMaxTTL
 	}
 
 	id := store.NewDocShareID()
-	dir := d.docShareDir(id)
-	if err := d.writeDocSnapshot(task.Worktree, rel, req.Images, dir); err != nil {
+	dir := d.DocShareDir(id)
+	if err := d.WriteDocSnapshot(task.Worktree, rel, req.Images, dir); err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
 
 	now := time.Now().UTC()
 	rec := &store.DocShare{
-		ID: id, TaskID: taskID, Path: rel, Namespace: publicNamespace, Dir: dir, Wanted: true,
+		ID: id, TaskID: taskID, Path: rel, Namespace: PublicNamespace, Dir: dir, Wanted: true,
 		CreatedAt: now.Format(store.TimeFormat), UpdatedAt: now.Format(store.TimeFormat),
 		ExpiresAt: now.Add(time.Duration(ttl) * 24 * time.Hour).Format(store.TimeFormat),
 	}
-	name, err := newShareName()
+	name, err := NewShareName()
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
 	rec.Name = name
-	if err := d.bindDocShare(rec); err != nil {
-		d.docShareBinder().unreserve(rec.Namespace, rec.Name)
+	if err := d.BindDocShare(rec); err != nil {
+		d.DocShareBinder().Unreserve(rec.Namespace, rec.Name)
 		_ = os.RemoveAll(dir)
-		return nil, docShareErr(http.StatusBadRequest, "%s", err.Error())
+		return nil, DocShareErr(http.StatusBadRequest, "%s", err.Error())
 	}
 	if err := d.st.PutDocShare(*rec); err != nil {
-		d.releaseDocShare(rec)
+		d.ReleaseDocShare(rec)
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
 	log.Printf("[atrium] sharing %s from %s at %s", rel, task.DisplayTitle(), rec.Address)
-	return d.docShareView(*rec), nil
+	return d.DocShareView(*rec), nil
 }
 
-func (d *Daemon) docShareLiveOrDue(rec *store.DocShare) bool {
-	return d.docs.has(rec.ID) || !d.st.DocShareExpired(*rec)
+func (d *Service) DocShareLiveOrDue(rec *store.DocShare) bool {
+	return d.Docs.Has(rec.ID) || !d.st.DocShareExpired(*rec)
 }
 
 // writeDocSnapshot resolves, checks and copies the document and its images into a new folder.
-func (d *Daemon) writeDocSnapshot(worktree, rel string, images []string, dir string) error {
+func (d *Service) WriteDocSnapshot(worktree, rel string, images []string, dir string) error {
 	root := filepath.FromSlash(worktree)
 	real, err := safepath.Contained(root, rel)
 	if err != nil {
-		return docShareErr(http.StatusForbidden, "%s", safepath.ErrOutside.Error())
+		return DocShareErr(http.StatusForbidden, "%s", safepath.ErrOutside.Error())
 	}
 	fi, err := os.Stat(real)
 	if err != nil {
-		return docShareErr(http.StatusNotFound, "no such file")
+		return DocShareErr(http.StatusNotFound, "no such file")
 	}
 	if fi.IsDir() {
-		return docShareErr(http.StatusBadRequest, "that is a directory. share one file")
+		return DocShareErr(http.StatusBadRequest, "that is a directory. share one file")
 	}
-	if fi.Size() > docShareMaxDoc {
-		return docShareErr(http.StatusBadRequest, "that document is over %d MiB", docShareMaxDoc>>20)
+	if fi.Size() > DocShareMaxDoc {
+		return DocShareErr(http.StatusBadRequest, "that document is over %d MiB", DocShareMaxDoc>>20)
 	}
-	if docshare.SecretFileName(realRel(root, real, rel)) {
-		return docShareErr(http.StatusForbidden, "%s", docShareSpeedBump)
+	if docshare.SecretFileName(RealRel(root, real, rel)) {
+		return DocShareErr(http.StatusForbidden, "%s", DocShareSpeedBump)
 	}
 	body, err := os.ReadFile(real)
 	if err != nil {
-		return docShareErr(http.StatusForbidden, "cannot read that")
+		return DocShareErr(http.StatusForbidden, "cannot read that")
 	}
 	if rule := docshare.SecretContent(body); rule != "" {
-		return docShareErr(http.StatusForbidden, "%s (%s)", docShareSpeedBump, rule)
+		return DocShareErr(http.StatusForbidden, "%s (%s)", DocShareSpeedBump, rule)
 	}
 
 	if err := os.MkdirAll(filepath.Join(dir, "f"), 0o700); err != nil {
 		return err
 	}
 	total := int64(len(body))
-	snap := docSnapshot{Path: rel, Images: map[string]int{}, Types: []string{}}
+	snap := DocSnapshot{Path: rel, Images: map[string]int{}, Types: []string{}}
 	seen := map[string]bool{}
 	for _, im := range images {
 		im = strings.TrimSpace(im)
@@ -229,34 +229,34 @@ func (d *Daemon) writeDocSnapshot(worktree, rel string, images []string, dir str
 			continue
 		}
 		seen[im] = true
-		if len(snap.Images) >= docShareMaxImages {
-			return docShareErr(http.StatusBadRequest, "more than %d images", docShareMaxImages)
+		if len(snap.Images) >= DocShareMaxImages {
+			return DocShareErr(http.StatusBadRequest, "more than %d images", DocShareMaxImages)
 		}
 		ct, ok := api.ViewImageType(filepath.Ext(im))
 		if !ok {
-			return docShareErr(http.StatusBadRequest, "%s is not an image type that can be shared", im)
+			return DocShareErr(http.StatusBadRequest, "%s is not an image type that can be shared", im)
 		}
 		ireal, err := safepath.Contained(root, im)
 		if err != nil {
-			return docShareErr(http.StatusForbidden, "%s", safepath.ErrOutside.Error())
+			return DocShareErr(http.StatusForbidden, "%s", safepath.ErrOutside.Error())
 		}
 		if rct, ok := api.ViewImageType(filepath.Ext(ireal)); !ok || rct != ct {
-			return docShareErr(http.StatusBadRequest, "%s is not an image type that can be shared", im)
+			return DocShareErr(http.StatusBadRequest, "%s is not an image type that can be shared", im)
 		}
 		ifi, err := os.Stat(ireal)
 		if err != nil || ifi.IsDir() {
-			return docShareErr(http.StatusNotFound, "no such image: %s", im)
+			return DocShareErr(http.StatusNotFound, "no such image: %s", im)
 		}
-		if docshare.SecretFileName(realRel(root, ireal, im)) {
-			return docShareErr(http.StatusForbidden, "%s", docShareSpeedBump)
+		if docshare.SecretFileName(RealRel(root, ireal, im)) {
+			return DocShareErr(http.StatusForbidden, "%s", DocShareSpeedBump)
 		}
 		total += ifi.Size()
-		if total > docShareMaxTotal {
-			return docShareErr(http.StatusBadRequest, "the snapshot is over %d MiB", docShareMaxTotal>>20)
+		if total > DocShareMaxTotal {
+			return DocShareErr(http.StatusBadRequest, "the snapshot is over %d MiB", DocShareMaxTotal>>20)
 		}
 		data, err := os.ReadFile(ireal)
 		if err != nil {
-			return docShareErr(http.StatusForbidden, "cannot read %s", im)
+			return DocShareErr(http.StatusForbidden, "cannot read %s", im)
 		}
 		n := len(snap.Types)
 		if err := os.WriteFile(filepath.Join(dir, "f", strconv.Itoa(n)), data, 0o600); err != nil {
@@ -272,7 +272,7 @@ func (d *Daemon) writeDocSnapshot(worktree, rel string, images []string, dir str
 	return os.WriteFile(filepath.Join(dir, "map.json"), mj, 0o600)
 }
 
-func realRel(root, real, fallback string) string {
+func RealRel(root, real, fallback string) string {
 	r := root
 	if e, err := filepath.EvalSymlinks(r); err == nil {
 		r = e
@@ -284,21 +284,21 @@ func realRel(root, real, fallback string) string {
 }
 
 // bindDocShare reserves the name, creates the share and starts answering it. It is the only place that does.
-func (d *Daemon) bindDocShare(rec *store.DocShare) error {
-	b := d.docShareBinder()
-	if err := b.reserve(rec.Namespace, rec.Name); err != nil {
+func (d *Service) BindDocShare(rec *store.DocShare) error {
+	b := d.DocShareBinder()
+	if err := b.Reserve(rec.Namespace, rec.Name); err != nil {
 		return err
 	}
-	h, err := d.docShareHandler(rec.Dir)
+	h, err := d.DocShareHandler(rec.Dir)
 	if err != nil {
 		return err
 	}
-	ln, token, address, err := b.bind(rec, h)
+	ln, token, address, err := b.Bind(rec, h)
 	if err != nil {
 		return err
 	}
 	srv := &http.Server{Handler: h}
-	d.docs.put(rec.ID, &docShareLive{srv: srv, token: token})
+	d.Docs.Put(rec.ID, &DocShareLive{Srv: srv, Token: token})
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("[atrium] the document share %s stopped: %v", rec.ID, err)
@@ -309,54 +309,54 @@ func (d *Daemon) bindDocShare(rec *store.DocShare) error {
 }
 
 // unbindDocShare takes a share down without giving anything up, which is what a shutdown does.
-func (d *Daemon) unbindDocShare(id string) {
-	l := d.docs.take(id)
+func (d *Service) UnbindDocShare(id string) {
+	l := d.Docs.Take(id)
 	if l == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = l.srv.Shutdown(ctx)
-	if l.token != "" {
-		d.docShareBinder().release(l.token)
+	_ = l.Srv.Shutdown(ctx)
+	if l.Token != "" {
+		d.DocShareBinder().Release(l.Token)
 	}
 }
 
-func (d *Daemon) releaseDocShare(rec *store.DocShare) {
-	d.unbindDocShare(rec.ID)
-	d.docShareBinder().unreserve(rec.Namespace, rec.Name)
+func (d *Service) ReleaseDocShare(rec *store.DocShare) {
+	d.UnbindDocShare(rec.ID)
+	d.DocShareBinder().Unreserve(rec.Namespace, rec.Name)
 }
 
 // StopDocShare ends one share for good: the listener, the share, the name, the folder and the row.
-func (d *Daemon) StopDocShare(id string) error {
+func (d *Service) StopDocShare(id string) error {
 	rec, err := d.st.DocShareByID(id)
 	if err != nil {
 		return err
 	}
 	if rec == nil {
-		return docShareErr(http.StatusNotFound, "that document is not shared")
+		return DocShareErr(http.StatusNotFound, "that document is not shared")
 	}
-	d.endDocShare(rec)
+	d.EndDocShare(rec)
 	return nil
 }
 
 // StopDocShareFor ends the share of one document of a card.
-func (d *Daemon) StopDocShareFor(taskID, path string) error {
+func (d *Service) StopDocShareFor(taskID, path string) error {
 	rec, err := d.st.DocShareFor(taskID, strings.TrimSpace(path))
 	if err != nil {
 		return err
 	}
 	if rec == nil {
-		return docShareErr(http.StatusNotFound, "that document is not shared")
+		return DocShareErr(http.StatusNotFound, "that document is not shared")
 	}
-	d.endDocShare(rec)
+	d.EndDocShare(rec)
 	return nil
 }
 
-func (d *Daemon) endDocShare(rec *store.DocShare) {
-	d.releaseDocShare(rec)
+func (d *Service) EndDocShare(rec *store.DocShare) {
+	d.ReleaseDocShare(rec)
 	// Only a folder this daemon made, found by the id and not by what the row says.
-	if dir := d.docShareDir(rec.ID); filepath.Clean(rec.Dir) == filepath.Clean(dir) {
+	if dir := d.DocShareDir(rec.ID); filepath.Clean(rec.Dir) == filepath.Clean(dir) {
 		if err := os.RemoveAll(dir); err != nil {
 			log.Printf("[atrium] could not remove the folder of document share %s: %v", rec.ID, err)
 		}
@@ -368,23 +368,23 @@ func (d *Daemon) endDocShare(rec *store.DocShare) {
 }
 
 // DocShareOf is the live share of one document, or nil.
-func (d *Daemon) DocShareOf(taskID, path string) any {
+func (d *Service) DocShareOf(taskID, path string) any {
 	rec, err := d.st.DocShareFor(taskID, strings.TrimSpace(path))
-	if err != nil || rec == nil || !d.docShareLiveOrDue(rec) {
+	if err != nil || rec == nil || !d.DocShareLiveOrDue(rec) {
 		return nil
 	}
-	return d.docShareView(*rec)
+	return d.DocShareView(*rec)
 }
 
-type docShareInfo struct {
+type DocShareInfo struct {
 	store.DocShare
 	Title    string `json:"title"`
 	CardGone bool   `json:"card_gone"`
 	Live     bool   `json:"live"`
 }
 
-func (d *Daemon) docShareView(rec store.DocShare) docShareInfo {
-	info := docShareInfo{DocShare: rec, Live: d.docs.has(rec.ID)}
+func (d *Service) DocShareView(rec store.DocShare) DocShareInfo {
+	info := DocShareInfo{DocShare: rec, Live: d.Docs.Has(rec.ID)}
 	if t, err := d.st.Get(rec.TaskID); err == nil {
 		info.Title = t.DisplayTitle()
 	} else {
@@ -394,21 +394,21 @@ func (d *Daemon) docShareView(rec store.DocShare) docShareInfo {
 }
 
 // DocShares is what the board lists beside the lent sessions.
-func (d *Daemon) DocShares() any {
+func (d *Service) DocShares() any {
 	recs, err := d.st.DocShares()
 	if err != nil {
 		log.Printf("[atrium] could not read the document shares: %v", err)
-		return []docShareInfo{}
+		return []DocShareInfo{}
 	}
-	out := make([]docShareInfo, 0, len(recs))
+	out := make([]DocShareInfo, 0, len(recs))
 	for _, r := range recs {
-		out = append(out, d.docShareView(r))
+		out = append(out, d.DocShareView(r))
 	}
 	return out
 }
 
 // RestoreDocShares puts back every share that is wanted and has not expired, after dropping the ones that have.
-func (d *Daemon) RestoreDocShares() {
+func (d *Service) RestoreDocShares() {
 	recs, err := d.st.DocShares()
 	if err != nil {
 		log.Printf("[atrium] could not read the document shares: %v", err)
@@ -421,13 +421,13 @@ func (d *Daemon) RestoreDocShares() {
 		for i := range recs {
 			rec := recs[i]
 			if d.st.DocShareExpired(rec) || !rec.Wanted {
-				d.endDocShare(&rec)
+				d.EndDocShare(&rec)
 				continue
 			}
-			if d.docs.has(rec.ID) {
+			if d.Docs.Has(rec.ID) {
 				continue
 			}
-			if err := d.bindDocShare(&rec); err != nil {
+			if err := d.BindDocShare(&rec); err != nil {
 				log.Printf("[atrium] could not put %s back on its share: %v", rec.Path, err)
 				continue
 			}
@@ -439,39 +439,39 @@ func (d *Daemon) RestoreDocShares() {
 }
 
 // sweepDocShares stops what has expired. It runs on the reaper tick.
-func (d *Daemon) sweepDocShares() {
+func (d *Service) SweepDocShares() {
 	recs, err := d.st.DocShares()
 	if err != nil {
 		return
 	}
 	for i := range recs {
 		if d.st.DocShareExpired(recs[i]) {
-			d.endDocShare(&recs[i])
+			d.EndDocShare(&recs[i])
 		}
 	}
 }
 
 // stopAllDocShares unbinds every share for shutdown. The rows stay wanted, so the next start puts them back.
-func (d *Daemon) stopAllDocShares() {
-	d.docs.mu.Lock()
-	ids := make([]string, 0, len(d.docs.live))
-	for id := range d.docs.live {
+func (d *Service) StopAllDocShares() {
+	d.Docs.Mu.Lock()
+	ids := make([]string, 0, len(d.Docs.Live))
+	for id := range d.Docs.Live {
 		ids = append(ids, id)
 	}
-	d.docs.mu.Unlock()
+	d.Docs.Mu.Unlock()
 	sort.Strings(ids)
 	for _, id := range ids {
-		d.unbindDocShare(id)
+		d.UnbindDocShare(id)
 	}
 }
 
 // docShareHandler is the whole surface a reader of a shared document can reach. Everything not named is 404.
-func (d *Daemon) docShareHandler(dir string) (http.Handler, error) {
+func (d *Service) DocShareHandler(dir string) (http.Handler, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, "map.json"))
 	if err != nil {
 		return nil, fmt.Errorf("the snapshot is missing: %w", err)
 	}
-	var snap docSnapshot
+	var snap DocSnapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return nil, fmt.Errorf("the snapshot is unreadable: %w", err)
 	}
@@ -483,7 +483,7 @@ func (d *Daemon) docShareHandler(dir string) (http.Handler, error) {
 	meta, _ := json.Marshal(map[string]any{"path": snap.Path, "images": snap.Images})
 	page = []byte(strings.Replace(string(page), "__SHARE_MAP__", html.EscapeString(string(meta)), 1))
 
-	type asset struct{ file, ct string }
+	type asset struct{ File, Ct string }
 	static := map[string]asset{
 		"/read.js":          {"read.js", "text/javascript; charset=utf-8"},
 		"/vendor/marked.js": {"vendor/marked.js", "text/javascript; charset=utf-8"},
@@ -540,58 +540,58 @@ func (d *Daemon) docShareHandler(dir string) (http.Handler, error) {
 				http.NotFound(w, r)
 				return
 			}
-			b, err := fs.ReadFile(board, s.file)
+			b, err := fs.ReadFile(board, s.File)
 			if err != nil {
 				http.NotFound(w, r)
 				return
 			}
-			serve(s.ct, b)
+			serve(s.Ct, b)
 		}
 	})
 	return h, nil
 }
 
-var errDocNoZrok = errors.New("this machine has no zrok environment yet. enable one under settings, expose the board")
+var ErrDocNoZrok = errors.New("this machine has no zrok environment yet. enable one under settings, expose the board")
 
-type zrokDocBinder struct{ d *Daemon }
+type ZrokDocBinder struct{ D *Service }
 
-func (z zrokDocBinder) reserve(namespace, name string) error {
-	_, err := z.d.ReserveZrokName(namespace, name)
+func (z ZrokDocBinder) Reserve(namespace, name string) error {
+	_, err := z.D.ReserveZrokName(namespace, name)
 	return err
 }
 
-func (z zrokDocBinder) unreserve(namespace, name string) {
-	if err := z.d.ReleaseZrokName(namespace, name); err != nil {
+func (z ZrokDocBinder) Unreserve(namespace, name string) {
+	if err := z.D.ReleaseZrokName(namespace, name); err != nil {
 		log.Printf("[atrium] could not release the name %s: %v", name, err)
 	}
 }
 
-func (z zrokDocBinder) release(token string) {
-	if root, err := z.d.zrokRoot(); err == nil {
+func (z ZrokDocBinder) Release(token string) {
+	if root, err := z.D.ZrokRoot(); err == nil {
 		if err := zroksdk.DeleteShare(root, &zroksdk.Share{Token: token}); err != nil {
 			log.Printf("[atrium] could not release the share %s: %v", token, err)
 		}
 	}
 }
 
-func (z zrokDocBinder) bind(rec *store.DocShare, h http.Handler) (net.Listener, string, string, error) {
-	root, err := z.d.zrokRoot()
+func (z ZrokDocBinder) Bind(rec *store.DocShare, h http.Handler) (net.Listener, string, string, error) {
+	root, err := z.D.ZrokRoot()
 	if err != nil {
 		return nil, "", "", fmt.Errorf("could not read the zrok environment: %w", err)
 	}
 	if !root.IsEnabled() {
-		return nil, "", "", errDocNoZrok
+		return nil, "", "", ErrDocNoZrok
 	}
 	shr, err := zroksdk.CreateShare(root, &zroksdk.ShareRequest{
 		BackendMode: zroksdk.ProxyBackendMode,
 		ShareMode:   zroksdk.PublicShareMode,
-		Target:      z.d.defaultBackend(),
+		Target:      z.D.DefaultBackend(),
 		NameSelections: []zroksdk.NameSelection{
 			{NamespaceToken: rec.Namespace, Name: rec.Name},
 		},
 	})
 	if err != nil {
-		return nil, "", "", zrokSays("could not share "+rec.Path, err)
+		return nil, "", "", ZrokSays("could not share "+rec.Path, err)
 	}
 	if len(shr.FrontendEndpoints) == 0 {
 		_ = zroksdk.DeleteShare(root, shr)
@@ -600,7 +600,7 @@ func (z zrokDocBinder) bind(rec *store.DocShare, h http.Handler) (net.Listener, 
 	ln, err := zroksdk.NewListener(shr.Token, root)
 	if err != nil {
 		_ = zroksdk.DeleteShare(root, shr)
-		return nil, "", "", zrokSays("the share was created but nothing could answer it", err)
+		return nil, "", "", ZrokSays("the share was created but nothing could answer it", err)
 	}
 	return ln, shr.Token, strings.TrimRight(shr.FrontendEndpoints[0], "/") + "/", nil
 }

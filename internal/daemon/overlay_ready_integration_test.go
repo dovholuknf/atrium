@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,7 @@ func TestSharingZitiWithNoIdentityIsRefusedWithTheNextStep(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 
-	err := d.readyToShare(OverlayZiti)
+	err := d.ReadyToShare(publish.OverlayZiti)
 	if err == nil {
 		t.Fatal("a ziti share with no identity was allowed to start")
 	}
@@ -29,11 +30,11 @@ func TestAnIdentityThatHasGoneSaysSoRatherThanSayingThereIsNone(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	gone := filepath.ToSlash(filepath.Join(t.TempDir(), "vanished.json"))
-	if err := d.saveOverlay("ziti", []byte(`{"identity":"`+gone+`","service":"board"}`)); err != nil {
+	if err := d.SaveOverlay("ziti", []byte(`{"identity":"`+gone+`","service":"board"}`)); err != nil {
 		t.Fatal(err)
 	}
 
-	err := d.readyToShare(OverlayZiti)
+	err := d.ReadyToShare(publish.OverlayZiti)
 	if err == nil {
 		t.Fatal("a missing identity was allowed to start")
 	}
@@ -56,11 +57,11 @@ func TestAnIdentityWithNoServiceIsRefused(t *testing.T) {
 	if err := os.WriteFile(id, []byte(`{"ztAPI":"https://ctrl.example:1280"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.saveOverlay("ziti", []byte(`{"identity":"`+filepath.ToSlash(id)+`"}`)); err != nil {
+	if err := d.SaveOverlay("ziti", []byte(`{"identity":"`+filepath.ToSlash(id)+`"}`)); err != nil {
 		t.Fatal(err)
 	}
 
-	err := d.readyToShare(OverlayZiti)
+	err := d.ReadyToShare(publish.OverlayZiti)
 	if err == nil {
 		t.Fatal("a ziti share with no service was allowed to start")
 	}
@@ -80,12 +81,12 @@ func TestAConfiguredZitiOverlayPassesPreflight(t *testing.T) {
 	if err := os.WriteFile(id, []byte(`{"ztAPI":"https://ctrl.example:1280"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.saveOverlay("ziti",
+	if err := d.SaveOverlay("ziti",
 		[]byte(`{"identity":"`+filepath.ToSlash(id)+`","service":"atrium-board"}`)); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := d.readyToShare(OverlayZiti); err != nil {
+	if err := d.ReadyToShare(publish.OverlayZiti); err != nil {
 		t.Fatalf("a configured overlay was refused: %v", err)
 	}
 }
@@ -95,7 +96,7 @@ func TestAConfiguredZitiOverlayPassesPreflight(t *testing.T) {
 func TestAnUnknownOverlayCannotBeStarted(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.startOverlay("carrier-pigeon"); err == nil {
+	if err := d.StartOverlay("carrier-pigeon"); err == nil {
 		t.Fatal("an unknown overlay was started")
 	}
 }
@@ -105,7 +106,7 @@ func TestAnUnknownOverlayCannotBeStarted(t *testing.T) {
 func TestStartGoesThroughThePreflight(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	err := d.startOverlay("ziti")
+	err := d.StartOverlay("ziti")
 	if err == nil {
 		t.Fatal("starting ziti with nothing configured was allowed")
 	}

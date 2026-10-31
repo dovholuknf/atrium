@@ -27,7 +27,7 @@ func TestTheRoomsGitSurfaceIsNotOnTheHumanGuestOrAgentListeners(t *testing.T) {
 		{"POST", "/v1/git/sync"},
 	}
 	board := d.BoardHandler()
-	guest := d.guestHandler(task.ID)
+	guest := d.GuestHandler(task.ID)
 	for _, p := range paths {
 		serve := func(h http.Handler) *httptest.ResponseRecorder {
 			rec := httptest.NewRecorder()

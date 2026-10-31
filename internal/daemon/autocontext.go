@@ -37,7 +37,7 @@ func (d *Daemon) cycleSubject(t *store.Task) bool {
 	default:
 		return false
 	}
-	if d.guests.get(t.ID) != nil || d.frozenForMove(t.ID) {
+	if d.Guests.Get(t.ID) != nil || d.frozenForMove(t.ID) {
 		return false
 	}
 	return true

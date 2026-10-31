@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"regexp"
 	"sort"
 	"strings"
@@ -170,17 +171,17 @@ var neverExported = []string{
 	// Whether cards may push to the hub. An import must not turn it on.
 	store.SettingGitPush,
 	store.SettingGlobalAuto,
-	SettingOverlayZrok,
-	SettingOverlayZiti,
+	publish.SettingOverlayZrok,
+	publish.SettingOverlayZiti,
 	// The key that signs session cookies. Anybody holding it can mint a
 	// session for any subject, which is every bit as good as the login it
 	// stands behind.
-	SettingAuthKey,
+	publish.SettingAuthKey,
 	// And the auth configuration, because it holds a client secret. The
 	// issuer and the allow list would be safe on their own, which is exactly
 	// the trap: a per-file rule would have to choose between exporting the
 	// secret and exporting nothing, so the blob stays.
-	SettingAuth,
+	publish.SettingAuth,
 	// A state like `global_auto`: whether THIS room stopped on purpose.
 	store.SettingRoomStopped,
 }
@@ -230,14 +231,14 @@ func (d *Daemon) BuildExport() (*Export, error) {
 	}
 
 	// FIELD BY FIELD, which is the allowlist. See the header.
-	zrok := d.zrokConfig()
+	zrok := d.ZrokConfig()
 	out.Overlays.Zrok = ExportZrok{
 		Public:         zrok.Public,
 		Private:        zrok.Private,
 		OwnEnvironment: zrok.OwnEnvironment,
 		ApiEndpoint:    zrok.ApiEndpoint,
 	}
-	out.Overlays.Ziti = ExportZiti{Service: d.zitiConfig().Service}
+	out.Overlays.Ziti = ExportZiti{Service: d.ZitiConfig().Service}
 
 	if err := refuseIfItLooksLikeASecret(out); err != nil {
 		return nil, err

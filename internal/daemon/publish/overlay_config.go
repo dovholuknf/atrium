@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"encoding/json"
@@ -105,23 +105,23 @@ type ZitiConfig struct {
 }
 
 // defaultBackend is the board's own address, which is the thing being shared.
-func (d *Daemon) defaultBackend() string {
-	addr := d.opts.HumanAddr
+func (d *Service) DefaultBackend() string {
+	addr := d.opts().HumanAddr
 	if strings.HasPrefix(addr, ":") {
 		return "localhost" + addr
 	}
 	return addr
 }
 
-func (d *Daemon) zrokConfig() ZrokConfig {
+func (d *Service) ZrokConfig() ZrokConfig {
 	var c ZrokConfig
 	raw, err := d.st.Setting(SettingOverlayZrok)
 	if err == nil && raw != "" {
 		_ = json.Unmarshal([]byte(raw), &c)
 	}
-	c.normalise()
+	c.Normalise()
 	if c.Backend == "" {
-		c.Backend = d.defaultBackend()
+		c.Backend = d.DefaultBackend()
 	}
 	return c
 }
@@ -142,7 +142,7 @@ func (d *Daemon) zrokConfig() ZrokConfig {
 // Public wins when both are ticked, because the board's own share is one
 // listener and has to pick, and somebody who ticked both is reaching for the
 // link rather than the command.
-func (c *ZrokConfig) normalise() {
+func (c *ZrokConfig) Normalise() {
 	mode := strings.TrimSpace(c.Mode)
 	known := mode == "public" || mode == "private"
 
@@ -164,7 +164,7 @@ func (c *ZrokConfig) normalise() {
 	}
 }
 
-func (d *Daemon) zitiConfig() ZitiConfig {
+func (d *Service) ZitiConfig() ZitiConfig {
 	var c ZitiConfig
 	raw, err := d.st.Setting(SettingOverlayZiti)
 	if err == nil && raw != "" {
@@ -173,7 +173,7 @@ func (d *Daemon) zitiConfig() ZitiConfig {
 	return c
 }
 
-func (d *Daemon) saveOverlayConfig(key string, v any) error {
+func (d *Service) SaveOverlayConfig(key string, v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -210,7 +210,7 @@ func (c ZrokConfig) zrokArgs() ([]string, error) {
 			args = append(args, "--name-selection", n)
 		}
 	}
-	return append(args, splitExtra(c.Extra)...), nil
+	return append(args, SplitExtra(c.Extra)...), nil
 }
 
 // zitiArgs builds the hosting command.
@@ -225,12 +225,12 @@ func (c ZitiConfig) zitiArgs() ([]string, error) {
 		return nil, fmt.Errorf("no identity: point atrium at an enrolled identity file")
 	}
 	args := []string{"tunnel", "host", "--identity", id}
-	return append(args, splitExtra(c.Extra)...), nil
+	return append(args, SplitExtra(c.Extra)...), nil
 }
 
 // splitExtra turns a free-text options field into arguments. Whitespace only,
 // with no quote handling: an option that needs a quoted value belongs in a
 // field of its own rather than in a catch-all.
-func splitExtra(s string) []string {
+func SplitExtra(s string) []string {
 	return strings.Fields(s)
 }

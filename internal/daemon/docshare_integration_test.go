@@ -5,6 +5,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"io"
 	"net"
 	"net/http"
@@ -30,26 +31,26 @@ func newFakeDocBinder() *fakeDocBinder {
 	return &fakeDocBinder{reserved: map[string]bool{}, lns: map[string]net.Listener{}}
 }
 
-func (f *fakeDocBinder) reserve(ns, name string) error {
+func (f *fakeDocBinder) Reserve(ns, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reserved[ns+"/"+name] = true
 	return nil
 }
 
-func (f *fakeDocBinder) unreserve(ns, name string) {
+func (f *fakeDocBinder) Unreserve(ns, name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.reserved, ns+"/"+name)
 }
 
-func (f *fakeDocBinder) release(token string) {
+func (f *fakeDocBinder) Release(token string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.released = append(f.released, token)
 }
 
-func (f *fakeDocBinder) bind(rec *store.DocShare, h http.Handler) (net.Listener, string, string, error) {
+func (f *fakeDocBinder) Bind(rec *store.DocShare, h http.Handler) (net.Listener, string, string, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, "", "", err
@@ -71,7 +72,7 @@ func docShareFixture(t *testing.T) (*Daemon, *fakeDocBinder, *store.Task, string
 	d, _, cancel, _ := startDaemon(t)
 	t.Cleanup(cancel)
 	fb := newFakeDocBinder()
-	d.docs.b = fb
+	d.Docs.B = fb
 	wt := t.TempDir()
 	task, _, err := d.st.Register(store.Observed{WireName: "blog", Worktree: wt, Runner: "claude"})
 	if err != nil {
@@ -109,9 +110,9 @@ func docGet(t *testing.T, base, path string) (int, string, http.Header) {
 	return resp.StatusCode, string(b), resp.Header
 }
 
-func asDocShare(t *testing.T, v any) docShareInfo {
+func asDocShare(t *testing.T, v any) publish.DocShareInfo {
 	t.Helper()
-	info, ok := v.(docShareInfo)
+	info, ok := v.(publish.DocShareInfo)
 	if !ok {
 		t.Fatalf("a share came back as %T", v)
 	}
@@ -231,7 +232,7 @@ func TestDocShareRefusesWhatItShould(t *testing.T) {
 	if recs, _ := d.st.DocShares(); len(recs) != 0 || fb.reservedCount() != 0 {
 		t.Fatalf("a refusal left %d rows and %d names behind", len(recs), fb.reservedCount())
 	}
-	if ents, _ := os.ReadDir(d.docShareRoot()); len(ents) != 0 {
+	if ents, _ := os.ReadDir(d.DocShareRoot()); len(ents) != 0 {
 		t.Fatalf("a refusal left %d folders behind", len(ents))
 	}
 }
@@ -259,7 +260,7 @@ func TestDocShareStopExpiryAndRestart(t *testing.T) {
 	if recs, _ := d.st.DocShares(); len(recs) != 0 {
 		t.Fatalf("a stopped share left %d rows", len(recs))
 	}
-	if _, err := os.Stat(d.docShareDir(first.ID)); !os.IsNotExist(err) {
+	if _, err := os.Stat(d.DocShareDir(first.ID)); !os.IsNotExist(err) {
 		t.Fatalf("a stopped share left its folder: %v", err)
 	}
 	if fb.reservedCount() != 0 {
@@ -270,7 +271,7 @@ func TestDocShareStopExpiryAndRestart(t *testing.T) {
 	}
 
 	keep := asDocShare(t, mustDocShare(t, d, task.ID, "docs/a.md"))
-	d.stopAllDocShares()
+	d.StopAllDocShares()
 	if _, err := http.Get(keep.Address + "doc.md"); err == nil {
 		t.Fatal("a shutdown left the share answering")
 	}
@@ -278,7 +279,7 @@ func TestDocShareStopExpiryAndRestart(t *testing.T) {
 		t.Fatalf("a shutdown did not leave the row wanted: %+v", recs)
 	}
 	d.RestoreDocShares()
-	waitFor(t, func() bool { return d.docs.has(keep.ID) })
+	waitFor(t, func() bool { return d.Docs.Has(keep.ID) })
 	rec, _ := d.st.DocShareByID(keep.ID)
 	if code, body, _ := docGet(t, strings.TrimSuffix(rec.Address, "/"), "/doc.md"); code != 200 || !strings.Contains(body, "# Title") {
 		t.Fatalf("a restored share answered %d %q", code, body)
@@ -288,22 +289,22 @@ func TestDocShareStopExpiryAndRestart(t *testing.T) {
 	if err := d.st.PutDocShare(*rec); err != nil {
 		t.Fatal(err)
 	}
-	d.sweepDocShares()
+	d.SweepDocShares()
 	if recs, _ := d.st.DocShares(); len(recs) != 0 {
 		t.Fatalf("an expired share survived the sweep: %+v", recs)
 	}
-	if _, err := os.Stat(d.docShareDir(keep.ID)); !os.IsNotExist(err) || fb.reservedCount() != 0 || d.docs.has(keep.ID) {
+	if _, err := os.Stat(d.DocShareDir(keep.ID)); !os.IsNotExist(err) || fb.reservedCount() != 0 || d.Docs.Has(keep.ID) {
 		t.Fatal("an expired share kept its folder, its name or its listener")
 	}
 
 	stale := asDocShare(t, mustDocShare(t, d, task.ID, "docs/b.md"))
-	d.stopAllDocShares()
+	d.StopAllDocShares()
 	rec, _ = d.st.DocShareByID(stale.ID)
 	rec.ExpiresAt = time.Now().Add(-time.Minute).UTC().Format(store.TimeFormat)
 	_ = d.st.PutDocShare(*rec)
 	d.RestoreDocShares()
 	waitFor(t, func() bool { r, _ := d.st.DocShareByID(stale.ID); return r == nil })
-	if d.docs.has(stale.ID) {
+	if d.Docs.Has(stale.ID) {
 		t.Fatal("a restart rebound an expired share")
 	}
 }
@@ -320,7 +321,7 @@ func TestDocShareOutlivesItsCardAndIsCapped(t *testing.T) {
 	if code, _, _ := docGet(t, strings.TrimSuffix(s.Address, "/"), "/doc.md"); code != 200 {
 		t.Fatalf("the share stopped with its card: %d", code)
 	}
-	list, _ := d.DocShares().([]docShareInfo)
+	list, _ := d.DocShares().([]publish.DocShareInfo)
 	if len(list) != 1 || !list[0].CardGone {
 		t.Fatalf("the list does not say the card is gone: %+v", list)
 	}
@@ -329,7 +330,7 @@ func TestDocShareOutlivesItsCardAndIsCapped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 1; i < docShareMaxLive; i++ {
+	for i := 1; i < publish.DocShareMaxLive; i++ {
 		name := fmt.Sprintf("n%d.md", i)
 		if err := os.WriteFile(filepath.Join(wt, name), []byte("# n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -340,7 +341,7 @@ func TestDocShareOutlivesItsCardAndIsCapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = d.MakeDocShare(task2.ID, api.DocShareRequest{Path: "one-too-many.md"})
-	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(docShareMaxLive)) {
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprint(publish.DocShareMaxLive)) {
 		t.Fatalf("the share past the cap: %v", err)
 	}
 }

@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ const shareRefusedErr = `[POST /share][401] shareUnauthorized`
 // instruction tries forever.
 func TestNameLimitIsNotReportedAsATakenName(t *testing.T) {
 	t.Parallel()
-	got := zrokSays("could not create the name", errors.New(nameLimitErr)).Error()
+	got := publish.ZrokSays("could not create the name", errors.New(nameLimitErr)).Error()
 
 	if strings.Contains(got, "that name is taken") || strings.Contains(got, "longer one") {
 		t.Fatalf("a name limit was reported as a name collision, so the instruction is to "+
@@ -37,7 +38,7 @@ func TestNameLimitIsNotReportedAsATakenName(t *testing.T) {
 // would send somebody to release names over something else entirely.
 func TestAnUnnamedLimitDoesNotClaimToBeTheNameLimit(t *testing.T) {
 	t.Parallel()
-	got := zrokSays("could not open the share",
+	got := publish.ZrokSays("could not open the share",
 		errors.New(`[POST /share][429] shareTooManyRequests`)).Error()
 
 	if strings.Contains(got, "reserved names") || strings.Contains(got, "release one") {
@@ -53,7 +54,7 @@ func TestAnUnnamedLimitDoesNotClaimToBeTheNameLimit(t *testing.T) {
 // message would lose that.
 func TestATakenNameStillReadsAsATakenName(t *testing.T) {
 	t.Parallel()
-	got := zrokSays("could not create the name", errors.New(nameTakenErr)).Error()
+	got := publish.ZrokSays("could not create the name", errors.New(nameTakenErr)).Error()
 
 	if !strings.Contains(got, "taken") {
 		t.Fatalf("a name collision no longer says the name is taken:\n%s", got)
@@ -66,7 +67,7 @@ func TestATakenNameStillReadsAsATakenName(t *testing.T) {
 // it is wrong about sends somebody to re-enable an environment that is fine.
 func TestAShareRefusalNamesBothCauses(t *testing.T) {
 	t.Parallel()
-	got := strings.ToLower(zrokSays("could not open the share", errors.New(shareRefusedErr)).Error())
+	got := strings.ToLower(publish.ZrokSays("could not open the share", errors.New(shareRefusedErr)).Error())
 
 	if !strings.Contains(got, "limit") {
 		t.Errorf("a 401 from zrok does not mention a limit, and a share limit is one of the "+
@@ -84,12 +85,12 @@ func TestAShareRefusalNamesBothCauses(t *testing.T) {
 // reserved", which describes a state the account is not in.
 func TestReservingDoesNotSwallowANameLimit(t *testing.T) {
 	t.Parallel()
-	if alreadyThere(errors.New(nameLimitErr)) {
+	if publish.AlreadyThere(errors.New(nameLimitErr)) {
 		t.Fatal("a name-limit refusal is being read as a name that already exists, so " +
 			"reserving carries on to the update, which refuses for the same reason and " +
 			"reports it as a name collision")
 	}
-	if !alreadyThere(errors.New(nameTakenErr)) {
+	if !publish.AlreadyThere(errors.New(nameTakenErr)) {
 		t.Fatal("a real conflict is no longer recognised, so pressing reserve twice now " +
 			"fails the second time")
 	}
@@ -100,12 +101,12 @@ func TestReservingDoesNotSwallowANameLimit(t *testing.T) {
 // silently zeroes that number rather than breaking anything.
 func TestAtriumNamesAreAttributable(t *testing.T) {
 	t.Parallel()
-	n, err := newShareNameOf(boardShareNameLen)
+	n, err := publish.NewShareNameOf(publish.BoardShareNameLen)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(n, atriumNamePrefix) {
+	if !strings.HasPrefix(n, publish.AtriumNamePrefix) {
 		t.Fatalf("%q does not start with %q, so the zrok panel cannot say which reserved "+
-			"names are atrium's", n, atriumNamePrefix)
+			"names are atrium's", n, publish.AtriumNamePrefix)
 	}
 }

@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"crypto/hmac"
@@ -69,7 +69,7 @@ const SettingAuth = "auth_oidc"
 const SettingAuthKey = "auth_cookie_key"
 
 // authCookie is the name of the session cookie.
-const authCookie = "atrium_session"
+const AuthCookie = "atrium_session"
 
 // authSessionFor is how long a session lasts before the provider is asked
 // again.
@@ -83,14 +83,14 @@ const authCookie = "atrium_session"
 // try if somebody wants revocation to bite sooner. The cost is not zero: every
 // renewal is a full page load, and the board is one page that holds open
 // terminals.
-const authSessionFor = 12 * time.Hour
+const AuthSessionFor = 12 * time.Hour
 
 // authStateFor bounds how long a login may take.
 //
 // The state parameter is what ties a callback to a login this board started.
 // Five minutes is generous for a human typing a password and short enough that
 // a captured link is not usable later.
-const authStateFor = 5 * time.Minute
+const AuthStateFor = 5 * time.Minute
 
 // AuthConfig is what makes the published board ask who you are.
 //
@@ -159,7 +159,7 @@ func (c AuthConfig) HasPassword() bool {
 }
 
 // basicReady says whether the name and password half could let somebody in.
-func (c AuthConfig) basicReady() error {
+func (c AuthConfig) BasicReady() error {
 	if !c.Basic {
 		return nil
 	}
@@ -177,14 +177,14 @@ func (c AuthConfig) basicReady() error {
 // CONSTANT TIME on the hash, because the comparison is against a secret and a
 // byte-by-byte one leaks how much of a guess was right. The name is compared
 // the same way for the same reason, since knowing the name is most of a guess.
-func (c AuthConfig) checks(user, pass string) bool {
+func (c AuthConfig) Checks(user, pass string) bool {
 	if !c.Basic || !c.HasPassword() {
 		return false
 	}
 	nameOK := subtle.ConstantTimeCompare(
 		[]byte(strings.TrimSpace(user)), []byte(strings.TrimSpace(c.User))) == 1
 	passOK := subtle.ConstantTimeCompare(
-		[]byte(hashPassword(pass, c.PassSalt)), []byte(c.PassHash)) == 1
+		[]byte(HashPassword(pass, c.PassSalt)), []byte(c.PassHash)) == 1
 	// Both are evaluated before either is read, so a wrong NAME costs the same
 	// as a wrong password and the pair cannot be learned one at a time.
 	return nameOK && passOK
@@ -196,7 +196,7 @@ func (c AuthConfig) checks(user, pass string) bool {
 // trying every password offline, and the whole defence against that is how
 // long one guess costs. The parameters are the ones the Go documentation names
 // for interactive use, which is around a tenth of a second here.
-func hashPassword(pass, salt string) string {
+func HashPassword(pass, salt string) string {
 	key, err := scrypt.Key([]byte(pass), []byte(salt), 1<<15, 8, 1, 32)
 	if err != nil {
 		return ""
@@ -209,7 +209,7 @@ func hashPassword(pass, salt string) string {
 // A FRESH SALT EVERY TIME. Reusing one would mean two boards with the same
 // password store the same hash, which is the property that makes a stolen
 // table worth precomputing against.
-func setBasicPassword(c *AuthConfig, pass string) error {
+func SetBasicPassword(c *AuthConfig, pass string) error {
 	if strings.TrimSpace(pass) == "" {
 		return fmt.Errorf("a password of nothing is not a password")
 	}
@@ -218,7 +218,7 @@ func setBasicPassword(c *AuthConfig, pass string) error {
 		return fmt.Errorf("could not make a salt: %w", err)
 	}
 	salt := base64.RawStdEncoding.EncodeToString(raw)
-	hash := hashPassword(pass, salt)
+	hash := HashPassword(pass, salt)
 	if hash == "" {
 		return fmt.Errorf("could not hash the password")
 	}
@@ -227,7 +227,7 @@ func setBasicPassword(c *AuthConfig, pass string) error {
 }
 
 // authConfig reads it, with the defaults that make being unconfigured safe.
-func (d *Daemon) authConfig() AuthConfig {
+func (d *Service) AuthConfig() AuthConfig {
 	var c AuthConfig
 	raw, err := d.st.Setting(SettingAuth)
 	if err == nil && raw != "" {
@@ -242,11 +242,11 @@ func (d *Daemon) authConfig() AuthConfig {
 // send every visitor to a provider that does not exist, and an empty allowlist
 // would let nobody in after they got back, which reads as broken rather than
 // as unconfigured.
-func (c AuthConfig) ready() error {
+func (c AuthConfig) Ready() error {
 	if !c.Enabled {
 		return nil
 	}
-	if err := c.basicReady(); err != nil {
+	if err := c.BasicReady(); err != nil {
 		return err
 	}
 	// A NAME AND PASSWORD IS ENOUGH ON ITS OWN. The checks below are about
@@ -277,7 +277,7 @@ func (c AuthConfig) ready() error {
 // Matched case-insensitively on email or subject, because a provider may put
 // either in the token and an operator typing their own address should not have
 // to know which.
-func (c AuthConfig) allows(subject, email string) bool {
+func (c AuthConfig) Allows(subject, email string) bool {
 	for _, a := range c.Allow {
 		a = strings.TrimSpace(strings.ToLower(a))
 		if a == "" {
@@ -298,16 +298,16 @@ func (c AuthConfig) allows(subject, email string) bool {
 // turning the login off afterwards leaves the board open on a public address.
 // The share is not stopped on the operator's behalf. It is named, and stopping
 // it first is theirs to do.
-func (d *Daemon) SaveAuth(c AuthConfig) error {
-	if err := c.ready(); err != nil {
+func (d *Service) SaveAuth(c AuthConfig) error {
+	if err := c.Ready(); err != nil {
 		return err
 	}
-	if d.publicShareRunning() && !(c.Enabled && c.ready() == nil) {
+	if d.PublicShareRunning() && !(c.Enabled && c.Ready() == nil) {
 		return fmt.Errorf("the board is on a public zrok share right now, and turning its " +
 			"login off would leave it open to anyone with the link. stop the share first, " +
 			"then change the login")
 	}
-	old := d.authConfig()
+	old := d.AuthConfig()
 	raw, err := json.Marshal(c)
 	if err != nil {
 		return err
@@ -315,8 +315,8 @@ func (d *Daemon) SaveAuth(c AuthConfig) error {
 	if err := d.st.SetSetting(SettingAuth, string(raw)); err != nil {
 		return err
 	}
-	if sessionsOutdatedBy(old, c) {
-		if err := d.bumpSessionGen(); err != nil {
+	if SessionsOutdatedBy(old, c) {
+		if err := d.BumpSessionGen(); err != nil {
 			return err
 		}
 	}
@@ -329,7 +329,7 @@ func (d *Daemon) SaveAuth(c AuthConfig) error {
 }
 
 // cookieKey returns the signing key, making one the first time.
-func (d *Daemon) cookieKey() ([]byte, error) {
+func (d *Service) CookieKey() ([]byte, error) {
 	raw, err := d.st.Setting(SettingAuthKey)
 	if err == nil && strings.TrimSpace(raw) != "" {
 		return base64.RawURLEncoding.DecodeString(raw)
@@ -358,11 +358,11 @@ func (d *Daemon) cookieKey() ([]byte, error) {
 // drift apart on the attributes that matter: `HttpOnly` keeps it away from
 // script, `Secure` keeps it off plain http, and `SameSite` is what stops
 // another site spending it.
-func (d *Daemon) setSession(w http.ResponseWriter, key []byte, subject, email string) {
-	until := time.Now().Add(authSessionFor)
+func (d *Service) SetSession(w http.ResponseWriter, key []byte, subject, email string) {
+	until := time.Now().Add(AuthSessionFor)
 	http.SetCookie(w, &http.Cookie{
-		Name: authCookie, Value: signSession(key, session{
-			Subject: subject, Email: email, Gen: d.sessionGen(),
+		Name: AuthCookie, Value: SignSession(key, Session{
+			Subject: subject, Email: email, Gen: d.SessionGen(),
 		}, until), Path: "/",
 		Expires: until, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 	})
@@ -374,13 +374,13 @@ func (d *Daemon) setSession(w http.ResponseWriter, key []byte, subject, email st
 // MAC, so on its own nothing short of its expiry could end it. It carries the
 // generation current when it was issued, and a password or allowlist change bumps
 // the stored one, so every cookie issued before the change stops matching.
-type session struct {
+type Session struct {
 	Subject string
 	Email   string
 	Gen     int64
 }
 
-func signSession(key []byte, s session, until time.Time) string {
+func SignSession(key []byte, s Session, until time.Time) string {
 	body := base64.RawURLEncoding.EncodeToString(
 		[]byte(fmt.Sprintf("%d|%d|%s|%s", until.Unix(), s.Gen, s.Subject, s.Email)))
 	mac := hmac.New(sha256.New, key)
@@ -392,36 +392,36 @@ func signSession(key []byte, s session, until time.Time) string {
 //
 // `hmac.Equal` rather than `==`, because comparing MACs with a string compare
 // leaks where they first differ, which is enough to forge one a byte at a time.
-func readSession(key []byte, v string) (session, bool) {
+func ReadSession(key []byte, v string) (Session, bool) {
 	body, sig, ok := strings.Cut(v, ".")
 	if !ok {
-		return session{}, false
+		return Session{}, false
 	}
 	want := hmac.New(sha256.New, key)
 	want.Write([]byte(body))
 	got, err := base64.RawURLEncoding.DecodeString(sig)
 	if err != nil || !hmac.Equal(got, want.Sum(nil)) {
-		return session{}, false
+		return Session{}, false
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(body)
 	if err != nil {
-		return session{}, false
+		return Session{}, false
 	}
 	parts := strings.SplitN(string(raw), "|", 4)
 	if len(parts) != 4 {
-		return session{}, false
+		return Session{}, false
 	}
 	var unix int64
-	var s session
+	var s Session
 	if _, err := fmt.Sscanf(parts[0], "%d", &unix); err != nil {
-		return session{}, false
+		return Session{}, false
 	}
 	if _, err := fmt.Sscanf(parts[1], "%d", &s.Gen); err != nil {
-		return session{}, false
+		return Session{}, false
 	}
 	s.Subject, s.Email = parts[2], parts[3]
 	if time.Now().After(time.Unix(unix, 0)) {
-		return session{}, false
+		return Session{}, false
 	}
 	return s, true
 }
@@ -430,7 +430,7 @@ func readSession(key []byte, v string) (session, bool) {
 const SettingAuthGen = "auth_session_gen"
 
 // sessionGen reads the current generation. Unset is zero.
-func (d *Daemon) sessionGen() int64 {
+func (d *Service) SessionGen() int64 {
 	raw, err := d.st.Setting(SettingAuthGen)
 	if err != nil {
 		return 0
@@ -441,27 +441,27 @@ func (d *Daemon) sessionGen() int64 {
 }
 
 // bumpSessionGen ends every session issued so far.
-func (d *Daemon) bumpSessionGen() error {
-	return d.st.SetSetting(SettingAuthGen, fmt.Sprintf("%d", d.sessionGen()+1))
+func (d *Service) BumpSessionGen() error {
+	return d.st.SetSetting(SettingAuthGen, fmt.Sprintf("%d", d.SessionGen()+1))
 }
 
 // sessionStillGood is the re-check the guard makes on every request: the
 // generation has not moved, and the subject is still somebody the current
 // configuration lets in. A valid MAC only proves this board issued it once.
-func (d *Daemon) sessionStillGood(cfg AuthConfig, s session) bool {
-	if s.Gen != d.sessionGen() {
+func (d *Service) SessionStillGood(cfg AuthConfig, s Session) bool {
+	if s.Gen != d.SessionGen() {
 		return false
 	}
 	if strings.HasPrefix(s.Subject, "basic:") {
 		return cfg.Basic && cfg.HasPassword() && s.Subject == "basic:"+cfg.User
 	}
-	return cfg.allows(s.Subject, s.Email)
+	return cfg.Allows(s.Subject, s.Email)
 }
 
 // sessionsOutdatedBy reports whether moving from one configuration to another
 // should end the sessions issued under the first: a different password, name,
 // allowlist or provider, or the login being turned off.
-func sessionsOutdatedBy(old, next AuthConfig) bool {
+func SessionsOutdatedBy(old, next AuthConfig) bool {
 	if old.Enabled && !next.Enabled {
 		return true
 	}

@@ -247,7 +247,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// itself runs off it. See mergedcull.go.
 		d.sweepMergedCulls()
 		d.sweepLandedIdle()
-		d.sweepDocShares()
+		d.SweepDocShares()
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.

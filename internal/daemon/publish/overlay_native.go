@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"context"
@@ -35,16 +35,16 @@ import (
 
 // overlayKind names a way out. Both are configured the same way and differ
 // only in how a listener is obtained.
-type overlayKind string
+type OverlayKind string
 
 const (
-	OverlayZrok overlayKind = "zrok"
-	OverlayZiti overlayKind = "ziti"
+	OverlayZrok OverlayKind = "zrok"
+	OverlayZiti OverlayKind = "ziti"
 )
 
 // OverlayState is what the board shows for one overlay.
 type OverlayState struct {
-	Kind overlayKind `json:"kind"`
+	Kind OverlayKind `json:"kind"`
 	// Found is the resolved path of the CLI, which is still needed for the
 	// setup step. Empty means enabling or enrolling cannot be done from here,
 	// though an environment or identity set up elsewhere still serves.
@@ -78,28 +78,28 @@ type OverlayState struct {
 }
 
 // nat returns the listener state for one overlay, creating it on first use.
-func (d *Daemon) nat(kind overlayKind) *native {
-	d.natsMu.Lock()
-	defer d.natsMu.Unlock()
-	if d.nats[kind] == nil {
-		d.nats[kind] = &native{kind: kind}
+func (d *Service) Nat(kind OverlayKind) *Native {
+	d.NatsMu.Lock()
+	defer d.NatsMu.Unlock()
+	if d.Nats[kind] == nil {
+		d.Nats[kind] = &Native{Kind: kind}
 	}
-	return d.nats[kind]
+	return d.Nats[kind]
 }
 
 // native is one listener atrium is serving the board on.
-type native struct {
-	mu       sync.Mutex
-	kind     overlayKind
-	ln       net.Listener
-	srv      *http.Server
-	since    time.Time
-	address  string
-	err      string
-	stopping bool
+type Native struct {
+	Mu       sync.Mutex
+	Kind     OverlayKind
+	Ln       net.Listener
+	Srv      *http.Server
+	Since    time.Time
+	Address  string
+	Err      string
+	Stopping bool
 	// shareToken is what zrok gave back, kept so the share can be deleted on
 	// the way out rather than left behind on the account.
-	shareToken string
+	ShareToken string
 }
 
 // serveOn takes ownership of a listener and answers the board on it.
@@ -107,47 +107,47 @@ type native struct {
 // The server is the same handler the local board uses. It is a second
 // http.Server rather than a second handler, because a listener is what these
 // SDKs return and http.Serve wants one.
-func (n *native) serveOn(ln net.Listener, handler http.Handler, address, shareToken string) {
+func (n *Native) ServeOn(ln net.Listener, handler http.Handler, address, shareToken string) {
 	srv := &http.Server{Handler: handler}
 
-	n.mu.Lock()
-	n.ln, n.srv, n.since = ln, srv, time.Now()
-	n.address, n.shareToken, n.err, n.stopping = address, shareToken, "", false
-	n.mu.Unlock()
+	n.Mu.Lock()
+	n.Ln, n.Srv, n.Since = ln, srv, time.Now()
+	n.Address, n.ShareToken, n.Err, n.Stopping = address, shareToken, "", false
+	n.Mu.Unlock()
 
 	go func() {
 		err := srv.Serve(ln)
-		n.mu.Lock()
-		defer n.mu.Unlock()
-		if n.srv != srv {
+		n.Mu.Lock()
+		defer n.Mu.Unlock()
+		if n.Srv != srv {
 			// Replaced by a later start.
 			return
 		}
-		n.ln, n.srv = nil, nil
-		if err != nil && err != http.ErrServerClosed && !n.stopping {
-			n.err = err.Error()
-			log.Printf("[atrium] the %s listener stopped: %v", n.kind, err)
+		n.Ln, n.Srv = nil, nil
+		if err != nil && err != http.ErrServerClosed && !n.Stopping {
+			n.Err = err.Error()
+			log.Printf("[atrium] the %s listener stopped: %v", n.Kind, err)
 			return
 		}
-		log.Printf("[atrium] the %s listener stopped", n.kind)
+		log.Printf("[atrium] the %s listener stopped", n.Kind)
 	}()
 }
 
-func (n *native) running() bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	return n.srv != nil
+func (n *Native) Running() bool {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+	return n.Srv != nil
 }
 
-func (n *native) state(found string) OverlayState {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+func (n *Native) State(found string) OverlayState {
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
 	st := OverlayState{
-		Kind: n.kind, Found: found, Running: n.srv != nil,
-		Address: n.address, Share: n.shareToken, Err: n.err,
+		Kind: n.Kind, Found: found, Running: n.Srv != nil,
+		Address: n.Address, Share: n.ShareToken, Err: n.Err,
 	}
-	if n.srv != nil {
-		st.Since = n.since.Format(time.RFC3339)
+	if n.Srv != nil {
+		st.Since = n.Since.Format(time.RFC3339)
 	}
 	return st
 }
@@ -157,14 +157,14 @@ func (n *native) state(found string) OverlayState {
 // Deleting the share matters: a reserved one lingers on the account and an
 // ephemeral one holds a name. Leaving them behind turns a board somebody
 // opened twice into a list of dead shares they have to clean up by hand.
-func (n *native) stop(root env_core.Root) {
-	n.mu.Lock()
-	srv, token := n.srv, n.shareToken
-	n.stopping = true
+func (n *Native) Stop(root env_core.Root) {
+	n.Mu.Lock()
+	srv, token := n.Srv, n.ShareToken
+	n.Stopping = true
 	// What it published died with it, and the error belonged to a listener
 	// that is over.
-	n.address, n.err, n.shareToken = "", "", ""
-	n.mu.Unlock()
+	n.Address, n.Err, n.ShareToken = "", "", ""
+	n.Mu.Unlock()
 
 	if srv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -193,19 +193,19 @@ func (n *native) stop(root env_core.Root) {
 }
 
 // startZrokNative creates a share and serves the board on it.
-func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
-	d.overlayStep("zrok", "env", "reading this machine's zrok environment")
-	root, err := d.zrokRoot()
+func (d *Service) StartZrokNative(cfg ZrokConfig) error {
+	d.OverlayStep("zrok", "env", "reading this machine's zrok environment")
+	root, err := d.ZrokRoot()
 	if err != nil {
-		return d.overlayFailed("zrok", fmt.Errorf("could not read the zrok environment: %w", err))
+		return d.OverlayFailed("zrok", fmt.Errorf("could not read the zrok environment: %w", err))
 	}
 	if !root.IsEnabled() {
-		return d.overlayFailed("zrok", fmt.Errorf("this machine has no zrok environment yet"))
+		return d.OverlayFailed("zrok", fmt.Errorf("this machine has no zrok environment yet"))
 	}
 
 	mode := strings.TrimSpace(cfg.Mode)
 	if mode != "public" && mode != "private" {
-		return d.overlayFailed("zrok",
+		return d.OverlayFailed("zrok",
 			fmt.Errorf("share mode must be public or private, not %q", mode))
 	}
 
@@ -215,7 +215,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 		ShareMode:   zroksdk.ShareMode(mode),
 		// The target is only used to name the share. Nothing dials it: this
 		// process answers the listener itself.
-		Target: d.defaultBackend(),
+		Target: d.DefaultBackend(),
 	}
 	// A stable address, expressed the way each mode expresses it.
 	//
@@ -231,27 +231,27 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 			req.PrivateShareToken = t
 		}
 	} else {
-		sel, err := d.boardShareName(&cfg)
+		sel, err := d.BoardShareName(&cfg)
 		if err != nil {
-			return d.overlayFailed("zrok", err)
+			return d.OverlayFailed("zrok", err)
 		}
 		req.NameSelections = []zroksdk.NameSelection{sel}
 	}
 
 	// The slow one, and the one that fails. Everything above this is local.
-	d.overlayStep("zrok", "create", "asking the zrok instance for a "+mode+" share")
+	d.OverlayStep("zrok", "create", "asking the zrok instance for a "+mode+" share")
 	shr, err := zroksdk.CreateShare(root, req)
 	if err != nil {
-		return d.overlayFailed("zrok", zrokSays("could not put the board on a zrok share", err))
+		return d.OverlayFailed("zrok", ZrokSays("could not put the board on a zrok share", err))
 	}
 
-	d.overlayStep("zrok", "listen", "opening the listener that answers it")
+	d.OverlayStep("zrok", "listen", "opening the listener that answers it")
 	ln, err := zroksdk.NewListener(shr.Token, root)
 	if err != nil {
 		// The share exists and nothing is answering it, so it goes.
 		_ = zroksdk.DeleteShare(root, shr)
-		return d.overlayFailed("zrok",
-			zrokSays("the share was created but nothing could answer it", err))
+		return d.OverlayFailed("zrok",
+			ZrokSays("the share was created but nothing could answer it", err))
 	}
 
 	// The address as data. A public share carries its frontend URLs; a private
@@ -261,11 +261,11 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 		address = shr.FrontendEndpoints[0]
 	}
 
-	d.overlayStep("zrok", "done", address)
+	d.OverlayStep("zrok", "done", address)
 	log.Printf("[atrium] serving the board on a %s zrok share at %s", mode, address)
 	// The share's own frontend is the one name it answers besides loopback, which is
 	// where a private share's `zrok access private` proxy listens.
-	d.nat(OverlayZrok).serveOn(ln, edge.Named(d.authGuard(d.ap.Handler()), shr.FrontendEndpoints...), address, shr.Token)
+	d.Nat(OverlayZrok).ServeOn(ln, edge.Named(d.AuthGuard(d.ap.Handler()), shr.FrontendEndpoints...), address, shr.Token)
 	return nil
 }
 
@@ -274,7 +274,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 //
 // Nothing is hosted or forwarded. The board answers on the service itself, so
 // there is no tunneler and no address on this machine for anything to reach.
-func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
+func (d *Service) StartZitiNative(cfg ZitiConfig) error {
 	id := strings.TrimSpace(cfg.Identity)
 	if id == "" {
 		return fmt.Errorf("no identity: enroll one, or point atrium at an identity file")
@@ -287,24 +287,24 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	// Two steps rather than three, because a ziti listener is bound rather than
 	// created: there is nothing to ask a controller for and nothing to release
 	// afterwards. The authenticate is the one that reaches the network.
-	d.overlayStep("ziti", "identity", "loading the ziti identity")
+	d.OverlayStep("ziti", "identity", "loading the ziti identity")
 	ctx, err := zitictx.SharedFile("native", id)
 	if err != nil {
-		return d.overlayFailed("ziti", fmt.Errorf("could not use that identity: %w", err))
+		return d.OverlayFailed("ziti", fmt.Errorf("could not use that identity: %w", err))
 	}
-	d.overlayStep("ziti", "bind", "binding the service "+service)
+	d.OverlayStep("ziti", "bind", "binding the service "+service)
 	ln, err := ctx.Listen(service)
 	if err != nil {
-		return d.overlayFailed("ziti", fmt.Errorf("could not bind %q: %w", service, err))
+		return d.OverlayFailed("ziti", fmt.Errorf("could not bind %q: %w", service, err))
 	}
 
-	d.overlayStep("ziti", "done", "ziti service "+service)
+	d.OverlayStep("ziti", "done", "ziti service "+service)
 	log.Printf("[atrium] serving the board on the ziti service %q", service)
 	// A ziti service has no address. Who may reach it is a policy on the
 	// network, and the service name is the whole identifier.
 	// A ziti service is administered on the network and atrium never created
 	// it, so there is nothing here to release.
-	d.nat(OverlayZiti).serveOn(ln, zitiEdge(d.authGuard(d.ap.Handler()), service), "ziti service "+service, "")
+	d.Nat(OverlayZiti).ServeOn(ln, ZitiEdge(d.AuthGuard(d.ap.Handler()), service), "ziti service "+service, "")
 	return nil
 }
 
@@ -312,7 +312,7 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 // the service's intercept address, which is configured on the network and not
 // here, so it answers the names in $ATRIUM_HOSTS. With none it checks origins
 // and not hosts, and says so, because that leaves DNS rebinding open on it.
-func zitiEdge(h http.Handler, service string) http.Handler {
+func ZitiEdge(h http.Handler, service string) http.Handler {
 	if len(edge.EnvNames()) == 0 {
 		log.Printf("[atrium] the ziti service %q answers any Host. set %s to its intercept address "+
 			"to refuse a rebound one", service, edge.EnvHosts)

@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"fmt"
@@ -62,36 +62,36 @@ type ZitiCapability struct {
 //
 // One at a time, and a SUCCESS is remembered for capsTTL, so a board asking repeatedly or from two tabs builds one
 // short-lived context rather than one each. A failure is not remembered: the next call asks again.
-func (d *Daemon) ZitiCapabilities() ZitiCapability {
-	caps.mu.Lock()
-	defer caps.mu.Unlock()
-	id := strings.TrimSpace(d.zitiConfig().Identity)
-	if caps.ok && caps.id == id && time.Since(caps.at) < capsTTL {
-		return caps.out
+func (d *Service) ZitiCapabilities() ZitiCapability {
+	Caps.Mu.Lock()
+	defer Caps.Mu.Unlock()
+	id := strings.TrimSpace(d.ZitiConfig().Identity)
+	if Caps.Ok && Caps.Id == id && time.Since(Caps.At) < CapsTTL {
+		return Caps.Out
 	}
-	out := d.askZitiCapabilities()
+	out := d.AskZitiCapabilities()
 	if out.Err == "" {
-		caps.out, caps.id, caps.at, caps.ok = out, id, time.Now(), true
+		Caps.Out, Caps.Id, Caps.At, Caps.Ok = out, id, time.Now(), true
 	} else {
-		caps.ok = false
+		Caps.Ok = false
 	}
 	return out
 }
 
-const capsTTL = 30 * time.Second
+const CapsTTL = 30 * time.Second
 
-var caps struct {
-	mu  sync.Mutex
-	ok  bool
-	id  string
-	at  time.Time
-	out ZitiCapability
+var Caps struct {
+	Mu  sync.Mutex
+	Ok  bool
+	Id  string
+	At  time.Time
+	Out ZitiCapability
 }
 
-func (d *Daemon) askZitiCapabilities() ZitiCapability {
+func (d *Service) AskZitiCapabilities() ZitiCapability {
 	var out ZitiCapability
 
-	cfg := d.zitiConfig()
+	cfg := d.ZitiConfig()
 	path := strings.TrimSpace(cfg.Identity)
 	if path == "" {
 		out.Err = "no identity yet. enroll one, or point atrium at an identity file."

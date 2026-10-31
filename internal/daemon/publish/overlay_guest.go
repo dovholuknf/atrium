@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"context"
@@ -37,7 +37,7 @@ import (
 // purpose.
 
 // guestShare is one card, published.
-type guestShare struct {
+type GuestShare struct {
 	TaskID string `json:"task_id"`
 	// Address is what you send somebody. A public share is a URL with the
 	// card's id in the fragment; a private one is the zrok command they run.
@@ -75,8 +75,8 @@ type guestShare struct {
 	// Lending a session is lending the session. If that is not what you meant,
 	// do not share it.
 
-	srv *http.Server
-	ln  net.Listener
+	Srv *http.Server
+	Ln  net.Listener
 }
 
 // publicNamespace is the namespace a public share asks for a name in.
@@ -85,43 +85,43 @@ type guestShare struct {
 // and `zrok overview` prints it beside the wildcard domain it serves. An
 // instance that has renamed it will refuse the share by name, which is an error
 // worth reading rather than a silent share with no address.
-const publicNamespace = "public"
+const PublicNamespace = "public"
 
 // guestShares is every card currently lent out, by card id.
-type guestShares struct {
-	mu  sync.Mutex
-	all map[string]*guestShare
+type GuestShares struct {
+	Mu  sync.Mutex
+	All map[string]*GuestShare
 }
 
-func (g *guestShares) get(taskID string) *guestShare {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.all[taskID]
+func (g *GuestShares) Get(taskID string) *GuestShare {
+	g.Mu.Lock()
+	defer g.Mu.Unlock()
+	return g.All[taskID]
 }
 
-func (g *guestShares) put(s *guestShare) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.all == nil {
-		g.all = map[string]*guestShare{}
+func (g *GuestShares) Put(s *GuestShare) {
+	g.Mu.Lock()
+	defer g.Mu.Unlock()
+	if g.All == nil {
+		g.All = map[string]*GuestShare{}
 	}
-	g.all[s.TaskID] = s
+	g.All[s.TaskID] = s
 }
 
-func (g *guestShares) take(taskID string) *guestShare {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	s := g.all[taskID]
-	delete(g.all, taskID)
+func (g *GuestShares) Take(taskID string) *GuestShare {
+	g.Mu.Lock()
+	defer g.Mu.Unlock()
+	s := g.All[taskID]
+	delete(g.All, taskID)
 	return s
 }
 
-func (g *guestShares) list() []guestShare {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	out := make([]guestShare, 0, len(g.all))
-	for _, s := range g.all {
-		out = append(out, guestShare{
+func (g *GuestShares) List() []GuestShare {
+	g.Mu.Lock()
+	defer g.Mu.Unlock()
+	out := make([]GuestShare, 0, len(g.All))
+	for _, s := range g.All {
+		out = append(out, GuestShare{
 			TaskID: s.TaskID, Address: s.Address, Mode: s.Mode,
 			Since: s.Since, Token: s.Token,
 		})
@@ -141,8 +141,8 @@ func (g *guestShares) list() []guestShare {
 //
 // `live` is what separates them. Everything here is an address somebody may
 // have, and `live` says whether it answers right now.
-func (d *Daemon) GuestShares() any {
-	out := d.guests.list()
+func (d *Service) GuestShares() any {
+	out := d.Guests.List()
 	for i := range out {
 		out[i].Live = true
 	}
@@ -162,7 +162,7 @@ func (d *Daemon) GuestShares() any {
 		if seen[rec.TaskID] {
 			continue
 		}
-		out = append(out, guestShare{
+		out = append(out, GuestShare{
 			TaskID: rec.TaskID, Address: rec.Address, Mode: rec.Mode,
 			Since: rec.CreatedAt, Name: rec.Name, Live: false,
 		})
@@ -183,7 +183,7 @@ func (d *Daemon) GuestShares() any {
 // Best effort by construction, and the POST still carries the answer. A window
 // that misses every one of these ends up in the same place a moment later, so
 // nothing here is load bearing and none of it is worth an error path.
-func (d *Daemon) shareStep(taskID, step, text string) {
+func (d *Service) ShareStep(taskID, step, text string) {
 	d.ap.Broadcast("share-progress", map[string]any{
 		"task_id": taskID, "step": step, "text": text,
 	})
@@ -193,7 +193,7 @@ func (d *Daemon) shareStep(taskID, step, text string) {
 //
 // Named separately because the board treats it differently: a step replaces
 // the line above it, and this one ends the sequence and puts the buttons back.
-func (d *Daemon) shareFailed(taskID string, err error) error {
+func (d *Service) ShareFailed(taskID string, err error) error {
 	d.ap.Broadcast("share-progress", map[string]any{
 		"task_id": taskID, "step": "failed", "error": err.Error(),
 	})
@@ -206,10 +206,10 @@ func (d *Daemon) shareFailed(taskID string, err error) error {
 // a character somebody can transcribe wrongly turns an unguessable link into a
 // support question. Thirty two symbols over twelve characters is sixty bits,
 // which is not guessable at any rate a public frontend would tolerate.
-const shareNameAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
+const ShareNameAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
 
 // shareNameLen is how many of those. See above.
-const shareNameLen = 12
+const ShareNameLen = 12
 
 // newShareName invents an address for one lent session.
 //
@@ -218,7 +218,7 @@ const shareNameLen = 12
 // entropy is entirely in the suffix, and it is what makes a leftover share
 // identifiable on an account that also holds shares from four other tools.
 // The operator who has to clean one up by hand should not have to guess.
-func newShareName() (string, error) { return newShareNameOf(shareNameLen) }
+func NewShareName() (string, error) { return NewShareNameOf(ShareNameLen) }
 
 // newShareNameOf is the same with the length said out loud.
 //
@@ -227,14 +227,14 @@ func newShareName() (string, error) { return newShareNameOf(shareNameLen) }
 // deliberately public or behind the sign-in in `auth.go`, so length here buys
 // tidiness rather than security. A LENT SESSION IS THE OPPOSITE and keeps the
 // full twelve, because there the address IS the credential.
-func newShareNameOf(n int) (string, error) {
+func NewShareNameOf(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("could not generate an address: %w", err)
 	}
 	out := make([]byte, n)
 	for i, v := range b {
-		out[i] = shareNameAlphabet[int(v)%len(shareNameAlphabet)]
+		out[i] = ShareNameAlphabet[int(v)%len(ShareNameAlphabet)]
 	}
 	return "atrium-" + string(out), nil
 }
@@ -247,7 +247,7 @@ func newShareNameOf(n int) (string, error) {
 // mode. That is the point of storing it: the link somebody was given last
 // week still reaches this terminal, so handing it over once is enough. A
 // change of mode is a different thing to hand somebody and starts fresh.
-func (d *Daemon) ShareCard(taskID, mode string) (any, error) {
+func (d *Service) ShareCard(taskID, mode string) (any, error) {
 	task, err := d.st.Get(taskID)
 	if err != nil {
 		return nil, err
@@ -256,7 +256,7 @@ func (d *Daemon) ShareCard(taskID, mode string) (any, error) {
 		return nil, fmt.Errorf("%s has no terminal to share. atrium only owns the "+
 			"terminals it started", task.DisplayTitle())
 	}
-	if old := d.guests.get(taskID); old != nil {
+	if old := d.Guests.Get(taskID); old != nil {
 		return nil, fmt.Errorf("this session is already shared at %s. stop that one first",
 			old.Address)
 	}
@@ -278,7 +278,7 @@ func (d *Daemon) ShareCard(taskID, mode string) (any, error) {
 		rec = &store.CardShare{TaskID: taskID, Kind: "zrok", Mode: mode}
 	}
 	rec.Wanted = true
-	return d.bindCardShare(task.DisplayTitle(), rec)
+	return d.BindCardShare(task.DisplayTitle(), rec)
 }
 
 // bindCardShare puts a recorded share up, and is the only place that does.
@@ -288,16 +288,16 @@ func (d *Daemon) ShareCard(taskID, mode string) (any, error) {
 // already lent out. They differ in what they have already decided, not in what
 // they do, and the one time they were separate functions the restart path
 // forgot to record the new token.
-func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare, error) {
+func (d *Service) BindCardShare(title string, rec *store.CardShare) (*GuestShare, error) {
 	taskID, mode := rec.TaskID, rec.Mode
 
-	d.shareStep(taskID, "env", "reading this machine's zrok environment")
-	root, err := d.zrokRoot()
+	d.ShareStep(taskID, "env", "reading this machine's zrok environment")
+	root, err := d.ZrokRoot()
 	if err != nil {
-		return nil, d.shareFailed(taskID, fmt.Errorf("could not read the zrok environment: %w", err))
+		return nil, d.ShareFailed(taskID, fmt.Errorf("could not read the zrok environment: %w", err))
 	}
 	if !root.IsEnabled() {
-		return nil, d.shareFailed(taskID, fmt.Errorf("this machine has no zrok environment yet. "+
+		return nil, d.ShareFailed(taskID, fmt.Errorf("this machine has no zrok environment yet. "+
 			"enable one under settings, expose the board"))
 	}
 
@@ -306,7 +306,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		ShareMode:   zroksdk.ShareMode(mode),
 		// Only used to name the share. Nothing dials it: this process answers
 		// the listener itself.
-		Target: d.defaultBackend(),
+		Target: d.DefaultBackend(),
 	}
 	// A PUBLIC SHARE HAS TO ASK FOR A PUBLIC FRONTEND, or it gets none.
 	//
@@ -326,18 +326,18 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 	// the name exists, the name is reserved, and the share asks for it.
 	if mode == "public" {
 		if rec.Namespace == "" {
-			rec.Namespace = publicNamespace
+			rec.Namespace = PublicNamespace
 		}
 		if rec.Name == "" {
-			n, err := newShareName()
+			n, err := NewShareName()
 			if err != nil {
-				return nil, d.shareFailed(taskID, err)
+				return nil, d.ShareFailed(taskID, err)
 			}
 			rec.Name = n
 		}
-		d.shareStep(taskID, "name", "reserving the address "+rec.Name)
+		d.ShareStep(taskID, "name", "reserving the address "+rec.Name)
 		if _, err := d.ReserveZrokName(rec.Namespace, rec.Name); err != nil {
-			return nil, d.shareFailed(taskID, err)
+			return nil, d.ShareFailed(taskID, err)
 		}
 		req.NameSelections = []zroksdk.NameSelection{
 			{NamespaceToken: rec.Namespace, Name: rec.Name},
@@ -353,17 +353,17 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		req.PrivateShareToken = rec.Token
 	}
 	// The slow one, and the one that fails. Everything before this is local.
-	d.shareStep(taskID, "create", "asking the zrok instance for a "+mode+" share")
+	d.ShareStep(taskID, "create", "asking the zrok instance for a "+mode+" share")
 	shr, err := zroksdk.CreateShare(root, req)
 	if err != nil {
-		return nil, d.shareFailed(taskID, zrokSays("could not share "+title, err))
+		return nil, d.ShareFailed(taskID, ZrokSays("could not share "+title, err))
 	}
-	d.shareStep(taskID, "listen", "opening the listener that answers it")
+	d.ShareStep(taskID, "listen", "opening the listener that answers it")
 	ln, err := zroksdk.NewListener(shr.Token, root)
 	if err != nil {
 		_ = zroksdk.DeleteShare(root, shr)
-		return nil, d.shareFailed(taskID,
-			zrokSays("the share was created but nothing could answer it", err))
+		return nil, d.ShareFailed(taskID,
+			ZrokSays("the share was created but nothing could answer it", err))
 	}
 
 	// WHAT TO HAND SOMEBODY, and it must not claim to be something else.
@@ -383,7 +383,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 	// reported as the failure it is rather than described as a private one.
 	address := ""
 	if len(shr.FrontendEndpoints) > 0 {
-		address = strings.TrimRight(shr.FrontendEndpoints[0], "/") + d.guestPath(taskID)
+		address = strings.TrimRight(shr.FrontendEndpoints[0], "/") + d.GuestPath(taskID)
 	}
 	if address == "" {
 		if mode == "public" {
@@ -400,14 +400,14 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		}
 	}
 
-	g := &guestShare{
+	g := &GuestShare{
 		TaskID: taskID, Address: address, Mode: mode,
 		Since: time.Now().Format(time.RFC3339), Token: shr.Token,
 		Name: rec.Name,
 	}
-	srv := &http.Server{Handler: edge.Named(d.guestHandler(taskID), shr.FrontendEndpoints...)}
-	g.srv, g.ln = srv, ln
-	d.guests.put(g)
+	srv := &http.Server{Handler: edge.Named(d.GuestHandler(taskID), shr.FrontendEndpoints...)}
+	g.Srv, g.Ln = srv, ln
+	d.Guests.Put(g)
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -426,7 +426,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		log.Printf("[atrium] could not record the share for %s: %v", taskID, err)
 	}
 
-	d.shareStep(taskID, "done", address)
+	d.ShareStep(taskID, "done", address)
 	log.Printf("[atrium] sharing one session (%s) at %s (%s, token %s)",
 		taskID, address, mode, shr.Token)
 	return g, nil
@@ -439,18 +439,18 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 // row is left `wanted`, so the next start puts the same address back.
 //
 // This is what a shutdown does. It is deliberately not what stopping does.
-func (d *Daemon) unbindCardShare(taskID string) {
-	g := d.guests.take(taskID)
+func (d *Service) UnbindCardShare(taskID string) {
+	g := d.Guests.Take(taskID)
 	if g == nil {
 		return
 	}
-	if g.srv != nil {
+	if g.Srv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = g.srv.Shutdown(ctx)
+		_ = g.Srv.Shutdown(ctx)
 	}
 	if g.Token != "" {
-		if root, err := d.zrokRoot(); err == nil {
+		if root, err := d.ZrokRoot(); err == nil {
 			if err := zroksdk.DeleteShare(root, &zroksdk.Share{Token: g.Token}); err != nil {
 				log.Printf("[atrium] could not release the share %s: %v", g.Token, err)
 			}
@@ -464,16 +464,16 @@ func (d *Daemon) unbindCardShare(taskID string) {
 // stop is the operator saying this link should not work any more, and a name
 // left reserved is a link that would work again the moment anything asked for
 // it. This is the only path that burns an address.
-func (d *Daemon) StopCardShare(taskID string) error {
+func (d *Service) StopCardShare(taskID string) error {
 	rec, err := d.st.CardShareFor(taskID)
 	if err != nil {
 		return err
 	}
-	live := d.guests.get(taskID) != nil
+	live := d.Guests.Get(taskID) != nil
 	if !live && rec == nil {
 		return fmt.Errorf("that session is not shared")
 	}
-	d.unbindCardShare(taskID)
+	d.UnbindCardShare(taskID)
 
 	if rec != nil {
 		// The reserved name goes back. A name that outlives the share it was
@@ -498,9 +498,9 @@ func (d *Daemon) StopCardShare(taskID string) error {
 // link, and treating it as one is what made every share die at the moment the
 // daemon came back. What each of these leaves behind is a row saying it should
 // be up, which `RestoreCardShares` reads on the way in.
-func (d *Daemon) stopAllGuestShares() {
-	for _, g := range d.guests.list() {
-		d.unbindCardShare(g.TaskID)
+func (d *Service) StopAllGuestShares() {
+	for _, g := range d.Guests.List() {
+		d.UnbindCardShare(g.TaskID)
 	}
 }
 
@@ -515,7 +515,7 @@ func (d *Daemon) stopAllGuestShares() {
 // refusing. A failure is logged and skipped, never fatal, because a daemon
 // that will not start because a share could not be restored is a daemon held
 // hostage by an overlay.
-func (d *Daemon) RestoreCardShares() {
+func (d *Service) RestoreCardShares() {
 	recs, err := d.st.WantedCardShares()
 	if err != nil {
 		log.Printf("[atrium] could not read which sessions were shared: %v", err)
@@ -538,11 +538,11 @@ func (d *Daemon) RestoreCardShares() {
 			if t, err := d.st.Get(rec.TaskID); err == nil {
 				title = t.DisplayTitle()
 			}
-			if _, err := d.bindCardShare(title, &rec); err != nil {
+			if _, err := d.BindCardShare(title, &rec); err != nil {
 				log.Printf("[atrium] could not put %s back on its share: %v", title, err)
 				continue
 			}
-			d.Publish(rec.TaskID)
+			d.publish(rec.TaskID)
 		}
 	}()
 }
@@ -553,12 +553,12 @@ func (d *Daemon) RestoreCardShares() {
 // daemon came up before the session did. Silent and cheap when the card was
 // never shared, which is almost always, because it is on the path every runner
 // takes.
-func (d *Daemon) EnsureCardShare(taskID string) {
+func (d *Service) EnsureCardShare(taskID string) {
 	rec, err := d.st.CardShareFor(taskID)
 	if err != nil || rec == nil || !rec.Wanted {
 		return
 	}
-	if d.guests.get(taskID) != nil {
+	if d.Guests.Get(taskID) != nil {
 		return
 	}
 	title := taskID
@@ -566,11 +566,11 @@ func (d *Daemon) EnsureCardShare(taskID string) {
 		title = t.DisplayTitle()
 	}
 	go func() {
-		if _, err := d.bindCardShare(title, rec); err != nil {
+		if _, err := d.BindCardShare(title, rec); err != nil {
 			log.Printf("[atrium] could not put %s back on its share: %v", title, err)
 			return
 		}
-		d.Publish(taskID)
+		d.publish(taskID)
 	}()
 }
 
@@ -584,14 +584,14 @@ func (d *Daemon) EnsureCardShare(taskID string) {
 // Only ever touches names ATRIUM RESERVED and recorded. A sweep that read the
 // account and deleted what it did not recognise would eventually delete
 // somebody else's share, and this machine's zrok account is not atrium's.
-func (d *Daemon) SweepDeadCardShares() {
+func (d *Service) SweepDeadCardShares() {
 	recs, err := d.st.StaleCardShares()
 	if err != nil {
 		log.Printf("[atrium] could not look for shares whose cards have gone: %v", err)
 		return
 	}
 	for _, rec := range recs {
-		d.unbindCardShare(rec.TaskID)
+		d.UnbindCardShare(rec.TaskID)
 		if rec.Name != "" {
 			if err := d.ReleaseZrokName(rec.Namespace, rec.Name); err != nil {
 				log.Printf("[atrium] could not release the orphaned name %s: %v", rec.Name, err)
@@ -613,7 +613,7 @@ func (d *Daemon) SweepDeadCardShares() {
 //
 // Read it as the answer to "what did I just give away". Everything not named
 // here is refused, including endpoints that do not exist yet.
-func (d *Daemon) guestHandler(taskID string) http.Handler {
+func (d *Service) GuestHandler(taskID string) http.Handler {
 	board := d.ap.Handler()
 	mine := "/v1/tasks/" + taskID
 
@@ -710,8 +710,8 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		// Anything else is the same 403 as every refusal below, found or not,
 		// so a guest cannot ask this listener which names exist here.
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			if name, page, ok := guestNamed(r.URL.EscapedPath(), d.opts.Room); ok {
-				if !d.namesCard(name, taskID) {
+			if name, page, ok := GuestNamed(r.URL.EscapedPath(), d.opts().Room); ok {
+				if !d.NamesCard(name, taskID) {
 					http.Error(w, "this link is one terminal. nothing else here is shared.", http.StatusForbidden)
 					return
 				}
@@ -766,7 +766,7 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 // `/room/<room>/<name>` or `/alias/<name>`, or the page's lookup,
 // `/v1/tasks/<name>` or `/v1/tasks/<name>@<room>`. `page` says which. A room
 // part naming another room is not this listener's, and is not read.
-func guestNamed(escaped, room string) (name string, page, ok bool) {
+func GuestNamed(escaped, room string) (name string, page, ok bool) {
 	unesc := func(s string) string {
 		if u, err := url.PathUnescape(s); err == nil {
 			return u
@@ -797,7 +797,7 @@ func guestNamed(escaped, room string) (name string, page, ok bool) {
 
 // namesCard is whether a name, as the room resolves one, is this card: its
 // wire name, or its alias as it is at the time of the request.
-func (d *Daemon) namesCard(name, taskID string) bool {
+func (d *Service) NamesCard(name, taskID string) bool {
 	name = strings.TrimPrefix(strings.TrimSpace(name), "@")
 	if name == "" {
 		return false
@@ -818,8 +818,8 @@ func (d *Daemon) namesCard(name, taskID string) bool {
 // that card's for its whole life, never its alias, which can be changed or taken
 // by a new card once this one is done. `#term=` when the room or the card has no
 // name to build one from, and that still works on the same listener.
-func (d *Daemon) guestPath(taskID string) string {
-	room := strings.TrimSpace(d.opts.Room)
+func (d *Service) GuestPath(taskID string) string {
+	room := strings.TrimSpace(d.opts().Room)
 	t, err := d.st.Get(taskID)
 	if err != nil || room == "" || t.WireName == "" {
 		return "/#term=" + taskID

@@ -27,7 +27,7 @@ func TestTheMergedCullRoutesAreOnTheBoardAndNowhereElse(t *testing.T) {
 		"/v1/tasks/archive-workers",
 	}
 	board := d.BoardHandler()
-	guest := d.guestHandler(task.ID)
+	guest := d.GuestHandler(task.ID)
 	for _, p := range paths {
 		post := func(h http.Handler) int {
 			rec := httptest.NewRecorder()

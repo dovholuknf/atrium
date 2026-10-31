@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"strings"
 	"testing"
 
@@ -108,11 +109,11 @@ func TestForceOverwrites(t *testing.T) {
 func TestAnImportDoesNotEraseTheZrokToken(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	cfg := d.zrokConfig()
+	cfg := d.ZrokConfig()
 	cfg.ShareToken = "a-token-that-must-survive"
 	cfg.Name = "atrium-reservedname"
 	cfg.Private, cfg.Public = true, false
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,7 +124,7 @@ func TestAnImportDoesNotEraseTheZrokToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	after := d.zrokConfig()
+	after := d.ZrokConfig()
 	if after.ShareToken != "a-token-that-must-survive" {
 		t.Fatalf("the share token was erased by an import: %q", after.ShareToken)
 	}
@@ -143,10 +144,10 @@ func TestAnImportDoesNotEraseTheZrokToken(t *testing.T) {
 func TestAnImportDoesNotEraseTheZitiIdentity(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	cfg := d.zitiConfig()
+	cfg := d.ZitiConfig()
 	cfg.Identity = "C:/keys/atrium.json"
 	cfg.Service = "old-service"
-	if err := d.saveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZiti, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +157,7 @@ func TestAnImportDoesNotEraseTheZitiIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	after := d.zitiConfig()
+	after := d.ZitiConfig()
 	if after.Identity != "C:/keys/atrium.json" {
 		t.Fatalf("the identity was erased by an import: %q", after.Identity)
 	}
@@ -173,14 +174,14 @@ func TestAnImportRefusesASettingTheExportWouldNotCarry(t *testing.T) {
 	in := &Export{
 		Version: ExportVersion,
 		Settings: map[string]string{
-			store.SettingGlobalAuto: "on",
-			SettingOverlayZrok:      `{"share_token":"sneaky"}`,
+			store.SettingGlobalAuto:    "on",
+			publish.SettingOverlayZrok: `{"share_token":"sneaky"}`,
 		},
 	}
 	if _, err := d.ApplyImport(in, true, true); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{store.SettingGlobalAuto, SettingOverlayZrok} {
+	for _, key := range []string{store.SettingGlobalAuto, publish.SettingOverlayZrok} {
 		got, err := d.st.Setting(key)
 		if err != nil {
 			t.Fatal(err)

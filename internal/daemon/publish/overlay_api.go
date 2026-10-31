@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"encoding/json"
@@ -49,7 +49,7 @@ type OverlayView struct {
 // register with a controller in ways their SDKs do not expose as one call, and
 // re-implementing that would mean owning credential handling this project has
 // said twice it will not own.
-func overlayCommand(kind overlayKind) string {
+func OverlayCommand(kind OverlayKind) string {
 	if kind == OverlayZrok {
 		return "zrok"
 	}
@@ -57,10 +57,10 @@ func overlayCommand(kind overlayKind) string {
 }
 
 // overlayViews is what GET /v1/overlays answers.
-func (d *Daemon) overlayViews() any {
-	zrokCfg := d.zrokConfig()
-	zitiCfg := d.zitiConfig()
-	env := d.zrokEnvOf()
+func (d *Service) OverlayViews() any {
+	zrokCfg := d.ZrokConfig()
+	zitiCfg := d.ZitiConfig()
+	env := d.ZrokEnvOf()
 	// An enabled environment records the instance it was enabled against. A
 	// machine that is not enabled yet has none, and that is exactly when
 	// somebody needs to see and change where enabling will point, so the
@@ -68,22 +68,22 @@ func (d *Daemon) overlayViews() any {
 	if env.ApiEndpoint == "" {
 		env.ApiEndpoint, env.ApiEndpointFrom = d.ZrokApiEndpoint()
 	}
-	id := zitiEnrolment(zitiCfg.Identity)
+	id := ZitiEnrolmentAt(zitiCfg.Identity)
 
 	// WHICH ONE OF THESE IS OPEN TO ANYONE. A public zrok share is the only
 	// exposure atrium offers that hands the board to whoever has the link, so
 	// it is the only one where a missing login is a hole rather than a choice.
 	// Read off the mode the share would start in, which is what the fields
 	// below the panel are set to.
-	auth := d.authConfig()
+	auth := d.AuthConfig()
 	zrokOpen := strings.TrimSpace(zrokCfg.Mode) == "public"
 
 	return []OverlayView{
 		{
-			OverlayState: d.nat(OverlayZrok).state(lookPath(overlayCommand(OverlayZrok))),
+			OverlayState: d.Nat(OverlayZrok).State(LookPath(OverlayCommand(OverlayZrok))),
 			Label:        "zrok",
 			Blurb: "Publishes the board at a zrok address. A private share needs zrok on the " +
-				"other end. A public one is a link anyone can open. " + whoMayOpenIt(auth, !zrokOpen),
+				"other end. A public one is a link anyone can open. " + WhoMayOpenIt(auth, !zrokOpen),
 			Install: "https://zrok.io",
 			SignUp:  "https://api.zrok.io",
 			Config:  zrokCfg,
@@ -94,7 +94,7 @@ func (d *Daemon) overlayViews() any {
 			Ready: env.Enabled,
 		},
 		{
-			OverlayState: d.nat(OverlayZiti).state(lookPath(overlayCommand(OverlayZiti))),
+			OverlayState: d.Nat(OverlayZiti).State(LookPath(OverlayCommand(OverlayZiti))),
 			Label:        "OpenZiti",
 			Blurb: "Hosts whatever services this identity is allowed to bind, on your own network. " +
 				"Which services, and where each points, are configured there rather than here. " +
@@ -104,7 +104,7 @@ func (d *Daemon) overlayViews() any {
 				// is the reason this panel never needed the sentence. It says
 				// it anyway so both panels answer the same question, and so
 				// somebody who sets a login is told it applies here too.
-				whoMayOpenIt(auth, true),
+				WhoMayOpenIt(auth, true),
 			Install: "https://openziti.io",
 			SignUp:  "https://openziti.io/docs/learn/quickstarts/network/",
 			Config:  zitiCfg,
@@ -130,8 +130,8 @@ type SetupRequest struct {
 // Output is returned on failure as well as success on purpose. These commands
 // fail for reasons only they can explain, and swallowing that leaves somebody
 // with a red box and no next step.
-func (d *Daemon) setupOverlay(kind string, req SetupRequest) (string, error) {
-	switch overlayKind(kind) {
+func (d *Service) SetupOverlay(kind string, req SetupRequest) (string, error) {
+	switch OverlayKind(kind) {
 	case OverlayZrok:
 		return d.EnableZrok(req.Token, req.Name)
 	case OverlayZiti:
@@ -141,9 +141,9 @@ func (d *Daemon) setupOverlay(kind string, req SetupRequest) (string, error) {
 		}
 		// Enrolling and then making somebody paste the path back in would be
 		// most of the work with none of the point.
-		cfg := d.zitiConfig()
+		cfg := d.ZitiConfig()
 		cfg.Identity = path
-		if err := d.saveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
+		if err := d.SaveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
 			return out, err
 		}
 		return "enrolled, and this identity is now the one atrium will use:\n" + path, nil
@@ -152,17 +152,17 @@ func (d *Daemon) setupOverlay(kind string, req SetupRequest) (string, error) {
 }
 
 // teardownOverlay undoes the setup step.
-func (d *Daemon) teardownOverlay(kind string) (string, error) {
-	switch overlayKind(kind) {
+func (d *Service) TeardownOverlay(kind string) (string, error) {
+	switch OverlayKind(kind) {
 	case OverlayZrok:
 		return d.DisableZrok()
 	case OverlayZiti:
 		// The identity file is not deleted. It may be the only copy, and
 		// re-enrolling needs a token that has already been spent.
-		d.nat(OverlayZiti).stop(nil)
-		cfg := d.zitiConfig()
+		d.Nat(OverlayZiti).Stop(nil)
+		cfg := d.ZitiConfig()
 		cfg.Identity = ""
-		if err := d.saveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
+		if err := d.SaveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
 			return "", err
 		}
 		return "atrium has forgotten that identity. the file is still on disk.", nil
@@ -172,13 +172,13 @@ func (d *Daemon) teardownOverlay(kind string) (string, error) {
 
 // InspectToken reads an enrollment token so the board can show which network it
 // is for, and whether it has already expired, before anything is done with it.
-func (d *Daemon) InspectToken(token string) (any, error) {
-	return readJWT(token)
+func (d *Service) InspectToken(token string) (any, error) {
+	return ReadJWT(token)
 }
 
 // lookPath resolves a command the same way starting one does. Empty when it is
 // not installed, which is the only thing the board needs to know.
-func lookPath(cmd string) string {
+func LookPath(cmd string) string {
 	p, err := exec.LookPath(cmd)
 	if err != nil {
 		return ""
@@ -187,8 +187,8 @@ func lookPath(cmd string) string {
 }
 
 // saveOverlay stores one overlay's configuration.
-func (d *Daemon) saveOverlay(kind string, body []byte) error {
-	switch overlayKind(kind) {
+func (d *Service) SaveOverlay(kind string, body []byte) error {
+	switch OverlayKind(kind) {
 	case OverlayZrok:
 		var c ZrokConfig
 		if err := json.Unmarshal(body, &c); err != nil {
@@ -198,7 +198,7 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 		// is already consistent. A board that sends two flags and a stale mode,
 		// which is exactly what an older tab does, would otherwise write a row
 		// whose mode disagrees with its flags until something reads it back.
-		c.normalise()
+		c.Normalise()
 		// A PUBLIC SHARE NEEDS A LOGIN, AND IT IS REFUSED HERE RATHER THAN AT
 		// START. A public zrok share is a URL anyone can open, so with no login
 		// it is the whole internet with an extra step. The design says the public
@@ -206,7 +206,7 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 		// so the operator finds out while they are still in the panel that set it.
 		// See docs/fabric/ziti-zrok-flow-design.md, "zrok public without OIDC".
 		if c.Public {
-			if err := d.requireLoginForPublic(); err != nil {
+			if err := d.RequireLoginForPublic(); err != nil {
 				return err
 			}
 		}
@@ -221,17 +221,17 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 		// One rule instead: while the board is being served on zrok, the
 		// configuration is what that share was started with. Stop it to change
 		// it. The panel says so rather than making somebody discover it.
-		if d.nat(OverlayZrok).running() {
+		if d.Nat(OverlayZrok).Running() {
 			return fmt.Errorf("the board is on a zrok share right now, so its settings are " +
 				"what that share started with. stop sharing first, then change them")
 		}
-		return d.saveOverlayConfig(SettingOverlayZrok, c)
+		return d.SaveOverlayConfig(SettingOverlayZrok, c)
 	case OverlayZiti:
 		var c ZitiConfig
 		if err := json.Unmarshal(body, &c); err != nil {
 			return err
 		}
-		return d.saveOverlayConfig(SettingOverlayZiti, c)
+		return d.SaveOverlayConfig(SettingOverlayZiti, c)
 	}
 	return fmt.Errorf("no overlay called %q", kind)
 }
@@ -246,7 +246,7 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 //
 // Best effort, and the POST still carries the answer. This makes the wait
 // legible, it is not what makes the start work.
-func (d *Daemon) overlayStep(kind, step, text string) {
+func (d *Service) OverlayStep(kind, step, text string) {
 	d.ap.Broadcast("overlay-progress", map[string]any{
 		"kind": kind, "step": step, "text": text,
 	})
@@ -256,7 +256,7 @@ func (d *Daemon) overlayStep(kind, step, text string) {
 //
 // Returned rather than just broadcast, so a call site is one line and cannot
 // report a failure over the stream while returning something else.
-func (d *Daemon) overlayFailed(kind string, err error) error {
+func (d *Service) OverlayFailed(kind string, err error) error {
 	d.ap.Broadcast("overlay-progress", map[string]any{
 		"kind": kind, "step": "failed", "error": err.Error(),
 	})
@@ -269,24 +269,24 @@ func (d *Daemon) overlayFailed(kind string, err error) error {
 // is missing rather than reporting that something failed somewhere. A share
 // that will not start because nothing said what to publish should not read
 // like a bug.
-func (d *Daemon) startOverlay(kind string) error {
-	switch overlayKind(kind) {
+func (d *Service) StartOverlay(kind string) error {
+	switch OverlayKind(kind) {
 	case OverlayZrok:
-		if d.nat(OverlayZrok).running() {
+		if d.Nat(OverlayZrok).Running() {
 			return fmt.Errorf("the board is already on a zrok share")
 		}
-		if err := d.readyToShare(OverlayZrok); err != nil {
+		if err := d.ReadyToShare(OverlayZrok); err != nil {
 			return err
 		}
-		return d.startZrokNative(d.zrokConfig())
+		return d.StartZrokNative(d.ZrokConfig())
 	case OverlayZiti:
-		if d.nat(OverlayZiti).running() {
+		if d.Nat(OverlayZiti).Running() {
 			return fmt.Errorf("the board is already on a ziti service")
 		}
-		if err := d.readyToShare(OverlayZiti); err != nil {
+		if err := d.ReadyToShare(OverlayZiti); err != nil {
 			return err
 		}
-		return d.startZitiNative(d.zitiConfig())
+		return d.StartZitiNative(d.ZitiConfig())
 	}
 	return fmt.Errorf("no overlay called %q", kind)
 }
@@ -302,19 +302,19 @@ func (d *Daemon) startOverlay(kind string) error {
 // state honestly, offer the next command, never invent one. What is added here
 // is only that the state is checked BEFORE the attempt rather than inferred
 // from the wreckage of one.
-func (d *Daemon) readyToShare(k overlayKind) error {
+func (d *Service) ReadyToShare(k OverlayKind) error {
 	switch k {
 	case OverlayZrok:
 		// DEFENCE IN DEPTH FOR THE PUBLIC SHARE. Save time is where the refusal
 		// belongs and where the operator sees it, but a configuration written
 		// before this rule existed, or edited by hand, must not start a public
 		// share with no login either. The gate is the same one.
-		if strings.TrimSpace(d.zrokConfig().Mode) == "public" {
-			if err := d.requireLoginForPublic(); err != nil {
+		if strings.TrimSpace(d.ZrokConfig().Mode) == "public" {
+			if err := d.RequireLoginForPublic(); err != nil {
 				return err
 			}
 		}
-		env := d.zrokEnvOf()
+		env := d.ZrokEnvOf()
 		if !env.Enabled {
 			if env.Own {
 				// A different sentence, because the fix is different. Running
@@ -332,12 +332,12 @@ func (d *Daemon) readyToShare(k overlayKind) error {
 				"or run `zrok enable` yourself")
 		}
 	case OverlayZiti:
-		cfg := d.zitiConfig()
+		cfg := d.ZitiConfig()
 		if strings.TrimSpace(cfg.Identity) == "" {
 			return fmt.Errorf("no ziti identity is configured, so there is nothing to " +
 				"host the service as. enroll one from the gear with an enrollment token")
 		}
-		id := zitiEnrolment(cfg.Identity)
+		id := ZitiEnrolmentAt(cfg.Identity)
 		if !id.Present {
 			return fmt.Errorf("the ziti identity at %s is not there. it was configured "+
 				"and the file has gone, which is the usual state after a machine is "+
@@ -370,9 +370,9 @@ func (d *Daemon) readyToShare(k overlayKind) error {
 // enforce a preference the design states but the auth model does not. So this
 // closes the actual hole, a public share with NO login, and whether to narrow it
 // to OIDC only is left as a decision rather than made here. See auth.ready.
-func (d *Daemon) requireLoginForPublic() error {
-	auth := d.authConfig()
-	if auth.Enabled && auth.ready() == nil {
+func (d *Service) RequireLoginForPublic() error {
+	auth := d.AuthConfig()
+	if auth.Enabled && auth.Ready() == nil {
 		return nil
 	}
 	return fmt.Errorf("a public zrok share hands the board to anyone with the link, so it " +
@@ -380,13 +380,13 @@ func (d *Daemon) requireLoginForPublic() error {
 		"password to start with), then turn the public share on")
 }
 
-func (d *Daemon) stopOverlay(kind string) error {
-	k := overlayKind(kind)
+func (d *Service) StopOverlay(kind string) error {
+	k := OverlayKind(kind)
 	if k != OverlayZrok && k != OverlayZiti {
 		return fmt.Errorf("no overlay called %q", kind)
 	}
 	log.Printf("[atrium] closing the %s listener", k)
-	d.nat(k).stop(d.rootToReleaseAgainst(k))
+	d.Nat(k).Stop(d.RootToReleaseAgainst(k))
 	return nil
 }
 
@@ -398,11 +398,11 @@ func (d *Daemon) stopOverlay(kind string) error {
 // the listener still has to happen, and a stop that refused because the
 // account was unreachable would leave the board served on an overlay the
 // operator has already asked to close.
-func (d *Daemon) rootToReleaseAgainst(k overlayKind) env_core.Root {
+func (d *Service) RootToReleaseAgainst(k OverlayKind) env_core.Root {
 	if k != OverlayZrok {
 		return nil
 	}
-	root, err := d.zrokRoot()
+	root, err := d.ZrokRoot()
 	if err != nil {
 		log.Printf("[atrium] could not read the zrok environment to release against: %v", err)
 		return nil
@@ -415,9 +415,9 @@ func (d *Daemon) rootToReleaseAgainst(k overlayKind) env_core.Root {
 // Read by the shutdown endpoint. The reason survives going native: a request
 // arriving over an overlay is accepted by this process, so its source address
 // is whatever the overlay presents rather than whoever sent it.
-func (d *Daemon) sharing() bool {
-	for _, k := range []overlayKind{OverlayZrok, OverlayZiti} {
-		if d.nat(k).running() {
+func (d *Service) Sharing() bool {
+	for _, k := range []OverlayKind{OverlayZrok, OverlayZiti} {
+		if d.Nat(k).Running() {
 			return true
 		}
 	}
@@ -425,21 +425,21 @@ func (d *Daemon) sharing() bool {
 }
 
 // publicShareRunning reports whether the board is on a public zrok share now.
-func (d *Daemon) publicShareRunning() bool {
-	return d.nat(OverlayZrok).running() && strings.TrimSpace(d.zrokConfig().Mode) == "public"
+func (d *Service) PublicShareRunning() bool {
+	return d.Nat(OverlayZrok).Running() && strings.TrimSpace(d.ZrokConfig().Mode) == "public"
 }
 
 // closeOverlays stops serving on every overlay on the way out. A listener
 // outliving the board it answers for would be an address that hangs.
-func (d *Daemon) closeOverlays() {
-	for _, k := range []overlayKind{OverlayZrok, OverlayZiti} {
-		d.nat(k).stop(d.rootToReleaseAgainst(k))
+func (d *Service) CloseOverlays() {
+	for _, k := range []OverlayKind{OverlayZrok, OverlayZiti} {
+		d.Nat(k).Stop(d.RootToReleaseAgainst(k))
 	}
 	// Every lent session too. Each is its own share on the account, and one
 	// left behind is an address that answers nothing and has to be cleared out
 	// by hand later.
-	d.stopAllGuestShares()
-	d.stopAllDocShares()
+	d.StopAllGuestShares()
+	d.StopAllDocShares()
 }
 
 // whoMayOpenIt is the last sentence of an overlay's blurb, and it has to be
@@ -458,7 +458,7 @@ func (d *Daemon) closeOverlays() {
 // those a login is something somebody may want rather than something missing.
 // The sentence says which of the two it is, because "this board has no login"
 // reads as a warning and is only one of those things.
-func whoMayOpenIt(c AuthConfig, gated bool) string {
+func WhoMayOpenIt(c AuthConfig, gated bool) string {
 	if !c.Enabled {
 		if gated {
 			return "Getting to it is already the permission, so it needs no login of its own. " +

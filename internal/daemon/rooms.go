@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"io"
 	"log"
 	"net"
@@ -671,20 +672,20 @@ type RoomJoinInfo struct {
 
 // RoomJoin answers GET /v1/rooms/join.
 func (d *Daemon) RoomJoin() any {
-	z := d.zitiConfig()
+	z := d.ZitiConfig()
 	info := RoomJoinInfo{
 		Heartbeat:      int(roomHeartbeat / time.Second),
 		Stale:          int(roomStale / time.Second),
 		Forget:         int(roomForget / time.Second),
 		Service:        strings.TrimSpace(z.Service),
-		ServiceRunning: d.nat(OverlayZiti).running(),
-		Local:          d.defaultBackend(),
+		ServiceRunning: d.Nat(publish.OverlayZiti).Running(),
+		Local:          d.DefaultBackend(),
 	}
 	// Only a public share has an address a room could post to. A private one
 	// is a token, and offering that as a hub URL produces a room that retries
 	// forever against something that was never a URL.
-	if zr := d.nat(OverlayZrok); zr.running() {
-		if addr := zr.state("").Address; strings.HasPrefix(addr, "http") {
+	if zr := d.Nat(publish.OverlayZrok); zr.Running() {
+		if addr := zr.State("").Address; strings.HasPrefix(addr, "http") {
 			info.Share = addr
 		}
 	}

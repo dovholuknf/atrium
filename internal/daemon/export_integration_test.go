@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"reflect"
 	"strings"
 	"testing"
@@ -34,12 +35,12 @@ func TestAZrokAccountTokenNeverLeaves(t *testing.T) {
 	d := testDaemon(t)
 	// Stored the way the daemon really stores it, so this cannot pass against
 	// a shape the real code would never have written.
-	cfg := d.zrokConfig()
+	cfg := d.ZrokConfig()
 	cfg.OwnEnvironment = true
 	cfg.ApiEndpoint = "https://zrok.example"
 	cfg.ShareToken = "sharetokensecret"
 	cfg.Name = "atrium-abc123def456"
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -62,10 +63,10 @@ func TestAZrokAccountTokenNeverLeaves(t *testing.T) {
 func TestAZitiIdentityPathNeverLeaves(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	cfg := d.zitiConfig()
+	cfg := d.ZitiConfig()
 	cfg.Identity = "C:/Users/someone/.atrium/identities/atrium-secret.json"
 	cfg.Service = "atrium-board"
-	if err := d.saveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZiti, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +111,7 @@ func TestAFieldNobodyAllowlistedDoesNotAppear(t *testing.T) {
 		held[f.name] = f.leave
 	}
 
-	stored := reflect.TypeOf(ZrokConfig{})
+	stored := reflect.TypeOf(publish.ZrokConfig{})
 	for i := 0; i < stored.NumField(); i++ {
 		name := stored.Field(i).Name
 		if _, known := held[name]; !known {
@@ -160,9 +161,9 @@ func TestTheOverlayBlobsAreNotExportedAsSettings(t *testing.T) {
 			}
 		}
 	}
-	cfg := d.zrokConfig()
+	cfg := d.ZrokConfig()
 	cfg.ShareToken = "blobbedsecret"
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, cfg); err != nil {
 		t.Fatal(err)
 	}
 	_, raw := exportOf(t, d)

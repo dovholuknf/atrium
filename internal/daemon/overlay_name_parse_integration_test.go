@@ -2,7 +2,10 @@
 
 package daemon
 
-import "testing"
+import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"testing"
+)
 
 func TestAShareNameIsParsedTheWayZrokSpellsIt(t *testing.T) {
 	t.Parallel()
@@ -24,7 +27,7 @@ func TestAShareNameIsParsedTheWayZrokSpellsIt(t *testing.T) {
 		{"mine:atrium-abc", "mine", "atrium-abc"},
 	}
 	for _, c := range cases {
-		sel, err := parseShareName(c.in)
+		sel, err := publish.ParseShareName(c.in)
 		if err != nil {
 			t.Fatalf("%q was refused: %v", c.in, err)
 		}
@@ -41,7 +44,7 @@ func TestAShareNameIsParsedTheWayZrokSpellsIt(t *testing.T) {
 func TestAShareNameWithNoShareInItIsRefused(t *testing.T) {
 	t.Parallel()
 	for _, in := range []string{"", "   ", "public:", "public/", ":", "/"} {
-		if sel, err := parseShareName(in); err == nil {
+		if sel, err := publish.ParseShareName(in); err == nil {
 			t.Fatalf("%q was accepted as namespace %q name %q", in, sel.NamespaceToken, sel.Name)
 		}
 	}

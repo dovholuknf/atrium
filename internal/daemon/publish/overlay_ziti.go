@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"encoding/base64"
@@ -25,8 +25,8 @@ import (
 // Beside the database rather than in the zrok or ziti directories: this one is
 // atrium's, created by atrium, and deleting atrium's state should take it with
 // it rather than leaving a credential behind in somebody else's folder.
-func (d *Daemon) zitiIdentityDir() string {
-	return filepath.ToSlash(filepath.Join(filepath.Dir(d.opts.DBPath), "identities"))
+func (d *Service) ZitiIdentityDir() string {
+	return filepath.ToSlash(filepath.Join(filepath.Dir(d.opts().DBPath), "identities"))
 }
 
 // ZitiEnrolment is what atrium can tell about the identity it was pointed at.
@@ -47,14 +47,14 @@ type ZitiEnrolment struct {
 // zitiIdentityFile is the part of an identity atrium looks at. The key
 // material lives beside these and is deliberately not named here: a field that
 // does not exist cannot be logged by accident.
-type zitiIdentityFile struct {
+type ZitiIdentityFile struct {
 	ZtAPI  string   `json:"ztAPI"`
 	ZtAPIs []string `json:"ztAPIs"`
 }
 
 // zitiEnrolment reports on the configured identity without holding its
 // contents.
-func zitiEnrolment(path string) ZitiEnrolment {
+func ZitiEnrolmentAt(path string) ZitiEnrolment {
 	p := strings.TrimSpace(path)
 	if p == "" {
 		return ZitiEnrolment{}
@@ -71,7 +71,7 @@ func zitiEnrolment(path string) ZitiEnrolment {
 	}
 	out.Present = true
 
-	var f zitiIdentityFile
+	var f ZitiIdentityFile
 	if err := json.Unmarshal(raw, &f); err != nil {
 		out.Err = "that file is not an identity atrium can read: " + err.Error()
 		return out
@@ -103,7 +103,7 @@ type JWTClaims struct {
 // The signature is NOT checked. Atrium is not the party that validates this,
 // the controller is, and pretending otherwise would mean carrying a trust
 // store for a network atrium knows nothing about.
-func readJWT(token string) (JWTClaims, error) {
+func ReadJWT(token string) (JWTClaims, error) {
 	var out JWTClaims
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) < 2 {
@@ -135,6 +135,6 @@ func readJWT(token string) (JWTClaims, error) {
 // The token is written to a file rather than passed as an argument, because an
 // argument is visible to anything on the machine that can list processes, and
 // this one is a credential.
-func zitiEnrollArgs(jwtPath, outPath string) []string {
+func ZitiEnrollArgs(jwtPath, outPath string) []string {
 	return []string{"enroll", "identity", "--jwt", jwtPath, "--out", outPath}
 }

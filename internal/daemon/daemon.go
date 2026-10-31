@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"log"
 	"net"
 	"net/http"
@@ -27,7 +28,6 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
 	"github.com/dovholuknf/atrium/internal/base/shellpick"
-	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"github.com/dovholuknf/atrium/internal/daemon/shared"
@@ -103,24 +103,18 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// Service is the published board. See overlay_service.go.
+	*publish.Service
 	// Publish sends one card to the board. See publishCard.
 	Publish func(id string)
 	// homeSize is the size walk over the card homes. See homesize.go.
 	homeSize homeSizer
 	// hk is this daemon's own seams, delays and limits. A test changes its daemon's copy. See hooks.go.
 	hk hooks
-	// logins are the sign-ins this daemon has started and not finished. See auth_flow.go.
-	logins loginStates
 	// replies is the transcript read cache every reader of a last reply shares. See keepalive.go.
 	replies lastReplies
-	// discovered caches provider metadata. See auth_flow.go.
-	discovered providerCache
-	// jwks caches the providers' signing keys. See auth_flow.go.
-	jwks publish.JwksCache
 	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
 	wakeLaunch func(shared.LaunchRequest) (*store.Task, error)
-	// authLim bounds password guessing on the published board. See auth_limit.go.
-	authLim authLimiter
 	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
 	forgeMu   sync.Mutex
 	forgeOpen map[string]ForgeAlert
@@ -221,23 +215,6 @@ type Daemon struct {
 	// up holds the runner version lookups in flight, so a wave of launches
 	// produces one request. See runnerupdate.go.
 	up updates
-
-	// nats holds any overlay listener the board is being served on, so it can
-	// be reached from somewhere else. See overlay_native.go.
-	nats   map[overlayKind]*native
-	natsMu sync.Mutex
-
-	// guests holds sessions lent out one at a time, each on its own share that
-	// reaches that session and nothing else.
-	//
-	// In memory, and that is now only half the story: the ADDRESS is recorded
-	// in the store and comes back after a restart. What is here is the live
-	// listener, which cannot outlive the process. See overlay_guest.go, and
-	// `docs/fabric/overlays.md` for why an address that dies with the daemon was the
-	// wrong answer.
-	guests guestShares
-	// docs holds the documents shared publicly, one share each. See docshare.go.
-	docs docShares
 
 	// rooms holds the other machines reporting into this hub. In memory and
 	// nowhere else: a room's cards are that room's state, and a second durable
@@ -429,13 +406,18 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d := &Daemon{
 		hk: defaultHooks(), opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
-		nats:        map[overlayKind]*native{},
 		peerLimit:   newPeerLimiter(),
 		launching:   small.NewKeyedMutex(),
 		windingDown: new(atomic.Bool),
 		startedAt:   new(sync.Map),
 	}
 	d.Publish = d.publishCard
+	d.Service = publish.New(publish.Config{
+		St: st, Ap: d.ap, Sup: d.sup, Publish: func(id string) { d.Publish(id) },
+		Opts: func() publish.Options {
+			return publish.Options{HumanAddr: d.opts.HumanAddr, Room: d.opts.Room, DBPath: d.opts.DBPath}
+		},
+	})
 	d.ph.opts.Build = opts.HostBuild
 	if tune != nil {
 		tune(&d.hk)
@@ -580,18 +562,18 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
-	d.ap.Overlays = d.overlayViews
-	d.ap.SaveOverlay = d.saveOverlay
-	d.ap.StartOverlay = d.startOverlay
-	d.ap.StopOverlay = d.stopOverlay
+	d.ap.Overlays = d.OverlayViews
+	d.ap.SaveOverlay = d.SaveOverlay
+	d.ap.StartOverlay = d.StartOverlay
+	d.ap.StopOverlay = d.StopOverlay
 	d.ap.SetupOverlay = func(kind string, body []byte) (string, error) {
-		var req SetupRequest
+		var req publish.SetupRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			return "", err
 		}
-		return d.setupOverlay(kind, req)
+		return d.SetupOverlay(kind, req)
 	}
-	d.ap.TeardownOverlay = d.teardownOverlay
+	d.ap.TeardownOverlay = d.TeardownOverlay
 	d.ap.InspectToken = d.InspectToken
 	d.ap.ReserveName = d.ReserveZrokName
 	d.ap.Capabilities = func() any { return d.ZitiCapabilities() }
@@ -608,7 +590,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// The secret is NEVER sent back, only whether there is one. This board is
 	// itself something people open and screenshot.
 	d.ap.AuthConfig = func() any {
-		c := d.authConfig()
+		c := d.AuthConfig()
 		return map[string]any{
 			"enabled": c.Enabled, "issuer": c.Issuer, "client_id": c.ClientID,
 			"redirect": c.Redirect, "allow": c.Allow,
@@ -625,7 +607,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		// The stored secret is carried over when the form sends none, so
 		// saving any other field does not silently blank it. A form that has
 		// never been shown the secret cannot send it back.
-		next := d.authConfig()
+		next := d.AuthConfig()
 		var in struct {
 			Enabled      *bool    `json:"enabled"`
 			Issuer       *string  `json:"issuer"`
@@ -677,7 +659,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		// leave it rather than clear it. Otherwise editing the name would blank
 		// the password every time.
 		if in.Password != nil && strings.TrimSpace(*in.Password) != "" {
-			if err := setBasicPassword(&next, *in.Password); err != nil {
+			if err := publish.SetBasicPassword(&next, *in.Password); err != nil {
 				return err
 			}
 		}
@@ -1498,7 +1480,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// Any share goes with the board it publishes. An address that outlives
 	// what it points at answers with a connection refused, which reads as the
 	// overlay being broken.
-	d.closeOverlays()
+	d.CloseOverlays()
 
 	// The deferred-injection retries stop first, so a backoff timer cannot fire
 	// against a store that is closing under it. The queued messages stay on disk
@@ -1633,4 +1615,9 @@ func (d *Daemon) resumePRReviews() {
 	for _, id := range ids {
 		d.prr.Start(id)
 	}
+}
+
+// EnrollZitiInto is publish.EnrollZitiInto, kept here for the CLI.
+func EnrollZitiInto(token, name, dir string) (string, string, error) {
+	return publish.EnrollZitiInto(token, name, dir)
 }

@@ -105,7 +105,7 @@ func (d *Daemon) shutdownAllowed(w http.ResponseWriter, r *http.Request) bool {
 		// rule was "only someone at this keyboard"; with a share running it
 		// would silently become "anyone the overlay admits", and a kill switch
 		// is the worst thing to hand out by accident.
-		if d.sharing() {
+		if d.Sharing() {
 			http.Error(w,
 				"a share is running, so loopback no longer means this machine. "+
 					"restart with --shutdown-token to allow this, or stop the share.",

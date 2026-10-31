@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ import (
 // v2 moved from `.zrok` to `.zrok2` and both can be on one machine, so the
 // newer wins and the older is still recognized rather than reported as
 // nothing being set up.
-var zrokRootNames = []string{".zrok2", ".zrok"}
+var ZrokRootNames = []string{".zrok2", ".zrok"}
 
 // ZrokEnv is what atrium can tell about the local zrok environment.
 type ZrokEnv struct {
@@ -68,7 +68,7 @@ type ZrokEnv struct {
 // called. See `environment/env_v0_4/root.go:297`, where `AccountToken` carries
 // that tag. Guessing from the field name reports every enabled environment as
 // having no token.
-type zrokEnvFile struct {
+type ZrokEnvFile struct {
 	AccountToken string `json:"zrok_token"`
 	ApiEndpoint  string `json:"api_endpoint"`
 	ZitiIdentity string `json:"ziti_identity"`
@@ -79,13 +79,13 @@ type zrokEnvFile struct {
 // Every failure reads as "not enabled". A file atrium cannot read is one it
 // cannot vouch for, and claiming an environment that does not work would be
 // worse than reporting none.
-func zrokEnv() ZrokEnv {
+func ZrokEnvHere() ZrokEnv {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ZrokEnv{}
 	}
-	for _, name := range zrokRootNames {
-		if env, ok := readZrokEnv(filepath.Join(home, name)); ok {
+	for _, name := range ZrokRootNames {
+		if env, ok := ReadZrokEnv(filepath.Join(home, name)); ok {
 			return env
 		}
 	}
@@ -99,19 +99,19 @@ func zrokEnv() ZrokEnv {
 // in the direction that matters: a daemon pointed at its own environment would
 // report the machine's as its readiness, so the panel would offer to share
 // from an environment it is not going to use.
-func (d *Daemon) zrokEnvOf() ZrokEnv {
+func (d *Service) ZrokEnvOf() ZrokEnv {
 	// Asked whichever root is selected, because the panel offers "use the one
 	// already here" and has to know whether there is one. It is the machine's
 	// environment either way, so this is not the same question as `Enabled`.
-	machine := zrokEnv().Enabled
+	machine := ZrokEnvHere().Enabled
 
-	dir := d.zrokRootDir()
+	dir := d.ZrokRootDir()
 	if dir == "" {
-		env := zrokEnv()
+		env := ZrokEnvHere()
 		env.MachineEnabled = machine
 		return env
 	}
-	env, _ := readZrokEnv(dir)
+	env, _ := ReadZrokEnv(dir)
 	env.Own = true
 	env.Root = filepath.ToSlash(dir)
 	env.MachineEnabled = machine
@@ -122,13 +122,13 @@ func (d *Daemon) zrokEnvOf() ZrokEnv {
 // there was one at all, which is not the same as the read failing: a directory
 // with no `environment.json` is a root that exists and is not enabled, and
 // that is the ordinary state of atrium's own before a token is pasted in.
-func readZrokEnv(root string) (ZrokEnv, bool) {
+func ReadZrokEnv(root string) (ZrokEnv, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, "environment.json"))
 	if err != nil {
 		return ZrokEnv{}, false
 	}
 	out := ZrokEnv{Enabled: true, Root: filepath.ToSlash(root)}
-	var f zrokEnvFile
+	var f ZrokEnvFile
 	if err := json.Unmarshal(raw, &f); err == nil {
 		out.ApiEndpoint = f.ApiEndpoint
 		out.HasAccountToken = strings.TrimSpace(f.AccountToken) != ""
@@ -144,7 +144,7 @@ func readZrokEnv(root string) (ZrokEnv, bool) {
 //
 // The description is what the zrok console lists this machine as. Left to
 // zrok's own default when empty, which is user@hostname.
-func zrokEnableArgs(token, description string) []string {
+func ZrokEnableArgs(token, description string) []string {
 	args := []string{"enable", strings.TrimSpace(token), "--headless"}
 	if d := strings.TrimSpace(description); d != "" {
 		args = append(args, "--description", d)

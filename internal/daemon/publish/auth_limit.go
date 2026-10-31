@@ -1,4 +1,4 @@
-package daemon
+package publish
 
 import (
 	"net"
@@ -17,47 +17,47 @@ import (
 // denial of service on a public share.
 const (
 	// authFreeFails are the wrong guesses a source gets before it waits.
-	authFreeFails = 5
+	AuthFreeFails = 5
 	// authLockBase is the first wait, and it doubles with each failure after.
-	authLockBase = 2 * time.Second
+	AuthLockBase = 2 * time.Second
 	// authLockMax caps the wait.
-	authLockMax = 15 * time.Minute
+	AuthLockMax = 15 * time.Minute
 	// authFailsMost bounds the table, since sources are chosen by the caller.
-	authFailsMost = 10000
+	AuthFailsMost = 10000
 	// authFailsForget is how long a quiet source is remembered.
-	authFailsForget = time.Hour
+	AuthFailsForget = time.Hour
 	// authScryptSlots is how many password checks may run at once.
-	authScryptSlots = 2
+	AuthScryptSlots = 2
 )
 
-type failRec struct {
-	n     int
-	until time.Time
-	last  time.Time
+type FailRec struct {
+	N     int
+	Until time.Time
+	Last  time.Time
 }
 
 // authLimiter is the state for both limits. The zero value works.
-type authLimiter struct {
-	mu    sync.Mutex
-	fails map[string]*failRec
-	sem   chan struct{}
+type AuthLimiter struct {
+	Mu    sync.Mutex
+	Fails map[string]*FailRec
+	Sem   chan struct{}
 	// now is replaceable so a test need not sleep.
-	now func() time.Time
+	Now func() time.Time
 }
 
-func (l *authLimiter) clock() time.Time {
-	if l.now != nil {
-		return l.now()
+func (l *AuthLimiter) Clock() time.Time {
+	if l.Now != nil {
+		return l.Now()
 	}
 	return time.Now()
 }
 
 // blocked returns how long this source must still wait, or zero.
-func (l *authLimiter) blocked(src string) time.Duration {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if r, ok := l.fails[src]; ok {
-		if wait := r.until.Sub(l.clock()); wait > 0 {
+func (l *AuthLimiter) Blocked(src string) time.Duration {
+	l.Mu.Lock()
+	defer l.Mu.Unlock()
+	if r, ok := l.Fails[src]; ok {
+		if wait := r.Until.Sub(l.Clock()); wait > 0 {
 			return wait
 		}
 	}
@@ -65,70 +65,70 @@ func (l *authLimiter) blocked(src string) time.Duration {
 }
 
 // fail records a wrong guess.
-func (l *authLimiter) fail(src string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := l.clock()
-	if l.fails == nil {
-		l.fails = map[string]*failRec{}
+func (l *AuthLimiter) Fail(src string) {
+	l.Mu.Lock()
+	defer l.Mu.Unlock()
+	now := l.Clock()
+	if l.Fails == nil {
+		l.Fails = map[string]*FailRec{}
 	}
-	r, ok := l.fails[src]
+	r, ok := l.Fails[src]
 	if !ok {
-		if len(l.fails) >= authFailsMost {
-			l.makeRoom(now)
+		if len(l.Fails) >= AuthFailsMost {
+			l.MakeRoom(now)
 		}
-		r = &failRec{}
-		l.fails[src] = r
+		r = &FailRec{}
+		l.Fails[src] = r
 	}
-	r.n++
-	r.last = now
-	if r.n >= authFreeFails {
-		wait := authLockBase
-		for i := authFreeFails; i < r.n && wait < authLockMax; i++ {
+	r.N++
+	r.Last = now
+	if r.N >= AuthFreeFails {
+		wait := AuthLockBase
+		for i := AuthFreeFails; i < r.N && wait < AuthLockMax; i++ {
 			wait *= 2
 		}
-		if wait > authLockMax {
-			wait = authLockMax
+		if wait > AuthLockMax {
+			wait = AuthLockMax
 		}
-		r.until = now.Add(wait)
+		r.Until = now.Add(wait)
 	}
 }
 
 // makeRoom drops forgotten sources, and the quietest one if that is not enough.
-func (l *authLimiter) makeRoom(now time.Time) {
+func (l *AuthLimiter) MakeRoom(now time.Time) {
 	var oldest string
 	var oldestAt time.Time
-	for k, r := range l.fails {
-		if now.Sub(r.last) > authFailsForget && !r.until.After(now) {
-			delete(l.fails, k)
+	for k, r := range l.Fails {
+		if now.Sub(r.Last) > AuthFailsForget && !r.Until.After(now) {
+			delete(l.Fails, k)
 			continue
 		}
-		if oldest == "" || r.last.Before(oldestAt) {
-			oldest, oldestAt = k, r.last
+		if oldest == "" || r.Last.Before(oldestAt) {
+			oldest, oldestAt = k, r.Last
 		}
 	}
-	if len(l.fails) >= authFailsMost && oldest != "" {
-		delete(l.fails, oldest)
+	if len(l.Fails) >= AuthFailsMost && oldest != "" {
+		delete(l.Fails, oldest)
 	}
 }
 
 // succeed forgets a source's failures.
-func (l *authLimiter) succeed(src string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.fails, src)
+func (l *AuthLimiter) Succeed(src string) {
+	l.Mu.Lock()
+	defer l.Mu.Unlock()
+	delete(l.Fails, src)
 }
 
 // acquire takes a password-check slot without waiting, and says whether it got
 // one. Refusing beats queueing: a queue of waiting requests is the memory the
 // bound exists to save.
-func (l *authLimiter) acquire() bool {
-	l.mu.Lock()
-	if l.sem == nil {
-		l.sem = make(chan struct{}, authScryptSlots)
+func (l *AuthLimiter) Acquire() bool {
+	l.Mu.Lock()
+	if l.Sem == nil {
+		l.Sem = make(chan struct{}, AuthScryptSlots)
 	}
-	sem := l.sem
-	l.mu.Unlock()
+	sem := l.Sem
+	l.Mu.Unlock()
 	select {
 	case sem <- struct{}{}:
 		return true
@@ -137,10 +137,10 @@ func (l *authLimiter) acquire() bool {
 	}
 }
 
-func (l *authLimiter) release() {
-	l.mu.Lock()
-	sem := l.sem
-	l.mu.Unlock()
+func (l *AuthLimiter) Release() {
+	l.Mu.Lock()
+	sem := l.Sem
+	l.Mu.Unlock()
 	<-sem
 }
 
@@ -151,7 +151,7 @@ func (l *authLimiter) release() {
 // the LAST entry, since a caller can write the earlier ones. From anywhere that
 // is not loopback the header is ignored, because then nothing trustworthy added
 // it.
-func authSource(r *http.Request) string {
+func AuthSource(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
