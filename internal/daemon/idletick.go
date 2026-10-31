@@ -35,8 +35,8 @@ const (
 // need not wait out a wind-down.
 var (
 	idleGoneWait = 5 * time.Second
-	idleLeave    = func(d *Daemon, r *runner, id string) {
-		windDown(r, idleParkGrace, d.exitKeysFor(id), d.hk.windDownKeyGap)
+	idleLeave    = func(r *runner, id string, keys [][]byte, keyGap time.Duration) {
+		windDown(r, idleParkGrace, keys, keyGap)
 	}
 )
 
@@ -320,7 +320,7 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 			}
 		}
 		r.noteCause(store.CauseIdlePark, "")
-		d.hk.idleLeave(d, r, id)
+		d.hk.idleLeave(r, id, d.exitKeysFor(id), d.hk.windDownKeyGap)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
 		for d.sup.Get(id) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)

@@ -337,7 +337,7 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 			return
 		}
 		defer d.idle.parking.Delete(t.ID)
-		d.hk.idleLeave(d, r, t.ID)
+		d.hk.idleLeave(r, t.ID, d.exitKeysFor(t.ID), d.hk.windDownKeyGap)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
 		for d.sup.Get(t.ID) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)

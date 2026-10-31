@@ -18,7 +18,7 @@ import (
 // dropping it, as its exit would.
 func quickPark(t *testing.T, d *Daemon) {
 	t.Helper()
-	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
+	d.hk.idleLeave = func(r *runner, id string, _ [][]byte, _ time.Duration) { endRunner(d, id) }
 	d.hk.idleGoneWait = 200 * time.Millisecond
 	// Parking is off until set, so a test that wants it says so, at the old two hours.
 	if err := d.st.SetSetting(store.SettingIdleParkAfter, "7200"); err != nil {
@@ -224,7 +224,7 @@ func TestIdleParkWorkersFirst(t *testing.T) {
 // Nothing is parked on a clock until the operator sets one, agent card or not.
 func TestIdleParkDoesNothingUntilSet(t *testing.T) {
 	d := testDaemon(t)
-	d.hk.idleLeave = func(d *Daemon, r *runner, id string) { endRunner(d, id) }
+	d.hk.idleLeave = func(r *runner, id string, _ [][]byte, _ time.Duration) { endRunner(d, id) }
 	card := idleAgent(t, d, "unset", store.StatusNeedsInput)
 	d.parkIdle(idleAfter(100 * time.Hour))
 	if parkedNow(t, d, card.ID) {
@@ -312,7 +312,7 @@ func TestIdleParkKeepsStatus(t *testing.T) {
 	quickPark(t, d)
 	card := idleAgent(t, d, "donecard", store.StatusDone)
 	// The wind-down would file it dead. It must come back as done.
-	d.hk.idleLeave = func(d *Daemon, r *runner, id string) {
+	d.hk.idleLeave = func(r *runner, id string, _ [][]byte, _ time.Duration) {
 		_ = d.st.SetStatus(id, store.StatusDead)
 		endRunner(d, id)
 	}
