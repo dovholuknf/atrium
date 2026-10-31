@@ -387,7 +387,11 @@ func (s *Store) Init(ctx context.Context, rawURL string) (InitResult, error) {
 // InitFromForge makes a repository the store lacks, as Init does, when its forge answers. A repository or a
 // directory already there, and a forge that does not answer, change nothing and are left to the caller's own refusal.
 func (s *Store) InitFromForge(ctx context.Context, ref Ref) error {
-	if _, err := os.Stat(s.dir(ref)); err == nil {
+	dir := filepath.Clean(s.dir(ref))
+	if !strings.HasPrefix(dir, filepath.Clean(s.Root())+string(filepath.Separator)) {
+		return refuse("%s is not under the store", ref.Name())
+	}
+	if _, err := os.Stat(dir); err == nil {
 		return nil
 	}
 	if _, err := s.HasForgeBranch(ctx, ref, "main"); err != nil {
