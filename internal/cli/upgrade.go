@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -100,7 +100,7 @@ var acceptUpgrades bool
 // blocking every upgrade: the hash the ROOM checks after downloading is what
 // makes this safe, and this one only saves a pointless round trip.
 func selfSHA(version string) string {
-	b, err := link.Offered(version)
+	b, err := conn.Offered(version)
 	if err != nil {
 		log.Printf("[link] cannot hash this binary, so an offer of it looks new: %v", err)
 		return ""

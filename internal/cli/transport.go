@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
@@ -365,7 +366,7 @@ func (h *zrokHub) listen() (net.Listener, error) {
 }
 
 // zrokBinder binds a zrok-first hub's share in a loop, so a deleted share is replaced by the next bind.
-func zrokBinder(s *hubSide, h *link.Hub, audit func(kind, detail string)) *link.CIBinder {
+func zrokBinder(s *hubSide, h *conn.Hub, audit func(kind, detail string)) *link.CIBinder {
 	attempt := 0
 	return &link.CIBinder{
 		Name: "room-zrok",
@@ -475,23 +476,23 @@ func rawRoomDialer(j linktransport.Join, keys linktransport.Keys, identity strin
 // Built from the join, the hub's list as last heard and what was told to this
 // room on its own machine (`atrium room transports`). `skipped` names what could
 // not be a rung and why, for the log. See docs/rnd/room-transport-order.md.
-func roomLadder(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports) (*link.Ladder, []string, error) {
+func roomLadder(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports) (*conn.Ladder, []string, error) {
 	rungs, skipped := roomRungs(keys, saved, tr, nil)
 	if len(rungs) == 0 {
 		return nil, skipped, fmt.Errorf("this room has no transport it can reach its hub on: %s",
 			strings.Join(skipped, "; "))
 	}
-	return link.NewLadder(rungs), skipped, nil
+	return conn.NewLadder(rungs), skipped, nil
 }
 
 // roomRungs builds the rungs, reusing a dialer from `had` for a path that has not
 // changed, so learning the hub's list does not open a second ziti session.
-func roomRungs(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports, had []link.Rung) ([]link.Rung, []string) {
+func roomRungs(keys linktransport.Keys, saved linktransport.Saved, tr linktransport.RoomTransports, had []conn.Rung) ([]conn.Rung, []string) {
 	paths, skipped := linktransport.Candidates(saved, tr)
-	var rungs []link.Rung
+	var rungs []conn.Rung
 	for _, p := range paths {
 		if d := reuse(had, p); d != nil {
-			rungs = append(rungs, link.Rung{Path: p, Dial: d})
+			rungs = append(rungs, conn.Rung{Path: p, Dial: d})
 			continue
 		}
 		d, err := rungDialer(keys, saved, p)
@@ -499,12 +500,12 @@ func roomRungs(keys linktransport.Keys, saved linktransport.Saved, tr linktransp
 			skipped = append(skipped, p.Transport+": "+err.Error())
 			continue
 		}
-		rungs = append(rungs, link.Rung{Path: p, Dial: d})
+		rungs = append(rungs, conn.Rung{Path: p, Dial: d})
 	}
 	return rungs, skipped
 }
 
-func reuse(had []link.Rung, p wire.Path) wire.Dialer {
+func reuse(had []conn.Rung, p wire.Path) wire.Dialer {
 	for _, r := range had {
 		q := r.Path
 		if q.Transport == p.Transport && strings.EqualFold(q.Addr, p.Addr) && q.Service == p.Service &&
@@ -537,7 +538,7 @@ func rungDialer(keys linktransport.Keys, saved linktransport.Saved, p wire.Path)
 
 // climbing is a ladder for a one-off connection, from a command rather than the
 // running room: every dial climbs from the top, since nothing has climbed yet.
-type climbing struct{ l *link.Ladder }
+type climbing struct{ l *conn.Ladder }
 
 func (c climbing) Dial(ctx context.Context) (net.Conn, error) {
 	return c.l.Climb(ctx, wire.DefaultTimings().DialWait)
@@ -554,7 +555,7 @@ func closeDialer(d wire.Dialer) {
 }
 
 // ladderSays is the rungs in one line, best first, for the log and `room transports`.
-func ladderSays(rungs []link.Rung) string {
+func ladderSays(rungs []conn.Rung) string {
 	out := make([]string, len(rungs))
 	for i, r := range rungs {
 		out[i] = r.Path.Transport + " " + r.Dial.Describe()
@@ -568,7 +569,7 @@ func ladderSays(rungs []link.Rung) string {
 // learnHubPaths writes the hub's list down when it changed and rebuilds the
 // ladder from it, so the next start knows the fallback even when the hub cannot
 // be reached. Best effort: a room that cannot write keeps what it has.
-func learnHubPaths(keys linktransport.Keys, saved linktransport.Saved, l *link.Ladder, ps []wire.Path) {
+func learnHubPaths(keys linktransport.Keys, saved linktransport.Saved, l *conn.Ladder, ps []wire.Path) {
 	tr, err := keys.Transports()
 	if err != nil {
 		log.Printf("[link] could not read %s: %v", keys.TransportsPath(), err)
@@ -595,7 +596,7 @@ func learnHubPaths(keys linktransport.Keys, saved linktransport.Saved, l *link.L
 }
 
 // reloadRungs rebuilds the ladder from disk, so an address `atrium room hub` changed is tried without a restart.
-func reloadRungs(keys linktransport.Keys, l *link.Ladder) {
+func reloadRungs(keys linktransport.Keys, l *conn.Ladder) {
 	saved, err := keys.Joined()
 	if err != nil {
 		log.Printf("[link] could not read this room's join: %v", err)

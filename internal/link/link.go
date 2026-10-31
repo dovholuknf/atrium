@@ -80,29 +80,21 @@ type (
 	note         = wire.Note
 )
 
-const (
-	handshakeWait = wire.HandshakeWait
-	maxLine       = wire.MaxLine
-)
-
 var (
-	otherRoom      = wire.OtherRoom
-	writeJSON      = wire.WriteJSON
-	writeJSONLimit = wire.WriteJSONLimit
-	readJSON       = wire.ReadJSON
-	readJSONLimit  = wire.ReadJSONLimit
-	sayHello       = wire.SayHello
-	Hosts          = transport.Hosts
-	MixedListener  = transport.MixedListener
-	NewCSR         = transport.NewCSR
-	ParseToken     = transport.ParseToken
-	EnrolOver      = transport.EnrolOver
-	MaskShare      = wire.MaskShare
+	otherRoom     = wire.OtherRoom
+	writeJSON     = wire.WriteJSON
+	readJSON      = wire.ReadJSON
+	sayHello      = wire.SayHello
+	Hosts         = transport.Hosts
+	MixedListener = transport.MixedListener
+	NewCSR        = transport.NewCSR
+	ParseToken    = transport.ParseToken
+	EnrolOver     = transport.EnrolOver
+	MaskShare     = wire.MaskShare
 
 	MintOverlayToken     = transport.MintOverlayToken
 	DirectAuthenticated  = transport.DirectAuthenticated
 	OverlayAuthenticated = transport.OverlayAuthenticated
-	hearHello            = wire.HearHello
 )
 
 type (
@@ -112,10 +104,6 @@ type (
 	Attached        = conn.Attached
 	RoomSetup       = conn.RoomSetup
 	SetupIssue      = conn.SetupIssue
-	Index           = conn.Index
-	Rung            = conn.Rung
-	Ladder          = conn.Ladder
-	ListenerState   = conn.ListenerState
 	RelayRequest    = conn.RelayRequest
 	RelayLaunchSpec = conn.RelayLaunchSpec
 	RelayAnswer     = conn.RelayAnswer
@@ -123,27 +111,16 @@ type (
 	RelayEvent      = conn.RelayEvent
 	RelayPeer       = conn.RelayPeer
 	Room            = conn.Room
-	State           = conn.State
 	StreamError     = conn.StreamError
-	Stream          = conn.Stream
 	TransportAsk    = conn.TransportAsk
 	TransportState  = conn.TransportState
-	Build           = conn.Build
-	Upgrades        = conn.Upgrades
 	errStatus       = conn.ErrStatus
 )
 
 const (
-	ForgePrefix        = conn.ForgePrefix
 	ForgeRoomHeader    = conn.ForgeRoomHeader
 	PRClaimPrefix      = conn.PRClaimPrefix
 	PRClaimRoomHeader  = conn.PRClaimRoomHeader
-	PathOn             = conn.PathOn
-	PathUp             = conn.PathUp
-	PathDown           = conn.PathDown
-	PathNone           = conn.PathNone
-	PathUnlistened     = conn.PathUnlistened
-	PathOff            = conn.PathOff
 	RelaySay           = conn.RelaySay
 	RelayPeers         = conn.RelayPeers
 	RelayCard          = conn.RelayCard
@@ -159,26 +136,15 @@ const (
 )
 
 var (
-	ErrNoGit             = conn.ErrNoGit
-	ErrHubNoGit          = conn.ErrHubNoGit
-	ErrNoRoom            = conn.ErrNoRoom
-	NewLadder            = conn.NewLadder
-	PathKinds            = conn.PathKinds
-	MergePaths           = conn.MergePaths
-	ErrRelayOld          = conn.ErrRelayOld
-	ErrRelayDown         = conn.ErrRelayDown
-	ErrRelayUnconfirmed  = conn.ErrRelayUnconfirmed
-	ErrStreamOld         = conn.ErrStreamOld
-	ErrStreamNotAttached = conn.ErrStreamNotAttached
-	CleanClaim           = conn.CleanClaim
-	ErrLastPath          = conn.ErrLastPath
-	Offered              = conn.Offered
-	Describe             = conn.Describe
-	newHub               = conn.NewHub
-	keyOf                = conn.KeyOf
-	headerHas            = conn.HeaderHas
-	pathClip             = conn.PathClip
-	newBuffered          = conn.Buffered
-	equalFold            = wire.EqualFold
-	lowerASCII           = wire.LowerASCII
+	ErrNoGit     = conn.ErrNoGit
+	ErrNoRoom    = conn.ErrNoRoom
+	ErrRelayDown = conn.ErrRelayDown
+	CleanClaim   = conn.CleanClaim
+	newHub       = conn.NewHub
+	keyOf        = conn.KeyOf
+	headerHas    = conn.HeaderHas
+	pathClip     = conn.PathClip
+	newBuffered  = conn.Buffered
+	equalFold    = wire.EqualFold
+	lowerASCII   = wire.LowerASCII
 )

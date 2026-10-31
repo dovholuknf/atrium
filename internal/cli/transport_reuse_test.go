@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -11,7 +11,7 @@ type fakeDial struct{ wire.Dialer }
 
 func TestReuseKeepsTheDialerForAnUnchangedPath(t *testing.T) {
 	d := &fakeDial{}
-	had := []link.Rung{{Path: wire.Path{Transport: "direct", Addr: "Hub.Example:7779"}, Dial: d}}
+	had := []conn.Rung{{Path: wire.Path{Transport: "direct", Addr: "Hub.Example:7779"}, Dial: d}}
 	for i := 0; i < 100; i++ {
 		got := reuse(had, wire.Path{Transport: "direct", Addr: "hub.example:7779"})
 		if got != wire.Dialer(d) {

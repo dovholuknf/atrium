@@ -6,17 +6,17 @@ import (
 	"errors"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 )
 
 // linkRelay is the daemon's Relay over a room's link to its hub. Here because
 // internal/daemon and internal/link do not import each other, and this is the
 // one place that holds both. See docs/fabric/cross-room-say-design.md.
-type linkRelay struct{ room *link.Room }
+type linkRelay struct{ room *conn.Room }
 
 func (l linkRelay) Say(ctx context.Context, s daemon.RelaySay) (daemon.RelayResult, error) {
-	ans, err := l.room.Relay(ctx, link.RelayRequest{
-		Op: link.RelaySay, From: s.From, Room: s.Room, To: s.To, Text: s.Text, When: s.When, Kind: s.Kind, Wake: s.Wake, Force: s.Force,
+	ans, err := l.room.Relay(ctx, conn.RelayRequest{
+		Op: conn.RelaySay, From: s.From, Room: s.Room, To: s.To, Text: s.Text, When: s.When, Kind: s.Kind, Wake: s.Wake, Force: s.Force,
 	})
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)
@@ -28,7 +28,7 @@ func (l linkRelay) Say(ctx context.Context, s daemon.RelaySay) (daemon.RelayResu
 }
 
 func (l linkRelay) Peers(ctx context.Context, all, everywhere bool) ([]daemon.RemotePeer, string, error) {
-	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayPeers, All: all, Everywhere: everywhere})
+	ans, err := l.room.Relay(ctx, conn.RelayRequest{Op: conn.RelayPeers, All: all, Everywhere: everywhere})
 	if err != nil {
 		return nil, "", relayErr(err)
 	}
@@ -46,20 +46,20 @@ func (l linkRelay) Peers(ctx context.Context, all, everywhere bool) ([]daemon.Re
 }
 
 func (l linkRelay) Find(ctx context.Context, name string) (daemon.RelayResult, error) {
-	return l.reach(ctx, link.RelayRequest{Op: link.RelayFind, To: name})
+	return l.reach(ctx, conn.RelayRequest{Op: conn.RelayFind, To: name})
 }
 
 func (l linkRelay) Card(ctx context.Context, room, to string, events bool) (daemon.RelayResult, error) {
-	return l.reach(ctx, link.RelayRequest{Op: link.RelayCard, Room: room, To: to, Events: events})
+	return l.reach(ctx, conn.RelayRequest{Op: conn.RelayCard, Room: room, To: to, Events: events})
 }
 
 func (l linkRelay) Exit(ctx context.Context, room, to, from string, force bool) (daemon.RelayResult, error) {
-	return l.reach(ctx, link.RelayRequest{Op: link.RelayExit, Room: room, To: to, From: from, Force: force})
+	return l.reach(ctx, conn.RelayRequest{Op: conn.RelayExit, Room: room, To: to, From: from, Force: force})
 }
 
 func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.RelayResult, error) {
-	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayLaunch, From: r.From, Room: r.Room,
-		Launch: &link.RelayLaunchSpec{
+	ans, err := l.room.Relay(ctx, conn.RelayRequest{Op: conn.RelayLaunch, From: r.From, Room: r.Room,
+		Launch: &conn.RelayLaunchSpec{
 			Cwd: r.Cwd, Title: r.Title, Why: r.Why, Prompt: r.Prompt, Brief: r.Brief, Runner: r.Runner, Tags: r.Tags,
 			Model: r.Model, Effort: r.Effort, Args: r.Args, Env: r.Env, LeanAgents: r.LeanAgents,
 			LeanSkills: r.LeanSkills, Superlean: r.Superlean, Lifetime: r.Lifetime, Item: r.Item,
@@ -80,7 +80,7 @@ func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.Rel
 
 // Hub makes linkRelay a daemon.HubAsker: one call to the hub's backlog or reports endpoint, over the link.
 func (l linkRelay) Hub(ctx context.Context, from, method, path string, body json.RawMessage) (daemon.RelayResult, error) {
-	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayHub, From: from, Method: method, Path: path, Body: body})
+	ans, err := l.room.Relay(ctx, conn.RelayRequest{Op: conn.RelayHub, From: from, Method: method, Path: path, Body: body})
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)
 	}
@@ -89,7 +89,7 @@ func (l linkRelay) Hub(ctx context.Context, from, method, path string, body json
 }
 
 // reach relays one card or exit request, and carries the card back.
-func (l linkRelay) reach(ctx context.Context, req link.RelayRequest) (daemon.RelayResult, error) {
+func (l linkRelay) reach(ctx context.Context, req conn.RelayRequest) (daemon.RelayResult, error) {
 	ans, err := l.room.Relay(ctx, req)
 	if err != nil {
 		return daemon.RelayResult{}, relayErr(err)
@@ -114,9 +114,9 @@ func (l linkRelay) reach(ctx context.Context, req link.RelayRequest) (daemon.Rel
 // link's sentence.
 func relayErr(err error) error {
 	switch {
-	case errors.Is(err, link.ErrRelayOld):
+	case errors.Is(err, conn.ErrRelayOld):
 		return daemon.ErrRelayOld
-	case errors.Is(err, link.ErrRelayUnconfirmed):
+	case errors.Is(err, conn.ErrRelayUnconfirmed):
 		return relayFailure{msg: err.Error(), is: daemon.ErrRelayUnconfirmed}
 	default:
 		return relayFailure{msg: err.Error(), is: daemon.ErrRelayDown}

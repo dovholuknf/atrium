@@ -6,6 +6,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 )
 
 // Every room this hub knows about, whether or not it is answering.
@@ -35,7 +36,7 @@ import (
 // here invents one.
 type inventory struct {
 	store *hubstore.Store
-	hub   *link.Hub
+	hub   *conn.Hub
 }
 
 func (i inventory) Known() ([]link.Known, error) {
@@ -45,7 +46,7 @@ func (i inventory) Known() ([]link.Known, error) {
 	}
 	// Indexed by the same folded name the hub routes on, so a room typed with
 	// different capitals in two places is still one room.
-	live := map[string]link.Attached{}
+	live := map[string]conn.Attached{}
 	for _, a := range i.hub.Rooms() {
 		live[fold(a.Name)] = a
 	}
@@ -66,7 +67,7 @@ func (i inventory) Known() ([]link.Known, error) {
 			k.Via, k.Fallback, k.Starved = a.Via, a.Fallback, a.Starved
 			k.RemoteAccess = a.RemoteAccess
 			k.LoginNeeded = a.LoginNeeded
-			k.Paths = link.MergePaths(a.Paths, i.hub.Listeners())
+			k.Paths = conn.MergePaths(a.Paths, i.hub.Listeners())
 			// PREFERRED OVER WHAT IS WRITTEN DOWN, because a live connection is
 			// telling us right now and the record is what it said last time.
 			// This is the only direction that rule runs in: the observed fields
@@ -135,7 +136,7 @@ func (i inventory) ForgetRoom(name string) error {
 // asking about a room that is not answering. That rule cannot be enforced here:
 // this package cannot see a socket either, and the check that matters is made
 // where the live list is, which is where the question is asked.
-func (i inventory) Remembered(name string) ([]link.CardState, error) {
+func (i inventory) Remembered(name string) ([]conn.CardState, error) {
 	r, err := i.store.ByName(name)
 	if err != nil {
 		return nil, err
@@ -144,9 +145,9 @@ func (i inventory) Remembered(name string) ([]link.CardState, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]link.CardState, 0, len(cards))
+	out := make([]conn.CardState, 0, len(cards))
 	for _, c := range cards {
-		out = append(out, link.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
+		out = append(out, conn.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
 	}
 	return out, nil
 }

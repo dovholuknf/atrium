@@ -23,6 +23,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	linktransport "github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
@@ -202,7 +203,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	defer set.release()
 
 	// THE HUB'S ZITI TRANSPORTS, each a switch in the gear. A flag seeds one. See link/hubtransports.go.
-	var h *link.Hub
+	var h *conn.Hub
 	ht := &link.HubTransports{
 		Store:            store,
 		IdentityFallback: f.identity,
@@ -258,7 +259,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// rooms either, since nothing answers on it.
 	var lns []net.Listener
 	var lnVia []string
-	var sideStates []link.ListenerState
+	var sideStates []conn.ListenerState
 	var zrokFirst *hubSide
 	for i, s := range set.sides {
 		if s.kind == "ziti" && i > 0 {
@@ -274,14 +275,14 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			if i == 0 {
 				return fmt.Errorf("listening for rooms over %s: %w", s.kind, err)
 			}
-			sideStates = append(sideStates, link.ListenerState{Kind: s.kind, LastError: err.Error()})
+			sideStates = append(sideStates, conn.ListenerState{Kind: s.kind, LastError: err.Error()})
 			log.Printf("[hub] not listening for rooms over %s, the hub runs without it: %v", s.kind, err)
 			s.enabled = func() bool { return false }
 			continue
 		}
 		defer ln.Close()
 		log.Printf("[hub] listening for rooms over %s: %s", s.kind, s.says)
-		sideStates = append(sideStates, link.ListenerState{Kind: s.kind, Up: true})
+		sideStates = append(sideStates, conn.ListenerState{Kind: s.kind, Up: true})
 		lns = append(lns, ln)
 		lnVia = append(lnVia, s.kind)
 	}
@@ -444,7 +445,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// was keeping for that room and is not in this is discarded,
 	// because it is no longer there, and the discard is written down
 	// rather than being silent. See `Announce` in internal/hubstore.
-	h.Cached = func(name string, cards []link.CardState) error {
+	h.Cached = func(name string, cards []conn.CardState) error {
 		r, err := store.ByName(name)
 		if errors.Is(err, hubstore.ErrHalted) {
 			// Attaching already let it in from memory. See below.
@@ -482,9 +483,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			if err != nil {
 				continue
 			}
-			cards := make([]link.CardState, 0, len(held))
+			cards := make([]conn.CardState, 0, len(held))
 			for _, c := range held {
-				cards = append(cards, link.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
+				cards = append(cards, conn.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
 			}
 			h.IndexEverywhere(r.Name, cards)
 		}

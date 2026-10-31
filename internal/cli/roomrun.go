@@ -19,7 +19,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/gitsync"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/roomstats"
@@ -415,7 +415,7 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	// fails open, a source that fails is reported on its own row. A room whose
 	// hub is down is a room with nobody watching it, which is exactly what it
 	// was before anybody built a hub.
-	room := &link.Room{
+	room := &conn.Room{
 		Name: saved.Room,
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
@@ -453,7 +453,7 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See
 		// `internal/link/upgrade.go`.
-		Upgrades: &link.Upgrades{
+		Upgrades: &conn.Upgrades{
 			Accept:  acceptUpgrades,
 			Version: Version,
 			// WHAT THIS ROOM IS RUNNING, so it cannot be talked into
@@ -502,7 +502,7 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 	// The room's stable hub remote forwards over the same link's git kind.
 	d.SetHubGit(func() (http.RoundTripper, error) {
 		if !room.HubServesGit() {
-			return nil, link.ErrNoGit
+			return nil, conn.ErrNoGit
 		}
 		return room.GitTransport(), nil
 	})
@@ -540,7 +540,7 @@ func runRoom(keys transport.Keys, db, human, agent string, restartAfter time.Dur
 // d.BoardHandler() directly and have no /v1/git/ at all. The hub's board proxy refuses the
 // path as well, so the hub's own sync and collect are the only way in. And only a repository
 // the hub has synced since this room started is served (gitsync.Syncer.Served).
-func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
+func roomHandler(d *daemon.Daemon, room *conn.Room) http.Handler {
 	sy := &gitsync.Syncer{Root: func() string {
 		if v, err := d.Store().Setting(gitsync.SettingGitRoot); err == nil && strings.TrimSpace(v) != "" {
 			return strings.TrimSpace(v)
@@ -549,7 +549,7 @@ func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 	}, HubRemote: func(canonical string) string { return d.HubRemoteURL(canonical) }}
 	gh := &gitsync.RoomHandler{Syncer: sy, Hub: func() (http.RoundTripper, error) {
 		if !room.HubServesGit() {
-			return nil, link.ErrNoGit
+			return nil, conn.ErrNoGit
 		}
 		return room.GitTransport(), nil
 	}, Live: func(name string) []string { return liveBranches(d, name) }}
