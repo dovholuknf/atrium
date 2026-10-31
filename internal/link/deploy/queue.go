@@ -1,4 +1,4 @@
-package link
+package deploy
 
 import (
 	"context"
@@ -18,44 +18,42 @@ import (
 
 // SetRunningCommit says which commit this hub's own binary was built from. Empty means the hub cannot say, and the
 // queue then falls back to the installed binary's commit.
-func (p *Proxy) SetRunningCommit(commit string) {
-	st := p.deployReady()
+func (p *Service) SetRunningCommit(commit string) {
+	st := p.DeployReady()
 	if st == nil {
 		return
 	}
-	st.mu.Lock()
+	st.Mu.Lock()
 	st.running = strings.TrimSpace(commit)
-	st.mu.Unlock()
+	st.Mu.Unlock()
 }
 
 // deployQueue reads the queue now. The caller has checked that deploy-ready is on.
-func (p *Proxy) deployQueue(ctx context.Context) deployready.Queue {
-	st := p.deployReady()
-	bctx, cancel := context.WithTimeout(ctx, st.bound)
+func (p *Service) deployQueue(ctx context.Context) deployready.Queue {
+	st := p.DeployReady()
+	bctx, cancel := context.WithTimeout(ctx, st.Bound)
 	defer cancel()
-	repo, err := p.repoFor("")
+	repo, err := p.RepoFor("")
 	if err != nil {
 		return deployready.Queue{Entries: []deployready.QueueEntry{}, Error: err.Error(),
 			Line: "deploy queue unknown: " + err.Error()}
 	}
-	st.mu.Lock()
+	st.Mu.Lock()
 	hub := st.running
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	if hub == "" {
-		if hub, err = st.installed(bctx, p); err != nil {
+		if hub, err = st.Installed(bctx, p); err != nil {
 			return deployready.Queue{Branch: repo.Branch, Entries: []deployready.QueueEntry{}, Error: err.Error(),
 				Line: "deploy queue unknown: " + err.Error()}
 		}
 	}
 	var rooms []deployready.Live
-	if p.hub != nil {
-		for _, a := range p.hub.Rooms() {
-			rooms = append(rooms, deployready.Live{Name: a.Name, Commit: a.Commit})
-		}
+	for _, a := range p.Rooms() {
+		rooms = append(rooms, deployready.Live{Name: a.Name, Commit: a.Commit})
 	}
-	st.mu.Lock()
+	st.Mu.Lock()
 	c := p.checkerFor(st, repo)
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	q := c.Queue(bctx, hub, rooms)
 	if bctx.Err() != nil {
 		return deployready.Queue{Branch: repo.Branch, Entries: []deployready.QueueEntry{},
@@ -64,8 +62,8 @@ func (p *Proxy) deployQueue(ctx context.Context) deployready.Queue {
 	return q
 }
 
-func (p *Proxy) serveDeployQueue(w http.ResponseWriter, r *http.Request) {
-	if p.deployReady() == nil {
+func (p *Service) ServeDeployQueue(w http.ResponseWriter, r *http.Request) {
+	if p.DeployReady() == nil {
 		http.NotFound(w, r)
 		return
 	}
