@@ -27,68 +27,12 @@ import (
 // the class that counts is the one the session had when it first connected. A retag
 // lands at the next session start, and nothing sends `list_changed`.
 
-// workerTools is the whole of the worker set, by name.
-//
-// A TOOL IS IN THE WORKER SET ONLY WHEN IT IS NAMED HERE. `addTool` filters on
-// this list and not on a list of exclusions, so a tool added later, such as the
-// git tools a `registerGit` adds, lands in `full` alone with no further change.
-var workerTools = map[string]bool{
-	"atrium_status": true,
-	"atrium_peers":  true,
-	"atrium_say":    true,
-	"atrium_report": true,
-	// How a worker ends, in one line. See ctl_end.go.
-	"atrium_done":    true,
-	"atrium_blocked": true,
-	// How a worker says what a test found, pinned to its own commit. See record_mcp.go.
-	"atrium_record": true,
-	"atrium_task":   true,
-	"atrium_alias":  true,
-	// A lean worker names what it lacks. See needHandler.
-	"atrium_need": true,
-	// Workers write the reports, so a worker publishes. See docs_mcp.go.
-	"atrium_publish": true,
-	// Workers hand files between rooms. See files_mcp.go.
-	"atrium_put":    true,
-	"atrium_get":    true,
-	"atrium_files":  true,
-	"atrium_export": true,
-	// The cards that push to the hub are workers. See git_hub.go.
-	"atrium_git_push": true,
-	// And the ones that read code that is not in their cwd. See git_url.go.
-	"atrium_git_url": true,
-	// And the ones that read the CI of a repository, which the hub reads for them. See ci_door.go.
-	"atrium_ci": true,
-	// And the ones that need a build machine. See resources_mcp.go.
-	"atrium_resources": true,
-	// And the ones that clear up cards, which otherwise script the API by hand. See closeHandler.
-	"atrium_close": true,
-	// And the ones that file what a run cost and what slowed it, for the work ledger. See backlog_mcp.go.
-	"atrium_reports": true,
-	// And the ones that land their branch, through the merge queue. See merge_mcp.go.
-	"atrium_merge": true,
-}
-
-// itemWithheld is what an item worker loses from the worker set: every way to talk to anything but the tool that ends
-// its work. The same four the say endpoint refuses for, so a worker that reached one by lying about its class meets
-// the refusal there.
-var itemWithheld = map[string]bool{
-	"atrium_say": true, "atrium_peers": true, "atrium_task": true, "atrium_report": true,
-}
+var (
+	workerTools = ctl.WorkerTools
+)
 
 // inClass reports whether a tool is served to a class.
-func inClass(name string, class ctl.Class) bool {
-	if name == "atrium_review" {
-		return class == ctl.ClassWorkerReview
-	}
-	if class == ctl.ClassWorkerReview {
-		return workerTools[name]
-	}
-	if class == ctl.ClassWorkerItem {
-		return workerTools[name] && !itemWithheld[name]
-	}
-	return class == ctl.ClassFull || class == ctl.ClassFullResident || workerTools[name]
-}
+func inClass(name string, class ctl.Class) bool { return ctl.InClass(name, class) }
 
 // residentClass is whether a class hears the resident words for atrium_done and atrium_blocked.
 func residentClass(c ctl.Class) bool {
@@ -98,9 +42,7 @@ func residentClass(c ctl.Class) bool {
 // addTool is `mcp.AddTool` for the class being built: it registers the tool when
 // the class includes it and does nothing otherwise.
 func addTool[In, Out any](s *mcp.Server, class ctl.Class, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
-	if inClass(t.Name, class) {
-		mcp.AddTool(s, t, h)
-	}
+	ctl.AddTool(s, class, t, h)
 }
 
 const (
@@ -211,24 +153,4 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctl.C
 		return ctl.ClassFullResident, true
 	}
 	return ctl.ClassFull, true
-}
-
-// pickCard is the card a wire name belongs to. A wire name can be reused by a card that has
-// since died, so a live one is preferred, then the newest, which is how resolvePeer orders an
-// alias. Nil when no card answers to it.
-func pickCard(tasks []ctlCard, agent string) *ctlCard {
-	var best *ctlCard
-	for i := range tasks {
-		t := &tasks[i]
-		if t.Wire != agent {
-			continue
-		}
-		switch {
-		case best == nil, best.Status == "dead" && t.Status != "dead":
-			best = t
-		case (best.Status == "dead") == (t.Status == "dead") && t.Created > best.Created:
-			best = t
-		}
-	}
-	return best
 }
