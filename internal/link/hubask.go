@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // A room's atrium_backlog and atrium_reports, answered by the hub it is attached to. See
@@ -107,9 +109,9 @@ func (c *controlMCP) hubAsk(ctx context.Context, from string, req RelayRequest) 
 	}
 	var data json.RawMessage
 	if err := c.ask(ctx, method, req.Path, "", body, &data); err != nil {
-		var be *boardError
+		var be *ctl.BoardError
 		if errors.As(err, &be) {
-			return RelayAnswer{Code: be.code, Error: be.msg, Unreachable: be.code == http.StatusBadGateway}
+			return RelayAnswer{Code: be.Code, Error: be.Msg, Unreachable: be.Code == http.StatusBadGateway}
 		}
 		return RelayAnswer{Code: http.StatusBadGateway, Error: err.Error()}
 	}

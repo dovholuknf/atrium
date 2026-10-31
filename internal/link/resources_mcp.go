@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/base/resources"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_resources, the control tool that lists the machines and environments an agent may use. See
@@ -150,6 +151,6 @@ func (c *controlMCP) resourcesHandler(ctx context.Context, req *mcp.CallToolRequ
 	return nil, out, nil
 }
 
-func (c *controlMCP) registerResources(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerResources(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_resources", Description: resourcesToolDesc}, c.resourcesHandler)
 }

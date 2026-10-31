@@ -18,6 +18,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // publishHarness is atrium_publish over a fake room. The room serves the card list and
@@ -394,7 +395,7 @@ func TestPublishRefusesASixthMiBOfText(t *testing.T) {
 
 // THE TOOL IS IN THE WORKER SET AND ITS DESCRIPTION SAYS THE CHECKS ARE A SPEED BUMP.
 func TestPublishIsAWorkerToolAndSaysItIsASpeedBump(t *testing.T) {
-	if !inClass("atrium_publish", classWorker) || !inClass("atrium_publish", classFull) {
+	if !inClass("atrium_publish", ctl.ClassWorker) || !inClass("atrium_publish", ctl.ClassFull) {
 		t.Fatal("atrium_publish is not in both sets")
 	}
 	h := newClassHarness(t, classTasks)

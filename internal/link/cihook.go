@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -638,13 +639,13 @@ func (d proxyCIDeliverer) Resolve(ctx context.Context, to string) (CITarget, CIA
 	scope, id, handle, err := c.resolveCard(ctx, "", to)
 	if err != nil {
 		var amb *errAmbiguous
-		var be *boardError
+		var be *ctl.BoardError
 		switch {
 		case errors.As(err, &amb):
 			return CITarget{}, CIAnswer{State: hubstore.CIRefused, Detail: err.Error()}
-		case errors.As(err, &be) && be.code != http.StatusBadGateway && be.code != http.StatusServiceUnavailable &&
-			be.code != http.StatusGatewayTimeout && be.code != http.StatusNotFound:
-			return CITarget{}, CIAnswer{State: hubstore.CIRefused, Detail: be.msg}
+		case errors.As(err, &be) && be.Code != http.StatusBadGateway && be.Code != http.StatusServiceUnavailable &&
+			be.Code != http.StatusGatewayTimeout && be.Code != http.StatusNotFound:
+			return CITarget{}, CIAnswer{State: hubstore.CIRefused, Detail: be.Msg}
 		}
 		return CITarget{}, CIAnswer{State: hubstore.CIPending, Detail: err.Error()}
 	}

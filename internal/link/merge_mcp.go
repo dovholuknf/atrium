@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_merge, ONE CODE for the hub's control over HTTP and a room's stdio `atrium control`, over /_hub/merge
@@ -65,7 +66,7 @@ func AddRoomMergeTool(s *mcp.Server, d MergeDoor) {
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_merge", Description: mergeToolDesc}, d.Handle)
 }
 
-func (c *controlMCP) registerMerge(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerMerge(s *mcp.Server, class ctl.Class) {
 	d := MergeDoor{
 		Call: func(ctx context.Context, method, path string, body, out any) error {
 			return c.ask(ctx, method, path, "", body, out)
@@ -84,7 +85,7 @@ func (d MergeDoor) Handle(ctx context.Context, req *mcp.CallToolRequest, in merg
 		if (repo == "" || branch == "") && d.Here != nil {
 			hr, hb, hs, err := d.Here(ctx)
 			if err != nil {
-				return nil, out, &refusedError{err.Error() + ". name the branch and the repository"}
+				return nil, out, &ctl.RefusedError{Msg: err.Error() + ". name the branch and the repository"}
 			}
 			if repo == "" {
 				repo = hr
@@ -94,7 +95,7 @@ func (d MergeDoor) Handle(ctx context.Context, req *mcp.CallToolRequest, in merg
 			}
 		}
 		if repo == "" || branch == "" {
-			return nil, out, &refusedError{"request needs branch and repo"}
+			return nil, out, &ctl.RefusedError{Msg: "request needs branch and repo"}
 		}
 		by := ""
 		if d.By != nil {
@@ -120,7 +121,7 @@ func (d MergeDoor) Handle(ctx context.Context, req *mcp.CallToolRequest, in merg
 		return nil, out, err
 	case "show":
 		if in.N <= 0 {
-			return nil, out, &refusedError{"show needs n"}
+			return nil, out, &ctl.RefusedError{Msg: "show needs n"}
 		}
 		var m hubstore.MergeRequest
 		if err := d.Call(ctx, http.MethodGet, "/_hub/merge/"+strconv.FormatInt(in.N, 10), nil, &m); err != nil {
@@ -130,14 +131,14 @@ func (d MergeDoor) Handle(ctx context.Context, req *mcp.CallToolRequest, in merg
 		return nil, out, nil
 	case "cancel":
 		if in.N <= 0 {
-			return nil, out, &refusedError{"cancel needs n"}
+			return nil, out, &ctl.RefusedError{Msg: "cancel needs n"}
 		}
 		by := ""
 		if d.By != nil {
 			by = d.By(req)
 		}
 		if by == "" {
-			return nil, out, &refusedError{"a card cancels its own request. the operator cancels with atrium merge cancel"}
+			return nil, out, &ctl.RefusedError{Msg: "a card cancels its own request. the operator cancels with atrium merge cancel"}
 		}
 		var m hubstore.MergeRequest
 		if err := d.Call(ctx, http.MethodPost, "/_hub/merge/"+strconv.FormatInt(in.N, 10)+"/cancel", map[string]any{"by": by}, &m); err != nil {
@@ -146,7 +147,7 @@ func (d MergeDoor) Handle(ctx context.Context, req *mcp.CallToolRequest, in merg
 		out.Request = &m
 		return nil, out, nil
 	}
-	return nil, out, &refusedError{"action is request, list, show or cancel"}
+	return nil, out, &ctl.RefusedError{Msg: "action is request, list, show or cancel"}
 }
 
 func orDefaultStr(v, def string) string {

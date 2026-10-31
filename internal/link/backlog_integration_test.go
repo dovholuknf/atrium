@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 type backlogRig struct {
@@ -206,10 +207,10 @@ func TestBacklogAndReportsToolsReachTheHub(t *testing.T) {
 
 // The backlog is the full class's. Reports are filed by workers too, for the work ledger.
 func TestBacklogToolsAreForTheFullClassOnly(t *testing.T) {
-	if inClass("atrium_backlog", classWorker) || !inClass("atrium_backlog", classFull) {
+	if inClass("atrium_backlog", ctl.ClassWorker) || !inClass("atrium_backlog", ctl.ClassFull) {
 		t.Errorf("atrium_backlog is in the wrong classes")
 	}
-	if !inClass("atrium_reports", classWorker) || !inClass("atrium_reports", classFull) {
+	if !inClass("atrium_reports", ctl.ClassWorker) || !inClass("atrium_reports", ctl.ClassFull) {
 		t.Errorf("atrium_reports is in the wrong classes")
 	}
 }

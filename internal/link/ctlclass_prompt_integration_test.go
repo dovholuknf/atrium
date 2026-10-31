@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // Every tool the worker and interviewer prompts name, and atrium_publish, is in the worker set of the HTTP control
@@ -26,7 +27,7 @@ func TestWorkerClassesServeEveryToolTheLeanPromptsName(t *testing.T) {
 			}
 		}
 	}
-	for _, c := range []ctlClass{classWorker, classWorkerResident} {
+	for _, c := range []ctl.Class{ctl.ClassWorker, ctl.ClassWorkerResident} {
 		for _, name := range want {
 			if !inClass(name, c) {
 				t.Errorf("class %d lacks %s", c, name)

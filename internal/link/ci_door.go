@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -90,7 +91,7 @@ func (c *controlMCP) ciHandler(ctx context.Context, req *mcp.CallToolRequest, in
 	*mcp.CallToolResult, forge.HubCI, error) {
 	return CIDoor{Ask: func(ctx context.Context, req *mcp.CallToolRequest, a forge.HubCIAsk) (forge.HubCI, error) {
 		var ans forge.HubCI
-		err := c.longClient().ask(ctx, "POST", "/_hub/forge/ci", roomOf(req), a, &ans)
+		err := c.longClient().ask(ctx, "POST", "/_hub/forge/ci", ctl.RoomOf(req), a, &ans)
 		return ans, err
 	}}.Call(ctx, req, in)
 }

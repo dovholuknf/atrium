@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -45,7 +46,7 @@ func (f *fakeBoardTasks) handler() http.Handler {
 func ctlReq(agent, room string) *mcp.CallToolRequest {
 	h := http.Header{}
 	if agent != "" {
-		h.Set(AgentHeader, agent)
+		h.Set(ctl.AgentHeader, agent)
 	}
 	if room != "" {
 		h.Set(wire.RoomHeader, room)
@@ -68,7 +69,7 @@ func TestPeersReadsIdentityFromHeadersAndScopesByRoom(t *testing.T) {
 		t.Fatalf("peers: %v", err)
 	}
 	if out.Me != "alice" {
-		t.Errorf("me = %q, want alice (read off %s)", out.Me, AgentHeader)
+		t.Errorf("me = %q, want alice (read off %s)", out.Me, ctl.AgentHeader)
 	}
 	if board.sawRoom != "beta" {
 		t.Errorf("board saw room %q, want the header forwarded as beta", board.sawRoom)
@@ -658,7 +659,7 @@ func TestSayAttachesTheCallerFromTheHeader(t *testing.T) {
 		t.Fatal("the message was never posted to the board")
 	}
 	if board.gotFrom != "alice" {
-		t.Errorf("the board got from %q, want the caller read off %s", board.gotFrom, AgentHeader)
+		t.Errorf("the board got from %q, want the caller read off %s", board.gotFrom, ctl.AgentHeader)
 	}
 	if out.Delivered != "queued" {
 		t.Errorf("delivered = %q, want it carried through", out.Delivered)

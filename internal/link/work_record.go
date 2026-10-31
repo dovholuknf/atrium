@@ -12,6 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // RECORDING A TEST, AND TAKING A REVIEW (item lifecycle L4, docs/rnd/item-lifecycle-design.md sections 3 and 4). The change
@@ -209,7 +210,7 @@ func (p *Proxy) serveWorkReview(w http.ResponseWriter, r *http.Request, st *hubs
 	case !edge.LocalOperator(r):
 		crFail(w, http.StatusForbidden, "reviews are taken only from the machine the hub runs on"+edge.ProxyNote(r))
 		return
-	case strings.TrimSpace(r.Header.Get(AgentHeader)) != "":
+	case strings.TrimSpace(r.Header.Get(ctl.AgentHeader)) != "":
 		crFail(w, http.StatusForbidden, "a card cannot write a review. atrium takes one from a review it ran, or reads a verdict trailer")
 		return
 	}

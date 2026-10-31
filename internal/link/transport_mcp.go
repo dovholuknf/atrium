@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_transport, the control tool over a room's /v1/link/transports. Full class only: `workerTools` does not name
@@ -32,7 +34,7 @@ type transportOutput struct {
 	Off        []string         `json:"off,omitempty"`
 }
 
-func (c *controlMCP) registerTransport(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerTransport(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_transport", Description: transportToolDesc},
 		audited(c, "ctl-transport", describeTransport, c.transportHandler))
 }
@@ -54,7 +56,7 @@ func (c *controlMCP) transportHandler(ctx context.Context, req *mcp.CallToolRequ
 	var out transportOutput
 	room := strings.TrimSpace(in.Room)
 	if room == "" {
-		room = roomOf(req)
+		room = ctl.RoomOf(req)
 	}
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: transportTimeout, Transport: c.client.Transport}}
 	var err error
@@ -62,14 +64,14 @@ func (c *controlMCP) transportHandler(ctx context.Context, req *mcp.CallToolRequ
 	case in.On == nil && strings.TrimSpace(in.Transport) == "":
 		err = long.ask(ctx, http.MethodGet, "/v1/link/transports", room, nil, &out)
 	case in.On == nil || strings.TrimSpace(in.Transport) == "":
-		return nil, out, &refusedError{"give both transport and on, or neither to read the states"}
+		return nil, out, &ctl.RefusedError{Msg: "give both transport and on, or neither to read the states"}
 	default:
 		err = long.ask(ctx, http.MethodPost, "/v1/link/transports", room,
 			TransportAsk{Transport: in.Transport, On: *in.On}, &out)
 	}
 	if err != nil {
-		var be *boardError
-		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+		var be *ctl.BoardError
+		if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
 			return nil, out, errors.New("that room is older than atrium_transport. update the room")
 		}
 		return nil, out, err

@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -146,7 +147,7 @@ type exportOutput struct {
 	Skipped []exportSkip   `json:"skipped"`
 }
 
-func (c *controlMCP) registerFiles(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerFiles(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_put", Description: putToolDesc},
 		audited(c, "ctl-put", describePut, c.putHandler))
 	// Not audited, as reads are not.
@@ -165,11 +166,11 @@ func describePut(req *mcp.CallToolRequest, in putInput, out putOutput) (string, 
 	case strings.TrimSpace(in.Path) != "":
 		what = "put " + strings.TrimSpace(in.Path)
 	}
-	return roomOf(req), what, true
+	return ctl.RoomOf(req), what, true
 }
 
 func describeGet(req *mcp.CallToolRequest, in getInput, out getOutput) (string, string, bool) {
-	return roomOf(req), "get " + strings.TrimSpace(in.Name), true
+	return ctl.RoomOf(req), "get " + strings.TrimSpace(in.Name), true
 }
 
 func describeExport(req *mcp.CallToolRequest, in exportInput, out exportOutput) (string, string, bool) {
@@ -177,22 +178,22 @@ func describeExport(req *mcp.CallToolRequest, in exportInput, out exportOutput) 
 	if len(out.Files) > 0 || len(out.Skipped) > 0 {
 		what = fmt.Sprintf("%s, %d stored, %d skipped", what, len(out.Files), len(out.Skipped))
 	}
-	return roomOf(req), what, true
+	return ctl.RoomOf(req), what, true
 }
 
 // dropStore is the hub's store, or the refusal for a hub without one.
 func (c *controlMCP) dropStore() (*hubstore.Store, error) {
 	if c.docs == nil || c.docs() == nil {
-		return nil, &refusedError{"this hub has no file store"}
+		return nil, &ctl.RefusedError{Msg: "this hub has no file store"}
 	}
 	return c.docs(), nil
 }
 
 // dropCaller is the caller's room and card. A drop records the card that put a file, and a get writes into one.
 func (c *controlMCP) dropCaller(ctx context.Context, req *mcp.CallToolRequest) (string, *ctlCard, error) {
-	agent, room := agentOf(req), roomOf(req)
+	agent, room := ctl.AgentOf(req), ctl.RoomOf(req)
 	if agent == "" {
-		return "", nil, &refusedError{"this call carries no " + AgentHeader + ", so the hub cannot say which card " +
+		return "", nil, &ctl.RefusedError{Msg: "this call carries no " + ctl.AgentHeader + ", so the hub cannot say which card " +
 			"is calling. the drop records the card that put a file and a get writes into the caller's own card"}
 	}
 	card, err := c.callerCard(ctx, room, agent)
@@ -363,8 +364,8 @@ func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	res, err := dropHTTP.Do(hr)
 	if err != nil {
-		return nil, out, &boardError{code: http.StatusBadGateway,
-			msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
+		return nil, out, &ctl.BoardError{Code: http.StatusBadGateway,
+			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -422,7 +423,7 @@ func (c *controlMCP) exportHandler(ctx context.Context, req *mcp.CallToolRequest
 		since = t
 	}
 	if c.rooms == nil {
-		return nil, out, &refusedError{"this hub cannot list its rooms"}
+		return nil, out, &ctl.RefusedError{Msg: "this hub cannot list its rooms"}
 	}
 	online := map[string]bool{}
 	var all []string
@@ -444,7 +445,7 @@ func (c *controlMCP) exportHandler(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return nil, out, err
 	}
-	callerTag := wire.TagFor(roomOf(req), card.ID)
+	callerTag := wire.TagFor(ctl.RoomOf(req), card.ID)
 	stamp := time.Now().UTC().Format("20060102-1504")
 
 	for _, room := range rooms {

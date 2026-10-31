@@ -15,6 +15,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -78,7 +79,7 @@ type publishOutput struct {
 	Version int    `json:"version"`
 }
 
-func (c *controlMCP) registerDocs(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerDocs(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_publish", Description: publishToolDesc},
 		audited(c, "ctl-publish", describePublish, c.publishHandler))
 }
@@ -90,7 +91,7 @@ func AddRoomPublishTool(s *mcp.Server, call func(ctx context.Context, method, pa
 		func(ctx context.Context, _ *mcp.CallToolRequest, in publishInput) (*mcp.CallToolResult, publishOutput, error) {
 			var out publishOutput
 			if by == "" {
-				return nil, out, &refusedError{"this session has no ATRIUM_AGENT_NAME, so the hub cannot say which card " +
+				return nil, out, &ctl.RefusedError{Msg: "this session has no ATRIUM_AGENT_NAME, so the hub cannot say which card " +
 					"is publishing. a document records the card that wrote it"}
 			}
 			err := call(ctx, http.MethodPost, hubPublishPath, in, &out)
@@ -108,7 +109,7 @@ func describePublish(req *mcp.CallToolRequest, in publishInput, out publishOutpu
 	} else if in.Slug != "" {
 		what = "publish a version of " + in.Slug
 	}
-	return roomOf(req), what, true
+	return ctl.RoomOf(req), what, true
 }
 
 // docsRefusal is a refusal with the status the HTTP API would have given it, so the same rule
@@ -126,7 +127,7 @@ func (e *docsRefusal) Error() string {
 	return fmt.Sprintf("%s (%d)", e.Msg, e.Status)
 }
 
-func (e *docsRefusal) Unwrap() error { return &refusedError{e.Msg} }
+func (e *docsRefusal) Unwrap() error { return &ctl.RefusedError{Msg: e.Msg} }
 
 // publishError turns a store refusal into one with its status, and passes the rest through.
 func publishError(err error) error {
@@ -139,7 +140,7 @@ func publishError(err error) error {
 func (c *controlMCP) publishHandler(ctx context.Context, req *mcp.CallToolRequest, in publishInput) (
 	*mcp.CallToolResult, publishOutput, error) {
 
-	return c.publishFor(ctx, agentOf(req), roomOf(req), callerName(req), in)
+	return c.publishFor(ctx, ctl.AgentOf(req), ctl.RoomOf(req), callerName(req), in)
 }
 
 // publishFor is atrium_publish for a caller already named: agent on room, by `by`. The HTTP control server names the
@@ -149,7 +150,7 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 
 	var out publishOutput
 	if c.docs == nil || c.docs() == nil {
-		return nil, out, &refusedError{"this hub has no document store"}
+		return nil, out, &ctl.RefusedError{Msg: "this hub has no document store"}
 	}
 	st := c.docs()
 	hasContent, hasPath := in.Content != "", strings.TrimSpace(in.Path) != ""
@@ -168,7 +169,7 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "a new document needs a title"}
 	}
 	if agent == "" {
-		return nil, out, &refusedError{"this call carries no " + AgentHeader + ", so the hub cannot say which card " +
+		return nil, out, &ctl.RefusedError{Msg: "this call carries no " + ctl.AgentHeader + ", so the hub cannot say which card " +
 			"is publishing. a document records the card that wrote it"}
 	}
 	card, err := c.callerCard(ctx, room, agent)
@@ -232,7 +233,7 @@ func (c *controlMCP) callerCard(ctx context.Context, room, agent string) (*ctlCa
 	}
 	card := pickCard(body.Tasks, agent)
 	if card == nil {
-		return nil, &refusedError{fmt.Sprintf("no card on %s answers to %q, so nothing can be published as it",
+		return nil, &ctl.RefusedError{Msg: fmt.Sprintf("no card on %s answers to %q, so nothing can be published as it",
 			docRoomName(room), agent)}
 	}
 	return card, nil
@@ -275,8 +276,8 @@ func (c *controlMCP) readCardFileWith(ctx context.Context, client *http.Client, 
 	}
 	res, err := client.Do(hr)
 	if err != nil {
-		return nil, "", &boardError{code: http.StatusBadGateway,
-			msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
+		return nil, "", &ctl.BoardError{Code: http.StatusBadGateway,
+			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {

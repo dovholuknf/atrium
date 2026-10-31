@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // auditLine is one call recorded by the fake audit func.
@@ -221,7 +223,7 @@ func TestAuditedWritesNothingForReadsPlainSayAndReport(t *testing.T) {
 	_, _, _ = c.peersHandler(ctx, req, peersInput{})
 	_, _, _ = c.statusHandler(ctx, req, statusInput{})
 	_, _, _ = c.taskHandler(ctx, req, taskInput{Card: "sa36"})
-	c.server(classFull)
+	c.server(ctl.ClassFull)
 	if len(*lines) != 0 {
 		t.Fatalf("lines = %+v, want none", *lines)
 	}

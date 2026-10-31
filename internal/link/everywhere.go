@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -478,7 +479,7 @@ func (c everyCard) sendName() string {
 // A miss that is the room not answering is not a miss, and a caller with no room
 // reads the aggregate list, where every room is already looked at.
 func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyCard, error) {
-	var be *boardError
+	var be *ctl.BoardError
 	if room == "" || c.hub == nil || errors.As(miss, &be) {
 		return everyCard{}, miss
 	}

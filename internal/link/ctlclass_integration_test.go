@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -26,7 +27,7 @@ type headerTransport struct{ agent, room string }
 func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	if h.agent != "" {
-		r.Header.Set(AgentHeader, h.agent)
+		r.Header.Set(ctl.AgentHeader, h.agent)
 	}
 	if h.room != "" {
 		r.Header.Set(wire.RoomHeader, h.room)
@@ -214,7 +215,7 @@ func TestClassCacheIsBounded(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	for i := 0; i < classCacheMax+50; i++ {
 		r, _ := http.NewRequest(http.MethodPost, "/", nil)
-		r.Header.Set(AgentHeader, "worker1")
+		r.Header.Set(ctl.AgentHeader, "worker1")
 		r.Header.Set(wire.RoomHeader, "room"+strings.Repeat("x", i))
 		h.c.classOf(r)
 	}
@@ -223,7 +224,7 @@ func TestClassCacheIsBounded(t *testing.T) {
 	}
 	h.advance(classTTL + time.Second)
 	r, _ := http.NewRequest(http.MethodPost, "/", nil)
-	r.Header.Set(AgentHeader, "worker1")
+	r.Header.Set(ctl.AgentHeader, "worker1")
 	h.c.classOf(r)
 	if n := len(h.c.classes); n != 1 {
 		t.Fatalf("expired entries kept: %d entries, want 1", n)

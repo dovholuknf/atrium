@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 type memSettings struct {
@@ -99,7 +101,7 @@ func deploy(t *testing.T, c *controlMCP, agent string, in deployInput) (deployOu
 func TestARequestWithNoOwnerIsRefused(t *testing.T) {
 	c, _ := deployControl(t, "")
 	_, err := deploy(t, c, "runtime", deployInput{Action: "request", Why: "r-hold-notices"})
-	var ref *refusedError
+	var ref *ctl.RefusedError
 	if !errors.As(err, &ref) || !strings.Contains(err.Error(), "no deploy owner is set") {
 		t.Fatalf("answered %v", err)
 	}
@@ -197,7 +199,7 @@ func TestADeployThatEndedIsSettledOnTheNextLook(t *testing.T) {
 }
 
 func TestAWorkerDoesNotSeeTheDeployTool(t *testing.T) {
-	if inClass("atrium_deploy", classWorker) {
+	if inClass("atrium_deploy", ctl.ClassWorker) {
 		t.Fatal("atrium_deploy is in the worker set")
 	}
 }

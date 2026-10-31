@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_record: a worker saying what a test run found, pinned to the commit it ran on. See work_record.go for the rules and
@@ -40,11 +42,11 @@ func (c *controlMCP) recordHandler(ctx context.Context, req *mcp.CallToolRequest
 	if k := strings.ToLower(strings.TrimSpace(in.Kind)); k != "" && k != "test" {
 		return nil, out, fmt.Errorf("a card records a test and nothing else. atrium reads a %s itself", k)
 	}
-	me := agentOf(req)
+	me := ctl.AgentOf(req)
 	if me == "" {
 		return nil, out, fmt.Errorf("this is for a session atrium knows. this call did not say which one it is")
 	}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	id, _, err := c.resolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err

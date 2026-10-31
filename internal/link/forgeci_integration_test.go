@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -179,7 +180,7 @@ func TestCIRepoNames(t *testing.T) {
 }
 
 func TestTheHubControlMCPOffersCIToWorkersAndFull(t *testing.T) {
-	for _, class := range []ctlClass{classFull, classWorker} {
+	for _, class := range []ctl.Class{ctl.ClassFull, ctl.ClassWorker} {
 		s := mcp.NewServer(&mcp.Implementation{Name: "t"}, nil)
 		(&controlMCP{}).registerGit(s, class)
 		ct, st := mcp.NewInMemoryTransports()
