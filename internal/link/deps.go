@@ -524,9 +524,9 @@ func (p *Proxy) tell(ctx context.Context, who, text string) (retry bool) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, controlTimeout)
 	defer cancel()
-	id, _, err := c.resolvePeer(ctx, room, name)
+	id, _, err := c.ResolvePeer(ctx, room, name)
 	if err == nil {
-		err = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
+		err = c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
 			map[string]any{"text": text, "from": depsTellFrom, "when": "done"}, nil)
 	}
 	if err == nil {

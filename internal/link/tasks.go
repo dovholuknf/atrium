@@ -460,7 +460,7 @@ func (p *Proxy) taskStart(ctx context.Context, st *hubstore.Store, c *controlMCP
 		callerRoom = strings.ToLower(ownerRoom)
 		spawnedBy = name
 		if callerRoom != "" && callerRoom != room {
-			if id, _, err := c.resolvePeer(ctx, callerRoom, name); err == nil {
+			if id, _, err := c.ResolvePeer(ctx, callerRoom, name); err == nil {
 				spawnedByID = wire.TagFor(callerRoom, id)
 			}
 			spawnedBy = name + "@" + callerRoom
@@ -470,7 +470,7 @@ func (p *Proxy) taskStart(ctx context.Context, st *hubstore.Store, c *controlMCP
 	default:
 		in.ItemOwner = hubstore.OwnerHumanWord
 	}
-	out, err := c.launchOnRoom(ctx, in, "claude", room, callerRoom, spawnedBy, spawnedByID, "")
+	out, err := c.LaunchOnRoom(ctx, in, "claude", room, callerRoom, spawnedBy, spawnedByID, "")
 	p.taskLaunchDone(st, begun, room, out, err)
 }
 

@@ -68,13 +68,13 @@ func (c *controlMCP) aliasHandler(ctx context.Context, req *mcp.CallToolRequest,
 	if set != "" && in.Clear {
 		return nil, out, fmt.Errorf("give `alias` or `clear`, not both")
 	}
-	id, _, err := c.resolvePeer(ctx, room, who)
+	id, _, err := c.ResolvePeer(ctx, room, who)
 	if err != nil {
 		return nil, out, err
 	}
 	path := "/v1/tasks/" + url.PathEscape(id)
 	var t aliasCard
-	if err := c.ask(ctx, http.MethodGet, path, room, nil, &t); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, path, room, nil, &t); err != nil {
 		return nil, out, err
 	}
 	if set != "" || in.Clear {
@@ -85,7 +85,7 @@ func (c *controlMCP) aliasHandler(ctx context.Context, req *mcp.CallToolRequest,
 		var patched struct {
 			Task aliasCard `json:"task"`
 		}
-		if err := c.ask(ctx, http.MethodPatch, path, room, map[string]any{"alias": set}, &patched); err != nil {
+		if err := c.Ask(ctx, http.MethodPatch, path, room, map[string]any{"alias": set}, &patched); err != nil {
 			return nil, out, err
 		}
 		t = patched.Task

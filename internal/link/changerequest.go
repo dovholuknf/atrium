@@ -648,7 +648,7 @@ func (p *Proxy) crTell(owner hubstore.CRParty, text string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c.deliverAs(ctx, owner.Room, owner.Card, "atrium-hub@hub", text, "", "fyi", false, false)
+	c.DeliverAs(ctx, owner.Room, owner.Card, "atrium-hub@hub", text, "", "fyi", false, false)
 }
 
 // crOwner is the live card that owns the source branch: the push log's owner for a branch pushed to the hub, the
@@ -673,7 +673,7 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return hubstore.CRParty{}
 	}
 	// A card's worktree is named for its branch: claude/f-x is the card in .../f-x.

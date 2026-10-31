@@ -48,7 +48,7 @@ func TestAnAliasOnTwoRoomsIsRefusedUnlessNamed(t *testing.T) {
 	ctx := context.Background()
 
 	for _, who := range []string{"minion", "@minion", "MINION"} {
-		_, id, _, err := c.resolveCard(ctx, "", who)
+		_, id, _, err := c.ResolveCard(ctx, "", who)
 		if err == nil {
 			t.Fatalf("resolveCard(%q) picked %q silently", who, id)
 		}
@@ -61,14 +61,14 @@ func TestAnAliasOnTwoRoomsIsRefusedUnlessNamed(t *testing.T) {
 	for who, want := range map[string]string{
 		"minion@roomA": "ida", "minion@roomB": "idb", "roomA~ida": "ida", "roomB~idb": "idb",
 	} {
-		scope, id, _, err := c.resolveCard(ctx, "", who)
+		scope, id, _, err := c.ResolveCard(ctx, "", who)
 		if err != nil || id != want && id != wire.TagFor(scope, want) {
 			t.Errorf("resolveCard(%q) = %q, %v; want %q", who, id, err, want)
 		}
 	}
 	// The caller's own room settles a bare name.
 	for room, want := range map[string]string{"roomA": "ida", "roomB": "idb"} {
-		_, id, _, err := c.resolveCard(ctx, room, "minion")
+		_, id, _, err := c.ResolveCard(ctx, room, "minion")
 		if err != nil || id != want {
 			t.Errorf("a caller on %s resolved bare minion to %q, %v; want %q", room, id, err, want)
 		}

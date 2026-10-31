@@ -52,6 +52,8 @@ import (
 // `X-Atrium-Room` from the caller's header. That inherits the proxy's scoping,
 // aggregation and offline-room behaviour whole, instead of a second copy of it.
 
+var _ ctl.Caller = (*controlMCP)(nil)
+
 // controlMCP holds what the hub-side tools need: where to reach the hub's own
 // board, a client to do it with, and the hub to forward a restart over.
 type controlMCP struct {
@@ -474,7 +476,7 @@ func (c *controlMCP) server(class ctl.Class) *mcp.Server {
 //
 // `room` scopes the call to one room by setting `X-Atrium-Room`, exactly the
 // way a scoped board does. Empty leaves it off, which is the aggregate view.
-func (c *controlMCP) ask(ctx context.Context, method, path, room string, body, out any) error {
+func (c *controlMCP) Ask(ctx context.Context, method, path, room string, body, out any) error {
 	var rdr *bytes.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -606,7 +608,7 @@ func (c *controlMCP) statusHandler(ctx context.Context, req *mcp.CallToolRequest
 	room := out.Room
 
 	var health map[string]any
-	if err := c.ask(ctx, http.MethodGet, "/v1/health", room, nil, &health); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/health", room, nil, &health); err != nil {
 		out.Note = "the hub board did not answer: " + err.Error()
 		return nil, out, nil
 	}
@@ -626,7 +628,7 @@ func (c *controlMCP) statusHandler(ctx context.Context, req *mcp.CallToolRequest
 			Status string `json:"status"`
 		} `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err == nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err == nil {
 		out.Cards = len(body.Tasks)
 		for _, t := range body.Tasks {
 			if t.Status == "needs-input" || t.Status == "needs-permission" {
@@ -698,7 +700,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return nil, out, err
 	}
 	for _, t := range body.Tasks {
@@ -752,7 +754,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 // name somebody chose, so the two cannot collide, and trying the name first
 // means a caller that pasted a handle never gets an obscure 404 from an endpoint
 // that wanted an id.
-func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, handle string, err error) {
+func (c *controlMCP) ResolvePeer(ctx context.Context, room, who string) (id, handle string, err error) {
 	return c.resolvePeerOpt(ctx, room, who, false)
 }
 
@@ -767,7 +769,7 @@ func (c *controlMCP) resolvePeerOpt(ctx context.Context, room, who string, stric
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return "", "", err
 	}
 	if strict {
@@ -827,7 +829,7 @@ func (c *controlMCP) resolvePeerOpt(ctx context.Context, room, who string, stric
 //
 // A caller with no room is the aggregate view, where a bare name still means
 // the aggregate list and a named room is asked directly.
-func (c *controlMCP) resolveCard(ctx context.Context, room, who string) (scope, id, handle string, err error) {
+func (c *controlMCP) ResolveCard(ctx context.Context, room, who string) (scope, id, handle string, err error) {
 	return c.resolveCardOpt(ctx, room, who, false)
 }
 
@@ -924,7 +926,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		}
 		in.To = name
 	}
-	id, handle, err := c.resolvePeer(ctx, room, in.To)
+	id, handle, err := c.ResolvePeer(ctx, room, in.To)
 	if err != nil {
 		// A BARE NAME THAT MISSED ON THE CALLER'S OWN ROOM, looked for among the
 		// cards tagged atrium:everywhere on the others. One match goes on as if
@@ -964,7 +966,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	if k := strings.TrimSpace(in.Kind); k != "" {
 		body["kind"] = k
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
+	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
 		body, &res); err != nil {
 		return nil, out, err
 	}
@@ -1019,7 +1021,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 		return nil, out, fmt.Errorf("atrium_report is for a session atrium knows. this call did not say which one it is")
 	}
 	room := ctl.RoomOf(req)
-	id, _, err := c.resolvePeer(ctx, room, me)
+	id, _, err := c.ResolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err
 	}
@@ -1029,7 +1031,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 		Unverified   bool   `json:"unverified"`
 		LauncherTold Told   `json:"launcher_told"`
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room,
+	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room,
 		map[string]string{
 			"status": strings.TrimSpace(in.Status), "recap": in.Summary, "sha": strings.TrimSpace(in.SHA),
 			"no_commit": in.NoCommit, "ask": in.Ask, "kind": strings.TrimSpace(in.Kind),
@@ -1060,7 +1062,7 @@ func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, bo
 		return out, fmt.Errorf("this is for a session atrium knows. this call did not say which one it is")
 	}
 	room := ctl.RoomOf(req)
-	id, _, err := c.resolvePeer(ctx, room, me)
+	id, _, err := c.ResolvePeer(ctx, room, me)
 	if err != nil {
 		return out, err
 	}
@@ -1071,7 +1073,7 @@ func (c *controlMCP) endReport(ctx context.Context, req *mcp.CallToolRequest, bo
 		RunnerExits  bool   `json:"runner_exits"`
 		RunnerNote   string `json:"runner_note"`
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room, body, &res); err != nil {
+	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room, body, &res); err != nil {
 		return out, err
 	}
 	out.Recorded, out.Status, out.LauncherTold = res.Recorded, res.Status, res.LauncherTold.Value()
@@ -1163,9 +1165,9 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 				"so it has no card of its own to default to")
 		}
 		// Your own handle is on your own room, whatever it looks like.
-		id, _, err = c.resolvePeer(ctx, room, who)
+		id, _, err = c.ResolvePeer(ctx, room, who)
 	} else {
-		scope, id, _, err = c.resolveCard(ctx, room, who)
+		scope, id, _, err = c.ResolveCard(ctx, room, who)
 		if err != nil && !strings.Contains(who, "@") && !strings.Contains(who, wire.IDJoin) {
 			// A READ, SO IT FALLS THROUGH like a say does, to the one card on
 			// another room that answers to this bare name. Continues as the
@@ -1184,11 +1186,11 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if strings.TrimSpace(in.Card) != "" {
 			return nil, out, fmt.Errorf("dismiss closes an item on your own card, so leave card empty")
 		}
-		wscope, wid, _, derr := c.resolveCard(ctx, room, dismiss)
+		wscope, wid, _, derr := c.ResolveCard(ctx, room, dismiss)
 		if derr != nil || wscope != scope {
 			return nil, out, fmt.Errorf("no worker of yours called %q on this room to dismiss", dismiss)
 		}
-		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/owed-dismiss", scope,
+		if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/owed-dismiss", scope,
 			map[string]string{"worker": wid}, nil); err != nil {
 			return nil, out, err
 		}
@@ -1203,7 +1205,7 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		// notice handed back and never with now, so one held after the read stays
 		// unread. Best effort: a notice that stays counted is a nag, and a failed read
 		// must not fail the answer.
-		_ = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/notices-read", scope,
+		_ = c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/notices-read", scope,
 			map[string]string{"through": notices[len(notices)-1].At}, nil)
 	}
 	out.Card, out.Handle = namedFrom(room, scope, t.ID, t.Wire)
@@ -1224,7 +1226,7 @@ func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents,
 	ctlCard, []taskEvent, []heldNotice, error) {
 
 	var t ctlCard
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), scope, nil, &t); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), scope, nil, &t); err != nil {
 		return t, nil, nil, err
 	}
 	if !withEvents && !withNotices {
@@ -1250,7 +1252,7 @@ func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents,
 		events  []taskEvent
 		notices []heldNotice
 	)
-	if err := c.ask(ctx, http.MethodGet,
+	if err := c.Ask(ctx, http.MethodGet,
 		"/v1/tasks/"+url.PathEscape(id)+"/events", scope, nil, &body); err == nil {
 		for _, e := range body.Events {
 			if withEvents {
@@ -1396,7 +1398,7 @@ func (c *controlMCP) launcherTags(ctx context.Context, callerRoom, who string) [
 		Tasks []ctlCard `json:"tasks"`
 	}
 	// The one card, not the board (a room that predates ?name= answers the whole list, matched below).
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks?name="+url.QueryEscape(who), callerRoom, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks?name="+url.QueryEscape(who), callerRoom, nil, &body); err != nil {
 		return nil
 	}
 	if t, ok := matchCard(body.Tasks, who); ok {
@@ -1511,7 +1513,7 @@ func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return 0, err
 	}
 	n := 0
@@ -1568,56 +1570,12 @@ func (c *controlMCP) reserveSlot(room string, live, limit int) (id string, ok bo
 	return id, true
 }
 
-type launchInput struct {
-	Cwd    string `json:"cwd,omitempty" jsonschema:"a directory you made to run in. it has to exist already. leave it out and name repo (or home) so atrium makes the card's own folder under the room's card root. not together with repo"`
-	Repo   string `json:"repo,omitempty" jsonschema:"the repository to work in, as host/owner/repo (cloned from the hub when the room has no clone yet) or an absolute path to a clone on the room. atrium makes the card's home under its card root and adds a git worktree there as the card's directory. use this instead of making a worktree yourself. not together with cwd"`
-	Branch string `json:"branch,omitempty" jsonschema:"the branch for the worktree that repo makes. made from base when it does not exist. default claude/<title>"`
-	Base   string `json:"base,omitempty" jsonschema:"where a new branch starts. default the clone's claude/main, else its default branch"`
-	Home   bool   `json:"home,omitempty" jsonschema:"true asks for a home with no repo: an empty folder under the room's card root for scratch work. the card is kept open"`
-	Title  string `json:"title,omitempty" jsonschema:"what to call the card"`
-	Why    string `json:"why,omitempty" jsonschema:"what this is for, read back later"`
-	Prompt string `json:"prompt,omitempty" jsonschema:"the first instruction it gets"`
-	// Brief is written to BRIEF.md in the new session's directory on the room and
-	// read first, so it survives compaction and can be re-read.
-	Brief  string   `json:"brief,omitempty" jsonschema:"context to hand the new session. written to BRIEF.md in its directory on the room and read before it starts, so it survives compaction and can be re-read"`
-	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
-	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
-	// Resident marks a long-lived card. See ResidentTag.
-	Resident bool `json:"resident,omitempty" jsonschema:"a long-lived card: atrium_done and atrium_blocked report a task and leave it open, and it is never exited or culled for a done"`
-	// Theme names the terminal palette the new session comes up in. Empty leaves
-	// it to the board, which colours a themeless card from its repo, so an
-	// agent-driven launch looks the same as a board-dialog one without this.
-	Theme string `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
-	// Lean is on unless the caller turns it off. See leanLaunch.
-	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. default true. false starts it with the operator's whole setup"`
-	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
-	// LeanAgents starts the worker lean and keeps its Agent tool plus these agents.
-	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these. Explore and Plan are Claude Code's own built-in agents and need no file, started by their bare name. any other name is namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
-	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
-	// Superlean cuts a lean worker further. Absent leaves it to superleanLaunch.
-	Superlean *bool `json:"superlean,omitempty" jsonschema:"start a claude worker SUPERLEAN: lean, and also only the tools Read, Edit, Write, Grep, Glob, Bash, PowerShell and ToolSearch, no mercurius unless mcp names it, and a one paragraph worker prompt. for a bounded change: edit files, run a command, commit, report. implies lean, refused with lean: false. claude only, never an interview. default true for an isolated item worker other than a review, false for anything else: false brings an item worker back lean"`
-	// Model and Effort are mapped by the runner's harness row, Args and Env are
-	// passed as given. See docs/runtime/launch-options-design.md.
-	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`
-	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, passed in the shape its runner row declares (claude: --effort, codex: -c model_reasoning_effort=). not checked: whatever the runner accepts, such as low, medium or high for claude. empty is the runner's default. a runner with no way to take one refuses"`
-	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, one per element, added after the model and effort and before the prompt. used as given. shown on the card, so keep secrets out"`
-	Env    map[string]string `json:"env,omitempty" jsonschema:"extra environment for the runner, used as given. ATRIUM_ names are refused. the values stay on the room and the card shows the names only"`
-	// Room launches on another room. The worker's reports come back across.
-	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. its reports and notices still reach you, as your-handle@your-room"`
-	// Kind is what sort of session this is. Empty is an ordinary worker.
-	Kind string `json:"kind,omitempty" jsonschema:"what sort of session to start. empty is an ordinary worker. interview starts an interviewer: atrium writes the interviewer rules into BRIEF.md ahead of your brief (put the topic and context in brief), tags the card atrium:interview, and does not nudge it for stopping on a question. its questions reach the human in its terminal, so tell the human to watch its card. it runs on opus unless model says otherwise. review starts a slop review of the branch checked out in cwd (or repo and branch): atrium writes the review rules into BRIEF.md, tags the card atrium:review, serves it atrium_review and does not nudge it. base names the branch it measures against, default claude/main. it is still a worker and still names an item"`
-	// Scratch lets the launch start outside a git checkout.
-	Scratch bool `json:"scratch,omitempty" jsonschema:"start in a directory that is not a git checkout on a claude/* branch. without this such a launch is refused, because what an agent writes there is not kept in git. say it only for throwaway work"`
-	// Item is the backlog item the worker is on, REQUIRED. See WorkTagPrefix and work_launch.go.
-	Item string `json:"item,omitempty" jsonschema:"REQUIRED: the backlog item this worker is on, by its id (find it with atrium_backlog list), or new:<a title> to file one as you launch, under your own department. every card launched on one id is attached to the same item. a launch with no item is refused"`
-	// Isolated starts the worker with the isolated toolset. See ItemTag.
-	Isolated  bool   `json:"isolated,omitempty" jsonschema:"start the worker ISOLATED: its ending lines never mention a launcher, its opening prompt comes from atrium, it has no atrium_say, atrium_peers, atrium_task or atrium_report, and atrium refuses any say from it. it ends with atrium_done or atrium_blocked and nothing else. leave it out for an ordinary worker, which is unchanged. this is no longer what makes a card an item: item is"`
-	ItemOwner string `json:"item_owner,omitempty" jsonschema:"who owns the item and hears when it is blocked or finished. empty is you, the creating session. orchestrator or director is whoever holds that role when it ends. human is the person at the board, and no session is told. tester is refused, it has several holders"`
-	// Lifetime is not a parameter: atrium_launch_worker sets it to `work`, atrium_launch leaves it empty.
-	Lifetime string `json:"-"`
-	// Task is a task of an item: the room makes the folder and writes the brief. Never a parameter. See tasks_launch.go.
-	Task *taskBlock `json:"-"`
-}
+// What the ctl package declares for a launch.
+type (
+	launchInput  = ctl.LaunchInput
+	launchOutput = ctl.LaunchOutput
+	taskBlock    = ctl.TaskBlock
+)
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the
 // claude runner, because a launched worker is handed its context in the brief
@@ -1665,25 +1623,6 @@ func SuperleanDropped(asked bool, gotTags []string) bool {
 	return true
 }
 
-type launchOutput struct {
-	Card   string `json:"card"`
-	Handle string `json:"handle"`
-	Title  string `json:"title,omitempty"`
-	Status string `json:"status"`
-	Watch  string `json:"watch,omitempty"`
-	// Brief is where the briefing was written on the room, when there was one.
-	// Returned so the caller can add to it later: a peer that turns out to need
-	// one more fact should be given it in the file it already reads.
-	Brief string `json:"brief,omitempty"`
-	// Model and Effort are what the card says it was started with, read back
-	// from the room rather than echoed from the request.
-	Model  string `json:"model,omitempty"`
-	Effort string `json:"effort,omitempty"`
-	Note   string `json:"note,omitempty"`
-	// Recovered is a card found on the room after the launch's answer was lost, not one the answer named.
-	Recovered bool `json:"-"`
-}
-
 // launchTimeout bounds the post to a room's /v1/launch. Under the 45 s the launching room waits on the hub, so
 // the answer reaches it, and long enough for a room that trusts the worktree and starts the runner first.
 const launchTimeout = 30 * time.Second
@@ -1728,7 +1667,7 @@ func (c *controlMCP) listCards(ctx context.Context, room string) ([]ctlCard, boo
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return nil, false
 	}
 	return body.Tasks, true
@@ -1793,7 +1732,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	spawnedBy, spawnedByID, spawnedByDir := ctl.AgentOf(req), "", ""
 	if r := strings.TrimSpace(in.Room); r != "" && !wire.EqualFold(r, room) {
 		if room != "" && spawnedBy != "" {
-			if id, _, err := c.resolvePeer(ctx, room, spawnedBy); err == nil {
+			if id, _, err := c.ResolvePeer(ctx, room, spawnedBy); err == nil {
 				spawnedByID = wire.TagFor(room, id)
 				spawnedByDir = c.launcherDir(ctx, room, id)
 			}
@@ -1801,7 +1740,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		}
 		room = r
 	}
-	out, err := c.launchOnRoom(ctx, in, harness, room, callerRoom, spawnedBy, spawnedByID, spawnedByDir)
+	out, err := c.LaunchOnRoom(ctx, in, harness, room, callerRoom, spawnedBy, spawnedByID, spawnedByDir)
 	return nil, out, err
 }
 
@@ -1820,7 +1759,7 @@ func (c *controlMCP) launcherDir(ctx context.Context, room, id string) string {
 // the hub's own atrium_launch and by a room's launch relayed here (launchAcross), so
 // the two cannot drift. `callerRoom` is the room the caller's cards are named from, and
 // `spawnedBy`, `spawnedByID` and `spawnedByDir` are the lineage already worked out.
-func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, room, callerRoom,
+func (c *controlMCP) LaunchOnRoom(ctx context.Context, in launchInput, harness, room, callerRoom,
 	spawnedBy, spawnedByID, spawnedByDir string) (launchOutput, error) {
 
 	out := launchOutput{}
@@ -1843,7 +1782,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 			spec = WorkOfTags(in.Tags)
 		}
 		hubCall := func(ctx context.Context, method, path string, body, out any) error {
-			return c.ask(ctx, method, path, "", body, out)
+			return c.Ask(ctx, method, path, "", body, out)
 		}
 		id, filed, err := ResolveItem(ctx, hubCall, spec, DeptOfTags(launcherTags), spawnedBy, callerRoom)
 		if err != nil {
@@ -1938,7 +1877,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	}
 	if wid := WorkOfTags(tags); wid != "" && brief != "" && !isInterview(in.Kind) && in.Task == nil {
 		brief = WithItemBrief(brief, ItemBrief(ctx, func(ctx context.Context, method, path string, body, out any) error {
-			return c.ask(ctx, method, path, "", body, out)
+			return c.Ask(ctx, method, path, "", body, out)
 		}, wid))
 	}
 	reqBody := map[string]any{
@@ -1982,7 +1921,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 		keyDir = in.Repo + "|" + in.Branch + "|" + in.Title
 	}
 	if in.Task != nil {
-		keyDir = in.Task.dir()
+		keyDir = taskDir(in.Task)
 		reqBody["task"] = in.Task
 	}
 	attempt := launchAttemptKey(room, keyDir)
@@ -2000,7 +1939,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	if in.Task != nil {
 		launchPath = "/v1/launch/task"
 	}
-	if err := long.ask(ctx, http.MethodPost, launchPath, room, reqBody, &t); err != nil {
+	if err := long.Ask(ctx, http.MethodPost, launchPath, room, reqBody, &t); err != nil {
 		// THE ANSWER MAY BE LOST WHILE THE CARD EXISTS. Look for it before reporting a failure, so
 		// a retry is not a duplicate worker in the same directory.
 		var be *ctl.BoardError
@@ -2172,7 +2111,7 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			body["from"], body["foreign"] = me+"@"+room, true
 		}
 	}
-	if err := c.ask(ctx, http.MethodPost,
+	if err := c.Ask(ctx, http.MethodPost,
 		"/v1/tasks/"+url.PathEscape(id)+"/exit", scope, body, nil); err != nil {
 		return nil, out, err
 	}
@@ -2207,7 +2146,7 @@ func (c *controlMCP) modelHandler(ctx context.Context, req *mcp.CallToolRequest,
 
 	out := modelOutput{}
 	room := ctl.RoomOf(req)
-	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
+	scope, id, handle, err := c.ResolveCard(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
@@ -2224,7 +2163,7 @@ func (c *controlMCP) modelHandler(ctx context.Context, req *mcp.CallToolRequest,
 		When      string `json:"when"`
 		Note      string `json:"note"`
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/model", scope, body, &res); err != nil {
+	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/model", scope, body, &res); err != nil {
 		return nil, out, err
 	}
 	out.Model, out.Was, out.Typed, out.Delivered, out.When, out.Note =
@@ -2287,7 +2226,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	out.Card, out.Handle = namedFrom(room, scope, id, handle)
 	// Only a card on the caller's own room can be the caller.
 	if me := ctl.AgentOf(req); me != "" && wire.EqualFold(scope, room) {
-		if myID, _, err := c.resolvePeer(ctx, room, me); err == nil && myID == id {
+		if myID, _, err := c.ResolvePeer(ctx, room, me); err == nil && myID == id {
 			return nil, out, fmt.Errorf("a worker cannot cull itself. whoever accepts the work culls it")
 		}
 	}
@@ -2299,7 +2238,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			by = "atrium_cull"
 		}
 		// To the card's own room, which is not the caller's for name@room (f-010).
-		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull/hold", scope,
+		if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull/hold", scope,
 			map[string]string{"by": by}, nil); err != nil {
 			var be *ctl.BoardError
 			if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
@@ -2319,7 +2258,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	if tip := strings.TrimSpace(in.Tip); tip != "" {
 		body["tip"] = tip
 	}
-	err = long.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", scope, body, &res)
+	err = long.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", scope, body, &res)
 	if err != nil {
 		var be *ctl.BoardError
 		if errors.As(err, &be) && be.NoSentence && be.Code == http.StatusNotFound {
@@ -2367,10 +2306,10 @@ func (c *controlMCP) closeHandler(ctx context.Context, req *mcp.CallToolRequest,
 	path := "/v1/tasks/" + url.PathEscape(id) + "/close"
 	if !in.Confirm {
 		long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
-		err = long.ask(ctx, http.MethodGet, path, scope, nil, &out)
+		err = long.Ask(ctx, http.MethodGet, path, scope, nil, &out)
 	} else {
 		long := &controlMCP{board: c.board, client: &http.Client{Timeout: closeTimeout, Transport: c.client.Transport}}
-		err = long.ask(ctx, http.MethodPost, path, scope, map[string]any{"confirm": true, "answers": in.Answers}, &out)
+		err = long.Ask(ctx, http.MethodPost, path, scope, map[string]any{"confirm": true, "answers": in.Answers}, &out)
 	}
 	if err != nil {
 		var be *ctl.BoardError
@@ -2457,7 +2396,7 @@ func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			"not say which one it is")
 	}
 	room := ctl.RoomOf(req)
-	id, _, err := c.resolvePeer(ctx, room, me)
+	id, _, err := c.ResolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err
 	}
@@ -2467,7 +2406,7 @@ func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		var res struct {
 			Cleared bool `json:"cleared"`
 		}
-		if err := c.ask(ctx, http.MethodDelete, path+"?by="+url.QueryEscape(me), room, nil, &res); err != nil {
+		if err := c.Ask(ctx, http.MethodDelete, path+"?by="+url.QueryEscape(me), room, nil, &res); err != nil {
 			return nil, out, err
 		}
 		out.Cleared = res.Cleared
@@ -2484,7 +2423,7 @@ func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		Replaced string `json:"replaced"`
 		Note     string `json:"note"`
 	}
-	if err := c.ask(ctx, http.MethodPost, path, room,
+	if err := c.Ask(ctx, http.MethodPost, path, room,
 		map[string]string{"text": in.Text, "by": me}, &res); err != nil {
 		return nil, out, err
 	}
@@ -2506,11 +2445,11 @@ func (c *controlMCP) needHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, out, fmt.Errorf("atrium_need is for a session atrium knows. this call did not say which one it is")
 	}
 	room := ctl.RoomOf(req)
-	id, _, err := c.resolvePeer(ctx, room, me)
+	id, _, err := c.ResolvePeer(ctx, room, me)
 	if err != nil {
 		return nil, out, err
 	}
-	err = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/need", room,
+	err = c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/need", room,
 		map[string]any{"needs": in.Needs, "by": me}, &out)
 	return nil, out, err
 }
