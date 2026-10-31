@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 )
 
 const (
@@ -127,6 +128,7 @@ func toolVersion(path string) string {
 	cmd := exec.CommandContext(ctx, path, "--version")
 	var so, se bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &so, &se
+	nowindow.Hide(cmd)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
 	_ = cmd.Run()
 	if v := dottedNumber.FindString(so.String()); v != "" {
