@@ -636,7 +636,7 @@ func (d proxyCIDeliverer) Resolve(ctx context.Context, to string) (CITarget, CIA
 	if c == nil {
 		return CITarget{}, CIAnswer{State: hubstore.CIPending, Detail: "the hub's control server is not up"}
 	}
-	scope, id, handle, err := c.resolveCard(ctx, "", to)
+	scope, id, handle, err := c.ResolveCard(ctx, "", to)
 	if err != nil {
 		var amb *errAmbiguous
 		var be *ctl.BoardError

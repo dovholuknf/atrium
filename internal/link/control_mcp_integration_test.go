@@ -690,12 +690,12 @@ func TestResolvePeerAcceptsAnAlias(t *testing.T) {
 		// answers to that and the alias does not shadow it.
 		"dotfiles": "shadow", "dotfiles-41800": "dot",
 	} {
-		id, _, err := c.resolvePeer(context.Background(), "", who)
+		id, _, err := c.ResolvePeer(context.Background(), "", who)
 		if err != nil || id != want {
 			t.Errorf("resolvePeer(%q) = %q, %v; want %q", who, id, err, want)
 		}
 	}
-	_, _, err := c.resolvePeer(context.Background(), "", "nobody")
+	_, _, err := c.ResolvePeer(context.Background(), "", "nobody")
 	if err == nil || !strings.Contains(err.Error(), "(@sa89)") {
 		t.Errorf("a miss does not list the aliases that would have worked: %v", err)
 	}
@@ -730,12 +730,12 @@ func TestADoneCardAnswersToItsAliasAndCanBeExited(t *testing.T) {
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	for who, want := range map[string]string{"sa21": "d1", "@sa21": "d1", "sa89": "live"} {
-		id, _, err := c.resolvePeer(context.Background(), "", who)
+		id, _, err := c.ResolvePeer(context.Background(), "", who)
 		if err != nil || id != want {
 			t.Errorf("resolvePeer(%q) = %q, %v, want %q", who, id, err, want)
 		}
 	}
-	if _, _, err := c.resolvePeer(context.Background(), "", "sa90"); err == nil {
+	if _, _, err := c.ResolvePeer(context.Background(), "", "sa90"); err == nil {
 		t.Error("a dead card's alias resolved")
 	}
 	_, out, err := c.exitHandler(context.Background(), ctlReq("orch", ""), exitInput{Card: "@sa21"})

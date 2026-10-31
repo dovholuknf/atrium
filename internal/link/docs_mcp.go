@@ -228,7 +228,7 @@ func (c *controlMCP) callerCard(ctx context.Context, room, agent string) (*ctlCa
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return nil, fmt.Errorf("could not find your card on %s: %w", docRoomName(room), err)
 	}
 	card := pickCard(body.Tasks, agent)

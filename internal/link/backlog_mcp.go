@@ -99,7 +99,7 @@ func (b backlogTools) ask(ctx context.Context, method, path, _ string, body, out
 func (c *controlMCP) tools() backlogTools {
 	return backlogTools{
 		call: func(ctx context.Context, method, path string, body, out any) error {
-			return c.ask(ctx, method, path, "", body, out)
+			return c.Ask(ctx, method, path, "", body, out)
 		},
 		by: callerName, room: backlogRoom,
 	}
@@ -321,7 +321,7 @@ func (c *controlMCP) linkItemToCard(ctx context.Context, tags []string, room, ca
 		return ""
 	}
 	var b hubstore.BacklogItem
-	err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
+	err := c.Ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
 		"card": wire.TagFor(room, card), "by": by}, &b)
 	if err != nil {
 		return "the item " + id + " was not moved to in-progress: " + err.Error() + ". "
@@ -338,6 +338,6 @@ func (c *controlMCP) followItem(ctx context.Context, room, card, status, by stri
 	var out struct {
 		Followed bool `json:"followed"`
 	}
-	_ = c.ask(ctx, http.MethodPost, "/_hub/backlog/follow", "", map[string]any{
+	_ = c.Ask(ctx, http.MethodPost, "/_hub/backlog/follow", "", map[string]any{
 		"card": wire.TagFor(room, card), "status": strings.TrimSpace(status), "by": by}, &out)
 }
