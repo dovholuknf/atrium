@@ -171,7 +171,7 @@ func (p *Proxy) ciNotify(title, body string) {
 	if g == nil {
 		return
 	}
-	rs, ok := g.st.(growlRaiser)
+	rs, ok := g.Raiser()
 	if !ok {
 		return
 	}
@@ -191,7 +191,7 @@ func (p *Proxy) ciNotify(title, body string) {
 		return
 	}
 	if raised {
-		g.publish(nil)
+		g.Publish()
 	}
 }
 

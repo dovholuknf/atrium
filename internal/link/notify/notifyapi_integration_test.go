@@ -1,6 +1,6 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"net/http"
@@ -14,7 +14,7 @@ import (
 // presence stay open, because the phone board does both over an overlay.
 func TestNotifyCommandIsLoopbackOnly(t *testing.T) {
 	n, _, _ := armed(t)
-	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p := newTestHub()
 	p.SetNotify(n)
 	before := n.Status()
 

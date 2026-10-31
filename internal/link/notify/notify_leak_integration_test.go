@@ -1,11 +1,12 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"os"
 	"strings"
 	"testing"
@@ -36,7 +37,7 @@ func TestNotifyCommandNeverSeesWhatACardHolds(t *testing.T) {
 		`"permission":{"tool":"Bash","input":"CANARY-CMD-rm-rf /"},"diff":"CANARY-DIFF +x",`+
 		`"cwd":"/home/CANARY-PATH","seen":{"questions_at":"T0","open_questions":["CANARY-QUESTION?"]}`)
 	n.Announced("sparta", nil)
-	n.Announced("sparta", []CardState{rich})
+	n.Announced("sparta", []conn.CardState{rich})
 
 	var raw []byte
 	until(t, "the command to run", func() bool {

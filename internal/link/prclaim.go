@@ -462,7 +462,7 @@ func (p *Proxy) prWarnSweep(g *Growler) bool {
 	if err != nil {
 		return false
 	}
-	rs, ok := g.st.(growlRaiser)
+	rs, ok := g.Raiser()
 	if !ok {
 		return false
 	}

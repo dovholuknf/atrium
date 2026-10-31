@@ -94,7 +94,7 @@ func (p *Proxy) releasePRClaim(key, room string) {
 	}
 	if c.Warned {
 		if g := p.growler(); g != nil {
-			g.endAbout(prWaitID(key, c.WarnN))
+			g.EndAbout(prWaitID(key, c.WarnN))
 		}
 	}
 	p.RecordAudit(room, "pr-claim-released", key+": the room refused the worktree")

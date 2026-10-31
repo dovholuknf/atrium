@@ -1,11 +1,12 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 	"os"
 	"strings"
 	"testing"
@@ -78,7 +79,7 @@ func TestReenablingNotifyForgetsWhichRoomsWereSeeded(t *testing.T) {
 		t.Fatal("a room seeded before notify was switched off still reads as seeded")
 	}
 	// Its first announcement after that is recorded silently.
-	n.Announced("sparta", []CardState{{ID: "c1", Status: "needs-input",
+	n.Announced("sparta", []conn.CardState{{ID: "c1", Status: "needs-input",
 		Payload: json.RawMessage(`{"status":"needs-input","waiting_since":"T9"}`)}})
 	if got := rs.count(); got != 0 {
 		t.Errorf("the first announcement after re-enabling notified %d times, want none", got)

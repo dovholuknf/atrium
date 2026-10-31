@@ -1,4 +1,4 @@
-package link
+package notify
 
 import (
 	"encoding/json"
@@ -33,21 +33,21 @@ import (
 
 // SetNotify wires the notifier. Optional: a hub without one answers the notify
 // routes 404 and takes presence and ignores it.
-func (p *Proxy) SetNotify(n *Notifier) {
+func (p *Service) SetNotify(n *Notifier) {
 	p.mu.Lock()
 	p.notify = n
 	p.mu.Unlock()
 }
 
-func (p *Proxy) notifier() *Notifier {
+func (p *Service) Notifier() *Notifier {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.notify
 }
 
-// serveNotify answers the three notify routes.
-func (p *Proxy) serveNotify(w http.ResponseWriter, r *http.Request, sub string) {
-	n := p.notifier()
+// ServeNotify answers the three notify routes.
+func (p *Service) ServeNotify(w http.ResponseWriter, r *http.Request, sub string) {
+	n := p.Notifier()
 	if n == nil {
 		http.NotFound(w, r)
 		return
@@ -104,18 +104,18 @@ func (p *Proxy) serveNotify(w http.ResponseWriter, r *http.Request, sub string) 
 	}
 }
 
-// servePresence is a desktop tab saying it is visible or hidden.
+// ServePresence is a desktop tab saying it is visible or hidden.
 //
 // THE BODY IS READ AS JSON WHATEVER ITS CONTENT TYPE, because a page closing
 // sends its `visible: false` with sendBeacon, which posts text/plain. Always
 // answered ok: a tab does not care.
-func (p *Proxy) servePresence(w http.ResponseWriter, r *http.Request) {
+func (p *Service) ServePresence(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
 		return
 	}
-	n := p.notifier()
+	n := p.Notifier()
 	if n != nil {
 		var body struct {
 			Visible bool   `json:"visible"`
