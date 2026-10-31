@@ -1,6 +1,6 @@
 # The per-repo setup file and its atrium_resources cross-check
 
-Status: design only, 2026-10-31. Nothing here is built. Origin: a card on claude-sg4 (repo ziti-hook) lost an hour
+Status: design, 2026-10-31, section 9 answered. Stage 1 (section 8) is being built. Origin: a card on claude-sg4 (repo ziti-hook) lost an hour
 learning by failed builds that the room had no Docker daemon, no Linux toolchain and no autotools or ninja. Nothing
 told it up front.
 
@@ -9,10 +9,11 @@ told it up front.
 Each repo carries `.atrium/setup.toml`, a short human-written list of what the repo needs to build and test: tools,
 how to get each per OS, and a version only where it matters. The room checks the file against itself with a small set
 of built-in probes (never a command the repo supplies). The check runs on the room, at launch, because only the room
-has the checkout and the live state (a Docker daemon can stop between check-in and launch). A missing tool never
-blocks a launch. It is written into the card's brief, and `atrium_resources` shows, per room, what the repo needs and
-what that room lacks, so the launcher picks a room that has it. Cards read the file themselves too, since it holds the
-install hints.
+has the checkout and the live state (a Docker daemon can stop between check-in and launch). A missing need marked
+`required = true` refuses the launch, with the list, before the agent starts. Any other missing need is a warning
+written into the card's brief. Atrium owns the needs list, a card never writes the file, and a card that finds a
+missing need tells atrium (section 7). The hub learns needs and applies them with user input, never by reading a git
+mirror. Cards read the file too, since it holds the install hints.
 
 ## 1. What exists today and is reused
 
@@ -33,7 +34,7 @@ have different owners: the repo's maintainers write the first, the room's operat
 atrium's, and `.atrium/` can later hold other repo-level atrium config. Read from the card's checkout (its cwd root),
 so it is the version of the file at the commit the card works on. A repo without it behaves exactly as today.
 TOML because it is small, has comments, needs no indentation care and has a parser the repo already depends on
-(to confirm in the build card). Size cap 16 KiB, like `resources.MaxBytes` in spirit.
+(to confirm in the build card). The file is owned by atrium's operator side, not by cards (section 9, item 4). Size cap 16 KiB, like `resources.MaxBytes` in spirit.
 
 ## 3. Format
 
@@ -43,6 +44,7 @@ One table per need. The key is the tool's name. Every field but `detect` is opti
 # what ziti-hook needs. Each entry: how to detect it, and how to get it per OS.
 [cmake]
 version = ">=3.25"
+required = true                         # a room without it refuses the launch
 install.macos = "brew install cmake"
 install.linux = "apt install cmake"
 install.windows = "winget install Kitware.CMake"
@@ -58,8 +60,7 @@ os = ["linux", "windows"]               # only needed there. Omitted means every
 
 [alpine]
 detect = { wsl = "Alpine" }             # a WSL distro by name
-os = ["windows"]
-optional = true                         # warn only, never mentioned as blocking
+os = ["windows"]                        # no required, so a missing one only warns
 ```
 
 Fields:
@@ -67,10 +68,10 @@ Fields:
 | Field | Meaning |
 | --- | --- |
 | `detect` | A built-in probe, section 4. Default is `{ bin = "<key>" }`. |
-| `version` | A constraint (`>=3.25`, `~1.22`, `=2`). Omitted means any. Checked against the probe's version. |
+| `version` | A constraint, `>=` only (`>=3.25`). Omitted means any. Checked against the probe's version. |
 | `install.<os>` | One line a person or card can run or read. `macos`, `linux`, `windows`. Text only, never run by atrium. |
 | `os` | OS names the entry applies to. Omitted means all. |
-| `optional` | The entry is a nice-to-have. Shown, but never counted as missing in the summary. |
+| `required` | `true` makes a missing or old need refuse the launch. Default false, which only warns. |
 | `why` | Free text, shown to the card. |
 
 No secrets, no hosts. Unknown fields are ignored with a note, so an older room reads a newer file.
@@ -92,6 +93,7 @@ detection is a closed set of kinds implemented in the room, each with a fixed ar
 Version probes run `name --version` of a tool found by PATH, and nothing else, with no shell, a timeout and a minimal
 environment. Every probe answers one of four states: `ok` (with version), `old` (found, below the constraint),
 `stopped` (present but not usable, the Docker case), `missing`, plus `na` when the entry's `os` excludes this room.
+A version that cannot be parsed from the output is `unknown`, which warns and never refuses, even when `required`.
 New kinds are a code change in atrium, which is the point: a repo cannot invent one.
 
 The probe's result is the room's own observation, in the spirit of `Hello.Tools`: observed, never trusted. A repo
@@ -107,21 +109,24 @@ Two places were considered.
 - **On launch, on the room.** The room has the checkout, so it reads `.atrium/setup.toml`, runs the probes and has the
   answer fresh at the moment it matters.
 
-Decision: the check runs ON THE ROOM AT LAUNCH, and its result is cached on the room by (repo, setup-file hash) for 60
-s so a burst of launches and repeated `atrium_resources` calls do not re-run `docker version`. The check-in `Tools`
-stays as it is, as the cheap always-there baseline. The room sends the result up in the launch reply and in a new
-`Hello.Needs` only for repos it has already checked (so the hub can show last known state of an offline room, marked
-stale). The launcher choosing a room BEFORE the launch has no checkout on the candidate rooms, so
-`atrium_resources` takes a `repo` argument (section 7) and the hub asks each online room to check that repo's file
-from its own clone or, if it has no clone, from the file's content the hub passes (the hub reads it from its git
-mirror at the branch tip). The probes are the same code either way.
+Decision: the check runs ON THE ROOM AT LAUNCH, before the agent starts, and its result is cached on the room by
+(repo, setup-file hash) for 60 s so a burst of launches does not re-run `docker version`. The check-in `Tools` stays as
+it is, as the cheap always-there baseline, and `Hello.Tools` stays fixed (section 9, item 7).
+
+The hub never reads the file from a git mirror. It learns needs from the rooms: a room reports the needs it checked and
+what it found, in the launch reply. The hub then applies them with user input. When a card or a room reports a need
+the hub's inventory lacks, the hub asks the human ("ziti-hook needs docker, add it to the inventory?") and records the
+answer. Design only in stage 1, nothing of this is built.
 
 ## 6. What a launch does with a missing need
 
-Warn, never refuse, and say it where the card will see it.
+A missing required need refuses. Every other missing need warns, in the brief where the card will see it.
 
-1. The room runs the check. Missing non-optional needs are collected.
-2. The card's brief gets one block appended (next to `withToolsLine`), only when there is something to say:
+1. The room runs the check before the agent starts. Needs are collected by state.
+2. If any need with `required = true` is `missing`, `old` or `stopped`, the launch is refused and the reply lists them,
+   one per line, with the `why` and the `install.<os>` hint for this room's OS. No agent starts, no card process
+   exists. `unknown` never refuses.
+3. Otherwise the card's brief gets one block appended (next to `withToolsLine`), only when something is not `ok`:
 
    ```
    Setup: this repo's .atrium/setup.toml needs things this room lacks.
@@ -131,60 +136,56 @@ Warn, never refuse, and say it where the card will see it.
    for an hour before saying so.
    ```
 
-3. The hub records the missing list on the card, so the board can show a small "setup: 2 missing" badge. No new store
-   table is proposed here, it is a field on the card's launch result.
-4. A launch that the LAUNCHER explicitly pins to a room is never moved. A launch that names no room (the hub picks)
-   prefers an online room with no missing needs, among rooms otherwise eligible, and says so in the launch reply. It
-   never blocks if every room lacks something.
+4. The missing list is a field on the card's launch result, so a later stage can show a badge. No store table.
+5. A launch the LAUNCHER pins to a room is never moved. Choosing among rooms by missing needs is a later stage.
 
-Refusing was rejected: the file may be stale or wrong, a card may exist precisely to install the tool, and
-atrium's rule is to inform, and not to stand between an operator and a launch. A `required = true` that refuses is
-left as an open question.
+Atrium never runs an `install.*` line, in either case. The refusal is only as good as the file, so a wrong
+`required = true` is fixed by the operator editing the file, not by the card.
 
-## 7. What the card sees and how atrium_resources shows it
+## 7. What the card sees, and how a card reports a need
 
 The card sees: the brief block above, and the file itself in its checkout, which it is told to read first by one
 added framing line, `Read .atrium/setup.toml if the repo has one.` The line is added with the others in
 `internal/daemon/launch.go` and only when the checkout has the file.
 
-`atrium_resources` gains an optional `repo` input (a repo name the hub knows, default the caller's own repo). Output
-gains `setup` beside `file` and `rooms`:
+A card never edits the file. When it finds a tool the file does not list, it calls a new tool, `atrium_need`, with
+`{name, why, detect?, install?}` (shape only, built in a later stage). The room checks the claim with its own probe
+before accepting it. The hub then asks the human whether to add it, and atrium writes the operator-approved entry. The
+reply to the card says whether it was recorded, never that the file changed.
+
+`atrium_resources` gains an optional `repo` input (default the caller's own repo) and a `setup` section beside `file`
+and `rooms`, built from what rooms have reported for that repo, not from a hub-side read of the repo:
 
 ```
-setup for ziti-hook (.atrium/setup.toml at claude/main, 4 needs):
+setup for ziti-hook (4 needs):
 - claude-sg4 (online): docker stopped, ninja missing, alpine missing, cmake 3.28 ok
 - m1mini (online): all present
 - m4-air (offline, last checked 2h ago): all present (stale)
+- m2-pro (online): not checked for this repo
 ```
 
-and in the structured output each room gains `needs: [{name, state, version, install, why, optional}]`. The rooms'
-existing `tools` map is unchanged. A launcher picking a room reads the `setup` section and sees which room has it. A
-card with no `repo` and no file sees `setup: this repo has no .atrium/setup.toml`.
+and in the structured output each room gains `needs: [{name, state, version, install, why, required}]`. The rooms'
+existing `tools` map is unchanged. A room that has not checked the repo is shown as unchecked, never as ok.
 
 ## 8. Staged plan
 
-1. File format, parser and the `bin` and `file` and `env` probes, the brief block, the framing line. (room only)
-2. `docker` and `wsl` probes, `atrium_resources` `repo` input and the `setup` section, the hub asking rooms.
-3. Hub placement preference when no room is named, board badge, `Hello.Needs` for offline rooms.
+1. File format, parser, the `bin`, `file` and `env` probes with `>=` versions, the brief block, the framing line and
+   the required-need refusal before the agent starts. (room only)
+2. `docker` and `wsl` probes, `atrium_resources` `repo` input and the `setup` section, rooms reporting checked needs.
+3. `atrium_need` and the hub asking the human to add a need, board badge, placement among rooms.
 
 Tests: probes run against a fake PATH and a fake `docker`/`wsl.exe` on PATH, as `toollocations` tests do. No flat waits.
 
-## 9. Open questions, with a recommendation each
+## 9. Decisions (answered by Clint)
 
-1. **Should a need be able to refuse a launch (`required = true`)?** Recommend no for now. Warn first and see whether
-   cards ignore the warning before adding a way to block.
-2. **TOML or the `## heading` markdown of resources.md?** Recommend TOML. Machine-checkable needs structure, and
-   markdown prose is what `resources.md` is already for.
-3. **Should atrium ever run the `install.*` line?** Recommend never. It is a hint for a person or a card, and running
-   it would be the repo choosing what runs as the operator.
-4. **Should a card be allowed to write a missing need back to the file?** Recommend yes, as an ordinary commit on its
-   branch like any file in the repo, reviewed in the merge. It is the repo's file, unlike `resources.md`.
-5. **Monorepos with a nested setup per subdirectory?** Recommend root only for v1, plus `[needs-in.<dir>]` later if a
-   real repo asks.
-6. **Version comparison syntax and parsing of odd `--version` output (Python 2 prints to stderr, `gh` is multi-line)?**
-   Recommend a fixed small grammar (`>=`, `~`, `=`), first dotted number on stdout then stderr, and `unknown` rather
-   than `old` when no number is found, so a parse failure warns and never blocks.
-7. **Should `Hello.Tools` grow to cover the repo's names automatically?** Recommend no. The hello stays the fixed
-   baseline and per-repo state is asked for, so the hello does not grow with every repo.
-8. **Is the hub reading a repo's file from its git mirror reliable for a repo with no hub mirror?** Recommend falling
-   back to "the room that holds the card's checkout checks it and the others are shown as unchecked", and saying so.
+1. **Can a need refuse a launch?** Yes, `required = true`. The room checks before the agent starts. A missing required
+   need refuses the launch with the list. A non-required need stays a warning in the brief.
+2. **TOML?** Yes.
+3. **Does atrium run the `install.*` line?** Never.
+4. **Does a card write the file?** No. Atrium owns the needs list. A card informs atrium of a missing need through
+   `atrium_need` (section 7, built later).
+5. **Monorepos?** Root only for v1.
+6. **Version syntax?** `>=` only, no `~` and no `=`. An unparseable version is `unknown` and warns.
+7. **Does `Hello.Tools` grow?** No, it stays fixed.
+8. **Does the hub read the file from a git mirror?** No. The hub learns needs from rooms and applies them with user
+   input, for example by asking the human "ziti-hook needs docker, add it to the inventory?". Design only for now.
