@@ -88,7 +88,7 @@ func (c *controlMCP) reviewHandler(ctx context.Context, req *mcp.CallToolRequest
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
 	path := "/v1/tasks/" + url.PathEscape(id) + "/atrium-review"
 	var raw map[string]any
-	if err := long.ask(ctx, http.MethodPost, path, scope, in, &raw); err != nil {
+	if err := long.Ask(ctx, http.MethodPost, path, scope, in, &raw); err != nil {
 		var be *ctl.BoardError
 		if errors.As(err, &be) && be.Code == http.StatusForbidden {
 			return nil, out, &ctl.RefusedError{Msg: "this card was not launched as a review. start one with kind review"}
