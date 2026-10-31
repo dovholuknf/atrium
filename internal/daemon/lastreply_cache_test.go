@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ func appendTo(t testing.TB, path, s string, mtime time.Time) {
 // BenchmarkLastReply30Cards reads 30 cards' 2 MB transcripts, as one board
 // poll does. Cached, the run is 30 stats. Uncached, 30 decodes of 2 MB.
 func BenchmarkLastReply30Cards(b *testing.B) {
-	var replies lastReplies
+	var replies cycle.LastReplies
 	dir := b.TempDir()
 	now := time.Now()
 	pad := `{"type":"user","message":{"content":"` + strings.Repeat("x", 800) + `"}}` + "\n"
@@ -37,7 +38,7 @@ func BenchmarkLastReply30Cards(b *testing.B) {
 	for i := range 30 {
 		p := filepath.Join(dir, fmt.Sprintf("%d.jsonl", i))
 		var sb strings.Builder
-		for j := 0; sb.Len() < transcriptTail-2000; j++ {
+		for j := 0; sb.Len() < cycle.TranscriptTail-2000; j++ {
 			if j%4 == 0 {
 				sb.WriteString(replyLine(fmt.Sprint(j), int64(j), now))
 			} else {
@@ -50,7 +51,7 @@ func BenchmarkLastReply30Cards(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, p := range paths {
-			if _, err := replies.readLastReply(p); err != nil {
+			if _, err := replies.ReadLastReply(p); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -60,7 +61,7 @@ func BenchmarkLastReply30Cards(b *testing.B) {
 // BenchmarkLastReply30CardsUncached is the same poll with the cache emptied
 // first, which is what every poll cost before the cache.
 func BenchmarkLastReply30CardsUncached(b *testing.B) {
-	var replies lastReplies
+	var replies cycle.LastReplies
 	dir := b.TempDir()
 	now := time.Now()
 	pad := `{"type":"user","message":{"content":"` + strings.Repeat("x", 800) + `"}}` + "\n"
@@ -68,7 +69,7 @@ func BenchmarkLastReply30CardsUncached(b *testing.B) {
 	for i := range 30 {
 		p := filepath.Join(dir, fmt.Sprintf("%d.jsonl", i))
 		var sb strings.Builder
-		for j := 0; sb.Len() < transcriptTail-2000; j++ {
+		for j := 0; sb.Len() < cycle.TranscriptTail-2000; j++ {
 			if j%4 == 0 {
 				sb.WriteString(replyLine(fmt.Sprint(j), int64(j), now))
 			} else {
@@ -81,8 +82,8 @@ func BenchmarkLastReply30CardsUncached(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		for _, p := range paths {
-			replies.lastReplyDrop(p)
-			if _, err := replies.readLastReply(p); err != nil {
+			replies.LastReplyDrop(p)
+			if _, err := replies.ReadLastReply(p); err != nil {
 				b.Fatal(err)
 			}
 		}

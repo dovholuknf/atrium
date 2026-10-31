@@ -130,7 +130,7 @@ func TestFamilySayWakesAFinishedWorker(t *testing.T) {
 		if launched != 1 {
 			t.Fatalf("launched %d times, want 1 (%v)", launched, out)
 		}
-		d.wakeSawSession(worker.ID, "conv-1")
+		d.WakeSawSession(worker.ID, "conv-1")
 		testwait.Eventually(t, 5*time.Second, "the launcher's words to reach the resumed worker", func() bool {
 			return f != nil && strings.Contains(f.written(), "FAMILYWORDS")
 		})
@@ -187,7 +187,7 @@ func TestKeepaliveNeverRefreshesAParkedCard(t *testing.T) {
 	if f.forks() != 0 {
 		t.Fatalf("forks = %d, a parked card was refreshed", f.forks())
 	}
-	if got := f.k.why[f.task.ID]; got != "parked" {
+	if got := f.k.Why[f.task.ID]; got != "parked" {
 		t.Fatalf("why = %q, want parked", got)
 	}
 }

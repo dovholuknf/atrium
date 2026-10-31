@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -16,21 +17,21 @@ func TestNewContextAckNeverComesReleasesTheHold(t *testing.T) {
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.ackWait = 300 * time.Millisecond
+	d.hk.NcTiming.AckWait = 300 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	if !d.holdingMessages(task.ID) {
+	if !d.HoldingMessages(task.ID) {
 		t.Fatal("the cycle did not hold the card")
 	}
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
 	if r := failedWith(d, task.ID); !strings.Contains(r, "held for") || !strings.Contains(r, "released") {
 		t.Fatalf("the card does not say why it was released: %q", r)
 	}
-	if d.holdingMessages(task.ID) {
+	if d.HoldingMessages(task.ID) {
 		t.Fatal("the hold is still on after the bound")
 	}
 	if strings.Contains(f.written(), "/clear") {
@@ -49,7 +50,7 @@ func TestNewContextProcessDiesReleasesTheHold(t *testing.T) {
 	}
 	d.sup.remove(task.ID)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
-	until(t, "the hold to lift", func() bool { return !d.holdingMessages(task.ID) })
+	until(t, "the hold to lift", func() bool { return !d.HoldingMessages(task.ID) })
 	if r := failedWith(d, task.ID); !strings.Contains(r, "terminal closed") {
 		t.Fatalf("reason: %q", r)
 	}
@@ -60,10 +61,10 @@ func TestNewContextFailedChipHoldsNothing(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
-	d.nctx.claim(task.ID, &newContext{step: NewContextLimit})
-	gen := d.nctx.get(task.ID).gen
-	d.nctx.fail(task.ID, gen, "the room restarted")
-	if d.holdingMessages(task.ID) {
+	d.Nctx.Claim(task.ID, &cycle.NewContext{Step: cycle.NewContextLimit})
+	gen := d.Nctx.Get(task.ID).Gen
+	d.Nctx.Fail(task.ID, gen, "the room restarted")
+	if d.HoldingMessages(task.ID) {
 		t.Fatal("a failed chip holds messages")
 	}
 }

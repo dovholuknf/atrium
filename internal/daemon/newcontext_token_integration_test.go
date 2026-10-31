@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,7 +28,7 @@ func writeAged(t *testing.T, path string, body []byte, age time.Duration) {
 }
 
 func withLine(token string, body []byte) []byte {
-	return append([]byte(captureLine(token)+"\n"), body...)
+	return append([]byte(cycle.CaptureLine(token)+"\n"), body...)
 }
 
 // A file from before the capture passes when it carries this run's line.
@@ -35,8 +36,8 @@ func TestHandoffWrittenAcceptsAnOldFileWithTheToken(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
-	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine("7-abc", handoffBody), time.Minute)
-	if err := d.handoffWritten(task.ID, HandoffName(task), time.Now(), "7-abc"); err != nil {
+	writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), withLine("7-abc", handoffBody), time.Minute)
+	if err := d.HandoffWritten(task.ID, cycle.HandoffName(task), time.Now(), "7-abc"); err != nil {
 		t.Fatalf("refused a fresh handoff carrying the token: %v", err)
 	}
 }
@@ -45,15 +46,15 @@ func TestHandoffWrittenAcceptsAnOldFileWithTheToken(t *testing.T) {
 func TestHandoffWrittenAcceptsTheTokenInMarkdown(t *testing.T) {
 	t.Parallel()
 	for name, line := range map[string]string{
-		"backticks": "`" + captureLine("7-abc") + "`",
-		"bullet":    "- " + captureLine("7-abc"),
-		"bold":      "**" + captureLine("7-abc") + "**",
+		"backticks": "`" + cycle.CaptureLine("7-abc") + "`",
+		"bullet":    "- " + cycle.CaptureLine("7-abc"),
+		"bold":      "**" + cycle.CaptureLine("7-abc") + "**",
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := testDaemon(t)
 			task, _, dir := ncCard(t, d)
-			writeAged(t, filepath.Join(dir, HandoffName(task)), append([]byte(line+"\n"), handoffBody...), time.Minute)
-			if err := d.handoffWritten(task.ID, HandoffName(task), time.Now(), "7-abc"); err != nil {
+			writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), append([]byte(line+"\n"), handoffBody...), time.Minute)
+			if err := d.HandoffWritten(task.ID, cycle.HandoffName(task), time.Now(), "7-abc"); err != nil {
 				t.Fatalf("refused the token as %s: %v", name, err)
 			}
 		})
@@ -64,12 +65,12 @@ func TestHandoffWrittenAcceptsTheTokenInMarkdown(t *testing.T) {
 func TestHandoffWrittenNamesTheMissingToken(t *testing.T) {
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
-	writeAged(t, filepath.Join(dir, HandoffName(task)), handoffBody, time.Minute)
-	err := d.handoffWritten(task.ID, HandoffName(task), time.Now(), "7-abc")
+	writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), handoffBody, time.Minute)
+	err := d.HandoffWritten(task.ID, cycle.HandoffName(task), time.Now(), "7-abc")
 	if err == nil {
 		t.Fatal("an old file without the token passed")
 	}
-	for _, want := range []string{HandoffName(task), filepath.ToSlash(dir), "atrium-capture: 7-abc"} {
+	for _, want := range []string{cycle.HandoffName(task), filepath.ToSlash(dir), "atrium-capture: 7-abc"} {
 		if !strings.Contains(filepath.ToSlash(err.Error()), want) {
 			t.Fatalf("the message does not name %q: %v", want, err)
 		}
@@ -81,10 +82,10 @@ func TestHandoffWrittenAcceptsAFileWrittenDuringTheCapture(t *testing.T) {
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
 	since := time.Now().Add(-time.Second)
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, cycle.HandoffName(task)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(task.ID, HandoffName(task), since, "7-abc"); err != nil {
+	if err := d.HandoffWritten(task.ID, cycle.HandoffName(task), since, "7-abc"); err != nil {
 		t.Fatalf("refused a file written during the capture: %v", err)
 	}
 }
@@ -94,8 +95,8 @@ func TestHandoffWrittenRefusesAnEarlierRunsToken(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
-	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine("6-old", handoffBody), time.Minute)
-	if err := d.handoffWritten(task.ID, HandoffName(task), time.Now(), "7-abc"); err == nil {
+	writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), withLine("6-old", handoffBody), time.Minute)
+	if err := d.HandoffWritten(task.ID, cycle.HandoffName(task), time.Now(), "7-abc"); err == nil {
 		t.Fatal("an earlier run's token passed")
 	}
 }
@@ -105,11 +106,11 @@ func TestHandoffWrittenRefusesAFileUnderTheFloor(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
-	small := []byte(captureLine("7-abc") + "\nshort\n")
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), small, 0o644); err != nil {
+	small := []byte(cycle.CaptureLine("7-abc") + "\nshort\n")
+	if err := os.WriteFile(filepath.Join(dir, cycle.HandoffName(task)), small, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := d.handoffWritten(task.ID, HandoffName(task), time.Now().Add(-time.Second), "7-abc")
+	err := d.HandoffWritten(task.ID, cycle.HandoffName(task), time.Now().Add(-time.Second), "7-abc")
 	if err == nil || !strings.Contains(err.Error(), "bytes") {
 		t.Fatalf("a file under the floor passed or was not named: %v", err)
 	}
@@ -120,9 +121,9 @@ func TestHandoffWrittenDoesNotFindATokenBeyond4KB(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _, dir := ncCard(t, d)
-	body := append([]byte(strings.Repeat("x", handoffHead)+"\n"), withLine("7-abc", handoffBody)...)
-	writeAged(t, filepath.Join(dir, HandoffName(task)), body, time.Minute)
-	if err := d.handoffWritten(task.ID, HandoffName(task), time.Now(), "7-abc"); err == nil {
+	body := append([]byte(strings.Repeat("x", cycle.HandoffHead)+"\n"), withLine("7-abc", handoffBody)...)
+	writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), body, time.Minute)
+	if err := d.HandoffWritten(task.ID, cycle.HandoffName(task), time.Now(), "7-abc"); err == nil {
 		t.Fatal("found a token past 4 KB")
 	}
 }
@@ -136,14 +137,14 @@ func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
-	writeAged(t, filepath.Join(dir, HandoffName(task)), handoffBody, time.Minute)
-	gen, ok := d.nctx.beginCaptureOnly(task.ID, HandoffName(task), "")
+	writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), handoffBody, time.Minute)
+	gen, ok := d.Nctx.BeginCaptureOnly(task.ID, cycle.HandoffName(task), "")
 	if !ok {
 		t.Fatal("could not begin")
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := d.ncCapture(task.ID, gen, HandoffName(task))
+		_, err := d.NcCapture(task.ID, gen, cycle.HandoffName(task))
 		done <- err
 	}()
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "atrium-capture: ") })
@@ -152,7 +153,7 @@ func TestNewContextCapturePromptCarriesTheToken(t *testing.T) {
 		t.Fatalf("no token in the prompt: %q", f.written())
 	}
 	d.act.set(task.ID, ActivityThinking, "")
-	writeAged(t, filepath.Join(dir, HandoffName(task)), withLine(m[1], handoffBody), time.Minute)
+	writeAged(t, filepath.Join(dir, cycle.HandoffName(task)), withLine(m[1], handoffBody), time.Minute)
 	time.Sleep(20 * time.Millisecond) // wait: the file must age before the turn ends, no event marks it
 	ncTurnEnds(d, task.ID)
 	if err := <-done; err != nil {
