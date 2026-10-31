@@ -128,7 +128,7 @@ type Daemon struct {
 	acProbe *autocompactProbe
 	// windingDown is set when shutdown begins. A session ending after it is the
 	// wind-down, never somebody deciding. See the session hook's `end`.
-	windingDown atomic.Bool
+	windingDown *atomic.Bool
 	// bootResumes is resume id to the card on the reopen list that takes it,
 	// for the length of one reopen pass. See reopenSaved.
 	bootResumes sync.Map
@@ -337,7 +337,7 @@ type Daemon struct {
 	// startedAt is when a launch last put a runner onto a card, keyed by card id,
 	// so a repeat of that launch answers with the card rather than a refusal. See
 	// repeatLaunch in launch.go.
-	startedAt sync.Map
+	startedAt *sync.Map
 	// kept is the cards a wake is delivering held messages to. See injectKept.
 	kept sync.Map
 
@@ -429,9 +429,11 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d := &Daemon{
 		hk: defaultHooks(), opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
-		nats:      map[overlayKind]*native{},
-		peerLimit: newPeerLimiter(),
-		launching: small.NewKeyedMutex(),
+		nats:        map[overlayKind]*native{},
+		peerLimit:   newPeerLimiter(),
+		launching:   small.NewKeyedMutex(),
+		windingDown: new(atomic.Bool),
+		startedAt:   new(sync.Map),
 	}
 	d.Publish = d.publishCard
 	d.ph.opts.Build = opts.HostBuild
