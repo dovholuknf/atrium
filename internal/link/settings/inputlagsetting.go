@@ -1,4 +1,4 @@
-package link
+package settings
 
 import (
 	"bytes"
@@ -30,17 +30,12 @@ import (
 // hubInputLag is the name the hub stores the switch under.
 const hubInputLag = "input_lag_log"
 
-// hubSettingStore is the part of the hub's store this needs. Asked for by type
+// Store is the part of the hub's store this needs. Asked for by type
 // rather than added to Inventory, so every fake inventory in the tests does not
 // have to grow two methods it never uses.
-type hubSettingStore interface {
+type Store interface {
 	HubSetting(name string) (string, error)
 	SetHubSetting(name, value string) error
-}
-
-func (p *Proxy) settingStore() hubSettingStore {
-	s, _ := p.inventory().(hubSettingStore)
-	return s
 }
 
 // inputLagIn reads `input_lag_log` off a settings write and puts the body back
@@ -64,15 +59,15 @@ func inputLagIn(r *http.Request) (on, found bool) {
 	return *body.InputLag, true
 }
 
-// noteInputLag switches the hub's own logging when a settings write names it,
+// NoteInputLag switches the hub's own logging when a settings write names it,
 // and stores it. Called ahead of routing, so it sees the write in every scope.
-func (p *Proxy) noteInputLag(r *http.Request) (on, found bool) {
+func (p *Service) NoteInputLag(r *http.Request) (on, found bool) {
 	on, found = inputLagIn(r)
 	if !found {
 		return on, found
 	}
 	inputlag.SetLive(on)
-	if s := p.settingStore(); s != nil {
+	if s := p.store(); s != nil {
 		v := "off"
 		if on {
 			v = "on"
@@ -86,8 +81,8 @@ func (p *Proxy) noteInputLag(r *http.Request) (on, found bool) {
 
 // ApplyInputLag switches the hub's logging to what it stored, for a hub coming
 // up. A value never written leaves the start-time default alone.
-func (p *Proxy) ApplyInputLag() {
-	s := p.settingStore()
+func (p *Service) ApplyInputLag() {
+	s := p.store()
 	if s == nil {
 		return
 	}
@@ -100,8 +95,8 @@ func (p *Proxy) ApplyInputLag() {
 // Nothing is sent when the hub has never been told, so a room keeps its own
 // answer until somebody presses the checkbox. Best effort: a room that does not
 // take it logs as it did before, which is the same state a missed click leaves.
-func (p *Proxy) PushInputLag(room string) {
-	s := p.settingStore()
+func (p *Service) PushInputLag(room string) {
+	s := p.store()
 	if s == nil {
 		return
 	}
@@ -114,31 +109,31 @@ func (p *Proxy) PushInputLag(room string) {
 	}
 }
 
-// fanInputLag passes the switch to every attached room, for a write made in the
+// FanInputLag passes the switch to every attached room, for a write made in the
 // ALL view. Answers with the hub's own state.
-func (p *Proxy) fanInputLag(w http.ResponseWriter, r *http.Request, on bool) {
-	for _, room := range p.hub.Rooms() {
+func (p *Service) FanInputLag(w http.ResponseWriter, r *http.Request, on bool) {
+	for _, room := range p.Rooms() {
 		if err := p.postInputLag(r.Context(), room.Name, on); err != nil {
 			log.Printf("[hub] could not pass the input-lag switch to %s: %v", room.Name, err)
 		}
 	}
-	writeJSONBody(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"input_lag_log":    inputlag.On(),
 		"input_lag_pinned": inputlag.Pinned(),
 	})
 }
 
-func (p *Proxy) postInputLag(ctx context.Context, room string, on bool) error {
+func (p *Service) postInputLag(ctx context.Context, room string, on bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	body, _ := json.Marshal(map[string]bool{"input_lag_log": on})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+hostFor(room)+"/v1/settings", bytes.NewReader(body))
+		"http://"+p.HostFor(room)+"/v1/settings", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return err
 	}

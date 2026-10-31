@@ -28,6 +28,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/deploy"
 	"github.com/dovholuknf/atrium/internal/link/docs"
 	"github.com/dovholuknf/atrium/internal/link/notify"
+	"github.com/dovholuknf/atrium/internal/link/settings"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -156,6 +157,7 @@ type Proxy struct {
 	// deploySvc is the deploy readiness, queue and owner. See deploy_forward.go.
 	deploySvc  *deploy.Service
 	notifyH    notifyHolder
+	settingsH  settingsHolder
 	deployOnce sync.Once
 	// docsSvc is the hub.s documents and file drop. See docs_forward.go.
 	docsSvc  *docs.Service
@@ -742,11 +744,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The input-lag switch, read off a settings write in every scope so the hub
 	// times its own hop whichever view the checkbox was pressed in. See
 	// inputlagsetting.go.
-	lagOn, lagNamed := p.noteInputLag(r)
+	lagOn, lagNamed := p.settingsService().NoteInputLag(r)
 	// The context limit per harness, the hub's in every scope. See contextlimits.go.
-	limits, limitsNamed, limitsErr := p.noteContextLimits(r)
+	limits, limitsNamed, limitsErr := p.settingsService().NoteContextLimits(r)
 	// The default worker model and budget, the hub's too. See workerpolicy.go.
-	policy, policyNamed, policyErr := p.noteWorkerPolicy(r)
+	policy, policyNamed, policyErr := p.settingsService().NoteWorkerPolicy(r)
 
 	// The strip's order goes to every room, named or not. See pinorder.go.
 	if ids, ok := pinOrderIn(r); ok {
@@ -762,7 +764,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				writeErrBody(w, http.StatusBadRequest, limitsErr.Error())
 				return
 			}
-			p.answerContextLimits(w, r, limits)
+			p.settingsService().AnswerContextLimits(w, r, limits)
 			return
 		}
 		if policyNamed {
@@ -770,15 +772,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				writeErrBody(w, http.StatusBadRequest, policyErr.Error())
 				return
 			}
-			p.answerWorkerPolicy(w, r, policy)
+			p.settingsService().AnswerWorkerPolicy(w, r, policy)
 			return
 		}
 		if lagNamed {
-			p.fanInputLag(w, r, lagOn)
+			p.settingsService().FanInputLag(w, r, lagOn)
 			return
 		}
 		// The terminal width floor goes to every room. See mincolssetting.go.
-		if payload, ok := minColsIn(r); ok {
+		if payload, ok := settings.MinColsIn(r); ok {
 			p.fanMinCols(w, r, payload)
 			return
 		}
