@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"bytes"
@@ -43,14 +43,14 @@ var hubFetches = map[string]bool{"": true, forge.FactsFetch: true, linkfetch.Red
 
 // hubRecognise answers `POST /v1/recognise` with no room named from the hub's table. False leaves the request to the
 // rest of the proxy: a named room, a hub with no forge wired, or a row whose fetch is a command.
-func (p *Proxy) hubRecognise(w http.ResponseWriter, r *http.Request) bool {
+func (p *Service) HubRecognise(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodPost || r.URL.Path != "/v1/recognise" {
 		return false
 	}
-	if _, named := p.roomFor(r); named {
+	if _, named := p.RoomFor(r); named {
 		return false
 	}
-	f := p.forgeSide()
+	f := p.ForgeSide()
 	if f == nil {
 		return false
 	}
@@ -63,7 +63,7 @@ func (p *Proxy) hubRecognise(w http.ResponseWriter, r *http.Request) bool {
 		crFail(w, http.StatusBadRequest, err.Error())
 		return true
 	}
-	rows, err := hubRecogniserRows(f.st, f.seedRows())
+	rows, err := HubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		crFail(w, http.StatusInternalServerError, "the hub's recognisers do not read: "+err.Error())
@@ -89,7 +89,7 @@ func (p *Proxy) hubRecognise(w http.ResponseWriter, r *http.Request) bool {
 
 // resolve fills a matched row in on the hub: the built-in fetch, the templates, and a look at the directory on the
 // hub's own disk, which is the board's machine.
-func (f *hubForge) resolve(ctx context.Context, row *rules.Recogniser, vars map[string]string) *rules.Resolved {
+func (f *HubForge) resolve(ctx context.Context, row *rules.Recogniser, vars map[string]string) *rules.Resolved {
 	var facts map[string]string
 	var fetchErr error
 	name, args := rules.FillArgv(strings.TrimSpace(row.Fetch), row.FetchArgs, vars)
@@ -123,9 +123,9 @@ func peekBody(r *http.Request, max int64) []byte {
 // ── a room that cannot read the hub's rows ─────────────
 
 // placedKey carries a paste the hub placed on the least busy room, for a retry on another. See retryDeaf.
-type placedKey struct{}
+type PlacedKey struct{}
 
-type placedPaste struct {
+type PlacedPaste struct {
 	room string
 	body []byte
 	// passed is the rooms that refused this paste, by key, and the sentence each gave. Placement skips them.
@@ -134,23 +134,23 @@ type placedPaste struct {
 
 // placePaste sends r to room as a placed paste. The placed room header is set on the answer, by rewrite, so a retry
 // can change it.
-func (p *Proxy) placePaste(r *http.Request, room string) *http.Request {
-	pp := &placedPaste{room: room, body: peekBody(r, 1<<16)}
-	ctx := context.WithValue(r.Context(), cardRoomKey{}, room)
-	return r.WithContext(context.WithValue(ctx, placedKey{}, pp))
+func (p *Service) PlacePaste(r *http.Request, room string) *http.Request {
+	pp := &PlacedPaste{room: room, body: peekBody(r, 1<<16)}
+	ctx := context.WithValue(r.Context(), wire.CardRoomKey{}, room)
+	return r.WithContext(context.WithValue(ctx, PlacedKey{}, pp))
 }
 
 // isDeaf is whether a room is remembered as not reading the hub's rows, on the build it runs now.
-func (p *Proxy) isDeaf(a wire.Attached) bool {
+func (p *Service) isDeaf(a wire.Attached) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	commit, ok := p.deaf[wire.KeyOf(a.Name)]
 	return ok && commit == a.Commit
 }
 
-func (p *Proxy) markDeaf(room string) {
+func (p *Service) markDeaf(room string) {
 	commit := ""
-	for _, a := range p.hub.Rooms() {
+	for _, a := range p.Rooms() {
 		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
 			commit = a.Commit
 		}
@@ -164,7 +164,7 @@ func (p *Proxy) markDeaf(room string) {
 }
 
 // deafAnswer is whether a room's answer is "no recogniser" for a link the hub's own rows match.
-func (p *Proxy) deafAnswer(status int, body, paste []byte) bool {
+func (p *Service) deafAnswer(status int, body, paste []byte) bool {
 	if status != http.StatusUnprocessableEntity {
 		return false
 	}
@@ -177,11 +177,11 @@ func (p *Proxy) deafAnswer(status int, body, paste []byte) bool {
 	var in struct {
 		URL string `json:"url"`
 	}
-	f := p.forgeSide()
+	f := p.ForgeSide()
 	if f == nil || json.Unmarshal(paste, &in) != nil {
 		return false
 	}
-	rows, err := hubRecogniserRows(f.st, f.seedRows())
+	rows, err := HubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		return false
 	}
@@ -212,16 +212,16 @@ func noSCMAnswer(status int, body []byte) (string, bool) {
 //
 // WHEN NO ROOM CAN, the answer is one 422 no_scm_root that names every room and why, once, in place of the last
 // room's own sentence. A claim the request made moves with the paste.
-func (p *Proxy) retryDeaf(res *http.Response) (string, error) {
+func (p *Service) RetryDeaf(res *http.Response) (string, error) {
 	if res.Request == nil {
 		return "", nil
 	}
-	pp, _ := res.Request.Context().Value(placedKey{}).(*placedPaste)
+	pp, _ := res.Request.Context().Value(PlacedKey{}).(*PlacedPaste)
 	if pp == nil {
 		return "", nil
 	}
 	room := pp.room
-	for tries := len(p.hub.Rooms()); tries > 0 && res.StatusCode == http.StatusUnprocessableEntity; tries-- {
+	for tries := len(p.Rooms()); tries > 0 && res.StatusCode == http.StatusUnprocessableEntity; tries-- {
 		raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 		res.Body.Close()
 		res.Body = io.NopCloser(bytes.NewReader(raw))
@@ -250,7 +250,7 @@ func (p *Proxy) retryDeaf(res *http.Response) (string, error) {
 			return room, nil
 		}
 		if m, ok := res.Request.Context().Value(prMadeKey{}).(*prMade); ok && wire.KeyOf(m.room) == wire.KeyOf(room) {
-			if st := p.prClaims(); st != nil {
+			if st := p.PRClaims(); st != nil {
 				if c, err := st.MovePRClaim(m.key, next); err == nil {
 					m.room = c.Room
 				}
@@ -274,16 +274,16 @@ func peekResponse(res *http.Response) []byte {
 
 // noRoomCan replaces res with the one answer for a paste no room could take, when a room refused it for want of an scm
 // folder. A paste only old rooms refused keeps the room's own no_recogniser.
-func (p *Proxy) noRoomCan(res *http.Response, pp *placedPaste, last string) {
+func (p *Service) noRoomCan(res *http.Response, pp *PlacedPaste, last string) {
 	if len(pp.passed) == 0 {
 		return
 	}
 	if _, ok := noSCMAnswer(res.StatusCode, peekResponse(res)); !ok && !p.isDeafName(last) {
 		return
 	}
-	marked := p.markedRooms()
+	marked := p.MarkedRooms()
 	var parts []string
-	for _, a := range p.hub.Rooms() {
+	for _, a := range p.Rooms() {
 		k := wire.KeyOf(a.Name)
 		switch why, passed := pp.passed[k]; {
 		case passed:
@@ -306,8 +306,8 @@ func (p *Proxy) noRoomCan(res *http.Response, pp *placedPaste, last string) {
 	res.Header.Set("Content-Length", fmt.Sprint(len(out)))
 }
 
-func (p *Proxy) isDeafName(room string) bool {
-	for _, a := range p.hub.Rooms() {
+func (p *Service) isDeafName(room string) bool {
+	for _, a := range p.Rooms() {
 		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
 			return p.isDeaf(a)
 		}
@@ -316,16 +316,16 @@ func (p *Proxy) isDeafName(room string) bool {
 }
 
 // answerFrom puts room's answer to the same request in place of res's.
-func (p *Proxy) answerFrom(res *http.Response, room string, body []byte) error {
+func (p *Service) answerFrom(res *http.Response, room string, body []byte) error {
 	ctx, cancel := context.WithTimeout(res.Request.Context(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+hostFor(room)+res.Request.URL.Path,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+wire.HostFor(room)+res.Request.URL.Path,
 		bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	got, err := p.roomClient(room).Do(req)
+	got, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return err
 	}

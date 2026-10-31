@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"context"
@@ -27,7 +27,7 @@ import (
 //  3. an import that failed leaves the claim and the old row as they were
 //  4. the claim moves
 //  5. the old room archives its row (`POST /v1/prs/{id}/archive`), which also stops a run that is going. The old
-//     folder stays. An archive that fails is logged and audited, and does not undo the move: the claim and the new
+//     folder stays. An archive that fails is logged and ctl.Audited, and does not undo the move: the claim and the new
 //     row are right, and the old room's row is a stale copy somebody can archive by hand.
 //  6. when the caller knows the card that moved with the PR, it is recorded as the new row's walker.
 
@@ -52,15 +52,15 @@ type PRClaimMove struct {
 
 // MovePRClaim gives a key to another room and ends its offline warning, taking the review along. The call the room
 // handoff makes when a PR's card moves, so a key keeps one owner.
-func (p *Proxy) MovePRClaim(key, to string) (hubstore.PRClaim, error) {
+func (p *Service) MovePRClaim(key, to string) (hubstore.PRClaim, error) {
 	m, err := p.MovePRClaimWith(context.Background(), key, to, "")
 	return m.PRClaim, err
 }
 
 // MovePRClaimWith is MovePRClaim that also says the card that walks the review on the new room, when the caller
 // knows it, and takes the context of the request that asked.
-func (p *Proxy) MovePRClaimWith(ctx context.Context, key, to, walker string) (PRClaimMove, error) {
-	st := p.prClaims()
+func (p *Service) MovePRClaimWith(ctx context.Context, key, to, walker string) (PRClaimMove, error) {
+	st := p.PRClaims()
 	if st == nil {
 		return PRClaimMove{}, hubstore.ErrNoPRClaim
 	}
@@ -73,10 +73,10 @@ func (p *Proxy) MovePRClaimWith(ctx context.Context, key, to, walker string) (PR
 		return out, nil
 	}
 	switch {
-	case !p.hub.Has(old.Room):
+	case !p.Has(old.Room):
 		return out, &moveError{http.StatusConflict, fmt.Sprintf(
 			"the review is on %s, which is offline. bring it back or move it later", old.Room)}
-	case !p.hub.Has(to):
+	case !p.Has(to):
 		return out, &moveError{http.StatusConflict, fmt.Sprintf("%s is offline, so the review cannot go there. "+
 			"bring it back or pick another room", to)}
 	}
@@ -92,7 +92,7 @@ func (p *Proxy) MovePRClaimWith(ctx context.Context, key, to, walker string) (PR
 	}
 	out.PRClaim = c
 	if old.Warned {
-		if g := p.growler(); g != nil {
+		if g := p.Growler(); g != nil {
 			g.EndAbout(prWaitID(key, old.WarnN))
 		}
 	}
@@ -116,13 +116,13 @@ func (p *Proxy) MovePRClaimWith(ctx context.Context, key, to, walker string) (PR
 
 // copyReview pipes the old room's export into the new room's import. newID is empty, and nothing was made, when the
 // old room has no review of the key.
-func (p *Proxy) copyReview(ctx context.Context, key, from, to string) (oldID, newID string, err error) {
+func (p *Service) copyReview(ctx context.Context, key, from, to string) (oldID, newID string, err error) {
 	exp, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://"+hostFor(from)+"/v1/prs/export?key="+url.QueryEscape(key), nil)
+		"http://"+wire.HostFor(from)+"/v1/prs/export?key="+url.QueryEscape(key), nil)
 	if err != nil {
 		return "", "", err
 	}
-	res, err := p.roomClient(from).Do(exp)
+	res, err := p.RoomClient(from).Do(exp)
 	if err != nil {
 		return "", "", &moveError{http.StatusBadGateway, fmt.Sprintf(
 			"the review is on %s, which did not answer (%v). bring it back or move it later", from, err)}
@@ -140,12 +140,12 @@ func (p *Proxy) copyReview(ctx context.Context, key, from, to string) (oldID, ne
 	if oldID == "" {
 		return "", "", &moveError{http.StatusBadGateway, from + " exported a review and did not say which row it is"}
 	}
-	imp, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+hostFor(to)+"/v1/prs/import", res.Body)
+	imp, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+wire.HostFor(to)+"/v1/prs/import", res.Body)
 	if err != nil {
 		return "", "", err
 	}
 	imp.Header.Set("Content-Type", "application/gzip")
-	ires, err := p.roomClient(to).Do(imp)
+	ires, err := p.RoomClient(to).Do(imp)
 	if err != nil {
 		return "", "", &moveError{http.StatusBadGateway, fmt.Sprintf(
 			"%s did not take the review (%v). the claim and the review stay on %s", to, err, from)}
@@ -180,7 +180,7 @@ func roomSentence(res *http.Response) string {
 }
 
 // roomJSON is one JSON call to a room's human listener. A non-2xx is an error carrying the room's sentence.
-func (p *Proxy) roomJSON(ctx context.Context, room, method, path string, in, out any) error {
+func (p *Service) roomJSON(ctx context.Context, room, method, path string, in, out any) error {
 	var body io.Reader
 	if in != nil {
 		raw, _ := json.Marshal(in)
@@ -188,14 +188,14 @@ func (p *Proxy) roomJSON(ctx context.Context, room, method, path string, in, out
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, method, "http://"+hostFor(room)+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, "http://"+wire.HostFor(room)+path, body)
 	if err != nil {
 		return err
 	}
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return err
 	}

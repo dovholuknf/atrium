@@ -3,6 +3,7 @@ package link
 import (
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"net/http"
 	"strings"
 
@@ -156,17 +157,7 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 }
 
-// ffail answers a store error: a refusal is the caller's to fix, anything else is the hub's.
-func ffail(w http.ResponseWriter, err error) {
-	code := http.StatusServiceUnavailable
-	switch {
-	case errors.Is(err, hubstore.ErrItemNotFound), errors.Is(err, hubstore.ErrFlowItemNotFound), errors.Is(err, hubstore.ErrNoEpoch):
-		code = http.StatusNotFound
-	case hubstore.IsRefusal(err):
-		code = http.StatusBadRequest
-	}
-	crFail(w, code, err.Error())
-}
+var ffail = jsonio.StoreFail
 
 func (p *Proxy) flowRole(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	var in struct{ Do, Role, Room, Card, By string }
