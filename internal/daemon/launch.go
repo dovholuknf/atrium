@@ -855,6 +855,21 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		}
 	}
 
+	// A REQUIRED NEED THE ROOM LACKS REFUSES A FRESH LAUNCH before anything starts. The rest is a warning in the brief.
+	if req.Resume == "" {
+		text, err := setupFor(cwd, os.Getenv("PATH"))
+		if err != nil {
+			return nil, err
+		}
+		if text != "" {
+			if strings.TrimSpace(req.Brief) != "" {
+				req.Brief = strings.TrimRight(req.Brief, "\n") + "\n\n" + text
+			} else if strings.TrimSpace(req.Prompt) != "" {
+				req.Prompt = strings.TrimRight(req.Prompt, "\n") + "\n\n" + text
+			}
+		}
+	}
+
 	// ONE CARD PER DIRECTORY. A second card in a directory a live or parked card holds would take its hooks, so a
 	// launch that did not ask to skip or adopt is refused, naming that card.
 	if req.TaskID == "" && req.IfRunning == "" && home == nil && !throwaway {
