@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"context"
@@ -28,10 +28,10 @@ const mergeLandMsgMax = 200
 type mergeLandInfo struct {
 	Repo     string                  `json:"repo"`
 	Unlanded []hubstore.MergeRequest `json:"unlanded"`
-	Lands    []mergeLandOut          `json:"lands"`
+	Lands    []MergeLandOut          `json:"lands"`
 }
 
-type mergeLandOut struct {
+type MergeLandOut struct {
 	hubstore.MergeLand
 	OnMain bool `json:"on_main"`
 }
@@ -47,7 +47,7 @@ func operatorAuthor(want string) func(context.Context) (gitsync.LandAuthor, erro
 	}
 }
 
-func (p *Proxy) mergeLandGet(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) mergeLandGet(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	repo := hubstore.MergeRepoName(r.URL.Query().Get("repo"))
 	if repo == "" {
 		crFail(w, http.StatusBadRequest, "say which repository: repo=<host>/<owner>/<repo>")
@@ -61,7 +61,7 @@ func (p *Proxy) mergeLandGet(w http.ResponseWriter, r *http.Request, st *hubstor
 	crJSON(w, http.StatusOK, info)
 }
 
-func (p *Proxy) mergeLandRead(r *http.Request, st *hubstore.Store, repo string) (mergeLandInfo, error) {
+func (p *Service) mergeLandRead(r *http.Request, st *hubstore.Store, repo string) (mergeLandInfo, error) {
 	info := mergeLandInfo{Repo: repo}
 	var err error
 	if info.Unlanded, err = st.MergeUnlanded(repo); err != nil {
@@ -71,10 +71,10 @@ func (p *Proxy) mergeLandRead(r *http.Request, st *hubstore.Store, repo string) 
 	if err != nil {
 		return info, err
 	}
-	info.Lands = []mergeLandOut{}
-	g := p.git()
+	info.Lands = []MergeLandOut{}
+	g := p.Git()
 	for _, l := range lands {
-		o := mergeLandOut{MergeLand: l}
+		o := MergeLandOut{MergeLand: l}
 		if g != nil {
 			o.OnMain, _ = g.Store().OnMain(r.Context(), repo, l.Commit)
 		}
@@ -83,7 +83,7 @@ func (p *Proxy) mergeLandRead(r *http.Request, st *hubstore.Store, repo string) 
 	return info, nil
 }
 
-func (p *Proxy) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	var in struct{ Repo, By, Room string }
 	if err := crDecode(r, &in); err != nil {
 		crFail(w, http.StatusBadRequest, "could not read that: "+err.Error())
@@ -93,7 +93,7 @@ func (p *Proxy) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubst
 		crFail(w, http.StatusForbidden, "landing is the operator's: the board's Land now, or atrium merge land on the hub's machine")
 		return
 	}
-	g := p.git()
+	g := p.Git()
 	if g == nil {
 		crFail(w, http.StatusServiceUnavailable, "this hub keeps no git store, so it has nothing to land")
 		return
@@ -103,7 +103,7 @@ func (p *Proxy) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubst
 		crFail(w, http.StatusBadRequest, "say which repository: <host>/<owner>/<repo>")
 		return
 	}
-	author := p.merges.author
+	author := p.Merges.Author
 	if author == nil {
 		prof, err := st.OperatorProfile()
 		if err != nil {
@@ -118,8 +118,8 @@ func (p *Proxy) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubst
 		return
 	}
 	// The queue is paused for the cut, so claude/main does not move under it.
-	p.merges.run.Lock()
-	defer p.merges.run.Unlock()
+	p.Merges.Run.Lock()
+	defer p.Merges.Run.Unlock()
 	open, err := st.MergeList(hubstore.MergeFilter{Repo: repo, Open: true, Limit: 500})
 	if err != nil {
 		ffail(w, err)
@@ -166,8 +166,8 @@ func (p *Proxy) mergeLandRoute(w http.ResponseWriter, r *http.Request, st *hubst
 	}
 	p.RecordAudit("", "merge-land", fmt.Sprintf("land %d of %s: main %s..%s, %d requests", n, repo,
 		shortHex(cut.MainBefore), shortHex(cut.Commit), len(ns)))
-	p.backlogEvent("merge", map[string]string{"land": strconv.FormatInt(n, 10), "repo": repo})
-	crJSON(w, http.StatusCreated, mergeLandOut{MergeLand: l, OnMain: true})
+	p.BacklogEvent("merge", map[string]string{"land": strconv.FormatInt(n, 10), "repo": repo})
+	crJSON(w, http.StatusCreated, MergeLandOut{MergeLand: l, OnMain: true})
 }
 
 // mergeLandMessage is the land commit's one line: the land and the branches it carries, cut short with a count.

@@ -1,10 +1,11 @@
-package link
+package forge
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"io"
 	"log"
 	"net/http"
@@ -44,16 +45,16 @@ import (
 // board's growler says so. See prWarnSweep. Only the operator's move changes an owner.
 
 // SetPRClaims wires the claim table. Without it the claim route answers 404 and a PR is placed by nobody.
-func (p *Proxy) SetPRClaims(st *hubstore.Store) {
+func (p *Service) SetPRClaims(st *hubstore.Store) {
 	p.mu.Lock()
 	p.prc = st
 	p.mu.Unlock()
-	if p.hub != nil {
-		p.hub.PRClaim = http.HandlerFunc(p.servePRClaim)
+	if p.HubUp() {
+		p.MountPRClaim(http.HandlerFunc(p.servePRClaim))
 	}
 }
 
-func (p *Proxy) prClaims() *hubstore.Store {
+func (p *Service) PRClaims() *hubstore.Store {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.prc
@@ -63,13 +64,13 @@ func (p *Proxy) prClaims() *hubstore.Store {
 var liveStatuses = map[string]bool{"running": true, "needs-input": true, "needs-permission": true}
 
 // roomSessions is how many sessions a room is running, from its own task list. ok is false when it did not answer.
-func (p *Proxy) roomSessions(ctx context.Context, room string) (n int, ok bool) {
+func (p *Service) roomSessions(ctx context.Context, room string) (n int, ok bool) {
 	var body struct {
 		Tasks []struct {
 			Status string `json:"status"`
 		} `json:"tasks"`
 	}
-	if !p.roomGet(ctx, room, "/v1/tasks", &body) {
+	if !p.RoomGet(ctx, room, "/v1/tasks", &body) {
 		return 0, false
 	}
 	for _, t := range body.Tasks {
@@ -80,100 +81,81 @@ func (p *Proxy) roomSessions(ctx context.Context, room string) (n int, ok bool) 
 	return n, true
 }
 
-// markedRooms is the rooms that start nothing new.
-func (p *Proxy) markedRooms() map[string]bool {
-	out := map[string]bool{}
-	stock := p.inventory()
-	if stock == nil {
-		return out
-	}
-	known, err := stock.Known()
-	if err != nil {
-		return out
-	}
-	for _, k := range known {
-		if k.State == "marked-for-deletion" {
-			out[wire.KeyOf(k.Name)] = true
-		}
-	}
-	return out
-}
-
 // placeLoadWait is how long placement waits for the rooms' session counts.
-const placeLoadWait = 1500 * time.Millisecond
+const PlaceLoadWait = 1500 * time.Millisecond
 
 // roomLoad is what placement knows of one room. n is running sessions, negative for a room not to be used, ok whether
 // it answered, idle the idle CPU percent it last reported and nil when it never has.
-type roomLoad struct {
-	room string
-	n    int
+type RoomLoad struct {
+	Room string
+	N    int
 	ok   bool
 	// has is whether the room already holds the checkout the paste lands in. Only asked of a paste that names a repo.
 	has  bool
-	idle *float64
+	Idle *float64
 }
 
 // lessLoaded is whether l is a better home than o: fewer sessions, then more idle CPU with a room that reported a
 // figure ahead of one that did not, then the lower name.
-func (l roomLoad) lessLoaded(o roomLoad) bool {
-	if l.n != o.n {
-		return l.n < o.n
+func (l RoomLoad) LessLoaded(o RoomLoad) bool {
+	if l.N != o.N {
+		return l.N < o.N
 	}
-	if (l.idle == nil) != (o.idle == nil) {
-		return l.idle != nil
+	if (l.Idle == nil) != (o.Idle == nil) {
+		return l.Idle != nil
 	}
-	if l.idle != nil && *l.idle != *o.idle {
-		return *l.idle > *o.idle
+	if l.Idle != nil && *l.Idle != *o.Idle {
+		return *l.Idle > *o.Idle
 	}
-	return wire.KeyOf(l.room) < wire.KeyOf(o.room)
+	return wire.KeyOf(l.Room) < wire.KeyOf(o.Room)
 }
 
 // placePRRoom picks the room for a new PR: the least busy online room, a tie to the one with more idle CPU, then the
 // lower name.
 // `fallback` is the answer when no room could be asked, which is the asker for a claim and nothing for a paste.
-func (p *Proxy) placePRRoom(ctx context.Context, fallback string) string {
+func (p *Service) PlacePRRoom(ctx context.Context, fallback string) string {
 	return p.placePRRoomExcept(ctx, fallback, nil)
 }
 
 // placePRRoomExcept is placePRRoom with rooms passed over: the ones that already refused this paste, by key.
-func (p *Proxy) placePRRoomExcept(ctx context.Context, fallback string, skip map[string]string) string {
-	return p.placeRoomHolding(ctx, fallback, skip, "")
+func (p *Service) placePRRoomExcept(ctx context.Context, fallback string, skip map[string]string) string {
+	return p.PlaceRoomHolding(ctx, fallback, skip, "")
 }
 
 // roomHolds is whether a room already has a checkout of repo ("host/org/repo"). A room that does not answer, or is on
 // a build with no such question, reads as false: it is no worse than before.
-func (p *Proxy) roomHolds(ctx context.Context, room, repo string) bool {
+func (p *Service) roomHolds(ctx context.Context, room, repo string) bool {
 	var body struct {
 		Has bool `json:"has"`
 	}
-	return p.roomGet(ctx, room, "/v1/scm/has?repo="+url.QueryEscape(repo), &body) && body.Has
+	return p.RoomGet(ctx, room, "/v1/scm/has?repo="+url.QueryEscape(repo), &body) && body.Has
 }
 
 // placeRoomHolding is placePRRoomExcept that prefers, among the rooms it would take, one that already holds a checkout
 // of repo. A room with the clone opens the link in seconds, and any other clones the repo first, which is the slow part
 // of a pasted link. repo "" asks nothing and places by load alone. The holders are asked beside the session counts, so
 // placement waits no longer than it did.
-func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[string]string, repo string) string {
-	rooms := p.hub.Rooms()
-	marked := p.markedRooms()
-	got := make([]roomLoad, len(rooms))
+func (p *Service) PlaceRoomHolding(ctx context.Context, fallback string, skip map[string]string, repo string) string {
+	rooms := p.Rooms()
+	marked := p.MarkedRooms()
+	got := make([]RoomLoad, len(rooms))
 	// A ROOM THAT DOES NOT ANSWER IN TIME IS NOT WAITED FOR. The count is read from every room at once, and one that
 	// is slow or gone held the whole placement for roomGet's ten seconds, which a pasted link then spent in silence.
 	// A room that missed the wait reads as one that did not answer, and the second pass below still takes it when no
 	// other room can be had.
-	ctx, cancel := context.WithTimeout(ctx, placeLoadWait)
+	ctx, cancel := context.WithTimeout(ctx, PlaceLoadWait)
 	defer cancel()
 	var wg sync.WaitGroup
 	for i, a := range rooms {
-		got[i].room, got[i].idle = a.Name, a.IdleCPU
+		got[i].Room, got[i].Idle = a.Name, a.IdleCPU
 		if _, passed := skip[wire.KeyOf(a.Name)]; passed || marked[wire.KeyOf(a.Name)] || p.isDeaf(a) {
-			got[i].n = -1
+			got[i].N = -1
 			continue
 		}
 		wg.Add(1)
 		go func(i int, name string) {
 			defer wg.Done()
-			got[i].n, got[i].ok = p.roomSessions(ctx, name)
+			got[i].N, got[i].ok = p.roomSessions(ctx, name)
 		}(i, a.Name)
 		if repo != "" {
 			wg.Add(1)
@@ -184,11 +166,11 @@ func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[
 		}
 	}
 	wg.Wait()
-	var best *roomLoad
+	var best *RoomLoad
 	for pass := 0; pass < 2 && best == nil; pass++ {
 		for i := range got {
 			l := &got[i]
-			if l.n < 0 || (pass == 0 && !l.ok) {
+			if l.N < 0 || (pass == 0 && !l.ok) {
 				continue
 			}
 			if best != nil && l.has != best.has {
@@ -197,7 +179,7 @@ func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[
 				}
 				continue
 			}
-			if best == nil || l.lessLoaded(*best) {
+			if best == nil || l.LessLoaded(*best) {
 				best = l
 			}
 		}
@@ -205,7 +187,7 @@ func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[
 	if best == nil {
 		return fallback
 	}
-	return best.room
+	return best.Room
 }
 
 // ── a paste with no room named ──────────────────────────
@@ -217,21 +199,21 @@ func (p *Proxy) placeRoomHolding(ctx context.Context, fallback string, skip map[
 // `POST /v1/recognise` with no room goes the same way only for a row whose fetch is a command: the hub answers every
 // other one itself (recogniseroute.go). The room it went to is in X-Atrium-Placed-Room, set on the answer, and a room
 // too old to read the hub's rows hands the paste on to the next. See retryDeaf.
-func (p *Proxy) placeNewPR(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+func (p *Service) PlaceNewPR(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	if r.Method != http.MethodPost || (r.URL.Path != "/v1/prs" && r.URL.Path != "/v1/recognise") {
 		return r, true
 	}
-	if room, named := p.roomFor(r); named || room != "" {
+	if room, named := p.RoomFor(r); named || room != "" {
 		return r, true
 	}
-	if len(p.hub.Rooms()) < 2 {
+	if len(p.Rooms()) < 2 {
 		return r, true
 	}
-	room := p.placePRRoom(r.Context(), "")
+	room := p.PlacePRRoom(r.Context(), "")
 	if room == "" {
 		return r, true
 	}
-	return p.placePaste(r, room), true
+	return p.PlacePaste(r, room), true
 }
 
 // ── a room's claim ──────────────────────────────────────
@@ -251,19 +233,19 @@ type prClaimAsk struct {
 
 // roomLive is the live card a room has for a claim key, or "". A room on a build with no such question reads as having
 // none: the claim then moves, as the operator picked.
-func (p *Proxy) roomLive(ctx context.Context, room, key string) string {
+func (p *Service) roomLive(ctx context.Context, room, key string) string {
 	var body struct {
 		Card string `json:"card"`
 	}
-	if !p.roomGet(ctx, room, "/v1/open/live?key="+url.QueryEscape(key), &body) {
+	if !p.RoomGet(ctx, room, "/v1/open/live?key="+url.QueryEscape(key), &body) {
 		return ""
 	}
 	return body.Card
 }
 
-func (p *Proxy) servePRClaim(w http.ResponseWriter, r *http.Request) {
+func (p *Service) servePRClaim(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	st := p.prClaims()
+	st := p.PRClaims()
 	if st == nil || r.Method != http.MethodPost || r.URL.Path != PRClaimPrefix {
 		http.NotFound(w, r)
 		return
@@ -286,7 +268,7 @@ func (p *Proxy) servePRClaim(w http.ResponseWriter, r *http.Request) {
 // claimPR is the rule: an existing claim is the answer, otherwise the key is placed and recorded. When it was placed
 // on another room and the ask carried the paste, the paste is forwarded to that room. A forward that cannot reach the
 // owner gives the key to the asker, who is plainly online, since nothing was made on the owner.
-func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, ask prClaimAsk) (PRClaimAnswer, error) {
+func (p *Service) claimPR(ctx context.Context, st *hubstore.Store, asker string, ask prClaimAsk) (PRClaimAnswer, error) {
 	ans := PRClaimAnswer{Key: ask.Key}
 	if c, err := st.PRClaimOf(ask.Key); err == nil {
 		ans.Owner = c.Room
@@ -317,7 +299,7 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 	}
 	want := asker
 	if !ask.Held {
-		want = p.placePRRoom(ctx, asker)
+		want = p.PlacePRRoom(ctx, asker)
 	}
 	if want == "" {
 		want = asker
@@ -344,16 +326,16 @@ func (p *Proxy) claimPR(ctx context.Context, st *hubstore.Store, asker string, a
 
 // forwardPR hands a paste to the owner's `POST /v1/prs`. The owner claims the key itself, is told it is the owner, and
 // makes the row. A 5xx or a transport error is a refusal to take it.
-func (p *Proxy) forwardPR(ctx context.Context, room string, ask prClaimAsk) (int, json.RawMessage, error) {
+func (p *Service) forwardPR(ctx context.Context, room string, ask prClaimAsk) (int, json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	raw, _ := json.Marshal(map[string]string{"url": ask.URL, "why": ask.Why, "head": ask.Head})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+hostFor(room)+"/v1/prs", bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+wire.HostFor(room)+"/v1/prs", bytes.NewReader(raw))
 	if err != nil {
 		return 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -372,8 +354,8 @@ func (p *Proxy) forwardPR(ctx context.Context, room string, ask prClaimAsk) (int
 
 // servePRClaims lists the claims and takes the operator's move. THE MOVE IS THE ONE WAY AN OWNER CHANGES. The room
 // handoff that moves a PR's card calls it, and so does an operator by hand.
-func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string) {
-	st := p.prClaims()
+func (p *Service) ServePRClaims(w http.ResponseWriter, r *http.Request, sub string) {
+	st := p.PRClaims()
 	if st == nil {
 		http.NotFound(w, r)
 		return
@@ -392,12 +374,12 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 		crJSON(w, http.StatusOK, map[string]any{"claims": list})
 	case rest == "holder" && r.Method == http.MethodGet:
 		// WHO HOLDS A LINK, for the launch dialog to say before "go": the room, and the card it has live on it if any.
-		key, _ := p.openTargetOf(r.URL.Query().Get("url"), r.URL.Query().Get("repo"))
+		key, _ := p.OpenTargetOf(r.URL.Query().Get("url"), r.URL.Query().Get("repo"))
 		out := map[string]string{"key": key, "owner": "", "card": ""}
 		if key != "" {
 			if c, err := st.PRClaimOf(strings.ToLower(key)); err == nil {
 				out["owner"] = c.Room
-				ctx, cancel := context.WithTimeout(r.Context(), placeLoadWait)
+				ctx, cancel := context.WithTimeout(r.Context(), PlaceLoadWait)
 				out["card"] = p.roomLive(ctx, c.Room, strings.ToLower(key))
 				cancel()
 			}
@@ -439,22 +421,22 @@ func (p *Proxy) servePRClaims(w http.ResponseWriter, r *http.Request, sub string
 
 // ── the warning ─────────────────────────────────────────
 
-// prWarnGrace is how long a claim's room must stay offline before the board is warned. A test sets `warnGrace` on its
+// PRWarnGrace is how long a claim's room must stay offline before the board is warned. A test sets `warnGrace` on its
 // Proxy instead of waiting.
-const prWarnGrace = 2 * time.Minute
+const PRWarnGrace = 2 * time.Minute
 
-func prWaitID(key string, n int) string { return "prwait|" + key + "|" + itoaN(n) }
+func prWaitID(key string, n int) string { return "prwait|" + key + "|" + ItoaN(n) }
 
-func itoaN(n int) string { return strconv.Itoa(n) }
+func ItoaN(n int) string { return strconv.Itoa(n) }
 
 // prWarnSweep raises a WARNING growler for every claim whose room is offline and ends it when the room is back or the
 // claim moved. It is the growler's own ticker doing it, so nothing new runs. The growler is the board's alert and it
 // reaches every screen, the bell and the phone. The PR stays where it is: this only says so.
 //
-// A ROOM IS OFFLINE FOR prWarnGrace BEFORE IT WARNS, counted from when this sweep first saw it gone, so a blink of
+// A ROOM IS OFFLINE FOR PRWarnGrace BEFORE IT WARNS, counted from when this sweep first saw it gone, so a blink of
 // the network and a hub restart (when no room has dialled back yet) raise nothing.
-func (p *Proxy) prWarnSweep(g *Growler) bool {
-	st := p.prClaims()
+func (p *Service) PRWarnSweep(g *notify.Growler) bool {
+	st := p.PRClaims()
 	if st == nil {
 		return false
 	}
@@ -476,7 +458,7 @@ func (p *Proxy) prWarnSweep(g *Growler) bool {
 	p.mu.Unlock()
 	sort.Slice(claims, func(i, j int) bool { return claims[i].Key < claims[j].Key })
 	for _, c := range claims {
-		offline := !p.hub.Has(c.Room)
+		offline := !p.Has(c.Room)
 		p.mu.Lock()
 		if !offline {
 			delete(gone, c.Key)
@@ -485,14 +467,14 @@ func (p *Proxy) prWarnSweep(g *Growler) bool {
 		}
 		since := gone[c.Key]
 		p.mu.Unlock()
-		offline = offline && at.Sub(since) >= p.warnGrace
+		offline = offline && at.Sub(since) >= p.WarnGrace
 		switch {
 		case offline && !c.Warned:
 			n, flipped, err := st.PRClaimWarn(c.Key, true)
 			if err != nil || !flipped {
 				continue
 			}
-			raised, err := rs.Raise(c.Room, GrowlRow{ID: prWaitID(c.Key, n), Reason: ReasonQuestion, Subject: c.Key,
+			raised, err := rs.Raise(c.Room, notify.GrowlRow{ID: prWaitID(c.Key, n), Reason: notify.ReasonQuestion, Subject: c.Key,
 				Title: "WARNING: PR " + c.Key + " is on " + c.Room + ", which is offline",
 				Body:  "It stays claimed and waits for " + c.Room + " to return. Move it by hand to run it elsewhere."})
 			if err != nil {

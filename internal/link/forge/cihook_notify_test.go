@@ -1,17 +1,13 @@
 //go:build integration
 
-package link
+package forge
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
 type ciNote struct{ title, body string }
@@ -229,35 +225,5 @@ func TestEveryAcceptedPostRaisesExactlyOneNotice(t *testing.T) {
 	}
 	if len(n.all()) != 3 {
 		t.Fatalf("3 posts raised %d notices", len(n.all()))
-	}
-}
-
-func TestANoticeBecomesAGrowlerOnTheBoard(t *testing.T) {
-	x := newRelayPair(t)
-	defer x.stop()
-	st, err := hubstore.Open(filepath.Join(t.TempDir(), "hub.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	for _, r := range []string{"sg4", "m1mini"} {
-		if _, err := st.Add(r, hubstore.TransportDirect); err != nil {
-			t.Fatal(err)
-		}
-	}
-	x.proxy.SetGrowler(NewGrowler(testGrowlStore{st}))
-	secret, _ := st.MintCIHookSecret(false)
-	hook := NewCIHook(st, x.proxy.Deliverer(), nil)
-	x.proxy.SetCIHook(hook)
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(ciBody("o/r", 1, 1, "CI", "main", "failure")))
-	req.Header.Set(ciSecretHeader, secret)
-	hook.Receive(httptest.NewRecorder(), req)
-	rows, err := st.GrowlLive()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 || rows[0].RoomName != "m1mini" || !strings.HasPrefix(rows[0].ID, "ci|") || rows[0].Reason != ReasonCI ||
-		!strings.Contains(rows[0].Title, "CI failure: o/r CI on main") || !strings.Contains(rows[0].Body, "no route") {
-		t.Fatalf("growlers = %+v", rows)
 	}
 }

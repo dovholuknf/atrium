@@ -1,4 +1,4 @@
-package link
+package forge
 
 import (
 	"encoding/json"
@@ -46,13 +46,13 @@ type HubRecognisers struct {
 	Recognisers []*rules.Recogniser `json:"recognisers"`
 }
 
-// seedFunc reads the built-in rows. A hubForge holds one so a test can give a hub its own.
-type seedFunc func() ([]rules.Recogniser, error)
+// seedFunc reads the built-in rows. A HubForge holds one so a test can give a hub its own.
+type SeedFunc func() ([]rules.Recogniser, error)
 
 // seedRows is the built-in rows, or the ones this forge was given instead.
-func (f *hubForge) seedRows() seedFunc {
-	if f.seed != nil {
-		return f.seed
+func (f *HubForge) seedRows() SeedFunc {
+	if f.Seed != nil {
+		return f.Seed
 	}
 	return recognisers.Seed
 }
@@ -61,13 +61,13 @@ func (f *hubForge) seedRows() seedFunc {
 var recognisersMu sync.Mutex
 
 // hubRecogniserRows reads the hub's rows, seeding any built-in row it has never held.
-func hubRecogniserRows(st ForgeSettings, seed seedFunc) ([]*rules.Recogniser, error) {
+func HubRecogniserRows(st ForgeSettings, seed SeedFunc) ([]*rules.Recogniser, error) {
 	recognisersMu.Lock()
 	defer recognisersMu.Unlock()
 	return hubRecogniserRowsLocked(st, seed)
 }
 
-func hubRecogniserRowsLocked(st ForgeSettings, seedRows seedFunc) ([]*rules.Recogniser, error) {
+func hubRecogniserRowsLocked(st ForgeSettings, seedRows SeedFunc) ([]*rules.Recogniser, error) {
 	rows, err := readRecogniserRows(st)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func sortedRecognisers(rows []*rules.Recogniser) []*rules.Recogniser {
 
 // saveHubRecogniser checks and stores one row. What atrium observed of the row (failures, last use) is kept from
 // the row it replaces and never taken from the request, the same rule the room's table follows.
-func saveHubRecogniser(st ForgeSettings, seed seedFunc, in rules.Recogniser) (*rules.Recogniser, error) {
+func SaveHubRecogniser(st ForgeSettings, seed SeedFunc, in rules.Recogniser) (*rules.Recogniser, error) {
 	in, err := rules.CheckRecogniser(in)
 	if err != nil {
 		return nil, err
@@ -220,7 +220,7 @@ func saveHubRecogniser(st ForgeSettings, seed seedFunc, in rules.Recogniser) (*r
 }
 
 // deleteHubRecogniser removes one row. A built-in row stays deleted: its id is in the seeded list.
-func deleteHubRecogniser(st ForgeSettings, seed seedFunc, id string) error {
+func DeleteHubRecogniser(st ForgeSettings, seed SeedFunc, id string) error {
 	recognisersMu.Lock()
 	defer recognisersMu.Unlock()
 	rows, err := hubRecogniserRowsLocked(st, seed)
@@ -237,8 +237,8 @@ func deleteHubRecogniser(st ForgeSettings, seed seedFunc, id string) error {
 }
 
 // serveForgeRecognisers answers a room's question for the rows.
-func (p *Proxy) serveForgeRecognisers(w http.ResponseWriter, f *hubForge) {
-	rows, err := hubRecogniserRows(f.st, f.seedRows())
+func (p *Service) serveForgeRecognisers(w http.ResponseWriter, f *HubForge) {
+	rows, err := HubRecogniserRows(f.st, f.seedRows())
 	if err != nil {
 		forgeFail(w, http.StatusInternalServerError, &forge.HubError{Code: forge.CodeOther,
 			Message: "the hub's recognisers do not read: " + err.Error()})
@@ -250,12 +250,12 @@ func (p *Proxy) serveForgeRecognisers(w http.ResponseWriter, f *hubForge) {
 // hubRecognisersRoute answers the board's recogniser routes from the hub's table, in every view, since the table is
 // the hub's and no room's. False leaves the request to the rest of the proxy: a hub with no forge wired keeps the old
 // per-room behaviour.
-func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool {
+func (p *Service) HubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool {
 	const pre = "/v1/recognisers"
 	if r.URL.Path != pre && !strings.HasPrefix(r.URL.Path, pre+"/") {
 		return false
 	}
-	f := p.forgeSide()
+	f := p.ForgeSide()
 	if f == nil {
 		return false
 	}
@@ -264,7 +264,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 	id := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, pre), "/")
 	switch {
 	case id == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
-		rows, err := hubRecogniserRows(f.st, f.seedRows())
+		rows, err := HubRecogniserRows(f.st, f.seedRows())
 		if err != nil {
 			crFail(w, http.StatusInternalServerError, err.Error())
 			return true
@@ -281,7 +281,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 			return true
 		}
 		rec.ID = id
-		saved, err := saveHubRecogniser(f.st, f.seedRows(), rec)
+		saved, err := SaveHubRecogniser(f.st, f.seedRows(), rec)
 		if err != nil {
 			crFail(w, http.StatusBadRequest, err.Error())
 			return true
@@ -293,7 +293,7 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return true
 		}
-		if err := deleteHubRecogniser(f.st, f.seedRows(), id); err != nil {
+		if err := DeleteHubRecogniser(f.st, f.seedRows(), id); err != nil {
 			crFail(w, http.StatusInternalServerError, err.Error())
 			return true
 		}
@@ -306,8 +306,8 @@ func (p *Proxy) hubRecognisersRoute(w http.ResponseWriter, r *http.Request) bool
 }
 
 // recognisersChanged tells every open board, as a room's save does.
-func (p *Proxy) recognisersChanged(v any) {
+func (p *Service) recognisersChanged(v any) {
 	if data, err := json.Marshal(v); err == nil {
-		p.feeds.broadcast(wire.Event{Kind: "recognisers", Data: data})
+		p.Broadcast(wire.Event{Kind: "recognisers", Data: data})
 	}
 }

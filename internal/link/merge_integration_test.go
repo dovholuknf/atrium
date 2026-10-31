@@ -5,6 +5,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	forgepkg "github.com/dovholuknf/atrium/internal/link/forge"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -40,7 +41,7 @@ func newMergeFix(t *testing.T) *mergeFix {
 	t.Cleanup(srv.Close)
 	x.url = srv.URL + "/git/hub/" + boardRepo + ".git"
 	x.push(t, "main:refs/heads/claude/main")
-	x.p.merges.cardID = func(_ context.Context, _, agent string) string { return agent }
+	x.p.forgeService().Merges.CardID = func(_ context.Context, _, agent string) string { return agent }
 	return x
 }
 
@@ -137,7 +138,7 @@ func TestMergeQueueAsksCancelsAndRefuses(t *testing.T) {
 	if code, again := x.ask(t, "claude/foo", "w1@sg4"); code != http.StatusOK || again.N != m.N {
 		t.Fatalf("asked again: %d %+v", code, again)
 	}
-	x.p.mergeSchedule(context.Background())
+	x.p.forgeService().MergeSchedule(context.Background())
 	code, body := x.send("GET", "/_hub/merge?open=1", "")
 	if code != 200 || !strings.Contains(body, "no merge room") || !strings.Contains(body, `"queued"`) {
 		t.Fatalf("held: %d %s", code, body)
@@ -215,7 +216,7 @@ func TestMergeQueueLandsAGreenRefusesAWrongRoomAndKeepsARed(t *testing.T) {
 	if got := x.refOn(t, "refs/heads/claude/bar"); got == "" {
 		t.Fatal("a red branch was deleted")
 	}
-	if got := mergeLine(must(x.st.MergeGet(m.N))); !strings.Contains(got, "failed TestA") {
+	if got := forgepkg.MergeLine(must(x.st.MergeGet(m.N))); !strings.Contains(got, "failed TestA") {
 		t.Fatalf("told: %s", got)
 	}
 }
@@ -226,9 +227,9 @@ func TestMergeQueueConflictAndAMovedMainAreNotLanded(t *testing.T) {
 	x.commit(t, "main.txt", "ours")
 	x.push(t, "main:refs/heads/claude/main")
 	_, m := x.ask(t, "claude/baz", "w1@sg4")
-	x.p.merges.run.Lock()
-	x.p.mergeStart(context.Background(), x.st, x.g.Store(), m, "sg4")
-	x.p.mergeUnlock()
+	x.p.forgeService().Merges.Run.Lock()
+	x.p.forgeService().MergeStart(context.Background(), x.st, x.g.Store(), m, "sg4")
+	x.p.forgeService().MergeUnlock()
 	got := must(x.st.MergeGet(m.N))
 	if got.State != hubstore.MergeRefused || !strings.Contains(got.Reason, "main.txt") || !strings.Contains(got.Reason, "no merger could start") {
 		t.Fatalf("conflict: %+v", got)
@@ -298,7 +299,7 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, To: hubstore.MergeConflict, Reason: "conflicts in baz.txt"}))
 	must(x.st.MergeSetMerger(m.N, "m1@sg4"))
 
-	brief := mergerBrief(m, gitsync.MergeResult{Conflicts: []string{"baz.txt"}})
+	brief := forgepkg.MergerBrief(m, gitsync.MergeResult{Conflicts: []string{"baz.txt"}})
 	nb := MergerBranch(m.N)
 	if !strings.Contains(brief, "- baz.txt") || !strings.Contains(brief, "branch "+nb+" and of "+strconv.FormatInt(m.N, 10)) {
 		t.Fatalf("brief:\n%s", brief)
@@ -319,7 +320,7 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 	}
 	c := out.Request
 	must(x.st.MergeMove(hubstore.MergeStep{N: c.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
-	x.p.mergeEnd(context.Background(), x.st, hubstore.MergeStep{N: c.N, From: hubstore.MergeMerging, To: hubstore.MergeLanded, Landed: sha})
+	x.p.forgeService().MergeEnd(context.Background(), x.st, hubstore.MergeStep{N: c.N, From: hubstore.MergeMerging, To: hubstore.MergeLanded, Landed: sha})
 	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeLanded || got.Landed != sha {
 		t.Fatalf("the conflict lands through its merger: %+v", got)
 	}
@@ -328,7 +329,7 @@ func TestMergeMergerAsksWithOfAndLandsTheConflict(t *testing.T) {
 func TestMergeAConflictWhoseMergerStoppedIsRefused(t *testing.T) {
 	x := newMergeFix(t)
 	states := map[string]string{"m1": "running", "m2": "done", "m3": "", "m5": "dead"}
-	x.p.merges.cardState = func(_ context.Context, room, agent string) (string, bool) {
+	x.p.forgeService().Merges.CardState = func(_ context.Context, room, agent string) (string, bool) {
 		st, ok := states[agent]
 		return st, ok
 	}
@@ -348,7 +349,7 @@ func TestMergeAConflictWhoseMergerStoppedIsRefused(t *testing.T) {
 	if code, b := x.send("POST", "/_hub/merge", js(map[string]any{"repo": boardRepo, "branch": "claude/" + nb, "by": "m2@sg4", "of": carried.N})); code != 201 {
 		t.Fatalf("of: %d %s", code, b)
 	}
-	x.p.mergeWatchMergers(context.Background())
+	x.p.forgeService().MergeWatchMergers(context.Background())
 	for _, c := range []struct {
 		m    hubstore.MergeRequest
 		want string
@@ -363,7 +364,7 @@ func TestMergeAConflictWhoseMergerStoppedIsRefused(t *testing.T) {
 func TestMergeLandPutsOneCommitOnMainAndLeavesClaudeMain(t *testing.T) {
 	x := newMergeFix(t)
 	x.push(t, "main:refs/heads/main")
-	x.p.merges.author = func(context.Context) (gitsync.LandAuthor, error) {
+	x.p.forgeService().Merges.Author = func(context.Context) (gitsync.LandAuthor, error) {
 		return gitsync.LandAuthor{Name: "o", Email: "o@o"}, nil
 	}
 	green := func(name string) hubstore.MergeRequest {
@@ -399,7 +400,7 @@ func TestMergeLandPutsOneCommitOnMainAndLeavesClaudeMain(t *testing.T) {
 		t.Fatalf("a card lands: %d %s", code, body)
 	}
 	code, body := x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo}))
-	var l mergeLandOut
+	var l forgepkg.MergeLandOut
 	if code != 201 || json.Unmarshal([]byte(body), &l) != nil || len(l.Requests) != 2 || !l.OnMain || l.MainBefore != main ||
 		l.ClaudeBefore != claude || strings.Contains(body, "push") {
 		t.Fatalf("land: %d %s", code, body)
@@ -429,7 +430,7 @@ func TestMergeLandPutsOneCommitOnMainAndLeavesClaudeMain(t *testing.T) {
 		t.Fatalf("a branch after the land: %+v", got)
 	}
 	code, body = x.send("POST", "/_hub/merge/land", js(map[string]any{"repo": boardRepo}))
-	var l2 mergeLandOut
+	var l2 forgepkg.MergeLandOut
 	if code != 201 || json.Unmarshal([]byte(body), &l2) != nil || l2.MainBefore != l.Commit || x.refOn(t, "refs/heads/main") != l2.Commit {
 		t.Fatalf("a land onto the last land: %d %s", code, body)
 	}
@@ -452,19 +453,19 @@ func TestMergeQueueNeverLeavesARequestTesting(t *testing.T) {
 	x.branch(t, "quiet", "quiet.txt", "quiet")
 	_, m = x.ask(t, "claude/quiet", "w1@sg4")
 	m = x.testing(t, m.N)
-	x.p.mergeWatch(context.Background())
+	x.p.forgeService().MergeWatch(context.Background())
 	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeTesting {
 		t.Fatalf("a run within its bound was given up: %+v", got)
 	}
-	x.p.merges.now = func() time.Time { return time.Now().Add(mergeSilent + time.Minute) }
-	x.p.mergeWatch(context.Background())
+	x.p.forgeService().Merges.Now = func() time.Time { return time.Now().Add(forgepkg.MergeSilent + time.Minute) }
+	x.p.forgeService().MergeWatch(context.Background())
 	got := must(x.st.MergeGet(m.N))
 	if got.State != hubstore.MergeQueued || got.Retries != 0 || !strings.Contains(got.Reason, "did not answer") {
 		t.Fatalf("a room that never reported: %+v", got)
 	}
 
 	must(x.st.MergeMove(hubstore.MergeStep{N: m.N, From: hubstore.MergeQueued, To: hubstore.MergeMerging, Room: "sg4"}))
-	x.p.mergeRecover()
+	x.p.forgeService().MergeRecover()
 	if got := must(x.st.MergeGet(m.N)); got.State != hubstore.MergeQueued || got.Retries != 0 {
 		t.Fatalf("a restart while merging: %+v", got)
 	}
@@ -496,7 +497,7 @@ func TestMergeQueueHoldsWhenTheRoomCannotRunAndRefusesNobody(t *testing.T) {
 	if code, b := x.send("POST", "/_hub/merge/report", body); code != 200 {
 		t.Fatalf("cannot: %d %s", code, b)
 	}
-	x.p.mergeSchedule(context.Background())
+	x.p.forgeService().MergeSchedule(context.Background())
 	for _, n := range ns {
 		if got := must(x.st.MergeGet(n)); got.State != hubstore.MergeQueued || got.Retries != 0 {
 			t.Fatalf("request %d: %+v", n, got)
@@ -505,8 +506,8 @@ func TestMergeQueueHoldsWhenTheRoomCannotRunAndRefusesNobody(t *testing.T) {
 	if code, b := x.send("GET", "/_hub/merge?open=1", ""); code != 200 || !strings.Contains(b, `"held":{"github/o/r":"the merge room sg4 could not run it`) {
 		t.Fatalf("held: %d %s", code, b)
 	}
-	x.p.merges.now = func() time.Time { return time.Now().Add(time.Hour) }
-	x.p.mergeSchedule(context.Background())
+	x.p.forgeService().Merges.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	x.p.forgeService().MergeSchedule(context.Background())
 	if _, b := x.send("GET", "/_hub/merge?open=1", ""); strings.Contains(b, `"held":{"github/o/r":"the merge room sg4 could not run it`) {
 		t.Fatalf("still held after the wait: %s", b)
 	}

@@ -1,10 +1,11 @@
-package link
+package forge
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"io"
 	"log"
 	"net"
@@ -60,7 +61,7 @@ func (b *CIBinder) state(up bool, err error) {
 	}
 }
 
-func waitTimer(ctx context.Context, d time.Duration) bool {
+func WaitTimer(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {
@@ -82,7 +83,7 @@ func (b *CIBinder) Run(ctx context.Context) {
 		limit = ciBindCap
 	}
 	if wait == nil {
-		wait = waitTimer
+		wait = WaitTimer
 	}
 	name := b.Name
 	if name == "" {
@@ -166,8 +167,8 @@ var ciNoticeSeq atomic.Uint64
 // ciNotify puts one post in front of the operator as a growler on the board, the channel a new push device and a change
 // request already use. It hangs on the first room by name because a growler needs one. A hub with no room attached, or
 // none wired for growlers, says nothing here and the audit line is still written.
-func (p *Proxy) ciNotify(title, body string) {
-	g := p.growler()
+func (p *Service) ciNotify(title, body string) {
+	g := p.Growler()
 	if g == nil {
 		return
 	}
@@ -175,7 +176,7 @@ func (p *Proxy) ciNotify(title, body string) {
 	if !ok {
 		return
 	}
-	rooms := p.hub.Rooms()
+	rooms := p.Rooms()
 	if len(rooms) == 0 {
 		return
 	}
@@ -185,7 +186,7 @@ func (p *Proxy) ciNotify(title, body string) {
 	}
 	sort.Strings(names)
 	id := fmt.Sprintf("ci|%d|%d", time.Now().UnixNano(), ciNoticeSeq.Add(1))
-	raised, err := rs.Raise(names[0], GrowlRow{ID: id, Reason: ReasonCI, Title: title, Body: body})
+	raised, err := rs.Raise(names[0], notify.GrowlRow{ID: id, Reason: notify.ReasonCI, Title: title, Body: body})
 	if err != nil {
 		log.Printf("[hub] growlers could not raise a ci hook notice: %v", err)
 		return
@@ -196,7 +197,7 @@ func (p *Proxy) ciNotify(title, body string) {
 }
 
 // SetCIHook turns the hook on for this hub. A hub that never calls it answers /_hub/ci-hook 404.
-func (p *Proxy) SetCIHook(h *CIHook) {
+func (p *Service) SetCIHook(h *CIHook) {
 	if h.Tell == nil {
 		h.Tell = p.ciNotify
 	}
@@ -205,7 +206,7 @@ func (p *Proxy) SetCIHook(h *CIHook) {
 	p.mu.Unlock()
 }
 
-func (p *Proxy) ciHook() *CIHook {
+func (p *Service) CIHookOf() *CIHook {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.ci
@@ -213,8 +214,8 @@ func (p *Proxy) ciHook() *CIHook {
 
 // serveCIHook answers POST /_hub/ci-hook and GET or PUT /_hub/ci-hook/routes. Loopback only: it is not a second public
 // door, so a share or an overlay request is a 403.
-func (p *Proxy) serveCIHook(w http.ResponseWriter, r *http.Request, sub string) {
-	h := p.ciHook()
+func (p *Service) ServeCIHook(w http.ResponseWriter, r *http.Request, sub string) {
+	h := p.CIHookOf()
 	if h == nil {
 		http.NotFound(w, r)
 		return
