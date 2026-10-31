@@ -1,4 +1,4 @@
-package link
+package deploy
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 // A ROOM THAT DOES NOT ANSWER IS NOT COUNTED. A clear is typed into a terminal that room owns, so one that is
 // unreachable cannot be advancing one, and a deploy held forever by a room that is down is worse.
 
-// newContextRun is one card with a run in flight, as the board lists it.
-type newContextRun struct {
+// NewContextRun is one card with a run in flight, as the board lists it.
+type NewContextRun struct {
 	Room  string `json:"room"`
 	Card  string `json:"card"`
 	Name  string `json:"name"`
@@ -32,18 +32,18 @@ type newContextRun struct {
 }
 
 // label is how the run is named in a refusal: the card, the room, and the step it is on.
-func (r newContextRun) label() string {
+func (r NewContextRun) label() string {
 	return r.Name + "@" + r.Room + " (step " + strconv.Itoa(r.N) + " of 3, " + r.Step + ")"
 }
 
-// newContextsUnderWay asks each attached room for its cards and keeps the ones with a run that has not failed.
+// NewContextsUnderWay asks each attached room for its cards and keeps the ones with a run that has not failed.
 // A failed chip is not under way: nothing is typing and a restart loses nothing.
-func (p *Proxy) newContextsUnderWay(ctx context.Context) []newContextRun {
-	rooms := p.attachedView()
+func (p *Service) NewContextsUnderWay(ctx context.Context) []NewContextRun {
+	rooms := p.Attached()
 	var (
 		mu  sync.Mutex
 		wg  sync.WaitGroup
-		out []newContextRun
+		out []NewContextRun
 	)
 	for _, a := range rooms {
 		wg.Add(1)
@@ -61,7 +61,7 @@ func (p *Proxy) newContextsUnderWay(ctx context.Context) []newContextRun {
 					} `json:"new_context"`
 				} `json:"tasks"`
 			}
-			if !p.roomGet(ctx, room, "/v1/tasks", &body) {
+			if !p.RoomGet(ctx, room, "/v1/tasks", &body) {
 				return
 			}
 			mu.Lock()
@@ -77,7 +77,7 @@ func (p *Proxy) newContextsUnderWay(ctx context.Context) []newContextRun {
 				if name == "" {
 					name = t.ID
 				}
-				out = append(out, newContextRun{Room: room, Card: t.ID, Name: name, Step: t.NewContext.Step,
+				out = append(out, NewContextRun{Room: room, Card: t.ID, Name: name, Step: t.NewContext.Step,
 					N: t.NewContext.N, Since: t.NewContext.Since})
 			}
 		}(a.Name)
@@ -88,7 +88,7 @@ func (p *Proxy) newContextsUnderWay(ctx context.Context) []newContextRun {
 }
 
 // newContextNames is the runs as one sentence fragment, for a refusal.
-func newContextNames(runs []newContextRun) string {
+func newContextNames(runs []NewContextRun) string {
 	names := make([]string, len(runs))
 	for i, r := range runs {
 		names[i] = r.label()
@@ -96,16 +96,16 @@ func newContextNames(runs []newContextRun) string {
 	return strings.Join(names, ", ")
 }
 
-// serveNewContexts answers GET /_hub/new-contexts with the runs under way, so a deploy script can wait on them.
-func (p *Proxy) serveNewContexts(w http.ResponseWriter, r *http.Request) {
+// ServeNewContexts answers GET /_hub/new-contexts with the runs under way, so a deploy script can wait on them.
+func (p *Service) ServeNewContexts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "that has to be a GET"})
 		return
 	}
-	runs := p.newContextsUnderWay(r.Context())
+	runs := p.NewContextsUnderWay(r.Context())
 	if runs == nil {
-		runs = []newContextRun{}
+		runs = []NewContextRun{}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"under_way": runs, "count": len(runs)})
 }

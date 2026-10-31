@@ -109,13 +109,17 @@ var table = []row{
 		"internal/base/rules", "internal/base/safepath", "internal/base/scratch", "internal/base/shellpick", "internal/store",
 		"internal/base/testguard", "internal/base/webasset", "internal/wtfree",
 	}},
+	{4, "internal/link/deploy", []string{
+		"internal/base/address", "internal/base/edge", "internal/base/nowindow", "internal/deployready", "internal/gitsync", "internal/link/ctl",
+		"internal/link/wire",
+	}},
 	{4, "internal/link/docs", []string{
 		"internal/base/docshare", "internal/base/edge", "internal/hubstore", "internal/link/ctl", "internal/link/wire",
 	}},
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/docs", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
 	{3, "internal/daemon/shared", []string{"internal/base/nowindow", "internal/daemon/screen", "internal/store"}},

@@ -1,6 +1,6 @@
 //go:build windows
 
-package link
+package deploy
 
 import (
 	"os/exec"
