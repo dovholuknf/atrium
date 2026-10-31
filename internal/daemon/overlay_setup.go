@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/openziti/zrok/v2/environment/env_core"
@@ -40,7 +41,7 @@ func runSetup(name string, args []string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	err := cmd.Run()
 	out := strings.TrimSpace(buf.String())
 

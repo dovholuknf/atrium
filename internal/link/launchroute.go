@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // An UNSCOPED launch finds its own room: the one on the caller's machine that has
@@ -77,7 +78,7 @@ func (p *Proxy) placeLaunch(w http.ResponseWriter, r *http.Request) (*http.Reque
 	switch len(has) {
 	case 1:
 		r = r.Clone(r.Context())
-		r.Header.Set(RoomHeader, has[0])
+		r.Header.Set(wire.RoomHeader, has[0])
 		return r, true
 	case 0:
 		// A ROOM THAT DID NOT ANSWER MAY HAVE THE DIRECTORY, so "none matched" is

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // TASKS OF AN ITEM, ON THE HUB.
@@ -459,7 +460,7 @@ func (p *Proxy) taskStart(ctx context.Context, st *hubstore.Store, c *controlMCP
 		spawnedBy = name
 		if callerRoom != "" && callerRoom != room {
 			if id, _, err := c.resolvePeer(ctx, callerRoom, name); err == nil {
-				spawnedByID = tagFor(callerRoom, id)
+				spawnedByID = wire.TagFor(callerRoom, id)
 			}
 			spawnedBy = name + "@" + callerRoom
 		}
@@ -487,7 +488,7 @@ func (p *Proxy) taskOwner(st *hubstore.Store, id string, w hubstore.Work) taskOw
 // taskLaunchDone writes what a launch came to.
 func (p *Proxy) taskLaunchDone(st *hubstore.Store, t hubstore.Task, room string, out launchOutput, err error) {
 	if err == nil {
-		_, bare := splitTag(out.Card)
+		_, bare := wire.SplitTag(out.Card)
 		if e := st.TaskLaunched(t.BacklogID, t.TaskID, room+"~"+bare, false, ""); e != nil {
 			log.Printf("[hub] task %s/%s launched on %s and the hub could not write it: %v", t.BacklogID, t.TaskID, room, e)
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/linkfetch"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // discourseRedirects stands in for a Discourse forum: /t/<slug> redirects to /t/<slug>/<num>, as the real one does,
@@ -45,7 +46,7 @@ func (x *claimHub) recogniseVia(t *testing.T, room, url string) (int, rules.Reso
 	req, _ := http.NewRequest(http.MethodPost, x.front.URL+"/v1/recognise", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	if room != "" {
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

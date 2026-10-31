@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Which control tools a caller is shown.
@@ -134,7 +136,7 @@ type classEntry struct {
 // classOf is the class of the session that sent a request.
 func (c *controlMCP) classOf(r *http.Request) ctlClass {
 	agent := strings.TrimSpace(r.Header.Get(AgentHeader))
-	room := strings.TrimSpace(r.Header.Get(RoomHeader))
+	room := strings.TrimSpace(r.Header.Get(wire.RoomHeader))
 	if agent == "" {
 		// Not one of atrium's sessions, so nothing to look up.
 		return classFull

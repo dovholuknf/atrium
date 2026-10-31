@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // atrium_wake_after_restart queues on the CALLER's card and nobody else's, and
@@ -26,7 +28,7 @@ func TestWakeAfterRestartQueuesOnTheCallersOwnCard(t *testing.T) {
 			}})
 			return
 		}
-		got.method, got.path, got.room, got.by = r.Method, r.URL.Path, r.Header.Get(RoomHeader), r.URL.Query().Get("by")
+		got.method, got.path, got.room, got.by = r.Method, r.URL.Path, r.Header.Get(wire.RoomHeader), r.URL.Query().Get("by")
 		got.body = nil
 		_ = json.NewDecoder(r.Body).Decode(&got.body)
 		_ = json.NewEncoder(w).Encode(map[string]any{"queued": true, "cleared": true, "replaced": "older"})

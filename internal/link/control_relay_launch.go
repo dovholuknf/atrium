@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's half of a room's atrium_launch with `room`. See docs/fabric/cross-room-say-design.md.
@@ -51,7 +53,7 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 	spawnedBy, spawnedByID, spawnedByDir := strings.TrimSpace(req.From), "", ""
 	if spawnedBy != "" {
 		if id, _, err := c.resolvePeer(ctx, from, spawnedBy); err == nil {
-			spawnedByID = tagFor(from, id)
+			spawnedByID = wire.TagFor(from, id)
 			spawnedByDir = c.launcherDir(ctx, from, id)
 		}
 		spawnedBy += "@" + from

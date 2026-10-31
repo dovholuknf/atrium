@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The everywhere index: the cards that carry the tag, on every room, so a bare
@@ -500,7 +502,7 @@ func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyC
 // asPeer is the card as a row of atrium_peers. The alias is bare, unlike a row
 // from another room's list, because a bare name is what reaches this card.
 func (c everyCard) asPeer() peer {
-	return peer{Handle: c.sendName() + "@" + c.Room, Alias: c.Alias, Card: tagFor(c.Room, c.ID), Room: c.Room,
+	return peer{Handle: c.sendName() + "@" + c.Room, Alias: c.Alias, Card: wire.TagFor(c.Room, c.ID), Room: c.Room,
 		Title: c.Title, Status: c.Status, Everywhere: true}
 }
 

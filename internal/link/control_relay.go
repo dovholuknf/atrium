@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's half of a message between rooms. See docs/fabric/cross-room-say-design.md.
@@ -60,7 +62,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 		if err != nil {
 			return RelayAnswer{Code: code, Error: err.Error()}
 		}
-		return RelayAnswer{OK: true, To: card.sendName() + "@" + card.Room, Card: tagFor(card.Room, card.ID)}
+		return RelayAnswer{OK: true, To: card.sendName() + "@" + card.Room, Card: wire.TagFor(card.Room, card.ID)}
 	case RelayPeers:
 		if req.Everywhere && c.hub != nil {
 			// ONLY THE CARDS TAGGED atrium:everywhere, from the index, with no
@@ -170,7 +172,7 @@ func (c *controlMCP) postSay(ctx context.Context, room, id, handle, fromWire, te
 		return ans
 	}
 	return RelayAnswer{OK: true, Delivered: res.Delivered, When: res.When, Warning: res.Warning,
-		To: handle + "@" + room, Card: tagFor(room, id)}
+		To: handle + "@" + room, Card: wire.TagFor(room, id)}
 }
 
 // cardAcross reads `to` on `room`, named across, for a room's atrium_task.
@@ -262,7 +264,7 @@ func (c *controlMCP) peersElsewhere(ctx context.Context, besides string, all boo
 				alias = t.Alias + "@" + a.Name
 			}
 			out = append(out, RelayPeer{
-				Handle: t.Wire + "@" + a.Name, Alias: alias, Card: tagFor(a.Name, t.ID), Room: a.Name,
+				Handle: t.Wire + "@" + a.Name, Alias: alias, Card: wire.TagFor(a.Name, t.ID), Room: a.Name,
 				Title: t.Title, Status: t.Status, Doing: t.Activity.What, Where: t.Worktree,
 				Waiting: t.Wait, Owned: t.Superv,
 			})

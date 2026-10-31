@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The event stream, fanned in once and dealt back out per client.
@@ -703,7 +705,7 @@ func tagEvent(e Event) []byte {
 	}
 	for _, field := range taggedFields[e.Kind] {
 		if id, ok := target[field].(string); ok && id != "" {
-			target[field] = tagFor(e.Room, id)
+			target[field] = wire.TagFor(e.Room, id)
 		}
 	}
 	out, err := json.Marshal(obj)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -197,7 +198,7 @@ func (d *Daemon) RunSourceNow(id string) (int, error) {
 // left its children running and holding stdout, so Run never returned.
 func stopTreeOnCancel(cmd *exec.Cmd) {
 	cardproc.OwnGroup(cmd)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	cmd.Cancel = func() error {
 		killTree(cmd.Process.Pid)
 		return cmd.Process.Kill()
@@ -215,7 +216,7 @@ func (d *Daemon) readSource(ctx context.Context, s *store.Source) ([]store.Intak
 
 	cmd := exec.CommandContext(runCtx, s.Cmd, s.Args...)
 	cmd.Dir = s.Cwd
-	// A source runs on a timer and nobody asked to watch it. See hideWindow.
+	// A source runs on a timer and nobody asked to watch it. See nowindow.Hide.
 	stopTreeOnCancel(cmd)
 	// The daemon's own environment, minus the markers that would make a child
 	// think it is inside the session atrium was started from. Exactly what a

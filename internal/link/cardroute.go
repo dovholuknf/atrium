@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // A REQUEST THAT NAMES A CARD GOES TO THE ROOM THAT HOLDS IT. Backlog-2 item 63.
@@ -71,7 +72,7 @@ func (p *Proxy) placeCard(w http.ResponseWriter, r *http.Request) (*http.Request
 	if id == "" {
 		return r, true
 	}
-	room, bare := splitTag(id)
+	room, bare := wire.SplitTag(id)
 	if room != "" {
 		// A tag came in, so a tag goes back out on the answer, the launch's as
 		// well as a tagged path's. See `retagCard`.
@@ -228,7 +229,7 @@ func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, t
 	// caller's scope names it, and the handle with its room.
 	named := bareID
 	if len(p.hub.Rooms()) > 1 {
-		named = tagFor(hit.Room, bareID)
+		named = wire.TagFor(hit.Room, bareID)
 	}
 	w.Header().Set("X-Atrium-Card", named)
 	w.Header().Set("X-Atrium-Handle", hit.Card.Wire+"@"+hit.Room)
@@ -308,7 +309,7 @@ func launchCardIn(r *http.Request) string {
 		_ = json.Unmarshal(fields["task_id"], &id)
 		id = strings.TrimSpace(id)
 	}
-	if room, bare := splitTag(id); room != "" {
+	if room, bare := wire.SplitTag(id); room != "" {
 		fields["task_id"], _ = json.Marshal(bare)
 		if out, err := json.Marshal(fields); err == nil {
 			raw = out

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // limitsStock is a hub inventory with a settings table.
@@ -27,7 +29,7 @@ func postLimits(t *testing.T, url, room, body string) int {
 	req, _ := http.NewRequest(http.MethodPost, url+"/v1/settings", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if room != "" {
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

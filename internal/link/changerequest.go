@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Change requests between rooms, and the hub's read of whether a branch is pushed. See internal/hubstore/changerequest.go
@@ -688,7 +689,7 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 			continue
 		}
 		if t.Worktree != "" && path.Base(filepath.ToSlash(t.Worktree)) == tail {
-			_, bare := splitTag(t.ID)
+			_, bare := wire.SplitTag(t.ID)
 			found = append(found, bare)
 		}
 	}

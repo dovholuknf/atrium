@@ -22,6 +22,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -498,7 +499,7 @@ func (c *controlMCP) ask(ctx context.Context, method, path, room string, body, o
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if room != "" {
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 	}
 	res, err := c.client.Do(req)
 	if err != nil {
@@ -557,7 +558,7 @@ func roomOf(req *mcp.CallToolRequest) string {
 	if req == nil || req.Extra == nil || req.Extra.Header == nil {
 		return ""
 	}
-	return strings.TrimSpace(req.Extra.Header.Get(RoomHeader))
+	return strings.TrimSpace(req.Extra.Header.Get(wire.RoomHeader))
 }
 
 // ctlCard is the part of a task these tools report. The board's own shape is
@@ -824,7 +825,7 @@ func (c *controlMCP) resolvePeerOpt(ctx context.Context, room, who string, stric
 	if room == "" {
 		byRoom := map[string][]ctlCard{}
 		for _, t := range body.Tasks {
-			r, _ := splitTag(t.ID)
+			r, _ := wire.SplitTag(t.ID)
 			byRoom[r] = append(byRoom[r], t)
 		}
 		if len(byRoom) > 1 {
@@ -908,7 +909,7 @@ func namedFrom(room, scope, id, handle string) (string, string) {
 	if handle != "" {
 		handle += "@" + scope
 	}
-	return tagFor(scope, id), handle
+	return wire.TagFor(scope, id), handle
 }
 
 // ── say ────────────────────────────────────────────────────────────────────────
@@ -1209,7 +1210,7 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		id, _, err = c.resolvePeer(ctx, room, who)
 	} else {
 		scope, id, _, err = c.resolveCard(ctx, room, who)
-		if err != nil && !strings.Contains(who, "@") && !strings.Contains(who, idJoin) {
+		if err != nil && !strings.Contains(who, "@") && !strings.Contains(who, wire.IDJoin) {
 			// A READ, SO IT FALLS THROUGH like a say does, to the one card on
 			// another room that answers to this bare name. Continues as the
 			// read of that card, named across, exactly as `room~id` would.
@@ -1837,7 +1838,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	if r := strings.TrimSpace(in.Room); r != "" && !equalFold(r, room) {
 		if room != "" && spawnedBy != "" {
 			if id, _, err := c.resolvePeer(ctx, room, spawnedBy); err == nil {
-				spawnedByID = tagFor(room, id)
+				spawnedByID = wire.TagFor(room, id)
 				spawnedByDir = c.launcherDir(ctx, room, id)
 			}
 			spawnedBy += "@" + room
@@ -2076,7 +2077,7 @@ func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, 
 	itemNote := c.linkItemToCard(ctx, in.Tags, room, t.ID, spawnedBy)
 	if room != callerRoom && room != "" {
 		// Named the way atrium_say takes it from here.
-		out.Card, out.Handle = tagFor(room, t.ID), t.Wire+"@"+room
+		out.Card, out.Handle = wire.TagFor(room, t.ID), t.Wire+"@"+room
 	}
 	if brief != "" {
 		// The room wrote it; name it back in the same slash form the rest of

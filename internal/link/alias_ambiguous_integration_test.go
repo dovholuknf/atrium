@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Two rooms each hold a live card with the alias `minion`. A bare alias with no
@@ -25,7 +27,7 @@ func TestAnAliasOnTwoRoomsIsRefusedUnlessNamed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var tasks []map[string]any
-		if room := r.Header.Get(RoomHeader); room != "" {
+		if room := r.Header.Get(wire.RoomHeader); room != "" {
 			tasks = rooms[room]
 		} else {
 			for _, name := range []string{"roomA", "roomB"} {
@@ -34,7 +36,7 @@ func TestAnAliasOnTwoRoomsIsRefusedUnlessNamed(t *testing.T) {
 					for k, v := range t {
 						tagged[k] = v
 					}
-					tagged["id"] = tagFor(name, t["id"].(string))
+					tagged["id"] = wire.TagFor(name, t["id"].(string))
 					tasks = append(tasks, tagged)
 				}
 			}
@@ -60,7 +62,7 @@ func TestAnAliasOnTwoRoomsIsRefusedUnlessNamed(t *testing.T) {
 		"minion@roomA": "ida", "minion@roomB": "idb", "roomA~ida": "ida", "roomB~idb": "idb",
 	} {
 		scope, id, _, err := c.resolveCard(ctx, "", who)
-		if err != nil || id != want && id != tagFor(scope, want) {
+		if err != nil || id != want && id != wire.TagFor(scope, want) {
 			t.Errorf("resolveCard(%q) = %q, %v; want %q", who, id, err, want)
 		}
 	}

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // fakeBoardTasks stands in for the hub's own board API. It records the room
@@ -26,7 +28,7 @@ type fakeBoardTasks struct {
 
 func (f *fakeBoardTasks) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.sawRoom = r.Header.Get(RoomHeader)
+		f.sawRoom = r.Header.Get(wire.RoomHeader)
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/health":
@@ -46,7 +48,7 @@ func ctlReq(agent, room string) *mcp.CallToolRequest {
 		h.Set(AgentHeader, agent)
 	}
 	if room != "" {
-		h.Set(RoomHeader, room)
+		h.Set(wire.RoomHeader, room)
 	}
 	return &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: h}}
 }
@@ -143,7 +145,7 @@ func TestStatusCountsWaiting(t *testing.T) {
 func TestLaunchForwardsBriefToTheRoom(t *testing.T) {
 	var gotBrief, gotRoom string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotRoom = r.Header.Get(RoomHeader)
+		gotRoom = r.Header.Get(wire.RoomHeader)
 		var body struct {
 			Brief string `json:"brief"`
 			Cwd   string `json:"cwd"`

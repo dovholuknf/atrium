@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // atrium_backlog and atrium_reports, the control tools over /_hub/backlog and /_hub/reports. Full class has both,
@@ -320,7 +321,7 @@ func (c *controlMCP) linkItemToCard(ctx context.Context, tags []string, room, ca
 	}
 	var b hubstore.BacklogItem
 	err := c.ask(ctx, http.MethodPost, "/_hub/backlog/"+url.PathEscape(id), "", map[string]any{
-		"card": tagFor(room, card), "by": by}, &b)
+		"card": wire.TagFor(room, card), "by": by}, &b)
 	if err != nil {
 		return "the item " + id + " was not moved to in-progress: " + err.Error() + ". "
 	}
@@ -337,5 +338,5 @@ func (c *controlMCP) followItem(ctx context.Context, room, card, status, by stri
 		Followed bool `json:"followed"`
 	}
 	_ = c.ask(ctx, http.MethodPost, "/_hub/backlog/follow", "", map[string]any{
-		"card": tagFor(room, card), "status": strings.TrimSpace(status), "by": by}, &out)
+		"card": wire.TagFor(room, card), "status": strings.TrimSpace(status), "by": by}, &out)
 }

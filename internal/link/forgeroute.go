@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // THE HUB RUNS THE FORGE FOR ITS ROOMS. Design: docs/rnd/scm-forge-design.md, Built.
@@ -109,7 +111,7 @@ func (f *hubForge) takePeek(ref forge.Ref, fetching bool) *forge.PR {
 // 404, which a room reads as a hub that cannot be asked.
 func (p *Proxy) SetForge(st ForgeSettings, run forge.Runner) {
 	if run == nil {
-		run = forge.Exec(hideWindow)
+		run = forge.Exec(nowindow.Hide)
 	}
 	p.mu.Lock()
 	p.fg = &hubForge{st: st, run: run, open: map[string]string{}}
@@ -712,7 +714,7 @@ func (p *Proxy) serveForgeAdmin(w http.ResponseWriter, r *http.Request, rest str
 		crJSON(w, http.StatusOK, map[string]any{"entries": in.Entries})
 	case rest == "ci" && r.Method == http.MethodPost:
 		// The hub's own control MCP, for `atrium_ci` called on the hub. The room is the caller's, from its header.
-		p.serveCI(w, r, f, strings.TrimSpace(r.Header.Get(RoomHeader)))
+		p.serveCI(w, r, f, strings.TrimSpace(r.Header.Get(wire.RoomHeader)))
 	case rest == "check" && r.Method == http.MethodPost:
 		if err := docsCrossOrigin.Check(r); err != nil {
 			crFail(w, http.StatusForbidden, "a page on another origin cannot run the hub's forge check")

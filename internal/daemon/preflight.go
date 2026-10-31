@@ -13,6 +13,7 @@ import (
 
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -116,7 +117,7 @@ type preflightAnswer struct {
 func runPreflightCommand(ctx context.Context, exe string, args []string, out io.Writer) error {
 	exe, args = viaShellIfScript(exe, args)
 	cmd := exec.CommandContext(ctx, exe, args...)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	cmd.Stdout = out
 	cmd.Stderr = out
 	// A grandchild holding the pipe open must not outlive the timeout.

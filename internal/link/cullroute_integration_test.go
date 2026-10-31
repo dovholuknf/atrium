@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // f-010. atrium_cull takes a card on another room and reaches THAT room, with the
@@ -60,7 +62,7 @@ func TestTheHoldMarkAndPreflightGoToTheOneRoomNamed(t *testing.T) {
 	do := func(method, path, room, body string) (int, string) {
 		t.Helper()
 		req, _ := http.NewRequestWithContext(relayCtx(t), method, x.board+path, strings.NewReader(body))
-		req.Header.Set(RoomHeader, room)
+		req.Header.Set(wire.RoomHeader, room)
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -129,7 +131,7 @@ func TestARoomThatPredatesCullSaysSo(t *testing.T) {
 		{"/v1/tasks/s1/cull/hold", `{"hold":true}`},
 	} {
 		req, _ := http.NewRequestWithContext(relayCtx(t), http.MethodPost, x.board+c.path, strings.NewReader(c.body))
-		req.Header.Set(RoomHeader, "sg4")
+		req.Header.Set(wire.RoomHeader, "sg4")
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

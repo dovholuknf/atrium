@@ -25,6 +25,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/webasset"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // What the hub actually answers with.
@@ -363,16 +364,16 @@ func (p *Proxy) roomFor(r *http.Request) (name string, named bool) {
 	if v, _ := r.Context().Value(cardRoomKey{}).(string); v != "" {
 		return v, true
 	}
-	if room, _ := splitTag(cardIDIn(r.URL.Path)); room != "" {
+	if room, _ := wire.SplitTag(cardIDIn(r.URL.Path)); room != "" {
 		return room, true
 	}
-	if room, _ := splitTag(prIDIn(r.URL.Path)); room != "" {
+	if room, _ := wire.SplitTag(prIDIn(r.URL.Path)); room != "" {
 		return room, true
 	}
-	if v := strings.TrimSpace(r.Header.Get(RoomHeader)); v != "" {
+	if v := strings.TrimSpace(r.Header.Get(wire.RoomHeader)); v != "" {
 		return v, true
 	}
-	if v := strings.TrimSpace(r.URL.Query().Get(RoomParam)); v != "" {
+	if v := strings.TrimSpace(r.URL.Query().Get(wire.RoomParam)); v != "" {
 		return v, true
 	}
 	// Exactly one room needs no choosing. The operator was explicit: do not
@@ -444,7 +445,7 @@ func cardIDIn(path string) string {
 func untag(path string) string {
 	// A pull row's `room~pr_...` comes off the same way. See pulls.go.
 	if id := prIDIn(path); id != "" {
-		if room, bare := splitTag(id); room != "" {
+		if room, bare := wire.SplitTag(id); room != "" {
 			return strings.Replace(path, "/v1/prs/"+id, "/v1/prs/"+bare, 1)
 		}
 		return path
@@ -453,7 +454,7 @@ func untag(path string) string {
 	if id == "" {
 		return path
 	}
-	room, bare := splitTag(id)
+	room, bare := wire.SplitTag(id)
 	if room == "" {
 		return path
 	}
@@ -1062,7 +1063,7 @@ func (p *Proxy) retagCard(res *http.Response) error {
 	obj["room"] = room
 	for _, field := range []string{"id", "task_id"} {
 		if id, ok := obj[field].(string); ok && id != "" {
-			obj[field] = tagFor(room, id)
+			obj[field] = wire.TagFor(room, id)
 		}
 	}
 	out, err := json.Marshal(obj)

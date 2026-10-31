@@ -21,6 +21,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The merge queue's hub half. See docs/rnd/merge-queue.md, internal/hubstore/merge.go for the rows and
@@ -469,7 +470,7 @@ func (p *Proxy) mergeLauncher(ctx context.Context, room, agent string) (string, 
 	if at != "" {
 		lroom = at
 	}
-	if r, id := splitTag(t.SpawnedByID); id != "" {
+	if r, id := wire.SplitTag(t.SpawnedByID); id != "" {
 		if r != "" {
 			lroom = r
 		}
@@ -885,7 +886,7 @@ func (p *Proxy) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest, 
 	}
 	spawnedBy, spawnedByID := card.Wire, card.ID
 	if m.RequesterRoom != m.Room {
-		spawnedBy, spawnedByID = card.Wire+"@"+m.RequesterRoom, tagFor(m.RequesterRoom, card.ID)
+		spawnedBy, spawnedByID = card.Wire+"@"+m.RequesterRoom, wire.TagFor(m.RequesterRoom, card.ID)
 	}
 	in := launchInput{
 		Title: fmt.Sprintf("%s merge #%d %s", item, m.N, m.Branch), Repo: m.Repo, Branch: MergerBranch(m.N),
@@ -901,7 +902,7 @@ func (p *Proxy) mergeLaunchMerger(ctx context.Context, m hubstore.MergeRequest, 
 	}
 	handle := out.Handle
 	if handle == "" {
-		_, handle = splitTag(out.Card)
+		_, handle = wire.SplitTag(out.Card)
 	}
 	return handle + "@" + m.Room, nil
 }

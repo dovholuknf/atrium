@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // THE PULLS VIEW THROUGH THE HUB. Design: docs/rnd/pulls-view-design.md section 9. Contract: docs/review/pulls-api.md.
@@ -89,11 +90,11 @@ func (p *Proxy) placePR(w http.ResponseWriter, r *http.Request) (*http.Request, 
 	if id == "" {
 		return r, true
 	}
-	if room, _ := splitTag(id); room != "" {
+	if room, _ := wire.SplitTag(id); room != "" {
 		r = r.WithContext(context.WithValue(r.Context(), taggedKey{}, room))
 		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room)), true
 	}
-	if strings.TrimSpace(r.Header.Get(RoomHeader)) != "" || strings.TrimSpace(r.URL.Query().Get(RoomParam)) != "" {
+	if strings.TrimSpace(r.Header.Get(wire.RoomHeader)) != "" || strings.TrimSpace(r.URL.Query().Get(wire.RoomParam)) != "" {
 		return r, true
 	}
 	rooms := p.hub.Rooms()
@@ -252,7 +253,7 @@ func tagRaw(room string, v json.RawMessage) json.RawMessage {
 	if len(v) == 0 || json.Unmarshal(v, &s) != nil || s == "" {
 		return v
 	}
-	return rawString(tagFor(room, s))
+	return rawString(wire.TagFor(room, s))
 }
 
 // ── the ALL view's list ──────────────────────────────────
@@ -316,10 +317,10 @@ func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
 			}
 			obj["room"] = a.room
 			if id, ok := obj["id"].(string); ok {
-				obj["id"] = tagFor(a.room, id)
+				obj["id"] = wire.TagFor(a.room, id)
 			}
 			if id, ok := obj["walker_task"].(string); ok && id != "" {
-				obj["walker_task"] = tagFor(a.room, id)
+				obj["walker_task"] = wire.TagFor(a.room, id)
 			}
 			all = append(all, obj)
 		}
