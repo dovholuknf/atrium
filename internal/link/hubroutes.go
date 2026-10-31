@@ -37,8 +37,8 @@ type hubHandlers struct {
 func (p *Proxy) hubRoutes() *hubHandlers {
 	p.handlersOnce.Do(func() {
 		p.handlers = hubHandlers{
-			Files:         p.serveFiles,
-			Docs:          p.serveDocs,
+			Files:         p.docsService().ServeFiles,
+			Docs:          p.docsService().ServeDocs,
 			Push:          p.servePush,
 			Growls:        p.serveGrowls,
 			CIHook:        p.serveCIHook,
