@@ -11,7 +11,6 @@ terminals. A card outlives its process, state lives on disk, and storage failure
 | `docs/working-here.md` | a change, a merge or a landing: the full text of every rule below |
 | `docs/repo-reference.md` | ports, stack, layout, subcommands, out of scope |
 | `docs/README.md` | any other doc |
-| `docs/changes/README.md` | the notes a change ships |
 | `internal/store/AGENTS.md` | the schema or a query |
 | `internal/daemon/AGENTS.md` | the room, the permission chain, supervision, the peer bus |
 | `internal/api/AGENTS.md` | the room's HTTP surface |
