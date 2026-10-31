@@ -1,9 +1,10 @@
-package link
+package forge
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,15 +19,15 @@ const PlacedRoomHeader = "X-Atrium-Placed-Room"
 // named. A PR already claimed goes to its owner, so a second paste of the same PR lands where the first one did, and
 // a new one goes to the least busy room and is claimed there. Nothing here runs for a named room or a single room,
 // which are routed as they always were. The body's `host` is the claim key's host, and the room ignores it.
-func (p *Proxy) placePRWorktree(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+func (p *Service) PlacePRWorktree(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	if r.Method != http.MethodPost || r.Body == nil || !strings.HasPrefix(r.URL.Path, "/v1/providers/") ||
 		!strings.HasSuffix(r.URL.Path, "/pr-worktree") {
 		return r, true
 	}
-	if room, named := p.roomFor(r); named || room != "" {
+	if room, named := p.RoomFor(r); named || room != "" {
 		return r, true
 	}
-	if len(p.hub.Rooms()) < 2 {
+	if len(p.Rooms()) < 2 {
 		return r, true
 	}
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
@@ -39,15 +40,15 @@ func (p *Proxy) placePRWorktree(w http.ResponseWriter, r *http.Request) (*http.R
 	}
 	_ = json.Unmarshal(raw, &in)
 
-	st := p.prClaims()
+	st := p.PRClaims()
 	key := ""
 	if st != nil && in.Host != "" && in.Org != "" && in.Repo != "" && in.Number > 0 {
 		key = strings.ToLower(in.Host + "/" + in.Org + "/" + in.Repo + "/" + strconv.Itoa(in.Number))
 		if c, err := st.PRClaimOf(key); err == nil {
-			return p.placedOn(w, r, c.Room), true
+			return p.PlacedOn(w, r, c.Room), true
 		}
 	}
-	room := p.placePRRoom(r.Context(), "")
+	room := p.PlacePRRoom(r.Context(), "")
 	if room == "" {
 		return r, true
 	}
@@ -62,7 +63,7 @@ func (p *Proxy) placePRWorktree(w http.ResponseWriter, r *http.Request) (*http.R
 	}
 	// A PLACED PASTE, so a room with no scm folder hands it on to the next. See retryDeaf. The placed room header is
 	// set on the answer by rewrite, since the room it ends on may not be this one.
-	return p.placePaste(r, room), true
+	return p.PlacePaste(r, room), true
 }
 
 // prMade is a claim this request made, so a refusal by the room it was placed on can let it go. A pointer, since a
@@ -74,7 +75,7 @@ type prMade struct{ key, room string }
 // releaseOnRefusal wraps w when the request made a claim. When the placed room answers 4xx or 5xx (or the proxy could
 // not reach it), nothing was made there, so the claim is released and a retry places the key again. Without that a
 // refused clone or fetch would leave the key owned by a room that has no worktree for it.
-func (p *Proxy) releaseOnRefusal(w http.ResponseWriter, r *http.Request) http.ResponseWriter {
+func (p *Service) ReleaseOnRefusal(w http.ResponseWriter, r *http.Request) http.ResponseWriter {
 	m, ok := r.Context().Value(prMadeKey{}).(*prMade)
 	if !ok {
 		return w
@@ -83,8 +84,8 @@ func (p *Proxy) releaseOnRefusal(w http.ResponseWriter, r *http.Request) http.Re
 }
 
 // releasePRClaim lets go of a claim the room it was placed on refused, and ends its offline warning.
-func (p *Proxy) releasePRClaim(key, room string) {
-	st := p.prClaims()
+func (p *Service) releasePRClaim(key, room string) {
+	st := p.PRClaims()
 	if st == nil {
 		return
 	}
@@ -93,7 +94,7 @@ func (p *Proxy) releasePRClaim(key, room string) {
 		return
 	}
 	if c.Warned {
-		if g := p.growler(); g != nil {
+		if g := p.Growler(); g != nil {
 			g.EndAbout(prWaitID(key, c.WarnN))
 		}
 	}
@@ -132,7 +133,7 @@ func (rw *refusalWriter) Flush() {
 
 func (rw *refusalWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
 
-func (p *Proxy) placedOn(w http.ResponseWriter, r *http.Request, room string) *http.Request {
+func (p *Service) PlacedOn(w http.ResponseWriter, r *http.Request, room string) *http.Request {
 	w.Header().Set(PlacedRoomHeader, room)
-	return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room))
+	return r.WithContext(context.WithValue(r.Context(), wire.CardRoomKey{}, room))
 }

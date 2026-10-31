@@ -5,6 +5,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	forgepkg "github.com/dovholuknf/atrium/internal/link/forge"
 	"io"
 	"net/http"
 	"strings"
@@ -14,25 +15,8 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/rules"
 )
 
-// seedOf is a seed that gives exactly `rows`.
-func seedOf(rows ...rules.Recogniser) seedFunc {
-	return func() ([]rules.Recogniser, error) { return append([]rules.Recogniser(nil), rows...), nil }
-}
-
 // seedHub gives the hub's forge side the seed `rows`. Call it after SetForge.
-func seedHub(x *claimHub, rows ...rules.Recogniser) { x.proxy.forgeSide().seed = seedOf(rows...) }
-
-func seedRow(id string, rank int, pattern string) rules.Recogniser {
-	return rules.Recogniser{ID: id, Label: id, Enabled: true, Rank: rank, Pattern: pattern, FetchArgs: []string{}}
-}
-
-func rowIDs(rows []*rules.Recogniser) string {
-	ids := make([]string, 0, len(rows))
-	for _, r := range rows {
-		ids = append(ids, r.ID)
-	}
-	return strings.Join(ids, ",")
-}
+func seedHub(x *claimHub, rows ...rules.Recogniser) { x.proxy.forgeSide().Seed = seedOf(rows...) }
 
 // SEEDED ONCE PER ROW: a new hub gets the built-in rows, an edit is never overwritten, a delete stays deleted, and a
 // seed row added by a later build arrives once.
@@ -40,20 +24,20 @@ func TestTheHubSeedsItsRecognisersOncePerRow(t *testing.T) {
 	st := &memSettings{m: map[string]string{}}
 	seed := seedOf(seedRow("pr", 10, `/pull/\d+`), seedRow("issue", 20, `/issues/\d+`))
 
-	rows, err := hubRecogniserRows(st, seed)
+	rows, err := forgepkg.HubRecogniserRows(st, seed)
 	if err != nil || rowIDs(rows) != "pr,issue" {
 		t.Fatalf("first read = %s, %v", rowIDs(rows), err)
 	}
 	edited := seedRow("pr", 10, `/pull/(?P<num>\d+)`)
 	edited.Label = "mine"
-	if _, err := saveHubRecogniser(st, seed, edited); err != nil {
+	if _, err := forgepkg.SaveHubRecogniser(st, seed, edited); err != nil {
 		t.Fatal(err)
 	}
-	if err := deleteHubRecogniser(st, seed, "issue"); err != nil {
+	if err := forgepkg.DeleteHubRecogniser(st, seed, "issue"); err != nil {
 		t.Fatal(err)
 	}
 	seed = seedOf(seedRow("pr", 10, `/pull/\d+`), seedRow("issue", 20, `/issues/\d+`), seedRow("zendesk", 30, `/tickets/\d+`))
-	rows, err = hubRecogniserRows(st, seed)
+	rows, err = forgepkg.HubRecogniserRows(st, seed)
 	if err != nil || rowIDs(rows) != "pr,zendesk" {
 		t.Fatalf("after a new build = %s, %v", rowIDs(rows), err)
 	}
@@ -66,34 +50,34 @@ func TestTheHubSeedsItsRecognisersOncePerRow(t *testing.T) {
 func TestTheHubBackfillsTheDefaultRepoOnce(t *testing.T) {
 	st := &memSettings{m: map[string]string{}}
 	seed := seedOf(seedRow("zendesk", 30, `/tickets/\d+`))
-	if _, err := hubRecogniserRows(st, seed); err != nil {
+	if _, err := forgepkg.HubRecogniserRows(st, seed); err != nil {
 		t.Fatal(err)
 	}
-	delete(st.m, SettingRecognisersBackfill)
+	delete(st.m, forgepkg.SettingRecognisersBackfill)
 	zd := seedRow("zendesk", 30, `/tickets/\d+`)
 	zd.DefaultRepo = "github.com/openziti/ziti"
 	seed = seedOf(zd)
-	rows, err := hubRecogniserRows(st, seed)
+	rows, err := forgepkg.HubRecogniserRows(st, seed)
 	if err != nil || len(rows) != 1 || rows[0].DefaultRepo != "github.com/openziti/ziti" {
 		t.Fatalf("the backfill = %v %+v", err, rows)
 	}
-	again, _ := hubRecogniserRows(st, seed)
+	again, _ := forgepkg.HubRecogniserRows(st, seed)
 	if again[0].DefaultRepo != "github.com/openziti/ziti" {
 		t.Fatalf("the backfill was not written: %+v", again[0])
 	}
 	emptied := *again[0]
 	emptied.DefaultRepo = ""
-	if _, err := saveHubRecogniser(st, seed, emptied); err != nil {
+	if _, err := forgepkg.SaveHubRecogniser(st, seed, emptied); err != nil {
 		t.Fatal(err)
 	}
-	if rows, _ := hubRecogniserRows(st, seed); rows[0].DefaultRepo != "" {
+	if rows, _ := forgepkg.HubRecogniserRows(st, seed); rows[0].DefaultRepo != "" {
 		t.Errorf("an emptied default repo came back: %+v", rows[0])
 	}
 }
 
 // A ROW THAT DOES NOT COMPILE IS REFUSED at save, on the hub as on a room.
 func TestTheHubRefusesARecogniserThatDoesNotCompile(t *testing.T) {
-	if _, err := saveHubRecogniser(&memSettings{m: map[string]string{}}, seedOf(), seedRow("bad", 1, `(`)); err == nil {
+	if _, err := forgepkg.SaveHubRecogniser(&memSettings{m: map[string]string{}}, seedOf(), seedRow("bad", 1, `(`)); err == nil {
 		t.Fatal("a bad pattern was saved")
 	}
 }

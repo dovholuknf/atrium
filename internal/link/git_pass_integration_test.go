@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	forgepkg "github.com/dovholuknf/atrium/internal/link/forge"
 	"io"
 	"io/fs"
 	"net"
@@ -485,16 +486,16 @@ func TestReadersWithNoAddressShareTheReachsBudgetAndPeersWithOneDoNot(t *testing
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
 	lightSlot(t)
-	if got := readerKey("overlay", "ziti-edge-router connId=7, logical=er1"); got != "overlay" {
+	if got := forgepkg.ReaderKey("overlay", "ziti-edge-router connId=7, logical=er1"); got != "overlay" {
 		t.Errorf("a ziti peer is keyed %q", got)
 	}
-	if readerKey("overlay", "ziti-edge-router connId=7, logical=er1") != readerKey("overlay", "ziti-edge-router connId=8, logical=er2") {
+	if forgepkg.ReaderKey("overlay", "ziti-edge-router connId=7, logical=er1") != forgepkg.ReaderKey("overlay", "ziti-edge-router connId=8, logical=er2") {
 		t.Error("two connections of the overlay are two readers")
 	}
-	if a, b := readerKey("loopback", "127.0.0.1:5555"), readerKey("loopback", "127.0.0.1:6666"); a != b || a != "loopback:127.0.0.1" {
+	if a, b := forgepkg.ReaderKey("loopback", "127.0.0.1:5555"), forgepkg.ReaderKey("loopback", "127.0.0.1:6666"); a != b || a != "loopback:127.0.0.1" {
 		t.Errorf("one address on two ports: %q %q", a, b)
 	}
-	if readerKey("zrok-private", "192.0.2.7:1") == readerKey("zrok-private", "192.0.2.8:1") {
+	if forgepkg.ReaderKey("zrok-private", "192.0.2.7:1") == forgepkg.ReaderKey("zrok-private", "192.0.2.8:1") {
 		t.Error("two addresses are one reader")
 	}
 
