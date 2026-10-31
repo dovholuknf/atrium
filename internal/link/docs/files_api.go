@@ -1,4 +1,4 @@
-package link
+package docs
 
 import (
 	"encoding/json"
@@ -32,9 +32,9 @@ import (
 
 var filesCrossOrigin = http.NewCrossOriginProtection()
 
-// serveFiles answers every /_hub/files route.
-func (p *Proxy) serveFiles(w http.ResponseWriter, r *http.Request, sub string) {
-	st := p.docStore()
+// ServeFiles answers every /_hub/files route.
+func (p *Service) ServeFiles(w http.ResponseWriter, r *http.Request, sub string) {
+	st := p.DocStore()
 	if st == nil {
 		http.NotFound(w, r)
 		return
@@ -45,7 +45,7 @@ func (p *Proxy) serveFiles(w http.ResponseWriter, r *http.Request, sub string) {
 		parts = nil
 	}
 	write := r.Method != http.MethodGet && r.Method != http.MethodHead
-	// THE CROSS-ORIGIN CHECK COMES FIRST, before the route is worked out, as serveDocs does.
+	// THE CROSS-ORIGIN CHECK COMES FIRST, before the route is worked out, as ServeDocs does.
 	if write {
 		if err := filesCrossOrigin.Check(r); err != nil {
 			docSay(w, http.StatusForbidden, "a page on another origin cannot write files here")
@@ -97,7 +97,7 @@ func (p *Proxy) serveFiles(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 }
 
-func (p *Proxy) filesList(w http.ResponseWriter, st *hubstore.Store) {
+func (p *Service) filesList(w http.ResponseWriter, st *hubstore.Store) {
 	files, err := st.FileList("")
 	if err != nil {
 		docFail(w, err)
@@ -119,7 +119,7 @@ func (p *Proxy) filesList(w http.ResponseWriter, st *hubstore.Store) {
 	})
 }
 
-func (p *Proxy) filesSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) filesSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	set, err := st.FileSettings()
 	if err != nil {
 		docFail(w, err)
@@ -136,7 +136,7 @@ func (p *Proxy) filesSettings(w http.ResponseWriter, r *http.Request, st *hubsto
 	})
 }
 
-func (p *Proxy) filesSetSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) filesSetSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	if !docOperatorOnly(w, r, "the file drop's caps are changed") {
 		return
 	}
@@ -157,7 +157,7 @@ func (p *Proxy) filesSetSettings(w http.ResponseWriter, r *http.Request, st *hub
 
 // filesRaw serves the bytes, and ALWAYS as an attachment of octet-stream with nosniff, so a hostile HTML file cannot
 // run in the board's origin, which holds every card.
-func (p *Proxy) filesRaw(w http.ResponseWriter, r *http.Request, st *hubstore.Store, name string) {
+func (p *Service) filesRaw(w http.ResponseWriter, r *http.Request, st *hubstore.Store, name string) {
 	f, row, err := st.FileOpen(name)
 	if err != nil {
 		docFail(w, err)
@@ -167,13 +167,13 @@ func (p *Proxy) filesRaw(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", attachmentHeader(row.Name))
+	h.Set("Content-Disposition", AttachmentHeader(row.Name))
 	h.Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, "", time.Time{}, f)
 }
 
 // filesUpload takes one multipart form: `file` (required), `note` and `ttl_days`.
-func (p *Proxy) filesUpload(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) filesUpload(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	set, err := st.FileSettings()
 	if err != nil {
 		docFail(w, err)
