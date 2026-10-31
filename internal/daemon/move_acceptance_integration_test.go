@@ -106,7 +106,7 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		t.Fatalf("check %+v", out)
 	}
 	// Typing is refused while it is frozen. Its says and notices wait, once each.
-	if !a.frozenForMove(old.ID) || !a.holdingMessages(old.ID) {
+	if !a.FrozenForMove(old.ID) || !a.HoldingMessages(old.ID) {
 		t.Fatal("the old card is not held")
 	}
 	if code, out := say(t, a, map[string]string{"from": "sender", "to": "old", "text": "during the freeze"}); code != 200 {
@@ -218,7 +218,7 @@ func TestAnUndoLeavesTheOldCardAsItWas(t *testing.T) {
 	}
 	mvOK(t, a, "undo", map[string]any{"id": old.ID, "move_id": "mv9"})
 	mvOK(t, a, "undo", map[string]any{"id": old.ID, "move_id": "mv9"}) // idempotent
-	if a.frozenForMove(old.ID) {
+	if a.FrozenForMove(old.ID) {
 		t.Fatal("still frozen")
 	}
 	if got := pendingFrom(t, a, old.ID); len(got) != 1 || got[0].Text != "queued while moving" {
@@ -235,11 +235,11 @@ func TestAnExpiredLeaseUndoesTheFreeze(t *testing.T) {
 	mvOK(t, a, "freeze", map[string]any{"id": old.ID, "move_id": "mv7", "lease_seconds": 1})
 	say(t, a, map[string]string{"from": "sender", "to": "old", "text": "held"})
 	a.sweepFreezes(time.Now())
-	if !a.frozenForMove(old.ID) {
+	if !a.FrozenForMove(old.ID) {
 		t.Fatal("undone before the lease")
 	}
 	a.sweepFreezes(time.Now().Add(time.Minute))
-	if a.frozenForMove(old.ID) || len(pendingFrom(t, a, old.ID)) != 1 {
+	if a.FrozenForMove(old.ID) || len(pendingFrom(t, a, old.ID)) != 1 {
 		t.Fatal("the lease did not undo the freeze")
 	}
 	if code, _ := mv(t, a, "moved", map[string]any{"id": old.ID, "move_id": "mv7", "to": "x~y"}); code != http.StatusConflict {

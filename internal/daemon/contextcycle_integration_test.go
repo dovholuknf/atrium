@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +54,7 @@ func statuslines(d *Daemon, id string, n int) {
 }
 
 func step(d *Daemon, id string) string {
-	v, _ := d.newContextFor(id).(map[string]any)
+	v, _ := d.NewContextFor(id).(map[string]any)
 	if v == nil {
 		return ""
 	}
@@ -70,18 +71,18 @@ func TestTheLimitMidTurnTypesThePromptOncePerCycle(t *testing.T) {
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = time.Hour
+	d.hk.NcTiming.PromptLost = time.Hour
 	task, f, _ := cycleCard(t, d, 250_000)
 	id := task.ID
 	midTurn(d, id)
 
 	statuslines(d, id, 1)
 	until(t, "the limit prompt mid-turn", func() bool { return prompts(f) == 1 && strings.HasSuffix(f.written(), "\r") })
-	if v, _ := d.newContextFor(id).(map[string]any); v == nil || v["auto"] != true || v["step"] != NewContextLimit {
-		t.Fatalf("no automatic cycle on the limit step: %v", d.newContextFor(id))
+	if v, _ := d.NewContextFor(id).(map[string]any); v == nil || v["auto"] != true || v["step"] != cycle.NewContextLimit {
+		t.Fatalf("no automatic cycle on the limit step: %v", d.NewContextFor(id))
 	}
 
-	for turn := 1; turn <= maxLimitAsks; turn++ {
+	for turn := 1; turn <= cycle.MaxLimitAsks; turn++ {
 		statuslines(d, id, 20)
 		if got := prompts(f); got != 1 {
 			t.Fatalf("turn %d: %d prompts mid-turn, want 1", turn, got)
@@ -96,10 +97,10 @@ func TestTheLimitMidTurnTypesThePromptOncePerCycle(t *testing.T) {
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("cleared with no ack: %q", f.written())
 	}
-	if step(d, id) != NewContextLimit {
-		t.Fatalf("the cycle left the limit step with no ack: %v", d.newContextFor(id))
+	if step(d, id) != cycle.NewContextLimit {
+		t.Fatalf("the cycle left the limit step with no ack: %v", d.NewContextFor(id))
 	}
-	if v, _ := d.newContextFor(id).(map[string]any); v["prompted"] != 1 {
+	if v, _ := d.NewContextFor(id).(map[string]any); v["prompted"] != 1 {
 		t.Fatalf("the chip counts %v prompts, want 1", v["prompted"])
 	}
 }
@@ -118,7 +119,7 @@ func TestNoAckNeverClears(t *testing.T) {
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(d.hk.ncTiming.captureEnd + d.hk.ncTiming.clearWait)
+	deadline := time.Now().Add(d.hk.NcTiming.CaptureEnd + d.hk.NcTiming.ClearWait)
 	for time.Now().Before(deadline) {
 		midTurn(d, id)
 		statuslines(d, id, 3)
@@ -128,8 +129,8 @@ func TestNoAckNeverClears(t *testing.T) {
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("cleared with a handoff on disk and no ack: %q", f.written())
 	}
-	if step(d, id) != NewContextLimit {
-		t.Fatalf("the cycle gave up or moved on with no ack: %v", d.newContextFor(id))
+	if step(d, id) != cycle.NewContextLimit {
+		t.Fatalf("the cycle gave up or moved on with no ack: %v", d.NewContextFor(id))
 	}
 }
 
@@ -165,9 +166,9 @@ func TestAckThenClearThenWake(t *testing.T) {
 	}
 	ncTurnEnds(d, id)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "the wake", func() bool { return strings.Contains(f.written(), "read "+path+" and continue.") })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 	got := f.written()
 	if !(strings.Index(got, limitPrompt) < strings.Index(got, "/clear") &&
 		strings.Index(got, "/clear") < strings.Index(got, "read "+path)) {
@@ -204,8 +205,8 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 	statuslines(d, id, 3)
 	watch(t, d)
 	time.Sleep(50 * time.Millisecond) // wait: a negative check, the card must not be cycled
-	if d.newContextFor(id) != nil || prompts(f) != 0 {
-		t.Fatalf("a card switched off was cycled: %v %q", d.newContextFor(id), f.written())
+	if d.NewContextFor(id) != nil || prompts(f) != 0 {
+		t.Fatalf("a card switched off was cycled: %v %q", d.NewContextFor(id), f.written())
 	}
 	if cs, _ := d.contextSizeFor(id).(*ContextSize); cs == nil || cs.Cycle || !cs.Warn {
 		t.Fatalf("a switched-off card reads %+v, want warned and not cycling", cs)
@@ -217,8 +218,8 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 	}
 	statuslines(d, id, 3)
 	time.Sleep(50 * time.Millisecond) // wait: a negative check, the card must not be cycled
-	if d.newContextFor(id) != nil {
-		t.Fatalf("a card under its own limit was cycled: %v", d.newContextFor(id))
+	if d.NewContextFor(id) != nil {
+		t.Fatalf("a card under its own limit was cycled: %v", d.NewContextFor(id))
 	}
 	if cs, _ := d.contextSizeFor(id).(*ContextSize); cs == nil || !cs.Cycle || cs.Warn || cs.Source != "card" {
 		t.Fatalf("the card reads %+v, want cycling, under its own 300k", cs)
@@ -230,7 +231,7 @@ func TestTheCardSwitchAndOverride(t *testing.T) {
 	}
 	statuslines(d, id, 1)
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
-	if v, _ := d.newContextFor(id).(map[string]any); v["limit"] != int64(240_000) {
+	if v, _ := d.NewContextFor(id).(map[string]any); v["limit"] != int64(240_000) {
 		t.Fatalf("the cycle started on %v, want the card's 240k", v["limit"])
 	}
 }
@@ -241,7 +242,7 @@ func TestTheHubLimitStartsTheCycle(t *testing.T) {
 	fastNewContext(t, d)
 	task, f, _ := cycleCard(t, d, 150_000)
 	statuslines(d, task.ID, 2)
-	if d.newContextFor(task.ID) != nil {
+	if d.NewContextFor(task.ID) != nil {
 		t.Fatal("cycled under the default 200k")
 	}
 	if err := d.st.SetSetting(rules.SettingContextLimits, `{"claude":120}`); err != nil {
@@ -262,8 +263,8 @@ func TestACardBackUnderItsLimitDropsTheCycle(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return prompts(f) == 1 })
 	reply(90_000)
 	statuslines(d, id, 1)
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
-	if d.holdingMessages(id) || strings.Contains(f.written(), "/clear") {
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
+	if d.HoldingMessages(id) || strings.Contains(f.written(), "/clear") {
 		t.Fatalf("a dropped cycle still holds or cleared: %q", f.written())
 	}
 	if !historyHas(t, d, id, "fell back under its limit") {
@@ -306,8 +307,8 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 		t.Fatalf("ready with an empty file answered %d %s", rec.Code, rec.Body)
 	}
 	time.Sleep(50 * time.Millisecond) // wait: a negative check, a refused ack must not move the cycle
-	if step(d, id) != NewContextLimit || strings.Contains(f.written(), "/clear") {
-		t.Fatalf("a refused ack moved the cycle: %v", d.newContextFor(id))
+	if step(d, id) != cycle.NewContextLimit || strings.Contains(f.written(), "/clear") {
+		t.Fatalf("a refused ack moved the cycle: %v", d.NewContextFor(id))
 	}
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
@@ -343,7 +344,7 @@ func TestOnlySupervisedCardsCycle(t *testing.T) {
 // The limit prompt names atrium's limit with both numbers, the binary and the path, in clint's words.
 func TestTheLimitPromptWording(t *testing.T) {
 	t.Parallel()
-	got := newContextLimitPrompt("/data/handoffs/c1.md", "/usr/local/bin/atrium", false, 157_400, 150_000)
+	got := cycle.NewContextLimitPrompt("/data/handoffs/c1.md", "/usr/local/bin/atrium", false, 157_400, 150_000)
 	want := "This card is over its configured atrium context limit (157k of 150k). Pause your work now. Write a " +
 		"handoff to /data/handoffs/c1.md that says what is complete, what is in flight, and what's still to be done. " +
 		"Then run /usr/local/bin/atrium ready. Atrium clears your context when this turn ends and starts a new one " +
@@ -354,13 +355,13 @@ func TestTheLimitPromptWording(t *testing.T) {
 	if strings.Contains(got, "atrium_ready") {
 		t.Fatalf("a runner with a shell was offered the tool: %q", got)
 	}
-	got = newContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true, 157_400, 150_000)
+	got = cycle.NewContextLimitPrompt("/tmp/c1.md", "/usr/local/bin/atrium", true, 157_400, 150_000)
 	if strings.Contains(got, "/tmp/c1.md") || strings.Contains(got, " ready.") || !strings.Contains(got, "atrium_ready") ||
 		!strings.Contains(got, "(157k of 150k)") {
 		t.Fatalf("a runner with no shell was told %q", got)
 	}
 	// A cycle started by hand has no limit to name.
-	if got := newContextLimitPrompt("/tmp/c1.md", "atrium", false, 0, 0); !strings.HasPrefix(got,
+	if got := cycle.NewContextLimitPrompt("/tmp/c1.md", "atrium", false, 0, 0); !strings.HasPrefix(got,
 		"Atrium is starting a new context on this card. Pause your work now.") {
 		t.Fatalf("a manual cycle was told %q", got)
 	}
@@ -371,7 +372,7 @@ func TestTheLimitPromptWording(t *testing.T) {
 func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = time.Hour
+	d.hk.NcTiming.PromptLost = time.Hour
 	task, f, _ := ncCard(t, d)
 	reply := withTranscript(t, d, task)
 	reply(250_000)
@@ -396,7 +397,7 @@ func TestAResumedCardGetsAReadingAndCycles(t *testing.T) {
 func TestAFixtureCardCycles(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.promptLost = time.Hour
+	d.hk.NcTiming.PromptLost = time.Hour
 	task, f, _ := cycleCard(t, d, 250_000)
 	fx, err := d.st.SaveFixture(&store.Fixture{Harness: "claude", Cwd: task.Worktree, Enabled: true})
 	if err != nil {
@@ -424,18 +425,18 @@ func TestTheCycleWaitsForTheHumansLineAndQuiet(t *testing.T) {
 	run.noteOperatorTyped([]byte("i thought rooms w"))
 
 	statuslines(d, id, 10)
-	if d.newContextFor(id) != nil || prompts(f) != 0 {
-		t.Fatalf("the cycle started over a part-written line: %v", d.newContextFor(id))
+	if d.NewContextFor(id) != nil || prompts(f) != 0 {
+		t.Fatalf("the cycle started over a part-written line: %v", d.NewContextFor(id))
 	}
 
 	run.noteOperatorTyped(bytes.Repeat([]byte{0x7f}, 17))
 	statuslines(d, id, 3)
-	if d.newContextFor(id) != nil {
-		t.Fatalf("the cycle started a moment after the last key: %v", d.newContextFor(id))
+	if d.NewContextFor(id) != nil {
+		t.Fatalf("the cycle started a moment after the last key: %v", d.NewContextFor(id))
 	}
 
 	until(t, "the cycle once the line is empty and quiet", func() bool {
 		d.cycleOnStatusline(id)
-		return d.newContextFor(id) != nil
+		return d.NewContextFor(id) != nil
 	})
 }

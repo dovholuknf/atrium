@@ -362,7 +362,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// A new context is typing into this terminal itself. Bytes from a
 				// board or phone would land between its steps, so they are dropped.
 				// The ack still goes out so a paste does not hang.
-				if !shell && d.frozenForMove(taskID) {
+				if !shell && d.FrozenForMove(taskID) {
 					if in.ID != "" {
 						if msg, err := json.Marshal(attachInDone{T: "in-done", ID: in.ID}); err == nil {
 							_ = c.Write(ctx, websocket.MessageText, msg)
@@ -373,7 +373,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					}
 					continue
 				}
-				if !shell && d.nctx.typingHeld(taskID) {
+				if !shell && d.Nctx.TypingHeld(taskID) {
 					if in.ID != "" {
 						if msg, err := json.Marshal(attachInDone{T: "in-done", ID: in.ID}); err == nil {
 							_ = c.Write(ctx, websocket.MessageText, msg)
@@ -443,7 +443,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				run.echoToPeers([]byte(in.D), me)
 			case "clear-line":
 				if !shell {
-					d.ncClearLine(taskID, in.N)
+					d.NcClearLine(taskID, in.N)
 				}
 			case "echo":
 				// Turn shared multi-pane input on or off for the whole runner.
@@ -476,7 +476,7 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// A browser cannot press ctrl-c the way a terminal does, so
 				// the control character is sent explicitly on request.
 				if strings.EqualFold(in.S, "int") {
-					if !shell && d.nctx.typingHeld(taskID) {
+					if !shell && d.Nctx.TypingHeld(taskID) {
 						if msg, err := json.Marshal(attachInRefused{T: "in-refused", Why: "input is refused during a new context"}); err == nil {
 							_ = c.Write(ctx, websocket.MessageText, msg)
 						}

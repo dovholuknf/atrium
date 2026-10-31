@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
@@ -60,7 +61,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case d.holdingMessages(taskID):
+	case d.HoldingMessages(taskID):
 		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("a new-context cycle owns that terminal, so nothing was typed"))
 		return
 	case d.act.dialogOpen(taskID):
@@ -96,11 +97,11 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 		return false
 	}
 	switch {
-	case d.holdingMessages(taskID):
-		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a new-context cycle owns that terminal. "+newContextHoldNote))
+	case d.HoldingMessages(taskID):
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a new-context cycle owns that terminal. "+cycle.NewContextHoldNote))
 		return true
 	case holding:
-		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: "+d.deployHoldNote()))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: "+d.DeployHoldNote()))
 		return true
 	case d.act.dialogOpen(taskID):
 		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a dialog is on that terminal, and the Enter would answer it"))

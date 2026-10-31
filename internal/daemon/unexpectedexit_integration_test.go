@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,7 +48,7 @@ func comeBack(t *testing.T, d *Daemon, taskID string) (*fakePTY, time.Time) {
 	t.Helper()
 	r, f := typedRunner(t, d, taskID)
 	r.started = time.Now().Add(time.Second)
-	return f, r.started.Add(wakeNoHook)
+	return f, r.started.Add(cycle.WakeNoHook)
 }
 
 // exitEvents is the card's notice history.
@@ -86,7 +87,7 @@ func TestACrashMidTurnIsToldOnceTheRunnerIsBack(t *testing.T) {
 	d = roomOn(t, dir)
 	d.noteCrashMidTurn()
 	f, open := comeBack(t, d, card.ID)
-	d.wakeTick(open)
+	d.WakeTick(open)
 	got := f.written()
 	want := "\x1b[38;5;244m[atrium] unexpected exit: \x1b[0m"
 	if !strings.HasPrefix(got, want) {
@@ -97,7 +98,7 @@ func TestACrashMidTurnIsToldOnceTheRunnerIsBack(t *testing.T) {
 		!strings.HasSuffix(got, "\r") {
 		t.Fatalf("the notice text is wrong or was not sent: %q", got)
 	}
-	d.wakeTick(open.Add(time.Minute))
+	d.WakeTick(open.Add(time.Minute))
 	if again := f.written(); again != got {
 		t.Fatalf("the notice was typed twice: %q", again)
 	}
@@ -134,7 +135,7 @@ func TestAPlannedStopMidTurnIsToldToo(t *testing.T) {
 		t.Fatal("the planned-stop mark was not cleared by the start")
 	}
 	f, open := comeBack(t, d, card.ID)
-	d.wakeTick(open)
+	d.WakeTick(open)
 	if got := f.written(); !strings.Contains(got, "(restart) at ") {
 		t.Fatalf("the notice after a planned stop is wrong: %q", got)
 	}
@@ -157,7 +158,7 @@ func TestAnIdleCardGetsNoNotice(t *testing.T) {
 	d = roomOn(t, dir)
 	d.noteCrashMidTurn()
 	f, open := comeBack(t, d, idle.ID)
-	d.wakeTick(open)
+	d.WakeTick(open)
 	if f.written() != "" {
 		t.Fatalf("an idle card was typed into: %q", f.written())
 	}
@@ -175,7 +176,7 @@ func TestASelfQueuedWakeWinsOverTheNotice(t *testing.T) {
 	dir := t.TempDir()
 	d := roomOn(t, dir)
 	card := cardInStatus(t, d, "orchestrator", store.StatusRunning)
-	if _, _, err := d.queueWake(card.ID, "we up", "orchestrator"); err != nil {
+	if _, _, err := d.QueueWake(card.ID, "we up", "orchestrator"); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()
@@ -183,7 +184,7 @@ func TestASelfQueuedWakeWinsOverTheNotice(t *testing.T) {
 	d = roomOn(t, dir)
 	d.noteCrashMidTurn()
 	f, open := comeBack(t, d, card.ID)
-	d.wakeTick(open)
+	d.WakeTick(open)
 	got := f.written()
 	if !strings.Contains(got, "restart wake:") || !strings.Contains(got, "we up") {
 		t.Fatalf("the card's own wake was not typed: %q", got)
@@ -220,7 +221,7 @@ func TestRestartsInARowNeverStackNotices(t *testing.T) {
 		t.Fatalf("three crashes queued %d rows", len(ws))
 	}
 	f, open := comeBack(t, d, card.ID)
-	d.wakeTick(open)
+	d.WakeTick(open)
 	if n := strings.Count(f.written(), "unexpected exit"); n != 1 {
 		t.Fatalf("typed %d notices: %q", n, f.written())
 	}
@@ -263,7 +264,7 @@ func TestTheSettingOffDeliversNothing(t *testing.T) {
 	d.noteCrashMidTurn()
 	f, open := comeBack(t, d, card.ID)
 	g, _ := comeBack(t, d, other.ID)
-	d.wakeTick(open)
+	d.WakeTick(open)
 	if f.written() != "" || g.written() != "" {
 		t.Fatalf("typed with the setting off: %q %q", f.written(), g.written())
 	}

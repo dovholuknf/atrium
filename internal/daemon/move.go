@@ -135,7 +135,7 @@ func (d *Daemon) sweepFreezes(at time.Time) {
 				log.Printf("[atrium] %s undid its own move but could not resume: %v", id, err)
 			}
 		}
-		d.releaseHeld(id)
+		d.ReleaseHeld(id)
 		d.Publish(id)
 		log.Printf("[atrium] %s: the move's lease ran out, the card undid it", id)
 	}

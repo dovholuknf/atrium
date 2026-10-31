@@ -1,6 +1,8 @@
 package daemon
 
-import "time"
+import (
+	"time"
+)
 
 // ActivityTracker is what the rest of the room asks of the activity tracker. The features that leave the package take
 // this and never the struct.
@@ -39,36 +41,4 @@ type ActivityTracker interface {
 	looksIdleMark(taskID string) (idleMark, bool)
 }
 
-// NewContexts is what the rest of the room asks of the context cycle.
-type NewContexts interface {
-	get(taskID string) *newContext
-	claim(taskID string, c *newContext) (uint64, bool)
-	sessionStarted(taskID, conv string) bool
-	mine(taskID string, gen uint64) bool
-	advance(taskID string, gen uint64, step string) bool
-	kick(taskID string)
-	ack(taskID string) bool
-	waitingForAck(taskID string) bool
-	notePrompt(taskID string, gen uint64, turn int, at time.Time) bool
-	noteCleared(taskID string, gen uint64)
-	fail(taskID string, gen uint64, reason string) bool
-	finish(taskID string, gen uint64) bool
-	finishRecorded(taskID string, gen uint64, record func()) bool
-	clear(taskID string) bool
-	holding(taskID string) bool
-	holdsInput(taskID string) bool
-	beginCaptureOnly(taskID, file, conv string) (uint64, bool)
-	typingHeld(taskID string) bool
-	typingNow(taskID string) bool
-	arm(taskID string, gen uint64) (armed, changed bool)
-	setWaiting(taskID string, gen uint64, why string) bool
-	setTyping(taskID string, gen uint64, on bool) bool
-	seedFailed(taskID string, row ncJournalRow, reason string)
-	busyCard() string
-	stopAll()
-}
-
-var (
-	_ ActivityTracker = (*activityTracker)(nil)
-	_ NewContexts     = (*newContexts)(nil)
-)
+var _ ActivityTracker = (*activityTracker)(nil)

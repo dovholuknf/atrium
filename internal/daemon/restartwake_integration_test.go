@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -19,7 +20,7 @@ import (
 func queuedWake(t *testing.T, d *Daemon, text string) (*store.RestartWake, *runner, *fakePTY) {
 	t.Helper()
 	target, r, f := peerPair(t, d)
-	w, _, err := d.queueWake(target.ID, text, "orchestrator")
+	w, _, err := d.QueueWake(target.ID, text, "orchestrator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,17 +65,17 @@ func TestAWakeSurvivesTheDaemonComingBack(t *testing.T) {
 	}
 	d := open()
 	card := cardFor(t, d, "orchestrator")
-	if _, _, err := d.queueWake(card.ID, "we up", "orchestrator"); err != nil {
+	if _, _, err := d.QueueWake(card.ID, "we up", "orchestrator"); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()
 
 	d = open()
-	got := d.wake.get(card.ID)
+	got := d.Wake.Get(card.ID)
 	if got == nil || got.Text != "we up" {
 		t.Fatalf("the new daemon did not load the wake: %+v", got)
 	}
-	v, _ := d.wakeFor(card.ID).(map[string]any)
+	v, _ := d.WakeFor(card.ID).(map[string]any)
 	if v == nil || v["state"] != "waiting" {
 		t.Fatalf("the card does not show the waiting wake: %+v", v)
 	}
@@ -91,7 +92,7 @@ func TestAWakeWaitsForTheNewRunnerAnEmptyLineAndTheEndOfTheTurn(t *testing.T) {
 
 	// The runner that is up is the old one, started before the wake.
 	r.started = w.QueuedAt.Add(-time.Hour)
-	d.wakeTick(w.QueuedAt.Add(time.Minute))
+	d.WakeTick(w.QueuedAt.Add(time.Minute))
 	if f.written() != "" {
 		t.Fatalf("typed into the runner that queued the wake: %q", f.written())
 	}
@@ -99,16 +100,16 @@ func TestAWakeWaitsForTheNewRunnerAnEmptyLineAndTheEndOfTheTurn(t *testing.T) {
 	// The restart brings a new runner. Its session has started but not settled.
 	r.started = w.QueuedAt.Add(time.Second)
 	started := r.started.Add(time.Second)
-	d.wake.sawSession(id, started)
-	d.wakeTick(started.Add(wakeSettle / 2))
+	d.Wake.SawSession(id, started)
+	d.WakeTick(started.Add(cycle.WakeSettle / 2))
 	if f.written() != "" {
 		t.Fatalf("typed before the session settled: %q", f.written())
 	}
 
-	settled := started.Add(wakeSettle)
+	settled := started.Add(cycle.WakeSettle)
 	// Mid-turn: held.
 	d.act.set(id, ActivityTool, "Bash")
-	d.wakeTick(settled)
+	d.WakeTick(settled)
 	if f.written() != "" {
 		t.Fatalf("typed into a runner mid-turn: %q", f.written())
 	}
@@ -117,7 +118,7 @@ func TestAWakeWaitsForTheNewRunnerAnEmptyLineAndTheEndOfTheTurn(t *testing.T) {
 	d.act.set(id, ActivityIdle, "")
 	partial := "half a thou"
 	r.noteOperatorTyped([]byte(partial))
-	d.wakeTick(settled)
+	d.WakeTick(settled)
 	if f.written() != "" {
 		t.Fatalf("typed into a part written line: %q", f.written())
 	}
@@ -127,20 +128,20 @@ func TestAWakeWaitsForTheNewRunnerAnEmptyLineAndTheEndOfTheTurn(t *testing.T) {
 	r.typeMu.Lock()
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
-	d.wakeTick(settled)
+	d.WakeTick(settled)
 	got := f.written()
 	if !strings.Contains(got, "we up") || !strings.HasSuffix(got, "\r") {
 		t.Fatalf("the wake was not typed and sent: %q", got)
 	}
 
 	// Once. The row and the mirror are both gone, and another tick types nothing.
-	if d.wake.get(id) != nil {
+	if d.Wake.Get(id) != nil {
 		t.Fatal("the wake is still in the mirror after landing")
 	}
 	if ws, _ := d.st.RestartWakes(); len(ws) != 0 {
 		t.Fatalf("the wake is still in the store after landing: %+v", ws)
 	}
-	d.wakeTick(settled.Add(time.Minute))
+	d.WakeTick(settled.Add(time.Minute))
 	if again := f.written(); again != got {
 		t.Fatalf("the wake was typed twice: %q", again)
 	}
@@ -157,11 +158,11 @@ func TestAWakeReachesARunnerWithNoSessionHook(t *testing.T) {
 	w, r, f := queuedWake(t, d, "carry on")
 	r.started = w.QueuedAt.Add(time.Second)
 
-	d.wakeTick(r.started.Add(wakeNoHook / 2))
+	d.WakeTick(r.started.Add(cycle.WakeNoHook / 2))
 	if f.written() != "" {
 		t.Fatalf("typed into a runner with no hook before it had been up long: %q", f.written())
 	}
-	d.wakeTick(r.started.Add(wakeNoHook))
+	d.WakeTick(r.started.Add(cycle.WakeNoHook))
 	if !strings.Contains(f.written(), "carry on") {
 		t.Fatalf("never typed into a runner with no hook: %q", f.written())
 	}
@@ -176,12 +177,12 @@ func TestAWakeQueuedLongAgoIsStillDelivered(t *testing.T) {
 	// The runner that queued it stays the one that is up for three days.
 	r.started = w.QueuedAt.Add(-time.Hour)
 	for _, later := range []time.Duration{time.Hour, 25 * time.Hour, 72 * time.Hour} {
-		d.wakeTick(w.QueuedAt.Add(later))
+		d.WakeTick(w.QueuedAt.Add(later))
 	}
 	if f.written() != "" {
 		t.Fatalf("typed into the runner that queued the wake: %q", f.written())
 	}
-	if v, _ := d.wakeFor(id).(map[string]any); v == nil || v["text"] != "we up" {
+	if v, _ := d.WakeFor(id).(map[string]any); v == nil || v["text"] != "we up" {
 		t.Fatalf("the wake left the card while it waited: %+v", v)
 	}
 	if ws, _ := d.st.RestartWakes(); len(ws) != 1 {
@@ -190,7 +191,7 @@ func TestAWakeQueuedLongAgoIsStillDelivered(t *testing.T) {
 
 	// The runner finally comes back.
 	r.started = w.QueuedAt.Add(72 * time.Hour)
-	d.wakeTick(r.started.Add(wakeNoHook))
+	d.WakeTick(r.started.Add(cycle.WakeNoHook))
 	if !strings.Contains(f.written(), "we up") {
 		t.Fatalf("a wake queued three days ago was not typed: %q", f.written())
 	}
@@ -206,18 +207,18 @@ func TestAWakeIsTypedBehindTheAtriumLabel(t *testing.T) {
 	d := testDaemon(t)
 	w, r, f := queuedWake(t, d, "we up")
 	r.started = w.QueuedAt.Add(time.Second)
-	d.wakeTick(r.started.Add(wakeNoHook))
+	d.WakeTick(r.started.Add(cycle.WakeNoHook))
 
 	got := f.written()
 	want := "\x1b[38;5;244m[atrium] restart wake: \x1b[0m"
 	if !strings.HasPrefix(got, want) {
 		t.Fatalf("the wake was not typed behind the label: %q", got)
 	}
-	if wakeLabel != atriumLabel("restart wake:") || peerBanner("x") != atriumLabel("@x says:") {
+	if cycle.WakeLabel != atriumLabel("restart wake:") || peerBanner("x") != atriumLabel("@x says:") {
 		t.Fatal("the wake and the peer banner do not share one label style")
 	}
-	if strings.ContainsAny(wakeLabel, "\r\n") {
-		t.Fatalf("the label can press Enter: %q", wakeLabel)
+	if strings.ContainsAny(cycle.WakeLabel, "\r\n") {
+		t.Fatalf("the label can press Enter: %q", cycle.WakeLabel)
 	}
 	if !strings.Contains(got[len(want):], "we up") {
 		t.Fatalf("the text does not follow the label: %q", got)
@@ -235,7 +236,7 @@ func TestTheRestartWakeEndpoint(t *testing.T) {
 		req := httptest.NewRequest(method, "/v1/tasks/"+who+"/restart-wake", strings.NewReader(body))
 		req.SetPathValue("id", who)
 		rec := httptest.NewRecorder()
-		d.handleRestartWake(rec, req)
+		d.HandleRestartWake(rec, req)
 		var out map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
 		return rec, out
@@ -260,7 +261,7 @@ func TestTheRestartWakeEndpoint(t *testing.T) {
 	if _, out := call(http.MethodDelete, card.ID, ""); out["cleared"] != true {
 		t.Fatalf("clearing answered %v", out)
 	}
-	if d.wakeFor(card.ID) != nil {
+	if d.WakeFor(card.ID) != nil {
 		t.Fatal("the cleared wake is still on the card")
 	}
 }

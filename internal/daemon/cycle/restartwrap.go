@@ -1,9 +1,10 @@
-package daemon
+package cycle
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"net/http"
 	"os"
@@ -29,31 +30,31 @@ import (
 // one of its own. The wait is bounded, and a card that never answered is named in the log and on its history.
 
 // wrapBy is the `by` on the events and wakes the wrap-up writes.
-const wrapBy = "restart-wrap"
+const WrapBy = "restart-wrap"
 
 // wrapLabel goes ahead of the prompt, so nobody reads it as the operator's own words.
-var wrapLabel = atriumLabel("restart:")
+var WrapLabel = shared.AtriumLabel("restart:")
 
 // wrapTimings is how often a card is looked at.
-type wrapTimings struct{ poll time.Duration }
+type WrapTimings struct{ Poll time.Duration }
 
 // The outcomes of one card.
 const (
-	wrapReady      = "ready"
-	wrapIdle       = "idle"
-	wrapUnanswered = "unanswered"
+	WrapReady      = "ready"
+	WrapIdle       = "idle"
+	WrapUnanswered = "unanswered"
 	// wrapSkipped is a card that was not prompted: it settled before the prompt was typed, or its runner went.
-	wrapSkipped = "skipped"
+	WrapSkipped = "skipped"
 )
 
-func restartWrapPrompt(path, bin string) string {
+func RestartWrapPrompt(path, bin string) string {
 	return "the room is restarting. wrap up the current step, write your state to " + path +
 		", then run " + bin + " ready."
 }
 
-func restartWrapWake(path string, wrote bool, outcome string) string {
+func RestartWrapWake(path string, wrote bool, outcome string) string {
 	s := "the room restarted"
-	if outcome == wrapUnanswered {
+	if outcome == WrapUnanswered {
 		s += " before you answered its wrap-up"
 	}
 	s += ". carry on where you left off, and check git status first."
@@ -64,91 +65,91 @@ func restartWrapWake(path string, wrote bool, outcome string) string {
 }
 
 // restartWrap is the wrap-up under way: one at a time, with the cards waiting for their ack.
-type restartWrap struct {
-	mu      sync.Mutex
-	running bool
-	cancel  context.CancelFunc
-	cur     *wrapRun
-	acks    map[string]chan struct{}
+type RestartWrap struct {
+	Mu      sync.Mutex
+	Running bool
+	Cancel  context.CancelFunc
+	Cur     *WrapRun
+	Acks    map[string]chan struct{}
 }
 
 // wrapRun is the wrap-up under way, for a second stop to join. rep is written before done is closed.
-type wrapRun struct {
-	done     chan struct{}
-	deadline time.Time
-	rep      WrapReport
+type WrapRun struct {
+	Done     chan struct{}
+	Deadline time.Time
+	Rep      WrapReport
 }
 
 // wrapJoinMargin is how long past the running wrap-up's own deadline a joiner waits before it gives up on it. A
 // variable for a test.
-var wrapJoinMargin = 5 * time.Second
+var WrapJoinMargin = 5 * time.Second
 
-func newRestartWrap() *restartWrap { return &restartWrap{acks: map[string]chan struct{}{}} }
+func NewRestartWrap() *RestartWrap { return &RestartWrap{Acks: map[string]chan struct{}{}} }
 
 // waiting is whether a wrap-up waits on this card's ack.
-func (w *restartWrap) waiting(taskID string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	_, ok := w.acks[taskID]
+func (w *RestartWrap) Waiting(taskID string) bool {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
+	_, ok := w.Acks[taskID]
 	return ok
 }
 
 // ack records `atrium ready` from a card and says whether one was waited for.
-func (w *restartWrap) ack(taskID string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	ch, ok := w.acks[taskID]
+func (w *RestartWrap) Ack(taskID string) bool {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
+	ch, ok := w.Acks[taskID]
 	if !ok {
 		return false
 	}
-	delete(w.acks, taskID)
+	delete(w.Acks, taskID)
 	close(ch)
 	return true
 }
 
-func (w *restartWrap) expect(taskID string) chan struct{} {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (w *RestartWrap) Expect(taskID string) chan struct{} {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
 	ch := make(chan struct{})
-	w.acks[taskID] = ch
+	w.Acks[taskID] = ch
 	return ch
 }
 
-func (w *restartWrap) forget(taskID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	delete(w.acks, taskID)
+func (w *RestartWrap) Forget(taskID string) {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
+	delete(w.Acks, taskID)
 }
 
 // begin claims the wrap-up, due by deadline. When one is already running it returns that one to join and false.
-func (w *restartWrap) begin(cancel context.CancelFunc, deadline time.Time) (*wrapRun, bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.running {
-		return w.cur, false
+func (w *RestartWrap) Begin(cancel context.CancelFunc, deadline time.Time) (*WrapRun, bool) {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
+	if w.Running {
+		return w.Cur, false
 	}
-	w.running, w.cancel = true, cancel
-	w.cur = &wrapRun{done: make(chan struct{}), deadline: deadline}
-	return w.cur, true
+	w.Running, w.Cancel = true, cancel
+	w.Cur = &WrapRun{Done: make(chan struct{}), Deadline: deadline}
+	return w.Cur, true
 }
 
 // end releases the wrap-up with what it did, and wakes whoever joined it.
-func (w *restartWrap) end(rep WrapReport) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	run := w.cur
-	w.running, w.cancel, w.cur = false, nil, nil
+func (w *RestartWrap) End(rep WrapReport) {
+	w.Mu.Lock()
+	defer w.Mu.Unlock()
+	run := w.Cur
+	w.Running, w.Cancel, w.Cur = false, nil, nil
 	if run != nil {
-		run.rep = rep
-		close(run.done)
+		run.Rep = rep
+		close(run.Done)
 	}
 }
 
 // cancelRunning ends the wrap-up under way, if any: the restart is no longer waiting.
-func (w *restartWrap) cancelRunning() {
-	w.mu.Lock()
-	cancel := w.cancel
-	w.mu.Unlock()
+func (w *RestartWrap) CancelRunning() {
+	w.Mu.Lock()
+	cancel := w.Cancel
+	w.Mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
@@ -167,32 +168,32 @@ type WrapReport struct {
 }
 
 // wrapCandidate is a card that is working and so is asked.
-func (d *Daemon) wrapCandidate(t *store.Task) bool {
-	if !d.cycleSubject(t) || t.Status != store.StatusRunning || d.nctx.get(t.ID) != nil {
+func (d *Service) WrapCandidate(t *store.Task) bool {
+	if !d.CycleSubject(t) || t.Status != store.StatusRunning || d.Nctx.Get(t.ID) != nil {
 		return false
 	}
-	return !d.act.dialogOpen(t.ID) && d.ncBusy(t.ID)
+	return !d.Act.DialogOpen(t.ID) && d.NcBusy(t.ID)
 }
 
 // wrapUpForRestart asks every working card to wrap up, waits for each to say ready or go idle (at most wait), queues
 // a restart wake on each card asked and returns what happened. It narrates every step. The caller then restarts.
-func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why string) (rep WrapReport) {
+func (d *Service) WrapUpForRestart(ctx context.Context, wait time.Duration, why string) (rep WrapReport) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	run, mine := d.wrap.begin(cancel, time.Now().Add(wait))
+	run, mine := d.Wrap.Begin(cancel, time.Now().Add(wait))
 	if !mine {
-		return d.joinWrapUp(ctx, run)
+		return d.JoinWrapUp(ctx, run)
 	}
-	defer func() { d.wrap.end(rep) }()
+	defer func() { d.Wrap.End(rep) }()
 
 	start := time.Now()
 	var cards []*store.Task
-	for _, r := range d.sup.All() {
-		t, err := d.st.Get(r.TaskID())
+	for _, r := range d.Sup.All() {
+		t, err := d.St.Get(r.TaskID())
 		if err != nil || t == nil {
 			continue
 		}
-		if d.wrapCandidate(t) {
+		if d.WrapCandidate(t) {
 			cards = append(cards, t)
 		}
 	}
@@ -202,25 +203,25 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 	}
 	sort.Slice(cards, func(i, j int) bool { return cards[i].ID < cards[j].ID })
 	log.Printf("[atrium] restart wrap-up (%s): asking %d working card(s) to wrap up, waiting up to %s",
-		orWord(why, "no reason given"), len(cards), wait)
+		shared.OrWord(why, "no reason given"), len(cards), wait)
 
 	tctx, tcancel := context.WithTimeout(ctx, wait)
 	defer tcancel()
 	type result struct {
-		t       *store.Task
-		outcome string
-		path    string
+		T       *store.Task
+		Outcome string
+		Path    string
 	}
 	out := make(chan result, len(cards))
 	for _, t := range cards {
-		path, err := d.prepareHandoff(t)
+		path, err := d.PrepareHandoff(t)
 		if err != nil {
 			log.Printf("[atrium] restart wrap-up: %v. %s is asked without a state file", err, t.DisplayTitle())
-			path = d.handoffPath(t)
+			path = d.HandoffPath(t)
 		}
-		ack := d.wrap.expect(t.ID)
+		ack := d.Wrap.Expect(t.ID)
 		go func(t *store.Task, path string) {
-			out <- result{t: t, outcome: d.wrapCard(tctx, t, path, ack), path: path}
+			out <- result{T: t, Outcome: d.WrapCard(tctx, t, path, ack), Path: path}
 		}(t, path)
 	}
 	results := make([]result, 0, len(cards))
@@ -229,19 +230,19 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 	}
 	rep.Cancelled = ctx.Err() != nil
 	for _, r := range results {
-		d.wrap.forget(r.t.ID)
+		d.Wrap.Forget(r.T.ID)
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].t.ID < results[j].t.ID })
+	sort.Slice(results, func(i, j int) bool { return results[i].T.ID < results[j].T.ID })
 
 	for _, r := range results {
-		title := r.t.DisplayTitle()
-		switch r.outcome {
-		case wrapSkipped:
+		title := r.T.DisplayTitle()
+		switch r.Outcome {
+		case WrapSkipped:
 			log.Printf("[atrium] restart wrap-up: %s settled before it was asked, left alone", title)
 			continue
-		case wrapReady:
+		case WrapReady:
 			rep.Ready = append(rep.Ready, title)
-		case wrapIdle:
+		case WrapIdle:
 			rep.Idle = append(rep.Idle, title)
 		default:
 			rep.Unanswered = append(rep.Unanswered, title)
@@ -250,24 +251,24 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 			} else {
 				log.Printf("[atrium] restart wrap-up: %s did not answer within %s", title, wait)
 			}
-			if err := d.st.AppendEvent(r.t.ID, store.EventNotified, map[string]any{
-				"by": wrapBy, "unanswered": true,
+			if err := d.St.AppendEvent(r.T.ID, store.EventNotified, map[string]any{
+				"by": WrapBy, "unanswered": true,
 				"text": "restart: did not answer the wrap-up in " + wait.String(),
 			}); err != nil {
-				log.Printf("[atrium] could not record the unanswered wrap-up on %s: %v", r.t.ID, err)
+				log.Printf("[atrium] could not record the unanswered wrap-up on %s: %v", r.T.ID, err)
 			}
 		}
 		rep.Asked = append(rep.Asked, title)
-		if r.outcome != wrapUnanswered {
-			log.Printf("[atrium] restart wrap-up: %s is %s", title, r.outcome)
+		if r.Outcome != WrapUnanswered {
+			log.Printf("[atrium] restart wrap-up: %s is %s", title, r.Outcome)
 		}
-		if d.wake.get(r.t.ID) != nil {
+		if d.Wake.Get(r.T.ID) != nil {
 			log.Printf("[atrium] restart wrap-up: %s already has a wake of its own, keeping it", title)
 			continue
 		}
-		_, werr := os.Stat(r.path)
-		text := restartWrapWake(r.path, werr == nil, r.outcome)
-		if _, _, err := d.queueWake(r.t.ID, text, wrapBy); err != nil {
+		_, werr := os.Stat(r.Path)
+		text := RestartWrapWake(r.Path, werr == nil, r.Outcome)
+		if _, _, err := d.QueueWake(r.T.ID, text, WrapBy); err != nil {
 			log.Printf("[atrium] restart wrap-up: could not queue a wake on %s: %v", title, err)
 			continue
 		}
@@ -286,15 +287,15 @@ func (d *Daemon) wrapUpForRestart(ctx context.Context, wait time.Duration, why s
 
 // joinWrapUp waits for the wrap-up already running instead of starting another, so a second stop does not skip the
 // wait. It is bounded by that wrap-up's own deadline plus a margin, and by ctx. It answers with the same outcome.
-func (d *Daemon) joinWrapUp(ctx context.Context, run *wrapRun) WrapReport {
-	limit := time.Until(run.deadline) + d.hk.wrapJoinMargin
+func (d *Service) JoinWrapUp(ctx context.Context, run *WrapRun) WrapReport {
+	limit := time.Until(run.Deadline) + d.Hk.WrapJoinMargin
 	log.Printf("[atrium] restart wrap-up: one is already waiting, joining it for up to %s", limit.Round(time.Millisecond))
 	timer := time.NewTimer(limit)
 	defer timer.Stop()
 	start := time.Now()
 	select {
-	case <-run.done:
-		rep := run.rep
+	case <-run.Done:
+		rep := run.Rep
 		rep.Already = true
 		log.Printf("[atrium] restart wrap-up: the one already waiting is over after %s, same outcome",
 			time.Since(start).Round(time.Millisecond))
@@ -308,78 +309,78 @@ func (d *Daemon) joinWrapUp(ctx context.Context, run *wrapRun) WrapReport {
 }
 
 // wrapCard types the prompt into one card and waits for its ack or for it to go idle.
-func (d *Daemon) wrapCard(ctx context.Context, t *store.Task, path string, ack <-chan struct{}) string {
+func (d *Service) WrapCard(ctx context.Context, t *store.Task, path string, ack <-chan struct{}) string {
 	id := t.ID
-	mid := d.midTurnInputFor(id)
+	mid := d.MidTurnInputFor(id)
 	typed, typedBusy, turn0 := false, false, 0
-	tick := time.NewTicker(d.hk.wrapTiming.poll)
+	tick := time.NewTicker(d.Hk.WrapTiming.Poll)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			if !typed {
-				return wrapSkipped
+				return WrapSkipped
 			}
-			return wrapUnanswered
+			return WrapUnanswered
 		case <-ack:
-			return wrapReady
+			return WrapReady
 		case <-tick.C:
 		}
-		run := d.sup.Get(id)
+		run := d.Sup.Get(id)
 		if run == nil {
-			return wrapSkipped
+			return WrapSkipped
 		}
 		if !typed {
-			if !d.ncBusy(id) && d.act.sinceBusy(id) >= d.hk.ncTiming.turnSettle {
-				return wrapSkipped
+			if !d.NcBusy(id) && d.Act.SinceBusy(id) >= d.Hk.NcTiming.TurnSettle {
+				return WrapSkipped
 			}
 			busy, turn := false, 0
 			ok := func() bool {
-				if d.act.dialogOpen(id) {
+				if d.Act.DialogOpen(id) {
 					return false
 				}
-				busy = d.ncBusy(id)
-				turn = d.act.turnsBegun(id)
+				busy = d.NcBusy(id)
+				turn = d.Act.TurnsBegun(id)
 				return mid || !busy
 			}
-			text := restartWrapPrompt(path, d.hk.atriumBinary())
-			wrote, err := d.typeLabelledGuarded(run, id, wrapLabel, text, ok)
+			text := RestartWrapPrompt(path, d.Hk.AtriumBinary())
+			wrote, err := d.TypeLabelledGuarded(run, id, WrapLabel, text, ok)
 			if err != nil || !wrote {
 				continue
 			}
 			typed, typedBusy, turn0 = true, busy, turn
 			log.Printf("[atrium] restart wrap-up: asked %s to wrap up", t.DisplayTitle())
-			if err := d.st.AppendEvent(id, store.EventPrompted, map[string]any{
-				"text": text, "via": "terminal", "from": wrapBy,
+			if err := d.St.AppendEvent(id, store.EventPrompted, map[string]any{
+				"text": text, "via": "terminal", "from": WrapBy,
 			}); err != nil {
 				log.Printf("[atrium] could not record the wrap-up prompt on %s: %v", id, err)
 			}
 			continue
 		}
 		// Asked. Idle is a turn that is over and stayed over. A prompt typed between turns must have started one.
-		if !d.ncBusy(id) && d.act.sinceBusy(id) >= d.hk.ncTiming.turnSettle &&
-			(typedBusy || d.act.turnsBegun(id) > turn0) {
-			return wrapIdle
+		if !d.NcBusy(id) && d.Act.SinceBusy(id) >= d.Hk.NcTiming.TurnSettle &&
+			(typedBusy || d.Act.TurnsBegun(id) > turn0) {
+			return WrapIdle
 		}
 	}
 }
 
 // handleRestartWrap is POST /v1/restart-wrap: the wrap-up alone, answered when it is over. The hub-asked restart
 // calls it before it schedules the restarter. `?wait=` is seconds, else the room's setting.
-func (d *Daemon) handleRestartWrap(w http.ResponseWriter, r *http.Request) {
-	if !d.shutdownAllowed(w, r) {
+func (d *Service) HandleRestartWrap(w http.ResponseWriter, r *http.Request) {
+	if !d.ShutdownAllowed(w, r) {
 		return
 	}
-	wait := d.st.RestartWrapWait()
-	if n := parseSeconds(r.URL.Query().Get("wait")); n > 0 {
-		wait = capWrapWait(n)
+	wait := d.St.RestartWrapWait()
+	if n := ParseSeconds(r.URL.Query().Get("wait")); n > 0 {
+		wait = CapWrapWait(n)
 	}
-	rep := d.wrapUpForRestart(r.Context(), wait, r.URL.Query().Get("why"))
+	rep := d.WrapUpForRestart(r.Context(), wait, r.URL.Query().Get("why"))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rep)
 }
 
-func parseSeconds(v string) time.Duration {
+func ParseSeconds(v string) time.Duration {
 	var n int
 	if _, err := fmt.Sscanf(v, "%d", &n); err != nil || n <= 0 {
 		return 0
@@ -388,7 +389,7 @@ func parseSeconds(v string) time.Duration {
 }
 
 // capWrapWait holds a typed wait to the setting's own maximum, so a caller cannot ask for longer than the room allows.
-func capWrapWait(n time.Duration) time.Duration {
+func CapWrapWait(n time.Duration) time.Duration {
 	if max := store.MaxRestartWrapWaitS * time.Second; n > max {
 		log.Printf("[atrium] restart wrap-up: a wait of %s is over the limit, using %s", n, max)
 		return max

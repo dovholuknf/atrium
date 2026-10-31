@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -205,7 +206,7 @@ func TestForkOfASuperleanCardCarriesToolsAndMatchesTheLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := keepFlags(launch); !reflect.DeepEqual(fork, want) {
+	if want := cycle.KeepFlags(launch); !reflect.DeepEqual(fork, want) {
 		t.Fatalf("fork and launch differ:\n%q\n%q", fork, want)
 	}
 }
