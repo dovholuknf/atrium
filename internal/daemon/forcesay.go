@@ -82,7 +82,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 		d.notePeerTyped(taskID, e.from, e.text, e.kind, forcedHow)
 		delivered++
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"delivered": delivered})
 }
 
@@ -156,7 +156,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	if from == "" {
 		d.seenAnswered(taskID, store.SeenMessage)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	out := map[string]any{"delivered": "terminal", "forced": true, "when": whenWord(waitTurn)}
 	if inBox {
 		// Typed past the turn rule into a runner that queues it: in its box, not read. See typedQueued.

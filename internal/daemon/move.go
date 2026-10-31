@@ -135,7 +135,7 @@ func (d *Daemon) sweepFreezes(at time.Time) {
 			}
 		}
 		d.releaseHeld(id)
-		d.publishTask(id)
+		d.Publish(id)
 		log.Printf("[atrium] %s: the move's lease ran out, the card undid it", id)
 	}
 }

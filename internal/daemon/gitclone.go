@@ -73,7 +73,7 @@ func (d *Daemon) askToAdopt(task *store.Task, clone string) error {
 		return err
 	}
 	if !decided {
-		d.publishTask(task.ID)
+		d.Publish(task.ID)
 		d.ap.Broadcast("permission", p)
 		return gitsync.ErrAsked
 	}

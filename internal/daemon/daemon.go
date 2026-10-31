@@ -103,6 +103,8 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// Publish sends one card to the board. See publishCard.
+	Publish func(id string)
 	// homeSize is the size walk over the card homes. See homesize.go.
 	homeSize homeSizer
 	// hk is this daemon's own seams, delays and limits. A test changes its daemon's copy. See hooks.go.
@@ -126,7 +128,7 @@ type Daemon struct {
 	acProbe *autocompactProbe
 	// windingDown is set when shutdown begins. A session ending after it is the
 	// wind-down, never somebody deciding. See the session hook's `end`.
-	windingDown atomic.Bool
+	windingDown *atomic.Bool
 	// bootResumes is resume id to the card on the reopen list that takes it,
 	// for the length of one reopen pass. See reopenSaved.
 	bootResumes sync.Map
@@ -335,7 +337,7 @@ type Daemon struct {
 	// startedAt is when a launch last put a runner onto a card, keyed by card id,
 	// so a repeat of that launch answers with the card rather than a refusal. See
 	// repeatLaunch in launch.go.
-	startedAt sync.Map
+	startedAt *sync.Map
 	// kept is the cards a wake is delivering held messages to. See injectKept.
 	kept sync.Map
 
@@ -427,10 +429,13 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d := &Daemon{
 		hk: defaultHooks(), opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
-		nats:      map[overlayKind]*native{},
-		peerLimit: newPeerLimiter(),
-		launching: small.NewKeyedMutex(),
+		nats:        map[overlayKind]*native{},
+		peerLimit:   newPeerLimiter(),
+		launching:   small.NewKeyedMutex(),
+		windingDown: new(atomic.Bool),
+		startedAt:   new(sync.Map),
 	}
+	d.Publish = d.publishCard
 	d.ph.opts.Build = opts.HostBuild
 	if tune != nil {
 		tune(&d.hk)
@@ -853,7 +858,7 @@ func (d *Daemon) decideInner(permID, decision, reason, command string) (*store.P
 	if err != nil {
 		return nil, err
 	}
-	d.publishTask(p.TaskID)
+	d.Publish(p.TaskID)
 	d.ap.Broadcast("permission", p)
 	return p, nil
 }
@@ -1036,7 +1041,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, store.DecidedByMessage); err != nil {
 			return "", nil, err
 		}
-		d.publishTask(task.ID)
+		d.Publish(task.ID)
 		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
@@ -1084,7 +1089,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			log.Printf("[atrium] auto mode on %s ran out, so it is asking again",
 				task.DisplayTitle())
 			task.AutoApprove, task.AutoUntil = false, nil
-			d.publishTask(task.ID)
+			d.Publish(task.ID)
 		}
 	}
 	// Global auto has its own decider so the audit distinguishes board-wide approval from a session choice.
@@ -1103,7 +1108,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
 		return "", nil, err
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	d.ap.Broadcast("permission", p)
 	return p.ID, nil, nil
 }
@@ -1153,11 +1158,11 @@ func (d *Daemon) onPermDecided(permID, decision, reason string) {
 	if err := d.st.SetStatus(p.TaskID, store.StatusRunning); err != nil {
 		log.Printf("[atrium] status after decision: %v", err)
 	}
-	d.publishTask(p.TaskID)
+	d.Publish(p.TaskID)
 	d.ap.Broadcast("permission", p)
 }
 
-func (d *Daemon) publishTask(id string) {
+func (d *Daemon) publishCard(id string) {
 	t, err := d.st.Get(id)
 	if err != nil {
 		return
@@ -1165,8 +1170,8 @@ func (d *Daemon) publishTask(id string) {
 	d.ap.PublishTask(t)
 }
 
-// PublishTaskFunc is publishTask as the value a feature package takes in place of the Daemon.
-func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.publishTask }
+// PublishTaskFunc is Publish as the value a feature package takes in place of the Daemon.
+func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.Publish }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
 // BoardHandler is the human-facing surface: the JSON API, the event stream, the

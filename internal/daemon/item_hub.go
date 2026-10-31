@@ -168,7 +168,7 @@ func (d *Daemon) moveItem(id, state, note string) (*store.ItemRow, bool) {
 	}
 	if changed {
 		if it.TaskID != "" {
-			d.publishTask(it.TaskID)
+			d.Publish(it.TaskID)
 		}
 		d.kickItems()
 		// A pool card that finished an item is idle: the next one is typed. See item_pool.go.
@@ -317,7 +317,7 @@ func (d *Daemon) itemQueue(worker *store.Task, toID, key, text string) {
 			log.Printf("[atrium] could not resume %s for an item notice: %v", to.DisplayTitle(), err)
 		}
 	}
-	d.publishTask(toID)
+	d.Publish(toID)
 }
 
 // itemNotifyHolder asks the hub who holds a role owner's role, and says whether anybody was told.

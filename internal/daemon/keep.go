@@ -49,7 +49,7 @@ func (d *Daemon) keepOnCard(w http.ResponseWriter, from string, target *store.Ta
 		out["say"] = id
 	}
 	d.peerSaid(from, target, text, owedKind(kind, reply))
-	d.publishTask(target.ID)
+	d.Publish(target.ID)
 	log.Printf("[atrium] kept %s's say to %s (%s)", from, target.WireName, why)
 	writeJSONCode(w, http.StatusOK, out)
 }
@@ -183,7 +183,7 @@ func (d *Daemon) wakeGone(taskID, via string) error {
 	d.queueHandoffWake(taskID)
 	d.injectKept(taskID)
 	log.Printf("[atrium] %s had finished and is resumed (%s)", t.DisplayTitle(), via)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 

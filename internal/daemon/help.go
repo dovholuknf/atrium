@@ -190,7 +190,7 @@ func (d *Daemon) handleHelp(w http.ResponseWriter, r *http.Request) {
 	if in.Blocked {
 		d.act.forget(task.ID)
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 
 	if peer == "" {
 		log.Printf("[atrium] %s asked for help: %s", task.DisplayTitle(), ask)
@@ -298,7 +298,7 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	if answered {
 		d.askSettled(target.ID, from, settled)
 	}
-	d.publishTask(target.ID)
+	d.Publish(target.ID)
 	log.Printf("[atrium] %s answered %s (%d chars)", from, to, len(text))
 
 	note := queuedNote
@@ -373,7 +373,7 @@ func (d *Daemon) handleDismissAsks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.askSettled(taskID, askDismissed, settled)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"dismissed": len(settled)})
 }

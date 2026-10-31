@@ -222,7 +222,7 @@ func (d *Daemon) markIfMerged(w *store.WorkItem, into string, branches []string,
 	if !marked {
 		return fail("not markable")
 	}
-	d.publishTask(w.TaskID)
+	d.Publish(w.TaskID)
 	d.tellLauncherMerged(t, w, into, sha, at)
 	return at, ""
 }
@@ -308,7 +308,7 @@ func (d *Daemon) HoldCull(taskID, by string) error {
 	if err := d.st.HoldCull(taskID, by); err != nil {
 		return fmt.Errorf("%s has no work item to hold: %w", t.DisplayTitle(), err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 
@@ -348,7 +348,7 @@ func (d *Daemon) cullDue(w *store.WorkItem) {
 	drop := func(why string) {
 		log.Printf("[atrium] not culling %s at its time: %s", t.DisplayTitle(), why)
 		_, _ = d.st.ClearCullMark(w.TaskID)
-		d.publishTask(w.TaskID)
+		d.Publish(w.TaskID)
 	}
 	if !d.isWorker(t) {
 		drop("it is not a worker")
@@ -367,6 +367,6 @@ func (d *Daemon) cullDue(w *store.WorkItem) {
 		drop(err.Error())
 		return
 	}
-	d.publishTask(w.TaskID)
+	d.Publish(w.TaskID)
 	d.ap.Broadcast("task-removed", nil)
 }

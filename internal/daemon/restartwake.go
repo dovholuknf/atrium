@@ -173,7 +173,7 @@ func (d *Daemon) wakeSawSession(taskID, conv string) {
 		d.wake.sawConversation(taskID, conv)
 	}
 	if d.nctx.sessionStarted(taskID, conv) {
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 }
 
@@ -200,7 +200,7 @@ func (d *Daemon) queueWake(taskID, text, by string) (*store.RestartWake, *store.
 	}
 	d.wake.put(w)
 	log.Printf("[atrium] after-restart wake queued for %s by %s", taskID, orWord(w.By, "an unnamed caller"))
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return w, old, nil
 }
 
@@ -213,7 +213,7 @@ func (d *Daemon) clearWake(taskID, by string) (bool, error) {
 		return false, err
 	}
 	d.wake.forget(taskID)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return gone, nil
 }
 
@@ -258,7 +258,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 			return
 		}
 		d.wake.forget(w.TaskID)
-		d.publishTask(w.TaskID)
+		d.Publish(w.TaskID)
 		return
 	}
 
@@ -291,7 +291,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	}
 	d.wake.forget(w.TaskID)
 	log.Printf("[atrium] after-restart wake (%s) typed into %s", orWord(w.By, "unnamed"), w.TaskID)
-	d.publishTask(w.TaskID)
+	d.Publish(w.TaskID)
 }
 
 // wakeRunnerReady reports whether the runner up now is the one the wake is for,

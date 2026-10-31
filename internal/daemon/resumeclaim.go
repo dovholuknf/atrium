@@ -43,7 +43,7 @@ func (d *Daemon) claimResume(task *store.Task, resume, via string, byID bool) er
 			"reason": fmt.Sprintf("took conversation %s from %q, which had no live session",
 				resume, old.DisplayTitle()),
 		})
-		d.publishTask(old.ID)
+		d.Publish(old.ID)
 	}
 	if h := res.Refused; h != nil {
 		log.Printf("[atrium] conversation %s stays on %s, not %s (%s)", resume, h.ID, task.ID, via)
@@ -63,8 +63,8 @@ func (d *Daemon) claimResume(task *store.Task, resume, via string, byID bool) er
 				"reason": fmt.Sprintf("kept conversation %s: %q claimed it %s and this card is live",
 					resume, task.DisplayTitle(), how),
 			})
-			d.publishTask(task.ID)
-			d.publishTask(h.ID)
+			d.Publish(task.ID)
+			d.Publish(h.ID)
 		}
 	}
 	return nil

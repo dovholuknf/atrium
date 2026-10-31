@@ -137,6 +137,6 @@ func (d *Daemon) readyHandoff(task *store.Task, handoff *string) (map[string]any
 		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
 	}
 	log.Printf("[atrium] atrium ready from %s, %d bytes in %s", task.DisplayTitle(), len(b), path)
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	return map[string]any{"ok": true, "task_id": task.ID, "path": path, "stored": stored, "message": ReadyLine}, 0, nil
 }

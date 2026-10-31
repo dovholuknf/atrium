@@ -508,7 +508,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		// report mid-work, which is still doing it.
 		d.act.forget(task.ID)
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	// A worker with no Stop hook never records its spend otherwise. See usage.go.
 	d.recordUsage(task.ID)
 	// A report kept on the launcher's card is not a report delivered: the worker is told so, and says so.

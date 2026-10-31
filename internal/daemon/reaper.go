@@ -97,7 +97,7 @@ func (d *Daemon) reviveOwnedDead() error {
 		}
 		log.Printf("[atrium] %s was filed dead with a live runner on it, back on the board",
 			t.DisplayTitle())
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 	return nil
 }
@@ -148,7 +148,7 @@ func (d *Daemon) reapOnce() error {
 			d.act.forget(t.ID)
 			log.Printf("[atrium] %s assumed gone: silent for %s and no pid to check",
 				t.DisplayTitle(), time.Since(t.LastActivityAt).Round(time.Minute))
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 			continue
 		}
 		if processAlive(t.PID) {
@@ -165,7 +165,7 @@ func (d *Daemon) reapOnce() error {
 		// Nothing a gone process was doing is still true.
 		d.act.forget(t.ID)
 		log.Printf("[atrium] %s is dead: pid %d is gone", t.DisplayTitle(), t.PID)
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 	return nil
 }

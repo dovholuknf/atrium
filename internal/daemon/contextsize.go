@@ -241,7 +241,7 @@ func (d *Daemon) watchContext() error {
 		}
 		// For a runner whose hooks are not wired. See outputat.go.
 		if d.outputMoved(t) {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 		tokens, changed := d.ctx.read(t)
 		if tokens == 0 {
@@ -254,11 +254,11 @@ func (d *Daemon) watchContext() error {
 		d.cycleCheck(t, tokens)
 		limitK, _ := api.ContextLimitFor(d.st, t)
 		if moved := d.ctx.judge(t.ID, int64(limitK)*1000); changed || moved {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 	}
 	for _, id := range d.ctx.forgetExcept(live) {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 	d.ctx.forgetSessions(open)
 	d.forgetOutput(open)

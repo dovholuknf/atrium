@@ -622,7 +622,7 @@ func (d *Daemon) giveUpRelay(r store.RelayRow, why string) {
 	if _, err := d.st.QueuePeerKind(r.FromTask, note, "atrium", store.PromptFYI, true); err != nil {
 		log.Printf("[atrium] could not hand the dropped message back to %s: %v", r.FromTask, err)
 	}
-	d.publishTask(r.FromTask)
+	d.Publish(r.FromTask)
 }
 
 // ── peers on other rooms ────────────────────────────────────────────────────

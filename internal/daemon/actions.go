@@ -129,7 +129,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 		}
 	}
 
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	log.Printf("[atrium] ran %q on %s, %s", action.Label, task.DisplayTitle(), out.Delivered)
 	return out, nil
 }

@@ -142,7 +142,7 @@ func (d *Daemon) moveFreeze(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 		moveRefusal(w, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "freeze": f})
 }
 
@@ -337,7 +337,7 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 			return
 		}
 		defer d.idle.parking.Delete(t.ID)
-		d.hk.idleLeave(d, r, t.ID)
+		d.hk.idleLeave(r, t.ID, d.exitKeysFor(t.ID), d.hk.windDownKeyGap)
 		deadline := time.Now().Add(d.hk.idleGoneWait)
 		for d.sup.Get(t.ID) != nil && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
@@ -372,7 +372,7 @@ func (d *Daemon) moveMoved(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		moveRefusal(w, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "moved_to": in.To})
 }
 
@@ -438,7 +438,7 @@ func (d *Daemon) moveRelease(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		moveRefusal(w, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -610,6 +610,6 @@ func (d *Daemon) moveAdopt(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }

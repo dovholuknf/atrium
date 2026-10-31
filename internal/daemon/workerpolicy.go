@@ -108,7 +108,7 @@ func (d *Daemon) checkBudget(t *store.Task) {
 	limit := d.st.WorkerPolicy().BudgetUSD
 	if limit <= 0 || !t.Launched() {
 		if d.budgets.put(t.ID, nil) {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 		return
 	}
@@ -123,7 +123,7 @@ func (d *Daemon) checkBudget(t *store.Task) {
 	}
 	if spent < limit {
 		if d.budgets.put(t.ID, nil) {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 		return
 	}
@@ -132,7 +132,7 @@ func (d *Daemon) checkBudget(t *store.Task) {
 		text += ", not counting unpriced " + strings.Join(unpriced, ", ")
 	}
 	if d.budgets.put(t.ID, &BudgetView{SpentUSD: spent, BudgetUSD: limit, Text: text}) {
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 	// Once per card, however many rows follow. A report, never an action.
 	d.notifyLauncher(t, NoticeBudget, "budget", strings.TrimSpace(text)+". a report, not an action. card "+t.ID)

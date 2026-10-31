@@ -257,7 +257,7 @@ func (d *Daemon) flagLooksIdle(t *store.Task, run *runner, silent time.Duration,
 	if d.pending != nil {
 		d.pending.reset(t.ID)
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	d.ap.Broadcast("activity", map[string]any{"task_id": t.ID, "activity": d.act.get(t.ID)})
 }
 
@@ -270,7 +270,7 @@ func (d *Daemon) looksIdleGone(taskID, wire, cause string) {
 	}
 	log.Printf("[atrium] looks idle cleared: %s (%s) by %s after %s", wire, taskID, cause,
 		time.Since(m.at).Truncate(time.Second))
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	if a := d.act.get(taskID); a != nil {
 		d.ap.Broadcast("activity", map[string]any{"task_id": taskID, "activity": a})
 	}

@@ -87,7 +87,7 @@ func (d *Daemon) parkCard(taskID, was string, extra map[string]any) error {
 	}
 	if parked {
 		d.act.forget(taskID)
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 	return nil
 }
@@ -165,7 +165,7 @@ func (d *Daemon) unpark(taskID, via string) error {
 		d.humanTouch(taskID, ViaResume)
 	}
 	log.Printf("[atrium] %s was parked and is resumed (%s)", t.DisplayTitle(), via)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 

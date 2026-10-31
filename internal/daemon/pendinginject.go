@@ -281,7 +281,7 @@ func (pi *pendingInjector) noteHeld(taskID string, why string) {
 	changed := pi.d.act.setHeld(taskID, r)
 	pi.mu.Unlock()
 	if changed {
-		pi.d.publishTask(taskID)
+		pi.d.Publish(taskID)
 	}
 }
 
@@ -538,7 +538,7 @@ func (pi *pendingInjector) try(taskID string) {
 	if len(ht.entries) == 0 {
 		pi.mu.Unlock()
 		pi.drop(taskID)
-		pi.d.publishTask(taskID)
+		pi.d.Publish(taskID)
 		return
 	}
 	if turnWait {
@@ -608,7 +608,7 @@ func (pi *pendingInjector) drop(taskID string) {
 	if run := pi.d.sup.Get(taskID); run != nil {
 		run.SetOnKey(nil)
 	}
-	pi.d.publishTask(taskID)
+	pi.d.Publish(taskID)
 }
 
 // withoutHeldPeers drops from a hook's batch the peer messages this card is
@@ -736,7 +736,7 @@ func (pi *pendingInjector) flagStuck(taskID string) {
 		log.Printf("[atrium] could not record a stuck hold on %s: %v", taskID, err)
 	}
 	log.Printf("[atrium] %s: a say has been held over %s, held for %q", who, pi.d.hk.stuckAfter, why)
-	pi.d.publishTask(taskID)
+	pi.d.Publish(taskID)
 	told := map[string]bool{}
 	for _, e := range entries {
 		if e.from == "" || told[e.from] || strings.Contains(e.from, "@") {
@@ -783,5 +783,5 @@ func (pi *pendingInjector) warn(taskID, from string, waited time.Duration, final
 		"final":   final,
 	})
 	// Refresh the held badge so its age advances even between board polls.
-	pi.d.publishTask(taskID)
+	pi.d.Publish(taskID)
 }
