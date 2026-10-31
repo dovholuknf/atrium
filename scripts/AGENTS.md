@@ -49,8 +49,8 @@ Most take `-WhatIf`, `-Check` or a dry run by default.
 - `test-time-guard.sh` prints `WARN PACKAGE` for a package over 60s and `WARN TEST` for a test over 5s, or over the
   ceiling on its line in `test-time-allow.txt`. It always exits 0: speed is not a functional check. `ci.sh` runs it as
   its own step and puts the WARN lines in `time-guard.log` and `summary.md`.
-- `check-imports.go` pins the Go import graph to the layer table in the file, which is section 1 of
-  `docs/design/go-modules.md`. A new edge or a package with no row fails it, and `ci.sh` runs it in `go-build`.
+- `check-imports.go` pins the Go import graph to the layer table in the file. A new edge or a package with no row
+  fails it, and `ci.sh` runs it in `go-build`.
 - `check-test-globals.go` fails on a `_test.go` file assigning a package-level var. Hooks, delays and clocks belong on
   the struct that uses them.
 - **`test-touched.sh` is what a worker runs before handing back**: the Go packages, headless units and node tests

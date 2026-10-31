@@ -88,7 +88,7 @@ kept in tiers: everything from the last hour, hourly for a day, daily for a week
 | `item.go` | atrium items: one row per item, an idempotent upsert on `(item_id, revision, state)`, owner resolution (never a tester). See `docs/changes/items-stage2a.md` |
 | `task.go` | the tasks of an item: rows, every transition, learnings. `docs/runtime/item-tasks-design.md` |
 | `changerequest.go` | change requests between rooms |
-| `flow.go` / `flow_epoch.go` | the merge flow's roles, stages, checks and epochs. `docs/design/merge-flow.md` |
+| `flow.go` / `flow_epoch.go` | the merge flow's roles, stages, checks and epochs. |
 | `merge.go` | the merge queue: requests, their states and output, the merge room. `docs/rnd/merge-queue.md` |
 | `gitpush.go` | the push log behind `gitsync.PushLog` |
 | `docs.go` / `docs_secrets.go` | hub documents and the secret checks every way in passes |
