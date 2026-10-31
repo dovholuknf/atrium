@@ -1,4 +1,4 @@
-package link
+package settings
 
 import (
 	"bytes"
@@ -18,12 +18,12 @@ import (
 // owns it, a write in any scope is read ahead of routing and kept in the hub's settings, the hub passes it to every
 // attached room, and a room that attaches later is sent it.
 
-// hubWorkerPolicy is the name the hub stores the policy under, the room's setting name.
-const hubWorkerPolicy = rules.SettingWorkerPolicy
+// HubWorkerPolicy is the name the hub stores the policy under, the room's setting name.
+const HubWorkerPolicy = rules.SettingWorkerPolicy
 
-// workerPolicyOff is what the hub keeps for a policy that was set back to off, so a room that attaches later is still
+// WorkerPolicyOff is what the hub keeps for a policy that was set back to off, so a room that attaches later is still
 // told.
-const workerPolicyOff = "off"
+const WorkerPolicyOff = "off"
 
 // workerPolicyIn reads `worker_policy` off a settings write and puts the body back for whoever reads it next. stored
 // is the policy as the rooms store it ("" for off). Found is false for any other request. err is a bad policy.
@@ -56,19 +56,19 @@ func policyOf(stored string) rules.WorkerPolicy {
 	return out
 }
 
-// noteWorkerPolicy stores the policy when a settings write names it. A bad policy is not stored, and the room it goes
+// NoteWorkerPolicy stores the policy when a settings write names it. A bad policy is not stored, and the room it goes
 // to refuses it the same way.
-func (p *Proxy) noteWorkerPolicy(r *http.Request) (stored string, found bool, err error) {
+func (p *Service) NoteWorkerPolicy(r *http.Request) (stored string, found bool, err error) {
 	stored, found, err = workerPolicyIn(r)
 	if !found || err != nil {
 		return stored, found, err
 	}
-	if s := p.settingStore(); s != nil {
+	if s := p.store(); s != nil {
 		v := stored
 		if v == "" {
-			v = workerPolicyOff
+			v = WorkerPolicyOff
 		}
-		if serr := s.SetHubSetting(hubWorkerPolicy, v); serr != nil {
+		if serr := s.SetHubSetting(HubWorkerPolicy, v); serr != nil {
 			log.Printf("[hub] could not store the worker policy: %v", serr)
 		}
 	}
@@ -76,16 +76,16 @@ func (p *Proxy) noteWorkerPolicy(r *http.Request) (stored string, found bool, er
 }
 
 // hubWorkerPolicyValue is what the hub was told, and whether it was told at all.
-func (p *Proxy) hubWorkerPolicyValue() (stored string, set bool) {
-	s := p.settingStore()
+func (p *Service) hubWorkerPolicyValue() (stored string, set bool) {
+	s := p.store()
 	if s == nil {
 		return "", false
 	}
-	v, err := s.HubSetting(hubWorkerPolicy)
+	v, err := s.HubSetting(HubWorkerPolicy)
 	if err != nil || strings.TrimSpace(v) == "" {
 		return "", false
 	}
-	if v == workerPolicyOff {
+	if v == WorkerPolicyOff {
 		return "", true
 	}
 	return v, true
@@ -93,7 +93,7 @@ func (p *Proxy) hubWorkerPolicyValue() (stored string, set bool) {
 
 // PushWorkerPolicy tells one room the hub's policy, for a room that just attached. Nothing is sent when the hub has
 // never been told, so a room keeps its own.
-func (p *Proxy) PushWorkerPolicy(room string) {
+func (p *Service) PushWorkerPolicy(room string) {
 	stored, set := p.hubWorkerPolicyValue()
 	if !set {
 		return
@@ -103,10 +103,10 @@ func (p *Proxy) PushWorkerPolicy(room string) {
 	}
 }
 
-// fanWorkerPolicy passes the policy to every attached room but skip, which got the write itself. Best effort: a room
+// FanWorkerPolicy passes the policy to every attached room but skip, which got the write itself. Best effort: a room
 // that misses it is sent it again when it attaches.
-func (p *Proxy) fanWorkerPolicy(ctx context.Context, stored, skip string) {
-	for _, room := range p.hub.Rooms() {
+func (p *Service) FanWorkerPolicy(ctx context.Context, stored, skip string) {
+	for _, room := range p.Rooms() {
 		if room.Name == skip {
 			continue
 		}
@@ -116,30 +116,30 @@ func (p *Proxy) fanWorkerPolicy(ctx context.Context, stored, skip string) {
 	}
 }
 
-// answerWorkerPolicy is the ALL view's answer to a write naming the policy.
-func (p *Proxy) answerWorkerPolicy(w http.ResponseWriter, r *http.Request, stored string) {
-	p.fanWorkerPolicy(r.Context(), stored, "")
-	writeJSONBody(w, http.StatusOK, map[string]any{"worker_policy": policyOf(stored)})
+// AnswerWorkerPolicy is the ALL view's answer to a write naming the policy.
+func (p *Service) AnswerWorkerPolicy(w http.ResponseWriter, r *http.Request, stored string) {
+	p.FanWorkerPolicy(r.Context(), stored, "")
+	writeJSON(w, http.StatusOK, map[string]any{"worker_policy": policyOf(stored)})
 }
 
-// applyWorkerPolicy writes the hub's policy into a borrowed settings payload.
-func (p *Proxy) applyWorkerPolicy(body map[string]any) {
+// ApplyWorkerPolicy writes the hub's policy into a borrowed settings payload.
+func (p *Service) ApplyWorkerPolicy(body map[string]any) {
 	if stored, set := p.hubWorkerPolicyValue(); set {
 		body["worker_policy"] = policyOf(stored)
 	}
 }
 
-func (p *Proxy) postWorkerPolicy(ctx context.Context, room, stored string) error {
+func (p *Service) postWorkerPolicy(ctx context.Context, room, stored string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	body, _ := json.Marshal(map[string]any{"worker_policy": policyOf(stored)})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+hostFor(room)+"/v1/settings", bytes.NewReader(body))
+		"http://"+p.HostFor(room)+"/v1/settings", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return err
 	}

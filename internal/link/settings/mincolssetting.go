@@ -1,4 +1,4 @@
-package link
+package settings
 
 import (
 	"bytes"
@@ -16,9 +16,9 @@ import (
 // every attached room. A room that refuses it (out of range) is relayed as the
 // answer, so the board shows the room's own reason.
 
-// minColsIn reports whether a settings write names ONLY `terminal_min_cols`,
+// MinColsIn reports whether a settings write names ONLY `terminal_min_cols`,
 // and puts the body back for whoever reads it next.
-func minColsIn(r *http.Request) (payload []byte, found bool) {
+func MinColsIn(r *http.Request) (payload []byte, found bool) {
 	if r.URL.Path != "/v1/settings" || (r.Method != http.MethodPost && r.Method != http.MethodPut) {
 		return nil, false
 	}
@@ -36,14 +36,14 @@ func minColsIn(r *http.Request) (payload []byte, found bool) {
 	return payload, found
 }
 
-// fanMinCols passes the floor to every attached room and answers with the last
+// FanMinCols passes the floor to every attached room and answers with the last
 // room's settings, or with the first refusal.
-func (p *Proxy) fanMinCols(w http.ResponseWriter, r *http.Request, payload []byte) {
+func (p *Service) FanMinCols(w http.ResponseWriter, r *http.Request, payload []byte) {
 	var last []byte
-	for _, room := range p.hub.Rooms() {
+	for _, room := range p.Rooms() {
 		code, body, err := p.postRoomSettings(r.Context(), room.Name, payload)
 		if err != nil {
-			writeErrBody(w, http.StatusBadGateway, room.Name+": "+err.Error())
+			writeErr(w, http.StatusBadGateway, room.Name+": "+err.Error())
 			return
 		}
 		if code != http.StatusOK {
@@ -55,23 +55,23 @@ func (p *Proxy) fanMinCols(w http.ResponseWriter, r *http.Request, payload []byt
 		last = body
 	}
 	if last == nil {
-		writeErrBody(w, http.StatusConflict, "no room is attached to take the terminal width floor")
+		writeErr(w, http.StatusConflict, "no room is attached to take the terminal width floor")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(last)
 }
 
-func (p *Proxy) postRoomSettings(ctx context.Context, room string, payload []byte) (int, []byte, error) {
+func (p *Service) postRoomSettings(ctx context.Context, room string, payload []byte) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+hostFor(room)+"/v1/settings", bytes.NewReader(payload))
+		"http://"+p.HostFor(room)+"/v1/settings", bytes.NewReader(payload))
 	if err != nil {
 		return 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
