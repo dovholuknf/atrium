@@ -1,4 +1,4 @@
-package link
+package notify
 
 import (
 	"bytes"
@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/link/conn"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -134,7 +136,7 @@ type NotifyStore interface {
 	Record(room string, ids map[string]string, present []string, silent bool) ([]string, error)
 	// Rooms and Cards let turning the feature on seed from what is cached.
 	Rooms() ([]string, error)
-	Cards(room string) ([]CardState, error)
+	Cards(room string) ([]conn.CardState, error)
 	Prune() error
 }
 
@@ -206,7 +208,7 @@ func bareCardID(id string) string {
 
 // runningParents is the bare ids of the cards that launched a card still
 // running: they are not at a turn end whatever their own status says.
-func runningParents(cards []CardState) map[string]bool {
+func runningParents(cards []conn.CardState) map[string]bool {
 	out := map[string]bool{}
 	for _, c := range cards {
 		var p struct {
@@ -276,7 +278,7 @@ func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 	}
 	// The same match the control tools use, trimmed and case-insensitive, so a
 	// tag written ` Origin:Agent ` is skipped here as it is there.
-	agent := hasOriginTag(p.Tags)
+	agent := ctl.HasTag(p.Tags, ctl.OriginTag)
 	waited := p.WaitingSince
 	if waited == "" {
 		waited = p.LastActivity
@@ -777,7 +779,7 @@ func (n *Notifier) record(res Result) {
 
 // Announced is called after a room's announcement is safely cached. It costs a
 // few map lookups and one database transaction and never waits on the sink.
-func (n *Notifier) Announced(room string, cards []CardState) {
+func (n *Notifier) Announced(room string, cards []conn.CardState) {
 	if !n.armed() {
 		return
 	}
@@ -817,7 +819,7 @@ func (n *Notifier) Remind(x Notice) {
 	n.enqueue(x)
 }
 
-func notifyPlan(cards []CardState) (ids map[string]string, info map[string]notifyCard, present []string) {
+func notifyPlan(cards []conn.CardState) (ids map[string]string, info map[string]notifyCard, present []string) {
 	ids, info = map[string]string{}, map[string]notifyCard{}
 	parents := runningParents(cards)
 	for _, c := range cards {

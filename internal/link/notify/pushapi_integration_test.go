@@ -1,6 +1,6 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"encoding/json"
@@ -14,13 +14,13 @@ import (
 
 type pushRoutes struct {
 	*pushRig
-	proxy *Proxy
+	proxy *testHub
 }
 
 func newPushRoutes(t *testing.T) *pushRoutes {
 	t.Helper()
 	rig := newPushRig(t)
-	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p := newTestHub()
 	p.SetNotify(rig.n)
 	p.SetPush(rig.p)
 	return &pushRoutes{pushRig: rig, proxy: p}
@@ -297,7 +297,7 @@ func TestPushRemoveByIDFromTheOperator(t *testing.T) {
 }
 
 func TestNoPushWiredIs404(t *testing.T) {
-	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p := newTestHub()
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/_hub/push/key", nil)
 	r.RemoteAddr = "127.0.0.1:1"

@@ -1,4 +1,4 @@
-package link
+package notify
 
 import (
 	"bytes"
@@ -87,10 +87,10 @@ import (
 // log (see audit.go), because a board-wide decision is the hub's action and the
 // hub is where "who turned the whole board loose" is answered.
 
-// hubAutoReason is recorded against every request the hub's board-wide switch
+// HubAutoReason is recorded against every request the hub's board-wide switch
 // lets through, so a session told why it was allowed says which switch answered,
 // and the review reads the same word.
-const hubAutoReason = "board-wide auto mode: approved by the hub without asking, and recorded"
+const HubAutoReason = "board-wide auto mode: approved by the hub without asking, and recorded"
 
 // hubAutoBy is who the room records as having decided. Without it the room files
 // the decision under "you", which says a person clicked. The room accepts exactly
@@ -103,9 +103,15 @@ const hubAutoBy = "global-auto"
 // that the list is never anything but a handful.
 const decidedKeep = 10 * time.Minute
 
-// autoApprover enforces the hub-wide auto-approve flag on the permission relay.
-type autoApprover struct {
-	p *Proxy
+// feedSub is the approver's place in the event feed: the stream, and how to leave it.
+type feedSub struct {
+	ch    <-chan wire.Event
+	leave func()
+}
+
+// AutoApprover enforces the hub-wide auto-approve flag on the permission relay.
+type AutoApprover struct {
+	Calls
 
 	once sync.Once
 	// wake asks the loop to look at the switch now: it was just saved, on or off.
@@ -118,7 +124,7 @@ type autoApprover struct {
 	// watching is the approver's own place in the event feed while the switch is
 	// on, and nil while it is off. It is what keeps a pump running per room with
 	// no board open.
-	watching *sub
+	watching *feedSub
 	// expiry re-looks at the switch when its deadline passes, so a switch left on
 	// for an hour stops being watched after an hour with nobody pressing anything.
 	expiry *time.Timer
@@ -127,18 +133,18 @@ type autoApprover struct {
 	decided map[string]time.Time
 }
 
-func newAutoApprover(p *Proxy) *autoApprover {
-	return &autoApprover{p: p, wake: make(chan struct{}, 1), decided: map[string]time.Time{}}
+func NewAutoApprover(c Calls) *AutoApprover {
+	return &AutoApprover{Calls: c, wake: make(chan struct{}, 1), decided: map[string]time.Time{}}
 }
 
 // start launches the loop once. Idempotent: SetInventory may be called more than
 // once over a hub's life and only the first wiring starts the goroutine.
-func (a *autoApprover) start() {
+func (a *AutoApprover) Start() {
 	a.once.Do(func() { go a.loop(context.Background()) })
 }
 
 // nudge asks the loop to look at the switch now.
-func (a *autoApprover) nudge() {
+func (a *AutoApprover) Nudge() {
 	select {
 	case a.wake <- struct{}{}:
 	default:
@@ -147,7 +153,7 @@ func (a *autoApprover) nudge() {
 
 // loop looks at the switch when the hub starts, and again whenever it is nudged:
 // saved through the board, or its deadline passing. No ticker.
-func (a *autoApprover) loop(ctx context.Context) {
+func (a *AutoApprover) loop(ctx context.Context) {
 	for {
 		a.evaluate(ctx)
 		select {
@@ -165,8 +171,8 @@ func (a *autoApprover) loop(ctx context.Context) {
 // A deadline is checked against the clock here as well as in the store: this is
 // the last thing standing between a request and an approval, so it does not rely
 // on whichever Inventory it was handed to have checked.
-func (a *autoApprover) state() (on bool, until *time.Time) {
-	stock := a.p.inventory()
+func (a *AutoApprover) state() (on bool, until *time.Time) {
+	stock := a.Inventory()
 	if stock == nil {
 		return false, nil
 	}
@@ -182,7 +188,7 @@ func (a *autoApprover) state() (on bool, until *time.Time) {
 
 // evaluate brings the approver in line with the switch: watching every room and
 // having swept them when it is on, watching nothing when it is off.
-func (a *autoApprover) evaluate(ctx context.Context) {
+func (a *AutoApprover) evaluate(ctx context.Context) {
 	on, until := a.state()
 	if !on {
 		a.unwatch()
@@ -196,7 +202,7 @@ func (a *autoApprover) evaluate(ctx context.Context) {
 
 // watch subscribes to the event feed for every room, once, and arms the timer
 // that ends the watch at the deadline.
-func (a *autoApprover) watch(until *time.Time) {
+func (a *AutoApprover) watch(until *time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.expiry != nil {
@@ -204,19 +210,20 @@ func (a *autoApprover) watch(until *time.Time) {
 		a.expiry = nil
 	}
 	if until != nil {
-		a.expiry = time.AfterFunc(time.Until(*until), a.nudge)
+		a.expiry = time.AfterFunc(time.Until(*until), a.Nudge)
 	}
 	if a.watching != nil {
 		return
 	}
-	s := a.p.feeds.add("")
+	events, leave := a.Subscribe("")
+	s := &feedSub{ch: events, leave: leave}
 	a.watching = s
 	go a.listen(s)
 }
 
 // unwatch leaves the event feed. The pumps stop with the last subscriber, so
 // switching auto off with no board open stops every stream this started.
-func (a *autoApprover) unwatch() {
+func (a *AutoApprover) unwatch() {
 	a.mu.Lock()
 	s := a.watching
 	a.watching = nil
@@ -226,12 +233,12 @@ func (a *autoApprover) unwatch() {
 	}
 	a.mu.Unlock()
 	if s != nil {
-		a.p.feeds.drop(s)
+		s.leave()
 	}
 }
 
 // listen reads the feed for permission events and approves the pending ones.
-func (a *autoApprover) listen(s *sub) {
+func (a *AutoApprover) listen(s *feedSub) {
 	for e := range s.ch {
 		if e.Kind != "permission" {
 			continue
@@ -251,13 +258,13 @@ func (a *autoApprover) listen(s *sub) {
 	}
 	a.mu.Unlock()
 	if dropped {
-		a.nudge()
+		a.Nudge()
 	}
 }
 
 // onPermission is one event. A request nobody has answered is approved. The
 // same event says so again when it is decided, and that one is left alone.
-func (a *autoApprover) onPermission(e wire.Event) {
+func (a *AutoApprover) onPermission(e wire.Event) {
 	var p struct {
 		ID       string `json:"id"`
 		Decision string `json:"decision"`
@@ -270,9 +277,9 @@ func (a *autoApprover) onPermission(e wire.Event) {
 
 // sweepAll answers whatever every attached room is holding. The switch is read
 // again for each request, not once for the sweep.
-func (a *autoApprover) sweepAll(ctx context.Context) {
+func (a *AutoApprover) sweepAll(ctx context.Context) {
 	var wg sync.WaitGroup
-	for _, r := range a.p.hub.Rooms() {
+	for _, r := range a.Rooms() {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
@@ -282,9 +289,9 @@ func (a *autoApprover) sweepAll(ctx context.Context) {
 	wg.Wait()
 }
 
-// sweepRoomIfOn is the sweep a room's stream coming up asks for. With the switch
+// SweepRoomIfOn is the sweep a room's stream coming up asks for. With the switch
 // off it reads the store and touches no room.
-func (a *autoApprover) sweepRoomIfOn(ctx context.Context, room string) {
+func (a *AutoApprover) SweepRoomIfOn(ctx context.Context, room string) {
 	if on, _ := a.state(); !on {
 		return
 	}
@@ -292,7 +299,7 @@ func (a *autoApprover) sweepRoomIfOn(ctx context.Context, room string) {
 }
 
 // sweepRoom approves every pending request one room is holding.
-func (a *autoApprover) sweepRoom(ctx context.Context, room string) {
+func (a *AutoApprover) sweepRoom(ctx context.Context, room string) {
 	for _, id := range a.pendingIn(ctx, room) {
 		a.approveIfOn(ctx, room, id)
 	}
@@ -300,7 +307,7 @@ func (a *autoApprover) sweepRoom(ctx context.Context, room string) {
 
 // approveIfOn is the only way a request gets approved here, from a sweep or from
 // an event: the switch and its deadline as they are NOW, then the id.
-func (a *autoApprover) approveIfOn(ctx context.Context, room, id string) {
+func (a *AutoApprover) approveIfOn(ctx context.Context, room, id string) {
 	if on, _ := a.state(); !on {
 		return
 	}
@@ -315,7 +322,7 @@ func (a *autoApprover) approveIfOn(ctx context.Context, room, id string) {
 }
 
 // claim reports whether this is the first attempt at a request, and takes it.
-func (a *autoApprover) claim(room, id string) bool {
+func (a *AutoApprover) claim(room, id string) bool {
 	key := room + "\x00" + id
 	now := time.Now()
 	a.mu.Lock()
@@ -332,7 +339,7 @@ func (a *autoApprover) claim(room, id string) bool {
 	return true
 }
 
-func (a *autoApprover) release(room, id string) {
+func (a *AutoApprover) release(room, id string) {
 	a.mu.Lock()
 	delete(a.decided, room+"\x00"+id)
 	a.mu.Unlock()
@@ -341,15 +348,15 @@ func (a *autoApprover) release(room, id string) {
 // pendingIn reads the ids of a room's pending requests. A room that cannot be
 // reached contributes nothing, exactly as the aggregate fan-out treats a quiet
 // room: it is skipped rather than failing the whole sweep.
-func (a *autoApprover) pendingIn(ctx context.Context, room string) []string {
+func (a *AutoApprover) pendingIn(ctx context.Context, room string) []string {
 	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodGet,
-		"http://"+hostFor(room)+"/v1/permissions", nil)
+		"http://"+a.HostFor(room)+"/v1/permissions", nil)
 	if err != nil {
 		return nil
 	}
-	res, err := a.p.roomClient(room).Do(req)
+	res, err := a.RoomClient(room).Do(req)
 	if err != nil {
 		return nil
 	}
@@ -382,23 +389,23 @@ func (a *autoApprover) pendingIn(ctx context.Context, room string) []string {
 //
 // True when the room ANSWERED, whatever it said, and false when it could not be
 // reached, which is the one case worth trying again.
-func (a *autoApprover) approve(ctx context.Context, room, id string) bool {
+func (a *AutoApprover) approve(ctx context.Context, room, id string) bool {
 	rctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	payload, err := json.Marshal(map[string]any{
-		"decision": "approve", "reason": hubAutoReason, "by": hubAutoBy,
+		"decision": "approve", "reason": HubAutoReason, "by": hubAutoBy,
 	})
 	if err != nil {
 		return true
 	}
 	req, err := http.NewRequestWithContext(rctx, http.MethodPost,
-		"http://"+hostFor(room)+"/v1/permissions/"+url.PathEscape(id)+"/decide",
+		"http://"+a.HostFor(room)+"/v1/permissions/"+url.PathEscape(id)+"/decide",
 		bytes.NewReader(payload))
 	if err != nil {
 		return true
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := a.p.roomClient(room).Do(req)
+	res, err := a.RoomClient(room).Do(req)
 	if err != nil {
 		return false
 	}
@@ -408,7 +415,7 @@ func (a *autoApprover) approve(ctx context.Context, room, id string) bool {
 		// The hub's own record of a board-wide decision. Best effort: the store's
 		// log is fail-open and never blocks the relay, the same as everywhere
 		// else the hub records one. See audit.go.
-		a.p.RecordAudit(room, "permission", "board-wide auto approved "+id)
+		a.RecordAudit(room, "permission", "board-wide auto approved "+id)
 	}
 	return true
 }
