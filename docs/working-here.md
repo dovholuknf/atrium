@@ -1,14 +1,13 @@
 # Working in this repo
 
-The full text of the house rules the root `AGENTS.md` keeps as one line each: the backlog and change notes, testing,
+The full text of the house rules the root `AGENTS.md` keeps as one line each: the backlog, testing,
 branching and landing, and the conventions. Read it before a first change, a merge or a landing.
 
 ## Documentation
 
 - **The backlog is on the hub.** Use `atrium_backlog` or `atrium backlog`. `docs/backlog.md` is frozen.
-- **A change ships its own notes.** A branch never edits `CHANGELOG.md`: a weekly roll-up card owns it. Write
-  `changelog/<dept>/<yyyy-mm-dd>-<item>.md` and `docs/changes/<item>.md` (its `Docs:` line).
-  `docs/changes/README.md` has the format.
+- A branch never edits `CHANGELOG.md` and writes no `docs/changes` or `changelog/` notes.
+  GitHub generates release notes.
 
 ## Testing
 
