@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"log"
@@ -518,10 +519,10 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	if why != "" {
 		note = why
 	}
-	if d.holdingMessages(target.ID) {
-		note = newContextHoldNote
-	} else if d.deployHeld(target.ID) {
-		note = d.deployHoldNote()
+	if d.HoldingMessages(target.ID) {
+		note = cycle.NewContextHoldNote
+	} else if d.DeployHeld(target.ID) {
+		note = d.DeployHoldNote()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"queued": true, "to": to, "note": note, "reachable": reach, "when": whenWord(waitTurn),
@@ -607,13 +608,6 @@ func peerBanner(from string) string {
 	return atriumLabel("@" + from + " says:")
 }
 
-// atriumLabel is the grey `[atrium] ...` label atrium types ahead of text that
-// is not the operator's. peerBanner is one. The after-restart wake is the other.
-// The rule peerBanner gives holds for every label: no carriage return in `what`.
-func atriumLabel(what string) string {
-	return "\x1b[38;5;244m[atrium] " + what + " \x1b[0m"
-}
-
 // tellByTyping puts a peer's message into the terminal when the terminal is
 // free enough to take it, and answers whether it did.
 //
@@ -639,7 +633,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text, kind string, waitT
 	}
 	// Held for a new-context cycle or a room deploy: queued, delivered after the
 	// wake prompt.
-	if d.holdingFrom(target.ID, from) {
+	if d.HoldingFrom(target.ID, from) {
 		return false, ""
 	}
 	run := d.sup.Get(target.ID)

@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func TestClearThatCannotBeTypedFailsWithWhatBlockedIt(t *testing.T) {
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.clearTypeWait = 300 * time.Millisecond
+	d.hk.NcTiming.ClearTypeWait = 300 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 
@@ -70,8 +71,8 @@ func TestClearThatCannotBeTypedFailsWithWhatBlockedIt(t *testing.T) {
 func TestClearIsTypedWhenTheStopWasLostAndTheCardWentQuiet(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.ackQuiet = 300 * time.Millisecond
-	d.hk.ncTiming.clearTypeWait = time.Minute
+	d.hk.NcTiming.AckQuiet = 300 * time.Millisecond
+	d.hk.NcTiming.ClearTypeWait = time.Minute
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 
@@ -90,7 +91,7 @@ func TestClearIsTypedWhenTheStopWasLostAndTheCardWentQuiet(t *testing.T) {
 func TestClearWaitSaysWhyOnTheCard(t *testing.T) {
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.clearTypeWait = time.Minute
+	d.hk.NcTiming.ClearTypeWait = time.Minute
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 
@@ -102,7 +103,7 @@ func TestClearWaitSaysWhyOnTheCard(t *testing.T) {
 	ncAck(t, d, task)
 
 	until(t, "the chip to say what it waits on", func() bool {
-		c := d.nctx.get(id)
-		return c != nil && c.step == NewContextClear && strings.Contains(c.reason, "a turn is in progress")
+		c := d.Nctx.Get(id)
+		return c != nil && c.Step == cycle.NewContextClear && strings.Contains(c.Reason, "a turn is in progress")
 	})
 }

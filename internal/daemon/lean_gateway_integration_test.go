@@ -145,7 +145,7 @@ func TestLeanKitAndGatewayTogetherReachTheLaunchAndTheFork(t *testing.T) {
 
 	f := newKAFix(t)
 
-	f.k.hk = hk
+	f.hk = hk
 	if err := f.st.SetSetting(store.SettingLeanWorkerGateway, "mercurius-worker"); err != nil {
 		t.Fatal(err)
 	}

@@ -94,14 +94,6 @@ func EndsTheSession(reason string) bool {
 	return true
 }
 
-// orWord is a fallback for a word a runner did not supply.
-func orWord(s, fallback string) string {
-	if strings.TrimSpace(s) == "" {
-		return fallback
-	}
-	return s
-}
-
 // defaultAlias gives a card new to the board its alias: the title's prefix, or
 // else the one its git branch makes. A title the board made itself is passed as
 // "", since it says nothing about what anybody calls the card. A card with an
@@ -507,7 +499,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// The runner is up and its hooks are posting, which is what an
 		// after-restart wake waits for. See restartwake.go.
 		d.noteAnnounced(task.ID, in.Resume)
-		d.wakeSawSession(task.ID, in.Resume)
+		d.WakeSawSession(task.ID, in.Resume)
 		// A NEW CONVERSATION (`/clear`, an automatic new context, a resume) lost whatever was typed
 		// into the last one. One line lists what its workers still owe. See listOwed.
 		d.listOwed(task)

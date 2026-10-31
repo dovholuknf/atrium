@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"log"
 	"strings"
 
@@ -36,7 +37,7 @@ func bannerKind(banner string) string {
 	switch banner {
 	case "":
 		return store.DeliveryOperator
-	case wakeLabel, exitLabel:
+	case cycle.WakeLabel, exitLabel:
 		return store.DeliveryRestartWake
 	}
 	return store.DeliveryCycle

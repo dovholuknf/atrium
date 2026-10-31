@@ -69,7 +69,7 @@ func (d *Daemon) handleNeed(w http.ResponseWriter, r *http.Request) {
 			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
-		if _, _, err := d.queueWake(task.ID, "you now have "+strings.Join(in.Needs, ", ")+". continue.", "atrium"); err != nil {
+		if _, _, err := d.QueueWake(task.ID, "you now have "+strings.Join(in.Needs, ", ")+". continue.", "atrium"); err != nil {
 			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}

@@ -209,7 +209,7 @@ func (d *Daemon) noteTypedModel(taskID, line string) {
 // error when the gate was shut and nothing was written.
 func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
 	run := d.sup.Get(taskID)
-	if run == nil || d.holdingFrom(taskID, "") || d.act.dialogOpen(taskID) || d.turnHolds(taskID, waitTurn) {
+	if run == nil || d.HoldingFrom(taskID, "") || d.act.dialogOpen(taskID) || d.turnHolds(taskID, waitTurn) {
 		return false, nil
 	}
 	// No paste markers: it is one short line, and a slash command is read as one

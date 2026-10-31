@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestNewContextBusyNamesTheStepAndHowLong(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := d.StartNewContext(task.ID)
-	if !errors.Is(err, errNewContextBusy) {
+	if !errors.Is(err, cycle.ErrNewContextBusy) {
 		t.Fatalf("wanted busy, got %v", err)
 	}
 	if msg := err.Error(); !strings.Contains(msg, "step 1 of 3 (limit) for ") {

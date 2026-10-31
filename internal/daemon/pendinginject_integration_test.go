@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"sync"
 	"testing"
@@ -275,7 +276,7 @@ func TestStillBlockedNoteUsesTheEntryHeldUnderTheLock(t *testing.T) {
 	if err := d.st.SetPeerTyping(id, true); err != nil {
 		t.Fatal(err)
 	}
-	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now(), prompted: 1, armed: true}
+	d.Nctx.By[id] = &cycle.NewContext{Step: cycle.NewContextLimit, Since: time.Now(), Prompted: 1, Armed: true}
 	sayViaMessage(t, d, "alice", id, "HELDTEXT")
 	d.pending.mu.Lock()
 	if ht := d.pending.by[id]; ht != nil && ht.timer != nil {
@@ -286,9 +287,9 @@ func TestStillBlockedNoteUsesTheEntryHeldUnderTheLock(t *testing.T) {
 		t.Fatalf("the message should be held, got %d", heldCount(d.pending, id))
 	}
 	d.pending.betweenHoldChecks = func() {
-		d.nctx.mu.Lock()
-		delete(d.nctx.by, id)
-		d.nctx.mu.Unlock()
+		d.Nctx.Mu.Lock()
+		delete(d.Nctx.By, id)
+		d.Nctx.Mu.Unlock()
 	}
 	d.pending.try(id)
 	if heldCount(d.pending, id) != 1 {
