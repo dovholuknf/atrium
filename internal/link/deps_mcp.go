@@ -74,16 +74,7 @@ func describeDeps(req *mcp.CallToolRequest, in depsInput, _ depsOutput) (string,
 }
 
 // callerName is who added a gate, as the ticker will tell it: `handle@room`.
-func callerName(req *mcp.CallToolRequest) string {
-	agent, room := ctl.AgentOf(req), ctl.RoomOf(req)
-	switch {
-	case agent == "":
-		return ""
-	case room == "":
-		return agent
-	}
-	return agent + "@" + room
-}
+func callerName(req *mcp.CallToolRequest) string { return ctl.CallerName(req) }
 
 func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, in depsInput) (
 	*mcp.CallToolResult, depsOutput, error) {

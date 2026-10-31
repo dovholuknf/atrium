@@ -1,4 +1,4 @@
-package link
+package docs
 
 import (
 	"bytes"
@@ -36,7 +36,7 @@ import (
 // EVERY DROP FILE IS VISIBLE TO EVERY CARD AND TO THE BOARD. That header is one anything on loopback can set, so a
 // recipient list would look like access control and not be one. The tool text says so.
 
-// dropTimeout bounds one transfer to or from a room. 32 MiB over a link can take longer than c.client's eight seconds.
+// dropTimeout bounds one transfer to or from a room. 32 MiB over a link can take longer than c.Client's eight seconds.
 const dropTimeout = 2 * time.Minute
 
 // dropHTTP carries a drop transfer. It has no timeout of its own, the context bounds the call.
@@ -72,7 +72,7 @@ const exportToolDesc = "Pull every online room's numbers into the hub's drop wit
 	"`atrium_get`. IT ANSWERS ROWS AND NEVER A RAW DATABASE. To hand over a file you have, use `atrium_put`.\n\n" +
 	dropCaveats
 
-type putInput struct {
+type PutInput struct {
 	Path    string `json:"path,omitempty" jsonschema:"a file inside your own card's directory, read on your room. give this or content, not both"`
 	Content string `json:"content,omitempty" jsonschema:"the text to leave. give this or path, not both. needs a name"`
 	Name    string `json:"name,omitempty" jsonschema:"the file's name in the drop. needed with content. with path it defaults to the file's own name"`
@@ -80,13 +80,13 @@ type putInput struct {
 	TTLDays int    `json:"ttl_days,omitempty" jsonschema:"days to keep it, 1 to 30. default 7"`
 }
 
-type putOutput struct {
+type PutOutput struct {
 	Name    string `json:"name"`
 	Size    int64  `json:"size"`
 	Expires string `json:"expires"`
 }
 
-type filesInput struct {
+type FilesInput struct {
 	Mine bool `json:"mine,omitempty" jsonschema:"list only the files your card put"`
 }
 
@@ -108,24 +108,24 @@ type dropUsage struct {
 	Cap   int64 `json:"cap"`
 }
 
-type filesOutput struct {
+type FilesOutput struct {
 	Files []dropFile `json:"files"`
 	Usage dropUsage  `json:"usage"`
 }
 
-type getInput struct {
+type GetInput struct {
 	Name    string `json:"name" jsonschema:"the file's name in the drop, as atrium_files or atrium_put gave it"`
 	Dest    string `json:"dest,omitempty" jsonschema:"a path inside your own card to write it to. relative, no .. segments. default .atrium/incoming/"`
 	Replace bool   `json:"replace,omitempty" jsonschema:"replace a file already at dest"`
 }
 
-type getOutput struct {
+type GetOutput struct {
 	Path string `json:"path"`
 	Rel  string `json:"rel"`
 	Size int64  `json:"size"`
 }
 
-type exportInput struct {
+type ExportInput struct {
 	What  string   `json:"what" jsonschema:"usage or tasks"`
 	Since string   `json:"since,omitempty" jsonschema:"RFC 3339 time. default 7 days ago"`
 	Rooms []string `json:"rooms,omitempty" jsonschema:"rooms to pull from. default every online room"`
@@ -142,23 +142,23 @@ type exportSkip struct {
 	Why  string `json:"why"`
 }
 
-type exportOutput struct {
+type ExportOutput struct {
 	Files   []exportedFile `json:"files"`
 	Skipped []exportSkip   `json:"skipped"`
 }
 
-func (c *controlMCP) registerFiles(s *mcp.Server, class ctl.Class) {
-	addTool(s, class, &mcp.Tool{Name: "atrium_put", Description: putToolDesc},
-		audited(c, "ctl-put", describePut, c.putHandler))
+func (c *MCP) RegisterFiles(s *mcp.Server, class ctl.Class) {
+	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_put", Description: putToolDesc},
+		ctl.Audited(c, "ctl-put", DescribePut, c.PutHandler))
 	// Not audited, as reads are not.
-	addTool(s, class, &mcp.Tool{Name: "atrium_files", Description: filesToolDesc}, c.filesHandler)
-	addTool(s, class, &mcp.Tool{Name: "atrium_get", Description: getToolDesc},
-		audited(c, "ctl-get", describeGet, c.getHandler))
-	addTool(s, class, &mcp.Tool{Name: "atrium_export", Description: exportToolDesc},
-		audited(c, "ctl-export", describeExport, c.exportHandler))
+	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_files", Description: filesToolDesc}, c.FilesHandler)
+	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_get", Description: getToolDesc},
+		ctl.Audited(c, "ctl-get", DescribeGet, c.GetHandler))
+	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_export", Description: exportToolDesc},
+		ctl.Audited(c, "ctl-export", DescribeExport, c.ExportHandler))
 }
 
-func describePut(req *mcp.CallToolRequest, in putInput, out putOutput) (string, string, bool) {
+func DescribePut(req *mcp.CallToolRequest, in PutInput, out PutOutput) (string, string, bool) {
 	what := "put " + strings.TrimSpace(in.Name)
 	switch {
 	case out.Name != "":
@@ -169,11 +169,11 @@ func describePut(req *mcp.CallToolRequest, in putInput, out putOutput) (string, 
 	return ctl.RoomOf(req), what, true
 }
 
-func describeGet(req *mcp.CallToolRequest, in getInput, out getOutput) (string, string, bool) {
+func DescribeGet(req *mcp.CallToolRequest, in GetInput, out GetOutput) (string, string, bool) {
 	return ctl.RoomOf(req), "get " + strings.TrimSpace(in.Name), true
 }
 
-func describeExport(req *mcp.CallToolRequest, in exportInput, out exportOutput) (string, string, bool) {
+func DescribeExport(req *mcp.CallToolRequest, in ExportInput, out ExportOutput) (string, string, bool) {
 	what := "export " + strings.TrimSpace(in.What)
 	if len(out.Files) > 0 || len(out.Skipped) > 0 {
 		what = fmt.Sprintf("%s, %d stored, %d skipped", what, len(out.Files), len(out.Skipped))
@@ -182,28 +182,28 @@ func describeExport(req *mcp.CallToolRequest, in exportInput, out exportOutput) 
 }
 
 // dropStore is the hub's store, or the refusal for a hub without one.
-func (c *controlMCP) dropStore() (*hubstore.Store, error) {
-	if c.docs == nil || c.docs() == nil {
+func (c *MCP) dropStore() (*hubstore.Store, error) {
+	if c.Docs == nil || c.Docs() == nil {
 		return nil, &ctl.RefusedError{Msg: "this hub has no file store"}
 	}
-	return c.docs(), nil
+	return c.Docs(), nil
 }
 
 // dropCaller is the caller's room and card. A drop records the card that put a file, and a get writes into one.
-func (c *controlMCP) dropCaller(ctx context.Context, req *mcp.CallToolRequest) (string, *ctlCard, error) {
+func (c *MCP) dropCaller(ctx context.Context, req *mcp.CallToolRequest) (string, *ctl.Card, error) {
 	agent, room := ctl.AgentOf(req), ctl.RoomOf(req)
 	if agent == "" {
 		return "", nil, &ctl.RefusedError{Msg: "this call carries no " + ctl.AgentHeader + ", so the hub cannot say which card " +
 			"is calling. the drop records the card that put a file and a get writes into the caller's own card"}
 	}
-	card, err := c.callerCard(ctx, room, agent)
+	card, err := ctl.CallerCard(ctx, c, room, agent)
 	return room, card, err
 }
 
-func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, in putInput) (
-	*mcp.CallToolResult, putOutput, error) {
+func (c *MCP) PutHandler(ctx context.Context, req *mcp.CallToolRequest, in PutInput) (
+	*mcp.CallToolResult, PutOutput, error) {
 
-	var out putOutput
+	var out PutOutput
 	st, err := c.dropStore()
 	if err != nil {
 		return nil, out, err
@@ -211,11 +211,11 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	hasContent, hasPath := in.Content != "", strings.TrimSpace(in.Path) != ""
 	switch {
 	case hasContent && hasPath:
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "give content or path, not both"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "give content or path, not both"}
 	case !hasContent && !hasPath:
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "give content or path"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "give content or path"}
 	case hasContent && strings.TrimSpace(in.Name) == "":
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "content needs a name"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "content needs a name"}
 	}
 	room, card, err := c.dropCaller(ctx, req)
 	if err != nil {
@@ -229,7 +229,7 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 			return nil, out, err
 		}
 		refuseName := func(msg string) error {
-			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
+			return &Refusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
 				Msg: msg + ". the drop is readable by everyone past the board's password. this check is a " +
 					"speed bump and not a guarantee"}
 		}
@@ -263,24 +263,24 @@ func (c *controlMCP) putHandler(ctx context.Context, req *mcp.CallToolRequest, i
 			return nil, out, err
 		}
 		if int64(len(data)) > set.Caps.File {
-			return nil, out, &docsRefusal{Status: http.StatusRequestEntityTooLarge, Msg: fmt.Sprintf(
+			return nil, out, &Refusal{Status: http.StatusRequestEntityTooLarge, Msg: fmt.Sprintf(
 				"that is %d bytes, over the %d byte cap for a drop file", len(data), set.Caps.File)}
 		}
 	}
 	row, err := st.FileAdd(hubstore.FileInput{
-		Name: name, Note: in.Note, Origin: "card", By: callerName(req), Card: wire.TagFor(room, card.ID), Room: room,
+		Name: name, Note: in.Note, Origin: "card", By: ctl.CallerName(req), Card: wire.TagFor(room, card.ID), Room: room,
 		Data: data, TTLDays: in.TTLDays, Rate: true,
 	})
 	if err != nil {
 		return nil, out, publishError(err)
 	}
-	return nil, putOutput{Name: row.Name, Size: row.Size, Expires: row.Expires}, nil
+	return nil, PutOutput{Name: row.Name, Size: row.Size, Expires: row.Expires}, nil
 }
 
-func (c *controlMCP) filesHandler(ctx context.Context, req *mcp.CallToolRequest, in filesInput) (
-	*mcp.CallToolResult, filesOutput, error) {
+func (c *MCP) FilesHandler(ctx context.Context, req *mcp.CallToolRequest, in FilesInput) (
+	*mcp.CallToolResult, FilesOutput, error) {
 
-	out := filesOutput{Files: []dropFile{}}
+	out := FilesOutput{Files: []dropFile{}}
 	st, err := c.dropStore()
 	if err != nil {
 		return nil, out, err
@@ -313,27 +313,27 @@ func (c *controlMCP) filesHandler(ctx context.Context, req *mcp.CallToolRequest,
 	return nil, out, nil
 }
 
-func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, in getInput) (
-	*mcp.CallToolResult, getOutput, error) {
+func (c *MCP) GetHandler(ctx context.Context, req *mcp.CallToolRequest, in GetInput) (
+	*mcp.CallToolResult, GetOutput, error) {
 
-	var out getOutput
+	var out GetOutput
 	st, err := c.dropStore()
 	if err != nil {
 		return nil, out, err
 	}
 	name, dest := strings.TrimSpace(in.Name), strings.TrimSpace(in.Dest)
 	if name == "" {
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "say which file, with name"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "say which file, with name"}
 	}
 	room, card, err := c.dropCaller(ctx, req)
 	if err != nil {
 		return nil, out, err
 	}
 	if card.Worktree == "" {
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "your card has no directory to put a file in"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "your card has no directory to put a file in"}
 	}
 	if dest != "" && docshare.SecretFileName(dest) {
-		return nil, out, &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
+		return nil, out, &Refusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
 			Msg: "that destination is named like a secret (" + path.Base(strings.ReplaceAll(dest, `\`, "/")) + "), " +
 				"so nothing was written"}
 	}
@@ -354,7 +354,7 @@ func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	ctx, cancel := context.WithTimeout(ctx, dropTimeout)
 	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		c.board+"/v1/tasks/"+url.PathEscape(card.ID)+"/files/drop?"+q, bytes.NewReader(data))
+		c.Board+"/v1/tasks/"+url.PathEscape(card.ID)+"/files/drop?"+q, bytes.NewReader(data))
 	if err != nil {
 		return nil, out, err
 	}
@@ -365,31 +365,31 @@ func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	res, err := dropHTTP.Do(hr)
 	if err != nil {
 		return nil, out, &ctl.BoardError{Code: http.StatusBadGateway,
-			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
+			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.Board, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		msg := readSentence(res.Body)
 		switch res.StatusCode {
 		case http.StatusForbidden:
-			return nil, out, &docsRefusal{Status: http.StatusForbidden, Msg: orSentence(msg,
+			return nil, out, &Refusal{Status: http.StatusForbidden, Msg: orSentence(msg,
 				"that path is outside where this card is allowed to reach")}
 		case http.StatusNotFound:
 			if msg == "" {
-				return nil, out, &docsRefusal{Status: http.StatusBadGateway, Msg: docRoomName(room) +
+				return nil, out, &Refusal{Status: http.StatusBadGateway, Msg: ctl.RoomName(room) +
 					" is older than the file drop, restart it on a current build"}
 			}
-			return nil, out, &docsRefusal{Status: http.StatusNotFound, Msg: msg}
+			return nil, out, &Refusal{Status: http.StatusNotFound, Msg: msg}
 		case http.StatusConflict:
-			return nil, out, &docsRefusal{Status: http.StatusConflict, Msg: orSentence(msg,
+			return nil, out, &Refusal{Status: http.StatusConflict, Msg: orSentence(msg,
 				"a file is already there, pass replace")}
 		case http.StatusRequestEntityTooLarge:
-			return nil, out, &docsRefusal{Status: http.StatusRequestEntityTooLarge, Msg: orSentence(msg,
+			return nil, out, &Refusal{Status: http.StatusRequestEntityTooLarge, Msg: orSentence(msg,
 				"the room would not take a file that large")}
 		case http.StatusBadRequest:
-			return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: orSentence(msg, "the room would not take that")}
+			return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: orSentence(msg, "the room would not take that")}
 		}
-		return nil, out, &docsRefusal{Status: http.StatusBadGateway,
+		return nil, out, &Refusal{Status: http.StatusBadGateway,
 			Msg: fmt.Sprintf("the room answered %d: %s", res.StatusCode, orSentence(msg, res.Status))}
 	}
 	var got struct {
@@ -397,37 +397,37 @@ func (c *controlMCP) getHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		Rel  string `json:"rel"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&got); err != nil {
-		return nil, out, &docsRefusal{Status: http.StatusBadGateway, Msg: "the room's answer could not be read"}
+		return nil, out, &Refusal{Status: http.StatusBadGateway, Msg: "the room's answer could not be read"}
 	}
-	return nil, getOutput{Path: got.Path, Rel: got.Rel, Size: int64(len(data))}, nil
+	return nil, GetOutput{Path: got.Path, Rel: got.Rel, Size: int64(len(data))}, nil
 }
 
-func (c *controlMCP) exportHandler(ctx context.Context, req *mcp.CallToolRequest, in exportInput) (
-	*mcp.CallToolResult, exportOutput, error) {
+func (c *MCP) ExportHandler(ctx context.Context, req *mcp.CallToolRequest, in ExportInput) (
+	*mcp.CallToolResult, ExportOutput, error) {
 
-	out := exportOutput{Files: []exportedFile{}, Skipped: []exportSkip{}}
+	out := ExportOutput{Files: []exportedFile{}, Skipped: []exportSkip{}}
 	st, err := c.dropStore()
 	if err != nil {
 		return nil, out, err
 	}
 	what := strings.TrimSpace(in.What)
 	if what != "usage" && what != "tasks" {
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "what is usage or tasks"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "what is usage or tasks"}
 	}
 	since := time.Now().UTC().Add(-7 * 24 * time.Hour)
 	if v := strings.TrimSpace(in.Since); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "since is not an RFC 3339 time"}
+			return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "since is not an RFC 3339 time"}
 		}
 		since = t
 	}
-	if c.rooms == nil {
+	if c.Rooms == nil {
 		return nil, out, &ctl.RefusedError{Msg: "this hub cannot list its rooms"}
 	}
 	online := map[string]bool{}
 	var all []string
-	for _, r := range c.rooms() {
+	for _, r := range c.Rooms() {
 		online[r.Name] = r.Online
 		if r.Online {
 			all = append(all, r.Name)
@@ -474,7 +474,7 @@ func (c *controlMCP) exportHandler(ctx context.Context, req *mcp.CallToolRequest
 			continue
 		}
 		row, err := st.FileAdd(hubstore.FileInput{
-			Name: fmt.Sprintf("%s-%s-%s.%s", what, room, stamp, ext), Origin: "card", By: callerName(req),
+			Name: fmt.Sprintf("%s-%s-%s.%s", what, room, stamp, ext), Origin: "card", By: ctl.CallerName(req),
 			Card: callerTag, Room: room, Data: body,
 			Note: fmt.Sprintf("export of %s from %s since %s", what, room, since.Format(time.RFC3339)),
 		})
@@ -491,10 +491,10 @@ func (c *controlMCP) exportHandler(ctx context.Context, req *mcp.CallToolRequest
 }
 
 // exportFetch reads one room's route through the hub's own board, answering the bytes or why the room is skipped.
-func (c *controlMCP) exportFetch(ctx context.Context, room, p string, limit int64) ([]byte, string) {
+func (c *MCP) exportFetch(ctx context.Context, room, p string, limit int64) ([]byte, string) {
 	ctx, cancel := context.WithTimeout(ctx, dropTimeout)
 	defer cancel()
-	hr, err := http.NewRequestWithContext(ctx, http.MethodGet, c.board+p, nil)
+	hr, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Board+p, nil)
 	if err != nil {
 		return nil, err.Error()
 	}

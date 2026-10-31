@@ -127,7 +127,7 @@ func (c *controlMCP) publishAsk(ctx context.Context, from, method string, req wi
 		return RelayAnswer{Code: http.StatusBadRequest, Error: "a publish is a POST of a JSON object"}
 	}
 	agent := strings.TrimSpace(req.From)
-	_, out, err := c.publishFor(ctx, agent, from, agent+"@"+from, in)
+	_, out, err := c.docsMCP().PublishFor(ctx, agent, from, agent+"@"+from, in)
 	if err != nil {
 		var dr *docsRefusal
 		if errors.As(err, &dr) {

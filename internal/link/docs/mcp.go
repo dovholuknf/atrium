@@ -1,4 +1,4 @@
-package link
+package docs
 
 import (
 	"context"
@@ -46,9 +46,9 @@ import (
 // that said it was this card" and never "the operator". Only a `local` origin may be called the
 // operator, and that is decided from an HTTP request, which this call is not.
 
-// realPathHeader is the room's api.RealPathHeader. Spelled here because this package does not
+// RealPathHeader is the room's api.RealPathHeader. Spelled here because this package does not
 // import the room's API.
-const realPathHeader = "X-Atrium-Real-Path"
+const RealPathHeader = "X-Atrium-Real-Path"
 
 const publishToolDesc = "Publish a document on the hub: a report, a summary, notes. It gets a stable link, " +
 	"`/d/<slug>`, that opens on the board and on the phone, and it outlives this card.\n\n" +
@@ -66,43 +66,62 @@ const publishToolDesc = "Publish a document on the hub: a report, a summary, not
 	"Limits: 5 MiB of text, 20 MiB of anything else, and 30 publishes an hour for your card. HTML and SVG " +
 	"are stored and offered as text, never rendered."
 
-type publishInput struct {
+type PublishInput struct {
 	Title   string `json:"title,omitempty" jsonschema:"the document's title. needed for a new document. a new version keeps the title it has"`
 	Content string `json:"content,omitempty" jsonschema:"the text to publish. give this or path, not both"`
 	Path    string `json:"path,omitempty" jsonschema:"a file inside your own card's directory, read on your room. give this or content, not both"`
 	Slug    string `json:"slug,omitempty" jsonschema:"to add a new version to the document with this slug. leave out for a new document"`
 }
 
-type publishOutput struct {
+type PublishOutput struct {
 	URL     string `json:"url"`
 	Slug    string `json:"slug"`
 	Version int    `json:"version"`
 }
 
-func (c *controlMCP) registerDocs(s *mcp.Server, class ctl.Class) {
-	addTool(s, class, &mcp.Tool{Name: "atrium_publish", Description: publishToolDesc},
-		audited(c, "ctl-publish", describePublish, c.publishHandler))
+// MCP is the document and file tools. The Caller is the hub's control server, and the rest is what it reads of the hub.
+type MCP struct {
+	ctl.Caller
+	// Docs is the hub's document store, read at each call so it may be wired later. Nil on a hub without one.
+	Docs func() *hubstore.Store
+	// Rooms lists the rooms the export reads. Nil in a test that does not read it.
+	Rooms func() []Room
+	// Board is the loopback base of the hub's own API, and Client reaches it under Timeout.
+	Board   string
+	Client  *http.Client
+	Timeout time.Duration
+}
+
+// Room is a room as the export names it.
+type Room struct {
+	Name   string
+	Online bool
+}
+
+func (c *MCP) RegisterDocs(s *mcp.Server, class ctl.Class) {
+	ctl.AddTool(s, class, &mcp.Tool{Name: "atrium_publish", Description: publishToolDesc},
+		ctl.Audited(c, "ctl-publish", DescribePublish, c.PublishHandler))
 }
 
 // AddRoomPublishTool is atrium_publish on a room's stdio server. The tool is the hub's: call asks the hub over the room's
 // link (see hubAsk) and the hub names the caller from the link, never from here.
 func AddRoomPublishTool(s *mcp.Server, call func(ctx context.Context, method, path string, body, out any) error, by string) {
 	mcp.AddTool(s, &mcp.Tool{Name: "atrium_publish", Description: publishToolDesc},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in publishInput) (*mcp.CallToolResult, publishOutput, error) {
-			var out publishOutput
+		func(ctx context.Context, _ *mcp.CallToolRequest, in PublishInput) (*mcp.CallToolResult, PublishOutput, error) {
+			var out PublishOutput
 			if by == "" {
 				return nil, out, &ctl.RefusedError{Msg: "this session has no ATRIUM_AGENT_NAME, so the hub cannot say which card " +
 					"is publishing. a document records the card that wrote it"}
 			}
-			err := call(ctx, http.MethodPost, hubPublishPath, in, &out)
+			err := call(ctx, http.MethodPost, PublishPath, in, &out)
 			return nil, out, err
 		})
 }
 
-// hubPublishPath is the one relayed path that is not an HTTP endpoint of the hub: hubAsk answers it in process.
-const hubPublishPath = "/_hub/publish"
+// PublishPath is the one relayed path that is not an HTTP endpoint of the hub: hubAsk answers it in process.
+const PublishPath = "/_hub/publish"
 
-func describePublish(req *mcp.CallToolRequest, in publishInput, out publishOutput) (string, string, bool) {
+func DescribePublish(req *mcp.CallToolRequest, in PublishInput, out PublishOutput) (string, string, bool) {
 	what := "publish " + strings.TrimSpace(in.Title)
 	if out.Slug != "" {
 		what = fmt.Sprintf("publish %s v%d", out.Slug, out.Version)
@@ -112,67 +131,67 @@ func describePublish(req *mcp.CallToolRequest, in publishInput, out publishOutpu
 	return ctl.RoomOf(req), what, true
 }
 
-// docsRefusal is a refusal with the status the HTTP API would have given it, so the same rule
+// Refusal is a refusal with the status the HTTP API would have given it, so the same rule
 // reads the same on both doors. It is a refusedError underneath, for the audit line.
-type docsRefusal struct {
+type Refusal struct {
 	Status int
 	Rule   string
 	Msg    string
 }
 
-func (e *docsRefusal) Error() string {
+func (e *Refusal) Error() string {
 	if e.Rule != "" {
 		return fmt.Sprintf("%s (%d, rule %s)", e.Msg, e.Status, e.Rule)
 	}
 	return fmt.Sprintf("%s (%d)", e.Msg, e.Status)
 }
 
-func (e *docsRefusal) Unwrap() error { return &ctl.RefusedError{Msg: e.Msg} }
+func (e *Refusal) Unwrap() error { return &ctl.RefusedError{Msg: e.Msg} }
 
 // publishError turns a store refusal into one with its status, and passes the rest through.
 func publishError(err error) error {
 	if de, ok := hubstore.AsDocError(err); ok {
-		return &docsRefusal{Status: docStatus[de.Kind], Rule: de.Rule, Msg: de.Msg}
+		return &Refusal{Status: docStatus[de.Kind], Rule: de.Rule, Msg: de.Msg}
 	}
 	return err
 }
 
-func (c *controlMCP) publishHandler(ctx context.Context, req *mcp.CallToolRequest, in publishInput) (
-	*mcp.CallToolResult, publishOutput, error) {
+func (c *MCP) PublishHandler(ctx context.Context, req *mcp.CallToolRequest, in PublishInput) (
+	*mcp.CallToolResult, PublishOutput, error) {
 
-	return c.publishFor(ctx, ctl.AgentOf(req), ctl.RoomOf(req), callerName(req), in)
+	return c.PublishFor(ctx, ctl.AgentOf(req), ctl.RoomOf(req), ctl.CallerName(req), in)
 }
 
-// publishFor is atrium_publish for a caller already named: agent on room, by `by`. The HTTP control server names the
+// PublishFor is atrium_publish for a caller already named: agent on room, by `by`. The HTTP control server names the
 // caller from its headers and a room's stdio server from the link (hubAsk), and both end here.
-func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in publishInput) (
-	*mcp.CallToolResult, publishOutput, error) {
+func (c *MCP) PublishFor(ctx context.Context, agent, room, by string, in PublishInput) (
+	*mcp.CallToolResult, PublishOutput, error) {
 
-	var out publishOutput
-	if c.docs == nil || c.docs() == nil {
+	var out PublishOutput
+	if c.Docs == nil || c.Docs() == nil {
 		return nil, out, &ctl.RefusedError{Msg: "this hub has no document store"}
 	}
-	st := c.docs()
+	st := c.Docs()
 	hasContent, hasPath := in.Content != "", strings.TrimSpace(in.Path) != ""
 	switch {
 	case hasContent && hasPath:
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "give content or path, not both"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "give content or path, not both"}
 	case !hasContent && !hasPath:
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "give content or path"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "give content or path"}
 	}
 	slug := strings.TrimSpace(in.Slug)
 	if slug != "" && !hubstore.ValidDocSlug(slug) {
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest,
+		return nil, out, &Refusal{Status: http.StatusBadRequest,
 			Msg: "a slug is lower case letters, digits and hyphens, at most 60"}
 	}
 	if slug == "" && strings.TrimSpace(in.Title) == "" {
-		return nil, out, &docsRefusal{Status: http.StatusBadRequest, Msg: "a new document needs a title"}
+		return nil, out, &Refusal{Status: http.StatusBadRequest, Msg: "a new document needs a title"}
 	}
 	if agent == "" {
 		return nil, out, &ctl.RefusedError{Msg: "this call carries no " + ctl.AgentHeader + ", so the hub cannot say which card " +
 			"is publishing. a document records the card that wrote it"}
 	}
-	card, err := c.callerCard(ctx, room, agent)
+	card, err := ctl.CallerCard(ctx, c, room, agent)
 	if err != nil {
 		return nil, out, err
 	}
@@ -188,7 +207,7 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 			limit = set.Caps.Other
 		}
 		refuseName := func(msg string) error {
-			return &docsRefusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
+			return &Refusal{Status: http.StatusUnprocessableEntity, Rule: docshare.RuleFileName,
 				Msg: msg + ". a document is readable by everyone past the board's password. this check is a " +
 					"speed bump and not a guarantee"}
 		}
@@ -220,54 +239,31 @@ func (c *controlMCP) publishFor(ctx context.Context, agent, room, by string, in 
 	if err != nil {
 		return nil, out, publishError(err)
 	}
-	return nil, publishOutput{URL: "/d/" + res.Slug, Slug: res.Slug, Version: res.Version}, nil
-}
-
-// callerCard is the card the X-Atrium-Agent name belongs to on the caller's room.
-func (c *controlMCP) callerCard(ctx context.Context, room, agent string) (*ctlCard, error) {
-	var body struct {
-		Tasks []ctlCard `json:"tasks"`
-	}
-	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
-		return nil, fmt.Errorf("could not find your card on %s: %w", docRoomName(room), err)
-	}
-	card := pickCard(body.Tasks, agent)
-	if card == nil {
-		return nil, &ctl.RefusedError{Msg: fmt.Sprintf("no card on %s answers to %q, so nothing can be published as it",
-			docRoomName(room), agent)}
-	}
-	return card, nil
-}
-
-func docRoomName(room string) string {
-	if room == "" {
-		return "this hub's room"
-	}
-	return "room " + room
+	return nil, PublishOutput{URL: "/d/" + res.Slug, Slug: res.Slug, Version: res.Version}, nil
 }
 
 // readCardFile asks the card's room for one file and answers its bytes and what the path
 // resolved to, relative to the card. The hub reads nothing from a disk itself: containment and
 // the symlink rules are the room's, in internal/safepath, and the room's 403 for a path outside
 // the card or through a link to outside is passed on as a 403.
-func (c *controlMCP) readCardFile(ctx context.Context, room string, card *ctlCard, p string, limit int64) (
+func (c *MCP) readCardFile(ctx context.Context, room string, card *ctl.Card, p string, limit int64) (
 	[]byte, string, error) {
 
-	return c.readCardFileWith(ctx, c.client, controlTimeout, room, card, p, limit)
+	return c.readCardFileWith(ctx, c.Client, c.Timeout, room, card, p, limit)
 }
 
 // readCardFileWith is readCardFile through a client and under a timeout of the caller's choosing. The file drop reads
-// up to 32 MiB over a link, which c.client cuts off at its own eight seconds.
-func (c *controlMCP) readCardFileWith(ctx context.Context, client *http.Client, timeout time.Duration, room string,
-	card *ctlCard, p string, limit int64) ([]byte, string, error) {
+// up to 32 MiB over a link, which c.Client cuts off at its own eight seconds.
+func (c *MCP) readCardFileWith(ctx context.Context, client *http.Client, timeout time.Duration, room string,
+	card *ctl.Card, p string, limit int64) ([]byte, string, error) {
 
 	if card.Worktree == "" {
-		return nil, "", &docsRefusal{Status: http.StatusBadRequest, Msg: "your card has no directory to read a path from. pass content"}
+		return nil, "", &Refusal{Status: http.StatusBadRequest, Msg: "your card has no directory to read a path from. pass content"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	u := "/v1/tasks/" + url.PathEscape(card.ID) + "/files?path=" + url.QueryEscape(p)
-	hr, err := http.NewRequestWithContext(ctx, http.MethodGet, c.board+u, nil)
+	hr, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Board+u, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -277,41 +273,41 @@ func (c *controlMCP) readCardFileWith(ctx context.Context, client *http.Client, 
 	res, err := client.Do(hr)
 	if err != nil {
 		return nil, "", &ctl.BoardError{Code: http.StatusBadGateway,
-			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.board, err)}
+			Msg: fmt.Sprintf("could not reach the board at %s: %v", c.Board, err)}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		msg := readSentence(res.Body)
 		switch res.StatusCode {
 		case http.StatusForbidden:
-			return nil, "", &docsRefusal{Status: http.StatusForbidden, Msg: orSentence(msg,
+			return nil, "", &Refusal{Status: http.StatusForbidden, Msg: orSentence(msg,
 				"that path is outside where this card is allowed to reach")}
 		case http.StatusNotFound:
-			return nil, "", &docsRefusal{Status: http.StatusNotFound, Msg: orSentence(msg, "no such file")}
+			return nil, "", &Refusal{Status: http.StatusNotFound, Msg: orSentence(msg, "no such file")}
 		case http.StatusBadRequest:
-			return nil, "", &docsRefusal{Status: http.StatusBadRequest, Msg: orSentence(msg, "the room would not read that")}
+			return nil, "", &Refusal{Status: http.StatusBadRequest, Msg: orSentence(msg, "the room would not read that")}
 		}
-		return nil, "", &docsRefusal{Status: http.StatusBadGateway,
+		return nil, "", &Refusal{Status: http.StatusBadGateway,
 			Msg: fmt.Sprintf("the room answered %d: %s", res.StatusCode, orSentence(msg, res.Status))}
 	}
-	raw := res.Header.Get(realPathHeader)
+	raw := res.Header.Get(RealPathHeader)
 	if raw == "" {
 		// A ROOM FROM BEFORE THIS TOOL cannot say what a path resolved to, and a name check on the
 		// name that was asked for is the one that a link defeats. Refused, not guessed.
-		return nil, "", &docsRefusal{Status: http.StatusBadGateway, Msg: "this room is older than the publish tool and cannot " +
+		return nil, "", &Refusal{Status: http.StatusBadGateway, Msg: "this room is older than the publish tool and cannot " +
 			"say what that path resolves to, which the secret check needs. pass content instead, or have the room " +
 			"restarted on a current build"}
 	}
 	rel, err := url.PathUnescape(raw)
 	if err != nil || rel == "" {
-		return nil, "", &docsRefusal{Status: http.StatusBadGateway, Msg: "the room sent a resolved path that could not be read"}
+		return nil, "", &Refusal{Status: http.StatusBadGateway, Msg: "the room sent a resolved path that could not be read"}
 	}
 	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("reading the file from the room: %w", err)
 	}
 	if int64(len(b)) > limit {
-		return nil, "", &docsRefusal{Status: http.StatusRequestEntityTooLarge,
+		return nil, "", &Refusal{Status: http.StatusRequestEntityTooLarge,
 			Msg: fmt.Sprintf("that file is over the %d byte cap", limit)}
 	}
 	return b, rel, nil

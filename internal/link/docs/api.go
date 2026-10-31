@@ -1,4 +1,4 @@
-package link
+package docs
 
 import (
 	"encoding/json"
@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -61,14 +62,30 @@ import (
 // bare, must not be the hole. A request with a foreign `Origin` or `Sec-Fetch-Site:
 // cross-site` is 403, on upload, version, title, delete, restore, purge and settings.
 
+// Service is the hub's document store and the HTTP half of the documents and the file drop. See mcp.go for the tools.
+type Service struct {
+	// mu guards docs, which is wired after the Service is built.
+	mu sync.Mutex
+	// docs is the hub's documents. Nil until SetDocs wires it, and a hub without one answers
+	// /_hub/docs 404.
+	docs *hubstore.Store
+	// RecordAudit writes one line in the hub's operational audit log.
+	RecordAudit func(room, kind, detail string)
+}
+
+// New is a Service with nothing wired yet.
+func New(recordAudit func(room, kind, detail string)) *Service {
+	return &Service{RecordAudit: recordAudit}
+}
+
 // SetDocs wires the document store. Optional: a hub without one answers /_hub/docs 404.
-func (p *Proxy) SetDocs(st *hubstore.Store) {
+func (p *Service) SetDocs(st *hubstore.Store) {
 	p.mu.Lock()
 	p.docs = st
 	p.mu.Unlock()
 }
 
-func (p *Proxy) docStore() *hubstore.Store {
+func (p *Service) DocStore() *hubstore.Store {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.docs
@@ -148,9 +165,9 @@ func docOperatorOnly(w http.ResponseWriter, r *http.Request, what string) bool {
 	return false
 }
 
-// serveDocs answers every /_hub/docs route.
-func (p *Proxy) serveDocs(w http.ResponseWriter, r *http.Request, sub string) {
-	st := p.docStore()
+// ServeDocs answers every /_hub/docs route.
+func (p *Service) ServeDocs(w http.ResponseWriter, r *http.Request, sub string) {
+	st := p.DocStore()
 	if st == nil {
 		http.NotFound(w, r)
 		return
@@ -253,7 +270,7 @@ func (p *Proxy) serveDocs(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 }
 
-func (p *Proxy) docsList(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) docsList(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	q := r.URL.Query()
 	docs, err := st.DocList(q.Get("q"), q.Get("deleted") == "1", strings.TrimSpace(q.Get("card")))
 	if err != nil {
@@ -276,7 +293,7 @@ func (p *Proxy) docsList(w http.ResponseWriter, r *http.Request, st *hubstore.St
 	})
 }
 
-func (p *Proxy) docsSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) docsSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	set, err := st.DocSettings()
 	if err != nil {
 		docFail(w, err)
@@ -293,7 +310,7 @@ func (p *Proxy) docsSettings(w http.ResponseWriter, r *http.Request, st *hubstor
 	})
 }
 
-func (p *Proxy) docsSetSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
+func (p *Service) docsSetSettings(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	if !docOperatorOnly(w, r, "the publishing switch and the caps are changed") {
 		return
 	}
@@ -312,7 +329,7 @@ func (p *Proxy) docsSetSettings(w http.ResponseWriter, r *http.Request, st *hubs
 	p.docsSettings(w, r, st)
 }
 
-func (p *Proxy) docsRetitle(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
+func (p *Service) docsRetitle(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
 	var body struct {
 		Title string `json:"title"`
 	}
@@ -327,7 +344,7 @@ func (p *Proxy) docsRetitle(w http.ResponseWriter, r *http.Request, st *hubstore
 	docJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (p *Proxy) docsPurge(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
+func (p *Service) docsPurge(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
 	// A purge through a proxy is refused here whatever the share's password: LocalOperator
 	// fails on any forwarding header, so X-Forwarded-For set is 403.
 	if !docOperatorOnly(w, r, "bytes are purged") {
@@ -364,7 +381,7 @@ func (p *Proxy) docsPurge(w http.ResponseWriter, r *http.Request, st *hubstore.S
 // client reads kind and mime from the metadata and renders from these bytes, never
 // inline: a document is text a model or a visitor wrote, and served inline as HTML it
 // would run on the board's own origin, which holds every card.
-func (p *Proxy) docsRaw(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
+func (p *Service) docsRaw(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
 	n := 0
 	if v := r.URL.Query().Get("v"); v != "" {
 		var err error
@@ -386,7 +403,7 @@ func (p *Proxy) docsRaw(w http.ResponseWriter, r *http.Request, st *hubstore.Sto
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", attachmentHeader(downloadName(title, v)))
+	h.Set("Content-Disposition", AttachmentHeader(downloadName(title, v)))
 	h.Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, "", time.Time{}, f)
 }
@@ -423,13 +440,13 @@ func cleanHeaderText(s string) string {
 	return b.String()
 }
 
-// attachmentHeader is a Content-Disposition by RFC 6266: an ASCII `filename=` with CR, LF,
+// AttachmentHeader is a Content-Disposition by RFC 6266: an ASCII `filename=` with CR, LF,
 // `"` and `\` taken out, and `filename*=UTF-8”` carrying the real name percent-encoded.
 //
 // A TITLE IS TEXT A MODEL WROTE. A raw CR or LF in it would end the header and start
 // another, so both are removed from BOTH forms, and everything outside the unreserved
 // set is percent-encoded in the second.
-func attachmentHeader(name string) string {
+func AttachmentHeader(name string) string {
 	name = cleanHeaderText(name)
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -477,7 +494,7 @@ func rfc5987(s string) string {
 
 // docsUpload takes one multipart form: `file` (required), `title` (a new document only)
 // and `override` (operator only). slug is empty for a new document.
-func (p *Proxy) docsUpload(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
+func (p *Service) docsUpload(w http.ResponseWriter, r *http.Request, st *hubstore.Store, slug string) {
 	set, err := st.DocSettings()
 	if err != nil {
 		docFail(w, err)
