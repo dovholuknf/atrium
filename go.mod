@@ -119,6 +119,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/dovholuknf/atrium/internal/base v0.0.0
 	github.com/dovholuknf/atrium/internal/gitsync v0.0.0
 	github.com/dovholuknf/atrium/internal/hubstore v0.0.0
