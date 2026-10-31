@@ -30,6 +30,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -1163,6 +1164,9 @@ func (d *Daemon) publishTask(id string) {
 	}
 	d.ap.PublishTask(t)
 }
+
+// PublishTaskFunc is publishTask as the value a feature package takes in place of the Daemon.
+func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.publishTask }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
 // BoardHandler is the human-facing surface: the JSON API, the event stream, the
