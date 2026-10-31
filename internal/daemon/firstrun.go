@@ -3,6 +3,7 @@ package daemon
 import (
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -44,7 +45,7 @@ var rendererEnvKeys = []string{classicRendererEnv, "CLAUDE_CODE_NO_FLICKER"}
 // operator can have said otherwise, and matched case-insensitively for the
 // reason permGateDefault gives.
 func classicRendererDefault(h *store.Harness, launchEnv map[string]string) (string, bool) {
-	if h == nil || h.LaunchMode != store.LaunchPTY || !isClaude(h) {
+	if h == nil || h.LaunchMode != store.LaunchPTY || !shared.IsClaude(h) {
 		return "", false
 	}
 	for k := range launchEnv {

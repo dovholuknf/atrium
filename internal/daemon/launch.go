@@ -21,6 +21,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/daemon/launch"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -1138,7 +1139,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			briefName = filepath.ToSlash(filepath.Join(homeDir.Dir, briefFileName))
 		}
 		write := writeBriefFile
-		if isClaude(h) {
+		if shared.IsClaude(h) {
 			write = func(dir, brief string, _ bool) (string, error) { return writeBrief(dir, brief) }
 		}
 		p, err := write(briefDir, brief, !outside)
@@ -1165,7 +1166,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 				vcancel()
 			}
 		}
-	} else if req.Resume == "" && wanted != "" && !outside && !isClaude(h) {
+	} else if req.Resume == "" && wanted != "" && !outside && !shared.IsClaude(h) {
 		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
 		// instead, on a fresh start only, like the brief.
 		wanted = withGitURLLine(wanted)
@@ -1173,7 +1174,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// THE RESOURCES LINE rides on every fresh start with a prompt, an outside-code card included: it names a tool
 	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile). A claude session is told
 	// the room's lines at its start instead (roomLines).
-	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" && !isClaude(h) {
+	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" && !shared.IsClaude(h) {
 		wanted = withToolsLine(withResourcesLine(wanted))
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
@@ -1239,7 +1240,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	agent := small.HasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
 		(task != nil && d.reportsToLauncher(task))
 	if len(cleanKitNames(req.LeanAgents)) > 0 || len(cleanKitNames(req.LeanSkills)) > 0 {
-		if !isClaude(h) {
+		if !shared.IsClaude(h) {
 			return nil, fmt.Errorf("%s has no agents or skills. lean_agents and lean_skills are claude launch options", h.Label)
 		}
 		if req.Lean != nil && !*req.Lean {
@@ -1254,7 +1255,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	if superlean {
-		if !isClaude(h) {
+		if !shared.IsClaude(h) {
 			return nil, fmt.Errorf("%s cannot start superlean. superlean is a claude launch option", h.Label)
 		}
 		if kit.Interview {
@@ -1263,7 +1264,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// A caller's own --tools in args wins over the superlean list, and the launched event says so.
 	superleanOwnTools := superlean && hasToolsFlag(args)
-	if lean && !isClaude(h) {
+	if lean && !shared.IsClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
 	}
 	// finishArgs adds the Stop hook, or for a lean launch the whole lean set,
@@ -1281,7 +1282,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
 	}
-	if wanted != "" && isClaude(h) && strings.Join(h.PromptArgs, " ") == "{prompt}" {
+	if wanted != "" && shared.IsClaude(h) && strings.Join(h.PromptArgs, " ") == "{prompt}" {
 		if flag := promptTakenBy(args); flag != "" {
 			return nil, fmt.Errorf("the opening prompt would never reach %s: %s takes the argument after it as its "+
 				"own value, so the session would open at an empty prompt. write it as %s=<value>, or put another "+

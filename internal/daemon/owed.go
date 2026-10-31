@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -130,7 +131,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 		// THE TYPED NUDGE for a launcher that does not hold its notices. Only a permission wait has
 		// no notice of its own: a report, an ask, a silent stop and an ending each already say it.
 		if launcher != nil && reason == owedPermission && !holdsNotices(launcher) {
-			if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, truncatePeer(t.WireName+" is "+line)); err != nil {
+			if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, shared.TruncatePeer(t.WireName+" is "+line)); err != nil {
 				log.Printf("[atrium] could not nudge %s about %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)
 			}
 		}
@@ -260,7 +261,7 @@ func (d *Daemon) pushOwed(worker *store.Task, it store.OwedItem, now time.Time) 
 		text = fmt.Sprintf("%s has no launcher, and has been waiting at %s for %d minutes. Its last words: %s",
 			it.WorkerWire, it.Status, mins, orWord(it.Text, "none"))
 	}
-	text = truncatePeer(text)
+	text = shared.TruncatePeer(text)
 	if o := d.localOrchestrator(worker.ID); o != nil {
 		d.holdNotice(o, worker, NoticeOwed, text)
 		return
@@ -362,7 +363,7 @@ func (d *Daemon) listOwed(host *store.Task) {
 	}
 	line := fmt.Sprintf("%d open %s from your workers: %s. atrium_task notices to read them.",
 		len(parts), noun, strings.Join(parts, ", "))
-	if _, err := d.st.QueueFromPeer(host.ID, truncatePeer(line), "atrium"); err != nil {
+	if _, err := d.st.QueueFromPeer(host.ID, shared.TruncatePeer(line), "atrium"); err != nil {
 		log.Printf("[atrium] could not list the owed items for %s: %v", host.DisplayTitle(), err)
 	}
 }
@@ -400,7 +401,7 @@ func (d *Daemon) orphanReport(worker *store.Task, body string) {
 	if small.HasTag(worker.Tags, OrchestratorTag) {
 		return
 	}
-	text := truncatePeer(worker.WireName + " reported, and has no launcher to hear it: " + body)
+	text := shared.TruncatePeer(worker.WireName + " reported, and has no launcher to hear it: " + body)
 	// THIS NOTICE IS THE ITEM: the worker is not also "ended with no report".
 	if err := d.st.SetOwedReported(worker.ID); err != nil {
 		log.Printf("[atrium] could not mark %s's report as told: %v", worker.DisplayTitle(), err)

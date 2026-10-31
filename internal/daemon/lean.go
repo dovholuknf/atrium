@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/claudeconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -107,7 +108,7 @@ func checkLeanGateway(st *store.Store, name string, readFile func(string) ([]byt
 	have := map[string]bool{}
 	checked := false
 	for _, h := range hs {
-		if !h.Enabled || !isClaude(h) {
+		if !h.Enabled || !shared.IsClaude(h) {
 			continue
 		}
 		args, _, err := runnerArgsWith(h, "", "", launchOptions{})

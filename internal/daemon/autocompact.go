@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -75,7 +76,7 @@ func (d *Daemon) autocompactArgsFor(h *store.Harness) []string {
 	if h == nil || len(h.AutocompactArgs) == 0 {
 		return nil
 	}
-	if isClaude(h) && !d.acProbe.takes(h.Exe()) {
+	if shared.IsClaude(h) && !d.acProbe.takes(h.Exe()) {
 		return nil
 	}
 	return h.AutocompactArgs

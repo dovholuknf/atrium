@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -307,7 +308,7 @@ func (d *Daemon) itemUnreached(task *store.Task, it *store.ItemRow) {
 
 // itemQueue queues the notice on a card here, and resumes it when it is parked: the owner is the one who has to act.
 func (d *Daemon) itemQueue(worker *store.Task, toID, key, text string) {
-	if _, err := d.st.ItemNotice(worker.ID, toID, key, truncatePeer(text)); err != nil {
+	if _, err := d.st.ItemNotice(worker.ID, toID, key, shared.TruncatePeer(text)); err != nil {
 		log.Printf("[atrium] could not queue item notice %s: %v", key, err)
 		return
 	}
@@ -341,7 +342,7 @@ func (d *Daemon) itemNotifyHolder(task *store.Task, it *store.ItemRow, key, text
 		return false
 	}
 	if room := d.otherRoom(got.Holder.Room); room != "" {
-		_, err := d.holdRelay(task, task.WireName, "", room, got.Holder.Card, truncatePeer(text), "", "", store.RelaySourceNotice)
+		_, err := d.holdRelay(task, task.WireName, "", room, got.Holder.Card, shared.TruncatePeer(text), "", "", store.RelaySourceNotice)
 		return err == nil
 	}
 	if _, err := d.st.Get(got.Holder.Card); err != nil {

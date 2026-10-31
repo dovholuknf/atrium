@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -233,7 +234,7 @@ func (d *Daemon) runsClaude(t *store.Task) bool {
 		return false
 	}
 	if h, err := d.st.Harness(t.Runner); err == nil && h != nil {
-		return isClaude(h)
+		return shared.IsClaude(h)
 	}
 	return strings.EqualFold(t.Runner, "claude")
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -500,7 +501,7 @@ func (d *Daemon) launcherRelay(worker *store.Task, text string) *store.RelaySpec
 	}
 	return &store.RelaySpec{
 		FromTask: worker.ID, FromWire: worker.WireName, ToRoom: room, ToName: name, ToCard: card,
-		Text: truncatePeer(text),
+		Text: shared.TruncatePeer(text),
 	}
 }
 

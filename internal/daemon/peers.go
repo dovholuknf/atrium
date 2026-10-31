@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/address"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -85,7 +86,7 @@ const (
 	// Eight thousand characters is several paragraphs. A session that needs to
 	// hand over more than that is handing over a document, and the way to do
 	// that is to write a file and say where it is.
-	maxPeerMessage = 8000
+	maxPeerMessage = shared.MaxPeerMessage
 
 	// peerSendsPerMinute bounds how often one session may message others.
 	//

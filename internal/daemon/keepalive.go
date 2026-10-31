@@ -19,6 +19,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -761,7 +762,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 		return skip("room deploy hold")
 	}
 	h, err := k.st.Harness(t.Runner)
-	if err != nil || !isClaude(h) {
+	if err != nil || !shared.IsClaude(h) {
 		return skip("not a Claude card")
 	}
 	// A parked card's cache is meant to go cold: the park chose to let it go.
@@ -1256,7 +1257,7 @@ func (k *keepalive) loop(ctx context.Context) {
 // reopened after a restart or resumed, and the board default applies to new
 // cards only: a card somebody turned off stays off.
 func (d *Daemon) keepaliveAtLaunch(taskID string, h *store.Harness, env map[string]string) {
-	if !isClaude(h) {
+	if !shared.IsClaude(h) {
 		return
 	}
 	state := store.KeepaliveOff
@@ -1289,7 +1290,7 @@ func (d *Daemon) keepaliveSet(taskID string, on bool) (any, error) {
 		return nil, err
 	}
 	h, _ := d.st.Harness(t.Runner)
-	if !isClaude(h) {
+	if !shared.IsClaude(h) {
 		return nil, errors.New("keep-alive is for Claude cards only")
 	}
 	state := store.KeepaliveOff
