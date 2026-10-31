@@ -544,7 +544,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			}
 		}
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	return nil
 }
 

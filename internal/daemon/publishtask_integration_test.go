@@ -42,7 +42,7 @@ func TestPublishTaskSendsTheDecoratedRow(t *testing.T) {
 	// The stream subscribes after it answers, so publish until the subscriber hears one.
 	go func() {
 		for {
-			d.publishTask(card.ID)
+			d.Publish(card.ID)
 			select {
 			case <-stop:
 				return

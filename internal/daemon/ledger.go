@@ -91,7 +91,7 @@ func (d *Daemon) ledgerChanged(taskID string) {
 	default:
 	}
 	if taskID != "" {
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 }
 
@@ -102,7 +102,7 @@ func (d *Daemon) ledgerNotice(n store.LedgerNotice) {
 	if n.Held {
 		d.ringHeld(n.ArbiterID, n.TaskID, n.Source, n.Text)
 	} else {
-		d.publishTask(n.ArbiterID)
+		d.Publish(n.ArbiterID)
 		d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, "", n.Source == NoticeReport || d.waitsForTurn(n.ArbiterID, WhenImmediate))
 	}
 	if n.Source == store.NoticeEnded {

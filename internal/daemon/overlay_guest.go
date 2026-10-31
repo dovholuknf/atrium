@@ -542,7 +542,7 @@ func (d *Daemon) RestoreCardShares() {
 				log.Printf("[atrium] could not put %s back on its share: %v", title, err)
 				continue
 			}
-			d.publishTask(rec.TaskID)
+			d.Publish(rec.TaskID)
 		}
 	}()
 }
@@ -570,7 +570,7 @@ func (d *Daemon) EnsureCardShare(taskID string) {
 			log.Printf("[atrium] could not put %s back on its share: %v", title, err)
 			return
 		}
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}()
 }
 

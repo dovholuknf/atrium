@@ -304,7 +304,7 @@ func TestAReportedWorkersStopPublishesOnce(t *testing.T) {
 	// The stream is subscribed once a publish of our own comes back down it.
 	deadline := time.Now().Add(3 * time.Second)
 	for ready := false; !ready && time.Now().Before(deadline); {
-		d.publishTask(launcher.ID)
+		d.Publish(launcher.ID)
 		select {
 		case l := <-lines:
 			ready = strings.HasPrefix(l, "event: task")

@@ -593,14 +593,14 @@ func (d *Daemon) deliverPeerCaused(target *store.Task, from, text, kind, cause s
 		// fall through to the queue
 	} else if typed, _ := d.tellByTyping(target, from, text, kind, waitTurn); typed {
 		d.noteDelivery(target.ID, from, store.DeliveryKind(from, cause))
-		d.publishTask(target.ID)
+		d.Publish(target.ID)
 		return true, "", nil
 	}
 	m, err := d.st.QueueCaused(target.ID, text, from, kind, cause, waitTurn)
 	if err != nil {
 		return false, "", err
 	}
-	d.publishTask(target.ID)
+	d.Publish(target.ID)
 	if !d.carriedByHooks(target.ID, waitTurn) {
 		d.deferPeerInjection(target.ID, m.ID, from, text, kind, waitTurn)
 	}

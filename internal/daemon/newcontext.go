@@ -736,7 +736,7 @@ func (d *Daemon) releaseHeld(taskID string) {
 	if d.pending != nil {
 		d.pending.reset(taskID)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // StartNewContext begins the sequence on a card and returns at once. The steps
@@ -775,7 +775,7 @@ func (d *Daemon) StartNewContext(taskID string) error {
 		return errNewContextBusy
 	}
 	log.Printf("[atrium] new context started on %s", task.DisplayTitle())
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	go d.runNewContext(taskID, gen)
 	return nil
 }
@@ -847,7 +847,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		}
 	}
 	after := func() {
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		d.releaseHeld(taskID)
 	}
 	end := func(ev map[string]any) {
@@ -891,7 +891,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 			return
 		}
 		log.Printf("[atrium] new context on %s: step 2/3, waiting for the turn to end to type /clear", taskID)
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 
 	if start != NewContextLimit {
@@ -926,7 +926,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 			return
 		}
 		log.Printf("[atrium] new context on %s: step 3/3, the new session started, typing the wake", taskID)
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 
 	// 3. The wake, once the new session has drawn its input box.
@@ -1070,7 +1070,7 @@ func (d *Daemon) cyclePrompt(taskID string, gen uint64, c *newContext) error {
 	}); err != nil {
 		log.Printf("[atrium] could not record the limit prompt on %s: %v", taskID, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 
@@ -1179,7 +1179,7 @@ func (d *Daemon) ncArm(taskID string, gen uint64) bool {
 	run.pasteMu.Unlock()
 	if changed {
 		log.Printf("[atrium] new context on %s: the input line is clear, holding input", taskID)
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 	return armed
 }
@@ -1309,7 +1309,7 @@ func (d *Daemon) ncTypeBusy(taskID string, gen uint64, label, text string, limit
 		// The card says what `/clear` waits on, so a stall is read there and not only in the log.
 		if label == "" && text == newContextClear && time.Since(began) >= d.hk.ncTiming.noteAfter {
 			if d.nctx.setWaiting(taskID, gen, "waiting to type /clear: "+d.ncBlocker(taskID, busy)) {
-				d.publishTask(taskID)
+				d.Publish(taskID)
 			}
 		}
 		if time.Since(logged) >= d.hk.ncTiming.logEvery {
@@ -1423,7 +1423,7 @@ func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 		ncJSON(w, http.StatusOK, map[string]any{"card": id, "new_context": d.newContextFor(id)})
 	case http.MethodDelete:
 		gone := d.nctx.clear(id)
-		d.publishTask(id)
+		d.Publish(id)
 		d.releaseHeld(id)
 		ncJSON(w, http.StatusOK, map[string]any{"card": id, "cleared": gone})
 	case http.MethodPost:

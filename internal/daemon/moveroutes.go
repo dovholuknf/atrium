@@ -142,7 +142,7 @@ func (d *Daemon) moveFreeze(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 		moveRefusal(w, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "freeze": f})
 }
 
@@ -372,7 +372,7 @@ func (d *Daemon) moveMoved(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		moveRefusal(w, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "moved_to": in.To})
 }
 
@@ -438,7 +438,7 @@ func (d *Daemon) moveRelease(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		moveRefusal(w, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -610,6 +610,6 @@ func (d *Daemon) moveAdopt(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }

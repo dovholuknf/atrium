@@ -152,7 +152,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	if mw != nil {
 		d.waitForModel(taskID, mw)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 
 	out := map[string]any{"card": taskID, "model": model, "from": t.Model, "typed": typed,
 		"when": whenWord(waitTurn), "delivered": "terminal"}
@@ -202,7 +202,7 @@ func (d *Daemon) noteTypedModel(taskID, line string) {
 	}); err != nil {
 		log.Printf("[atrium] switched %s to %s by hand but could not record it: %v", taskID, model, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // typeModel types `/model <model>` and Enter through the say gate. False and no
@@ -299,7 +299,7 @@ func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
 			}); err != nil {
 				log.Printf("[atrium] typed /model into %s but could not record it: %v", taskID, err)
 			}
-			d.publishTask(taskID)
+			d.Publish(taskID)
 			return
 		}
 	}()
@@ -322,7 +322,7 @@ func (d *Daemon) giveUpOnModel(taskID string, mw *modelWait) {
 	}); err != nil {
 		log.Printf("[atrium] could not record the give-up on %s: %v", taskID, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // modelHooks are the seams of model switches.

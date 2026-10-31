@@ -341,7 +341,7 @@ func (d *Daemon) holdNotice(launcher, worker *store.Task, source, text string) {
 // words the board shows. See docs/changes/r-hold-notices.md for what the board
 // does with it.
 func (d *Daemon) ringHeld(launcherID, workerID, source, text string) {
-	d.publishTask(launcherID)
+	d.Publish(launcherID)
 	d.ap.Broadcast("notice", map[string]any{
 		"task_id": launcherID, "about_card": workerID, "source": source, "toast": text,
 	})
@@ -747,12 +747,12 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 		}
 		live[t.ID] = true
 		if d.esc.put(t.ID, x) {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 	}
 	d.scans.forgetExcept(live)
 	for _, id := range d.esc.forgetExcept(live) {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 	return nil
 }

@@ -113,7 +113,7 @@ func (d *Daemon) startCycle(t *store.Task, tokens, limit int64) {
 	if err := d.st.AppendEvent(t.ID, store.EventNotified, cycleStartEvent(tokens, limit, path, l)); err != nil {
 		log.Printf("[atrium] could not record the context cycle start on %s: %v", t.ID, err)
 	}
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	go d.runNewContext(t.ID, gen)
 }
 

@@ -259,7 +259,7 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 	d.idle.put(t.ID, mark)
 	log.Printf("[atrium] %s has been idle %s, taking its handoff before it is parked",
 		t.DisplayTitle(), idle.Round(time.Minute))
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	go func() {
 		step, err := d.ncCapture(t.ID, gen, file)
 		done := *mark
@@ -332,7 +332,7 @@ func (d *Daemon) idlePark(t *store.Task, idle time.Duration, m *handoffMark) {
 			if err := d.st.SetWhy(id, "parked without a handoff: "+m.timeoutWhy); err != nil {
 				log.Printf("[atrium] could not note the missing handoff on %s: %v", id, err)
 			}
-			d.publishTask(id)
+			d.Publish(id)
 		}
 		d.idle.drop(id)
 		d.idle.parking.Delete(id)

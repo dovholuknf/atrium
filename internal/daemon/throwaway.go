@@ -69,7 +69,7 @@ func (d *Daemon) promoteThrowaway(taskID, from, to string) {
 			"could not be moved to "+to+", so it stays in "+from); err != nil {
 			log.Printf("[atrium] note the failed promote on %s: %v", taskID, err)
 		}
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		return
 	}
 	if err := d.st.Promoted(taskID, filepath.ToSlash(to)); err != nil {
@@ -79,7 +79,7 @@ func (d *Daemon) promoteThrowaway(taskID, from, to string) {
 		log.Printf("[atrium] clear the throwaway note on %s: %v", taskID, err)
 	}
 	log.Printf("[atrium] promoted %s to %s", taskID, to)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // discardThrowaway removes the directory, transcripts, then card. Stop if
@@ -156,7 +156,7 @@ func (d *Daemon) endHomeThrowaway(t *store.Task, row store.CardHome) {
 		if err := d.st.SetWhy(t.ID, ""); err != nil {
 			log.Printf("[atrium] clear the throwaway note on %s: %v", t.ID, err)
 		}
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 		return
 	}
 	d.CloseShell(t.ID)

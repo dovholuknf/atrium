@@ -64,7 +64,7 @@ func (d *Daemon) noteTurnForSeen(taskID string, q store.TurnQuestions, autoVia s
 	} else {
 		d.unseen.Store(taskID, true)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // launcherSeen is the auto-seen via for a turn ending on this card: the
@@ -96,7 +96,7 @@ func (d *Daemon) seenAnswered(taskID, via string) {
 		return
 	}
 	if changed {
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 }
 
@@ -115,7 +115,7 @@ func (d *Daemon) seenTyped(taskID string) {
 			return
 		}
 		if changed {
-			d.publishTask(taskID)
+			d.Publish(taskID)
 		}
 	}()
 }

@@ -266,7 +266,7 @@ func (d *Daemon) landedPass(grace time.Duration, now time.Time) {
 
 func (d *Daemon) landedSet(id, why string) {
 	if d.landed.set(id, why) {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 }
 
@@ -308,7 +308,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 		line += ", kept: " + res.Kept
 	}
 	d.noteOnCard(t.ID, line)
-	d.publishTask(t.ID)
+	d.Publish(t.ID)
 	d.ap.Broadcast("task-removed", nil)
 	log.Printf("[atrium] %s (%s) after %s idle", line, t.DisplayTitle(), grace)
 }
@@ -317,7 +317,7 @@ func (d *Daemon) landedOne(t *store.Task, grace time.Duration, now time.Time) {
 func (d *Daemon) keepLanded(t *store.Task, why string) {
 	if d.landed.set(t.ID, why) {
 		d.noteOnCard(t.ID, why)
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	}
 }
 

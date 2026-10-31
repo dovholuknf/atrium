@@ -135,7 +135,7 @@ func (d *Daemon) feedPool(pool string) {
 		if _, changed, err := d.st.ItemAssign(it.ID, card.ID, gen); err != nil {
 			log.Printf("[atrium] item %s was handed to %s and could not be recorded: %v", it.ID, card.DisplayTitle(), err)
 		} else if changed {
-			d.publishTask(card.ID)
+			d.Publish(card.ID)
 			d.kickItems()
 		}
 	}

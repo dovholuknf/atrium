@@ -72,7 +72,7 @@ func (d *Daemon) outputSoon(taskID string) {
 			return
 		}
 		if d.outputMoved(t) {
-			d.publishTask(taskID)
+			d.Publish(taskID)
 		}
 	})
 }

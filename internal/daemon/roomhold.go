@@ -387,7 +387,7 @@ func (d *Daemon) holdChanged(h *store.RoomHold) {
 		ids = d.holdableCards()
 	}
 	for _, id := range ids {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 }
 

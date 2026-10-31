@@ -2563,7 +2563,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		if _, err := d.spawnPTY(x.taskID, x.spec.cmd, x.spec.args, x.spec.cwd, x.spec.env); err != nil {
 			log.Printf("[atrium] fresh start for %s failed too: %v", x.taskID, err)
 		} else {
-			d.publishTask(x.taskID)
+			d.Publish(x.taskID)
 			return true, err
 		}
 	}
@@ -2575,7 +2575,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 			log.Printf("[atrium] status after exit for %s: %v", x.taskID, err)
 		}
 	}
-	d.publishTask(x.taskID)
+	d.Publish(x.taskID)
 	log.Printf("[atrium] supervised runner for %s exited with %d", x.taskID, code)
 
 	// Clean up throwaways after waiting for the process, when its working

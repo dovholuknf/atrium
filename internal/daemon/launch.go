@@ -1142,9 +1142,9 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		d.starting.Store(t.ID, struct{}{})
 		defer func() {
 			d.starting.Delete(t.ID)
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}()
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	case claimed:
 		// A card offered by a source has never been on the wire, so it has no
 		// name for Register to match and no pid for the fallback. Registering
@@ -1598,7 +1598,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		d.startedOnto(created.ID)
 	}
 
-	d.publishTask(created.ID)
+	d.Publish(created.ID)
 	return d.st.Get(created.ID)
 }
 
@@ -1710,7 +1710,7 @@ func (d *Daemon) launchFailed(taskID, reason string) {
 		log.Printf("[atrium] status after launch failure for %s: %v", taskID, err)
 	}
 	log.Printf("[atrium] %s never started: %s", taskID, small.FirstLine(reason))
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // inheritedTaint names environment variables that must not reach a launched
@@ -1986,7 +1986,7 @@ func (d *Daemon) Kill(taskID string) error {
 		return err
 	}
 	d.recordUsage(taskID)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 

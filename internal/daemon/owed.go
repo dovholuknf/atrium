@@ -139,7 +139,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 	if err := d.st.LogWorkAtrium(t.ID, "owes an answer ("+reason+"), kept on its launcher's card"); err != nil {
 		log.Printf("[atrium] could not log the owed item on %s: %v", t.DisplayTitle(), err)
 	}
-	d.publishTask(it.Host)
+	d.Publish(it.Host)
 }
 
 func firstWords(s string) string {
@@ -175,7 +175,7 @@ func (d *Daemon) closeOwed(workerID, how string) {
 		return
 	}
 	log.Printf("[atrium] owed item for %s closed: %s", it.WorkerWire, how)
-	d.publishTask(it.Host)
+	d.Publish(it.Host)
 }
 
 // owedPass is one tick: open what is owed, close what is not, push what has waited.

@@ -126,7 +126,7 @@ func (d *Daemon) runSource(ctx context.Context, s *store.Source) (created int, e
 				runErr = fmt.Errorf("could not offer %s: %w", item.ExternalID, err)
 				break
 			}
-			d.publishTask(task.ID)
+			d.Publish(task.ID)
 		}
 	}
 

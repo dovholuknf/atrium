@@ -118,7 +118,7 @@ func (d *Daemon) markDelivered(taskID, via string, ids []string) error {
 	for _, id := range ids {
 		_, _ = d.st.ItemUnblockDelivered(id)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 
@@ -431,7 +431,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// instruction, so the turn is not over after all.
 	d.turnResumed(task.ID)
 	d.usage.prompted(task.ID, messagesCause(msgs))
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	_, _ = w.Write(out)
 }
 
@@ -476,7 +476,7 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 		// `thinking` back from the tool-end that follows the report, and this
 		// Stop is the only thing left that can put it to idle.
 		d.act.set(taskID, ActivityIdle, "")
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		return
 	}
 	if err := d.st.SetStatusBecause(taskID, store.StatusNeedsInput, reason); err != nil {
@@ -484,7 +484,7 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 		return
 	}
 	d.act.set(taskID, ActivityIdle, "")
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // turnPaused is a turn that ended with the session's own subagents still out.
@@ -499,7 +499,7 @@ func (d *Daemon) turnPaused(taskID string) {
 		d.pending.reset(taskID)
 	}
 	d.act.set(taskID, ActivityIdle, "")
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // turnResumed moves a card back to running when the agent starts working
@@ -519,7 +519,7 @@ func (d *Daemon) turnResumed(taskID string) {
 		return
 	}
 	d.act.set(taskID, ActivityThinking, "")
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // handleMessage queues something to say to a session.
@@ -683,7 +683,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			out["via"] = rec.Via
 			d.peerSaid(from, gated, body.Text, owedKind(body.Kind, body.Reply))
 		}
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
 		return
@@ -768,7 +768,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			if from == "" {
 				d.seenAnswered(taskID, store.SeenMessage)
 			}
-			d.publishTask(taskID)
+			d.Publish(taskID)
 			out := map[string]any{"delivered": "terminal", "when": whenWord(waitTurn)}
 			if from != "" && terr == nil {
 				rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
@@ -820,7 +820,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if from == "" {
 		d.seenAnswered(taskID, store.SeenMessage)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
@@ -957,7 +957,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		// the worst case is sending it twice, which you can see.
 		log.Printf("[atrium] sent the note on %s but could not clear it: %v", taskID, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": delivered, "when": whenWord(waitTurn)})

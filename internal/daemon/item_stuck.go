@@ -141,7 +141,7 @@ func (d *Daemon) itemAlert(task *store.Task, it *store.ItemRow, why string) {
 		log.Printf("[atrium] could not record the stuck alert for item %s: %v", it.ID, err)
 	}
 	log.Printf("[atrium] %s", text)
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 }
 
 func itemStuckText(it *store.ItemRow, why string) string {

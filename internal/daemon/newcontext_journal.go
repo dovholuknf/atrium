@@ -172,7 +172,7 @@ func (d *Daemon) endAbandonedNewContexts() {
 			log.Printf("[atrium] could not record the abandoned new context on %s: %v", id, err)
 		}
 		log.Printf("[atrium] new context on %s ended at startup, %s", id, reason)
-		d.publishTask(id)
+		d.Publish(id)
 	}
 	d.saveNewContextJournal(nil)
 }

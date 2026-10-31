@@ -49,12 +49,12 @@ func (d *Daemon) sampleCardMem() {
 	d.cmem.mu.Unlock()
 	for id, n := range by {
 		if memMoved(old[id], n) {
-			d.publishTask(id)
+			d.Publish(id)
 		}
 	}
 	for id := range old {
 		if _, ok := by[id]; !ok {
-			d.publishTask(id)
+			d.Publish(id)
 		}
 	}
 }
