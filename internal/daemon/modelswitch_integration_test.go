@@ -340,14 +340,14 @@ func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
 	r.noteOperatorTyped([]byte("git comm"))
 	switchModel(t, d, target.ID, `{"model":"haiku"}`)
 
-	// Open the gate, then hold the card's lock as a handler in the middle of a
-	// switch does, so the waiter is parked on it with the old wait still stored.
+	// Hold the card's lock as a handler in the middle of a switch does, before the
+	// gate opens, so the waiter cannot type the old model in between.
+	mu := d.modelLock(target.ID)
+	mu.Lock()
 	r.noteOperatorTyped([]byte("\r"))
 	r.typeMu.Lock()
 	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.typeMu.Unlock()
-	mu := d.modelLock(target.ID)
-	mu.Lock()
 	time.Sleep(100 * time.Millisecond) // wait: let the waiter park on the held lock, no event marks it
 
 	// The handler's step: replace the wait and type the newer model.
