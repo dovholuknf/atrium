@@ -467,7 +467,7 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 	if g == nil || room == "" {
 		return msg
 	}
-	rs, ok := g.st.(growlRaiser)
+	rs, ok := g.Raiser()
 	if !ok {
 		return msg
 	}
@@ -496,7 +496,7 @@ func (f *hubForge) raise(p *Proxy, room, tool, cmd, host string, notInstalled bo
 	f.open[key] = id
 	f.markAlerted(alerted, key)
 	if raised {
-		g.publish(nil)
+		g.Publish()
 	}
 	p.RecordAudit(room, "forge-access", msg)
 	return msg
@@ -524,7 +524,7 @@ func (f *hubForge) markAlerted(alerted []string, key string) {
 // openIn finds an alert raised before this hub started, so a restart neither raises it again nor leaves it open
 // after the login is fixed. Called with f.mu held.
 func (f *hubForge) openIn(g *Growler, tool, host string) string {
-	rows, err := g.st.Live()
+	rows, err := g.Live()
 	if err != nil {
 		return ""
 	}
@@ -560,7 +560,7 @@ func (f *hubForge) end(p *Proxy, tool, host string) {
 	delete(f.open, key)
 	f.mu.Unlock()
 	if id != "" {
-		g.endAbout(id)
+		g.EndAbout(id)
 	}
 }
 

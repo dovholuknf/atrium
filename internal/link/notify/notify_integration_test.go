@@ -1,6 +1,6 @@
 //go:build integration
 
-package link
+package notify
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 )
 
 // fakeStore is NotifyStore with the semantics of hubstore.NotifyRecord.
@@ -25,13 +26,13 @@ type fakeStore struct {
 	mu       sync.Mutex
 	settings map[string]string
 	rows     map[string]map[string]string
-	cache    map[string][]CardState
+	cache    map[string][]conn.CardState
 	records  int
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{settings: map[string]string{}, rows: map[string]map[string]string{},
-		cache: map[string][]CardState{}}
+		cache: map[string][]conn.CardState{}}
 }
 
 func (f *fakeStore) Setting(n string) (string, error) {
@@ -77,7 +78,7 @@ func (f *fakeStore) Rooms() ([]string, error) {
 	return out, nil
 }
 
-func (f *fakeStore) Cards(room string) ([]CardState, error) {
+func (f *fakeStore) Cards(room string) ([]conn.CardState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.cache[room], nil
@@ -122,12 +123,12 @@ func until(t *testing.T, what string, ok func() bool) {
 
 func settle() { time.Sleep(150 * time.Millisecond) } // wait: callers check that no further notice comes
 
-func ncard(id, extra string) CardState {
+func ncard(id, extra string) conn.CardState {
 	body := fmt.Sprintf(`{"id":%q,"title":"title-%s"%s}`, id, id, extra)
-	return CardState{ID: id, Payload: json.RawMessage(body)}
+	return conn.CardState{ID: id, Payload: json.RawMessage(body)}
 }
 
-func permCard(id, since string) CardState {
+func permCard(id, since string) conn.CardState {
 	return ncard(id, `,"status":"needs-permission","waiting_since":"`+since+`"`)
 }
 
@@ -234,13 +235,13 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 
 func TestNotifyFirstAnnouncementIsSeededSilently(t *testing.T) {
 	n, _, rs := armed(t)
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	settle()
 	if rs.count() != 0 {
 		t.Fatalf("a room's first announcement notified %d times", rs.count())
 	}
 	// The second, with a new card, does.
-	n.Announced("sparta", []CardState{permCard("a", "T1"), permCard("b", "T2")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1"), permCard("b", "T2")})
 	until(t, "the new card's notice", func() bool { return rs.count() == 1 })
 	if got := rs.got[0]; got.Card != "sparta~b" || got.Reason != "permission" || got.Room != "sparta" {
 		t.Fatalf("notice %+v", got)
@@ -251,7 +252,7 @@ func TestNotifySameIdentityRunsOnce(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
 	for i := 0; i < 5; i++ {
-		n.Announced("sparta", []CardState{permCard("a", "T1")})
+		n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	}
 	until(t, "one notice", func() bool { return rs.count() == 1 })
 	settle()
@@ -259,14 +260,14 @@ func TestNotifySameIdentityRunsOnce(t *testing.T) {
 		t.Fatalf("the same identity notified %d times", rs.count())
 	}
 	// A second permission spell is a new identity.
-	n.Announced("sparta", []CardState{permCard("a", "T9")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T9")})
 	until(t, "the second spell", func() bool { return rs.count() == 2 })
 }
 
 func TestNotifyOriginAgentIsSkipped(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
-	n.Announced("sparta", []CardState{ncard("a", `,"status":"needs-permission","waiting_since":"T","tags":["origin:agent"]`)})
+	n.Announced("sparta", []conn.CardState{ncard("a", `,"status":"needs-permission","waiting_since":"T","tags":["origin:agent"]`)})
 	settle()
 	if rs.count() != 0 {
 		t.Fatalf("an origin:agent card notified")
@@ -280,7 +281,7 @@ func TestNotifyIdleAgentCardTurnEndNotifiesOnce(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
 	for i := 0; i < 3; i++ {
-		n.Announced("sparta", []CardState{ncard("a", idleAgent)})
+		n.Announced("sparta", []conn.CardState{ncard("a", idleAgent)})
 	}
 	until(t, "the agent card's notice", func() bool { return rs.count() == 1 })
 	settle()
@@ -296,13 +297,13 @@ func TestNotifyIdleAgentCardTurnEndNotifiesOnce(t *testing.T) {
 func TestNotifyIdleAgentCardWithRunningChildIsHeldBack(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
-	n.Announced("sparta", []CardState{ncard("a", idleAgent),
+	n.Announced("sparta", []conn.CardState{ncard("a", idleAgent),
 		ncard("kid", `,"status":"running","spawned_by_id":"sparta~a","tags":["origin:agent"]`)})
 	settle()
 	if rs.count() != 0 {
 		t.Fatalf("an agent card with a running child notified")
 	}
-	n.Announced("sparta", []CardState{ncard("a", idleAgent),
+	n.Announced("sparta", []conn.CardState{ncard("a", idleAgent),
 		ncard("kid", `,"status":"done","spawned_by_id":"a","tags":["origin:agent"]`)})
 	until(t, "the notice once the child ended", func() bool { return rs.count() == 1 })
 }
@@ -315,7 +316,7 @@ func TestNotifyAgentCardsNotAtRestOrAskingStayQuiet(t *testing.T) {
 	} {
 		n, _, rs := armed(t)
 		n.Announced("sparta", nil)
-		n.Announced("sparta", []CardState{ncard("a", extra)})
+		n.Announced("sparta", []conn.CardState{ncard("a", extra)})
 		settle()
 		if rs.count() != 0 {
 			t.Errorf("%s: an agent card notified", name)
@@ -327,7 +328,7 @@ func TestNotifyAgentCardsNotAtRestOrAskingStayQuiet(t *testing.T) {
 func TestNotifyNormalCardWithRunningChildStillNotifies(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
-	n.Announced("sparta", []CardState{
+	n.Announced("sparta", []conn.CardState{
 		ncard("a", `,"status":"needs-input","waiting_since":"T","seen":{"turn_ended_at":"T0"}`),
 		ncard("kid", `,"status":"running","spawned_by_id":"a"`)})
 	until(t, "the normal card's notice", func() bool { return rs.count() == 1 })
@@ -336,10 +337,10 @@ func TestNotifyNormalCardWithRunningChildStillNotifies(t *testing.T) {
 func TestNotifyCardLeavingAndReturningDoesNotRefire(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	until(t, "the first notice", func() bool { return rs.count() == 1 })
 	n.Announced("sparta", nil)
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	settle()
 	if rs.count() != 1 {
 		t.Fatalf("a returning card notified again: %d", rs.count())
@@ -348,7 +349,7 @@ func TestNotifyCardLeavingAndReturningDoesNotRefire(t *testing.T) {
 
 func TestNotifyTurningItOnSeedsWhatIsAlreadyWaiting(t *testing.T) {
 	st := newFakeStore()
-	st.cache["sparta"] = []CardState{permCard("a", "T1")}
+	st.cache["sparta"] = []conn.CardState{permCard("a", "T1")}
 	n := NewNotifier(st)
 	rs := &recSink{}
 	n.SetSink(rs)
@@ -356,14 +357,14 @@ func TestNotifyTurningItOnSeedsWhatIsAlreadyWaiting(t *testing.T) {
 	defer stop()
 	n.Start(ctx)
 	// Off: an announcement does nothing.
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	if st.records != 0 {
 		t.Fatal("a disabled notifier recorded")
 	}
 	if err := n.Configure(true, []string{os.Args[0]}); err != nil {
 		t.Fatal(err)
 	}
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	settle()
 	if rs.count() != 0 {
 		t.Fatalf("turning it on announced what was already waiting: %d", rs.count())
@@ -374,7 +375,7 @@ func TestNotifySuppressedWhileATabIsVisibleButStored(t *testing.T) {
 	n, st, rs := armed(t)
 	n.Announced("sparta", nil)
 	n.Presence().Set("tab1", true)
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	settle()
 	if rs.count() != 0 {
 		t.Fatal("notified while a tab was visible")
@@ -384,7 +385,7 @@ func TestNotifySuppressedWhileATabIsVisibleButStored(t *testing.T) {
 	}
 	// Hidden again: the stored identity does not fire late.
 	n.Presence().Set("tab1", false)
-	n.Announced("sparta", []CardState{permCard("a", "T1")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T1")})
 	settle()
 	if rs.count() != 0 {
 		t.Fatal("a suppressed identity fired when the tab hid")
@@ -546,7 +547,7 @@ func TestNotifyThreeFailuresSwitchItOffWithTheReason(t *testing.T) {
 	rs.fail = true
 	n.Announced("sparta", nil)
 	for i := 1; i <= 3; i++ {
-		n.Announced("sparta", []CardState{permCard(fmt.Sprintf("c%d", i), "T")})
+		n.Announced("sparta", []conn.CardState{permCard(fmt.Sprintf("c%d", i), "T")})
 		until(t, "a run", func() bool { return rs.count() == i })
 	}
 	until(t, "disabled", func() bool { return !n.Status().Enabled })
@@ -575,12 +576,12 @@ func TestNotifyASuccessResetsTheFailureCount(t *testing.T) {
 	n, _, rs := armed(t)
 	n.Announced("sparta", nil)
 	rs.fail = true
-	n.Announced("sparta", []CardState{permCard("a", "T")})
+	n.Announced("sparta", []conn.CardState{permCard("a", "T")})
 	until(t, "a failure", func() bool { return n.Status().Failures == 1 })
 	rs.mu.Lock()
 	rs.fail = false
 	rs.mu.Unlock()
-	n.Announced("sparta", []CardState{permCard("b", "T")})
+	n.Announced("sparta", []conn.CardState{permCard("b", "T")})
 	until(t, "a success", func() bool { return n.Status().Failures == 0 && n.Status().Sent == 1 })
 }
 
@@ -589,7 +590,7 @@ func TestNotifyAQueueDropsTheOldestAndAnnounceNeverBlocks(t *testing.T) {
 	rs.block = make(chan struct{})
 	n.Announced("sparta", nil)
 	began := time.Now()
-	var cards []CardState
+	var cards []conn.CardState
 	for i := 0; i < notifyQueueMax*3; i++ {
 		cards = append(cards, permCard(fmt.Sprintf("c%03d", i), "T"))
 	}
@@ -609,7 +610,7 @@ func TestNotifyAQueueDropsTheOldestAndAnnounceNeverBlocks(t *testing.T) {
 func notifyProxy(t *testing.T) (*httptest.Server, *Notifier, *fakeStore) {
 	t.Helper()
 	n, st, _ := armed(t)
-	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p := newTestHub()
 	p.SetNotify(n)
 	srv := httptest.NewServer(p)
 	t.Cleanup(srv.Close)
@@ -698,14 +699,8 @@ func TestNotifyTestWithNoCommandIsAConflict(t *testing.T) {
 
 func TestPresenceEndpointTakesTextPlainAndTheStreamClearsIt(t *testing.T) {
 	srv, n, _ := notifyProxy(t)
-	// The board opens its stream with the tab id.
-	ctx, cancel := context.WithCancel(context.Background())
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/v1/events/hub?tab=tab-9", nil)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
+	// The board's stream opens presence with its tab id, as the hub's event stream does.
+	closeStream := n.pres.Open("tab-9")
 	until(t, "the stream to register", func() bool {
 		n.pres.mu.Lock()
 		defer n.pres.mu.Unlock()
@@ -719,7 +714,7 @@ func TestPresenceEndpointTakesTextPlainAndTheStreamClearsIt(t *testing.T) {
 	if s := n.Status(); !s.Suppressed || s.VisibleTabs != 1 {
 		t.Fatalf("status %+v", s)
 	}
-	cancel()
+	closeStream()
 	until(t, "the closed stream to end", func() bool {
 		n.pres.mu.Lock()
 		defer n.pres.mu.Unlock()
@@ -736,7 +731,7 @@ func TestPresenceEndpointTakesTextPlainAndTheStreamClearsIt(t *testing.T) {
 // these routes. This pins that from the other side: without a notifier wired
 // they do not exist, and presence is accepted and ignored.
 func TestNotifyRoutesAreAbsentWithoutANotifier(t *testing.T) {
-	srv := httptest.NewServer(NewProxy(NewHub(Timings{}), nil, "", nil))
+	srv := httptest.NewServer(newTestHub())
 	defer srv.Close()
 	if code, _ := do(t, http.MethodGet, srv.URL+"/_hub/notify", "", ""); code != http.StatusNotFound {
 		t.Fatalf("notify answered %d", code)
@@ -750,95 +745,6 @@ func TestNotifyRoutesAreAbsentWithoutANotifier(t *testing.T) {
 	}
 }
 
-// @runtime adds GET /v1/tasks/{id}/replies?n= on the room. The hub already
-// routes /v1/tasks/<id>/... to the card's room, and this locks in that the
-// query string survives the hop, for a tagged id and for a bare one.
-func TestRepliesReachTheOwningRoomWithTheQueryIntact(t *testing.T) {
-	room := func(name string, id string) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			if r.URL.Path == "/v1/tasks/"+id {
-				fmt.Fprint(w, `{"id":"`+id+`"}`)
-				return
-			}
-			if r.URL.Path != "/v1/tasks/"+id+"/replies" {
-				w.WriteHeader(http.StatusNotFound)
-				fmt.Fprint(w, `{"error":"no"}`)
-				return
-			}
-			fmt.Fprintf(w, `{"served_by":%q,"path":%q,"query":%q}`, name, r.URL.Path, r.URL.RawQuery)
-		})
-	}
-	front, _, done := two(t, room("alpha", "acard"), room("beta", "bcard"))
-	defer done()
-	for _, path := range []string{"/v1/tasks/beta~bcard/replies?n=3", "/v1/tasks/bcard/replies?n=3"} {
-		checkReplies(t, front.URL, path, "n=3")
-	}
-	// r-replies-paging: `before` rides along with `n`, colons and all.
-	for _, path := range []string{
-		"/v1/tasks/beta~bcard/replies?n=50&before=2026-09-30T08:00:00.5Z",
-		"/v1/tasks/bcard/replies?n=50&before=2026-09-30T08:00:00.5Z",
-	} {
-		checkReplies(t, front.URL, path, "n=50&before=2026-09-30T08:00:00.5Z")
-	}
-}
-
-func checkReplies(t *testing.T, base, path, wantQuery string) {
-	t.Helper()
-	{
-		res, err := http.Get(base + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		raw, _ := io.ReadAll(res.Body)
-		res.Body.Close()
-		var plain map[string]string
-		_ = json.Unmarshal(raw, &plain)
-		if res.StatusCode != http.StatusOK || plain["served_by"] != "beta" ||
-			plain["path"] != "/v1/tasks/bcard/replies" || plain["query"] != wantQuery {
-			t.Fatalf("%s answered %d %s", path, res.StatusCode, raw)
-		}
-	}
-}
-
-// r-changes: GET /v1/tasks/{id}/changes reaches the owning room with its query intact, for a tagged
-// id and a bare one, `against` and `turn` alike.
-func TestChangesReachTheOwningRoomWithTheQueryIntact(t *testing.T) {
-	room := func(name string, id string) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			if r.URL.Path == "/v1/tasks/"+id {
-				fmt.Fprint(w, `{"id":"`+id+`"}`)
-				return
-			}
-			if r.URL.Path != "/v1/tasks/"+id+"/changes" {
-				w.WriteHeader(http.StatusNotFound)
-				fmt.Fprint(w, `{"error":"no"}`)
-				return
-			}
-			fmt.Fprintf(w, `{"served_by":%q,"path":%q,"query":%q}`, name, r.URL.Path, r.URL.RawQuery)
-		})
-	}
-	front, _, done := two(t, room("alpha", "acard"), room("beta", "bcard"))
-	defer done()
-	for _, q := range []string{"against=base", "turn=2026-09-30T08:00:00.5Z"} {
-		for _, path := range []string{"/v1/tasks/beta~bcard/changes?" + q, "/v1/tasks/bcard/changes?" + q} {
-			res, err := http.Get(front.URL + path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			raw, _ := io.ReadAll(res.Body)
-			res.Body.Close()
-			var plain map[string]string
-			_ = json.Unmarshal(raw, &plain)
-			if res.StatusCode != http.StatusOK || plain["served_by"] != "beta" ||
-				plain["path"] != "/v1/tasks/bcard/changes" || plain["query"] != q {
-				t.Fatalf("%s answered %d %s", path, res.StatusCode, raw)
-			}
-		}
-	}
-}
-
 // A HUB START IS NOT A TURN END (2026-10-13). The store remembers what the last process notified about, and a deploy
 // that starts counting cards it left out (ad0f1582 took in idle agent cards) found identities it had never stored and
 // fired them all a minute after the restart, one of them a week old. The first plan after a start seeds every room,
@@ -847,7 +753,7 @@ func TestNotifyFirstPlanAfterRestartSeedsEveryReadyCard(t *testing.T) {
 	before, st, was := armed(t)
 	before.Announced("sparta", nil)
 	normal := ncard("a", `,"status":"needs-input","waiting_since":"T1","seen":{"turn_ended_at":"T0"}`)
-	before.Announced("sparta", []CardState{normal})
+	before.Announced("sparta", []conn.CardState{normal})
 	until(t, "the first process's notice", func() bool { return was.count() == 1 })
 
 	// The restart: a new notifier over the same store, the room still marked seeded in it. A normal card waiting since
@@ -860,24 +766,24 @@ func TestNotifyFirstPlanAfterRestartSeedsEveryReadyCard(t *testing.T) {
 	n.Start(ctx)
 	other := ncard("b", `,"status":"needs-input","waiting_since":"T1","seen":{"turn_ended_at":"T0"}`)
 	agent := ncard("w", idleAgent)
-	n.Announced("sparta", []CardState{normal, other, agent})
+	n.Announced("sparta", []conn.CardState{normal, other, agent})
 	settle()
 	if rs.count() != 0 {
 		t.Fatalf("the first plan after a restart notified %d times: %+v", rs.count(), rs.got)
 	}
-	n.Announced("sparta", []CardState{normal, other, agent})
+	n.Announced("sparta", []conn.CardState{normal, other, agent})
 	settle()
 	if rs.count() != 0 {
 		t.Fatalf("the second plan with nothing changed notified %d times", rs.count())
 	}
 
 	// A normal card's turn ends.
-	n.Announced("sparta", []CardState{normal, other, agent,
+	n.Announced("sparta", []conn.CardState{normal, other, agent,
 		ncard("c", `,"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T2"}`)})
 	until(t, "the normal card's notice", func() bool { return rs.count() == 1 })
 	// The agent card's next turn ends.
 	agent2 := ncard("w", `,"status":"needs-input","waiting_since":"T3","tags":["origin:agent"],"seen":{"turn_ended_at":"T3"}`)
-	n.Announced("sparta", []CardState{normal, other, agent2,
+	n.Announced("sparta", []conn.CardState{normal, other, agent2,
 		ncard("c", `,"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T2"}`)})
 	until(t, "the agent card's notice", func() bool { return rs.count() == 2 })
 	settle()

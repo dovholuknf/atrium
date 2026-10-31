@@ -60,9 +60,7 @@ func newForgeHub(t *testing.T) *forgeHub {
 		}
 		return x.ff, nil
 	}
-	x.p.mu.Lock()
-	x.p.growl = NewGrowler(x.growls)
-	x.p.mu.Unlock()
+	x.p.SetGrowler(NewGrowler(x.growls))
 	return x
 }
 
@@ -272,9 +270,7 @@ func TestARoomAsksTheHubOverItsLink(t *testing.T) {
 	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
 	x.proxy.forgeSide().forgeOf = func(string) (forge.Forge, error) { return ff, nil }
 	growls := &liveGrowls{}
-	x.proxy.mu.Lock()
-	x.proxy.growl = NewGrowler(growls)
-	x.proxy.mu.Unlock()
+	x.proxy.SetGrowler(NewGrowler(growls))
 
 	r := forge.NewRemote(x.rooms["alpha"].room.Forge)
 	ref := forge.Ref{Host: "github.com", Org: "o", Repo: "r", Number: 7}

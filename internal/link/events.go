@@ -624,12 +624,12 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 	flusher.Flush()
 
 	// The growlers as they stand, first, so a fresh tab has them. See growl.go.
-	p.openGrowls(s)
+	p.notifyService().OpenGrowls(s.ch)
 	// A DESKTOP TAB'S STREAM IS WHAT KEEPS ITS PRESENCE TRUE. When this request
 	// ends, whether by a closed tab, a crash or a sleeping laptop, the tab is no
 	// longer visible. See presence in notify.go.
 	if n := p.notifier(); n != nil {
-		defer n.pres.Open(r.URL.Query().Get("tab"))()
+		defer n.Presence().Open(r.URL.Query().Get("tab"))()
 	}
 
 	// The same 25 seconds the daemon uses, and it has to stay under the
