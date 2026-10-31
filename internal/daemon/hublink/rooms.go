@@ -1,10 +1,11 @@
-package daemon
+package hublink
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"io"
 	"log"
 	"net"
@@ -44,7 +45,7 @@ import (
 // Three missed heartbeats. Long enough that a slow link or a restart does not
 // flap the list, short enough that a machine that has actually gone is not
 // still being reported as present a minute later.
-const roomStale = 3 * roomHeartbeat
+const RoomStale = 3 * RoomHeartbeat
 
 // roomForget is when a quiet room stops being listed at all.
 //
@@ -52,11 +53,11 @@ const roomStale = 3 * roomHeartbeat
 // questions. Stale means "this was here and I cannot see it now", which is
 // worth showing. Gone means nobody has heard from it in long enough that
 // listing it is a claim rather than a memory.
-const roomForget = 10 * time.Minute
+const RoomForget = 10 * time.Minute
 
 // roomHeartbeat is how often a room is expected to check in. The room side
 // uses the same constant, which is why it lives here rather than there.
-const roomHeartbeat = 20 * time.Second
+const RoomHeartbeat = 20 * time.Second
 
 // roomBusyHeartbeat is how often a room checks in while somebody on it is
 // frozen waiting for an answer.
@@ -71,7 +72,7 @@ const roomHeartbeat = 20 * time.Second
 // Two seconds rather than one. A blocked agent is already waiting on a human,
 // so the cost of a second is nothing next to the cost of a room hammering a
 // hub it reaches over an overlay.
-const roomBusyHeartbeat = 2 * time.Second
+const RoomBusyHeartbeat = 2 * time.Second
 
 // roomDecisionTTL is how long an answer stays queued for a room before it is
 // given up on.
@@ -86,7 +87,7 @@ const roomBusyHeartbeat = 2 * time.Second
 // The failure this avoids is the worse one. A decision that hid a request
 // forever would leave an agent frozen on another machine with nothing on any
 // board to say so, which is the exact thing this feature exists to stop.
-const roomDecisionTTL = 2 * time.Minute
+const RoomDecisionTTL = 2 * time.Minute
 
 // RoomCard is one card on another machine, in the shape the hub keeps.
 //
@@ -227,21 +228,21 @@ type Room struct {
 	// answers is what this board has decided and the room has not yet acted
 	// on, keyed by the request id. Unexported: it is one side of a handover in
 	// flight, not a fact about the room worth publishing.
-	answers map[string]*roomAnswer
+	Answers map[string]*RoomAnswer
 }
 
 // roomAnswer is a decision waiting to be collected, and what has happened to
 // it so far.
-type roomAnswer struct {
-	dec RoomDecision
+type RoomAnswer struct {
+	Dec RoomDecision
 	// at is when it was decided, which is when the clock on `roomDecisionTTL`
 	// starts.
-	at time.Time
+	At time.Time
 	// sent is whether a check-in has already carried it away. It stays here
 	// after that, so the request is not drawn as unanswered in the seconds
 	// between the room taking the decision and the room's next report no
 	// longer mentioning it. Without this, one approval is offered twice.
-	sent bool
+	Sent bool
 }
 
 // RoomDecision is an answer going the other way: from this board to the room
@@ -264,29 +265,29 @@ type RoomDecision struct {
 }
 
 // rooms is every room the hub has heard from. In memory, on purpose.
-type rooms struct {
-	mu  sync.Mutex
-	all map[string]*Room
+type Rooms struct {
+	Mu  sync.Mutex
+	All map[string]*Room
 }
 
 // Rooms is what the board draws, oldest first so the list does not reorder
 // itself between polls.
-func (d *Daemon) Rooms() any {
-	d.rooms.mu.Lock()
-	defer d.rooms.mu.Unlock()
+func (d *Service) Rooms() any {
+	d.RoomTable.Mu.Lock()
+	defer d.RoomTable.Mu.Unlock()
 
 	now := time.Now()
-	out := make([]Room, 0, len(d.rooms.all))
-	for name, r := range d.rooms.all {
+	out := make([]Room, 0, len(d.RoomTable.All))
+	for name, r := range d.RoomTable.All {
 		// Forgotten rather than listed. See `roomForget`.
-		if now.Sub(r.LastSeen) > roomForget {
-			delete(d.rooms.all, name)
+		if now.Sub(r.LastSeen) > RoomForget {
+			delete(d.RoomTable.All, name)
 			continue
 		}
 		c := *r
 		quiet := now.Sub(r.LastSeen)
-		c.Stale = quiet > roomStale
-		c.ForgetIn = int((roomForget - quiet) / time.Second)
+		c.Stale = quiet > RoomStale
+		c.ForgetIn = int((RoomForget - quiet) / time.Second)
 		if c.ForgetIn < 0 {
 			c.ForgetIn = 0
 		}
@@ -300,14 +301,14 @@ func (d *Daemon) Rooms() any {
 		}
 		// Anything decided here and gone through is dropped before the list is
 		// built, so a request the room has stopped reporting cannot come back.
-		r.settle(now)
+		r.Settle(now)
 		c.Requests = make([]RoomRequest, 0, len(r.Perms))
 		for _, p := range r.Perms {
 			// A request with an answer waiting for it is NOT offered again.
 			// Two approvals for one request is either a conflict on the room
 			// or, if the room applied both, the second one running the command
 			// a second time.
-			if r.answers[p.ID] != nil {
+			if r.Answers[p.ID] != nil {
 				continue
 			}
 			if p.Waiting < 0 {
@@ -325,7 +326,7 @@ func (d *Daemon) Rooms() any {
 		// The report's own copy is not published twice, and the answers in
 		// flight are not published at all.
 		c.Perms = nil
-		c.answers = nil
+		c.Answers = nil
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -338,7 +339,7 @@ func (d *Daemon) Rooms() any {
 // that did not. The cost of not having it is a browser asked to draw a thousand
 // permission cards, each with a text box in it, which is a board that stops
 // responding rather than a board that is wrong.
-const roomPermsMax = 50
+const RoomPermsMax = 50
 
 // roomDetailsMax is how much of a diff one request may carry.
 //
@@ -348,13 +349,13 @@ const roomPermsMax = 50
 // CHECK-IN, which would take the cards down with it and make the room look
 // gone. Truncated detail is worth more than a room that disappears when one of
 // its agents edits a big file.
-const roomDetailsMax = 4000
+const RoomDetailsMax = 4000
 
 // errRoomStaleDecision is answering something this hub can no longer address:
 // the room has gone, or it has stopped asking, or it has already been answered
 // from here. All three mean "you are looking at something that has moved on",
 // which is the same thing the local queue says with a 409.
-var errRoomStaleDecision = errors.New("that request has moved on")
+var ErrRoomStaleDecision = errors.New("that request has moved on")
 
 // RoomCheckIn records what a room just said, and hands back what this board
 // has decided for it.
@@ -367,7 +368,7 @@ var errRoomStaleDecision = errors.New("that request has moved on")
 // nothing here can dial back into it, and the request's channel is held in that
 // room's process and cannot move. So an answer waits until the room next says
 // hello and leaves on the reply.
-func (d *Daemon) RoomCheckIn(rep RoomReport) ([]RoomDecision, error) {
+func (d *Service) RoomCheckIn(rep RoomReport) ([]RoomDecision, error) {
 	name := strings.TrimSpace(rep.Name)
 	if name == "" {
 		return nil, fmt.Errorf("a room has to say what it is called")
@@ -375,25 +376,25 @@ func (d *Daemon) RoomCheckIn(rep RoomReport) ([]RoomDecision, error) {
 	if len(name) > 64 {
 		return nil, fmt.Errorf("that room name is too long to draw")
 	}
-	if len(rep.Perms) > roomPermsMax {
-		rep.Perms = rep.Perms[:roomPermsMax]
+	if len(rep.Perms) > RoomPermsMax {
+		rep.Perms = rep.Perms[:RoomPermsMax]
 	}
 	for i := range rep.Perms {
-		if len(rep.Perms[i].Details) > roomDetailsMax {
-			rep.Perms[i].Details = rep.Perms[i].Details[:roomDetailsMax]
+		if len(rep.Perms[i].Details) > RoomDetailsMax {
+			rep.Perms[i].Details = rep.Perms[i].Details[:RoomDetailsMax]
 		}
 	}
 
-	d.rooms.mu.Lock()
-	defer d.rooms.mu.Unlock()
-	if d.rooms.all == nil {
-		d.rooms.all = map[string]*Room{}
+	d.RoomTable.Mu.Lock()
+	defer d.RoomTable.Mu.Unlock()
+	if d.RoomTable.All == nil {
+		d.RoomTable.All = map[string]*Room{}
 	}
 	now := time.Now()
-	r, seen := d.rooms.all[name]
+	r, seen := d.RoomTable.All[name]
 	if !seen {
 		r = &Room{Since: now}
-		d.rooms.all[name] = r
+		d.RoomTable.All[name] = r
 	}
 	r.RoomReport = rep
 	r.RoomReport.Name = name
@@ -407,11 +408,11 @@ func (d *Daemon) RoomCheckIn(rep RoomReport) ([]RoomDecision, error) {
 
 	// Settled against the report that just arrived, so a decision the room has
 	// already acted on is dropped before it can be handed over twice.
-	r.settle(now)
-	out := make([]RoomDecision, 0, len(r.answers))
-	for _, a := range r.answers {
-		a.sent = true
-		out = append(out, a.dec)
+	r.Settle(now)
+	out := make([]RoomDecision, 0, len(r.Answers))
+	for _, a := range r.Answers {
+		a.Sent = true
+		out = append(out, a.Dec)
 	}
 	// Ordered, so a room applying a batch does it the same way every time and a
 	// test can say what it expects.
@@ -423,29 +424,29 @@ func (d *Daemon) RoomCheckIn(rep RoomReport) ([]RoomDecision, error) {
 //
 // Called with the report just received in place, because "nothing left to do"
 // is a question about what the room is still asking for.
-func (r *Room) settle(now time.Time) {
-	if len(r.answers) == 0 {
+func (r *Room) Settle(now time.Time) {
+	if len(r.Answers) == 0 {
 		return
 	}
 	asking := make(map[string]bool, len(r.Perms))
 	for _, p := range r.Perms {
 		asking[p.ID] = true
 	}
-	for id, a := range r.answers {
+	for id, a := range r.Answers {
 		// The room has stopped asking. Either it took this decision or it
 		// answered the request some other way, and either way the agent is
 		// running again and there is nothing here to deliver.
 		if !asking[id] {
-			delete(r.answers, id)
+			delete(r.Answers, id)
 			continue
 		}
 		// Still being asked long after being answered, so the answer did not
 		// take. See `roomDecisionTTL`: the request goes back to being
 		// answerable rather than staying hidden behind a decision that failed.
-		if now.Sub(a.at) > roomDecisionTTL {
+		if now.Sub(a.At) > RoomDecisionTTL {
 			log.Printf("[atrium] room %q is still asking about %s %s after being told %q, "+
-				"so it is being asked again", r.Name, a.dec.Perm, roomDecisionTTL, a.dec.Decision)
-			delete(r.answers, id)
+				"so it is being asked again", r.Name, a.Dec.Perm, RoomDecisionTTL, a.Dec.Decision)
+			delete(r.Answers, id)
 		}
 	}
 }
@@ -457,7 +458,7 @@ func (r *Room) settle(now time.Time) {
 // which unblocks its own channel. Nothing here touches an agent and nothing
 // here records the outcome: the decision, the rule it may create and the
 // history it lands in all belong to the machine that was asked.
-func (d *Daemon) RoomDecide(room, perm string, dec RoomDecision) error {
+func (d *Service) RoomDecide(room, perm string, dec RoomDecision) error {
 	room = strings.TrimSpace(room)
 	perm = strings.TrimSpace(perm)
 	if dec.Decision != "approve" && dec.Decision != "block" {
@@ -471,11 +472,11 @@ func (d *Daemon) RoomDecide(room, perm string, dec RoomDecision) error {
 	}
 	dec.Perm = perm
 
-	d.rooms.mu.Lock()
-	defer d.rooms.mu.Unlock()
-	r := d.rooms.all[room]
+	d.RoomTable.Mu.Lock()
+	defer d.RoomTable.Mu.Unlock()
+	r := d.RoomTable.All[room]
 	if r == nil {
-		return fmt.Errorf("%w: no room called %q is reporting in", errRoomStaleDecision, room)
+		return fmt.Errorf("%w: no room called %q is reporting in", ErrRoomStaleDecision, room)
 	}
 	asking := false
 	for _, p := range r.Perms {
@@ -486,16 +487,16 @@ func (d *Daemon) RoomDecide(room, perm string, dec RoomDecision) error {
 	}
 	if !asking {
 		return fmt.Errorf("%w: %s is not asking for that any more, so it was answered there",
-			errRoomStaleDecision, room)
+			ErrRoomStaleDecision, room)
 	}
-	if a := r.answers[perm]; a != nil {
+	if a := r.Answers[perm]; a != nil {
 		return fmt.Errorf("%w: that was already answered with %s, and %s has not taken it yet",
-			errRoomStaleDecision, a.dec.Decision, room)
+			ErrRoomStaleDecision, a.Dec.Decision, room)
 	}
-	if r.answers == nil {
-		r.answers = map[string]*roomAnswer{}
+	if r.Answers == nil {
+		r.Answers = map[string]*RoomAnswer{}
 	}
-	r.answers[perm] = &roomAnswer{dec: dec, at: time.Now()}
+	r.Answers[perm] = &RoomAnswer{Dec: dec, At: time.Now()}
 	log.Printf("[atrium] %s for a request on room %q, waiting for it to be collected",
 		dec.Decision, room)
 	return nil
@@ -508,7 +509,7 @@ func (d *Daemon) RoomDecide(room, perm string, dec RoomDecision) error {
 // runners instead of burning tokens. A room is not a runner: it is another
 // operator surface, and a hub that has halted should still be able to say so to
 // the rooms attached to it.
-func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		small.WriteJSONErr(w, http.StatusBadRequest, err)
@@ -534,9 +535,9 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 	//
 	// After the check-in is recorded, not before, because the handout is
 	// decided from what this report just said about itself.
-	launches := d.handoutFor(rep)
+	launches := d.HandoutFor(rep)
 	if launches == nil {
-		launches = []dispatchHandout{}
+		launches = []shared.DispatchHandout{}
 	}
 	// The heartbeat intervals come back, so a room does not have to be
 	// configured with something the hub already knows and the two cannot
@@ -549,8 +550,8 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":                     true,
-		"heartbeat_seconds":      int(roomHeartbeat / time.Second),
-		"busy_heartbeat_seconds": int(roomBusyHeartbeat / time.Second),
+		"heartbeat_seconds":      int(RoomHeartbeat / time.Second),
+		"busy_heartbeat_seconds": int(RoomBusyHeartbeat / time.Second),
 		"decisions":              decisions,
 		"launches":               launches,
 	})
@@ -564,7 +565,7 @@ func (d *Daemon) handleRoomCheckIn(w http.ResponseWriter, r *http.Request) {
 // is that the decision is queued for a room that is currently reporting in, and
 // the request disappearing from the board on the next poll is what says the
 // room took it.
-func (d *Daemon) handleRoomDecide(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleRoomDecide(w http.ResponseWriter, r *http.Request) {
 	var dec RoomDecision
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&dec); err != nil {
 		small.WriteJSONErr(w, http.StatusBadRequest, err)
@@ -575,7 +576,7 @@ func (d *Daemon) handleRoomDecide(w http.ResponseWriter, r *http.Request) {
 		// Answering something that has moved on is the same event the local
 		// queue reports with a 409, and it reads the same way on the board: a
 		// button that was drawn from a poll one moment out of date.
-		if errors.Is(err, errRoomStaleDecision) {
+		if errors.Is(err, ErrRoomStaleDecision) {
 			small.WriteJSONErr(w, http.StatusConflict, err)
 			return
 		}
@@ -585,7 +586,7 @@ func (d *Daemon) handleRoomDecide(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok": true, "queued_for": room,
-		"collected_within_seconds": int(roomBusyHeartbeat / time.Second),
+		"collected_within_seconds": int(RoomBusyHeartbeat / time.Second),
 	})
 }
 
@@ -601,23 +602,23 @@ func (d *Daemon) handleRoomDecide(w http.ResponseWriter, r *http.Request) {
 // What it is FOR is the machine that has gone. A laptop that was reimaged, a
 // room renamed, a test run that left a name behind: those sit stale for ten
 // minutes saying something nobody needs to read.
-func (d *Daemon) RoomForget(name string) (bool, error) {
+func (d *Service) RoomForget(name string) (bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false, fmt.Errorf("say which room to forget")
 	}
-	d.rooms.mu.Lock()
-	defer d.rooms.mu.Unlock()
-	if _, ok := d.rooms.all[name]; !ok {
+	d.RoomTable.Mu.Lock()
+	defer d.RoomTable.Mu.Unlock()
+	if _, ok := d.RoomTable.All[name]; !ok {
 		return false, nil
 	}
-	delete(d.rooms.all, name)
+	delete(d.RoomTable.All, name)
 	log.Printf("[atrium] room %q forgotten from the board", name)
 	return true, nil
 }
 
 // handleRoomForget is the endpoint the board presses.
-func (d *Daemon) handleRoomForget(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleRoomForget(w http.ResponseWriter, r *http.Request) {
 	had, err := d.RoomForget(r.PathValue("name"))
 	if err != nil {
 		small.WriteJSONErr(w, http.StatusBadRequest, err)
@@ -671,12 +672,12 @@ type RoomJoinInfo struct {
 }
 
 // RoomJoin answers GET /v1/rooms/join.
-func (d *Daemon) RoomJoin() any {
+func (d *Service) RoomJoin() any {
 	z := d.ZitiConfig()
 	info := RoomJoinInfo{
-		Heartbeat:      int(roomHeartbeat / time.Second),
-		Stale:          int(roomStale / time.Second),
-		Forget:         int(roomForget / time.Second),
+		Heartbeat:      int(RoomHeartbeat / time.Second),
+		Stale:          int(RoomStale / time.Second),
+		Forget:         int(RoomForget / time.Second),
 		Service:        strings.TrimSpace(z.Service),
 		ServiceRunning: d.Nat(publish.OverlayZiti).Running(),
 		Local:          d.DefaultBackend(),
@@ -690,7 +691,7 @@ func (d *Daemon) RoomJoin() any {
 		}
 	}
 	if host, err := os.Hostname(); err == nil && strings.TrimSpace(host) != "" {
-		if _, port, splitErr := net.SplitHostPort(d.opts.HumanAddr); splitErr == nil && port != "" {
+		if _, port, splitErr := net.SplitHostPort(d.HumanAddr()); splitErr == nil && port != "" {
 			info.Address = "http://" + host + ":" + port
 		}
 	}

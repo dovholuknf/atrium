@@ -32,7 +32,7 @@ func (d *Daemon) resolveReportTo(req shared.LaunchRequest, name string) (*store.
 		return nil, fmt.Errorf("%s is on another room (%s). report_to takes a card on this room for now, "+
 			"because a launcher is a local card", n, room)
 	}
-	t := d.localTarget(name)
+	t := d.LocalTarget(name)
 	if t == nil {
 		return nil, fmt.Errorf("no session called %s to report to. handles that would have worked: %s. "+
 			"no card was created", name, d.handleList())
@@ -72,7 +72,7 @@ func (d *Daemon) currentLauncher(worker *store.Task) *store.Task {
 	if name == "" {
 		return nil
 	}
-	t := d.localTarget(name)
+	t := d.LocalTarget(name)
 	if t == nil || t.ID == worker.ID {
 		return nil
 	}

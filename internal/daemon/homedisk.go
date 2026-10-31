@@ -3,6 +3,7 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,10 +106,7 @@ func (d *Daemon) DiskView() (any, error) {
 	return v, nil
 }
 
-func insideRoot(root, path string) bool {
-	rel, err := filepath.Rel(root, filepath.FromSlash(path))
-	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
+var insideRoot = shared.InsideRoot
 
 type HomeRemoved struct {
 	Removed bool   `json:"removed"`

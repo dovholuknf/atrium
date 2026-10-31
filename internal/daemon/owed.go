@@ -112,7 +112,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 		it.Host, it.Launcher = launcher.ID, launcher.ID
 	default:
 		// NOBODY KEPT BY NOBODY: the local orchestrator keeps it, else the worker's own row.
-		if name, room, ok := d.remoteLauncher(t); ok {
+		if name, room, ok := d.RemoteLauncher(t); ok {
 			it.RemoteLauncher = name + "@" + room
 		}
 		it.Orphan = true
@@ -279,13 +279,13 @@ func (d *Daemon) pushRemoteOrchestrator(worker *store.Task, text string) {
 	if name == "" {
 		return
 	}
-	if _, err := d.holdRelay(worker, worker.WireName, name, room, "", text, "", KindFYI, store.RelaySourceNotice); err != nil {
+	if _, err := d.HoldRelay(worker, worker.WireName, name, room, "", text, "", KindFYI, store.RelaySourceNotice); err != nil {
 		log.Printf("[atrium] could not hold an owed notice to %s@%s: %v", name, room, err)
 	}
 }
 
 func (d *Daemon) remoteOrchestrator() (name, room string) {
-	if rl := d.relay(); rl != nil {
+	if rl := d.Relay(); rl != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		list, _, err := rl.Peers(ctx, true, false)
 		cancel()

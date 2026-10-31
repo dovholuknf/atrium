@@ -1,4 +1,4 @@
-package daemon
+package hublink
 
 import (
 	"context"
@@ -20,7 +20,7 @@ type HubAsker interface {
 // handleHubAsk is `POST /v1/hub/ask` with `{from, method, path, body}`: the room's atrium_backlog and atrium_reports,
 // asked of the hub over the link this room already holds. The hub says which paths it serves and stamps who asked from
 // the link. Nothing is held for later: a write that did not get an answer is the caller's to look at and repeat.
-func (d *Daemon) handleHubAsk(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleHubAsk(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		From   string          `json:"from"`
 		Method string          `json:"method"`
@@ -31,9 +31,9 @@ func (d *Daemon) handleHubAsk(w http.ResponseWriter, r *http.Request) {
 		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
-	code, data, msg := d.hubCall(r.Context(), strings.TrimSpace(in.From), in.Method, in.Path, in.Body)
+	code, data, msg := d.HubCallFrom(r.Context(), strings.TrimSpace(in.From), in.Method, in.Path, in.Body)
 	if code != http.StatusOK {
-		writeJSONCode(w, code, errBody(msg))
+		WriteJSONCode(w, code, ErrBody(msg))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -47,12 +47,12 @@ func (d *Daemon) handleHubAsk(w http.ResponseWriter, r *http.Request) {
 
 // hubCall is one ask of the hub over the link, answered as a status, the hub's data and a sentence for a refusal. Both
 // `POST /v1/hub/ask` and the room's own subscription handler ride it.
-func (d *Daemon) hubCall(ctx context.Context, from, method, path string, body json.RawMessage) (int, json.RawMessage, string) {
-	ha, _ := d.relay().(HubAsker)
+func (d *Service) HubCallFrom(ctx context.Context, from, method, path string, body json.RawMessage) (int, json.RawMessage, string) {
+	ha, _ := d.Relay().(HubAsker)
 	if ha == nil {
 		return http.StatusServiceUnavailable, nil, "this atrium is not a room linked to a hub, so it has no hub backlog to ask"
 	}
-	cctx, cancel := context.WithTimeout(ctx, relayWait)
+	cctx, cancel := context.WithTimeout(ctx, RelayWait)
 	defer cancel()
 	res, err := ha.Hub(cctx, from, method, path, body)
 	switch {
@@ -75,6 +75,6 @@ func (d *Daemon) hubCall(ctx context.Context, from, method, path string, body js
 }
 
 // HubCall asks the hub one of the paths it serves a room, as this room and no card. See hubCall.
-func (d *Daemon) HubCall(ctx context.Context, method, path string, body json.RawMessage) (int, json.RawMessage, string) {
-	return d.hubCall(ctx, "", method, path, body)
+func (d *Service) HubCall(ctx context.Context, method, path string, body json.RawMessage) (int, json.RawMessage, string) {
+	return d.HubCallFrom(ctx, "", method, path, body)
 }

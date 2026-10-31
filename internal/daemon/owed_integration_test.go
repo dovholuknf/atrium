@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"strings"
 	"testing"
 	"time"
@@ -295,7 +296,7 @@ func TestAnOrphanKeepsItsItemOnTheOrchestratorOrOnItsOwnRow(t *testing.T) {
 func TestAnOrphanOnARoomWithNoOrchestratorTellsTheHubsOne(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4-control", Tags: []string{OrchestratorTag}}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "sg4-control", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
 	worker := orphanWorker(t, d, "worker", "ghost")
 	endWorker(t, d, worker)
@@ -480,8 +481,8 @@ func TestAnOrchestratorsOwnWorkNeverReachesTheOrchestratorsRow(t *testing.T) {
 // peersDown is a relay whose hub does not answer a peers call.
 type peersDown struct{ *fakeRelay }
 
-func (peersDown) Peers(context.Context, bool, bool) ([]RemotePeer, string, error) {
-	return nil, "", ErrRelayDown
+func (peersDown) Peers(context.Context, bool, bool) ([]hublink.RemotePeer, string, error) {
+	return nil, "", hublink.ErrRelayDown
 }
 
 func orphanEndedAndPushed(t *testing.T, d *Daemon) {
@@ -493,7 +494,7 @@ func orphanEndedAndPushed(t *testing.T, d *Daemon) {
 	d.owedPass(now.Add(owedPushAfter + time.Second))
 }
 
-func waitSays(rl *fakeRelay, want int) []RelaySay {
+func waitSays(rl *fakeRelay, want int) []hublink.RelaySay {
 	testwait.Poll(2*time.Second, func() bool {
 		rl.mu.Lock()
 		defer rl.mu.Unlock()
@@ -502,7 +503,7 @@ func waitSays(rl *fakeRelay, want int) []RelaySay {
 	time.Sleep(100 * time.Millisecond) // wait: a negative check, no further say may come
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	return append([]RelaySay(nil), rl.got...)
+	return append([]hublink.RelaySay(nil), rl.got...)
 }
 
 func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testing.T) {
@@ -511,7 +512,7 @@ func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testin
 	}
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "orchestrator", Room: "someroom"}}}
 	d.SetRelay(rl)
 	orphanEndedAndPushed(t, d)
 	if got := waitSays(rl, 1); len(got) != 0 {
@@ -527,7 +528,7 @@ func TestAnUntaggedPeerCalledOrchestratorGetsNothingAndIsNotRemembered(t *testin
 func TestTheRememberedOrchestratorIsUsedOnlyWhenTheHubIsAway(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	rl := &fakeRelay{peers: []RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
+	rl := &fakeRelay{peers: []hublink.RemotePeer{{Handle: "chief", Room: "sg4", Tags: []string{OrchestratorTag}}}}
 	d.SetRelay(rl)
 	if n, r := d.remoteOrchestrator(); n != "chief" || r != "sg4" {
 		t.Fatalf("found %s@%s", n, r)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"log"
 	"net/http"
@@ -88,13 +89,7 @@ const (
 	// that is to write a file and say where it is.
 	maxPeerMessage = shared.MaxPeerMessage
 
-	// peerSendsPerMinute bounds how often one session may message others.
-	//
-	// A model in a loop is the failure this exists for: without a limit, one
-	// confused session can fill every other session's queue faster than any of
-	// them drains it. Twenty a minute is far more than deliberate use and far
-	// less than a loop.
-	peerSendsPerMinute = 20
+	peerSendsPerMinute = shared.PeerSendsPerMinute
 
 	// peerWindow is the period that limit is measured over.
 	peerWindow = time.Minute
@@ -342,7 +337,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 			d.keepOnCard(w, from, target, verb, text, when, kind, reply, "it is parked")
 			return nil
 		}
-		writeJSONCode(w, http.StatusOK, map[string]any{
+		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{
 			"queued": false, "typed": false, "delivered": "parked", "reachable": "parked",
 			"to": to, "note": parkedNote(target),
 		})
@@ -376,10 +371,7 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 	return target
 }
 
-// queuedNote is what a sender needs to know next: this did not land now, and
-// the first of three things to happen delivers it.
-const queuedNote = "queued. it is typed in when that session's terminal is free, or arrives on its " +
-	"next tool call or at the end of its turn, whichever comes first."
+const queuedNote = shared.QueuedNote
 
 // handleTell delivers a message from one session to another.
 func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
@@ -421,13 +413,13 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
 	if name, room, err := address.SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {
-			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake, false)
+			code, body := d.SayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Kind, in.Reply, in.Wake, false)
 			if code < 400 {
 				// The two words `atrium tell` reads, beside the rest.
 				body["typed"] = body["delivered"] == "terminal"
 				body["queued"] = body["delivered"] != "terminal"
 			}
-			writeJSONCode(w, code, body)
+			hublink.WriteJSONCode(w, code, body)
 			return
 		}
 		in.To = name
@@ -442,9 +434,9 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	}
 	// A BARE NAME THAT IS NOT ON THIS ROOM, looked for among the cards tagged
 	// atrium:everywhere on the others. Only a name that is nobody here.
-	if d.localTarget(in.To) == nil && from != to {
+	if d.LocalTarget(in.To) == nil && from != to {
 		raw := strings.TrimSpace(in.From)
-		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Kind, in.Reply, in.Wake,
+		done, note := d.SayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Kind, in.Reply, in.Wake,
 			func(code int, body map[string]any) {
 				if code < 400 {
 					body["typed"] = body["delivered"] == "terminal"
@@ -536,20 +528,11 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// turnQueuedNote is queuedNote for a message that waits for the turn to end.
-const turnQueuedNote = "queued until that session's turn ends, then typed in when its terminal is " +
-	"free, or carried by the Stop hook."
+const turnQueuedNote = shared.TurnQueuedNote
 
-// whenWord is what a sender is told its message will wait for.
-func whenWord(waitTurn bool) string {
-	if waitTurn {
-		return WhenDone
-	}
-	return WhenImmediate
-}
+var whenWord = shared.WhenWord
 
-// typedNote is what a sender is told when its words went straight in.
-const typedNote = "typed into the terminal and sent."
+const typedNote = shared.TypedNote
 
 // deliverPeer is the one way a peer's words reach another session, shared by
 // `tell`, a routed `ask`, and `answer` so the three cannot drift apart.

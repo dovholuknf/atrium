@@ -129,10 +129,13 @@ var table = []row{
 	{5, "internal/daemon/roomconf", []string{
 		"internal/api", "internal/base/rules", "internal/daemon/publish", "internal/small", "internal/store",
 	}},
+	{5, "internal/daemon/hublink", []string{
+		"internal/base/address", "internal/daemon/publish", "internal/daemon/shared", "internal/roomstats", "internal/small", "internal/store",
+	}},
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
-		"internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
+		"internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
 		"internal/daemon/roomconf", "internal/daemon/screen", "internal/daemon/shared", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",

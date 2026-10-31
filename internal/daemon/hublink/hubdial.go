@@ -1,4 +1,4 @@
-package daemon
+package hublink
 
 import (
 	"context"
@@ -23,43 +23,43 @@ type HubDialer interface {
 }
 
 // hubDialUpgrade is the Upgrade token, mirrored in internal/cli.
-const hubDialUpgrade = "atrium-hubdial"
+const HubDialUpgrade = "atrium-hubdial"
 
-type hubDialHolder struct {
-	mu sync.Mutex
-	d  HubDialer
+type HubDialHolder struct {
+	Mu sync.Mutex
+	D  HubDialer
 }
 
 // SetHubDialer wires the room's ladder up for commands on this machine. Called once the link is built.
-func (d *Daemon) SetHubDialer(h HubDialer) {
-	d.hubDial.mu.Lock()
-	d.hubDial.d = h
-	d.hubDial.mu.Unlock()
+func (d *Service) SetHubDialer(h HubDialer) {
+	d.HubDial.Mu.Lock()
+	d.HubDial.D = h
+	d.HubDial.Mu.Unlock()
 }
 
-func (d *Daemon) hubDialer() HubDialer {
-	d.hubDial.mu.Lock()
-	defer d.hubDial.mu.Unlock()
-	return d.hubDial.d
+func (d *Service) HubDialer() HubDialer {
+	d.HubDial.Mu.Lock()
+	defer d.HubDial.Mu.Unlock()
+	return d.HubDial.D
 }
 
 // handleHubDial is `POST /hubdial`, upgraded to the raw connection the room's ladder dialled to the hub.
-func (d *Daemon) handleHubDial(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleHubDial(w http.ResponseWriter, r *http.Request) {
 	refuse := func(status int, msg string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		fmt.Fprintf(w, `{"error":%q}`, msg)
 	}
-	if !loopbackPeer(r) {
+	if !LoopbackPeer(r) {
 		refuse(http.StatusForbidden, "the hub is dialled from this machine only")
 		return
 	}
-	if r.Method != http.MethodPost || !strings.EqualFold(r.Header.Get("Upgrade"), hubDialUpgrade) ||
+	if r.Method != http.MethodPost || !strings.EqualFold(r.Header.Get("Upgrade"), HubDialUpgrade) ||
 		!strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
 		refuse(http.StatusBadRequest, "that is not a hub dial request")
 		return
 	}
-	h := d.hubDialer()
+	h := d.HubDialer()
 	if h == nil {
 		refuse(http.StatusServiceUnavailable, "this room is not attached to a hub right now")
 		return
@@ -81,10 +81,10 @@ func (d *Daemon) handleHubDial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = c.SetDeadline(time.Time{})
-	if _, err := io.WriteString(c, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "+hubDialUpgrade+"\r\n\r\n"); err != nil {
+	if _, err := io.WriteString(c, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "+HubDialUpgrade+"\r\n\r\n"); err != nil {
 		c.Close()
 		up.Close()
 		return
 	}
-	joinStreams(&readerConn{Conn: c, br: rw.Reader}, up)
+	JoinStreams(&ReaderConn{Conn: c, Br: rw.Reader}, up)
 }

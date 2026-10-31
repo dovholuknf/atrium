@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"strings"
 	"testing"
 
@@ -130,7 +131,9 @@ func TestACrossRoomFyiKeepsItsKind(t *testing.T) {
 		t.Fatalf("relay got %+v, want kind fyi", got)
 	}
 
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
 	if _, out := say(t, d, map[string]string{"from": "sa1", "to": "w@claude-sg4", "text": "later", "kind": "fyi"}); out["delivered"] != "held" {
 		t.Fatalf("%+v", out)
 	}
@@ -139,7 +142,7 @@ func TestACrossRoomFyiKeepsItsKind(t *testing.T) {
 		t.Fatalf("outbox = %+v, want the fyi held with its kind", rows)
 	}
 	f.set(nil)
-	d.drainRelays()
+	d.DrainRelays()
 	got := f.says()
 	if last := got[len(got)-1]; last.Text != "later" || last.Kind != store.PromptFYI {
 		t.Fatalf("drain sent %+v, want kind fyi", last)

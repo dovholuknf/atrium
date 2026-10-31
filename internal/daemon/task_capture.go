@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io/fs"
 	"log"
 	"net/http"
@@ -47,7 +48,7 @@ func (e *taskPostError) Error() string { return e.msg }
 
 // taskPost sends one event to the hub, three tries for one it did not answer. A refusal is not tried again.
 func (d *Daemon) taskPost(body map[string]any) (json.RawMessage, error) {
-	ha, _ := d.relay().(HubAsker)
+	ha, _ := d.Relay().(hublink.HubAsker)
 	if ha == nil {
 		return nil, &taskPostError{msg: "this room has no link to a hub"}
 	}

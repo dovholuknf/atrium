@@ -353,7 +353,7 @@ func (d *Daemon) ringHeld(launcherID, workerID, source, text string) {
 // there, so a launcher whose room is offline hears it when it is back. See
 // relay.go.
 func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body string) bool {
-	spec := d.launcherRelay(worker, body)
+	spec := d.LauncherRelay(worker, body)
 	if spec == nil {
 		return false
 	}
@@ -365,7 +365,7 @@ func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body stri
 	if !fresh {
 		return false
 	}
-	if _, err := d.holdRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", KindFYI,
+	if _, err := d.HoldRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", KindFYI,
 		store.RelaySourceNotice); err != nil {
 		log.Printf("[atrium] could not hold a notice to %s@%s about %s: %v", spec.ToName, spec.ToRoom,
 			worker.DisplayTitle(), err)

@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"testing"
@@ -34,10 +35,12 @@ func TestAWakeSayToAnUnreachableRoomIsRefusedNotHeld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	for _, down := range []func(RelaySay) (RelayResult, error){
-		func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown },
-		func(RelaySay) (RelayResult, error) {
-			return RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
+	for _, down := range []func(hublink.RelaySay) (hublink.RelayResult, error){
+		func(hublink.RelaySay) (hublink.RelayResult, error) {
+			return hublink.RelayResult{}, hublink.ErrRelayDown
+		},
+		func(hublink.RelaySay) (hublink.RelayResult, error) {
+			return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
 		},
 	} {
 		f.set(down)
@@ -56,7 +59,9 @@ func TestAnUnconfirmedWakeSayIsNotHeld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{Unconfirmed: true, Error: "no answer"}, nil })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Unconfirmed: true, Error: "no answer"}, nil
+	})
 	_, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})
 	if out["delivered"] != "unconfirmed" || len(owed(t, d)) != 0 {
 		t.Fatalf("%+v", out)
@@ -69,8 +74,8 @@ func TestAWakeSayAnsweredParkedMeansTheHubIsOld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.set(func(s RelaySay) (RelayResult, error) {
-		return RelayResult{OK: true, Delivered: "parked", Warning: "not sent: this card is parked, send again with wake=true",
+	f.set(func(s hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{OK: true, Delivered: "parked", Warning: "not sent: this card is parked, send again with wake=true",
 			To: s.To + "@" + s.Room, Card: s.Room + "~L1"}, nil
 	})
 	code, out := sayAny(t, d, map[string]any{"from": "sa1", "to": "orch@claude-sg4", "text": "x", "wake": true})

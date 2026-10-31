@@ -1,4 +1,4 @@
-package daemon
+package hublink
 
 import (
 	"bufio"
@@ -30,48 +30,48 @@ type Streamer interface {
 }
 
 // streamUpgrade is the Upgrade token. Mirrored from internal/link, which this package does not import.
-const streamUpgrade = "atrium-stream"
+const StreamUpgrade = "atrium-stream"
 
-type streamHolder struct {
-	mu sync.Mutex
-	s  Streamer
+type StreamHolder struct {
+	Mu sync.Mutex
+	S  Streamer
 }
 
 // SetStreamer wires the room's link up for ssh streams. Called once the link is built.
-func (d *Daemon) SetStreamer(s Streamer) {
-	d.streams.mu.Lock()
-	d.streams.s = s
-	d.streams.mu.Unlock()
+func (d *Service) SetStreamer(s Streamer) {
+	d.Streams.Mu.Lock()
+	d.Streams.S = s
+	d.Streams.Mu.Unlock()
 }
 
-func (d *Daemon) streamer() Streamer {
-	d.streams.mu.Lock()
-	defer d.streams.mu.Unlock()
-	return d.streams.s
+func (d *Service) Streamer() Streamer {
+	d.Streams.Mu.Lock()
+	defer d.Streams.Mu.Unlock()
+	return d.Streams.S
 }
 
 // handleStreamStatus is `GET /stream/status`: how many streams this room carries, for `atrium room remote-access`.
-func (d *Daemon) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleStreamStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	n := 0
-	if s := d.streamer(); s != nil {
+	if s := d.Streamer(); s != nil {
 		n = s.OpenStreams()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]int{"open": n})
 }
 
 // handleStream is `POST /stream`, `{"room": ...}` in the X-Atrium-Room header, upgraded to raw bytes.
-func (d *Daemon) handleStream(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleStream(w http.ResponseWriter, r *http.Request) {
 	refuse := func(status int, msg string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		fmt.Fprintf(w, `{"error":%q}`, msg)
 	}
-	if !loopbackPeer(r) {
+	if !LoopbackPeer(r) {
 		refuse(http.StatusForbidden, "ssh streams are opened from this machine only")
 		return
 	}
-	if r.Method != http.MethodPost || !strings.EqualFold(r.Header.Get("Upgrade"), streamUpgrade) ||
+	if r.Method != http.MethodPost || !strings.EqualFold(r.Header.Get("Upgrade"), StreamUpgrade) ||
 		!strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
 		refuse(http.StatusBadRequest, "that is not a stream request")
 		return
@@ -81,7 +81,7 @@ func (d *Daemon) handleStream(w http.ResponseWriter, r *http.Request) {
 		refuse(http.StatusBadRequest, "name the room to reach")
 		return
 	}
-	s := d.streamer()
+	s := d.Streamer()
 	if s == nil {
 		refuse(http.StatusServiceUnavailable, "this room is not attached to a hub right now")
 		return
@@ -103,17 +103,17 @@ func (d *Daemon) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = c.SetDeadline(time.Time{})
-	if _, err := io.WriteString(c, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "+streamUpgrade+"\r\n\r\n"); err != nil {
+	if _, err := io.WriteString(c, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "+StreamUpgrade+"\r\n\r\n"); err != nil {
 		c.Close()
 		up.Close()
 		return
 	}
 	// The hub counts and audits. This hop only joins two connections, with half close, and the hub's own linger bound
 	// ends a stream whose other half never finishes.
-	joinStreams(&readerConn{Conn: c, br: rw.Reader}, up)
+	JoinStreams(&ReaderConn{Conn: c, Br: rw.Reader}, up)
 }
 
-func loopbackPeer(r *http.Request) bool {
+func LoopbackPeer(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return false
@@ -122,14 +122,14 @@ func loopbackPeer(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-type readerConn struct {
+type ReaderConn struct {
 	net.Conn
-	br *bufio.Reader
+	Br *bufio.Reader
 }
 
-func (c *readerConn) Read(p []byte) (int, error) { return c.br.Read(p) }
+func (c *ReaderConn) Read(p []byte) (int, error) { return c.Br.Read(p) }
 
-func (c *readerConn) CloseWrite() error {
+func (c *ReaderConn) CloseWrite() error {
 	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
 		return cw.CloseWrite()
 	}
@@ -138,7 +138,7 @@ func (c *readerConn) CloseWrite() error {
 
 // joinStreams copies both ways, half closing as each side finishes, and returns when both are done. Any error closes
 // both at once.
-func joinStreams(a, b net.Conn) {
+func JoinStreams(a, b net.Conn) {
 	done := make(chan struct{}, 2)
 	cp := func(dst, src net.Conn) {
 		_, err := io.CopyBuffer(dst, src, make([]byte, 32<<10))

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"log"
 	"net"
@@ -104,12 +105,17 @@ type Options struct {
 // roomconfService names the embedded room configuration, which would otherwise clash with publish.Service.
 type roomconfService = roomconf.Service
 
+// hublinkService names the embedded hub link, which would otherwise clash with publish.Service.
+type hublinkService = hublink.Service
+
 // Daemon owns the store and both listeners.
 type Daemon struct {
 	// Service is the published board. See overlay_service.go.
 	*publish.Service
 	// roomconfService is the room's own configuration. See roomconf/roomconf_service.go.
 	*roomconfService
+	// hublinkSvc is the link to the hub and the other rooms. See hublink_service.go.
+	*hublinkService
 	// Publish sends one card to the board. See publishCard.
 	Publish func(id string)
 	// homeSize is the size walk over the card homes. See homesize.go.
@@ -221,24 +227,11 @@ type Daemon struct {
 	// produces one request. See runnerupdate.go.
 	up updates
 
-	// rooms holds the other machines reporting into this hub. In memory and
-	// nowhere else: a room's cards are that room's state, and a second durable
-	// copy here would be a source of truth that is wrong whenever the room is
-	// unreachable. See rooms.go.
-	rooms rooms
-
 	// peerLimit bounds how often one session may message others. In memory,
 	// because the thing it bounds is a runaway session and a session does not
 	// outlive the daemon either.
 	peerLimit *peerLimiter
 
-	// relays is the way to other rooms, through the hub, and the drain of what
-	// is owed to them. Empty on a daemon that is not a room. See relay.go.
-	relays relayState
-	// streams is the room's link for ssh streams to another room's sshd. See stream.go.
-	streams streamHolder
-	// hubDial is the room's ladder for commands on this machine. See hubdial.go.
-	hubDial hubDialHolder
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
 	// taskHandled is the task cards whose end is already being filed, by a capture or by a failure. See task_capture.go.
@@ -460,7 +453,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice
-	st.RemoteArbiter = d.launcherRelay
+	st.RemoteArbiter = d.LauncherRelay
 	st.HoldNotice = func(arbiter *store.Task, source string) bool {
 		// A REPORT OR AN FYI IS ADDRESSED TO THE LAUNCHER, so it is never parked unseen: it is queued for the
 		// end of the launcher's turn. Only an automatic notice that is not a say stays held. See fyi.go.
@@ -469,7 +462,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		}
 		return holdsNotices(arbiter)
 	}
-	st.OnRelayHeld = d.kickRelays
+	st.OnRelayHeld = d.KickRelays
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Decide = d.decide
 	d.ap.DecideBy = d.decideBy
@@ -513,22 +506,22 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.TypeAnyway = d.handleTypeAnyway
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
-	d.ap.Say = d.handleSay
+	d.ap.Say = d.HandleSay
 	d.ap.Move = d.moveHandler()
 	d.ap.TaskSays = d.handleTaskSays
 	d.ap.Says = d.handleSays
-	d.ap.RoomPeers = d.handleRoomPeers
-	d.ap.RoomCard = d.handleRoomCard
-	d.ap.RoomExit = d.handleRoomExit
-	d.ap.RoomLaunch = d.handleRoomLaunch
+	d.ap.RoomPeers = d.HandleRoomPeers
+	d.ap.RoomCard = d.HandleRoomCard
+	d.ap.RoomExit = d.HandleRoomExit
+	d.ap.RoomLaunch = d.HandleRoomLaunch
 	d.ap.Report = d.handleReport
 	d.ap.Stamp = d.handleStamp
 	d.ap.GitClone = d.handleGitClone
 	d.ap.HubRemote = d.HubRemoteBase
 	d.ap.HubGitURL = d.handleHubGitURL
 	d.ap.HubCI = pulls.HubCI(d.HubForge, errNoHub)
-	d.ap.HubAsk = d.handleHubAsk
-	d.ap.HubCall = d.hubCall
+	d.ap.HubAsk = d.HandleHubAsk
+	d.ap.HubCall = d.HubCallFrom
 	d.ap.ItemAct = d.handleItemAct
 	d.ap.PoolSubmit = d.handlePoolSubmit
 	d.ap.RestartWake = d.handleRestartWake
@@ -662,10 +655,10 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		return d.SaveAuth(next)
 	}
 	d.ap.Rooms = d.Rooms
-	d.ap.RoomCheckIn = d.handleRoomCheckIn
-	d.ap.RoomDecide = d.handleRoomDecide
+	d.ap.RoomCheckIn = d.HandleRoomCheckIn
+	d.ap.RoomDecide = d.HandleRoomDecide
 	d.ap.RoomJoin = d.RoomJoin
-	d.ap.RoomForget = d.handleRoomForget
+	d.ap.RoomForget = d.HandleRoomForget
 	d.ap.Dispatches = d.Dispatches
 	d.ap.QueueDispatch = d.QueueDispatch
 	d.ap.CancelDispatch = d.CancelDispatch
@@ -1194,9 +1187,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/peers", d.handlePeers)
 	agentMux.HandleFunc("/tell", d.handleTell)
 	// AN SSH STREAM to another room's sshd through the hub, upgraded to raw bytes. See stream.go.
-	agentMux.HandleFunc("/stream", d.handleStream)
-	agentMux.HandleFunc("/stream/status", d.handleStreamStatus)
-	agentMux.HandleFunc("/hubdial", d.handleHubDial)
+	agentMux.HandleFunc("/stream", d.HandleStream)
+	agentMux.HandleFunc("/stream/status", d.HandleStreamStatus)
+	agentMux.HandleFunc("/hubdial", d.HandleHubDial)
 	agentMux.HandleFunc("/hooks-changed", d.HandleHooksChanged)
 	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
 	// the token opens this route and no other. See hubremote.go.
@@ -1620,6 +1613,33 @@ func EnrollZitiInto(token, name, dir string) (string, string, error) {
 
 // initServices builds the features that left Daemon. They read the daemon's state at call time.
 func (d *Daemon) initServices() {
+	d.hublinkService = hublink.New(hublink.Config{
+		St: d.st,
+		Calls: hublink.Calls{
+			RecordSay: func(v store.Say, text string) string { return d.recordSay(v, text) },
+			OtherRoom: func(room string) string { return d.otherRoom(room) },
+			Liveness:  func(t *store.Task) store.Liveness { return d.liveness(t) },
+			WriteMissNote: func(w http.ResponseWriter, from, name, door, text, when string, reply bool, note string) {
+				d.writeMissNote(w, from, name, door, text, when, reply, note)
+			},
+			SenderTask:          func(from string) string { return d.senderTask(from) },
+			KickItems:           func() { d.kickItems() },
+			ItemSayRefused:      func(from string) bool { return d.itemSayRefused(from) },
+			WriteItemSayRefused: writeItemSayRefused,
+			HandoutFor:          func(rep hublink.RoomReport) []dispatchHandout { return d.handoutFor(rep) },
+			HandleMessage:       func(w http.ResponseWriter, r *http.Request) { d.handleMessage(w, r) },
+			DoneBySay:           func(sender *store.Task, text string) { d.doneBySay(sender, text) },
+			WithSayTrace:        withSayTrace,
+			PromptKind:          promptKind,
+			Nat:                 func(kind publish.OverlayKind) *publish.Native { return d.Nat(kind) },
+			ZitiConfig:          func() publish.ZitiConfig { return d.ZitiConfig() },
+			DefaultBackend:      func() string { return d.DefaultBackend() },
+			Publish:             func(id string) { d.Publish(id) },
+			RelayKeep:           func() time.Duration { return d.hk.RelayKeep },
+			PeerAllow:           func(from string) bool { return d.peerLimit.allow(from) },
+			HumanAddr:           func() string { return d.opts.HumanAddr },
+		},
+	})
 	d.Service = publish.New(publish.Config{
 		St: d.st, Ap: d.ap, Sup: d.sup, Publish: func(id string) { d.Publish(id) },
 		Opts: func() publish.Options {

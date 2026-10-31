@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"time"
 
@@ -122,7 +123,7 @@ func defaultHooks() hooks {
 			stuckAfter:   heldStuckAfter,
 			silentNudges: silentNudges,
 			OrphanGrace:  OrphanGrace,
-			RelayKeep:    RelayKeep,
+			RelayKeep:    hublink.RelayKeep,
 			listMax:      pulls.ListMax,
 		},
 		repliesHooks: repliesHooks{

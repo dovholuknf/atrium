@@ -6,19 +6,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
 
-func roomsOf(t *testing.T, d *Daemon) []Room {
+func roomsOf(t *testing.T, d *Daemon) []hublink.Room {
 	t.Helper()
 	got, ok := d.Rooms().(map[string]any)
 	if !ok {
 		t.Fatalf("Rooms answered %T", d.Rooms())
 	}
-	list, ok := got["rooms"].([]Room)
+	list, ok := got["rooms"].([]hublink.Room)
 	if !ok {
 		t.Fatalf("rooms is %T", got["rooms"])
 	}
@@ -32,12 +33,12 @@ func TestACheckInReplacesTheCards(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "one", Cards: []RoomCard{
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "one", Cards: []hublink.RoomCard{
 		{ID: "a", Title: "first"}, {ID: "b", Title: "second"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.RoomCheckIn(RoomReport{Name: "one", Cards: []RoomCard{
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "one", Cards: []hublink.RoomCard{
 		{ID: "b", Title: "second"},
 	}}); err != nil {
 		t.Fatal(err)
@@ -58,7 +59,7 @@ func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "quiet"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "quiet"}); err != nil {
 		t.Fatal(err)
 	}
 	if roomsOf(t, d)[0].Stale {
@@ -66,9 +67,9 @@ func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 	}
 
 	// Reach in and age it, rather than sleeping for a minute.
-	d.rooms.mu.Lock()
-	d.rooms.all["quiet"].LastSeen = time.Now().Add(-roomStale - time.Second)
-	d.rooms.mu.Unlock()
+	d.RoomTable.Mu.Lock()
+	d.RoomTable.All["quiet"].LastSeen = time.Now().Add(-hublink.RoomStale - time.Second)
+	d.RoomTable.Mu.Unlock()
 
 	list := roomsOf(t, d)
 	if len(list) != 1 {
@@ -85,15 +86,15 @@ func TestAForgottenRoomIsGone(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "gone"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "gone"}); err != nil {
 		t.Fatal(err)
 	}
-	d.rooms.mu.Lock()
-	d.rooms.all["gone"].LastSeen = time.Now().Add(-roomForget - time.Second)
-	d.rooms.mu.Unlock()
+	d.RoomTable.Mu.Lock()
+	d.RoomTable.All["gone"].LastSeen = time.Now().Add(-hublink.RoomForget - time.Second)
+	d.RoomTable.Mu.Unlock()
 
 	if list := roomsOf(t, d); len(list) != 0 {
-		t.Fatalf("a room nobody has heard from in %s is still listed: %+v", roomForget, list)
+		t.Fatalf("a room nobody has heard from in %s is still listed: %+v", hublink.RoomForget, list)
 	}
 }
 
@@ -103,7 +104,7 @@ func TestWaitingIsCountedFromTheCards(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "busy", Cards: []RoomCard{
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "busy", Cards: []hublink.RoomCard{
 		{ID: "a", Status: "running"},
 		{ID: "b", Status: "needs-input"},
 		{ID: "c", Status: "needs-permission"},
@@ -123,10 +124,10 @@ func TestARoomHasToBeNamed(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "  "}); err == nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "  "}); err == nil {
 		t.Fatal("a room with no name was accepted")
 	}
-	if _, err := d.RoomCheckIn(RoomReport{Name: string(make([]byte, 200))}); err == nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: string(make([]byte, 200))}); err == nil {
 		t.Fatal("a room name too long to draw was accepted")
 	}
 }
@@ -137,7 +138,7 @@ func TestCheckingInTwiceIsOneRoom(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
 	for i := 0; i < 5; i++ {
-		if _, err := d.RoomCheckIn(RoomReport{Name: "same", Host: "h"}); err != nil {
+		if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "same", Host: "h"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -146,7 +147,7 @@ func TestCheckingInTwiceIsOneRoom(t *testing.T) {
 	}
 }
 
-func requestsOf(t *testing.T, d *Daemon, room string) []RoomRequest {
+func requestsOf(t *testing.T, d *Daemon, room string) []hublink.RoomRequest {
 	t.Helper()
 	for _, r := range roomsOf(t, d) {
 		if r.Name == room {
@@ -157,9 +158,9 @@ func requestsOf(t *testing.T, d *Daemon, room string) []RoomRequest {
 	return nil
 }
 
-func reportAsking(t *testing.T, d *Daemon, room, perm string) []RoomDecision {
+func reportAsking(t *testing.T, d *Daemon, room, perm string) []hublink.RoomDecision {
 	t.Helper()
-	out, err := d.RoomCheckIn(RoomReport{Name: room, Perms: []RoomPerm{
+	out, err := d.RoomCheckIn(hublink.RoomReport{Name: room, Perms: []hublink.RoomPerm{
 		{ID: perm, Tool: "Bash", Command: "rm -rf build", Agent: "a card", Waiting: 30},
 	}})
 	if err != nil {
@@ -177,7 +178,7 @@ func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
 	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
 	}
 	got := reportAsking(t, d, "leaf", "p1")
@@ -196,14 +197,14 @@ func TestADecisionIsHandedOverOnce(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
 	}
 	reportAsking(t, d, "leaf", "p1")
 
 	// The room took it and its next report no longer mentions the request,
 	// which is the only signal that anything happened.
-	again, err := d.RoomCheckIn(RoomReport{Name: "leaf"})
+	again, err := d.RoomCheckIn(hublink.RoomReport{Name: "leaf"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
 	if got := requestsOf(t, d, "leaf"); len(got) != 1 {
 		t.Fatalf("a pending request was not drawn: %+v", got)
 	}
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := requestsOf(t, d, "leaf"); len(got) != 0 {
@@ -247,7 +248,7 @@ func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
 	}
 	reportAsking(t, d, "leaf", "p1")
@@ -256,17 +257,17 @@ func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 	}
 
 	// Reach in and age the answer, rather than waiting two minutes.
-	d.rooms.mu.Lock()
-	d.rooms.all["leaf"].answers["p1"].at = time.Now().Add(-roomDecisionTTL - time.Second)
-	d.rooms.mu.Unlock()
+	d.RoomTable.Mu.Lock()
+	d.RoomTable.All["leaf"].Answers["p1"].At = time.Now().Add(-hublink.RoomDecisionTTL - time.Second)
+	d.RoomTable.Mu.Unlock()
 
 	reportAsking(t, d, "leaf", "p1")
 	got := requestsOf(t, d, "leaf")
 	if len(got) != 1 {
 		t.Fatalf("a request still being asked about %s after being answered is not being "+
-			"asked again: %+v", roomDecisionTTL, got)
+			"asked again: %+v", hublink.RoomDecisionTTL, got)
 	}
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "block"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "block"}); err != nil {
 		t.Fatalf("and it could not be answered a second time: %v", err)
 	}
 }
@@ -279,21 +280,21 @@ func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
 	}
 	// The room's next report does not mention it, which means it is answered
 	// there.
-	out, err := d.RoomCheckIn(RoomReport{Name: "leaf"})
+	out, err := d.RoomCheckIn(hublink.RoomReport{Name: "leaf"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(out) != 0 {
 		t.Fatalf("an answer for a request that is gone was handed over: %+v", out)
 	}
-	d.rooms.mu.Lock()
-	held := len(d.rooms.all["leaf"].answers)
-	d.rooms.mu.Unlock()
+	d.RoomTable.Mu.Lock()
+	held := len(d.RoomTable.All["leaf"].Answers)
+	d.RoomTable.Mu.Unlock()
 	if held != 0 {
 		t.Fatalf("%d answer(s) are still being held for a request that is gone", held)
 	}
@@ -314,21 +315,21 @@ func TestAStaleDecisionIsRefused(t *testing.T) {
 		{"a room that is not reporting in", "nowhere", "p1"},
 		{"a request that room is not asking about", "leaf", "p2"},
 	} {
-		err := d.RoomDecide(c.room, c.perm, RoomDecision{Decision: "approve"})
+		err := d.RoomDecide(c.room, c.perm, hublink.RoomDecision{Decision: "approve"})
 		if err == nil {
 			t.Fatalf("%s was accepted", c.why)
 		}
-		if !errors.Is(err, errRoomStaleDecision) {
+		if !errors.Is(err, hublink.ErrRoomStaleDecision) {
 			t.Fatalf("%s was refused as something other than stale: %v", c.why, err)
 		}
 	}
 
 	// And answering one twice while the first is still in flight.
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
 	}
-	err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "block"})
-	if !errors.Is(err, errRoomStaleDecision) {
+	err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "block"})
+	if !errors.Is(err, hublink.ErrRoomStaleDecision) {
 		t.Fatalf("answering a request that already has an answer in flight: %v", err)
 	}
 }
@@ -343,17 +344,17 @@ func TestARoomDecisionIsChecked(t *testing.T) {
 	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "maybe"}); err == nil {
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{Decision: "maybe"}); err == nil {
 		t.Fatal("a decision that is neither approve nor block was accepted")
 	}
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{
 		Decision: "approve", Forever: true, Prefix: "  ",
 	}); err == nil {
 		t.Fatal("a standing answer with no scope was accepted, so a rule matching " +
 			"everything would have been written on another machine")
 	}
 	// The scope makes it acceptable, and it carries.
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{
 		Decision: "approve", Forever: true, Prefix: "go build",
 	}); err != nil {
 		t.Fatal(err)
@@ -372,7 +373,7 @@ func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf", Perms: []RoomPerm{
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "leaf", Perms: []hublink.RoomPerm{
 		{ID: "p1", Tool: "Bash", Command: "go build", Waiting: 90},
 		// A room whose clock ran backwards. Nothing sensible can be drawn from
 		// a request made in the future.
@@ -408,23 +409,23 @@ func TestAReportIsBounded(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	many := make([]RoomPerm, roomPermsMax+20)
+	many := make([]hublink.RoomPerm, hublink.RoomPermsMax+20)
 	for i := range many {
-		many[i] = RoomPerm{
+		many[i] = hublink.RoomPerm{
 			ID: fmt.Sprintf("p%03d", i), Tool: "Edit",
-			Command: "main.go", Details: strings.Repeat("x", roomDetailsMax*2),
+			Command: "main.go", Details: strings.Repeat("x", hublink.RoomDetailsMax*2),
 		}
 	}
-	if _, err := d.RoomCheckIn(RoomReport{Name: "loud", Perms: many}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "loud", Perms: many}); err != nil {
 		t.Fatal(err)
 	}
 	got := requestsOf(t, d, "loud")
-	if len(got) != roomPermsMax {
-		t.Fatalf("%d requests got through a cap of %d", len(got), roomPermsMax)
+	if len(got) != hublink.RoomPermsMax {
+		t.Fatalf("%d requests got through a cap of %d", len(got), hublink.RoomPermsMax)
 	}
 	for _, q := range got {
-		if len(q.Details) > roomDetailsMax {
-			t.Fatalf("a diff of %d bytes got through a cap of %d", len(q.Details), roomDetailsMax)
+		if len(q.Details) > hublink.RoomDetailsMax {
+			t.Fatalf("a diff of %d bytes got through a cap of %d", len(q.Details), hublink.RoomDetailsMax)
 		}
 	}
 }
@@ -438,14 +439,14 @@ func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
-	if err := d.RoomDecide("leaf", "p1", RoomDecision{
+	if err := d.RoomDecide("leaf", "p1", hublink.RoomDecision{
 		Decision: "approve", Reason: "go on then",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	reportAsking(t, d, "leaf", "p1")
 	// Collected, and then the room stops asking.
-	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "leaf"}); err != nil {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(d.Rooms())
@@ -469,7 +470,7 @@ func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "leaf"}); err != nil {
 		t.Fatal(err)
 	}
 	had, err := d.RoomForget("leaf")
@@ -483,7 +484,7 @@ func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 		t.Fatalf("a forgotten room is still listed: %+v", list)
 	}
 
-	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "leaf"}); err != nil {
 		t.Fatal(err)
 	}
 	if list := roomsOf(t, d); len(list) != 1 {
@@ -518,7 +519,7 @@ func TestAStaleRoomSaysWhenItGoes(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
 	d.initServices()
-	if _, err := d.RoomCheckIn(RoomReport{Name: "fading"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "fading"}); err != nil {
 		t.Fatal(err)
 	}
 	fresh := roomsOf(t, d)[0].ForgetIn
@@ -526,9 +527,9 @@ func TestAStaleRoomSaysWhenItGoes(t *testing.T) {
 		t.Fatalf("a room that just checked in is already out of time: %ds", fresh)
 	}
 
-	d.rooms.mu.Lock()
-	d.rooms.all["fading"].LastSeen = time.Now().Add(-roomStale - time.Second)
-	d.rooms.mu.Unlock()
+	d.RoomTable.Mu.Lock()
+	d.RoomTable.All["fading"].LastSeen = time.Now().Add(-hublink.RoomStale - time.Second)
+	d.RoomTable.Mu.Unlock()
 
 	stale := roomsOf(t, d)[0]
 	if !stale.Stale {
@@ -552,7 +553,7 @@ func TestAskingHowToJoinAddsNoRoom(t *testing.T) {
 	defer cancel()
 
 	for i := 0; i < 3; i++ {
-		if _, ok := d.RoomJoin().(RoomJoinInfo); !ok {
+		if _, ok := d.RoomJoin().(hublink.RoomJoinInfo); !ok {
 			t.Fatalf("RoomJoin answered %T", d.RoomJoin())
 		}
 	}
@@ -571,14 +572,14 @@ func TestJoinOffersNoAddressWhenNothingIsShared(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)
 	defer cancel()
 
-	info, ok := d.RoomJoin().(RoomJoinInfo)
+	info, ok := d.RoomJoin().(hublink.RoomJoinInfo)
 	if !ok {
 		t.Fatalf("RoomJoin answered %T", d.RoomJoin())
 	}
 	if info.Share != "" {
 		t.Fatalf("a board that is not sharing offered %q as a hub address", info.Share)
 	}
-	if info.Heartbeat != int(roomHeartbeat/time.Second) {
+	if info.Heartbeat != int(hublink.RoomHeartbeat/time.Second) {
 		t.Fatalf("the board would be told the heartbeat is %ds", info.Heartbeat)
 	}
 	// The timings are reported so the page does not carry its own copy of them
@@ -601,7 +602,7 @@ func TestTheRoomRoutesDoNotOverlap(t *testing.T) {
 	defer cancel()
 	base := "http://" + d.opts.HumanAddr
 
-	if _, err := d.RoomCheckIn(RoomReport{Name: "join"}); err != nil {
+	if _, err := d.RoomCheckIn(hublink.RoomReport{Name: "join"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -609,7 +610,7 @@ func TestTheRoomRoutesDoNotOverlap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var info RoomJoinInfo
+	var info hublink.RoomJoinInfo
 	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
 		t.Fatalf("GET /v1/rooms/join did not answer join instructions: %v", err)
 	}

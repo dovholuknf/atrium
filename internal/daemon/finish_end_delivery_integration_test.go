@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,7 +29,9 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 			d, f := roomDaemon(t)
 			w := remoteWorker(t, d)
 			stubCommits(t, d, true, false)
-			f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+			f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+				return hublink.RelayResult{}, hublink.ErrRelayDown
+			})
 
 			rec, out := finishWith(t, d, c.in)
 			if rec.Code != http.StatusOK || out["launcher_told"] != "relayed" {
@@ -43,7 +46,7 @@ func TestAnEndingReachesALauncherOnAnotherRoomByWayOfTheHub(t *testing.T) {
 			}
 			// Then the hub answers, and the report goes once, to the card, from the worker.
 			f.set(nil)
-			d.drainRelays()
+			d.DrainRelays()
 			sent := f.says()
 			if len(sent) == 0 {
 				t.Fatal("nothing reached the hub")

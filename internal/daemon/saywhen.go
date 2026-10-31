@@ -2,53 +2,18 @@ package daemon
 
 import (
 	"fmt"
-	"strings"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// When a message is typed in: IMMEDIATELY by default, or once the turn ends.
-//
-// Immediate means the gate every automated write goes through and nothing
-// else: an empty input line, a quiet keyboard, and no dialog on screen. It is
-// the restart wake's gate without the wake's turn check. A runner that reads a
-// line typed mid-turn as it arrives (codex) is typed into, so a "stop now" lands
-// while the worker is still working, which is what a person typing does.
-//
-// A RUNNER THAT QUEUES A LINE TYPED MID-TURN (claude: its own queued-message box,
-// read at the next step boundary) is never typed into mid-turn by anything but
-// the operator's keystrokes. Its hooks carry the message and the answer is
-// `queued`. See carriedByHooks and `runnerprofile.Profile.QueuesMidTurn`.
-//
-// Done is the old rule, kept for a message that should not disturb a worker
-// mid-thought. It waits for the turn to end as well as for the gate. The hooks
-// respect it too: the permission hook leaves a done message for the Stop hook,
-// because a message carried by the next tool call is delivered mid-turn by
-// another route. See `Message.WaitTurn`.
-//
-// A RUNNER THAT DOES NOT TAKE INPUT MID-TURN falls back to done for every
-// message. That is a setting on its row on the runners page, seeded from
-// `runnerprofile`, because it is a fact about the runner and not the sender.
-//
-// Decided 2026-09-24. It reverses the N7 rule in docs/terminal/typing-race.md, which
-// held every peer message for the turn and so let a "stop now" sent to four
-// workers reach none of them.
 const (
-	WhenImmediate = "immediate"
-	WhenDone      = "done"
+	WhenImmediate = shared.WhenImmediate
+	WhenDone      = shared.WhenDone
 )
 
-// parseWhen reads a `when` a caller sent. Empty is the default, immediate.
-func parseWhen(s string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", WhenImmediate:
-		return WhenImmediate, nil
-	case WhenDone:
-		return WhenDone, nil
-	}
-	return "", fmt.Errorf("when is %q or %q, not %q", WhenImmediate, WhenDone, s)
-}
+var parseWhen = shared.ParseWhen
 
 // waitsForTurn resolves a sender's `when` against the card's runner: true when
 // the message has to wait for the turn to end.

@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-func checkIn(t *testing.T, d *Daemon, rep RoomReport) map[string]any {
+func checkIn(t *testing.T, d *Daemon, rep hublink.RoomReport) map[string]any {
 	t.Helper()
 	body, err := json.Marshal(rep)
 	if err != nil {
@@ -20,7 +21,7 @@ func checkIn(t *testing.T, d *Daemon, rep RoomReport) map[string]any {
 	}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/v1/rooms", bytes.NewReader(body))
-	d.handleRoomCheckIn(w, r)
+	d.HandleRoomCheckIn(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("check-in answered %d: %s", w.Code, w.Body.String())
 	}
@@ -62,7 +63,7 @@ func TestQueuedWorkRidesTheReplyToACheckIn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws", Launches: true}))
+	got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws", Launches: true}))
 	if len(got) != 1 {
 		t.Fatalf("a room checked in with work waiting and was handed %d", len(got))
 	}
@@ -76,7 +77,7 @@ func TestQueuedWorkRidesTheReplyToACheckIn(t *testing.T) {
 	}
 
 	// And the next check-in gets nothing, because it was claimed.
-	if again := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws", Launches: true})); len(again) != 0 {
+	if again := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws", Launches: true})); len(again) != 0 {
 		t.Fatalf("the same item was handed out again on the next heartbeat: %d", len(again))
 	}
 }
@@ -87,7 +88,7 @@ func TestOneRoomIsNeverHandedAnothersWork(t *testing.T) {
 	if _, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	got := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdzrok", Launches: true}))
+	got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdzrok", Launches: true}))
 	if len(got) != 0 {
 		t.Fatalf("cdzrok was handed %d item(s) queued for cdaws", len(got))
 	}
@@ -102,7 +103,7 @@ func TestARoomThatRefusesWorkIsHandedNoneOfIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws"})); len(got) != 0 {
+	if got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws"})); len(got) != 0 {
 		t.Fatalf("a room reporting launches=false was handed %d item(s)", len(got))
 	}
 	after, err := d.st.Dispatch(item.ID)
@@ -129,7 +130,7 @@ func TestARoomStartingThingsIsHandedNoMore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws", Launches: true, Busy: true}))
+	got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws", Launches: true, Busy: true}))
 	if len(got) != 0 {
 		t.Fatalf("a busy room was handed %d more item(s)", len(got))
 	}
@@ -138,7 +139,7 @@ func TestARoomStartingThingsIsHandedNoMore(t *testing.T) {
 		t.Fatalf("an attempt was spent on a room that was mid-batch: %+v", after)
 	}
 	// And it collects on the check-in after it is free again.
-	if free := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws", Launches: true})); len(free) != 1 {
+	if free := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws", Launches: true})); len(free) != 1 {
 		t.Fatalf("the item was not handed over once the room was free: %d", len(free))
 	}
 }
@@ -152,7 +153,7 @@ func TestWhitespaceAroundARoomNameDoesNotSplitItsQueue(t *testing.T) {
 	if _, err := d.st.QueueDispatch(store.Dispatch{Room: "cdaws", Harness: "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	got := launchesIn(t, checkIn(t, d, RoomReport{Name: "  cdaws  ", Launches: true}))
+	got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "  cdaws  ", Launches: true}))
 	if len(got) != 1 {
 		t.Fatalf("a room whose name arrived padded collected %d of its own items", len(got))
 	}
@@ -165,7 +166,7 @@ func TestARoomReportsWhatHappenedAndOnlyWithItsToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws", Launches: true}))
+	got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws", Launches: true}))
 	token, _ := got[0]["token"].(string)
 
 	// Somebody else's answer is refused, and the status says the world moved
@@ -213,7 +214,7 @@ func TestAStartedItemPointsAtTheRoomAndKeepsNoCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := launchesIn(t, checkIn(t, d, RoomReport{Name: "cdaws", Launches: true}))
+	got := launchesIn(t, checkIn(t, d, hublink.RoomReport{Name: "cdaws", Launches: true}))
 	token, _ := got[0]["token"].(string)
 
 	body := `{"token":"` + token + `","ok":true,"card_id":"card-9",` +

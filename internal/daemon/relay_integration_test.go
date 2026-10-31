@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,7 +23,7 @@ func roomDaemon(t *testing.T) (*Daemon, *fakeRelay) {
 	t.Helper()
 	d := testDaemon(t)
 	d.opts.Room = "m1mini"
-	d.relays.kick = func() {}
+	d.Relays.Kick = func() {}
 	f := &fakeRelay{}
 	d.SetRelay(f)
 	return d, f
@@ -32,7 +33,7 @@ func say(t *testing.T, d *Daemon, body map[string]string) (int, map[string]any) 
 	t.Helper()
 	raw, _ := json.Marshal(body)
 	rec := httptest.NewRecorder()
-	d.handleSay(rec, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
+	d.HandleSay(rec, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out
@@ -49,7 +50,7 @@ func owed(t *testing.T, d *Daemon) []store.RelayRow {
 
 // settle runs the drain a hold would have started. roomDaemon turns the
 // background kick off, so every drain in these tests runs here, in order.
-func settle(d *Daemon) { d.drainRelays() }
+func settle(d *Daemon) { d.DrainRelays() }
 
 // THE FEATURE, ROOM SIDE. `name@room` is relayed with this room's handle for
 // the sender, and the answer names the target as `name@room`.
@@ -114,7 +115,9 @@ func TestAnUnreachableRoomIsHeldAndSentLater(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
 
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "later"})
 	if code != http.StatusOK || out["delivered"] != "held" {
@@ -129,7 +132,7 @@ func TestAnUnreachableRoomIsHeldAndSentLater(t *testing.T) {
 
 	// The hub is back.
 	f.set(nil)
-	d.drainRelays()
+	d.DrainRelays()
 	if len(owed(t, d)) != 0 {
 		t.Fatal("the held message was not sent when the hub answered")
 	}
@@ -144,8 +147,8 @@ func TestATargetRoomNotAttachedIsHeld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) {
-		return RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
 	})
 	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
 	if out["delivered"] != "held" {
@@ -162,7 +165,9 @@ func TestAnUnconfirmedSayIsNotHeld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayUnconfirmed })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayUnconfirmed
+	})
 	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
 	if out["delivered"] != "unconfirmed" {
 		t.Fatalf("%+v", out)
@@ -177,7 +182,7 @@ func TestAnOldHubIsNotHeldFor(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayOld })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) { return hublink.RelayResult{}, hublink.ErrRelayOld })
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orch@claude-sg4", "text": "x"})
 	if code != http.StatusBadGateway || !strings.Contains(out["error"].(string), "older") {
 		t.Fatalf("%d %+v", code, out)
@@ -192,8 +197,8 @@ func TestARefusalFromTheOtherRoomIsPassedBack(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) {
-		return RelayResult{Code: 404, Error: "no session called \"nobody\". these would have worked: orch"}, nil
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Code: 404, Error: "no session called \"nobody\". these would have worked: orch"}, nil
 	})
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "nobody@claude-sg4", "text": "x"})
 	if code != http.StatusNotFound || !strings.Contains(out["error"].(string), "orch") {
@@ -253,7 +258,9 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	remoteWorker(t, d)
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
 
 	stopSilently(t, d, "worker")
 	settle(d)
@@ -263,7 +270,7 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 		t.Fatalf("outbox = %+v", rows)
 	}
 	f.set(nil)
-	d.drainRelays()
+	d.DrainRelays()
 	got := f.says()
 	if last := got[len(got)-1]; last.To != "L1" || last.Room != "claude-sg4" || last.From != "worker" {
 		t.Fatalf("the notice went as %+v, want to card L1 on claude-sg4 from worker", last)
@@ -286,7 +293,9 @@ func TestAnEndedNoticeReachesALauncherOnAnotherRoom(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
 	if made, err := d.st.CreateWorkItem(w, store.NewWorkItem{Brief: "item 58"}); err != nil || !made {
 		t.Fatalf("work item: %v %v", made, err)
 	}
@@ -317,7 +326,9 @@ func TestAReportReachesALauncherOnAnotherRoom(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
 
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: "progress", Recap: "half way"})
 	if rec.Code != http.StatusOK || out["launcher_told"] != "relayed" {
@@ -336,8 +347,8 @@ func TestSayingToARemoteLauncherCountsAsReporting(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	w := remoteWorker(t, d)
-	f.set(func(s RelaySay) (RelayResult, error) {
-		return RelayResult{OK: true, Delivered: "queued", To: "orch@claude-sg4", Card: "claude-sg4~L1"}, nil
+	f.set(func(s hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{OK: true, Delivered: "queued", To: "orch@claude-sg4", Card: "claude-sg4~L1"}, nil
 	})
 	if code, out := say(t, d, map[string]string{"from": "worker", "to": "@orch@claude-sg4", "text": "done soon"}); code != 200 {
 		t.Fatalf("%d %+v", code, out)
@@ -354,16 +365,20 @@ func TestTheDrainDropsAnUnconfirmedSayAndKeepsANotice(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
-	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "", "a say", "", "", store.RelaySourceSay); err != nil {
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
+	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-sg4", "", "a say", "", "", store.RelaySourceSay); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "L1", "a notice", "", "", store.RelaySourceNotice); err != nil {
+	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-sg4", "L1", "a notice", "", "", store.RelaySourceNotice); err != nil {
 		t.Fatal(err)
 	}
 	settle(d)
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayUnconfirmed })
-	d.drainRelays()
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayUnconfirmed
+	})
+	d.DrainRelays()
 	rows := owed(t, d)
 	if len(rows) != 1 || rows[0].Source != store.RelaySourceNotice {
 		t.Fatalf("outbox = %+v, want only the notice kept", rows)
@@ -387,14 +402,16 @@ func TestTheDrainDropsAnUnconfirmedSayAndKeepsANotice(t *testing.T) {
 func TestAHeldMessageExpires(t *testing.T) {
 	d, f := roomDaemon(t)
 	sender := peerCard(t, d, "sa1")
-	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
-	if _, err := d.holdRelay(sender, "sa1", "orch", "claude-sg4", "", "old", "", "", store.RelaySourceSay); err != nil {
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	})
+	if _, err := d.HoldRelay(sender, "sa1", "orch", "claude-sg4", "", "old", "", "", store.RelaySourceSay); err != nil {
 		t.Fatal(err)
 	}
 	settle(d)
 	d.hk.RelayKeep = time.Nanosecond
 	time.Sleep(2 * time.Millisecond) // wait: lets the nanosecond keep run out, no event marks it
-	d.drainRelays()
+	d.DrainRelays()
 	if len(owed(t, d)) != 0 {
 		t.Fatal("an expired message was kept")
 	}
@@ -423,7 +440,7 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 	if d.launcherOf(got) != nil {
 		t.Fatal("a launcher on another room was found on this one")
 	}
-	if name, room, ok := d.remoteLauncher(got); !ok || name != "orch" || room != "claude-sg4" {
+	if name, room, ok := d.RemoteLauncher(got); !ok || name != "orch" || room != "claude-sg4" {
 		t.Fatalf("remote launcher = %q %q %v", name, room, ok)
 	}
 
@@ -444,11 +461,11 @@ func TestALaunchFromAnotherRoomKeepsTheTaggedLauncher(t *testing.T) {
 func TestRoomPeersComeFromTheHub(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	f.peers = []RemotePeer{{Handle: "orch@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~L1", Status: "working"}}
+	f.peers = []hublink.RemotePeer{{Handle: "orch@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~L1", Status: "working"}}
 	rec := httptest.NewRecorder()
-	d.handleRoomPeers(rec, httptest.NewRequest(http.MethodGet, "/v1/peers/rooms", nil))
+	d.HandleRoomPeers(rec, httptest.NewRequest(http.MethodGet, "/v1/peers/rooms", nil))
 	var out struct {
-		Peers []RemotePeer `json:"peers"`
+		Peers []hublink.RemotePeer `json:"peers"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	if rec.Code != 200 || len(out.Peers) != 1 || out.Peers[0].Room != "claude-sg4" {
@@ -462,7 +479,7 @@ func roomCard(d *Daemon, to string, events bool) (int, map[string]any) {
 		path += "&events=1"
 	}
 	rec := httptest.NewRecorder()
-	d.handleRoomCard(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	d.HandleRoomCard(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out
@@ -471,7 +488,7 @@ func roomCard(d *Daemon, to string, events bool) (int, map[string]any) {
 func roomExit(d *Daemon, to string) (int, map[string]any) {
 	raw, _ := json.Marshal(map[string]string{"to": to})
 	rec := httptest.NewRecorder()
-	d.handleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", bytes.NewReader(raw)))
+	d.HandleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", bytes.NewReader(raw)))
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out
@@ -493,8 +510,8 @@ func TestACardOnAnotherRoomIsReadAndExitedThroughTheHub(t *testing.T) {
 		t.Fatalf("exit: %d %+v", code, out)
 	}
 	got := f.reachedAll()
-	if len(got) != 2 || got[0] != (RelaySay{Room: "claude-sg4", To: "orch", Text: "card", When: "true"}) ||
-		got[1] != (RelaySay{Room: "claude-sg4", To: "01ABC", Text: "exit"}) {
+	if len(got) != 2 || got[0] != (hublink.RelaySay{Room: "claude-sg4", To: "orch", Text: "card", When: "true"}) ||
+		got[1] != (hublink.RelaySay{Room: "claude-sg4", To: "01ABC", Text: "exit"}) {
 		t.Fatalf("hub asked %+v", got)
 	}
 }
@@ -524,8 +541,8 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	f.mu.Lock()
-	f.reach = func(RelaySay) (RelayResult, error) {
-		return RelayResult{Code: http.StatusNotFound, Error: "no session called \"nobody\". these would have worked: orch"}, nil
+	f.reach = func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Code: http.StatusNotFound, Error: "no session called \"nobody\". these would have worked: orch"}, nil
 	}
 	f.mu.Unlock()
 	code, out := roomExit(d, "nobody@claude-sg4")
@@ -533,8 +550,8 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 		t.Fatalf("refusal: %d %+v", code, out)
 	}
 	f.mu.Lock()
-	f.reach = func(RelaySay) (RelayResult, error) {
-		return RelayResult{Code: http.StatusBadRequest, Error: "this hub does not know the relay op \"exit\""}, nil
+	f.reach = func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Code: http.StatusBadRequest, Error: "this hub does not know the relay op \"exit\""}, nil
 	}
 	f.mu.Unlock()
 	code, out = roomExit(d, "orch@claude-sg4")
@@ -542,7 +559,9 @@ func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
 		t.Fatalf("old hub: %d %+v", code, out)
 	}
 	f.mu.Lock()
-	f.reach = func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown }
+	f.reach = func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	}
 	f.mu.Unlock()
 	if code, _ = roomCard(d, "orch@claude-sg4", false); code != http.StatusBadGateway {
 		t.Fatalf("hub down: %d", code)
@@ -568,14 +587,14 @@ func TestACrossRoomExitHandsTheHubWhoIsAsking(t *testing.T) {
 	d, f := roomDaemon(t)
 	for _, c := range []struct {
 		body string
-		want RelaySay
+		want hublink.RelaySay
 	}{
-		{`{"to":"claude-sg4~01ABC","from":"me"}`, RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit"}},
+		{`{"to":"claude-sg4~01ABC","from":"me"}`, hublink.RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit"}},
 		{`{"to":"claude-sg4~01ABC","from":"me","force":true}`,
-			RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit", When: "force"}},
+			hublink.RelaySay{Room: "claude-sg4", To: "01ABC", From: "me", Text: "exit", When: "force"}},
 	} {
 		rec := httptest.NewRecorder()
-		d.handleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", strings.NewReader(c.body)))
+		d.HandleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", strings.NewReader(c.body)))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s answered %d", c.body, rec.Code)
 		}

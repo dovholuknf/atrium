@@ -460,7 +460,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	} else if !in.viaSay && itemEnd == nil {
 		// A launcher on another room hears it the same way, held in the relay
 		// outbox inside the same transaction. See relay.go.
-		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
+		write.Relay = d.LauncherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
 	// A REPORT TO A PARKED LAUNCHER RESUMES IT, as if wake=true: the launcher is
 	// the one who has to act on it, and a report nobody reads is the failure
@@ -478,7 +478,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		return nil, http.StatusInternalServerError, err
 	}
 	if res.Relayed {
-		d.kickRelays()
+		d.KickRelays()
 	}
 	if itemEnd != nil && itemEnd.changed && in.Status == ReportDone && itemEnd.item.Pool != "" && strings.TrimSpace(in.Learned) != "" {
 		d.appendLearned(task, itemEnd.item, in.Learned)
