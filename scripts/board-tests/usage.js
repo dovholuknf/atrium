@@ -587,11 +587,11 @@ async function contextCycleSection(browser, base) {
     // THE DO-NOT-ENTER SIGN is up from the cycle's first step to its end, and gone for a failed cycle and a capture.
     const sign = step => wp.evaluate(step => {
       composeBar({ new_context: step === "none" ? null : { step, n: 1, of: 3, label: "waiting for atrium ready" } });
-      const el = document.getElementById("t-nodev");
+      const el = document.getElementById("t-ctxbox");
       return !!el && !el.hidden ? el.textContent.replace(/\s+/g, " ").trim() : "";
     }, step);
     const upAt = await sign("limit");
-    if (!/typing is held for the new context step 1\/3: waiting for atrium ready let me type$/.test(upAt)) fail("no do-not-enter sign on the cycle's first step: " + JSON.stringify(upAt));
+    if (!/step 1\/3: waiting for atrium ready/.test(upAt) || /typing is held/.test(upAt) || await wp.evaluate(() => document.querySelectorAll("#t-nodev").length)) fail("not one panel with the step on the cycle's first step: " + JSON.stringify(upAt));
     const unarmed = await wp.evaluate(() => {
       composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for your line to clear", held: false } });
       const was = termTask, kind = termKind;
@@ -600,7 +600,7 @@ async function contextCycleSection(browser, base) {
       const gated = composeGate("x");
       termTask = was;
       termKind = kind;
-      return { sign: !document.getElementById("t-nodev").hidden, gated };
+      return { sign: !document.getElementById("t-ctxbox").hidden, gated };
     });
     if (unarmed.sign || unarmed.gated) fail("typing is held before the cycle found the line clear: " + JSON.stringify(unarmed));
     if (process.env.NODEV_SHOTS) {
@@ -610,38 +610,19 @@ async function contextCycleSection(browser, base) {
         await wp.setViewportSize({ width: w, height: h });
         await sign(step);
         await wp.evaluate(() => {
-          for (let e = document.getElementById("t-nodev"); e && e !== document.body; e = e.parentElement) {
-            e.hidden = e.id === "t-nodev" ? e.hidden : false;
+          for (let e = document.getElementById("t-ctxbox"); e && e !== document.body; e = e.parentElement) {
+            e.hidden = e.id === "t-ctxbox" ? e.hidden : false;
             if (getComputedStyle(e).display === "none") e.style.display = "block";
           }
         });
-        await wp.evaluate(() => document.getElementById("t-nodev").scrollIntoView({ block: "center" }));
+        await wp.evaluate(() => document.getElementById("t-ctxbox").scrollIntoView({ block: "center" }));
         await wp.screenshot({ path: path.join(process.env.NODEV_SHOTS, name + "-" + step + "-" + w + ".png") });
       }
       process.exit(0);
     }
-    const gate = await wp.evaluate(() => {
-      const realSend = window.send, frames = [];
-      window.send = m => { frames.push(m); };
-      termTask = { id: "ll-cycle", new_context: { step: "wake", n: 3, of: 3, label: "waking it to read x" } };
-      termKind = "runner";
-      sendInput("asdf");
-      const held = { frames: frames.slice(), box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
-      composeClose();
-      sendInput("[I", true);
-      const quiet = frames.length;
-      termTask.new_context = null;
-      sendInput("after");
-      window.send = realSend;
-      return { held, quiet, frames };
-    });
-    if (gate.held.frames.length || !gate.held.box || gate.held.text !== "asdf") fail("keys reached the terminal while the new context held typing: " + JSON.stringify(gate.held));
-    if (gate.quiet !== 1) fail("a focus report was dropped by the hold: " + JSON.stringify(gate));
-    if (gate.frames.length !== 2 || gate.frames[1].d !== "after") fail("typing did not pass once the hold ended: " + JSON.stringify(gate.frames));
-    for (const step of ["clear", "wake"]) if (!(await sign(step))) fail("no do-not-enter sign on the " + step + " step");
-    for (const step of ["failed", "capture", "none"]) if (await sign(step)) fail("a do-not-enter sign on a " + step + " cycle");
-    await sign("limit");
     const composed = [], freed = [];
+    let freeWake = null;
+    const nextFree = () => new Promise(r => { freeWake = r; });
     await wp.route("**/v1/tasks/ll-cycle/message", async route => {
       composed.push(JSON.parse(route.request().postData() || "{}"));
       await route.fulfill({ json: { delivered: "queued" } });
@@ -649,9 +630,31 @@ async function contextCycleSection(browser, base) {
     await wp.route("**/v1/tasks/ll-cycle/new-context", async route => {
       if (route.request().method() !== "DELETE") return route.fallback();
       freed.push(1);
+      if (freeWake) { const w = freeWake; freeWake = null; w(); }
       await route.fulfill({ json: { card: "ll-cycle", cleared: true } });
     });
-    await wp.evaluate(() => { termTask = { id: "ll-cycle" }; termKind = "runner"; composeNoteTyped("h"); composeRefused(); });
+    const gate = await wp.evaluate(() => {
+      const realSend = window.send, frames = [];
+      window.send = m => { frames.push(m); };
+      termTask = { id: "ll-cycle", new_context: { step: "wake", n: 3, of: 3, label: "waking it to read x" } };
+      termKind = "runner";
+      window.gateFrames = frames; window.gateSend = realSend;
+      sendInput("asdf");
+      const held = { frames: frames.length };
+      sendInput("[I", true);
+      return { held, quiet: frames.length };
+    });
+    // TYPING IS NEVER BLOCKED: the key releases the hold (one DELETE) and goes through.
+    await wp.waitForFunction(() => window.gateFrames.some(f => f.d === "asdf"), null, { timeout: slow(5000) });
+    if (gate.held.frames || gate.quiet !== 1) fail("a quiet report was held or a key skipped the release: " + JSON.stringify(gate));
+    if (freed.length !== 1) fail("typing into a held terminal did not release the hold: " + freed.length);
+    await wp.evaluate(() => { window.send = window.gateSend; });
+    freed.length = 0;
+    if (await wp.evaluate(() => composeOpen())) fail("the panel stayed open after typing released the hold");
+    for (const step of ["clear", "wake"]) if (!(await sign(step))) fail("no do-not-enter sign on the " + step + " step");
+    for (const step of ["failed", "capture", "none"]) if (await sign(step)) fail("a do-not-enter sign on a " + step + " cycle");
+    await sign("limit");
+    await wp.evaluate(() => { termTask = { id: "ll-cycle" }; termKind = "runner"; document.getElementById("t-ctxbox-in").value = ""; composeNoteTyped("h"); composeRefused(); });
     const cbox = await wp.evaluate(() => ({ open: composeOpen(), text: document.getElementById("t-ctxbox-in").value }));
     if (!cbox.open || cbox.text !== "h") fail("a refused key did not open the compose cbox seeded with it: " + JSON.stringify(cbox));
     if (/Typing dropped/.test(await wp.evaluate(() => document.body.innerText))) fail("the Typing dropped toast is still shown");
@@ -682,16 +685,34 @@ async function contextCycleSection(browser, base) {
     if (composed.length !== 1 || composed[0].text !== "hello after the cycle") fail("Enter did not queue the text: " + JSON.stringify(composed));
     await wp.evaluate(() => composeRefused());
     await wp.evaluate(() => { document.getElementById("t-ctxbox-in").value = "never mind"; });
+    let woke = nextFree();
     await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
-    if (await wp.evaluate(() => composeOpen()) || composed.length !== 1) fail("Escape did not discard the compose cbox.");
+    await woke;
+    if (await wp.evaluate(() => composeOpen()) || composed.length !== 1 || freed.length !== 1) fail("Escape did not dismiss the panel and release the hold.");
     await wp.evaluate(() => composeRefused());
+    woke = nextFree();
     await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
+    await woke;
     await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
-    if (freed.length !== 1) fail("'let me type' did not dismiss the cycle.");
+    if (freed.length !== 2) fail("'let me type' did not dismiss the cycle.");
     await sign("limit");
-    await wp.evaluate(() => document.querySelector("#t-nodev button").click());
-    await wp.waitForFunction(() => document.getElementById("t-nodev").hidden, null, { timeout: slow(5000) });
-    if (freed.length !== 2) fail("'let me type' on the do-not-enter sign did not dismiss the cycle.");
+    woke = nextFree();
+    await wp.evaluate(() => document.getElementById("t-ctxbox-free").click());
+    await woke;
+    await wp.waitForFunction(() => document.getElementById("t-ctxbox").hidden, null, { timeout: slow(5000) });
+    if (freed.length !== 3) fail("'let me type' on the panel did not dismiss the cycle.");
+    // DISMISSABLE AT EVERY STEP: Escape and the x both release the hold, whatever step the cycle is on.
+    for (const how of ["Escape", "x"]) for (const step of ["limit", "clear", "wake"]) {
+      freed.length = 0;
+      await sign(step);
+      const woke = nextFree();
+      if (how === "Escape") await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+      else await wp.evaluate(() => document.querySelector("#t-ctxbox [aria-label^=dismiss]").click());
+      await woke;
+      await wp.waitForFunction(() => document.getElementById("t-ctxbox").hidden, null, { timeout: slow(5000) });
+      if (freed.length !== 1) fail(how + " on the " + step + " step did not release the hold: " + freed.length);
+    }
+    freed.length = 0;
     // THE END FRAME TAKES THE STRIP AND THE BOX AWAY (r-new-context-strip-stuck-at-1of3). The bar followed only the list
     // pass, so a window that never ran it kept "1/3" and "let me type" after the cycle ended.
     const endFrame = await wp.evaluate(() => {
@@ -729,10 +750,28 @@ async function contextCycleSection(browser, base) {
     // "let me type" must still cancel it and put the bar away. No cycle step has to finish first.
     await wp.evaluate(() => {
       composeBar({ new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } });
-      document.querySelector("#t-nodev button").click();
+      document.getElementById("t-ctxbox-free").click();
     });
     await wp.waitForFunction(() => document.getElementById("t-ncbar").hidden, null, { timeout: slow(5000) });
-    if (freed.length !== 3) fail("the modal's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    if (freed.length !== 1) fail("the modal's 'let me type' did not cancel a cycle that never ends: " + freed.length);
+    // IMAGE PASTE: a file pasted into the panel goes up the way a terminal paste does and its path joins the text.
+    await wp.route("**/v1/tasks/ll-cycle/files", async route => {
+      await route.fulfill({ json: { paths: ["/w/.atrium/incoming/pasted.png"] } });
+    });
+    await sign("limit");
+    await wp.evaluate(() => {
+      const ta = document.getElementById("t-ctxbox-in");
+      ta.value = "look: ";
+      ta.setSelectionRange(6, 6);
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" }));
+      ta.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await wp.waitForFunction(() => document.getElementById("t-ctxbox-in").value.includes(".atrium/incoming/pasted.png"), null, { timeout: slow(5000) });
+    await wp.evaluate(() => document.getElementById("t-ctxbox-in").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    await wp.waitForFunction(() => !composeOpen(), null, { timeout: slow(5000) });
+    if (composed.length !== 2 || !/^look: .*\.atrium\/incoming\/pasted\.png$/.test(composed[1].text))
+      fail("the pasted image path was not queued with the text: " + JSON.stringify(composed));
     await wp.evaluate(() => { termTask = null; });
 
     // The details: the switch on, no own limit, and a line naming the limit in force and where from.
