@@ -256,18 +256,22 @@ func (h *Hub) Lookup(ctx context.Context, q URLQuery) URLAnswer {
 	known := h.known(ctx)
 	name, cands := resolveRepo(q.Repo, known)
 	var forgeNote string
-	if name == "" && len(cands) == 0 && q.Branch != "" && q.Room == "" {
-		// A REPOSITORY THE HUB DOES NOT HAVE YET, asked for with a branch: made from its forge, as `atrium hub git init`
-		// makes it, when the forge has that branch. A typo makes nothing.
+	if name == "" && len(cands) == 0 && q.Room == "" {
+		// A REPOSITORY THE HUB DOES NOT HAVE YET: made from its forge, as `atrium hub git init` makes it, when the
+		// forge has the branch asked for, or answers when none was. A typo makes nothing.
 		if ref, ok := forgeRef(q.Repo); ok {
-			has, err := h.Store().HasForgeBranch(ctx, ref, q.Branch)
+			probe := q.Branch
+			if probe == "" {
+				probe = "main"
+			}
+			has, err := h.Store().HasForgeBranch(ctx, ref, probe)
 			var fe *FetchError
 			switch {
 			case errors.As(err, &fe) && fe.Auth:
 				return URLAnswer{State: URLNoCredential, Repo: ref.Name(), Branch: cutText(q.Branch), Note: fe.Msg}
 			case err != nil:
 				forgeNote = err.Error()
-			case has:
+			case has || q.Branch == "":
 				if _, err := h.Store().Init(ctx, "https://"+forgeHost(ref)+"/"+ref.Owner+"/"+ref.Repo); err != nil {
 					forgeNote = "the hub could not make " + ref.Name() + " to fetch it into: " + err.Error()
 				} else {
