@@ -83,6 +83,10 @@ a tracked file.
 
 ## Open questions
 
-1. `VERSION` bumped by hand in the release commit, or by `cut-release.sh`? Proposed: by hand, checked by the script.
+1. Decided: a release CI workflow bumps `VERSION`, not a person. The logic lives in a locally runnable script
+   (`scripts/bump-version.sh`) and the workflow only calls it. `cut-release.sh` still checks tag against `VERSION`.
+   Still open: whether the dev format is `0.0.3-dev+<hash>` or just `0.0.3+<hash>`. Note the second sorts ABOVE the
+   release under SemVer ordering rules that read build metadata, and equal under strict SemVer, so it breaks the
+   rule that a dev build never sorts above 0.0.3.
 2. Is `+` and `.modified` acceptable in file names and the board? Proposed yes, nothing here puts the version in a
    path except packaging, which never sees a dev build.
