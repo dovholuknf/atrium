@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -151,11 +152,11 @@ func TestAckThenClearThenWake(t *testing.T) {
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := d.ready(task)
+	out, _, err := d.Ready(task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out["message"] != ReadyLine || out["path"] != path || out["stored"] != true {
+	if out["message"] != roomconf.ReadyLine || out["path"] != path || out["stored"] != true {
 		t.Fatalf("ready answered %v", out)
 	}
 	time.Sleep(80 * time.Millisecond) // wait: a negative check, /clear must not be typed inside the turn
@@ -281,7 +282,7 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	post := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/ready", strings.NewReader(`{"agent":"x","task_id":"`+id+`"}`))
 		rec := httptest.NewRecorder()
-		d.handleReady(rec, req)
+		d.HandleReady(rec, req)
 		return rec
 	}
 	if rec := post(); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "no context cycle") {
@@ -311,7 +312,7 @@ func TestReadyIsRefusedWithNoCycleOrNoHandoff(t *testing.T) {
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rec := post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), ReadyLine) {
+	if rec := post(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), roomconf.ReadyLine) {
 		t.Fatalf("ready answered %d %s", rec.Code, rec.Body)
 	}
 	if rec := post(); rec.Code != http.StatusConflict {

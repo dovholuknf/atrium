@@ -1,4 +1,4 @@
-package daemon
+package roomconf
 
 import (
 	"encoding/json"
@@ -132,7 +132,7 @@ type ExportZiti struct {
 // A LIST rather than "everything except", because the settings table is where
 // a value with no home ends up, and the next thing put in it is not going to
 // be considered against this comment. Anything not named here does not leave.
-var exportedSettings = []string{
+var ExportedSettings = []string{
 	store.SettingSweepDead,
 	store.SettingPruneAfter,
 	api.SettingBrowseRoots,
@@ -153,7 +153,7 @@ var exportedSettings = []string{
 	// back to an earlier binary finds their worktree command intact. So they
 	// stop being exported from this release, which is correct, because nothing
 	// on the other end would read them either.
-	SettingShellCommand,
+	api.SettingShellCommand,
 	store.SettingUnexpectedExit,
 }
 
@@ -165,7 +165,7 @@ var exportedSettings = []string{
 // secret, it is a STATE. Whether this machine is approving everything right
 // now is not configuration to restore onto another one, and an import that
 // silently turned it on would be the worst possible thing to restore.
-var neverExported = []string{
+var NeverExported = []string{
 	// A server name from the runner's mcp.json. Machine-specific, so it stays.
 	store.SettingLeanWorkerGateway,
 	// Whether cards may push to the hub. An import must not turn it on.
@@ -187,16 +187,16 @@ var neverExported = []string{
 }
 
 // BuildExport gathers the configuration, or refuses and says why.
-func (d *Daemon) BuildExport() (*Export, error) {
+func (d *Service) BuildExport() (*Export, error) {
 	out := &Export{
 		Version:    ExportVersion,
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
-		Tenant:     d.st.Tenant(),
+		Tenant:     d.St.Tenant(),
 		Settings:   map[string]string{},
 	}
 
-	for _, key := range exportedSettings {
-		v, err := d.st.Setting(key)
+	for _, key := range ExportedSettings {
+		v, err := d.St.Setting(key)
 		if err != nil {
 			return nil, fmt.Errorf("could not read the setting %q: %w", key, err)
 		}
@@ -208,25 +208,25 @@ func (d *Daemon) BuildExport() (*Export, error) {
 	}
 
 	var err error
-	if out.Harnesses, err = d.st.Harnesses(); err != nil {
+	if out.Harnesses, err = d.St.Harnesses(); err != nil {
 		return nil, err
 	}
-	if out.Fixtures, err = d.st.Fixtures(); err != nil {
+	if out.Fixtures, err = d.St.Fixtures(); err != nil {
 		return nil, err
 	}
-	if out.Sources, err = d.st.Sources(); err != nil {
+	if out.Sources, err = d.St.Sources(); err != nil {
 		return nil, err
 	}
-	if out.Actions, err = d.st.CardActions(); err != nil {
+	if out.Actions, err = d.St.CardActions(); err != nil {
 		return nil, err
 	}
-	if out.Rules, err = d.st.Rules(); err != nil {
+	if out.Rules, err = d.St.Rules(); err != nil {
 		return nil, err
 	}
-	if out.Recognisers, err = d.st.Recognisers(); err != nil {
+	if out.Recognisers, err = d.St.Recognisers(); err != nil {
 		return nil, err
 	}
-	if out.Themes, err = d.st.TermThemes(); err != nil {
+	if out.Themes, err = d.St.TermThemes(); err != nil {
 		return nil, err
 	}
 
@@ -240,7 +240,7 @@ func (d *Daemon) BuildExport() (*Export, error) {
 	}
 	out.Overlays.Ziti = ExportZiti{Service: d.ZitiConfig().Service}
 
-	if err := refuseIfItLooksLikeASecret(out); err != nil {
+	if err := RefuseIfItLooksLikeASecret(out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -259,9 +259,9 @@ func (d *Daemon) BuildExport() (*Export, error) {
 // that a base64 line in a legitimate command is unlikely and a real token is
 // caught: an API key that is short enough to slip under it is short enough to
 // be guessable anyway.
-var secretShapes = []struct {
-	name string
-	re   *regexp.Regexp
+var SecretShapes = []struct {
+	Name string
+	Re   *regexp.Regexp
 }{
 	{"a private key", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)},
 	{"a github token", regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{16,}`)},
@@ -282,20 +282,20 @@ var secretShapes = []struct {
 // The error names WHERE, by finding the key whose value matched, because
 // "your export contains a secret" with no location is an error somebody has to
 // go hunting behind.
-func refuseIfItLooksLikeASecret(out *Export) error {
+func RefuseIfItLooksLikeASecret(out *Export) error {
 	raw, err := json.Marshal(out)
 	if err != nil {
 		return err
 	}
-	for _, s := range secretShapes {
-		hit := s.re.Find(raw)
+	for _, s := range SecretShapes {
+		hit := s.Re.Find(raw)
 		if hit == nil {
 			continue
 		}
 		return fmt.Errorf("this export was stopped because something in it looks like %s, "+
 			"and a secret pushed to a repository is still in its history after it is "+
 			"deleted. it appears near %q. take it out of the configuration and use an "+
-			"environment variable there instead", s.name, whereabouts(raw, hit))
+			"environment variable there instead", s.Name, Whereabouts(raw, hit))
 	}
 	return nil
 }
@@ -307,7 +307,7 @@ func refuseIfItLooksLikeASecret(out *Export) error {
 // probably a screenshot, and printing the credential to explain that it must
 // not be printed is the joke that writes itself. What comes back is enough
 // context to find it.
-func whereabouts(raw, hit []byte) string {
+func Whereabouts(raw, hit []byte) string {
 	at := strings.Index(string(raw), string(hit))
 	if at < 0 {
 		return "somewhere in the export"
@@ -330,14 +330,14 @@ func whereabouts(raw, hit []byte) string {
 // it rather than apply it. Copied rather than returned directly so a caller
 // cannot reorder or extend the real one.
 func ExportSettingKeys() []string {
-	out := append([]string(nil), exportedSettings...)
+	out := append([]string(nil), ExportedSettings...)
 	sort.Strings(out)
 	return out
 }
 
 // NeverExportedKeys is the other half, for the same reason.
 func NeverExportedKeys() []string {
-	out := append([]string(nil), neverExported...)
+	out := append([]string(nil), NeverExported...)
 	sort.Strings(out)
 	return out
 }

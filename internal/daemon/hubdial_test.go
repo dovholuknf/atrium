@@ -49,6 +49,7 @@ func TestHubDialRelaysTheRoomsConnection(t *testing.T) {
 	}()
 	f := &fakeHubDialer{up: tcpA}
 	d := &Daemon{}
+	d.initServices()
 	d.SetHubDialer(f)
 	srv := httptest.NewServer(http.HandlerFunc(d.handleHubDial))
 	defer srv.Close()
@@ -72,6 +73,7 @@ func TestHubDialRelaysTheRoomsConnection(t *testing.T) {
 func TestHubDialRefusesAPeerThatIsNotLoopback(t *testing.T) {
 	f := &fakeHubDialer{}
 	d := &Daemon{}
+	d.initServices()
 	d.SetHubDialer(f)
 	req := httptest.NewRequest(http.MethodPost, "/hubdial", nil)
 	req.RemoteAddr = "10.1.2.3:5555"
@@ -86,6 +88,7 @@ func TestHubDialRefusesAPeerThatIsNotLoopback(t *testing.T) {
 
 func TestHubDialSaysSoWhenTheRoomHasNoHub(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	req := httptest.NewRequest(http.MethodPost, "/hubdial", nil)
 	req.RemoteAddr = "127.0.0.1:5555"
 	req.Header.Set("Upgrade", "atrium-hubdial")
@@ -99,6 +102,7 @@ func TestHubDialSaysSoWhenTheRoomHasNoHub(t *testing.T) {
 
 func TestHubDialAnswersADialFailureWithItsSentence(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	d.SetHubDialer(&fakeHubDialer{err: errors.New("no route to the hub")})
 	req := httptest.NewRequest(http.MethodPost, "/hubdial", nil)
 	req.RemoteAddr = "127.0.0.1:5555"

@@ -101,10 +101,15 @@ type Options struct {
 	HostBuild string
 }
 
+// roomconfService names the embedded room configuration, which would otherwise clash with publish.Service.
+type roomconfService = roomconf.Service
+
 // Daemon owns the store and both listeners.
 type Daemon struct {
 	// Service is the published board. See overlay_service.go.
 	*publish.Service
+	// roomconfService is the room's own configuration. See roomconf/roomconf_service.go.
+	*roomconfService
 	// Publish sends one card to the board. See publishCard.
 	Publish func(id string)
 	// homeSize is the size walk over the card homes. See homesize.go.
@@ -324,10 +329,6 @@ type Daemon struct {
 	// exits counts the awaitExit goroutines still running. A runner leaves the supervisor BEFORE its exit is filed,
 	// so "no runner left" does not mean "nothing is writing"; a test waits on this before it closes the store.
 	exits sync.WaitGroup
-	// clearOnce guards removing the address file, which the shutdown path does
-	// before it closes the store and Run's deferred call would do again after.
-	// See clearLocation.
-	clearOnce sync.Once
 
 	// gone is what the reaper remembers about worktrees that have vanished. See
 	// worktreegone.go.
@@ -412,12 +413,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		startedAt:   new(sync.Map),
 	}
 	d.Publish = d.publishCard
-	d.Service = publish.New(publish.Config{
-		St: st, Ap: d.ap, Sup: d.sup, Publish: func(id string) { d.Publish(id) },
-		Opts: func() publish.Options {
-			return publish.Options{HumanAddr: d.opts.HumanAddr, Room: d.opts.Room, DBPath: d.opts.DBPath}
-		},
-	})
+	d.initServices()
 	d.ph.opts.Build = opts.HostBuild
 	if tune != nil {
 		tune(&d.hk)
@@ -676,7 +672,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.DispatchResult = d.handleDispatchResult
 	d.ap.BuildExport = func() (any, error) { return d.BuildExport() }
 	d.ap.ApplyImport = func(body []byte, apply, force bool) (any, error) {
-		var in Export
+		var in roomconf.Export
 		if err := json.Unmarshal(body, &in); err != nil {
 			return nil, fmt.Errorf("that is not an atrium configuration: %w", err)
 		}
@@ -941,7 +937,7 @@ func (d *Daemon) onHalt(cause error) {
 	}
 	d.ap.Broadcast("halted", map[string]string{"cause": fmt.Sprint(cause)})
 	// And as `health`, the event the board reads instead of polling /v1/health.
-	d.publishHealth()
+	d.PublishHealth()
 }
 
 // observedFor builds the observed bucket from what the wire name tells us.
@@ -1183,7 +1179,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
-	agentMux.HandleFunc("/ready", d.handleReady)
+	agentMux.HandleFunc("/ready", d.HandleReady)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
 	agentMux.HandleFunc("/help", d.handleHelp)
@@ -1201,7 +1197,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/stream", d.handleStream)
 	agentMux.HandleFunc("/stream/status", d.handleStreamStatus)
 	agentMux.HandleFunc("/hubdial", d.handleHubDial)
-	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
+	agentMux.HandleFunc("/hooks-changed", d.HandleHooksChanged)
 	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
 	// the token opens this route and no other. See hubremote.go.
 	agentMux.Handle(gitsync.HubRemotePrefix, d.hubRemote())
@@ -1245,11 +1241,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// `addressOf`, not concatenation. An address that already names a host,
 	// which is what `atrium preview` passes, came out as
 	// `http://localhost127.0.0.1:53895`.
-	log.Printf("[atrium] agents  -> %s", addressOf(d.opts.AgentAddr))
+	log.Printf("[atrium] agents  -> %s", roomconf.AddressOf(d.opts.AgentAddr))
 	if strings.TrimSpace(d.opts.HumanAddr) == "-" {
 		log.Printf("[atrium] board   -> none of its own. reached through the hub")
 	} else {
-		log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
+		log.Printf("[atrium] board   -> %s", roomconf.AddressOf(d.opts.HumanAddr))
 	}
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
 	// WHAT A SHELL WILL OPEN AS, said once at startup rather than discovered
@@ -1266,8 +1262,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Written once both listeners are bound, so the file never advertises an
 	// address that failed to open.
-	d.writeLocation()
-	defer d.clearLocation()
+	d.WriteLocation()
+	defer d.ClearLocation()
 
 	// A new database is indistinguishable from every card and every rule having
 	// vanished. WORKTREE_ROOT unset once sent the path to the home directory,
@@ -1317,7 +1313,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// started inside it would race the first fixture.
 		d.settle.begin()
 		// Say so on the stream, and say again when the window closes. See health.go.
-		go d.watchSettle(ctx)
+		go d.WatchSettle(ctx)
 		// Terminals that come up with the daemon, and then the ones that were
 		// simply open when it stopped. In the background, so a runner that is
 		// slow to start cannot delay the board answering: a board that is not
@@ -1568,7 +1564,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	//
 	// The address file goes first, because finding the shared copy reads the
 	// store. See clearLocation.
-	d.clearLocation()
+	d.ClearLocation()
 	if err := d.closeDB(); err != nil {
 		log.Printf("[atrium] closing the database: %v", err)
 	}
@@ -1620,4 +1616,44 @@ func (d *Daemon) resumePRReviews() {
 // EnrollZitiInto is publish.EnrollZitiInto, kept here for the CLI.
 func EnrollZitiInto(token, name, dir string) (string, string, error) {
 	return publish.EnrollZitiInto(token, name, dir)
+}
+
+// initServices builds the features that left Daemon. They read the daemon's state at call time.
+func (d *Daemon) initServices() {
+	d.Service = publish.New(publish.Config{
+		St: d.st, Ap: d.ap, Sup: d.sup, Publish: func(id string) { d.Publish(id) },
+		Opts: func() publish.Options {
+			return publish.Options{HumanAddr: d.opts.HumanAddr, Room: d.opts.Room, DBPath: d.opts.DBPath}
+		},
+	})
+	d.roomconfService = roomconf.New(roomconf.Config{
+		St: d.st, Ap: d.ap,
+		Opts: func() roomconf.Options {
+			o := d.opts
+			return roomconf.Options{AgentAddr: o.AgentAddr, HumanAddr: o.HumanAddr, DBPath: o.DBPath, Room: o.Room,
+				RoomDir: o.RoomDir, LocationFile: o.LocationFile}
+		},
+		Calls: roomconf.Calls{
+			PidAlive:          func(pid int) bool { return d.hk.pidAlive(pid) },
+			HealthHalted:      func(h roomconf.HaltReader) (bool, error) { return d.hk.HealthHalted(h) },
+			Settling:          d.Settling,
+			LoginHealth:       d.loginHealth,
+			ToolchainHealth:   d.toolchainHealth,
+			ZrokConfig:        d.ZrokConfig,
+			ZitiConfig:        d.ZitiConfig,
+			SaveOverlayConfig: d.SaveOverlayConfig,
+			TaskFor:           d.taskFor,
+			Cycle: func(id string) (string, bool, bool) {
+				cur := d.nctx.get(id)
+				if cur == nil || cur.step != NewContextLimit {
+					return "", false, false
+				}
+				return cur.file, true, cur.acked
+			},
+			CycleAck: func(id string) bool { return d.nctx.ack(id) },
+			WrapAck:  func(id string) bool { return d.wrap.ack(id) },
+			CycleBy:  cycleBy,
+			Publish:  func(id string) { d.Publish(id) },
+		},
+	})
 }

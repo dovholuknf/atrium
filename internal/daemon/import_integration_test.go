@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"strings"
 	"testing"
 
@@ -16,8 +17,8 @@ import (
 func TestADryRunChangesNothing(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	in := &Export{
-		Version:  ExportVersion,
+	in := &roomconf.Export{
+		Version:  roomconf.ExportVersion,
 		Settings: map[string]string{store.SettingSweepDead: "999"},
 	}
 	res, err := d.ApplyImport(in, false, false)
@@ -47,8 +48,8 @@ func TestAnImportKeepsWhatIsAlreadySet(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingSweepDead, "mine"); err != nil {
 		t.Fatal(err)
 	}
-	in := &Export{
-		Version:  ExportVersion,
+	in := &roomconf.Export{
+		Version:  roomconf.ExportVersion,
 		Settings: map[string]string{store.SettingSweepDead: "theirs"},
 	}
 	res, err := d.ApplyImport(in, true, false)
@@ -84,8 +85,8 @@ func TestForceOverwrites(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingSweepDead, "mine"); err != nil {
 		t.Fatal(err)
 	}
-	in := &Export{
-		Version:  ExportVersion,
+	in := &roomconf.Export{
+		Version:  roomconf.ExportVersion,
 		Settings: map[string]string{store.SettingSweepDead: "theirs"},
 	}
 	if _, err := d.ApplyImport(in, true, true); err != nil {
@@ -117,7 +118,7 @@ func TestAnImportDoesNotEraseTheZrokToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	in := &Export{Version: ExportVersion}
+	in := &roomconf.Export{Version: roomconf.ExportVersion}
 	in.Overlays.Zrok.Public = true
 	in.Overlays.Zrok.ApiEndpoint = "https://zrok.example"
 	if _, err := d.ApplyImport(in, true, true); err != nil {
@@ -151,7 +152,7 @@ func TestAnImportDoesNotEraseTheZitiIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	in := &Export{Version: ExportVersion}
+	in := &roomconf.Export{Version: roomconf.ExportVersion}
 	in.Overlays.Ziti.Service = "new-service"
 	if _, err := d.ApplyImport(in, true, true); err != nil {
 		t.Fatal(err)
@@ -171,8 +172,8 @@ func TestAnImportDoesNotEraseTheZitiIdentity(t *testing.T) {
 func TestAnImportRefusesASettingTheExportWouldNotCarry(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	in := &Export{
-		Version: ExportVersion,
+	in := &roomconf.Export{
+		Version: roomconf.ExportVersion,
 		Settings: map[string]string{
 			store.SettingGlobalAuto:    "on",
 			publish.SettingOverlayZrok: `{"share_token":"sneaky"}`,
@@ -200,8 +201,8 @@ func TestAnImportRefusesASettingTheExportWouldNotCarry(t *testing.T) {
 func TestAnUnknownVersionIsRefusedWhole(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	in := &Export{
-		Version:  ExportVersion + 41,
+	in := &roomconf.Export{
+		Version:  roomconf.ExportVersion + 41,
 		Settings: map[string]string{store.SettingSweepDead: "999"},
 	}
 	if _, err := d.ApplyImport(in, true, true); err == nil {
@@ -301,8 +302,8 @@ func TestABroughtThemeSurvivesTheRoundTrip(t *testing.T) {
 func TestAnImportedThemeIsStillValidated(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	in := &Export{
-		Version: ExportVersion,
+	in := &roomconf.Export{
+		Version: roomconf.ExportVersion,
 		Themes: []store.TermTheme{{Name: "bad", Palette: store.Palette{
 			Background: "#000000", Foreground: "url(javascript:alert(1))",
 		}}},

@@ -106,7 +106,7 @@ func (d *Daemon) ledgerNotice(n store.LedgerNotice) {
 		d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, "", n.Source == NoticeReport || d.waitsForTurn(n.ArbiterID, WhenImmediate))
 	}
 	if n.Source == store.NoticeEnded {
-		d.emitLifecycle("work-ended", n.Text)
+		d.EmitLifecycle("work-ended", n.Text)
 	}
 	log.Printf("[atrium] work ledger: queued a %s notice about %s for %s", n.Source, n.From, n.ArbiterID)
 }

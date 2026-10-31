@@ -350,6 +350,7 @@ func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
 	f.k.record = f.st.AddKeepaliveRefresh
 	f.now = f.now.Add(time.Minute)
 	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
+	d.initServices()
 	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -535,6 +536,7 @@ func TestKeepaliveHandOnRestartsTheBudget(t *testing.T) {
 	f.seed(5, 0.06, 56*time.Minute)
 	f.tick()
 	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
+	d.initServices()
 	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -738,6 +740,7 @@ func TestKeepaliveAtLaunch(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
+	d.initServices()
 	h, err := f.st.Harness("claude")
 	if err != nil {
 		t.Fatal(err)

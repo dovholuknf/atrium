@@ -1,4 +1,4 @@
-package daemon
+package roomconf
 
 import (
 	"encoding/json"
@@ -43,9 +43,9 @@ const ReadyLine = "atrium clears your context when this turn ends. End your turn
 const WrapReadyLine = "atrium restarts the room when everyone is ready, and wakes you after. End your turn now."
 
 // handoffKeep is the most of a handoff kept on the card.
-const handoffKeep = 256 << 10
+const HandoffKeep = 256 << 10
 
-func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleReady(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		small.WriteJSONErr(w, http.StatusMethodNotAllowed, small.ErrString("POST"))
 		return
@@ -59,7 +59,7 @@ func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session this is, with agent or task_id"))
 		return
 	}
-	task, err := d.taskFor(in.Agent, in.TaskID)
+	task, err := d.TaskFor(in.Agent, in.TaskID)
 	if err != nil {
 		who := strings.TrimSpace(in.Agent)
 		if who == "" {
@@ -69,38 +69,37 @@ func (d *Daemon) handleReady(w http.ResponseWriter, r *http.Request) {
 			"wire name and alias on this room", who))
 		return
 	}
-	out, code, err := d.readyHandoff(task, in.Handoff)
+	out, code, err := d.ReadyHandoff(task, in.Handoff)
 	if err != nil {
 		small.WriteJSONErr(w, code, err)
 		return
 	}
-	ncJSON(w, http.StatusOK, out)
+	small.WriteJSON(w, http.StatusOK, out)
 }
 
 // ready stores the card's handoff and acks its cycle.
-func (d *Daemon) ready(task *store.Task) (map[string]any, int, error) {
-	return d.readyHandoff(task, nil)
+func (d *Service) Ready(task *store.Task) (map[string]any, int, error) {
+	return d.ReadyHandoff(task, nil)
 }
 
 // readyHandoff is ready with the handoff text given, which it writes to the cycle's file first.
-func (d *Daemon) readyHandoff(task *store.Task, handoff *string) (map[string]any, int, error) {
-	cur := d.nctx.get(task.ID)
+func (d *Service) ReadyHandoff(task *store.Task, handoff *string) (map[string]any, int, error) {
+	path, atLimit, acked := d.Cycle(task.ID)
 	// A restart wrap-up waiting on this card takes the ack, with no file asked for: the conversation is kept.
-	if (cur == nil || cur.step != NewContextLimit) && d.wrap.ack(task.ID) {
+	if !atLimit && d.WrapAck(task.ID) {
 		log.Printf("[atrium] atrium ready from %s for the restart wrap-up", task.DisplayTitle())
 		return map[string]any{"ok": true, "task_id": task.ID, "message": WrapReadyLine}, 0, nil
 	}
-	if cur == nil || cur.step != NewContextLimit || cur.acked {
+	if !atLimit || acked {
 		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
 	}
-	path := cur.file
 	if handoff != nil {
 		text := *handoff
 		if strings.TrimSpace(text) == "" {
 			return nil, http.StatusConflict, small.ErrString("the handoff text is empty: write what a fresh session needs to carry on")
 		}
-		if len(text) > handoffKeep {
-			text = text[:handoffKeep]
+		if len(text) > HandoffKeep {
+			text = text[:HandoffKeep]
 			for !utf8.ValidString(text) {
 				text = text[:len(text)-1]
 			}
@@ -117,23 +116,23 @@ func (d *Daemon) readyHandoff(task *store.Task, handoff *string) (map[string]any
 		return nil, http.StatusConflict, fmt.Errorf("write your handoff to %s first, then run atrium ready again", path)
 	}
 	text, cut := string(b), false
-	if len(text) > handoffKeep {
-		text, cut = text[:handoffKeep], true
+	if len(text) > HandoffKeep {
+		text, cut = text[:HandoffKeep], true
 		for !utf8.ValidString(text) {
 			text = text[:len(text)-1]
 		}
 	}
-	ev := map[string]any{"by": cycleBy, "handoff": text, "path": path, "bytes": len(b)}
+	ev := map[string]any{"by": d.CycleBy, "handoff": text, "path": path, "bytes": len(b)}
 	if cut {
-		ev["cut"] = fmt.Sprintf("kept the first %d KB of %d", handoffKeep>>10, len(b)>>10)
+		ev["cut"] = fmt.Sprintf("kept the first %d KB of %d", HandoffKeep>>10, len(b)>>10)
 	}
 	stored := true
-	if err := d.st.AppendEvent(task.ID, store.EventNotified, ev); err != nil {
+	if err := d.St.AppendEvent(task.ID, store.EventNotified, ev); err != nil {
 		log.Printf("[atrium] could not store the handoff on %s: %v", task.ID, err)
 		stored = false
 	}
 	// The run may have moved on between the look and here: only an ack that took counts.
-	if !d.nctx.ack(task.ID) {
+	if !d.CycleAck(task.ID) {
 		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
 	}
 	log.Printf("[atrium] atrium ready from %s, %d bytes in %s", task.DisplayTitle(), len(b), path)

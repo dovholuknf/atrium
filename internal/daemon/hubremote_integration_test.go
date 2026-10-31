@@ -336,6 +336,8 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 	}
 
 	again := &Daemon{hk: *testHooks(), st: d.st}
+
+	again.initServices()
 	again.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
 	again.restoreHubGit()
 	if id, ok := again.hubGit.cards.Check(tok); !ok || id != task.ID {
@@ -354,6 +356,7 @@ func TestARunnerKeptThroughARoomRestartKeepsItsGitToken(t *testing.T) {
 
 	again.revokeHubGit(task.ID, time.Time{})
 	third := &Daemon{hk: *testHooks(), st: d.st}
+	third.initServices()
 	third.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
 	third.restoreHubGit()
 	if _, ok := third.hubGit.cards.Check(tok); ok {
@@ -371,6 +374,8 @@ func TestTheRoomPushesForAReattachedCardWithoutReplacingItsToken(t *testing.T) {
 	runner := strings.TrimPrefix(env["GIT_CONFIG_VALUE_0"], gitsync.HeaderCardToken+": ")
 
 	again := &Daemon{hk: *testHooks(), st: d.st}
+
+	again.initServices()
 	again.hubGit.cards = &gitsync.CardTokens{Live: func(string) bool { return true }}
 	again.restoreHubGit()
 	ct := again.hubGit.cards.(*gitsync.CardTokens)

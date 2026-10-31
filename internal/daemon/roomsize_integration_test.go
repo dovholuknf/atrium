@@ -39,6 +39,7 @@ func TestTheRoomsViewportSurvivesARestart(t *testing.T) {
 
 	// A daemon that has not looked yet reads it back from the store.
 	again := &Daemon{hk: *testHooks(), st: d.st}
+	again.initServices()
 	if got := again.roomSize(); got != (viewport{150, 44}) {
 		t.Fatalf("a restarted daemon read the room at %+v, want 150x44", got)
 	}

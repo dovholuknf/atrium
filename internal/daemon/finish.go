@@ -536,7 +536,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		if recap != "" {
 			finishLine += " with a recap"
 		}
-		d.emitLifecycle("session-finish", finishLine)
+		d.EmitLifecycle("session-finish", finishLine)
 	}
 
 	log.Printf("[atrium] %s reports %s%s", task.DisplayTitle(), map[bool]string{true: in.Status, false: "done"}[in.Status != ""],

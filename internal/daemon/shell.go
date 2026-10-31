@@ -273,7 +273,7 @@ func (d *Daemon) shellEnv(taskID string) []string {
 			extra[k] = v
 		}
 	}
-	d.tellWhereIAm(extra)
+	d.TellWhereIAm(extra)
 	for k, v := range extra {
 		out = append(out, k+"="+v)
 	}

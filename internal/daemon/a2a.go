@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
 	"os"
 	"strings"
@@ -162,7 +163,7 @@ func isCodex(h *store.Harness) bool {
 // no `turn` subcommand, and a working hook's program is still the surer one.
 // A variable so a test can say what it wants without a settings file.
 var stopHookCommand = func() string {
-	rep, err := claudeconf.Inspect(daemonBinary())
+	rep, err := claudeconf.Inspect(roomconf.DaemonBinary())
 	if err != nil {
 		return ""
 	}

@@ -59,6 +59,7 @@ func TestTheRoomDoorJoinsTheCallerToTheHubStream(t *testing.T) {
 	}()
 	f := &fakeStreamer{up: tcpA}
 	d := &Daemon{}
+	d.initServices()
 	d.SetStreamer(f)
 	srv := httptest.NewServer(http.HandlerFunc(d.handleStream))
 	defer srv.Close()
@@ -101,6 +102,7 @@ func tcpPairT(t *testing.T) (a, b net.Conn) {
 
 func TestTheRoomDoorSaysTheRefusalAsASentence(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	d.SetStreamer(&fakeStreamer{err: errors.New("sg3 does not offer ssh to m1mini")})
 	srv := httptest.NewServer(http.HandlerFunc(d.handleStream))
 	defer srv.Close()
@@ -113,6 +115,7 @@ func TestTheRoomDoorSaysTheRefusalAsASentence(t *testing.T) {
 
 func TestTheRoomDoorWithNoLinkSaysItIsNotAttached(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	srv := httptest.NewServer(http.HandlerFunc(d.handleStream))
 	defer srv.Close()
 	_, _, resp := streamReq(t, srv, "sg3")
@@ -124,6 +127,7 @@ func TestTheRoomDoorWithNoLinkSaysItIsNotAttached(t *testing.T) {
 
 func TestStreamStatusCountsTheOpenStreams(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	d.SetStreamer(&fakeStreamer{})
 	rec := httptest.NewRecorder()
 	d.handleStreamStatus(rec, httptest.NewRequest("GET", "/stream/status", nil))

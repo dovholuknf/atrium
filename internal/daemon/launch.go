@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
 	"net"
 	"os"
@@ -1235,7 +1236,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		// name baked into its own command line.
 		"ATRIUM_RUNNER": h.ID,
 	}
-	d.tellWhereIAm(atrium)
+	d.TellWhereIAm(atrium)
 	if u, ok := d.hubURLDefault(overEnv(h.Env, addedEnv)); ok {
 		atrium["ATRIUM_HUB_URL"] = u
 	}
@@ -1763,7 +1764,7 @@ func (d *Daemon) hubURLDefault(harnessEnv map[string]string) (string, bool) {
 	if _, port, err := net.SplitHostPort(a); err != nil || port == "0" {
 		return "", false
 	}
-	return addressOf(a), true
+	return roomconf.AddressOf(a), true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.

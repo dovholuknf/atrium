@@ -76,7 +76,7 @@ func TestNewContextUsesOnePathThroughTheCycle(t *testing.T) {
 	if err := os.WriteFile(first, handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatalf("ready refused the path the prompt named: %v", err)
 	}
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })

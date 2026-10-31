@@ -5,6 +5,7 @@ package daemon
 import (
 	"encoding/json"
 	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ import (
 // exportOf builds an export and hands back both the document and its bytes,
 // because most of these assert on the SERIALISED form. What matters is what
 // lands in the file, not what the struct held on the way there.
-func exportOf(t *testing.T, d *Daemon) (*Export, string) {
+func exportOf(t *testing.T, d *Daemon) (*roomconf.Export, string) {
 	t.Helper()
 	out, err := d.BuildExport()
 	if err != nil {
@@ -121,7 +122,7 @@ func TestAFieldNobodyAllowlistedDoesNotAppear(t *testing.T) {
 		}
 	}
 
-	exported := reflect.TypeOf(ExportZrok{})
+	exported := reflect.TypeOf(roomconf.ExportZrok{})
 	for i := 0; i < exported.NumField(); i++ {
 		name := exported.Field(i).Name
 		if !held[name] {
@@ -154,8 +155,8 @@ func TestAnUnknownSettingIsNotExported(t *testing.T) {
 func TestTheOverlayBlobsAreNotExportedAsSettings(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	for _, key := range NeverExportedKeys() {
-		for _, allowed := range ExportSettingKeys() {
+	for _, key := range roomconf.NeverExportedKeys() {
+		for _, allowed := range roomconf.ExportSettingKeys() {
 			if key == allowed {
 				t.Fatalf("%q is on both lists", key)
 			}
@@ -246,7 +247,7 @@ func TestAnOrdinaryConfigurationExportsCleanly(t *testing.T) {
 	if !strings.Contains(raw, "my issues") {
 		t.Fatal("a source did not come through")
 	}
-	if out.Version != ExportVersion {
+	if out.Version != roomconf.ExportVersion {
 		t.Fatalf("version is %d", out.Version)
 	}
 }

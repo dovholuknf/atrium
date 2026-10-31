@@ -33,6 +33,8 @@ func TestUsageContextNowFollowsTheStartedSession(t *testing.T) {
 
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 
+	d.initServices()
+
 	// Before any new session is heard of, it is the resume id's transcript.
 	v, err := d.usageFor(f.task.ID, 10)
 	if err != nil {

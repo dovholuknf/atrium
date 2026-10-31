@@ -42,3 +42,10 @@ func FirstLine(s string) string {
 	}
 	return s
 }
+
+// WriteJSON answers code with v as JSON.
+func WriteJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}

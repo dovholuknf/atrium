@@ -195,7 +195,7 @@ func os_WriteHandoff(d *Daemon, id, dir string) error {
 	if err := os.WriteFile(cycleFile(d, id), handoffBody, 0o644); err != nil {
 		return err
 	}
-	_, _, err = d.ready(task)
+	_, _, err = d.Ready(task)
 	return err
 }
 

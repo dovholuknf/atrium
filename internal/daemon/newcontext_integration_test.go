@@ -81,7 +81,7 @@ func ncAck(t *testing.T, d *Daemon, task *store.Task) {
 	if err := os.WriteFile(cycleFile(d, task.ID), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatalf("atrium ready was refused: %v", err)
 	}
 }
@@ -167,7 +167,7 @@ func TestNewContextAsksClearsAndWakes(t *testing.T) {
 	// The ack inside a turn: /clear waits for that turn to end.
 	d.act.set(id, ActivityTool, "Bash")
 	_ = d.st.SetStatus(id, store.StatusRunning)
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond) // wait: nothing may be cleared inside the turn

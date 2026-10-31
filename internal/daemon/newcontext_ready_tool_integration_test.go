@@ -23,7 +23,7 @@ func TestReadyWithTextWritesTheHandoffAndCompletesTheCycle(t *testing.T) {
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 
 	text := string(handoffBody) + "\nwritten by the tool"
-	out, code, err := d.readyHandoff(task, &text)
+	out, code, err := d.ReadyHandoff(task, &text)
 	if err != nil {
 		t.Fatalf("refused with %d: %v", code, err)
 	}
@@ -53,7 +53,7 @@ func TestReadyWithTextIsRefusedWithNoCycle(t *testing.T) {
 	fastNewContext(t, d)
 	task, _, _ := ncCard(t, d)
 	text := string(handoffBody)
-	_, code, err := d.readyHandoff(task, &text)
+	_, code, err := d.ReadyHandoff(task, &text)
 	if err == nil || code != http.StatusConflict || !strings.Contains(err.Error(), "no context cycle") {
 		t.Fatalf("got %d, %v", code, err)
 	}
@@ -71,7 +71,7 @@ func TestReadyWithEmptyTextIsRefused(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	empty := "  \n"
-	_, code, err := d.readyHandoff(task, &empty)
+	_, code, err := d.ReadyHandoff(task, &empty)
 	if err == nil || code != http.StatusConflict || !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("got %d, %v", code, err)
 	}
@@ -130,7 +130,7 @@ func TestTheCycleStopsAskingAfterThreeAsks(t *testing.T) {
 		t.Fatal("the cycle gave up the card instead of leaving it waiting")
 	}
 	text := string(handoffBody)
-	if _, code, err := d.readyHandoff(task, &text); err != nil {
+	if _, code, err := d.ReadyHandoff(task, &text); err != nil {
 		t.Fatalf("a late ready was refused with %d: %v", code, err)
 	}
 }
@@ -145,7 +145,7 @@ func TestReadyNamesWhatItLookedUpAndFindsACardByAliasOrID(t *testing.T) {
 		}
 	}
 	rec := httptest.NewRecorder()
-	d.handleReady(rec, httptest.NewRequest(http.MethodPost, "/ready", strings.NewReader(`{"agent":"nobody-here"}`)))
+	d.HandleReady(rec, httptest.NewRequest(http.MethodPost, "/ready", strings.NewReader(`{"agent":"nobody-here"}`)))
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "nobody-here") {
 		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}

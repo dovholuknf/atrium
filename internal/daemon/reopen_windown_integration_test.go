@@ -223,7 +223,7 @@ func TestAChildIsToldWhereItsDaemonIs(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	env := map[string]string{}
-	d.tellWhereIAm(env)
+	d.TellWhereIAm(env)
 	if env["ATRIUM_LOCATION"] == "" || env["ATRIUM_LOCATION"] != d.opts.LocationFile {
 		t.Fatalf("a runner is told %q, want the daemon's own file %q", env["ATRIUM_LOCATION"], d.opts.LocationFile)
 	}

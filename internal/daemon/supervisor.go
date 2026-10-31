@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"io"
 	"log"
 	"os"
@@ -2360,7 +2361,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	if t, err := d.st.Get(taskID); err == nil && t.Runner != "" {
 		runner = t.Runner
 	}
-	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
+	d.EmitLifecycle("session-start", roomconf.LifecycleStart(d.TaskTitle(taskID), runner, resumed))
 
 	return r, nil
 }
@@ -2523,11 +2524,11 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	// The room announces the exit with its reason, which the hub cannot see: it
 	// watches a card go dead, not why. See lifecycle.go.
 	exitLine := fmt.Sprintf("%s exited with code %d after %s",
-		d.taskTitle(x.taskID), code, lived.Round(time.Millisecond))
+		d.TaskTitle(x.taskID), code, lived.Round(time.Millisecond))
 	if lived < startupFailureWindow && tail != "" {
 		exitLine += ", " + small.FirstLine(tail)
 	}
-	d.emitLifecycle("session-exit", exitLine)
+	d.EmitLifecycle("session-exit", exitLine)
 	// The runner's last turns, for a worker that has no Stop hook. See usage.go.
 	d.recordUsage(x.taskID)
 

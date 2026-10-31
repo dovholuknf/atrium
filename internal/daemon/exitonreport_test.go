@@ -9,6 +9,7 @@ import (
 func TestScratchWorkerIsExitedByDoneUnlessKeptOpen(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{}
+	d.initServices()
 	for _, tc := range []struct {
 		name string
 		tags []string
@@ -33,6 +34,7 @@ func TestScratchWorkerIsExitedByDoneUnlessKeptOpen(t *testing.T) {
 func TestMinionDirectorExitsOnDone(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{}
+	d.initServices()
 	for _, tc := range []struct {
 		name string
 		tags []string
@@ -58,6 +60,7 @@ func TestMinionDirectorExitsOnDone(t *testing.T) {
 func TestAnUnresolvedAgentLauncherStillGetsItsWorkerExited(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{}
+	d.initServices()
 	for _, tc := range []struct {
 		name string
 		task *store.Task
@@ -76,6 +79,7 @@ func TestAnUnresolvedAgentLauncherStillGetsItsWorkerExited(t *testing.T) {
 func TestAWorkLifetimeCardIsExitedWhoeverLaunchedIt(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{}
+	d.initServices()
 	for _, tc := range []struct {
 		name string
 		task *store.Task

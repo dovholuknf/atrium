@@ -31,6 +31,8 @@ func TestScopeHubRemoteIsWorktreeOnly(t *testing.T) {
 	hubWtGit(t, main, "worktree", "add", "-q", "-b", "w", wt)
 
 	d := &Daemon{hk: *testHooks()}
+
+	d.initServices()
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(wt)
 
@@ -44,6 +46,7 @@ func TestScopeHubRemoteIsWorktreeOnly(t *testing.T) {
 
 func TestScopeHubRemoteNoOps(t *testing.T) {
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(t.TempDir()) // not a git dir
 
@@ -70,6 +73,8 @@ func TestScopeHubRemoteLeavesOneUrlPerWorktree(t *testing.T) {
 	hubWtGit(t, main, "worktree", "add", "-q", "-b", "w", wt)
 
 	d := &Daemon{}
+
+	d.initServices()
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(wt)
 	d.scopeHubRemote(wt) // idempotent
@@ -98,6 +103,8 @@ func TestScopeHubRemoteRepairsDoubleUrl(t *testing.T) {
 	}
 
 	d := &Daemon{}
+
+	d.initServices()
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(wt)
 
@@ -119,6 +126,7 @@ func TestScopeHubRemoteWorktreeAddedAfterTheMove(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "first")
 	hubWtGit(t, main, "worktree", "add", "-q", "-b", "f", first)
 	d := &Daemon{}
+	d.initServices()
 	d.hubGit.agent = "127.0.0.1:7777"
 	d.scopeHubRemote(first) // the move: .git/config loses the url
 

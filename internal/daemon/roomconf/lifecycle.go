@@ -1,4 +1,4 @@
-package daemon
+package roomconf
 
 import "fmt"
 
@@ -28,18 +28,18 @@ import "fmt"
 
 // emitLifecycle broadcasts one operational lifecycle event for the hub to
 // record. The kind is one of the `session-*` values the hub whitelists.
-func (d *Daemon) emitLifecycle(kind, detail string) {
-	d.ap.Broadcast("lifecycle", map[string]any{"kind": kind, "detail": detail})
+func (d *Service) EmitLifecycle(kind, detail string) {
+	d.Ap.Broadcast("lifecycle", map[string]any{"kind": kind, "detail": detail})
 }
 
 // taskTitle is a card's display title, or its id when it cannot be read. Used
 // only to word a lifecycle line, so a lookup that fails is a plainer line rather
 // than a dropped event.
-func (d *Daemon) taskTitle(taskID string) string {
+func (d *Service) TaskTitle(taskID string) string {
 	if taskID == "" {
 		return ""
 	}
-	if t, err := d.st.Get(taskID); err == nil {
+	if t, err := d.St.Get(taskID); err == nil {
 		return t.DisplayTitle()
 	}
 	return taskID
@@ -47,7 +47,7 @@ func (d *Daemon) taskTitle(taskID string) string {
 
 // lifecycleStart words a session-start line: what card, on which runner, and
 // whether it is resuming an earlier conversation.
-func lifecycleStart(title, runner string, resumed bool) string {
+func LifecycleStart(title, runner string, resumed bool) string {
 	line := fmt.Sprintf("%s started", title)
 	if runner != "" {
 		line += " on " + runner

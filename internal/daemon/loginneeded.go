@@ -188,7 +188,7 @@ func (d *Daemon) watchLoginNeeded(now time.Time) {
 	}
 	d.login.mu.Unlock()
 	if changed {
-		d.publishHealth()
+		d.PublishHealth()
 	}
 }
 
@@ -201,7 +201,7 @@ func (d *Daemon) clearLoginNeeded() bool {
 	d.login.mu.Unlock()
 	if was {
 		log.Printf("[atrium] claude login needed: lifted by the operator")
-		d.publishHealth()
+		d.PublishHealth()
 	}
 	return was
 }

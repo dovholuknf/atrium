@@ -66,7 +66,6 @@ var table = []row{
 	{0, "internal/base/webasset", nil},
 	{0, "internal/daemon/launch", nil},
 	{0, "internal/daemon/promptline", nil},
-	{0, "internal/daemon/roomconf", nil},
 	{0, "internal/link/wire", nil},
 	{0, "internal/zitictx", nil},
 	{0, "tools/devloop", nil},
@@ -126,6 +125,9 @@ var table = []row{
 	{5, "internal/daemon/publish", []string{
 		"internal/api", "internal/base/docshare", "internal/base/edge", "internal/base/nowindow", "internal/base/safepath",
 		"internal/store", "internal/zitictx",
+	}},
+	{5, "internal/daemon/roomconf", []string{
+		"internal/api", "internal/base/rules", "internal/daemon/publish", "internal/small", "internal/store",
 	}},
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",

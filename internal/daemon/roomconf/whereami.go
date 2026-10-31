@@ -1,4 +1,4 @@
-package daemon
+package roomconf
 
 import (
 	"encoding/json"
@@ -178,14 +178,14 @@ func SharedLocationPath() string {
 // task or a service and inherits nothing anybody exported. So the answer an
 // operator can give from the machine that is already running takes precedence.
 // See `api.SettingSharedLocation`.
-func (d *Daemon) sharedLocation() string {
+func (d *Service) SharedLocation() string {
 	// THE STORE MAY BE GONE. This runs from `clearLocation` on the way out,
 	// and a daemon that halted or was never fully built has no store to ask.
 	// Reaching into it there is a nil dereference during shutdown, which is
 	// the worst moment to panic: the address file is exactly what gets left
 	// behind pointing at a process that is no longer listening.
-	if d.st != nil {
-		if v, err := d.st.Setting(api.SettingSharedLocation); err == nil {
+	if d.St != nil {
+		if v, err := d.St.Setting(api.SettingSharedLocation); err == nil {
 			if p := strings.TrimSpace(v); p != "" {
 				return p
 			}
@@ -235,37 +235,34 @@ func ReadLocation() (Location, bool) {
 // another, because Run writes this file and deletes it again, and a test doing
 // that to the real file removes the address of whatever daemon is actually
 // running on the machine at the time.
-func (d *Daemon) locationPath() (string, error) {
-	if d.opts.LocationFile != "" {
-		return d.opts.LocationFile, nil
+func (d *Service) LocationPath() (string, error) {
+	if d.Opts().LocationFile != "" {
+		return d.Opts().LocationFile, nil
 	}
 	return LocationPath()
 }
-
-// pidAlive is processAlive, replaceable so a test can arrange a live room.
-var pidAlive = processAlive
 
 // writeLocation records where this daemon is listening.
 //
 // Failure is logged and otherwise ignored. Callers fall back to the default
 // address, which is what they did before this existed.
-func (d *Daemon) writeLocation() {
-	path, err := d.locationPath()
+func (d *Service) WriteLocation() {
+	path, err := d.LocationPath()
 	if err != nil {
 		log.Printf("[atrium] could not work out where to record my address: %v", err)
 		return
 	}
 	loc := Location{
-		Agent:       addressOf(d.opts.AgentAddr),
-		Board:       addressOf(d.opts.HumanAddr),
-		AgentListen: strings.TrimSpace(d.opts.AgentAddr),
-		BoardListen: strings.TrimSpace(d.opts.HumanAddr),
-		Room:        d.opts.Room,
-		RoomDir:     d.opts.RoomDir,
+		Agent:       AddressOf(d.Opts().AgentAddr),
+		Board:       AddressOf(d.Opts().HumanAddr),
+		AgentListen: strings.TrimSpace(d.Opts().AgentAddr),
+		BoardListen: strings.TrimSpace(d.Opts().HumanAddr),
+		Room:        d.Opts().Room,
+		RoomDir:     d.Opts().RoomDir,
 		PID:         os.Getpid(),
 		Since:       time.Now().Format(time.RFC3339),
-		DB:          d.opts.DBPath,
-		Exe:         daemonBinary(),
+		DB:          d.Opts().DBPath,
+		Exe:         DaemonBinary(),
 	}
 	// A LIVE ROOM'S FILE IS NOT TAKEN. A throwaway room or a second daemon that
 	// writes the machine's file aims every session's hook at itself, and the
@@ -275,8 +272,8 @@ func (d *Daemon) writeLocation() {
 	// its own `LocationFile` (a test, a preview) is not asking for the machine's
 	// place and may take its own file over, which is only announced.
 	if raw, err := os.ReadFile(path); err == nil {
-		if prev, taking := takingOver(raw, os.Getpid(), d.hk.pidAlive); taking {
-			if d.opts.LocationFile == "" {
+		if prev, taking := TakingOver(raw, os.Getpid(), d.PidAlive); taking {
+			if d.Opts().LocationFile == "" {
 				log.Printf("[atrium] NOT recording my address: pid %d is already listening on %s "+
 					"and every hook is aimed at it. start a second or throwaway room with "+
 					"--isolated to keep them apart.", prev.PID, prev.Agent)
@@ -291,7 +288,7 @@ func (d *Daemon) writeLocation() {
 	if err != nil {
 		return
 	}
-	if err := putLocation(path, body, 0o600); err != nil {
+	if err := PutLocation(path, body, 0o600); err != nil {
 		log.Printf("[atrium] could not record my address: %v", err)
 		return
 	}
@@ -301,8 +298,8 @@ func (d *Daemon) writeLocation() {
 	// this daemon is on the machine's real location file: a test pointing
 	// `LocationFile` somewhere else must not also write a real shared one and
 	// send every caller on the box to a daemon that is about to stop.
-	shared := d.sharedLocation()
-	if shared == "" || d.opts.LocationFile != "" {
+	shared := d.SharedLocation()
+	if shared == "" || d.Opts().LocationFile != "" {
 		return
 	}
 	// READABLE, unlike the one above. The whole point is another account, and
@@ -311,7 +308,7 @@ func (d *Daemon) writeLocation() {
 	// is mostly advisory and the directory's own permissions decide, which is
 	// why the shared root is the operator's choice rather than a path atrium
 	// invents.
-	if err := putLocation(shared, body, 0o644); err != nil {
+	if err := PutLocation(shared, body, 0o644); err != nil {
 		log.Printf("[atrium] could not record my address where others can read it: %v", err)
 		return
 	}
@@ -325,7 +322,7 @@ func (d *Daemon) writeLocation() {
 // what `atrium preview` passes, ALREADY HAS A HOST, and gluing produced
 // `http://localhost127.0.0.1:53895` in the log and in the address file: an
 // address that is not wrong so much as unparseable.
-func addressOf(addr string) string {
+func AddressOf(addr string) string {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
 		return ""
@@ -342,7 +339,7 @@ func addressOf(addr string) string {
 // moment and a half-written file parses as nothing. A rename is atomic on both
 // filesystems atrium runs on, so a reader sees the old address or the new one
 // and never a truncated document.
-func putLocation(path string, body []byte, perm os.FileMode) error {
+func PutLocation(path string, body []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -362,7 +359,7 @@ func putLocation(path string, body []byte, perm os.FileMode) error {
 // `os.Executable()` is the right call HERE and nowhere else: this is the
 // daemon, so its own binary is the answer by definition. Everything outside
 // the daemon reads it back out of the location file rather than asking itself.
-func daemonBinary() string {
+func DaemonBinary() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
@@ -383,7 +380,7 @@ func daemonBinary() string {
 //
 // The liveness check is a parameter so this can be tested without arranging
 // for a second live process, which is not a thing a test can portably do.
-func takingOver(raw []byte, myPID int, alive func(int) bool) (Location, bool) {
+func TakingOver(raw []byte, myPID int, alive func(int) bool) (Location, bool) {
 	var prev Location
 	if err := json.Unmarshal(raw, &prev); err != nil {
 		return prev, false
@@ -404,9 +401,9 @@ func takingOver(raw []byte, myPID int, alive func(int) bool) (Location, bool) {
 // Answered before doing anything, like every other hook endpoint. A caller
 // that has already written the file has nothing to do with a failure here, and
 // the poll is still behind it either way.
-func (d *Daemon) handleHooksChanged(w http.ResponseWriter, r *http.Request) {
+func (d *Service) HandleHooksChanged(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
-	d.ap.Broadcast("hooks", map[string]any{"at": time.Now().Format(time.RFC3339)})
+	d.Ap.Broadcast("hooks", map[string]any{"at": time.Now().Format(time.RFC3339)})
 }
 
 // clearLocation removes the file on the way out, so the next hook to run does
@@ -417,29 +414,29 @@ func (d *Daemon) handleHooksChanged(w http.ResponseWriter, r *http.Request) {
 // closes the store, and Run's deferred call afterwards is then a no-op. Reading
 // a closed store is a failure the store halts on, which is how a clean stop used
 // to end in `HALTED: sql: database is closed`.
-func (d *Daemon) clearLocation() {
-	d.clearOnce.Do(d.removeLocation)
+func (d *Service) ClearLocation() {
+	d.ClearOnce.Do(d.RemoveLocation)
 }
 
-func (d *Daemon) removeLocation() {
-	path, err := d.locationPath()
+func (d *Service) RemoveLocation() {
+	path, err := d.LocationPath()
 	if err != nil {
 		return
 	}
-	removeIfMine(path)
+	RemoveIfMine(path)
 	// The shared copy goes with it, under the same rule, or a caller running
 	// as somebody else keeps being sent to a daemon that has stopped. Guarded
 	// the same way as the write: a test with its own location file never wrote
 	// a shared one, so it must not delete the real one either.
-	if shared := d.sharedLocation(); shared != "" && d.opts.LocationFile == "" {
-		removeIfMine(shared)
+	if shared := d.SharedLocation(); shared != "" && d.Opts().LocationFile == "" {
+		RemoveIfMine(shared)
 	}
 }
 
 // removeIfMine deletes an address file only while it still describes this
 // process. A second daemon that started while this one was winding down owns
 // the file now, and taking it would unhook every session on the machine.
-func removeIfMine(path string) {
+func RemoveIfMine(path string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return
@@ -460,8 +457,8 @@ func removeIfMine(path string) {
 // hooks read the shared file and reported to whatever room owns it. That is how
 // a test's runner put cards on the live board. Told, they report here, and to
 // nothing once this daemon is gone.
-func (d *Daemon) tellWhereIAm(env map[string]string) {
-	if p := strings.TrimSpace(d.opts.LocationFile); p != "" {
+func (d *Service) TellWhereIAm(env map[string]string) {
+	if p := strings.TrimSpace(d.Opts().LocationFile); p != "" {
 		env["ATRIUM_LOCATION"] = p
 	}
 }

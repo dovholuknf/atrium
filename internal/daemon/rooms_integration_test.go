@@ -31,6 +31,7 @@ func roomsOf(t *testing.T, d *Daemon) []Room {
 func TestACheckInReplacesTheCards(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "one", Cards: []RoomCard{
 		{ID: "a", Title: "first"}, {ID: "b", Title: "second"},
 	}}); err != nil {
@@ -56,6 +57,7 @@ func TestACheckInReplacesTheCards(t *testing.T) {
 func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "quiet"}); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +84,7 @@ func TestAQuietRoomGoesStaleBeforeItGoes(t *testing.T) {
 func TestAForgottenRoomIsGone(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "gone"}); err != nil {
 		t.Fatal(err)
 	}
@@ -99,6 +102,7 @@ func TestAForgottenRoomIsGone(t *testing.T) {
 func TestWaitingIsCountedFromTheCards(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "busy", Cards: []RoomCard{
 		{ID: "a", Status: "running"},
 		{ID: "b", Status: "needs-input"},
@@ -118,6 +122,7 @@ func TestWaitingIsCountedFromTheCards(t *testing.T) {
 func TestARoomHasToBeNamed(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "  "}); err == nil {
 		t.Fatal("a room with no name was accepted")
 	}
@@ -130,6 +135,7 @@ func TestARoomHasToBeNamed(t *testing.T) {
 func TestCheckingInTwiceIsOneRoom(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	for i := 0; i < 5; i++ {
 		if _, err := d.RoomCheckIn(RoomReport{Name: "same", Host: "h"}); err != nil {
 			t.Fatal(err)
@@ -168,6 +174,7 @@ func reportAsking(t *testing.T, d *Daemon, room, perm string) []RoomDecision {
 func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
@@ -187,6 +194,7 @@ func TestADecisionLeavesOnTheNextCheckIn(t *testing.T) {
 func TestADecisionIsHandedOverOnce(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
@@ -211,6 +219,7 @@ func TestADecisionIsHandedOverOnce(t *testing.T) {
 func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 	if got := requestsOf(t, d, "leaf"); len(got) != 1 {
 		t.Fatalf("a pending request was not drawn: %+v", got)
@@ -236,6 +245,7 @@ func TestAnAnsweredRequestIsNotOfferedAgain(t *testing.T) {
 func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
@@ -267,6 +277,7 @@ func TestAnAnswerThatDidNotTakeExpires(t *testing.T) {
 func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "approve"}); err != nil {
 		t.Fatal(err)
@@ -294,6 +305,7 @@ func TestAnAnswerForARequestThatWentAwayIsDropped(t *testing.T) {
 func TestAStaleDecisionIsRefused(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 
 	for _, c := range []struct {
@@ -328,6 +340,7 @@ func TestAStaleDecisionIsRefused(t *testing.T) {
 func TestARoomDecisionIsChecked(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{Decision: "maybe"}); err == nil {
@@ -358,6 +371,7 @@ func TestARoomDecisionIsChecked(t *testing.T) {
 func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf", Perms: []RoomPerm{
 		{ID: "p1", Tool: "Bash", Command: "go build", Waiting: 90},
 		// A room whose clock ran backwards. Nothing sensible can be drawn from
@@ -393,6 +407,7 @@ func TestTheWaitIsReadAgainstThisClock(t *testing.T) {
 func TestAReportIsBounded(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	many := make([]RoomPerm, roomPermsMax+20)
 	for i := range many {
 		many[i] = RoomPerm{
@@ -421,6 +436,7 @@ func TestAReportIsBounded(t *testing.T) {
 func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	reportAsking(t, d, "leaf", "p1")
 	if err := d.RoomDecide("leaf", "p1", RoomDecision{
 		Decision: "approve", Reason: "go on then",
@@ -452,6 +468,7 @@ func TestTheHubKeepsNoRecordOfADecision(t *testing.T) {
 func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "leaf"}); err != nil {
 		t.Fatal(err)
 	}
@@ -481,6 +498,7 @@ func TestForgettingARoomDoesNotKeepItAway(t *testing.T) {
 func TestForgettingWhatIsNotThere(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	had, err := d.RoomForget("never-existed")
 	if err != nil {
 		t.Fatalf("forgetting an unknown room was an error: %v", err)
@@ -499,6 +517,7 @@ func TestForgettingWhatIsNotThere(t *testing.T) {
 func TestAStaleRoomSaysWhenItGoes(t *testing.T) {
 	t.Parallel()
 	d := &Daemon{hk: *testHooks()}
+	d.initServices()
 	if _, err := d.RoomCheckIn(RoomReport{Name: "fading"}); err != nil {
 		t.Fatal(err)
 	}

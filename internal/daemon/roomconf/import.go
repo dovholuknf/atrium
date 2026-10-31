@@ -1,4 +1,4 @@
-package daemon
+package roomconf
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ type ImportResult struct {
 //
 // `apply` false is the default and the useful one: it answers "what would this
 // change", which is the question somebody restoring a machine actually has.
-func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, error) {
+func (d *Service) ApplyImport(in *Export, apply, force bool) (*ImportResult, error) {
 	if in == nil {
 		return nil, fmt.Errorf("nothing to import")
 	}
@@ -69,7 +69,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 	// has been edited by hand, or written by something else, does not get to
 	// name a key the export itself would refuse.
 	allowed := map[string]bool{}
-	for _, k := range exportedSettings {
+	for _, k := range ExportedSettings {
 		allowed[k] = true
 	}
 	keys := make([]string, 0, len(in.Settings))
@@ -86,7 +86,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			res.Kept++
 			continue
 		}
-		have, err := d.st.Setting(k)
+		have, err := d.St.Setting(k)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +95,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			res.Changes = append(res.Changes, ImportChange{
 				Kind: "setting", Name: k, Action: "add"})
 			if apply {
-				if err := d.st.SetSetting(k, in.Settings[k]); err != nil {
+				if err := d.St.SetSetting(k, in.Settings[k]); err != nil {
 					return nil, err
 				}
 			}
@@ -107,7 +107,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			res.Changes = append(res.Changes, ImportChange{
 				Kind: "setting", Name: k, Action: "replace"})
 			if apply {
-				if err := d.st.SetSetting(k, in.Settings[k]); err != nil {
+				if err := d.St.SetSetting(k, in.Settings[k]); err != nil {
 					return nil, err
 				}
 			}
@@ -125,16 +125,16 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			continue
 		}
 		exists := false
-		if got, err := d.st.Harness(h.ID); err == nil && got != nil {
+		if got, err := d.St.Harness(h.ID); err == nil && got != nil {
 			exists = true
 		}
-		change, do := decide("harness", h.ID, exists, force)
+		change, do := Decide("harness", h.ID, exists, force)
 		res.Changes = append(res.Changes, change)
 		if change.Action == "keep" {
 			res.Kept++
 		}
 		if apply && do {
-			if _, err := d.st.SaveHarness(*h); err != nil {
+			if _, err := d.St.SaveHarness(*h); err != nil {
 				return nil, fmt.Errorf("harness %s: %w", h.ID, err)
 			}
 		}
@@ -144,16 +144,16 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			continue
 		}
 		exists := false
-		if got, err := d.st.SourceByID(s.ID); err == nil && got != nil {
+		if got, err := d.St.SourceByID(s.ID); err == nil && got != nil {
 			exists = true
 		}
-		change, do := decide("source", s.ID, exists, force)
+		change, do := Decide("source", s.ID, exists, force)
 		res.Changes = append(res.Changes, change)
 		if change.Action == "keep" {
 			res.Kept++
 		}
 		if apply && do {
-			if _, err := d.st.SaveSource(*s); err != nil {
+			if _, err := d.St.SaveSource(*s); err != nil {
 				return nil, fmt.Errorf("source %s: %w", s.ID, err)
 			}
 		}
@@ -164,10 +164,10 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			continue
 		}
 		exists := false
-		if got, err := d.st.RecogniserByID(rec.ID); err == nil && got != nil {
+		if got, err := d.St.RecogniserByID(rec.ID); err == nil && got != nil {
 			exists = true
 		}
-		change, do := decide("recogniser", rec.ID, exists, force)
+		change, do := Decide("recogniser", rec.ID, exists, force)
 		res.Changes = append(res.Changes, change)
 		if change.Action == "keep" {
 			res.Kept++
@@ -176,7 +176,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 			// SaveRecogniser compiles the pattern, so a hand-edited file with a
 			// broken expression in it fails the import naming the row rather
 			// than landing a row that can never match.
-			if _, err := d.st.SaveRecogniser(*rec); err != nil {
+			if _, err := d.St.SaveRecogniser(*rec); err != nil {
 				return nil, fmt.Errorf("recogniser %s: %w", rec.ID, err)
 			}
 		}
@@ -190,17 +190,17 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 	// is not a colour into this table by arriving as a configuration rather
 	// than through the editor.
 	for _, th := range in.Themes {
-		have, err := d.st.TermThemeByName(th.Name)
+		have, err := d.St.TermThemeByName(th.Name)
 		if err != nil {
 			return nil, err
 		}
-		change, do := decide("theme", th.Name, have != nil, force)
+		change, do := Decide("theme", th.Name, have != nil, force)
 		res.Changes = append(res.Changes, change)
 		if change.Action == "keep" {
 			res.Kept++
 		}
 		if apply && do {
-			if _, err := d.st.SaveTermTheme(th); err != nil {
+			if _, err := d.St.SaveTermTheme(th); err != nil {
 				return nil, fmt.Errorf("theme %s: %w", th.Name, err)
 			}
 		}
@@ -264,7 +264,7 @@ func (d *Daemon) ApplyImport(in *Export, apply, force bool) (*ImportResult, erro
 
 // decide is the same rule for every keyed row: add what is missing, keep what
 // is there, replace only when told.
-func decide(kind, name string, exists, force bool) (ImportChange, bool) {
+func Decide(kind, name string, exists, force bool) (ImportChange, bool) {
 	switch {
 	case !exists:
 		return ImportChange{Kind: kind, Name: name, Action: "add"}, true
