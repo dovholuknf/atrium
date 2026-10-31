@@ -13,6 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type tcpDial struct{ addr string }
@@ -29,7 +30,7 @@ func (p tcpDial) Describe() string { return p.addr }
 func TestTheRoomsRelaySayCarriesWakeToTheHub(t *testing.T) {
 	var mu sync.Mutex
 	var got []link.RelayRequest
-	tm := link.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1, Backoff: 50 * time.Millisecond}
+	tm := wire.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1, Backoff: 50 * time.Millisecond}
 	hub := link.NewHub(tm)
 	hub.Relay = func(_ context.Context, _ string, req link.RelayRequest) link.RelayAnswer {
 		mu.Lock()

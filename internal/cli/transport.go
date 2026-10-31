@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Choosing a transport, on both sides.
@@ -33,7 +34,7 @@ var transports = []string{"direct", "ziti", "zrok"}
 type hubSide struct {
 	// kind is the transport, and path is what rooms are told about it.
 	kind   string
-	path   link.Path
+	path   wire.Path
 	listen func() (net.Listener, error)
 	// enrol is nil for a transport that carries its own identity.
 	enrol func(conn net.Conn, br *bufio.Reader) (string, error)
@@ -57,7 +58,7 @@ type hubSide struct {
 	says string
 	// set, when not nil, is every path this side offers right now, asked again at each welcome and on a
 	// timer. Direct has one: its addresses move with the machine. Nil means `path` alone.
-	set func() []link.Path
+	set func() []wire.Path
 	// enabled, when not nil, says whether the side is bound now. A side that is not is left out of the paths and of
 	// overlay(). service, when not nil, is the service the side is bound to now.
 	enabled func() bool
@@ -90,7 +91,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 		}
 		d := link.Direct{Addr: linkAddr, Keys: keys, Spend: spend}
 		return &hubSide{
-			kind: "direct", path: link.Path{Transport: "direct", Addr: adv},
+			kind: "direct", path: wire.Path{Transport: "direct", Addr: adv},
 			listen: d.Listen,
 			enrol:  d.ServeEnrolment,
 			auth:   link.DirectAuthenticated,
@@ -99,11 +100,11 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			},
 			release: func() {},
 			says:    adv,
-			set: func() []link.Path {
+			set: func() []wire.Path {
 				addrs := advertiseSet(linkAddr, advertise, interfaceIPs)
-				out := make([]link.Path, len(addrs))
+				out := make([]wire.Path, len(addrs))
 				for i, a := range addrs {
-					out[i] = link.Path{Transport: "direct", Addr: a}
+					out[i] = wire.Path{Transport: "direct", Addr: a}
 				}
 				return out
 			},
@@ -116,7 +117,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			return nil, err
 		}
 		return &hubSide{
-			kind: "ziti", path: link.Path{Transport: "ziti", Service: service},
+			kind: "ziti", path: wire.Path{Transport: "ziti", Service: service},
 			listen: overlayListen(z.Listen, d, "ziti"),
 			// THE CERTIFICATE NAMES THE ROOM, as it does over direct. The overlay
 			// decides only who may reach this service, so enrolment runs inside it.
@@ -227,8 +228,8 @@ func (s hubSet) auth() func(net.Conn) bool {
 
 // paths is what a welcome tells rooms: every side but zrok, in `order`, and never
 // a credential. zrok's share reaching an authenticated room is a later job.
-func (s hubSet) paths(order []string) []link.Path {
-	var out []link.Path
+func (s hubSet) paths(order []string) []wire.Path {
+	var out []wire.Path
 	for _, side := range s.sides {
 		if side.kind == "zrok" || !side.on() {
 			continue
@@ -314,7 +315,7 @@ func newZrokHub(keys link.Keys, spend func(string) (string, error), api link.Zro
 	}
 	h := &zrokHub{keys: keys, z: &link.Zrok{API: api}, d: d}
 	return &hubSide{
-		kind: "zrok", path: link.Path{Transport: "zrok"},
+		kind: "zrok", path: wire.Path{Transport: "zrok"},
 		listen: h.listen,
 		enrol:  d.ServeEnrolment,
 		auth:   link.OverlayAuthenticated,
@@ -339,7 +340,7 @@ func (h *zrokHub) detail() string {
 	}
 	s := "no share reserved yet"
 	if token != "" {
-		s = "share " + link.MaskShare(token)
+		s = "share " + wire.MaskShare(token)
 	}
 	if env := h.z.Env(); env != "" {
 		s += ", env " + env
@@ -438,7 +439,7 @@ func readZrokShare(keys link.Keys) (string, error) {
 // here, so none can skip it. An old-form join never wraps, whatever is in the keys
 // directory: a stray room.crt from an earlier direct enrolment, maybe to another
 // hub, would otherwise start a handshake against the wrong CA and drop the room.
-func roomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
+func roomDialer(j link.Join, keys link.Keys, identity string) (wire.Dialer, error) {
 	d, err := rawRoomDialer(j, keys, identity)
 	if err != nil {
 		return nil, err
@@ -451,7 +452,7 @@ func roomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, erro
 
 // rawRoomDialer is the transport with nothing wrapped round it. Enrolment dials
 // this, because the pinned handshake it runs is not the room's own.
-func rawRoomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
+func rawRoomDialer(j link.Join, keys link.Keys, identity string) (wire.Dialer, error) {
 	switch j.Transport {
 	case "direct":
 		return link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}, nil
@@ -502,7 +503,7 @@ func roomRungs(keys link.Keys, saved link.Saved, tr link.RoomTransports, had []l
 	return rungs, skipped
 }
 
-func reuse(had []link.Rung, p link.Path) link.Dialer {
+func reuse(had []link.Rung, p wire.Path) wire.Dialer {
 	for _, r := range had {
 		q := r.Path
 		if q.Transport == p.Transport && strings.EqualFold(q.Addr, p.Addr) && q.Service == p.Service &&
@@ -520,7 +521,7 @@ func reuse(had []link.Rung, p link.Path) link.Dialer {
 // The hub refuses a name that enrolled a certificate on the old path, so a
 // direct room falling back to ziti without it would be turned away by name. An
 // old-form overlay join never wraps, for the reason `roomDialer` gives.
-func rungDialer(keys link.Keys, saved link.Saved, p link.Path) (link.Dialer, error) {
+func rungDialer(keys link.Keys, saved link.Saved, p wire.Path) (wire.Dialer, error) {
 	d, err := rawRoomDialer(link.Join{
 		Transport: p.Transport, Addr: p.Addr, Service: p.Service, ShareToken: p.Share,
 	}, keys, p.Identity)
@@ -538,14 +539,14 @@ func rungDialer(keys link.Keys, saved link.Saved, p link.Path) (link.Dialer, err
 type climbing struct{ l *link.Ladder }
 
 func (c climbing) Dial(ctx context.Context) (net.Conn, error) {
-	return c.l.Climb(ctx, link.DefaultTimings().DialWait)
+	return c.l.Climb(ctx, wire.DefaultTimings().DialWait)
 }
 
 func (c climbing) Describe() string { return c.l.Describe() }
 
 func (c climbing) Close() { c.l.Close() }
 
-func closeDialer(d link.Dialer) {
+func closeDialer(d wire.Dialer) {
 	if c, ok := d.(interface{ Close() }); ok {
 		c.Close()
 	}
@@ -566,7 +567,7 @@ func ladderSays(rungs []link.Rung) string {
 // learnHubPaths writes the hub's list down when it changed and rebuilds the
 // ladder from it, so the next start knows the fallback even when the hub cannot
 // be reached. Best effort: a room that cannot write keeps what it has.
-func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []link.Path) {
+func learnHubPaths(keys link.Keys, saved link.Saved, l *link.Ladder, ps []wire.Path) {
 	tr, err := keys.Transports()
 	if err != nil {
 		log.Printf("[link] could not read %s: %v", keys.TransportsPath(), err)
@@ -613,7 +614,7 @@ func reloadRungs(keys link.Keys, l *link.Ladder) {
 	log.Printf("[link] this room's hub addresses changed on disk. will try %s", ladderSays(rungs))
 }
 
-func samePaths(a, b []link.Path) bool {
+func samePaths(a, b []wire.Path) bool {
 	if len(a) != len(b) {
 		return false
 	}

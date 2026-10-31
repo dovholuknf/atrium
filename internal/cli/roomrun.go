@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/roomstats"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/spf13/cobra"
@@ -417,7 +418,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		Name: saved.Room,
 		Dial: dial,
 		// THE HUB'S LIST, written down for a start when the hub cannot be reached.
-		OnPaths: func(ps []link.Path) {
+		OnPaths: func(ps []wire.Path) {
 			// room.json read again, so a hub address changed since the start is not put back.
 			now, err := keys.Joined()
 			if err != nil {

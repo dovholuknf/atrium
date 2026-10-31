@@ -70,8 +70,6 @@ type (
 	Dialer         = wire.Dialer
 	Timings        = wire.Timings
 	RestartAsk     = wire.RestartAsk
-	Offer          = wire.Offer
-	Path           = wire.Path
 	PathState      = wire.PathState
 	RemoteAccess   = wire.RemoteAccess
 	Proven         = transport.Proven
@@ -96,7 +94,6 @@ const (
 )
 
 var (
-	DefaultTimings = wire.DefaultTimings
 	otherRoom      = wire.OtherRoom
 	writeJSON      = wire.WriteJSON
 	writeJSONLimit = wire.WriteJSONLimit

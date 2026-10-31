@@ -17,6 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // parses finds the command a line names and parses its flags the way cobra
@@ -248,7 +249,7 @@ func TestRunMakesThisMachinesRoomOverItsOwnLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := link.NewHub(link.Timings{})
+	h := link.NewHub(wire.Timings{})
 	h.Enrol = side.enrol
 	h.Authenticated = side.auth
 	ctx, cancel := context.WithCancel(context.Background())

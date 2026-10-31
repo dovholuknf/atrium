@@ -13,6 +13,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func writeBacklog(t *testing.T, root string, files map[string]string) {
@@ -76,7 +77,7 @@ func TestBacklogImportRefreshesATempHubAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	p := link.NewProxy(link.NewHub(link.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1}), nil, "", nil)
+	p := link.NewProxy(link.NewHub(wire.Timings{Beat: 200 * time.Millisecond, Silence: time.Second, Warm: 1}), nil, "", nil)
 	p.SetBacklog(st)
 	srv := httptest.NewServer(p)
 	t.Cleanup(srv.Close)

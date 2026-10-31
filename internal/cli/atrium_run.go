@@ -23,6 +23,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
 )
 
@@ -240,7 +241,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		if err == nil {
 			z := &link.Ziti{Identity: zitiIdentity, Service: service}
 			zitiSide = &hubSide{
-				kind: "ziti", path: link.Path{Transport: "ziti", Service: service},
+				kind: "ziti", path: wire.Path{Transport: "ziti", Service: service},
 				enrol: d.ServeEnrolment, auth: link.OverlayAuthenticated,
 				release: z.Close, says: "the ziti service " + service,
 			}
@@ -340,7 +341,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			"a room it did not know is refused. the agents on every room are unaffected and keep running")
 	}
 
-	h = link.NewHub(link.Timings{})
+	h = link.NewHub(wire.Timings{})
 	ht.Hub = h
 	for _, s := range sideStates {
 		var why error
@@ -401,7 +402,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	h.Authenticated = func(c net.Conn) bool { return set.auth()(c) }
 	// WHAT ROOMS ARE TOLD, in the order the store holds, read at every attach so
 	// `atrium rooms transports` needs no restart.
-	h.Paths = func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }
+	h.Paths = func() []wire.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }
 	// A ROOM THIS HUB HAS NO RECORD OF DOES NOT ATTACH, even holding a
 	// certificate this hub signed, because a certificate is not a
 	// record: a room that was forced out still has its papers. The
@@ -714,7 +715,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 
 	// THE ADDRESSES ROOMS ARE TOLD, recomputed on a timer. A change is pushed to every attached room, so one
 	// standing on another rung learns a hub that moved. See advertiseset.go.
-	go watchPaths(ctx, pathsEvery, func() []link.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }, h.PushPaths)
+	go watchPaths(ctx, pathsEvery, func() []wire.Path { return set.paths(hubOrder(store.RoomTransportOrder)) }, h.PushPaths)
 
 	// HANDING FREED PAGES BACK TO DISK, a bounded batch at a time while
 	// the hub stays live. The room cache is rewritten wholesale on every

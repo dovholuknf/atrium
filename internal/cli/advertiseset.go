@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // pathsEvery is how often a running hub recomputes the addresses it tells rooms about. Shorter than
@@ -83,7 +83,7 @@ func dialableInterface(ip net.IP) bool {
 // watchPaths asks for the hub's paths every `every` and calls push when they differ from the last it saw,
 // so a hub that moved tells the rooms already attached on another rung. The first answer is remembered and
 // not pushed: every welcome already carries it.
-func watchPaths(ctx context.Context, every time.Duration, paths func() []link.Path, push func()) {
+func watchPaths(ctx context.Context, every time.Duration, paths func() []wire.Path, push func()) {
 	last := paths()
 	t := time.NewTicker(every)
 	defer t.Stop()

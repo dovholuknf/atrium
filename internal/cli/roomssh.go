@@ -20,6 +20,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/remoteaccess"
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/sshwizard"
 )
 
@@ -121,11 +122,11 @@ func sshSetupCmd() *cobra.Command {
 
 // localSSHMachine is this machine and this room's key directory. The hub's ssh record is read and written over the
 // room's own link, and a hub that keeps none makes the steps that need it say so and wait.
-func localSSHMachine(dir string, shared link.Dialer) sshwizard.LocalMachine {
+func localSSHMachine(dir string, shared wire.Dialer) sshwizard.LocalMachine {
 	return localSSHMachineAt(dir, shared, daemon.ReadLocation)
 }
 
-func localSSHMachineAt(dir string, shared link.Dialer, location func() (daemon.Location, bool)) sshwizard.LocalMachine {
+func localSSHMachineAt(dir string, shared wire.Dialer, location func() (daemon.Location, bool)) sshwizard.LocalMachine {
 	hub := &hubSSH{dir: dir, shared: shared, location: location}
 	return sshwizard.LocalMachine{
 		KeyDir: dir,
@@ -150,7 +151,7 @@ func localSSHMachineAt(dir string, shared link.Dialer, location func() (daemon.L
 // dial. Publishing drops it, so the check after a fix reads what the hub holds now.
 type hubSSH struct {
 	dir      string
-	shared   link.Dialer
+	shared   wire.Dialer
 	location func() (daemon.Location, bool)
 	mu       sync.Mutex
 	set      []link.SSHEntry
@@ -161,7 +162,7 @@ type hubSSH struct {
 // link is the dialer for one hub call and what to do with it afterwards. The room passes its own ladder, which is never
 // closed here, because it holds the one ziti context the hub link uses. With none, a ladder is built for the call and
 // closed after it, since a ziti dialer holds a context whose goroutines live until it is.
-func (h *hubSSH) link() (string, link.Dialer, func(), error) {
+func (h *hubSSH) link() (string, wire.Dialer, func(), error) {
 	if h.shared != nil {
 		saved, err := link.Keys{Dir: h.dir}.Joined()
 		if err != nil {
@@ -270,7 +271,7 @@ func sshSyncCmd() *cobra.Command {
 
 // sshSyncOnce is one pass. A room with its switch on gets both steps, and a room with it off only publishes, since it
 // has no sshd for the hub to open and nothing to authorize.
-func sshSyncOnce(ctx context.Context, dir string, shared link.Dialer) []sshwizard.Action {
+func sshSyncOnce(ctx context.Context, dir string, shared wire.Dialer) []sshwizard.Action {
 	st, err := remoteaccess.Load(dir)
 	if err != nil {
 		return nil
@@ -287,7 +288,7 @@ func sshSyncOnce(ctx context.Context, dir string, shared link.Dialer) []sshwizar
 // sshSyncLoop keeps this room's published record and its authorized keys current: a room added to the hub, or removed
 // from it, reaches every room within a minute and nobody copies a key. It never makes a key, and a step that cannot
 // be done is logged once per change and tried again.
-func sshSyncLoop(ctx context.Context, dir string, shared link.Dialer) {
+func sshSyncLoop(ctx context.Context, dir string, shared wire.Dialer) {
 	t := time.NewTimer(20 * time.Second)
 	defer t.Stop()
 	last := ""
@@ -315,7 +316,7 @@ func sshSyncLoop(ctx context.Context, dir string, shared link.Dialer) {
 
 // sshWizardHandler is `GET /v1/ssh/wizard` on the room: the same checks, read only, as JSON. The query takes the
 // same choices as the flags: port, user and from, and self_test=1 to run the self test, which is off here.
-func sshWizardHandler(dir string, shared link.Dialer) func(r *http.Request) any {
+func sshWizardHandler(dir string, shared wire.Dialer) func(r *http.Request) any {
 	return func(r *http.Request) any {
 		q := r.URL.Query()
 		opt := sshwizard.Options{User: q.Get("user"), SelfTest: q.Get("self_test") == "1"}

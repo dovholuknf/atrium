@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Installing a build a room took from its hub.
@@ -34,7 +35,7 @@ import (
 // itself because a hub said so.
 
 // installUpgrade puts the fetched binary in place of the running one.
-func installUpgrade(path string, o link.Offer) error {
+func installUpgrade(path string, o wire.Offer) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err

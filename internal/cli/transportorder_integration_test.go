@@ -11,6 +11,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // See docs/rnd/room-transport-order.md.
@@ -55,9 +56,9 @@ func TestRoomsTransportsSetsTheHubOrder(t *testing.T) {
 // The hub tells rooms only what it listens on, in its order, and never a credential.
 func TestHubPathsFollowTheOrderAndSayNoSecret(t *testing.T) {
 	set := hubSet{sides: []*hubSide{
-		{kind: "direct", path: link.Path{Transport: "direct", Addr: "sg4:7779"}},
-		{kind: "ziti", path: link.Path{Transport: "ziti", Service: "atrium-hub"}},
-		{kind: "zrok", path: link.Path{Transport: "zrok", Share: "secret-share"}},
+		{kind: "direct", path: wire.Path{Transport: "direct", Addr: "sg4:7779"}},
+		{kind: "ziti", path: wire.Path{Transport: "ziti", Service: "atrium-hub"}},
+		{kind: "zrok", path: wire.Path{Transport: "zrok", Share: "secret-share"}},
 	}}
 	ps := set.paths([]string{"ziti", "direct"})
 	if len(ps) != 2 || ps[0].Transport != "ziti" || ps[1].Transport != "direct" {
@@ -77,7 +78,7 @@ func TestRoomLadderWrapsTheZitiFallbackInTheRoomCertificate(t *testing.T) {
 	keys := link.Keys{Dir: t.TempDir()}
 	writeStrayRoomCert(t, keys)
 	saved := link.Saved{Transport: "direct", Hub: "sg4:7779", Room: "m1mini"}
-	tr := link.RoomTransports{Paths: []link.Path{{Transport: "ziti", Identity: "m1mini.json"}}}
+	tr := link.RoomTransports{Paths: []wire.Path{{Transport: "ziti", Identity: "m1mini.json"}}}
 	l, skipped, err := roomLadder(keys, saved, tr)
 	if err != nil || len(skipped) != 0 {
 		t.Fatalf("%v %v", err, skipped)

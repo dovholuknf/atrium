@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 type fakeShares struct {
@@ -143,7 +144,7 @@ func TestAZrokFirstHubStartsWithTheControllerDownAndRebindsWhenItsShareGoes(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := link.NewHub(link.Timings{})
+	h := link.NewHub(wire.Timings{})
 	waited, goOn := make(chan struct{}), make(chan struct{})
 	b := zrokBinder(side, h, nil)
 	b.Wait = func(ctx context.Context, _ time.Duration) bool {

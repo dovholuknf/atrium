@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/testwait"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func ips(s ...string) func() ([]net.IP, error) {
@@ -54,9 +54,9 @@ func TestWatchPathsPushesOnlyWhenTheListChanged(t *testing.T) {
 	var pushed, reads atomic.Int32
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
-	go watchPaths(ctx, time.Millisecond, func() []link.Path {
+	go watchPaths(ctx, time.Millisecond, func() []wire.Path {
 		reads.Add(1)
-		return []link.Path{{Transport: "direct", Addr: addr.Load().(string)}}
+		return []wire.Path{{Transport: "direct", Addr: addr.Load().(string)}}
 	}, func() { pushed.Add(1) })
 	for i := 0; i < 200 && reads.Load() < 3; i++ {
 		time.Sleep(time.Millisecond) // wait: the watcher must have read its baseline and ticked before the change

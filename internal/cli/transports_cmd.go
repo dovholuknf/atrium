@@ -9,6 +9,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/spf13/cobra"
 )
 
@@ -275,7 +276,7 @@ func roomTransportsLocalCmd() *cobra.Command {
 }
 
 // describePath says one rung for a person.
-func describePath(p link.Path) string {
+func describePath(p wire.Path) string {
 	s := p.Transport
 	switch p.Transport {
 	case "direct":
