@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/docshare"
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/docs"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -105,7 +106,7 @@ func newFilesHarness(t *testing.T) *filesHarness {
 			}
 			root, _ := filepath.EvalSymlinks(work)
 			rel, _ := filepath.Rel(root, real)
-			w.Header().Set(realPathHeader, url.PathEscape(filepath.ToSlash(rel)))
+			w.Header().Set(docs.RealPathHeader, url.PathEscape(filepath.ToSlash(rel)))
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = w.Write(b)
 		default:
@@ -127,23 +128,23 @@ func newFilesHarness(t *testing.T) *filesHarness {
 }
 
 func (h *filesHarness) put(agent string, in putInput) (putOutput, error) {
-	_, out, err := h.c.putHandler(context.Background(), ctlReq(agent, "sg4"), in)
+	_, out, err := h.c.docsMCP().PutHandler(context.Background(), ctlReq(agent, "sg4"), in)
 	return out, err
 }
 
 func (h *filesHarness) get(agent string, in getInput) (getOutput, error) {
-	_, out, err := h.c.getHandler(context.Background(), ctlReq(agent, "sg4"), in)
+	_, out, err := h.c.docsMCP().GetHandler(context.Background(), ctlReq(agent, "sg4"), in)
 	return out, err
 }
 
 func (h *filesHarness) export(in exportInput) (exportOutput, error) {
-	_, out, err := h.c.exportHandler(context.Background(), ctlReq("r-031", "sg4"), in)
+	_, out, err := h.c.docsMCP().ExportHandler(context.Background(), ctlReq("r-031", "sg4"), in)
 	return out, err
 }
 
 func (h *filesHarness) list(agent string, mine bool) filesOutput {
 	h.t.Helper()
-	_, out, err := h.c.filesHandler(context.Background(), ctlReq(agent, "sg4"), filesInput{Mine: mine})
+	_, out, err := h.c.docsMCP().FilesHandler(context.Background(), ctlReq(agent, "sg4"), filesInput{Mine: mine})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -427,12 +428,12 @@ func TestFilesToolsAreAudited(t *testing.T) {
 	ctx := context.Background()
 	run := func() {
 		// Through the same wrapper the server registers, which is what writes the line.
-		_, _, _ = audited(h.c, "ctl-put", describePut, h.c.putHandler)(ctx, ctlReq("r-031", "sg4"),
+		_, _, _ = audited(h.c, "ctl-put", docs.DescribePut, h.c.docsMCP().PutHandler)(ctx, ctlReq("r-031", "sg4"),
 			putInput{Content: "x", Name: "a.txt"})
-		_, _, _ = audited(h.c, "ctl-put", describePut, h.c.putHandler)(ctx, ctlReq("r-031", "sg4"),
+		_, _, _ = audited(h.c, "ctl-put", docs.DescribePut, h.c.docsMCP().PutHandler)(ctx, ctlReq("r-031", "sg4"),
 			putInput{Content: "x", Name: ".env"})
-		_, _, _ = audited(h.c, "ctl-get", describeGet, h.c.getHandler)(ctx, ctlReq("r-032", "sg4"), getInput{Name: "a.txt"})
-		_, _, _ = audited(h.c, "ctl-export", describeExport, h.c.exportHandler)(ctx, ctlReq("r-031", "sg4"),
+		_, _, _ = audited(h.c, "ctl-get", docs.DescribeGet, h.c.docsMCP().GetHandler)(ctx, ctlReq("r-032", "sg4"), getInput{Name: "a.txt"})
+		_, _, _ = audited(h.c, "ctl-export", docs.DescribeExport, h.c.docsMCP().ExportHandler)(ctx, ctlReq("r-031", "sg4"),
 			exportInput{What: "tasks", Rooms: []string{"sg4"}})
 	}
 	run()

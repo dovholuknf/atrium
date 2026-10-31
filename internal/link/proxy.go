@@ -25,6 +25,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/webasset"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/docs"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -165,9 +166,9 @@ type Proxy struct {
 	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
 	// /_hub/deploy-ready 404. See deployready.go.
 	ready *deployReadyState
-	// docs is the hub's documents. Nil until SetDocs wires it, and a hub without one answers
-	// /_hub/docs 404. See docs_api.go.
-	docs *hubstore.Store
+	// docsSvc is the hub.s documents and file drop. See docs_forward.go.
+	docsSvc  *docs.Service
+	docsOnce sync.Once
 	// cr is the change requests between rooms. See changerequest.go.
 	cr *changeRequests
 	// backlog is the hub-wide backlog and director reports. Nil answers 404. See backlog.go.
