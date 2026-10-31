@@ -1,4 +1,4 @@
-package link
+package settings
 
 import (
 	"bytes"
@@ -24,8 +24,8 @@ import (
 // A room that attaches later is sent the hub's value, so a machine asleep when it
 // was changed still cycles at the same limit. The same shape as input_lag_log.
 
-// hubContextLimits is the name the hub stores the list under, the room's setting name.
-const hubContextLimits = rules.SettingContextLimits
+// HubContextLimits is the name the hub stores the list under, the room's setting name.
+const HubContextLimits = rules.SettingContextLimits
 
 // contextLimitsIn reads `context_limits` off a settings write and puts the body back
 // for whoever reads it next. stored is the list as the rooms store it ("" for back
@@ -59,21 +59,21 @@ func limitsMap(stored string) map[string]int {
 	return out
 }
 
-// noteContextLimits stores the list when a settings write names it. A bad list is
+// NoteContextLimits stores the list when a settings write names it. A bad list is
 // not stored, and the room it goes to refuses it the same way.
-func (p *Proxy) noteContextLimits(r *http.Request) (stored string, found bool, err error) {
+func (p *Service) NoteContextLimits(r *http.Request) (stored string, found bool, err error) {
 	stored, found, err = contextLimitsIn(r)
 	if !found || err != nil {
 		return stored, found, err
 	}
-	if s := p.settingStore(); s != nil {
+	if s := p.store(); s != nil {
 		// Stored as "default" rather than "", so a hub that was set back to the
 		// default still tells a room that attaches later.
 		v := stored
 		if v == "" {
 			v = "default"
 		}
-		if serr := s.SetHubSetting(hubContextLimits, v); serr != nil {
+		if serr := s.SetHubSetting(HubContextLimits, v); serr != nil {
 			log.Printf("[hub] could not store the context limits: %v", serr)
 		}
 	}
@@ -81,12 +81,12 @@ func (p *Proxy) noteContextLimits(r *http.Request) (stored string, found bool, e
 }
 
 // hubContextLimitsValue is what the hub was told, and whether it was told at all.
-func (p *Proxy) hubContextLimitsValue() (stored string, set bool) {
-	s := p.settingStore()
+func (p *Service) hubContextLimitsValue() (stored string, set bool) {
+	s := p.store()
 	if s == nil {
 		return "", false
 	}
-	v, err := s.HubSetting(hubContextLimits)
+	v, err := s.HubSetting(HubContextLimits)
 	if err != nil || strings.TrimSpace(v) == "" {
 		return "", false
 	}
@@ -98,7 +98,7 @@ func (p *Proxy) hubContextLimitsValue() (stored string, set bool) {
 
 // PushContextLimits tells one room the hub's list, for a room that just attached.
 // Nothing is sent when the hub has never been told, so a room keeps its own list.
-func (p *Proxy) PushContextLimits(room string) {
+func (p *Service) PushContextLimits(room string) {
 	stored, set := p.hubContextLimitsValue()
 	if !set {
 		return
@@ -108,10 +108,10 @@ func (p *Proxy) PushContextLimits(room string) {
 	}
 }
 
-// fanContextLimits passes the list to every attached room but skip, which got the
+// FanContextLimits passes the list to every attached room but skip, which got the
 // write itself. Best effort: a room that misses it is sent it again when it attaches.
-func (p *Proxy) fanContextLimits(ctx context.Context, stored, skip string) {
-	for _, room := range p.hub.Rooms() {
+func (p *Service) FanContextLimits(ctx context.Context, stored, skip string) {
+	for _, room := range p.Rooms() {
 		if room.Name == skip {
 			continue
 		}
@@ -121,20 +121,20 @@ func (p *Proxy) fanContextLimits(ctx context.Context, stored, skip string) {
 	}
 }
 
-// answerContextLimits is the ALL view's answer to a write naming the list.
-func (p *Proxy) answerContextLimits(w http.ResponseWriter, r *http.Request, stored string) {
-	p.fanContextLimits(r.Context(), stored, "")
-	writeJSONBody(w, http.StatusOK, map[string]any{"context_limits": limitsMap(stored)})
+// AnswerContextLimits is the ALL view's answer to a write naming the list.
+func (p *Service) AnswerContextLimits(w http.ResponseWriter, r *http.Request, stored string) {
+	p.FanContextLimits(r.Context(), stored, "")
+	writeJSON(w, http.StatusOK, map[string]any{"context_limits": limitsMap(stored)})
 }
 
-// applyContextLimits writes the hub's list into a borrowed settings payload.
-func (p *Proxy) applyContextLimits(body map[string]any) {
+// ApplyContextLimits writes the hub's list into a borrowed settings payload.
+func (p *Service) ApplyContextLimits(body map[string]any) {
 	if stored, set := p.hubContextLimitsValue(); set {
 		body["context_limits"] = limitsMap(stored)
 	}
 }
 
-func (p *Proxy) postContextLimits(ctx context.Context, room, stored string) error {
+func (p *Service) postContextLimits(ctx context.Context, room, stored string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	limits := map[string]int{}
@@ -143,12 +143,12 @@ func (p *Proxy) postContextLimits(ctx context.Context, room, stored string) erro
 	}
 	body, _ := json.Marshal(map[string]any{"context_limits": limits})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+hostFor(room)+"/v1/settings", bytes.NewReader(body))
+		"http://"+p.HostFor(room)+"/v1/settings", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := p.roomClient(room).Do(req)
+	res, err := p.RoomClient(room).Do(req)
 	if err != nil {
 		return err
 	}
