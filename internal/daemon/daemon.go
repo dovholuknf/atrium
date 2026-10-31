@@ -530,7 +530,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.GitClone = d.handleGitClone
 	d.ap.HubRemote = d.HubRemoteBase
 	d.ap.HubGitURL = d.handleHubGitURL
-	d.ap.HubCI = d.handleHubCI
+	d.ap.HubCI = pulls.HubCI(d.HubForge, errNoHub)
 	d.ap.HubAsk = d.handleHubAsk
 	d.ap.HubCall = d.hubCall
 	d.ap.ItemAct = d.handleItemAct
