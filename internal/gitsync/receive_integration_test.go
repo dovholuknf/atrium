@@ -1051,7 +1051,8 @@ func TestAPushToARepositoryTheHubLacksIsRefusedUnlessCreateOnPushIsOn(t *testing
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
 	}
 	t.Parallel()
-	x := newRecv(t)
+	none := filepath.Join(t.TempDir(), "none.git")
+	x := newRecv(t, func(h *Hub) { h.Store().Forge = func(Ref) string { return none } })
 	sha := x.branch("fix/x", "x.txt")
 	card := roomCard("sg4", "C1")
 

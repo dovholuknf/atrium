@@ -167,6 +167,47 @@ func TestAFirstAskMakesTheRepositoryFromItsForge(t *testing.T) {
 	}
 }
 
+func TestAFirstPushToARepositoryItsForgeHasMakesAndTakesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newForgeFix(t)
+	sha := x.branch("fix/x", "x.txt")
+	x.must(x.push(roomCard("sg4", "C1"), forgeRepo, "fix/x:refs/heads/fix/x"))
+	if x.refOn(forgeRepo, "refs/heads/fix/x") != sha || x.refOn(forgeRepo, MainRef) != x.main {
+		t.Fatal("the push is not in the repository, or main was not seeded from the forge")
+	}
+}
+
+func TestAFirstAskWithNoBranchMakesTheRepositoryFromItsForge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newForgeFix(t)
+	if a := x.lookup(""); a.State != URLFound || a.Repo != forgeRepo || x.refOn(forgeRepo, MainRef) != x.main {
+		t.Fatalf("answer = %+v", a)
+	}
+}
+
+func TestAnUnreachableForgeKeepsTheRefusalAndMakesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: git subprocesses and a real smart-HTTP rig")
+	}
+	t.Parallel()
+	x := newForgeFix(t)
+	x.down.Store(true)
+	x.branch("fix/x", "x.txt")
+	out, err := x.push(roomCard("sg4", "C1"), forgeRepo, "fix/x:refs/heads/fix/x")
+	if err == nil || !strings.Contains(out, "atrium rooms git init") {
+		t.Fatalf("push = %v\n%s", err, out)
+	}
+	if a := x.lookup(""); a.State != URLNotFound || x.h.Store().Exists(forgeRepo) {
+		t.Fatalf("answer = %+v, exists=%v", a, x.h.Store().Exists(forgeRepo))
+	}
+}
+
 func TestAPushedBranchOfTheSameNameIsNotShadowed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: git subprocesses and a real smart-HTTP rig")

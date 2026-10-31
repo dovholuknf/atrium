@@ -43,7 +43,12 @@ func newURLRig(t *testing.T) *urlRig {
 		copyTree(t, filepath.Join(snap.dir, "store"), x.store)
 	}
 	x.g.Store().Protocols = "file"
-	x.g.Store().Forge = func(gitsync.Ref) string { return forge }
+	x.g.Store().Forge = func(ref gitsync.Ref) string {
+		if ref.Name() != "github/o/r" {
+			return filepath.Join(x.root, "no-such.git")
+		}
+		return forge
+	}
 	if snap == nil {
 		gitRun(t, "", "init", "-q", "--bare", "-b", "master", forge)
 		work := filepath.Join(x.root, "forgework")
