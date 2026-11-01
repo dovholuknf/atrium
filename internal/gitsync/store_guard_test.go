@@ -22,14 +22,17 @@ func TestTheStorePathNeverLeavesTheRoot(t *testing.T) {
 	}
 }
 
-func TestAGitArgumentHasNoLineBreakOrNul(t *testing.T) {
-	cmd := gitCommand(context.Background(), "", nil, []string{"log", "a\nb\x00c\r"})
-	for _, a := range cmd.Args {
-		if strings.ContainsAny(a, "\x00\r\n") {
-			t.Errorf("argument %q kept a control character", a)
+func TestARevisionNeverReadsAsAnOption(t *testing.T) {
+	s := &Store{h: &Hub{}}
+	for _, bad := range []string{"--output=x", "-x", "a..b", "a\nb", "", "a b"} {
+		if _, err := s.commitHeld(context.Background(), "", bad); err == nil {
+			t.Errorf("commitHeld took %q", bad)
+		}
+		if _, err := s.isAncestor(context.Background(), "", bad, "claude/main"); err == nil {
+			t.Errorf("isAncestor took %q", bad)
 		}
 	}
-	if got := cmd.Args[len(cmd.Args)-1]; got != "abc" {
-		t.Errorf("last argument %q", got)
+	if !safeRevArg("refs/heads/claude/main") || !safeRevArg(strings.Repeat("a", 40)) {
+		t.Error("a plain ref or sha was refused")
 	}
 }
