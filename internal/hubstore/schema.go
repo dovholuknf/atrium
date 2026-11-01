@@ -545,7 +545,7 @@ var migrations = []struct {
 		},
 	},
 	{
-		// THE MERGE FLOW'S STATE. See flow.go and docs/design/merge-flow.md. flow_role is who holds each role, one row per
+		// THE MERGE FLOW'S STATE. See flow.go. flow_role is who holds each role, one row per
 		// holder (only the tester may have several; flow.go enforces that, so the table need not). flow_item is a backlog
 		// item's stage, kept apart from backlog_item.status so nothing that reads that column changes. flow_check is a
 		// verdict on a sha of main, and flow_deploy is the sha a room runs. Cards and rooms are TEXT with no foreign key.
@@ -587,7 +587,7 @@ var migrations = []struct {
 	},
 	{
 		// ONE ROW PER ROUND OF clint FETCHING claude/main, re-signing and pushing, so what landed in between can be
-		// accounted for. See flow_epoch.go and docs/design/merge-flow.md, "Between clint's fetch and clint's push".
+		// accounted for. See flow_epoch.go.
 		name: "0016_flow_epoch",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS flow_epoch (

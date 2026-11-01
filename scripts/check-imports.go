@@ -1,8 +1,7 @@
 //go:build ignore
 
-// check-imports pins the import graph of every package but the root to the layer table below, which is the graph in
-// docs/design/go-modules.md section 1. It fails when a package imports one its row does not list, and when a
-// package has no row, so the table stays complete.
+// check-imports pins the import graph of every package but the root to the layer table below. It fails when a package
+// imports one its row does not list, and when a package has no row, so the table stays complete.
 //
 // Usage: go run scripts/check-imports.go
 // Exit 1 when any is found.
