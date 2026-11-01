@@ -49,6 +49,7 @@ jobs:
   # Which jobs and groups a dispatch runs, from its os and suite inputs. scripts/ci-select.sh decides, a push runs all.
   select:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       flaky_linux_go: ${{ steps.pick.outputs.flaky_linux_go }}
       flaky_linux_playwright: ${{ steps.pick.outputs.flaky_linux_playwright }}
@@ -80,6 +81,7 @@ jobs:
     if: needs.select.outputs.flaky_linux_go == 'true'
     name: flaky-linux-go
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
@@ -108,6 +110,7 @@ jobs:
     if: needs.select.outputs.flaky_linux_playwright == 'true'
     name: flaky-linux-playwright
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
@@ -136,6 +139,7 @@ jobs:
     if: needs.select.outputs.flaky_macos_go == 'true'
     name: flaky-macos-go
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -159,6 +163,7 @@ jobs:
     if: needs.select.outputs.flaky_macos_playwright == 'true'
     name: flaky-macos-playwright
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -182,6 +187,7 @@ jobs:
     if: needs.select.outputs.flaky_windows_go == 'true'
     name: flaky-windows-go
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
@@ -205,6 +211,7 @@ jobs:
     if: needs.select.outputs.flaky_windows_playwright == 'true'
     name: flaky-windows-playwright
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
@@ -245,6 +252,7 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_ubuntu) }}
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
@@ -276,6 +284,7 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_macos) }}
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -302,6 +311,7 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_windows) }}
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
@@ -326,6 +336,7 @@ jobs:
     needs: [select, flaky-linux-go, flaky-linux-playwright, flaky-macos-go, flaky-macos-playwright, flaky-windows-go, flaky-windows-playwright, check-ubuntu, check-macos, check-windows]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       results: ${{ join(needs.*.result, ' ') }}
     permissions:
@@ -355,6 +366,7 @@ jobs:
     needs: [select, rollup]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
