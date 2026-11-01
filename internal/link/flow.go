@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// The merge flow's HTTP half. See internal/hubstore/flow.go for the rows and docs/design/merge-flow.md for why.
+// The merge flow's HTTP half. See internal/hubstore/flow.go for the rows.
 //
 //	GET  /_hub/flow/roles?role=      who holds each role, or one
 //	POST /_hub/flow/roles            {do:"set"|"clear", role, room, card, by?}

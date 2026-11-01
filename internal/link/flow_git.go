@@ -7,7 +7,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/hubstore"
 )
 
-// What git says of an item, folded into the item's stage. See docs/design/merge-flow.md, "Backlog item states".
+// What git says of an item, folded into the item's stage.
 //
 // THREE STAGES COME FROM GIT, TWO ARE DERIVED FROM SHA-KEYED RECORDS, and nobody has to remember a call for any of
 // them: reading an item computes the stage, and a stage that git or the records say is further on than the one stored
