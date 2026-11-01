@@ -553,7 +553,7 @@ func (s *Store) create(ctx context.Context, dir string) (err error) {
 			gl.Unlock()
 		}
 	}()
-	args :=[]string{"init", "-q", "--bare", "--template=", "--initial-branch=main"}
+	args := []string{"init", "-q", "--bare", "--template=", "--initial-branch=main"}
 	if s.reftable(ctx) {
 		args = append(args, "--ref-format=reftable")
 	}
