@@ -22,6 +22,25 @@ func TestTheStorePathNeverLeavesTheRoot(t *testing.T) {
 	}
 }
 
+func TestABranchOrStorePathNeverReadsAsAnOption(t *testing.T) {
+	s := &Store{h: &Hub{}}
+	for _, bad := range []string{"--output=x", "-x", "a..b", "", "a b"} {
+		if _, _, err := s.tipOf(context.Background(), "", bad); err == nil {
+			t.Errorf("tipOf took %q", bad)
+		}
+	}
+	if err := s.create(context.Background(), "-x/p.git"); err == nil {
+		t.Error("create took an option as its path")
+	}
+}
+
+func TestGitRefusesAnArgumentHoldingANul(t *testing.T) {
+	r := &Runner{root: context.Background()}
+	if _, err := r.Git(context.Background(), "", "rev-parse", "a\x00b"); err == nil || r.Spawned.Load() != 0 {
+		t.Errorf("a NUL argument was run: %v", err)
+	}
+}
+
 func TestARevisionNeverReadsAsAnOption(t *testing.T) {
 	s := &Store{h: &Hub{}}
 	for _, bad := range []string{"--output=x", "-x", "a..b", "a\nb", "", "a b"} {
