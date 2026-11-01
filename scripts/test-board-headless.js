@@ -13626,6 +13626,12 @@ async function groupMenusSection(browser, base) {
     });
     await p.waitForFunction(() => !!document.querySelector('#term-list .tgroup[data-ghead="zeta"]'), null, { timeout: slow(8000) })
       .catch(() => fail("groupMenus: the new group is not drawn on the terminals tab"));
+    // A second renderer reads the write back through the browser process: a reload can otherwise beat a write still in flight.
+    const probe = await ctx.newPage();
+    await probe.goto(base + "/robots.txt", { waitUntil: "domcontentloaded" });
+    await probe.waitForFunction(() => (JSON.parse(localStorage.getItem("atrium.grouping") || "{}").groups || []).includes("zeta"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: the new group never reached the browser's storage"));
+    await probe.close();
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector('#term-list .tgroup[data-ghead="zeta"]', { timeout: slow(10000) })
