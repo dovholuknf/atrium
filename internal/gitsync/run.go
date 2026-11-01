@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -175,11 +176,21 @@ func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, args ..
 	return r.gitWith(ctx, dir, nil, stdin, 0, args...)
 }
 
+var argRe = regexp.MustCompile(`^[^\x00]*$`)
+
 func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
 	return r.gitWith(ctx, dir, extraEnv, nil, 0, args...)
 }
 
 func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, maxOut int, args ...string) (string, error) {
+	checked := make([]string, 0, len(args))
+	for _, a := range args {
+		if !argRe.MatchString(a) {
+			return "", &Error{Args: args, Err: errors.New("a git argument holds a NUL")}
+		}
+		checked = append(checked, a)
+	}
+	args = checked
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
