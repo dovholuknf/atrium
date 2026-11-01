@@ -200,8 +200,7 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	d, _, cancel, _ := startDaemon(t)
-	defer cancel()
+	d, _, _, _ := startDaemon(t)
 	shell, args := someShell(t)
 	dir := t.TempDir()
 	task := cardAt(t, d, "recorded", dir)
@@ -213,15 +212,12 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 		t.Skipf("could not start a runner here: %v", err)
 	}
 	r := d.sup.get(task.ID)
+	// Ended while the daemon still runs: a Run already shutting down races its wind-down with this kill.
 	t.Cleanup(func() {
 		// Not Kill: its taskkill takes seconds on a loaded Windows runner, and the runner here has no children.
 		_ = r.cmd.Process.Kill()
-		select {
-		case <-r.done:
-		case <-time.After(10 * time.Second):
-		}
-		// The directory is released a beat after the process is reaped.
-		time.Sleep(500 * time.Millisecond) // wait: the directory is released after the reap, no event marks it
+		// Out of the supervisor means the terminal is closed and the directory released.
+		testwait.Poll(10*time.Second, func() bool { return d.sup.get(task.ID) == nil })
 	})
 	got, err := d.st.Run(r.runID)
 	if err != nil {
