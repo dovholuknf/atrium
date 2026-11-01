@@ -37,6 +37,8 @@ func ValidSHA(s string) bool { return shaRe.MatchString(s) }
 
 var revArgRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 
+var pathArgRe = regexp.MustCompile(`^[^-]`)
+
 // safeRevArg says whether s is a sha or ref name git may take as a revision, never an option and never a "..".
 func safeRevArg(s string) bool { return revArgRe.MatchString(s) && !strings.Contains(s, "..") }
 
@@ -93,6 +95,9 @@ func (s *Store) BranchSHA(ctx context.Context, name, branch string) (string, boo
 }
 
 func (s *Store) tipOf(ctx context.Context, dir, branch string) (string, bool, error) {
+	if !revArgRe.MatchString(branch) || strings.Contains(branch, "..") {
+		return "", false, refuse("that is not a branch name")
+	}
 	out, err := s.git(ctx, dir, "for-each-ref", "--format=%(objectname)", headsPrefix+branch)
 	if err != nil {
 		return "", false, err

@@ -535,6 +535,9 @@ func writeMarker(dir, kind string) error {
 // create makes the bare repository, with HEAD on main, no hook and no template, and removes what it
 // made if any step fails.
 func (s *Store) create(ctx context.Context, dir string) (err error) {
+	if !pathArgRe.MatchString(dir) {
+		return refuse("that is not a store path")
+	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return fmt.Errorf("could not make the store's directory: %w", err)
 	}
@@ -550,7 +553,7 @@ func (s *Store) create(ctx context.Context, dir string) (err error) {
 			gl.Unlock()
 		}
 	}()
-	args := []string{"init", "-q", "--bare", "--template=", "--initial-branch=main"}
+	args :=[]string{"init", "-q", "--bare", "--template=", "--initial-branch=main"}
 	if s.reftable(ctx) {
 		args = append(args, "--ref-format=reftable")
 	}
