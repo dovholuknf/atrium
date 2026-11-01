@@ -314,8 +314,12 @@ func TestAWorkerThatEndsWithNoDoneFailsTheTaskAndKeepsTheFolder(t *testing.T) {
 	if row.State != store.CardHomeKept || !strings.Contains(row.Reason, "no done") || row.Owed != "" {
 		t.Fatalf("ledger: %+v", row)
 	}
-	if got := x.hub.kinds(); len(got) != 1 || got[0] != "failed" {
-		t.Fatalf("events: %v", got)
+	got := x.hub.kinds()
+	for len(got) > 1 && got[0] == got[1] {
+		got = got[1:] // the flush createItem kicked may resend the owed failed, and the hub takes a replay as nothing
+	}
+	if len(got) != 1 || got[0] != "failed" {
+		t.Fatalf("events: %v", x.hub.kinds())
 	}
 }
 
