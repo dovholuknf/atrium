@@ -156,6 +156,7 @@ func TestRepliesPageCapIs50(t *testing.T) {
 			textBlock(fmt.Sprintf("answer %d", i)))
 	}
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	for _, ask := range []int{50, 80} {
 		v, err := d.repliesFor(f.task.ID, ask)
 		if err != nil {

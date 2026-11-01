@@ -154,7 +154,7 @@ func TestAForcedSayToAnotherRoomCarriesTheForce(t *testing.T) {
 	d.SetRelay(rl)
 	raw, _ := json.Marshal(map[string]any{"from": "boss", "to": "worker@sg4", "text": "carry on", "force": true})
 	w := httptest.NewRecorder()
-	d.handleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
+	d.HandleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("the say answered %d: %s", w.Code, w.Body.String())
 	}

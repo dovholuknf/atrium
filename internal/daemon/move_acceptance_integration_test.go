@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -64,9 +65,9 @@ func TestAWorkerMovesBetweenRoomsThroughTheRoomRoutes(t *testing.T) {
 		<-errCh
 	}()
 	// A's relay is room B: a say lands on B as it would from the hub.
-	fa.set(func(s RelaySay) (RelayResult, error) {
+	fa.set(func(s hublink.RelaySay) (hublink.RelayResult, error) {
 		code, out := say(t, b, map[string]string{"from": s.From + "@sg3", "to": s.To, "text": s.Text})
-		return RelayResult{OK: code < 400, Delivered: "queued", To: s.To + "@" + s.Room, Card: s.Room + "~" + s.To,
+		return hublink.RelayResult{OK: code < 400, Delivered: "queued", To: s.To + "@" + s.Room, Card: s.Room + "~" + s.To,
 			Code: code, Error: strings.TrimSpace(strings.Join([]string{asString(out["error"])}, ""))}, nil
 	})
 

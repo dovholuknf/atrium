@@ -22,6 +22,7 @@ import (
 func writePrev(t *testing.T, d *Daemon, db string) {
 	t.Helper()
 	prev := &Daemon{hk: *testHooks(), opts: d.opts}
+	prev.initServices()
 	prev.opts.DBPath = db
 	prev.rememberDB()
 }
@@ -43,8 +44,9 @@ func TestACleanStopThenADifferentDatabaseStillWarns(t *testing.T) {
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "first.db")),
 		LocationFile: location,
 	}}
+	first.initServices()
 	first.warnIfDifferentDatabase()
-	first.clearLocation()
+	first.ClearLocation()
 
 	// The address file is gone, which is correct and is what broke this.
 	if _, err := os.Stat(location); !os.IsNotExist(err) {
@@ -60,6 +62,7 @@ func TestACleanStopThenADifferentDatabaseStillWarns(t *testing.T) {
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "second.db")),
 		LocationFile: location,
 	}}
+	second.initServices()
 	second.warnIfDifferentDatabase()
 
 	if !strings.Contains(logs.String(), "DIFFERENT DATABASE") {
@@ -118,9 +121,10 @@ func TestWhatWasOpenedSurvivesAWindDown(t *testing.T) {
 		DBPath:       filepath.ToSlash(filepath.Join(dir, "a.db")),
 		LocationFile: filepath.Join(dir, "daemon.json"),
 	}}
-	d.writeLocation()
+	d.initServices()
+	d.WriteLocation()
 	d.rememberDB()
-	d.clearLocation()
+	d.ClearLocation()
 
 	got, ok := d.previousDB()
 	if !ok {
@@ -137,6 +141,7 @@ func TestTheRecordIsIsolatedByTheLocationOption(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	d := &Daemon{hk: *testHooks(), opts: Options{LocationFile: filepath.Join(dir, "daemon.json")}}
+	d.initServices()
 	got, err := d.lastDBPath()
 	if err != nil {
 		t.Fatal(err)

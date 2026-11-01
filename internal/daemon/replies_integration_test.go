@@ -36,6 +36,8 @@ func TestRepliesAreTheLastMainChainTextOldestFirst(t *testing.T) {
 
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
 
+	d.initServices()
+
 	v, err := d.repliesFor(f.task.ID, 3)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +87,7 @@ func TestRepliesFollowTheStartedSession(t *testing.T) {
 	transcriptReply(t, f.path, "old", f.base, false, textBlock("from before the clear"))
 	transcriptReply(t, fresh, "new", f.base.Add(time.Second), false, textBlock("after the clear"))
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	d.ctx.started(f.task.ID, "s2")
 
 	v, err := d.repliesFor(f.task.ID, 3)
@@ -140,6 +143,7 @@ func TestRepliesForSurfacesAStoreError(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	if _, err := d.repliesFor("01a0nosuchcard", 3); !errors.Is(err, errNoSuchCard) {
 		t.Fatalf("an unknown card gave %v", err)
 	}

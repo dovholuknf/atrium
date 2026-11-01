@@ -3,9 +3,9 @@ package daemon
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"log"
 	"net/http"
@@ -260,8 +260,8 @@ var atriumBinary = func() string {
 func (d *Daemon) handoffPath(t *store.Task) string {
 	dir := d.st.ContextHandoffDir()
 	if dir == "" {
-		if h, ok := d.homeOf(t.ID); ok {
-			return filepath.Join(dirsOf(h.Path).Meta, "handoff.md")
+		if h, ok := d.HomeOf(t.ID); ok {
+			return filepath.Join(home.DirsOf(h.Path).Meta, "handoff.md")
 		}
 	}
 	if dir == "" {
@@ -1442,11 +1442,7 @@ func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ncJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
+func ncJSON(w http.ResponseWriter, code int, v any) { small.WriteJSON(w, code, v) }
 
 // newContextHooks are the seams of the new-context and restart-wrap sequences.
 type newContextHooks struct {

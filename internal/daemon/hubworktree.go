@@ -25,7 +25,7 @@ import (
 //
 // Best effort: a failure logs and never fails the launch.
 func (d *Daemon) scopeHubRemote(cwd string) {
-	agent := d.agentAddr()
+	agent := d.AgentAddr()
 	if cwd == "" || agent == "" {
 		return
 	}

@@ -291,13 +291,6 @@ func (d *Daemon) tellLauncherMerged(t *store.Task, w *store.WorkItem, into, sha 
 	}
 }
 
-func orDefault(s, def string) string {
-	if strings.TrimSpace(s) == "" {
-		return def
-	}
-	return s
-}
-
 // HoldCull is the hold: `atrium_cull hold=true` and the chip's keep. The mark
 // goes and nothing marks the card again.
 func (d *Daemon) HoldCull(taskID, by string) error {

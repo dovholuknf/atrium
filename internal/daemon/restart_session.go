@@ -38,7 +38,7 @@ func (d *Daemon) askExit(taskID string, grace time.Duration) error {
 	r := d.sup.Get(taskID)
 	if r == nil || !r.HasTerm() {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is nothing here to exit",
-			d.taskTitle(taskID))
+			d.TaskTitle(taskID))
 	}
 	// ATRIUM TYPED THIS EXIT, so the hook's /exit rule skips it. See windDown.
 	r.SetLeaving(true)
@@ -61,7 +61,7 @@ func (d *Daemon) askExit(taskID string, grace time.Duration) error {
 	log.Printf("[atrium] runner for %s ignored its exit keys for %s, leaving it running", taskID, grace)
 	return fmt.Errorf("%s did not exit when asked, even after %s. it is still running and was not "+
 		"restarted. it may be mid-turn or waiting on a prompt. finish or answer that and try again, "+
-		"or terminate it from the card", d.taskTitle(taskID), grace)
+		"or terminate it from the card", d.TaskTitle(taskID), grace)
 }
 
 // RestartRunner asks a card's runner to exit, waits for it to be gone, and

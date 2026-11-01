@@ -84,12 +84,6 @@ func (d *Daemon) reclaimBlock(t *store.Task) string {
 	return ""
 }
 
-// hasDotGit says whether a directory is a git checkout or worktree of its own.
-func hasDotGit(dir string) bool {
-	_, err := os.Lstat(filepath.Join(filepath.FromSlash(dir), ".git"))
-	return err == nil
-}
-
 // reclaimPlain reclaims a worker whose directory is not a git checkout: the scratch directory a launcher made for
 // it, holding its BRIEF.md. There is no branch of its own to prove merged. The launcher's call is the claim.
 func (d *Daemon) reclaimPlain(t *store.Task, into string) (*CullResult, error) {
@@ -188,15 +182,4 @@ func leftIn(dir string) []string {
 func trackedByGit(dir, name string) bool {
 	_, err := gitIn(dir, "ls-files", "--error-unmatch", "--", name)
 	return err == nil
-}
-
-// samePath compares two paths the way the platform does, once resolved.
-func samePath(a, b string) bool {
-	if ra, err := filepath.EvalSymlinks(a); err == nil {
-		a = ra
-	}
-	if rb, err := filepath.EvalSymlinks(b); err == nil {
-		b = rb
-	}
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }

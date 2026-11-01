@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"path/filepath"
 	"testing"
 
@@ -12,10 +13,10 @@ import (
 func TestClassifyProc(t *testing.T) {
 	root := t.TempDir()
 	closed, live := filepath.Join(root, "old-card"), filepath.Join(root, "new-card")
-	places := []cardPlace{
-		{path: closed, card: "c-old"},
-		{path: live, card: "c-new", live: true},
-		{path: filepath.Join(closed, "work"), card: "c-reused", live: true},
+	places := []hublink.CardPlace{
+		{Path: closed, Card: "c-old"},
+		{Path: live, Card: "c-new", Live: true},
+		{Path: filepath.Join(closed, "work"), Card: "c-reused", Live: true},
 	}
 	for _, c := range []struct {
 		name string
@@ -34,7 +35,7 @@ func TestClassifyProc(t *testing.T) {
 		{"an atrium binary", roomstats.Proc{PID: 17, Command: filepath.Join(root, "atrium.exe") + " ptyhost"}, roomstats.ProcAtrium, ""},
 	} {
 		p := c.p
-		classifyProc(&p, places, 99)
+		hublink.ClassifyProc(&p, places, 99)
 		if p.Kind != c.kind || p.Card != c.card {
 			t.Errorf("%s: got %s %q, want %s %q", c.name, p.Kind, p.Card, c.kind, c.card)
 		}

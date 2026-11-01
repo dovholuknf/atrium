@@ -45,7 +45,7 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 			return roomstats.DiskOf(d.worktreeVolume())
 		},
 		DBBytes:   func() (int64, error) { return roomstats.DBBytes(d.opts.DBPath) },
-		CardHomes: d.cardHomesStat,
+		CardHomes: d.CardHomesStat,
 		Worktrees: func() (int, error) {
 			ts, err := d.st.List()
 			if err != nil {
@@ -68,8 +68,8 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 			}
 			return out, nil
 		},
-		Agents:  d.agentsRunning,
-		Procs:   d.topProcs,
+		Agents:  d.AgentsRunning,
+		Procs:   d.TopProcs,
 		Publish: func(b []byte) { d.ap.Broadcast("room-stats", json.RawMessage(b)) },
 	})
 	d.ap.RoomStats = s.Bytes

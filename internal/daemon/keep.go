@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
 	"time"
@@ -51,7 +52,7 @@ func (d *Daemon) keepOnCard(w http.ResponseWriter, from string, target *store.Ta
 	d.peerSaid(from, target, text, owedKind(kind, reply))
 	d.Publish(target.ID)
 	log.Printf("[atrium] kept %s's say to %s (%s)", from, target.WireName, why)
-	writeJSONCode(w, http.StatusOK, out)
+	hublink.WriteJSONCode(w, http.StatusOK, out)
 }
 
 // How a woken card is given what it holds. Vars so a test can shorten them.

@@ -108,7 +108,7 @@ func (d *Daemon) checkoutOf(slug string) string {
 	if err != nil {
 		return ""
 	}
-	if _, dest, err := d.scm(nil).ClonePath(ref); err == nil && hasDotGit(dest) {
+	if _, dest, err := d.Scm(nil).ClonePath(ref); err == nil && hasDotGit(dest) {
 		return filepath.ToSlash(dest)
 	}
 	return ""

@@ -50,7 +50,7 @@ type lastDB struct {
 // lastDBPath sits beside the address file, so naming another location file
 // isolates both and a test cannot reach the machine's real one.
 func (d *Daemon) lastDBPath() (string, error) {
-	path, err := d.locationPath()
+	path, err := d.LocationPath()
 	if err != nil {
 		return "", err
 	}

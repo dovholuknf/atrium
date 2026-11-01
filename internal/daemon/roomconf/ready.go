@@ -1,0 +1,141 @@
+package roomconf
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/dovholuknf/atrium/internal/small"
+	"github.com/dovholuknf/atrium/internal/store"
+)
+
+// `atrium ready`: a card in a context cycle saying its handoff is written.
+//
+// The ack the cycle waits on (newcontext.go). A command rather than a tool, like
+// `atrium finish`, because it costs no tool schema in every context and works in
+// every runner.
+//
+// IT READS THE HANDOFF INTO THE STORE. A notified event on the card carries the
+// text, so the board's history shows it after the temp directory is cleaned.
+//
+// REFUSED, NOT IGNORED. Unlike `finish`, a refusal answers 409 and the CLI exits
+// non-zero: the agent has to know the ack did not land, since nothing is cleared
+// without one. No cycle waiting, and a missing or empty file, are both refused.
+
+// ReadyRequest is a session saying its handoff is written.
+type ReadyRequest struct {
+	Agent  string `json:"agent"`
+	TaskID string `json:"task_id,omitempty"`
+	// Handoff is the handoff text itself, from a session with no shell to write the file. Absent means read the file.
+	Handoff *string `json:"handoff,omitempty"`
+}
+
+// ReadyLine is what the CLI prints when the ack lands.
+const ReadyLine = "atrium clears your context when this turn ends. End your turn now."
+
+// WrapReadyLine is what the CLI prints when the ack of a restart wrap-up lands.
+const WrapReadyLine = "atrium restarts the room when everyone is ready, and wakes you after. End your turn now."
+
+// handoffKeep is the most of a handoff kept on the card.
+const HandoffKeep = 256 << 10
+
+func (d *Service) HandleReady(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		small.WriteJSONErr(w, http.StatusMethodNotAllowed, small.ErrString("POST"))
+		return
+	}
+	var in ReadyRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(in.Agent) == "" && in.TaskID == "" {
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which session this is, with agent or task_id"))
+		return
+	}
+	task, err := d.TaskFor(in.Agent, in.TaskID)
+	if err != nil {
+		who := strings.TrimSpace(in.Agent)
+		if who == "" {
+			who = in.TaskID
+		}
+		small.WriteJSONErr(w, http.StatusNotFound, fmt.Errorf("atrium has no card for this session: looked up %q as a card id, "+
+			"wire name and alias on this room", who))
+		return
+	}
+	out, code, err := d.ReadyHandoff(task, in.Handoff)
+	if err != nil {
+		small.WriteJSONErr(w, code, err)
+		return
+	}
+	small.WriteJSON(w, http.StatusOK, out)
+}
+
+// ready stores the card's handoff and acks its cycle.
+func (d *Service) Ready(task *store.Task) (map[string]any, int, error) {
+	return d.ReadyHandoff(task, nil)
+}
+
+// readyHandoff is ready with the handoff text given, which it writes to the cycle's file first.
+func (d *Service) ReadyHandoff(task *store.Task, handoff *string) (map[string]any, int, error) {
+	path, atLimit, acked := d.Cycle(task.ID)
+	// A restart wrap-up waiting on this card takes the ack, with no file asked for: the conversation is kept.
+	if !atLimit && d.WrapAck(task.ID) {
+		log.Printf("[atrium] atrium ready from %s for the restart wrap-up", task.DisplayTitle())
+		return map[string]any{"ok": true, "task_id": task.ID, "message": WrapReadyLine}, 0, nil
+	}
+	if !atLimit || acked {
+		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
+	}
+	if handoff != nil {
+		text := *handoff
+		if strings.TrimSpace(text) == "" {
+			return nil, http.StatusConflict, small.ErrString("the handoff text is empty: write what a fresh session needs to carry on")
+		}
+		if len(text) > HandoffKeep {
+			text = text[:HandoffKeep]
+			for !utf8.ValidString(text) {
+				text = text[:len(text)-1]
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, http.StatusInternalServerError, fmt.Errorf("could not write the handoff to %s: %w", path, err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			return nil, http.StatusInternalServerError, fmt.Errorf("could not write the handoff to %s: %w", path, err)
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || len(strings.TrimSpace(string(b))) == 0 {
+		return nil, http.StatusConflict, fmt.Errorf("write your handoff to %s first, then run atrium ready again", path)
+	}
+	text, cut := string(b), false
+	if len(text) > HandoffKeep {
+		text, cut = text[:HandoffKeep], true
+		for !utf8.ValidString(text) {
+			text = text[:len(text)-1]
+		}
+	}
+	ev := map[string]any{"by": d.CycleBy, "handoff": text, "path": path, "bytes": len(b)}
+	if cut {
+		ev["cut"] = fmt.Sprintf("kept the first %d KB of %d", HandoffKeep>>10, len(b)>>10)
+	}
+	stored := true
+	if err := d.St.AppendEvent(task.ID, store.EventNotified, ev); err != nil {
+		log.Printf("[atrium] could not store the handoff on %s: %v", task.ID, err)
+		stored = false
+	}
+	// The run may have moved on between the look and here: only an ack that took counts.
+	if !d.CycleAck(task.ID) {
+		return nil, http.StatusConflict, small.ErrString("no context cycle is waiting for atrium ready on this card")
+	}
+	log.Printf("[atrium] atrium ready from %s, %d bytes in %s", task.DisplayTitle(), len(b), path)
+	d.Publish(task.ID)
+	return map[string]any{"ok": true, "task_id": task.ID, "path": path, "stored": stored, "message": ReadyLine}, 0, nil
+}

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -248,7 +249,7 @@ func TestPreflightOnARoomWithAHubRunsNoForge(t *testing.T) {
 	}
 	for _, k := range []string{"gh@github.com", "bb@bitbucket.org"} {
 		s := a.Forges[k]
-		if s.State != forgeUnknown || !strings.Contains(s.Message, "hub") {
+		if s.State != home.ForgeUnknown || !strings.Contains(s.Message, "hub") {
 			t.Fatalf("%s = %+v", k, s)
 		}
 	}

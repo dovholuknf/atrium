@@ -5,6 +5,7 @@ package daemon
 import (
 	"encoding/base64"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func makeJWT(t *testing.T, iss, sub string, exp time.Time) string {
 func TestReadJWT(t *testing.T) {
 	t.Parallel()
 	tok := makeJWT(t, "https://ctrl.example.com", "atrium", time.Now().Add(time.Hour))
-	claims, err := readJWT(tok)
+	claims, err := publish.ReadJWT(tok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +55,7 @@ func TestReadJWT(t *testing.T) {
 func TestReadJWTNoticesAnExpiredToken(t *testing.T) {
 	t.Parallel()
 	tok := makeJWT(t, "https://ctrl.example.com", "atrium", time.Now().Add(-time.Minute))
-	claims, err := readJWT(tok)
+	claims, err := publish.ReadJWT(tok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestReadJWTNoticesAnExpiredToken(t *testing.T) {
 func TestReadJWTRefusesSomethingElse(t *testing.T) {
 	t.Parallel()
 	for _, in := range []string{"", "not-a-token", "one.two", "abc.!!!.def"} {
-		if _, err := readJWT(in); err == nil {
+		if _, err := publish.ReadJWT(in); err == nil {
 			t.Fatalf("%q was accepted as an enrollment token", in)
 		}
 	}
@@ -90,10 +91,10 @@ func TestSafeNameCannotEscape(t *testing.T) {
 		"C:/x":          "cx",
 	}
 	for in, want := range cases {
-		if got := safeName(in); got != want {
+		if got := publish.SafeName(in); got != want {
 			t.Errorf("safeName(%q) = %q, wanted %q", in, got, want)
 		}
-		if got := safeName(in); strings.ContainsAny(got, `/\.:`) {
+		if got := publish.SafeName(in); strings.ContainsAny(got, `/\.:`) {
 			t.Errorf("safeName(%q) = %q, which is not a bare name", in, got)
 		}
 	}
@@ -101,7 +102,7 @@ func TestSafeNameCannotEscape(t *testing.T) {
 
 func TestSafeNameIsBounded(t *testing.T) {
 	t.Parallel()
-	if got := safeName(strings.Repeat("a", 500)); len(got) > 40 {
+	if got := publish.SafeName(strings.Repeat("a", 500)); len(got) > 40 {
 		t.Fatalf("a 500 character name produced %d characters", len(got))
 	}
 }
@@ -138,11 +139,11 @@ func TestEnrollZitiRefusesWithNoToken(t *testing.T) {
 func TestEnrollZitiIntoRefusesBadInputWithoutADaemon(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if _, _, err := EnrollZitiInto("", "room", dir); err == nil {
+	if _, _, err := publish.EnrollZitiInto("", "room", dir); err == nil {
 		t.Fatal("enrolling was accepted with no token")
 	}
 	tok := makeJWT(t, "https://ctrl.example.com", "room", time.Now().Add(-time.Hour))
-	if _, _, err := EnrollZitiInto(tok, "room", dir); err == nil || !strings.Contains(err.Error(), "expired") {
+	if _, _, err := publish.EnrollZitiInto(tok, "room", dir); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("an expired token should be refused with its date, got %v", err)
 	}
 }
@@ -173,7 +174,7 @@ func TestZrokEnvReportsNothingWhenThereIsNothing(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	if env := zrokEnv(); env.Enabled {
+	if env := publish.ZrokEnvHere(); env.Enabled {
 		t.Fatalf("an empty home reported an enabled environment: %+v", env)
 	}
 }
@@ -197,7 +198,7 @@ func TestZrokEnvReadsAnEnabledEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env := zrokEnv()
+	env := publish.ZrokEnvHere()
 	if !env.Enabled {
 		t.Fatal("an environment that is there was reported as missing")
 	}
@@ -225,7 +226,7 @@ func TestZrokEnvNeverCarriesTheToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := json.Marshal(zrokEnv())
+	out, err := json.Marshal(publish.ZrokEnvHere())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,10 +239,10 @@ func TestZrokEnvNeverCarriesTheToken(t *testing.T) {
 // configured one, because the fix is different.
 func TestZitiEnrolmentTellsMissingFromUnset(t *testing.T) {
 	t.Parallel()
-	if got := zitiEnrolment(""); got.Path != "" || got.Present {
+	if got := publish.ZitiEnrolmentAt(""); got.Path != "" || got.Present {
 		t.Fatalf("an unset identity reported as %+v", got)
 	}
-	got := zitiEnrolment(filepath.Join(t.TempDir(), "nope.json"))
+	got := publish.ZitiEnrolmentAt(filepath.Join(t.TempDir(), "nope.json"))
 	if got.Present {
 		t.Fatal("a file that is not there was reported present")
 	}
@@ -264,7 +265,7 @@ func TestZitiEnrolmentReadsTheControllerAndNotTheKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := zitiEnrolment(path)
+	got := publish.ZitiEnrolmentAt(path)
 	if !got.Present {
 		t.Fatal("an identity that is there was reported missing")
 	}
@@ -284,7 +285,7 @@ func TestZitiEnrolmentReadsTheControllerAndNotTheKey(t *testing.T) {
 // must not become an empty flag.
 func TestZrokEnableArgs(t *testing.T) {
 	t.Parallel()
-	args := zrokEnableArgs("tok123", "")
+	args := publish.ZrokEnableArgs("tok123", "")
 	got := strings.Join(args, " ")
 	if !strings.Contains(got, "enable tok123") {
 		t.Fatalf("the token is not what it enables with: %q", got)
@@ -295,7 +296,7 @@ func TestZrokEnableArgs(t *testing.T) {
 	if strings.Contains(got, "--description") {
 		t.Fatalf("an empty description became a flag: %q", got)
 	}
-	if named := strings.Join(zrokEnableArgs("tok", "my laptop"), " "); !strings.Contains(named, "--description my laptop") {
+	if named := strings.Join(publish.ZrokEnableArgs("tok", "my laptop"), " "); !strings.Contains(named, "--description my laptop") {
 		t.Fatalf("a description was dropped: %q", named)
 	}
 }

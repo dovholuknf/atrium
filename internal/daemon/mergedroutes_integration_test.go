@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +28,7 @@ func TestTheMergedCullRoutesAreOnTheBoardAndNowhereElse(t *testing.T) {
 		"/v1/tasks/archive-workers",
 	}
 	board := d.BoardHandler()
-	guest := d.guestHandler(task.ID)
+	guest := d.GuestHandler(task.ID)
 	for _, p := range paths {
 		post := func(h http.Handler) int {
 			rec := httptest.NewRecorder()
@@ -41,7 +42,7 @@ func TestTheMergedCullRoutesAreOnTheBoardAndNowhereElse(t *testing.T) {
 		if code := post(guest); code != http.StatusForbidden {
 			t.Errorf("%s answered %d to a guest, want 403", p, code)
 		}
-		resp, err := http.Post(addressOf(d.opts.AgentAddr)+p, "application/json", strings.NewReader(`{}`))
+		resp, err := http.Post(roomconf.AddressOf(d.opts.AgentAddr)+p, "application/json", strings.NewReader(`{}`))
 		if err != nil {
 			t.Fatalf("agent listener: %v", err)
 		}

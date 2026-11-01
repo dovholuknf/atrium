@@ -66,7 +66,7 @@ func TestAGivenUpRelayComesBackAsAMessage(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
-	d.giveUpRelay(store.RelayRow{ID: "r1", FromTask: target.ID, FromWire: target.WireName,
+	d.GiveUpRelay(store.RelayRow{ID: "r1", FromTask: target.ID, FromWire: target.WireName,
 		ToRoom: "far", ToName: "x", Text: "important words"}, "it was held too long")
 	msgs, err := d.st.PendingMessages(target.ID)
 	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Text, "important words") {

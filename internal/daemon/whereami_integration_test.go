@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ func TestTheAddressGoesWhereTheOptionsSay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the daemon did not record its address: %v", err)
 	}
-	var loc Location
+	var loc roomconf.Location
 	if err := json.Unmarshal(raw, &loc); err != nil {
 		t.Fatal(err)
 	}
@@ -49,12 +50,13 @@ func TestTheAddressGoesWhereTheOptionsSay(t *testing.T) {
 // to get correct behavior is an option everybody forgets.
 func TestNoOptionMeansTheRealPlace(t *testing.T) {
 	t.Parallel()
-	real, err := LocationPath()
+	real, err := roomconf.LocationPath()
 	if err != nil {
 		t.Skip("this machine has no answer for where runtime state goes")
 	}
 	d := &Daemon{hk: *testHooks()}
-	got, err := d.locationPath()
+	d.initServices()
+	got, err := d.LocationPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +65,7 @@ func TestNoOptionMeansTheRealPlace(t *testing.T) {
 	}
 
 	d.opts.LocationFile = filepath.Join(t.TempDir(), "elsewhere.json")
-	got, err = d.locationPath()
+	got, err = d.LocationPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,15 +86,15 @@ func TestTakingTheAddressFromALiveDaemonIsAnnounced(t *testing.T) {
 	living := func(int) bool { return true }
 	gone := func(int) bool { return false }
 
-	other, err := json.Marshal(Location{Agent: "http://localhost:9999", PID: 2000})
+	other, err := json.Marshal(roomconf.Location{Agent: "http://localhost:9999", PID: 2000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	mine, err := json.Marshal(Location{Agent: "http://localhost:9999", PID: me})
+	mine, err := json.Marshal(roomconf.Location{Agent: "http://localhost:9999", PID: me})
 	if err != nil {
 		t.Fatal(err)
 	}
-	noPID, err := json.Marshal(Location{Agent: "http://localhost:9999"})
+	noPID, err := json.Marshal(roomconf.Location{Agent: "http://localhost:9999"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +111,7 @@ func TestTakingTheAddressFromALiveDaemonIsAnnounced(t *testing.T) {
 		{"a file with no pid in it", noPID, living, false},
 		{"a file that does not parse", []byte("{not json"), living, false},
 	} {
-		prev, got := takingOver(tc.raw, me, tc.live)
+		prev, got := roomconf.TakingOver(tc.raw, me, tc.live)
 		if got != tc.warn {
 			t.Fatalf("%s: warned=%v, wanted %v", tc.name, got, tc.warn)
 		}
@@ -127,7 +129,7 @@ func TestTheTakeoverWarningIsPrinted(t *testing.T) {
 	d, logs, cancel, errCh := startDaemon(t)
 	defer func() { cancel(); <-errCh }()
 
-	raw, err := json.Marshal(Location{Agent: "http://localhost:9999", PID: os.Getpid() + 1})
+	raw, err := json.Marshal(roomconf.Location{Agent: "http://localhost:9999", PID: os.Getpid() + 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,13 +140,13 @@ func TestTheTakeoverWarningIsPrinted(t *testing.T) {
 	// processAlive is the real one here, so this only proves the wiring when
 	// that pid happens to exist. Checked either way: the point is that
 	// writeLocation still writes, whatever it decided about warning.
-	d.writeLocation()
+	d.WriteLocation()
 
 	back, err := os.ReadFile(d.opts.LocationFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var loc Location
+	var loc roomconf.Location
 	if err := json.Unmarshal(back, &loc); err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +178,7 @@ func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var loc Location
+	var loc roomconf.Location
 	if err := json.Unmarshal(raw, &loc); err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +207,7 @@ func TestTheLocationPathAgreesWithTheHookResolver(t *testing.T) {
 	// The two DEFAULTS are what must agree. The test guard points
 	// ATRIUM_LOCATION at a dead file for every test, and only the daemon reads it.
 	t.Setenv("ATRIUM_LOCATION", "")
-	mine, err := LocationPath()
+	mine, err := roomconf.LocationPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,12 +227,13 @@ func TestLocationRecordsTheRoomDir(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.json")
 	d := &Daemon{hk: *testHooks(), opts: Options{Room: "r1", RoomDir: "/r/dir", LocationFile: path}}
-	d.writeLocation()
+	d.initServices()
+	d.WriteLocation()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var loc Location
+	var loc roomconf.Location
 	if err := json.Unmarshal(raw, &loc); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +250,7 @@ func TestAThrowawayDoesNotOverwriteALiveRoomsAddress(t *testing.T) {
 	t.Setenv("ATRIUM_LOCATION", shared)
 	t.Setenv("ATRIUM_SHARED_LOCATION", "-")
 
-	real, err := json.Marshal(Location{Agent: "http://localhost:7777", PID: os.Getpid() + 1})
+	real, err := json.Marshal(roomconf.Location{Agent: "http://localhost:7777", PID: os.Getpid() + 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,16 +260,18 @@ func TestAThrowawayDoesNotOverwriteALiveRoomsAddress(t *testing.T) {
 
 	d := &Daemon{hk: *testHooks(), opts: Options{AgentAddr: "127.0.0.1:9", HumanAddr: "127.0.0.1:10"}}
 
+	d.initServices()
+
 	d.hk.pidAlive = func(int) bool { return true }
-	d.writeLocation()
+	d.WriteLocation()
 	back, _ := os.ReadFile(shared)
 	if string(back) != string(real) {
 		t.Fatalf("a live room's address was overwritten: %s", back)
 	}
 
 	d.hk.pidAlive = func(int) bool { return false }
-	d.writeLocation()
-	var loc Location
+	d.WriteLocation()
+	var loc roomconf.Location
 	back, _ = os.ReadFile(shared)
 	if err := json.Unmarshal(back, &loc); err != nil || loc.PID != os.Getpid() {
 		t.Fatalf("a stale address was not replaced: %s", back)

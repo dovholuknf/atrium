@@ -88,7 +88,6 @@ func isResident(t []string) bool {
 // reclaimed. The launcher puts one on when the card is meant to outlive its first answer: a long conversation, or
 // an investigation whose transcript is the product. See reclaim.go.
 const (
-	KeepOpenTag      = "atrium:keep-open"
 	InvestigationTag = "atrium:investigation"
 )
 

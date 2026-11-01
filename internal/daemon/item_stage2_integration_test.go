@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"sync"
@@ -28,14 +29,14 @@ type hubRelay struct {
 
 func newHubRelay() *hubRelay { return &hubRelay{fakeRelay: &fakeRelay{}, seen: map[string]bool{}} }
 
-func (h *hubRelay) Hub(_ context.Context, _, method, path string, body json.RawMessage) (RelayResult, error) {
+func (h *hubRelay) Hub(_ context.Context, _, method, path string, body json.RawMessage) (hublink.RelayResult, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.down {
-		return RelayResult{}, ErrRelayDown
+		return hublink.RelayResult{}, hublink.ErrRelayDown
 	}
 	if method == http.MethodGet {
-		return RelayResult{OK: true, Data: json.RawMessage(h.holder)}, nil
+		return hublink.RelayResult{OK: true, Data: json.RawMessage(h.holder)}, nil
 	}
 	var p struct {
 		ID    string `json:"item_id"`
@@ -47,7 +48,7 @@ func (h *hubRelay) Hub(_ context.Context, _, method, path string, body json.RawM
 	applied := !h.seen[key]
 	h.seen[key] = true
 	h.pushes = append(h.pushes, key)
-	return RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"applied":` + map[bool]string{true: "true", false: "false"}[applied] + `}`)}, nil
+	return hublink.RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"applied":` + map[bool]string{true: "true", false: "false"}[applied] + `}`)}, nil
 }
 
 func (h *hubRelay) pushed() []string {

@@ -62,7 +62,7 @@ func TestWrapAskedCardSaysReadyAndIsWoken(t *testing.T) {
 	if !d.wrap.waiting(task.ID) {
 		t.Fatal("the wrap-up is not waiting on the card's ack")
 	}
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatalf("ready was refused: %v", err)
 	}
 	rep := report(t, ch)
@@ -157,7 +157,7 @@ func TestWrapKeepsACardsOwnWake(t *testing.T) {
 	midTurn(d, task.ID)
 	ch := runWrap(d, time.Minute)
 	until(t, "the wrap-up prompt", func() bool { return wraps(f) == 1 })
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatal(err)
 	}
 	rep := report(t, ch)
@@ -199,7 +199,7 @@ func TestShutdownWrapsUpFirstAndNowSkipsIt(t *testing.T) {
 	if stopped(d) {
 		t.Fatal("the room stopped while the wrap-up waited")
 	}
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "the stop after the ack", func() bool { return stopped(d) })
@@ -279,7 +279,7 @@ func TestSecondStopJoinsTheRunningWrapUp(t *testing.T) {
 	if stopped(d) {
 		t.Fatal("the room stopped while the wrap-up waited")
 	}
-	if _, _, err := d.ready(task); err != nil {
+	if _, _, err := d.Ready(task); err != nil {
 		t.Fatal(err)
 	}
 	rep := report(t, joined)

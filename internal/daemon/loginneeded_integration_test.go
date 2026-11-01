@@ -21,7 +21,7 @@ func TestARevokedLoginOnAnyScreenFlagsTheRoomAndRefusesClaudeLaunches(t *testing
 	if l == nil || !strings.Contains(l.Line, "OAuth token revoked") {
 		t.Fatalf("flag %+v, wanted the revoked line", l)
 	}
-	if d.LoginNeededReason() == "" || d.loginHealth() == nil || d.healthBody()["login_needed"] == nil {
+	if d.LoginNeededReason() == "" || d.loginHealth() == nil || d.HealthBody()["login_needed"] == nil {
 		t.Fatal("the flag did not reach the reason, the health answer and the health event")
 	}
 	err := d.launchNeedsLogin(shared.LaunchRequest{Harness: "claude"})

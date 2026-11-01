@@ -236,7 +236,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// What this room owes other rooms, for a hub or a room that was not
 		// answering. Off the tick, since a relay can wait on a slow room. See
 		// relay.go.
-		d.kickRelays()
+		d.KickRelays()
 		d.kickItems()
 		// Work items whose session is gone with no end recorded. Same tick,
 		// after liveness, for the same reason. See ledger.go.
@@ -247,7 +247,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// itself runs off it. See mergedcull.go.
 		d.sweepMergedCulls()
 		d.sweepLandedIdle()
-		d.sweepDocShares()
+		d.SweepDocShares()
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.
@@ -264,7 +264,7 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			log.Printf("[atrium] pruning old cards: %v", err)
 		}
 		// And the home ledger: folders already gone, removals to try again, a throwaway the room restarted past.
-		if err := d.sweepHomes(); err != nil {
+		if err := d.SweepHomes(); err != nil {
 			log.Printf("[atrium] sweeping card homes: %v", err)
 		}
 		// And the scrollback saved for cards that are no longer here. Same

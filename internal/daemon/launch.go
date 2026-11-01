@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
 	"net"
 	"os"
@@ -724,7 +726,7 @@ func (d *Daemon) launchLocked(req shared.LaunchRequest) (*store.Task, error) {
 	var made store.CardHome
 	t, err := d.launchCore(req, &made)
 	if err != nil && made.Path != "" {
-		d.reclaimHome(nil, made, true)
+		d.ReclaimHome(nil, made, true)
 	}
 	return t, err
 }
@@ -792,28 +794,28 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 
 	cwd := strings.TrimSpace(req.Cwd)
-	if err := homeLaunchRefusal(req, cwd); err != nil {
+	if err := home.HomeLaunchRefusal(req, cwd); err != nil {
 		return nil, err
 	}
-	var home *store.CardHome
-	var homeDir homeDirs
-	if kind := homeRequest(req, cwd, task != nil); kind != "" {
-		row, dd, err := d.launchHome(kind, &req)
+	var cardHome *store.CardHome
+	var homeDir home.HomeDirs
+	if kind := home.HomeRequest(req, cwd, task != nil); kind != "" {
+		row, dd, err := d.LaunchHome(kind, &req)
 		switch {
 		case err == nil:
-			home, homeDir, cwd, *made = &row, dd, dd.Work, row
+			cardHome, homeDir, cwd, *made = &row, dd, dd.Work, row
 		case kind == store.CardHomeThrowaway && errors.Is(err, cardroot.ErrNone):
 		default:
 			return nil, err
 		}
 	} else if task != nil {
-		if row, ok := d.homeOf(task.ID); ok {
-			homeDir = dirsOf(row.Path)
-			home = &row
+		if row, ok := d.HomeOf(task.ID); ok {
+			homeDir = home.DirsOf(row.Path)
+			cardHome = &row
 		}
 	}
 	// Create a temporary directory only for a throwaway without a supplied
-	// directory or existing card, and with no home to hold it.
+	// directory or existing card, and with no cardHome to hold it.
 	throwaway := req.Throwaway && cwd == "" && task == nil
 	if throwaway {
 		tmp, err := makeThrowawayDir()
@@ -822,7 +824,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		}
 		cwd = tmp
 	}
-	throwaway = req.Throwaway && task == nil && (throwaway || (home != nil && home.Kind == store.CardHomeThrowaway))
+	throwaway = req.Throwaway && task == nil && (throwaway || (cardHome != nil && cardHome.Kind == store.CardHomeThrowaway))
 	if cwd == "" && task != nil {
 		cwd = task.Worktree
 	}
@@ -838,15 +840,15 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
-	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) &&
+	if task == nil && req.Resume == "" && !throwaway && cardHome == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) &&
 		d.st.CardRootRequiredOn() {
-		if root, err := d.cardRoot(); err == nil && !insideRoot(root, cwd) {
-			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or home: true) so the "+
+		if root, err := d.CardRoot(); err == nil && !insideRoot(root, cwd) {
+			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or cardHome: true) so the "+
 				"room makes the folder, or pass scratch: true if this is throwaway work", filepath.ToSlash(cwd), filepath.ToSlash(root))
 		}
 	}
 	launchBranch := ""
-	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) {
+	if task == nil && req.Resume == "" && !throwaway && cardHome == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) {
 		branch, why := agentCheckoutBranch(cwd)
 		launchBranch = branch
 		if why != "" {
@@ -872,7 +874,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 
 	// ONE CARD PER DIRECTORY. A second card in a directory a live or parked card holds would take its hooks, so a
 	// launch that did not ask to skip or adopt is refused, naming that card.
-	if req.TaskID == "" && req.IfRunning == "" && home == nil && !throwaway {
+	if req.TaskID == "" && req.IfRunning == "" && cardHome == nil && !throwaway {
 		if here, err := d.st.AdoptableTask(filepath.ToSlash(cwd)); err != nil {
 			return nil, err
 		} else if here != "" {
@@ -938,13 +940,13 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	// it would be a second source of truth it believes. See writeBriefFile.
 	briefPath := ""
 	// An outside-code card has no git token, so the room's forwarder is no use to it.
-	outside := isOutsideCode(req, task)
+	outside := home.IsOutsideCode(req, task)
 	if !outside && req.Resume == "" {
 		d.scopeHubRemote(cwd)
 	}
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
 		briefDir, briefName := cwd, briefFileName
-		if home != nil {
+		if cardHome != nil {
 			briefDir = homeDir.Dir
 			briefName = filepath.ToSlash(filepath.Join(homeDir.Dir, briefFileName))
 		}
@@ -1183,8 +1185,8 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		task.Worktree = filepath.ToSlash(cwd)
 	}
 
-	if home != nil && made.Path != "" {
-		if err := d.st.CardHomeCard(home.Path, task.ID); err != nil {
+	if cardHome != nil && made.Path != "" {
+		if err := d.st.CardHomeCard(cardHome.Path, task.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -1235,13 +1237,13 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 		// name baked into its own command line.
 		"ATRIUM_RUNNER": h.ID,
 	}
-	d.tellWhereIAm(atrium)
+	d.TellWhereIAm(atrium)
 	if u, ok := d.hubURLDefault(overEnv(h.Env, addedEnv)); ok {
 		atrium["ATRIUM_HUB_URL"] = u
 	}
 	// A HOME'S TEMP FOLDER, over the harness and the machine, so nothing the runner starts writes outside it.
-	if home != nil {
-		for k, v := range homeEnv(homeDir) {
+	if cardHome != nil {
+		for k, v := range home.HomeEnv(homeDir) {
 			atrium[k] = v
 		}
 	}
@@ -1250,7 +1252,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 	// THE CARD'S GIT TOKEN for the room's hub forwarder, scoped to the forwarder's URL. Nothing for a card that runs
 	// outside code. See hubGitEnv.
-	d.hubGitEnv(task.ID, isOutsideCode(req, task), overEnv(h.Env, addedEnv), atrium)
+	d.HubGitEnv(task.ID, home.IsOutsideCode(req, task), overEnv(h.Env, addedEnv), atrium)
 	// WHICH ROOM THIS SESSION BELONGS TO, so its HTTP control MCP registration
 	// resolves ${ATRIUM_ROOM} and the hub scopes control calls to this room.
 	// Only set when this daemon is a room: a plain daemon with no hub has no
@@ -1759,11 +1761,11 @@ func (d *Daemon) hubURLDefault(harnessEnv map[string]string) (string, bool) {
 			return "", false
 		}
 	}
-	a := d.agentAddr()
+	a := d.AgentAddr()
 	if _, port, err := net.SplitHostPort(a); err != nil || port == "0" {
 		return "", false
 	}
-	return addressOf(a), true
+	return roomconf.AddressOf(a), true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.

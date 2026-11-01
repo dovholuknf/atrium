@@ -90,7 +90,7 @@ func (d *Daemon) sweepOwnerSilent(it *store.ItemRow, now time.Time) {
 // itemOwnerGone: the owning session's card is gone or dead. A launcher in another room cannot be asked from here, so
 // it is not gone, and only the timer applies to it. A role owner is the same, and has only the timer.
 func (d *Daemon) itemOwnerGone(worker *store.Task) bool {
-	if _, _, remote := d.remoteLauncher(worker); remote {
+	if _, _, remote := d.RemoteLauncher(worker); remote {
 		return false
 	}
 	owner := d.launcherOf(worker)

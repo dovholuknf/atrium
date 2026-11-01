@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
 
@@ -45,7 +46,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	run := d.sup.Get(taskID)
 	if d.pending == nil || run == nil {
-		writeJSONCode(w, http.StatusNotFound, errBody("no supervised terminal on this card"))
+		hublink.WriteJSONCode(w, http.StatusNotFound, hublink.ErrBody("no supervised terminal on this card"))
 		return
 	}
 	d.pending.mu.Lock()
@@ -55,15 +56,15 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 	}
 	d.pending.mu.Unlock()
 	if len(entries) == 0 {
-		writeJSONCode(w, http.StatusConflict, errBody("nothing is waiting"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("nothing is waiting"))
 		return
 	}
 	switch {
 	case d.holdingMessages(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("a new-context cycle owns that terminal, so nothing was typed"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("a new-context cycle owns that terminal, so nothing was typed"))
 		return
 	case d.act.dialogOpen(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("a dialog is on that terminal, and the Enter would answer it"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("a dialog is on that terminal, and the Enter would answer it"))
 		return
 	}
 	delivered := 0
@@ -83,7 +84,7 @@ func (d *Daemon) handleTypeAnyway(w http.ResponseWriter, r *http.Request) {
 		delivered++
 	}
 	d.Publish(taskID)
-	writeJSONCode(w, http.StatusOK, map[string]any{"delivered": delivered})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"delivered": delivered})
 }
 
 // forceSay answers true when it has written the response, a delivery or a refusal, and false when the ordinary path
@@ -96,13 +97,13 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	}
 	switch {
 	case d.holdingMessages(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: a new-context cycle owns that terminal. "+newContextHoldNote))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a new-context cycle owns that terminal. "+newContextHoldNote))
 		return true
 	case holding:
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: "+d.deployHoldNote()))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: "+d.deployHoldNote()))
 		return true
 	case d.act.dialogOpen(taskID):
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: a dialog is on that terminal, and the Enter would answer it"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: a dialog is on that terminal, and the Enter would answer it"))
 		return true
 	}
 	banner := ""
@@ -110,11 +111,11 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 	if from != "" {
 		// A PEER is not that human. Only the target's launcher may force, and only past a line atrium cannot read.
 		if !d.isLauncherOf(from, target) {
-			writeJSONCode(w, http.StatusForbidden, errBody("force refused: only the operator or the launcher of that session may force a say"))
+			hublink.WriteJSONCode(w, http.StatusForbidden, hublink.ErrBody("force refused: only the operator or the launcher of that session may force a say"))
 			return true
 		}
 		if why := run.ForceRefusal(); why != "" {
-			writeJSONCode(w, http.StatusConflict, errBody("force refused: "+why+". force only types past a line atrium cannot read"))
+			hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: "+why+". force only types past a line atrium cannot read"))
 			return true
 		}
 		banner, ok = peerBanner(from), run.PeerForceOK
@@ -131,7 +132,7 @@ func (d *Daemon) forceSay(w http.ResponseWriter, taskID, from, text, kind, rawKi
 		return true
 	}
 	if !wrote {
-		writeJSONCode(w, http.StatusConflict, errBody("force refused: the line changed under it, so nothing was typed"))
+		hublink.WriteJSONCode(w, http.StatusConflict, hublink.ErrBody("force refused: the line changed under it, so nothing was typed"))
 		return true
 	}
 	ev := map[string]any{"text": text, "via": "terminal", "how": forcedHow, "forced": true}

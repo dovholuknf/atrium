@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"os"
 	"path/filepath"
 	"strings"
@@ -214,7 +215,7 @@ func TestAnOutsideCodeCardsBriefAndPromptCarryNoGitURLLine(t *testing.T) {
 	if got == "" || strings.Contains(got, "atrium_git_url") {
 		t.Fatalf("prompt %q", got)
 	}
-	tagged := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "just do it", Tags: []string{OutsideCodeTag}})
+	tagged := promptSeenBy(t, d, shared.LaunchRequest{Prompt: "just do it", Tags: []string{home.OutsideCodeTag}})
 	if tagged == "" || strings.Contains(tagged, "atrium_git_url") {
 		t.Fatalf("tagged prompt %q", tagged)
 	}
@@ -240,7 +241,7 @@ func TestALaunchedOutsideCodeCardsBriefFileHasNoGitURLLine(t *testing.T) {
 	h := briefHarness(t, d)
 	for name, req := range map[string]shared.LaunchRequest{
 		"flag": {OutsideCode: true},
-		"tag":  {Tags: []string{OutsideCodeTag}},
+		"tag":  {Tags: []string{home.OutsideCodeTag}},
 	} {
 		dir := t.TempDir()
 		req.Harness, req.Cwd, req.Brief = h, dir, "the task"

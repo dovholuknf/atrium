@@ -14,6 +14,7 @@ func TestKeepLimitReadingsOnChange(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st}
+	d.initServices()
 	reset := time.Date(2026, 9, 29, 15, 0, 0, 0, time.UTC)
 	post := func(pct int) {
 		d.keepLimitReadings(f.task.ID, Telemetry{FiveHour: &Limit{Pct: pct, ResetsAt: reset}})

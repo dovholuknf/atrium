@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"net"
 	"net/http"
@@ -37,7 +38,7 @@ func hubDialReq(t *testing.T, srv *httptest.Server) (net.Conn, *http.Response) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &readerConn{Conn: c, br: br}, resp
+	return &hublink.ReaderConn{Conn: c, Br: br}, resp
 }
 
 func TestHubDialRelaysTheRoomsConnection(t *testing.T) {
@@ -49,8 +50,9 @@ func TestHubDialRelaysTheRoomsConnection(t *testing.T) {
 	}()
 	f := &fakeHubDialer{up: tcpA}
 	d := &Daemon{}
+	d.initServices()
 	d.SetHubDialer(f)
-	srv := httptest.NewServer(http.HandlerFunc(d.handleHubDial))
+	srv := httptest.NewServer(http.HandlerFunc(d.HandleHubDial))
 	defer srv.Close()
 
 	c, resp := hubDialReq(t, srv)
@@ -58,7 +60,7 @@ func TestHubDialRelaysTheRoomsConnection(t *testing.T) {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
 	io.WriteString(c, "hi")
-	c.(*readerConn).Conn.(*net.TCPConn).CloseWrite()
+	c.(*hublink.ReaderConn).Conn.(*net.TCPConn).CloseWrite()
 	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	got, err := io.ReadAll(c)
 	if err != nil || string(got) != "echo:hi" {
@@ -72,13 +74,14 @@ func TestHubDialRelaysTheRoomsConnection(t *testing.T) {
 func TestHubDialRefusesAPeerThatIsNotLoopback(t *testing.T) {
 	f := &fakeHubDialer{}
 	d := &Daemon{}
+	d.initServices()
 	d.SetHubDialer(f)
 	req := httptest.NewRequest(http.MethodPost, "/hubdial", nil)
 	req.RemoteAddr = "10.1.2.3:5555"
 	req.Header.Set("Upgrade", "atrium-hubdial")
 	req.Header.Set("Connection", "Upgrade")
 	rec := httptest.NewRecorder()
-	d.handleHubDial(rec, req)
+	d.HandleHubDial(rec, req)
 	if rec.Code != http.StatusForbidden || f.calls != 0 {
 		t.Fatalf("status %d, dials %d", rec.Code, f.calls)
 	}
@@ -86,12 +89,13 @@ func TestHubDialRefusesAPeerThatIsNotLoopback(t *testing.T) {
 
 func TestHubDialSaysSoWhenTheRoomHasNoHub(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	req := httptest.NewRequest(http.MethodPost, "/hubdial", nil)
 	req.RemoteAddr = "127.0.0.1:5555"
 	req.Header.Set("Upgrade", "atrium-hubdial")
 	req.Header.Set("Connection", "Upgrade")
 	rec := httptest.NewRecorder()
-	d.handleHubDial(rec, req)
+	d.HandleHubDial(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -99,13 +103,14 @@ func TestHubDialSaysSoWhenTheRoomHasNoHub(t *testing.T) {
 
 func TestHubDialAnswersADialFailureWithItsSentence(t *testing.T) {
 	d := &Daemon{}
+	d.initServices()
 	d.SetHubDialer(&fakeHubDialer{err: errors.New("no route to the hub")})
 	req := httptest.NewRequest(http.MethodPost, "/hubdial", nil)
 	req.RemoteAddr = "127.0.0.1:5555"
 	req.Header.Set("Upgrade", "atrium-hubdial")
 	req.Header.Set("Connection", "Upgrade")
 	rec := httptest.NewRecorder()
-	d.handleHubDial(rec, req)
+	d.HandleHubDial(rec, req)
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "no route to the hub") {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}

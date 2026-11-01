@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,7 @@ func (d *Daemon) isLauncherOf(from string, target *store.Task) bool {
 	}
 	// A launcher on another room is not in this store: the worker records it as SpawnedBy, `name@room`, and a say
 	// from it arrives under that same address.
-	if target.Launched() && sameAddress(from, target.SpawnedBy) {
+	if target.Launched() && hublink.SameAddress(from, target.SpawnedBy) {
 		return true
 	}
 	sender, err := d.st.GetByWireName(from)

@@ -46,7 +46,7 @@ func (d *Daemon) fixtureCards() map[string]bool {
 // in use. A shell is not a card's runner (it lives in the supervisor's other map),
 // so it never gets here.
 func (d *Daemon) idleParkSubject(t *store.Task) bool {
-	if t == nil || t.Throwaway || d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil {
+	if t == nil || t.Throwaway || d.fixtureCards()[t.ID] || d.Guests.Get(t.ID) != nil {
 		return false
 	}
 	return small.HasTag(t.Tags, OriginAgentTag)

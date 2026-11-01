@@ -16,6 +16,7 @@ func TestOutputAtMovesOnANewReply(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 
 	if d.outputMoved(f.task) || d.outputAtFor(f.task.ID) != "" {
 		t.Fatal("a card with no transcript has an output time")
@@ -61,6 +62,7 @@ func TestOutputAtWaitsForAWholeLine(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("first"))
 	if !d.outputMoved(f.task) {
 		t.Fatal("the first reply did not move output_at")
@@ -101,6 +103,7 @@ func TestOutputAtGetsPastAHugeLine(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("before the paste"))
 	if !d.outputMoved(f.task) {
 		t.Fatal("the first reply did not move output_at")
@@ -133,6 +136,7 @@ func TestCloseStopsAPendingOutputCheck(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))
 	d.outputSoon(f.task.ID)
 	d.stopOutput()
@@ -152,6 +156,7 @@ func TestOutputAtIsClaudeOnly(t *testing.T) {
 	f := newUsageFix(t)
 	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	task := *f.task
 	task.Runner = "codex"
 	if d.outputMoved(&task) {

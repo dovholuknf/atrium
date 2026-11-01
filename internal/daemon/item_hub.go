@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"log"
 	"net/http"
@@ -134,12 +135,12 @@ func (d *Daemon) flushItems() {
 	if len(rows) == 0 {
 		return
 	}
-	ha, _ := d.relay().(HubAsker)
+	ha, _ := d.Relay().(hublink.HubAsker)
 	if ha == nil {
 		return
 	}
 	for _, r := range rows {
-		ctx, cancel := context.WithTimeout(context.Background(), relayWait)
+		ctx, cancel := context.WithTimeout(context.Background(), hublink.RelayWait)
 		res, err := ha.Hub(ctx, "", http.MethodPost, "/_hub/items/sync", json.RawMessage(r.Body))
 		cancel()
 		switch {
@@ -285,8 +286,8 @@ func (d *Daemon) itemNotifyKeyed(task *store.Task, it *store.ItemRow, key, text 
 		d.itemQueue(task, launcher.ID, key, text)
 		return
 	}
-	if spec := d.launcherRelay(task, text); spec != nil {
-		if _, err := d.holdRelay(task, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", "",
+	if spec := d.LauncherRelay(task, text); spec != nil {
+		if _, err := d.HoldRelay(task, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "", "",
 			store.RelaySourceNotice); err != nil {
 			log.Printf("[atrium] could not hold item %s's notice for %s: %v", it.ID, spec.ToRoom, err)
 			d.orphanReport(task, text)
@@ -322,11 +323,11 @@ func (d *Daemon) itemQueue(worker *store.Task, toID, key, text string) {
 
 // itemNotifyHolder asks the hub who holds a role owner's role, and says whether anybody was told.
 func (d *Daemon) itemNotifyHolder(task *store.Task, it *store.ItemRow, key, text string) bool {
-	ha, _ := d.relay().(HubAsker)
+	ha, _ := d.Relay().(hublink.HubAsker)
 	if ha == nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), relayWait)
+	ctx, cancel := context.WithTimeout(context.Background(), hublink.RelayWait)
 	defer cancel()
 	res, err := ha.Hub(ctx, "", http.MethodGet, "/_hub/items/"+it.ID, nil)
 	if err != nil || !res.OK {
@@ -342,7 +343,7 @@ func (d *Daemon) itemNotifyHolder(task *store.Task, it *store.ItemRow, key, text
 		return false
 	}
 	if room := d.otherRoom(got.Holder.Room); room != "" {
-		_, err := d.holdRelay(task, task.WireName, "", room, got.Holder.Card, shared.TruncatePeer(text), "", "", store.RelaySourceNotice)
+		_, err := d.HoldRelay(task, task.WireName, "", room, got.Holder.Card, shared.TruncatePeer(text), "", "", store.RelaySourceNotice)
 		return err == nil
 	}
 	if _, err := d.st.Get(got.Holder.Card); err != nil {

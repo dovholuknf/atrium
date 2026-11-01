@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,12 +20,12 @@ type taskHub struct {
 	*fakeRelay
 	mu     sync.Mutex
 	events []map[string]any
-	answer func(ev map[string]any) (RelayResult, error)
+	answer func(ev map[string]any) (hublink.RelayResult, error)
 }
 
-func (h *taskHub) Hub(_ context.Context, _, _, path string, body json.RawMessage) (RelayResult, error) {
+func (h *taskHub) Hub(_ context.Context, _, _, path string, body json.RawMessage) (hublink.RelayResult, error) {
 	if path != taskSyncPath {
-		return RelayResult{OK: true, Data: json.RawMessage(`{"ok":true}`)}, nil
+		return hublink.RelayResult{OK: true, Data: json.RawMessage(`{"ok":true}`)}, nil
 	}
 	var ev map[string]any
 	_ = json.Unmarshal(body, &ev)
@@ -39,12 +40,12 @@ func (h *taskHub) Hub(_ context.Context, _, _, path string, body json.RawMessage
 	}
 	if ev["event"] == "file" {
 		name, _ := ev["path"].(string)
-		return RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"name":"f-x-t1-` + name + `","size":1,"sha256":"ab"}`)}, nil
+		return hublink.RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"name":"f-x-t1-` + name + `","size":1,"sha256":"ab"}`)}, nil
 	}
-	return RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"applied":true}`)}, nil
+	return hublink.RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"applied":true}`)}, nil
 }
 
-func (h *taskHub) setAnswer(f func(ev map[string]any) (RelayResult, error)) {
+func (h *taskHub) setAnswer(f func(ev map[string]any) (hublink.RelayResult, error)) {
 	h.mu.Lock()
 	h.answer = f
 	h.mu.Unlock()
@@ -138,11 +139,11 @@ func TestACapturedTaskSendsItsFilesAndRemovesTheFolderOnlyAfterTheHubTookIt(t *t
 	x.write(t, "RECAP.md", 5)
 	x.write(t, "scratch.tmp", 5)
 	var atAck bool
-	x.hub.setAnswer(func(ev map[string]any) (RelayResult, error) {
+	x.hub.setAnswer(func(ev map[string]any) (hublink.RelayResult, error) {
 		if ev["event"] == "captured" {
 			atAck = !gone(x.folder)
 		}
-		return RelayResult{OK: true}, nil
+		return hublink.RelayResult{OK: true}, nil
 	})
 	x.capture()
 	if got := strings.Join(x.hub.kinds(), ","); got != "capturing,file,file,captured,reaped" {
@@ -172,16 +173,16 @@ func TestAHubDownAtThePostKeepsTheFolderAndSendsWhatIsOwedWhenItIsBack(t *testin
 	x.write(t, "out.txt", 10)
 	var mu sync.Mutex
 	down := false
-	x.hub.setAnswer(func(ev map[string]any) (RelayResult, error) {
+	x.hub.setAnswer(func(ev map[string]any) (hublink.RelayResult, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if ev["event"] == "captured" {
 			down = true
 		}
 		if down {
-			return RelayResult{}, ErrRelayDown
+			return hublink.RelayResult{}, hublink.ErrRelayDown
 		}
-		return RelayResult{OK: true}, nil
+		return hublink.RelayResult{OK: true}, nil
 	})
 	x.capture()
 	if gone(x.folder) {
@@ -281,7 +282,7 @@ func TestATaskLedgerPathOutsideTheCardRootIsNotRemoved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	root, _ := x.d.cardRoot()
+	root, _ := x.d.CardRoot()
 	for _, p := range []string{outside, root} {
 		x.d.reapTaskFolder(store.CardHome{Path: filepath.ToSlash(p), BacklogID: "f-x", TaskID: "t1", Attempt: 1})
 		if gone(p) {

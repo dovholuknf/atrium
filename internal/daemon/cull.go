@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/small"
@@ -62,36 +61,9 @@ const SubagentTag = "atrium:subagent"
 // errCullNewContext is the refusal while a new context is running on the worker.
 var errCullNewContext = errors.New("a new context is running on it, try again")
 
-// DefaultCullInto is the branch a worker's branch has to be merged into.
-const DefaultCullInto = "claude/main"
-
 // briefFile is what atrium writes into a launched worker's directory. Left
 // untracked by design, so it is the one untracked file a cull ignores.
 const briefFile = "BRIEF.md"
-
-// cullGitTimeout bounds each git command a cull runs.
-const cullGitTimeout = 20 * time.Second
-
-// CullResult is what a cull did and did not do. Kept is the reason the
-// worktree or branch is still there, empty when both went.
-type CullResult struct {
-	Card            string `json:"card"`
-	Exited          bool   `json:"exited"`
-	Branch          string `json:"branch,omitempty"`
-	Into            string `json:"into"`
-	Worktree        string `json:"worktree,omitempty"`
-	WorktreeRemoved bool   `json:"worktree_removed"`
-	BranchDeleted   bool   `json:"branch_deleted"`
-	// BytesFreed is what the worktree held on disk, ignored files included, counted only once its path is gone.
-	BytesFreed int64 `json:"bytes_freed"`
-	// BriefRemoved and ScratchRemoved say what became of the BRIEF.md atrium wrote and of a directory that was
-	// not a git worktree. See reclaim.go.
-	BriefRemoved   bool `json:"brief_removed"`
-	ScratchRemoved bool `json:"scratch_removed"`
-	// ScratchDirRemoved is the card's scratch_root folder, removed only when atrium made it.
-	ScratchDirRemoved bool   `json:"scratch_dir_removed,omitempty"`
-	Kept              string `json:"kept,omitempty"`
-}
 
 // Cull asks a merged worker to leave and removes its worktree and branch. See
 // the top of this file for what it refuses.
@@ -145,8 +117,8 @@ func (d *Daemon) cullProved(taskID, into, tip string, idle bool, prior *cullPlan
 	unlock := d.launching.Lock(small.LaunchKeys(taskID, t.ResumeID)...)
 	defer unlock()
 
-	if row, ok := d.homeOf(taskID); ok {
-		return d.cullHome(t, into, row)
+	if row, ok := d.HomeOf(taskID); ok {
+		return d.CullHome(t, into, row)
 	}
 
 	// A directory that is not a git checkout is the scratch directory a launcher made. There is no branch of its
@@ -436,15 +408,6 @@ func isHexSha(s string) bool {
 	return true
 }
 
-// protectedBranch is a branch a cull never deletes, whatever the worktree says.
-func protectedBranch(branch, into string) bool {
-	switch strings.ToLower(branch) {
-	case "main", "master", "claude/main", strings.ToLower(into):
-		return true
-	}
-	return false
-}
-
 // isAncestor is `git merge-base --is-ancestor`, which answers 1 for "no" and
 // anything else for a failure.
 func isAncestor(dir, commit, of string) (bool, error) {
@@ -588,22 +551,4 @@ func errOr(err error, def string) string {
 		return err.Error()
 	}
 	return def
-}
-
-// gitIn runs git in dir and returns its trimmed output, or git's own reason.
-func gitIn(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), cullGitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	nowindow.Hide(cmd)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return "", errors.New(msg)
-	}
-	return strings.TrimSpace(string(out)), nil
 }

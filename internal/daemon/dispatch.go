@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"io"
 	"log"
 	"net/http"
@@ -33,24 +35,7 @@ import (
 // started is kept for the same length only because two rules is worse than one.
 const DispatchKeepSettled = 24 * time.Hour
 
-// dispatchHandout is what a room is told to start, in the reply to its
-// check-in.
-//
-// A SEPARATE SHAPE FROM `store.Dispatch` on purpose. What crosses is an
-// instruction, not a row: no token bookkeeping the room has no use for, no
-// attempt count, and no state, because the only state a room can observe is
-// "you have this now".
-type dispatchHandout struct {
-	ID      string   `json:"id"`
-	Token   string   `json:"token"`
-	Harness string   `json:"harness"`
-	Cwd     string   `json:"cwd,omitempty"`
-	Title   string   `json:"title,omitempty"`
-	Prompt  string   `json:"prompt,omitempty"`
-	Why     string   `json:"why,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Window  string   `json:"window,omitempty"`
-}
+type dispatchHandout = shared.DispatchHandout
 
 // handoutFor is what to send back to a room that just checked in.
 //
@@ -64,7 +49,7 @@ type dispatchHandout struct {
 // queued and the board says why beside the room that is refusing them, which is
 // a state somebody can act on. Handing them over to be bounced would spend the
 // item's two attempts on a machine that was never going to run it.
-func (d *Daemon) handoutFor(rep RoomReport) []dispatchHandout {
+func (d *Daemon) handoutFor(rep hublink.RoomReport) []dispatchHandout {
 	// Any check-in is a chance to take back a claim that went nowhere. No
 	// timer, because the room whose lease needs expiring is by definition the
 	// one that is not checking in, and some other room is.

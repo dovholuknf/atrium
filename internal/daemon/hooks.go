@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
@@ -23,7 +25,7 @@ type hooks struct {
 	preflightHooks
 	hostHooks
 	finishHooks
-	healthHooks
+	roomconf.HealthHooks
 	runnerHooks
 	idleHooks
 	windDownHooks
@@ -95,7 +97,7 @@ func defaultHooks() hooks {
 		preflightHooks:  defaultPreflightHooks(),
 		hostHooks:       defaultHostHooks(),
 		finishHooks:     defaultFinishHooks(),
-		healthHooks:     defaultHealthHooks(),
+		HealthHooks:     roomconf.DefaultHealthHooks(),
 		runnerHooks: runnerHooks{
 			helpRunner:  helpRunner,
 			runnerFound: runnerFound,
@@ -115,13 +117,13 @@ func defaultHooks() hooks {
 			opencodeExec:      opencodeExec,
 			opencodeLookPath:  opencodeLookPath,
 		},
-		procHooks: procHooks{pidAlive: pidAlive, procAncestors: cardproc.Ancestors},
+		procHooks: procHooks{pidAlive: processAlive, procAncestors: cardproc.Ancestors},
 		finishLimitHooks: finishLimitHooks{
 			backoffSteps: append([]time.Duration(nil), backoffSteps...),
 			stuckAfter:   heldStuckAfter,
 			silentNudges: silentNudges,
 			OrphanGrace:  OrphanGrace,
-			RelayKeep:    RelayKeep,
+			RelayKeep:    hublink.RelayKeep,
 			listMax:      pulls.ListMax,
 		},
 		repliesHooks: repliesHooks{

@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,10 +40,10 @@ func homeRepo(t *testing.T) string {
 	return repo
 }
 
-func worktreeHome(t *testing.T, d *Daemon, repo string) (*store.Task, store.CardHome, homeDirs) {
+func worktreeHome(t *testing.T, d *Daemon, repo string) (*store.Task, store.CardHome, home.HomeDirs) {
 	t.Helper()
 	req := shared.LaunchRequest{Repo: repo, Title: "Fix The Thing"}
-	row, dd, err := d.launchHome(store.CardHomeWorktree, &req)
+	row, dd, err := d.LaunchHome(store.CardHomeWorktree, &req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,16 +60,16 @@ func worktreeHome(t *testing.T, d *Daemon, repo string) (*store.Task, store.Card
 
 func TestHomeSlugAndName(t *testing.T) {
 	t.Parallel()
-	if got := homeSlug("Fix: the  THING!!", "w"); got != "fix-the-thing" {
+	if got := home.HomeSlug("Fix: the  THING!!", "w"); got != "fix-the-thing" {
 		t.Fatalf("slug %q", got)
 	}
-	if got := homeSlug("", "Worker_1"); got != "worker-1" {
+	if got := home.HomeSlug("", "Worker_1"); got != "worker-1" {
 		t.Fatalf("wire slug %q", got)
 	}
-	if got := homeSlug("!!!", ""); got != "card" {
+	if got := home.HomeSlug("!!!", ""); got != "card" {
 		t.Fatalf("empty slug %q", got)
 	}
-	if got := homeSlug(strings.Repeat("ab ", 40), ""); len(got) > 40 || strings.HasSuffix(got, "-") {
+	if got := home.HomeSlug(strings.Repeat("ab ", 40), ""); len(got) > 40 || strings.HasSuffix(got, "-") {
 		t.Fatalf("long slug %q", got)
 	}
 }
@@ -81,7 +82,7 @@ func TestACardRootNobodyMayRemoveInIsRefused(t *testing.T) {
 		if err := d.st.SetSetting(cardroot.Setting, bad); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := d.makeHome(store.CardHomeScratch, "t", "w"); err == nil {
+		if _, _, err := d.MakeHome(store.CardHomeScratch, "t", "w"); err == nil {
 			t.Fatalf("a home was made under %s", bad)
 		}
 	}
@@ -90,7 +91,7 @@ func TestACardRootNobodyMayRemoveInIsRefused(t *testing.T) {
 func TestAHomeIsFlatWithARow(t *testing.T) {
 	t.Parallel()
 	d, root := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "Fix The Thing", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "Fix The Thing", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,13 +128,13 @@ func TestARepoLaunchMakesWorkAsAWorktree(t *testing.T) {
 
 func TestCwdWithARepoIsRefused(t *testing.T) {
 	t.Parallel()
-	if err := homeLaunchRefusal(shared.LaunchRequest{Repo: "github.com/o/r"}, "/x"); err == nil {
+	if err := home.HomeLaunchRefusal(shared.LaunchRequest{Repo: "github.com/o/r"}, "/x"); err == nil {
 		t.Fatal("cwd with repo was accepted")
 	}
-	if err := homeLaunchRefusal(shared.LaunchRequest{Repo: "o/r"}, "/x"); err != nil {
+	if err := home.HomeLaunchRefusal(shared.LaunchRequest{Repo: "o/r"}, "/x"); err != nil {
 		t.Fatalf("a label repo with cwd: %v", err)
 	}
-	if err := homeLaunchRefusal(shared.LaunchRequest{}, "/x"); err != nil {
+	if err := home.HomeLaunchRefusal(shared.LaunchRequest{}, "/x"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -141,11 +142,11 @@ func TestCwdWithARepoIsRefused(t *testing.T) {
 func TestTheRunnerSeesItsHomeForTemp(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	_, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	_, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := homeEnv(dd)
+	env := home.HomeEnv(dd)
 	for _, k := range []string{"TMP", "TEMP", "TMPDIR"} {
 		if env[k] != dd.Tmp {
 			t.Fatalf("%s=%q, want %q", k, env[k], dd.Tmp)
@@ -162,7 +163,7 @@ func TestReclaimRemovesACleanLandedHome(t *testing.T) {
 	repo := homeRepo(t)
 	task, row, dd := worktreeHome(t, d, repo)
 
-	removed, kept, _ := d.reclaimHome(task, row, false)
+	removed, kept, _ := d.ReclaimHome(task, row, false)
 	if !removed || kept != "" {
 		t.Fatalf("removed=%v kept=%q", removed, kept)
 	}
@@ -196,7 +197,7 @@ func TestReclaimKeepsADirtyOrUnlandedHomeAndSaysSoOnce(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		got, _, _ := d.st.CardHomeByPath(row.Path)
-		if removed, kept, _ := d.reclaimHome(task, got, false); removed || !strings.Contains(kept, "uncommitted") {
+		if removed, kept, _ := d.ReclaimHome(task, got, false); removed || !strings.Contains(kept, "uncommitted") {
 			t.Fatalf("dirty home: removed=%v kept=%q", removed, kept)
 		}
 	}
@@ -207,7 +208,7 @@ func TestReclaimKeepsADirtyOrUnlandedHomeAndSaysSoOnce(t *testing.T) {
 	cullGit(t, dd.Work, "add", "wip.txt")
 	cullGit(t, dd.Work, "commit", "-q", "-m", "wip")
 	got, _, _ := d.st.CardHomeByPath(row.Path)
-	if removed, kept, _ := d.reclaimHome(task, got, false); removed || !strings.Contains(kept, "not landed") {
+	if removed, kept, _ := d.ReclaimHome(task, got, false); removed || !strings.Contains(kept, "not landed") {
 		t.Fatalf("unlanded home: removed=%v kept=%q", removed, kept)
 	}
 	if _, err := os.Stat(filepath.Join(dd.Work, "wip.txt")); err != nil {
@@ -216,7 +217,7 @@ func TestReclaimKeepsADirtyOrUnlandedHomeAndSaysSoOnce(t *testing.T) {
 
 	cullGit(t, repo, "branch", "-f", "claude/main", "claude/fix-the-thing")
 	got, _, _ = d.st.CardHomeByPath(row.Path)
-	if removed, kept, _ := d.reclaimHome(task, got, false); !removed {
+	if removed, kept, _ := d.ReclaimHome(task, got, false); !removed {
 		t.Fatalf("a landed home was kept: %q", kept)
 	}
 }
@@ -226,10 +227,10 @@ func TestACardWithNoHomeIsNeverTouched(t *testing.T) {
 	d, _ := homeRoom(t)
 	dir := t.TempDir()
 	task := cullCard(t, d, dir)
-	if _, ok := d.homeOf(task.ID); ok {
+	if _, ok := d.HomeOf(task.ID); ok {
 		t.Fatal("a card with no row has a home")
 	}
-	if err := d.sweepHomes(); err != nil {
+	if err := d.SweepHomes(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(dir); err != nil {
@@ -248,7 +249,7 @@ func TestAHomeOutsideTheRootIsNotRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if removed, _, _ := d.reclaimHome(nil, row, true); removed {
+	if removed, _, _ := d.ReclaimHome(nil, row, true); removed {
 		t.Fatal("a folder outside the card root was removed")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "keep.txt")); err != nil {
@@ -259,7 +260,7 @@ func TestAHomeOutsideTheRootIsNotRemoved(t *testing.T) {
 func TestRemovalDoesNotFollowALink(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +271,7 @@ func TestRemovalDoesNotFollowALink(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(dd.Work, "link")); err != nil {
 		t.Skipf("no links here: %v", err)
 	}
-	if removed, kept, _ := d.reclaimHome(nil, row, false); !removed {
+	if removed, kept, _ := d.ReclaimHome(nil, row, false); !removed {
 		t.Fatalf("kept: %q", kept)
 	}
 	if _, err := os.Stat(filepath.Join(target, "precious.txt")); err != nil {
@@ -281,10 +282,10 @@ func TestRemovalDoesNotFollowALink(t *testing.T) {
 	}
 }
 
-func aHomeThrowaway(t *testing.T, d *Daemon) (*store.Task, store.CardHome, homeDirs) {
+func aHomeThrowaway(t *testing.T, d *Daemon) (*store.Task, store.CardHome, home.HomeDirs) {
 	t.Helper()
 	req := shared.LaunchRequest{Title: "tryout", Throwaway: true}
-	row, dd, err := d.launchHome(store.CardHomeThrowaway, &req)
+	row, dd, err := d.LaunchHome(store.CardHomeThrowaway, &req)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -76,7 +77,7 @@ func newFakeIDP(t *testing.T) *fakeIDP {
 		// carried, and a provider that skips this check is a provider that
 		// would let atrium ship PKCE that does nothing.
 		got := r.PostForm.Get("code_verifier")
-		if want != "" && (got == "" || pkceChallenge(got) != want) {
+		if want != "" && (got == "" || publish.PkceChallenge(got) != want) {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":` +
 				`"the code_verifier does not match the code_challenge"}`))
@@ -104,7 +105,7 @@ func newFakeIDP(t *testing.T) *fakeIDP {
 func (idp *fakeIDP) on(t *testing.T) *Daemon {
 	t.Helper()
 	d := testDaemon(t)
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: idp.srv.URL, ClientID: "atrium",
 		Redirect: "https://board.example/auth/callback",
 		Allow:    []string{idp.email},
@@ -119,7 +120,7 @@ func (idp *fakeIDP) on(t *testing.T) *Daemon {
 func authorizeOf(t *testing.T, d *Daemon, path string) url.Values {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	if rec.Code != http.StatusFound {
 		t.Fatalf("%s answered %d (%s), wanted a redirect", path, rec.Code, rec.Body.String())
 	}
@@ -129,7 +130,7 @@ func authorizeOf(t *testing.T, d *Daemon, path string) url.Values {
 	}
 	// One hop through atrium's own endpoint, since the guard sends a browser
 	// to renew rather than straight out to the provider.
-	if strings.HasPrefix(u.Path, authPrefix) {
+	if strings.HasPrefix(u.Path, publish.AuthPrefix) {
 		return authorizeOf(t, d, u.RequestURI())
 	}
 	return u.Query()
@@ -170,16 +171,16 @@ func TestTheVerifierNeverGoesToTheBrowser(t *testing.T) {
 	d := idp.on(t)
 
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, authPrefix+"login", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, publish.AuthPrefix+"login", nil))
 	sent := rec.Header().Get("Location") + " " + rec.Body.String()
 
-	d.logins.Lock()
+	d.Logins.Lock()
 	var verifier string
-	for _, l := range d.logins.at {
-		verifier = l.verifier
+	for _, l := range d.Logins.At {
+		verifier = l.Verifier
 	}
-	d.logins.Unlock()
+	d.Logins.Unlock()
 	if verifier == "" {
 		t.Fatal("no login was recorded, so this test proves nothing")
 	}
@@ -206,8 +207,8 @@ func TestASignInSpendsItsCodeWithTheVerifier(t *testing.T) {
 	idp.mu.Unlock()
 
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
-		authPrefix+"callback?state="+url.QueryEscape(q.Get("state"))+"&code=a-code", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		publish.AuthPrefix+"callback?state="+url.QueryEscape(q.Get("state"))+"&code=a-code", nil))
 	if rec.Code != http.StatusFound {
 		t.Fatalf("the callback answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -219,25 +220,25 @@ func TestASignInSpendsItsCodeWithTheVerifier(t *testing.T) {
 		t.Fatal("the token exchange carried no code_verifier, so a stolen code is " +
 			"spendable by whoever stole it")
 	}
-	if pkceChallenge(form.Get("code_verifier")) != q.Get("code_challenge") {
+	if publish.PkceChallenge(form.Get("code_verifier")) != q.Get("code_challenge") {
 		t.Fatal("the verifier sent does not match the challenge shown")
 	}
 
 	// And what came back is a session this board will accept.
-	key, err := d.cookieKey()
+	key, err := d.CookieKey()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var cookie string
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == authCookie {
+		if c.Name == publish.AuthCookie {
 			cookie = c.Value
 		}
 	}
 	if cookie == "" {
 		t.Fatal("a completed sign-in set no session cookie")
 	}
-	if sub, ok := readSession(key, cookie); !ok || sub.Subject != idp.sub {
+	if sub, ok := publish.ReadSession(key, cookie); !ok || sub.Subject != idp.sub {
 		t.Fatalf("the session says %q, ok=%v", sub.Subject, ok)
 	}
 	// And it puts somebody back where they were rather than on the front page.
@@ -263,8 +264,8 @@ func TestARenewalAsksTheProviderSilently(t *testing.T) {
 	// A sign-in asked for on purpose is not silent, or nobody could ever get
 	// past a provider that has forgotten them.
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, authPrefix+"login", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, publish.AuthPrefix+"login", nil))
 	u, err := url.Parse(rec.Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
@@ -287,15 +288,15 @@ func TestADeclinedRenewalEndsAtALoginAndNotAnError(t *testing.T) {
 	q := authorizeOf(t, d, "/?card=7")
 
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
-		authPrefix+"callback?error=login_required&state="+
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		publish.AuthPrefix+"callback?error=login_required&state="+
 			url.QueryEscape(q.Get("state")), nil))
 	if rec.Code != http.StatusFound {
 		t.Fatalf("a declined renewal answered %d (%s), wanted somebody to be sent to "+
 			"sign in", rec.Code, rec.Body.String())
 	}
 	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, authPrefix+"login") {
+	if !strings.HasPrefix(loc, publish.AuthPrefix+"login") {
 		t.Fatalf("a declined renewal sent the browser to %q", loc)
 	}
 	// And it remembers where they were going, or renewing costs somebody their
@@ -314,16 +315,16 @@ func TestARefusedSignInIsStillReported(t *testing.T) {
 	d := idp.on(t)
 
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, authPrefix+"login", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, publish.AuthPrefix+"login", nil))
 	u, err := url.Parse(rec.Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rec = httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
-		authPrefix+"callback?error=unauthorized_client&state="+
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		publish.AuthPrefix+"callback?error=unauthorized_client&state="+
 			url.QueryEscape(u.Query().Get("state")), nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("a refused sign-in answered %d, wanted the provider's refusal said "+
@@ -342,8 +343,8 @@ func TestAnErrorWithAnUnknownStateIsRefused(t *testing.T) {
 	idp := newFakeIDP(t)
 	d := idp.on(t)
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
-		authPrefix+"callback?error=login_required&state=never-issued", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		publish.AuthPrefix+"callback?error=login_required&state=never-issued", nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("a callback with a state nobody issued answered %d", rec.Code)
 	}
@@ -373,14 +374,14 @@ func TestATokenSignedBySomebodyElseIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disc, err := d.discovered.discoverFor(t.Context(), idp.srv.URL)
+	disc, err := d.Discovered.DiscoverFor(t.Context(), idp.srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := d.claimsOf(t.Context(), disc, d.authConfig(), signed); err == nil {
+	if _, _, err := d.ClaimsOf(t.Context(), disc, d.AuthConfig(), signed); err == nil {
 		t.Fatal("a token signed with a key the provider does not publish was accepted")
 	}
-	d.logins.takeLogin(q.Get("state"))
+	d.Logins.TakeLogin(q.Get("state"))
 }
 
 // A sanity check on the fake, so a green suite above means what it says. If the
@@ -389,7 +390,7 @@ func TestATokenSignedBySomebodyElseIsRefused(t *testing.T) {
 func TestTheFakeProviderRefusesAnExchangeWithoutTheVerifier(t *testing.T) {
 	t.Parallel()
 	idp := newFakeIDP(t)
-	idp.challenge = pkceChallenge("a-verifier-atrium-does-not-have")
+	idp.challenge = publish.PkceChallenge("a-verifier-atrium-does-not-have")
 
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {"a-code"}}
 	res, err := http.PostForm(idp.srv.URL+"/token", form)
@@ -408,10 +409,10 @@ func TestTheFakeProviderRefusesAnExchangeWithoutTheVerifier(t *testing.T) {
 func TestTheChallengeIsTheHashOfTheVerifier(t *testing.T) {
 	t.Parallel()
 	sum := sha256.Sum256([]byte("a-verifier"))
-	if got := pkceChallenge("a-verifier"); got != base64.RawURLEncoding.EncodeToString(sum[:]) {
+	if got := publish.PkceChallenge("a-verifier"); got != base64.RawURLEncoding.EncodeToString(sum[:]) {
 		t.Fatalf("the challenge is %q, which is not the base64url sha256 of the verifier", got)
 	}
-	if strings.ContainsAny(pkceChallenge("a-verifier"), "+/=") {
+	if strings.ContainsAny(publish.PkceChallenge("a-verifier"), "+/=") {
 		t.Fatal("the challenge is standard base64, which a provider will reject")
 	}
 }

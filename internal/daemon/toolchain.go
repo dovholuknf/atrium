@@ -54,7 +54,7 @@ func (d *Daemon) toolNotFound(taskID, tool string) {
 		return
 	}
 	log.Printf("[atrium] room misconfigured: %s found no %s on its PATH", taskID, tool)
-	d.publishHealth()
+	d.PublishHealth()
 }
 
 // toolchainMissing is each tool the work in cwd needs that the env's PATH does not hold. checked is false when cwd
@@ -116,7 +116,7 @@ func (d *Daemon) checkToolchain(taskID, cwd string, env []string) {
 		log.Printf("[atrium] room misconfigured: %s launched without %s on its PATH", taskID, strings.Join(missing, ", "))
 	}
 	if changed {
-		d.publishHealth()
+		d.PublishHealth()
 	}
 }
 

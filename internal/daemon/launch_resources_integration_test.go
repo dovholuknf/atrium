@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +58,7 @@ func TestASessionStartIsToldTheRoomLinesAndAHubRoomIsNotToldGh(t *testing.T) {
 			t.Fatalf("roomLines lacks %q: %q", want, got)
 		}
 	}
-	if strings.Contains(d.roomLines(&store.Task{Tags: []string{OutsideCodeTag}}), "atrium_git_url") {
+	if strings.Contains(d.roomLines(&store.Task{Tags: []string{home.OutsideCodeTag}}), "atrium_git_url") {
 		t.Fatal("an outside-code card was told atrium_git_url")
 	}
 	d.SetHubForge(&forge.Remote{})

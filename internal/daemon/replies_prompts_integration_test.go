@@ -50,6 +50,8 @@ func TestRepliesCarryThePromptsFromEverySource(t *testing.T) {
 		textBlock("<system-reminder>injected</system-reminder>")}, human)
 
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+
+	d.initServices()
 	v, err := d.repliesFor(f.task.ID, 10)
 	if err != nil {
 		t.Fatal(err)

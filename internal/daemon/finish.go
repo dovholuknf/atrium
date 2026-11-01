@@ -217,7 +217,7 @@ var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 	defer cancel()
 	// ANY BRANCH OF ANY REPOSITORY THE HUB HAS, whatever the worker's directory is. Naming the repository from the
 	// directory missed every worker whose directory is not a clone the room can name. See gitsync/lookup_commit.go.
-	if rt, err := d.hubTransport(); err == nil {
+	if rt, err := d.HubTransport(); err == nil {
 		if ans, err := gitsync.AskHubLookup(ctx, rt, gitsync.URLQuery{Commit: sha}); err == nil {
 			if ans.State == gitsync.URLFound {
 				return true
@@ -225,11 +225,11 @@ var commitOnHub = func(d hubAsker, task *store.Task, sha string) bool {
 		}
 	}
 	dir := filepath.FromSlash(task.Worktree)
-	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.cloneRoots()...)
+	repo := gitsync.HubNameOf(ctx, gitsync.Default, dir, d.CloneRoots()...)
 	if repo == "" {
 		return false
 	}
-	rt, err := d.hubTransport()
+	rt, err := d.HubTransport()
 	if err != nil {
 		return false
 	}
@@ -460,7 +460,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	} else if !in.viaSay && itemEnd == nil {
 		// A launcher on another room hears it the same way, held in the relay
 		// outbox inside the same transaction. See relay.go.
-		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
+		write.Relay = d.LauncherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
 	// A REPORT TO A PARKED LAUNCHER RESUMES IT, as if wake=true: the launcher is
 	// the one who has to act on it, and a report nobody reads is the failure
@@ -478,7 +478,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		return nil, http.StatusInternalServerError, err
 	}
 	if res.Relayed {
-		d.kickRelays()
+		d.KickRelays()
 	}
 	if itemEnd != nil && itemEnd.changed && in.Status == ReportDone && itemEnd.item.Pool != "" && strings.TrimSpace(in.Learned) != "" {
 		d.appendLearned(task, itemEnd.item, in.Learned)
@@ -536,7 +536,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		if recap != "" {
 			finishLine += " with a recap"
 		}
-		d.emitLifecycle("session-finish", finishLine)
+		d.EmitLifecycle("session-finish", finishLine)
 	}
 
 	log.Printf("[atrium] %s reports %s%s", task.DisplayTitle(), map[bool]string{true: in.Status, false: "done"}[in.Status != ""],
@@ -637,8 +637,8 @@ type finishHooks struct {
 
 // hubAsker is the part of the daemon commitOnHub asks the hub through.
 type hubAsker interface {
-	hubTransport() (http.RoundTripper, error)
-	cloneRoots() []string
+	HubTransport() (http.RoundTripper, error)
+	CloneRoots() []string
 }
 
 func defaultFinishHooks() finishHooks {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"net/http"
 	"os"
@@ -143,7 +144,7 @@ func (d *Daemon) moveFreeze(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 		return
 	}
 	d.Publish(t.ID)
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "freeze": f})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "freeze": f})
 }
 
 func (d *Daemon) moveRenew(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
@@ -155,7 +156,7 @@ func (d *Daemon) moveRenew(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		moveRefusal(w, err)
 		return
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // moveGitArgs keeps atrium's own files out of the clean-tree question, and out of a wip commit.
@@ -206,7 +207,7 @@ func (d *Daemon) moveCheck(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 			}
 		}
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": len(fails) == 0, "failures": fails, "wip": wip})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": len(fails) == 0, "failures": fails, "wip": wip})
 }
 
 // moveCapture writes the card's handoff and answers when it is written. It is the idle handoff's capture, run
@@ -220,7 +221,7 @@ func (d *Daemon) moveCapture(w http.ResponseWriter, _ *http.Request, in *moveAsk
 	if d.sup.Get(t.ID) == nil {
 		// Parked or gone: nothing to type into. A handoff already in the cwd stays the read-me.
 		_, err := os.Stat(filepath.Join(t.Worktree, file))
-		writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file, "skipped": "no runner", "exists": err == nil})
+		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file, "skipped": "no runner", "exists": err == nil})
 		return
 	}
 	gen, ok := d.nctx.beginCaptureOnly(t.ID, file, d.conversationOf(t))
@@ -235,7 +236,7 @@ func (d *Daemon) moveCapture(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		small.WriteJSONErr(w, http.StatusBadGateway, fmt.Errorf("capture failed at %s: %w", step, err))
 		return
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file})
 }
 
 func readCapped(path string, budget *int64) ([]byte, error) {
@@ -313,7 +314,7 @@ func (d *Daemon) moveBundle(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 		}
 	}
 	sort.Slice(b.Files, func(i, j int) bool { return b.Files[i].Name < b.Files[j].Name })
-	writeJSONCode(w, http.StatusOK, b)
+	hublink.WriteJSONCode(w, http.StatusOK, b)
 }
 
 // movePark parks the old runner as an idle park does: it exits, and the card stays, frozen and resumable.
@@ -327,7 +328,7 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		return
 	}
 	if small.IsParked(t) && d.sup.Get(t.ID) == nil {
-		writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
+		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
 		return
 	}
 	was := t.Status
@@ -351,7 +352,7 @@ func (d *Daemon) movePark(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "parked": true})
 }
 
 // moveMoved sets `moved_to`, the cut-over. After the lease it is refused.
@@ -361,7 +362,7 @@ func (d *Daemon) moveMoved(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		return
 	}
 	if t.MovedTo != "" && t.MovedTo == in.To {
-		writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "moved_to": t.MovedTo})
+		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "moved_to": t.MovedTo})
 		return
 	}
 	if _, _, ok := splitMovedTo(in.To); !ok {
@@ -373,7 +374,7 @@ func (d *Daemon) moveMoved(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		return
 	}
 	d.Publish(t.ID)
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "moved_to": in.To})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "moved_to": in.To})
 }
 
 func (d *Daemon) moveQueue(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
@@ -389,7 +390,7 @@ func (d *Daemon) moveQueue(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 	if q == nil {
 		q = []store.FrozenMessage{}
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "queue": q})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "queue": q})
 }
 
 func (d *Daemon) moveAck(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
@@ -401,7 +402,7 @@ func (d *Daemon) moveAck(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // moveRelease closes the old card: its alias is released with a note, it is marked done, and the freeze ends once
@@ -439,7 +440,7 @@ func (d *Daemon) moveRelease(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		return
 	}
 	d.Publish(t.ID)
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // moveUndo leaves the card as it was: resumed, unfrozen, its queue replayed in order. Refused once it has moved.
@@ -456,7 +457,7 @@ func (d *Daemon) moveUndo(w http.ResponseWriter, _ *http.Request, in *moveAsk) {
 		moveRefusal(w, err)
 		return
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // undoCard resumes a parked card and ends its freeze with the queue replayed. The lease sweep uses it as well.
@@ -536,7 +537,7 @@ func (d *Daemon) moveReceive(w http.ResponseWriter, _ *http.Request, in *moveAsk
 		}
 		wrote++
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true, "wrote": wrote})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "wrote": wrote})
 }
 
 // moveDeliver is B taking one forwarded message by id. A repeat is answered `acked` and not delivered again.
@@ -555,7 +556,7 @@ func (d *Daemon) moveDeliver(w http.ResponseWriter, r *http.Request, in *moveAsk
 		return
 	}
 	if !fresh {
-		writeJSONCode(w, http.StatusOK, map[string]any{"acked": true, "msg_id": in.MsgID, "duplicate": true})
+		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"acked": true, "msg_id": in.MsgID, "duplicate": true})
 		return
 	}
 	from := strings.TrimSpace(in.From)
@@ -574,14 +575,14 @@ func (d *Daemon) moveDeliver(w http.ResponseWriter, r *http.Request, in *moveAsk
 		return
 	}
 	inner.SetPathValue("id", t.ID)
-	rec := &answerRecorder{code: http.StatusOK}
+	rec := &hublink.AnswerRecorder{Code: http.StatusOK}
 	d.handleMessage(rec, inner)
-	if rec.code >= 400 {
+	if rec.Code >= 400 {
 		_ = d.st.ForgetMove(in.MsgID)
-		writeJSONCode(w, rec.code, map[string]any{"error": strings.TrimSpace(rec.body.String())})
+		hublink.WriteJSONCode(w, rec.Code, map[string]any{"error": strings.TrimSpace(rec.Body.String())})
 		return
 	}
-	writeJSONCode(w, http.StatusOK, map[string]any{"acked": true, "msg_id": in.MsgID})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"acked": true, "msg_id": in.MsgID})
 }
 
 // moveAdopt is the cut-over note to the successor: it takes the alias, the pin and the gate settings.
@@ -611,5 +612,5 @@ func (d *Daemon) moveAdopt(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		return
 	}
 	d.Publish(t.ID)
-	writeJSONCode(w, http.StatusOK, map[string]any{"ok": true})
+	hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true})
 }

@@ -241,6 +241,7 @@ func TestTheRecordSitsBesideTheDatabase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	d := &Daemon{hk: *testHooks(), opts: Options{DBPath: filepath.ToSlash(filepath.Join(dir, "a.db"))}}
+	d.initServices()
 	if filepath.Dir(d.reopenPath()) != dir {
 		t.Fatalf("the record went to %q, outside the database's directory", d.reopenPath())
 	}
