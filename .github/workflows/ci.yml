@@ -369,6 +369,8 @@ jobs:
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         continue-on-error: true
+        # An unreachable hub must not hold the run open: the action has no timeout of its own.
+        timeout-minutes: 2
         with:
           transport: ziti
           url: http://ziti-hook.ziti/
