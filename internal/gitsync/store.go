@@ -121,7 +121,14 @@ func (s *Store) Root() string {
 }
 
 func (s *Store) dir(ref Ref) string {
-	return filepath.Join(s.Root(), ref.Host, ref.Owner, ref.Repo+".git")
+	root := s.Root()
+	p := filepath.Clean(filepath.Join(root, ref.Host, ref.Owner, ref.Repo+".git"))
+	// A ref that was not made by ParseName lands on a path that holds nothing, never outside the store.
+	if !strings.HasPrefix(p, root+string(filepath.Separator)) || strings.Contains(ref.Host+ref.Owner+ref.Repo, "..") ||
+		ref.Host == "" || ref.Owner == "" || ref.Repo == "" {
+		return filepath.Join(root, "refused.git")
+	}
+	return p
 }
 
 // Path is the bare repository's directory for a name, whether or not it exists. It is for the

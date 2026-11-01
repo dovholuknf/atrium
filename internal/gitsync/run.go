@@ -246,7 +246,14 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 // hardening flags, the clean environment, and prepareTree, which on Windows also keeps it
 // from opening a console window.
 func gitCommand(ctx context.Context, dir string, extraEnv, args []string) *exec.Cmd {
-	full := append(append([]string{}, hardening...), args...)
+	full := append([]string{}, hardening...)
+	for _, a := range args {
+		// A NUL or a line break is never part of an argument git is given here, and is dropped.
+		if strings.ContainsAny(a, "\x00\r\n") {
+			a = strings.NewReplacer("\x00", "", "\r", "", "\n", "").Replace(a)
+		}
+		full = append(full, a)
+	}
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = dir
 	cmd.Env = CleanEnv(extraEnv...)

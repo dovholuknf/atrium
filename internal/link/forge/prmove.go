@@ -143,7 +143,8 @@ func (p *Service) copyReview(ctx context.Context, key, from, to string) (oldID, 
 	if oldID == "" {
 		return "", "", &moveError{http.StatusBadGateway, from + " exported a review and did not say which row it is"}
 	}
-	imp, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+wire.HostFor(to)+"/v1/prs/import", res.Body)
+	toHost, _ := p.attachedHost(to)
+	imp, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+toHost+"/v1/prs/import", res.Body)
 	if err != nil {
 		return "", "", err
 	}
@@ -170,6 +171,16 @@ func (p *Service) copyReview(ctx context.Context, key, from, to string) (oldID, 
 	return oldID, got.PR.ID, nil
 }
 
+// attachedHost is the host of an attached room, built from the hub's own record of its name and never the caller's.
+func (p *Service) attachedHost(room string) (string, bool) {
+	for _, a := range p.Rooms() {
+		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
+			return wire.HostFor(a.Name), true
+		}
+	}
+	return "", false
+}
+
 // roomSentence is the error a room answered with, or its status.
 func roomSentence(res *http.Response) string {
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<16))
@@ -184,7 +195,8 @@ func roomSentence(res *http.Response) string {
 
 // roomJSON is one JSON call to a room's human listener. A non-2xx is an error carrying the room's sentence.
 func (p *Service) roomJSON(ctx context.Context, room, method, path string, in, out any) error {
-	if !p.Has(room) {
+	host, ok := p.attachedHost(room)
+	if !ok {
 		return errors.New("no such room attached: " + room)
 	}
 	var body io.Reader
@@ -194,7 +206,7 @@ func (p *Service) roomJSON(ctx context.Context, room, method, path string, in, o
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, method, "http://"+wire.HostFor(room)+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, "http://"+host+path, body)
 	if err != nil {
 		return err
 	}
