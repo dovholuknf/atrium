@@ -117,6 +117,9 @@ func (p *Service) MovePRClaimWith(ctx context.Context, key, to, walker string) (
 // copyReview pipes the old room's export into the new room's import. newID is empty, and nothing was made, when the
 // old room has no review of the key.
 func (p *Service) copyReview(ctx context.Context, key, from, to string) (oldID, newID string, err error) {
+	if !p.Has(from) || !p.Has(to) {
+		return "", "", &moveError{http.StatusConflict, "no such room attached: " + from + " or " + to}
+	}
 	exp, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"http://"+wire.HostFor(from)+"/v1/prs/export?key="+url.QueryEscape(key), nil)
 	if err != nil {
@@ -181,6 +184,9 @@ func roomSentence(res *http.Response) string {
 
 // roomJSON is one JSON call to a room's human listener. A non-2xx is an error carrying the room's sentence.
 func (p *Service) roomJSON(ctx context.Context, room, method, path string, in, out any) error {
+	if !p.Has(room) {
+		return errors.New("no such room attached: " + room)
+	}
 	var body io.Reader
 	if in != nil {
 		raw, _ := json.Marshal(in)
