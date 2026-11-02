@@ -1,1 +1,0 @@
-A path in a terminal now opens when it is under the card root, any card's directory, a repository clone or the worktree root, or under a folder in the new `open_paths` setting. Anything else still says "outside this card". Item open-paths-allowlist.

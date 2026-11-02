@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // The pipe's DACL is asserted by reading it back off the live pipe, not by trying a second account: exactly one
@@ -16,14 +18,11 @@ func TestPipeDACLGrantsTheCurrentUserOnly(t *testing.T) {
 	p, _ := windows.UTF16PtrFromString(addr)
 	var h windows.Handle
 	var err error
-	for i := 0; i < 100; i++ {
+	testwait.PollEvery(20*time.Millisecond, 2*time.Second, func() bool {
 		h, err = windows.CreateFile(p, windows.READ_CONTROL|windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil,
 			windows.OPEN_EXISTING, 0, 0)
-		if err != windows.ERROR_PIPE_BUSY {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return err != windows.ERROR_PIPE_BUSY
+	})
 	if err != nil {
 		t.Fatalf("open the pipe: %v", err)
 	}

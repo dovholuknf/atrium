@@ -114,6 +114,18 @@ const still = async (read, ms = 3000) => {
   return a;
 };
 
+// Waits out every finite animation and transition on the page: the settle after an action, read from the page itself.
+const calm = page => until(() => page.evaluate(() => document.getAnimations()
+  .every(a => a.playState !== "running" || a.effect.getComputedTiming().iterations === Infinity)), v => v);
+
+// Waits for a mouse resting on a terminal row to have warmed its card (js/terminal-list.js), so a count from here sees no late fetch.
+const rested = (page, id) => until(() => page.evaluate(id => {
+  const row = id && document.querySelector('#term-list .card.tab[data-id="' + id + '"]:not(.cold)');
+  if (typeof prewarmed === "undefined" || !row || row.offsetParent === null) return true;
+  const w = prewarmed.get(id);
+  return !!w && Date.now() - w.at < PREWARM_FRESH_MS && prewarmFlying === 0;
+}, id), v => v, 1000);
+
 // ── what each tab is, to the steps ──────────────────────────────────────────
 // `rows` are the cards a person would click, `chip` the one step 4 presses and what its count must read.
 const TABS = {
@@ -146,8 +158,8 @@ const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
 // One finger or one mouse, whichever the width calls for.
 function pointer(page, mobile) {
   return {
-    async click(x, y) { if (mobile) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(250); },
-    async clickOn(loc, position) { if (mobile) await loc.tap({ position }); else await loc.click({ position }); await sleep(250); }
+    async click(x, y) { if (mobile) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await calm(page); },
+    async clickOn(loc, position) { if (mobile) await loc.tap({ position }); else await loc.click({ position }); await calm(page); }
   };
 }
 
@@ -220,7 +232,11 @@ async function open(browser, width, mobile) {
 
 async function goto(page, view) {
   await page.evaluate(v => switchView(v), view);
-  await sleep(700);
+  await until(() => page.evaluate(([v, rows]) => {
+    const h = [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0];
+    return !!h && h.dataset.tab === v && document.querySelectorAll(rows).length > 0;
+  }, [view, TABS[view].rows]), v => v);
+  await calm(page);
 }
 
 // The point on the line that is not the search box: the line's own padding at the left on a desktop, where the summary
@@ -292,7 +308,7 @@ async function steps(browser, width, mobile, tabName) {
   s = await state(page);
   check(s && s.activeIsQ && !s.open, `${tag} 2: ctrl-/ puts focus in the search box and leaves the drawer shut (${s && s.active})`);
   await page.keyboard.type("alpha");
-  await sleep(300);
+  await until(() => page.$$eval(T.rows, e => e.length), n => n > 0 && n < before);
   const after = await page.$$eval(T.rows, e => e.length);
   check(after > 0 && after < before, `${tag} 2: typing narrows the list (${before} -> ${after})`);
   s = await state(page);
@@ -305,7 +321,7 @@ async function steps(browser, width, mobile, tabName) {
   await page.keyboard.press("Escape");
   s = await state(page);
   check(!s.activeIsQ, `${tag} 2: a second Esc leaves the box`);
-  await sleep(300);
+  await until(() => page.$$eval(T.rows, e => e.length), n => n === before);
   check((await page.$$eval(T.rows, e => e.length)) === before, `${tag} 2: the list is whole again (${before})`);
 
   // 3: a click on the line opens it, over the list ---------------------------------------------------------
@@ -317,7 +333,7 @@ async function steps(browser, width, mobile, tabName) {
   s = await until(() => state(page), x => x && x.open && x.panelVisible && !x.inert && x.panel.y >= x.line.b - 2);
   check(s && s.open && s.panelVisible && !s.inert, `${tag} 3: a click on the line opens the drawer`);
   check(s && s.panel.y >= s.line.b - 2, `${tag} 3: it hangs under the line`);
-  await sleep(300);   // the accordion's slide
+  await calm(page);
   s = await state(page);
   const geoOpen = await geometry(page, listBox);
   if (T.view === "terms") check(geoBefore === geoOpen, `${tag} 3: the list's box did not move or resize (${geoBefore} / ${geoOpen})`);
@@ -363,10 +379,10 @@ async function steps(browser, width, mobile, tabName) {
   check(!!target, `${tag} 5: there is a card below the drawer to click`);
   if (target) {
     // A mouse resting on a terminal row warms its card with a fetch (js/terminal-list.js), so rest first and count from there.
-    if (!mobile) { await page.mouse.move(target.x, target.y); await sleep(400); }
+    if (!mobile) { await page.mouse.move(target.x, target.y); await rested(page, target.id); }
     cardGets = [];
     await mouse.click(target.x, target.y);
-    s = await state(page);
+    s = await until(() => state(page), x => x && !x.open);
     check(s && !s.open, `${tag} 5: the click outside closes the drawer`);
     const opened = () => page.evaluate(() => !!document.querySelector("dialog[open]") || (typeof termTask !== "undefined" && !!termTask));
     check(cardGets.length === 0 && !(await opened()), `${tag} 5: and the card did not open (fetched: ${cardGets.join(",") || "nothing"})`);
@@ -378,11 +394,11 @@ async function steps(browser, width, mobile, tabName) {
   await focusSomething(page);
   p = await linePoint(page);
   await mouse.click(p.x, p.y);
-  s = await state(page);
+  s = await until(() => state(page), x => x && x.open);
   check(s && s.open, `${tag} 6: opened again`);
   await page.keyboard.press("Escape");
-  await sleep(200);
-  s = await state(page);
+  s = await until(() => state(page), x => x && !x.open);
+  await calm(page);
   check(s && !s.open, `${tag} 6: Esc closes it`);
   check(await page.evaluate(() => !!(document.activeElement && document.activeElement.dataset.checkFocus)), `${tag} 6: and focus is back where it was (${s && s.active})`);
 
@@ -411,7 +427,7 @@ async function steps(browser, width, mobile, tabName) {
     // The row is found when the click happens: a stored point goes stale when the accordion or a chip re-lays the page out.
     const row = control.id ? page.locator("[data-id=\"" + control.id + "\"]:visible").first() : null;
     const at = { x: control.dx, y: control.dy };
-    if (!mobile) { if (row) await row.hover({ position: at }); else await page.mouse.move(control.x, control.y); await sleep(400); }
+    if (!mobile) { if (row) await row.hover({ position: at }); else await page.mouse.move(control.x, control.y); await rested(page, control.id); }
     cardGets = [];
     seen = [];
     if (row) await mouse.clickOn(row, at); else await mouse.click(control.x, control.y);
@@ -483,8 +499,7 @@ async function keeps(browser, width, mobile) {
   check(JSON.stringify(again) === JSON.stringify(got), `${tag} 7: a switch from tab to tab changes none of them`);
   await page.reload();
   await page.waitForFunction(() => typeof switchView === "function" && document.querySelectorAll(".card, .stackrow").length > 0, null, { timeout: 15000 });
-  await sleep(500);
-  const reloaded = await read();
+  const reloaded = await until(read, v => JSON.stringify(v) === JSON.stringify(got));
   check(JSON.stringify(reloaded) === JSON.stringify(got), `${tag} 7: a reload keeps them (${JSON.stringify(reloaded)})`);
   const nOpen = await page.evaluate(() => document.querySelectorAll(".fdrawer.open").length);
   check(nOpen === 0, `${tag} 7: and the drawer is shut again after it`);
@@ -617,7 +632,8 @@ async function touch(browser, tabName) {
   await send("touchStart", qx, qy);
   await sleep(40);
   await send("touchEnd");
-  await sleep(300);
+  await until(() => state(page), x => x && x.activeIsQ);
+  await calm(page);
   s = await state(page);
   check(s && s.activeIsQ && !s.open, `${tag} 8: a tap on the search box focuses it and does not open the drawer`);
   onFail = null;
@@ -633,7 +649,7 @@ async function swallowEdges(browser) {
     const tag = "1280px terms";
     const { ctx, page } = await open(browser, 1280, false);
     await goto(page, "terms");
-    const openIt = async () => { const p = await linePoint(page); await page.mouse.click(p.x, p.y); await sleep(250); };
+    const openIt = async () => { const p = await linePoint(page); await page.mouse.click(p.x, p.y); await until(() => state(page), x => x && x.open); };
     await openIt();
     let s = await state(page);
     check(s && s.open, `${tag} 3b: the drawer is open before the right-click`);
@@ -646,32 +662,31 @@ async function swallowEdges(browser) {
     check(!!row, `${tag} 3b: there is a row below the drawer to right-click`);
     if (row) {
       await page.mouse.click(row.x, row.y, { button: "right" });
-      await sleep(150);
-      s = await state(page);
+      s = await until(() => state(page), x => x && !x.open);
       check(s && !s.open, `${tag} 3b: a right-click outside closes the drawer`);
       // Within the 1.5 s: a plain click must get through. It is on the line, so it only opens the drawer when not eaten.
       const p = await linePoint(page);
       await page.mouse.click(p.x, p.y);
-      await sleep(250);
-      s = await state(page);
+      s = await until(() => state(page), x => x && x.open);
       check(s && s.open, `${tag} 3b: the click that follows a right-click is not swallowed`);
       await page.keyboard.press("Escape");
     }
     // Finding 4: Enter on the focused handle closes it.
-    await sleep(200);
+    await until(() => state(page), x => x && !x.open);
+    await calm(page);
     await openIt();
     s = await state(page);
     check(s && s.open, `${tag} 4b: opened again`);
     await page.focus(".fdrawer.open .fhandle");
     await page.keyboard.press("Enter");
-    await sleep(250);
-    s = await state(page);
+    s = await until(() => state(page), x => x && !x.open);
+    await calm(page);
     check(s && !s.open, `${tag} 4b: Enter on the close handle closes the drawer`);
     await openIt();
     await page.focus(".fdrawer.open .fhandle");
     await page.keyboard.press("Space");
-    await sleep(250);
-    s = await state(page);
+    s = await until(() => state(page), x => x && !x.open);
+    await calm(page);
     check(s && !s.open, `${tag} 4b: and so does Space`);
     // ...while a key still does not OPEN it: the line's own click with no pointer behind it.
     await page.evaluate(() => document.querySelector("#fd-terms .fline").click());
@@ -686,7 +701,7 @@ async function swallowEdges(browser) {
     await goto(page, "terms");
     const send = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
     const p = await linePoint(page);
-    const tap = async (x, y) => { await send("touchStart", x, y); await sleep(40); await send("touchEnd"); await sleep(300); };
+    const tap = async (x, y) => { await send("touchStart", x, y); await sleep(40); await send("touchEnd"); await until(() => state(page), x => x && x.open); await calm(page); };
     await tap(p.x, p.y);
     let s = await state(page);
     check(s && s.open, `${tag} 3c: a tap on the line opens the drawer`);
@@ -703,8 +718,8 @@ async function swallowEdges(browser) {
       for (let i = 1; i <= 6; i++) { await send("touchMove", r.x, r.y + i * 8); await sleep(16); }
       await sleep(120);   // as in `drag`: stopped before it lifts, so no fling eats the next tap
       await send("touchEnd");
-      await sleep(200);
-      s = await state(page);
+      s = await until(() => state(page), x => x && !x.open);
+      await calm(page);
       check(s && !s.open, `${tag} 3c: a touch that scrolls outside closes the drawer`);
       await tap(p.x, p.y);
       s = await state(page);
@@ -729,14 +744,14 @@ async function phoneAttached(browser) {
     return { phone: document.body.classList.contains("term-phone"), hasTerm: lay.classList.contains("has-term") };
   });
   check(set.phone && set.hasTerm, `${tag}: the phone layout with a terminal attached is set (${JSON.stringify(set)})`);
-  await sleep(300);
-  let s = await state(page);
+  await calm(page);
+  let s = await until(() => state(page), x => x && x.tab === "terms" && x.q.w > 40 && x.line.h > 20);
   check(s && s.tab === "terms" && s.q.w > 40 && s.line.h > 20, `${tag}: the line and the search box are on screen`);
   const geo0 = await geometry(page, "#term-layout");
   const p = await linePoint(page);
   await page.touchscreen.tap(p.x, p.y);
-  await sleep(300);
-  s = await state(page);
+  s = await until(() => state(page), x => x && x.open && x.panelVisible);
+  await calm(page);
   check(s && s.open && s.panelVisible, `${tag}: a tap on the line opens the drawer`);
   const cap = await page.evaluate(() => [...document.querySelectorAll(".fdrawer")].filter(e => e.offsetParent !== null)[0].querySelector(".fpanel").offsetHeight / innerHeight);
   check(cap <= 0.71, `${tag}: it is capped at 70% of the screen (${cap.toFixed(2)})`);
@@ -750,12 +765,13 @@ async function phoneAttached(browser) {
   const chip = page.locator('.fdrawer.open .seg button[data-v="paused"]').first();
   const cb = await chip.boundingBox();
   await page.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
-  await sleep(250);
+  await until(() => chip.evaluate(e => e.classList.contains("on")), v => v);
+  await calm(page);
   s = await state(page);
   check(s && s.open, `${tag}: a chip applies and the drawer stays open`);
   await page.keyboard.press("Escape");
-  await sleep(250);
-  s = await state(page);
+  s = await until(() => state(page), x => x && !x.open);
+  await calm(page);
   check(s && !s.open, `${tag}: Esc closes it`);
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
   await page.keyboard.press("Control+/");
@@ -765,11 +781,9 @@ async function phoneAttached(browser) {
   await page.keyboard.press("Escape");
   // Full screen takes it away, and leaving full screen brings it back.
   await page.evaluate(() => document.body.classList.add("term-full"));
-  await sleep(150);
-  check(await page.evaluate(() => getComputedStyle(document.getElementById("fd-terms")).display === "none"), `${tag}: a terminal that fills the screen hides the line`);
+  check(await until(() => page.evaluate(() => getComputedStyle(document.getElementById("fd-terms")).display === "none"), v => v), `${tag}: a terminal that fills the screen hides the line`);
   await page.evaluate(() => document.body.classList.remove("term-full"));
-  await sleep(150);
-  check(await page.evaluate(() => getComputedStyle(document.getElementById("fd-terms")).display !== "none"), `${tag}: and it is back when the terminal does not`);
+  check(await until(() => page.evaluate(() => getComputedStyle(document.getElementById("fd-terms")).display !== "none"), v => v), `${tag}: and it is back when the terminal does not`);
   await ctx.close();
 }
 
@@ -806,7 +820,7 @@ async function attachedStays(browser) {
 
   await goto(page, "board");
   await page.evaluate(() => { toggleBoardShow("done"); });
-  await sleep(300);
+  await until(() => page.evaluate(() => !document.querySelector('#board [data-id="d1"]')), v => v);
   r = await drawn("board", "d1", null, "");
   check(r.n === 0, `board attached: a finished card is not drawn with the finished column off (${r.n})`);
   r = await drawn("board", "d1", "d1", "");

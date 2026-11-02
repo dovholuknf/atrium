@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The hub's half of a room's atrium_launch with `room`. See docs/fabric/cross-room-say-design.md.
@@ -24,11 +27,11 @@ import (
 // known and not attached is `unreachable` (reachable), found out before anything is posted.
 
 // launchAcross starts the session `req.Launch` describes on `req.Room`, for the room `from`.
-func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayRequest) RelayAnswer {
+func (c *controlMCP) launchAcross(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer {
 	target := strings.TrimSpace(req.Room)
 	spec := req.Launch
 	switch {
-	case target == "" || equalFold(target, from):
+	case target == "" || wire.EqualFold(target, from):
 		return RelayAnswer{Code: http.StatusBadRequest,
 			Error: "the relay launches on another room. this one names the room it came from"}
 	case spec == nil || strings.TrimSpace(spec.Cwd) == "":
@@ -50,8 +53,8 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 	// another room's card.
 	spawnedBy, spawnedByID, spawnedByDir := strings.TrimSpace(req.From), "", ""
 	if spawnedBy != "" {
-		if id, _, err := c.resolvePeer(ctx, from, spawnedBy); err == nil {
-			spawnedByID = tagFor(from, id)
+		if id, _, err := c.ResolvePeer(ctx, from, spawnedBy); err == nil {
+			spawnedByID = wire.TagFor(from, id)
 			spawnedByDir = c.launcherDir(ctx, from, id)
 		}
 		spawnedBy += "@" + from
@@ -59,9 +62,9 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 	in := launchInput{
 		Cwd: spec.Cwd, Title: spec.Title, Why: spec.Why, Prompt: spec.Prompt, Brief: spec.Brief,
 		Runner: spec.Runner, Tags: spec.Tags, Model: spec.Model, Effort: spec.Effort, Args: spec.Args,
-		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: spec.Superlean, Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
+		Env: spec.Env, LeanAgents: spec.LeanAgents, LeanSkills: spec.LeanSkills, Superlean: relaySuperlean(spec.Superlean), Lifetime: spec.Lifetime, Isolated: spec.Item, Room: target,
 	}
-	out, err := c.launchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
+	out, err := c.LaunchOnRoom(ctx, in, harness, target, from, spawnedBy, spawnedByID, spawnedByDir)
 	c.auditLaunchAcross(target, from, req.From, harness, out, err)
 	if err != nil {
 		return launchRefusal(err)
@@ -79,15 +82,15 @@ func (c *controlMCP) launchAcross(ctx context.Context, from string, req RelayReq
 // UNCONFIRMED, never unreachable: the post may have started the session before the answer
 // was lost, and a second launch would start a second one.
 func launchRefusal(err error) RelayAnswer {
-	var ref *refusedError
+	var ref *ctl.RefusedError
 	if errors.As(err, &ref) {
-		return RelayAnswer{Code: http.StatusConflict, Error: ref.msg}
+		return RelayAnswer{Code: http.StatusConflict, Error: ref.Msg}
 	}
-	var be *boardError
+	var be *ctl.BoardError
 	if errors.As(err, &be) {
-		switch be.code {
+		switch be.Code {
 		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			return RelayAnswer{Unconfirmed: true, Code: be.code, Error: be.msg}
+			return RelayAnswer{Unconfirmed: true, Code: be.Code, Error: be.Msg}
 		}
 	}
 	return refusal(err)
@@ -108,4 +111,12 @@ func (c *controlMCP) auditLaunchAcross(target, from, by, harness string, out lau
 		what += " as " + out.Card
 	}
 	c.audit(target, "ctl-launch", "by "+by+"@"+from+" (claimed): "+what+", "+auditOutcome(err))
+}
+
+// relaySuperlean is a room's superlean flag as the hub's launchInput takes it: only true is a choice, false is absent.
+func relaySuperlean(on bool) *bool {
+	if !on {
+		return nil
+	}
+	return &on
 }

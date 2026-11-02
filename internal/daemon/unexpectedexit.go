@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"log"
 	"time"
 
@@ -58,8 +59,8 @@ func (d *Daemon) queueExitNotice(t *store.Task, why string, at time.Time) {
 	if t.Throwaway {
 		return
 	}
-	d.wake.deliver.Lock()
-	defer d.wake.deliver.Unlock()
+	d.Wake.Deliver.Lock()
+	defer d.Wake.Deliver.Unlock()
 	w, queued, err := d.st.QueueUnexpectedExit(t.ID, exitNoticeText(why, at))
 	if err != nil {
 		log.Printf("[atrium] could not queue the unexpected-exit notice for %s: %v", t.ID, err)
@@ -69,7 +70,7 @@ func (d *Daemon) queueExitNotice(t *store.Task, why string, at time.Time) {
 		// A wake of its own, or a notice from an earlier exit, is already waiting.
 		return
 	}
-	d.wake.put(w)
+	d.Wake.Put(w)
 	log.Printf("[atrium] %s was mid-turn at the %s. it gets an unexpected-exit notice", t.DisplayTitle(), why)
 }
 
@@ -137,5 +138,5 @@ func labelFor(w *store.RestartWake) string {
 	if w.By == store.UnexpectedExitBy {
 		return exitLabel
 	}
-	return wakeLabel
+	return cycle.WakeLabel
 }

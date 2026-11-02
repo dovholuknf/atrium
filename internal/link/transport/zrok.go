@@ -164,6 +164,20 @@ func (z *Zrok) api() (ZrokAPI, error) {
 // the whole credential, and this string ends up in logs and on the board.
 func (z *Zrok) Describe() string { return "a private zrok share" }
 
+// Env names this machine's zrok environment for the board: its ziti identity and api endpoint, never the account token.
+// Empty when there is none or a test handed in the API.
+func (z *Zrok) Env() string {
+	if z.API != nil {
+		return ""
+	}
+	root, err := z.environmentRoot()
+	if err != nil || root.Environment() == nil {
+		return ""
+	}
+	ep, _ := root.ApiEndpoint()
+	return strings.TrimSpace(root.Environment().ZitiIdentity + " at " + ep)
+}
+
 // environmentRoot loads this machine's zrok environment, once.
 func (z *Zrok) environmentRoot() (env_core.Root, error) {
 	z.once.Do(func() {

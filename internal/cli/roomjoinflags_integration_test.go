@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // A full direct token, the shape ParseToken hands back for `--transport direct`.
-func directToken() link.Join {
-	return link.Join{Transport: "direct", Name: "room-a", Addr: "hub:7443", Pin: "fp", Secret: "s3cret"}
+func directToken() transport.Join {
+	return transport.Join{Transport: "direct", Name: "room-a", Addr: "hub:7443", Pin: "fp", Secret: "s3cret"}
 }
 
 func TestResolveNoFlagsKeepsToken(t *testing.T) {
@@ -51,14 +51,14 @@ func TestResolveMtlsOverridesAddress(t *testing.T) {
 func TestResolveMtlsNeedsDirectAnchor(t *testing.T) {
 	// A token with a name but no secret or pin is not a direct join token, and no
 	// URL can supply what the hub has to have signed.
-	_, _, _, err := joinFlags{mtls: "hub:7443"}.resolve(link.Join{Transport: "direct", Name: "r"})
+	_, _, _, err := joinFlags{mtls: "hub:7443"}.resolve(transport.Join{Transport: "direct", Name: "r"})
 	if err == nil || !strings.Contains(err.Error(), "direct join token") {
 		t.Fatalf("mtls without secret/pin should be refused, got %v", err)
 	}
 }
 
 func TestResolveMtlsConflictsWithOverlayToken(t *testing.T) {
-	_, _, _, err := joinFlags{mtls: "hub:7443"}.resolve(link.Join{Transport: "zrok", Name: "r", ShareToken: "k"})
+	_, _, _, err := joinFlags{mtls: "hub:7443"}.resolve(transport.Join{Transport: "zrok", Name: "r", ShareToken: "k"})
 	if err == nil || !strings.Contains(err.Error(), "one transport") {
 		t.Fatalf("mtls against a zrok token should conflict, got %v", err)
 	}
@@ -66,7 +66,7 @@ func TestResolveMtlsConflictsWithOverlayToken(t *testing.T) {
 
 func TestResolveZrokPrivateSetsShareToken(t *testing.T) {
 	// The token names the room; the flag supplies the share access token.
-	out, _, _, err := joinFlags{zrokPrivate: "share-abc"}.resolve(link.Join{Transport: "zrok", Name: "r", ShareToken: "old"})
+	out, _, _, err := joinFlags{zrokPrivate: "share-abc"}.resolve(transport.Join{Transport: "zrok", Name: "r", ShareToken: "old"})
 	if err != nil {
 		t.Fatalf("zrok-private should resolve: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestResolveZrokPrivateSetsShareToken(t *testing.T) {
 
 func TestResolveOpenzitiIdentityFile(t *testing.T) {
 	out, ident, jwt, err := joinFlags{openziti: "C:/ids/room.json", service: "boards"}.
-		resolve(link.Join{Transport: "ziti", Name: "r", Service: "atrium"})
+		resolve(transport.Join{Transport: "ziti", Name: "r", Service: "atrium"})
 	if err != nil {
 		t.Fatalf("openziti with a .json should resolve: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestResolveOpenzitiIdentityFile(t *testing.T) {
 }
 
 func TestResolveOpenzitiServiceDefault(t *testing.T) {
-	out, _, _, err := joinFlags{openziti: "room.json"}.resolve(link.Join{Transport: "ziti", Name: "r"})
+	out, _, _, err := joinFlags{openziti: "room.json"}.resolve(transport.Join{Transport: "ziti", Name: "r"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestResolveOpenzitiServiceDefault(t *testing.T) {
 }
 
 func TestResolveOpenzitiJwtIsFlaggedForEnrolment(t *testing.T) {
-	_, ident, jwt, err := joinFlags{openziti: "eyJhbG0"}.resolve(link.Join{Transport: "ziti", Name: "r"})
+	_, ident, jwt, err := joinFlags{openziti: "eyJhbG0"}.resolve(transport.Join{Transport: "ziti", Name: "r"})
 	if err != nil {
 		t.Fatalf("a jwt should resolve and be returned for enrolment: %v", err)
 	}

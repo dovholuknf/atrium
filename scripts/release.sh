@@ -26,7 +26,7 @@ cd "$here"
 
 version="${1:-}"
 if [ -z "$version" ]; then
-  version="$(git describe --tags --exact-match 2>/dev/null || echo dev)"
+  version="$(bash scripts/version.sh)"
 fi
 # The commit is read from git, and can be OVERRIDDEN by the environment. That
 # override exists for exactly one caller: the reproducibility probe in

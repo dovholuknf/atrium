@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // crAudit is a thread-safe AuditLog: the relay records from its own goroutine.
@@ -105,7 +107,7 @@ func newCRRig(t *testing.T) *crRig {
 		return sha, ok, nil
 	}
 	// A board watching, added by hand so no stream to the fake rooms is started.
-	x.feed = &sub{ch: make(chan Event, 256)}
+	x.feed = &sub{ch: make(chan wire.Event, 256)}
 	p.feeds.mu.Lock()
 	p.feeds.subs[x.feed] = struct{}{}
 	p.feeds.mu.Unlock()
@@ -127,6 +129,19 @@ func (x *crRig) owner(t *testing.T, branch, sha, room, card string) {
 		New: sha, Room: room, Card: card}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// settled is the sentinel for "nobody was told": a request that does tell sg4's card, whose message arriving
+// means everything sent before it has been delivered. It returns the messages with the sentinel's included.
+func (x *crRig) settled(t *testing.T, branch string, before int) int {
+	t.Helper()
+	x.hubPush(t, x.c[2], branch)
+	x.owner(t, branch, x.c[2], "sg4", "s1")
+	if code, c := x.create(t, x.op, hubReq(branch, "other")); code != http.StatusCreated {
+		t.Fatal(code, c)
+	}
+	waitFor(t, 5*time.Second, func() bool { return len(x.rp.sg4.messages()) > before })
+	return len(x.rp.sg4.messages())
 }
 
 func (x *crRig) tip(room, branch, sha string) {
@@ -231,17 +246,16 @@ func TestThePushedReadSaysAllFiveStatesAndTheOwner(t *testing.T) {
 	ask := func(repo, branch, head string) map[string]any {
 		t.Helper()
 		// The hub answers from a snapshot and says `building` until the first build of this question is done.
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		var m map[string]any
+		testwait.EventuallyHTTP(t, 10*time.Second, repo+" "+branch+" "+head+" to stop building", func() bool {
 			code, raw := x.op("GET", "/_hub/git/pushed?repo="+repo+"&branch="+branch+"&head="+head, "")
 			if code != 200 {
 				t.Fatalf("%s %s %s = %d %s", repo, branch, head, code, raw)
 			}
-			if m := obj(t, raw); m["building"] != true {
-				return m
-			}
-		}
-		t.Fatalf("%s %s %s was still building", repo, branch, head)
-		return nil
+			m = obj(t, raw)
+			return m["building"] != true
+		})
+		return m
 	}
 	want := func(m map[string]any, state, hub string) {
 		t.Helper()
@@ -749,24 +763,22 @@ func TestOneRequestCarriesThePushedReadForItsSource(t *testing.T) {
 	// hub's disk, so the test asks for a rebuild and reads until the answer is the state it wants.
 	pushed := func(id, want string) map[string]any {
 		t.Helper()
-		var last string
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		var p map[string]any
+		testwait.EventuallyHTTP(t, 10*time.Second, "pushed "+want+" on "+id, func() bool {
 			x.g.Store().RefreshView()
 			code, raw := x.op("GET", "/_hub/change-requests/"+id, "")
 			if code != 200 {
 				t.Fatalf("get %s = %d %s", id, code, raw)
 			}
-			last = raw
 			m := obj(t, raw)
 			if str(m, "id") != id {
 				t.Errorf("id = %s", str(m, "id"))
 			}
-			if p, ok := m["pushed"].(map[string]any); ok && str(p, "state") == want {
-				return p
-			}
-		}
-		t.Fatalf("no pushed %s on %s: %s", want, id, last)
-		return nil
+			var ok bool
+			p, ok = m["pushed"].(map[string]any)
+			return ok && str(p, "state") == want
+		})
+		return p
 	}
 	// matches: a hub-pushed request is at the hub's own tip when it is made.
 	_, c1 := x.create(t, x.op, hubReq("claude/x", "main"))
@@ -1036,8 +1048,7 @@ func TestTheOwnerCardIsToldAsAnFyiWithTheWordsQuotedAsData(t *testing.T) {
 	}
 	waitFor(t, 5*time.Second, func() bool { return len(x.rp.sg4.messages()) == 3 })
 	x.do(t, x.asCard("sg4", "s1"), "cr_2", map[string]any{"do": "close"})
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 3 {
+	if n := x.settled(t, "claude/sentinel", 3); n != 4 {
 		t.Errorf("the owner was told of its own close: %d messages", n)
 	}
 }
@@ -1059,8 +1070,7 @@ func TestNobodyIsToldWhenThereIsNoOwnerOrTheChangeWasRefused(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return len(x.rp.sg4.messages()) == 1 })
 	// a refused change tells nobody
 	x.do(t, x.asCard("m1mini", "m9"), str(c, "id"), map[string]any{"do": "close"})
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 1 {
+	if n := x.settled(t, "claude/sentinel", 1); n != 2 {
 		t.Errorf("%d messages, want 1", n)
 	}
 }
@@ -1097,8 +1107,7 @@ func TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest(t 
 		t.Fatalf("growlers = %+v", rows)
 	}
 	// ONE QUESTION and it is the operator's: the owner is not told there is a question.
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 0 {
+	if n := x.settled(t, "claude/sentinel", 0); n != 1 {
 		t.Errorf("a question about main told a card: %v", x.rp.sg4.messages())
 	}
 	// the question is on the board's own growls route
@@ -1135,8 +1144,7 @@ func TestARequestIntoMainRaisesAQuestionForTheOperatorAndItEndsWithTheRequest(t 
 	if len(rows) != 1 || rows[0].ID != "cr|"+str(c, "id") || rows[0].RoomName != "sg4" {
 		t.Fatalf("growlers = %+v", rows)
 	}
-	time.Sleep(300 * time.Millisecond)
-	if n := len(x.rp.sg4.messages()); n != 0 {
+	if n := x.settled(t, "claude/sentinel2", 1); n != 2 {
 		t.Errorf("the owner was told of a question about main: %v", x.rp.sg4.messages())
 	}
 }

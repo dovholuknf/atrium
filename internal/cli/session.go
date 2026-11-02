@@ -30,11 +30,6 @@ import (
 // bound on everything. A session must never fail to start because atrium was
 // not listening.
 
-// sessionTimeout is longer than the activity budget. This fires twice per
-// session rather than on every tool call, and a card that never appears is
-// worse than a session start that took a moment.
-const sessionTimeout = 3 * time.Second
-
 // sessionInput is the part of Claude Code's payload this reads.
 type sessionInput struct {
 	CWD       string `json:"cwd"`
@@ -83,6 +78,9 @@ func newSession() *cobra.Command {
 			} else if reported.context != "" {
 				fmt.Fprintln(cmd.OutOrStdout(), sessionContext(reported.context))
 			}
+			if reported.warn != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), string(hookWarning(sessionHookEvents[reported.event], runner, reported.warn)))
+			}
 			return nil
 		},
 	}
@@ -120,9 +118,16 @@ type sessionReport struct {
 	agent   string
 	pid     int
 	context string
+	// event and warn say what to tell the session when atrium could not be reached.
+	event string
+	warn  string
 }
 
+// sessionHookEvents are the claude hook events behind each session event.
+var sessionHookEvents = map[string]string{"start": "SessionStart", "end": "SessionEnd", "compact": "PreCompact"}
+
 func reportSession(hubURL, event, name, runner string) sessionReport {
+	start := time.Now()
 	var out sessionReport
 	if strings.EqualFold(os.Getenv("ATRIUM_PERM_GATE"), "off") {
 		return out
@@ -189,9 +194,16 @@ func reportSession(hubURL, event, name, runner string) sessionReport {
 		return out
 	}
 
-	client := hookClient(sessionTimeout)
-	resp, err := client.Post(hubAddress(hubURL)+"/session", "application/json", bytes.NewReader(body))
+	left := hookLeft(start)
+	if event == "end" {
+		// Claude Code cancels a SessionEnd hook after 1.5s, which would lose the warning.
+		left = min(left, time.Second)
+	}
+	client := hookClient(left)
+	addr := hubAddress(hubURL)
+	resp, err := client.Post(addr+"/session", "application/json", bytes.NewReader(body))
 	if err != nil {
+		out.event, out.warn = event, unreachable("session --event "+event, addr, err)
 		return out
 	}
 	defer resp.Body.Close()

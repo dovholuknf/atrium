@@ -189,6 +189,9 @@ function dockPaint() {
   document.getElementById("walk-note").textContent = head.note;
   setHTML(document.getElementById("walk-bar"), barHtml);
   document.getElementById("walk-count").textContent = t.summary(dock.items);
+  const more = document.getElementById("walk-more");
+  more.textContent = head.more || "";
+  more.hidden = !head.more;
   setHTML(document.getElementById("walk-rail"), dock.items.map((it, i) => t.railRow(it, i, dock)).join(""));
   // Held while a compose box is open: repainting it would throw away what was typed.
   if (!dock.editing) {
@@ -390,6 +393,7 @@ function walkPrItem(f) {
   it.line = f.line || 0;
   it.link = f.link || "";
   it.leak = !!f.leak;
+  it.group = f.group || "";
   const w = f.walk || {};
   it.state = walkUiState(w.state); it.stateAt = w.at || ""; it.stateUrl = w.url || "";
   it.diff = f.hunk ? walkParseDiff(`diff --git a/${it.path} b/${it.path}\n+++ b/${it.path}\n${f.hunk}`) : null;
@@ -447,6 +451,7 @@ const walkTenant = {
       if (before) it.isNew = before.isNew;
       else if (d.items.length) it.isNew = true;
     }
+    walkPanelAsk(this.prId);
     return { items: next };
   },
 
@@ -519,7 +524,8 @@ const walkTenant = {
     }
     const wt = (termTask && termTask.worktree) || "";
     const sha = /-([0-9a-f]{7,40})$/.exec(wt.replace(/[\\/]+$/, "").split(/[\\/]/).pop());
-    return { title, note: sha ? "head " + sha[1] : "" };
+    const live = walkPanelLive(d.taskId);
+    return { title, note: sha ? "head " + sha[1] : "", more: this.prId && live ? "more pending" : "" };
   },
 
   summary(items) {
@@ -542,6 +548,7 @@ const walkTenant = {
       <span class="wk-g">${glyph}</span><span class="wk-n">${esc(it.num)}</span><span class="wk-sev s-${it.sev}">${esc(it.sevText)}</span><span class="wk-p">${
         esc(it.path.split("/").pop())}:${it.line}</span>${
         it.leak ? `<span class="wk-lk" data-tip="a leak">◆</span>` : ""}${
+        it.group ? `<span class="wk-grp" data-tip="from the review panel">${esc(it.group)}</span>` : ""}${
         it.isNew ? `<span class="wk-new">new</span>` : ""}</button>`;
   },
 
@@ -942,6 +949,39 @@ function walkTakeTheirs(it) {
   // The daemon's copy becomes ours, so the next write quotes its hash.
   walkAdopt(it, c.disk, c.diskHash);
   dockPaint();
+}
+
+// The review panel the walker launched: cards whose launcher is the walker and whose runner is still up.
+function walkPanelLive(walkerId) {
+  if (typeof lastTasks === "undefined" || !walkerId) return 0;
+  return lastTasks.filter(t => cardLive(t) && (l => !!l && l.id === walkerId)(launcherOf(t, lastTasks))).length;
+}
+
+// When the panel's merged.md has landed and was not applied, ask once per version of it what to do with it.
+const walkPanelAsked = new Set();
+async function walkPanelAsk(prId) {
+  if (!dock.open || walkPanelLive(dock.taskId)) return;
+  const base = `/v1/prs/${encodeURIComponent(prId)}/panel`;
+  let p;
+  try { p = await api(base); } catch (e) { return; }
+  if (!p.found || p.applied || !p.count || walkPanelAsked.has(p.hash)) return;
+  walkPanelAsked.add(p.hash);
+  const skip = p.skipped ? `, ${p.skipped} line${p.skipped === 1 ? "" : "s"} skipped` : "";
+  const mode = await askUser({
+    title: "the review panel is done",
+    body: `It wrote ${p.count} finding${p.count === 1 ? "" : "s"}${skip}. Keep both lists, merge in the ones on lines ` +
+      `the drawer does not have, or replace the drawer's findings with the panel's?`,
+    buttons: [{ label: "not now", value: null }, { label: "replace", value: "replace" },
+      { label: "merge", value: "merge" }, { label: "keep both", value: "both", style: "go" }]
+  });
+  if (!mode) { walkPanelAsked.delete(p.hash); return; }
+  try {
+    await pullsPost(base, { mode, hash: p.hash });
+    toast("review panel", mode === "both" ? "kept both" : mode === "merge" ? "merged" : "replaced");
+    dockResync();
+  } catch (e) {
+    toast("could not apply the panel", e.message);
+  }
 }
 
 // "walk done" types the words into the walker's terminal and submits them, which is the existing brief's way to

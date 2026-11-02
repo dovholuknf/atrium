@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -60,7 +61,7 @@ func TestSayReachesADoneCardByAlias(t *testing.T) {
 	if !strings.Contains(f.written(), "one more thing") {
 		t.Fatalf("the message did not land on the done card: %q (answer %v)", f.written(), out)
 	}
-	if got, via := d.localTargetVia("sa89"); got == nil || got.ID != bob.ID || via != "alias" {
+	if got, via := d.LocalTargetVia("sa89"); got == nil || got.ID != bob.ID || via != "alias" {
 		t.Fatalf("localTargetVia = %v, %q", got, via)
 	}
 
@@ -69,7 +70,7 @@ func TestSayReachesADoneCardByAlias(t *testing.T) {
 	if err := d.st.SetAlias(fresh.ID, "sa89"); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.localTarget("sa89"); got == nil || got.ID != fresh.ID {
+	if got := d.LocalTarget("sa89"); got == nil || got.ID != fresh.ID {
 		t.Fatalf("a live card did not win the alias: %v", got)
 	}
 
@@ -80,7 +81,7 @@ func TestSayReachesADoneCardByAlias(t *testing.T) {
 	if n, err := d.st.Archive(-time.Minute, store.StatusDone); err != nil || n != 2 {
 		t.Fatalf("archived %d, %v", n, err)
 	}
-	if got := d.localTarget("sa89"); got != nil {
+	if got := d.LocalTarget("sa89"); got != nil {
 		t.Fatalf("an archived card still answered to its alias: %v", got.ID)
 	}
 }
@@ -129,7 +130,7 @@ func TestALaunchedWorkerTakesItsTitlePrefix(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	h := slowHarness(t, d)
-	first, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(),
+	first, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(),
 		Title: "sa89: typing gate and card aliases", Tags: []string{OriginAgentTag}})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
@@ -143,7 +144,7 @@ func TestALaunchedWorkerTakesItsTitlePrefix(t *testing.T) {
 		t.Fatalf("the worker's alias is %q, want its title prefix", got.Alias)
 	}
 
-	second, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(),
+	second, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(),
 		Title: "sa89: the same prefix again", Tags: []string{OriginAgentTag}})
 	if err != nil {
 		t.Fatalf("a clashing default alias failed the launch: %v", err)

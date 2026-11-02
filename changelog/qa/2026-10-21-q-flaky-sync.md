@@ -1,1 +1,0 @@
-One script per finished main run, `scripts/flaky-sync.js`, keeps the flaky suite to the tests that failed in the last 15 runs and logs every move in `scripts/flaky-history.md`, and the CI rollup uploads the run's failing tests as the `failing-tests` artifact (q-flaky-sync).

@@ -16,6 +16,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -116,20 +117,20 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		t.Fatalf("launched %d", len(oh.launched))
 	}
 	var sent struct {
-		Cwd, Prompt, Title, Why, Branch string
-		Tags                            []string
-		SourceURL                       string `json:"source_url"`
+		Cwd, Prompt, Brief, Title, Why, Branch string
+		Tags                                   []string
+		SourceURL                              string `json:"source_url"`
 	}
 	_ = json.Unmarshal(oh.launched[0], &sent)
-	if sent.Cwd != path || !strings.HasPrefix(sent.Prompt, "review it") || sent.Title != "review o/r#7" || sent.Why != "look" ||
+	if sent.Cwd != path || sent.Prompt != "" || !strings.HasPrefix(sent.Brief, "review it") || sent.Title != "review o/r#7" || sent.Why != "look" ||
 		sent.Branch != "feat/x" || sent.SourceURL != openURL ||
 		strings.Join(sent.Tags, ",") != "pull-request,pr,pr:o/r#7,link:github.com/o/r/7" {
 		t.Errorf("the launch was %s", oh.launched[0])
 	}
 	for _, want := range []string{"Fix the thing", "Base branch: main", "abc123def456", "Do not fetch, pull or run gh",
 		prBriefFile} {
-		if !strings.Contains(sent.Prompt, want) {
-			t.Errorf("the prompt lacks %q: %s", want, sent.Prompt)
+		if !strings.Contains(sent.Brief, want) {
+			t.Errorf("the brief lacks %q: %s", want, sent.Brief)
 		}
 	}
 	md, err := os.ReadFile(filepath.Join(filepath.FromSlash(path), ".atrium", "PR.md"))
@@ -150,14 +151,12 @@ func TestOpenMakesTheWorktreeTheRowAndTheCardAndTiesThem(t *testing.T) {
 		Resources []store.CardResource `json:"resources"`
 		Disk      int64                `json:"disk_bytes"`
 	}
-	for deadline := time.Now().Add(openMeasureWait); ; time.Sleep(5 * time.Millisecond) {
+	testwait.PollEvery(5*time.Millisecond, openMeasureWait, func() bool {
 		rec = httpDo(t, oh.h, "GET", "/v1/tasks/"+out["card"].(string)+"/resources")
 		inv.Disk = 0
 		_ = json.Unmarshal(rec.Body.Bytes(), &inv)
-		if inv.Disk > 0 || time.Now().After(deadline) {
-			break
-		}
-	}
+		return inv.Disk > 0
+	})
 	kinds := []string{}
 	for _, r := range inv.Resources {
 		kinds = append(kinds, r.Kind+" "+r.Ref)
@@ -179,6 +178,30 @@ func httpDo(t *testing.T, h http.Handler, method, path string) *httptest.Respons
 	return rec
 }
 
+func TestOpenOwnPullRequestIsAPlainCardUnlessReview(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	for _, c := range []struct {
+		name, me string
+		review   bool
+		plain    bool
+	}{{"own", "Lee", false, true}, {"someone else's", "kim", false, false}, {"own with review", "lee", true, false}} {
+		oh := newOpenHarness(t, &fakeForge{me: c.me, pr: forge.PR{HeadRef: "feat/x", Author: "lee"}})
+		oh.checkout(t, "o", "r")
+		rec := post(t, oh.h, "/v1/open", map[string]any{"url": openURL, "why": "look", "review": c.review})
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if rec.Code != 201 || out["card"] == nil || len(oh.launched) != 1 {
+			t.Fatalf("%s: %d %v", c.name, rec.Code, out)
+		}
+		if _, has := out["pr"]; has == c.plain {
+			t.Errorf("%s: pr row in the answer is %v, want %v", c.name, has, !c.plain)
+		}
+	}
+}
+
 func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: a real server with git worktrees and a database")
@@ -193,6 +216,40 @@ func TestOpenTwiceAnswersTheLiveCard(t *testing.T) {
 	}
 	if len(oh.launched) != 1 {
 		t.Errorf("a second open launched again: %d", len(oh.launched))
+	}
+}
+
+func TestOpenFallsBackToTheRecipesRunnerWhenTheRequestedOneIsNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: a real server with git worktrees and a database")
+	}
+	t.Parallel()
+	oh := newOpenHarness(t, &fakeForge{pr: forge.PR{HeadRef: "feat/x"}})
+	oh.checkout(t, "o", "r")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []store.Harness{
+		{ID: "here", Enabled: true, Cmd: "here", BinPath: filepath.ToSlash(exe), LaunchMode: store.LaunchPTY},
+		{ID: "gone", Enabled: true, Cmd: "atrium-no-such-runner", LaunchMode: store.LaunchPTY},
+	} {
+		if _, err := oh.srv.st.SaveHarness(h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := oh.srv.st.SavePRRecipe(store.PRRecipe{Name: "default", Harness: "here", Panel: store.DefaultPRPanel,
+		WalkerBrief: "walk", BudgetUSD: 1, TurnsCap: 5}); err != nil {
+		t.Fatal(err)
+	}
+	rec := post(t, oh.h, "/v1/open", map[string]any{"url": openURL, "why": "look", "harness": "gone"})
+	if rec.Code != 201 || len(oh.launched) != 1 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var sent struct{ Harness string }
+	_ = json.Unmarshal(oh.launched[0], &sent)
+	if sent.Harness != "here" {
+		t.Errorf("the launch asked for %q, want the recipe's here", sent.Harness)
 	}
 }
 

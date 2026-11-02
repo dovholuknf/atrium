@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/ptyhost"
 )
 
@@ -66,7 +67,7 @@ func (d *Daemon) RestartPtyHost(ctx context.Context, wait time.Duration, why str
 		return rep, errors.New("this room is stopping")
 	}
 	if !immediate {
-		rep.Wrap = d.wrapUpForRestart(ctx, wait, why)
+		rep.Wrap = d.WrapUpForRestart(ctx, wait, why)
 	}
 	// One at a time, and a stop that arrives meanwhile is refused as one with the other kind of ask.
 	if !d.stopAsked.CompareAndSwap(stopAskedNone, stopAskedRunners) {
@@ -123,8 +124,8 @@ func (d *Daemon) handleRestartPtyHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wait := d.st.RestartWrapWait()
-	if n := parseSeconds(r.URL.Query().Get("wait")); n > 0 {
-		wait = capWrapWait(n)
+	if n := cycle.ParseSeconds(r.URL.Query().Get("wait")); n > 0 {
+		wait = cycle.CapWrapWait(n)
 	}
 	rep, err := d.RestartPtyHost(r.Context(), wait, r.URL.Query().Get("why"), truthy(r.URL.Query().Get("immediate")))
 	if err != nil {

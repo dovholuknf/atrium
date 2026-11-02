@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_task's `notices` reads back what the room held on a card instead of
@@ -128,7 +130,7 @@ func TestTaskNoticesMarksOwnNoticesRead(t *testing.T) {
 	}))
 	defer board.Close()
 	c := &controlMCP{board: board.URL, client: board.Client()}
-	req := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: http.Header{AgentHeader: {"orch"}}}}
+	req := &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: http.Header{ctl.AgentHeader: {"orch"}}}}
 
 	if _, _, err := c.taskHandler(context.Background(), req, taskInput{Notices: true}); err != nil {
 		t.Fatal(err)

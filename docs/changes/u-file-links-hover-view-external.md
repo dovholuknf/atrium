@@ -1,8 +1,5 @@
 Docs: none, website/docs/files.md is updated on this branch
 
-New endpoint: `POST /v1/tasks/{id}/files/launch {path}` opens one file in the card with the room machine's default
-app (ShellExecute on Windows, `open` on macOS, `xdg-open` elsewhere). It accepts pictures, svg, pdf, md, txt, log,
-csv, json and html only, judged by the resolved path, and answers 403 outside the card as `files/open` does.
 `files/view` serves a `.pdf` as `application/pdf` with no sandbox CSP, because a browser will not run its PDF
 viewer in a sandboxed document.
 
@@ -12,7 +9,7 @@ this rule changed when it is built.
 
 ## Test plan
 
-## @LETTER@. Terminal file links: a hover every time, the viewer, and open externally
+## @LETTER@. Terminal file links: a hover every time, and the viewer
 
 ### @LETTER@1. A path outside the card
 
@@ -36,11 +33,3 @@ nothing. In devtools, no `files/probe` request carried that path.
 
 **Expected:** each opens in a new tab: the image as the image, the PDF in the browser's viewer, the SVG as a picture,
 the JSON indented and the markdown rendered. A `.zip` shows a Download link instead.
-
-### @LETTER@4. Open externally
-
-1. Click a `.md` path in a card on another room, for example sg4, and choose "open externally, on sg4".
-2. In the viewer, click "Open externally, on sg4".
-
-**Expected:** the file opens in that machine's default app, on that machine. The viewer says so. A `.go` or `.exe`
-path is not offered the item, and `files/launch` refuses it.

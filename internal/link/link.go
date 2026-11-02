@@ -67,100 +67,54 @@ import (
 const Version = wire.Version
 
 type (
-	Dialer         = wire.Dialer
-	Timings        = wire.Timings
-	RestartAsk     = wire.RestartAsk
-	Offer          = wire.Offer
-	Path           = wire.Path
-	PathState      = wire.PathState
-	RemoteAccess   = wire.RemoteAccess
-	Proven         = transport.Proven
-	Ziti           = transport.Ziti
-	Zrok           = transport.Zrok
-	ZrokAPI        = transport.ZrokAPI
-	Direct         = transport.Direct
-	Keys           = transport.Keys
-	Join           = transport.Join
-	Saved          = transport.Saved
-	RoomTransports = transport.RoomTransports
-	hello          = wire.Hello
-	welcome        = wire.Welcome
-	note           = wire.Note
-)
-
-const DefaultZitiService = transport.DefaultZitiService
-
-const (
-	handshakeWait = wire.HandshakeWait
-	maxLine       = wire.MaxLine
+	Dialer       = wire.Dialer
+	Timings      = wire.Timings
+	RestartAsk   = wire.RestartAsk
+	PathState    = wire.PathState
+	RemoteAccess = wire.RemoteAccess
+	Proven       = transport.Proven
+	Direct       = transport.Direct
+	Keys         = transport.Keys
+	hello        = wire.Hello
+	welcome      = wire.Welcome
+	note         = wire.Note
 )
 
 var (
-	DefaultTimings = wire.DefaultTimings
-	otherRoom      = wire.OtherRoom
-	writeJSON      = wire.WriteJSON
-	writeJSONLimit = wire.WriteJSONLimit
-	readJSON       = wire.ReadJSON
-	readJSONLimit  = wire.ReadJSONLimit
-	sayHello       = wire.SayHello
-	RejoinSentence = transport.RejoinSentence
-	DefaultOrder   = transport.DefaultOrder
-	Arrange        = transport.Arrange
-	Candidates     = transport.Candidates
-	Hosts          = transport.Hosts
-	ParseOrder     = transport.ParseOrder
-	MixedListener  = transport.MixedListener
-	NewCSR         = transport.NewCSR
-	ParseToken     = transport.ParseToken
-	EnrolOver      = transport.EnrolOver
+	otherRoom     = wire.OtherRoom
+	writeJSON     = wire.WriteJSON
+	readJSON      = wire.ReadJSON
+	sayHello      = wire.SayHello
+	Hosts         = transport.Hosts
+	MixedListener = transport.MixedListener
+	NewCSR        = transport.NewCSR
+	ParseToken    = transport.ParseToken
+	EnrolOver     = transport.EnrolOver
+	MaskShare     = wire.MaskShare
 
 	MintOverlayToken     = transport.MintOverlayToken
 	DirectAuthenticated  = transport.DirectAuthenticated
 	OverlayAuthenticated = transport.OverlayAuthenticated
-	ZitiAuthenticated    = transport.ZitiAuthenticated
-	ZrokAuthenticated    = transport.ZrokAuthenticated
-	hearHello            = wire.HearHello
 )
 
 type (
-	CardState       = conn.CardState
-	PRClaimAnswer   = conn.PRClaimAnswer
-	Hub             = conn.Hub
-	Attached        = conn.Attached
-	RoomSetup       = conn.RoomSetup
-	SetupIssue      = conn.SetupIssue
-	Index           = conn.Index
-	Rung            = conn.Rung
-	Ladder          = conn.Ladder
-	ListenerState   = conn.ListenerState
-	RelayRequest    = conn.RelayRequest
-	RelayLaunchSpec = conn.RelayLaunchSpec
-	RelayAnswer     = conn.RelayAnswer
-	RelayTask       = conn.RelayTask
-	RelayEvent      = conn.RelayEvent
-	RelayPeer       = conn.RelayPeer
-	Room            = conn.Room
-	State           = conn.State
-	StreamError     = conn.StreamError
-	Stream          = conn.Stream
-	TransportAsk    = conn.TransportAsk
-	TransportState  = conn.TransportState
-	Build           = conn.Build
-	Upgrades        = conn.Upgrades
-	errStatus       = conn.ErrStatus
+	CardState      = conn.CardState
+	PRClaimAnswer  = conn.PRClaimAnswer
+	Hub            = conn.Hub
+	RelayAnswer    = conn.RelayAnswer
+	RelayTask      = conn.RelayTask
+	RelayEvent     = conn.RelayEvent
+	RelayPeer      = conn.RelayPeer
+	Room           = conn.Room
+	StreamError    = conn.StreamError
+	TransportAsk   = conn.TransportAsk
+	TransportState = conn.TransportState
 )
 
 const (
-	ForgePrefix        = conn.ForgePrefix
 	ForgeRoomHeader    = conn.ForgeRoomHeader
 	PRClaimPrefix      = conn.PRClaimPrefix
 	PRClaimRoomHeader  = conn.PRClaimRoomHeader
-	PathOn             = conn.PathOn
-	PathUp             = conn.PathUp
-	PathDown           = conn.PathDown
-	PathNone           = conn.PathNone
-	PathUnlistened     = conn.PathUnlistened
-	PathOff            = conn.PathOff
 	RelaySay           = conn.RelaySay
 	RelayPeers         = conn.RelayPeers
 	RelayCard          = conn.RelayCard
@@ -176,26 +130,14 @@ const (
 )
 
 var (
-	ErrNoGit             = conn.ErrNoGit
-	ErrHubNoGit          = conn.ErrHubNoGit
-	ErrNoRoom            = conn.ErrNoRoom
-	NewLadder            = conn.NewLadder
-	PathKinds            = conn.PathKinds
-	MergePaths           = conn.MergePaths
-	ErrRelayOld          = conn.ErrRelayOld
-	ErrRelayDown         = conn.ErrRelayDown
-	ErrRelayUnconfirmed  = conn.ErrRelayUnconfirmed
-	ErrStreamOld         = conn.ErrStreamOld
-	ErrStreamNotAttached = conn.ErrStreamNotAttached
-	CleanClaim           = conn.CleanClaim
-	ErrLastPath          = conn.ErrLastPath
-	Offered              = conn.Offered
-	Describe             = conn.Describe
-	newHub               = conn.NewHub
-	keyOf                = conn.KeyOf
-	headerHas            = conn.HeaderHas
-	pathClip             = conn.PathClip
-	newBuffered          = conn.Buffered
-	equalFold            = wire.EqualFold
-	lowerASCII           = wire.LowerASCII
+	ErrNoGit     = conn.ErrNoGit
+	ErrNoRoom    = conn.ErrNoRoom
+	ErrRelayDown = conn.ErrRelayDown
+	CleanClaim   = conn.CleanClaim
+	newHub       = conn.NewHub
+	headerHas    = conn.HeaderHas
+	pathClip     = conn.PathClip
+	newBuffered  = conn.Buffered
+	equalFold    = wire.EqualFold
+	lowerASCII   = wire.LowerASCII
 )

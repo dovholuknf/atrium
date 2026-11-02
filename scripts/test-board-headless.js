@@ -615,7 +615,7 @@ async function detailsHoverSection(browser, base) {
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await dp.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
-    await dp.waitForTimeout(900);
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
     const themes = [["plain", null], ["dark theme", ["#e6e6e6", "#101418"]], ["light theme", ["#222222", "#f4f1e8"]]];
@@ -712,7 +712,7 @@ async function detailsSideBySideSection(browser, base) {
   });
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForTimeout(900);
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector("#t-expando", { state: "attached", timeout: slow(15000) });
     await dp.evaluate(() => {
@@ -740,7 +740,7 @@ async function detailsSideBySideSection(browser, base) {
     });
     // Short: side by side.
     await dp.setViewportSize({ width: 1400, height: 420 });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(h => innerHeight === h, 420, { timeout: slow(5000) });
     let m = await measure();
     if (!m.wide) fail("at a short viewport the details panels are still stacked " + JSON.stringify(m));
     if (!(m.card.r <= m.dbg.l + 1)) fail("the card panel is not left of DEBUG " + JSON.stringify(m));
@@ -757,13 +757,13 @@ async function detailsSideBySideSection(browser, base) {
         window.__fit = termDrawerFit; termDrawerFit = () => {};
         document.getElementById("t-drawer").classList.remove("wide");
       });
-      await dp.waitForTimeout(300);
+      await dp.waitForTimeout(300); // wait: a settle for the screenshot only
       await dp.screenshot({ path: require("path").join(process.env.DETAILS_SIDE_SHOTS, "details-side-by-side-before.png") });
       await dp.evaluate(() => { termDrawerFit = window.__fit; });
     }
     // Shorter still: each panel scrolls inside itself.
     await dp.setViewportSize({ width: 1400, height: 300 });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(h => innerHeight === h, 300, { timeout: slow(5000) });
     m = await measure();
     if (!m.wide || m.card.t < 0 || m.dbg.t < 0) fail("at a very short viewport a panel leaves the screen " + JSON.stringify(m));
     const scrolls = await dp.evaluate(() => {
@@ -773,19 +773,19 @@ async function detailsSideBySideSection(browser, base) {
     if (!scrolls) fail("the card panel does not scroll inside itself at a very short viewport.");
     // Tall: stacked again, after a resize alone.
     await dp.setViewportSize({ width: 1400, height: 1400 });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(h => innerHeight === h, 1400, { timeout: slow(5000) });
     m = await measure();
     if (m.wide) fail("at a tall viewport the details panels are not stacked " + JSON.stringify(m));
     if (!(m.dbg.t >= m.card.b - 1)) fail("stacked, DEBUG is not under the card panel " + JSON.stringify(m));
     // Content growing while open re-decides, with no resize.
     await dp.setViewportSize({ width: 1400, height: 700 });
-    await dp.waitForTimeout(400);
+    await dp.waitForFunction(h => innerHeight === h, 700, { timeout: slow(5000) });
     await dp.evaluate(() => {
       let more = "";
       for (let i = 0; i < 40; i++) more += "<div style='margin:3px 0'>more " + i + "</div>";
       document.getElementById("t-drawer-body").insertAdjacentHTML("beforeend", more);
     });
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(() => document.getElementById("t-drawer").classList.contains("wide"), null, { timeout: slow(5000) }).catch(() => {});
     const grown = await dp.evaluate(() => document.getElementById("t-drawer").classList.contains("wide"));
     if (!grown) fail("the panels did not go side by side when the content grew while open.");
     if (errors.length) fail("the details page threw uncaught errors: " + errors.join(" | "));
@@ -813,7 +813,7 @@ async function groupRemoveSection(browser, base) {
   mock.tasksMode = "filed";
   try {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
-    await gp.waitForTimeout(900);
+    await gp.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await gp.click('.tab[data-view="terms"]');
     await gp.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
       { state: "attached", timeout: slow(15000) });
@@ -824,7 +824,9 @@ async function groupRemoveSection(browser, base) {
       const item = gp.locator("#cardmenu button", { hasText: "remove from the view" });
       if (!(await item.count())) { fail("the " + name + " group's heading has no remove item on its menu."); return; }
       await item.click();
-      await gp.waitForTimeout(400);
+      await gp.waitForFunction(n => !groupingPrefs().groups.includes(n) &&
+        ![...document.querySelectorAll("#term-list .tgroup .tgname")].some(e => e.textContent.trim() === n), name,
+      { timeout: slow(5000) }).catch(() => {});
     };
 
     // The empty group: gone from the list and from the saved view.
@@ -902,11 +904,11 @@ async function groupColorSection(browser, base) {
     await page.locator('#term-list .tgroup[data-ghead="active"]').click({ button: "right" });
     await page.locator("#cardmenu button", { hasText: "recolor" }).click();
     await page.locator(`#ask-body .swatch[data-hue="${hue}"]`).click();
-    await page.waitForTimeout(500);
+    await until(async () => (await hues(page)).term === String(hue), 5000, "the recolour").catch(() => {});
   };
   try {
     await cp.goto(base, { waitUntil: "domcontentloaded" });
-    await cp.waitForTimeout(900);
+    await cp.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await cp.click('.tab[data-view="terms"]');
     await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(15000) });
     await recolor(cp, 140);
@@ -915,11 +917,11 @@ async function groupColorSection(browser, base) {
       for (const cc of [false, true]) {
         await cp.evaluate(([s, c]) => { applySkin(s); toggleCardColors(c); }, [skin, cc]);
         await cp.click('.tab[data-view="board"]');
-        await cp.waitForTimeout(500);
+        await until(async () => (await hues(cp)).board === "140", 5000, "the board's hue").catch(() => {});
         await cp.click('.tab[data-view="stack"]');
-        await cp.waitForTimeout(500);
+        await until(async () => (await hues(cp)).stack === "140", 5000, "the stack's hue").catch(() => {});
         await cp.click('.tab[data-view="terms"]');
-        await cp.waitForTimeout(300);
+        await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(5000) }).catch(() => {});
         const h = await hues(cp);
         if (h.stack !== "140" || h.board !== "140" || h.term !== "140" || h.nest !== "140") {
           fail(`a group recoloured from the terminals pane did not land everywhere on ${skin}, ` +
@@ -943,14 +945,14 @@ async function groupColorSection(browser, base) {
     cp2.on("pageerror", e => errors.push(String(e)));
     await cp2.goto(base, { waitUntil: "domcontentloaded" });
     await cp2.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: slow(15000) });
-    await cp2.waitForTimeout(600);
+    await cp2.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await cp.click('.tab[data-view="terms"]');
-    await cp.waitForTimeout(300);
+    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(5000) }).catch(() => {});
     await recolor(cp, 250);
-    await cp2.waitForTimeout(1200);
+    await until(async () => (await hues(cp2)).term === "250", 5000, "the second window's hue").catch(() => {});
     const seen = await hues(cp2);
     await cp2.click('.tab[data-view="stack"]');
-    await cp2.waitForTimeout(500);
+    await until(async () => (await hues(cp2)).stack === "250", 5000, "the second window's stack").catch(() => {});
     const other = Object.assign(await hues(cp2), { termBeforeSwitch: seen.term });
     if (seen.term !== "250" || other.stack !== "250") {
       fail("a group recoloured in one window did not reach a second window: " + JSON.stringify(other));
@@ -995,18 +997,21 @@ async function groupDragSection(browser, base) {
   };
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
-    await dp.waitForTimeout(900);
+    await dp.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
     await dp.click('.tab[data-view="terms"]');
     await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: slow(15000) });
 
     // A heading dragged above another moves the whole group and writes the order.
     await dp.locator('#term-list .tgroup[data-ghead="spare"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="active"]'), { targetPosition: { x: 10, y: 2 } });
-    await dp.waitForTimeout(600);
+    await dp.waitForFunction(() => JSON.stringify(groupingPrefs().groups) === '["spare","active"]', null, { timeout: slow(5000) }).catch(() => {});
     await dp.click('.tab[data-view="stack"]');
-    await dp.waitForTimeout(500);
+    await dp.waitForFunction(() => {
+      const k = [...document.querySelectorAll(".stackgroup")].map(d => d.dataset.morphKey);
+      return k.includes("stack:spare") && k.indexOf("stack:spare") < k.indexOf("stack:active");
+    }, null, { timeout: slow(5000) }).catch(() => {});
     await dp.click('.tab[data-view="terms"]');
-    await dp.waitForTimeout(300);
+    await dp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(5000) }).catch(() => {});
     let st = await dp.evaluate(() => ({
       groups: groupingPrefs().groups,
       stack: [...document.querySelectorAll(".stackgroup")].map(d => d.dataset.morphKey),
@@ -1030,13 +1035,13 @@ async function groupDragSection(browser, base) {
     await quiet('#term-list .card.tab[data-id="loose1"]', '#term-list .tgroup[data-ghead="spare"]');
     await dp.locator('#term-list .card.tab[data-id="loose1"]').dragTo(
       dp.locator('#term-list .tgroup[data-ghead="spare"]'));
-    await dp.waitForTimeout(500);
+    await frames(dp, 2);
     st = await dp.evaluate(() => groupingPrefs().groups);
     if (JSON.stringify(st) !== '["spare","active"]') fail("a row dropped on a heading reordered the groups: " + JSON.stringify(st));
     // And a heading dropped on the pinned bucket pins nothing.
     await quiet('#term-list .tgroup[data-ghead="active"]', "#term-list .termbucket");
     await dp.locator('#term-list .tgroup[data-ghead="active"]').dragTo(dp.locator("#term-list .termbucket"));
-    await dp.waitForTimeout(500);
+    await dp.waitForTimeout(500); // wait: absence, a pin write from the drop would land here
     if (writes.some(w => /pinned/.test(w))) fail("a heading dropped on the pinned bucket pinned something: " + writes.join(" | "));
     writes.length = 0;
 
@@ -1045,7 +1050,7 @@ async function groupDragSection(browser, base) {
       '#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]');
     await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').dragTo(
       dp.locator('#term-list .tnest[data-ungroup] .card.tab[data-id="loose1"]'));
-    await dp.waitForTimeout(600);
+    await until(() => writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w)), 5000, "the untag write").catch(() => {});
     if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
       fail("a row dragged out of its group onto untagged did not lose the group's tag: " + writes.join(" | "));
     }
@@ -1058,7 +1063,7 @@ async function groupDragSection(browser, base) {
     if (!(await out.count())) fail("a card in a group has no `remove from group` entry on its menu.");
     else {
       await out.click();
-      await dp.waitForTimeout(500);
+      await until(() => writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w)), 5000, "the menu's untag write").catch(() => {});
       if (!writes.some(w => /filed1/.test(w) && /"tags":\[\]/.test(w))) {
         fail("`remove from group` did not take the tag off: " + writes.join(" | "));
       }
@@ -1066,7 +1071,10 @@ async function groupDragSection(browser, base) {
 
     // Outside custom mode a heading does not drag and says where ordering lives.
     await dp.evaluate(() => { setGrouping({ mode: "recency" }); });
-    await dp.waitForTimeout(600);
+    await dp.waitForFunction(() => {
+      const b = [...document.querySelectorAll("#term-list .tgroup:not(.pinnedhead)")];
+      return b.length && b.every(e => !e.draggable && !e.querySelector(".tgrip"));
+    }, null, { timeout: slow(5000) }).catch(() => {});
     const tag = await dp.evaluate(() => [...document.querySelectorAll("#term-list .tgroup:not(.pinnedhead)")]
       .map(b => ({ drag: b.draggable, grip: !!b.querySelector(".tgrip"), title: b.dataset.tip })));
     if (tag.some(t => t.drag || t.grip)) fail("a heading drags outside the custom grouping: " + JSON.stringify(tag));
@@ -1495,7 +1503,7 @@ async function tooltipSection(browser, base) {
       }
       // Leaving takes it down.
       await tp.mouse.move(700, 890);
-      await tp.waitForTimeout(100);
+      await tp.waitForFunction(() => !document.getElementById("tip").classList.contains("on"), null, { timeout: slow(5000) }).catch(() => {});
       if ((await tipNow()).on) fail("in " + skin + " the tooltip stayed up after the pointer left.");
     }
     await tp.evaluate(() => applySkin("harbour"));
@@ -1580,7 +1588,7 @@ async function popoutTagFlipSection(browser, base) {
   if (process.env.DEBUG_HEADLESS) bp.on("console", m => console.error("[flip] " + m.text()));
   try {
     await bp.goto(base, { waitUntil: "domcontentloaded" });
-    await bp.waitForTimeout(1000);
+    await bp.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(15000) });
     await bp.click('.tab[data-view="terms"]');
     // A stand-in popped-out window on the shared bus, holding the card under
     // one spelling and answering every roll call with it.
@@ -1595,14 +1603,14 @@ async function popoutTagFlipSection(browser, base) {
 
     // Claimed bare, asked tagged, and the other way round.
     await standIn("s1");
-    await bp.waitForTimeout(200);
+    await bp.waitForFunction(() => poppedOut("sgg~s1"), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await bp.evaluate(() => poppedOut("sgg~s1")))) {
       fail("a card popped out as `s1` read as free once the board spelled it `sgg~s1`.");
     }
     await standIn("sgg~s1");
     await bp.evaluate(() => soloHeld.clear());
     await bp.evaluate(() => runRefresh());
-    await bp.waitForTimeout(200);
+    await bp.waitForFunction(() => poppedOut("s1"), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await bp.evaluate(() => poppedOut("s1")))) {
       fail("a card popped out as `sgg~s1` read as free once the board spelled it `s1`.");
     }
@@ -1612,7 +1620,7 @@ async function popoutTagFlipSection(browser, base) {
     // attach.
     await bp.evaluate(() => soloHeld.clear());
     await standIn("s1");
-    await bp.waitForTimeout(200);
+    await bp.waitForFunction(() => poppedOut("sgg~s1"), null, { timeout: slow(5000) }).catch(() => {});
     // Counted at `openTerm`, because the list render tears a pane down again
     // when the mocked list does not carry the card, which would hide the attach.
     await bp.evaluate(() => {
@@ -1620,9 +1628,9 @@ async function popoutTagFlipSection(browser, base) {
       const real = openTerm;
       window.__flipRealOpen = real;
       openTerm = t => { window.__flipOpened.push(t.id); return real(t); };
-      waitAndAttach("sgg~s1");
+      waitAndAttach("sgg~s1").finally(() => { window.__flipWaited = true; });
     });
-    await bp.waitForTimeout(1500);
+    await bp.waitForFunction(() => window.__flipWaited, null, { timeout: slow(5000) }).catch(() => {});
     const restored = await bp.evaluate(() => {
       openTerm = window.__flipRealOpen;
       return window.__flipOpened;
@@ -1857,7 +1865,7 @@ async function foldStillSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(who + ": " + e));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(1200);
+    await fakeWait(p, () => history.state && history.state.atrium, null, 15000, 0);
     await p.click('.tab[data-view="board"]');
     return p;
   };
@@ -1869,7 +1877,7 @@ async function foldStillSection(browser, base) {
       mock.LOOSE.display_title = "loose card " + (++tick);
       openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
       await ctx.clock.runFor(1000);
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 150)); // wait: the beat's repaint has no event, and nothing must be written
     }
   };
   try {
@@ -1975,7 +1983,7 @@ async function laneFoldSection(browser, base) {
     }
     // One lane's group folds alone.
     await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:working|alpha"] > summary').click(); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.folded") || "[]").includes("proj:working|alpha"), null, { timeout: slow(5000) }).catch(() => {});
     await laneShot(p, "board");
     if (await grp(p, "working") !== false) fail("laneFold: clicking the running lane's alpha did not fold it.");
     if (await grp(p, "needs-you") !== true) fail("laneFold: folding alpha in running folded it in the ready lane too.");
@@ -1984,7 +1992,7 @@ async function laneFoldSection(browser, base) {
     if (await pin(p, "working") !== "missing" || await pin(p, "needs-you") !== "missing") fail("laneFold: the board still draws a pinned group.");
     // Collapse all reaches every lane, expand all undoes it.
     await p.click("#board-collapse-all");
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => ![...document.querySelectorAll("#board details[data-fold]")].some(d => d.open), null, { timeout: slow(5000) }).catch(() => {});
     const shut = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => d.open).map(d => d.dataset.fold));
     if (shut.length) fail("laneFold: collapse all left groups open: " + shut.join(", "));
     await p.reload({ waitUntil: "domcontentloaded" });
@@ -1992,7 +2000,7 @@ async function laneFoldSection(browser, base) {
     const still = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => d.open).length);
     if (still) fail("laneFold: collapse all did not survive a reload (" + still + " open).");
     await p.click("#board-expand-all");
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => [...document.querySelectorAll("#board details[data-fold]")].every(d => d.open), null, { timeout: slow(5000) }).catch(() => {});
     const closed = await p.evaluate(() => [...document.querySelectorAll("#board details[data-fold]")].filter(d => !d.open).map(d => d.dataset.fold));
     if (closed.length) fail("laneFold: expand all left groups shut: " + closed.join(", "));
 
@@ -2002,11 +2010,11 @@ async function laneFoldSection(browser, base) {
       fail("laneFold: the stack's pinned and rest sections did not start open: " + JSON.stringify([await sect(p, "pinned"), await sect(p, "rest")]));
     }
     await p.evaluate(() => { document.querySelector('#stack-list details[data-fold^="sect:pinned:"] > summary').click(); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.folded") || "[]").some(k => k.startsWith("sect:pinned:")), null, { timeout: slow(5000) }).catch(() => {});
     await laneShot(p, "stack");
     if (await sect(p, "pinned") !== false || await sect(p, "rest") !== true) fail("laneFold: folding the stack's pinned section did not fold it alone.");
     await p.evaluate(() => { document.querySelector('#stack-list details[data-fold^="sect:rest:"] > summary').click(); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.folded") || "[]").some(k => k.startsWith("sect:rest:")), null, { timeout: slow(5000) }).catch(() => {});
     if (await sect(p, "rest") !== false) fail("laneFold: the stack's rest section did not fold.");
     await p.reload({ waitUntil: "domcontentloaded" });
     await toStack(p);
@@ -2029,7 +2037,7 @@ async function laneFoldSection(browser, base) {
     if (migrated.includes("proj:alpha") || !migrated.includes("proj:stack:alpha")) fail("laneFold: the old key was not migrated cleanly: " + JSON.stringify(migrated));
     // ...and a lane can be opened alone afterwards.
     await p.evaluate(() => { document.querySelector('#board details.cardgroup[data-fold="proj:working|alpha"] > summary').click(); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => !JSON.parse(localStorage.getItem("atrium.folded") || "[]").includes("proj:working|alpha"), null, { timeout: slow(5000) }).catch(() => {});
     if (await grp(p, "working") !== true || await grp(p, "needs-you") !== false) fail("laneFold: a migrated fold could not be opened lane by lane.");
     if (errors.length) fail("laneFold: the page threw: " + errors.join(" | "));
   } finally {
@@ -2307,7 +2315,7 @@ async function reselectSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "reselect", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await termWrite(p, "");
     // From here on nothing may reach xterm or dial a socket.
     await p.evaluate(() => {
       window.__writes = 0;
@@ -2317,7 +2325,7 @@ async function reselectSection(browser, base) {
       window.__attaches = [];
     });
     const check = async how => {
-      await p.waitForTimeout(400);
+      await p.waitForTimeout(400); // wait: a second select must open no socket and write nothing, which has no event
       const got = await p.evaluate(() => ({ socks: window.__attaches.length, writes: window.__writes,
         same: term === window.__term, card: termTask && termTask.id,
         view: document.getElementById("terms").hidden ? "not terms" : "terms" }));
@@ -2339,11 +2347,11 @@ async function reselectSection(browser, base) {
     // The control: another card does attach, and so does the same card once its
     // socket is gone.
     await p.evaluate(() => attachTask("land-other"));
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => window.__attaches.length, null, { timeout: slow(5000) }).catch(() => {});
     let socks = await p.evaluate(() => window.__attaches.length);
     if (socks !== 1) fail("selecting a different card opened " + socks + " sockets, not 1.");
     await p.evaluate(() => { window.__attaches = []; termSock.readyState = 3; return attachTask("land-other"); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => window.__attaches.length, null, { timeout: slow(5000) }).catch(() => {});
     socks = await p.evaluate(() => window.__attaches.length);
     if (socks !== 1) fail("selecting a card whose socket had closed opened " + socks + " sockets, not 1.");
   } finally {
@@ -2414,6 +2422,10 @@ async function clearKeepsPageSection(browser, base) {
     got = await run(page("same", 4) + "\x1b[2J\x1b[H" + page("same", 4) + "\x1b[2J", true);
     if (got.hist.filter(l => l === "same1").length !== 1) fail("a repaint of the same page stacked copies of it in history.");
 
+    got = await run(page("old", rows - 2) + "\x1b[2J\x1b[Hbanner" + "\x1b[2J\x1b[Hbanner\r\n> /clear", true);
+    have(got, "old", rows - 2, "a clear repainted twice");
+    if (got.hist.includes("banner")) fail("the intermediate repaint of a clear was pushed into history.");
+
     // The replay is the same bytes through the same handler.
     got = await run(page("old", rows - 2) + "\x1b[2J\x1b[Hnew banner", true);
     if (got.hist.join("|") !== live) fail("the same stream written again as a replay left a different history.");
@@ -2463,7 +2475,7 @@ async function clearMarkSection(browser, base) {
     // What sits above the viewport on the normal buffer, as text.
     const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
       const w = d => new Promise(r => term.write(d, r));
-      if (fresh) { term.reset(); term._atriumPushed = ""; }
+      if (fresh) { term.reset(); term._atriumPushed = ""; term._atriumClearAt = 0; }
       await w(seq);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       const b = term.buffer.normal, above = [], shown = [];
@@ -2654,7 +2666,7 @@ async function toastsTopSection(browser, base) {
       toast("older toast", "first");
       toast("newer toast", "second");
     });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => window.__starts >= 2 && document.querySelectorAll("#toasts .toast:not(.leaving)").length === 2, null, { timeout: slow(5000) }).catch(() => {});
 
     // 1. Off the terminals view: bottom right, as before.
     let w = await where(p);
@@ -2669,7 +2681,7 @@ async function toastsTopSection(browser, base) {
       document.querySelectorAll("#toasts .toast").forEach(el => { el.__mark = 1; });
       switchView("terms");
     });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => document.getElementById("toasts").classList.contains("top"), null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     const kept = await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].every(el => el.__mark));
     if (!w.top || w.boxes.length !== 2 || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
@@ -2687,7 +2699,7 @@ async function toastsTopSection(browser, base) {
 
     // 3. A paste on its way: the indicator is not under a toast.
     await p.evaluate(() => { pasteShow({ n: 300 * 1024 }); toast("during a paste", "third"); });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => window.__starts >= 3 && document.querySelectorAll("#toasts .toast:not(.leaving)").length === 3 && document.getElementById("t-pasting").getBoundingClientRect().height, null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     const paste = await p.evaluate(() => {
       const r = document.getElementById("t-pasting").getBoundingClientRect();
@@ -2702,7 +2714,7 @@ async function toastsTopSection(browser, base) {
     // 4. And back off it: bottom right again, still not re-animated.
     const before = (await where(p)).starts;
     await p.evaluate(() => switchView("stack"));
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => !document.getElementById("toasts").classList.contains("top"), null, { timeout: slow(5000) }).catch(() => {});
     w = await where(p);
     if (w.top || w.boxes.some(b => b.bottom < w.h - 400)) {
       fail("back off the terminals view the toasts did not return bottom right: " + JSON.stringify(w));
@@ -2713,7 +2725,7 @@ async function toastsTopSection(browser, base) {
     await p.evaluate(() => switchView("terms"));
     for (const skin of ["harbour", "daylight", "website", "noir", "paper"]) {
       await p.evaluate(s => applySkin(s), skin);
-      await p.waitForTimeout(150);
+      await frames(p, 2);
       w = await where(p);
       // Three toasts by now, hanging under the filter line as well as the bar, so the floor is 60%.
       if (!w.top || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h * 0.6)) {
@@ -2727,7 +2739,7 @@ async function toastsTopSection(browser, base) {
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
     await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: slow(10000) });
     await solo.evaluate(() => toast("solo toast", "in a popped-out window"));
-    await solo.waitForTimeout(400);
+    await solo.waitForFunction(() => document.getElementById("toasts").classList.contains("top") && document.querySelector("#toasts .toast:not(.leaving)"), null, { timeout: slow(5000) }).catch(() => {});
     w = await where(solo);
     if (!w.top || !w.boxes.length || w.boxes.some(b => b.top < w.barBottom || b.bottom > w.h / 2)) {
       fail("in a popped-out window the toasts are not top right: " + JSON.stringify(w));
@@ -3035,14 +3047,14 @@ async function resumeSpinnerSection(browser, base) {
     // 1. Click: spinner on the row while the launch is out, a second resume does not launch again.
     await p.evaluate(() => { window.__r1 = resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"); });
     await p.waitForFunction(() => document.querySelector('.stackrow[data-id="land-res"]'), null, { timeout: 5000 });
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => typeof openingState !== "function" || document.querySelector('.stackrow[data-id="land-res"] .chip.opening'), null, { timeout: slow(5000) }).catch(() => {});
     await shot(p, "2-opening");
     if (isNew) {
       let st = await state(p);
       if (st.chip.length !== 1 || !/opening the conversation/.test(st.chip[0])) fail("the row did not say it is opening: " + JSON.stringify(st));
       await p.evaluate(() => resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"));
       await p.evaluate(() => resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms"));
-      await p.waitForTimeout(150);
+      await p.waitForTimeout(150); // wait: a second resume must not launch, which has no event
       if (launches !== 1) fail("a second resume while opening launched again: " + launches + " launches.");
       st = await state(p);
       if (st.chip.length !== 1) fail("a second resume left " + st.chip.length + " chips on the row.");
@@ -3051,7 +3063,7 @@ async function resumeSpinnerSection(browser, base) {
     // 2. The launch answers, the pane is up and still says so until output.
     release();
     await attachRetry(p, { unit: "resumeSpinner", id: "land-res", attach: false, check: () => window.__sock && termTask && termTask.id === "land-res" });
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => typeof openingState !== "function" || (!document.getElementById("t-wait").hidden && /opening the conversation/.test(document.getElementById("t-wait-say").textContent)), null, { timeout: slow(5000) }).catch(() => {});
     await shot(p, "3-pane-opening");
     if (isNew) {
       const st = await state(p);
@@ -3061,7 +3073,7 @@ async function resumeSpinnerSection(browser, base) {
 
     // 3. Output ends it, on the card and in the pane.
     await p.evaluate(() => window.__sock.onmessage({ data: "hello\r\n" }));
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => typeof openingState !== "function" || (!document.querySelector('.stackrow[data-id="land-res"] .chip.opening') && document.getElementById("t-wait").hidden), null, { timeout: slow(5000) }).catch(() => {});
     await shot(p, "4-output");
     if (isNew) {
       const st = await state(p);
@@ -3070,11 +3082,12 @@ async function resumeSpinnerSection(browser, base) {
 
     // 4. No output inside the bound: it turns to the reason, and a resume is allowed again.
     if (isNew) {
-      await p.evaluate(() => { RESUME_BOUND_MS = 400; openingStart("land-res"); });
-      await p.waitForTimeout(250);
+      await p.evaluate(() => { RESUME_BOUND_MS = 30000; openingStart("land-res"); });
+      await frames(p, 2);
       let st = await state(p);
       if (!st.chip.length || /no output/.test(st.chip[0])) fail("before the bound it was not still spinning: " + JSON.stringify(st));
-      await p.waitForTimeout(400);
+      await p.evaluate(() => { RESUME_BOUND_MS = 400; openingStart("land-res"); });
+      await p.waitForFunction(() => /no output after/.test((document.querySelector('.stackrow[data-id="land-res"] .chip.opening') || {}).textContent || "") && /no output after/.test(document.getElementById("t-wait-say").textContent), null, { timeout: slow(5000) }).catch(() => {});
       await shot(p, "5-slow");
       st = await p.evaluate(() => ({ chip: [...document.querySelectorAll(".stackrow[data-id=\"land-res\"] .chip.opening")].map(e => e.textContent.trim()),
         pane: document.getElementById("t-wait-say").textContent, spin: getComputedStyle(document.querySelector("#t-wait .spin")).display }));
@@ -3088,19 +3101,19 @@ async function resumeSpinnerSection(browser, base) {
     landCard("land-res", { supervised: false, resume_id: "sess-1", worktree: "/tmp/res", display_title: "big conversation" });
     mock.landList = [mock.LAND["land-res"]];
     await p.evaluate(() => refresh());
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => lastTasks.some(x => x.id === "land-res" && !x.supervised), null, { timeout: slow(5000) }).catch(() => {});
     launchAnswer = "no such runner";
     const before = launches;
     await p.evaluate(() => { resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"); });
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => typeof openingState !== "function" || document.querySelector('.stackrow[data-id="land-res"] .chip.opening'), null, { timeout: slow(5000) }).catch(() => {});
     const pointed = () => p.evaluate(() => [...document.querySelectorAll("#toasts .toast:not(.leaving)")].filter(e => /already opening/.test(e.textContent)).length);
     if (isNew) {
       await p.evaluate(() => resumeCard("land-res", lastTasks.find(x => x.id === "land-res"), "terms", "sess-1"));
-      await p.waitForTimeout(150);
+      await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving)")].some(e => /already opening/.test(e.textContent)), null, { timeout: slow(5000) }).catch(() => {});
       if (await pointed() !== 1) fail("a second resume did not say it is already opening");
     }
     release();
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => typeof openingState !== "function" || (/could not start it/.test((document.querySelector('.stackrow[data-id="land-res"] .chip.opening') || {}).textContent || "") && ![...document.querySelectorAll("#toasts .toast:not(.leaving)")].some(e => /already opening/.test(e.textContent))), null, { timeout: slow(5000) }).catch(() => {});
     await shot(p, "6-failed");
     if (isNew && await pointed()) fail("the already opening toast stayed up after the opening ended in a reason");
     if (isNew) {
@@ -3259,10 +3272,12 @@ async function typingSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "typing", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(1200);
+    await fakePause(p);
+    await fakeTick(p, 1200);
 
     const off = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
@@ -3292,7 +3307,7 @@ async function typingSection(browser, base) {
       const say = (name, ans, on) => (async () => {
         mock.typingAnswer = ans;
         await held(on);
-        await p.waitForTimeout(1200);
+        await fakeTick(p, 1200);
         fs.mkdirSync(process.env.TYPING_SHOTS, { recursive: true });
         await p.locator("#t-typing").evaluate(el => el.parentElement.scrollIntoView());
         await p.screenshot({ path: path.join(process.env.TYPING_SHOTS,
@@ -3310,8 +3325,8 @@ async function typingSection(browser, base) {
 
     mock.typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
       reason: "13 unsent character(s) on the line" };
-    await p.waitForFunction(() => /waits: 13/.test((document.getElementById("t-typing") || {}).textContent || ""),
-      null, { timeout: slow(5000) }).catch(() => {});
+    await fakeWait(p, () => /waits: 13/.test((document.getElementById("t-typing") || {}).textContent || ""),
+      null, 5000).catch(() => {});
     const on = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
       const help = document.querySelector(".term-help");
@@ -3335,8 +3350,8 @@ async function typingSection(browser, base) {
 
     // It follows the endpoint: the gate opening shows on the next poll.
     mock.typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
-    await p.waitForFunction(() => document.getElementById("t-typing").textContent === "line empty", null,
-      { timeout: slow(5000) }).catch(() => {});
+    await fakeWait(p, () => document.getElementById("t-typing").textContent === "line empty", null,
+      5000).catch(() => {});
     const opened = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
       return { hidden: el.hidden, text: el.textContent, calm: el.classList.contains("calm"),
@@ -3354,8 +3369,8 @@ async function typingSection(browser, base) {
         peekCard("land-live").activity = h ? { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" }
           : { what: "idle" };
       }, held);
-      await p.waitForFunction(w => document.getElementById("t-typing").textContent === w, want,
-        { timeout: slow(5000) }).catch(() => {});
+      await fakeWait(p, w => document.getElementById("t-typing").textContent === w, want,
+        5000).catch(() => {});
       return p.evaluate(() => {
         const el = document.getElementById("t-typing");
         return { text: el.textContent, calm: el.classList.contains("calm"), shut: el.classList.contains("shut") };
@@ -3379,9 +3394,9 @@ async function typingSection(browser, base) {
 
     // Off again: hidden, and the polling stops.
     await p.evaluate(() => toggleTypingReadout(false));
-    await p.waitForTimeout(200);
+    await fakeTick(p, 200);
     const n = mock.typingPolls.length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
     const after = await p.evaluate(() => document.getElementById("t-typing").hidden);
     if (!after) fail("the typing readout stayed up after it was switched off.");
     if (mock.typingPolls.length !== n) fail("the typing endpoint was still polled after the readout was switched off.");
@@ -3423,6 +3438,7 @@ async function termDebugSection(browser, base) {
   try {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing.land-live"); localStorage.removeItem("atrium.debug.inputlag.land-live"); });
@@ -3479,9 +3495,11 @@ async function termDebugSection(browser, base) {
 
     // Closing the drawer stops the asking.
     await p.evaluate(() => toggleTermDrawer(false));
-    await p.waitForTimeout(200);
+    await fakePause(p);
+    await fakeTick(p, 200);
     const n = mock.typingPolls.length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
+    await p.clock.resume();
     if (mock.typingPolls.length !== n) fail("the gate was still polled after the drawer closed.");
 
     // The gate line under the terminal speaks only when blocking, and never repeats the line.
@@ -3555,8 +3573,10 @@ async function termDebugSection(browser, base) {
     mock.kaSettings = { input_lag_log: true, input_lag_pinned: false };
     await p.evaluate(() => toggleTermDrawer(true));
     await p.waitForFunction(() => !settingsInflight.size, null, { timeout: slow(5000) });
-    await p.waitForTimeout(200);
+    await fakePause(p);
+    await fakeTick(p, 200);
     const lagOnState = await lagState();
+    await p.clock.resume();
     await p.evaluate(() => { toggleTermDrawer(false); toggleInputLag(false); });
     if (lagOnState.box || lagOnState.lag || lagOnState.pinned) {
       fail("the machine logging switched this card's input lag box on: " + JSON.stringify(lagOnState));
@@ -3577,10 +3597,12 @@ async function termDebugSection(browser, base) {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       toggleTermDrawer(true);
     });
-    await p.waitForTimeout(300);
+    await fakePause(p);
+    await fakeTick(p, 300);
     const hiddenN = mock.typingPolls.length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
     const asked = mock.typingPolls.length - hiddenN;
+    await p.clock.resume();
     await p.evaluate(() => { toggleTermDrawer(false); delete document.hidden; });
     if (asked) fail("a hidden tab still asked for the gate " + asked + "x.");
 
@@ -3669,7 +3691,7 @@ async function termLagSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     for (const id of ids) {
       await attachRetry(p, { unit: "termLag", id: id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
-      await p.waitForTimeout(300);
+      await frames(p, 2);
     }
     // A working agent's screen: a block of new text now and then, and a status block under it redrawn ten times a
     // second, with colour and a spinner, as Claude Code's does.
@@ -3692,7 +3714,7 @@ async function termLagSection(browser, base) {
     });
     // The SSE stream says something changed every couple of seconds on a busy board, and the board refreshes.
     if (process.env.TERMLAG_REFRESH !== "0") await p.evaluate(() => { window.__refresh = setInterval(() => refresh(), 2000); });
-    await p.waitForTimeout(1500);
+    await p.waitForTimeout(1500); // wait: the stream and the refreshes warm up on the real clock before the trace
     if (process.env.TERMLAG_PROBE) {
       console.log(JSON.stringify(await p.evaluate(() => ({
         canvases: [...document.querySelectorAll("canvas")].map(c => c.width + "x" + c.height + (c.offsetParent ? "" : " hidden") + " " + (c.className || "")),
@@ -3713,7 +3735,7 @@ async function termLagSection(browser, base) {
     // Typing while it streams: a key every 150ms, through xterm, as the operator does.
     const typer = setInterval(() => { p.keyboard.press("a").catch(() => {}); }, 150);
     await p.focus("#t-screen textarea").catch(() => {});
-    await p.waitForTimeout(secs * 1000);
+    await p.waitForTimeout(secs * 1000); // wait: the trace window, real time is what it measures
     clearInterval(typer);
     await cdp.send("Tracing.end");
     await doneP;
@@ -3799,7 +3821,7 @@ async function termHiddenRedrawSection(browser, base) {
     await p.evaluate(() => localStorage.setItem("atrium.termReturn", "bottom"));
     for (const id of ["hid-a", "hid-b"]) {
       await attachRetry(p, { unit: "termHiddenRedraw", id: id, check: id => termSock && termSock.readyState === 1 && termTask && termTask.id === id });
-      await p.waitForTimeout(300);
+      await frames(p, 2);
     }
     // hid-a is kept and hidden. Its WebGL context goes, as `keepEnforce` takes it past the first few, and its DOM
     // renderer starts with an empty width cache, under `display: none`.
@@ -3807,7 +3829,8 @@ async function termHiddenRedrawSection(browser, base) {
       const slot = keptTerms.get("hid-a");
       if (!slot) return { err: "hid-a is not kept" };
       dropWebgl(slot.term);
-      await new Promise(r => setTimeout(r, 200));
+      for (const t = Date.now(); !(slot.term._core._renderService._renderer.value || {})._widthCache && Date.now() - t < 5000;) await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => requestIdleCallback(() => r()));
       const rd = slot.term._core._renderService._renderer.value;
       const wc = rd && rd._widthCache;
       if (!wc) return { err: "no DOM renderer width cache on the kept terminal" };
@@ -3820,7 +3843,8 @@ async function termHiddenRedrawSection(browser, base) {
         sock.onmessage({ data: enc.encode("hidden line " + i + " of what the agent said\r\n").buffer });
         if (i % 25 === 0) await new Promise(r => requestAnimationFrame(r));
       }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => slot.term.write("", r));
+      for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(r));
       P._measure = real;
       return { measured: n };
     });
@@ -3828,7 +3852,7 @@ async function termHiddenRedrawSection(browser, base) {
     else if (r.measured > 200) fail("termHiddenRedraw: a hidden DOM-rendered terminal measured " + r.measured +
       " cells for 500 lines; it redraws while hidden.");
     await attachRetry(p, { unit: "termHiddenRedraw", id: "hid-a", check: () => termTask && termTask.id === "hid-a" });
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => { const rows = document.querySelector("#t-screen .xterm-rows"); return term._atriumGl || !rows || /hidden line 499/.test(rows.textContent); }, null, { timeout: slow(5000) }).catch(() => {});
     const shown = await p.evaluate(() => {
       const b = term.buffer.active, out = [];
       for (let i = 0; i < term.rows; i++) { const l = b.getLine(b.viewportY + i); out.push(l ? l.translateToString(true) : ""); }
@@ -4287,6 +4311,7 @@ async function termDebugPerCardSection(browser, base) {
       if (r.method() !== "POST" || !/\/v1\/settings$/.test(r.url())) return;
       try { const b = JSON.parse(r.postData() || "{}"); if ("input_lag_log" in b) posted.push(b.input_lag_log); } catch (e) {}
     });
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     // A browser that had the old browser-wide switch on drops it.
@@ -4318,11 +4343,13 @@ async function termDebugPerCardSection(browser, base) {
     // The other card: both off, the line hidden, its gate never asked for by the line.
     await attach("land-b");
     await p.evaluate(() => toggleTermDrawer(false));
-    await p.waitForTimeout(300);
+    await fakePause(p);
+    await fakeTick(p, 300);
     const n = mock.typingPolls.filter(u => u.includes("/land-b/")).length;
-    await p.waitForTimeout(1300);
+    await fakeTick(p, 1300);
     const b = await state();
     const bPolls = mock.typingPolls.filter(u => u.includes("/land-b/")).length - n;
+    await p.clock.resume();
     if (b.lag || b.typing || b.lagBox || b.typingBox || b.line) fail("a card switched on carried over to another card: " + JSON.stringify(b));
     if (bPolls) fail("the gate line polled a card it is not switched on for: " + bPolls + "x");
     const stored = await p.evaluate(() => ({ lagB: localStorage.getItem("atrium.debug.inputlag.land-b"),
@@ -4331,9 +4358,10 @@ async function termDebugPerCardSection(browser, base) {
 
     // Switching the other card off-then-on and off keeps the machine on while the first card still is.
     await p.evaluate(() => toggleTermDrawer(true));
+    const twice = posted.length;
     await click("s-inputlag");
     await click("s-inputlag");
-    await p.waitForTimeout(300);
+    await until(() => posted.length >= twice + 2, 5000, "both input lag posts").catch(() => {});
     if (posted[posted.length - 1] !== true) fail("unticking one card told the hub to stop while another card is on: " + JSON.stringify(posted));
     await p.evaluate(() => toggleTermDrawer(false));
 
@@ -4345,9 +4373,10 @@ async function termDebugPerCardSection(browser, base) {
 
     // Its last card off: the hub and room are told to stop.
     await p.evaluate(() => toggleTermDrawer(true));
+    const last = posted.length;
     await click("s-inputlag");
     await click("s-typing");
-    await p.waitForTimeout(300);
+    await until(() => posted.length > last, 5000, "the input lag post").catch(() => {});
     if (posted[posted.length - 1] !== false) fail("the last card switched off did not tell the hub to stop: " + JSON.stringify(posted));
     await p.evaluate(() => toggleTermDrawer(false));
   } finally {
@@ -5156,79 +5185,6 @@ async function crossedPaneSection(browser, base) {
   mock.tasksMode = was;
 }
 
-// ── hovering a file path underlines it and tips its name; a click opens the menu ──
-async function linkTipSection(browser, base) {
-  const was = mock.tasksMode;
-  mock.tasksMode = "land";
-  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
-  mock.landList = [mock.LAND["land-live"]];
-  mock.landPerms = [];
-  const errors = [];
-  const shots = process.env.LINKTIP_SHOTS || "";
-  const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
-  const ctx = await landContext(browser);
-  await ctx.addInitScript(() => {
-    const Real = window.WebSocket;
-    window.WebSocket = function (url, protocols) {
-      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
-      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
-        onopen: null, onclose: null, onmessage: null, onerror: null,
-        send() {}, close() { this.readyState = 3; } };
-      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
-      return s;
-    };
-    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-  });
-  await ctx.route("**/files/probe", route => {
-    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
-    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
-  });
-  try {
-    const p = await ctx.newPage();
-    p.on("pageerror", e => errors.push(String(e)));
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await attachRetry(p, { unit: "linkTip", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.evaluate(() => new Promise(res => term.write("see src/alpha.go here\r\nsrc/beta.go\r\n", res)));
-    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
-    const cell = await p.evaluate(() => {
-      const d = term._core._renderService.dimensions.css.cell;
-      return { w: d.width, h: d.height };
-    });
-    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
-    const tipOn = () => p.evaluate(() => document.getElementById("tip").classList.contains("on"));
-    const underlined = () => p.waitForSelector("#t-screen .xterm-cursor-pointer", { timeout: slow(5000) }).then(() => true, () => false);
-
-    await shot(p, "before-hover");
-    await p.mouse.move(...at(40, 5));
-    await p.mouse.move(...at(8, 0), { steps: 3 });
-    if (!await underlined()) { fail("hovering a path in the terminal did not underline it, so this proves nothing"); return; }
-    const deadline = Date.now() + slow(3000);
-    while (Date.now() < deadline && !(await tipOn())) await new Promise(r => setTimeout(r, 10));
-    const tipText = () => p.evaluate(() => document.getElementById("tip").textContent);
-    if (!await tipOn()) fail("hovering a file path showed no tip");
-    else if (!/src\/alpha\.go/.test(await tipText())) fail("the file tip does not name the file: " + await tipText());
-    await shot(p, "hover-tip");
-
-    await p.mouse.move(...at(3, 1), { steps: 2 });
-    if (!await underlined()) fail("hovering a second path did not underline it");
-    const next = Date.now() + slow(3000);
-    while (Date.now() < next && !/src\/beta\.go/.test(await tipText())) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
-    if (!/src\/beta\.go/.test(await tipText())) fail("hovering a second file path did not show its tip: " + await tipText());
-
-    await p.mouse.click(...at(3, 1));
-    const menu = await p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
-      { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
-    if (!menu) fail("clicking a file path did not open the menu");
-    await shot(p, "click-menu");
-    if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
-  } finally {
-    mock.tasksMode = was;
-    await ctx.close();
-  }
-}
-
 // ── a path wrapped in backticks, quotes, parens or bold is still a link, and the wrapper is not in it ──
 // Claude Code puts paths in code spans and prose puts them in quotes and brackets. The link has to cover the path
 // and stop short of every character around it, whatever the path's shape and with or without a :line.
@@ -5382,13 +5338,13 @@ async function fileMenuSection(browser, base) {
     const choose = async text => { await p.locator("#cardmenu button", { hasText: text }).click(); await menuState(false); };
     const until = async cond => {
       const end = Date.now() + slow(3000);
-      while (Date.now() < end && !(await cond())) await new Promise(r => setTimeout(r, 10));
+      while (Date.now() < end && !(await cond())) await new Promise(r => setTimeout(r, 10)); // wait: poll step of a deadline loop
     };
     const tabs = () => p.evaluate(() => window.__tabs);
     const same = (got, want) => JSON.stringify(got) === JSON.stringify(want);
 
     let got = await ask("docs/plan.md");
-    const want = ["open rendered", "open in atrium's editor", "open externally, on sg4", "open in the editor on sg4"];
+    const want = ["open rendered", "open in atrium's editor", "open in the editor on sg4"];
     if (!same(got, want)) fail("the file menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     if (!await p.locator("#cardmenu button", { hasText: "open rendered" }).locator("svg.out").count()) fail("open rendered has no icon");
     await shot(p, "menu-md");
@@ -5414,7 +5370,7 @@ async function fileMenuSection(browser, base) {
 
     editorCommand = "";
     got = await ask("docs/plan.md");
-    if (!same(got, want.slice(0, 3))) fail("with no editor_command the menu offered " + JSON.stringify(got));
+    if (!same(got, want.slice(0, 2))) fail("with no editor_command the menu offered " + JSON.stringify(got));
     await p.keyboard.press("Escape");
     if (errors.length) fail("the file menu page threw uncaught errors: " + errors.join(" | "));
   } finally {
@@ -5456,7 +5412,7 @@ async function fileMenuHTMLSection(browser, base) {
 
     if (!await ask("out/topology.html")) { fail("fileLinkMenu for an html file did not open the menu"); return; }
     const got = await items();
-    const want = ["open rendered", "open raw in a tab", "open in atrium's editor", "open externally, on sg4"];
+    const want = ["open rendered", "open raw in a tab", "open in atrium's editor"];
     if (JSON.stringify(got) !== JSON.stringify(want)) fail("an html menu offered " + JSON.stringify(got) + ", want " + JSON.stringify(want));
     const rendered = p.locator("#cardmenu button", { hasText: "open rendered" });
     if (!await rendered.getAttribute("data-tip")) fail("open rendered carries no data-tip");
@@ -5616,7 +5572,7 @@ async function markdownTabSection(browser, base) {
     if (r.hrefs.some(h => /javascript:/i.test(h || ""))) fail("a javascript: link survived: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fother.md")) fail("a relative .md link did not stay in the tab: " + JSON.stringify(r.hrefs));
     if (!r.hrefs.includes("/read.html#land-live/docs%2Fdata%2Fa.txt")) fail("a relative file link did not go to the viewer: " + JSON.stringify(r.hrefs));
-    if (!r.hrefs.includes("https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
+    if (!r.hrefs.some(h => h === "https://example.org/")) fail("an https link was lost: " + JSON.stringify(r.hrefs));
     if (JSON.stringify(r.imgs) !== JSON.stringify(["/v1/tasks/land-live/files/view?path=docs%2Fimg%2Fp.png"])) fail("images were " + JSON.stringify(r.imgs));
     if (tabReqs.some(u => /evil\.test/.test(u))) fail("a remote image was fetched");
     if (!/<script>window\.__pwn/.test(r.text)) fail("raw HTML was dropped rather than shown as text: " + r.text.slice(0, 200));
@@ -5841,11 +5797,11 @@ async function termLinkLateSection(browser, base) {
   }
 }
 
-// ── terminal file links: an outside path tips without asking, the viewer shows by type, open externally (u-file-links-hover-view-external) ──
+// ── terminal file links: an outside path tips without asking, the viewer shows by type (u-file-links-hover-view-external) ──
 // 1. An absolute path outside the card is asked, and when the room does not find it the link's tip says so. One inside is asked.
 // 2. read.html shows a png as the image, an md rendered, an svg as an image that ran nothing, json indented, a pdf in
-//    a frame and a zip as a download, and its Open externally button posts files/launch.
-// 3. The link menu's "open externally, on sg4" posts files/launch, and a .go file is not offered it.
+//    a frame and a zip as a download.
+// 3. The link menu puts the viewer first and offers nothing that opens a file externally.
 // FILELINKSVIEW_SHOTS=dir writes the PNGs.
 async function fileLinksViewSection(browser, base) {
   const was = mock.tasksMode;
@@ -5857,7 +5813,7 @@ async function fileLinksViewSection(browser, base) {
   const errors = [];
   const shots = process.env.FILELINKSVIEW_SHOTS || "";
   const shot = (pg, name) => shots ? pg.screenshot({ path: path.join(shots, name + ".png") }) : null;
-  const asked = [], launched = [];
+  const asked = [];
   const ctx = await landContext(browser);
   await ctx.addInitScript(() => {
     const Real = window.WebSocket;
@@ -5879,10 +5835,6 @@ async function fileLinksViewSection(browser, base) {
     const found = paths.filter(p => /\.(md|txt|go)$/.test(p) && !/openziti-test-kitchen/.test(p))
       .map(p => ({ path: p, rel: p.replace(/\\/g, "/").replace(/^.*blog-add-by-url\//, ""), size: 10, dir: false }));
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
-  });
-  await ctx.route("**/files/launch", route => {
-    launched.push({ url: new URL(route.request().url()).pathname, path: JSON.parse(route.request().postData() || "{}").path });
-    route.fulfill({ status: 200, contentType: "application/json", body: "{\"ok\":true}" });
   });
   await ctx.route("**/v1/settings", route => route.fulfill({ status: 200, contentType: "application/json",
     body: JSON.stringify(Object.assign({}, settingsBody(""), { editor_command: "" })) }));
@@ -5950,11 +5902,18 @@ async function fileLinksViewSection(browser, base) {
     await p.mouse.click(...at(12, 0));
     await p.waitForTimeout(300); // wait: negative check, nothing may open after a click
     if (await p.evaluate(() => document.getElementById("cardmenu").classList.contains("on") || window.__tabs.length > 0)) fail("clicking an outside path opened something");
-    t = await tipFor(20, 1, /README\.md/);
-    if (!/README\.md/.test(t) || /outside/.test(t)) fail("the inside path's tip was " + JSON.stringify(t));
-    await shot(p, "1-inside-tip");
-    t = await tipFor(5, 2, /click to view/);
-    if (!/click to view/.test(t) || /outside this card/.test(t)) fail("an outside path the room finds was not a file link: " + JSON.stringify(t));
+    const clickMenu = async (col, r) => {
+      await p.mouse.move(...at(60, 8));
+      await p.mouse.move(...at(col, r), { steps: 3 });
+      await p.mouse.click(...at(col, r));
+      const on = await p.waitForFunction(() => document.getElementById("cardmenu").classList.contains("on"), null,
+        { timeout: slow(3000), polling: 10 }).then(() => true, () => false);
+      await p.keyboard.press("Escape");
+      return on;
+    };
+    if (!await clickMenu(20, 1)) fail("clicking an inside path did not open the file menu");
+    await shot(p, "1-inside-menu");
+    if (!await clickMenu(5, 2)) fail("an outside path the room finds was not a file link");
 
     // 3. the menu.
     const menuUp = on => p.waitForFunction(on => document.getElementById("cardmenu").classList.contains("on") === on, on,
@@ -5964,13 +5923,11 @@ async function fileLinksViewSection(browser, base) {
     await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "docs/plan.md", dir: false }); });
     if (!await menuUp(true)) fail("the menu did not open for an md");
     let menu = await items();
-    if (!menu.includes("open externally, on sg4")) fail("an md menu offered no open externally: " + JSON.stringify(menu));
+    if (menu.some(m => /externally/.test(m))) fail("an md file was offered open externally: " + JSON.stringify(menu));
     if (menu[0] !== "open rendered") fail("the viewer is not first: " + JSON.stringify(menu));
     await shot(p, "3-menu");
-    await p.locator("#cardmenu button", { hasText: "open externally, on sg4" }).click();
-    const until = async cond => { const end = Date.now() + slow(3000); while (Date.now() < end && !cond()) await new Promise(r => setTimeout(r, 10)); }; // wait: poll step of a deadline loop
-    await until(() => launched.length > 0);
-    if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/land-live/files/launch", path: "docs/plan.md" }])) fail("open externally sent " + JSON.stringify(launched));
+    await p.keyboard.press("Escape");
+    await menuUp(false);
     await p.evaluate(() => { fileLinkMenu({ clientX: 100, clientY: 100 }, termTask.id, { rel: "src/a.go", dir: false }); });
     if (!await menuUp(true)) fail("the menu did not open for a .go");
     menu = await items();
@@ -6003,18 +5960,6 @@ async function fileLinksViewSection(browser, base) {
     v = await view("spec/doc.pdf", () => { const f = document.getElementById("pdf"); return !f.hidden && /files\/view\?path=spec%2Fdoc\.pdf$/.test(f.src); });
     await v.close();
     v = await view("out/bundle.zip", () => !!document.querySelector("#text a[href*='/files?path=out%2Fbundle.zip']"));
-    if (await v.evaluate(() => !document.getElementById("open-ext").hidden)) fail("a zip was offered open externally");
-    await v.close();
-    launched.length = 0;
-    v = await view("docs/plan.md", () => !document.getElementById("open-ext").hidden);
-    const label = await v.evaluate(() => document.getElementById("open-ext").textContent);
-    if (label !== "Open externally, on sg4") fail("the viewer's button says " + JSON.stringify(label));
-    await v.click("#open-ext");
-    await v.waitForFunction(() => !document.getElementById("ext-note").hidden, null, { timeout: slow(3000) }).catch(() => {});
-    const note = await v.evaluate(() => document.getElementById("ext-note").textContent);
-    if (!/sg4's machine, not in this browser/.test(note)) fail("the viewer's note said " + JSON.stringify(note));
-    if (JSON.stringify(launched) !== JSON.stringify([{ url: "/v1/tasks/sg4~land-live/files/launch", path: "docs/plan.md" }])) fail("the viewer's button sent " + JSON.stringify(launched));
-    await shot(v, "2-open-ext");
     await v.close();
     if (errors.length) fail("the page threw: " + errors.join(" | "));
   } finally {
@@ -6170,8 +6115,9 @@ async function termFitHeightSection(browser, base) {
           const hint = document.querySelector(".term-help").getBoundingClientRect();
           const screen = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
           const cell = term._core._renderService.dimensions.css.cell.height;
-          const pane = term.element.parentElement;
-          if (term._atriumBox !== pane.clientWidth + "x" + pane.clientHeight) return false;
+          // Not the box mark `onTermResize` leaves: the first fit after open does not leave one.
+          const d = termFit.proposeDimensions();
+          if (!d || term.rows !== rowsInPane(d.rows)) return false;
           return screen.top + term.rows * cell <= hint.top + 0.5;
         }, null, { timeout: slow(3000) });
       } catch (e) {
@@ -6457,7 +6403,7 @@ async function phoneViewSection(browser, base) {
     await pctx.addInitScript(fakeSock);
     const p = await open(pctx);
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => term.cols === 132 && term.rows === 41, null, { timeout: slow(5000) }).catch(() => {});
     let n = (await resizes(p)).length;
     if (n) fail("phoneView: a phone attach sent " + n + " resize frame(s)");
     const dims = () => p.evaluate(() => ({ cols: term.cols, rows: term.rows, font: term.options.fontSize,
@@ -6471,13 +6417,13 @@ async function phoneViewSection(browser, base) {
 
     // a window resize and a keyboard-sized height change send nothing
     await p.setViewportSize({ width: 390, height: 460 });
-    await p.waitForTimeout(500);
+    await frames(p, 2);
     await p.setViewportSize({ width: 844, height: 390 });
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => { const s = document.getElementById("t-screen"); return s.scrollWidth <= s.clientWidth + 20; }, null, { timeout: slow(5000) }).catch(() => {});
     d = await dims();
     if (d.sw > d.cw + 20) fail("phoneView: landscape did not fit the whole width: " + JSON.stringify(d));
     await p.setViewportSize({ width: 390, height: 844 });
-    await p.waitForTimeout(500);
+    await frames(p, 2);
     n = (await resizes(p)).length;
     if (n) fail("phoneView: a resize or a keyboard-sized height change sent " + n + " resize frame(s)");
     phoneFocusSent = await p.evaluate(() => { window.dispatchEvent(new Event("focus"));
@@ -6487,7 +6433,7 @@ async function phoneViewSection(browser, base) {
 
     // the pty moving while the phone is attached is followed, locally
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":150,"rows":35}' }));
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => term.cols === 150 && term.rows === 35, null, { timeout: slow(5000) }).catch(() => {});
     if ((await resizes(p)).length) fail("phoneView: following a size frame sent a resize");
     d = await dims();
     if (d.cols !== 150 || d.rows !== 35) fail("phoneView: a new size frame was not followed: " + JSON.stringify(d));
@@ -6513,12 +6459,12 @@ async function phoneViewSection(browser, base) {
     }
     await p.evaluate(() => { window.__sent.length = 0; });
     await p.locator('#t-keys button[data-key="int"]').tap();
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: a tap must not fire the 600ms hold timer, and its absence has no event
     if ((await p.evaluate(() => window.__sent.slice())).some(x => /signal/.test(x)))
       fail("phoneView: a tap on ctrl-c interrupted");
     const intBtn = p.locator('#t-keys button[data-key="int"]');
     await intBtn.dispatchEvent("pointerdown");
-    await p.waitForTimeout(800);
+    await p.waitForFunction(() => window.__sent.some(x => /"t":"signal"/.test(x)), null, { timeout: slow(5000) }).catch(() => {});
     await intBtn.dispatchEvent("pointerup");
     const sig = await p.evaluate(() => window.__sent.slice());
     if (!sig.includes(JSON.stringify({ t: "signal", s: "int" }))) fail("phoneView: ctrl-c sent " + JSON.stringify(sig));
@@ -6618,7 +6564,7 @@ async function u016Section(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "u016", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     return p;
   };
   const vis = (p, sel) => p.evaluate(s => {
@@ -6658,10 +6604,10 @@ async function u016Section(browser, base) {
         if (!a.top || !a.inView) fail(tag + "the attach control is covered or off screen: " + JSON.stringify(a));
         const pick = () => p.setInputFiles("#t-attach-in", [{ name: "a.heic", mimeType: "image/heic", buffer: Buffer.from("x") }]);
         await pick();
-        await p.waitForTimeout(400);
+        await until(() => uploads >= 1, 5000, "the first upload").catch(() => {});
         if (uploads !== 1) fail(tag + "a chosen file did not reach the upload endpoint: " + uploads);
         await pick();
-        await p.waitForTimeout(400);
+        await until(() => uploads >= 2, 5000, "the second upload").catch(() => {});
         if (uploads !== 2) fail(tag + "the same file twice did not upload twice: " + uploads);
       }
 
@@ -6674,7 +6620,7 @@ async function u016Section(browser, base) {
 
       // full screen
       await p.evaluate(() => document.getElementById("t-full").click());
-      await p.waitForTimeout(400);
+      await p.waitForFunction(() => document.body.classList.contains("term-full"), null, { timeout: slow(5000) }).catch(() => {});
       if (!(await isFull(p))) fail(tag + "the button did not turn full screen on");
       if (await vis(p, "header")) fail(tag + "the header shows in full screen");
       if (await vis(p, "#term-list")) fail(tag + "the terminal list shows in full screen");
@@ -6684,7 +6630,7 @@ async function u016Section(browser, base) {
         if (!(await vis(p, "#t-keys"))) fail(tag + "the key bar is gone in full screen");
         if ((await p.evaluate(() => window.__fs)) < 1) fail(tag + "requestFullscreen was not called");
         await p.evaluate(() => document.dispatchEvent(new Event("fullscreenchange")));
-        await p.waitForTimeout(200);
+        await p.waitForFunction(() => !document.body.classList.contains("term-full"), null, { timeout: slow(5000) }).catch(() => {});
         if (await isFull(p)) fail(tag + "fullscreenchange did not leave full screen");
       } else {
         // desktop: Esc with the terminal focused goes to the runner and does not leave
@@ -6693,18 +6639,18 @@ async function u016Section(browser, base) {
         if (!(await isFull(p))) fail(tag + "Esc in the focused terminal left full screen");
         await p.evaluate(() => document.activeElement && document.activeElement.blur());
         await p.keyboard.press("Escape");
-        await p.waitForTimeout(300);
+        await p.waitForFunction(() => !document.body.classList.contains("term-full"), null, { timeout: slow(5000) }).catch(() => {});
         if (await isFull(p)) fail(tag + "Esc outside the terminal did not leave full screen");
       }
       // the button both ways
       await p.evaluate(() => { if (!document.body.classList.contains("term-full")) document.getElementById("t-full").click(); });
-      await p.waitForTimeout(200);
+      await p.waitForFunction(() => document.body.classList.contains("term-full"), null, { timeout: slow(5000) }).catch(() => {});
       await p.evaluate(() => document.getElementById("t-full").click());
-      await p.waitForTimeout(300);
+      await p.waitForFunction(() => !document.body.classList.contains("term-full"), null, { timeout: slow(5000) }).catch(() => {});
       if (await isFull(p)) fail(tag + "the button did not leave full screen");
       if (phone) {
         await p.evaluate(() => document.getElementById("t-full").click());
-        await p.waitForTimeout(200);
+        await p.waitForFunction(() => document.body.classList.contains("term-full"), null, { timeout: slow(5000) }).catch(() => {});
         await p.evaluate(() => { window.__sent.length = 0; document.querySelector("#t-keys [data-key=esc]").click(); });
         if (!(await isFull(p))) fail(tag + "one key bar Esc left full screen");
         if (!(await p.evaluate(() => window.__sent.some(x => /u001b/.test(x)))))
@@ -6771,7 +6717,7 @@ async function u016Section(browser, base) {
         await p.evaluate(() => document.getElementById("hdr-toggle").click());
         if (!(await vis(p, "#gear"))) fail(tag + "the chevron did not open the header");
         await p.setViewportSize({ width: 844, height: 390 });
-        await p.waitForTimeout(300);
+        await frames(p, 2);
         if (!(await hd())) fail(tag + "rotating to landscape hid the header");
         await p.setViewportSize({ width: 390, height: 844 });
         await p.evaluate(() => history.replaceState(history.state, "", location.pathname + location.search));
@@ -7565,7 +7511,7 @@ async function phoneTermBarSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "phoneTermBar", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     return p;
   };
   const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false;
@@ -7584,14 +7530,15 @@ async function phoneTermBarSection(browser, base) {
     const shown = (q, sel) => q.evaluate(s => { const e = document.querySelector(s); return !!e && getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; }, sel);
     for (const mode of ["normal", "full"]) {
       const tag = "phoneTermBar " + mode + ": ";
-      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await p.waitForTimeout(200); }
+      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await settleStyle(p); }
       if (await shown(p, ".term-bar")) fail(tag + "the tray shows by default");
       if (!(await vis(p, "#t-tray-handle"))) fail(tag + "the handle is missing");
       const hb = await box(p, "#t-tray-handle");
       if (hb.w < 44 || hb.h < 44) fail(tag + "the handle is under 44px: " + JSON.stringify(hb));
       const before = await p.evaluate(() => document.activeElement && document.activeElement.tagName);
       await p.tap("#t-tray-handle");
-      await p.waitForTimeout(300);
+      await p.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }).catch(() => {});
+      await settleStyle(p).catch(() => {});
       if (!(await shown(p, ".term-bar"))) fail(tag + "a tap on the handle did not open the tray");
       if (!(await vis(p, "#t-chips .chip.path"))) fail(tag + "the path chip is not in the open tray");
       if (await vis(p, "#t-attach")) fail(tag + "the paperclip shows in the tray");
@@ -7608,12 +7555,12 @@ async function phoneTermBarSection(browser, base) {
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
       if (!(await p.evaluate(() => document.body.classList.contains("tray-open")))) fail(tag + "the open choice did not survive a reload");
       await p.tap("#t-bar-toggle");
-      await p.waitForTimeout(300);
+      await p.waitForFunction(() => !document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }).catch(() => {});
       if (await p.evaluate(() => document.body.classList.contains("tray-open"))) fail(tag + "the chevron did not hide the tray");
       if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail(tag + "the tray moved the board header's key");
       if (mode === "normal") {
         await attachRetry(p, { unit: "phoneTermBar", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask });
-        await p.waitForTimeout(300);
+        await frames(p, 3);
       }
     }
     await pctx.close();
@@ -7628,10 +7575,11 @@ async function phoneTermBarSection(browser, base) {
     sp.on("pageerror", e => errors.push(String(e)));
     await sp.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
     await sp.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(15000) });
-    await sp.waitForTimeout(300);
+    await frames(sp, 3);
     if (await shown(sp, ".term-bar")) fail("phoneTermBar popout: the tray shows by default");
     await sp.tap("#t-tray-handle");
-    await sp.waitForTimeout(300);
+    await sp.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }).catch(() => {});
+    await settleStyle(sp).catch(() => {});
     if (!(await vis(sp, "#t-chips .chip.path"))) fail("phoneTermBar popout: a tap on the handle did not open the tray");
     const pb = await box(sp, "#t-bar-toggle");
     if (pb.w < 44 || pb.h < 44) fail("phoneTermBar popout: the chevron is under 44px");
@@ -7685,7 +7633,7 @@ async function phoneFocusSection(browser, base) {
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
       await attachRetry(p, { unit: "phoneFocus", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
       await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
-      await p.waitForTimeout(300);
+      await p.waitForFunction(() => term.cols === 132 && term.rows === 41, null, { timeout: slow(5000) }).catch(() => {});
       // the browser's scroll-into-view: bring the focused textarea inside the pane, and the pane inside the page
       await p.evaluate(() => {
         window.__bfs = () => {
@@ -7700,7 +7648,7 @@ async function phoneFocusSection(browser, base) {
       });
       // a prompt near the top, so the cursor only moves down while output streams
       await p.evaluate(() => termSock.onmessage({ data: "\x1b[2J\x1b[8;1Hprompt" }));
-      await p.waitForTimeout(200);
+      await termWrite(p, "");
       const box = await p.locator("#t-screen").boundingBox();
       await p.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 3);
       await p.evaluate(() => term.focus());
@@ -7725,7 +7673,7 @@ async function phoneFocusSection(browser, base) {
           if (n >= 30) clearInterval(feed);
         }, 60);
       });
-      await p.waitForTimeout(2500);
+      await p.waitForFunction(() => { const s = window.__samples; return s.length && s[s.length - 1].t >= 2200; }, null, { timeout: slow(10000) }).catch(() => {});
       const r = await p.evaluate(() => {
         const host = document.getElementById("t-screen");
         const vv = window.visualViewport;
@@ -8037,9 +7985,9 @@ async function terminalTopGapSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "terminalTopGap", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     await p.evaluate((x) => termSock.onmessage({ data: x }), "\x1b[2J\x1b[1;1Hfirst line\r\nsecond line\r\nthird line");
-    await p.waitForTimeout(250);
+    await termWrite(p, ""); await frames(p, 2);
     // From the top of the pane's content box to the top of the first grid row.
     const gap = () => p.evaluate(() => {
       const host = document.getElementById("t-screen"), x = host.querySelector(".xterm");
@@ -8060,7 +8008,7 @@ async function terminalTopGapSection(browser, base) {
     };
     const size = async (rows) => {
       await p.evaluate((r) => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":' + r + '}' }), rows);
-      await p.waitForTimeout(250);
+      await p.waitForFunction((r) => termPtyRows === r, rows, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     };
     await check("after attach");
     await shot("attach");
@@ -8075,7 +8023,7 @@ async function terminalTopGapSection(browser, base) {
     // a fit: the window changes by part of a row
     for (const h of [723, 690, 711]) {
       await p.setViewportSize({ width: 1280, height: h });
-      await p.waitForTimeout(400);
+      await frames(p, 2);
       await check("after a fit at " + h + "px");
       await size((await gap()).fit);
       await check("pty as tall as the pane after a fit at " + h + "px");
@@ -8123,7 +8071,7 @@ async function phoneTapSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "phoneTap", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
     await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => term.cols === 132 && term.rows === 41, null, { timeout: slow(5000) }).catch(() => {});
     const rule = "─".repeat(60);
     await p.evaluate((rule) => {
       window.__focus = 0;
@@ -8132,7 +8080,7 @@ async function phoneTapSection(browser, base) {
         "\x1b[6;1H> hello world first line\x1b[7;1H  wrapped second here\x1b[8;1H" + rule +
         "\x1b[9;1Hstatus\x1b[7;22H" });
     }, rule);
-    await p.waitForTimeout(300);
+    await termWrite(p, ""); await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
     const cell = await p.evaluate(() => {
       const r = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
       const d = term._core._renderService.dimensions.css.cell;
@@ -8152,33 +8100,33 @@ async function phoneTapSection(browser, base) {
     await clear();
     // 5 cells left of the cursor, one frame
     await p.touchscreen.tap(...at(6, 16));
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => window.__sent.some(x => /"t":"in"/.test(x)), null, { timeout: slow(5000) }).catch(() => {});
     await expect("a tap 5 cells left", [L.repeat(5)]);
     // output above the rule
     await p.touchscreen.tap(...at(1, 4));
-    await p.waitForTimeout(150);
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
     await expect("a tap on output", []);
     // u-029: a tap on another row inside the input sends NOTHING (no Up or Down, no Left or Right), whether
     // it lands inside the text or past its end, so the daemon's line tracker is never left "unsure"
     await p.touchscreen.tap(...at(5, 10));
-    await p.waitForTimeout(150);
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
     await expect("a tap on the line above", []);
     await p.touchscreen.tap(...at(5, 50));
-    await p.waitForTimeout(150);
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
     await expect("a tap past the end of the line above", []);
     // the same row still moves the cursor after a tap on another row
     await p.touchscreen.tap(...at(6, 18));
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => window.__sent.some(x => /"t":"in"/.test(x)), null, { timeout: slow(5000) }).catch(() => {});
     await expect("a tap 3 cells left after a tap elsewhere", [L.repeat(3)]);
     // a tap on a rule and on the status line send nothing
     await p.touchscreen.tap(...at(4, 3));
     await p.touchscreen.tap(...at(8, 3));
-    await p.waitForTimeout(150);
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
     await expect("a tap on a rule and the status", []);
     // application cursor mode uses SS3
     await p.evaluate(() => termSock.onmessage({ data: "\x1b[?1h" }));
     await p.touchscreen.tap(...at(6, 19));
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => window.__sent.some(x => /"t":"in"/.test(x)), null, { timeout: slow(5000) }).catch(() => {});
     await expect("a tap in application cursor mode", ["\x1bOD\x1bOD"]);
     await p.evaluate(() => termSock.onmessage({ data: "\x1b[?1l" }));
     // a drag on the prompt, and a long press, send nothing
@@ -8190,7 +8138,7 @@ async function phoneTapSection(browser, base) {
       host.dispatchEvent(new TouchEvent("touchmove", { bubbles: true, touches: [tch(x + 40, y)], changedTouches: [tch(x + 40, y)] }));
       host.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [tch(x + 40, y)] }));
     }, [dx, dy]);
-    await p.waitForTimeout(150);
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
     await expect("a drag", []);
     await p.evaluate(([x, y]) => new Promise(res => {
       const host = document.getElementById("t-screen");
@@ -8542,7 +8490,7 @@ async function termListLastRowSection(browser, base) {
             const l = document.querySelector(".term-layout");
             l.classList.add("tl-open");
           }, tray);
-          await p.waitForTimeout(300);
+          await settleStyle(p);
           const tag = "termListLastRow " + vp.width + "x" + vp.height + (tray ? " tray" : " plain") + " gap " + gap + ": ";
           const r = await p.evaluate(() => {
             const vv = window.visualViewport, vis = vv.offsetTop + vv.height;
@@ -8613,12 +8561,12 @@ async function copySelectSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "copySelect", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     await p.evaluate(() => {
       copyOnSelect = true;
       termSock.onmessage({ data: "alpha beta gamma\r\nalpha delta\r\nalpha epsilon\r\n" });
     });
-    await p.waitForTimeout(200);
+    await termWrite(p, "");
 
     // 1. Typing, stepping both ways, and output while the bar is open.
     await p.evaluate(() => openFind());
@@ -8626,7 +8574,7 @@ async function copySelectSection(browser, base) {
     await p.keyboard.type("alpha", { delay: 20 });
     await p.evaluate(() => { runFind(true); runFind(true); runFind(true, true); });
     await p.evaluate(() => termSock.onmessage({ data: "alpha zeta\r\n" }));
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => / of 4$/.test(document.getElementById("t-find-n").textContent), null, { timeout: slow(5000) }).catch(() => {});
     const find = await p.evaluate(() => ({ sel: term.getSelection(), clip: window.__clip.slice() }));
     if (find.sel !== "alpha") fail("the find bar did not select its match, so this proves nothing: " + JSON.stringify(find));
     if (find.clip.length) fail("copy on select copied from the find bar: " + JSON.stringify(find.clip));
@@ -8644,32 +8592,95 @@ async function copySelectSection(browser, base) {
     await p.mouse.move(box.x + cell.w * 5, y, { steps: 5 });
     await p.mouse.move(box.x + cell.w * 10.5, y, { steps: 5 });
     await p.mouse.up();
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => window.__clip.length, null, { timeout: slow(5000) }).catch(() => {});
     const drag = await p.evaluate(() => window.__clip.slice());
     if (drag.length !== 1 || !/^alpha be/.test(drag[0] || "")) fail("a drag did not copy its selection: " + JSON.stringify(drag));
 
     // 3. A double-click copies the word, a triple-click the line.
     await p.evaluate(() => { term.clearSelection(); window.__clip = []; });
     await p.mouse.dblclick(box.x + cell.w * 7.5, y + cell.h);
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => window.__clip.length, null, { timeout: slow(5000) }).catch(() => {});
     const word = await p.evaluate(() => window.__clip.slice());
     if (!word.includes("delta")) fail("a double-click did not copy the word: " + JSON.stringify(word));
     await p.evaluate(() => { term.clearSelection(); window.__clip = []; });
     await p.mouse.click(box.x + cell.w * 2.5, y + cell.h * 2, { clickCount: 3 });
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => window.__clip.some(t => /^alpha epsilon/.test(t)), null, { timeout: slow(5000) }).catch(() => {});
     const line = await p.evaluate(() => window.__clip.slice());
     if (!line.some(t => /^alpha epsilon\s*$/.test(t))) fail("a triple-click did not copy the line: " + JSON.stringify(line));
 
     // 4. A plain click that changes nothing copies nothing.
     await p.evaluate(() => { term.clearSelection(); window.__clip = []; });
     await p.mouse.click(box.x + cell.w * 3, y);
-    await p.waitForTimeout(100);
+    await frames(p, 2);
     const still = await p.evaluate(() => window.__clip.slice());
     if (still.length) fail("a plain click copied: " + JSON.stringify(still));
   } finally {
     await ctx.close();
   }
   if (errors.length) fail("the copy on select page threw: " + errors.join(" | "));
+  mock.landList = []; mock.landPerms = [];
+  mock.tasksMode = was;
+}
+
+// ── find by speaker: "me" matches only the operator's tinted prompt rows ──
+// A wrapped tinted prompt holds the word on its continuation row and the agent's plain row holds it too. "me" finds
+// the prompt's, "agent" the agent's, "all" both.
+async function termFindSpeakerSection(browser, base) {
+  const was = mock.tasksMode;
+  mock.tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  mock.landList = [mock.LAND["land-live"]];
+  mock.landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await attachRetry(p, { unit: "termFindSpeaker", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
+    await p.evaluate(() => {
+      const pad = "x".repeat(term.cols - 2);
+      termSock.onmessage({ data: "the widget is fixed\r\n\x1b[48;5;237m> " + pad + " widget again\x1b[K\x1b[0m\r\nnothing here\r\n" });
+    });
+    await p.waitForFunction(() => {
+      const b = term.buffer.active;
+      for (let y = 0; y < b.length; y++) if (b.getLine(y).translateToString(true).includes("nothing here")) return true;
+      return false;
+    }, null, { timeout: slow(5000) });
+    await p.evaluate(() => openFind());
+    await p.fill("#t-find-q", "widget");
+    const pick = who => p.evaluate(w => {
+      while (findWho !== w) toggleFind("who");
+      runFind(false);
+      const b = term.buffer.active, s = term.getSelectionPosition();
+      return { n: document.getElementById("t-find-n").textContent, sel: term.getSelection(),
+        label: document.getElementById("t-find-who").textContent, wrapped: s ? b.getLine(s.start.y).isWrapped : null };
+    }, who);
+    const me = await pick("me");
+    if (me.label !== "me" || me.n !== "1 of 1" || me.sel !== "widget" || me.wrapped !== true) fail("\"me\" did not find only the wrapped prompt's word: " + JSON.stringify(me));
+    const agent = await pick("agent");
+    if (agent.n !== "1 of 1" || agent.sel !== "widget" || agent.wrapped !== false) fail("\"agent\" did not find only the agent's word: " + JSON.stringify(agent));
+    await p.evaluate(() => toggleFind("who"));
+    const all = await p.waitForFunction(() => /^(\d+ of )?2$/.test(document.getElementById("t-find-n").textContent), null, { timeout: slow(5000) })
+      .then(() => true, () => false);
+    if (!all) fail("\"all\" did not find both: " + await p.evaluate(() => document.getElementById("t-find-n").textContent));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the find by speaker page threw: " + errors.join(" | "));
   mock.landList = []; mock.landPerms = [];
   mock.tasksMode = was;
 }
@@ -8728,7 +8739,7 @@ async function cleanCopySection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "cleanCopy", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     const toasts = () => p.evaluate(() => document.getElementById("toasts").textContent);
     const btn = () => p.evaluate(() => { const b = document.getElementById("cc-btn"); return b ? b.getBoundingClientRect().toJSON() : null; });
     // Selects the lines, does the plain copy (what ctrl-c does), and waits for the popup lookup to finish.
@@ -8739,7 +8750,7 @@ async function cleanCopySection(browser, base) {
         termSock.onmessage({ data: out });
         term.selectLines(lines[0], lines[1]);
       }, [out, lines]);
-      await p.waitForTimeout(100);
+      await termWrite(p, "");
       const sel = await p.evaluate(async () => { const s = term.getSelection(); copySelection(); await offerCleanCopy(); return s; });
       return { sel, clip: await p.evaluate(() => window.__clip.slice()), btn: await btn() };
     };
@@ -8763,7 +8774,7 @@ async function cleanCopySection(browser, base) {
     if (/copied|written/.test(await toasts())) fail("cleanCopy: a copy raised a toast: " + await toasts());
     await shot("copy-clean-popup-after.png");
     await p.click("#cc-btn");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(w => window.__clip[window.__clip.length - 1] === w, want, { timeout: slow(5000) }).catch(() => {});
     const clicked = await p.evaluate(() => window.__clip.slice());
     if (clicked.length !== 2 || clicked[1] !== want) fail("cleanCopy: the button copied " + JSON.stringify(clicked) + ", not " + JSON.stringify(want));
     if (await btn()) fail("cleanCopy: the button stayed after it was clicked");
@@ -8777,7 +8788,7 @@ async function cleanCopySection(browser, base) {
       resetTerm(term);
       termSock.onmessage({ data: out });
     }, [shown]);
-    await p.waitForTimeout(200);
+    await termWrite(p, ""); await frames(p, 2);
     const sbox = await p.locator("#t-screen .xterm-screen").boundingBox();
     const sc = await p.evaluate(() => {
       const d = term._core._renderService.dimensions.css.cell;
@@ -8821,15 +8832,15 @@ async function cleanCopySection(browser, base) {
     // 2. Gone when the selection clears, on scroll and on Escape.
     await select(shown, [2, 3]);
     await p.evaluate(() => term.clearSelection());
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
     if (await btn()) fail("cleanCopy: the button stayed after the selection cleared");
     await select(shown, [2, 3]);
     await p.evaluate(() => { for (let i = 0; i < 60; i++) term.write("\r\nfiller " + i); term.scrollLines(-5); });
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
     if (await btn()) fail("cleanCopy: the button stayed after a scroll");
     await select(shown, [2, 3]);
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => !document.getElementById("cc-btn"), null, { timeout: slow(5000) }).catch(() => {});
     if (await btn()) fail("cleanCopy: the button stayed after Escape");
 
     // 3. Tool output no reply holds: the plain copy is the render, and the button still shows.
@@ -8899,7 +8910,7 @@ async function cleanCopySection(browser, base) {
     const o2 = await select("  ▎ The prior transcript holds this sentence\r\n  ▎ about caching.\r\n", [0, 1]);
     if (!o2.btn) fail("cleanCopy: no button for a selection in a prior transcript");
     await p.click("#cc-btn");
-    await p.waitForTimeout(100);
+    await p.waitForFunction(w => window.__clip[window.__clip.length - 1] === w, "> The prior transcript holds this sentence about caching.", { timeout: slow(5000) }).catch(() => {});
     const oc = await p.evaluate(() => window.__clip.slice());
     if (oc[oc.length - 1] !== "> The prior transcript holds this sentence about caching.") fail("cleanCopy: the prior-transcript button copied " + JSON.stringify(oc));
     if (allReads !== 1) fail("cleanCopy: the all-replies read ran " + allReads + " times for one card, not once");
@@ -8907,7 +8918,7 @@ async function cleanCopySection(browser, base) {
     // 5. An image pasted into the terminal says nothing about where it landed: the path is already typed.
     await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
     await p.evaluate(() => uploadIntoTerm([new File([new Uint8Array([1, 2, 3])], "pasted.png", { type: "image/png" })]));
-    await p.waitForTimeout(500);
+    await frames(p, 2);
     const pt = await toasts();
     if (/working directory|scratch folder|\/tmp\/pasted/.test(pt)) fail("cleanCopy: a pasted image raised the landing toast: " + pt);
   } finally {
@@ -8992,7 +9003,7 @@ async function busyGuardSection(browser, base) {
   let launchFails = false;
   const hold = (key, reply, ms) => async route => {
     hits[key] = (hits[key] || 0) + 1;
-    await new Promise(r => setTimeout(r, ms || 300));
+    await new Promise(r => setTimeout(r, ms || 300)); // wait: the route holds the request so the press is seen in flight
     await route.fulfill(reply());
   };
   const json = body => ({ contentType: "application/json", body: JSON.stringify(body) });
@@ -9037,7 +9048,7 @@ async function busyGuardSection(browser, base) {
       setTimeout(() => done({ busy: go.getAttribute("aria-busy"), disabled: go.disabled,
         spin: !!go.querySelector(".busy-spin"), label: go.textContent }), 100);
     }));
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => !document.querySelector("button[data-busy]") && !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => {});
     once("launch", "the launch dialog's launch button");
     if (during.busy !== "true" || !during.disabled || !during.spin || !/starting/.test(during.label)) {
       fail("a held launch did not show it was working: " + JSON.stringify(during));
@@ -9051,7 +9062,7 @@ async function busyGuardSection(browser, base) {
     launchFails = true;
     await openIt();
     await p.evaluate(() => document.getElementById("l-go").click());
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => !document.querySelector("button[data-busy]") && document.querySelector("#launch .busy-why"), null, { timeout: slow(5000) }).catch(() => {});
     const refused = await p.evaluate(() => {
       const why = document.querySelector("#launch .busy-why");
       return { open: document.getElementById("launch").open, why: why && why.textContent,
@@ -9086,7 +9097,7 @@ async function busyGuardSection(browser, base) {
       b.click();
       setTimeout(() => done({ busy: b.getAttribute("aria-busy") }), 100);
     }));
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => !document.querySelector("button[data-busy]"), null, { timeout: slow(5000) }).catch(() => {});
     once("decide", "a permission card's approve");
     if (perm.busy !== "true") fail("a permission answer in flight did not show it: " + JSON.stringify(perm));
 
@@ -9099,7 +9110,7 @@ async function busyGuardSection(browser, base) {
       b.click();
       sayToCurrent("done");
     });
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => !document.querySelector("button[data-busy]"), null, { timeout: slow(5000) }).catch(() => {});
     once("message", "the say box's send");
 
     // 7. The note's send it, twice.
@@ -9131,8 +9142,8 @@ async function busyGuardSection(browser, base) {
       for (const b of buttons) {
         b.click();
         b.click();
-        await new Promise(r => setTimeout(r, 200));
-        for (let i = 0; held() && i < 100; i++) await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => requestAnimationFrame(r));
+        for (const t = Date.now(); held() && Date.now() - t < 5000;) await new Promise(r => requestAnimationFrame(r));
       }
       return names;
     });
@@ -9224,7 +9235,9 @@ async function idleParkSection(browser, base) {
     await shot("idle-park-cog-after");
 
     await edit("45", null);
-    await ip.waitForTimeout(400);
+    await until(() => mock.idleParkWrites.length >= 1, 5000, "the 45 minute write").catch(() => {});
+    // The toast lands after the pane's refill, so the next edit is not overwritten by a stale one.
+    await ip.waitForFunction(() => /parked after 45 minutes/.test(document.body.textContent), null, { timeout: slow(5000) }).catch(() => {});
     let w = mock.idleParkWrites[0];
     if (!w || w.body.idle_park_after !== "2700" || Object.keys(w.body).length !== 1) {
       fail("45 minutes did not post {idle_park_after:\"2700\"}: " + JSON.stringify(mock.idleParkWrites));
@@ -9232,7 +9245,8 @@ async function idleParkSection(browser, base) {
     if (w && w.room !== "alpha") fail("the idle park write did not name the room in X-Atrium-Room: " + JSON.stringify(w.room));
 
     await edit(null, false);
-    await ip.waitForTimeout(400);
+    await until(() => mock.idleParkWrites.length >= 2, 5000, "the off write").catch(() => {});
+    await ip.waitForFunction(() => /idle cards are not parked/.test(document.body.textContent), null, { timeout: slow(5000) }).catch(() => {});
     w = mock.idleParkWrites[1];
     if (!w || w.body.idle_park_after !== "off") fail("turning it off did not post \"off\": " + JSON.stringify(mock.idleParkWrites));
     if (w && w.room !== "alpha") fail("the off write did not name the room: " + JSON.stringify(w.room));
@@ -9241,12 +9255,13 @@ async function idleParkSection(browser, base) {
     await shot("idle-park-cog-off");
 
     await edit(null, true);
-    await ip.waitForTimeout(300);
+    await until(() => mock.idleParkWrites.length >= 3, 5000, "the on write").catch(() => {});
+    await ip.waitForFunction(() => /parked after 120 minutes/.test(document.body.textContent), null, { timeout: slow(5000) }).catch(() => {});
     const before = mock.idleParkWrites.length;
     // The board shows three toasts and queues the rest, so clear the saved ones before looking for the refusal.
     await ip.evaluate(() => { document.getElementById("toasts").innerHTML = ""; });
     await edit("10", null);
-    await ip.waitForTimeout(400);
+    await ip.waitForFunction(() => /the least is 30 minutes/.test(document.body.textContent), null, { timeout: slow(3000) }).catch(() => {});
     if (mock.idleParkWrites.length !== before) {
       fail("a value under the floor was sent: " + JSON.stringify(mock.idleParkWrites));
     }
@@ -9467,6 +9482,55 @@ async function keepaliveSection(browser, base) {
     if (/suspended/.test(by["ka-stop"].tip)) fail("a card in an unsuspended room mentions a suspension.");
     if (!/off . cold/.test(by["ka-off"].text)) fail("a card with its switch off does not say off and cold: " + JSON.stringify(by["ka-off"]));
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
+
+    // A Terminals row draws only the dial (pie, pie due) and the stopped strike. Every other state draws nothing
+    // there, and the same chip on a board card still shows. KA_ROW_SHOTS=<dir> writes the rows.
+    const soon = ms => new Date(Date.now() + ms).toISOString();
+    const rowCards = KA_CARDS.concat([
+      Object.assign({}, T1, { id: "ka-kept", display_title: "kept pie card", keepalive: { state: "on", refreshes: 2,
+        warm_until: soon(50 * 60000), next_refresh_at: soon(45 * 60000), last_refresh_at: soon(-10 * 60000) } }),
+      Object.assign({}, T1, { id: "ka-due", display_title: "due card", keepalive: { state: "on", refreshes: 1,
+        warm_until: soon(6 * 60000), next_refresh_at: soon(60000), last_refresh_at: soon(-50 * 60000) } }),
+      Object.assign({}, T1, { id: "ka-cold", display_title: "cold card", keepalive: { state: "on", refreshes: 0,
+        warm_until: soon(-60 * 60000) } }),
+      Object.assign({}, T1, { id: "ka-nocache", display_title: "no cache card", keepalive: { state: "on", refreshes: 0 } }),
+    ]);
+    const rows = await kp.evaluate(cards => {
+      const list = document.createElement("aside");
+      list.className = "term-list";
+      list.id = "ka-rows";
+      list.style.cssText = "position:fixed;left:0;top:0;width:360px;z-index:99999;background:var(--bg-2)";
+      const board = document.createElement("div");
+      document.body.append(list, board);
+      const out = cards.map(t => {
+        const row = document.createElement("div");
+        row.className = "card tab";
+        row.innerHTML = `<span>${esc(t.display_title)}</span>` + termRowChips(t);
+        list.appendChild(row);
+        const card = document.createElement("div");
+        card.innerHTML = cardHTML(t);
+        board.appendChild(card);
+        const c = row.querySelector(".chip.cache");
+        const b = card.querySelector(".chip.cache");
+        return { id: t.id, cls: c ? c.className : "", shown: !!c && c.getBoundingClientRect().width > 0,
+          boardShown: !!b && b.getBoundingClientRect().width > 0 };
+      });
+      board.remove();
+      return out;
+    }, rowCards);
+    const wantRow = { "ka-stop": "stopped", "ka-miss": "stopped", "ka-quiet": "pie", "ka-kept": "pie", "ka-due": "pie due" };
+    for (const r of rows) {
+      const want = wantRow[r.id];
+      if (want && (!r.shown || !want.split(" ").every(c => r.cls.split(" ").includes(c)))) {
+        fail("a Terminals row does not draw the " + want + " chip: " + JSON.stringify(r));
+      }
+      if (!want && r.shown) fail("a Terminals row draws a plain keep-alive dot: " + JSON.stringify(r));
+      if (r.id !== "ka-none" && !r.boardShown) fail("a board card lost its keep-alive chip: " + JSON.stringify(r));
+    }
+    if (process.env.KA_ROW_SHOTS) {
+      await kp.locator("#ka-rows").screenshot({ path: require("path").join(process.env.KA_ROW_SHOTS, "keepalive-rows.png") });
+    }
+    await kp.evaluate(() => document.getElementById("ka-rows").remove());
 
     // The card menu's switch: offered on a Claude card, reads its state, and
     // posts to that card. Not offered on a card with no switch.
@@ -9977,6 +10041,7 @@ async function peekEverywhereSection(browser, base) {
   const W = 1400, H = 900;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   const p = await ctx.newPage();
+  await p.clock.install();
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => {
@@ -9997,7 +10062,7 @@ async function peekEverywhereSection(browser, base) {
     }
     if (px >= pk.x && px <= pk.r && py >= pk.y && py <= pk.b) fail(what + ": the details open over the pointer.");
   };
-  const settle = () => new Promise(r => setTimeout(r, 450));
+  const settle = () => settleStyle(p);
   const reset = async () => {
     await p.mouse.move(W / 2, 3);
     await p.evaluate(() => closePeek());
@@ -10018,7 +10083,7 @@ async function peekEverywhereSection(browser, base) {
       const ok = await p.waitForSelector(sel, { state: "visible", timeout: slow(5000) }).then(() => true)
         .catch(() => { fail("the " + view + " tab draws no entry for the card."); return false; });
       if (!ok) continue;
-      await new Promise(r => setTimeout(r, 300));
+      await settle();
       await reset();
 
       // Held still on the entry: nothing at half a second, the details at one,
@@ -10031,9 +10096,12 @@ async function peekEverywhereSection(browser, base) {
         document.querySelector(s).dataset.peekOld = "1";
         window.peekRedraw = setInterval(() => runRefresh(), 120);
       }, sel);
+      await fakePause(p);
       await p.mouse.move(px, py);
-      await new Promise(r => setTimeout(r, 500));
+      await fakeTick(p, 500, 100);
       if (await state()) fail("on the " + view + " tab the details opened after half a second, not one.");
+      await fakeTick(p, 600, 100);
+      await p.clock.resume();
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
         null, { timeout: slow(3000) }).catch(() => fail("a second on the card on the " + view + " tab did not open its details."));
       const redrawn = await p.evaluate(s => {
@@ -10063,10 +10131,11 @@ async function peekEverywhereSection(browser, base) {
       // from the right edge where the entry reaches it.
       await reset();
       await p.evaluate(() => { document.querySelector("main").style.paddingTop = "420px"; });
-      await new Promise(r => setTimeout(r, 200));
+      await frames(p, 2);
       const low = await p.locator(sel).boundingBox();
       await p.setViewportSize({ width: W, height: Math.ceil(low.y + low.height + 40) });
-      await new Promise(r => setTimeout(r, 300));
+      await p.waitForFunction(h => innerHeight === h, Math.ceil(low.y + low.height + 40), { timeout: slow(5000) });
+      await settle();
       const cut = await p.locator(sel).boundingBox();
       const cx = Math.round(cut.x + cut.width - 3), cy = Math.round(cut.y + cut.height / 2);
       const hit = await p.evaluate(([x, y, s]) => {
@@ -10074,7 +10143,10 @@ async function peekEverywhereSection(browser, base) {
         return !!(e && e.closest(s));
       }, [cx, cy, sel]);
       if (!hit) fail("the " + view + " tab's entry is not under the pointer near the bottom of the screen.");
+      await fakePause(p);
       await p.mouse.move(cx, cy);
+      await fakeTick(p, 1100, 100);
+      await p.clock.resume();
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
         null, { timeout: slow(3000) }).catch(() => fail("a second near the bottom of the " + view + " tab's entry did not open its details."));
       await settle();
@@ -10113,21 +10185,23 @@ async function peekEverywhereSection(browser, base) {
       const ok = await part.waitFor({ state: "visible", timeout: slow(5000) }).then(() => true)
         .catch(() => { fail("the " + view + " tab's entry has no part with a tooltip at " + sel); return false; });
       if (!ok) continue;
-      await new Promise(r => setTimeout(r, 300));
+      await settle();
       await reset();
       const own = view === "terms";
       const said = norm(await part.getAttribute("data-tip"));
       const b = await part.boundingBox();
       const px = Math.round(b.x + Math.min(b.width / 2, 20)), py = Math.round(b.y + b.height / 2);
+      await fakePause(p);
       await p.mouse.move(px, py);
       let both = false, tipped = false, opened = false;
-      for (const t0 = Date.now(); Date.now() - t0 < 1800;) {
+      for (let t = 0; t < 1800; t += 40) {
         const s = await shown();
         both = both || (s.tip && s.peek);
         tipped = tipped || s.tip;
         opened = opened || s.peek;
-        await new Promise(r => setTimeout(r, 40));
+        await p.clock.runFor(40);
       }
+      await p.clock.resume();
       if (both) fail("on the " + view + " tab the card's tooltip and its details showed at once.");
       if (tipped) fail("on the " + view + " tab a tooltip showed on the card under the pointer: " + sel);
       if (!opened) { fail("on the " + view + " tab a second on " + sel + " did not open the details."); continue; }
@@ -10152,9 +10226,11 @@ async function peekEverywhereSection(browser, base) {
         // Across the same card to another part: the details stay, and say what that one says.
         const nb = await p.locator(next).first().boundingBox();
         const nsaid = norm(await p.locator(next).first().getAttribute("data-tip"));
+        await fakePause(p);
         await p.mouse.move(Math.round(nb.x + nb.width / 2), Math.round(nb.y + nb.height / 2), { steps: 4 });
-        await new Promise(r => setTimeout(r, 700));
+        await p.clock.runFor(700);
         const s = await shown();
+        await p.clock.resume();
         if (s.tip) fail("on the " + view + " tab a tooltip showed after crossing the card to " + next);
         if (!s.peek) fail("on the " + view + " tab the details closed crossing their own card to " + next);
         else if (await p.evaluate(() => !!document.querySelector(".peek.on .peek-hint"))) {
@@ -10225,7 +10301,7 @@ const ONE_HOVER_CARD = Object.assign({}, T1, {
   ask: "land sa21 first?", asks_open: 2,
   seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false, open_questions: ["land sa21 first?", "build the tray?"] },
   keepalive: { state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
-    warm_until: new Date(Date.now() + 30 * 60000).toISOString() },
+    warm_until: new Date(Date.now() + 30 * 60000).toISOString(), next_refresh_at: new Date(Date.now() + 25 * 60000).toISOString() },
 });
 // The two cards the peek is measured on: one open question and a recap, and a plain idle card.
 const OH_RECAP = "Moved the peek's size rules into one place and cut the card block, the usage grid and the cache paragraph. " +
@@ -10248,6 +10324,7 @@ async function peekOneHoverSection(browser, base) {
   const W = 1400, H = 1000;
   const ctx = await browser.newContext({ viewport: { width: W, height: H } });
   const p = await ctx.newPage();
+  await p.clock.install();
   const errors = [];
   p.on("pageerror", e => errors.push(String(e)));
   await ctx.route("**/v1/tasks/*/usage*", route => route.fulfill({ json: CTX_USAGE["cx-big"] }));
@@ -10270,7 +10347,8 @@ async function peekOneHoverSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     const row = '#term-list .card.tab[data-id="sg4-control~oh1"]';
     await p.waitForSelector(row, { state: "visible", timeout: slow(15000) });
-    await new Promise(r => setTimeout(r, 1500));
+    await p.waitForFunction(r => ["held", "questions", "unseen", "cache", "room"].every(c => document.querySelector(r + " .chip." + c)), row, { timeout: slow(5000) }).catch(() => {});
+    await settleStyle(p);
     // The row's badges, by what they are. Every one must be on the row for the test to mean anything.
     const badges = ["chip.held", "chip.questions", "chip.unseen", "chip.cache", "chip.room"]
       .map(c => row + " ." + c.split(".").join("."));
@@ -10280,12 +10358,15 @@ async function peekOneHoverSection(browser, base) {
       if (!(await loc.count())) { if (sel.endsWith(".tname") || sel === row) fail("onehover: no " + sel); else fail("onehover: the row draws no " + sel); continue; }
       await p.mouse.move(W / 2, 3);
       await p.evaluate(() => closePeek());
-      await new Promise(r => setTimeout(r, 300));
+      await settleStyle(p);
       const b = await loc.boundingBox();
+      await fakePause(p);
       await p.mouse.move(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2));
+      await fakeTick(p, 1500, 100);
+      await p.clock.resume();
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("onehover: a second on " + sel + " did not open the details."));
-      await new Promise(r => setTimeout(r, 400));
+      await settleStyle(p);
       if (await p.evaluate(() => document.getElementById("tip").classList.contains("on"))) fail("onehover: a tooltip showed over " + sel);
       const pk = await open();
       if (!pk) { fail("onehover: no details on " + sel); continue; }
@@ -10301,7 +10382,7 @@ async function peekOneHoverSection(browser, base) {
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "hover"), id);
       await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("onehover: the details of " + id + " never showed a context size."));
-      await new Promise(r => setTimeout(r, 400));
+      await settleStyle(p);
       // Every drawer open, for the picture and for the recap's "more", which only measures in an open drawer.
       if (all) await p.evaluate(() => document.querySelectorAll(".peek.on .peek-drawer:not(.open) > .peek-dh").forEach(h => h.click()));
       const m = await p.evaluate(() => {
@@ -10333,8 +10414,10 @@ async function peekOneHoverSection(browser, base) {
     // Short window: it never grows past the viewport, and scrolls inside.
     await p.evaluate(() => closePeek());
     await p.setViewportSize({ width: W, height: 260 });
+    await p.waitForFunction(() => innerHeight === 260, null, { timeout: slow(5000) });
     await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
-    await new Promise(r => setTimeout(r, 600));
+    await p.waitForSelector(".peek.on .peek-body", { timeout: slow(5000) });
+    await settleStyle(p);
     const short = await p.evaluate(() => { const b = document.querySelector(".peek.on .peek-body"); const r = b.getBoundingClientRect();
       return { top: r.top, bottom: r.bottom, vh: innerHeight, scrolls: b.scrollHeight > b.clientHeight, oy: getComputedStyle(b).overflowY }; });
     if (short.top < 0 || short.bottom > short.vh || short.oy !== "auto") fail("onehover: in a short window the details leave it: " + JSON.stringify(short));
@@ -10348,7 +10431,8 @@ async function peekOneHoverSection(browser, base) {
       t.seen = Object.assign({}, t.seen, { open_questions: ["Where should the Config builder link go in the ziti-doc sidebar? ".repeat(8).trim()] });
     });
     await p.evaluate(() => openPeek("sg4-control~oh2", document.querySelector('#term-list .card.tab[data-id="sg4-control~oh2"]'), "hover"));
-    await new Promise(r => setTimeout(r, 600));
+    await p.waitForSelector(".peek.on .qa-qx", { timeout: slow(5000) });
+    await settleStyle(p);
     const lq = () => p.evaluate(() => {
       const pop = document.querySelector(".peek.on"), x = pop.querySelector(".qa-qx"), e = pop.querySelector(".qa-exp"), r = pop.getBoundingClientRect();
       const lh = parseFloat(getComputedStyle(x).lineHeight) || 18;
@@ -10366,7 +10450,7 @@ async function peekOneHoverSection(browser, base) {
     if (shots) await p.screenshot({ path: shots + "/" + (process.env.ONEHOVER_NAME || "peek") + "-longq-open.png" });
     await p.evaluate(() => closePeek());
     await p.mouse.move(W / 2, 3);
-    await new Promise(r => setTimeout(r, 400));
+    await settleStyle(p);
 
     const [firstSel, first] = hovered[0] || ["", ""];
     for (const [sel, text] of hovered) {
@@ -10382,7 +10466,9 @@ async function peekOneHoverSection(browser, base) {
     // Opening a peek hides any tooltip, so one still closing or opening from the hovers above would take the gear's
     // tooltip down after it showed. Wait until no peek is on screen, then let the grace timers run out.
     await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: slow(5000) });
-    await new Promise(r => setTimeout(r, 400));
+    await fakePause(p);
+    await p.clock.runFor(400);
+    await p.clock.resume();
     const gear = await p.locator("#gear").boundingBox();
     await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
     await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(3000) })
@@ -10412,16 +10498,18 @@ async function peekDrawersSection(browser, base) {
   const was = mock.tasksMode;
   mock.tasksMode = "onehover";
   try {
+    await p.clock.install();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~oh2"]', { state: "visible", timeout: slow(15000) });
-    await new Promise(r => setTimeout(r, 1000));
+    await fakePause(p);
+    await fakeTick(p, 1000);
     const show = async id => {
       await p.evaluate(() => closePeek());
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "menu"), id);
-      await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
-        null, { timeout: slow(4000) }).catch(() => fail("peekDrawers: " + id + " never showed a context size."));
-      await new Promise(r => setTimeout(r, 300));
+      await fakeWait(p, () => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
+        null, 4000).catch(() => fail("peekDrawers: " + id + " never showed a context size."));
+      await fakeTick(p, 300);
     };
     // What each drawer looks like now: open or not, its summary as seen, whether its body is visible.
     const drawers = () => p.evaluate(() => {
@@ -10665,6 +10753,11 @@ async function peekScratchSection(browser, base) {
     });
     if (!row || !/scratch\s*D:\/tmp\/hot-loop-01ABCDEF/.test(row.text)) fail("peekScratch: the scratch folder is not in the details: " + JSON.stringify(row));
     if (row && row.none) fail("peekScratch: a card with no scratch folder draws a row.");
+    const idRow = await p.evaluate(() => {
+      const b = document.querySelector("#shot-root .peek-copyid");
+      return b ? { id: b.dataset.id, text: document.querySelector("#shot-root").textContent.includes("sg4~c1") } : null;
+    });
+    if (!idRow || idRow.id !== "sg4~c1" || !idRow.text) fail("peekScratch: the card id is not shown with a copy button: " + JSON.stringify(idRow));
     await p.click("#shot-root .peek-scratch");
     await p.waitForSelector("#shot-root .peek-sfile a", { timeout: slow(10000) });
     if (!listed.length || !/root=scratch/.test(listed[0])) fail("peekScratch: the listing was not read with root=scratch: " + JSON.stringify(listed));
@@ -10764,13 +10857,13 @@ async function peekStatusTruthSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.evaluate(() => document.querySelector('.tab[data-view="terms"]').click());
     await p.waitForSelector('#term-list .card.tab[data-id="sg4-control~ps1"]', { state: "visible", timeout: slow(15000) });
-    await new Promise(r => setTimeout(r, 1000));
+    await settleStyle(p);
     const show = async id => {
       await p.evaluate(() => closePeek());
       await p.evaluate(i => openPeek(i, document.querySelector('#term-list .card.tab[data-id="' + i + '"]'), "menu"), id);
       await p.waitForFunction(() => /\d+k/.test((document.querySelector(".peek.on .peek-ctx") || {}).textContent || ""),
         null, { timeout: slow(4000) }).catch(() => fail("peekStatus: " + id + " never showed a context size."));
-      await new Promise(r => setTimeout(r, 400));
+      await settleStyle(p);
       return p.evaluate(() => {
         const b = document.querySelector(".peek.on .peek-body");
         const q = s => (b.querySelector(s) || {}).textContent || "";
@@ -10814,7 +10907,8 @@ async function peekStatusTruthSection(browser, base) {
     const q = await p.locator(".peek.on .qa-q").first().boundingBox();
     // The question is taller than its scrolling block, so the pointer goes on its top edge, the part in view.
     await p.mouse.move(Math.round(q.x + q.width / 2), Math.round(q.y + 12));
-    await new Promise(r => setTimeout(r, 500));
+    await p.waitForFunction(() => document.querySelector(".peek.on .qa-q:hover") !== null, null, { timeout: slow(5000) }).catch(() => {});
+    await settleStyle(p);
     const hov = await p.evaluate(() => document.querySelector(".peek.on .qa-q:hover") !== null);
     if (!hov) fail("peekStatus: the pointer is not over the question, so the hover check proves nothing: " + JSON.stringify({ q, at: await p.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.className + "|" + e.tagName : ""; }, [Math.round(q.x + q.width / 2), Math.round(q.y + q.height / 2)]) }));
     await shot("hover");
@@ -11007,9 +11101,12 @@ async function quietDoerSection(browser, base) {
     try {
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
+      await p.clock.install();
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
-      await p.waitForTimeout(1500);
+      await fakePause(p);
+      await fakeTick(p, 1500);
+      await p.clock.resume();
       const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
         [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
       const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
@@ -11130,7 +11227,7 @@ async function autoPermSection(browser, base) {
     // AUTOPERM_SHOT=<file.png> writes a picture of the board and its toast log after the approved request.
     if (process.env.AUTOPERM_SHOT) {
       await p.evaluate(() => openToastLog());
-      await p.waitForTimeout(900);
+      await p.clock.runFor(900);
       await p.screenshot({ path: process.env.AUTOPERM_SHOT });
       await p.evaluate(() => document.getElementById("toastlog").close());
     }
@@ -11308,6 +11405,10 @@ async function questionsClickSection(browser, base) {
       { state: "attached", timeout: slow(15000) });
   };
   const said = () => p.evaluate(() => toastLog().map(e => e.title + " " + e.body).join("|"));
+  const polled = async () => {
+    await p.evaluate(() => runRefresh());
+    await p.waitForFunction(() => !refreshInFlight && !refreshDirty, null, { timeout: slow(15000) });
+  };
   // Which of the two lists is in front. Both are drawn, one is hidden.
   const show = v => p.evaluate(x => switchView(x), v);
   try {
@@ -11404,7 +11505,7 @@ async function questionsClickSection(browser, base) {
     await p.waitForFunction(() => toastLog()
       .some(e => /newer questions arrived, nothing was dismissed/.test(e.title)), null, { timeout: slow(5000) })
       .catch(() => fail("a stale answer drew no toast."));
-    await p.waitForTimeout(600);
+    await polled();
     if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a stale answer removed the chip.");
 
     // Already answered elsewhere: not "dismissed", and nothing was open.
@@ -11424,7 +11525,7 @@ async function questionsClickSection(browser, base) {
     await p.waitForFunction(() => toastLog()
       .some(e => /the store said no/.test(e.body)), null, { timeout: slow(5000) })
       .catch(() => fail("a failed dismiss did not toast its error."));
-    await p.waitForTimeout(600);
+    await polled();
     if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a failed dismiss removed the chip.");
 
     // `!` and the queued mark take their own click and change nothing else.
@@ -11437,7 +11538,7 @@ async function questionsClickSection(browser, base) {
       await show("terms");
       await p.waitForSelector(sel, { timeout: slow(5000) });
       await p.click(sel);
-      await p.waitForTimeout(300);
+      await polled();
       const term = await p.evaluate(() => termTask ? termTask.id : null);
       if (term !== null) fail("clicking the " + (quiet ? "queued" : "held") + " chip selected " + term);
       if (mock.qDismissWrites.length) fail("clicking the held chip posted a dismiss.");
@@ -11915,7 +12016,7 @@ async function walkContextSection(browser, base) {
   const shot = async (p, name) => {
     if (!shotDir) return;
     fs.mkdirSync(shotDir, { recursive: true });
-    await p.waitForTimeout(350);
+    await settleStyle(p).catch(() => {});
     await p.screenshot({ path: path.join(shotDir, shotTag + "-" + name + ".png") });
   };
   const rows = p => p.$$eval(S + ".wk-code .wk-l", els => els.map(e => ({
@@ -11962,7 +12063,7 @@ async function walkContextSection(browser, base) {
     const pb = await ctx.newPage();
     pb.on("pageerror", e => errors.push(String(e)));
     await open(pb, ids.b);
-    await pb.waitForTimeout(400);
+    await pb.waitForFunction(() => /more above/.test((document.querySelector("#walk-drawer .wk-more[data-more=above]") || {}).textContent || ""), null, { timeout: slow(5000) }).catch(() => {});
     r = await rows(pb);
     if (r.filter(x => /\bdel\b/.test(x.cls)).length !== 1 && r.filter(x => /\bdel\b/.test(x.cls)).length !== 2) fail("walkContext: no removed lines without src/");
     if (!/^⋯ 1 more above$/.test(await more(pb, "above"))) fail("walkContext: without src/ above says " + await more(pb, "above"));
@@ -11976,7 +12077,7 @@ async function walkContextSection(browser, base) {
     pp.on("pageerror", e => errors.push(String(e)));
     await pp.setViewportSize({ width: 390, height: 800 });
     await open(pp, ids.a);
-    await pp.waitForTimeout(500);
+    await settleStyle(pp).catch(() => {});
     const box = sel => pp.$eval(sel, e => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, h: b.height }; });
     const tb = await box(".term-body");
     let sc = await box("#t-screen");
@@ -11993,26 +12094,26 @@ async function walkContextSection(browser, base) {
     await pp.$eval(S + ".walk-item", e => { e.scrollTop = 0; });
     await shot(pp, "phone-shut");
     await pp.click("#walk-sheet");
-    await pp.waitForTimeout(400);
+    await pp.waitForFunction(() => document.querySelector(".term-body").classList.contains("sheet-open"), null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(pp).catch(() => {});
     sc = await box("#t-screen");
     if (sc.bottom > tb.bottom + 1 || sc.top > tb.bottom - 100) fail("walkContext: the sheet did not come up: " + JSON.stringify({ sc, tb }));
     if (await pp.getAttribute("#walk-sheet", "aria-expanded") !== "true") fail("walkContext: the handle does not say it is open");
     await shot(pp, "phone-open");
     await pp.click("#walk-sheet");
-    await pp.waitForTimeout(400);
+    await pp.waitForFunction(() => !document.querySelector(".term-body").classList.contains("sheet-open"), null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(pp).catch(() => {});
     sc = await box("#t-screen");
     if (sc.top < tb.bottom - 1) fail("walkContext: the sheet did not go back down");
     // a talks to the walker, so it brings the sheet up and types into the one terminal.
     await pp.evaluate(() => { window.__sent = []; });
     await pp.focus("#walk-drawer");
     await pp.keyboard.press("a");
-    await pp.waitForTimeout(400);
+    await pp.waitForFunction(() => document.querySelector(".term-body").classList.contains("sheet-open"), null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(pp).catch(() => {});
     sc = await box("#t-screen");
     if (sc.top > tb.bottom - 100) fail("walkContext: ask left the sheet shut");
     const sent = (await pp.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in");
     if (sent.length !== 1 || !/^about 01 a\.go:12, $/.test(sent[0].d)) fail("walkContext: ask typed " + JSON.stringify(sent));
     await pp.click(S + ".walk-head .icon");
-    await pp.waitForTimeout(300);
+    await pp.waitForFunction(() => !document.querySelector(".term-body").classList.contains("sheet-open"), null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(pp).catch(() => {});
     if (await pp.evaluate(() => document.querySelector(".term-body").classList.contains("sheet-open"))) fail("walkContext: closing the drawer left the sheet up");
     sc = await box("#t-screen");
     if (sc.top > tb.top + 40 || sc.bottom < tb.bottom - 40) fail("walkContext: the terminal did not return to the pane: " + JSON.stringify({ sc, tb }));
@@ -12277,12 +12378,12 @@ async function linkBoardSection(browser, base) {
         if (m.type === "land") { seen.push(m.taskFor); if (m.ack) main.postMessage({ type: "landed", taskFor: m.taskFor }); }
       };
       openTermURL({ preventDefault() {} }, location.origin + "/#term=land-live");
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 1000)); // wait: past atriumLinkWaitMs, and no window may open
       const withMain = { seen: seen.slice(), opens: window.__opens.length };
       main.onmessage = null; main.close();
       // No main board: one is opened, landing on the card.
       openTermURL({ preventDefault() {} }, location.origin + "/#term=land-live");
-      await new Promise(r => setTimeout(r, 1000));
+      for (const t = Date.now(); !window.__opens.length && Date.now() - t < 5000;) await new Promise(r => requestAnimationFrame(r));
       return { withMain, alone: window.__opens.map(o => o.url) };
     });
     if (solo.withMain.seen.join() !== "land-live" || solo.withMain.opens !== 0) fail("linkBoard: a popped-out link did not go to main: " + JSON.stringify(solo));
@@ -12701,12 +12802,13 @@ async function mComposeImagesSection(browser) {
     return e.defaultPrevented;
   });
   await p.waitForSelector('#m-compose .mc-file[data-state="ok"]:last-child', { timeout: slow(5000) });
-  await p.waitForTimeout(200);
+  await p.waitForTimeout(200); // wait: absence, a second upload of the one paste would land here
   if (!took || up.n !== n0 + 1) fail(tag + "the paste uploaded " + (up.n - n0) + " times");
 
   // Send clears the chips.
   await p.tap("#m-compose .mc-send");
-  await p.waitForTimeout(300);
+  await until(() => calls.message.length, 5000, "the send").catch(() => {});
+  await p.waitForFunction(() => !document.querySelector("#m-compose .mc-file"), null, { timeout: slow(5000) }).catch(() => {});
   if (await p.evaluate(() => document.querySelectorAll("#m-compose .mc-file").length)) fail(tag + "chips after a send");
   if (calls.message.length !== 1) fail(tag + "sends " + calls.message.length);
   if (!/\/w\/b\.txt/.test(calls.message[0].body.text) || !/\/w\/pasted\.png/.test(calls.message[0].body.text)) fail(tag + "the paths did not leave with the message: " + JSON.stringify(calls.message[0].body));
@@ -12763,7 +12865,7 @@ async function mHarness(browser, view, opts) {
       const body = JSON.parse(route.request().postData() || "{}");
       calls.message.push({ id: m[1], body });
       if (mode.message === "fail") return send(500, JSON.stringify({ error: "the session is gone" }));
-      if (mode.message === "slow") await new Promise(r => setTimeout(r, 400));
+      if (mode.message === "slow") await new Promise(r => setTimeout(r, 400)); // wait: the slow answer the double tap races
       const d = mode.message === "slow" ? "terminal" : mode.message;
       return send(200, JSON.stringify({ delivered: d, warning: d === "parked" ? "no live session" : "" }));
     }
@@ -12791,6 +12893,7 @@ async function mComposeSection(browser) {
     const mount = (id) => p.evaluate((i) => mCompose.mount(document.getElementById("m-compose"), i), id || "c1");
     const type = async (text) => { await p.fill(box, text); };
     const noteText = () => p.evaluate((s) => document.querySelector(s).textContent, note);
+    const hinted = () => p.waitForFunction((s) => /joined with spaces/.test(document.querySelector(s).textContent), note, { timeout: slow(5000) }).catch(() => {});
     await mount();
 
     // Send disabled when empty, 44px target, Enter inserts a newline.
@@ -12850,8 +12953,8 @@ async function mComposeSection(browser) {
     await Promise.all([p.waitForResponse(r => /\/message$/.test(r.url())), p.tap(btn)]);
     if (calls.message[calls.message.length - 1].body.text !== "line a\nline b") fail(tag + "claude multi-line changed: " + JSON.stringify(calls.message[calls.message.length - 1]));
     await mount("c2");
-    await p.waitForTimeout(100);
     await type("line a\nline b");
+    await hinted();
     if (!/joined with spaces/.test(await noteText())) fail(tag + "no join hint: " + await noteText());
     await Promise.all([p.waitForResponse(r => /\/message$/.test(r.url())), p.tap(btn)]);
     const last =calls.message[calls.message.length - 1];
@@ -12879,18 +12982,20 @@ async function mComposeSection(browser) {
     await p.evaluate(() => { window.__cards.push({ id: "plain~c3", runner: "claude", status: "working", title: "plain" }, { id: "paste~c4", runner: "claude", status: "working", title: "paste" }); });
     await mount("plain~c3");
     await type("line a\nline b");
-    await p.waitForTimeout(150);
+    await hinted();
     if (!/joined with spaces/.test(await noteText())) fail(tag + "the room that cannot paste got no join hint: " + await noteText());
+    const read = p.waitForResponse(r => /\/v1\/harnesses$/.test(r.url()) && r.request().headers()["x-atrium-room"] === "paste", { timeout: slow(5000) }).catch(() => {});
     await mount("paste~c4");
     await type("line a\nline b");
-    await p.waitForTimeout(150);
+    await read;
+    await frames(p, 2);
     if (/joined with spaces/.test(await noteText())) fail(tag + "one room's claude took the other room's capability");
     if (calls.harnessRooms.indexOf("plain") < 0 || calls.harnessRooms.indexOf("paste") < 0) fail(tag + "harnesses were not read per room: " + calls.harnessRooms);
     await mount("c1");
 
     // The fixed quick replies are gone, for a working card and for one that is asking.
     await p.evaluate(() => { __cards[0].status = "needs-input"; __emit("cards"); });
-    await p.waitForTimeout(150);
+    await frames(p, 2);
     if (await p.$(".mc-chip, .mc-chips")) fail(tag + "quick reply buttons are still drawn");
 
     // The keyboard lifts the composer by the visual viewport gap.
@@ -12899,7 +13004,7 @@ async function mComposeSection(browser) {
       Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - 300 });
       vv.dispatchEvent(new Event("resize"));
     });
-    await p.waitForTimeout(150);
+    await p.waitForFunction(() => document.querySelector("#m-compose .mc").style.getPropertyValue("--mc-lift") === "300px", null, { timeout: slow(5000) }).catch(() => {});
     const lift = await p.$eval("#m-compose .mc", e => e.style.getPropertyValue("--mc-lift"));
     if (lift !== "300px") fail(tag + "lift is " + lift);
 
@@ -12921,7 +13026,7 @@ async function mComposeSection(browser) {
           document.querySelector(".mc-box").value = "Go ahead, and keep the tests green.";
           document.querySelector(".mc-box").dispatchEvent(new Event("input"));
         }, skin);
-        await p.waitForTimeout(400);
+        await p.waitForTimeout(400); // wait: shots only, the face settles before the picture
         fs.mkdirSync(path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m"), { recursive: true });
         await p.screenshot({ path: path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m", "compose-" + skin + "-" + view.width + ".png") });
       }
@@ -12958,8 +13063,7 @@ async function mPermsSection(browser) {
       }
       // Approve and deny bodies.
       await p.tap('.mp-row[data-id="p1"] .mp-btn.approve');
-      await p.waitForFunction(() => true);
-      await p.waitForTimeout(100);
+      await until(() => calls.decide.length, 5000, "the approve").catch(() => {});
       const a = calls.decide[0];
       if (!a || a.url !== "/v1/permissions/p1/decide" || a.body.decision !== "approve" || a.body.forever !== false) fail(tag + "approve: " + JSON.stringify(a));
       if (await p.$eval('.mp-row[data-id="p1"] .mp-btn.approve', b => !b.disabled)) fail(tag + "an answered row can be answered again");
@@ -12972,7 +13076,7 @@ async function mPermsSection(browser) {
       await setPerms([perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "x" }), perm("p4", "c1")]);
       if ((await p.$eval('.mp-reason-box', t => t.value)) !== "use pnpm instead") fail(tag + "an update lost the typed reason");
       await p.tap('.mp-row[data-id="p3"] .mp-reason .go');
-      await p.waitForTimeout(150);
+      await until(() => calls.decide.length >= 2, 5000, "the block").catch(() => {});
       const d = calls.decide[1];
       if (!d || d.url !== "/v1/permissions/r9/decide" || d.room !== "lab" || d.body.decision !== "block" || d.body.reason !== "use pnpm instead") fail(tag + "reason: " + JSON.stringify(d));
       // Plain deny has no reason. A refused answer unlocks the row and says why.
@@ -12988,9 +13092,9 @@ async function mPermsSection(browser) {
       await p.waitForSelector('.mp-row[data-id="beta~p1"]');
       const before = calls.decide.length;
       await p.tap('.mp-row[data-id="beta~p1"] .mp-btn.approve');
-      await p.waitForTimeout(100);
+      await until(() => calls.decide.length >= before + 1, 5000, "the beta approve").catch(() => {});
       await p.tap('.mp-row[data-id="alpha~p1"] .mp-btn.deny:not(.go)');
-      await p.waitForTimeout(150);
+      await until(() => calls.decide.length >= before + 2, 5000, "the alpha deny").catch(() => {});
       const two = calls.decide.slice(before).map(c => c.room + " " + c.url + " " + c.body.decision).join(" | ");
       if (two !== "beta /v1/permissions/p1/decide approve | alpha /v1/permissions/p1/decide block") fail(tag + "two rooms: " + two);
       // All-cards view and its empty state.
@@ -12998,7 +13102,7 @@ async function mPermsSection(browser) {
       if ((await p.$$(".mp-row")).length !== 2) fail(tag + "all view shows " + (await p.$$(".mp-row")).length);
       await setPerms([]);
       await p.waitForFunction(() => !document.querySelector(".mp-empty").hidden, null, { timeout: 2000 });
-      await p.waitForTimeout(400);
+      await p.waitForFunction(() => !document.querySelector(".mp-row"), null, { timeout: slow(5000) }).catch(() => {});
       if ((await p.$$(".mp-row")).length) fail(tag + "rows remained after the store emptied");
       const s0 = await p.evaluate(() => window.__subs);
       await p.evaluate(() => mPerms.unmount());
@@ -13014,7 +13118,7 @@ async function mPermsSection(browser) {
             window.__perms = [{ id: "s1", task_id: "c1", tool: "Bash", command: "npm run build && git status --short", agent: "worker", requested_at: new Date().toISOString(), details: "+ added line\n- removed line" }];
             mPerms.mount(document.getElementById("m-perms"), "c1");
           }, skin);
-          await p.waitForTimeout(400);
+          await p.waitForTimeout(400); // wait: shots only, the face settles before the picture
           await p.screenshot({ path: path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m", "perms-" + skin + "-" + view.width + ".png") });
         }
       }
@@ -13350,7 +13454,7 @@ async function shiftMenuSection(browser, base) {
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     const attach = async (id) => {
       await attachRetry(p, { unit: "shiftMenu", id: id, check: i => termSock && termSock.readyState === 1 && termTask && termTask.id === i });
-      await p.waitForTimeout(300);
+      await termWrite(p, "");
     };
     const fire = (opts) => p.evaluate(o => {
       let pasted = 0;
@@ -13368,7 +13472,7 @@ async function shiftMenuSection(browser, base) {
       return { shown, left: r.left, top: r.top,
         labels: shown ? [...m.querySelectorAll("button")].map(b => b.textContent) : [] };
     });
-    const closeMenu = async () => { await p.keyboard.press("Escape"); await p.evaluate(() => document.body.click()); await p.waitForTimeout(100); };
+    const closeMenu = async () => { await p.keyboard.press("Escape"); await p.evaluate(() => document.body.click()); await p.waitForFunction(() => !document.querySelector("#cardmenu.on"), null, { timeout: slow(5000) }).catch(() => {}); };
     const has = (m) => m.labels.some(l => /new context/.test(l));
 
     await attach("land-live");
@@ -13389,7 +13493,7 @@ async function shiftMenuSection(browser, base) {
     if (Math.abs(m.left - 210) > 40 || Math.abs(m.top - 160) > 40) fail("shiftMenu: the menu is not at the pointer: " + JSON.stringify(m));
     // choose it
     await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /new context/.test(b.textContent)).click());
-    await p.waitForTimeout(400);
+    await until(() => posts.length, 5000, "the new context POST").catch(() => {});
     if (posts.length !== 1 || posts[0] !== "/v1/tasks/land-live/new-context POST")
       fail("shiftMenu: choosing new context did not POST once: " + JSON.stringify(posts));
     await closeMenu();
@@ -13453,12 +13557,14 @@ async function groupMenusSection(browser, base) {
       localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
     });
     const patches = [];
+    let refusePatch = false;
     await ctx.route("**/v1/tasks/*", route => {
       const r = route.request();
       if (r.method() !== "PATCH") return route.fallback();
       const id = decodeURIComponent(new URL(r.url()).pathname.split("/").pop());
       const body = JSON.parse(r.postData() || "{}");
       patches.push(id + " " + r.postData());
+      if (refusePatch) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) });
       if (mock.LAND[id]) Object.assign(mock.LAND[id], body);
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mock.LAND[id] || {}) });
     });
@@ -13500,7 +13606,8 @@ async function groupMenusSection(browser, base) {
     await p.locator("dialog[open] #ask-input").waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("dialog[open] #ask-input").fill("nope");
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {});
+    await frames(p, 2);
     if ((await groupsNow()).includes("nope") || patches.length) fail("groupMenus: Esc still made a group: " + JSON.stringify([await groupsNow(), patches]));
 
     // Create: the group exists, the card is in it, and it is still there after a reload.
@@ -13519,6 +13626,12 @@ async function groupMenusSection(browser, base) {
     });
     await p.waitForFunction(() => !!document.querySelector('#term-list .tgroup[data-ghead="zeta"]'), null, { timeout: slow(8000) })
       .catch(() => fail("groupMenus: the new group is not drawn on the terminals tab"));
+    // A second renderer reads the write back through the browser process: a reload can otherwise beat a write still in flight.
+    const probe = await ctx.newPage();
+    await probe.goto(base + "/robots.txt", { waitUntil: "domcontentloaded" });
+    await probe.waitForFunction(() => (JSON.parse(localStorage.getItem("atrium.grouping") || "{}").groups || []).includes("zeta"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: the new group never reached the browser's storage"));
+    await probe.close();
     await p.reload({ waitUntil: "domcontentloaded" });
     await p.evaluate(() => switchView("terms"));
     await p.waitForSelector('#term-list .tgroup[data-ghead="zeta"]', { timeout: slow(10000) })
@@ -13529,7 +13642,7 @@ async function groupMenusSection(browser, base) {
     // The new one is "new", and sorted in. Remove from group lists A to Z too, with the same tag.
     mock.LAND["land-gm-b"].tags = ["prs", "zeta", "discourse"];
     await p.evaluate(() => refresh());
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => ((lastTasks.find(t => t.id === "land-gm-b") || {}).tags || []).includes("zeta"), null, { timeout: slow(5000) }).catch(() => {});
     fly = await flyout("land-gm-b", "remove from group");
     if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-desktop-remove.png") });
     if (!fly) fail("groupMenus: no \"remove from group\" on a card in three groups");
@@ -13546,10 +13659,24 @@ async function groupMenusSection(browser, base) {
     await p.locator("dialog[open] #ask-input").fill("ACTIVE");
     await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
     await p.waitForFunction(() => true);
-    await p.waitForTimeout(500);
+    await until(() => patches.some(x => /^land-gm-b /.test(x) && /"active"/.test(x)), 5000, "the PATCH filing land-gm-b into active").catch(() => {});
     const after = await groupsNow();
     if (after.length !== before || after.filter(n => n === "active").length !== 1) fail("groupMenus: an existing name made a duplicate: " + JSON.stringify(after));
     if (!mock.LAND["land-gm-b"].tags.includes("active")) fail("groupMenus: an existing name did not file the card: " + JSON.stringify(mock.LAND["land-gm-b"].tags));
+
+    // A save that fails takes the new group back and says so.
+    refusePatch = true;
+    const seen = patches.length;
+    await flyout("land-gm-a", "add to group");
+    await p.locator("#cardmenu .subitem", { hasText: "create group..." }).click();
+    await p.locator("dialog[open] #ask-input").fill("broken");
+    await p.locator("dialog[open] button", { hasText: /^ok$/ }).click();
+    await p.waitForFunction(() => document.body.textContent.includes("that did not stick"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: a failed save said nothing"));
+    await p.waitForFunction(() => !JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("broken"), null, { timeout: slow(5000) })
+      .catch(() => fail("groupMenus: a failed save left the group broken behind"));
+    if (!patches.slice(seen).some(x => /"broken"/.test(x))) fail("groupMenus: the failed save was never sent: " + JSON.stringify(patches.slice(seen)));
+    refusePatch = false;
 
     // Eleven minutes on, discourse and zeta are no longer new. The clock is the page's Date.now.
     await p.evaluate(() => { const real = Date.now.bind(Date); Date.now = () => real() + 11 * 60 * 1000; });
@@ -13603,7 +13730,10 @@ async function mGroupMenusSection(browser) {
     const read = () => p.evaluate(() => [...document.querySelectorAll('#m-rmenu .rmenu-picks[data-i] [data-pick]')].filter(b => b.offsetParent).map(b => ({
       label: b.firstChild.textContent.trim(), tag: (b.querySelector(".newtag") || {}).textContent || "" })));
     const got = await read();
-    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(300); await p.screenshot({ path: path.join(shots, shotTag + "-phone-add.png") }); }
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(300); // wait: a settle for the screenshot only
+      await p.screenshot({ path: path.join(shots, shotTag + "-phone-add.png") });
+    }
     if (got.map(g => g.label).join("|") !== "active|discourse|orchestrators|prs|create group...") fail(tag + "the add to group sheet lists " + JSON.stringify(got));
     if (got.filter(g => g.tag).map(g => g.label).join() !== "discourse") fail(tag + "the new tags are " + JSON.stringify(got));
     // Esc puts the entry back and makes nothing.
@@ -13617,11 +13747,14 @@ async function mGroupMenusSection(browser) {
     await p.locator("#m-rmenu [data-pick]", { hasText: "create group..." }).tap();
     await p.locator("#m-rmenu .rmenu-name-in").fill(" Zeta ");
     if (shots) await p.screenshot({ path: path.join(shots, shotTag + "-phone-create.png") });
+    // A reload while the PATCH is in flight rejects it, and the page then takes the group back.
+    await p.evaluate(() => { const real = window.fetch; window.fetch = function (u, o) { const r = real.apply(this, arguments); if (o && o.method === "PATCH") r.then(() => { window.__patched = true; }, () => {}); return r; }; });
     await p.keyboard.press("Enter");
     await p.waitForFunction(() => JSON.parse(localStorage.getItem("atrium.grouping")).groups.includes("zeta"), null, { timeout: slow(5000) })
       .catch(() => fail(tag + "the group was not made"));
-    await p.waitForTimeout(400);
+    await until(() => st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x)), 5000, "the PATCH filing gm-1 into zeta").catch(() => {});
     if (!st.patches.some(x => /gm-1/.test(x) && /"prs","zeta"/.test(x))) fail(tag + "the card was not filed into zeta: " + JSON.stringify(st.patches));
+    await p.waitForFunction(() => window.__patched, null, { timeout: slow(5000) });
     const made = await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.grouping")).made.zeta);
     if (!(Date.now() - made < 60000)) fail(tag + "no creation time on zeta");
     // After a reload the group is still there, and the sheet lists it as new, after the clock moves on it is not.
@@ -13723,7 +13856,7 @@ async function termMenuSection(browser, base) {
 
     // stop: no question, PATCHes paused.
     await pick("stop");
-    await p.waitForTimeout(400);
+    await until(() => patches.some(x => /land-tm-run/.test(x) && /"status":"paused"/.test(x)), 5000, "the stop's PATCH").catch(() => {});
     if (await dialogUp().count()) fail("termMenu: stop asked before stopping.");
     if (!patches.some(x => /land-tm-run/.test(x) && /"status":"paused"/.test(x))) fail("termMenu: stop did not pause the card: " + JSON.stringify(patches));
 
@@ -13749,7 +13882,7 @@ async function termMenuSection(browser, base) {
     asks = [];
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
-    await p.waitForTimeout(500);
+    await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
     if (await dialogUp().count()) fail("termMenu: clean up asked with nothing at risk.");
     if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: clean up did not close once: " + JSON.stringify(closes));
     closes.length = 0;
@@ -13769,13 +13902,14 @@ async function termMenuSection(browser, base) {
     if (fb !== "cancel,terminate") fail("termMenu: the foreign worktree buttons are " + fb);
     if (process.env.CLOSE_SHOT) await p.locator("dialog#ask").screenshot({ path: process.env.CLOSE_SHOT + "/board-" + (process.env.CLOSE_SHOT_TAG || "after") + ".png" });
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     if (closes.length) fail("termMenu: cancelling the foreign worktree dialog still closed it: " + JSON.stringify(closes));
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("dialog[open] button", { hasText: "terminate" }).click();
-    await p.waitForTimeout(500);
+    await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].some(b => /^terminated /.test(b.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (closes.length !== 1 || closes[0].confirm !== true) fail("termMenu: terminate did not close once: " + JSON.stringify(closes));
     if (await dialogUp().count()) fail("termMenu: the foreign worktree dialog stayed up after terminate.");
     const toasted = () => p.evaluate(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")].map(b => b.textContent));
@@ -13800,7 +13934,7 @@ async function termMenuSection(browser, base) {
       .catch(() => fail("termMenu: clean up did not ask about work nowhere else."));
     if (!/never show me this again/.test(await dialogUp().first().textContent())) fail("termMenu: the question has no never-show-me tick.");
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => !document.querySelector("dialog[open]"), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     if (closes.length) fail("termMenu: cancelling still closed the card: " + JSON.stringify(closes));
     // delete with the tick: answered, and the next one does not ask.
     await openMenu("land-tm-run");
@@ -13808,12 +13942,12 @@ async function termMenuSection(browser, base) {
     await dialogUp().waitFor({ state: "visible", timeout: slow(5000) });
     await p.locator("#ask-remember-on").check();
     await p.locator("dialog[open] button", { hasText: "delete it" }).click();
-    await p.waitForTimeout(500);
+    await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
     if (closes.length !== 1 || closes[0].answers["4"] !== "delete") fail("termMenu: delete did not close with delete: " + JSON.stringify(closes));
     closes.length = 0;
     await openMenu("land-tm-run");
     await pick("terminate and clean up");
-    await p.waitForTimeout(600);
+    await until(() => closes.length >= 1, 5000, "the close").catch(() => {});
     if (await dialogUp().count()) fail("termMenu: it asked again after never show me this again.");
     if (closes.length !== 1 || closes[0].answers["4"] !== "delete") fail("termMenu: the ticked clean up did not delete: " + JSON.stringify(closes));
   } finally {
@@ -13858,7 +13992,7 @@ async function closeOneDialogSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => { switchView("terms"); });
-    for (const end = Date.now() + slow(10000); openStreams.filter(r => !r.destroyed).length < 1 && Date.now() < end;) await p.waitForTimeout(100);
+    await until(() => openStreams.filter(r => !r.destroyed).length >= 1, 10000, "an open event stream").catch(() => {});
     const say = ev => openStreams.forEach(r => { try { r.write("event: close-progress\ndata: " + JSON.stringify(Object.assign({ id: posts[posts.length - 1].progress, seconds: 0 }, ev)) + "\n\n"); } catch (e) {} });
     const rowsOf = () => p.evaluate(() => [...document.querySelectorAll("#close-steps li")].map(l => l.className + ":" + l.dataset.key));
     let askUps = 0;
@@ -13896,7 +14030,7 @@ async function closeOneDialogSection(browser, base) {
     if (focus !== "stash") fail("closeStash: the focus is on " + focus + ", not the stash choice");
     // delete is picked inline, cancel changes nothing
     await p.click('#ask-actions button:has-text("cancel")');
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) }).catch(() => {});
     if (posts.length) fail("closeOne: cancel posted a close");
 
     // pressed: the dialog stays, the button is off and spins, the steps tick, the card reads closing
@@ -13905,7 +14039,7 @@ async function closeOneDialogSection(browser, base) {
     await askUp();
     await p.click('#ask-body .close-wt input[value="delete"]');
     await p.click('#ask-actions button:has-text("close it")');
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].confirm !== true || JSON.stringify(posts[0].answers) !== '{"1":"delete"}' || !/^close-/.test(posts[0].progress || "")) fail("closeOne: the close posted " + JSON.stringify(posts));
     const busy = await p.evaluate(() => ({ off: [...document.querySelectorAll("#ask-actions button")].every(b => b.disabled), spin: !!document.querySelector("#ask-actions button.busy"),
       open: document.getElementById("ask").open, radios: [...document.querySelectorAll("#ask-body .close-wt input")].every(i => i.disabled),
@@ -13913,12 +14047,11 @@ async function closeOneDialogSection(browser, base) {
     if (!busy.off || !busy.spin || !busy.open || !busy.radios) fail("closeOne: not busy after the press: " + JSON.stringify(busy));
     if (!/land-co-a/.test(busy.closing) || !/closing/.test(busy.closing)) fail("closeOne: the card does not read closing: " + busy.closing);
     await p.keyboard.press("Escape");
-    await p.waitForTimeout(150);
-    if (!(await p.evaluate(() => document.getElementById("ask").open))) fail("closeOne: escape shut a working dialog");
     say({ key: "session", line: "stopping the session", state: "run", detail: "" });
     say({ key: "session", line: "stopping the session", state: "ok", detail: "" });
     say({ key: "worktree:1", line: "removing /w/ziti-console (0.46 GB)", state: "run", detail: "" });
     await p.waitForFunction(() => document.querySelectorAll("#close-steps li").length === 2, null, { timeout: slow(5000) }).catch(() => fail("closeOne: the steps were not drawn"));
+    if (!(await p.evaluate(() => document.getElementById("ask").open))) fail("closeOne: escape shut a working dialog");
     let rows = await rowsOf();
     if (rows.join() !== "ok:session,run:worktree:1") fail("closeOne: the rows are " + rows.join());
     await shot(p, "close-progress");
@@ -13934,14 +14067,14 @@ async function closeOneDialogSection(browser, base) {
     await p.evaluate(() => { closeCardAsk("land-co-a", { display_title: "openziti/ziti-console #967" }); });
     await askUp();
     await p.keyboard.press("Enter");
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].answers["1"] !== "stash") fail("closeStash: Enter posted " + JSON.stringify(posts[0] && posts[0].answers) + ", not stash");
     say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "run", detail: "" });
     say({ key: "worktree:1", line: "stashing /w/ziti-console to the hub", state: "fail", detail: "kept, the stash did not land: git push: rejected" });
     await p.waitForFunction(() => document.querySelector('#close-steps li.fail'), null, { timeout: slow(5000) }).catch(() => fail("closeOne: the failed row was not drawn"));
     answer = () => ({ status: 200, contentType: "application/json", body: JSON.stringify({ closed: true, items: [], stashes: [], left: 1, warnings: ["kept"] }) });
     release.go();
-    await p.waitForTimeout(500);
+    await p.waitForFunction(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join() === "dismiss", null, { timeout: slow(5000) }).catch(() => {});
     const stayed = await p.evaluate(() => ({ open: document.getElementById("ask").open, fail: (document.querySelector("#close-steps li.fail") || {}).textContent || "",
       buttons: [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent + (b.disabled ? "!" : "")).join() }));
     if (!stayed.open || !/git push: rejected/.test(stayed.fail)) fail("closeOne: a failure did not leave the dialog open on its row: " + JSON.stringify(stayed));
@@ -13965,7 +14098,7 @@ async function closeOneDialogSection(browser, base) {
     if (nostash.radios !== "keep,delete" || nostash.checked !== "keep" || nostash.focus !== "keep") fail("closeStash: without can_stash " + JSON.stringify(nostash));
     await shot(p, "close-stash-default-cannot");
     await p.keyboard.press("Enter");
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].answers["1"] !== "keep") fail("closeStash: Enter without can_stash posted " + JSON.stringify(posts[0] && posts[0].answers));
     await p.waitForFunction(() => !document.getElementById("ask").open, null, { timeout: slow(5000) }).catch(() => {});
     canStash = true;
@@ -13978,7 +14111,7 @@ async function closeOneDialogSection(browser, base) {
     const cu = await p.evaluate(() => [...document.querySelectorAll("#ask-actions button")].map(b => b.textContent).join());
     if (cu !== "cancel,delete it,stash to the hub") fail("closeStash: the clean up buttons are " + cu);
     await p.keyboard.press("Enter");
-    for (let i = 0; i < 50 && !posts.length; i++) await p.waitForTimeout(100);
+    await until(() => posts.length, 5000, "the close POST").catch(() => {});
     if (!posts.length || posts[0].answers["1"] !== "stash") fail("closeStash: Enter on the clean up question posted " + JSON.stringify(posts[0] && posts[0].answers));
     await p.waitForFunction(() => !document.getElementById("ask").open && !busyKeys.has("close:land-co-a"), null, { timeout: slow(5000) })
       .catch(() => fail("closeStash: the clean up question left the dialog or the card busy"));
@@ -14147,8 +14280,10 @@ async function notifyCommandSection(browser, base) {
   const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
     const p = await open(ctx2, false);
+    const answered = p.waitForResponse(r => new URL(r.url()).pathname === "/_hub/notify", { timeout: slow(5000) }).catch(() => {});
     await p.click("#gear");
-    await p.waitForTimeout(500);
+    await answered;
+    await frames(p, 2);
     const vis = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return r.hidden || r.offsetParent === null; });
     if (!vis) fail("notifyCommand: a 404 from the hub still drew the row");
   } finally { await ctx2.close(); }
@@ -14163,7 +14298,7 @@ async function notifyCommandSection(browser, base) {
     const p = await ctx3.newPage();
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: a guest board must never call the hub, and nothing it does afterwards is a sentinel
     const row = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return !r || r.hidden || r.offsetParent === null; });
     if (!row) fail("notifyCommand: a guest board drew the row");
     if (hubCalls.length) fail("notifyCommand: a guest board called the hub: " + hubCalls.join(" "));
@@ -14195,7 +14330,7 @@ async function presenceSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(500);
+    await until(() => posts.length && streams.length, 5000, "the load's presence post and event stream").catch(() => {});
     const tab = await p.evaluate(() => hubTabId);
     if (!tab) fail("presence: no tab id");
     if (!streams.length || !streams.every(u => new URL(u).searchParams.get("tab") === tab)) {
@@ -14205,7 +14340,7 @@ async function presenceSection(browser, base) {
     // hidden
     const n0 = posts.length;
     await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
-    await p.waitForTimeout(300);
+    await until(() => posts.length > n0, 5000, "the hidden presence post").catch(() => {});
     const last = posts[posts.length - 1];
     if (posts.length !== n0 + 1 || last.visible !== false) fail("presence: hidden did not post visible false: " + JSON.stringify(posts.slice(n0)));
     // pagehide goes by beacon, as text/plain, and not by fetch.
@@ -14219,11 +14354,11 @@ async function presenceSection(browser, base) {
     // A 404 stops it: the next post is the last.
     status = 404;
     await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => presenceOff, null, { timeout: slow(5000) }).catch(() => {});
     const n2 = posts.length;
     await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
     await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
-    await p.waitForTimeout(300);
+    await p.evaluate(() => fetch("/v1/tasks").then(r => r.text()));
     if (posts.length !== n2) fail("presence: posts continued after a 404: " + (posts.length - n2) + " more");
     const reloaded = await p.evaluate(() => sessionStorage.getItem("atrium.tab"));
     if (reloaded !== tab) fail("presence: the tab id is not in sessionStorage");
@@ -14264,8 +14399,8 @@ async function backForwardSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "backForward", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
-    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(200); };
+    await p.waitForSelector("#t-screen .xterm-screen", { state: "attached", timeout: slow(5000) });
+    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.evaluate(() => new Promise(r => term.write("", r))); };
 
     // Press and release a side button on `sel` and answer which of its events the page cancelled.
     const side = (sel, button) => p.evaluate(({ sel, button }) => {
@@ -14302,12 +14437,13 @@ async function backForwardSection(browser, base) {
     await p.evaluate(() => { switchView("runners"); });
     const view = () => p.evaluate(() => history.state && history.state.view);
     if ((await view()) !== "runners") fail("backForward: the pushed entry is not the view just opened: " + (await view()));
-    await p.goBack(); await p.waitForTimeout(150);
+    const at = v => p.waitForFunction(x => history.state && history.state.view === x, v, { timeout: slow(5000) }).catch(() => {});
+    await p.goBack(); await at("stack");
     if ((await view()) !== "stack") fail("backForward: back from runners did not land on stack: " + (await view()));
-    await p.goBack(); await p.waitForTimeout(150);
+    await p.goBack(); await at("board");
     if ((await view()) !== "board") fail("backForward: back from stack did not land on board: " + (await view()));
-    await p.goForward(); await p.waitForTimeout(150);
-    await p.goForward(); await p.waitForTimeout(150);
+    await p.goForward(); await at("stack");
+    await p.goForward(); await at("runners");
     if ((await view()) !== "runners") fail("backForward: forward twice did not return to runners: " + (await view()));
     const shown = await p.evaluate(() => VIEWS.find(isViewing));
     if (shown !== "runners") fail("backForward: history said runners but the board shows " + shown);
@@ -14349,12 +14485,12 @@ async function tallPtySection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await attachRetry(p, { unit: "tallPty", id: "land-live", check: () => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live" });
-    await p.waitForTimeout(300);
+    await frames(p, 3);
     const size = async (rows) => {
       await p.evaluate((r) => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":' + r + '}' }), rows);
-      await p.waitForTimeout(250);
+      await p.waitForFunction((r) => termPtyRows === r, rows, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     };
-    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(250); };
+    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await termWrite(p, ""); await frames(p, 2); };
     // Where row `r` (0 based) sits against the pane, in px.
     const rowBox = (r) => p.evaluate((row) => {
       const host = document.getElementById("t-screen"), x = host.querySelector(".xterm");
@@ -14397,17 +14533,17 @@ async function tallPtySection(browser, base) {
 
     // 4. the wheel brings hidden rows in: xterm's own scroll moves rows, the clip stays where it was.
     await p.evaluate(() => { let s = ""; for (let i = 0; i < 120; i++) s += "history " + i + "\r\n"; termSock.onmessage({ data: s + "\x1b[48;1Hprompt" }); });
-    await p.waitForTimeout(300);
+    await termWrite(p, ""); await frames(p, 2);
     const before = await st();
     const box = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.left + 40, y: r.top + 60 }; });
     await p.mouse.move(box.x, box.y);
     for (let i = 0; i < 5; i++) await p.mouse.wheel(0, -40);
-    await p.waitForTimeout(300);
+    await p.waitForFunction(y => term.buffer.active.viewportY < y, before.viewportY, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     const after = await st();
     if (!(after.viewportY < before.viewportY)) fail("tallPty: the wheel did not scroll xterm: " + JSON.stringify([before, after]));
     if (after.st !== before.st) fail("tallPty: scrolling xterm moved the clip: " + JSON.stringify([before, after]));
     await p.evaluate(() => term.scrollToBottom());
-    await p.waitForTimeout(200);
+    await frames(p, 2);
 
     // 5. no feedback loop: a fit still proposes what the pane shows, and the resize frames say so.
     await p.evaluate(() => fitTerm());
@@ -14441,7 +14577,7 @@ async function tallPtySection(browser, base) {
       return { x: x.left + d.width * 4.5, y: x.top + d.height * 45.5 };
     });
     await p.mouse.click(mb.x, mb.y);
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__sent.some(x => { try { return (JSON.parse(x).d || "").indexOf("\x1b[<0;") === 0; } catch (e) { return false; } }), null, { timeout: slow(5000) }).catch(() => {});
     const rep = await p.evaluate(() => window.__sent.map(x => { try { return JSON.parse(x).d || ""; } catch (e) { return ""; } })
       .filter(x => x.indexOf("\x1b[<0;") === 0));
     if (!rep.length || !/\[<0;5;46M/.test(rep[0])) fail("tallPty: a mouse click reported " + JSON.stringify(rep) + ", not column 5 row 46");
@@ -14452,7 +14588,7 @@ async function tallPtySection(browser, base) {
     const sel0 = await st();
     const db = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.left + 60, y: r.top + 30, y2: r.bottom + 40 }; });
     await p.mouse.move(db.x, db.y); await p.mouse.down(); await p.mouse.move(db.x + 80, db.y2, { steps: 6 });
-    await p.waitForTimeout(300); await p.mouse.up();
+    await p.waitForTimeout(300); await p.mouse.up(); // wait: a held drag past the bottom must not autoscroll the clip, which has no event
     const sel1 = await st();
     if (sel1.st !== sel0.st) fail("tallPty: a selection drag moved the clip: " + JSON.stringify([sel0, sel1]));
 
@@ -14460,16 +14596,16 @@ async function tallPtySection(browser, base) {
     await put("\x1b[2J\x1b[48;1Hprompt");
     const f0 = await st();
     await p.evaluate(() => { document.activeElement && document.activeElement.blur(); term.focus(); });
-    await p.waitForTimeout(250);
+    await frames(p, 2);
     await p.keyboard.type("abc");
-    await p.waitForTimeout(250);
+    await p.waitForFunction(() => window.__sent.some(x => /"d":"c"/.test(x)), null, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     const f1 = await st();
     if (f1.st !== f0.st || !f1.tall) fail("tallPty: focus or typing moved the clip: " + JSON.stringify([f0, f1]));
 
     // 10. a pane resize reruns the clip and the fit: a taller pane shows more, and the frame is the fit's.
     await p.evaluate(() => { window.__sent.length = 0; });
     await p.setViewportSize({ width: 1280, height: 420 });
-    await p.waitForTimeout(700);
+    await p.waitForFunction(f => termFitRows < f, fit, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     const r0 = await st();
     if (r0.fit >= fit || r0.rows !== 48 || !r0.tall) fail("tallPty: a shorter pane did not refit: " + JSON.stringify([fit, r0]));
     if (!inside(await rowBox(47))) fail("tallPty: after a pane resize the cursor left the pane");
@@ -14478,7 +14614,7 @@ async function tallPtySection(browser, base) {
 
     // 11. the find bar and a tooltip stay inside the pane.
     await p.evaluate(() => openFind());
-    await p.waitForTimeout(200);
+    await settleStyle(p).catch(() => {});
     const fb = await p.evaluate(() => {
       const f = document.getElementById("t-find").getBoundingClientRect(), pn = document.querySelector(".term-pane").getBoundingClientRect();
       return { fl: f.left, ft: f.top, fr: f.right, fb: f.bottom, pl: pn.left, pt: pn.top, pr: pn.right, pb: pn.bottom };
@@ -14502,7 +14638,7 @@ async function tallPtySection(browser, base) {
     const old0 = await st();
     if (old0.tall || old0.st !== 0) fail("tallPty: a pty at the pane's rows switched tall on: " + JSON.stringify(old0));
     await p.evaluate(() => { termPtyRows = 0; applyPtySize(); });
-    await p.waitForTimeout(150);
+    await frames(p, 2);
     const old1 = await st();
     if (old1.tall || old1.rows !== old1.fit) fail("tallPty: with no rows from the room the grid is not the fit: " + JSON.stringify(old1));
   } finally {
@@ -14522,9 +14658,11 @@ async function arrivedOnceSection(browser, base) {
   page.on("pageerror", e => errors.push(String(e)));
   await page.addInitScript(() => { Document.prototype.hasFocus = () => true; });
   try {
+    await page.clock.install();
     await page.goto(base, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
-    await page.waitForTimeout(1500);
+    await fakePause(page);
+    await fakeTick(page, 1500);
     const got = await page.evaluate(() => {
       localStorage.removeItem("atrium.toastlog");
       alerting.set({ debounce: 0, muted: true });
@@ -15323,18 +15461,23 @@ async function popoutRaiseSection(browser, base) {
         return what;
       };
       const popups = () => ctx.pages().filter(p => p !== page);
+      // Page events come in the order the windows opened, so one opened after a click is the sentinel for any it opened.
+      const settled = async () => {
+        const [s] = await Promise.all([ctx.waitForEvent("page"), page.evaluate(() => { window.open("about:blank", "_blank"); })]);
+        await s.close();
+      };
       const first = await click("first");
       if (first !== "opened") fail("popoutRaise: the first click answered " + first);
-      await page.waitForTimeout(800);
+      await page.waitForFunction(() => soloHeld.has("land-a"), null, { timeout: slow(5000) }).catch(() => {});
       if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after the first click");
       if (await click("second") !== "raised") fail("popoutRaise: the second click did not raise by handle");
 
       // A board that reloaded has no handle.
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 1, null, { timeout: slow(15000) });
-      await page.waitForTimeout(1500);
+      await page.waitForFunction(() => poppedOut("land-a"), null, { timeout: slow(5000) }).catch(() => {});
       const again = await click("after reload");
-      await page.waitForTimeout(1000);
+      await settled();
       if (popups().length !== 1) fail("popoutRaise: " + popups().length + " pop-outs after a click on a reloaded board (" + again + ")");
       if (again !== "raised") fail("popoutRaise: after a reload the click answered " + again);
 
@@ -15342,12 +15485,12 @@ async function popoutRaiseSection(browser, base) {
       for (const w of popups()) await w.close();
       const [pasted] = await Promise.all([ctx.waitForEvent("page"), page.evaluate(u => { window.open(u, "_blank"); }, base + "/#term=land-a")]);
       await cuSolo(pasted, "land-a");
-      await pasted.waitForTimeout(1500);
+      await page.waitForFunction(() => poppedOut("land-a"), null, { timeout: slow(5000) }).catch(() => {});
       const nameless = await page.evaluate(() => { popOuts.clear(); return poppedOut("land-a"); });
       if (!nameless) fail("popoutRaise: the pasted-url window did not claim the card");
       // The window was named on boot, so the board finds it by name and raises it: no second window, nothing closed.
       const last = await click("pasted url");
-      await page.waitForTimeout(1000);
+      await settled();
       if (last !== "raised") fail("popoutRaise: the click on a named #term window answered " + last);
       if (pasted.isClosed()) fail("popoutRaise: the #term window was closed by a click that could raise it");
       const out = popups();
@@ -15697,8 +15840,7 @@ async function mWorkingSection(browser) {
       await mShot(p, "working-thinking-" + vp.width);
       // events sent before the page's stream is open are lost, so wait for the stream the page holds
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-      const t1 = Date.now();
-      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
       // a tool event shows the tool's name, from the stream
       st.send("task", Object.assign({}, run, { row: 1, activity: { what: "tool", tool: "Bash", seconds: 2 } }));
       await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
@@ -15715,8 +15857,7 @@ async function mWorkingSection(browser) {
       st.streams.forEach(x => { try { x.destroy(); } catch (e) {} });
       st.streams = [];
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on") === false, null, { timeout: slow(5000) }).catch(() => {});
-      const t0 = Date.now();
-      while (!st.streams.length && Date.now() - t0 < slow(15000)) await p.waitForTimeout(200);
+      await until(() => st.streams.length, 15000, "the stream to reopen").catch(() => {});
       if (!st.streams.length) fail(tag + "the stream did not reopen (" + n + " before)");
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
       // the reopen reads the tasks again, so the room's answer must already agree with the event
@@ -15814,7 +15955,7 @@ async function mBubblesSection(browser) {
       await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
       const bub = i => "#m-replies .reply:nth-of-type(" + i + ")";
       // selectable: no user-select none on the text, and each bubble has the two actions with a 40px hit area and readable colour
-      await p.waitForTimeout(700);
+      await settleStyle(p);
       const info = await p.evaluate(() => {
         const lum = c => { const m = c.match(/[\d.]+/g).map(Number); const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
         const r = document.querySelectorAll("#m-replies .reply")[1], md = r.querySelector(".md"), b = r.querySelector(".bact");
@@ -15838,8 +15979,10 @@ async function mBubblesSection(browser) {
       await p.evaluate(sel => { const n = document.querySelector(sel + " .md p, " + sel + " .md"); const r = document.createRange(); r.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
       const at2 = mIso(M_MIN);
       st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: at2, text: "Newest arrives mid-selection." }]) };
+      const fetched = p.waitForResponse(r => /\/v1\/tasks\/bub-1\/replies/.test(r.url()), { timeout: slow(5000) }).catch(() => {});
       st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
-      await p.waitForTimeout(900);
+      await fetched;
+      await frames(p, 3);
       const held = await p.evaluate(() => ({ sel: String(getSelection()), has: /Newest arrives/.test(document.getElementById("m-replies").textContent) }));
       if (held.sel !== "Plain reply.") fail(tag + "the selection was lost to a redraw: " + JSON.stringify(held));
       if (held.has) fail(tag + "the thread was redrawn under a selection");
@@ -15893,8 +16036,10 @@ async function mBubblesSection(browser) {
         await p.evaluate(sel => { const r = document.createRange(); r.selectNodeContents(document.querySelector(sel + " .md")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, bub(1));
         const at = mIso(-n * M_MIN);
         st.replies["bub-1"] = { source: "transcript", replies: replies.concat([{ at: mIso(M_MIN), text: "Newest arrives mid-selection." }, { at, text: "Held " + n }]) };
+        const fetched = p.waitForResponse(r => /\/v1\/tasks\/bub-1\/replies/.test(r.url()), { timeout: slow(5000) }).catch(() => {});
         st.send("task", Object.assign({}, c, { row: 1, output_at: at }));
-        await p.waitForTimeout(700);
+        await fetched;
+        await frames(p, 3);
         return () => p.evaluate(n => ({ drawn: document.getElementById("m-replies").textContent.includes("Held " + n), sel: String(getSelection()).length }), n);
       };
       let probe = await hold(1);
@@ -15986,7 +16131,7 @@ async function mCompactSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.tap('#m-list .row[data-id="cp-1"]');
     await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
-    await p.waitForTimeout(500);
+    await settleStyle(p);
     const k = await mCompactCount(p);
     console.log("mCompact count: " + JSON.stringify(k));
     await mShot(p, "compact-390");
@@ -16000,13 +16145,12 @@ async function mCompactSection(browser) {
     await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
     await p.tap("#m-compose .mc-send");
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-    await p.waitForTimeout(400);
+    await until(async () => (await mCompactCount(p)).note === 0, 5000, "the sent line to leave").catch(() => {});
     if ((await mCompactCount(p)).note > 0) fail(tag + "a sent line is still above the composer");
     // the activity shares the row above the composer with the send state, and has no box of its own
     const act = mCard("cp-1", { alias: "packer", display_title: "packer", status: "running", activity: { what: "tool", tool: "Bash" }, seen: { turn_ended_at: mIso(20 * M_MIN) } });
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const t1 = Date.now();
-    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     st.send("task", Object.assign({}, act, { row: 1 }));
     await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
     const row = await p.evaluate(() => {
@@ -16056,8 +16200,8 @@ async function mCompactSection(browser) {
     await n.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await n.p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
     await n.p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    await n.p.waitForTimeout(600);
     await n.p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await settleStyle(n.p);
     await mCompactButtons(n.p, tag + "360: ");
     await mShot(n.p, "compact-jump-360");
     if (await mNoSideways(n.p)) fail(tag + "360: the card scrolls sideways");
@@ -16080,7 +16224,7 @@ async function mPinchSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.tap('#m-list .row[data-id="pn-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-    await p.waitForTimeout(500);
+    await settleStyle(p);
     const meta = await p.$eval('meta[name=viewport]', m => m.content);
     if (!/user-scalable=no/.test(meta) || !/maximum-scale=1/.test(meta)) fail(tag + "the browser pinch is not off: " + meta);
     if (await p.$eval("#m-card-scroll", e => getComputedStyle(e).touchAction) !== "pan-y") fail(tag + "touch-action does not stop the browser pinch");
@@ -16110,7 +16254,7 @@ async function mPinchSection(browser) {
     if (!a.mid) fail(tag + "no message in the middle to hold");
     const prevented = await pinch(100, 200);
     if (!prevented) fail(tag + "the pinch was not caught");
-    await p.waitForTimeout(200);
+    await frames(p, 2);
     const b = await state();
     if (b.fs <= a.fs + 3) fail(tag + "spreading did not grow the text: " + a.fs + " to " + b.fs);
     if (b.comp !== a.comp || b.head !== a.head) fail(tag + "the composer or header changed size: " + JSON.stringify([a, b]));
@@ -16129,10 +16273,11 @@ async function mPinchSection(browser) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     await p.tap('#m-list .row[data-id="pn-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector("#m-replies .md")).fontSize) === 24, null, { timeout: slow(5000) }).catch(() => {});
     if ((await state()).fs !== 24) fail(tag + "the size did not survive a reload");
+    await settleStyle(p);
     await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 600; });
-    await p.waitForTimeout(300);
+    await frames(p, 2);
     const held = await p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;
       const at = document.elementFromPoint(cx, cy).closest(".reply");
@@ -16214,7 +16359,7 @@ async function mTypeSteadySection(browser) {
     await p.tap('#m-list .row[data-id="ty-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
-    await p.waitForTimeout(600);
+    await settleStyle(p);
     const look = () => p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
       const first = [...document.querySelectorAll("#m-replies .reply")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
@@ -16223,9 +16368,9 @@ async function mTypeSteadySection(browser) {
     });
     for (const where of ["bottom", "middle"]) {
       if (where === "middle") await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = Math.round(e.scrollHeight / 3); });
-      await p.waitForTimeout(300);
+      await settleStyle(p);
       await p.tap("#m-compose textarea");
-      await p.waitForTimeout(200);
+      await settleStyle(p);
       const base = await look();
       const steps = [];
       for (let line = 0; line < 10; line++) {
@@ -16238,7 +16383,7 @@ async function mTypeSteadySection(browser) {
         await p.keyboard.press("Shift+Enter");
         if (line === 3) await p.setViewportSize({ width: 390, height: 844 - 320 });
         if (line === 7) await p.setViewportSize({ width: 390, height: 844 });
-        await p.waitForTimeout(60);
+        await frames(p, 2);
       }
       if (steps.length) fail(tag + where + ": the thread moved " + JSON.stringify({ base, step: steps[0] }));
       const end = await look();
@@ -16257,15 +16402,14 @@ async function mTypeSteadySection(browser) {
     for (let i = 0; i < 4; i++) await p.keyboard.press("Backspace");
     if (await p.$eval("#m-compose textarea", t => t.value)) fail(tag + "the box did not empty");
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const t1 = Date.now();
-    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     const at2 = mIso(1 * M_MIN);
     st.replies["ty-1"] = { source: "transcript", replies: st.replies["ty-1"].replies.concat([{ at: at2, text: "A new reply that must be followed. " + "more ".repeat(60) }]) };
     st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
     await p.waitForFunction(() => /must be followed/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
     const readGap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight; });
     let gap = await readGap();
-    for (const t2 = Date.now(); gap > 4 && Date.now() - t2 < slow(3000);) { await p.waitForTimeout(10); gap = await readGap(); }
+    await until(async () => (gap = await readGap()) <= 4, 3000, "the thread to follow").catch(() => {});
     if (gap > 4) fail(tag + "an emptied but focused box still holds the thread, gap " + gap);
     // and the next input pins again
     await p.keyboard.type("x");
@@ -16311,7 +16455,7 @@ async function mOlderRun(browser, cfg) {
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForSelector("#m-older", { timeout: slow(5000) });
     if (cfg.fs) await p.evaluate(f => document.getElementById("m-card").style.setProperty("--m-fs", f + "px"), cfg.fs);
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     const ov = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollHeight, e.clientHeight]; });
     if (ov[0] <= ov[1] + 40) fail(tag + "the thread does not overflow its box, so the top cannot be reached: " + ov.join(" in "));
     if (!st.hits.includes("ol-1?50")) fail(tag + "the first page was not asked for with n=50: " + st.hits.join(","));
@@ -16324,9 +16468,8 @@ async function mOlderRun(browser, cfg) {
     // reaching the top asks once, after a short wait, and an empty page with more=true does not end it
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await p.waitForFunction(h => h, olderHits("cur-A") > 0, { timeout: 100 }).catch(() => {});
-    const t0 = Date.now();
-    while (olderHits("cur-A") < 1 && Date.now() - t0 < slow(4000)) await p.waitForTimeout(50);
-    await p.waitForTimeout(900);
+    await until(() => olderHits("cur-A") >= 1, 4000, "the first older page").catch(() => {});
+    await p.waitForTimeout(900); // wait: absence, a second ask for the top would land here
     if (olderHits("cur-A") !== 1) fail(tag + "reaching the top asked " + olderHits("cur-A") + " times: " + st.hits.join(","));
     if (olderHits("cur-B") !== 0) fail(tag + "the empty page led to a loop: " + st.hits.join(","));
     if (!(await p.$("#m-older"))) fail(tag + "an empty page with more=true removed the row");
@@ -16335,10 +16478,10 @@ async function mOlderRun(browser, cfg) {
     await p.tap("#m-older");
     await p.waitForFunction(() => document.querySelectorAll("#m-replies [data-k]").length > 8, null, { timeout: slow(5000) });
     if (olderHits("cur-B") !== 1) fail(tag + "the click did not follow next_before: " + st.hits.join(","));
-    await p.waitForTimeout(300);
+    await settleStyle(p);
     const after = await p.evaluate(k => { const e = [...document.querySelectorAll("#m-replies [data-k]")].find(x => x.dataset.k === k); return e ? Math.round(e.getBoundingClientRect().top) : null; }, before.k);
     if (after === null || Math.abs(after - before.y) > 2) fail(tag + "the bubble at the top moved: " + JSON.stringify({ before, after }));
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: absence, a click must not go on to the next page by itself
     if (olderHits("cur-C") !== 0) fail(tag + "a click went on to ask for the next page by itself: " + st.hits.join(","));
     const o = await p.evaluate(() => {
       const times = [...document.querySelectorAll("#m-replies .reply time")].map(t => Date.parse(t.getAttribute("datetime")));
@@ -16358,8 +16501,7 @@ async function mOlderRun(browser, cfg) {
     await mShot(p, "older-390");
     // the newest window moves on with new entries after a load: nothing that fell out of it goes missing
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const ts = Date.now();
-    while (!st.streams.length && Date.now() - ts < slow(10000)) await p.waitForTimeout(100);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
     const fresh = [1, 2, 3].map(i => ({ at: mIso((10 - i) * 0.5 * M_MIN), text: "Fresh " + i + ". " + "newer words. ".repeat(4) }));
     st.replies["ol-1"] = { source: "transcript", replies: latest.slice(3).concat(fresh), prompts: [], more: true, next_before: "cur-A" };
     st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.2 * M_MIN) }));
@@ -16368,10 +16510,9 @@ async function mOlderRun(browser, cfg) {
     if (kept.r2 !== 1 || kept.r3 !== 1 || kept.r112 !== 1 || kept.fresh !== 3) fail(tag + "a refreshed window left a gap or a repeat: " + JSON.stringify(kept));
     // a failure shows a retry row, makes no further request of its own, and the retry goes on
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-    const t1 = Date.now();
-    while (olderHits("cur-C") < 1 && Date.now() - t1 < slow(4000)) await p.waitForTimeout(50);
+    await until(() => olderHits("cur-C") >= 1, 4000, "the failing page").catch(() => {});
     await p.waitForFunction(() => /retry/.test((document.getElementById("m-older") || {}).textContent || ""), null, { timeout: slow(5000) });
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: absence, a failure must not be asked again on its own
     if (olderHits("cur-C") !== 1) fail(tag + "a failure was asked again on its own: " + st.hits.join(","));
     await p.tap("#m-older");
     await p.waitForFunction(() => !document.getElementById("m-older"), null, { timeout: slow(5000) });
@@ -16453,9 +16594,16 @@ async function mFollowSection(browser) {
     await p.tap('#m-list .row[data-id="fo-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-    const t1 = Date.now();
-    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
-    await p.waitForTimeout(500);
+    await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
+    await settleStyle(p);
+    await p.evaluate(() => { window.__reads = 0; const was = window.mNet.api; window.mNet.api = async function (path) { try { return await was.apply(this, arguments); } finally { if (/\/replies\?/.test(path)) window.__reads++; } }; });
+    let reads = 0;
+    const applied = async () => {
+      if (tick % 3 === 2) await p.waitForFunction(w => document.getElementById("m-working").textContent.includes(w), "Tool" + tick, { timeout: slow(5000) }).catch(() => {});
+      else await p.waitForFunction(k => window.__reads >= k, reads, { timeout: slow(5000) }).catch(() => {});
+      await frames(p, 2);
+    };
+    const atEnd = () => p.waitForFunction(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight <= 3; }, null, { timeout: slow(5000) }).catch(() => {});
     const gap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return Math.round(e.scrollHeight - e.scrollTop - e.clientHeight); });
     const look = () => p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
@@ -16466,9 +16614,9 @@ async function mFollowSection(browser) {
     const output = async () => {
       tick++;
       const kind = tick % 3;
-      if (kind === 1) { n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(Math.max(0.1, 30 - tick)) })); }
+      if (kind === 1) { n++; reads++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(Math.max(0.1, 30 - tick)) })); }
       else if (kind === 2) st.send("task", Object.assign({}, c, { row: 1, activity: { what: "tool", tool: "Tool" + tick, seconds: tick } }));
-      else { st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
+      else { reads++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
     };
     if ((await gap()) > 4) fail(tag + "did not open at the bottom: " + await gap());
     // a finger goes down and drags slowly up for 8 s while output arrives every 2 s: four outputs, each of the three kinds
@@ -16476,13 +16624,13 @@ async function mFollowSection(browser) {
     const X = 200;
     let y = 600;
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: X, y }] });
-    await p.waitForTimeout(150);
+    await frames(p, 2);
     const t0 = Date.now();
     let base = null, bad1 = null, last = null, nextOut = t0 + 1000;
     while (Date.now() - t0 < 8000) {
       y += Number(process.env.FOLLOW_STEP || 0.5);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: X, y: Math.round(y) }] });
-      await p.waitForTimeout(100);
+      await p.waitForTimeout(100); // wait: the pace of a slow drag
       if (Date.now() >= nextOut) { nextOut += 2000; await output(); }
       const s = await look();
       if (!base && s.k) base = s;
@@ -16497,33 +16645,33 @@ async function mFollowSection(browser) {
     if (bad1) fail(tag + bad1);
     if (!base) fail(tag + "no bubble to hold " + JSON.stringify(await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); return [sc.scrollTop, sc.scrollHeight, sc.clientHeight, document.querySelectorAll("#m-replies [data-k]").length, [...document.querySelectorAll("#m-replies [data-k]")].map(e => Math.round(e.getBoundingClientRect().height))]; })));
     // after the finger lifts, a reader above the bottom still keeps still, through more output
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum after a touch ends
     const rest = await look();
-    for (let i = 0; i < 3; i++) { await output(); await p.waitForTimeout(700); }
+    for (let i = 0; i < 3; i++) { await output(); await applied(); }
     const after = await look();
     if (after.k === rest.k && (Math.abs(after.top - rest.top) > 2 || Math.abs(after.y - rest.y) > 2)) fail(tag + "a reader who let go was moved: " + JSON.stringify({ rest, after }));
     // parked 100 px above the bottom: replies arrive and nothing moves
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = e.scrollHeight - e.clientHeight - 100; });
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: the page's 120ms scroll window, a paint inside it is deferred
     const park = await look();
-    for (let i = 0; i < 3; i++) { await output(); await p.waitForTimeout(700); }
+    for (let i = 0; i < 3; i++) { await output(); await applied(); }
     const parked = await look();
     if (Math.abs(parked.top - park.top) > 2) fail(tag + "a reader parked 100px above the bottom was moved: " + JSON.stringify({ park, parked }));
     if ((await gap()) < 90) fail(tag + "the thread went back to the bottom under a parked reader: " + await gap());
     // the jump arrow resumes following
     await p.tap("#m-jump");
-    await p.waitForTimeout(500);
+    await atEnd();
     if ((await gap()) > 3) fail(tag + "the jump arrow did not reach the bottom: " + await gap());
-    await output(); await p.waitForTimeout(900);
+    await output(); await applied(); await atEnd();
     if ((await gap()) > 3) fail(tag + "following did not resume after the jump arrow: " + await gap());
     // scrolling back to the very bottom by hand resumes it too, and a little way up does not
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = e.scrollTop - 300; });
-    await p.waitForTimeout(500);
-    await output(); await p.waitForTimeout(900);
+    await p.waitForTimeout(500); // wait: the page's 120ms scroll window, a paint inside it is deferred
+    await output(); await applied();
     if ((await gap()) < 250) fail(tag + "a reader 300px up was pulled down: " + await gap());
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 })); e.scrollTop = e.scrollHeight; });
-    await p.waitForTimeout(600);
-    await output(); await p.waitForTimeout(900);
+    await frames(p, 2);
+    await output(); await applied(); await atEnd();
     if ((await gap()) > 3) fail(tag + "scrolling to the very bottom did not resume following: " + await gap());
     // a touch is over only when the last finger lifts: touchend with another finger still down keeps it
     await p.evaluate(() => {
@@ -16532,14 +16680,15 @@ async function mFollowSection(browser) {
       sc.dispatchEvent(new TouchEvent("touchend", { touches: [t(2)], targetTouches: [t(2)], changedTouches: [t(1)], bubbles: true, cancelable: true }));
       sc.scrollTop = sc.scrollHeight;
     });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum and 120ms scroll window
     const nBefore = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
-    n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.05) }));
-    await p.waitForTimeout(1200);
+    n++; reads++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.05) }));
+    await p.waitForFunction(k => window.__reads >= k, reads, { timeout: slow(5000) }).catch(() => {});
+    await frames(p, 2);
     const nDuring = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
     if (nDuring !== nBefore) fail(tag + "a finger still down was treated as lifted, the thread was redrawn under it: " + nBefore + " to " + nDuring);
     await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new TouchEvent("touchend", { touches: [], targetTouches: [], changedTouches: [], bubbles: true, cancelable: true })); });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum after the last finger lifts
     // a pen dragged on a touch screen ends with pointercancel and no pointerup: the thread must still stick again at the bottom
     await p.evaluate(() => {
       const sc = document.getElementById("m-card-scroll");
@@ -16547,10 +16696,11 @@ async function mFollowSection(browser) {
       sc.dispatchEvent(new PointerEvent("pointercancel", { pointerType: "pen", pointerId: 7, bubbles: true }));
       sc.scrollTop = sc.scrollHeight;
     });
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: the page's 300ms momentum after the pen's pointercancel
     const nPen = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
     n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.04) }));
-    await p.waitForTimeout(1500);
+    await p.waitForFunction(k => document.querySelectorAll("#m-replies [data-k]").length > k, nPen, { timeout: slow(5000) }).catch(() => {});
+    await atEnd();
     const nPen2 = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
     if (nPen2 <= nPen) fail(tag + "after a pen's pointercancel the thread still counts as held, nothing new was drawn: " + nPen + " to " + nPen2);
     if ((await gap()) > 3) fail(tag + "after a pen's pointercancel the thread never stuck to the bottom again: " + await gap());
@@ -16743,7 +16893,7 @@ async function mNoSidewaysSection(browser) {
         await p.tap("#m-opts-btn");
         for (const tab of ["#m-seg-needs", "#m-seg-all"]) {
           await p.tap(tab);
-          await p.waitForTimeout(300);
+          await settleStyle(p);
           const r = await p.evaluate(() => {
             const vw = window.innerWidth, bad = [];
             for (const e of document.body.querySelectorAll("*")) {
@@ -16795,7 +16945,7 @@ async function mPullSection(browser) {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
       for (let i = 1; i <= steps; i++) {
         await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: Math.round(y0 + (y1 - y0) * i / steps) }] });
-        await p.waitForTimeout(25);
+        await p.waitForTimeout(25); // wait: the pace of a finger drag
       }
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     };
@@ -16824,18 +16974,18 @@ async function mPullSection(browser) {
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.scrollTop = 500; });
     await frames(p, 3);
     await drag(200, 300, 520, 12);
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull from mid-thread reloaded the page");
     // from the composer, and from the viewer over the card
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await drag(200, 870, 900, 6);
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull from the composer reloaded the page");
     await p.evaluate(() => window.mViewer.open("pl-2", "/w/card/a.txt"));
     await p.waitForFunction(() => window.mViewer.isOpen(), null, { timeout: slow(5000) });
     await frames(p, 3);
     await drag(200, 200, 420, 12);
-    await p.waitForTimeout(700);
+    await p.waitForTimeout(700); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull from the viewer reloaded the page");
     if (!(await p.evaluate(() => window.mViewer.isOpen()))) fail(tag + "a pull closed the viewer");
     await p.evaluate(() => window.mViewer.close && window.mViewer.close());
@@ -16844,7 +16994,7 @@ async function mPullSection(browser) {
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await frames(p, 3);
     await drag(200, 200, 240, 4);
-    await p.waitForTimeout(600);
+    await p.waitForTimeout(600); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a short pull reloaded the page");
     if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner stayed after a short pull");
     // a send in flight is not lost to a pull: no spinner and no reload until the room has answered
@@ -16859,10 +17009,10 @@ async function mPullSection(browser) {
     const at0 = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
     if (at0 !== 0) fail(tag + "the thread was not at its top for the in-flight case: " + at0);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
-    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); } // wait: the pace of a finger drag
     if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner started while a send was in flight");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    await p.waitForTimeout(800);
+    await p.waitForTimeout(800); // wait: absence, a reload would land here
     if (!(await kept()) || loads) fail(tag + "a pull reloaded the page with a send in flight");
     release();
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
@@ -16870,14 +17020,13 @@ async function mPullSection(browser) {
     await frames(p, 3);
     // a pull at the very top shows a spinner and reloads
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
-    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); } // wait: the pace of a finger drag
     const spin = await p.evaluate(() => { const e = document.getElementById("m-pull"); return { shown: !e.hidden, go: e.classList.contains("go") }; });
     if (!spin.shown || !spin.go) fail(tag + "no spinner while pulling at the top: " + JSON.stringify(spin));
     await mShot(p, "pull-412");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    const t0 = Date.now();
-    while (await kept().catch(() => false) && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
-    await p.waitForTimeout(500);
+    await until(async () => !(await kept().catch(() => false)), 5000, "the reload").catch(() => {});
+    await p.waitForLoadState("domcontentloaded").catch(() => {});
     if (await kept().catch(() => false)) fail(tag + "a pull at the top did not reload the page");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -17196,7 +17345,7 @@ async function mDocsSection(browser) {
       if (!/published 1 document$/.test(await p.textContent("#m-card-docs"))) fail(tag + "the card line is wrong: " + await p.textContent("#m-card-docs"));
       st.send("task", Object.assign({}, st.tasks[0], { row: 1, output_at: mIso(0.1 * M_MIN) }));
       st.send("task", Object.assign({}, st.tasks[0], { row: 1, output_at: mIso(0.05 * M_MIN) }));
-      await p.waitForTimeout(800);
+      await p.waitForTimeout(800); // wait: absence, a second ask for the card line would land here
       const asks = hub.log.filter(r => r.path === "/_hub/docs" && /card=dc-1/.test(r.q)).length;
       if (asks !== 1) fail(tag + "the card line asked " + asks + " times inside 30 seconds");
       await p.tap("#m-card-docs");
@@ -17287,8 +17436,7 @@ async function mOutputAtSection(browser) {
       await p.tap('#m-list .row[data-id="out-1"]');
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-      const t1 = Date.now();
-      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
       const reads = () => st.hits.filter(h => h === "out-1?50").length;
       st.hits.length = 0;
       // a newer output_at re-reads once
@@ -17302,7 +17450,7 @@ async function mOutputAtSection(browser) {
       const bare = Object.assign({}, c, { row: 1, activity: { what: "thinking" } });
       delete bare.output_at;
       st.send("task", bare);
-      await p.waitForTimeout(700);
+      await p.waitForTimeout(700); // wait: absence, a second read would land here
       if (reads() !== 1) fail(tag + "the same or an absent output_at read again: " + reads());
       // and the next newer one reads again
       const at3 = mIso(M_MIN);
@@ -17383,8 +17531,7 @@ async function mStickBottomSection(browser) {
       await p.waitForFunction(() => Array.from(document.querySelectorAll("#m-replies img")).every(i => i.complete), null, { timeout: slow(5000) });
       await settled("after the late image loaded");
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
-      const t1 = Date.now();
-      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      await until(() => st.streams.length, 10000, "the event stream").catch(() => {});
       // a new reply while following lands on it
       st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }]) };
       st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(30000) } }));
@@ -17398,11 +17545,11 @@ async function mStickBottomSection(browser) {
       st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }, { at: mIso(1000), text: "LATER one " + "x ".repeat(100) }]) };
       st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(500) } }));
       await p.waitForFunction(() => /LATER one/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-      await p.waitForTimeout(300);
+      await p.waitForTimeout(300); // wait: absence, a pull down to the newest would land here
       if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 5) fail(tag + "the view was pulled down while scrolled up on purpose");
       if (!(await jump())) fail(tag + "no jump control while scrolled up");
       await p.evaluate(() => window.visualViewport.dispatchEvent(new Event("resize")));
-      await p.waitForTimeout(200);
+      await p.waitForTimeout(200); // wait: absence, a pull down to the newest would land here
       if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 5) fail(tag + "the keyboard pulled a scrolled-up view down");
       await mShot(p, "stick-jump-" + vp.width);
       await p.tap("#m-jump");
@@ -17428,11 +17575,11 @@ async function mStickBottomSection(browser) {
       await settled("own message");
       // closing the recap sheet gives back what the reader had: a reader at the top stays there
       await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
-      await p.waitForTimeout(400);
+      await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) }).catch(() => {});
       await p.tap("#m-recap-open");
       await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
       await p.tap("#m-recap-close");
-      await p.waitForTimeout(500);
+      await p.waitForTimeout(500); // wait: absence, a move of the reader at the top would land here
       if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 4) fail(tag + "closing the recap moved a reader at the top");
       // and one following the end still follows
       await p.tap("#m-jump");
@@ -17475,7 +17622,7 @@ async function mSendFreeSection(browser) {
         await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       };
       const box = () => p.evaluate(() => ({ v: document.querySelector("#m-compose textarea").value, off: document.querySelector("#m-compose .mc-send").disabled }));
-      const answered = async () => { const t0 = Date.now(); while (!release && Date.now() - t0 < slow(5000)) await p.waitForTimeout(50); const f = release; release = null; f(); };
+      const answered = async () => { await until(() => release, 5000, "the send to reach the room").catch(() => {}); const f = release; release = null; f(); };
       // a slow send: the box is clear and usable at once, the row is pending
       await type("first message");
       await p.tap("#m-compose .mc-send");
@@ -18579,10 +18726,16 @@ async function termsDrawerPushSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof fdSet === "function" && typeof onTermResize === "function", null, { timeout: slow(15000) });
-    await p.waitForTimeout(1500);   // boot ends with its own switchView, which shuts the drawer: let it land first
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(15000) });   // boot ends with its own switchView, which shuts the drawer: let it land first
     const got = await p.evaluate(async () => {
       switchView("terms");
-      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const wait = async () => {
+        const t = Date.now();
+        for (let clean = 0; clean < 2 && Date.now() - t < 5000;) {
+          await new Promise(r => requestAnimationFrame(r));
+          clean = document.getAnimations().some(a => !(a.effect.getComputedTiming().iterations > 1)) ? 0 : clean + 1;
+        }
+      };
       const calls = [];
       const orig = window.onTermResize;
       window.onTermResize = function () { calls.push(1); return orig.apply(this, arguments); };
@@ -18591,16 +18744,16 @@ async function termsDrawerPushSection(browser, base) {
         window.FD_TERMS_PUSH = push;
         fdSet("terms", true);
         fdSet("terms", false);
-        await wait(400);
+        await wait();
         const host = document.getElementById("fd-terms");
         const shut = paneH();
         calls.length = 0;
         fdSet("terms", true);
-        await wait(500);
+        await wait();
         const open = paneH(), openCalls = calls.length, overlay = host.classList.contains("foverlay");
         calls.length = 0;
         fdSet("terms", false);
-        await wait(500);
+        await wait();
         return { shut, open, openCalls, overlay, back: paneH(), closeCalls: calls.length };
       };
       const push = await run(true), fixed = await run(false);
@@ -18813,7 +18966,7 @@ async function discreteGroupSection(browser, base) {
     await p.waitForFunction(() => hubRepos.loaded, null, { timeout: slow(10000) });
     const order = () => p.evaluate(() => hubReposSorted(hubRepos.repos, hubReposSort()).map(r => r.repo).join(","));
     const shown = () => p.evaluate(() => [...document.querySelectorAll("#hubrepos-list .hr-repo")].map(e => e.dataset.repo).join(","));
-    await p.waitForTimeout(200);
+    await frames(p, 2);
     if ((await order()) !== "alpha,bravo,charlie") fail("discreteGroup: repos by name gave " + await order());
     await pick("hubrepos-sort", "pushed");
     if ((await order()) !== "bravo,charlie,alpha") fail("discreteGroup: repos by last push gave " + await order());
@@ -19351,7 +19504,7 @@ async function mHomeOrderSection(browser) {
   ];
   const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
   const heads = p => p.$$eval("#m-list h2.grp", e => e.map(x => x.textContent.replace(/\s+/g, " ").trim()));
-  const pick = async (p, sel) => { await p.tap(sel); await p.waitForTimeout(150); };
+  const pick = async (p, sel) => { await p.tap(sel); await frames(p, 2); };
   try {
     for (const vp of M_VIEWS) {
       st.tasks = cards();
@@ -19797,7 +19950,7 @@ async function mHostileSection(browser) {
       st.fileHits = [];
       const { ctx, p, errors, remote } = await mReplyPage(browser, st, vp, "ev-1");
       await p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the inside image did not load"));
-      await p.waitForTimeout(400);
+      await p.waitForTimeout(400); // wait: absence, a script, a remote read or an outside download would land here
       const d = await p.evaluate(() => {
         const r = document.getElementById("m-replies");
         return {
@@ -19890,7 +20043,7 @@ async function growlLinksSection(browser, base) {
         return { links: b.querySelectorAll("a").length, strong: b.querySelectorAll("strong, b, em").length, text: b.textContent };
       }, root);
       if (f.links || f.strong) fail(tag + "the body drew markup: " + JSON.stringify(f));
-      if (!f.text.includes("https://example.com/y") || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
+      if (!/https:\/\/example\.com\/y/.test(f.text) || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
       if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
     } finally { await h.close(); }
   }
@@ -19910,18 +20063,19 @@ async function growlChoiceOnceSection(browser, base) {
       h.msgDelay = 600; h.msgFail = true;
       const first = root + " [data-choice]";
       await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
-      await p.waitForTimeout(150);
+      await p.waitForFunction(s => [...document.querySelectorAll(s)].every(x => x.disabled === true), root + " [data-choice]", { timeout: slow(5000) }).catch(() => {});
       if ((await off()).join() !== "true,true,true") fail(tag + "the buttons were not disabled in flight: " + (await off()));
-      await p.waitForTimeout(900);
+      await p.waitForFunction(s => [...document.querySelectorAll(s)].every(x => x.disabled === false), root + " [data-choice]", { timeout: slow(5000) }).catch(() => {});
       if (h.messages.length !== 1) fail(tag + "a double press sent " + h.messages.length + " messages.");
       if ((await off()).join() !== "false,false,false") fail(tag + "a failed send did not light the buttons again: " + (await off()));
       h.msgDelay = 0; h.msgFail = false;
+      const sent = p.waitForResponse(r => r.url().endsWith("/message"), { timeout: slow(5000) }).catch(() => {});
       await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
-      await p.waitForTimeout(400);
+      await sent;
+      await frames(p, 2);
       if (h.messages.length !== 2) fail(tag + "the retry sent " + (h.messages.length - 1) + " messages.");
       if ((await off()).join() !== "true,true,true") fail(tag + "an answered choice left its buttons lit: " + (await off()));
       await h.say([GR("c", "blocked", 1, { body })]);
-      await p.waitForTimeout(200);
       if ((await off()).join() !== "true,true,true") fail(tag + "a redraw lit an answered choice again.");
       if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
     } finally { await h.close(); }
@@ -19967,7 +20121,7 @@ async function ciGrowlSection(browser, base) {
         if (name === "hostile" && (f.imgs || f.pwned || !f.text.includes("<img src=x"))) fail(tag + "the body was not escaped: " + JSON.stringify(f));
         if (name === "delivered") {
           await p.click(root + " .gr-full [data-do=dismiss]");
-          await p.waitForTimeout(150);
+          await until(() => h.posts.length, 5000, "the dismiss POST").catch(() => {});
           if (h.posts.length !== 1 || h.posts[0].body.do !== "dismiss") fail(tag + "dismiss posted " + JSON.stringify(h.posts));
         }
         const shots = process.env.CIGROWL_SHOTS;
@@ -19975,7 +20129,7 @@ async function ciGrowlSection(browser, base) {
           fs.mkdirSync(shots, { recursive: true });
           await p.locator(root).screenshot({ path: path.join(shots, "after.png") });
           await h.say([Object.assign({}, row, { reason: "question", urgency: 4 })]);
-          await p.waitForTimeout(150);
+          await p.waitForTimeout(150); // wait: a settle for the screenshot only
           await p.locator(root).screenshot({ path: path.join(shots, "before.png") });
         }
         if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
@@ -20030,6 +20184,7 @@ async function termEndedSection(browser, base) {
     r.fulfill({ json: { ok: true } }); });
   const shots = process.env.TERM_ENDED_SHOTS || "";
   try {
+    await p.clock.install();
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof termEndedHTML === "function" && (() => { try { newCardBook; termSuffix; return true; } catch (e) { return false; } })(), null, { timeout: slow(15000) });
     const setup = async () => { await p.waitForFunction(() => typeof termEndedHTML === "function" && (() => { try { newCardBook; termSuffix; return true; } catch (e) { return false; } })(), null, { timeout: slow(15000) });
@@ -20046,7 +20201,9 @@ async function termEndedSection(browser, base) {
       // The ended group is the dead chip's, so the chip is on to see it.
       localStorage.setItem(termDeviceKey("atrium.terms.show"), '["dead"]');
       });
-      await p.waitForTimeout(1500);
+      await fakePause(p);
+      await fakeTick(p, 1500);
+      await p.clock.resume();
       await p.evaluate(async () => { switchView("terms"); await renderTermList(); });
     };
     const shot = name => shots ? p.screenshot({ path: require("path").join(shots, name) }) : null;
@@ -20254,6 +20411,57 @@ async function termActivityWorkingFirstSection(browser, base) {
     if (errors.length) fail("termActivityWorkingFirst: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("termActivityWorkingFirst ok");
+}
+
+// A drop into a group you made files the card and nothing more: the strip's sort places it, under every sort, and
+// the write carries the tag and no rank. The ranks here run against the name order, so hand order would show.
+async function termGroupDropSortSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { switchView("terms"); localStorage.removeItem("atrium.termSort"); });
+    const out = await p.evaluate(async () => {
+      const card = (id, rank, tags, created) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags, rank, created_at: created, last_activity_at: created, activity: { what: "idle" } });
+      const cards = [card("bravo", 1, ["mine"], "2026-10-01T10:00:00Z"), card("delta", 2, ["mine"], "2026-10-03T10:00:00Z"),
+        card("alpha", 3, ["mine"], "2026-10-02T10:00:00Z"), card("charlie", 0, [], "2026-10-04T10:00:00Z")];
+      boardCards = async () => cards;
+      const writes = [];
+      patchTask = async (id, body) => { writes.push({ id, body }); Object.assign(cards.find(c => c.id === id), body); };
+      const order = () => [...document.querySelectorAll('#term-list .tnest[data-group="mine"] .card.tab')]
+        .map(c => c.dataset.id);
+      const res = {};
+      setTermSortMode("name");
+      setGrouping({ on: true, mode: "custom", picked: true, groups: ["mine"] }, "terms");
+      await renderTermList();
+      res.name = order();
+      termDragEl = document.querySelector('#term-list .card.tab[data-id="charlie"]');
+      await document.querySelector('#term-list .tnest[data-group="mine"]').ondrop(
+        { preventDefault() {}, stopPropagation() {} });
+      await renderTermList();
+      res.dropped = order();
+      res.writes = writes;
+      setTermSortMode("started");
+      await renderTermList();
+      res.started = order();
+      setTermSortMode("name");
+      setGroupMode("off", "terms");
+      return res;
+    });
+    if (out.name.join() !== "alpha,bravo,delta") fail("termGroupDropSort: a custom group is not in name order: " + out.name.join());
+    if (out.dropped.join() !== "alpha,bravo,charlie,delta") fail("termGroupDropSort: a dropped card is not placed by the sort: " + out.dropped.join());
+    if (out.started.join() !== "charlie,delta,alpha,bravo") fail("termGroupDropSort: a custom group is not newest first under started: " + out.started.join());
+    if (out.writes.length !== 1 || "rank" in out.writes[0].body || String(out.writes[0].body.tags) !== "mine") {
+      fail("termGroupDropSort: the drop wrote more than the group's tag: " + JSON.stringify(out.writes));
+    }
+    if (errors.length) fail("termGroupDropSort: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termGroupDropSort ok");
 }
 
 // A spawned card is drawn under its parent's row, under every sort and group mode. An orphan stays a row.
@@ -20664,6 +20872,8 @@ async function repoPasteSection(browser, base) {
     let release; st.hold = new Promise(r => { release = r; });
     await row(urls[0]);
     await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    await p.keyboard.press("Enter");
     await p.waitForSelector(".card.linkopen", { state: "attached", timeout: slow(5000) })
       .catch(() => fail("repoPaste: no card from the keypress"));
     if (!/openziti-test-kitchen\/ziti-tv/.test(await p.textContent(".card.linkopen"))) fail("repoPaste: the card did not name the repo");
@@ -20676,33 +20886,18 @@ async function repoPasteSection(browser, base) {
       fail("repoPaste: a held repo opened as " + JSON.stringify(news));
     if (st.calls.some(c => c.indexOf("_hub/git/init") >= 0)) fail("repoPaste: a held repo asked the hub to fetch it");
 
-    // A REPO NOBODY HOLDS: the hub fetches, the room clones, and the card stops for a confirm. Nothing starts until start.
+    // A REPO NOBODY HOLDS: the hub fetches, the room clones, and the work starts with no confirm in between.
     st.has = false; st.calls = [];
     await p.evaluate(() => { hubIsHub = true; });
     await row(urls[0]);
     await p.keyboard.press("Enter");
-    await p.waitForFunction(() => /start/.test((document.querySelector(".card.linkopen") || {}).textContent || ""), null, { timeout: slow(5000) })
-      .catch(() => fail("repoPaste: an unseen repo did not stop at a confirm"));
-    const txt = await p.textContent(".card.linkopen");
-    if (!/new repository from github\.com.*hooks will run/.test(txt)) fail("repoPaste: the confirm said: " + txt);
-    await shot(p, "repo-confirm");
-    const sent = st.calls.map(c => c.split(" ").slice(0, 2).join(" "));
-    if (sent.join(",") !== "POST /_hub/git/init,POST /v1/new" || !/"prepare":true/.test(st.calls[1]))
-      fail("repoPaste: an unseen repo went " + sent.join(" > "));
-    await p.click('.card.linkopen [data-op-act="cancel"]');
-    await p.waitForTimeout(300);
-    if (await p.evaluate(() => !!document.querySelector(".card.linkopen"))) fail("repoPaste: cancel left the card");
-    if (st.calls.filter(c => c.indexOf("POST /v1/new") === 0).length !== 1) fail("repoPaste: cancel still started the work");
-    // start finishes it
-    st.calls = [];
-    await row(urls[0]);
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
     await p.keyboard.press("Enter");
-    await p.waitForSelector('.card.linkopen [data-op-act="start"]', { timeout: slow(5000) });
-    await p.click('.card.linkopen [data-op-act="start"]');
     await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) })
-      .catch(() => fail("repoPaste: start did not finish the card"));
-    const started = st.calls.filter(c => c.indexOf("POST /v1/new") === 0 && !/"prepare":true/.test(c));
-    if (started.length !== 1) fail("repoPaste: start made " + started.length + " starts");
+      .catch(() => fail("repoPaste: an unseen repo did not finish without a confirm"));
+    const sent = st.calls.map(c => c.split(" ").slice(0, 2).join(" "));
+    if (sent.join(",") !== "POST /_hub/git/init,POST /v1/new,POST /v1/new" || !/"prepare":true/.test(st.calls[1]) || /"prepare":true/.test(st.calls[2]))
+      fail("repoPaste: an unseen repo went " + sent.join(" > "));
 
     // SHIFT-ENTER: the dialog with start new work open, the repo picked and a branch name in
     await row(urls[0]);
@@ -20714,6 +20909,112 @@ async function repoPasteSection(browser, base) {
     if (errors.length) fail("repoPaste: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("repoPaste ok");
+}
+
+// Enter on a pasted repo asks the worktree name first: claude/ fixed, work-<yymmdd>-<hhmm> selected, a live preview,
+// Enter starts on that branch, shift-Enter fills "start new work", Esc goes back to the list.
+async function pasteRepoNameSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const news = [];
+  await ctx.addInitScript(() => {
+    window.__clip = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      readText: async () => window.__clip, read: async () => [], writeText: async () => {} } });
+  });
+  await ctx.route(/\/(v1\/(recognise|new|scm\/has|checkouts|tasks\/t-n)|_hub\/git\/repos)(\/|\?|$)/, async route => {
+    const req = route.request();
+    const p = new URL(req.url()).pathname;
+    if (p === "/v1/tasks/t-n") return json(route, 200, { id: "t-n", status: "running", title: "o/r" });
+    if (p === "/v1/checkouts") return json(route, 200, { checkouts: [] });
+    if (p === "/_hub/git/repos") return json(route, 200, { repos: [] });
+    if (p === "/v1/scm/has") return json(route, 200, { has: true });
+    if (p === "/v1/new") {
+      news.push(JSON.parse(req.postData() || "{}"));
+      return json(route, 201, { card: "t-n", worktree: "/wt/o/r/x", repo: "github.com/o/r", created: true });
+    }
+    const url = JSON.parse(req.postData() || "{}").url || "";
+    return json(route, 200, { recogniser: "github-repo", label: "a repository", url, host: "github.com",
+      title: "", prompt: "", tags: [], vars: { org: "openziti-test-kitchen", repo: "zssh", host: "github.com" } });
+  });
+  const url = "https://github.com/openziti-test-kitchen/zssh";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof repoNameAsk === "function" && typeof openLaunch === "function", null, { timeout: slow(15000) });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) }).catch(() => {});
+    const ask = async () => {
+      await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      await p.evaluate(u => { window.__clip = u; }, url);
+      await p.keyboard.press("Control+Alt+KeyR");
+      await p.waitForSelector("#sw-open.seen", { timeout: slow(5000) });
+      await p.keyboard.press("Enter");
+      await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    };
+
+    await ask();
+    const st = await p.evaluate(() => {
+      const box = document.getElementById("sw-nm");
+      const vis = id => document.getElementById(id).checkVisibility();
+      return { value: box.value, all: box.selectionStart === 0 && box.selectionEnd === box.value.length,
+        focused: document.activeElement === box, q: vis("sw-q"), foot: vis("sw-foot"),
+        nmfoot: (() => {
+          const w = document.createTreeWalker(document.getElementById("sw-nmfoot"), NodeFilter.SHOW_TEXT), t = [];
+          while (w.nextNode()) t.push(w.currentNode.data);
+          return t.join(" ").replace(/\s+/g, " ").trim();
+        })(),
+        label: document.getElementById("sw-name").textContent, hint: document.querySelector(".swnmhint").textContent };
+    });
+    if (!/^work-\d{6}-\d{4}$/.test(st.value) || !st.all || !st.focused) fail("pasteRepoName: the default name is not selected: " + JSON.stringify(st));
+    if (st.q || st.foot || !/worktree name/.test(st.label) || !/claude\//.test(st.label)) fail("pasteRepoName: the name step drew: " + JSON.stringify(st));
+    if (!/^enter start shift enter edit first esc back\b/.test(st.nmfoot)) fail("pasteRepoName: the footer says " + st.nmfoot);
+    if (!/origin's default branch/.test(st.hint) || st.hint.indexOf("claude/" + st.value) < 0) fail("pasteRepoName: the preview said " + st.hint);
+    if (news.length) fail("pasteRepoName: Enter on the row started work before the name");
+
+    await p.keyboard.type("fix/thing");
+    const hint = await p.textContent(".swnmhint");
+    if (hint.indexOf("claude/fix/thing") < 0 || hint.indexOf("worktrees/github.com/openziti-test-kitchen/zssh/claude-fix-thing") < 0)
+      fail("pasteRepoName: the preview did not follow the typing: " + hint);
+
+    await p.mouse.click(5, 5);
+    if (process.env.DISMISSSHOTS) {
+      fs.mkdirSync(process.env.DISMISSSHOTS, { recursive: true });
+      await p.screenshot({ path: path.join(process.env.DISMISSSHOTS, "dirty-click-outside-" + (process.env.DISMISSTAG || "after") + ".png") });
+    }
+    await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("pasteRepoName: a click on the backdrop with a typed name did not ask"));
+    await p.click("#ask-actions button:first-child");
+    const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-nm").value }));
+    if (!kept.open || kept.value !== "fix/thing") fail("pasteRepoName: no did not keep the dialog and the name: " + JSON.stringify(kept));
+
+    await p.keyboard.press("Escape");
+    const back = await p.evaluate(() => ({ open: document.getElementById("switcher").open,
+      q: document.getElementById("sw-q").checkVisibility(), name: document.getElementById("sw-name").checkVisibility(),
+      row: !!document.getElementById("sw-open") }));
+    if (!back.open || !back.q || back.name || !back.row) fail("pasteRepoName: esc did not go back to the list: " + JSON.stringify(back));
+
+    await p.keyboard.press("Enter");
+    await p.waitForSelector("#sw-nm", { state: "visible", timeout: slow(5000) });
+    await p.keyboard.type("fix/thing");
+    const started = p.waitForResponse(r => /\/v1\/new$/.test(new URL(r.url()).pathname), { timeout: slow(5000) }).catch(() => {});
+    await p.keyboard.press("Enter");
+    await started;
+    await p.waitForFunction(() => !document.querySelector(".card.linkopen"), null, { timeout: slow(5000) }).catch(() => {});
+    if (news.length !== 1 || news[0].name !== "claude/fix/thing" || news[0].repo !== "github.com/openziti-test-kitchen/zssh")
+      fail("pasteRepoName: enter started " + JSON.stringify(news));
+
+    await ask();
+    await p.keyboard.type("edited");
+    await p.keyboard.press("Shift+Enter");
+    await p.waitForFunction(() => document.getElementById("launch").open && !document.getElementById("l-nw").hidden &&
+      document.getElementById("l-nw-name").value === "claude/edited", null, { timeout: slow(5000) })
+      .catch(() => fail("pasteRepoName: shift-enter did not fill start new work with the name"));
+    if (news.length !== 1) fail("pasteRepoName: shift-enter started work");
+    if (errors.length) fail("pasteRepoName: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pasteRepoName ok");
 }
 
 async function quickPasteSection(browser, base) {
@@ -20818,7 +21119,7 @@ async function quickPasteSection(browser, base) {
     if (process.env.QPSHOT) {
       for (const skin of ["harbour", "paper"]) {
         await p.evaluate(s => document.documentElement.setAttribute("data-skin", s), skin);
-        await p.waitForTimeout(700);
+        await settleStyle(p).catch(() => {});
         await shot(p, "box-" + skin);
       }
       await p.evaluate(() => document.documentElement.setAttribute("data-skin", "harbour"));
@@ -20838,13 +21139,19 @@ async function quickPasteSection(browser, base) {
     await p.evaluate(() => { window.__clip = "just words"; });
     await p.click("#quickpaste-open");
     await p.waitForFunction(() => document.getElementById("switcher").open, null, { timeout: slow(5000) });
-    await p.waitForTimeout(100);
+    await frames(p, 2);
     if (await p.inputValue("#sw-q") !== "") fail("quickPaste: text that is not a link was put in the box");
     // text that is not a link is not an open row, and nothing is asked
     await p.fill("#sw-q", "not a link");
     await p.press("#sw-q", "Enter");
     if (await p.evaluate(() => !!document.querySelector("#sw-list #sw-open"))) fail("quickPaste: text that is not a link got an open row");
     if (st.calls.length) fail("quickPaste: text that is not a link still called: " + st.calls.join(" | "));
+    // an ssh clone url is a link: it gets an open row and is read
+    await p.fill("#sw-q", "git@github.com:netfoundry/docusaurus-shared.git");
+    await p.waitForFunction(() => !!document.querySelector("#sw-list #sw-open"), null, { timeout: slow(5000) })
+      .catch(() => fail("quickPaste: an ssh clone url got no open row"));
+    await until(() => st.calls.some(c => c.indexOf("POST /v1/recognise") === 0 && c.indexOf("git@github.com:netfoundry") > 0), 5000,
+      "the ssh read").catch(() => fail("quickPaste: an ssh clone url was not read: " + st.calls.join(" | ")));
     // the paste button puts the clipboard's link in the bar, and reads it
     await p.evaluate(() => { window.__clip = "https://github.com/openziti/zrok/pull/12"; });
     await p.click("#sw-paste");
@@ -20869,7 +21176,7 @@ async function quickPasteSection(browser, base) {
     await p.waitForFunction(() => document.getElementById("launch").open &&
       document.getElementById("l-prompt").value === "review the pull request", null, { timeout: slow(5000) })
       .catch(() => fail("quickPaste: shift-enter did not leave the launch dialog filled in"));
-    await p.waitForTimeout(200);
+    await frames(p, 2);
     if (st.calls.some(c => c.indexOf("/v1/launch") >= 0)) fail("quickPaste: shift-enter launched: " + st.calls.join(" | "));
     if (await p.inputValue("#l-url") !== "https://github.com/openziti/zrok/pull/12") fail("quickPaste: shift-enter lost the link");
     await shot(p, "edit-first");
@@ -20889,7 +21196,7 @@ async function quickPasteSection(browser, base) {
       await p.mouse.move(2, 2);
       const was = await box();
       await p.hover(sel);
-      await p.waitForTimeout(250);
+      await settleStyle(p).catch(() => {});
       if (await box() !== was) fail("quickPaste: hovering " + sel + " moved or resized it");
     }
     await p.mouse.move(2, 2);
@@ -20914,7 +21221,7 @@ async function quickPasteSection(browser, base) {
     await p.press("#sw-q", "Enter");
     await p.waitForFunction(() => !document.getElementById("launch").open && !document.getElementById("switcher").open,
       null, { timeout: slow(8000) }).catch(() => {});
-    await p.waitForTimeout(200);
+    await until(() => st.calls.some(c => c.indexOf("POST /v1/open") === 0), 5000, "the open").catch(() => {});
     if (await p.evaluate(() => window.__sawLaunch)) fail("quickPaste: enter showed the launch dialog");
     // the box had already read the link, so Enter does not ask the recogniser again
     const order = st.calls.map(c => c.split(" ")[1]);
@@ -20945,9 +21252,9 @@ async function quickPasteSection(browser, base) {
       // WAIT ON THE REQUEST, not on the dialogs: they are shut before the open is sent, so a wait on them is true at
       // once. Then until the calls stop coming (the fallback launch follows a refused open).
       const until = Date.now() + slow(8000);
-      while (!st.calls.some(x => x.indexOf("POST /v1/open") === 0) && Date.now() < until) await p.waitForTimeout(25);
+      while (!st.calls.some(x => x.indexOf("POST /v1/open") === 0) && Date.now() < until) await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
       if (!st.calls.some(x => x.indexOf("POST /v1/open") === 0)) fail("quickPaste: enter did not start " + url);
-      for (let n = -1; n !== st.calls.length;) { n = st.calls.length; await p.waitForTimeout(300); }
+      for (let n = -1; n !== st.calls.length;) { n = st.calls.length; await p.waitForTimeout(300); } // wait: quiet is the end of the calls, and the fallback launch has no event
       const c = st.calls.find(x => x.indexOf("POST /v1/open") === 0);
       return { order: st.calls.map(x => x.split(" ")[1]), open: c ? JSON.parse(c.split(" ").slice(2).join(" ")) : null };
     };
@@ -21071,6 +21378,7 @@ async function quickPasteSection(browser, base) {
       st.calls = [];
       st.cardReads = 0;
       await p.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+      const read = p.waitForResponse(r => /\/v1\/recognise$/.test(new URL(r.url()).pathname), { timeout: slow(8000) }).catch(() => {});
       await p.evaluate(u => {
         window.__sawLaunch = false;
         const dt = new DataTransfer();
@@ -21078,8 +21386,8 @@ async function quickPasteSection(browser, base) {
         document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
       }, url);
       const until = Date.now() + slow(8000);
-      while (wait && !st.cardReads && Date.now() < until) await p.waitForTimeout(25);
-      await p.waitForTimeout(200);
+      while (wait && !st.cardReads && Date.now() < until) await p.evaluate(() => new Promise(r => requestAnimationFrame(r)));
+      await read; await p.waitForFunction(w => !w || !document.querySelector(".card.linkopen"), wait, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2);
     };
     const dew = "https://github.com/openziti/desktop-edge-win/pull/1095";
     await paste(dew);
@@ -21185,7 +21493,9 @@ async function quickPasteSection(browser, base) {
       const was = closeCardAsk;
       closeCardAsk = id => asked.push(id);
       const row = (id, s) => ({ id, status: s, tags: ["link:x", CLEANUP_TAG] });
-      const settle = () => new Promise(r => setTimeout(r, 80));
+      const pend = [], realOffer = cleanupOffer;
+      cleanupOffer = r => { const q = realOffer(r); pend.push(q); return q; };
+      const settle = () => Promise.all(pend.splice(0));
       // two boards at the same moment: the server's claim lets exactly one show the close
       cleanupWhenDone(row("c1", "running"), row("c1", "done"));
       cleanupWhenDone(row("c1", "running"), row("c1", "done"));
@@ -21196,7 +21506,7 @@ async function quickPasteSection(browser, base) {
       cleanupWhenDone(undefined, row("c1", "done"));
       cleanupWhenDone(row("c2", "running"), row("c2", "done"));
       await settle();
-      closeCardAsk = was;
+      closeCardAsk = was; cleanupOffer = realOffer;
       return { asked };
     });
     if (cleaned.asked.join() !== "c1" || claimed.tags.join() !== "link:x,cleanup:offered")
@@ -21288,7 +21598,7 @@ async function hostLabelGroupSection(browser, base) {
   p.on("pageerror", e => errors.push(e.message));
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => typeof termTree === "function", null, { timeout: slow(15000) });
     const got = await p.evaluate(() => {
       const a = { id: "h1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
       const b = { id: "h2", worktree: "D:/git/worktrees/github.com/openziti/ziti-sdk-c/y", repo: "ziti-sdk-c", branch: "y" };
@@ -21310,6 +21620,39 @@ async function hostLabelGroupSection(browser, base) {
   }
   console.log("hostLabelGroup ok");
 }
+
+// The strip's path tree draws a chain of only children as one heading, keeps a split's own heading, and folds on the merged path.
+async function termCondenseSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForTimeout(600);
+    const got = await p.evaluate(() => {
+      const a = { id: "c1", worktree: "D:/worktrees/github/openziti/ziti-sdk-c/x", repo: "ziti-sdk-c", branch: "x" };
+      const b = { id: "c2", worktree: "D:/worktrees/github/openziti/ziti-tunnel-sdk-c/y", repo: "ziti-tunnel-sdk-c", branch: "y" };
+      const draw = (list, folded) => {
+        const host = document.createElement("div");
+        host.innerHTML = termNodeHTML(termTree(list), 0, "", new Set(folded));
+        return { heads: [...host.querySelectorAll(".tgroup .tgname")].map(n => n.textContent).join(","),
+          counts: [...host.querySelectorAll(".tgroup .tgcount")].map(n => n.textContent).join(","),
+          rows: [...host.querySelectorAll(".tab[data-id]")].map(n => n.dataset.id).join(",") };
+      };
+      return { one: draw([a], []), split: draw([a, b], []), shut: draw([a], ["github/openziti/ziti-sdk-c"]),
+        later: draw([a, b], ["github/openziti/ziti-sdk-c"]) };
+    });
+    if (got.one.heads !== "github/openziti/ziti-sdk-c" || got.one.counts !== "1" || got.one.rows !== "c1") fail("termCondense: a single chain is not one heading: " + JSON.stringify(got.one));
+    if (got.split.heads !== "github/openziti,ziti-sdk-c,ziti-tunnel-sdk-c" || got.split.rows !== "c1,c2") fail("termCondense: a split lost its heading: " + JSON.stringify(got.split));
+    if (got.shut.heads !== "github/openziti/ziti-sdk-c" || got.shut.rows !== "") fail("termCondense: folding the merged heading did not fold the chain: " + JSON.stringify(got.shut));
+    if (got.later.heads !== "github/openziti,ziti-sdk-c,ziti-tunnel-sdk-c" || got.later.rows !== "c2") fail("termCondense: the split did not start expanded: " + JSON.stringify(got.later));
+    if (errors.length) fail("termCondense: page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+  console.log("termCondense ok");
+}
 async function termRowBleedSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
@@ -21319,10 +21662,10 @@ async function termRowBleedSection(browser, base) {
   mock.tasksMode = "filed";
   try {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
-    await p.waitForTimeout(900);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
     await p.waitForSelector('#term-list .card.tab[data-id="filed1"]', { state: "attached", timeout: slow(15000) });
-    await p.waitForTimeout(1000);
+    await settleStyle(p).catch(() => {});
     for (const w of [150, 520]) {
       const got = await p.evaluate(async (w) => {
         termTask = { id: "filed1" };
@@ -21693,7 +22036,7 @@ async function phoneBoardCompactSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-    await p.waitForTimeout(600);
+    await p.waitForFunction(() => history.state && history.state.atrium, null, { timeout: slow(15000) }); await settleStyle(p).catch(() => {});
     const shot = async n => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, n + "-390.png") }); } };
     await shot("stack");
     // the filter rows are folded behind one button, collapsed, with nothing but the search box and the button above the first card
@@ -21746,13 +22089,13 @@ async function phoneBoardCompactSection(browser, base) {
     await p.mouse.down();
     await p.mouse.move(pb.x + pb.width / 2, pb.y - 120, { steps: 4 });
     await p.mouse.up();
-    await p.waitForTimeout(250);
+    await p.waitForFunction(() => document.getElementById("sound-hint").hidden, null, { timeout: slow(5000) }).catch(() => {});
     const slid = await p.evaluate(() => ({ hidden: document.getElementById("sound-hint").hidden, press: document.getElementById("sound-hint").dataset.press || "", row: window.__row }));
     if (!slid.hidden || slid.press) fail(tag + "a press that slid off the pill kept it up: " + JSON.stringify(slid));
     if (slid.row) fail(tag + "a press that slid off the pill clicked the row under it: " + JSON.stringify(slid));
     await p.evaluate(() => { document.getElementById("sound-hint").hidden = false; window.__under = 0; });
     await p.tap("#sound-hint");
-    await p.waitForTimeout(250);
+    await p.waitForFunction(() => document.getElementById("sound-hint").hidden, null, { timeout: slow(5000) }).catch(() => {});
     const after = await p.evaluate(() => ({ n: window.__under, hidden: document.getElementById("sound-hint").hidden, url: location.pathname + location.hash }));
     if (after.n) fail(tag + "a tap on the sound pill reached what is under it: " + JSON.stringify(after));
     if (!after.hidden) fail(tag + "a tap on the sound pill did not enable sound");
@@ -21767,7 +22110,7 @@ async function phoneBoardCompactSection(browser, base) {
     const low = [];
     for (const sk of skins) {
       await p.evaluate(x => document.documentElement.setAttribute("data-skin", x), sk);
-      await p.waitForTimeout(80);
+      await settleStyle(p).catch(() => {});
       const box = await p.evaluate(() => { const e = document.querySelector("#stack .chip.tag"); e.scrollIntoView({ block: "center" }); const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; });
       const png = await p.screenshot({ clip: { x: box.x, y: box.y, width: box.w, height: box.h } });
       const got = await p.evaluate(async b64 => {
@@ -21790,22 +22133,22 @@ async function phoneBoardCompactSection(browser, base) {
     console.log("phoneBoardCompact: first card " + ch[0] + "px, " + skins.length + " skins");
     for (const v of ["board", "terms"]) {
       await p.evaluate(x => { const t = document.querySelector('header nav .tab[data-view="' + x + '"]'); if (t) t.click(); }, v);
-      await p.waitForTimeout(500);
+      await settleStyle(p).catch(() => {});
       await shot(v);
       await hint(v);
     }
     // opening the button brings the rows back
     await p.evaluate(() => document.querySelector('header nav .tab[data-view="stack"]').click());
-    await p.waitForTimeout(300);
+    await settleStyle(p).catch(() => {});
     await p.tap("#stack .filtersbtn");
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => document.querySelector("#stack .filtersbtn").getAttribute("aria-expanded") === "true", null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(p).catch(() => {});
     const open = await p.evaluate(() => !document.querySelector("#stack .fpanel").inert && ["stack-seg", "stack-sort", "stack-group"].every(id => document.getElementById(id).getBoundingClientRect().height > 0) && document.querySelector("#stack .filtersbtn").getAttribute("aria-expanded") === "true");
     if (!open) fail(tag + "the button did not open the rows");
     await p.tap('#stack-seg button:not([data-v=""]):not([data-v="subagents"])');
-    await p.waitForTimeout(200);
+    await settleStyle(p).catch(() => {});
     await shot("stack-open");
     await p.tap("#stack .filtersbtn");
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => document.querySelector("#stack .filtersbtn").getAttribute("aria-expanded") === "false", null, { timeout: slow(5000) }).catch(() => {}); await settleStyle(p).catch(() => {});
     if (await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)) fail(tag + "the page scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -21830,7 +22173,7 @@ async function boardFilesSection(browser, base) {
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
-      await p.waitForTimeout(800);
+      await p.waitForFunction(() => window.mFiles, null, { timeout: slow(15000) }); await p.evaluate(() => new Promise(r => mFiles.onAvailable(() => r())));
       const shown = await p.evaluate(() => { const t = document.querySelector('.tab[data-view="files"]'); return !!t && !t.hidden; });
       if (shown !== on) fail(tag + "the files tab is " + (shown ? "shown" : "hidden"));
       if (on) {
@@ -21853,7 +22196,7 @@ async function boardFilesSection(browser, base) {
         await p.click("#m-files .f-row:not(.f-h) .f-act button");
         await p.click("#m-files .d-sure .d-warn");
         await p.waitForFunction(() => true, null, { timeout: slow(1000) });
-        await p.waitForTimeout(400);
+        await until(() => mock.filesDeleted.length, 5000, "the delete").catch(() => {});
         if (mock.filesDeleted[0] !== "report.pdf") fail(tag + "delete asked for " + JSON.stringify(mock.filesDeleted));
         await p.click("#m-files .d-back");
         await p.waitForFunction(() => document.getElementById("m-files").hidden, null, { timeout: slow(3000) });
@@ -21951,15 +22294,85 @@ async function switcherRankSection(browser, base) {
     if (sub[0] && sub[0].name !== "Config screens") fail("switcherRank: the row's main text is " + JSON.stringify(sub[0].name) + ", want the card's title");
     if (sub[0] && !/ziti-console/.test(sub[0].dir)) fail("switcherRank: the dim text is " + JSON.stringify(sub[0].dir) + ", want the short path");
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "switcher-" + tag + ".png") }); }
-    // With no real match, the scattered one is all there is and stays.
-    const scatter = await rows("uixtlsfig");
+    // With no real match, a short scattered abbreviation stays and a long name typed in full finds nothing.
+    const scatter = await rows("uixtl");
     if (scatter.map(r => r.id).join() !== "sw-c") fail("switcherRank: a scattered query with no real match should keep sw-c, got " + scatter.map(r => r.id).join());
+    const noise = await rows("uixtlsfig");
+    if (noise.length) fail("switcherRank: a long scattered query should list nothing, got " + noise.map(r => r.id).join());
+    // The typed text is marked in the title, and a runner is a row that opens the launch dialog on it.
+    const marked = await p.evaluate(() => {
+      allHarnesses = [{ id: "claude-slim", label: "claude slim (orchestrator)", enabled: true, found: true }];
+      swSetQuery("slim");
+      const r = document.querySelector("#sw-list .swrow[data-harness]");
+      return r ? { name: r.querySelector(".swhit") && r.querySelector(".swhit").textContent, id: r.dataset.harness } : null;
+    });
+    if (!marked || marked.id !== "claude-slim" || marked.name !== "slim") fail("switcherRank: a runner row was not offered and marked: " + JSON.stringify(marked));
     // Two cards of one repo are told apart by their titles.
     const both = await rows("ziti-console");
     if (new Set(both.map(r => r.name)).size !== 2) fail("switcherRank: two cards of one repo read alike: " + JSON.stringify(both));
+    // A dead card is found once something is typed, under the live one, chipped ended or archived.
+    const gone = Object.assign(card("sw-d", "Config old", "/w/github/openziti/ziti-console", "old"), { supervised: false });
+    const idle = await rows("");
+    if (idle.some(r => r.id === "sw-d")) fail("switcherRank: a dead card is listed with nothing typed");
+    const dead = await p.evaluate(([cs, g]) => {
+      swTasks = cs;
+      swSetQuery("config");
+      swGone = [Object.assign({}, g, { id: "sw-e", archived_at: "2026-10-01T00:00:00Z" })];
+      paintSwitcher();
+      return [...document.querySelectorAll("#sw-list .swrow[data-id]")].map(r =>
+        r.dataset.id + ":" + [...r.querySelectorAll(".chip")].map(c => c.textContent).filter(c => /^(ended|archived)$/.test(c)).join("/"));
+    }, [cards.concat(gone), gone]);
+    if (dead[0] !== "sw-a:" || dead.slice(1).sort().join() !== "sw-d:ended,sw-e:archived") {
+      fail("switcherRank: config should list sw-a, then sw-d ended and sw-e archived, got " + dead.join());
+    }
     if (errors.length) fail("switcherRank: page errors: " + errors.join(" | "));
   } finally { mock.tasksMode = was; await ctx.close(); }
   if (!bad) console.log("switcherRank ok");
+}
+
+// THE SWITCHER CLOSES ON ESCAPE, EVEN WITH THE FIELD FOCUSED, AND ON A CLICK OUTSIDE ITS FORM. A click inside leaves it open, and outside a typed query it asks first.
+async function switcherDismissSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+    const open = async () => {
+      await p.evaluate(() => openSwitcher());
+      await p.waitForFunction(() => document.getElementById("switcher").open && document.activeElement === document.getElementById("sw-q"),
+        null, { timeout: slow(5000) });
+    };
+    const isOpen = () => p.evaluate(() => document.getElementById("switcher").open);
+    await open();
+    await p.keyboard.press("Escape");
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: Escape did not close the switcher"));
+    await open();
+    await p.click("#sw-q");
+    await p.click("#sw-foot", { position: { x: 2, y: 2 } });
+    if (!(await isOpen())) fail("switcherDismiss: a click inside the form closed the switcher");
+    await p.mouse.click(4, 4);
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: a click outside a clean form did not close the switcher"));
+    await open();
+    await p.keyboard.type("zz");
+    await p.mouse.click(4, 4);
+    await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: a click outside a typed query did not ask"));
+    if (!(await isOpen())) fail("switcherDismiss: a click outside a typed query closed the switcher before the answer");
+    await p.click("#ask-actions button:first-child");
+    const kept = await p.evaluate(() => ({ open: document.getElementById("switcher").open, value: document.getElementById("sw-q").value }));
+    if (!kept.open || kept.value !== "zz") fail("switcherDismiss: no did not keep the query: " + JSON.stringify(kept));
+    await p.mouse.click(4, 4);
+    await p.waitForSelector("#ask-actions button.go", { state: "visible", timeout: slow(5000) });
+    await p.click("#ask-actions button.go");
+    await p.waitForFunction(() => !document.getElementById("switcher").open, null, { timeout: slow(5000) })
+      .catch(() => fail("switcherDismiss: yes did not close the switcher"));
+    if (errors.length) fail("switcherDismiss: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("switcherDismiss ok");
 }
 
 // GOING TO A CARD OPENS EVERY FOLD IT SITS IN, except the terminals list's headings. Its heading path, its project group
@@ -22181,6 +22594,65 @@ async function groupBridgeSection(browser, base) {
 // THE BRIDGE RUNS FROM A COLLAPSED PARENT. The attached card is a hidden child of a folded row, one level down and two:
 // the folded row carries a funnel in the attached card's frame and nothing is opened. Expanded, the child's own row
 // carries the ordinary bridge. COLLAPSED_BRIDGE_SHOTS and COLLAPSED_BRIDGE_TAG write the pictures.
+// A pinned card filed into the orchestrators and directors groups, attached, beside two plain rows.
+async function selectedRowsPage(ctx, base) {
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.grouping", JSON.stringify({ mode: "custom", groups: ["orchestrators", "directors"] }));
+    localStorage.setItem("atrium.grouping.terms", JSON.stringify({ on: true, mode: "custom" }));
+  });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => typeof renderTermList === "function" && typeof placeTabBridge === "function", null, { timeout: slow(15000) });
+  await p.evaluate(() => {
+    const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+      display_title: id, tags: [], created_at: at, worktree: "/r/" + id, theme: "green", ...extra });
+    const cards = [card("og", "2026-09-01T10:00:00Z", { pinned: true, tags: ["orchestrators", "directors"],
+      display_title: "ogorch with a name long enough to fill the row" }),
+      card("rnd", "2026-09-02T10:00:00Z", { tags: ["directors"] }), card("blog", "2026-09-03T10:00:00Z", { pinned: true })];
+    boardCards = async () => cards;
+    term = term || { options: {}, dispose() {} };
+    termTask = cards[0];
+    switchView("terms");
+  });
+  const settle = () => p.evaluate(async () => { await renderTermList(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+    placeTabBridge(); r();
+  }))); });
+  const read = () => p.evaluate(() => {
+    const box = document.querySelector("#term-list .termscroll");
+    const right = el => Math.round(el.getBoundingClientRect().right);
+    return { col: Math.round(box.getBoundingClientRect().left + box.clientLeft + box.clientWidth),
+      on: [...document.querySelectorAll("#term-list .card.on")].map(right),
+      heads: [...document.querySelectorAll("#term-list .tgroup")].map(right),
+      carries: [...document.querySelectorAll("#term-list .tgroup.carries")].map(h => h.querySelector(".tgname").textContent),
+      bridges: [...document.querySelectorAll("#term-layout .tabbridge")].filter(b => !b.hidden).length };
+  });
+  const fold = key => p.evaluate(k => toggleTermGroup(k || PINNED_FOLD), key);
+  return { p, errors, settle, read, fold };
+}
+
+// THE ATTACHED ROW STAYS IN ITS COLUMN. The card is drawn three times, the list narrow, default and wide: every copy of
+// the attached row and every heading ends inside the box the rows scroll in, as an ordinary row does.
+async function selectedFitsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const { p, errors, settle, read } = await selectedRowsPage(ctx, base);
+    const shots = process.env.SELECTED_FITS_SHOTS || "";
+    for (const w of [200, 260, 420]) {
+      await p.evaluate(w => { termListW = w; applyTermList(); }, w);
+      await settle();
+      const g = await read();
+      if (g.on.length !== 3) fail("selectedFits: at " + w + "px want the attached row drawn three times: " + JSON.stringify(g));
+      if (g.on.some(r => r > g.col)) fail("selectedFits: at " + w + "px an attached row runs past its column: " + JSON.stringify(g));
+      if (g.heads.some(r => r > g.col)) fail("selectedFits: at " + w + "px a heading runs past its column: " + JSON.stringify(g));
+      if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "selected-fits-" + w + ".png") }); }
+    }
+    if (errors.length) fail("selectedFits: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("selectedFits ok");
+}
+
 async function collapsedBridgeSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   try {
@@ -22402,7 +22874,7 @@ async function phoneRedirectSection(browser, base) {
       });
       try {
         await p.goto(base + at, { waitUntil: "load" });
-        await p.waitForTimeout(1200);
+        await p.waitForFunction(() => typeof recordToLog === "function" && [...document.querySelectorAll("#toastlog-open, #phone-bell")].some(e => e.getClientRects().length > 0 && !e.hidden), null, { timeout: slow(15000) }).catch(() => {});
         await p.evaluate(() => recordToLog("a thing", "it happened", "", "", ""));
         const bell = await p.evaluate(() => [...document.querySelectorAll("#toastlog-open, #phone-bell")].find(e => e.getClientRects().length > 0 && !e.hidden) ? true : false);
         if (!bell) { fail(tag + "no bell is on screen"); continue; }
@@ -22443,7 +22915,7 @@ async function mReloadSection(browser) {
     await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
     await p.evaluate(() => window.mBuild.check());
     const base = loads;
-    const settle = ms => p.waitForTimeout(ms);
+    const settle = ms => p.waitForTimeout(ms); // wait: absence, a reload would land here
     const tag = "mReload: ";
 
     // same id: nothing
@@ -22604,8 +23076,8 @@ async function mActivityReadSection(browser) {
     const want = JSON.stringify([r.last_activity_at, r.prompted_at, r.output_at]);
     await p.waitForFunction(w => { const c = window.mStore.cards()[0]; return c && JSON.stringify([c.last_activity_at, c.prompted_at, c.output_at]) === w; }, want, { timeout: slow(4000) }).catch(() => {});
   };
-  const readsReach = async n => { const end = Date.now() + slow(3000); while (reads() < n && Date.now() < end) await new Promise(r => setTimeout(r, 20)); return reads(); };
-  const readsSettle = async () => { await new Promise(r => setTimeout(r, slow(300))); return reads(); };
+  const readsReach = async n => { await until(() => reads() >= n, 3000, "the reads").catch(() => {}); return reads(); };
+  const readsSettle = async () => { await new Promise(r => setTimeout(r, slow(300))); return reads(); }; // wait: absence, an extra read would land here
   try {
     const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
     p = await ctx.newPage();
@@ -22688,11 +23160,14 @@ async function mReviewSection(browser, base) {
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
     // 3. The read starts on a bare `task` event, and is answered 900ms later with what the list was when it began.
     st.tasksSlow = 900;
+    const asked = st.tasksAsked || 0;
+    const answered = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/tasks", { timeout: slow(5000) }).catch(() => {});
     st.send("task", {});
-    await p.waitForTimeout(450);
+    await until(() => (st.tasksAsked || 0) > asked, 5000, "the slow read").catch(() => {});
     st.send("task", Object.assign({}, st.tasks[0], { row: 1, status: "done" }));
     st.send("task-removed", { id: "b-1" });
-    await p.waitForTimeout(1300);
+    await answered;
+    await frames(p, 2);
     const got = await p.evaluate(() => ({ a: (window.mStore.card("a-1") || {}).status, b: !!window.mStore.card("b-1") }));
     if (got.a !== "done") fail(tag + "an older read put the card back to " + got.a);
     if (got.b) fail(tag + "an older read brought a removed card back");
@@ -22704,18 +23179,18 @@ async function mReviewSection(browser, base) {
       await p.waitForSelector('#m-list .row[data-id="z-1"]', { timeout: slow(5000) });
       await p.tap('#m-list .row[data-id="' + first + '"]');
       await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
-      await p.waitForTimeout(500);
+      await settleStyle(p);
       // Right after the back button's popstate, which starts the slide-out, and before it can have finished.
       await p.evaluate(([id, again]) => new Promise(done => {
         addEventListener("popstate", () => { window.mCard.open(again); done(); }, { once: true });
         window.mCard.close();
       }), [first, second]);
-      await p.waitForTimeout(700);
+      await p.waitForFunction(id => window.mCard.current() === id && document.getElementById("m-card").classList.contains("on") && !document.getElementById("m-card").hidden, second, { timeout: slow(5000) }).catch(() => {});
       const now = await p.evaluate(() => ({ cur: window.mCard.current(), on: document.getElementById("m-card").classList.contains("on"), hidden: document.getElementById("m-card").hidden }));
       if (now.cur !== second || !now.on || now.hidden) fail(tag + "a tap on " + second + " just after closing " + first + " did nothing: " + JSON.stringify(now));
       await p.evaluate(() => window.mCard.close());
       await p.waitForFunction(() => !document.getElementById("m-card").classList.contains("on"), null, { timeout: slow(2000) });
-      await p.waitForTimeout(600);
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) }).catch(() => {});
       if (await p.evaluate(() => !document.getElementById("m-card").hidden)) fail(tag + "the sheet stayed up after a close");
     }
     if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
@@ -22765,12 +23240,12 @@ async function mReviewSection(browser, base) {
       await p.waitForSelector('#m-list .row[data-id="alpha~a-1"]', { timeout: slow(10000) });
       await p.tap('#m-list .row[data-id="alpha~a-1"]');
       await p.waitForSelector("#m-card.on .mp-row", { timeout: slow(10000) });
-      await p.waitForTimeout(700);
+      await p.waitForTimeout(700); // wait: shots only, the face settles before the picture
       fs.mkdirSync(process.env.REVIEW_SHOTS, { recursive: true });
       const nm = process.env.REVIEW_SHOT_NAME || "shot";
       await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, nm + "-rows-390.png") });
       await p.tap('.mp-row[data-id="alpha~p1"] .mp-btn.approve');
-      await p.waitForTimeout(900);
+      await p.waitForTimeout(900); // wait: shots only, the face settles before the picture
       await p.screenshot({ path: path.join(process.env.REVIEW_SHOTS, nm + "-approve-390.png") });
       console.log("review shots " + nm + ": decides " + JSON.stringify(hub.decides));
       await ctx.close();
@@ -22793,7 +23268,7 @@ async function mReadRetrySection(browser) {
       await p.clock.install();
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
-      for (let t = 0; t < 6500; t += 100) { await p.clock.runFor(100); await new Promise(r => setTimeout(r, 10)); }
+      for (let t = 0; t < 6500; t += 100) { await p.clock.runFor(100); await new Promise(r => setTimeout(r, 10)); } // wait: real time for each failed read to land between fake clock steps
       const n = st.permsHits;
       if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
       if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
@@ -22822,7 +23297,7 @@ async function mBellSection(browser) {
       if (!(await vis("#m-bell"))) fail(tag + "no bell in the header");
       if (!(await vis("#m-sound-hint"))) fail(tag + "no tap-to-enable hint while sound is locked");
       await p.tap("#m-seg-all");
-      await p.waitForTimeout(150);
+      await p.waitForFunction(() => { const e = document.querySelector("#m-sound-hint"); return !e || e.hidden || !e.getClientRects().length; }, null, { timeout: slow(5000) }).catch(() => {});
       if (await vis("#m-sound-hint")) fail(tag + "the hint is still up after a touch");
       // a request arrives: the sound plays and the bell counts it
       st.perms = [{ id: "px" + vp.width, task_id: "b-1", tool: "Bash", command: "ls", requested_at: mIso(0) }];
@@ -22841,7 +23316,7 @@ async function mBellSection(browser) {
       st.perms = [{ id: "py" + vp.width, task_id: "b-1", tool: "Bash", command: "pwd", requested_at: mIso(0) }];
       st.send("permission", {});
       await p.waitForFunction(() => document.getElementById("m-log-list") && true, null, { timeout: slow(1000) });
-      await p.waitForTimeout(500);
+      await p.waitForTimeout(500); // wait: absence, a sound would land here
       if ((await p.evaluate(() => window.__osc)) !== before) fail(tag + "a muted page made a sound");
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
@@ -22912,7 +23387,7 @@ async function gearHostsSection(browser, base) {
     await p.evaluate(() => document.getElementById("settings").close());
     await p.click("#gear");
     await p.evaluate(() => showSettingsPane("expose the board"));
-    await p.waitForTimeout(400);
+    await until(() => st.gets > gets, 5000, "the hosts read").catch(() => {});
     if (st.gets <= gets) fail(tag + "opening the gear did not read the hosts again.");
     if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
   } finally { await h.ctx.close(); }
@@ -22938,9 +23413,11 @@ async function gearHostsSection(browser, base) {
   h = await open("none");
   try {
     const { p } = h;
+    const read = p.waitForResponse(r => r.url().endsWith("/_hub/hosts"), { timeout: slow(5000) }).catch(() => {});
     await p.click("#gear");
     await p.evaluate(() => showSettingsPane("expose the board"));
-    await p.waitForTimeout(600);
+    await read;
+    await frames(p, 2);
     const hidden = await p.evaluate(() => { const r = document.getElementById("s-hh-row"); return r.hidden || r.offsetParent === null; });
     if (!hidden) fail(tag + "a board with no hub draws the row.");
   } finally { await h.ctx.close(); }
@@ -23227,16 +23704,12 @@ async function mViewerSection(browser) {
       const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
       // What the mock server saw of a streamed file: it waits for the read to be cut, or for the server to finish it.
       const streamEnd = async key => {
-        for (let t = 0; t < slow(10000); t += 50) {
-          const r = (st.streamed || {})[key] || {};
-          if (r.aborted) return r;
-          await p.waitForTimeout(50);
-        }
+        await until(() => ((st.streamed || {})[key] || {}).aborted, 10000, "the read to be cut").catch(() => {});
         return (st.streamed || {})[key] || {};
       };
       // markdown, through the safe renderer, and Back restores the thread's scroll
       await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 300; });
-      await p.waitForTimeout(150);
+      await frames(p, 2);
       const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
       await p.evaluate(s => document.querySelector(s).click(), file("plan.md"));
       await settle();
@@ -23297,7 +23770,7 @@ async function mViewerSection(browser) {
       if (!st.ifRanges.length) fail(tag + "the range was not tied to the file with If-Range");
       await back();
       // a server that ignores Range answers the whole file, and the read stops at the cap
-      st.streamed = {};
+      st.streamed = Object.create(null);
       await p.evaluate(s => document.querySelector(s).click(), file("ignores.log"));
       await settle();
       v = await viewer();
@@ -23324,7 +23797,7 @@ async function mViewerSection(browser) {
       await settle();
       v = await viewer();
       if (!/Can't preview pack\.zip \(2\.9 KB\)\. Download\?/.test(v.text)) fail(tag + "the question says: " + v.text);
-      await p.waitForTimeout(200);
+      await p.waitForTimeout(200); // wait: absence, a read before the answer would land here
       if (st.fileReqs.some(r => r.method === "GET")) fail(tag + "the file was read before the question was answered");
       const dl = p.waitForEvent("download", { timeout: slow(5000) });
       await p.tap("#m-viewer-body .v-btn");
@@ -23439,7 +23912,7 @@ async function mHomeLiveSection(browser) {
       if (c.o[key] !== state.order) await p.tap('[data-opt="order"][data-val="' + state.order + '"]');
       if (c.o.group !== state.group) await p.tap('[data-opt="group"][data-val="' + state.group + '"]');
       for (const f of ["needsMe", "hideDone", "hideSubs"]) { c = await cur(); if (!!c.o[f] !== !!state[f]) await p.tap('[data-opt="' + f + '"]'); }
-      await p.waitForTimeout(120);
+      await frames(p, 2);
     };
     const check = async (name, state) => {
       const tag = "mHomeLive " + name + ": ";
@@ -23541,9 +24014,9 @@ async function mChangesSection(browser) {
       if (await p.$$eval(".reply", e => e.length) !== 3 || st.changeReqs.length) fail(tag + "the thread asked for changes before a tap: " + st.changeReqs.length);
       const sheet = () => p.evaluate(() => { const s = document.getElementById("m-changes"); return { open: !s.hidden, title: document.getElementById("m-changes-title").textContent, text: document.getElementById("m-changes-body").textContent, state: history.state && history.state.mchg || "" }; });
       const wait = fn => p.waitForFunction(fn, null, { timeout: slow(6000) });
-      const back = async () => { await p.goBack(); await p.waitForTimeout(150); };
+      const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-changes").hidden, null, { timeout: slow(5000) }).catch(() => {}); };
       await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 120; });
-      await p.waitForTimeout(150);
+      await frames(p, 2);
       const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
       // the turn
       const chipFor = at => '.chg-chip[data-at="' + at + '"]';
@@ -23594,8 +24067,7 @@ async function mChangesSection(browser) {
       await p.fill("#m-compose textarea", "why 10?");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
-      await p.waitForFunction(() => true);
-      await p.waitForTimeout(300);
+      await until(() => posted.length, 5000, "the send").catch(() => {});
       const hh = new Date(at1).getHours().toString().padStart(2, "0") + ":" + new Date(at1).getMinutes().toString().padStart(2, "0");
       const want = "review comment on internal/api/web/m/js/card.js line 12, removed (turn " + hh + ", head 1a2b3c4):\n    -const REPLIES_N = 3;\n" +
         "review comment on internal/api/web/m/js/card.js line 12 (turn " + hh + ", head 1a2b3c4):\n    +const REPLIES_N = 10;\nwhy 10?";
@@ -23606,7 +24078,7 @@ async function mChangesSection(browser) {
       await p.fill("#m-compose textarea", "ok");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
-      await p.waitForTimeout(300);
+      await until(() => posted.length >= 2, 5000, "the send").catch(() => {});
       if (posted.length !== 2 || !posted[1].text.includes("line 10 (turn " + hh + ", head 1a2b3c4):\n     const U = window.mUtil;\nok")) fail(tag + "a context line was quoted as " + JSON.stringify(posted[1]));
       // text size
       await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
@@ -23652,7 +24124,7 @@ async function mChangesSection(browser) {
       await p.fill("#m-compose textarea", "danger");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
-      await p.waitForTimeout(300);
+      await until(() => posted.length, 5000, "the send").catch(() => {});
       const evil = (posted[0] || {}).text || "";
       if (/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/.test(evil)) fail(tag + "a control character reached the message: " + JSON.stringify(evil));
       if (evil.split("\n").length !== 3) fail(tag + "the message split into " + evil.split("\n").length + " lines: " + JSON.stringify(evil));
@@ -23680,12 +24152,12 @@ async function mChangesSection(browser) {
       st.send("task", Object.assign({ row: 1 }, st.tasks[0]));
       await wait(() => /the agent is still working/.test(document.getElementById("m-changes-body").textContent));
       const n = st.changeReqs.length;
-      await p.waitForTimeout(300);
+      await p.waitForTimeout(300); // wait: absence, a read while running would land here
       if (st.changeReqs.length !== n) fail(tag + "the sheet asked again while the card was running");
       st.tasks[0] = Object.assign({}, c1, { status: "needs-input", seen: { turn_ended_at: new Date().toISOString() } });
       st.send("task", Object.assign({ row: 1 }, st.tasks[0]));
       await wait(() => !/the agent is still working/.test(document.getElementById("m-changes-body").textContent));
-      await p.waitForTimeout(200);
+      await until(() => st.changeReqs.length >= n + 1, 5000, "the read on stop").catch(() => {});
       if (st.changeReqs.length !== n + 1) fail(tag + "the card's Stop made " + (st.changeReqs.length - n) + " reads, not one");
       await back();
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
@@ -24002,6 +24474,8 @@ const unitResults = {};
 // each other's state. This holds for the serial run and for a shard alike. A new piece of state goes on `mock`, and the
 // listing fails on a module-level `let` in this file or in lib/mock.js.
 let pristine = null, lastUnit = "";
+// Six times the slowest unit on the weight file: past it a unit is stuck, and the shard fails it rather than hang the job.
+const UNIT_MS = Number(process.env.HEADLESS_UNIT_MS) > 0 ? Number(process.env.HEADLESS_UNIT_MS) : 300000;
 const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
 // What a unit changed on `mock`, field by field, as JSON.
 function mockSnapshot() {
@@ -24020,11 +24494,13 @@ async function unit(name, fn) {
   const before = bad, t0 = Date.now();
   const snap0 = process.env.HEADLESS_LEAKS ? mockSnapshot() : null;
   results.currentUnit = name;
-  try { await fn(); }
+  let timer;
+  const stuck = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("no result after " + UNIT_MS / 1000 + "s, a wait that never completes")), UNIT_MS); });
+  try { await Promise.race([fn(), stuck]); }
   catch (e) {
     if (!UNIT_FILTER) throw e;
     fail(name + ": the unit threw: " + threwMessage(e));
-  } finally { results.currentUnit = ""; }
+  } finally { clearTimeout(timer); results.currentUnit = ""; }
   const ms = Date.now() - t0;
   if (snap0) {
     const snap1 = mockSnapshot();
@@ -24403,6 +24879,38 @@ async function attachAtOnceSection(browser, base) {
   } finally { mock.tasksMode = was; await ctx.close(); }
 }
 
+// AN EXITED PANE SHOWS ITS CARD'S ID, and the copy button beside it, the one bar button left with close and copy
+// mode, puts the bare id (no room tag) on the clipboard.
+async function deadCardIdSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  try {
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForFunction(() => typeof markTermDead === "function" && typeof copyPath === "function",
+      null, { timeout: slow(15000) });
+    const st = await wp.evaluate(async () => {
+      window.__copied = [];
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { writeText: async s => { window.__copied.push(s); } } });
+      termTask = { id: "lab~0f3c-dead-id", display_title: "row dead" };
+      markTermDead();
+      const chip = document.querySelector("#t-chips .t-deadid");
+      const btn = chip && chip.querySelector("button");
+      const shown = !!btn && !btn.hidden && getComputedStyle(btn).display !== "none";
+      if (btn) btn.click();
+      return { text: chip ? chip.textContent.trim() : "", shown };
+    });
+    await wp.waitForFunction(() => window.__copied.length > 0, null, { timeout: slow(5000) }).catch(() => {});
+    st.copied = await wp.evaluate(() => window.__copied.slice());
+    if (st.text !== "0f3c-dead-id" || !st.shown) fail("deadCardId: the exited pane does not show the id with its copy button (" + JSON.stringify(st) + ").");
+    if (st.copied.join("|") !== "0f3c-dead-id") fail("deadCardId: the copy button did not copy the bare id (" + JSON.stringify(st) + ").");
+    if (errors.length) fail("deadCardId: page errors " + errors.join("; "));
+    if (!bad) console.log("deadCardId ok");
+  } finally { await ctx.close(); }
+}
+
 // AN OPEN FILE BELONGS TO ITS CARD. Opened on A, hidden on B (whose terminal shows), back on A with the edited text
 // and scroll, closed on A only. And the editor reaches down to the footer hint line at two window heights.
 // `FILEVIEW_SHOTS=dir` also writes the pictures for the item file.
@@ -24535,8 +25043,8 @@ async function pinNowSection(browser, base) {
       if (route.request().method() !== "PATCH") return route.continue();
       patches++;
       if (mode !== "fail") { const r = mock.wornTasks.find(x => route.request().url().endsWith("/" + x.id)); if (r) r.pinned = !!JSON.parse(route.request().postData() || "{}").pinned; }
-      if (mode === "fail") { await new Promise(r => setTimeout(r, 400)); return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) }); }
-      await new Promise(r => setTimeout(r, 2000));
+      if (mode === "fail") { await new Promise(r => setTimeout(r, 400)); return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) }); } // wait: the slow refusal the star shows first
+      await new Promise(r => setTimeout(r, 2000)); // wait: the held PATCH the repaint must not wait behind
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row("pn-a")) });
     });
     await wp.goto(base, { waitUntil: "domcontentloaded" });
@@ -24547,6 +25055,7 @@ async function pinNowSection(browser, base) {
       const s = r && r.querySelector(".pin"); return s ? s.classList.contains("on") : null; }, id);
     if (await star("pn-a") !== false) fail("pinNow: the row did not start with an unpinned star (" + await star("pn-a") + ").");
     // Click, then read the star after two animation frames, with the PATCH still held.
+    const held = wp.waitForResponse(r => /\/v1\/tasks\/pn-a$/.test(r.url()) && r.request().method() === "PATCH", { timeout: slow(10000) }).catch(() => {});
     const t0 = Date.now();
     await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-a"] .pin').click());
     const waitStar = async (id, want) => { const end = Date.now() + 1500; while (Date.now() < end && await star(id) !== want) await wp.waitForTimeout(10); };
@@ -24554,13 +25063,14 @@ async function pinNowSection(browser, base) {
     const took = Date.now() - t0;
     if (await star("pn-a") !== true) fail("pinNow: the star did not turn on within a frame of the click.");
     if (took > 1500) fail("pinNow: the repaint waited " + took + "ms, behind the PATCH.");
-    await wp.waitForTimeout(2300);
+    await held;
+    await frames(wp, 2);
     // Refused: the star goes on, then back.
     mode = "fail";
     await wp.evaluate(() => document.querySelector('#term-list .card.tab[data-id="pn-b"] .pin').click());
     await waitStar("pn-b", true);
     if (await star("pn-b") !== true) fail("pinNow: a refused pin was not shown first.");
-    for (let i = 0; i < 30 && await star("pn-b") !== false; i++) await wp.waitForTimeout(100);
+    await until(async () => await star("pn-b") === false, 3000, "the star back").catch(() => {});
     if (await star("pn-b") !== false) fail("pinNow: a refused PATCH did not put the star back.");
     if (patches < 2) fail("pinNow: expected two PATCHes, saw " + patches + ".");
     if (errors.length) fail("pinNow: page errors: " + errors.join("; "));
@@ -24789,13 +25299,13 @@ async function switchBackCostSection(browser, base) {
         const hook = setInterval(() => { if (term && term !== hooked) { hooked = term; term.onWriteParsed(() => { parsed = performance.now(); }); } }, 1);
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         const frames2 = performance.now() - t0;
-        await new Promise(r => setTimeout(r, 900));
+        await new Promise(r => setTimeout(r, 900)); // wait: the window is the measurement, the replay's last parse inside it
         clearInterval(hook);
         return { sync, frames2, parsed: parsed ? parsed - t0 : 0, newSocks: window.__socks - n, lines: term.buffer.active.length,
           marks: (window.__switchMarks || []).map(m => m[0] + "=" + m[1].toFixed(1)).join(" ") };
       }, id);
-      await sw("sb-a"); await wp.waitForTimeout(500);
-      await sw("sb-b"); await wp.waitForTimeout(500);
+      await sw("sb-a"); await wp.evaluate(() => new Promise(r => term.write("", r)));
+      await sw("sb-b"); await wp.evaluate(() => new Promise(r => term.write("", r)));
       rows.push({ keep, back: await sw("sb-a") });
       await ctx.close();
     }
@@ -24850,15 +25360,19 @@ async function keepMemorySection(browser, base) {
       const bs = await browser.newBrowserCDPSession();
       const heap = async () => {
         await cdp.send("HeapProfiler.collectGarbage"); await cdp.send("HeapProfiler.collectGarbage");
-        await wp.waitForTimeout(500);
+        await wp.waitForTimeout(500); // wait: the renderer's resident memory settles after the collection on its own time
         const procs = (await bs.send("SystemInfo.getProcessInfo")).processInfo.filter(p => p.type === "renderer");
         const rss = Math.max(...procs.map(p => +require("child_process").execSync("ps -o rss= -p " + p.id).toString().trim() / 1024));
         return { heap: (await cdp.send("Runtime.getHeapUsage")).usedSize / 1048576, rss };
       };
-      await wp.evaluate(id => attachTask(id), ids[0]);
-      await wp.waitForTimeout(1500);
+      const attached = async id => {
+        await wp.evaluate(i => attachTask(i), id);
+        await wp.waitForFunction(i => termTask && termTask.id === i && termSock && termSock.readyState === 1, id, { timeout: slow(15000) });
+        await termWrite(wp, "");
+      };
+      await attached(ids[0]);
       const one = await heap();
-      for (const id of ids.slice(1)) { await wp.evaluate(i => attachTask(i), id); await wp.waitForTimeout(1200); }
+      for (const id of ids.slice(1)) await attached(id);
       const nine = await heap();
       const kept = await wp.evaluate(() => keptTerms.size);
       const histLines = await wp.evaluate(() => Array.from(keptTerms.values()).map(s => s.term.buffer.active.length));
@@ -25047,7 +25561,7 @@ async function mChangeReqPage(browser, st, vp, o) {
   await p.goto(st.url + "/m/" + (o.query || ""), { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
   await p.waitForFunction(() => window.mRequests && window.mRequests.state && (window.mRequests.state.loaded || window.mRequests.state.note), null, { timeout: slow(8000) });
-  await p.waitForTimeout(150);
+  await frames(p, 2);
   return { ctx, p, errors, hub };
 }
 
@@ -25156,7 +25670,7 @@ async function mChangeReqSection(browser) {
       try {
         if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + "a banner with the mock off");
         await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
-        await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(400);
+        await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForFunction(() => window.mRequests && window.mRequests.state && (window.mRequests.state.loaded || window.mRequests.state.note), null, { timeout: slow(8000) }).catch(() => {});
         if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + "localStorage still turns the mock on");
       } finally { await ctx.close(); }
 
@@ -25274,7 +25788,7 @@ async function mChangeReqSection(browser) {
         await p.tap("#m-seg-all"); await p.waitForSelector("#m-list .row");
         await p.tap('#m-list .row[data-id="cr-1"]'); await p.waitForSelector("#m-replies .md");
         await p.tap("#m-card-changes"); await p.waitForSelector(".cg-sub");
-        await p.waitForTimeout(200);
+        await p.waitForTimeout(200); // wait: absence, a Pushed line or a call would land here
         if (await p.$(".cg-pushed") || asked.length) fail(tag0 + ": a card with no branch got a Pushed line or a call");
       } finally { await ctx.close(); }
     }
@@ -25303,10 +25817,10 @@ async function mCrShots(browser, st) {
         if (view === "closed") { await p.tap(".crm-seg button:nth-child(2)"); await p.tap('.crm-li[data-id="cr_6"]'); await p.waitForFunction(() => /Bump Go/.test((document.querySelector(".crm-ttl") || {}).textContent || "") && document.querySelectorAll(".crm-tl li").length >= 3); }
         if (view === "form") { await p.tap(".crm-bar .crm-btn"); await p.waitForSelector(".crm-form"); }
       }
-      await p.waitForTimeout(250);
+      await p.waitForTimeout(250); // wait: shots only, the face settles before the picture
       const h = await p.evaluate(() => { const sc = document.querySelector("#m-requests:not([hidden]) .crm-scroll") || document.querySelector(".v-scroll"); return sc ? sc.scrollHeight + 90 : 844; });
       await p.setViewportSize({ width: 390, height: Math.min(5000, Math.max(844, h)) });
-      await p.waitForTimeout(200);
+      await p.waitForTimeout(200); // wait: shots only, the face settles before the picture
       await p.screenshot({ path: require("path").join(dir, "m-requests-" + view + "-390-" + skin + ".png") });
     } finally { await ctx.close(); }
   }
@@ -25440,7 +25954,7 @@ async function newContextSseSection(browser, base) {
       const readFrom = Date.now() - 50;
       onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "running",
         new_context: { step: "limit", n: 1, of: 3, label: "waiting for atrium ready" } }) });
-      const held = { sign: !document.getElementById("t-nodev").hidden, box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
+      const held = { sign: composeOpen(), box: composeOpen(), text: document.getElementById("t-ctxbox-in").value };
       sendInput("more");
       const dropped = frames.length === before;
       (typeof composeFromList === "function" ? composeFromList : r => { termTask.new_context = r.new_context; })({ id: "c-sse", new_context: null }, readFrom);
@@ -25450,7 +25964,7 @@ async function newContextSseSection(browser, base) {
       window.sendInput = t => { typed.push(t); };
       onTaskEvent({ data: JSON.stringify({ id: "c-sse", row: 1, status: "idle" }) });
       window.sendInput = realSend;
-      return { before, held, dropped, clears, stillHeld, typed, after: { box: composeOpen(), sign: !document.getElementById("t-nodev").hidden } };
+      return { before, held, dropped, clears, stillHeld, typed, after: { box: composeOpen(), sign: composeOpen() } };
     });
     if (shots) {
       await p.evaluate(() => {
@@ -25548,10 +26062,10 @@ async function main() {
   if (ONLY) {    const only = { ...bt.sections, closeOneDialog: closeOneDialogSection, boardDocs: boardDocsSection, boardFiles: boardFilesSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, detailsHover: detailsHoverSection, detailsSide: detailsSideBySideSection, 
       groupRemove: groupRemoveSection, worn: wornSection, 
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, backtickPathLinks: backtickPathLinksSection, fileMenu: fileMenuSection, fileMenuHTML: fileMenuHTMLSection, htmlTab: htmlTabSection, markdownTab: markdownTabSection, docShare: docShareSection, termLinkLate: termLinkLateSection, fileLinksView: fileLinksViewSection, termProbeStorm: termProbeStormSection, termFitHeight: termFitHeightSection,popoutTagFlip: popoutTagFlipSection, alertKinds: alertKindsSection, mPrefsEverywhere: (b) => mPrefsEverywhereSection(b), idleRate: idleRateSection, foldStill: foldStillSection, laneFold: laneFoldSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection, clearMark: clearMarkSection, clearLine: clearLineSection,
       resumeSpinner: resumeSpinnerSection, toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
+      pasteBig: pasteBigSection, termDragNotTyped: termDragNotTypedSection, pasteLands: pasteLandsSection, pasteEmpty: pasteEmptySection, pasteBusy: pasteBusySection, typing: typingSection, askAgain: askAgainSection, copySelect: copySelectSection, termFindSpeaker: termFindSpeakerSection, cleanCopy: cleanCopySection, cleanCopyTwo: cleanCopyTwoSection, busyGuard: busyGuardSection, keepalive: keepaliveSection, coldHandoff: coldHandoffSection, idlePark: idleParkSection, sshBadge: sshBadgeSection, 
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection, crossedPane: crossedPaneSection,
       toastLives: toastLivesSection,
       history: historySection, peekEverywhere: peekEverywhereSection, peekOneHover: peekOneHoverSection, peekDrawers: peekDrawersSection,peekStatusTruth: peekStatusTruthSection, peekKids: peekKidsSection, peekScratch: peekScratchSection, detailsOne: detailsOneSection, peekHoverRest: peekHoverRestSection, cardRoute: cardRouteSection,
@@ -25560,7 +26074,7 @@ async function main() {
       phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, mReview: mReviewSection, 
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, 
       terminalTopGap: terminalTopGapSection, phoneListFit: phoneListFitSection, termListLastRow: termListLastRowSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlRoomAlert: growlRoomAlertSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection, growlTrayRow: growlTrayRowSection, trayMerge: trayMergeSection,
       mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, termMenu: termMenuSection, notifyCommand: notifyCommandSection, hears: hearsSection, presence: presenceSection, tallPty: tallPtySection, arrivedOnce: arrivedOnceSection, popoutBell: popoutBellSection, windowMute: windowMuteSection, 
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       
@@ -25586,11 +26100,11 @@ async function main() {
       mSwitcher: mSwitcherSection, mPickerDone: mPickerDoneSection, mHomePicker: mHomePickerSection,
       mPull: mPullSection, mNoSideways: mNoSidewaysSection, joinedLive: joinedLiveSection, termEnded: termEndedSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection, termRowBleed: termRowBleedSection,
-      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection,
+      termDebug: termDebugSection, termDebugPerCard: termDebugPerCardSection, termLag: termLagSection, termHiddenRedraw: termHiddenRedrawSection, termLastRead: termLastReadSection, termFollowBottom: termFollowBottomSection, termSortStarted: termSortStartedSection, termActivityWorkingFirst: termActivityWorkingFirstSection, termGroupDropSort: termGroupDropSortSection,
       childUnderParent: childUnderParentSection, topNav: topNavSection, tabsOrder: tabsOrderSection,
       groupMenus: groupMenusSection, mGroupMenus: mGroupMenusSection,
-      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
-      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
+      u002: u002Section, childFold: childFoldSection, liveHome: liveHomeSection, toastsTop: toastsTopSection, heldLink: heldLinkSection, groupBridge: groupBridgeSection, collapsedBridge: collapsedBridgeSection, selectedFits: selectedFitsSection, revealFolds: revealFoldsSection, revealChip: revealChipSection,
+      quickPaste: quickPasteSection, changeReq: changeReqSection, mChangeReq: mChangeReqSection, trayHead: trayHeadSection, emptyGroups: emptyGroupsSection, oneTooltip: oneTooltipSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, termDeadCard: termDeadCardSection, deadCardId: deadCardIdSection, fileView: fileViewSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection, };
     try {
       const unknown = ONLY.split(",").filter(n => typeof only[n] !== "function");
       if (unknown.length) {
@@ -25826,7 +26340,7 @@ async function main() {
       if (nest && stray) nest.appendChild(stray);
       repaintTermList();
     });
-    await page.waitForTimeout(300);
+    await frames(page, 2);
     fs1 = await filedState();
     if (fs1.strays !== 0) {
       fail("a row dragged into a group stayed there after a repaint with unchanged markup.");
@@ -26219,10 +26733,12 @@ async function main() {
     await page.click('.tab[data-view="stack"]');
     await page.waitForSelector('#stack-list .stackrow[data-id="t1"]', { timeout: slow(15000) });
     mock.tasksMode = "hang";
+    const hung0 = hungResponses.length;
     await page.evaluate(() => runRefresh());
 
     // While it hangs, the board keeps its last paint rather than clearing.
-    await page.waitForTimeout(800);
+    await until(() => hungResponses.length > hung0, 5000, "the hung fetch").catch(() => {});
+    await frames(page, 2);
     const duringHang = await page.locator("#stack-list .stackrow").count();
     if (duringHang < 1) {
       fail("the board blanked its task list while a fetch was in flight. A hung " +
@@ -26235,7 +26751,7 @@ async function main() {
     mock.tasksMode = "second";
     if (process.env.DEBUG_HEADLESS) {
       for (let i = 0; i < 12; i++) {
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(500); // wait: debug only, samples the state every half second
         const st = await page.evaluate(() => ({
           ids: [...document.querySelectorAll("#stack-list .stackrow")]
             .map(e => e.dataset.id),
@@ -26307,7 +26823,7 @@ async function main() {
 
     // A second of real time. On the broken code the counters run into the
     // hundreds here; the fix bounds them.
-    await page.waitForTimeout(1200);
+    await page.waitForTimeout(1200); // wait: the second of real time the counts are bounded over
     const opens = await page.evaluate(() => window.__openTermCount);
     const attempts = await page.evaluate(() => window.__attachAttempts);
     if (opens > 8) {
@@ -26335,7 +26851,7 @@ async function main() {
     });
     // Wait past the capped backoff for a pending retry to fire and open.
     await page.waitForFunction(() => window.__attachAttempts > 0, null, { timeout: slow(20000) });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500); // wait: absence, a churning attach would reopen here
     const opensAfter = await page.evaluate(() => window.__openTermCount);
     const attemptsAfter = await page.evaluate(() => window.__attachAttempts);
     if (opensAfter > 2) {
@@ -26397,7 +26913,7 @@ async function main() {
       await fillPage.setViewportSize({ width: 1280, height: 900 });
       await fillPage.goto(base, { waitUntil: "domcontentloaded" });
       // Let the board's first poll fire and settle before attaching.
-      await fillPage.waitForTimeout(900);
+      await fillPage.waitForFunction(() => document.querySelector("#stack-list .stackrow") && !refreshInFlight && !refreshDirty, null, { timeout: slow(15000) });
       await fillPage.click('.tab[data-view="terms"]');
       // Build, fill, and measure in ONE step. The mocked attach opens but never
       // replays, so a poll or watchdog that ran between steps would read the card
@@ -26490,7 +27006,7 @@ async function main() {
     try {
       await floorPage.setViewportSize({ width: 700, height: 800 });
       await floorPage.goto(base, { waitUntil: "domcontentloaded" });
-      await floorPage.waitForTimeout(900);
+      await floorPage.waitForFunction(() => document.querySelector("#stack-list .stackrow") && !refreshInFlight && !refreshDirty, null, { timeout: slow(15000) });
       await floorPage.click('.tab[data-view="terms"]');
       await floorPage.evaluate(async () => {
         const t = await api("/v1/tasks/t1");
@@ -26517,7 +27033,7 @@ async function main() {
         fail("a pane under the floor did not draw 120 columns in a sideways scroll: " + JSON.stringify(seen));
       }
       await floorPage.click("#ask-body a");
-      await floorPage.waitForTimeout(300);
+      await floorPage.waitForFunction(() => document.getElementById("settings").open, null, { timeout: slow(5000) }).catch(() => {});
       const cog = await floorPage.evaluate(() => {
         const pane = document.querySelector('#settings .pane[data-name="board"]');
         const field = document.getElementById("s-mincols-field");
@@ -26806,7 +27322,7 @@ async function main() {
       // Attach sgg, clear the loadHubRooms throttle, then push the `rooms` event
       // the hub sends on a membership change. Nothing reopens the menu.
       mock.sggAttached = true;
-      await hub.waitForTimeout(2100);
+      await hub.evaluate(() => { hubRead = 0; });
       hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
 
       // The open menu repaints in place: sgg is now live, not disconnected, and
@@ -27123,15 +27639,17 @@ async function main() {
     const ga1Errors = [];
     ga1.on("pageerror", e => ga1Errors.push(String(e)));
     try {
+      const ga1Read = ga1.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/settings"), { timeout: slow(15000) }).catch(() => {});
       await ga1.goto(base, { waitUntil: "domcontentloaded" });
-      await ga1.waitForTimeout(1500);
+      await ga1Read;
+      await ga1.waitForFunction(() => { const b = document.getElementById("gauto"); return b && b.textContent.trim() && b.classList.contains("unknown"); }, null, { timeout: slow(5000) }).catch(() => {});
       const g = await gautoPaint(ga1);
       if (gautoDrawn("settings failing at load", g) && !/unknown/.test(g.cls)) {
         fail("settings failing at load: #gauto claims a state nobody read, " + JSON.stringify(g));
       }
       // Past loadHubRooms' 2s throttle, a room attaches and the read succeeds.
-      await ga1.waitForTimeout(2200);
       mock.hubHasRoom = true;
+      await ga1.evaluate(() => { hubRead = 0; });
       pushRooms();
       await gautoHeals("settings failing at load", ga1, "asking");
       if (ga1Errors.length) fail("the gauto load page threw: " + ga1Errors.join(" | "));
@@ -27149,8 +27667,10 @@ async function main() {
     const ga2Errors = [];
     ga2.on("pageerror", e => ga2Errors.push(String(e)));
     try {
+      const ga2Read = ga2.waitForResponse(r => r.url().split("?")[0].endsWith("/v1/settings"), { timeout: slow(15000) }).catch(() => {});
       await ga2.goto(base, { waitUntil: "domcontentloaded" });
-      await ga2.waitForTimeout(1500);
+      await ga2Read;
+      await ga2.waitForFunction(() => { const b = document.getElementById("gauto"); return b && b.classList.contains("gauto") && b.textContent.trim(); }, null, { timeout: slow(5000) }).catch(() => {});
       gautoDrawn("settings failing in a room scope", await gautoPaint(ga2));
       // The room comes back. The poll re-reads while the switch is unknown.
       mock.roomSettingsDown = false;
@@ -27184,13 +27704,13 @@ async function main() {
       openStreams.splice(0).forEach(r => { try { r.end(); } catch (e) {} });
       hubStreams.splice(0);
       await settingsAfter;
-      await ga3.waitForTimeout(300);
+      await ga3.waitForFunction(() => { const b = document.getElementById("gauto"); return b && b.classList.contains("stale"); }, null, { timeout: slow(5000) }).catch(() => {});
       const g = await gautoPaint(ga3);
       if (gautoDrawn("settings failing on a stream reopen", g) && !/stale/.test(g.cls)) {
         fail("settings failing on a stream reopen: #gauto shows its old answer as fresh, " + JSON.stringify(g));
       }
-      await ga3.waitForTimeout(2200);
       mock.hubHasRoom = true;
+      await ga3.evaluate(() => { hubRead = 0; });
       pushRooms();
       await gautoHeals("settings failing on a stream reopen", ga3, "approving everything");
       if (ga3Errors.length) fail("the gauto reopen page threw: " + ga3Errors.join(" | "));
@@ -27470,9 +27990,11 @@ async function main() {
     await unit("typing", () => typingSection(browser, base));
     // ── a card wears its alias, and the menu sets it ────────────────────────
     await unit("alias", bu("alias"));
+    await unit("parent", bu("parent"));
     await unit("askAgain", () => askAgainSection(browser, base));
     // ── copy on select answers the pointer, not the find bar ───────────────
     await unit("copySelect", () => copySelectSection(browser, base));
+    await unit("termFindSpeaker", () => termFindSpeakerSection(browser, base));
     await unit("cleanCopy", () => cleanCopySection(browser, base));
     await unit("cleanCopyTwo", () => cleanCopyTwoSection(browser, base));
     await unit("chatTab", bu("chatTab"));
@@ -27527,6 +28049,7 @@ async function main() {
     // ── the persistent growler: stack, actions, over a modal, and quiet ────
     await unit("growlStack", () => growlStackSection(browser, base));
     await unit("growlActions", () => growlActionsSection(browser, base));
+    await unit("growlRoomAlert", () => growlRoomAlertSection(browser, base));
     await unit("growlModal", () => growlModalSection(browser, base));
     await unit("growlQuiet", () => growlQuietSection(browser, base));
     await unit("growlAttention", () => growlAttentionSection(browser, base));
@@ -27536,6 +28059,7 @@ async function main() {
     await unit("growlOff", () => growlOffSection(browser, base));
     await unit("growlRemind", () => growlRemindSection(browser, base));
     await unit("growlTrayRow", () => growlTrayRowSection(browser, base));
+  await unit("trayMerge", () => trayMergeSection(browser, base));
     // ── card urls: a card has an address made of names ──
     await unit("cardUrlTable", () => cardUrlTableSection(browser, base));
     await unit("cardUrlClash", () => cardUrlClashSection(browser, base));
@@ -27642,6 +28166,7 @@ async function main() {
     await unit("backlogSearch", bu("backlogSearch"));
     await unit("backlogShow", bu("backlogShow"));
     await unit("backlogGroup", bu("backlogGroup"));
+    await unit("backlogNewItem", bu("backlogNewItem"));
     await unit("mergeStrip", bu("mergeStrip"));
     await unit("launchLink", bu("launchLink"));
     await unit("hubGate", bu("hubGate"));
@@ -27677,6 +28202,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("launchRepoUrls", bu("launchRepoUrls"));
     await unit("launchThrowaway", bu("launchThrowaway"));
     await unit("launchSetup", bu("launchSetup"));
+    await unit("launchPresets", bu("launchPresets"));
     await unit("newWorkDialog", bu("newWorkDialog"));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mReload", () => mReloadSection(browser));
@@ -27708,10 +28234,12 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("boardDocs", () => boardDocsSection(browser, base));
     await unit("boardFiles", () => boardFilesSection(browser, base));
     await unit("switcherRank", () => switcherRankSection(browser, base));
+    await unit("switcherDismiss", () => switcherDismissSection(browser, base));
     await unit("revealFolds", () => revealFoldsSection(browser, base));
     await unit("revealChip", () => revealChipSection(browser, base));
     await unit("groupBridge", () => groupBridgeSection(browser, base));
     await unit("collapsedBridge", () => collapsedBridgeSection(browser, base));
+    await unit("selectedFits", () => selectedFitsSection(browser, base));
     await unit("groupMenus", () => groupMenusSection(browser, base));
     await unit("mGroupMenus", () => mGroupMenusSection(browser));
     await unit("docsPage", () => docsPageSection(browser, base));
@@ -27755,6 +28283,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termRowBleed", () => termRowBleedSection(browser, base));
     await unit("hostLabelGroup", () => hostLabelGroupSection(browser, base));
+    await unit("termCondense", () => termCondenseSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termDebugPerCard", () => termDebugPerCardSection(browser, base));
     await unit("termLag", () => termLagSection(browser, base));
@@ -27764,9 +28293,11 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("termFollowBottom", () => termFollowBottomSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("termActivityWorkingFirst", () => termActivityWorkingFirstSection(browser, base));
+    await unit("termGroupDropSort", () => termGroupDropSortSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("tabsOrder", () => tabsOrderSection(browser, base));
     await unit("boardUsage", bu("boardUsage"));
+    await unit("pullsMorePending", bu("pullsMorePending"));
     await unit("pullsLiveSteps", bu("pullsLiveSteps"));
     await unit("pullsPasteOpening", bu("pullsPasteOpening"));
     await unit("pulls", bu("pulls"));
@@ -27785,6 +28316,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
     await unit("termDeadCard", () => termDeadCardSection(browser, base));
+    await unit("deadCardId", () => deadCardIdSection(browser, base));
     await unit("fileView", () => fileViewSection(browser, base));
     await unit("keepAlive", () => keepAliveSection(browser, base));
     await unit("pinNow", () => pinNowSection(browser, base));
@@ -27794,6 +28326,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
     await unit("prMove", bu("prMove"));
     await unit("quickPaste", () => quickPasteSection(browser, base));
     await unit("repoPaste", () => repoPasteSection(browser, base));
+    await unit("pasteRepoName", () => pasteRepoNameSection(browser, base));
     await unit("recogniserRepo", bu("recogniserRepo"));
     await unit("roomsMenuScroll", bu("roomsMenuScroll"));
     await unit("notifyTrayFill", () => notifyTrayFillSection(browser, base));
@@ -27837,7 +28370,7 @@ await unit("itemDocsLanded", bu("itemDocsLanded"));
       process.exitCode = 1;
     }
     // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
-    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
+    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection"]);
     const src = fs.readFileSync(__filename, "utf8");
     const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
     // a unit moved to scripts/board-tests/ is owned by the `{ name, run }` that calls its section there
@@ -28000,6 +28533,7 @@ function mServer(state) {
     const p = u.pathname;
     const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
     if (p === "/v1/tasks") {
+      state.tasksAsked = (state.tasksAsked || 0) + 1;
       // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
       const rm = req.headers["x-atrium-room"];
       if (state.tasksFail > 0) { state.tasksFail--; return json(503, { error: "the room is not up yet" }); }
@@ -28078,7 +28612,7 @@ function mServer(state) {
         // The whole file, written as the client takes it, so how much was read can be told.
         res.writeHead(200, head);
         let at = 0;
-        const rec = (state.streamed = state.streamed || {});
+        const rec = (state.streamed = state.streamed || Object.create(null));
         rec[want] = { sent: 0, aborted: false };
         res.on("close", () => { if (at < body.length) rec[want].aborted = true; });
         // One chunk a millisecond, not as fast as loopback takes it: a loaded runner can read a whole 25 MB image before
@@ -28166,7 +28700,7 @@ async function mShot(p, name) {
   if (dir) {
     // Let the fade, the slide and the stream settle, so the picture is the resting state.
     await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) }).catch(() => {});
-    await p.waitForTimeout(900);
+    await p.waitForTimeout(900); // wait: shots only, the face settles before the picture
     fs.mkdirSync(dir, { recursive: true }); await p.screenshot({ path: path.join(dir, name + ".png") }); }
 }
 function mNeedsCards() {
@@ -28198,7 +28732,7 @@ async function mResumeSection(browser) {
   const shots = process.env.RESUME_SHOTS, shotTag = process.env.RESUME_TAG || "after";
   try {
     const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
-    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(250); await p.screenshot({ path: path.join(shots, shotTag + "-" + name + ".png") }); } };
+    const shot = async name => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.waitForTimeout(250); await p.screenshot({ path: path.join(shots, shotTag + "-" + name + ".png") }); } }; // wait: shots only, the face settles before the picture
     await p.tap("#m-seg-all");
     await p.waitForSelector('#m-list .row[data-id="shelf-1"]', { timeout: slow(10000) });
     await shot("m1-card");
@@ -28258,12 +28792,14 @@ async function mResumeSection(browser) {
     await p.evaluate(() => window.mResume.open("shelf-1"));
     await p.tap("#m-rmenu .rmenu-resume");
     await p.evaluate(() => window.mResume.resume("shelf-1"));
-    await p.waitForTimeout(200);
+    await p.waitForTimeout(200); // wait: absence, a second launch would land here
     if (st.launches.length !== 1) fail(tag + "a second resume while opening launched again: " + st.launches.length);
     const b = st.launches[0];
     if (b.task_id !== "shelf-1" || b.resume !== "sess-1" || b.harness !== "claude" || b.cwd !== "/tmp/res") fail(tag + "the launch was " + JSON.stringify(b));
+    const launched = p.waitForResponse(r => new URL(r.url()).pathname === "/v1/launch", { timeout: slow(5000) }).catch(() => {});
     open();
-    await p.waitForTimeout(300);
+    await launched;
+    await frames(p, 2);
     if (!(await p.$(sel + " .opening .m-spin"))) fail(tag + "the spinner ended when the launch answered, before any output");
 
     // 4. First output (the card runs and moves) ends it.
@@ -28277,7 +28813,7 @@ async function mResumeSection(browser) {
     // 5. No output inside the bound: the reason, and a resume is allowed again.
     st.tasks = [paused(), st.tasks[1]];
     st.send("task", st.tasks[0]);
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => { const c = window.mStore.card("shelf-1"); return c && c.status === "done"; }, null, { timeout: slow(5000) }).catch(() => {});
     st.launchGate = null;
     const first = await p.evaluate(() => { RESUME_BOUND_MS = 400; window.mResume.resume("shelf-1"); return openingState("shelf-1").state; });
     if (first !== "opening") fail(tag + "the resume was " + first + " straight after it started");
@@ -28287,7 +28823,7 @@ async function mResumeSection(browser) {
     await shot("m5-slow");
     const n0 = st.launches.length;
     await p.evaluate(() => window.mResume.resume("shelf-1"));
-    await p.waitForTimeout(300);
+    await until(() => st.launches.length >= n0 + 1, 5000, "the resume").catch(() => {});
     if (st.launches.length !== n0 + 1) fail(tag + "a resume was not allowed again after the bound");
     await p.evaluate(() => { openingEnd("shelf-1"); RESUME_BOUND_MS = 30000; });
 
@@ -28305,8 +28841,8 @@ async function mResumeSection(browser) {
   if (!bad) console.log("mResume ok");
 }
 
-// GREY MEANS NOT RUNNING, NOTHING ELSE. One rule (`runnerGone` in js/cardrules.js) decides it for the stack and the terminals
-// tab; the phone page reads the same rule and is checked in mAgentIdle. GREY_SHOTS=<dir> writes a PNG of the rows.
+// GREY MEANS NOT RUNNING, NOTHING ELSE. One rule (`runnerGone` in js/cardrules.js) decides it for the stack, the terminals
+// tab and the board; the phone page reads the same rule and is checked in mAgentIdle. GREY_SHOTS=<dir> writes a PNG of the rows.
 async function greyMeansDeadSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
@@ -28315,7 +28851,7 @@ async function greyMeansDeadSection(browser, base) {
   const tag = "greyMeansDead: ";
   try {
     await p.goto(base + "/raw", { waitUntil: "load" });
-    await p.waitForTimeout(1000);
+    await p.waitForFunction(() => typeof stackRow === "function" && typeof termRow === "function" && typeof isWaiting === "function", null, { timeout: slow(15000) });
     const card = (id, over) => Object.assign({ id, title: id, display_title: id, status: "needs-input", wire_name: "w/" + id,
       tags: ["origin:agent"], worktree: "/w/" + id, repo: "r", runner: "claude", supervised: true, pid: 0, seen: {}, activity: {},
       created_at: "2026-10-13T10:00:00Z", last_activity_at: new Date().toISOString(), waiting_since: new Date().toISOString() }, over);
@@ -28334,8 +28870,13 @@ async function greyMeansDeadSection(browser, base) {
       for (const t of cs) {
         const stack = document.createElement("div"); stack.innerHTML = stackRow(t);
         const term = document.createElement("div"); term.innerHTML = termRow(t, false, false);
+        const board = document.createElement("div"); board.className = "board"; board.innerHTML = cardHTML(t);
+        document.body.appendChild(board);
+        const bc = board.querySelector(".card");
         out[t.id] = { attn: stack.firstElementChild.classList.contains("attn"),
-          cold: !!term.querySelector(".card.tab.cold"), waiting: isWaiting(t), gone: typeof runnerGone === "function" && runnerGone(t) };
+          cold: !!term.querySelector(".card.tab.cold"), waiting: isWaiting(t), gone: typeof runnerGone === "function" && runnerGone(t),
+          boardCold: bc.classList.contains("cold"), boardOpacity: Number(getComputedStyle(bc).opacity) };
+        board.remove();
       }
       const shots = document.createElement("div");
       shots.id = "grey-shots"; shots.style.cssText = "position:fixed;top:0;left:0;width:900px;z-index:99999;background:#111";
@@ -28354,6 +28895,9 @@ async function greyMeansDeadSection(browser, base) {
       const g = got[id];
       if (g.attn !== want[id].attn) fail(tag + id + " on the stack: orange=" + g.attn + ", want " + want[id].attn);
       if (g.cold !== want[id].cold) fail(tag + id + " on the terminals tab: grey=" + g.cold + ", want " + want[id].cold);
+      if (g.boardCold !== want[id].cold || (g.boardOpacity < 0.5) !== want[id].cold) {
+        fail(tag + id + " on the board: grey=" + g.boardCold + " opacity=" + g.boardOpacity + ", want " + want[id].cold);
+      }
       if (g.waiting !== want[id].attn) fail(tag + id + " isWaiting=" + g.waiting);
     }
     if (process.env.GREY_SHOTS) {
@@ -28482,9 +29026,9 @@ async function mAgentIdleSection(browser) {
     // the permission ask above already rang once; what follows is counted from there
     const logged = () => p.evaluate(() => JSON.parse(localStorage.getItem("atrium.toastlog") || "[]").map(r => r.title + " " + r.body));
     const waits = async () => (await logged()).filter(l => /is waiting for you/.test(l));
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(500); // wait: absence, a ring for the first load would land here
     if ((await waits()).length) fail(tag + "the first load rang for a wait: " + (await waits()).join("|"));
-    const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForTimeout(800); };
+    const push = async (t) => { st.tasks.push(t); st.send("task", t); await p.waitForFunction(id => window.mStore.card(id), t.id, { timeout: slow(5000) }).catch(() => {}); await frames(p, 2); };
     await push(agent("a-new-idle", { waiting_since: mIso(0) }));
     if ((await waits()).length !== 1) fail(tag + "a live agent card waiting on the operator did not ring the bell: " + (await waits()).join("|"));
     await push(agent("a-new-gone", { waiting_since: mIso(0), supervised: false }));
@@ -28596,7 +29140,7 @@ async function mPrefsEverywhereSection(browser) {
     try { await b.waitForFunction(() => document.getElementById("m-card").style.getPropertyValue("--m-fs") === "19px", null, { timeout: SPAN }); }
     catch (e) { fail("mPrefsEverywhere: the text size did not reach the other tab"); }
     await a.evaluate(() => { const o = JSON.parse(localStorage.getItem("atrium.sound") || "{}"); o.muted = true; localStorage.setItem("atrium.sound", JSON.stringify(o)); });
-    await b.waitForTimeout(300);
+    await b.waitForTimeout(300); // wait: absence, a reload would land here
     if (!(await b.evaluate(() => window.__noReload === true))) fail("mPrefsEverywhere: the other tab reloaded");
     if (errors.length) fail("mPrefsEverywhere: page errors: " + errors.join(" | "));
     await ctx.close();
@@ -28714,8 +29258,10 @@ async function mCardSection(browser) {
       if (st.hits.filter(h => h === "card-a?50").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
       await mShot(p, "card-dark-" + vp.width);
       // refetch only when the turn ends
-      st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
-      await p.waitForTimeout(600);
+      const lastAct = mIso(1000);
+      st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: lastAct }));
+      await p.waitForFunction(at => (window.mStore.card("card-a") || {}).last_activity_at === at, lastAct, { timeout: slow(5000) }).catch(() => {});
+      await frames(p, 2);
       if (st.hits.filter(h => h === "card-a?50").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
       st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
       st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
@@ -28774,7 +29320,7 @@ async function mCardSection(browser) {
       await lt.p.waitForSelector("#m-list .row", { timeout: slow(8000) });
       await lt.p.tap('#m-list .row[data-id="card-a"]');
       await lt.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
-      await lt.p.waitForTimeout(500);
+      await settleStyle(lt.p);
       await mShot(lt.p, "card-light-" + vp.width);
       await lt.ctx.close();
     }
@@ -28876,7 +29422,7 @@ async function growlBoard(browser, base, hub, init, phone) {
   });
   await ctx.route("**/v1/tasks/*/message", async route => {
     h.messages.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
-    if (h.msgDelay) await new Promise(r => setTimeout(r, h.msgDelay));
+    if (h.msgDelay) await new Promise(r => setTimeout(r, h.msgDelay)); // wait: the mocked send's delay is what the test holds the buttons across
     if (h.msgFail) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "queued", when: "done" }) });
   });
@@ -28886,18 +29432,16 @@ async function growlBoard(browser, base, hub, init, phone) {
     h.rows = rows;
     const line = "event: growls\ndata: " + JSON.stringify(Object.assign({ growls: rows, perm_after_seconds: 120 }, extra || {})) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
-    if (growlBoard.fake) { said++; await until(() => p.evaluate(k => window.__ga >= k, said), 5000, "the growls event was never applied", 10); }
-    else await p.waitForTimeout(150);
+    said++;
+    await until(() => p.evaluate(k => window.__ga >= k, said), 5000, "the growls event was never applied", 10);
   };
   h.close = async () => { mock.hubMode = h.wasHub; await ctx.close(); };
   if (growlBoard.fake) await p.clock.install();
   await p.goto(base, { waitUntil: "domcontentloaded" });
   await p.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
   if (hub) await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
-  if (growlBoard.fake) {
-    await fakePause(p);
-    await p.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
-  }
+  if (growlBoard.fake) await fakePause(p);
+  await p.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
   return h;
 }
 
@@ -28934,7 +29478,7 @@ async function growlStackSection(browser, base) {
     if (cmd !== "Bash: rm -rf build") fail("growlStack: the command line was " + JSON.stringify(cmd));
     // Pinned above the toasts, and outside their cap.
     await p.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "x"); });
-    await p.waitForTimeout(100);
+    await p.waitForFunction(() => document.querySelectorAll("#toasts .toast:not(.sticky)").length === 3, null, { timeout: slow(5000) }).catch(() => {});
     const pin = await p.evaluate(() => {
       const g = document.getElementById("growl"), t = document.querySelector("#toasts .toast");
       return { above: g.getBoundingClientRect().bottom <= t.getBoundingClientRect().top + 1,
@@ -28993,7 +29537,7 @@ async function growlActionsSection(browser, base) {
     // approve and block answer the request and never touch the growler's own endpoint
     await p.click('#growl .gr-full button[data-do="approve"]');
     await p.waitForFunction(() => true);
-    await p.waitForTimeout(200);
+    await until(() => h.decides.length, 5000, "the approve decide").catch(() => {});
     if (h.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(h.decides[0].url) || h.decides[0].body.decision !== "approve") {
       fail("growlActions: approve posted " + JSON.stringify(h.decides));
     }
@@ -29001,7 +29545,7 @@ async function growlActionsSection(browser, base) {
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     await p.fill("#ask-input", "use pnpm instead");
     await p.click('#ask-actions button:has-text("ok")');
-    await p.waitForTimeout(300);
+    await until(() => h.decides.length >= 2, 5000, "the block decide").catch(() => {});
     const blk = h.decides[1];
     if (!blk || blk.body.decision !== "block" || blk.body.reason !== "use pnpm instead") fail("growlActions: block posted " + JSON.stringify(blk));
     if (h.posts.length) fail("growlActions: approve and block posted to /_hub/growls: " + JSON.stringify(h.posts));
@@ -29013,7 +29557,7 @@ async function growlActionsSection(browser, base) {
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     if (h.holds.length) fail("growlActions: lift posted before it asked.");
     await p.click('#ask-actions button:has-text("lift it")');
-    await p.waitForTimeout(300);
+    await until(() => h.holds.length, 5000, "the lift hold").catch(() => {});
     if (h.holds.length !== 1 || h.holds[0].body.action !== "lift" || h.holds[0].room !== "sgg") fail("growlActions: lift posted " + JSON.stringify(h.holds));
     if (h.posts.length) fail("growlActions: lift posted to /_hub/growls.");
     // a permission row with no subject yet cannot be answered
@@ -29025,7 +29569,7 @@ async function growlActionsSection(browser, base) {
     await h.say([perm, q]);
     await p.evaluate(() => { window.__lands = []; window.landOnAlert = (...a) => { window.__lands.push(a); }; });
     await p.click('#growl .gr-full button[data-do="open"]');
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__lands.length, null, { timeout: slow(5000) }).catch(() => {});
     let lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1 || lands[0][1] !== "perms" || lands[0][2] !== "perm-a" || !/c$|a$/.test(String(lands[0][0]))) fail("growlActions: open landed " + JSON.stringify(lands));
     // and then dismisses the growler the way "dismiss this" does: one post, the board's own, with the undo offered
@@ -29041,7 +29585,7 @@ async function growlActionsSection(browser, base) {
     await h.say([q]);
     await p.fill("#growl .gr-reply", "yes, do it");
     await p.click('#growl button[data-do="reply"]');
-    await p.waitForTimeout(300);
+    await until(() => h.messages.length, 5000, "the reply message").catch(() => {});
     if (h.messages.length !== 1 || !/\/v1\/tasks\/(alpha~)?c\/message$/.test(h.messages[0].url) || h.messages[0].body.text !== "yes, do it") {
       fail("growlActions: reply posted " + JSON.stringify(h.messages));
     }
@@ -29049,7 +29593,8 @@ async function growlActionsSection(browser, base) {
     // snooze: 15 min, and the body carries the board's tab and via
     await p.click('#growl button[data-do="snooze"]');
     await p.click('#growl .gr-snooze button[data-snooze="15"]');
-    await p.waitForTimeout(300);
+    await until(() => h.posts.length, 5000, "the snooze post").catch(() => {});
+    await p.waitForFunction(() => !document.getElementById("growl"), null, { timeout: slow(5000) }).catch(() => {});
     let last = h.posts[h.posts.length - 1];
     if (!last || last.id !== q.id || last.body.do !== "snooze" || last.body.minutes !== 15 || last.body.via !== "board" || !last.body.tab) {
       fail("growlActions: snooze posted " + JSON.stringify(h.posts));
@@ -29059,21 +29604,22 @@ async function growlActionsSection(browser, base) {
     await h.say([q]);
     await p.click('#growl button[data-do="snooze"]');
     await p.click('#growl .gr-snooze button[data-snooze="0"]');
-    await p.waitForTimeout(300);
+    await until(() => h.posts.some(x => x.body.do === "snooze" && x.body.minutes !== 15), 5000, "the tomorrow snooze post").catch(() => {});
+    await p.waitForFunction(id => growlSet.some(g => g.id === id && g.state === "snoozed"), q.id, { timeout: slow(5000) }).catch(() => {});
     last = h.posts[h.posts.length - 1];
     if (!(last.body.minutes >= 1 && last.body.minutes <= 2 * 24 * 60 - 1) || last.body.minutes % 1) fail("growlActions: tomorrow snooze sent " + last.body.minutes);
     // a 409 says already handled and drops the row
     await h.say([q]);
     h.answer = (id, body, row) => ({ status: 409, json: { growl: Object.assign({}, row, { state: "resolved" }) } });
     await p.click('#growl button[data-do="dismiss"]');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some(t => /already handled/.test(t.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await toasts()).some(t => /already handled/.test(t))) fail("growlActions: a 409 did not say already handled: " + JSON.stringify(await toasts()));
     if (await p.$("#growl")) fail("growlActions: a 409 left the row up.");
     // a 400 toasts the error text
     await h.say([q]);
     h.answer = () => ({ status: 400, json: { error: "minutes out of range" } });
     await p.click('#growl button[data-do="dismiss"]');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some(t => /minutes out of range/.test(t.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await toasts()).some(t => /minutes out of range/.test(t))) fail("growlActions: a 400 did not toast its error.");
     // dismiss, then undo inside the window puts it straight back
     h.answer = null;
@@ -29085,7 +29631,8 @@ async function growlActionsSection(browser, base) {
     if (last.body.do !== "dismiss" || last.body.via !== "board") fail("growlActions: dismiss posted " + JSON.stringify(last));
     if ((await p.textContent("#growl .gr-full b")) !== "question c") fail("growlActions: dismiss left the dismissed row on top.");
     await p.click(".toast .gr-undo");
-    await p.waitForTimeout(300);
+    await until(() => h.posts[h.posts.length - 1].body.do === "undismiss", 5000, "the undismiss post").catch(() => {});
+    await p.waitForFunction(() => (document.querySelector("#growl .gr-full b") || {}).textContent === "permission a", null, { timeout: slow(5000) }).catch(() => {});
     last = h.posts[h.posts.length - 1];
     if (last.body.do !== "undismiss") fail("growlActions: undo posted " + JSON.stringify(last));
     if ((await p.textContent("#growl .gr-full b")) !== "permission a") fail("growlActions: undo did not restore the growler at once.");
@@ -29094,13 +29641,13 @@ async function growlActionsSection(browser, base) {
     await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
     h.answer = (id, body, row) => body.do === "undismiss" ? { status: 409, json: { growl: Object.assign({}, row, { state: "resolved" }) } } : null;
     await p.click(".toast .gr-undo");
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some(t => /already handled/.test(t.textContent)), null, { timeout: slow(5000) }).catch(() => {});
     if (!(await toasts()).some(t => /already handled/.test(t))) fail("growlActions: a 409 undo did not say already handled.");
     // the undo toast is gone after its window, and one for a growler already back is taken down
     h.answer = null;
     await h.say([perm, q]);
     await p.click('#growl .gr-full button[data-do="dismiss"]');
-    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
+    await p.waitForFunction(id => growlUndo.has(id), perm.id, { timeout: slow(3000) });
     await h.say([perm, q]);
     await p.waitForFunction(() => !document.querySelector(".toast .gr-undo"), null, { timeout: slow(2000) })
       .catch(() => fail("growlActions: the undo toast stayed after the growler came back another way."));
@@ -29116,6 +29663,55 @@ async function growlActionsSection(browser, base) {
   if (!bad) console.log("growlActions ok");
 }
 
+// The room alert, f-room-cpu-alert: a hot room's growler lists its processes, offers a kill only for the closed card's
+// orphans, asks first and posts each pid to that room. The room tile badges what the alert says.
+async function growlRoomAlertSection(browser, base) {
+  const h = await growlBoard(browser, base, true);
+  const { p } = h;
+  const kills = [];
+  await h.ctx.route("**/v1/room/procs/kill", route => {
+    kills.push({ body: JSON.parse(route.request().postData() || "{}"), room: route.request().headers()["x-atrium-room"] || "" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  try {
+    const hot = GR("hot", "room-cpu", 1, { room: "sgg", card_id: "", card: "", subject: "42,43",
+      title: "sgg is at high cpu with no agents running", urgency: 7,
+      body: "- 99% pid 42 ppid 1 up 02:01:00, orphan of closed card c-old: node server.js (in /homes/old)\n" +
+        "- 40% pid 7 ppid 1 up 5-00:00:00, foreign: audiomxd" });
+    await h.say([hot]);
+    const d = await p.evaluate(() => ({
+      items: [...document.querySelectorAll("#growl .gr-full .gr-body li")].map(li => li.textContent),
+      acts: [...document.querySelectorAll("#growl .gr-full .gr-acts button")].map(b => b.dataset.do)
+    }));
+    if (d.items.length !== 2 || !/orphan of closed card c-old/.test(d.items[0]) || !/foreign: audiomxd/.test(d.items[1])) {
+      fail("growlRoomAlert: the body drew " + JSON.stringify(d.items));
+    }
+    if (!d.acts.includes("kill") || !d.acts.includes("room")) fail("growlRoomAlert: the actions were " + JSON.stringify(d.acts));
+    await p.click('#growl .gr-full button[data-do="kill"]');
+    await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+    if (kills.length) fail("growlRoomAlert: kill posted before it asked.");
+    await p.click('#ask-actions button:has-text("kill")');
+    await until(() => kills.length >= 2, 5000, "the kill posts").catch(() => {});
+    if (kills.map(k => k.body.pid + "@" + k.room).join() !== "42@sgg,43@sgg") fail("growlRoomAlert: kill posted " + JSON.stringify(kills));
+    if (h.posts.length) fail("growlRoomAlert: kill posted to /_hub/growls.");
+    await h.say([Object.assign({}, hot, { subject: "" })]);
+    if (await p.$('#growl .gr-full button[data-do="kill"]')) fail("growlRoomAlert: a growler with no orphan offered a kill.");
+    const badge = await p.evaluate(() => {
+      const el = document.createElement("div");
+      el.innerHTML = roomTileHTML({ name: "sgg" }, { alert: { hot_since: "2026-10-26T12:00:00Z", cpu_pct: 93.4, runners_missing: ["codex"] } }, false);
+      const b = el.querySelector(".rt-head .chip.bad.rd-alert");
+      const none = document.createElement("div");
+      none.innerHTML = roomTileHTML({ name: "sgg" }, {}, false);
+      return { text: b && b.textContent, tip: b && b.dataset.tip, none: !!none.querySelector(".rd-alert") };
+    });
+    if (badge.text !== "hot, runner missing" || !/cpu at 93% since/.test(badge.tip || "") || !/codex/.test(badge.tip || "") || badge.none) {
+      fail("growlRoomAlert: the tile badge was " + JSON.stringify(badge));
+    }
+    if (h.errors.length) fail("growlRoomAlert: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlRoomAlert ok");
+}
+
 async function growlModalSection(browser, base) {
   const h = await growlBoard(browser, base, true);
   const { p } = h;
@@ -29127,11 +29723,11 @@ async function growlModalSection(browser, base) {
     if (!inside) fail("growlModal: the growler was not drawn inside the open dialog.");
     await p.click('#growl .gr-full button[data-do="approve"]', { timeout: slow(3000) })
       .catch(() => fail("growlModal: approve could not be clicked over the settings dialog."));
-    await p.waitForTimeout(200);
+    await until(() => h.decides.length, 5000, "the approve decide").catch(() => {});
     if (h.decides.length !== 1) fail("growlModal: the click over the dialog did not reach the decide call.");
     await p.click('#growl .gr-full button[data-do="dismiss"]', { timeout: slow(3000) })
       .catch(() => fail("growlModal: dismiss could not be clicked over the settings dialog."));
-    await p.waitForTimeout(200);
+    await until(() => h.posts.length, 5000, "the dismiss post").catch(() => {});
     if (h.posts.length !== 1) fail("growlModal: dismiss over the dialog posted " + h.posts.length + " times.");
     if (!(await p.evaluate(() => document.getElementById("settings").open))) fail("growlModal: the settings dialog closed under the growler.");
     if (h.errors.length) fail("growlModal: page errors: " + h.errors.join(" | "));
@@ -29168,7 +29764,6 @@ async function growlOffSection(browser, base) {
       const g = GR("c", reason, 1);
       await h.say([]);
       await h.say([g]);
-      await p.waitForTimeout(300);
       if (await drawn()) fail("growlOff: a " + reason + " drew a growler.");
       if (await p.$("#growl-phone:not([hidden]) *")) fail("growlOff: a " + reason + " drew the phone strip.");
       const after = await heard();
@@ -29183,7 +29778,6 @@ async function growlOffSection(browser, base) {
     await p.evaluate(() => setNotifyOff(true));
     await h.say([]);
     await h.say([GR("c", "question", 2)]);
-    await p.waitForTimeout(300);
     if ((await heard()).notes !== n0) fail("growlOff: a desktop notification came through with notify switched off.");
     if (!(await logged("question c"))) fail("growlOff: the held question left no log line.");
     await p.evaluate(() => setNotifyOff(false));
@@ -29194,7 +29788,6 @@ async function growlOffSection(browser, base) {
     const times = t => p.evaluate(t0 => toastLog().filter(e => e.title === t0).reduce((s, e) => s + (e.n || 1), 0), t);
     const q0 = await times("question c");
     await h.say([Object.assign({}, q, { reminders: 1 })], { remind: [q.id] });
-    await p.waitForTimeout(300);
     const r1 = await heard();
     if (await drawn() || r1.osc !== r0.osc) fail("growlOff: a hub reminder drew or rang: " + JSON.stringify([r0, r1]));
     if (!(await times("question c") > q0)) fail("growlOff: a hub reminder was not logged.");
@@ -29203,14 +29796,12 @@ async function growlOffSection(browser, base) {
     if (prefixed.length) fail("growlOff: the bell log carries an internal prefix: " + JSON.stringify(prefixed));
     // a dismissal draws no undo bar
     await p.evaluate(g => growlPost(g, { do: "dismiss" }, true), q);
-    await p.waitForTimeout(300);
     if (await p.$(".gr-undo") || await p.$("#toasts .toast")) fail("growlOff: dismissing drew an undo bar or toast.");
     // a permission: no growler, no tone from the growler, still logged, and the nag is back
     await h.say([]);
     const pr = GR("a", "permission", 4);
     const b0 = await heard();
     await h.say([pr]);
-    await p.waitForTimeout(300);
     if (await drawn()) fail("growlOff: a permission drew a growler.");
     if ((await heard()).osc !== b0.osc) fail("growlOff: a permission rang the growler's tone.");
     if (!(await logged("permission a"))) fail("growlOff: a permission left no log line.");
@@ -29223,7 +29814,8 @@ async function growlOffSection(browser, base) {
       alerting.check("permission", [], say);
       alerting.check("permission", [{ id: "perm-a", task_id: "a", requested_at: new Date().toISOString() }], say);
     });
-    await p.waitForTimeout(500);
+    await p.waitForFunction(o => window.__osc > o && [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("needs permission perm-a")),
+      t0.osc, { timeout: slow(5000) }).catch(() => {});
     if (!(await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("needs permission perm-a")))))
       fail("growlOff: a pending permission with the growler off drew no keyed toast.");
     if ((await heard()).osc <= t0.osc) fail("growlOff: a pending permission with the growler off rang no permission tone.");
@@ -29234,7 +29826,6 @@ async function growlOffSection(browser, base) {
     await p.waitForSelector("#growl .gr-full", { timeout: slow(3000) }).catch(() => fail("growlOff: turning it on drew no growler for the open permission."));
     await h.say([]);
     await h.say([GR("c", "question", 5)]);
-    await p.waitForTimeout(300);
     if (!(await p.$("#growl .gr-full"))) fail("growlOff: on did not draw a question.");
     await p.evaluate(() => { Document.prototype.hasFocus = () => false; });
     await p.evaluate(() => setGrowler(false));
@@ -29243,9 +29834,9 @@ async function growlOffSection(browser, base) {
     const p2 = await h.ctx.newPage();
     await p2.goto(base, { waitUntil: "domcontentloaded" });
     await p2.waitForFunction(() => typeof growlDraw === "function" && document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await p2.waitForTimeout(500);
+    await p2.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
     await h.say([GR("c", "question", 6)]);
-    await p2.waitForTimeout(300);
+    await p2.waitForFunction(() => window.__ga >= 1, null, { timeout: slow(5000) }).catch(() => {});
     if (await p2.$("#growl")) fail("growlOff: the second window drew a growler while off.");
     await p.evaluate(() => setGrowler(true));
     await p2.waitForSelector("#growl .gr-full", { timeout: slow(4000) }).catch(() => fail("growlOff: the second window did not follow the switch on."));
@@ -29271,7 +29862,6 @@ async function growlRemindSection(browser, base) {
     await h.say([]);
     await h.say([q, e]);
     await h.say([q]);
-    await p.waitForTimeout(300);
     await p.evaluate(() => openToastLog());
     if (await p.$("#growl")) fail("growlRemind: the growler was drawn while off.");
     const rows = () => p.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow")].map(r => ({
@@ -29285,19 +29875,17 @@ async function growlRemindSection(browser, base) {
     r = await rows();
     if (r.find(x => x.t.startsWith("question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
     await p.click('#toastlog-list .tlremind[data-remind="60"]');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(id => growlSet.some(g => g.id === id && g.state === "snoozed"), q.id, { timeout: slow(5000) }).catch(() => {});
     const post = h.posts.find(x => x.id === q.id);
     if (!post || post.body.do !== "snooze" || post.body.minutes !== 60) fail("growlRemind: the post was " + JSON.stringify(h.posts));
     if (await p.$("#growl")) fail("growlRemind: a reminded row drew a growler.");
     // the stub answers with the row snoozed and no `until`; the hub's own event carries one, and the open bell follows it
     await h.say([Object.assign({}, q, { state: "snoozed", until: new Date(Date.now() + 3 * 3600000 + 60000).toISOString() })]);
-    await p.waitForTimeout(300);
     const said = await p.evaluate(() => (document.querySelector("#toastlog-list .tlremits .tlremind:not([data-remind])") || {}).textContent || "");
     if (said !== "reminding in 3 h") fail("growlRemind: the open bell said " + JSON.stringify(said) + " after a growls event.");
     if (await p.$("#toastlog-list .tlremind[data-remind]")) fail("growlRemind: a reminded row still offered the menu.");
     // and an open one coming back (the reminder is due) gets its control again without reopening the bell
     await h.say([q]);
-    await p.waitForTimeout(300);
     if (!(await p.$('#toastlog-list .tlremind[data-remind="menu"]'))) fail("growlRemind: the open bell did not repaint when the growler came back.");
     // tomorrow 9am is a literal tomorrow, clamped to the hub's week
     const mins = await p.evaluate(async () => {
@@ -29354,6 +29942,48 @@ async function growlTrayRowSection(browser, base) {
   if (!bad) console.log("growlTrayRow ok");
 }
 
+async function trayMergeSection(browser, base) {
+  growlBoard.off = true;
+  let h;
+  try { h = await growlBoard(browser, base, true, GROWL_STUBS); } finally { growlBoard.off = false; }
+  const { p } = h;
+  try {
+    // Every refresh replaces lastTasks, so the two cards are served rather than set.
+    await h.ctx.route("**/v1/tasks", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ tasks: [{ id: "kid", spawned_by: "boss@room", display_title: "kid" }, { id: "solo", display_title: "solo" }] }) }));
+    await p.waitForFunction(() => lastTasks.some(t => t.id === "kid") && lastTasks.some(t => t.id === "solo"), null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      localStorage.removeItem("atrium.toastlog");
+      localStorage.removeItem("atrium.tray.mine");
+      logKind = "blocker";
+      [6, 11, 30, 31].forEach(m => recordToLog("kid", "BLOCKED: no activity since launch (" + m + " min)", "stack", "", "kid"));
+      logKind = "";
+      recordToLog("kid is ready", "", "stack", "", "kid");
+      recordToLog("solo is ready", "", "stack", "", "solo");
+      recordToLog("kid asked a question", "", "stack", "", "kid");
+      logKind = "blocker";
+      recordToLog("kid", "BLOCKED: no activity since launch (32 min)", "stack", "", "kid");
+      logKind = "";
+    });
+    const log = await p.evaluate(() => toastLog());
+    const blk = log.filter(e => e.kind === "blocker");
+    if (blk.length !== 1 || blk[0].n !== 5 || !/32 min/.test(blk[0].body)) fail("trayMerge: blocked alerts were " + JSON.stringify(blk));
+    if (log[log.length - 1].kind !== "blocker") fail("trayMerge: a new alert of the same kind did not move to the top");
+    await p.evaluate(() => openToastLog());
+    const rows = () => p.$$eval("#toastlog-list .tlrow:not(.pinned)", r => r.map(x => [x.textContent.trim().slice(0, 40), x.classList.contains("agent")]));
+    let r = await rows();
+    if (r.length !== 4) fail("trayMerge: expected 4 rows, got " + JSON.stringify(r));
+    const dim = r.filter(x => x[1]).length;
+    if (dim !== 2) fail("trayMerge: expected the two agent rows dimmed, not the question or the solo card's: " + JSON.stringify(r));
+    await p.click("#toastlog-mine");
+    r = await rows();
+    if (r.length !== 2 || r.some(x => x[1])) fail("trayMerge: mine only left " + JSON.stringify(r));
+    if ((await p.evaluate(() => localStorage.getItem("atrium.tray.mine"))) !== "1") fail("trayMerge: the toggle was not kept");
+    if (h.errors.length) fail("trayMerge: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("trayMerge ok");
+}
+
 async function growlQuietSection(browser, base) {
   growlBoard.fake = true;
   const h = await growlBoard(browser, base, true);
@@ -29394,10 +30024,14 @@ async function growlQuietSection(browser, base) {
     if (l.some(t => /^growler ended/.test(t))) fail("growlQuiet: ending logged " + JSON.stringify(l));
     // a snooze coming back open is raised again
     await h.say([Object.assign({}, row, { state: "snoozed" })]);
+    const raises = () => p.evaluate(() => toastLog().filter(e => e.title === "permission a").map(e => e.n || 1));
+    const was = await raises();
     // the hub resets raised_at when a snooze ends
     await h.say([Object.assign({}, row, { raised_at: new Date(GR_T0 + 99 * 60000).toISOString() })], { remind: [row.id] });
-    l = await log();
-    if (l.filter(t => t === "permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
+    // one card's repeats fold into one row, so the raise and its reminder are two more on its count
+    const now = await raises();
+    if (was.length !== 1 || now.length !== 1 || now[0] !== was[0] + 2)
+      fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify([was, now]));
     // a hub never asks for the set, at load or later
     await fakeTick(p, 1500);
     if (h.gets) fail("growlQuiet: the board fetched /_hub/growls " + h.gets + " times.");
@@ -29586,7 +30220,7 @@ async function growlPhoneSection(browser, base) {
     const open = await rect("#growl-phone");
     if (open.h > 844 / 2 + 1) fail("growlPhone: the open stack is " + open.h + "px in an 844px window.");
     await p.evaluate(() => { switchView("terms"); });
-    await p.waitForTimeout(400);
+    await settleStyle(p);
     for (const sel of ["#t-keys", "#t-compose", "#tcompose"]) {
       const k = await rect(sel);
       if (k && k.vis && open.bottom > k.top + 1) fail("growlPhone: the open stack lies over " + sel + ": " + JSON.stringify([open, k]));
@@ -29595,18 +30229,20 @@ async function growlPhoneSection(browser, base) {
     await p.evaluate(() => { switchView("stack"); });
     // the actions, through the same paths, and the post says `phone`
     await p.tap('#growl-phone button[data-do="approve"]');
-    await p.waitForTimeout(250);
+    await until(() => h.decides.length, 5000, "the approve").catch(() => {});
     if (h.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(h.decides[0].url) || h.decides[0].room !== "alpha") fail("growlPhone: approve was " + JSON.stringify(h.decides));
     await p.tap('#growl-phone .gr-full[data-id="' + c.id + '"] button[data-do="dismiss"]');
     await p.waitForSelector("#growl-phone .gp-undo", { timeout: slow(3000) });
     let last = h.posts[h.posts.length - 1];
     if (last.body.do !== "dismiss" || last.body.via !== "phone" || !last.body.tab) fail("growlPhone: dismiss posted " + JSON.stringify(last));
     await p.tap('#growl-phone .gp-undo button[data-do="undo"]');
-    await p.waitForTimeout(300);
+    await until(() => h.posts[h.posts.length - 1].body.do === "undismiss", 5000, "the undo").catch(() => {});
+    await p.waitForFunction(() => !document.querySelector("#growl-phone .gp-undo"), null, { timeout: slow(5000) }).catch(() => {});
     last = h.posts[h.posts.length - 1];
     if (last.body.do !== "undismiss" || last.body.via !== "phone") fail("growlPhone: undo posted " + JSON.stringify(last));
     if (await p.$("#growl-phone .gp-undo")) fail("growlPhone: the undo line stayed after undo.");
-    if (!(await p.textContent("#growl-phone")).includes("question c")) fail("growlPhone: undo did not bring the growler back.");
+    await p.waitForFunction(() => document.getElementById("growl-phone").textContent.includes("question c"), null, { timeout: slow(5000) })
+      .catch(() => fail("growlPhone: undo did not bring the growler back."));
     // the undo line leaves by itself
     await p.tap('#growl-phone .gr-full[data-id="' + c.id + '"] button[data-do="dismiss"]');
     await p.waitForSelector("#growl-phone .gp-undo", { timeout: slow(3000) });
@@ -29653,14 +30289,19 @@ async function growlPopoutSection(browser, base) {
     await p.goto(base + hash, { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof alerting !== "undefined" && typeof growlDraw === "function" &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await p.waitForTimeout(800);
+    await p.waitForFunction(() => !inPopout() || !!soloID, null, { timeout: slow(5000) }).catch(() => {});
     await p.evaluate(() => document.dispatchEvent(new Event("pointerdown")));
+    await p.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
+    pages.push(p);
     return p;
   };
+  const pages = [];
+  let said = 0;
   const say = async (rows, extra) => {
     const line = "event: growls\ndata: " + JSON.stringify(Object.assign({ growls: rows, perm_after_seconds: 120 }, extra || {})) + "\n\n";
     openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
-    await new Promise(r => setTimeout(r, 400));
+    said++;
+    for (const p of pages) if (!p.isClosed()) await until(() => p.evaluate(k => window.__ga >= k, said), 5000, "the growls event was never applied", 10);
   };
   const heard = p => p.evaluate(() => ({ osc: window.__osc, notes: window.__notes.filter(n => /atrium-growl:/.test(n.o.tag || "")).length }));
   const text = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
@@ -29668,7 +30309,7 @@ async function growlPopoutSection(browser, base) {
     const pop = await open("/#term=land-live");
     const other = await open("/#term=other-card");
     const board = await open("/");
-    await board.waitForTimeout(800);
+    await board.waitForFunction(() => poppedOut("alpha~land-live"), null, { timeout: slow(8000) }).catch(() => {});
     await board.evaluate(() => { localStorage.clear(); localStorage.setItem("atrium.growler", "1"); });
     await say([]);
     const mine = GR("land-live", "permission", 1), theirs = GR("elsewhere", "question", 2);
@@ -29775,7 +30416,6 @@ async function growlOnItSection(browser, base) {
     const before = await heard();
     const g = GR("c", reason, ++n, extra);
     await h.say([g]);
-    await p.waitForTimeout(200);
     const after = await heard();
     return { g, drawn: await drawn(), rang: after.osc > before.osc, noted: after.notes > before.notes };
   };
@@ -29791,7 +30431,7 @@ async function growlOnItSection(browser, base) {
     await p.evaluate(() => toastUnlogged("in the working directory", "/x/y"));
     await p.evaluate(() => alerting.check("waiting", [], t => ({ title: t.id + " is ready", body: "" })));
     await p.evaluate(() => alerting.check("waiting", [{ id: "c", task_id: "c", status: "needs-input", waiting_since: "Z1" }], t => ({ title: t.id + " is ready", body: "" })));
-    await p.waitForTimeout(600);
+    await frames(p, 2);
     if (await count()) fail("growlOnIt: a paste toast or the focused card's ready counted on the bell.");
     r = await raise("blocked");
     if (r.drawn || r.rang || r.noted) fail("growlOnIt: a blocked card for the attached, focused card was " + JSON.stringify(r));
@@ -29818,7 +30458,6 @@ async function growlOnItSection(browser, base) {
     if (r.drawn) fail("growlOnIt: the question was drawn before the reminder.");
     await stage("c", false);
     await h.say([Object.assign({}, r.g, { reminders: 1 })], { remind: [r.g.id] });
-    await p.waitForTimeout(200);
     if (!(await drawn())) fail("growlOnIt: a reminder with you elsewhere did not bring the question back.");
     if (!(await logged("question c"))) fail("growlOnIt: the question that came back was not logged.");
     // with no reminder involved, "you are on it" ending draws the hidden growler, and rings nothing
@@ -29852,15 +30491,16 @@ async function growlOnItSection(browser, base) {
     await pop.evaluate(() => { term = new Proxy({}, { get: (_, k) => k === "element" ? null : () => {} }); termTask = { id: "c" }; window.dispatchEvent(new Event("focus")); });
     await p.waitForFunction(() => focusedElsewhere.watch === "c", null, { timeout: slow(5000) })
       .catch(() => fail("growlOnIt: the board never heard the pop-out's focus on card c."));
+    await pop.evaluate(() => { window.__ga = 0; const was = growlApply; growlApply = function () { try { return was.apply(this, arguments); } finally { window.__ga++; } }; });
     // an empty set first, since a window's first event only seeds
     await h.say([]);
-    await pop.waitForTimeout(300);
+    await pop.waitForFunction(() => window.__ga >= 1, null, { timeout: slow(5000) }).catch(() => {});
     await p.evaluate(() => { localStorage.removeItem("atrium.toastlog"); paintToastLogBadge(); });
     const bh0 = await p.evaluate(() => window.__notes.length);
     const osc0 = await p.evaluate(() => window.__osc);
     const q = GR("c", "question", ++n);
     await h.say([q]);
-    await p.waitForTimeout(600);
+    await pop.waitForFunction(() => window.__ga >= 2, null, { timeout: slow(5000) }).catch(() => {});
     if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused.");
     const inPop = await pop.evaluate(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""));
     if (inPop) fail("growlOnIt: the focused pop-out drew a question for its own card.");
@@ -29881,7 +30521,6 @@ async function growlOnItSection(browser, base) {
     const q2 = GR("c", "question", ++n);
     await h.say([]);
     await h.say([q2]);
-    await p.waitForTimeout(400);
     if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused, the second time.");
     await pop.close();
     await p.waitForFunction(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""), null, { timeout: slow(15000) })
@@ -29922,7 +30561,7 @@ async function growlQuestionShotsSection(browser, base) {
     try {
       await h.say([]);
       await h.say([q]);
-      await h.p.waitForTimeout(400);
+      await h.p.waitForTimeout(400); // wait: shots only, the face settles before the picture
       await h.p.screenshot({ path: path.join(dir, name + (phone ? "-phone" : "") + ".png") });
     } finally { await h.close(); }
   }
@@ -29934,7 +30573,7 @@ async function growlQuestionShotsSection(browser, base) {
     await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
     st.send("growls", { growls: [q], perm_after_seconds: 120 });
     await p.waitForFunction(() => !document.getElementById("m-growl").hidden, null, { timeout: slow(4000) });
-    await p.waitForTimeout(400);
+    await p.waitForTimeout(400); // wait: shots only, the face settles before the picture
     await p.screenshot({ path: path.join(dir, name + "-m.png") });
     await ctx.close();
   } finally { await st.close(); }
@@ -30023,8 +30662,8 @@ async function growlReplyGrowSection(browser, base) {
       if ((await size()).v !== "first\nsecond") fail(tag + "Shift+Enter did not make a newline: " + JSON.stringify((await size()).v));
       if (h.messages.length) fail(tag + "Shift+Enter sent.");
       await p.keyboard.press("Enter");
-      await p.waitForTimeout(300);
-      if (h.messages.length !== 1 || h.messages[0].body.text !== "first\nsecond") fail(tag + "Enter sent " + JSON.stringify(h.messages));
+      await p.waitForFunction(s => document.querySelector(s).value === "", box, { timeout: slow(5000) }).catch(() => {});
+      if (h.messages.length !== 1 || h.messages[0].body.text !== "first\nsecond") fail(tag + "Enter sent" + JSON.stringify(h.messages));
       if ((await size()).v !== "") fail(tag + "the box kept its text after sending.");
       // the bigger box keeps the text, takes the focus, and folds with Escape or its control
       await p.fill(box, "half a thought");
@@ -30063,7 +30702,7 @@ async function growlChoicesSection(browser, base) {
       if (btns.join("|") !== "1. Run it now|2. Run it on a copy|3. Do not run it|stop") fail(tag + "the choices were " + JSON.stringify(btns));
       if ((await p.textContent(root + " .gr-body")).includes("{choices}")) fail(tag + "the marker stayed in the text.");
       await p.click(root + ' .gr-choices button:has-text("Run it on a copy")');
-      await p.waitForTimeout(300);
+      await until(() => h.messages.length, 5000, "the choice").catch(() => {});
       if (h.messages.length !== 1 || h.messages[0].body.text !== "2. Run it on a copy" || !/\/message$/.test(h.messages[0].url)) fail(tag + "a choice sent " + JSON.stringify(h.messages));
       if (h.posts.length) fail(tag + "a choice posted to /_hub/growls.");
       await growlShot(p, "choices-" + (phone ? "phone" : "desktop"));
@@ -30260,7 +30899,7 @@ async function growlStableSection(browser, base) {
         await h.say([q]);
         await p.evaluate(() => { growlDraw(); growlAttention(); window.dispatchEvent(new Event("resize")); });
       }
-      await p.waitForTimeout(500);
+      await frames(p, 2);
       const s = await p.evaluate(root => ({
         same: window.__node === document.querySelector(root + " .gr-full") && window.__node.isConnected,
         btn: window.__btn === document.querySelector(root + ' button[data-do="open"]'),
@@ -30275,7 +30914,6 @@ async function growlStableSection(browser, base) {
       if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive: " + JSON.stringify(s));
       // news that is about another growler leaves this face's node alone too
       await h.say([q, GR("z", "permission", 2)]);
-      await p.waitForTimeout(200);
       const t = await p.evaluate(root => ({ same: window.__node === document.querySelector(root + " .gr-full"), v: document.querySelector(root + " .gr-reply").value }), root);
       if (!t.same) fail(tag + "a second growler rebuilt the first one's face.");
       if (t.v !== "half typ") fail(tag + "a second growler took the half-typed reply.");
@@ -30411,7 +31049,7 @@ async function mCleanUpForeignSection(browser) {
     if (closes.length) fail(tag + "cancel still closed the card");
     await menu();
     await p.tap('#m-rmenu [data-ans="go"]');
-    for (let i = 0; i < 50 && !closes.length; i++) await p.waitForTimeout(100);
+    await until(() => closes.length, 5000, "the terminate").catch(() => {});
     if (closes.length !== 1 || closes[0].confirm !== true) fail(tag + "terminate posted " + JSON.stringify(closes));
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -30465,8 +31103,9 @@ async function mGrowlQuestionSection(browser) {
     await p.keyboard.type("y");
     if (msgs.length || (await size()).v !== "x\ny") fail(tag + "Shift+Enter: " + JSON.stringify([msgs, (await size()).v]));
     await p.keyboard.press("Enter");
-    await p.waitForTimeout(300);
+    await until(() => msgs.length, 5000, "the send").catch(() => {});
     if (msgs.length !== 1 || msgs[0] !== "x\ny") fail(tag + "Enter sent " + JSON.stringify(msgs));
+    await p.waitForSelector("#m-growl .gm-note", { timeout: slow(5000) });
     // the bigger box
     await p.fill(box, "half a thought");
     await p.tap('#m-growl button[data-do="compose"]');
@@ -30477,8 +31116,10 @@ async function mGrowlQuestionSection(browser) {
       .catch(() => fail(tag + "Escape did not fold the box."));
     if ((await size()).v !== "half a thought") fail(tag + "folding lost the text.");
     // a choice sends its line
+    await p.evaluate(() => { window.__before = document.querySelector("#m-growl .gm-full"); });
     await p.tap('#m-growl .gm-choices button:has-text("Do not run it")');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => document.querySelector("#m-growl .gm-full") !== window.__before, null, { timeout: slow(5000) }).catch(() => {});
+    await until(() => msgs[msgs.length - 1] === "2. Do not run it", 5000, "the choice").catch(() => {});
     if (msgs[msgs.length - 1] !== "2. Do not run it") fail(tag + "a choice sent " + JSON.stringify(msgs));
     // the face is not rebuilt for unrelated news
     await p.fill(box, "half typ");
@@ -30491,10 +31132,10 @@ async function mGrowlQuestionSection(browser) {
     for (let i = 0; i < 5; i++) {
       st.send("task", {});
       st.send("permission", {});
-      st.send("growls", { growls: [q], perm_after_seconds: 120 });
-      await p.waitForTimeout(80);
+      st.send("growls", { growls: [q], perm_after_seconds: 120, remind: ["s" + i] });
+      await p.waitForFunction(k => mStore.remind()[0] === k, "s" + i, { timeout: slow(5000) }).catch(() => {});
     }
-    await p.waitForTimeout(300);
+    await frames(p, 2);
     const s = await p.evaluate(() => ({ same: window.__node === document.querySelector("#m-growl .gm-full"), mut: window.__mut, v: document.querySelector("#m-growl .gm-reply").value, focus: document.activeElement === document.querySelector("#m-growl .gm-reply") }));
     if (!s.same || s.mut) fail(tag + "the face was rebuilt by unrelated news: " + JSON.stringify(s));
     if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive.");
@@ -30590,13 +31231,13 @@ async function mGrowlSection(browser) {
     await p.tap("#m-growl .gm-strip");
     // approve
     await p.tap('#m-growl button[data-do="approve"]');
-    await p.waitForTimeout(250);
+    await until(() => calls.decides.length, 5000, "the approve").catch(() => {});
     if (calls.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(calls.decides[0].url) || calls.decides[0].body.decision !== "approve") fail(tag + "approve posted " + JSON.stringify(calls.decides));
     // block asks for its reason in place
     await p.tap('#m-growl button[data-do="block"]');
     await p.fill("#m-growl .gm-why", "use pnpm instead");
     await p.tap('#m-growl button[data-do="sendblock"]');
-    await p.waitForTimeout(250);
+    await until(() => calls.decides.length >= 2, 5000, "the block").catch(() => {});
     if (calls.decides.length !== 2 || calls.decides[1].body.decision !== "block" || calls.decides[1].body.reason !== "use pnpm instead") fail(tag + "block posted " + JSON.stringify(calls.decides[1]));
     if (calls.posts.length) fail(tag + "approve or block posted to /_hub/growls.");
     // reply, through the message path
@@ -30604,12 +31245,13 @@ async function mGrowlSection(browser) {
     await p.waitForFunction(() => !!document.querySelector("#m-growl .gm-reply"));
     await p.fill("#m-growl .gm-reply", "yes do it");
     await p.tap('#m-growl button[data-do="reply"]');
-    await p.waitForTimeout(250);
+    await until(() => calls.messages.length, 5000, "the reply").catch(() => {});
     if (calls.messages.length !== 1 || !/\/v1\/tasks\/c\/message$/.test(calls.messages[0].url) || calls.messages[0].body.text !== "yes do it") fail(tag + "reply posted " + JSON.stringify(calls.messages));
     // snooze
     await p.tap('#m-growl button[data-do="snooze"]');
     await p.tap('#m-growl button[data-snooze="15"]');
-    await p.waitForTimeout(250);
+    await p.waitForFunction(() => !document.querySelector("#m-growl .gm-full"), null, { timeout: slow(5000) }).catch(() => {});
+    await until(() => calls.posts.length && calls.posts[calls.posts.length - 1].body.do === "snooze", 5000, "the snooze").catch(() => {});
     let last = calls.posts[calls.posts.length - 1];
     if (!last || last.body.do !== "snooze" || last.body.minutes !== 15 || last.body.via !== "phone" || !last.body.tab) fail(tag + "snooze posted " + JSON.stringify(last));
     if (await p.$("#m-growl .gm-full")) fail(tag + "a snoozed growler is still drawn.");
@@ -30621,7 +31263,8 @@ async function mGrowlSection(browser) {
     last = calls.posts[calls.posts.length - 1];
     if (last.body.do !== "dismiss" || last.body.via !== "phone") fail(tag + "dismiss posted " + JSON.stringify(last));
     await p.tap('#m-growl .gm-undo button[data-do="undo"]');
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => document.getElementById("m-growl").textContent.includes("question c"), null, { timeout: slow(5000) }).catch(() => {});
+    await until(() => calls.posts[calls.posts.length - 1].body.do === "undismiss", 5000, "the undo").catch(() => {});
     last = calls.posts[calls.posts.length - 1];
     if (last.body.do !== "undismiss" || last.body.via !== "phone") fail(tag + "undo posted " + JSON.stringify(last));
     if (!(await p.textContent("#m-growl")).includes("question c")) fail(tag + "undo did not restore the growler.");

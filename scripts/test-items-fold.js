@@ -84,5 +84,13 @@ if (off.fold.group !== "working" || off.fold.offline !== 1) fail("an offline car
 // The board has no card list yet (null): a running assignment is not called idle.
 if (one([row(asg(1, "b11", "c1", "running"), work(2))], null).fold.group !== "working") fail("an unknown card list made a row idle");
 
+// THE ITEM'S TASKS ride the work answer onto the item, with steps and without, and an empty list adds nothing.
+const tk = [{ task_id: "t1", state: "captured" }, { task_id: "t2", state: "pending" }];
+const withSteps = itemWithWork(asg(1, "b12", "c1", "running"), Object.assign(work(2), { tasks: tk }));
+if (!withSteps.tasks || withSteps.tasks.length !== 2 || !withSteps.hasWork) fail("tasks with steps: " + JSON.stringify(withSteps.tasks));
+const noSteps = itemWithWork(asg(1, "b13", "c1", "running"), { steps: [], tasks: tk });
+if (!noSteps.tasks || noSteps.tasks[1].task_id !== "t2") fail("tasks with no steps: " + JSON.stringify(noSteps.tasks));
+if ("tasks" in itemWithWork(asg(1, "b14", "c1", "running"), Object.assign(work(2), { tasks: [] }))) fail("an empty task list was put on the item");
+
 if (!bad) console.log("test-items-fold ok");
 process.exit(bad ? 1 : 0);

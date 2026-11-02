@@ -2505,6 +2505,13 @@ var migrations = []struct {
 			   WHERE id = 'codex' AND resume_args = '["resume","{resume}"]'`,
 		},
 	},
+	{
+		// When a runner last started on the card, so a room brings it back after a crash. See daemon/reopen.go.
+		name: "0115_task_live_at",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN live_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migratePausedStatus widens task.status's CHECK to accept 'paused' and renames the stored value.

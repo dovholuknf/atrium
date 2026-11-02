@@ -42,7 +42,7 @@ done
 # -count=1 because a cached pass is not a pass.
 #
 # A UNIT RUN HAS A BUDGET: scripts/unit-budget.go reads the -json stream, prints each test over 10ms, and fails the
-# run when one took over 20ms. An integration run has no budget.
+# run when one took over 20ms, and over 20ms again when run alone. An integration run has no budget.
 #
 # EVERY RUN IS KEPT, so the time of a test is never a reason to run the suite again. Under build.claude/test-runs/:
 #
@@ -72,7 +72,7 @@ if [ "$wrap" = 0 ]; then
   exit "${PIPESTATUS[0]}"
 fi
 go test -json -count=1 ${tags[@]+"${tags[@]}"} "$@" | tee "$raw" |
-  go run scripts/unit-budget.go -budget="$budget" -times "$tsv" ${vflag[@]+"${vflag[@]}"}
+  go run scripts/unit-budget.go -budget="$budget" -times "$tsv" ${tags[@]+"${tags[@]}"} ${vflag[@]+"${vflag[@]}"}
 codes=("${PIPESTATUS[@]}")
 cp -f "$tsv" "$runs/latest-$mode.tsv" 2>/dev/null
 echo "test times: $tsv" >&2

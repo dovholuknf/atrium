@@ -133,9 +133,23 @@ func TestASayHeldPastFiveMinutesIsFlaggedOnTheCardAndTheSenderToldOnce(t *testin
 	if a := d.act.get(bob.ID); a == nil || !a.HeldStuck {
 		t.Fatalf("the card was not flagged: %+v", a)
 	}
-	time.Sleep(400 * time.Millisecond) // wait: absence of a second sender notice has no event to wait on
 	told := 0
-	pending, _ := d.st.PendingMessages(alice.ID)
+	var pending []*store.Message
+	for time.Now().Before(deadline) && told == 0 {
+		told = 0
+		pending, _ = d.st.PendingMessages(alice.ID)
+		for _, m := range pending {
+			if strings.Contains(m.Text, "has not been typed") {
+				told++
+			}
+		}
+		if told == 0 {
+			time.Sleep(20 * time.Millisecond) // wait: poll step under the 5 s deadline
+		}
+	}
+	time.Sleep(400 * time.Millisecond) // wait: absence of a second sender notice has no event to wait on
+	told = 0
+	pending, _ = d.st.PendingMessages(alice.ID)
 	for _, m := range pending {
 		if strings.Contains(m.Text, "has not been typed") {
 			told++
@@ -154,7 +168,7 @@ func TestAForcedSayToAnotherRoomCarriesTheForce(t *testing.T) {
 	d.SetRelay(rl)
 	raw, _ := json.Marshal(map[string]any{"from": "boss", "to": "worker@sg4", "text": "carry on", "force": true})
 	w := httptest.NewRecorder()
-	d.handleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
+	d.HandleSay(w, httptest.NewRequest(http.MethodPost, "/v1/say", bytes.NewReader(raw)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("the say answered %d: %s", w.Code, w.Body.String())
 	}

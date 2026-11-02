@@ -1,1 +1,0 @@
-The hub/rest test bucket is back under its ceiling, and a card's changes for one turn spends fewer git runs on a long list of paths, so a loaded machine no longer runs out of the 30 second bound and answers 500 (pickfallout2).

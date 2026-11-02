@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/cardproc"
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -34,13 +36,10 @@ func longChild(t *testing.T) *exec.Cmd {
 }
 
 func gone(pid int) bool {
-	for i := 0; i < 50; i++ {
-		if _, err := cardproc.StartTime(pid); errors.Is(err, cardproc.ErrGone) {
-			return true
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return false
+	return testwait.PollEvery(100*time.Millisecond, 5*time.Second, func() bool {
+		_, err := cardproc.StartTime(pid)
+		return errors.Is(err, cardproc.ErrGone)
+	})
 }
 
 func askPorts(t *testing.T, oh *openHarness, card string, n int) (int, []int) {
@@ -182,5 +181,56 @@ func TestParseRangeRefusesNonsense(t *testing.T) {
 	}
 	if r, err := cardproc.ParseRange(" 41000 - 41199 "); err != nil || r.Lo != 41000 || r.Hi != 41199 {
 		t.Errorf("%v %v", r, err)
+	}
+}
+
+// A CARD'S PARENT CHANGES BY ITS ROUTE: the new parent takes `spawned_by`, the old `report_to` goes, a card cannot nest
+// under one it launched, and the change is an event on the card.
+func TestChangeParentNestsRefusesACycleAndRecordsIt(t *testing.T) {
+	oh := newOpenHarness(t, &fakeForge{})
+	st := oh.srv.st
+	reg := func(name string) *store.Task {
+		task, _, err := st.Register(store.Observed{WireName: name, Worktree: filepath.ToSlash(t.TempDir()), Runner: "claude"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task
+	}
+	orch, hook, kid := reg("orch"), reg("hook"), reg("kid")
+	if err := st.SetLauncher(kid.ID, hook.WireName, hook.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetReportTo(hook.ID, "orch"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(t, oh.h, "/v1/tasks/"+hook.ID+"/parent", map[string]any{"parent": hook.ID}); rec.Code != 409 {
+		t.Fatalf("under itself: %d %s", rec.Code, rec.Body)
+	}
+	if rec := post(t, oh.h, "/v1/tasks/"+hook.ID+"/parent", map[string]any{"parent": kid.WireName}); rec.Code != 409 {
+		t.Fatalf("under its own child: %d %s", rec.Code, rec.Body)
+	}
+	if rec := post(t, oh.h, "/v1/tasks/"+hook.ID+"/parent", map[string]any{"parent": "nobody"}); rec.Code != 404 {
+		t.Fatalf("an unknown parent: %d %s", rec.Code, rec.Body)
+	}
+	if rec := post(t, oh.h, "/v1/tasks/"+hook.ID+"/parent", map[string]any{"parent": orch.WireName}); rec.Code != 200 {
+		t.Fatalf("the change: %d %s", rec.Code, rec.Body)
+	}
+	got, _ := st.Get(hook.ID)
+	if got.SpawnedByID != orch.ID || got.SpawnedBy != orch.WireName || st.ReportTo(hook.ID) != "" {
+		t.Fatalf("after the change: %+v report_to %q", got, st.ReportTo(hook.ID))
+	}
+	evs, _ := st.Events(hook.ID, 50)
+	found := false
+	for _, e := range evs {
+		found = found || (e.Kind == store.EventNotified && strings.Contains(string(e.Payload), ParentChanged))
+	}
+	if !found {
+		t.Errorf("no parent-changed event: %+v", evs)
+	}
+	if rec := post(t, oh.h, "/v1/tasks/"+hook.ID+"/parent", map[string]any{"parent": ""}); rec.Code != 200 {
+		t.Fatalf("the clear: %d %s", rec.Code, rec.Body)
+	}
+	if got, _ = st.Get(hook.ID); got.SpawnedByID != "" || got.SpawnedBy != store.HumanLauncher {
+		t.Errorf("after the clear: %+v", got)
 	}
 }

@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -25,97 +25,79 @@ import (
 // what work matters. It is maintenance, and the operator's own words for what
 // it cost were "we keep restarting and i keep losing shit".
 //
-// WHAT IS RECORDED IS ONLY THE LIST OF CARDS. Everything needed to start one
-// again is already on its row: the harness is `Runner`, the directory is
-// `Worktree`, and the conversation to pick back up is `ResumeID`. Copying
-// those into a file would be a second source of truth that goes stale the
-// first time somebody retitles a card or moves a worktree.
+// WHAT IS RECORDED IS ONLY WHICH CARDS: `live_at` on the card, set when a runner starts and read back through
+// `store.LiveCards`. Everything needed to start one again is already on its row: the harness is `Runner`, the
+// directory is `Worktree`, and the conversation to pick back up is `ResumeID`.
+//
+// IN THE DATABASE, SET AT THE START. A list written only at a clean stop was a week old after the 2026-10-27
+// reboot, and the seven cards started since stayed dead. A card closed on purpose drops off through
+// `exit_asked_at`, an archived one through `archived_at`.
 //
 // This sits beside `carryover.go` on purpose and the pair is the whole
 // feature: carryover brings back what the terminal SAID, this brings back the
 // terminal. Neither is any use without the other.
 
-// reopenFile is written into the same directory as the scrollback, which is
-// beside the database. One place for "what the last daemon left behind".
+// reopenFile is the list rooms kept beside the database before `live_at`. Read once into it, then removed.
 const reopenFile = "reopen.json"
 
 // reopenWorkers is how many cards are started at once. A fixed pause between cards cost 400ms each, ten
 // seconds for twenty-seven, so the stampede is bounded by a few workers instead.
 const reopenWorkers = 4
 
-// reopenRecord is what the last daemon had open.
-//
-// A `saved_at` nobody reads yet, because the first question asked of a file
-// like this is always "how old is this", and answering it later means a format
-// change.
-type reopenRecord struct {
-	SavedAt time.Time `json:"saved_at"`
-	Cards   []string  `json:"cards"`
-}
-
 func (d *Daemon) reopenPath() string {
 	return filepath.Join(filepath.Dir(d.opts.DBPath), reopenFile)
 }
 
-// saveReopen records which cards had a runner atrium owned.
-//
-// Called from the wind-down beside `saveCarryover`, and best effort in the
-// same way: every failure is logged and stepped over. A shutdown must not fail
-// or hang over this, and the cost of it not being written is the behaviour
-// that existed before it did.
-//
-// WRITTEN EVEN WHEN THE LIST IS EMPTY, and that is deliberate. An empty file
-// means "the last daemon had nothing open", which is a different fact from no
-// file at all, and leaving yesterday's list in place would reopen terminals
-// somebody closed on purpose before stopping.
+// saveReopen marks the cards that had a runner atrium owned as live. Each was marked when its runner started, so
+// this only covers a runner that started before `live_at` existed.
 func (d *Daemon) saveReopen(rs []*runner) {
-	rec := reopenRecord{SavedAt: time.Now()}
 	for _, r := range rs {
 		if r != nil && r.taskID != "" {
-			rec.Cards = append(rec.Cards, r.taskID)
+			d.noteOpen(r.taskID)
 		}
 	}
-	raw, err := json.Marshal(rec)
-	if err != nil {
-		log.Printf("[atrium] could not record what was open: %v", err)
-		return
-	}
-	path := d.reopenPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		log.Printf("[atrium] could not make a place to record what was open: %v", err)
-		return
-	}
-	// Written aside and renamed, so a daemon killed mid-write leaves the last
-	// good list rather than half of this one.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		log.Printf("[atrium] could not record what was open: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		log.Printf("[atrium] could not record what was open: %v", err)
-		return
-	}
-	log.Printf("[atrium] recorded %d open terminal(s) to reopen", len(rec.Cards))
 }
 
-// readReopen returns the cards the last daemon had open, or nothing.
-//
-// NOTHING FOR EVERYTHING UNREADABLE, the posture `readCarry` is written in and
-// for the same reason: this is a convenience over state that was always
-// disposable, and refusing to start over it would be a self-inflicted outage.
+// noteOpen marks a card live the moment its runner starts. Logged and stepped over: a store that cannot write
+// halts the room on its own account.
+func (d *Daemon) noteOpen(taskID string) {
+	if err := d.st.MarkLive(taskID); err != nil {
+		log.Printf("[atrium] could not mark %s live: %v", taskID, err)
+	}
+}
+
+// readReopen returns the cards to bring back, oldest start first, after taking in a `reopen.json` an older room left.
 func (d *Daemon) readReopen() []string {
+	d.importReopenFile()
+	ids, err := d.st.LiveCards()
+	if err != nil {
+		log.Printf("[atrium] could not read which cards were live: %v", err)
+		return nil
+	}
+	return ids
+}
+
+// importReopenFile marks every card on an old `reopen.json` live and removes the file. An unreadable file is
+// removed too: it names nothing anybody can use.
+func (d *Daemon) importReopenFile() {
 	raw, err := os.ReadFile(d.reopenPath())
 	if err != nil {
-		return nil
+		return
 	}
-	var rec reopenRecord
+	var rec struct {
+		Cards []string `json:"cards"`
+	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		log.Printf("[atrium] the record of what was open is unreadable, ignoring it: %v", err)
-		return nil
+		log.Printf("[atrium] the old record of what was open is unreadable, removing it: %v", err)
 	}
-	return rec.Cards
+	for _, id := range rec.Cards {
+		d.noteOpen(id)
+	}
+	if err := os.Remove(d.reopenPath()); err != nil {
+		log.Printf("[atrium] could not remove %s: %v", d.reopenPath(), err)
+		return
+	}
+	log.Printf("[atrium] took %d card(s) from %s into the database", len(rec.Cards), reopenFile)
 }
 
 // reopenSaved starts a runner again on every card that had one.
@@ -211,12 +193,12 @@ func (d *Daemon) reopenWanted() []*store.Task {
 
 	var wanted []*store.Task
 	for _, id := range cards {
-		if d.sup.get(id) != nil {
+		if d.sup.Get(id) != nil {
 			// A fixture already brought this one up, or a runner reconnected.
 			continue
 		}
 		t, err := d.st.Get(id)
-		if err != nil {
+		if err != nil || t.ArchivedAt != nil {
 			// The card was pruned or archived while the daemon was down. Not
 			// worth a warning: the work is gone, which is an answer.
 			continue
@@ -242,7 +224,7 @@ func (d *Daemon) reopenWanted() []*store.Task {
 			continue
 		}
 		// Parked is put down the same way: it wakes when something asks it to.
-		if isParked(t) {
+		if small.IsParked(t) {
 			continue
 		}
 		// Do not reopen throwaways. Their directories may be gone or awaiting

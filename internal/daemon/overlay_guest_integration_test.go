@@ -50,7 +50,7 @@ func TestAWritableGuestCannotReachTheShell(t *testing.T) {
 	defer cancel()
 
 	task := sharedCard(t, d, "lent")
-	h := d.guestHandler(task.ID)
+	h := d.GuestHandler(task.ID)
 
 	rec := guestGet(h, "/v1/tasks/"+task.ID+"/attach?kind=shell")
 	if rec.Code != http.StatusForbidden {
@@ -68,7 +68,7 @@ func TestAGuestCannotOpenAShell(t *testing.T) {
 	defer cancel()
 
 	task := sharedCard(t, d, "lent")
-	h := d.guestHandler(task.ID)
+	h := d.GuestHandler(task.ID)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+task.ID+"/shell", nil))
@@ -91,7 +91,7 @@ func TestAGuestSeesOneCardAndNoMore(t *testing.T) {
 
 	task := sharedCard(t, d, "lent")
 	other := sharedCard(t, d, "not-lent")
-	h := d.guestHandler(task.ID)
+	h := d.GuestHandler(task.ID)
 
 	for _, path := range []string{
 		"/v1/tasks",
@@ -125,7 +125,7 @@ func TestAGuestGetsTheWholeBoard(t *testing.T) {
 	defer cancel()
 
 	task := sharedCard(t, d, "lent")
-	h := d.guestHandler(task.ID)
+	h := d.GuestHandler(task.ID)
 
 	paths := []string{"/", "/sw.js", "/down.html", "/js/core.js", "/js/boot.js"}
 	// Every stylesheet, found on disk rather than named here.

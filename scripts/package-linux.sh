@@ -22,7 +22,7 @@ cd "$here"
 
 version="${1:-}"
 if [ -z "$version" ]; then
-  version="$(git describe --tags --exact-match 2>/dev/null || echo dev)"
+  version="$(bash scripts/version.sh)"
 fi
 
 # THE LEADING v COMES OFF, and this is not cosmetic.

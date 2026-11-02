@@ -1,1 +1,0 @@
-The clear mark no longer lands inside a runner's escape sequence: if the output stops mid CSI, OSC, DCS or UTF-8 character when /clear is marked, the mark waits for the sequence to end, and is forced out after 4096 bytes or 2 seconds if it never does (r-clear-mark-split-escape).

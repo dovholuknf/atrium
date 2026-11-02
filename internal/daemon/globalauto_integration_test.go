@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -161,11 +162,10 @@ func TestGlobalAutoSurvivesAReopen(t *testing.T) {
 	// the reopen is refused as busy. A restart is a new process, which never sees that.
 	var st *store.Store
 	var err error
-	for end := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		if st, err = store.Open(path); err == nil || time.Now().After(end) {
-			break
-		}
-	}
+	testwait.PollEvery(testwait.HTTP, 5*time.Second, func() bool {
+		st, err = store.Open(path)
+		return err == nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

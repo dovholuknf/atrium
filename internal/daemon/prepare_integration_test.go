@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // A prepare command exists so a shell function that puts a toolchain on PATH
@@ -53,7 +55,7 @@ func TestCaptureEnvKeepsPathOrder(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.ToLower(path), strings.ToLower("C:\\atrium-probe")) &&
 		!strings.HasPrefix(path, "/atrium-probe") {
-		t.Fatalf("what prepare put first is not first: %q", firstLine(path))
+		t.Fatalf("what prepare put first is not first: %q", small.FirstLine(path))
 	}
 }
 

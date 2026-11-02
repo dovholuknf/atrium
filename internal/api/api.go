@@ -85,6 +85,10 @@ type Server struct {
 	Recognise func(url string) (*rules.Resolved, error)
 	// PRForge picks the forge for a host, for making a worktree of a pull request. Owned by the daemon.
 	PRForge func(host string) (forge.Forge, error)
+	// advisoryForkURL is where the fork of org/repo for an advisory is, and advisoryForkProtocol the one protocol its
+	// fetch may use. A test points them at a local repo.
+	advisoryForkURL      func(host, org, repo, ghsa string) string
+	advisoryForkProtocol string
 	// SCMClone is the scm clone path (atrium_git_clone), for a PR on a repo with no checkout.
 	SCMClone func(ctx context.Context, url string) (gitsync.SCMResult, error)
 	// SCMHas is whether the scm folder already holds a clone of the repo at a url. Nil reads as no. It lets a PR
@@ -129,6 +133,8 @@ type Server struct {
 	// `/v1/login-needed`, where DELETE lifts it. See internal/daemon/loginneeded.go.
 	LoginNeeded  func() map[string]any
 	LoginHandler http.HandlerFunc
+	// ToolchainMissing is the tools a worker launched here lacked, for `/v1/health`: nil when fine.
+	ToolchainMissing func() map[string]any
 	// CancelPending answers every outstanding request on a task with a block.
 	// Moving a card out of a waiting state has to answer the question rather
 	// than hide it, or the agent stays frozen with nobody coming.
@@ -220,6 +226,8 @@ type Server struct {
 	// runner is back after a restart. Owned by the daemon, which owns the
 	// terminal. See internal/daemon/restartwake.go.
 	RestartWake http.HandlerFunc
+	// Need is a lean worker naming what it lacks, which the daemon adds and restarts it with.
+	Need http.HandlerFunc
 	// GitClone is `atrium_git_clone`: a clone in the scm folder for a card. Owned by the daemon,
 	// which holds the settings and asks the one yes. See internal/daemon/gitclone.go.
 	GitClone http.HandlerFunc
@@ -348,6 +356,9 @@ type Server struct {
 	// or nil before the first. Does no work of its own. Owned by the daemon.
 	// See internal/roomstats.
 	RoomStats func() []byte
+	// KillOrphan is the room alert's kill: a process under a closed card's home, read again first. Owned by
+	// the daemon. See internal/daemon/roomalert.go.
+	KillOrphan func(pid int) error
 
 	// Overlays reports how the board can be reached from elsewhere, and turns
 	// those ways on and off. Supplied by the daemon, which owns the child
@@ -498,7 +509,7 @@ func (s *Server) forever(permID, decision, reason, prefix, kind string) error {
 
 // New builds a server over a store.
 func New(st *store.Store) *Server {
-	return &Server{st: st, bus: newBus()}
+	return &Server{st: st, bus: newBus(), advisoryForkURL: advisoryForkURL, advisoryForkProtocol: "https"}
 }
 
 // NotOnRoom words a card this room does not hold, naming the card and the room,
@@ -520,6 +531,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/usage", s.postBoardUsage)
 	mux.HandleFunc("GET /v1/usage/board", s.getBoardUsage)
 	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
+	mux.HandleFunc("POST /v1/room/procs/kill", s.roomKill)
 	mux.HandleFunc("GET /v1/settings", s.getSettings)
 	mux.HandleFunc("POST /v1/settings", s.setSettings)
 	mux.HandleFunc("GET /v1/fixtures", s.getFixtures)
@@ -663,7 +675,6 @@ func (s *Server) Handler() http.Handler {
 	// directory, and carried by whatever already carries the board.
 	mux.HandleFunc("GET /v1/tasks/{id}/files/list", s.listFiles)
 	mux.HandleFunc("POST /v1/tasks/{id}/files/open", s.openFile)
-	mux.HandleFunc("POST /v1/tasks/{id}/files/launch", s.launchFile)
 	// The card's directory in a terminal window on the daemon's desktop. Not
 	// a pane and not a runner: see `termopen.go`.
 	mux.HandleFunc("POST /v1/tasks/{id}/open-terminal", s.openTerminal)
@@ -692,6 +703,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
 	// A pasted link to a live card in its own worktree, in one call. See open.go.
 	mux.HandleFunc("POST /v1/open", s.open)
+	mux.HandleFunc("POST /v1/tangent", s.tangent)
 	mux.HandleFunc("POST /v1/new", s.newWork)
 	mux.HandleFunc("GET /v1/open/live", s.openLive)
 	mux.HandleFunc("GET /v1/scm/has", s.scmHas)
@@ -706,6 +718,7 @@ func (s *Server) Handler() http.Handler {
 	// Ports handed out and processes recorded, as inventory. See cardports.go.
 	mux.HandleFunc("POST /v1/tasks/{id}/ports", s.postCardPorts)
 	mux.HandleFunc("POST /v1/tasks/{id}/own", s.postOwn)
+	mux.HandleFunc("POST /v1/tasks/{id}/parent", s.postParent)
 	mux.HandleFunc("POST /v1/tasks/{id}/proc", s.postCardProc)
 	mux.HandleFunc("POST /v1/tasks/{id}/overlay", s.postOverlay)
 	// Closing a card frees its inventory. See close.go.
@@ -728,6 +741,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/prs/{id}/findings", s.getPRFindings)
 	mux.HandleFunc("PUT /v1/prs/{id}/findings/{key}", s.putPRFinding)
 	mux.HandleFunc("POST /v1/prs/{id}/findings/{key}/walk", s.walkPRFinding)
+	mux.HandleFunc("GET /v1/prs/{id}/panel", s.getPRPanel)
+	mux.HandleFunc("POST /v1/prs/{id}/panel", s.applyPRPanel)
 	mux.HandleFunc("POST /v1/prs/{id}/walker", s.walkerPR)
 	// A review moves with its PR: see `prsmove.go`.
 	mux.HandleFunc("GET /v1/prs/export", s.exportPR)
@@ -935,6 +950,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
 	}
+	if s.Need != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/need", s.Need)
+	}
 	if s.LoginHandler != nil {
 		mux.HandleFunc("GET /v1/login-needed", s.LoginHandler)
 		mux.HandleFunc("DELETE /v1/login-needed", s.LoginHandler)
@@ -1041,6 +1059,11 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 			body["login_needed"] = l
 		}
 	}
+	if s.ToolchainMissing != nil {
+		if tc := s.ToolchainMissing(); tc != nil {
+			body["toolchain_missing"] = tc
+		}
+	}
 	writeJSON(w, http.StatusOK, body)
 }
 
@@ -1091,6 +1114,9 @@ type view struct {
 	// Starting marks a card atrium is launching whose runner is not up yet. The board draws it as starting, not as
 	// joined from a terminal atrium does not hold.
 	Starting bool `json:"starting,omitempty"`
+	// Revive marks a card a failure killed: it had a runner, has none, and nobody closed, paused or parked it. The
+	// room starts it again on its next start, and the switcher offers it now. See daemon/reopen.go.
+	Revive bool `json:"revive,omitempty"`
 	// Shell marks a card that already has a plain shell open beside its runner,
 	// so the board can offer to go to it rather than to open a second one.
 	//
@@ -1141,6 +1167,9 @@ type view struct {
 	// and never stored, and whether it is past the threshold. Absent on a card
 	// that is not Claude or has no transcript yet. See docs/runtime/activity-design.md.
 	ContextSize any `json:"context_size,omitempty"`
+	// Mem is what the card's processes hold in bytes, from the pty host's job objects or cgroups. Absent with
+	// pty_host off.
+	Mem int64 `json:"mem,omitempty"`
 	// Autocompact is the limit atrium holds the card to and the compaction window its
 	// runner is started with, both in thousands of tokens. Absent for a runner that
 	// takes no such flag. Worked out by the daemon, never stored.
@@ -1240,6 +1269,9 @@ var TelemetryOf func(taskID string) any
 // memory. See internal/daemon/a2a.go.
 var EscalationOf func(taskID string) any
 
+// MemOf returns what a card's processes hold in bytes, or 0. Supplied by the daemon, from the pty host.
+var MemOf func(taskID string) int64
+
 // BudgetOf returns a card's crossed worker budget, or nil. Supplied by the daemon, which holds it in memory.
 var BudgetOf func(taskID string) any
 
@@ -1327,6 +1359,9 @@ func (s *Server) toView(t *store.Task) view {
 	if ContextSizeOf != nil {
 		v.ContextSize = ContextSizeOf(t.ID)
 	}
+	if MemOf != nil {
+		v.Mem = MemOf(t.ID)
+	}
 	if AutocompactOf != nil {
 		v.Autocompact = AutocompactOf(t)
 	}
@@ -1367,6 +1402,17 @@ func (s *Server) toViews(ts []*store.Task) []view {
 // "and two more" is worth serving; a board that answers 500 because a count
 // query failed is not.
 func (s *Server) withAskCounts(vs []view) []view {
+	if live, err := s.st.LiveCards(); err == nil && len(live) > 0 {
+		was := make(map[string]bool, len(live))
+		for _, id := range live {
+			was[id] = true
+		}
+		for i := range vs {
+			t := vs[i].Task
+			vs[i].Revive = t != nil && was[t.ID] && !vs[i].Supervised && !vs[i].Starting &&
+				t.Status != store.StatusPaused && t.ParkedAt == nil && !t.Throwaway
+		}
+	}
 	if disk, err := s.st.CardDisk(); err == nil && len(disk) > 0 {
 		for i := range vs {
 			if vs[i].Task != nil {
@@ -1647,6 +1693,10 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	// launch_cmd was three quarters of the hub's list (b-hub-tasks-4mb-slow). The card details read it from GET one.
+	for _, t := range tasks {
+		t.LaunchCmd = nil
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": s.withAskCounts(s.toViews(tasks))})
 }
@@ -2901,14 +2951,16 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, fmt.Errorf("streaming unsupported"))
 		return
 	}
+	// Subscribe before the headers go out, so a client that has its response
+	// can never miss an event published after it.
+	sub := s.bus.subscribe()
+	defer s.bus.unsubscribe(sub)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	sub := s.bus.subscribe()
-	defer s.bus.unsubscribe(sub)
 
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
@@ -3021,4 +3073,25 @@ func (s *Server) pendingMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+}
+
+// roomKill ends one orphan the room alert named. The daemon refuses anything
+// that is not under a closed card's home when it looks again.
+func (s *Server) roomKill(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PID int `json:"pid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PID <= 0 {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("a pid is required"))
+		return
+	}
+	if s.KillOrphan == nil {
+		writeErr(w, http.StatusServiceUnavailable, fmt.Errorf("this room cannot kill processes"))
+		return
+	}
+	if err := s.KillOrphan(body.PID); err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"killed": body.PID})
 }

@@ -3,10 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -28,6 +30,51 @@ import (
 // hookTimeout is the whole budget. This runs before every tool call in every
 // session, so it is the operator's latency, not atrium's.
 const hookTimeout = time.Second
+
+// hookBudget is how long any atrium hook may take to give up on an atrium that does not answer. A session never waits
+// more than 2s on atrium, and the half second left is the process starting and the payload arriving.
+const hookBudget = 1500 * time.Millisecond
+
+// hookLeft is what is left of the budget for a hook that began at start.
+func hookLeft(start time.Time) time.Duration {
+	return max(hookBudget-time.Since(start), 100*time.Millisecond)
+}
+
+// contextEvents are the claude hook events that take additionalContext, so the model hears atrium is down. Any other
+// event rejects the field, so it gets the systemMessage alone.
+var contextEvents = map[string]bool{"PreToolUse": true, "PostToolUse": true, "SessionStart": true, "UserPromptSubmit": true}
+
+// unreachable says which hook could not reach atrium, where, and what to do about it.
+func unreachable(hook, addr string, err error) string {
+	why := "no answer"
+	var ue *url.Error
+	var ne net.Error
+	switch {
+	case errors.As(err, &ne) && ne.Timeout():
+		why = "no answer in time"
+	case errors.As(err, &ue):
+		why = ue.Err.Error()
+	case err != nil:
+		why = err.Error()
+	}
+	return fmt.Sprintf("atrium's hook `atrium %s` could not reach atrium at %s (%s). The session goes on without "+
+		"atrium. Start atrium with `atrium run`, or set ATRIUM_PERM_GATE=off to turn atrium's hooks off. "+
+		"If you cannot do either, tell the user.", hook, addr, why)
+}
+
+// hookWarning is what a hook prints when atrium did not answer: a systemMessage for the user, and additionalContext
+// for the model where the event takes it. Codex is told the systemMessage only.
+func hookWarning(hookEvent, runner, msg string) []byte {
+	out := map[string]any{"systemMessage": msg}
+	if contextEvents[hookEvent] && !strings.EqualFold(strings.TrimSpace(runner), "codex") {
+		out["hookSpecificOutput"] = map[string]any{"hookEventName": hookEvent, "additionalContext": msg}
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
+// activityHookEvents are the claude hook events behind the activity arguments that take additionalContext.
+var activityHookEvents = map[string]string{"tool-start": "PreToolUse", "tool-end": "PostToolUse", "prompt": "UserPromptSubmit"}
 
 // hookEvents are the events a hook may report, mapped to what /activity calls
 // them. Named here rather than passed through, so a typo in settings.json is
@@ -86,6 +133,26 @@ type hookInput struct {
 	// one is starting immediately, so the card should not die and come back a
 	// second later.
 	Reason string `json:"reason"`
+	// ToolResponse and Error are a finished tool's output, read only for a shell's command not found.
+	ToolResponse json.RawMessage `json:"tool_response"`
+	Error        string          `json:"error"`
+}
+
+// knownTools are the tools whose absence from a card's shell is the room's misconfiguration.
+var knownTools = []string{"go", "gofmt", "make", "git", "gh", "node", "npm", "npx", "python", "python3", "pwsh"}
+
+// missingTool is the first known tool a shell tool's output says was not found, or "".
+func missingTool(in hookInput) string {
+	if in.ToolName != "Bash" && in.ToolName != "PowerShell" {
+		return ""
+	}
+	out := string(in.ToolResponse) + "\n" + in.Error
+	for _, t := range knownTools {
+		if strings.Contains(out, " "+t+": command not found") || strings.Contains(out, "The term '"+t+"' is not recognized") {
+			return t
+		}
+	}
+	return ""
 }
 
 // wantsAHuman reports whether a notification means a card is waiting on you.
@@ -141,7 +208,7 @@ func newHook() *cobra.Command {
 		Short: "Report what this session is doing. Run by a harness, not by hand.",
 		Long: "Posts one activity event to the daemon and exits. Meant to be registered in the " +
 			"runner's own hooks file, which the board can do for you from the runners tab.\n\n" +
-			"It never fails a session: whatever goes wrong, it exits 0 and says nothing.",
+			"It never fails a session: whatever goes wrong, it exits 0, and it says so when atrium did not answer.",
 		// Hook flag errors must never interrupt a tool call.
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -178,7 +245,10 @@ func newHook() *cobra.Command {
 				}
 				return nil
 			}
-			reportActivity(hubURL, event, name)
+			if warn := reportActivity(hubURL, event, name); warn != "" {
+				arg := strings.ToLower(strings.TrimSpace(event))
+				fmt.Fprintln(cmd.OutOrStdout(), string(hookWarning(activityHookEvents[arg], runner, warn)))
+			}
 			// Explain an interactive invocation because silence looks like a hang, without prompting inside hooks.
 			if interactive() {
 				addr, source := hubAddressFrom(hubURL)
@@ -186,8 +256,7 @@ func newHook() *cobra.Command {
 					"posted %q to %s/activity\naddress came from %s\n",
 					event, addr, source)
 				fmt.Fprintln(cmd.OutOrStdout(),
-					"whatever came back was ignored. a hook never reports failure, "+
-						"so this says nothing about whether atrium was listening.")
+					"whatever came back was ignored. a warning above means atrium was not listening.")
 			}
 			return nil
 		},
@@ -383,19 +452,18 @@ func readStdin() []byte {
 	}
 }
 
-// reportActivity posts one event. It returns nothing on purpose: there is no
-// failure a caller could act on, and the contract is that nothing downstream
-// reads the result.
-func reportActivity(hubURL, event, name string) {
+// reportActivity posts one event. It returns what to tell the session when atrium could not be reached, or "".
+func reportActivity(hubURL, event, name string) string {
+	start := time.Now()
 	// One environment variable turns every atrium hook off without editing
 	// settings.json.
 	if strings.EqualFold(os.Getenv("ATRIUM_PERM_GATE"), "off") {
-		return
+		return ""
 	}
 	arg := strings.ToLower(strings.TrimSpace(event))
 	kind, ok := hookEvents[arg]
 	if !ok {
-		return
+		return ""
 	}
 
 	in := readPayload()
@@ -403,7 +471,7 @@ func reportActivity(hubURL, event, name string) {
 	// The one event that decides for itself whether to say anything. Silence
 	// here is the normal case, not a failure.
 	if arg == notifying && !wantsAHuman(in) {
-		return
+		return ""
 	}
 
 	cwd := in.CWD
@@ -412,7 +480,7 @@ func reportActivity(hubURL, event, name string) {
 	}
 	agent, nameSource := hookAgent(name, cwd)
 	if agent == "" {
-		return
+		return ""
 	}
 
 	body, err := json.Marshal(map[string]any{
@@ -430,20 +498,23 @@ func reportActivity(hubURL, event, name string) {
 		// The daemon needs it to tell a dialog it raised from one the runner
 		// put up on its own. See wantsAHuman.
 		"notification": notificationKind(in),
+		"missing_tool": missingTool(in),
 	})
 	if err != nil {
-		return
+		return ""
 	}
 
-	client := hookClient(hookTimeout)
-	resp, err := client.Post(hubAddress(hubURL)+"/activity", "application/json", bytes.NewReader(body))
+	client := hookClient(min(hookTimeout, hookLeft(start)))
+	addr := hubAddress(hubURL)
+	resp, err := client.Post(addr+"/activity", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return
+		return unreachable("hook --event "+arg, addr, err)
 	}
 	// Drained and closed so the connection can be reused, then discarded. The
 	// status is not checked because there is nothing to do about it.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 	resp.Body.Close()
+	return ""
 }
 
 // hookClient is the one client every hook posts with. The dial gets a second of its own so a connect that hangs

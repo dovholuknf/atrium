@@ -1,10 +1,10 @@
 // launch: starting work: the launch dropdowns, the new work dialog, throwaway runners.
 //
-// Units: launchRepoUrls, launchLink, launchThrowaway, launchSetup, newWorkDialog.
+// Units: launchRepoUrls, launchLink, launchThrowaway, launchSetup, launchPresets, newWorkDialog.
 // `units` is what the harness runs, in suite order. `sections` is for HEADLESS_ONLY, which names a section and not a unit.
 // Alone: `node scripts/board-tests/launch.js` runs just these units, the way the full run would.
 const path = require("path");
-const { slow } = require("../lib/browser.js");
+const { slow, frames } = require("../lib/browser.js");
 const { mock } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 
@@ -115,6 +115,49 @@ async function launchSetupSection(browser, base) {
     await ctx.close();
   }
   if (!bad) console.log("launchSetup ok");
+}
+
+// THE NAMED PROMPTS in the launch dialog: the enabled ones are offered over the first instruction, a pick fills the
+// box and the launch sends that text. None enabled hides the list, and every open starts unpicked.
+async function launchPresetsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const bodies = [];
+  try {
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    let actions = [
+      { id: "critique", label: "critique", prompt: "Critique the branch.", enabled: true },
+      { id: "off", label: "off", prompt: "Not offered.", enabled: false },
+    ];
+    await p.route(/\/v1\/actions(\?|$)/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ actions }) }));
+    await p.route(/\/v1\/launch(\?|$)/, async r => {
+      bodies.push(JSON.parse(r.request().postData() || "{}"));
+      await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "t1", status: "running" }) });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof openLaunch === "function" && typeof doLaunch === "function");
+    const state = () => p.evaluate(() => ({ shown: !document.getElementById("l-preset").hidden,
+      value: document.getElementById("l-preset").value, options: [...document.getElementById("l-preset").options].map(o => o.value) }));
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    await p.waitForFunction(() => !document.getElementById("l-preset").hidden, null, { timeout: slow(5000) }).catch(() => fail("launchPresets: the list never showed"));
+    const s = await state();
+    if (s.value !== "" || s.options.join() !== ",critique") fail("launchPresets: a fresh dialog " + JSON.stringify(s));
+    await p.selectOption("#l-preset", "critique");
+    if (await p.inputValue("#l-prompt") !== "Critique the branch.") fail("launchPresets: the pick did not fill the box");
+    await p.evaluate(() => doLaunch());
+    await p.waitForFunction(() => !document.getElementById("launch").open, null, { timeout: slow(5000) }).catch(() => fail("launchPresets: the dialog stayed open"));
+    if ((bodies[0] || {}).prompt !== "Critique the branch.") fail("launchPresets: body " + JSON.stringify(bodies));
+    actions = [];
+    await p.evaluate(async () => { await openLaunch(null, "", "/work/here", null, null); });
+    await p.waitForFunction(() => document.getElementById("l-preset").hidden && document.getElementById("l-preset").value === "", null, { timeout: slow(5000) })
+      .catch(async () => fail("launchPresets: none enabled still offered or kept the pick " + JSON.stringify(await state())));
+    await p.evaluate(() => document.getElementById("launch").close());
+    if (errors.length) fail("launchPresets: page errors " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+  if (!bad) console.log("launchPresets ok");
 }
 
 // THE LAUNCH DIALOG'S `repo` LIST (js/launchrepo.js, docs/changes/launch-repo-picker.md). `repo` opens a panel inside the
@@ -386,11 +429,11 @@ async function launchLinkSection(browser, base) {
       Object.defineProperty(window, "launchQueue", { configurable: true, value: { setConsumer: fn => { window.__consumer = fn; } } });
     });
     await p.goto(base + "/", { waitUntil: "load" });
-    await p.waitForTimeout(1200);
+    await p.waitForFunction(() => typeof window.__consumer === "function", null, { timeout: slow(5000) }).catch(() => {});
     if (!(await p.evaluate(() => typeof window.__consumer === "function"))) { fail("launchLink: the board registered no launchQueue consumer."); return; }
     await p.evaluate(() => { window.__lands = []; window.landOnAlert = (...a) => { window.__lands.push(a); }; });
     await p.evaluate(u => window.__consumer({ targetURL: u }), base + "/#term=s1");
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => window.__lands.length > 0, null, { timeout: slow(5000) }).catch(() => {});
     let lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1 || lands[0][0] !== "s1") fail("launchLink: a #term= link landed " + JSON.stringify(lands));
     await p.evaluate(() => window.__consumer({ targetURL: "https://example.com/#term=s2" }));
@@ -404,8 +447,10 @@ async function launchLinkSection(browser, base) {
     const q = await ctx2.newPage();
     const e2 = [];
     q.on("pageerror", e => e2.push(String(e && e.message || e)));
+    const streamed = q.waitForRequest(r => new URL(r.url()).pathname.startsWith("/v1/events"), { timeout: slow(15000) }).catch(() => {});
     await q.goto(base + "/", { waitUntil: "load" });
-    await q.waitForTimeout(800);
+    await streamed;
+    await frames(q, 2);
     if (e2.length) fail("launchLink: without launchQueue the board threw " + e2.join(" | "));
     await ctx2.close();
   } finally { await ctx.close(); }
@@ -519,9 +564,10 @@ const units = [
   { name: "launchLink", run: ({ browser, base }) => launchLinkSection(browser, base) },
   { name: "launchThrowaway", run: ({ browser, base }) => launchThrowawaySection(browser, base) },
   { name: "launchSetup", run: ({ browser, base }) => launchSetupSection(browser, base) },
+  { name: "launchPresets", run: ({ browser, base }) => launchPresetsSection(browser, base) },
   { name: "newWorkDialog", run: ({ browser, base }) => newWorkDialogSection(browser, base) },
 ];
-const sections = { launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, newWorkDialog: newWorkDialogSection };
+const sections = { launchRepoUrls: launchRepoUrlsSection, launchLink: launchLinkSection, launchThrowaway: launchThrowawaySection, launchSetup: launchSetupSection, launchPresets: launchPresetsSection, newWorkDialog: newWorkDialogSection };
 
 module.exports = { units, sections };
 if (require.main === module) require("../lib/alone.js")(units);

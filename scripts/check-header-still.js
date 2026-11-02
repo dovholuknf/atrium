@@ -52,7 +52,8 @@ const check = (ok, what) => { console.log((ok ? "ok   " : "FAIL ") + what); if (
   const browser = await chromium.launch();
   const page = await browser.newPage();
   await page.goto("http://127.0.0.1:" + server.address().port + "/");
-  await page.waitForTimeout(1000);
+  await page.waitForFunction(() => typeof cardsLoaded !== "undefined" && cardsLoaded && document.getElementById("sound"), null, { timeout: 15000 });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 
   for (const skin of ["", "daylight", "website"]) {
     const got = await page.evaluate(s => {

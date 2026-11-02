@@ -31,12 +31,7 @@ func mkDir(t *testing.T, dir string) {
 
 func openStore(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s
+	return openMigrated(t)
 }
 
 func provider(t *testing.T, s *store.Store, root string, p store.Provider) *store.Provider {

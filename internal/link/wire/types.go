@@ -21,7 +21,17 @@ type Path struct {
 	From string `json:"from,omitempty"`
 }
 
-// PathState is one rung as a room sees it. Never a credential: Addr is the dial address or the ziti service name.
+// MaskShare is a zrok share token as the board may show it: its first four characters, never the whole credential.
+func MaskShare(token string) string {
+	token = strings.TrimSpace(token)
+	if len(token) <= 4 {
+		return "..."
+	}
+	return token[:4] + "..."
+}
+
+// PathState is one rung as a room sees it. Never a credential: Addr is the dial address, the ziti service name or a
+// masked zrok share.
 type PathState struct {
 	Kind      string    `json:"kind"`
 	Addr      string    `json:"addr,omitempty"`

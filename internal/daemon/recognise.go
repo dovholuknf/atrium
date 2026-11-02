@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/linkfetch"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // Turning a pasted URL into a filled-in launch dialog.
@@ -80,7 +82,7 @@ func (d *Daemon) Recognise(url string) (*rules.Resolved, error) {
 	}
 	out := r.Resolve(vars, facts, nil)
 	if fetchErr != nil {
-		out.FetchError = firstLine(fetchErr.Error())
+		out.FetchError = small.FirstLine(fetchErr.Error())
 	}
 	// ATRIUM DOES NOT CREATE THE DIRECTORY. See rules.DescribeCwd.
 	rules.DescribeCwd(out, os.Stat)
@@ -145,7 +147,7 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	cmd.Dir = r.FetchCwd
 	// Fetched behind a dialog the operator is already looking at, so a console
 	// appearing over it is the same interruption a source's was. See
-	// hideWindow.
+	// nowindow.Hide.
 	stopTreeOnCancel(cmd)
 	// The daemon's own environment, minus the markers that would make a child
 	// think it is inside the session atrium was started from. Exactly what a
@@ -153,8 +155,8 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	cmd.Env = childEnv(nil, nil)
 
 	var out, errOut bytes.Buffer
-	cmd.Stdout = &limitedWriter{w: &out, left: recogniserFetchLimit + 1}
-	cmd.Stderr = &limitedWriter{w: &errOut, left: 8 << 10}
+	cmd.Stdout = &shared.LimitedWriter{W: &out, Left: recogniserFetchLimit + 1}
+	cmd.Stderr = &shared.LimitedWriter{W: &errOut, Left: 8 << 10}
 
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
@@ -166,7 +168,7 @@ func (d *Daemon) fetchFacts(ctx context.Context, r *rules.Recogniser,
 	}
 	if err != nil {
 		if errOut.Len() > 0 {
-			return nil, fmt.Errorf("%v: %s", err, firstLine(errOut.String()))
+			return nil, fmt.Errorf("%v: %s", err, small.FirstLine(errOut.String()))
 		}
 		return nil, err
 	}
@@ -233,6 +235,6 @@ func (d *Daemon) forgeFacts(ctx context.Context, args []string, vars map[string]
 		if hf := d.HubForge(); hf != nil {
 			return hf, nil
 		}
-		return d.prr.forgeFor(host)
+		return d.prr.ForgeFor(host)
 	})
 }

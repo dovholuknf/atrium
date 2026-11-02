@@ -147,7 +147,7 @@ if (relAt < 0 || !/popOuts\.delete\(m\.task\)/.test(html.slice(relAt, relAt + 70
 // Check coordinates against the rectangle: backdrop and padding can both
 // report the dialog as the event target. Guarded dialogs stay open to
 // preserve unsaved edits.
-const lightAt = html.indexOf("if (!inside) dlg.close();");
+const lightAt = html.indexOf("if (inside) return;");
 if (lightAt < 0) {
   fail("no dialog light-dismisses on a click outside it. The switcher is opened by reflex and " +
     "has to be leavable by reflex, and the rule is set for every dialog at once or it is set " +
@@ -183,7 +183,7 @@ function lift(name) {
 const COMBO_TABLE = /^const COMBO_NAMES = \{[\s\S]*?^\};/m.exec(html);
 const FORGE_TABLE = /^const FORGE_HOST_LABELS = \{.*\};/m.exec(html);
 const src = [COMBO_TABLE ? COMBO_TABLE[0] : "", FORGE_TABLE ? FORGE_TABLE[0] : "", lift("forgeHostLabel"), lift("comboOf"), lift("comboName"),
-  lift("swSubseq"), lift("terminalLabel"), lift("swScore")];
+  lift("swSubseq"), lift("swFuzzy"), lift("terminalLabel"), lift("swScore")];
 if (src.some(s => !s)) {
   fail("comboOf, comboName, swSubseq, terminalLabel or swScore could not be lifted out of the " +
     "page, so what they actually do went unchecked. They are top-level functions on purpose.");

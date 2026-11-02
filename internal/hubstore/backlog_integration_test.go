@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newItem(id, dept string) ItemNew {
@@ -225,6 +226,54 @@ func TestPriorityIsHighMediumLowOrUnsetAndFoldsCase(t *testing.T) {
 		if err == nil || !IsRefusal(err) || !strings.Contains(err.Error(), "high, medium, low") {
 			t.Errorf("%q: %v", bad, err)
 		}
+	}
+}
+
+func TestItemEdit(t *testing.T) {
+	s := open(t)
+	_, _ = s.ItemFile(newItem("a", "fabric"))
+	title, body, blank := "new title", "new body", " "
+	b, err := s.ItemEdit("a", &title, nil, "orch@sg4")
+	if err != nil || b.Title != "new title" || b.Body == "new body" || b.ChangedBy != "orch@sg4" {
+		t.Fatalf("title: %+v %v", b, err)
+	}
+	if b, err = s.ItemEdit("a", nil, &body, "x"); err != nil || b.Title != "new title" || b.Body != "new body" {
+		t.Fatalf("body: %+v %v", b, err)
+	}
+	if _, err = s.ItemEdit("a", &blank, nil, "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("blank title: %v", err)
+	}
+	if _, err = s.ItemEdit("a", nil, nil, "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("nothing: %v", err)
+	}
+	if _, err = s.ItemEdit("nope", &title, nil, "x"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+}
+
+func TestItemAppend(t *testing.T) {
+	s := open(t)
+	s.clock = func() time.Time { return time.Date(2026, 10, 17, 18, 0, 0, 0, time.UTC) }
+	_, _ = s.ItemFile(newItem("a", "fabric"))
+	b, err := s.ItemAppend("a", " one more line \n", "qa@sg4")
+	if err != nil || b.Body != "why\n\tand how\n\nqa@sg4 2026-10-17: one more line" || b.ChangedBy != "qa@sg4" ||
+		b.Title != "do the thing" {
+		t.Fatalf("append: %+v %v", b, err)
+	}
+	title := "t"
+	empty := ""
+	_, _ = s.ItemEdit("a", &title, &empty, "x")
+	if b, err = s.ItemAppend("a", "first", ""); err != nil || b.Body != "2026-10-17: first" {
+		t.Fatalf("append to empty: %+v %v", b, err)
+	}
+	if _, err = s.ItemAppend("a", " ", "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("blank: %v", err)
+	}
+	if _, err = s.ItemAppend("a", strings.Repeat("x", ItemBodyMax), "x"); err == nil || !IsRefusal(err) {
+		t.Fatalf("too long: %v", err)
+	}
+	if _, err = s.ItemAppend("nope", "t", "x"); !errors.Is(err, ErrItemNotFound) {
+		t.Fatalf("missing: %v", err)
 	}
 }
 

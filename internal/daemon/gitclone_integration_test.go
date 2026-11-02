@@ -22,7 +22,7 @@ func cloneCall(t *testing.T, d *Daemon, id, url string) (int, map[string]any) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+id+"/git/clone", strings.NewReader(string(body)))
 	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
-	d.handleGitClone(rec, req)
+	d.HandleGitClone(rec, req)
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out
@@ -163,7 +163,7 @@ func TestPRWorktreeAdoptsAnOperatorsCloneWithoutAsking(t *testing.T) {
 	git("init", "-q")
 	git("remote", "add", "origin", "https://github.com/acme/widget.git")
 
-	res, err := d.prWorktreeClone(t.Context(), "https://github.com/acme/widget")
+	res, err := d.PrWorktreeClone(t.Context(), "https://github.com/acme/widget")
 	if err != nil {
 		t.Fatalf("the clone was not adopted: %v", err)
 	}

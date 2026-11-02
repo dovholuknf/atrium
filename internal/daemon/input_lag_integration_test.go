@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 // The operator's keystroke BOOKKEEPING must stay fast while a peer message is
@@ -37,9 +39,9 @@ func TestOperatorKeystrokeStaysFastDuringPeerInjection(t *testing.T) {
 		wrote, _ := r.injectPeer("[peer sg4/doer] ", "the migration is ready")
 		wroteCh <- wrote
 	}()
-	// Let the injection acquire its locks, write the banner+body, and enter its
-	// held pause. Well inside sayThenEnter, so it is still sending when we measure.
-	time.Sleep(15 * time.Millisecond)
+	testwait.EventuallyEvery(t, time.Millisecond, 5*time.Second, "the injection to enter its held pause", func() bool {
+		return strings.Contains(f.written(), "the migration is ready")
+	})
 
 	start := time.Now()
 	r.noteOperatorTyped([]byte("x"))

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 	"github.com/dovholuknf/atrium/internal/wtfree"
 )
@@ -367,7 +368,7 @@ func TestCullExitsASupervisedWorkerFirst(t *testing.T) {
 		<-errCh
 	}()
 	r := newCullRepo(t, true)
-	task, err := d.Launch(LaunchRequest{
+	task, err := d.Launch(shared.LaunchRequest{
 		Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Tags: []string{SubagentTag},
 	})
 	if err != nil {

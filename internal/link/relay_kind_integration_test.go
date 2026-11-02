@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 func TestTheLaunchLineNamesDoneAndBlockedAndNotAtriumReport(t *testing.T) {
@@ -34,7 +35,7 @@ func TestARelayedFyiKeepsItsKind(t *testing.T) {
 	defer x.stop()
 
 	for _, kind := range []string{"fyi", ""} {
-		ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
+		ans, err := x.miniR.Relay(relayCtx(t), wire.RelayRequest{Op: RelaySay, From: "sa1", Room: "sg4",
 			To: "atrium-87300", Text: "stop, nothing else to do", Kind: kind})
 		if err != nil || !ans.OK {
 			t.Fatalf("%q: answer = %+v, %v", kind, ans, err)

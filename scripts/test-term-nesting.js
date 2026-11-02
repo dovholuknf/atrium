@@ -316,7 +316,8 @@ function checkNesting(list, what, opts = {}) {
       `${what}: the fold path on the ${h.name} heading`);
     const inside = list.filter(t => {
       const segs = termPathOf(t).segs;
-      return segs.slice(0, h.under.length + 1).join("/") === h.path;
+      const at = segs.join("/");
+      return at === h.path || at.startsWith(h.path + "/");
     }).length;
     is(h.count, inside, `${what}: the count on the ${h.name} heading`);
   }
@@ -342,7 +343,8 @@ function checkNesting(list, what, opts = {}) {
   // `openziti`, and an org for every org.
   is(heads.filter(h => h.name === "github").length, 1, "how many github headings");
   is(heads.filter(h => h.under.join("/") === "github").map(h => h.name).sort().join(","),
-    "dovholuknf,netfoundry,openziti,openziti-test-kitchen", "the orgs under github");
+    "dovholuknf,netfoundry/docusaurus-shared,openziti,openziti-test-kitchen/docpreview",
+    "the orgs under github, an org holding one repo merged with it");
 }
 
 // 2. ORDER INDEPENDENT. The strip is drawn from a list sorted by pinned first
@@ -466,17 +468,28 @@ function checkNesting(list, what, opts = {}) {
     "and each says its whole label");
 }
 
-// 6. ONE MEMBER ALL THE WAY DOWN. Every level here holds exactly one thing, so
-//    a renderer that skips a heading for a group of one draws no headings at
-//    all and puts the row at the top of the strip, which is the same bug with
-//    nothing else in the list to hide it.
+// 6. ONE MEMBER ALL THE WAY DOWN. A chain of levels each holding only the next is one heading, named by the whole
+//    chain, with the row inside it. Never zero headings, and never one per level.
 {
-  const list = sessions(["github/openziti/ziti-openwrt:firmware-upgrade-recovery-docs"]);
-  const { rows, heads } = checkNesting(list, "a single session three levels down");
-  is(heads.map(h => h.name).join("/"), "github/openziti/ziti-openwrt",
-    "every level of a chain of one gets its heading");
-  is(rows[0].under.join("/"), "github/openziti/ziti-openwrt",
-    "and the row is inside all three of them");
+  const list = sessions(["claude/atrium/rnd/rnd-card:main"]);
+  const { rows, heads } = checkNesting(list, "a single chain of three levels");
+  is(heads.map(h => h.name).join(","), "claude/atrium/rnd/rnd-card", "a chain of one is one heading");
+  is(heads[0].path, "claude/atrium/rnd/rnd-card", "keyed on the full merged path");
+  is(heads[0].count, 1, "and counts the card under it");
+  is(rows[0].under.join("/"), "claude/atrium/rnd/rnd-card", "and the row is inside it");
+}
+
+// 6b. A SPLIT KEEPS THE HEADING, and a fold on the merged path does not carry over to the split.
+{
+  const one = sessions(["claude/atrium/rnd:a"]);
+  store.set("atrium.termfolded", JSON.stringify(["claude/atrium/rnd"]));
+  is(drawn(termGroupsHTML(one)).rows.length, 0, "a fold on the merged path hides the whole chain");
+  const two = sessions(["claude/atrium/rnd:a", "claude/atrium/x:b"]);
+  const { heads, rows } = checkNesting(two, "a chain that split", { hidden: ["t0"] });
+  is(heads.map(h => h.path).join(","), "claude/atrium,claude/atrium/rnd,claude/atrium/x",
+    "the shared prefix keeps a heading and each branch its own");
+  is(rows.map(r => r.id).join(","), "t1", "the new split starts expanded and the folded branch stays folded");
+  store.delete("atrium.termfolded");
 }
 
 // 7. A CARD NAMES ITS ROOM ONLY WHEN THERE IS MORE THAN ONE. The hub tags a

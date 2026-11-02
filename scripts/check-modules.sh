@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Builds and vets every module alone, with GOWORK=off, so a missing require or replace fails here and not only in the
 # workspace. Then fails when `go work sync` changes a go.mod or go.sum, which means the pinned versions drifted.
-# See docs/design/go-modules.md section 5.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Which control tools a caller is shown.
@@ -24,94 +27,22 @@ import (
 // the class that counts is the one the session had when it first connected. A retag
 // lands at the next session start, and nothing sends `list_changed`.
 
-// ctlClass is which set of control tools a caller gets.
-type ctlClass int
-
-const (
-	// classFull is every tool. The default, and what any doubt resolves to.
-	classFull ctlClass = iota
-	// classWorker is the tools a worker uses to talk and to report.
-	classWorker
-	// classWorkerResident and classFullResident are those two with the done and blocked words of a card that stays open.
-	classWorkerResident
-	classFullResident
-	// classWorkerItem is the worker set of an item: no say, no peers, no task and no report, and the done and blocked
-	// words that name no launcher. See ItemTag.
-	classWorkerItem
-	// classWorkerReview is the worker set and atrium_review, for a card tagged ReviewTag.
-	classWorkerReview
+var (
+	workerTools = ctl.WorkerTools
 )
 
-// workerTools is the whole of the worker set, by name.
-//
-// A TOOL IS IN THE WORKER SET ONLY WHEN IT IS NAMED HERE. `addTool` filters on
-// this list and not on a list of exclusions, so a tool added later, such as the
-// git tools a `registerGit` adds, lands in `full` alone with no further change.
-var workerTools = map[string]bool{
-	"atrium_status": true,
-	"atrium_peers":  true,
-	"atrium_say":    true,
-	"atrium_report": true,
-	// How a worker ends, in one line. See ctl_end.go.
-	"atrium_done":    true,
-	"atrium_blocked": true,
-	// How a worker says what a test found, pinned to its own commit. See record_mcp.go.
-	"atrium_record": true,
-	"atrium_task":   true,
-	"atrium_alias":  true,
-	// Workers write the reports, so a worker publishes. See docs_mcp.go.
-	"atrium_publish": true,
-	// Workers hand files between rooms. See files_mcp.go.
-	"atrium_put":    true,
-	"atrium_get":    true,
-	"atrium_files":  true,
-	"atrium_export": true,
-	// The cards that push to the hub are workers. See git_hub.go.
-	"atrium_git_push": true,
-	// And the ones that read code that is not in their cwd. See git_url.go.
-	"atrium_git_url": true,
-	// And the ones that read the CI of a repository, which the hub reads for them. See ci_door.go.
-	"atrium_ci": true,
-	// And the ones that need a build machine. See resources_mcp.go.
-	"atrium_resources": true,
-	// And the ones that clear up cards, which otherwise script the API by hand. See closeHandler.
-	"atrium_close": true,
-	// And the ones that file what a run cost and what slowed it, for the work ledger. See backlog_mcp.go.
-	"atrium_reports": true,
-	// And the ones that land their branch, through the merge queue. See merge_mcp.go.
-	"atrium_merge": true,
-}
-
-// itemWithheld is what an item worker loses from the worker set: every way to talk to anything but the tool that ends
-// its work. The same four the say endpoint refuses for, so a worker that reached one by lying about its class meets
-// the refusal there.
-var itemWithheld = map[string]bool{
-	"atrium_say": true, "atrium_peers": true, "atrium_task": true, "atrium_report": true,
-}
-
 // inClass reports whether a tool is served to a class.
-func inClass(name string, class ctlClass) bool {
-	if name == "atrium_review" {
-		return class == classWorkerReview
-	}
-	if class == classWorkerReview {
-		return workerTools[name]
-	}
-	if class == classWorkerItem {
-		return workerTools[name] && !itemWithheld[name]
-	}
-	return class == classFull || class == classFullResident || workerTools[name]
-}
+func inClass(name string, class ctl.Class) bool { return ctl.InClass(name, class) }
 
 // residentClass is whether a class hears the resident words for atrium_done and atrium_blocked.
-func residentClass(c ctlClass) bool { return c == classWorkerResident || c == classFullResident }
+func residentClass(c ctl.Class) bool {
+	return c == ctl.ClassWorkerResident || c == ctl.ClassFullResident
+}
 
 // addTool is `mcp.AddTool` for the class being built: it registers the tool when
 // the class includes it and does nothing otherwise.
-func addTool[In, Out any](s *mcp.Server, class ctlClass, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
-	if inClass(t.Name, class) {
-		mcp.AddTool(s, t, h)
-	}
+func addTool[In, Out any](s *mcp.Server, class ctl.Class, t *mcp.Tool, h mcp.ToolHandlerFor[In, Out]) {
+	ctl.AddTool(s, class, t, h)
 }
 
 const (
@@ -125,17 +56,17 @@ const (
 
 // classEntry is one remembered answer.
 type classEntry struct {
-	class   ctlClass
+	class   ctl.Class
 	expires time.Time
 }
 
 // classOf is the class of the session that sent a request.
-func (c *controlMCP) classOf(r *http.Request) ctlClass {
-	agent := strings.TrimSpace(r.Header.Get(AgentHeader))
-	room := strings.TrimSpace(r.Header.Get(RoomHeader))
+func (c *controlMCP) classOf(r *http.Request) ctl.Class {
+	agent := strings.TrimSpace(r.Header.Get(ctl.AgentHeader))
+	room := strings.TrimSpace(r.Header.Get(wire.RoomHeader))
 	if agent == "" {
 		// Not one of atrium's sessions, so nothing to look up.
-		return classFull
+		return ctl.ClassFull
 	}
 	key := strings.ToLower(room) + "\x00" + agent
 	now := c.classNow()
@@ -151,7 +82,7 @@ func (c *controlMCP) classOf(r *http.Request) ctlClass {
 	if !found {
 		// FAIL OPEN, and do not remember it: a card not on the board yet at the
 		// session's first connect must not keep the full set for a minute once it is.
-		return classFull
+		return ctl.ClassFull
 	}
 
 	c.classMu.Lock()
@@ -192,54 +123,34 @@ func (c *controlMCP) classNow() time.Time {
 // A WORKER is tagged SubagentTag and not DirectorTag. Everything else is full:
 // directors, the resident merger, and a session a human started, which carries no
 // tags at all.
-func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctlClass, bool) {
+func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctl.Class, bool) {
 	ctx, cancel := context.WithTimeout(ctx, controlTimeout)
 	defer cancel()
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
-		return classFull, false
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+		return ctl.ClassFull, false
 	}
 	best := pickCard(body.Tasks, agent)
 	if best == nil {
-		return classFull, false
+		return ctl.ClassFull, false
 	}
 	if hasTag(best.Tags, ItemTag) && hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
-		return classWorkerItem, true
+		return ctl.ClassWorkerItem, true
 	}
 	if hasTag(best.Tags, ReviewTag) && !hasTag(best.Tags, DirectorTag) {
-		return classWorkerReview, true
+		return ctl.ClassWorkerReview, true
 	}
 	resident := hasTag(best.Tags, ResidentTag) || hasTag(best.Tags, DirectorTag) || hasTag(best.Tags, "atrium:orchestrator")
 	if hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
 		if resident {
-			return classWorkerResident, true
+			return ctl.ClassWorkerResident, true
 		}
-		return classWorker, true
+		return ctl.ClassWorker, true
 	}
 	if resident {
-		return classFullResident, true
+		return ctl.ClassFullResident, true
 	}
-	return classFull, true
-}
-
-// pickCard is the card a wire name belongs to. A wire name can be reused by a card that has
-// since died, so a live one is preferred, then the newest, which is how resolvePeer orders an
-// alias. Nil when no card answers to it.
-func pickCard(tasks []ctlCard, agent string) *ctlCard {
-	var best *ctlCard
-	for i := range tasks {
-		t := &tasks[i]
-		if t.Wire != agent {
-			continue
-		}
-		switch {
-		case best == nil, best.Status == "dead" && t.Status != "dead":
-			best = t
-		case (best.Status == "dead") == (t.Status == "dead") && t.Created > best.Created:
-			best = t
-		}
-	}
-	return best
+	return ctl.ClassFull, true
 }

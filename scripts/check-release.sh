@@ -109,6 +109,15 @@ else
 fi
 
 echo
+echo "=== the number in internal/cli/VERSION"
+mkdir -p internal/cli
+echo 0.5.0 >internal/cli/VERSION
+git add -A
+git commit -qm "carry a VERSION"
+expect 2 "a tag that is not the VERSION number is refused" v0.5.1 --preflight
+expect 0 "a tag that is the VERSION number is accepted" v0.5.0 --preflight
+
+echo
 if [ "$fail" != "0" ]; then
   echo "the release refusals are not what they say they are. see above." >&2
   exit 1

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/zitictx"
 	"github.com/openziti/sdk-golang/ziti"
@@ -106,10 +107,7 @@ func TestZitiResetLogsInAgainWithoutBuilding(t *testing.T) {
 	z, reg := newFakeZiti(false)
 	_, _ = z.Dial(context.Background())
 	z.Reset()
-	deadline := time.Now().Add(2 * time.Second)
-	for reg.relogins.Load() == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	testwait.Eventually(t, 2*time.Second, "a relogin", func() bool { return reg.relogins.Load() != 0 })
 	if reg.relogins.Load() != 1 || reg.built.Load() != 1 {
 		t.Fatalf("relogins %d, built %d, want 1 and 1", reg.relogins.Load(), reg.built.Load())
 	}

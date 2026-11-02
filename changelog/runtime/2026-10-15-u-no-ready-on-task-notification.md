@@ -1,1 +1,0 @@
-A turn Claude Code starts for a finished background shell or a monitor event no longer sends a ready notice or bell. A turn a person, a peer or a launch started is unchanged, and a task-notification turn that ends with Open Questions still rings. Item u-no-ready-on-task-notification.

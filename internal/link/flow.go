@@ -3,14 +3,16 @@ package link
 import (
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"net/http"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
-// The merge flow's HTTP half. See internal/hubstore/flow.go for the rows and docs/design/merge-flow.md for why.
+// The merge flow's HTTP half. See internal/hubstore/flow.go for the rows.
 //
 //	GET  /_hub/flow/roles?role=      who holds each role, or one
 //	POST /_hub/flow/roles            {do:"set"|"clear", role, room, card, by?}
@@ -40,7 +42,7 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 		case r.Method != http.MethodPost:
 			crFail(w, http.StatusMethodNotAllowed, "that has to be a GET or a POST")
 			return
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 			return
 		case !edge.LocalOperator(r):
@@ -155,17 +157,7 @@ func (p *Proxy) serveFlow(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 }
 
-// ffail answers a store error: a refusal is the caller's to fix, anything else is the hub's.
-func ffail(w http.ResponseWriter, err error) {
-	code := http.StatusServiceUnavailable
-	switch {
-	case errors.Is(err, hubstore.ErrItemNotFound), errors.Is(err, hubstore.ErrFlowItemNotFound), errors.Is(err, hubstore.ErrNoEpoch):
-		code = http.StatusNotFound
-	case hubstore.IsRefusal(err):
-		code = http.StatusBadRequest
-	}
-	crFail(w, code, err.Error())
-}
+var ffail = jsonio.StoreFail
 
 func (p *Proxy) flowRole(w http.ResponseWriter, r *http.Request, st *hubstore.Store) {
 	var in struct{ Do, Role, Room, Card, By string }

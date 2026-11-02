@@ -3,13 +3,14 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"strings"
 	"testing"
 )
 
 func TestAPublicShareWithNoLoginSaysSo(t *testing.T) {
 	t.Parallel()
-	got := whoMayOpenIt(AuthConfig{}, false)
+	got := publish.WhoMayOpenIt(publish.AuthConfig{}, false)
 	if !strings.Contains(got, "no login") {
 		t.Fatalf("a public share with nothing in front of it should say so, said %q", got)
 	}
@@ -17,7 +18,7 @@ func TestAPublicShareWithNoLoginSaysSo(t *testing.T) {
 
 func TestAGatedWayOutIsNotReportedAsOpen(t *testing.T) {
 	t.Parallel()
-	got := whoMayOpenIt(AuthConfig{}, true)
+	got := publish.WhoMayOpenIt(publish.AuthConfig{}, true)
 	if strings.Contains(got, "This board has no login") {
 		t.Fatalf("a private share and a ziti service already decide who gets in, said %q", got)
 	}
@@ -28,9 +29,9 @@ func TestAGatedWayOutIsNotReportedAsOpen(t *testing.T) {
 
 func TestAPasswordIsReportedWithItsName(t *testing.T) {
 	t.Parallel()
-	c := AuthConfig{Enabled: true, Basic: true, User: "clint",
+	c := publish.AuthConfig{Enabled: true, Basic: true, User: "clint",
 		PassHash: "NOTTHEPASSWORD", PassSalt: "NOTTHESALT"}
-	got := whoMayOpenIt(c, false)
+	got := publish.WhoMayOpenIt(c, false)
 	if !strings.Contains(got, `"clint"`) {
 		t.Fatalf("the name is the half atrium can say, said %q", got)
 	}
@@ -43,7 +44,7 @@ func TestAPasswordIsReportedWithItsName(t *testing.T) {
 
 func TestALoginTurnedOnWithNothingBehindItSaysThat(t *testing.T) {
 	t.Parallel()
-	got := whoMayOpenIt(AuthConfig{Enabled: true}, false)
+	got := publish.WhoMayOpenIt(publish.AuthConfig{Enabled: true}, false)
 	if !strings.Contains(got, "nothing is configured") {
 		t.Fatalf("an empty login is its own state, said %q", got)
 	}
@@ -51,8 +52,8 @@ func TestALoginTurnedOnWithNothingBehindItSaysThat(t *testing.T) {
 
 func TestAProviderIsNamed(t *testing.T) {
 	t.Parallel()
-	c := AuthConfig{Enabled: true, Issuer: "https://keycloak.example/realms/x"}
-	got := whoMayOpenIt(c, false)
+	c := publish.AuthConfig{Enabled: true, Issuer: "https://keycloak.example/realms/x"}
+	got := publish.WhoMayOpenIt(c, false)
 	if !strings.Contains(got, c.Issuer) {
 		t.Fatalf("somebody has to know where they are being sent, said %q", got)
 	}

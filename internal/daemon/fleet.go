@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -156,15 +157,6 @@ func describeActivity(a *Activity) string {
 	return out
 }
 
-// plural writes a count with its noun, which is one `if` nobody should write
-// twice.
-func plural(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return itoa(n) + " " + noun + "s"
-}
-
 // shortDuration writes an age the way a person says it: `40s`, `12m`, `3h`.
 //
 // Never more than two units and never fractional. This is read at a glance in
@@ -285,7 +277,7 @@ func (d *Daemon) rosterWithin(exclude string, finished bool, within time.Duratio
 		p := Peer{
 			Handle: t.WireName, Alias: t.Alias, Title: t.DisplayTitle(), Status: t.Status,
 			Runner: t.Runner, Worktree: t.Worktree, Why: t.Why,
-			Waiting: waiting[t.ID], Want: want, Note: why, AskPeer: t.AskPeer, Parked: isParked(t),
+			Waiting: waiting[t.ID], Want: want, Note: why, AskPeer: t.AskPeer, Parked: small.IsParked(t),
 		}
 		if rep != nil && rep.Kind == store.ReportAsked {
 			p.Ask, p.Blocked, p.Since = rep.Ask, rep.Blocked, rep.At

@@ -267,8 +267,33 @@ func TestTheReportFormat(t *testing.T) {
 	want := "offset\trows\tcols\tcut\toutcome\tk\tadded\twhy\n" +
 		"9\t10\t30\t-\trepaired\t3\t3\t\n" +
 		"99\t40\t30\t50\tresize-filed\t0\t0\tk=10 gone=10\n" +
-		"totals\trepaired=1\tresize-filed=1\tno-match=0\tambiguous=0\tcancelled=0\tincomplete=0\tadded=3\n"
+		"totals\trepaired=1\tunfiled=0\tresize-filed=1\tno-match=0\tambiguous=0\tcancelled=0\tincomplete=0\tadded=3\n"
 	if got != want {
 		t.Fatalf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// THE REPLAY REPAIRS BOTH WAYS. A repaint one row EARLIER than the screen (conhost pulled `line 03` back out of its
+// history) must not file it twice, and one three rows LATER must still file the three rows it overwrote.
+func TestTheReplayFilesEachRowOnceWhicheverWayARepaintShifts(t *testing.T) {
+	t.Parallel()
+	push := "\r\n" + strings.Join(newRows(1, 10), "\r\n")
+	for name, c := range map[string]struct {
+		b    string
+		want []string
+	}{
+		"earlier": {nlines(1, 13) + repaint(lineRows(3, 12), false) + push, lineRows(1, 12)},
+		"later":   {nlines(1, 10) + repaint(append(lineRows(4, 10), newRows(11, 13)...), false) + push, lineRows(1, 10)},
+	} {
+		text := string(ReplayCut([]byte(c.b), "screen", []SizeCut{{0, 30, 10}}, 10))
+		var got []string
+		for _, l := range strings.Split(text, "\n") {
+			if l = strings.TrimRight(l, " \r"); strings.HasPrefix(l, "line ") {
+				got = append(got, l)
+			}
+		}
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s: history holds %q, want %q", name, got, c.want)
+		}
 	}
 }

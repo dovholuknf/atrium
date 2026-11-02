@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestNewContextAsksMidTurnButClearsOnlyBetweenTurns(t *testing.T) {
 	}
 	until(t, "the limit prompt mid-turn", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	ncAck(t, d, task)
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond) // wait: nothing may be typed while the screen shows a turn
 	if got := f.written(); strings.Contains(got, "/clear") {
 		t.Fatalf("typed /clear into a card whose screen shows a turn: %q", got)
 	}
@@ -63,7 +64,7 @@ func TestNewContextBusyNamesTheStepAndHowLong(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := d.StartNewContext(task.ID)
-	if !errors.Is(err, errNewContextBusy) {
+	if !errors.Is(err, cycle.ErrNewContextBusy) {
 		t.Fatalf("wanted busy, got %v", err)
 	}
 	if msg := err.Error(); !strings.Contains(msg, "step 1 of 3 (limit) for ") {

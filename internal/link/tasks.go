@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // TASKS OF AN ITEM, ON THE HUB.
@@ -458,8 +460,8 @@ func (p *Proxy) taskStart(ctx context.Context, st *hubstore.Store, c *controlMCP
 		callerRoom = strings.ToLower(ownerRoom)
 		spawnedBy = name
 		if callerRoom != "" && callerRoom != room {
-			if id, _, err := c.resolvePeer(ctx, callerRoom, name); err == nil {
-				spawnedByID = tagFor(callerRoom, id)
+			if id, _, err := c.ResolvePeer(ctx, callerRoom, name); err == nil {
+				spawnedByID = wire.TagFor(callerRoom, id)
 			}
 			spawnedBy = name + "@" + callerRoom
 		}
@@ -468,7 +470,7 @@ func (p *Proxy) taskStart(ctx context.Context, st *hubstore.Store, c *controlMCP
 	default:
 		in.ItemOwner = hubstore.OwnerHumanWord
 	}
-	out, err := c.launchOnRoom(ctx, in, "claude", room, callerRoom, spawnedBy, spawnedByID, "")
+	out, err := c.LaunchOnRoom(ctx, in, "claude", room, callerRoom, spawnedBy, spawnedByID, "")
 	p.taskLaunchDone(st, begun, room, out, err)
 }
 
@@ -487,23 +489,23 @@ func (p *Proxy) taskOwner(st *hubstore.Store, id string, w hubstore.Work) taskOw
 // taskLaunchDone writes what a launch came to.
 func (p *Proxy) taskLaunchDone(st *hubstore.Store, t hubstore.Task, room string, out launchOutput, err error) {
 	if err == nil {
-		_, bare := splitTag(out.Card)
+		_, bare := wire.SplitTag(out.Card)
 		if e := st.TaskLaunched(t.BacklogID, t.TaskID, room+"~"+bare, false, ""); e != nil {
 			log.Printf("[hub] task %s/%s launched on %s and the hub could not write it: %v", t.BacklogID, t.TaskID, room, e)
 		}
 		p.RecordAudit(room, "task-launch", t.BacklogID+"/"+t.TaskID)
 		return
 	}
-	var ref *refusedError
-	var be *boardError
+	var ref *ctl.RefusedError
+	var be *ctl.BoardError
 	switch {
 	case errors.As(err, &ref):
-		_ = st.TaskWait(t.BacklogID, t.TaskID, ref.msg)
-	case errors.As(err, &be) && be.code == http.StatusNotFound && be.Bare():
+		_ = st.TaskWait(t.BacklogID, t.TaskID, ref.Msg)
+	case errors.As(err, &be) && be.Code == http.StatusNotFound && be.Bare():
 		_ = st.TaskLaunchFailed(t.BacklogID, t.TaskID, "the room "+room+" is too old to run tasks: update it")
-	case errors.As(err, &be) && be.code != http.StatusBadGateway && be.code != http.StatusServiceUnavailable &&
-		be.code != http.StatusGatewayTimeout && be.code >= 400 && be.code < 500:
-		_ = st.TaskLaunchFailed(t.BacklogID, t.TaskID, be.msg)
+	case errors.As(err, &be) && be.Code != http.StatusBadGateway && be.Code != http.StatusServiceUnavailable &&
+		be.Code != http.StatusGatewayTimeout && be.Code >= 400 && be.Code < 500:
+		_ = st.TaskLaunchFailed(t.BacklogID, t.TaskID, be.Msg)
 	default:
 		_ = st.TaskLaunched(t.BacklogID, t.TaskID, "", true, "the launch went out and its answer was lost: "+err.Error())
 	}

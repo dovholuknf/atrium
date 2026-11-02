@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Every tool the worker and interviewer prompts name, and atrium_publish, is in the worker set of the HTTP control
@@ -26,7 +28,7 @@ func TestWorkerClassesServeEveryToolTheLeanPromptsName(t *testing.T) {
 			}
 		}
 	}
-	for _, c := range []ctlClass{classWorker, classWorkerResident} {
+	for _, c := range []ctl.Class{ctl.ClassWorker, ctl.ClassWorkerResident} {
 		for _, name := range want {
 			if !inClass(name, c) {
 				t.Errorf("class %d lacks %s", c, name)
@@ -41,7 +43,7 @@ func TestRoomPublishRelayedThroughHubAsk(t *testing.T) {
 	if !hubAskPath(hubPublishPath) {
 		t.Fatal("the publish path is not relayable")
 	}
-	ans := h.c.hubAsk(context.Background(), "alpha", RelayRequest{Op: "hub", From: "r-031", Method: "POST",
+	ans := h.c.hubAsk(context.Background(), "alpha", wire.RelayRequest{Op: "hub", From: "r-031", Method: "POST",
 		Path: hubPublishPath, Body: json.RawMessage(`{"title":"t","content":"hello"}`)})
 	if !ans.OK {
 		t.Fatalf("answer = %+v", ans)
@@ -50,7 +52,7 @@ func TestRoomPublishRelayedThroughHubAsk(t *testing.T) {
 	if err := json.Unmarshal(ans.Data, &out); err != nil || out.Slug == "" {
 		t.Fatalf("data = %s, %v", ans.Data, err)
 	}
-	bad := h.c.hubAsk(context.Background(), "alpha", RelayRequest{Op: "hub", From: "r-031", Method: "POST",
+	bad := h.c.hubAsk(context.Background(), "alpha", wire.RelayRequest{Op: "hub", From: "r-031", Method: "POST",
 		Path: hubPublishPath, Body: json.RawMessage(`{"content":"x"}`)})
 	if bad.OK {
 		t.Fatal("a new document without a title was accepted")

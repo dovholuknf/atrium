@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -476,9 +477,9 @@ func TestAMergedWorkerStaysWithTheGraceOff(t *testing.T) {
 // launchedMerged is a supervised worker in r's worktree that reported done, launched with `lifetime`.
 func launchedMerged(t *testing.T, d *Daemon, r cullRepo, lifetime string) *store.Task {
 	t.Helper()
-	d.hk.stopAfterReport = func(*Daemon, string) error { return nil }
+	d.hk.stopAfterReport = func(runnerStopper, string) error { return nil }
 	launcher := peerCard(t, d, "orchestrator")
-	task, err := d.Launch(LaunchRequest{
+	task, err := d.Launch(shared.LaunchRequest{
 		Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Lifetime: lifetime,
 		Tags: []string{OriginAgentTag, SubagentTag},
 	})
@@ -511,7 +512,7 @@ func TestALaunchRecordsItsLifetimeAndRefusesAnUnknownOne(t *testing.T) {
 	}
 	d := testDaemon(t)
 	r := newCullRepo(t, true)
-	if _, err := d.Launch(LaunchRequest{Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Lifetime: "forever"}); err == nil ||
+	if _, err := d.Launch(shared.LaunchRequest{Harness: slowHarness(t, d), Cwd: filepath.ToSlash(r.wt), Lifetime: "forever"}); err == nil ||
 		!strings.Contains(err.Error(), "lifetime") {
 		t.Fatalf("err = %v, want an unknown lifetime refused", err)
 	}

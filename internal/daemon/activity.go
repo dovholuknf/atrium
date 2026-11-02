@@ -26,9 +26,8 @@ import (
 // Activity states. Status says what a card needs; these say what it is doing.
 // Waiting is absent: the column and the wait chip already carry it.
 const (
-	ActivityThinking = "thinking"
-	ActivityTool     = "tool"
-	ActivityIdle     = "idle"
+	ActivityTool = "tool"
+	ActivityIdle = "idle"
 	// ActivityCompacting starts with PreCompact. There is no matching completion
 	// hook, so clear it on the next activity event or after compactingFor.
 	// This is transient activity; store.EventCompacted records the lasting event.
@@ -777,8 +776,10 @@ func (a *activityTracker) backgroundWork(taskID string) (int, time.Time) {
 
 // ActivityEvent is what a hook posts to /activity.
 type ActivityEvent struct {
-	Agent  string `json:"agent"`
-	TaskID string `json:"task_id,omitempty"`
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int    `json:"contract,omitempty"`
+	Agent    string `json:"agent"`
+	TaskID   string `json:"task_id,omitempty"`
 	// NameSource is "dir" when Agent was made up from the directory. Absent from
 	// a hook older than the field, which is read as a told name. Nothing here
 	// acts on it yet: activity only looks a card up.
@@ -804,6 +805,8 @@ type ActivityEvent struct {
 	// The one value acted on is `permission_prompt`, which says a dialog is on
 	// that terminal's screen. See dialogRaised.
 	Notification string `json:"notification,omitempty"`
+	// MissingTool is a known tool a shell answered command not found for, on a tool-end.
+	MissingTool string `json:"missing_tool,omitempty"`
 }
 
 // handleActivity records what a session is doing.
@@ -882,6 +885,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 	case "tool-end":
 		// The turn continues, so the model has the floor again.
 		d.act.set(taskID, ActivityThinking, "")
+		d.toolNotFound(taskID, in.MissingTool)
 	case "prompt":
 		// The operator answered, so the agent is working again. This is the
 		// other half of the needs-input signal: without it a card stays in
@@ -891,15 +895,15 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.turnResumed(taskID)
 		// A submit emptied the runner's prompt, so a model that still holds text
 		// was wrong, a swallowed Enter in a stuck paste above all. See resetLine.
-		if run := d.sup.get(taskID); run != nil {
-			if run.resetLine() {
+		if run := d.sup.Get(taskID); run != nil {
+			if run.ResetLine() {
 				log.Printf("[atrium] %s: prompt hook, typing model reset", taskID)
 			}
 		}
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
-		if run := d.sup.get(taskID); run == nil || !run.promptWasOwn(time.Now()) {
-			d.ka.coldRearm(taskID)
+		if run := d.sup.Get(taskID); run == nil || !run.PromptWasOwn(time.Now()) {
+			d.Ka.ColdRearm(taskID)
 		}
 		d.usage.prompted(taskID, cause)
 		d.itemTurnStarted(taskID, cause == store.UsageOperator)
@@ -932,7 +936,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityIdle, "")
 		// A turn that ran means its prompt was sent. See resetLineAtStop.
 		if in.Event == "idle" {
-			if run := d.sup.get(taskID); run != nil && run.resetLineAtStop() {
+			if run := d.sup.Get(taskID); run != nil && run.ResetLineAtStop() {
 				log.Printf("[atrium] %s: stop hook, typing model reset", taskID)
 			}
 		}

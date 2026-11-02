@@ -24,13 +24,16 @@ $GoFallbackBin = 'V:\work\tools\go\current\bin'
 if ($env:ATRIUM_NEW_BUILD) { $AtriumNew = $env:ATRIUM_NEW_BUILD }
 $Base         = 'C:\Users\claude\.atrium2'
 $HubDir       = Join-Path $Base 'hub'
-$RoomDir      = Join-Path $Base 'room'
-$RoomDb       = 'C:\Users\claude\.atrium\atrium.db'
-$HubHealth    = 'http://127.0.0.1:7778/_hub/health'
+# Every room on this machine is <root>\<room>: config (keys, database, what the room keeps beside it), logs, cards.
+# `atrium room --root --name` finds it there. See internal/cli/roomlayout.go.
+$AtriumRoot   = 'D:\atrium'
+$HubHealth   = 'http://127.0.0.1:7778/_hub/health'
 $HubRooms     = 'http://127.0.0.1:7778/_hub/rooms'
+$HubInventory = 'http://127.0.0.1:7778/_hub/inventory'
 # What the hub calls the room these scripts restart. A room COUNT says nothing about it: m1mini and sg4-wsl attach to
 # the same hub, so "rooms >= 1" passed on 2026-09-29 17:05 while this room was being refused.
 $RoomName     = 'claude-sg4'
+$RoomLogs     = Join-Path $AtriumRoot "$RoomName\logs"
 $RoomShutdown = 'http://127.0.0.1:7781/v1/shutdown'
 $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
 # A request the room answers from its store. `/v1/health` and the hub's view of the room both answer while the store is
@@ -40,9 +43,31 @@ $RoomServes   = 'http://127.0.0.1:7781/v1/settings'
 # The sg4-control room: a second room on this machine, for the orchestrator. Its own binary directory on purpose, so
 # Find-Atrium never matches it and a deploy of claude-sg4 never stops it. start-atrium-control.ps1 starts it.
 $CtlBinDir    = 'C:\Users\claude\.atrium\ctl-bin'
-$CtlDir       = Join-Path $Base 'ctl'
+$CtlName      = 'sg4-control'
+$CtlLogs      = Join-Path $AtriumRoot "$CtlName\logs"
 $CtlHealth    = 'http://127.0.0.1:7791/v1/health'
 $CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
+$CtlServes    = 'http://127.0.0.1:7791/v1/settings'
+# How each remote room is started, detached, over ssh: atrium-deploy.ps1 after a swap, start-atrium-remote.ps1 after a
+# failure. A start that finds the room's port answering leaves it alone and exits.
+$winEnv ='$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+  '$b = Join-Path $HOME ''.atrium\bin\atrium.exe'' ; '
+$sg3Detach = 'C:/Users/claude/.atrium/bin/atrium.exe room --detach --dir C:/Users/claude/.atrium/room ' +
+  '--db C:/Users/claude/.atrium/atrium.db'
+$macDetach = '~/.local/bin/atrium room --detach --dir /Users/claude/.atrium/room --db /Users/claude/.atrium/atrium.db ' +
+  '--agent 127.0.0.1:7777 --http 127.0.0.1:7781'
+$zrokEnv = '$e = Join-Path $HOME ''.atrium\toolchain\room-env.ps1'' ; if (Test-Path $e) { . $e } ; ' +
+  '$b = Join-Path $HOME ''.atrium-zrok\bin\atrium.exe'' ; '
+$zrokDetach = '& $b room --detach --isolated --dir (Join-Path $HOME ''.atrium-zrok\room'') ' +
+  '--db (Join-Path $HOME ''.atrium-zrok\atrium.db'') --agent 127.0.0.1:7787 --http 127.0.0.1:7791'
+$RemoteStart = [ordered]@{
+  'sg3'      = @{ Ssh = 'sg3'; Cmd = $sg3Detach }
+  'sgg'      = @{ Ssh = 'sgg'; Cmd = $winEnv + '& $b room --detach' }
+  'sgg-zrok' = @{ Ssh = 'sgg'; Cmd = $zrokEnv + $zrokDetach }
+  'm1mini'   = @{ Ssh = 'm1mini'; Cmd = 'zsh -lic "' + $macDetach + '"' }
+}
+# The room's own PATH record, written by room-toolchain.ps1, so a start never leans on the profile of whoever ran it.
+$ToolchainDir = Join-Path (Split-Path $AtriumBinDir) 'toolchain'
 
 # The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
 # The address rooms are told to dial: ATRIUM_LINK_ADVERTISE (host:port) when set, else this machine's IPv4 address on the
@@ -84,7 +109,7 @@ if (Test-Path $HubZitiIdentity) {
   $HubArgs += @('--board-transport', 'ziti', '--board-service', 'atrium-board')
   $HubArgs += @('--ci-hook-service', 'ziti-hook')
 }
-$RoomArgs = @('room', '--dir', $RoomDir, '--db', $RoomDb, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
+$RoomArgs = @('room', '--root', $AtriumRoot, '--name', $RoomName, '--http', '127.0.0.1:7781', '--agent', '127.0.0.1:7777')
 
 # $WhatIf is set by the script that dot-sources this, from its own -WhatIf switch.
 if (-not (Test-Path variable:WhatIf)) { $WhatIf = $false }
@@ -353,7 +378,7 @@ function Test-NewBuildStamped([string]$Path = $AtriumNew) {
 # Returns 'up', 'down' or '' when it has said neither yet. The room has no endpoint for this: /v1/settings and
 # /v1/health answer from the room itself whether or not the hub has it.
 function Get-RoomLink {
-  $err = Join-Path $Base 'room.err'
+  $err = Join-Path $RoomLogs 'room.err'
   if (-not (Test-Path $err)) { return '' }
   $last = Select-String -Path $err -Pattern '\[link\] (attached to hub|hub \S+: )' | Select-Object -Last 1
   if (-not $last) { return '' }
@@ -536,8 +561,8 @@ function Install-Atrium([string]$From = $AtriumNew) {
 # The room first asks each working card to wrap up and queues a wake on it (r-graceful-room-restart), bounded by its
 # restart_wrap_wait_s setting, so the force waits that long plus 45s. -Immediate on the calling script ($Immediate)
 # posts ?now=1 and skips the wrap-up.
-function Get-WrapWait {
-  try { return [int](Invoke-RestMethod $RoomServes -TimeoutSec 5).restart_wrap_wait_s } catch { return 300 }
+function Get-WrapWait([string]$Url = $RoomServes) {
+  try { return [int](Invoke-RestMethod $Url -TimeoutSec 5).restart_wrap_wait_s } catch { return 300 }
 }
 #
 # A 409 from the room means the pty host would die with the room's task, so this stop would end every runner and
@@ -581,6 +606,7 @@ function Stop-Room {
         }
       }
       if ($script:StopRoomRefused) { return }
+      Say "waiting up to ${wait}s for room pid $($p.ProcessId) to exit while its cards wrap up"
       try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
         Say "room still up after ${wait}s, force stop"
@@ -596,13 +622,16 @@ function Stop-Room {
 function Stop-Control {
   $ctl = Find-Control
   if (-not $ctl) { Say 'no running sg4-control room found'; return }
+  $post = $CtlShutdown
+  $wait = 45
+  if ($Immediate) { $post = "$CtlShutdown`?now=1" } else { $wait = 45 + (Get-WrapWait $CtlServes) }
   foreach ($p in $ctl) {
-    Invoke-Step "stop sg4-control pid $($p.ProcessId): POST $CtlShutdown, wait up to 45s, then force" {
-      try { Invoke-RestMethod $CtlShutdown -Method Post -TimeoutSec 8 | Out-Null }
+    Invoke-Step "stop sg4-control pid $($p.ProcessId): POST $post, wait up to ${wait}s, then force" {
+      try { Invoke-RestMethod $post -Method Post -TimeoutSec 8 | Out-Null }
       catch { Say "sg4-control shutdown post: $($_.Exception.Message)" }
-      try { Wait-Process -Id $p.ProcessId -Timeout 45 -ErrorAction Stop } catch {}
+      try { Wait-Process -Id $p.ProcessId -Timeout $wait -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
-        Say 'sg4-control still up after 45s, force stop'
+        Say "sg4-control still up after ${wait}s, force stop"
         Stop-Process -Id $p.ProcessId -Force
       }
     }
@@ -621,12 +650,16 @@ function Stop-Hub {
   }
 }
 
-# Backup keeps the previous run's log, since a redirect overwrites it.
-function Backup([string]$Name) {
-  $p = Join-Path $Base $Name
+# Backup keeps the previous run's log, since a redirect overwrites it. -Keep prunes to the newest that many copies.
+function Backup([string]$Name, [string]$Dir = $Base, [int]$Keep = 0) {
+  $p = Join-Path $Dir $Name
   if (Test-Path $p) {
     Invoke-Step "keep $p as $Name.<timestamp>" {
-      Copy-Item $p (Join-Path $Base "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+      Copy-Item $p (Join-Path $Dir "$Name.$(Get-Date -Format yyyyMMdd-HHmmss)") -Force
+      if ($Keep -gt 0) {
+        Get-ChildItem $Dir -Filter "$Name.*" | Sort-Object LastWriteTime -Descending | Select-Object -Skip $Keep |
+          ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }
+      }
     }
   }
 }
@@ -732,25 +765,41 @@ function Start-Wmi([string]$CommandLine) {
 # New-LaunchScript writes the .cmd a WMI start runs: WMI hands the child no copy of this process's environment, so the
 # ATRIUM_* variables it needs (ATRIUM_HOSTS, ATRIUM_DEBUG_INPUTLAG, ATRIUM_PRIORITY) are set in the script, and nothing
 # else is, so no credential in this shell is written to disk. A value that cannot sit inside set "..." is skipped.
-function New-LaunchScript([string]$Path, [string]$Command) {
+function New-LaunchScript([string]$Path, [string]$Command, [string[]]$PathRecord = @()) {
   $lines = @('@echo off')
   foreach ($e in (Get-ChildItem Env: | Where-Object { $_.Name -like 'ATRIUM_*' })) {
     if ($e.Value -match '["\r\n]') { continue }
     $lines += ('set "{0}={1}"' -f $e.Name, ($e.Value -replace '%', '%%'))
   }
+  $dirs = @($PathRecord | Where-Object { $_ -notmatch '["\r\n]' } | ForEach-Object { $_ -replace '%', '%%' })
+  if ($dirs) { $lines += ('set "PATH={0};%PATH%"' -f ($dirs -join ';')) }
   $lines += $Command
   Set-Content -Path $Path -Value $lines -Encoding ASCII
+}
+
+# Get-PathRecord answers the folders in the room's path.txt, go and jq among them, or none when there is no record.
+function Get-PathRecord([string]$Dir = $ToolchainDir) {
+  $f = Join-Path $Dir 'path.txt'
+  if (-not (Test-Path -LiteralPath $f)) { return @() }
+  return @(Get-Content -LiteralPath $f | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 # Start-Jobless starts "<exe> args > out 2> err" with no job object over it, by the route Get-StartRoute picks, and says
 # when the result is still in one. Returns the pid of the cmd that runs it. Throws only when neither route could start it.
 function Start-Jobless([string]$Command, [string]$Tag) {
   $route = Get-StartRoute (Test-ProcessInJob $PID)
+  $record = Get-PathRecord
+  if ($record) {
+    Say "$Tag gets the room's PATH record first: $($record -join ';')"
+    $env:Path = (@($record) + @($env:Path -split ';' | Where-Object { $_ -and $record -notcontains $_ })) -join ';'
+  } else {
+    Say "no PATH record at $(Join-Path $ToolchainDir 'path.txt'), so $Tag gets no go or jq it did not inherit. room-toolchain.ps1 writes one"
+  }
   $procId = $null
   if ($route -eq 'wmi') {
     try {
       $launch = Join-Path $Base "launch-$Tag.cmd"
-      New-LaunchScript $launch $Command
+      New-LaunchScript $launch $Command $record
       $procId = Start-Wmi "cmd.exe /c `"$launch`""
     } catch {
       Say "WARNING: could not start $Tag through WMI ($($_.Exception.Message)). falling back to breakaway, which leaves it in any outer job"
@@ -802,7 +851,8 @@ function Start-Room {
     Clear-SessionEnv
     Set-LiveHosts $h
     # Through cmd for the redirects, and in no job object, so stopping a room never takes this one with it and closing the terminal never takes the room.
-    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') > $Base\room.out 2> $Base\room.err" 'room'
+    New-Item -ItemType Directory -Force $RoomLogs | Out-Null
+    $null = Start-Jobless "`"$AtriumBin`" $($RoomArgs -join ' ') > $RoomLogs\room.out 2> $RoomLogs\room.err" 'room'
   }
   return $true
 }
@@ -864,6 +914,64 @@ function Test-RoomBackOnHub([string]$Name, [datetime]$After, [string]$Commit = '
   if (-not $r -or ([datetime]$r.since).ToUniversalTime() -lt $After.ToUniversalTime()) { return $false }
   if ($Commit -and $r.commit -and -not ($r.commit.StartsWith($Commit.Substring(0, [Math]::Min(7, $Commit.Length))))) { return $false }
   return $true
+}
+
+# Get-RoomSkew is one row per room the hub knows (the inventory, as the board's rooms tab reads it), judged against
+# $HubCommit by the commit each attached room says it runs (the same field the "set up inconsistently" tooltip compares).
+# A room never connected is inventory, not a room, and is left out. State is ok, STALE or offline.
+function Get-RoomSkew($Attached, $Inventory, [string]$HubCommit) {
+  $live = @{}
+  foreach ($a in @($Attached)) { $live[$a.name] = $a }
+  $names = @(@($Inventory) | Where-Object { $_.attached -or $_.first_seen } | ForEach-Object { $_.name }) + @($live.Keys)
+  foreach ($n in ($names | Sort-Object -Unique)) {
+    $a = $live[$n]
+    if (-not $a) { [pscustomobject]@{ Name = $n; Commit = ''; State = 'offline' }; continue }
+    $c = if ($a.commit) { [string]$a.commit } elseif ($a.setup -and $a.setup.commit) { [string]$a.setup.commit } else { '' }
+    $same = $c -and $HubCommit -and $c.StartsWith($HubCommit.Substring(0, [Math]::Min(7, $HubCommit.Length)))
+    [pscustomobject]@{ Name = $n; Commit = $c; State = $(if ($same) { 'ok' } else { 'STALE' }) }
+  }
+}
+
+# Format-RoomSkew is the line for one Get-RoomSkew row: `<room>  <commit>  ok`, `... STALE (hub <commit>)` or `<room>  offline`.
+function Format-RoomSkew($Row, [string]$HubCommit) {
+  $short = { param($c) if ($c) { $c.Substring(0, [Math]::Min(8, $c.Length)) } else { 'unknown' } }
+  switch ($Row.State) {
+    'offline' { "$($Row.Name)  offline" }
+    'ok' { "$($Row.Name)  $(& $short $Row.Commit)  ok" }
+    default { "$($Row.Name)  $(& $short $Row.Commit)  STALE (hub $(& $short $HubCommit))" }
+  }
+}
+
+# Get-DeployNext is the command that deploys the rooms Get-RoomSkew found stale or offline. sg4-control takes the
+# opt-in form and a room deploy does not know is named on its own line, to be done by hand.
+function Get-DeployNext([string[]]$Names, [string]$Script) {
+  $deployable = 'hub', 'claude-sg4', 'sg3', 'm1mini', 'sgg'
+  $rooms = @($Names | Where-Object { $_ -in $deployable })
+  $cmds = @()
+  if ($rooms.Count) { $cmds += "pwsh -NoProfile -File $Script -Rooms $($rooms -join ',')" }
+  if ($Names -contains 'sg4-control') { $cmds += "pwsh -NoProfile -File $Script -Control -IKnowItKillsMyShell" }
+  foreach ($n in ($Names | Where-Object { $_ -notin $deployable -and $_ -ne 'sg4-control' })) {
+    $cmds += "$n has no deploy target in atrium-deploy.ps1, redeploy it by hand"
+  }
+  $cmds
+}
+
+# Get-RoomSkewReport reads the hub and answers the lines, the rooms to deploy next and whether all is well. The hub's
+# commit is its local room's when it has one, else $Fallback (the commit just built).
+function Get-RoomSkewReport([string]$Fallback = '') {
+  try {
+    $att = @((Invoke-RestMethod $HubRooms -TimeoutSec 5).rooms)
+    $inv = @((Invoke-RestMethod $HubInventory -TimeoutSec 5).rooms)
+  } catch { return [pscustomobject]@{ Ok = $false; Lines = @("hub unreachable, rooms not checked: $($_.Exception.Message)"); Bad = @() } }
+  $hubCommit = $Fallback
+  $loc = $att | Where-Object { $_.local -and $_.commit } | Select-Object -First 1
+  if ($loc) { $hubCommit = [string]$loc.commit }
+  $rows = @(Get-RoomSkew $att $inv $hubCommit)
+  [pscustomobject]@{
+    Ok = -not ($rows | Where-Object { $_.State -ne 'ok' })
+    Lines = @($rows | ForEach-Object { Format-RoomSkew $_ $hubCommit })
+    Bad = @($rows | Where-Object { $_.State -ne 'ok' } | ForEach-Object { $_.Name })
+  }
 }
 
 # Get-RoomSshUser is the ssh login a room needs when it is not the caller's own, or '' to let ssh choose. The hub's room

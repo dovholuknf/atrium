@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // fakeBoardTasks stands in for the hub's own board API. It records the room
@@ -26,7 +29,7 @@ type fakeBoardTasks struct {
 
 func (f *fakeBoardTasks) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.sawRoom = r.Header.Get(RoomHeader)
+		f.sawRoom = r.Header.Get(wire.RoomHeader)
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/health":
@@ -43,10 +46,10 @@ func (f *fakeBoardTasks) handler() http.Handler {
 func ctlReq(agent, room string) *mcp.CallToolRequest {
 	h := http.Header{}
 	if agent != "" {
-		h.Set(AgentHeader, agent)
+		h.Set(ctl.AgentHeader, agent)
 	}
 	if room != "" {
-		h.Set(RoomHeader, room)
+		h.Set(wire.RoomHeader, room)
 	}
 	return &mcp.CallToolRequest{Extra: &mcp.RequestExtra{Header: h}}
 }
@@ -66,7 +69,7 @@ func TestPeersReadsIdentityFromHeadersAndScopesByRoom(t *testing.T) {
 		t.Fatalf("peers: %v", err)
 	}
 	if out.Me != "alice" {
-		t.Errorf("me = %q, want alice (read off %s)", out.Me, AgentHeader)
+		t.Errorf("me = %q, want alice (read off %s)", out.Me, ctl.AgentHeader)
 	}
 	if board.sawRoom != "beta" {
 		t.Errorf("board saw room %q, want the header forwarded as beta", board.sawRoom)
@@ -143,7 +146,7 @@ func TestStatusCountsWaiting(t *testing.T) {
 func TestLaunchForwardsBriefToTheRoom(t *testing.T) {
 	var gotBrief, gotRoom string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotRoom = r.Header.Get(RoomHeader)
+		gotRoom = r.Header.Get(wire.RoomHeader)
 		var body struct {
 			Brief string `json:"brief"`
 			Cwd   string `json:"cwd"`
@@ -656,7 +659,7 @@ func TestSayAttachesTheCallerFromTheHeader(t *testing.T) {
 		t.Fatal("the message was never posted to the board")
 	}
 	if board.gotFrom != "alice" {
-		t.Errorf("the board got from %q, want the caller read off %s", board.gotFrom, AgentHeader)
+		t.Errorf("the board got from %q, want the caller read off %s", board.gotFrom, ctl.AgentHeader)
 	}
 	if out.Delivered != "queued" {
 		t.Errorf("delivered = %q, want it carried through", out.Delivered)
@@ -687,12 +690,12 @@ func TestResolvePeerAcceptsAnAlias(t *testing.T) {
 		// answers to that and the alias does not shadow it.
 		"dotfiles": "shadow", "dotfiles-41800": "dot",
 	} {
-		id, _, err := c.resolvePeer(context.Background(), "", who)
+		id, _, err := c.ResolvePeer(context.Background(), "", who)
 		if err != nil || id != want {
 			t.Errorf("resolvePeer(%q) = %q, %v; want %q", who, id, err, want)
 		}
 	}
-	_, _, err := c.resolvePeer(context.Background(), "", "nobody")
+	_, _, err := c.ResolvePeer(context.Background(), "", "nobody")
 	if err == nil || !strings.Contains(err.Error(), "(@sa89)") {
 		t.Errorf("a miss does not list the aliases that would have worked: %v", err)
 	}
@@ -727,12 +730,12 @@ func TestADoneCardAnswersToItsAliasAndCanBeExited(t *testing.T) {
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	for who, want := range map[string]string{"sa21": "d1", "@sa21": "d1", "sa89": "live"} {
-		id, _, err := c.resolvePeer(context.Background(), "", who)
+		id, _, err := c.ResolvePeer(context.Background(), "", who)
 		if err != nil || id != want {
 			t.Errorf("resolvePeer(%q) = %q, %v, want %q", who, id, err, want)
 		}
 	}
-	if _, _, err := c.resolvePeer(context.Background(), "", "sa90"); err == nil {
+	if _, _, err := c.ResolvePeer(context.Background(), "", "sa90"); err == nil {
 		t.Error("a dead card's alias resolved")
 	}
 	_, out, err := c.exitHandler(context.Background(), ctlReq("orch", ""), exitInput{Card: "@sa21"})

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -169,13 +170,10 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 
 	// The shell's end is marked filed and writes nothing to the card.
 	d.CloseShell(task.ID)
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if got, _ := d.st.Run(sh.runID); got != nil && got.Filed {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool {
+		got, _ := d.st.Run(sh.runID)
+		return got != nil && got.Filed
+	})
 	if got, _ := d.st.Run(sh.runID); got == nil || !got.Filed {
 		t.Fatal("the shell's run was never marked filed")
 	}
@@ -185,13 +183,10 @@ func TestARunnerAndAShellOnOneCardHaveTheirOwnRuns(t *testing.T) {
 	if got, _ := d.st.Run(r.runID); got == nil || got.Filed {
 		t.Fatalf("the runner's run was marked filed by the shell: %+v", got)
 	}
-
 	// The runner's own exit files against the runner's run.
-	windDown(r, time.Second, nil, windDownKeyGap)
-	deadline = time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) && len(filedExits(t, d, task.ID)) == 0 {
-		time.Sleep(50 * time.Millisecond)
-	}
+	// Not Kill: its taskkill takes seconds on a loaded Windows runner, and the runner here has no children.
+	_ = r.cmd.Process.Kill()
+	testwait.PollEvery(testwait.HTTP, 20*time.Second, func() bool { return len(filedExits(t, d, task.ID)) != 0 })
 	if n := len(filedExits(t, d, task.ID)); n != 1 {
 		t.Fatalf("%d exit events after the runner ended, want 1", n)
 	}
@@ -205,8 +200,7 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: real ptys, processes and timers")
 	}
-	d, _, cancel, _ := startDaemon(t)
-	defer cancel()
+	d, _, _, _ := startDaemon(t)
 	shell, args := someShell(t)
 	dir := t.TempDir()
 	task := cardAt(t, d, "recorded", dir)
@@ -218,14 +212,12 @@ func TestAStartWritesItsRunRowBeforeTheLaunchIsComplete(t *testing.T) {
 		t.Skipf("could not start a runner here: %v", err)
 	}
 	r := d.sup.get(task.ID)
+	// Ended while the daemon still runs: a Run already shutting down races its wind-down with this kill.
 	t.Cleanup(func() {
-		windDown(r, time.Second, nil, windDownKeyGap)
-		select {
-		case <-r.done:
-		case <-time.After(10 * time.Second):
-		}
-		// The directory is released a beat after the process is reaped.
-		time.Sleep(500 * time.Millisecond)
+		// Not Kill: its taskkill takes seconds on a loaded Windows runner, and the runner here has no children.
+		_ = r.cmd.Process.Kill()
+		// Out of the supervisor means the terminal is closed and the directory released.
+		testwait.Poll(10*time.Second, func() bool { return d.sup.get(task.ID) == nil })
 	})
 	got, err := d.st.Run(r.runID)
 	if err != nil {

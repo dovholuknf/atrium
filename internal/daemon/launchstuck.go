@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -124,6 +126,62 @@ func (d *Daemon) heardSince(t *store.Task, started time.Time) bool {
 	return d.act.heard(t.ID)
 }
 
+// tookTurn is heardSince without the session hook: a SessionStart alone is a runner that came up, and a launch
+// prompt the runner dropped leaves exactly that, an idle worker nobody would call stuck.
+func (d *Daemon) tookTurn(t *store.Task, started time.Time) bool {
+	if t.ToolHookSeenAt != nil && t.ToolHookSeenAt.After(started) {
+		return true
+	}
+	if t.StopHookSeenAt != nil && t.StopHookSeenAt.After(started) {
+		return true
+	}
+	return d.act.turned(t.ID)
+}
+
+// launchRetypeLabel is the banner on a launch prompt atrium types again.
+var launchRetypeLabel = atriumLabel("your launch prompt, typed again because it never reached you:")
+
+// retypeLaunchPrompt types a launch prompt the runner dropped, once: its session hook spoke, no prompt or tool hook
+// followed, and the terminal has gone quiet with no dialog on it. A gate that holds tries again next tick.
+func (d *Daemon) retypeLaunchPrompt(t *store.Task, now time.Time) {
+	run := d.sup.get(t.ID)
+	if run == nil || run.buf == nil || run.started.IsZero() || run.resumed {
+		return
+	}
+	p := run.owedPrompt.Load()
+	if p == nil {
+		return
+	}
+	if d.tookTurn(t, run.started) {
+		run.owedPrompt.Store(nil)
+		return
+	}
+	outAt := run.lastOutputAt()
+	if !d.heardSince(t, run.started) || now.Sub(outAt) < TerminalMenuAfter || d.act.dialogOpen(t.ID) {
+		return
+	}
+	if hit := d.scanTerminal(t.ID, run, outAt); hit.prompt != "" || hit.menu {
+		return
+	}
+	wrote, err := d.typeLabelledGuardedAs(run, t.ID, launchRetypeLabel, *p, nil, store.DeliveryNotice)
+	if err != nil {
+		log.Printf("[atrium] could not retype the launch prompt of %s: %v", t.DisplayTitle(), err)
+		return
+	}
+	if wrote {
+		run.owedPrompt.Store(nil)
+		log.Printf("[atrium] %s took no turn on its launch prompt, typed it again", t.DisplayTitle())
+	}
+}
+
+// turned is whether a hook other than the session hook has set an activity for the card.
+func (a *activityTracker) turned(taskID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	return cur != nil && cur.What != ""
+}
+
 // neverHeard is a claude card with a live runner no hook has spoken for since
 // it started. Such a card has not "stopped without reporting": it never began.
 // False when there is no runner, or one with no recorded start.
@@ -175,7 +233,7 @@ func (d *Daemon) launchStuck(t *store.Task, now time.Time) *Escalation {
 			Minutes: int(now.Sub(since) / time.Minute), Text: text,
 		}
 	}
-	if d.heardSince(t, run.started) {
+	if d.tookTurn(t, run.started) {
 		// A permission atrium holds, and a dialog a Notification raised, are
 		// already on the card in their own words.
 		if t.Status == store.StatusNeedsPermission || d.act.dialogOpen(t.ID) || d.hasPendingPermission(t.ID) {
@@ -221,7 +279,7 @@ func (d *Daemon) launchStuck(t *store.Task, now time.Time) *Escalation {
 	// with no atrium hooks is healthy and silent. A RESUMED RUNNER IS NOT A LAUNCH:
 	// a card a restart reopened sits idle at its prompt with its first prompt long
 	// since run, and its restarted clock would call that "no activity since launch".
-	if !run.resumed && d.reportsToLauncher(t) && !hasTag(t.Tags, InterviewTag) && !hasTag(t.Tags, ReviewTag) && now.Sub(run.started) >= LaunchIdleAfter && silent >= TerminalMenuAfter {
+	if !run.resumed && d.reportsToLauncher(t) && !small.HasTag(t.Tags, InterviewTag) && !small.HasTag(t.Tags, ReviewTag) && now.Sub(run.started) >= LaunchIdleAfter && silent >= TerminalMenuAfter {
 		since := run.started.Add(LaunchIdleAfter)
 		mins := int(now.Sub(run.started) / time.Minute)
 		e := mkEsc(NoticeLaunchIdle, "", since, fmt.Sprintf("%s: no activity since launch, %d min", who, mins))

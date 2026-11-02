@@ -13,6 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // WORK, ON THE HUB: the item as the unit of work, one per backlog id, with every card attached. The rows are written when a
@@ -49,7 +50,7 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 		// A CARD'S TEST. The one write here a card makes, through the hub's own tool, so it is not the operator's route: it has
 		// its own checks (work_record.go), and the same loopback and origin guards.
 		switch {
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 		case !edge.LocalOperator(r):
 			crFail(w, http.StatusForbidden, "records are written only from the machine the hub runs on"+edge.ProxyNote(r))
@@ -64,7 +65,7 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 	if r.Method == http.MethodPost && strings.HasSuffix(rest, "/event") && !strings.Contains(strings.TrimSuffix(rest, "/event"), "/") {
 		switch {
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 		case !edge.LocalOperator(r):
 			crFail(w, http.StatusForbidden, "items are written only from the machine the hub runs on"+edge.ProxyNote(r))
@@ -75,7 +76,7 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 	}
 	if r.Method == http.MethodPost && rest != "" && !strings.Contains(rest, "/") {
 		switch {
-		case docsCrossOrigin.Check(r) != nil:
+		case wire.DocsCrossOrigin.Check(r) != nil:
 			crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 		case !edge.LocalOperator(r):
 			crFail(w, http.StatusForbidden, "items are written only from the machine the hub runs on"+edge.ProxyNote(r))
@@ -133,7 +134,7 @@ func (p *Proxy) serveWork(w http.ResponseWriter, r *http.Request, sub string) {
 // `code`, `doc` or `mixed`, which are what `landed` and `deployed` read. Either may be left out.
 func (p *Proxy) serveWorkSet(w http.ResponseWriter, r *http.Request, st *hubstore.Store, id string) {
 	switch {
-	case docsCrossOrigin.Check(r) != nil:
+	case wire.DocsCrossOrigin.Check(r) != nil:
 		crFail(w, http.StatusForbidden, "a page on another origin cannot write here")
 		return
 	case !edge.LocalOperator(r):

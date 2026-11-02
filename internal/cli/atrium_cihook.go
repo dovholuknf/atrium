@@ -7,6 +7,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +23,7 @@ func startCIHook(ctx context.Context, service string, store *hubstore.Store, ht 
 	ht.Add(link.TransportItem{
 		Name: link.TransportCIHook, Label: "CI hook", Kind: link.CIListenerKind, DefaultService: "ziti-hook",
 		Listen: func(svc, identity string) (net.Listener, error) {
-			return (&link.Ziti{Identity: identity, Service: svc}).ListenService(svc)
+			return (&transport.Ziti{Identity: identity, Service: svc}).ListenService(svc)
 		},
 		Handler: hook,
 	}, ciHookSeed(service))

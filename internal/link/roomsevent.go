@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // What the `rooms` event says, and how the hub knows whether it changed.
@@ -32,7 +34,7 @@ import (
 // attachedView is what `/_hub/rooms` answers: the rooms answering right now, by
 // name. Sorted, because the hub's map is not, and an order that changes between
 // two reads would read as a change to the fingerprint.
-func (p *Proxy) attachedView() []Attached {
+func (p *Proxy) attachedView() []wire.Attached {
 	rooms := p.hub.Rooms()
 	sort.Slice(rooms, func(i, j int) bool { return rooms[i].Name < rooms[j].Name })
 	for i := range rooms {
@@ -72,7 +74,7 @@ func (p *Proxy) roomsPayload() (payload []byte, fingerprint string) {
 	body := map[string]any{"rooms": names, "only": p.hub.Only(), "attached": attached}
 
 	// The fingerprint sees a copy with the volatile fields cleared.
-	steady := make([]Attached, len(attached))
+	steady := make([]wire.Attached, len(attached))
 	for i, r := range attached {
 		r.Idle = 0
 		r.Beat = time.Time{}

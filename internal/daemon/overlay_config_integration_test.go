@@ -2,7 +2,10 @@
 
 package daemon
 
-import "testing"
+import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"testing"
+)
 
 func TestALegacyModeBecomesTheMatchingFlag(t *testing.T) {
 	t.Parallel()
@@ -13,8 +16,8 @@ func TestALegacyModeBecomesTheMatchingFlag(t *testing.T) {
 		{"public", true, false},
 		{"private", false, true},
 	} {
-		c := ZrokConfig{Mode: tc.mode}
-		c.normalise()
+		c := publish.ZrokConfig{Mode: tc.mode}
+		c.Normalise()
 		if c.Public != tc.public || c.Private != tc.privat {
 			t.Fatalf("mode %q became public=%v private=%v, wanted %v and %v",
 				tc.mode, c.Public, c.Private, tc.public, tc.privat)
@@ -29,8 +32,8 @@ func TestALegacyModeBecomesTheMatchingFlag(t *testing.T) {
 // login in front of it. That was the default before and it stays the default.
 func TestAnEmptyConfigIsPrivate(t *testing.T) {
 	t.Parallel()
-	var c ZrokConfig
-	c.normalise()
+	var c publish.ZrokConfig
+	c.Normalise()
 	if !c.Private || c.Public {
 		t.Fatalf("an untouched config came out public=%v private=%v", c.Public, c.Private)
 	}
@@ -44,8 +47,8 @@ func TestAnEmptyConfigIsPrivate(t *testing.T) {
 // public, because that is what somebody ticking both is reaching for.
 func TestBothAtOnceSurvivesAndTheBoardGoesPublic(t *testing.T) {
 	t.Parallel()
-	c := ZrokConfig{Public: true, Private: true}
-	c.normalise()
+	c := publish.ZrokConfig{Public: true, Private: true}
+	c.Normalise()
 	if !c.Public || !c.Private {
 		t.Fatalf("ticking both came back public=%v private=%v", c.Public, c.Private)
 	}
@@ -58,8 +61,8 @@ func TestBothAtOnceSurvivesAndTheBoardGoesPublic(t *testing.T) {
 // The flags are what the operator just ticked, so they win.
 func TestTheFlagsBeatAStaleMode(t *testing.T) {
 	t.Parallel()
-	c := ZrokConfig{Mode: "private", Public: true}
-	c.normalise()
+	c := publish.ZrokConfig{Mode: "private", Public: true}
+	c.Normalise()
 	if c.Mode != "public" {
 		t.Fatalf("a stale mode survived the flags: %q", c.Mode)
 	}
@@ -73,7 +76,7 @@ func TestTheFlagsBeatAStaleMode(t *testing.T) {
 // save.
 func TestNormaliseIsIdempotent(t *testing.T) {
 	t.Parallel()
-	for _, start := range []ZrokConfig{
+	for _, start := range []publish.ZrokConfig{
 		{},
 		{Mode: "public"},
 		{Mode: "private"},
@@ -82,9 +85,9 @@ func TestNormaliseIsIdempotent(t *testing.T) {
 		{Public: true, Private: true},
 	} {
 		once := start
-		once.normalise()
+		once.Normalise()
 		twice := once
-		twice.normalise()
+		twice.Normalise()
 		if once != twice {
 			t.Fatalf("%+v normalised to %+v and then to %+v", start, once, twice)
 		}

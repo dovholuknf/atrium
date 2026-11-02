@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // atrium_deps, the control tool over /_hub/deps. Full class only: `workerTools` does not
@@ -55,7 +57,7 @@ type depsOutput struct {
 	Note  string      `json:"note,omitempty"`
 }
 
-func (c *controlMCP) registerDeps(s *mcp.Server, class ctlClass) {
+func (c *controlMCP) registerDeps(s *mcp.Server, class ctl.Class) {
 	addTool(s, class, &mcp.Tool{Name: "atrium_deps", Description: depsToolDesc},
 		audited(c, "ctl-deps", describeDeps, c.depsHandler))
 }
@@ -64,24 +66,15 @@ func (c *controlMCP) registerDeps(s *mcp.Server, class ctlClass) {
 func describeDeps(req *mcp.CallToolRequest, in depsInput, _ depsOutput) (string, string, bool) {
 	switch strings.TrimSpace(in.Action) {
 	case "add":
-		return roomOf(req), fmt.Sprintf("deps add %s waits on %s", in.Item, strings.Join(in.WaitsOn, ", ")), true
+		return ctl.RoomOf(req), fmt.Sprintf("deps add %s waits on %s", in.Item, strings.Join(in.WaitsOn, ", ")), true
 	case "rename":
-		return roomOf(req), fmt.Sprintf("deps rename %s to %s", in.From, in.To), true
+		return ctl.RoomOf(req), fmt.Sprintf("deps rename %s to %s", in.From, in.To), true
 	}
 	return "", "", false
 }
 
 // callerName is who added a gate, as the ticker will tell it: `handle@room`.
-func callerName(req *mcp.CallToolRequest) string {
-	agent, room := agentOf(req), roomOf(req)
-	switch {
-	case agent == "":
-		return ""
-	case room == "":
-		return agent
-	}
-	return agent + "@" + room
-}
+func callerName(req *mcp.CallToolRequest) string { return ctl.CallerName(req) }
 
 func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, in depsInput) (
 	*mcp.CallToolResult, depsOutput, error) {
@@ -95,15 +88,15 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	switch strings.TrimSpace(in.Action) {
 	case "add":
 		if item == "" || len(in.WaitsOn) == 0 {
-			return nil, out, &refusedError{"add needs item and waits_on"}
+			return nil, out, &ctl.RefusedError{Msg: "add needs item and waits_on"}
 		}
-		err := c.ask(ctx, http.MethodPost, "/_hub/deps", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/deps", "", map[string]any{
 			"repo": in.Repo, "item": item, "waits_on": in.WaitsOn, "why": in.Why,
 			"added_by": callerName(req)}, &out)
 		return nil, out, err
 	case "list", "check":
 		if in.Action == "check" && item == "" {
-			return nil, out, &refusedError{"check needs item"}
+			return nil, out, &ctl.RefusedError{Msg: "check needs item"}
 		}
 		if item != "" {
 			q.Set("item", item)
@@ -115,7 +108,7 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if open {
 			q.Set("open", "1")
 		}
-		if err := c.ask(ctx, http.MethodGet, "/_hub/deps?"+q.Encode(), "", nil, &out); err != nil {
+		if err := c.Ask(ctx, http.MethodGet, "/_hub/deps?"+q.Encode(), "", nil, &out); err != nil {
 			return nil, out, err
 		}
 		if in.Action == "check" {
@@ -128,28 +121,28 @@ func (c *controlMCP) depsHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, out, nil
 	case "ready":
 		if strings.TrimSpace(in.Dept) == "" {
-			return nil, out, &refusedError{"ready needs dept"}
+			return nil, out, &ctl.RefusedError{Msg: "ready needs dept"}
 		}
 		q.Set("dept", strings.TrimSpace(in.Dept))
-		err := c.ask(ctx, http.MethodGet, "/_hub/deps/ready?"+q.Encode(), "", nil, &out)
+		err := c.Ask(ctx, http.MethodGet, "/_hub/deps/ready?"+q.Encode(), "", nil, &out)
 		if err == nil && len(out.Items) == 0 {
 			out.Note = "nothing in docs/backlog/" + strings.TrimSpace(in.Dept) + " is ready"
 		}
 		return nil, out, err
 	case "rename":
 		if strings.TrimSpace(in.From) == "" || strings.TrimSpace(in.To) == "" {
-			return nil, out, &refusedError{"rename needs from and to"}
+			return nil, out, &ctl.RefusedError{Msg: "rename needs from and to"}
 		}
 		by := callerName(req)
 		if by == "" {
 			by = "control"
 		}
-		err := c.ask(ctx, http.MethodPost, "/_hub/deps/rename", "", map[string]any{
+		err := c.Ask(ctx, http.MethodPost, "/_hub/deps/rename", "", map[string]any{
 			"repo": in.Repo, "from": in.From, "to": in.To, "by": by}, &out)
 		return nil, out, err
 	case "clear":
-		return nil, out, &refusedError{"there is no clear. a gate clears when the board sees the work land, " +
+		return nil, out, &ctl.RefusedError{Msg: "there is no clear. a gate clears when the board sees the work land, " +
 			"or when a human clears it on the board. if a gate is wrong, ask the human"}
 	}
-	return nil, out, &refusedError{fmt.Sprintf("action %q is not one of add, list, check, ready, rename", in.Action)}
+	return nil, out, &ctl.RefusedError{Msg: fmt.Sprintf("action %q is not one of add, list, check, ready, rename", in.Action)}
 }

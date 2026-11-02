@@ -75,7 +75,7 @@ const bad = msg => { console.error("FAIL: " + msg); fail = true; };
     await page.evaluate(() => switchView("terms"));
     await page.waitForSelector('[data-id="old1"]');
     // Let the first pass settle so the throttle clock (cardsReadAt) is fresh, which is the busy board.
-    await page.waitForTimeout(1200);
+    await page.waitForFunction(() => cardsReadAt && !cardsLoading && !refreshInFlight, null, { timeout: 10000 });
     await page.evaluate(() => {
       window.__t = { alert: 0, row: 0 };
       const watch = () => {
@@ -93,7 +93,7 @@ const bad = msg => { console.error("FAIL: " + msg); fail = true; };
     const t = await page.evaluate(() => window.__t);
     console.log("event to alert " + Math.round(t.alert - sent) + "ms, alert to row " + Math.round(t.row - t.alert) + "ms");
     if (process.env.SHOT) {
-      await page.waitForTimeout(300);
+      await page.waitForFunction(() => document.getAnimations().every(a => a.playState !== "running" || a.effect.getComputedTiming().iterations === Infinity), null, { timeout: 3000 }).catch(() => {});
       await page.locator("#term-list, body").first().screenshot({ path: process.env.SHOT });
     }
     if (!process.env.NO_STARTING && t.row && !/starting/.test(await page.locator('[data-id="new1"]').textContent())) bad("the row does not say starting");

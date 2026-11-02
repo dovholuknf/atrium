@@ -136,6 +136,11 @@ sync("806", { ...ps, deps: deps({ download: () => ({ run: "806", date: "2026-10-
 eq(JSON.parse(fs.readFileSync(ps.suite, "utf8")).entries.map((e) => e.name), ["newBoard"], "a failure at or below since stays out, one in a newer run is added");
 eq(JSON.parse(fs.readFileSync(ps.suite, "utf8")).since, 802, "since is kept");
 
+const pi = world([row(900, ["TestNew"])]);
+fs.writeFileSync(pi.suite, ['{', ' "note": "n",', ' "since": 1,', ' "entries": []', '}', ''].join("\n"));
+sync("901", { ...pi, deps: deps({ download: () => ({ run: "901", date: "2026-10-30T00:00:00Z", sha: "abc", jobs: [] }) }) });
+eq(JSON.parse(fs.readFileSync(pi.suite, "utf8")).entries.map((e) => e.name), ["TestNew"], "the first entry goes into an inline empty list");
+
 fs.rmSync(tmp, { recursive: true, force: true });
 if (bad) { console.error(bad + " failure(s)"); process.exit(1); }
 console.log("flaky-sync: ok");

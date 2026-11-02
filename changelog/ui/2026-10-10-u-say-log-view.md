@@ -1,1 +1,0 @@
-Card details (the terminals drawer and the board peek) gain a chatter section: what the card said to other sessions and what they said to it, newest first, with the other party's name linking to its card, the time, the delivery state, the full text on a click, and a "more" that pages back. The daemon now keeps each say's text, up to 16000 bytes. (u-say-log-view)

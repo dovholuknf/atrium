@@ -49,6 +49,7 @@ jobs:
   # Which jobs and groups a dispatch runs, from its os and suite inputs. scripts/ci-select.sh decides, a push runs all.
   select:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       flaky_linux_go: ${{ steps.pick.outputs.flaky_linux_go }}
       flaky_linux_playwright: ${{ steps.pick.outputs.flaky_linux_playwright }}
@@ -61,7 +62,7 @@ jobs:
       check_windows: ${{ steps.pick.outputs.check_windows }}
       skipped: ${{ steps.pick.outputs.skipped }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: pick
         shell: bash
         env:
@@ -80,13 +81,14 @@ jobs:
     if: needs.select.outputs.flaky_linux_go == 'true'
     name: flaky-linux-go
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -95,7 +97,7 @@ jobs:
           node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-flaky-go-attempt-${{ github.run_attempt }}
@@ -108,13 +110,14 @@ jobs:
     if: needs.select.outputs.flaky_linux_playwright == 'true'
     name: flaky-linux-playwright
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -123,7 +126,7 @@ jobs:
           node: true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-flaky-board-attempt-${{ github.run_attempt }}
@@ -136,8 +139,9 @@ jobs:
     if: needs.select.outputs.flaky_macos_go == 'true'
     name: flaky-macos-go
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -146,7 +150,7 @@ jobs:
           node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-flaky-go-attempt-${{ github.run_attempt }}
@@ -159,8 +163,9 @@ jobs:
     if: needs.select.outputs.flaky_macos_playwright == 'true'
     name: flaky-macos-playwright
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -169,7 +174,7 @@ jobs:
           node: true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-flaky-board-attempt-${{ github.run_attempt }}
@@ -182,8 +187,9 @@ jobs:
     if: needs.select.outputs.flaky_windows_go == 'true'
     name: flaky-windows-go
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -192,7 +198,7 @@ jobs:
           node: false
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-flaky-go-attempt-${{ github.run_attempt }}
@@ -205,8 +211,9 @@ jobs:
     if: needs.select.outputs.flaky_windows_playwright == 'true'
     name: flaky-windows-playwright
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -215,7 +222,7 @@ jobs:
           node: true
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-flaky-board-attempt-${{ github.run_attempt }}
@@ -245,13 +252,14 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_ubuntu) }}
     name: check (ubuntu-latest, ${{ matrix.group }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container:
       image: ghcr.io/dovholuknf/atrium-ci:1
       options: --user 1001 --init
       env:
         USER: runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -259,7 +267,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-ubuntu-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -276,8 +284,9 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_macos) }}
     name: check (macos-latest, ${{ matrix.group }})
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -285,7 +294,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-macos-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -302,8 +311,9 @@ jobs:
         group: ${{ fromJSON(needs.select.outputs.check_windows) }}
     name: check (windows-latest, ${{ matrix.group }})
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ci-run
         with:
@@ -311,7 +321,7 @@ jobs:
           go: ${{ !startsWith(matrix.group, 'board') }}
 
       # What ci.sh left in build.claude/ci, kept on a pass too, so a slow test can be compared against a run that was fine.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ci-windows-latest-${{ matrix.group }}-attempt-${{ github.run_attempt }}
@@ -326,20 +336,21 @@ jobs:
     needs: [select, flaky-linux-go, flaky-linux-playwright, flaky-macos-go, flaky-macos-playwright, flaky-windows-go, flaky-windows-playwright, check-ubuntu, check-macos, check-windows]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       results: ${{ join(needs.*.result, ' ') }}
     permissions:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: rollup
         continue-on-error: true
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-rollup.js --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY" --failing-json failing-tests.json || true
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: failing-tests
@@ -355,11 +366,12 @@ jobs:
     needs: [select, rollup]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: body
         env:
           NEEDS_RESULTS: ${{ needs.rollup.result }} ${{ needs.rollup.outputs.results }}
@@ -369,6 +381,8 @@ jobs:
           echo "body=$(jq -c . "$path")" >> "$GITHUB_OUTPUT"
       - uses: dovholuknf/ziti-hook@main
         continue-on-error: true
+        # An unreachable hub must not hold the run open: the action has no timeout of its own.
+        timeout-minutes: 2
         with:
           transport: ziti
           url: http://ziti-hook.ziti/

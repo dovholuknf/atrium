@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -42,7 +43,7 @@ func TestASecondLaunchOntoAStartingCardAnswersTheFirst(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			got[i], errs[i] = d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID})
+			got[i], errs[i] = d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID})
 		}(i)
 	}
 	wg.Wait()
@@ -87,12 +88,12 @@ func TestALaunchOntoALiveCardLongAfterItStartedIsStillRefused(t *testing.T) {
 	defer d.sup.remove(task.ID)
 
 	d.startedAt.Store(task.ID, time.Now().Add(-2*repeatWindow))
-	if _, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID}); err == nil {
+	if _, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID}); err == nil {
 		t.Fatal("a launch onto a card whose runner has been up for minutes was answered as a repeat")
 	}
 
 	d.startedAt.Store(task.ID, time.Now())
-	again, err := d.Launch(LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID})
+	again, err := d.Launch(shared.LaunchRequest{Harness: h, Cwd: t.TempDir(), TaskID: task.ID})
 	if err != nil {
 		t.Fatalf("a launch inside the window was refused: %v", err)
 	}

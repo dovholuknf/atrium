@@ -211,7 +211,7 @@ func TestAHeldLockIsWaitedFor(t *testing.T) {
 	}
 	released := make(chan struct{})
 	go func() {
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond) // wait: a lock held for a while is what is under test
 		os.Remove(lock)
 		close(released)
 	}()
@@ -274,6 +274,7 @@ func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
 		t.Skip("slow: real file locking and writes")
 	}
 	env, path := claudeHome(t)
+	env.lockPoll = time.Millisecond
 	const n = 8
 	var dirs []string
 	for i := 0; i < n; i++ {

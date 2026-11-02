@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +13,8 @@ import (
 )
 
 // found answers Find with the one match the design describes.
-func foundSG4(name string) (RelayResult, error) {
-	return RelayResult{OK: true, To: "atrium-87300@claude-sg4", Card: "claude-sg4~s1"}, nil
+func foundSG4(name string) (hublink.RelayResult, error) {
+	return hublink.RelayResult{OK: true, To: "atrium-87300@claude-sg4", Card: "claude-sg4~s1"}, nil
 }
 
 // FE1, room side: a bare name that misses here is looked up, and the say goes on
@@ -59,8 +60,8 @@ func TestTwoEverywhereMatchesAreRefusedAndNothingIsSent(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.find = func(string) (RelayResult, error) {
-		return RelayResult{Code: http.StatusConflict, Error: `"orchestrator" names a card on more than one room: ` +
+	f.find = func(string) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Code: http.StatusConflict, Error: `"orchestrator" names a card on more than one room: ` +
 			"atrium-87300@claude-sg4 (@orchestrator), atrium-5120@sg3 (@orchestrator). say which, as name@room"}, nil
 	}
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orchestrator", "text": "hello"})
@@ -79,8 +80,8 @@ func TestAnEverywhereCardOnAnOfflineRoomIsHeld(t *testing.T) {
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
 	f.find = foundSG4
-	f.set(func(RelaySay) (RelayResult, error) {
-		return RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
+	f.set(func(hublink.RelaySay) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached"}, nil
 	})
 	_, out := say(t, d, map[string]string{"from": "sa1", "to": "orchestrator", "text": "x"})
 	if out["delivered"] != "held" {
@@ -97,7 +98,7 @@ func TestAHubThatDoesNotAnswerIsANoteOnTheMiss(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.find = func(string) (RelayResult, error) { return RelayResult{}, ErrRelayDown }
+	f.find = func(string) (hublink.RelayResult, error) { return hublink.RelayResult{}, hublink.ErrRelayDown }
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "orchestrator", "text": "x"})
 	if code != http.StatusNotFound || !strings.Contains(out["error"].(string), "the hub is not answering, so no card") {
 		t.Fatalf("%d %+v", code, out)
@@ -110,10 +111,10 @@ func TestAHubThatDoesNotAnswerIsANoteOnTheMiss(t *testing.T) {
 // An old hub refuses the op, which is the same 404 with its own note.
 func TestAnOldHubIsANoteOnTheMiss(t *testing.T) {
 	t.Parallel()
-	for name, find := range map[string]func(string) (RelayResult, error){
-		"refused the kind": func(string) (RelayResult, error) { return RelayResult{}, ErrRelayOld },
-		"unknown op": func(string) (RelayResult, error) {
-			return RelayResult{Code: 400, Error: `this hub does not know the relay op "find"`}, nil
+	for name, find := range map[string]func(string) (hublink.RelayResult, error){
+		"refused the kind": func(string) (hublink.RelayResult, error) { return hublink.RelayResult{}, hublink.ErrRelayOld },
+		"unknown op": func(string) (hublink.RelayResult, error) {
+			return hublink.RelayResult{Code: 400, Error: `this hub does not know the relay op "find"`}, nil
 		},
 	} {
 		d, f := roomDaemon(t)
@@ -134,8 +135,8 @@ func TestAMissCarriesTheHubsEverywhereList(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
 	peerCard(t, d, "sa1")
-	f.find = func(string) (RelayResult, error) {
-		return RelayResult{Code: 404, Error: `no card called "zzz" on another room. cards on every room: atrium-87300@claude-sg4`}, nil
+	f.find = func(string) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Code: 404, Error: `no card called "zzz" on another room. cards on every room: atrium-87300@claude-sg4`}, nil
 	}
 	code, out := say(t, d, map[string]string{"from": "sa1", "to": "zzz", "text": "x"})
 	if code != http.StatusNotFound || !strings.Contains(out["error"].(string), "atrium-87300@claude-sg4") {
@@ -158,12 +159,12 @@ func TestTellFallsThroughToTheEverywhereCard(t *testing.T) {
 	}
 }
 
-func roomPeers(t *testing.T, d *Daemon, query string) []RemotePeer {
+func roomPeers(t *testing.T, d *Daemon, query string) []hublink.RemotePeer {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	d.handleRoomPeers(rec, httptest.NewRequest(http.MethodGet, "/v1/peers/rooms"+query, nil))
+	d.HandleRoomPeers(rec, httptest.NewRequest(http.MethodGet, "/v1/peers/rooms"+query, nil))
 	var out struct {
-		Peers []RemotePeer `json:"peers"`
+		Peers []hublink.RemotePeer `json:"peers"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	if rec.Code != 200 {
@@ -179,7 +180,7 @@ func roomPeers(t *testing.T, d *Daemon, query string) []RemotePeer {
 func TestAnOldHubsPeersAddNothingToTheLocalList(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	f.peers = []RemotePeer{
+	f.peers = []hublink.RemotePeer{
 		{Handle: "a@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~1", Status: "working"},
 		{Handle: "b@sg3", Room: "sg3", Card: "sg3~2", Status: "working"},
 	}
@@ -196,7 +197,7 @@ func TestAnOldHubsPeersAddNothingToTheLocalList(t *testing.T) {
 func TestOnlyTheRowsThatCarryEverywhereAreAppended(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	f.peers = []RemotePeer{
+	f.peers = []hublink.RemotePeer{
 		{Handle: "a@claude-sg4", Room: "claude-sg4", Card: "claude-sg4~1", Status: "working", Everywhere: true},
 		{Handle: "b@sg3", Room: "sg3", Card: "sg3~2", Status: "working"},
 	}

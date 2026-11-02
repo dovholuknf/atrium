@@ -1,1 +1,0 @@
-A worker whose turn ended on a question for the human reads "your move" on NEEDS YOU, not "stuck", and its launcher gets no silent-stop notice. A turn that ended with no question and no report is still stuck. Item: r-stuck-vs-your-move.

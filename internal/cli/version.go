@@ -1,6 +1,7 @@
 package cli
 
 import (
+	_ "embed"
 	"fmt"
 	"runtime"
 	"runtime/debug"
@@ -22,17 +23,17 @@ import (
 // has been running since some morning weeks ago, and the only way to find out
 // what it is was to compare file timestamps.
 
-// Version is stamped at build time and is `dev` when it is not.
+// Version is stamped at build time. Empty means nothing stamped it, and versionInfoOf then answers `<base>+<shorthash>`.
 //
 // SET BY THE LINKER, not by editing this file:
 //
-//	go build -ldflags "-X github.com/dovholuknf/atrium/internal/cli.Version=v0.4.1"
+//	go build -ldflags "-X github.com/dovholuknf/atrium/internal/cli.Version=0.0.3"
 //
-// A constant edited by hand is a constant that is wrong between the edit and
-// the tag, and wrong again on every build off a branch. `dev` is the honest
-// answer for a binary built from a working tree, and saying so is worth more
-// than a number nobody set.
-var Version = "dev"
+// The base number is the VERSION file next to this one. scripts/version.sh is the rule every build path stamps with.
+var Version = ""
+
+//go:embed VERSION
+var baseVersion string
 
 // Commit is stamped the same way, and falls back to what Go recorded.
 //
@@ -73,6 +74,12 @@ func versionInfoOf(stampedCommit, stampedTree string) (version, commit, dirty st
 					dirty = "modified"
 				}
 			}
+		}
+	}
+	if version == "" {
+		version = strings.TrimSpace(baseVersion)
+		if len(commit) >= 7 {
+			version += "+" + commit[:7]
 		}
 	}
 	switch stampedTree {

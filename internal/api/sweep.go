@@ -278,6 +278,15 @@ func (s *Server) sweepGone(ctx context.Context, r *store.CardResource) string {
 				return "the ref is gone, found by the sweep"
 			}
 		}
+	case store.ResRemote:
+		if r.Detail != "" && isCheckout(filepath.FromSlash(r.Detail)) {
+			cctx, cancel := context.WithTimeout(ctx, closeGitWait)
+			_, err := gitIn(cctx, r.Detail, "remote", "get-url", r.Ref)
+			cancel()
+			if err != nil {
+				return "the remote is gone, found by the sweep"
+			}
+		}
 	case store.ResOverlay, store.ResIdentity:
 		if _, err := os.Stat(filepath.FromSlash(r.Ref)); errors.Is(err, os.ErrNotExist) {
 			return "gone from disk, found by the sweep"

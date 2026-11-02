@@ -1,1 +1,0 @@
-﻿The browser's back and forward mouse buttons work on the board again with a terminal in view. xterm cancelled every press on its screen, and every release once a runner turned mouse reporting on, so a terminal left in mouse mode ate back and forward until the browser was closed. The board now keeps buttons 3 and 4 away from xterm.

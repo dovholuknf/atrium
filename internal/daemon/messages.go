@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"io"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -117,7 +119,7 @@ func (d *Daemon) markDelivered(taskID, via string, ids []string) error {
 	for _, id := range ids {
 		_, _ = d.st.ItemUnblockDelivered(id)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 
@@ -127,8 +129,8 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	// the message into the context about to be cleared, and during the clear it
 	// would be lost. It stays queued and the hooks after the wake carry it. See
 	// newcontext.go.
-	held := d.holdingMessages(taskID)
-	if held && d.frozenForMove(taskID) {
+	held := d.HoldingMessages(taskID)
+	if held && d.FrozenForMove(taskID) {
 		return nil, nil
 	}
 	msgs, err := d.st.PendingMessages(taskID)
@@ -148,7 +150,7 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	}
 	// HELD FOR A DEPLOY: another agent's words wait for the wake, and the
 	// operator's still go. See roomhold.go.
-	if d.deployHeld(taskID) {
+	if d.DeployHeld(taskID) {
 		kept := msgs[:0:0]
 		for _, m := range msgs {
 			if m.FromPeer == "" {
@@ -212,7 +214,8 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 // session makes no tool calls for the permission hook to ride.
 func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Agent string `json:"agent"`
+		Contract int    `json:"contract,omitempty"`
+		Agent    string `json:"agent"`
 		// The card the runner was launched on, which binds this report to it by
 		// id. Empty from a hook older than the field, or a session atrium did
 		// not launch.
@@ -338,7 +341,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 			// nothing has spoken for and that holds nothing yet: a session that
 			// began before the session hook was wired has no other way to say.
 			announced := d.wasAnnounced(task.ID, in.Resume)
-			bare := task.ResumeID == "" && !d.anyAnnounced(task.ID) && d.sup.get(task.ID) == nil
+			bare := task.ResumeID == "" && !d.anyAnnounced(task.ID) && d.sup.Get(task.ID) == nil
 			if !announced && !bare {
 				rejected = true
 				log.Printf("[atrium] a turn on %s named conversation %s, which no session start "+
@@ -362,8 +365,8 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	d.act.setBackground(task.ID, in.SubagentsRunning)
 	d.act.setBackgroundWork(task.ID, in.BackgroundRunning)
 	// A runner picked up from the pty host has now said what it is running, so idle parking may judge it.
-	if run := d.sup.get(task.ID); run != nil {
-		run.reattached.Store(false)
+	if run := d.sup.Get(task.ID); run != nil {
+		run.ClearReattached()
 	}
 	// What the turn spent, read off its transcript once it settles. Every Stop
 	// ends a row, the one a message is about to continue included. See usage.go.
@@ -429,7 +432,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// instruction, so the turn is not over after all.
 	d.turnResumed(task.ID)
 	d.usage.prompted(task.ID, messagesCause(msgs))
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	_, _ = w.Write(out)
 }
 
@@ -474,7 +477,7 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 		// `thinking` back from the tool-end that follows the report, and this
 		// Stop is the only thing left that can put it to idle.
 		d.act.set(taskID, ActivityIdle, "")
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		return
 	}
 	if err := d.st.SetStatusBecause(taskID, store.StatusNeedsInput, reason); err != nil {
@@ -482,7 +485,7 @@ func (d *Daemon) turnEndedBecause(taskID, reason string) {
 		return
 	}
 	d.act.set(taskID, ActivityIdle, "")
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // turnPaused is a turn that ended with the session's own subagents still out.
@@ -497,7 +500,7 @@ func (d *Daemon) turnPaused(taskID string) {
 		d.pending.reset(taskID)
 	}
 	d.act.set(taskID, ActivityIdle, "")
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // turnResumed moves a card back to running when the agent starts working
@@ -517,7 +520,7 @@ func (d *Daemon) turnResumed(taskID string) {
 		return
 	}
 	d.act.set(taskID, ActivityThinking, "")
-	d.publishTask(taskID)
+	d.Publish(taskID)
 }
 
 // handleMessage queues something to say to a session.
@@ -545,16 +548,16 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		Force bool `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if strings.TrimSpace(body.Text) == "" {
-		writeJSONErr(w, http.StatusBadRequest, fmt.Errorf("a message needs some text"))
+		small.WriteJSONErr(w, http.StatusBadRequest, fmt.Errorf("a message needs some text"))
 		return
 	}
 	when, err := parseWhen(body.When)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	taskID := r.PathValue("id")
@@ -593,7 +596,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !d.peerLimit.allow(from) {
-			writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+			small.WriteJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
 				"%s has sent %d messages in the last minute, which is the limit",
 				from, peerSendsPerMinute))
 			return
@@ -623,7 +626,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		end, err := d.followMoved(gated)
 		switch {
 		case err != nil:
-			writeJSONErr(w, http.StatusConflict, err)
+			small.WriteJSONErr(w, http.StatusConflict, err)
 			return
 		case end.Live != nil:
 			taskID, gated = end.Live.ID, end.Live
@@ -635,7 +638,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if gate == sayParked && (from == "" || body.Wake || d.fromFamily(from, gated)) {
 		if err := d.unpark(taskID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		woke, gate = true, sayOK
@@ -644,7 +647,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if gate == sayGone && gated != nil && resumable(gated) &&
 		(from == "" || body.Wake || (parseKind(body.Kind) != KindFYI && d.fromFamily(from, gated))) {
 		if err := d.wakeGone(taskID, wakeVia(from)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		woke, gate = true, sayOK
@@ -666,7 +669,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			km, kerr = d.st.QueueMessage(taskID, body.Text)
 		}
 		if kerr != nil {
-			writeJSONErr(w, http.StatusInternalServerError, kerr)
+			small.WriteJSONErr(w, http.StatusInternalServerError, kerr)
 			return
 		}
 		out := map[string]any{
@@ -681,7 +684,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			out["via"] = rec.Via
 			d.peerSaid(from, gated, body.Text, owedKind(body.Kind, body.Reply))
 		}
-		d.publishTask(taskID)
+		d.Publish(taskID)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(out)
 		return
@@ -724,7 +727,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	//
 	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
 	// words still go. See roomhold.go.
-	holding := d.holdingFrom(taskID, from)
+	holding := d.HoldingFrom(taskID, from)
 	// FORCE: types now, past the typing gate and the turn rule. Only a dialog or a new-context cycle refuses it, and
 	// it says so rather than queueing, because the sender asked for now.
 	if body.Force && gate == sayOK && !woke {
@@ -740,10 +743,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if _, waking := d.kept.Load(taskID); waking {
 		woke = true
 	}
-	if run := d.sup.get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	if run := d.sup.Get(taskID); run != nil && !holding && !woke && !byHooks && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		if wrote {
@@ -755,7 +758,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				ev["kind"] = k
 			}
 			if err := d.st.AppendEvent(taskID, store.EventPrompted, ev); err != nil {
-				writeJSONErr(w, http.StatusInternalServerError, err)
+				small.WriteJSONErr(w, http.StatusInternalServerError, err)
 				return
 			}
 			d.askAnswered(taskID, "the operator")
@@ -766,7 +769,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 			if from == "" {
 				d.seenAnswered(taskID, store.SeenMessage)
 			}
-			d.publishTask(taskID)
+			d.Publish(taskID)
 			out := map[string]any{"delivered": "terminal", "when": whenWord(waitTurn)}
 			if from != "" && terr == nil {
 				rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
@@ -799,7 +802,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		m, err = d.st.QueueMessage(taskID, body.Text)
 	}
 	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
+		small.WriteJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	// Only once the message is somewhere. The operator saying something to a
@@ -818,7 +821,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if from == "" {
 		d.seenAnswered(taskID, store.SeenMessage)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	// A queued message keeps trying to type in on the same backoff as the bus,
 	// whoever sent it, so it lands the moment the line clears. See
 	// pendinginject.go.
@@ -861,9 +864,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if holding {
 		// Queued, never typed, whatever the hooks report about reach.
 		out["delivered"] = "queued"
-		out["warning"] = newContextHoldNote
-		if !d.holdingMessages(taskID) {
-			out["warning"] = d.deployHoldNote()
+		out["warning"] = cycle.NewContextHoldNote
+		if !d.HoldingMessages(taskID) {
+			out["warning"] = d.DeployHoldNote()
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -883,12 +886,12 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	task, err := d.st.Get(taskID)
 	if err != nil {
-		writeJSONErr(w, http.StatusNotFound, err)
+		small.WriteJSONErr(w, http.StatusNotFound, err)
 		return
 	}
 	note := strings.TrimSpace(task.Note)
 	if note == "" {
-		writeJSONErr(w, http.StatusBadRequest, errString("there is nothing written down to send"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("there is nothing written down to send"))
 		return
 	}
 
@@ -899,13 +902,13 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.ContentLength != 0 {
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil && err != io.EOF {
-			writeJSONErr(w, http.StatusBadRequest, err)
+			small.WriteJSONErr(w, http.StatusBadRequest, err)
 			return
 		}
 	}
 	when, err := parseWhen(body.When)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	waitTurn := d.waitsForTurn(taskID, when)
@@ -915,10 +918,10 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 	// operator's line is part written, or mid-turn for a note that waits for
 	// the turn. Same gate as `handleMessage` above.
 	typed := false
-	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	if run := d.sup.Get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		var err error
 		if typed, err = d.typeThroughGate(run, taskID, "", note); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -926,7 +929,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
 			"text": note, "via": "terminal", "from": "note",
 		}); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		delivered = "terminal"
@@ -937,7 +940,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		}
 		m, err := queue(taskID, note)
 		if err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			small.WriteJSONErr(w, http.StatusInternalServerError, err)
 			return
 		}
 		d.deferPeerInjection(taskID, m.ID, "", note, "", waitTurn)
@@ -955,7 +958,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 		// the worst case is sending it twice, which you can see.
 		log.Printf("[atrium] sent the note on %s but could not clear it: %v", taskID, err)
 	}
-	d.publishTask(taskID)
+	d.Publish(taskID)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"delivered": delivered, "when": whenWord(waitTurn)})
@@ -969,7 +972,7 @@ func (d *Daemon) handleSendNote(w http.ResponseWriter, r *http.Request) {
 // ONE GATE FOR EVERY AUTOMATED WRITE. A peer's text carries its banner. The
 // operator's channel, a note and an action carry none, so a slash command still
 // reaches the runner as one.
-func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, error) {
+func (d *Daemon) typeThroughGate(run Runner, taskID, from, text string) (bool, error) {
 	banner := ""
 	if from != "" {
 		banner = peerBanner(from)
@@ -984,19 +987,19 @@ func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, 
 
 // typeLabelledThroughGate is typeThroughGate with the label given whole, for
 // text that is not a peer's but is not the operator's either. See atriumLabel.
-func (d *Daemon) typeLabelledThroughGate(run *runner, taskID, banner, text string) (bool, error) {
+func (d *Daemon) typeLabelledThroughGate(run Runner, taskID, banner, text string) (bool, error) {
 	return d.typeLabelledGuarded(run, taskID, banner, text, nil)
 }
 
 // typeLabelledGuarded is typeLabelledThroughGate with one more check, run under
 // the input lock at the moment of writing. See `runner.injectPeerIf`.
-func (d *Daemon) typeLabelledGuarded(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
+func (d *Daemon) typeLabelledGuarded(run Runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	return d.typeLabelledGuardedAs(run, taskID, banner, text, ok, bannerKind(banner))
 }
 
 // typeLabelledGuardedAs is typeLabelledGuarded that records the delivery under kind when it wrote, and records
 // nothing for an empty one. See turncost.go.
-func (d *Daemon) typeLabelledGuardedAs(run *runner, taskID, banner, text string, ok func() bool, kind string) (bool, error) {
+func (d *Daemon) typeLabelledGuardedAs(run Runner, taskID, banner, text string, ok func() bool, kind string) (bool, error) {
 	wrote, err := d.typePayload(run, taskID, banner, text, ok)
 	if wrote && err == nil && kind != "" && kind != store.DeliveryOperator {
 		d.noteDelivery(taskID, "atrium", kind)
@@ -1004,16 +1007,10 @@ func (d *Daemon) typeLabelledGuardedAs(run *runner, taskID, banner, text string,
 	return wrote, err
 }
 
-func (d *Daemon) typePayload(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
+func (d *Daemon) typePayload(run Runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
 		payload = screen.BracketedPaste(text)
 	}
-	return run.injectPeerIf(banner, payload, ok)
-}
-
-func writeJSONErr(w http.ResponseWriter, code int, err error) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	return run.InjectPeerIf(banner, payload, ok)
 }

@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -59,6 +59,8 @@ const (
 type roomLaunch struct {
 	dir, db, human, agent string
 	isolated, upgrades    bool
+	// root and name are the room's layout, which also gives it its card root. See roomlayout.go.
+	root, name string
 }
 
 // restartArgs is the command line the detached restarter runs.
@@ -84,6 +86,9 @@ func (l roomLaunch) args(extra ...string) []string {
 	if l.upgrades {
 		args = append(args, "--accept-upgrades")
 	}
+	if l.name != "" {
+		args = append(args, "--root", l.root, "--name", l.name)
+	}
 	return args
 }
 
@@ -107,8 +112,8 @@ func restartLog(dir, format string, args ...any) {
 }
 
 // onHubRestart is the room's OnRestart handler: park, schedule, wind down.
-func onHubRestart(boardURL string, l roomLaunch, stop func()) func(link.RestartAsk) {
-	return func(ask link.RestartAsk) {
+func onHubRestart(boardURL string, l roomLaunch, stop func()) func(wire.RestartAsk) {
+	return func(ask wire.RestartAsk) {
 		why := strings.TrimSpace(ask.Why)
 		if ask.PtyHost {
 			restartLog(l.dir, "the hub asked this room to restart its pty host, for: %q", why)

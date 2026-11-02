@@ -2046,8 +2046,7 @@ function Build-Checkout {
     $outDir = Join-Path $work "${os}_$goarch"
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     $Binary = Join-Path $outDir "atrium$ext"
-    $ver = (git -C $checkout describe --tags --exact-match 2>$null)
-    if (-not $ver) { $ver = 'dev' }
+    $ver = (& "$checkout/scripts/version.ps1")
     $commit = (git -C $checkout rev-parse HEAD 2>$null)
     # Tracked files only, as the Makefile does. See `Tree` in internal/cli/version.go.
     $tree = if (git -C $checkout status --porcelain --untracked-files=no 2>$null) { 'modified' } else { 'clean' }

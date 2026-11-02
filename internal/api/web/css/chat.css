@@ -13,3 +13,10 @@ main > #chat { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: col
    terminal.css, and the bridge across the gutter placed by `placeTabBridge`, which wears this pane's frame. */
 .chat-layout { position: relative; }
 .chat-pane { border: var(--framew, 1px) solid var(--framec, var(--stroke-dim)); }
+/* The new item agent's bubble (js/newitem.js), the same frame as the chat tab's, floating at the corner. */
+#newitem-open { margin: 0 0 var(--sp-3); }
+#newitem-panel { position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 50; width: min(420px, calc(100vw - 32px));
+  height: min(560px, calc(100vh - 96px)); display: flex; flex-direction: column; border-radius: var(--r-md); overflow: hidden;
+  background: var(--shell-0); border: var(--framew, 1px) solid var(--framec, var(--stroke-dim)); box-shadow: var(--shadow-pop); }
+#newitem-panel[hidden] { display: none; }
+#newitem-note { margin: 0; padding: 12px; }

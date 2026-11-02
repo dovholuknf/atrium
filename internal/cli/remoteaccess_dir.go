@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 )
 
 // runningRoomDir is the directory the room running on this machine keeps its certificate in, as that room recorded it
@@ -32,7 +32,7 @@ func sameDir(a, b string) bool {
 }
 
 func holdsRoomCert(dir string) bool {
-	return dir != "" && link.Keys{Dir: dir}.HasRoomCert()
+	return dir != "" && transport.Keys{Dir: dir}.HasRoomCert()
 }
 
 // pickRoomDir is the directory remote-access reads and writes, and a line saying which room is running here.

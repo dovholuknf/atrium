@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/pulls"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -34,7 +35,7 @@ func (f *changesFix) get(query string) (int, map[string]any) {
 	return res.StatusCode, m
 }
 
-func (f *changesFix) ok(query string) *ChangesView {
+func (f *changesFix) ok(query string) *pulls.ChangesView {
 	f.t.Helper()
 	res, err := http.Get(f.ts.URL + "/v1/tasks/" + f.task.ID + "/changes" + query)
 	if err != nil {
@@ -45,7 +46,7 @@ func (f *changesFix) ok(query string) *ChangesView {
 		body, _ := io.ReadAll(res.Body)
 		f.t.Fatalf("changes%s answered %d %s", query, res.StatusCode, body)
 	}
-	var v ChangesView
+	var v pulls.ChangesView
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
 		f.t.Fatal(err)
 	}

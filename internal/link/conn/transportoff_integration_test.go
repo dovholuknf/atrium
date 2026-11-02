@@ -76,7 +76,7 @@ func TestTurningZitiOffKeepsTheLinkOnDirectAndOnResumes(t *testing.T) {
 
 	// No further dial of ziti, not by the climb, not by the probe, not by a data dial.
 	n := ziti.n()
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // wait: a negative check, ziti must not be dialled while off
 	if got := ziti.n(); got != n {
 		t.Fatalf("ziti was dialled %d more times while turned off", got-n)
 	}

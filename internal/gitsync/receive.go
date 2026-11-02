@@ -355,6 +355,10 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 		return
 	}
 	dir, ok := rc.dir(ref)
+	if !ok && c.Kind != CallerOperator {
+		_ = rc.h.Store().InitFromForge(r.Context(), ref)
+		dir, ok = rc.dir(ref)
+	}
 	if !ok {
 		if why := rc.cannotCreate(ref, c.Kind == CallerOperator); why != "" {
 			adv(why)
@@ -532,6 +536,9 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	// DONE BEFORE THE LOCK, none of it depends on what the lock holds: the verdict on each ref's name (a process
 	// per ref), and what the owners' rooms say about the cards that own the branches this push names. The owner
 	// is re-read under the lock, and an answer is used only for the owner it was asked about.
+	if _, ok := rc.dir(ref); !ok && !who.Operator {
+		_ = rc.h.Store().InitFromForge(ctx, ref)
+	}
 	names := rc.checkNames(ctx, req)
 	asked := rc.askOwners(ctx, ref.Name(), who, req)
 

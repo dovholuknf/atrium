@@ -927,6 +927,47 @@ func (s *Store) ClearExitAsked(taskID string) error {
 	})
 }
 
+// MarkLive records that a runner started on the card. Set at the start rather than at a stop, since a reboot or a
+// crash gives a stop no chance to write.
+func (s *Store) MarkLive(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET live_at = ? WHERE id = ?`, ts(s.now()), taskID)
+		return err
+	})
+}
+
+// ClearLive takes the card off LiveCards: its runner ended on its own, which is a close.
+func (s *Store) ClearLive(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET live_at = '' WHERE id = ?`, taskID)
+		return err
+	})
+}
+
+// LiveCards is every card a runner started on that nobody closed on purpose and that is not archived, oldest start
+// first. A card a failure killed is on it, whatever its status.
+func (s *Store) LiveCards() ([]string, error) {
+	var ids []string
+	err := s.guard(func() error {
+		ids = nil
+		rows, err := s.db.Query(`SELECT id FROM task WHERE live_at != '' AND exit_asked_at = '' AND archived_at = ''
+			ORDER BY live_at, id`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+		return rows.Err()
+	})
+	return ids, err
+}
+
 // ResumeHolders is every card other than `except` whose resume id is
 // `resumeID`, newest first. All of them, because a newer dead holder must not
 // hide an older live one.
@@ -1822,7 +1863,8 @@ var _ = time.Time{}
 // cannot answer what has been running this week.
 //
 // Same rules as Prune about what may be taken, for the same reason: shelving
-// says the work is coming back.
+// says the work is coming back. A card a failure killed is coming back too, so a
+// live card nobody closed stays (see LiveCards).
 func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error) {
 	want := statuses
 	if len(want) == 0 {
@@ -1848,7 +1890,8 @@ func (s *Store) Archive(olderThan time.Duration, statuses ...string) (int, error
 			`UPDATE task SET archived_at = ?
 			 WHERE archived_at = ''
 			   AND status IN (`+placeholders(len(keep))+`)
-			   AND last_activity_at <= ?`, args...)
+			   AND last_activity_at <= ?
+			   AND (live_at = '' OR exit_asked_at != '')`, args...)
 		if err != nil {
 			return err
 		}

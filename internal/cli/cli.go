@@ -113,15 +113,15 @@ func newRoot() *cobra.Command {
 			"shows every one of them on one board.",
 	}
 	root.AddCommand(newDaemon(),
-		newJoin(), newLeave(), newStop(), newRestartPtyHost(), newLaunch(), newTaskCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
-		newName(), newFinish(), newReady(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
-		newAnswer(), newOpen(), newNew(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newArchiveWorkers(),
-		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd())
+		newJoin(), newLeave(), newStop(), newRestartPtyHost(), newLaunch(), newTaskCmd(), newCdCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
+		newName(), newFinish(), newReady(), newWait(), newPeers(), newTell(), newControl(), newMCPRelay(), newVersion(), newAsk(),
+		newAnswer(), newOpen(), newTangent(), newNew(), newTwig(), newClose(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newLandCheck(), newArchiveWorkers(),
+		newPtyHost(), newResources(), newSSH(), newSSHProxy(), backlogCmd(), reportsCmd(), newShepherd(), ciCmd(), mergeCmd(), newWorktree(), newUpdate())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/archive/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")
 	backups.AddCommand(hubRestoreCmd("atrium-"))
-	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd())
+	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), newCIHookCmd(), newSubscribe(), newUnsubscribe(), newSubscriptions(), backups, dbCmd(), ledgerCmd(), usageCmd(), newAdapter())
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "run", "room":

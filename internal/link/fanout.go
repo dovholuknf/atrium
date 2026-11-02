@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"io"
 	"log"
 	"net"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/base/cardcolors"
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The aggregate view: every room, one board.
@@ -219,12 +221,12 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 			obj["room"] = a.room
 			if m.idField != "" {
 				if id, ok := obj[m.idField].(string); ok {
-					obj[m.idField] = tagFor(a.room, id)
+					obj[m.idField] = wire.TagFor(a.room, id)
 				}
 			}
 			if m.taskField != "" {
 				if id, ok := obj[m.taskField].(string); ok {
-					obj[m.taskField] = tagFor(a.room, id)
+					obj[m.taskField] = wire.TagFor(a.room, id)
 				}
 			}
 			all = append(all, obj)
@@ -269,7 +271,7 @@ func (p *Proxy) aggregate(w http.ResponseWriter, r *http.Request, spec string) b
 // their own collapsed group and to refuse to open any of them. Nothing here is
 // counted anywhere: every badge on the board is live only, because a number you
 // cannot act on is a number that makes you look.
-func (p *Proxy) remembered(spec string, live []Attached) []any {
+func (p *Proxy) remembered(spec string, live []wire.Attached) []any {
 	if spec != "/v1/tasks" {
 		return nil
 	}
@@ -287,7 +289,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 	}
 	here := map[string]bool{}
 	for _, a := range live {
-		here[keyOf(a.Name)] = true
+		here[wire.KeyOf(a.Name)] = true
 	}
 
 	var out []any
@@ -295,7 +297,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 		// A ROOM THAT IS HERE ANSWERS FOR ITSELF. The cache is written while a
 		// room is connected and read only when it is not, so a live room's
 		// remembered cards are never drawn beside its real ones.
-		if here[keyOf(name)] {
+		if here[wire.KeyOf(name)] {
 			continue
 		}
 		cards, err := stock.Remembered(name)
@@ -312,7 +314,7 @@ func (p *Proxy) remembered(spec string, live []Attached) []any {
 			// THE SAME TAGGING A LIVE CARD GETS, so the board builds the same
 			// urls from it. Those urls will be refused, by name, which is
 			// better than a card whose buttons quietly do nothing.
-			obj["id"] = tagFor(name, c.ID)
+			obj["id"] = wire.TagFor(name, c.ID)
 			// WHAT A ROOM WOULD HAVE COMPUTED ON THE WAY OUT.
 			//
 			// The cache holds the stored row, which is the rule: never what the
@@ -422,7 +424,7 @@ func (p *Proxy) history(w http.ResponseWriter, r *http.Request) {
 			out[i].room = name
 			body := p.askRoomBody(scan, name)
 			if body == nil {
-				out[i].err = errStatus(http.StatusBadGateway)
+				out[i].err = wire.ErrStatus(http.StatusBadGateway)
 				return
 			}
 			out[i].rows, _ = body["tasks"].([]any)
@@ -447,7 +449,7 @@ func (p *Proxy) history(w http.ResponseWriter, r *http.Request) {
 			}
 			obj["room"] = a.room
 			if id, ok := obj["id"].(string); ok {
-				obj["id"] = tagFor(a.room, id)
+				obj["id"] = wire.TagFor(a.room, id)
 			}
 			all = append(all, obj)
 		}
@@ -523,9 +525,10 @@ func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	var quiet, halted []string
+	var quiet, halted, names []string
 	settling := false
 	for _, a := range got {
+		names = append(names, a.room)
 		if a.body == nil {
 			quiet = append(quiet, a.room)
 			continue
@@ -542,6 +545,8 @@ func (p *Proxy) health(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(quiet)
 	sort.Strings(halted)
+	sort.Strings(names)
+	out["room_names"] = names
 	out["halted"] = len(halted) > 0
 	out["halted_rooms"] = halted
 	out["settling"] = settling
@@ -596,7 +601,7 @@ func (p *Proxy) askRoom(r *http.Request, room, field string) ([]any, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, errStatus(res.StatusCode)
+		return nil, wire.ErrStatus(res.StatusCode)
 	}
 	var body map[string]any
 	// Bounded. A room's task list is large and a room that answers with
@@ -782,7 +787,7 @@ func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inven
 	// empties the queue". Told either way: turning it OFF is what lets the
 	// approver stop watching every room.
 	if ap := p.autoApprover(); ap != nil {
-		ap.nudge()
+		ap.Nudge()
 	}
 	writeJSONBody(w, http.StatusOK, p.boardAutoView(stock))
 	return true
@@ -814,7 +819,7 @@ func (p *Proxy) saveHubCardColors(w http.ResponseWriter, r *http.Request, payloa
 	ev := p.boardAutoView(stock)
 	p.applyCardColors(ev, stock)
 	if data, err := json.Marshal(ev); err == nil {
-		p.feeds.broadcast(Event{Kind: "settings", Data: data})
+		p.feeds.broadcast(wire.Event{Kind: "settings", Data: data})
 	}
 	if body, ok := p.hubSettingsBody(r, stock); ok {
 		writeJSONBody(w, http.StatusOK, body)
@@ -854,9 +859,9 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	body["input_lag_log"] = inputlag.On()
 	body["input_lag_pinned"] = inputlag.Pinned()
 	// And the context limit per harness, which the hub owns. See contextlimits.go.
-	p.applyContextLimits(body)
+	p.settingsService().ApplyContextLimits(body)
 	// And the default worker model and budget, the hub's the same way. See workerpolicy.go.
-	p.applyWorkerPolicy(body)
+	p.settingsService().ApplyWorkerPolicy(body)
 	return body, true
 }
 
@@ -1085,22 +1090,16 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-func writeJSONBody(w http.ResponseWriter, code int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeErrBody(w http.ResponseWriter, code int, msg string) {
-	writeJSONBody(w, code, map[string]any{"error": msg})
-}
+var (
+	writeJSONBody = jsonio.WriteJSONBody
+	writeErrBody  = jsonio.WriteErrBody
+)
 
 // needsARoom is the refusal for a write with no room to land in.
 //
 // The alternative is spreading a machine-shaped setting across every machine,
 // which is a guess wearing the clothes of a feature.
-func needsARoom(w http.ResponseWriter, rooms []Attached) {
+func needsARoom(w http.ResponseWriter, rooms []wire.Attached) {
 	names := make([]string, 0, len(rooms))
 	for _, r := range rooms {
 		names = append(names, r.Name)

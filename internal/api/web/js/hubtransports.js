@@ -1,8 +1,9 @@
 // ── the hub's transports, a row in the gear ─────────────────────────────
 //
 // The board, the room link and the CI hook each bind a ziti service on the hub. `GET /_hub/transports` answers
-// {transports: [{name, label, on, state, last_error, service, identity, seeded, locked, switchable, no_service}]}.
-// A zrok share (no_service) has no service or identity, so its row is a state and a switch. `PUT` takes
+// {transports: [{name, label, on, state, last_error, service, identity, seeded, locked, switchable, no_service, detail}]}.
+// A zrok share (no_service) has no service or identity, so its row is a state, a switch and its detail line: the
+// masked share token and the zrok env. `PUT` takes
 // {name, on, service, identity}: 403 from any machine but the hub's own, and then the row is read-only and says where
 // to set it. 409 is a refusal, shown as the hub said it.
 //
@@ -69,8 +70,9 @@ function htPaint(list) {
         : { name: t.name, on: !t.on, service: svc.value, identity: id.value });
       row.appendChild(sw);
     }
+    if (t.detail) htText(row, "div", t.detail, "hintline ht-detail");
     if (t.locked) htText(row, "div", t.locked, "hintline");
-    if (Array.isArray(t.seeded) && t.seeded.length) {
+    if (!t.locked && Array.isArray(t.seeded) && t.seeded.length) {
       htText(row, "div", "set by flag: " + t.seeded.join(", ") + ". the first change here replaces it.", "hintline");
     }
     box.appendChild(row);

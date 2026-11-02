@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -38,10 +41,6 @@ const (
 	// preflightEach bounds one command, preflightTotal the whole request.
 	preflightEach  = 10 * time.Second
 	preflightTotal = 60 * time.Second
-
-	// preflightOutput caps what one command may say, kept WHILE reading as a
-	// source's output is. A status command prints a few lines.
-	preflightOutput = 4 << 10
 
 	// preflightMaxKeys bounds each list in the body. Unknown keys cost only a
 	// PATH lookup, but a list is still not the place for a megabyte.
@@ -106,9 +105,9 @@ type preflightAnswer struct {
 	RunnerAuth map[string]preflightItem `json:"runner_auth"`
 	EnvPresent map[string]bool          `json:"env_present"`
 	// Forges is keyed tool@host. A failure also raises the board alert.
-	Forges    map[string]forgeStatus `json:"forges"`
-	PID       int                    `json:"pid"`
-	StartedBy string                 `json:"started_by"`
+	Forges    map[string]home.ForgeStatus `json:"forges"`
+	PID       int                         `json:"pid"`
+	StartedBy string                      `json:"started_by"`
 }
 
 // runPreflightCommand runs one resolved command, from this process's own
@@ -116,7 +115,7 @@ type preflightAnswer struct {
 func runPreflightCommand(ctx context.Context, exe string, args []string, out io.Writer) error {
 	exe, args = viaShellIfScript(exe, args)
 	cmd := exec.CommandContext(ctx, exe, args...)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	cmd.Stdout = out
 	cmd.Stderr = out
 	// A grandchild holding the pipe open must not outlive the timeout.
@@ -144,7 +143,7 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		Tools:      map[string]preflightItem{},
 		RunnerAuth: map[string]preflightItem{},
 		EnvPresent: map[string]bool{},
-		Forges:     map[string]forgeStatus{},
+		Forges:     map[string]home.ForgeStatus{},
 		PID:        os.Getpid(),
 		StartedBy:  d.opts.StartedBy,
 	}
@@ -173,16 +172,16 @@ func (d *Daemon) handlePreflight(w http.ResponseWriter, r *http.Request) {
 	for _, fg := range req.Forges {
 		if d.HubForge() != nil {
 			// A room with a hub never runs a forge CLI. The logins are the hub's, and so is their check.
-			ans.Forges[fg.Tool+"@"+fg.Host] = forgeStatus{Tool: fg.Tool, Host: fg.Host, State: forgeUnknown,
+			ans.Forges[fg.Tool+"@"+fg.Host] = home.ForgeStatus{Tool: fg.Tool, Host: fg.Host, State: home.ForgeUnknown,
 				Message: "forge logins are the hub's, nothing was run here. check them on the hub with POST /_hub/forge/check"}
 			continue
 		}
 		if fg.Host != "" && !store.ValidForgeHost(fg.Host) {
-			ans.Forges[fg.Tool+"@"+fg.Host] = forgeStatus{Tool: fg.Tool, Host: fg.Host, State: forgeUnknown, Message: "not a host name, nothing was run"}
+			ans.Forges[fg.Tool+"@"+fg.Host] = home.ForgeStatus{Tool: fg.Tool, Host: fg.Host, State: home.ForgeUnknown, Message: "not a host name, nothing was run"}
 			continue
 		}
-		st := d.checkForge(ctx, fg.Tool, fg.Host, fg.Scopes)
-		d.applyForge(st)
+		st := d.CheckForge(ctx, fg.Tool, fg.Host, fg.Scopes)
+		d.ApplyForge(st)
 		ans.Forges[st.Tool+"@"+st.Host] = st
 	}
 	for _, n := range req.EnvPresent {
@@ -209,7 +208,7 @@ func (d *Daemon) preflightOne(ctx context.Context, key string, argv []string, lo
 	cctx, cancel := context.WithTimeout(ctx, d.hk.preflightEachFor)
 	defer cancel()
 	var buf bytes.Buffer
-	err = d.hk.preflightRun(cctx, path, argv[1:], &limitedWriter{w: &buf, left: preflightOutput})
+	err = d.hk.preflightRun(cctx, path, argv[1:], &shared.LimitedWriter{W: &buf, Left: preflightOutput})
 	item := preflightItem{Path: path, Output: strings.TrimSpace(buf.String())}
 	switch {
 	case cctx.Err() != nil:
@@ -225,4 +224,21 @@ func (d *Daemon) preflightOne(ctx context.Context, key string, argv []string, lo
 func writeJSONBody(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// preflightHooks are the seams of preflight.
+type preflightHooks struct {
+	preflightLook     func(string) (string, error)
+	preflightRun      func(ctx context.Context, exe string, args []string, out io.Writer) error
+	preflightEachFor  time.Duration
+	preflightTotalFor time.Duration
+}
+
+func defaultPreflightHooks() preflightHooks {
+	return preflightHooks{
+		preflightLook:     preflightLook,
+		preflightRun:      preflightRun,
+		preflightEachFor:  preflightEachFor,
+		preflightTotalFor: preflightTotalFor,
+	}
 }

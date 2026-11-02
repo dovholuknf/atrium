@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"sort"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -49,7 +51,7 @@ func BackfillUsage(st *store.Store, since time.Time, dry bool, transcript func(c
 		if t.ResumeID == "" || t.Worktree == "" {
 			continue
 		}
-		if h, err := st.Harness(t.Runner); err != nil || !isClaude(h) {
+		if h, err := st.Harness(t.Runner); err != nil || !shared.IsClaude(h) {
 			continue
 		}
 		path := transcript(t.Worktree, t.ResumeID)
@@ -84,9 +86,9 @@ func backfillCard(st *store.Store, t *store.Task, path string, since time.Time, 
 		return 0, 0, nil
 	}
 	defer f.Close()
-	byID := map[string]*mainReply{}
+	byID := map[string]*cycle.MainReply{}
 	var order []string
-	if _, err := scanMainReplies(f, func(r *mainReply) {
+	if _, err := cycle.ScanMainReplies(f, func(r *cycle.MainReply) {
 		if r.At.Before(since) {
 			return
 		}

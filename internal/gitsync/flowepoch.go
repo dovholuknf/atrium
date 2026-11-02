@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// The reset of claude/main onto the commits clint re-signed and pushed, without losing what landed in between. See
-// docs/design/merge-flow.md, "Between clint's fetch and clint's push".
+// The reset of claude/main onto the commits clint re-signed and pushed, without losing what landed in between.
 //
 // THE HUB DOES THE MOVE, AND ONLY AFTER CHECKING. The pre-receive hook holds every pushed ref to a fast-forward, and
 // the reset is the one move that is not, so it is not a push: the merger replays on a branch of its own, and the hub

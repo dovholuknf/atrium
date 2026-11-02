@@ -1,1 +1,0 @@
-The hub now tells rooms every address it can be reached at, not one: `--link-advertise` takes a host name or a comma list, a wide `--link` adds this machine's interface addresses, and a change is pushed to attached rooms within 30 seconds. (f-multi-transport-rooms, phase 2)

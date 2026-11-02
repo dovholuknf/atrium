@@ -304,7 +304,7 @@ async function loadBacklog() {
   const reps = document.getElementById("backlog-reports");
   if (!items || !reps) return;
   try {
-    const body = await backlogGet("/_hub/backlog");
+    const body = await backlogGet("/_hub/backlog?bodies=1");
     const list = (body && body.items) || [];
     backlogList = list;
     paintBacklog();

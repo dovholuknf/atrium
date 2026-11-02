@@ -127,7 +127,7 @@ func (r *Room) announce(ctx context.Context, session string) {
 		// first attempt failed.
 		var retry <-chan time.Time
 		if a.pending() {
-			retry = time.After(announceEvery)
+			retry = time.After(a.every())
 		}
 		select {
 		case <-ctx.Done():
@@ -142,10 +142,17 @@ func (r *Room) announce(ctx context.Context, session string) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(announceEvery):
+			case <-time.After(a.every()):
 			}
 		}
 	}
+}
+
+func (a *announcer) every() time.Duration {
+	if a.r.AnnounceEvery > 0 {
+		return a.r.AnnounceEvery
+	}
+	return announceEvery
 }
 
 // pending reports whether the last attempt did not land.

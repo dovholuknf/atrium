@@ -1,1 +1,0 @@
-A launch from a worker session no longer reports a timeout for a runner that is starting: it waits 45 seconds instead of 8, and when the answer is still lost it returns the card the room filed, so a retry does not start a second one. (bug-launch-times-out-still-starts)

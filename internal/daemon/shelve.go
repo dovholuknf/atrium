@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -38,7 +39,7 @@ func (d *Daemon) StopRunnerBy(taskID, by string) error {
 	if err != nil {
 		return err
 	}
-	if d.sup.get(taskID) == nil {
+	if d.sup.Get(taskID) == nil {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nothing here to exit", t.DisplayTitle())
 	}
@@ -111,7 +112,7 @@ func (d *Daemon) Unshelve(taskID string) (started bool, why string, err error) {
 	if err != nil {
 		return false, "", err
 	}
-	if d.sup.get(taskID) != nil {
+	if d.sup.Get(taskID) != nil {
 		return false, "it is already running", nil
 	}
 	if t.ResumeID == "" {
@@ -124,7 +125,7 @@ func (d *Daemon) Unshelve(taskID string) (started bool, why string, err error) {
 
 	// The card is the launch spec: runner is the harness, worktree is where it
 	// ran, resume id is the conversation.
-	if _, err := d.Launch(LaunchRequest{
+	if _, err := d.Launch(shared.LaunchRequest{
 		Harness: t.Runner,
 		Cwd:     t.Worktree,
 		Resume:  t.ResumeID,

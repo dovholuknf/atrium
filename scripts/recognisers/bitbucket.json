@@ -64,5 +64,18 @@
     "cwd": "D:/git/bitbucket/{org}/{repo}",
     "window": "active-work",
     "notes": "The shrug for bitbucket, at the bottom like github's: a repository page opens on its clone, where gwt clones it."
+  },
+  {
+    "id": "bitbucket-repo-ssh",
+    "label": "a repository on bitbucket, as its ssh clone url",
+    "enabled": true,
+    "rank": 906,
+    "pattern": "^git@(?P<host>bitbucket\\.org):(?P<org>[A-Za-z0-9_-][A-Za-z0-9_.-]*)/(?P<repo>[A-Za-z0-9_-][A-Za-z0-9_.-]*?)(?:\\.git)?/?$",
+    "kind": "bitbucket",
+    "title": "{org}/{repo}",
+    "tags": "{repo}",
+    "cwd": "D:/git/bitbucket/{org}/{repo}",
+    "window": "active-work",
+    "notes": "The ssh form of bitbucket-repo, git@<host>:<org>/<repo>(.git), with the same fields so both land on the same clone."
   }
 ]

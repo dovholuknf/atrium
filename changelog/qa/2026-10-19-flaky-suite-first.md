@@ -1,1 +1,0 @@
-Every known-flaky test now lives in `scripts/flaky-suite.json` and runs first and alone: CI starts a `flaky` job per platform (`ci.sh --group flaky`, no retry), the other jobs of that platform wait for it and still run if it fails, and go-test and the board skip those tests. `board-suite-flaky.json` is folded into the manifest.

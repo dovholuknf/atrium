@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -64,7 +66,7 @@ func TestAGivenUpRelayComesBackAsAMessage(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	target, _, _ := peerPair(t, d)
-	d.giveUpRelay(store.RelayRow{ID: "r1", FromTask: target.ID, FromWire: target.WireName,
+	d.GiveUpRelay(store.RelayRow{ID: "r1", FromTask: target.ID, FromWire: target.WireName,
 		ToRoom: "far", ToName: "x", Text: "important words"}, "it was held too long")
 	msgs, err := d.st.PendingMessages(target.ID)
 	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Text, "important words") {
@@ -100,7 +102,7 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 
 	var f *fakePTY
 	launched := 0
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		launched++
 		if req.TaskID != target.ID {
 			t.Errorf("launched %q, want the done card", req.TaskID)
@@ -121,15 +123,12 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	if strings.Contains(f.written(), "WAKETEXT") || strings.Contains(f.written(), "KEPTEARLIER") {
 		t.Fatalf("typed straight into a session that had only just started: %q", f.written())
 	}
-	time.Sleep(3 * d.hk.keptTick)
+	time.Sleep(3 * d.hk.keptTick) // wait: nothing may be typed before the session starts
 	if got := f.written(); strings.Contains(got, "WAKETEXT") || strings.Contains(got, "KEPTEARLIER") {
 		t.Fatalf("typed before the session started: %q", got)
 	}
-	d.wakeSawSession(target.ID, "conv-1")
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(f.written(), "\r") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	d.WakeSawSession(target.ID, "conv-1")
+	testwait.Poll(5*time.Second, func() bool { return strings.Contains(f.written(), "\r") })
 	got := f.written()
 	i, j := strings.Index(got, "KEPTEARLIER"), strings.Index(got, "WAKETEXT")
 	if i < 0 || j < 0 || i > j {
@@ -138,12 +137,11 @@ func TestASayToADoneCardIsKeptThenTypedInWhenWakeResumesIt(t *testing.T) {
 	if n := strings.Count(got, "\r"); n != 1 {
 		t.Fatalf("%d submits, want ONE turn for everything held: %q", n, got)
 	}
-	deadline = time.Now().Add(5 * time.Second)
-	n, _ := d.st.UndeliveredCount(target.ID)
-	for n != 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	var n int
+	testwait.Poll(5*time.Second, func() bool {
 		n, _ = d.st.UndeliveredCount(target.ID)
-	}
+		return n == 0
+	})
 	if n != 0 {
 		t.Fatalf("undelivered %d after typing, want 0", n)
 	}
@@ -174,23 +172,17 @@ func TestAWokenCardThatNeverTakesItsMessagesTellsTheLauncher(t *testing.T) {
 	}
 	d.hk.keptGiveUp = 200 * time.Millisecond
 	var f *fakePTY
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		_, f = typedRunner(t, d, target.ID)
 		return d.st.Get(target.ID)
 	}
 	if err := d.wakeGone(target.ID, "say"); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if _, still := d.kept.Load(target.ID); !still {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the delivery never gave up")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testwait.Eventually(t, 3*time.Second, "the delivery to give up", func() bool {
+		_, still := d.kept.Load(target.ID)
+		return !still
+	})
 	if strings.Contains(f.written(), "HELDWORDS") {
 		t.Fatalf("typed into a runner that never started: %q", f.written())
 	}
@@ -227,7 +219,7 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 
 	var f *fakePTY
 	launched := 0
-	d.wakeLaunch = func(req LaunchRequest) (*store.Task, error) {
+	d.wakeLaunch = func(req shared.LaunchRequest) (*store.Task, error) {
 		launched++
 		_, f = typedRunner(t, d, target.ID)
 		return d.st.Get(target.ID)
@@ -243,16 +235,13 @@ func TestAWakeSayToAParkedCardTypesNothingUntilReadyThenOneTurn(t *testing.T) {
 	if launched != 1 {
 		t.Fatalf("resumed %d times, want 1", launched)
 	}
-	time.Sleep(10 * d.hk.keptTick)
+	time.Sleep(10 * d.hk.keptTick) // wait: nothing may be typed before the runner is ready
 	if got := f.written(); got != "" {
 		t.Fatalf("typed before the runner was ready: %q", got)
 	}
-	d.wakeSawSession(target.ID, "conv-1")
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(f.written(), "\r") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	time.Sleep(10 * d.hk.keptTick)
+	d.WakeSawSession(target.ID, "conv-1")
+	testwait.Poll(5*time.Second, func() bool { return strings.Contains(f.written(), "\r") })
+	time.Sleep(10 * d.hk.keptTick) // wait: no second turn may be typed
 	got := f.written()
 	for _, want := range []string{"HELDONE", "WAKEONE", "WAKETWO"} {
 		if !strings.Contains(got, want) {

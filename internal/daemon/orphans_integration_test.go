@@ -3,11 +3,13 @@
 package daemon
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -133,6 +135,8 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 		resp, err := http.Post("http://"+d.opts.AgentAddr+"/permission",
 			"application/json", strings.NewReader(body))
 		if err == nil {
+			// The headers come at once, so the agent is parked until the body ends, as the hook is.
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
 	}()
@@ -146,18 +150,13 @@ func TestALiveRequestIsNeverOrphaned(t *testing.T) {
 	// this test lose the race under load and report the ordinary case as an
 	// orphan, which is the one thing it exists to catch.
 	var id string
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	testwait.Eventually(t, 3*time.Second, "the request to reach the store with an agent parked on it", func() bool {
 		pend, err := d.st.PendingForTask(task.ID)
 		if err == nil && len(pend) > 0 && d.liveStoreIDs()[pend[0].ID] {
 			id = pend[0].ID
-			break
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if id == "" {
-		t.Fatal("the request never reached the store with an agent parked on it")
-	}
+		return id != ""
+	})
 	shrinkGrace(t, d)
 
 	if err := d.reapOrphans(); err != nil {

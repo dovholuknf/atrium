@@ -60,134 +60,13 @@ const (
 	RelayHub = "hub"
 )
 
-// RelayRequest is what a room asks its hub to carry.
-type RelayRequest struct {
-	Op string `json:"op"`
-	// From is the sender's handle ON THE ASKING ROOM. The hub adds the room from
-	// the connection, never from here, so a room cannot speak for another.
-	From string `json:"from,omitempty"`
-	// Room and To are the target: a room other than the asking one, and a
-	// handle, alias or card id on it.
-	Room string `json:"room,omitempty"`
-	To   string `json:"to,omitempty"`
-	Text string `json:"text,omitempty"`
-	When string `json:"when,omitempty"`
-	// Kind is `fyi` or empty, for `say`: a launcher's fyi makes no report owed on
-	// the target room. An older hub ignores it and the say goes as `needs`.
-	Kind string `json:"kind,omitempty"`
-	// Wake resumes a parked target before the message is delivered, for `say`. An older hub
-	// ignores it, and the target answers `parked` as it always did.
-	Wake bool `json:"wake,omitempty"`
-	// All includes cards with no session, for `peers`.
-	All bool `json:"all,omitempty"`
-	// Everywhere asks `peers` for the cards tagged atrium:everywhere on other
-	// rooms and nothing else. An older hub ignores it.
-	Everywhere bool `json:"everywhere,omitempty"`
-	// Events includes the card's recent events, for `card`.
-	Events bool `json:"events,omitempty"`
-	// Launch is the session to start, for `launch`. An older hub ignores it and
-	// refuses the op by name.
-	Launch *RelayLaunchSpec `json:"launch,omitempty"`
-	// Force, for `exit`, is the asker overriding the guard on a card that is
-	// neither theirs nor their own. The room that owns the card records it.
-	Force bool `json:"force,omitempty"`
-	// Method, Path and Body are the hub call, for `hub`. Only /_hub/backlog and /_hub/reports are served.
-	Method string          `json:"method,omitempty"`
-	Path   string          `json:"path,omitempty"`
-	Body   json.RawMessage `json:"body,omitempty"`
-}
-
-// RelayLaunchSpec is one launch for another room, field for field what the hub's own
-// atrium_launch takes beside `room`. Room is the target, From (on the request) the
-// launcher on the asking room.
-type RelayLaunchSpec struct {
-	Cwd        string            `json:"cwd"`
-	Title      string            `json:"title,omitempty"`
-	Why        string            `json:"why,omitempty"`
-	Prompt     string            `json:"prompt,omitempty"`
-	Brief      string            `json:"brief,omitempty"`
-	Runner     string            `json:"runner,omitempty"`
-	Tags       []string          `json:"tags,omitempty"`
-	Model      string            `json:"model,omitempty"`
-	Effort     string            `json:"effort,omitempty"`
-	Args       []string          `json:"args,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	LeanAgents []string          `json:"lean_agents,omitempty"`
-	LeanSkills []string          `json:"lean_skills,omitempty"`
-	Superlean  bool              `json:"superlean,omitempty"`
-	Lifetime   string            `json:"lifetime,omitempty"`
-	Item       bool              `json:"item,omitempty"`
-}
-
-// RelayAnswer is the hub's answer.
-type RelayAnswer struct {
-	OK bool `json:"ok"`
-	// Code and Error are a refusal, in the target room's words where it gave
-	// some. Unreachable marks one the sender's room may hold and try again,
-	// rather than one that will never succeed.
-	Code        int    `json:"code,omitempty"`
-	Error       string `json:"error,omitempty"`
-	Unreachable bool   `json:"unreachable,omitempty"`
-	// Unconfirmed is a failure AFTER the message may have reached the target,
-	// so sending it again could deliver it twice. Never held for a say.
-	Unconfirmed bool `json:"unconfirmed,omitempty"`
-	// What the target room said about a delivered message.
-	Delivered string `json:"delivered,omitempty"`
-	When      string `json:"when,omitempty"`
-	Warning   string `json:"warning,omitempty"`
-	// To is the resolved `handle@room` and Card the tagged `room~id`.
-	To    string      `json:"to,omitempty"`
-	Card  string      `json:"card,omitempty"`
-	Peers []RelayPeer `json:"peers,omitempty"`
-	// Task is the card `card` read, named across, or the one `launch` started.
-	Task *RelayTask `json:"task,omitempty"`
-	// What `launch` started: where to watch it, where its briefing was written on the
-	// target's disk, and the model and effort the room says it ran with.
-	Watch  string `json:"watch,omitempty"`
-	Brief  string `json:"brief,omitempty"`
-	Model  string `json:"model,omitempty"`
-	Effort string `json:"effort,omitempty"`
-	// Data is the hub endpoint's own JSON answer, for `hub`.
-	Data json.RawMessage `json:"data,omitempty"`
-}
-
-// RelayTask is one card on another room, as atrium_task reports it. Card is
-// `room~id` and Handle `name@room`.
-type RelayTask struct {
-	Card    string       `json:"card"`
-	Handle  string       `json:"handle,omitempty"`
-	Title   string       `json:"title,omitempty"`
-	Status  string       `json:"status"`
-	Doing   string       `json:"doing,omitempty"`
-	Where   string       `json:"where,omitempty"`
-	Why     string       `json:"why,omitempty"`
-	Idle    int          `json:"idle_seconds,omitempty"`
-	Waiting int          `json:"waiting_seconds,omitempty"`
-	Owned   bool         `json:"atrium_owns_terminal"`
-	Events  []RelayEvent `json:"events,omitempty"`
-}
-
-// RelayEvent is one event on a RelayTask.
-type RelayEvent struct {
-	At   string `json:"at"`
-	Kind string `json:"kind"`
-}
-
-// RelayPeer is one session on another room.
-type RelayPeer struct {
-	Handle  string `json:"handle"`
-	Alias   string `json:"alias,omitempty"`
-	Card    string `json:"card"`
-	Room    string `json:"room"`
-	Title   string `json:"title,omitempty"`
-	Status  string `json:"status"`
-	Doing   string `json:"doing,omitempty"`
-	Where   string `json:"where,omitempty"`
-	Waiting int    `json:"waiting_seconds,omitempty"`
-	Owned   bool   `json:"atrium_owns_terminal"`
-	// Everywhere marks a card that is here because it carries atrium:everywhere.
-	Everywhere bool `json:"everywhere,omitempty"`
-}
+// What the wire package declares and the hub answers with.
+type (
+	RelayAnswer = wire.RelayAnswer
+	RelayTask   = wire.RelayTask
+	RelayEvent  = wire.RelayEvent
+	RelayPeer   = wire.RelayPeer
+)
 
 // ErrRelayOld is a hub older than the relay. Nothing held for it would ever go.
 var ErrRelayOld = errors.New("the hub is older than cross-room say, so it cannot carry this. update the hub")
@@ -206,7 +85,7 @@ var ErrRelayUnconfirmed = errors.New("the hub took the message and did not say w
 //
 // An error is ErrRelayOld, or wraps ErrRelayDown or ErrRelayUnconfirmed. A refusal from the target is
 // not an error: it is an answer with OK false, which the caller reads.
-func (r *Room) Relay(ctx context.Context, req RelayRequest) (RelayAnswer, error) {
+func (r *Room) Relay(ctx context.Context, req wire.RelayRequest) (RelayAnswer, error) {
 	var ans RelayAnswer
 	r.mu.Lock()
 	up, session := r.up, r.session
@@ -268,7 +147,7 @@ func (h *Hub) serveRelay(ctx context.Context, name string, conn net.Conn, br *bu
 	if err := conn.SetDeadline(time.Now().Add(handshakeWait)); err != nil {
 		return
 	}
-	var req RelayRequest
+	var req wire.RelayRequest
 	if err := readJSONLimit(br, &req, announceMax); err != nil {
 		log.Printf("[hub] could not read %q's relay: %v", name, err)
 		return

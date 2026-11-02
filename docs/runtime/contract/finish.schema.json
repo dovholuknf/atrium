@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /finish body",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "integer",
+      "description": "contract version the sender speaks, absent means 1"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "recap": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "sha": {
+      "type": "string"
+    },
+    "no_commit": {
+      "type": "string"
+    },
+    "artifact": {
+      "type": "string"
+    },
+    "ask": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "ended": {
+      "type": "boolean"
+    },
+    "learned": {
+      "type": "string"
+    },
+    "why": {
+      "type": "string"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "agent"
+      ]
+    },
+    {
+      "required": [
+        "task_id"
+      ]
+    }
+  ]
+}

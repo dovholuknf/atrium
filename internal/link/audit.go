@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // The operational audit log, as the hub serves it.
@@ -74,7 +76,7 @@ func (p *Proxy) RecordAudit(room, kind, detail string) {
 	if err != nil {
 		return
 	}
-	p.feeds.emit(Event{Kind: "audit", Data: payload})
+	p.feeds.emit(wire.Event{Kind: "audit", Data: payload})
 }
 
 // auditFromRelay turns a relayed room event into an operational audit line, when

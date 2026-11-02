@@ -12,6 +12,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -27,7 +32,11 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/mcprule"
 	"github.com/dovholuknf/atrium/internal/base/shellpick"
+	"github.com/dovholuknf/atrium/internal/daemon/pulls"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -96,26 +105,44 @@ type Options struct {
 	HostBuild string
 }
 
+// roomconfService names the embedded room configuration, which would otherwise clash with publish.Service.
+type roomconfService = roomconf.Service
+
+// hublinkService names the embedded hub link, which would otherwise clash with publish.Service.
+type hublinkService = hublink.Service
+
+// homeService names the embedded card homes, which would otherwise clash with publish.Service.
+type homeService = home.Service
+
+// cycleService names the embedded context cycle, which would otherwise clash with publish.Service.
+type cycleService = cycle.Service
+
 // Daemon owns the store and both listeners.
 type Daemon struct {
-	// homeSize is the size walk over the card homes. See homesize.go.
-	homeSize homeSizer
+	// Service is the published board. See overlay_service.go.
+	*publish.Service
+	// roomconfService is the room's own configuration. See roomconf/roomconf_service.go.
+	*roomconfService
+	// hublinkService is the link to the hub and the other rooms. See hublink/hublink_service.go.
+	*hublinkService
+	// homeService is the card homes, the hub remote and the hub forge. See home/home_service.go.
+	*homeService
+	// cycleService is the context cycle, the keepalive, the restart wrap and wake, and the room hold. See
+	// cycle/cycle_service.go.
+	*cycleService
+	// Publish sends one card to the board. See publishCard.
+	Publish func(id string)
 	// hk is this daemon's own seams, delays and limits. A test changes its daemon's copy. See hooks.go.
 	hk hooks
-	// logins are the sign-ins this daemon has started and not finished. See auth_flow.go.
-	logins loginStates
+	// replies is the transcript read cache every reader of a last reply shares. See keepalive.go.
+	replies cycle.LastReplies
 	// wakeLaunch replaces the real launch when a done card is woken. Tests only. See keep.go.
-	wakeLaunch func(LaunchRequest) (*store.Task, error)
-	// authLim bounds password guessing on the published board. See auth_limit.go.
-	authLim authLimiter
-	// forgeOpen is the forge access alerts open now, by tool@host. See forgeaccess.go.
-	forgeMu   sync.Mutex
-	forgeOpen map[string]ForgeAlert
+	wakeLaunch func(shared.LaunchRequest) (*store.Task, error)
 	// acProbe knows which runners take --autocompact. See autocompact.go.
 	acProbe *autocompactProbe
 	// windingDown is set when shutdown begins. A session ending after it is the
 	// wind-down, never somebody deciding. See the session hook's `end`.
-	windingDown atomic.Bool
+	windingDown *atomic.Bool
 	// bootResumes is resume id to the card on the reopen list that takes it,
 	// for the length of one reopen pass. See reopenSaved.
 	bootResumes sync.Map
@@ -131,7 +158,7 @@ type Daemon struct {
 	st   *store.Store
 	ap   *api.Server
 	// prr runs pull request reviews. See prrunner.go.
-	prr *prRunner
+	prr *pulls.PRRunner
 
 	// mergedCulling is set while the sweep is culling due workers, so a slow
 	// exit is not started twice by the next tick. See mergedcull.go.
@@ -151,6 +178,8 @@ type Daemon struct {
 
 	// The pty host link. See hostterm.go.
 	ph hostLink
+	// cmem is each card's memory, read from the pty host. See cardmem.go.
+	cmem cardMem
 	// stopRunners is set by a stop that was asked to end every runner, host-held ones included (`atrium stop
 	// --runners`). Unset, a stop leaves the runners the pty host holds up. See stopSupervised.
 	stopRunners atomic.Bool
@@ -196,6 +225,8 @@ type Daemon struct {
 	looksIdleFired atomic.Int64
 	// login is whether claude's login here is revoked. See loginneeded.go.
 	login loginState
+	// toolchain is what the last launch's PATH lacked. See toolchain.go.
+	toolchain toolchainState
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
@@ -205,41 +236,11 @@ type Daemon struct {
 	// produces one request. See runnerupdate.go.
 	up updates
 
-	// nats holds any overlay listener the board is being served on, so it can
-	// be reached from somewhere else. See overlay_native.go.
-	nats   map[overlayKind]*native
-	natsMu sync.Mutex
-
-	// guests holds sessions lent out one at a time, each on its own share that
-	// reaches that session and nothing else.
-	//
-	// In memory, and that is now only half the story: the ADDRESS is recorded
-	// in the store and comes back after a restart. What is here is the live
-	// listener, which cannot outlive the process. See overlay_guest.go, and
-	// `docs/fabric/overlays.md` for why an address that dies with the daemon was the
-	// wrong answer.
-	guests guestShares
-	// docs holds the documents shared publicly, one share each. See docshare.go.
-	docs docShares
-
-	// rooms holds the other machines reporting into this hub. In memory and
-	// nowhere else: a room's cards are that room's state, and a second durable
-	// copy here would be a source of truth that is wrong whenever the room is
-	// unreachable. See rooms.go.
-	rooms rooms
-
 	// peerLimit bounds how often one session may message others. In memory,
 	// because the thing it bounds is a runaway session and a session does not
 	// outlive the daemon either.
 	peerLimit *peerLimiter
 
-	// relays is the way to other rooms, through the hub, and the drain of what
-	// is owed to them. Empty on a daemon that is not a room. See relay.go.
-	relays relayState
-	// streams is the room's link for ssh streams to another room's sshd. See stream.go.
-	streams streamHolder
-	// hubDial is the room's ladder for commands on this machine. See hubdial.go.
-	hubDial hubDialHolder
 	// itemPush is the one pass at a time that carries items to the hub. See item_hub.go.
 	itemPush itemPush
 	// taskHandled is the task cards whose end is already being filed, by a capture or by a failure. See task_capture.go.
@@ -253,27 +254,8 @@ type Daemon struct {
 	// See pendinginject.go.
 	pending *pendingInjector
 
-	// wake holds the after-restart wakes, mirrored from the store, and when each
-	// card's session last started. See restartwake.go.
-	wake *wakes
-
-	// holds is the room's deploy hold, copied from the store for the permission
-	// path, and build is the binary it was set against. See roomhold.go.
-	holds *holdState
-	build string
-
-	// nctx holds the new-context sequences under way and the failed ones nobody
-	// has dismissed. In memory. See newcontext.go.
-	nctx *newContexts
-
 	// inCtx is what reached each card in its latest turn, handed back after a new context. See contextlog.go.
 	inCtx *contextLog
-
-	// wrap is the restart wrap-up under way. See restartwrap.go.
-	wrap *restartWrap
-
-	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
-	ka *keepalive
 
 	// ctx is each live Claude card's context size, read from its transcript.
 	// See contextsize.go.
@@ -316,11 +298,11 @@ type Daemon struct {
 	// card and the resume id. Without it two restarts or launches onto one card
 	// both pass the "is a runner live" guard before either registers, and both
 	// resume the same conversation. See keyedmutex.go and launch.go.
-	launching *keyedMutex
+	launching *small.KeyedMutex
 	// startedAt is when a launch last put a runner onto a card, keyed by card id,
 	// so a repeat of that launch answers with the card rather than a refusal. See
 	// repeatLaunch in launch.go.
-	startedAt sync.Map
+	startedAt *sync.Map
 	// kept is the cards a wake is delivering held messages to. See injectKept.
 	kept sync.Map
 
@@ -330,19 +312,10 @@ type Daemon struct {
 	// exits counts the awaitExit goroutines still running. A runner leaves the supervisor BEFORE its exit is filed,
 	// so "no runner left" does not mean "nothing is writing"; a test waits on this before it closes the store.
 	exits sync.WaitGroup
-	// clearOnce guards removing the address file, which the shutdown path does
-	// before it closes the store and Run's deferred call would do again after.
-	// See clearLocation.
-	clearOnce sync.Once
 
 	// gone is what the reaper remembers about worktrees that have vanished. See
 	// worktreegone.go.
 	gone goneWatch
-
-	// hubGit is the room's stable hub remote. See hubremote.go.
-	hubGit hubGit
-	// hubForge is the hub's forge, for a room with a hub. See hubforge.go.
-	hubForge hubForge
 
 	mu          sync.Mutex
 	agentServer *http.Server
@@ -371,6 +344,11 @@ func DefaultDBPath() string {
 	}
 	return filepath.ToSlash(filepath.Join(dir, "atrium.db"))
 }
+
+// RoomDataNames is everything a room keeps beside its database, which `atrium room move` carries with it. A name the
+// daemon joins onto filepath.Dir(DBPath) belongs here, except scrap, which is emptied on every start.
+var RoomDataNames = []string{store.LedgerFileName, reopenFile, carryDirName, "reviews", "icons", "cards",
+	"lean-plugins", "docshares", "identities", "zrok", cycle.HandoffDirName}
 
 // New opens the store and builds the daemon. A storage failure here is fatal
 // by design: the daemon refuses to start rather than run without durable state.
@@ -407,24 +385,34 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d := &Daemon{
 		hk: defaultHooks(), opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),
-		nats:      map[overlayKind]*native{},
-		peerLimit: newPeerLimiter(),
-		launching: newKeyedMutex(),
+		peerLimit:   newPeerLimiter(),
+		launching:   small.NewKeyedMutex(),
+		windingDown: new(atomic.Bool),
+		startedAt:   new(sync.Map),
 	}
+	d.Publish = d.publishCard
+	d.initServices()
 	d.ph.opts.Build = opts.HostBuild
 	if tune != nil {
 		tune(&d.hk)
 	}
-	d.hubGit.cards = &gitsync.CardTokens{Live: d.cardLive}
-	d.restoreHubGit()
+	if st.Fresh() {
+		if home, err := os.UserHomeDir(); err != nil {
+			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
+		} else if err := wireControlMCP(st, home, d.hk.AtriumBinary()); err != nil {
+			log.Printf("[atrium] atrium-control not wired for claude: %v", err)
+		}
+	}
+	d.HubGit.Cards = &gitsync.CardTokens{Live: d.CardLive}
+	d.RestoreHubGit()
 	d.pending = newPendingInjector(d)
-	d.wake = newWakes()
-	d.holds = newHoldState()
-	d.build = buildIdentity()
-	d.nctx = newNewContexts()
+	d.Wake = cycle.NewWakes()
+	d.Holds = cycle.NewHoldState()
+	d.Build = cycle.BuildIdentity()
+	d.Nctx = cycle.NewNewContexts()
 	d.inCtx = newContextLog()
-	d.wrap = newRestartWrap()
-	d.nctx.persist = d.saveNewContextJournal
+	d.Wrap = cycle.NewRestartWrap()
+	d.Nctx.Persist = d.SaveNewContextJournal
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
 	api.ApplyInputLag(st)
@@ -450,7 +438,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice
-	st.RemoteArbiter = d.launcherRelay
+	st.RemoteArbiter = d.LauncherRelay
 	st.HoldNotice = func(arbiter *store.Task, source string) bool {
 		// A REPORT OR AN FYI IS ADDRESSED TO THE LAUNCHER, so it is never parked unseen: it is queued for the
 		// end of the launcher's turn. Only an automatic notice that is not a say stays held. See fyi.go.
@@ -459,7 +447,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		}
 		return holdsNotices(arbiter)
 	}
-	st.OnRelayHeld = d.kickRelays
+	st.OnRelayHeld = d.KickRelays
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Decide = d.decide
 	d.ap.DecideBy = d.decideBy
@@ -469,22 +457,19 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
-	d.prr = newPRRunner(st, d.ap.PublishPR)
+	d.prr = pulls.NewPRRunner(st, d.ap.PublishPR, d.prConfig())
 	d.ap.PRRunner = d.prr
-	d.prr.hk = &d.hk
-	d.prr.onAccess, d.prr.onWorked = d.ForgeAccessFrom, d.ForgeWorked
-	d.prr.hub, d.prr.hubSource = d.HubForge, d.hubSource
-	d.ap.PRForge = d.prr.forgeFor
+	d.ap.PRForge = d.prr.ForgeFor
 	d.ap.HubSource = func(ctx context.Context, name string) (string, func(), error) {
 		if d.HubForge() == nil {
-			return "", nil, errNoHub
+			return "", nil, home.ErrNoHub
 		}
-		return d.hubSource(ctx, name)
+		return d.HubSource(ctx, name)
 	}
 	d.ap.ForgeFailed, d.ap.ForgeWorked = d.ForgeAccessFrom, d.ForgeWorked
-	d.ap.SCMClone = d.prWorktreeClone
-	d.ap.SCMHas = d.prWorktreeHas
-	d.ap.CloneFromHub = d.cloneFromHub
+	d.ap.SCMClone = d.PrWorktreeClone
+	d.ap.SCMHas = d.PrWorktreeHas
+	d.ap.CloneFromHub = d.CloneFromHub
 	d.ap.ScopeHub = d.scopeHubRemote
 	d.ap.Stash = d.StashTo
 	d.ap.HubDelete = d.HubDeleteBranch
@@ -492,6 +477,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling
 	d.ap.LoginNeeded = d.loginHealth
+	d.ap.ToolchainMissing = d.toolchainHealth
 	d.ap.LoginHandler = d.handleLoginNeeded
 	d.ap.DrainAuto = d.drainForAuto
 	d.ap.Attach = d.handleAttach
@@ -505,32 +491,33 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.TypeAnyway = d.handleTypeAnyway
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
-	d.ap.Say = d.handleSay
+	d.ap.Say = d.HandleSay
 	d.ap.Move = d.moveHandler()
 	d.ap.TaskSays = d.handleTaskSays
 	d.ap.Says = d.handleSays
-	d.ap.RoomPeers = d.handleRoomPeers
-	d.ap.RoomCard = d.handleRoomCard
-	d.ap.RoomExit = d.handleRoomExit
-	d.ap.RoomLaunch = d.handleRoomLaunch
+	d.ap.RoomPeers = d.HandleRoomPeers
+	d.ap.RoomCard = d.HandleRoomCard
+	d.ap.RoomExit = d.HandleRoomExit
+	d.ap.RoomLaunch = d.HandleRoomLaunch
 	d.ap.Report = d.handleReport
 	d.ap.Stamp = d.handleStamp
-	d.ap.GitClone = d.handleGitClone
+	d.ap.GitClone = d.HandleGitClone
 	d.ap.HubRemote = d.HubRemoteBase
-	d.ap.HubGitURL = d.handleHubGitURL
-	d.ap.HubCI = d.handleHubCI
-	d.ap.HubAsk = d.handleHubAsk
-	d.ap.HubCall = d.hubCall
+	d.ap.HubGitURL = d.HandleHubGitURL
+	d.ap.HubCI = pulls.HubCI(d.HubForge, home.ErrNoHub)
+	d.ap.HubAsk = d.HandleHubAsk
+	d.ap.HubCall = d.HubCallFrom
 	d.ap.ItemAct = d.handleItemAct
 	d.ap.PoolSubmit = d.handlePoolSubmit
-	d.ap.RestartWake = d.handleRestartWake
-	d.ap.Hold = d.handleHold
-	d.ap.NewContext = d.handleNewContext
+	d.ap.RestartWake = d.HandleRestartWake
+	d.ap.Need = d.handleNeed
+	d.ap.Hold = d.HandleHold
+	d.ap.NewContext = d.HandleNewContext
 	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
-	d.ap.RestartWrap = d.handleRestartWrap
+	d.ap.RestartWrap = d.HandleRestartWrap
 	d.ap.RestartPtyHost = d.handleRestartPtyHost
 	d.ap.Preflight = d.handlePreflight
 	d.ap.HostState = d.handleHostState
@@ -550,18 +537,18 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
-	d.ap.Overlays = d.overlayViews
-	d.ap.SaveOverlay = d.saveOverlay
-	d.ap.StartOverlay = d.startOverlay
-	d.ap.StopOverlay = d.stopOverlay
+	d.ap.Overlays = d.OverlayViews
+	d.ap.SaveOverlay = d.SaveOverlay
+	d.ap.StartOverlay = d.StartOverlay
+	d.ap.StopOverlay = d.StopOverlay
 	d.ap.SetupOverlay = func(kind string, body []byte) (string, error) {
-		var req SetupRequest
+		var req publish.SetupRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			return "", err
 		}
-		return d.setupOverlay(kind, req)
+		return d.SetupOverlay(kind, req)
 	}
-	d.ap.TeardownOverlay = d.teardownOverlay
+	d.ap.TeardownOverlay = d.TeardownOverlay
 	d.ap.InspectToken = d.InspectToken
 	d.ap.ReserveName = d.ReserveZrokName
 	d.ap.Capabilities = func() any { return d.ZitiCapabilities() }
@@ -578,7 +565,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// The secret is NEVER sent back, only whether there is one. This board is
 	// itself something people open and screenshot.
 	d.ap.AuthConfig = func() any {
-		c := d.authConfig()
+		c := d.AuthConfig()
 		return map[string]any{
 			"enabled": c.Enabled, "issuer": c.Issuer, "client_id": c.ClientID,
 			"redirect": c.Redirect, "allow": c.Allow,
@@ -595,7 +582,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		// The stored secret is carried over when the form sends none, so
 		// saving any other field does not silently blank it. A form that has
 		// never been shown the secret cannot send it back.
-		next := d.authConfig()
+		next := d.AuthConfig()
 		var in struct {
 			Enabled      *bool    `json:"enabled"`
 			Issuer       *string  `json:"issuer"`
@@ -647,24 +634,24 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 		// leave it rather than clear it. Otherwise editing the name would blank
 		// the password every time.
 		if in.Password != nil && strings.TrimSpace(*in.Password) != "" {
-			if err := setBasicPassword(&next, *in.Password); err != nil {
+			if err := publish.SetBasicPassword(&next, *in.Password); err != nil {
 				return err
 			}
 		}
 		return d.SaveAuth(next)
 	}
 	d.ap.Rooms = d.Rooms
-	d.ap.RoomCheckIn = d.handleRoomCheckIn
-	d.ap.RoomDecide = d.handleRoomDecide
+	d.ap.RoomCheckIn = d.HandleRoomCheckIn
+	d.ap.RoomDecide = d.HandleRoomDecide
 	d.ap.RoomJoin = d.RoomJoin
-	d.ap.RoomForget = d.handleRoomForget
+	d.ap.RoomForget = d.HandleRoomForget
 	d.ap.Dispatches = d.Dispatches
 	d.ap.QueueDispatch = d.QueueDispatch
 	d.ap.CancelDispatch = d.CancelDispatch
 	d.ap.DispatchResult = d.handleDispatchResult
 	d.ap.BuildExport = func() (any, error) { return d.BuildExport() }
 	d.ap.ApplyImport = func(body []byte, apply, force bool) (any, error) {
-		var in Export
+		var in roomconf.Export
 		if err := json.Unmarshal(body, &in); err != nil {
 			return nil, fmt.Errorf("that is not an atrium configuration: %w", err)
 		}
@@ -672,7 +659,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	}
 	// The board only offers attach for a runner atrium owns, because a window
 	// mode launch has no terminal here to show.
-	api.IsSupervised = func(taskID string) bool { return d.sup.get(taskID) != nil }
+	api.IsSupervised = func(taskID string) bool { return d.sup.Get(taskID) != nil }
 	api.IsStarting = func(taskID string) bool { _, ok := d.starting.Load(taskID); return ok }
 	// Whether this card has a shell open, so the board can offer `open a shell`
 	// or `go to the shell` rather than guessing. Asked rather than remembered
@@ -693,33 +680,38 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// the same way. See a2a.go.
 	api.EscalationOf = d.escalationFor
 	// The after-restart wake waiting on a card.
-	d.loadWakes()
-	api.RestartWakeOf = d.wakeFor
+	d.LoadWakes()
+	api.RestartWakeOf = d.WakeFor
 	// The deploy hold, and which cards it holds. See roomhold.go.
-	d.loadHolds()
-	api.HeldOf = d.heldFor
+	d.LoadHolds()
+	api.HeldOf = d.HeldFor
 	api.LandedKeptOf = d.landedKeptFor
-	api.NewContextOf = d.newContextFor
+	api.NewContextOf = d.NewContextFor
 	// The cache keep-alive: each card's switch and its current idle stretch,
 	// and the per-card switch the board flips. See keepalive.go.
-	d.ka = newKeepalive(st)
-	d.ka.hk = &d.hk
-	d.ka.broadcast = d.ap.Broadcast
-	d.ka.window = func(taskID string) int {
+	d.Ka = cycle.NewKeepalive(st)
+	d.Ka.AgentFork = func(exe string, args []string) (string, []string) { return d.hk.agentFork(exe, args) }
+	d.Ka.CardArgs = func(h *store.Harness, t *store.Task) ([]string, error) { return forkCardArgs(st, h, t, &d.hk) }
+	d.Ka.EffortArgs = forkEffortArgs
+	d.Ka.ForkEnvOf = keepaliveForkEnv
+	d.Ka.Replies = &d.replies
+	d.Ka.Broadcast = d.ap.Broadcast
+	d.Ka.Window = func(taskID string) int {
 		if t := d.act.telemetry(taskID); t != nil {
 			return t.Window
 		}
 		return 0
 	}
-	api.KeepaliveOf = d.ka.view
-	api.KeepaliveOfTask = d.ka.viewTask
-	d.ap.SetKeepalive = d.keepaliveSet
+	api.KeepaliveOf = d.Ka.View
+	api.KeepaliveOfTask = d.Ka.ViewTask
+	d.ap.SetKeepalive = d.KeepaliveSet
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
-	d.ka.holding = d.nctx.holding
-	d.ka.deployHeld = d.deployHeld
-	d.ka.cold = d.coldHandoff
-	d.ka.session = d.ctx.sessionOf
+	d.ctx.replies = &d.replies
+	d.Ka.Holding = d.Nctx.Holding
+	d.Ka.DeployHeld = d.DeployHeld
+	d.Ka.Cold = d.ColdHandoff
+	d.Ka.Session = d.ctx.sessionOf
 	d.acProbe = newAutocompactProbe(func(exe string) (string, error) { return d.hk.helpRunner(exe) })
 	api.ContextSizeOf = d.contextSizeFor
 	api.AutocompactOf = d.autocompactFor
@@ -731,8 +723,9 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	// The worker budget is checked as each row lands. See workerpolicy.go.
 	d.usage.afterRow = d.checkBudget
 	api.BudgetOf = d.budgetFor
+	api.MemOf = d.memFor
 	// A keep-alive refresh's row is announced the same way as a turn's.
-	d.ka.spent = func(u *store.SessionUsage) error {
+	d.Ka.Spent = func(u *store.SessionUsage) error {
 		d.usage.stamp(u)
 		err := st.AddSessionUsage(u)
 		if err == nil {
@@ -754,7 +747,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 }
 
 func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
-	var req LaunchRequest
+	var req shared.LaunchRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
 	}
@@ -766,7 +759,7 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	if err := d.launchWhileStopping(); err != nil {
 		return nil, err
 	}
-	if err := d.launchHeld(req); err != nil {
+	if err := d.LaunchHeld(req); err != nil {
 		return nil, err
 	}
 	if err := d.launchNeedsLogin(req); err != nil {
@@ -825,7 +818,7 @@ func (d *Daemon) decideInner(permID, decision, reason, command string) (*store.P
 	if err != nil {
 		return nil, err
 	}
-	d.publishTask(p.TaskID)
+	d.Publish(p.TaskID)
 	d.ap.Broadcast("permission", p)
 	return p, nil
 }
@@ -926,7 +919,7 @@ func (d *Daemon) onHalt(cause error) {
 	}
 	d.ap.Broadcast("halted", map[string]string{"cause": fmt.Sprint(cause)})
 	// And as `health`, the event the board reads instead of polling /v1/health.
-	d.publishHealth()
+	d.PublishHealth()
 }
 
 // observedFor builds the observed bucket from what the wire name tells us.
@@ -1008,7 +1001,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, store.DecidedByMessage); err != nil {
 			return "", nil, err
 		}
-		d.publishTask(task.ID)
+		d.Publish(task.ID)
 		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
@@ -1021,9 +1014,9 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	}
 
 	// A deploy hold overrides rules and auto mode so held agents park before the room restarts.
-	if h := d.deployHold(); h.Holds(task.ID) {
-		reason := d.deployRefusal(h)
-		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, DecidedByDeployHold); err != nil {
+	if h := d.DeployHold(); h.Holds(task.ID) {
+		reason := d.DeployRefusal(h)
+		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, cycle.DecidedByDeployHold); err != nil {
 			return "", nil, err
 		}
 		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
@@ -1056,7 +1049,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			log.Printf("[atrium] auto mode on %s ran out, so it is asking again",
 				task.DisplayTitle())
 			task.AutoApprove, task.AutoUntil = false, nil
-			d.publishTask(task.ID)
+			d.Publish(task.ID)
 		}
 	}
 	// Global auto has its own decider so the audit distinguishes board-wide approval from a session choice.
@@ -1075,7 +1068,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	if err := d.st.SetStatus(task.ID, store.StatusNeedsPermission); err != nil {
 		return "", nil, err
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	d.ap.Broadcast("permission", p)
 	return p.ID, nil, nil
 }
@@ -1125,17 +1118,20 @@ func (d *Daemon) onPermDecided(permID, decision, reason string) {
 	if err := d.st.SetStatus(p.TaskID, store.StatusRunning); err != nil {
 		log.Printf("[atrium] status after decision: %v", err)
 	}
-	d.publishTask(p.TaskID)
+	d.Publish(p.TaskID)
 	d.ap.Broadcast("permission", p)
 }
 
-func (d *Daemon) publishTask(id string) {
+func (d *Daemon) publishCard(id string) {
 	t, err := d.st.Get(id)
 	if err != nil {
 		return
 	}
 	d.ap.PublishTask(t)
 }
+
+// PublishTaskFunc is Publish as the value a feature package takes in place of the Daemon.
+func (d *Daemon) PublishTaskFunc() shared.PublishTask { return d.Publish }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
 // BoardHandler is the human-facing surface: the JSON API, the event stream, the
@@ -1159,12 +1155,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/permission", d.handlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
 	agentMux.HandleFunc("/gate", d.handleGate)
+	agentMux.HandleFunc("/contract", handleContract)
 	agentMux.HandleFunc("/stop", d.handleStop)
 	agentMux.HandleFunc("/activity", d.handleActivity)
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
-	agentMux.HandleFunc("/ready", d.handleReady)
+	agentMux.HandleFunc("/ready", d.HandleReady)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
 	agentMux.HandleFunc("/help", d.handleHelp)
@@ -1179,13 +1176,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/peers", d.handlePeers)
 	agentMux.HandleFunc("/tell", d.handleTell)
 	// AN SSH STREAM to another room's sshd through the hub, upgraded to raw bytes. See stream.go.
-	agentMux.HandleFunc("/stream", d.handleStream)
-	agentMux.HandleFunc("/stream/status", d.handleStreamStatus)
-	agentMux.HandleFunc("/hubdial", d.handleHubDial)
-	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
+	agentMux.HandleFunc("/stream", d.HandleStream)
+	agentMux.HandleFunc("/stream/status", d.HandleStreamStatus)
+	agentMux.HandleFunc("/hubdial", d.HandleHubDial)
+	agentMux.HandleFunc("/hooks-changed", d.HandleHooksChanged)
 	// The room's stable hub remote: a card's git reaches the hub's store through here, on its own token, and
 	// the token opens this route and no other. See hubremote.go.
-	agentMux.Handle(gitsync.HubRemotePrefix, d.hubRemote())
+	agentMux.Handle(gitsync.HubRemotePrefix, d.HubRemote())
 
 	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
 	// rebind a name onto it, or open a terminal. See internal/edge.
@@ -1200,7 +1197,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent listener: %w", err)
 	}
-	d.setAgentAddr(agentLn.Addr())
+	d.SetAgentAddr(agentLn.Addr())
 	// NO BOARD OF ITS OWN, when asked for with `-`.
 	//
 	// A room attached to a hub is reached through that hub, and its loopback
@@ -1220,17 +1217,17 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 		// The profiler, on this listener only and only when it is loopback.
 		// See pprof.go.
-		humanSrv.Handler = withProfiling(humanSrv.Handler, humanLn)
+		humanSrv.Handler = roomconf.WithProfiling(humanSrv.Handler, humanLn)
 	}
 
 	// `addressOf`, not concatenation. An address that already names a host,
 	// which is what `atrium preview` passes, came out as
 	// `http://localhost127.0.0.1:53895`.
-	log.Printf("[atrium] agents  -> %s", addressOf(d.opts.AgentAddr))
+	log.Printf("[atrium] agents  -> %s", roomconf.AddressOf(d.opts.AgentAddr))
 	if strings.TrimSpace(d.opts.HumanAddr) == "-" {
 		log.Printf("[atrium] board   -> none of its own. reached through the hub")
 	} else {
-		log.Printf("[atrium] board   -> %s", addressOf(d.opts.HumanAddr))
+		log.Printf("[atrium] board   -> %s", roomconf.AddressOf(d.opts.HumanAddr))
 	}
 	log.Printf("[atrium] state   -> %s", d.opts.DBPath)
 	// WHAT A SHELL WILL OPEN AS, said once at startup rather than discovered
@@ -1247,8 +1244,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Written once both listeners are bound, so the file never advertises an
 	// address that failed to open.
-	d.writeLocation()
-	defer d.clearLocation()
+	d.WriteLocation()
+	defer d.ClearLocation()
 
 	// A new database is indistinguishable from every card and every rule having
 	// vanished. WORKTREE_ROOT unset once sent the path to the home directory,
@@ -1272,7 +1269,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.reap(ctx, ReapEvery)
 	// The room's own stats, pushed to the board. See roomstats.go.
 	d.startRoomStats(ctx)
-	go d.sizeLoop(ctx)
+	go d.SizeLoop(ctx)
+	go d.cardMemLoop(ctx)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
 	// database not in incremental auto_vacuum mode. See vacuum.go.
@@ -1297,7 +1295,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// started inside it would race the first fixture.
 		d.settle.begin()
 		// Say so on the stream, and say again when the window closes. See health.go.
-		go d.watchSettle(ctx)
+		go d.WatchSettle(ctx)
 		// Terminals that come up with the daemon, and then the ones that were
 		// simply open when it stopped. In the background, so a runner that is
 		// slow to start cannot delay the board answering: a board that is not
@@ -1309,9 +1307,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// A deploy hold this room restarted under is lifted before any runner
 		// starts, so every wake it queues is newer than the runner that takes it.
 		// See roomhold.go.
-		d.liftAtStartup()
+		d.LiftAtStartup()
 		// Before any runner is reopened: a clear the last process left half done.
-		d.endAbandonedNewContexts()
+		d.EndAbandonedNewContexts()
 		go func() {
 			// Cleared at the end of this function and nowhere else.
 			//
@@ -1372,12 +1370,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Wakes queued before the restart, typed in as their cards come back. A
 	// passive board brings nothing back, so it has nothing to type into.
 	if !d.opts.Passive {
-		go d.wakeLoop(ctx)
+		go d.WakeLoop(ctx)
 		// A deploy hold nobody redeployed under is lifted when it runs out.
-		go d.holdLoop(ctx)
+		go d.HoldLoop(ctx)
 		// Idle caches kept warm. A passive board spends nothing on anybody's
 		// behalf. See keepalive.go.
-		go d.ka.loop(ctx)
+		go d.Ka.Loop(ctx)
 	}
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
@@ -1460,7 +1458,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	// Any share goes with the board it publishes. An address that outlives
 	// what it points at answers with a connection refused, which reads as the
 	// overlay being broken.
-	d.closeOverlays()
+	d.CloseOverlays()
 
 	// The deferred-injection retries stop first, so a backoff timer cannot fire
 	// against a store that is closing under it. The queued messages stay on disk
@@ -1469,7 +1467,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 		d.pending.stopAll()
 	}
 	// And any new-context sequence: its terminal is about to close under it.
-	d.nctx.stopAll()
+	d.Nctx.StopAll()
 
 	// Which runners were mid-turn, read before they are stopped: a runner that
 	// exits files its card dead or done. See unexpectedexit.go.
@@ -1548,7 +1546,7 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	//
 	// The address file goes first, because finding the shared copy reads the
 	// store. See clearLocation.
-	d.clearLocation()
+	d.ClearLocation()
 	if err := d.closeDB(); err != nil {
 		log.Printf("[atrium] closing the database: %v", err)
 	}
@@ -1595,4 +1593,134 @@ func (d *Daemon) resumePRReviews() {
 	for _, id := range ids {
 		d.prr.Start(id)
 	}
+}
+
+// EnrollZitiInto is publish.EnrollZitiInto, kept here for the CLI.
+func EnrollZitiInto(token, name, dir string) (string, string, error) {
+	return publish.EnrollZitiInto(token, name, dir)
+}
+
+// initServices builds the features that left Daemon. They read the daemon's state at call time.
+func (d *Daemon) initServices() {
+	d.hublinkService = hublink.New(hublink.Config{
+		St: d.st,
+		Calls: hublink.Calls{
+			RecordSay: func(v store.Say, text string) string { return d.recordSay(v, text) },
+			OtherRoom: func(room string) string { return d.otherRoom(room) },
+			Liveness:  func(t *store.Task) store.Liveness { return d.liveness(t) },
+			WriteMissNote: func(w http.ResponseWriter, from, name, door, text, when string, reply bool, note string) {
+				d.writeMissNote(w, from, name, door, text, when, reply, note)
+			},
+			SenderTask:          func(from string) string { return d.senderTask(from) },
+			KickItems:           func() { d.kickItems() },
+			ItemSayRefused:      func(from string) bool { return d.itemSayRefused(from) },
+			WriteItemSayRefused: writeItemSayRefused,
+			HandoutFor:          func(rep hublink.RoomReport) []dispatchHandout { return d.handoutFor(rep) },
+			HandleMessage:       func(w http.ResponseWriter, r *http.Request) { d.handleMessage(w, r) },
+			DoneBySay:           func(sender *store.Task, text string) { d.doneBySay(sender, text) },
+			WithSayTrace:        withSayTrace,
+			PromptKind:          promptKind,
+			Nat:                 func(kind publish.OverlayKind) *publish.Native { return d.Nat(kind) },
+			ZitiConfig:          func() publish.ZitiConfig { return d.ZitiConfig() },
+			DefaultBackend:      func() string { return d.DefaultBackend() },
+			Publish:             func(id string) { d.Publish(id) },
+			RelayKeep:           func() time.Duration { return d.hk.RelayKeep },
+			PeerAllow:           func(from string) bool { return d.peerLimit.allow(from) },
+			HumanAddr:           func() string { return d.opts.HumanAddr },
+		},
+	})
+	d.Service = publish.New(publish.Config{
+		St: d.st, Ap: d.ap, Sup: d.sup, Publish: func(id string) { d.Publish(id) },
+		Opts: func() publish.Options {
+			return publish.Options{HumanAddr: d.opts.HumanAddr, Room: d.opts.Room, DBPath: d.opts.DBPath}
+		},
+	})
+	d.roomconfService = roomconf.New(roomconf.Config{
+		St: d.st, Ap: d.ap,
+		Opts: func() roomconf.Options {
+			o := d.opts
+			return roomconf.Options{AgentAddr: o.AgentAddr, HumanAddr: o.HumanAddr, DBPath: o.DBPath, Room: o.Room,
+				RoomDir: o.RoomDir, LocationFile: o.LocationFile}
+		},
+		Calls: roomconf.Calls{
+			PidAlive:          func(pid int) bool { return d.hk.pidAlive(pid) },
+			HealthHalted:      func(h roomconf.HaltReader) (bool, error) { return d.hk.HealthHalted(h) },
+			Settling:          d.Settling,
+			LoginHealth:       d.loginHealth,
+			ToolchainHealth:   d.toolchainHealth,
+			ZrokConfig:        d.ZrokConfig,
+			ZitiConfig:        d.ZitiConfig,
+			SaveOverlayConfig: d.SaveOverlayConfig,
+			TaskFor:           d.taskFor,
+			Cycle: func(id string) (string, bool, bool) {
+				cur := d.Nctx.Get(id)
+				if cur == nil || cur.Step != cycle.NewContextLimit {
+					return "", false, false
+				}
+				return cur.File, true, cur.Acked
+			},
+			CycleAck: func(id string) bool { return d.Nctx.Ack(id) },
+			WrapAck:  func(id string) bool { return d.Wrap.Ack(id) },
+			CycleBy:  cycleBy,
+			Publish:  func(id string) { d.Publish(id) },
+		},
+	})
+	d.homeService = home.New(home.Config{
+		St: d.st, Ap: d.ap,
+		Calls: home.Calls{
+			Publish:        func(id string) { d.Publish(id) },
+			OptAgentAddr:   func() string { return d.opts.AgentAddr },
+			Room:           func() string { return d.opts.Room },
+			HasSession:     func(id string) bool { return d.sup != nil && d.sup.Get(id) != nil },
+			NotifyLauncher: func(w *store.Task, source, key, body string) bool { return d.notifyLauncher(w, source, key, body) },
+			WaitRunnerGone: func(id string, within time.Duration) bool { return d.waitRunnerGone(id, within) },
+			CloseShell:     func(id string) { d.CloseShell(id) },
+			LeaveForCull:   func(t *store.Task, res *CullResult) error { return d.leaveForCull(t, res) },
+			Culled:         func(t *store.Task, res *CullResult) *CullResult { return d.culled(t, res) },
+			EndThrowaway:   func(id string) { d.endThrowaway(id) },
+			VisibleLauncher: func(ctx context.Context, w *store.Task, byID, byName, byDir, dir string) *store.Task {
+				return d.visibleLauncher(ctx, w, byID, byName, byDir, dir)
+			},
+			LandedInto:      func(dir, branch, into string) (bool, error) { return landedInto(dir, branch, into) },
+			RecordHubBranch: func(card, branch, hubRepo string) { d.recordHubBranch(card, branch, hubRepo) },
+			PreflightLook:   func(cmd string) (string, error) { return d.hk.preflightLook(cmd) },
+			PreflightRun: func(ctx context.Context, exe string, args []string, out io.Writer) error {
+				return d.hk.preflightRun(ctx, exe, args, out)
+			},
+			PreflightEachFor: func() time.Duration { return d.hk.preflightEachFor },
+		},
+	})
+	d.cycleService = cycle.New(cycle.Config{
+		St: d.st, Ap: d.ap, Hk: &d.hk.NewContextHooks,
+		Calls: cycle.Calls{
+			Publish:  func(id string) { d.Publish(id) },
+			DBPath:   func() string { return d.opts.DBPath },
+			Room:     func() string { return d.opts.Room },
+			HomeOf:   func(id string) (store.CardHome, bool) { return d.HomeOf(id) },
+			HasGuest: func(id string) bool { return d.Guests.Get(id) != nil },
+			ResetPending: func(id string) {
+				if d.pending != nil {
+					d.pending.reset(id)
+				}
+			},
+			ContextTokens:   func(t *store.Task) (int64, bool) { return d.ctx.read(t) },
+			CycleLimit:      func(t *store.Task) int64 { return d.cycleLimit(t) },
+			CycleSubject:    func(t *store.Task) bool { return d.cycleSubject(t) },
+			HarnessOf:       func(id string) (*store.Harness, *store.Task) { return d.harnessOf(id) },
+			MidTurnInputFor: func(id string) bool { return d.midTurnInputFor(id) },
+			TypeLabelledGuarded: func(run Runner, id, banner, text string, ok func() bool) (bool, error) {
+				return d.typeLabelledGuarded(run, id, banner, text, ok)
+			},
+			LabelFor: labelFor,
+			TypeLabelledThroughGate: func(run Runner, id, banner, text string) (bool, error) {
+				return d.typeLabelledThroughGate(run, id, banner, text)
+			},
+			TakeInContext:   func(id string) []shared.DeliveredSay { return d.takeInContext(id) },
+			RequeueCarried:  func(id string, c []shared.DeliveredSay) { d.requeueCarried(id, c) },
+			ItemMissed:      func(id string, c []shared.DeliveredSay) []shared.DeliveredSay { return d.itemMissed(id, c) },
+			ShutdownAllowed: func(w http.ResponseWriter, r *http.Request) bool { return d.shutdownAllowed(w, r) },
+		},
+	})
+	d.cycleService.Act = activityForCycle{d.act}
+	d.cycleService.Sup = d.sup
 }

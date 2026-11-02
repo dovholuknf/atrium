@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
 	"net"
 	"os"
@@ -21,215 +23,12 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/scratch"
 	"github.com/dovholuknf/atrium/internal/base/userenv"
 	"github.com/dovholuknf/atrium/internal/daemon/launch"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/runnersetup"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
-
-// LaunchRequest is what the board sends to start a runner.
-type LaunchRequest struct {
-	Harness string `json:"harness"`
-	Cwd     string `json:"cwd"`
-	Title   string `json:"title"`
-	Why     string `json:"why"`
-	// Resume picks a conversation back up instead of starting a new one. The
-	// value is the runner's own session id, recorded by the session hooks.
-	Resume string `json:"resume"`
-	// Respawn marks a launch rebuilt from an existing card (a reopen after a restart, an unpark, a runner restart).
-	// It is not a first launch even when no conversation id could be passed, so the launch-inactivity notice stays
-	// quiet. Never set from the wire.
-	Respawn bool `json:"-"`
-	// TaskID starts a runner onto a card that already exists, instead of making
-	// one. Unshelving uses it: the card, its history and its resume id are the
-	// reason to pick the work back up, so a second card would defeat the point.
-	TaskID string `json:"task_id,omitempty"`
-	// MovedFrom is `room~id` of the card this one is the successor of, on a move
-	// between rooms. It is the key that makes a repeat launch for one move return
-	// the same card. Pinned and PinOrder put it in the old card's pinned slot.
-	MovedFrom string `json:"moved_from,omitempty"`
-	Pinned    bool   `json:"pinned,omitempty"`
-	PinOrder  int    `json:"pin_order,omitempty"`
-	// LaunchKey is a random string the caller makes on its first attempt and sends again on a retry of the same
-	// launch. A card already filed under it on this room is returned, marked `launch_replay`, and nothing is started:
-	// the answer to the first attempt may have been lost while the card went on being made. Optional, and a launch
-	// without one is as it always was. Ignored on a launch onto a card (`task_id`).
-	LaunchKey string `json:"launch_key,omitempty"`
-	// Tags are what the operator calls this work. A script that starts a
-	// session from a ticket knows things the path does not.
-	Tags []string `json:"tags,omitempty"`
-	// Prompt is the first instruction the runner gets, handed over as the
-	// harness's PromptArgs say to. This is how a card raised from an issue
-	// starts with the issue in front of it rather than at an empty cursor.
-	Prompt string `json:"prompt,omitempty"`
-	// Brief is context to hand the new session, written to BRIEF.md in its
-	// directory before it starts and read first.
-	//
-	// A FILE, NOT A LONGER PROMPT, and that is the whole difference. A prompt is
-	// said once, is the first thing to fall out of a compaction, and cannot be
-	// consulted afterwards. A file in the working directory can be re-read at any
-	// point, survives compaction, and is there when a human takes the card over.
-	// See writeBriefFile. Written on the room's own machine, which is why this
-	// runs here rather than wherever the caller was: the hub has no directory to
-	// write to. Ignored on a resume, which continues a conversation and takes no
-	// first prompt.
-	Brief string `json:"brief,omitempty"`
-	// Model names the model this session runs on, handed over as the harness's
-	// ModelArgs say to.
-	//
-	// ONE TIME WITH RESPECT TO THE HARNESS, STICKY WITH RESPECT TO THE CARD.
-	// The form's control is unticked every time it opens, so nobody has to
-	// remember to turn it back, and nothing is written to the runner's row.
-	// The card keeps it, and `reopenSaved` replays it, so a session that
-	// started on a model stays on it across a restart.
-	//
-	// Naming one for a harness with no ModelArgs is REFUSED. See runnerArgs.
-	Model string `json:"model,omitempty"`
-	// Effort is the thinking effort, handed over as the harness's EffortArgs or
-	// EffortEnv say to. Args and Env are extra argv and environment for the
-	// runner, used as given. All three are sticky with respect to the card, as
-	// Model is, and none is checked against a list. See
-	// docs/runtime/launch-options-design.md.
-	Effort string            `json:"effort,omitempty"`
-	Args   []string          `json:"args,omitempty"`
-	Env    map[string]string `json:"env,omitempty"`
-	// Source, ExternalID and URL record where this work came from. See
-	// store.SetOrigin and docs/runtime/intake-design.md.
-	Source     string `json:"source,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
-	URL        string `json:"url,omitempty"`
-	// SourceKind and SourceURL are the same two under the names a launcher
-	// resolving a URL calls them.
-	//
-	// TWO NAMES FOR ONE THING, on purpose and only here. `source` and `url`
-	// are what the store and the intake path have always called them, and
-	// renaming those would touch every source ever configured. A caller that
-	// turned `github.com/o/r/pull/9` into a worktree is thinking in the other
-	// vocabulary, and refusing it over a word is a round trip for nothing.
-	// The explicit pair wins when both are sent.
-	SourceKind string `json:"source_kind,omitempty"`
-	SourceURL  string `json:"source_url,omitempty"`
-	// What a launcher knows about the work that the directory cannot say.
-	//
-	// ATRIUM IS NOT LEARNING GIT. None of this is derived here and none of it
-	// is checked: whoever resolved the URL and made the worktree already knows
-	// the answers, and a daemon that re-derives them is a second implementation
-	// to disagree with the first. Every one of them is optional, and a session
-	// that joined on its own leaves them all empty.
-	Repo   string `json:"repo,omitempty"`
-	Org    string `json:"org,omitempty"`
-	Host   string `json:"host,omitempty"`
-	Branch string `json:"branch,omitempty"`
-	// Base is where a new branch starts, and Home asks for a home with no repo. With `repo` as `host/owner/repo` or a
-	// path to a clone and no cwd, the room makes the card's home and adds `<home>/work` as a worktree on Branch. See
-	// cardhome.go.
-	Base string `json:"base,omitempty"`
-	Home bool   `json:"home,omitempty"`
-	// Interactive marks a launch somebody pressed, as opposed to one that
-	// happened on its own.
-	//
-	// NOT ON THE WIRE. Set by the board's launch handler and by nothing else,
-	// so a fixture coming up at boot, a source's queued launch and a peer
-	// asking for one are all automated by default. The one thing it decides is
-	// whether the runner version check is allowed to hold the launch up: there
-	// is somebody in front of an interactive launch to read the answer, and
-	// nobody in front of the others. See runnerupdate.go.
-	Interactive bool `json:"-"`
-	// Window is which pile this card belongs to, and it is the board's
-	// grouping key. `active-work`, `pull-requests`, `tangent`, `discourse`, a
-	// repo name, or anything else: atrium stores the string and groups by it
-	// without knowing what any of them mean.
-	Window string `json:"window,omitempty"`
-	// Theme is the terminal palette this session comes up in. A launcher that
-	// keeps a repo-to-color map sends the answer rather than atrium keeping a
-	// second copy of that map. Empty leaves it to the board.
-	Theme string `json:"theme,omitempty"`
-	// Throwaway requests a temporary directory, with directory, card, and
-	// transcript cleanup at exit. Ignore it when a directory or card was supplied.
-	Throwaway bool `json:"throwaway,omitempty"`
-	// IfRunning is what to do when this directory already has a card.
-	//
-	// FOR CALLERS THAT ARE NOT A PERSON. A human pressing start in the launch
-	// dialog is looking at the board and means it. A script is not: `gwt new`
-	// run twice, or run on a worktree that already has a pinned session, would
-	// otherwise put a second runner in a directory that has one, and the two
-	// write to the same files while neither knows about the other.
-	//
-	//	""       start anyway, which is what the board does and the default
-	//	"skip"   hand back the card that is there and start nothing
-	//	"adopt"  start onto that card, unless something is already running on it
-	//
-	// The same question `startFixture` answers, moved to where every caller
-	// can ask it. It lived in that one caller, which is why the endpoint under
-	// it never asked.
-	IfRunning string `json:"if_running,omitempty"`
-	// SpawnedBy is the handle of the session asking for this launch, sent by
-	// the hub's `atrium_launch` from the caller's own identity header. The
-	// board's dialog sends nothing and is recorded as `@human`. See
-	// store.SetLineage.
-	SpawnedBy string `json:"spawned_by,omitempty"`
-	// SpawnedByID is the launcher's card on ANOTHER room, as `room~id`, sent by
-	// the hub when it launches here for a session on another room. Taken only
-	// in that tagged form, so it can never name a card on this room. See
-	// docs/fabric/cross-room-say-design.md.
-	SpawnedByID string `json:"spawned_by_id,omitempty"`
-	// SpawnedByDir is where that launcher works, read by the hub from its card. Used only to ask git whether it
-	// shares a repository with this launch, so a path that is not on this machine means nothing.
-	SpawnedByDir string `json:"spawned_by_dir,omitempty"`
-	// Lean starts a claude session with only what a worker needs, and MCP names
-	// the servers from the runner's MCP config it keeps beside atrium-control.
-	// Recorded on the card as tags, so a reopen starts it lean again. See lean.go.
-	//
-	// A pointer, because absent and false differ. Absent leaves it to the card.
-	// False starts a lean card with the full setup and takes the lean tags off
-	// it, so its next reopen is not lean either.
-	Lean *bool    `json:"lean,omitempty"`
-	MCP  []string `json:"mcp,omitempty"`
-	// Superlean starts a lean worker with a smaller tool list, no mercurius and a one paragraph prompt. A pointer like
-	// Lean: absent leaves it to the card, false brings a superlean card back lean. Implies lean, refused with `lean:
-	// false`, claude only, never an interview. Recorded as the tag atrium:superlean beside atrium:lean. See
-	// docs/runtime/superlean-design.md.
-	Superlean *bool `json:"superlean,omitempty"`
-	// LeanAgents keeps the Agent tool on a lean launch and makes just these
-	// agents (the operator's ~/.claude/agents/<name>.md) available to it, and
-	// LeanSkills the Skill tool and these skills (~/.claude/skills/<name>/). A
-	// name with no file refuses the launch. Claude only, and either starts lean.
-	// Recorded on the card as `atrium:agent:` and `atrium:skill:` tags. See
-	// lean_agents.go.
-	LeanAgents []string `json:"lean_agents,omitempty"`
-	LeanSkills []string `json:"lean_skills,omitempty"`
-	// ReportTo is who this card's reports go to: a handle, alias or card id on
-	// this room, resolved as `atrium_say` resolves one. The card's launcher is
-	// set to that card, and the name is kept as given and resolved again at each
-	// delivery. An unknown name refuses the launch. See reportto.go.
-	//
-	// THE BOARD AND THE CLI ONLY. A launch carrying the agent marker is refused
-	// for sending it, so no session can point another card's reports at a third
-	// party. It sets the launcher and nothing else: no tag, room or permission.
-	ReportTo string `json:"report_to,omitempty"`
-
-	// OutsideCode says this card runs code that is not the room's own (a PR's tests, `prove`, an outside target). It
-	// gets no git token in its environment, so that code cannot read it and push as the card. It can only take
-	// something away, so any caller may set it. The tag atrium:outside-code says the same and survives a reopen.
-	OutsideCode bool `json:"outside_code,omitempty"`
-
-	// Scratch lets an agent launch start in a directory that is not a git checkout on a claude/* branch. Without it
-	// such a launch is refused, so what an agent writes is kept in git. See agentCheckoutRefusal.
-	Scratch bool `json:"scratch,omitempty"`
-
-	// Lifetime is `work` for a launch from atrium_launch_worker: atrium exits the runner once the card's branch
-	// merges. Empty leaves a relaunched card's own value and gives a new card none. Anything but `work` is refused.
-	Lifetime string `json:"lifetime,omitempty"`
-	// Item starts the card as an item: the ItemTag, an ending that names no launcher, atrium as the opening prompt's
-	// sender, and no say. See item.go. Since item lifecycle L1 this is what `isolated` says, and it stays an alias of it
-	// for one release: what makes a card an item is the attachment, WorkItem.
-	Item bool `json:"item,omitempty"`
-	// Isolated is Item, said plainly: the isolated toolset and endings, and nothing about which item the card is on.
-	Isolated bool `json:"isolated,omitempty"`
-	// WorkItem is the backlog id of the item this card is attached to. It becomes the tag `atrium:item:<id>`, which
-	// travels with the card, and the assignment pushed to the hub names it. Launchers resolve `new:` before they post, so
-	// this is always an id. A launch from a script that sends none is attached to nothing and unchanged.
-	WorkItem string `json:"work_item,omitempty"`
-}
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
 // {cwd}, {title} and {cmd} are substituted. Configurable because which
@@ -575,7 +374,7 @@ func (d *Daemon) resumeIsFree(resume string) error {
 		return nil
 	}
 	for _, t := range tasks {
-		if t.ResumeID != resume || d.sup.get(t.ID) == nil {
+		if t.ResumeID != resume || d.sup.Get(t.ID) == nil {
 			continue
 		}
 		return &ResumeBusy{
@@ -767,7 +566,7 @@ func ontoRefusal(t *store.Task, live bool) error {
 // true about somebody else's process entirely, and believing it there would
 // refuse the relaunch this whole change exists to make work.
 func (d *Daemon) runnerIsLive(t *store.Task) bool {
-	if d.sup.get(t.ID) != nil {
+	if d.sup.Get(t.ID) != nil {
 		return true
 	}
 	switch t.Status {
@@ -808,7 +607,7 @@ func (d *Daemon) startedOnto(taskID string) {
 //
 // RestartRunner holds the same lock itself and calls launchLocked, so a restart
 // and a launch onto the same card serialize rather than braid.
-func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
+func (d *Daemon) Launch(req shared.LaunchRequest) (*store.Task, error) {
 	// The store keys cards by their bare id. The aggregate board addresses a card
 	// as `room~id`, and the hub proxy rewrites that in the request PATH on the way
 	// here, but a task id carried in the request BODY is off that path, so a
@@ -836,14 +635,14 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 		req.Item = true
 	}
 	// AN ITEM CARRIES ITS TAG, wherever the request came from: the tag is what the rest reads. See item.go.
-	if req.Item && !hasTag(req.Tags, ItemTag) {
+	if req.Item && !small.HasTag(req.Tags, ItemTag) {
 		req.Tags = append(append([]string{}, req.Tags...), ItemTag)
 	}
 	// AN OWNER THAT CANNOT BE is refused here, before a card or a worktree exists. See item_hub.go.
 	if err := checkItemLaunch(req); err != nil {
 		return nil, err
 	}
-	keys := launchKeys(req.TaskID, req.Resume)
+	keys := small.LaunchKeys(req.TaskID, req.Resume)
 	if req.MovedFrom != "" {
 		keys = append(keys, "move:"+req.MovedFrom)
 	}
@@ -856,7 +655,7 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	if lk != "" {
 		keys = append(keys, "launchkey:"+lk)
 	}
-	unlock := d.launching.lock(keys...)
+	unlock := d.launching.Lock(keys...)
 	defer unlock()
 	// A REPEAT FOR ONE MOVE returns the card the first made.
 	if req.MovedFrom != "" {
@@ -911,7 +710,7 @@ func (d *Daemon) repeatLaunch(taskID string) *store.Task {
 		return nil
 	}
 	at, ok := d.startedAt.Load(taskID)
-	if !ok || time.Since(at.(time.Time)) > repeatWindow || d.sup.get(taskID) == nil {
+	if !ok || time.Since(at.(time.Time)) > repeatWindow || d.sup.Get(taskID) == nil {
 		return nil
 	}
 	t, err := d.st.Get(taskID)
@@ -923,16 +722,16 @@ func (d *Daemon) repeatLaunch(taskID string) *store.Task {
 	return t
 }
 
-func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
+func (d *Daemon) launchLocked(req shared.LaunchRequest) (*store.Task, error) {
 	var made store.CardHome
 	t, err := d.launchCore(req, &made)
 	if err != nil && made.Path != "" {
-		d.reclaimHome(nil, made, true)
+		d.ReclaimHome(nil, made, true)
 	}
 	return t, err
 }
 
-func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Task, error) {
+func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*store.Task, error) {
 	h, err := d.st.Harness(req.Harness)
 	if err != nil {
 		return nil, fmt.Errorf("unknown harness %q", req.Harness)
@@ -995,28 +794,28 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 
 	cwd := strings.TrimSpace(req.Cwd)
-	if err := homeLaunchRefusal(req, cwd); err != nil {
+	if err := home.HomeLaunchRefusal(req, cwd); err != nil {
 		return nil, err
 	}
-	var home *store.CardHome
-	var homeDir homeDirs
-	if kind := homeRequest(req, cwd, task != nil); kind != "" {
-		row, dd, err := d.launchHome(kind, &req)
+	var cardHome *store.CardHome
+	var homeDir home.HomeDirs
+	if kind := home.HomeRequest(req, cwd, task != nil); kind != "" {
+		row, dd, err := d.LaunchHome(kind, &req)
 		switch {
 		case err == nil:
-			home, homeDir, cwd, *made = &row, dd, dd.Work, row
+			cardHome, homeDir, cwd, *made = &row, dd, dd.Work, row
 		case kind == store.CardHomeThrowaway && errors.Is(err, cardroot.ErrNone):
 		default:
 			return nil, err
 		}
 	} else if task != nil {
-		if row, ok := d.homeOf(task.ID); ok {
-			homeDir = dirsOf(row.Path)
-			home = &row
+		if row, ok := d.HomeOf(task.ID); ok {
+			homeDir = home.DirsOf(row.Path)
+			cardHome = &row
 		}
 	}
 	// Create a temporary directory only for a throwaway without a supplied
-	// directory or existing card, and with no home to hold it.
+	// directory or existing card, and with no cardHome to hold it.
 	throwaway := req.Throwaway && cwd == "" && task == nil
 	if throwaway {
 		tmp, err := makeThrowawayDir()
@@ -1025,7 +824,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 		cwd = tmp
 	}
-	throwaway = req.Throwaway && task == nil && (throwaway || (home != nil && home.Kind == store.CardHomeThrowaway))
+	throwaway = req.Throwaway && task == nil && (throwaway || (cardHome != nil && cardHome.Kind == store.CardHomeThrowaway))
 	if cwd == "" && task != nil {
 		cwd = task.Worktree
 	}
@@ -1041,15 +840,15 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// AN AGENT'S OUTPUT BELONGS IN GIT. A fresh agent launch outside a claude/* checkout is refused unless it says
 	// `scratch`. A throwaway is a scratch directory by definition, and the board's own launches are not an agent's.
-	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) &&
+	if task == nil && req.Resume == "" && !throwaway && cardHome == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) &&
 		d.st.CardRootRequiredOn() {
-		if root, err := d.cardRoot(); err == nil && !insideRoot(root, cwd) {
-			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or home: true) so the "+
+		if root, err := d.CardRoot(); err == nil && !insideRoot(root, cwd) {
+			return nil, fmt.Errorf("%s is outside this room's card root %s. launch with repo and branch (or cardHome: true) so the "+
 				"room makes the folder, or pass scratch: true if this is throwaway work", filepath.ToSlash(cwd), filepath.ToSlash(root))
 		}
 	}
 	launchBranch := ""
-	if task == nil && req.Resume == "" && !throwaway && home == nil && !req.Scratch && hasTag(req.Tags, OriginAgentTag) {
+	if task == nil && req.Resume == "" && !throwaway && cardHome == nil && !req.Scratch && small.HasTag(req.Tags, OriginAgentTag) {
 		branch, why := agentCheckoutBranch(cwd)
 		launchBranch = branch
 		if why != "" {
@@ -1058,6 +857,35 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 
+	// A REQUIRED NEED THE ROOM LACKS REFUSES A FRESH LAUNCH before anything starts. The rest is a warning in the brief.
+	if req.Resume == "" {
+		text, err := setupFor(cwd, os.Getenv("PATH"))
+		if err != nil {
+			return nil, err
+		}
+		if text != "" {
+			if strings.TrimSpace(req.Brief) != "" {
+				req.Brief = strings.TrimRight(req.Brief, "\n") + "\n\n" + text
+			} else if strings.TrimSpace(req.Prompt) != "" {
+				req.Prompt = strings.TrimRight(req.Prompt, "\n") + "\n\n" + text
+			}
+		}
+	}
+
+	// ONE CARD PER DIRECTORY. A second card in a directory a live or parked card holds would take its hooks, so a
+	// launch that did not ask to skip or adopt is refused, naming that card.
+	if req.TaskID == "" && req.IfRunning == "" && cardHome == nil && !throwaway {
+		if here, err := d.st.AdoptableTask(filepath.ToSlash(cwd)); err != nil {
+			return nil, err
+		} else if here != "" {
+			t, err := d.st.Get(here)
+			if err != nil {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%s already holds the card %s (%s). launch onto it, or pick another directory",
+				filepath.ToSlash(cwd), t.DisplayTitle(), t.ID)
+		}
+	}
 	// ONE SESSION PER DIRECTORY, when the caller asks for it. See `IfRunning`.
 	if req.TaskID == "" && req.IfRunning != "" {
 		here, err := d.st.AdoptableTask(filepath.ToSlash(cwd))
@@ -1073,7 +901,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			// work already filed here, and starting a second process onto one
 			// card is not that: both would write to the same directory and the
 			// card would describe whichever spoke last.
-			switch handOverTo(req.IfRunning, d.sup.get(here) != nil) {
+			switch handOverTo(req.IfRunning, d.sup.Get(here) != nil) {
 			case handBack:
 				log.Printf("[atrium] not starting a second runner in %s, %s is already there",
 					cwd, t.DisplayTitle())
@@ -1112,32 +940,37 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// it would be a second source of truth it believes. See writeBriefFile.
 	briefPath := ""
 	// An outside-code card has no git token, so the room's forwarder is no use to it.
-	outside := isOutsideCode(req, task)
+	outside := home.IsOutsideCode(req, task)
 	if !outside && req.Resume == "" {
 		d.scopeHubRemote(cwd)
 	}
 	if brief := strings.TrimSpace(req.Brief); brief != "" && req.Resume == "" {
 		briefDir, briefName := cwd, briefFileName
-		if home != nil {
+		if cardHome != nil {
 			briefDir = homeDir.Dir
 			briefName = filepath.ToSlash(filepath.Join(homeDir.Dir, briefFileName))
 		}
-		p, err := writeBriefFile(briefDir, brief, !outside)
+		write := writeBriefFile
+		if shared.IsClaude(h) {
+			write = func(dir, brief string, _ bool) (string, error) { return writeBrief(dir, brief) }
+		}
+		p, err := write(briefDir, brief, !outside)
 		if err != nil {
 			return nil, err
 		}
 		briefPath = filepath.ToSlash(p)
-		if hasTag(req.Tags, InterviewTag) {
+		// A card opened from a link is the operator's, so its prompt only points at the brief.
+		if small.HasTag(req.Tags, InterviewTag) || req.SourceKind != "" {
 			wanted = briefPromptEnding(briefName, wanted, "")
 		} else {
-			if req.Item || hasTag(req.Tags, ItemTag) {
+			if req.Item || small.HasTag(req.Tags, ItemTag) {
 				wanted = ItemBriefPrompt(briefName, wanted)
 			} else if isResident(req.Tags) {
 				wanted = briefPromptEnding(briefName, wanted, ResidentEndingLine)
 			} else {
 				wanted = BriefPrompt(briefName, wanted)
 			}
-			if !outside && !req.Item && !hasTag(req.Tags, ItemTag) {
+			if !outside && !req.Item && !small.HasTag(req.Tags, ItemTag) {
 				vctx, vcancel := context.WithTimeout(context.Background(), gitsync.CommandBound)
 				if l := d.visibleLauncher(vctx, task, req.SpawnedByID, req.SpawnedBy, req.SpawnedByDir, cwd); l != nil {
 					wanted = withCommitVisible(wanted, commitVisibleLine(l.WireName))
@@ -1145,15 +978,16 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 				vcancel()
 			}
 		}
-	} else if req.Resume == "" && wanted != "" && !outside {
+	} else if req.Resume == "" && wanted != "" && !outside && !shared.IsClaude(h) {
 		// NO BRIEF, so no BRIEF.md to carry the line. It rides on the prompt
 		// instead, on a fresh start only, like the brief.
 		wanted = withGitURLLine(wanted)
 	}
 	// THE RESOURCES LINE rides on every fresh start with a prompt, an outside-code card included: it names a tool
-	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile).
-	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" {
-		wanted = withResourcesLine(wanted)
+	// and carries no credential. With a brief it is in BRIEF.md already (writeBriefFile). A claude session is told
+	// the room's lines at its start instead (roomLines).
+	if strings.TrimSpace(req.Brief) == "" && req.Resume == "" && wanted != "" && !shared.IsClaude(h) {
+		wanted = withToolsLine(withResourcesLine(wanted))
 	}
 	// THE CARD'S MODEL IS THE FALLBACK, exactly as its prompt is, and for a
 	// different reason: a relaunch or an resume of a card that was started
@@ -1196,7 +1030,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	if task != nil {
 		probe.Tags = append(probe.Tags, task.Tags...)
 	}
-	if hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" {
+	if small.HasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" {
 		probe.Tags = append(probe.Tags, OriginAgentTag)
 	}
 	if d.autocompactArgsFor(h) != nil {
@@ -1215,10 +1049,10 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// marker is on the request for a new launch and on the card for a reopen.
 	// A card told who to report to gets the Stop hook too, so its silent stops
 	// are seen, and still does NOT get the agent marker.
-	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
+	agent := small.HasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
 		(task != nil && d.reportsToLauncher(task))
 	if len(cleanKitNames(req.LeanAgents)) > 0 || len(cleanKitNames(req.LeanSkills)) > 0 {
-		if !isClaude(h) {
+		if !shared.IsClaude(h) {
 			return nil, fmt.Errorf("%s has no agents or skills. lean_agents and lean_skills are claude launch options", h.Label)
 		}
 		if req.Lean != nil && !*req.Lean {
@@ -1233,7 +1067,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	if superlean {
-		if !isClaude(h) {
+		if !shared.IsClaude(h) {
 			return nil, fmt.Errorf("%s cannot start superlean. superlean is a claude launch option", h.Label)
 		}
 		if kit.Interview {
@@ -1242,7 +1076,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// A caller's own --tools in args wins over the superlean list, and the launched event says so.
 	superleanOwnTools := superlean && hasToolsFlag(args)
-	if lean && !isClaude(h) {
+	if lean && !shared.IsClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
 	}
 	// finishArgs adds the Stop hook, or for a lean launch the whole lean set,
@@ -1260,7 +1094,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
 	}
-	if wanted != "" && isClaude(h) && strings.Join(h.PromptArgs, " ") == "{prompt}" {
+	if wanted != "" && shared.IsClaude(h) && strings.Join(h.PromptArgs, " ") == "{prompt}" {
 		if flag := promptTakenBy(args); flag != "" {
 			return nil, fmt.Errorf("the opening prompt would never reach %s: %s takes the argument after it as its "+
 				"own value, so the session would open at an empty prompt. write it as %s=<value>, or put another "+
@@ -1325,9 +1159,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		d.starting.Store(t.ID, struct{}{})
 		defer func() {
 			d.starting.Delete(t.ID)
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}()
-		d.publishTask(t.ID)
+		d.Publish(t.ID)
 	case claimed:
 		// A card offered by a source has never been on the wire, so it has no
 		// name for Register to match and no pid for the fallback. Registering
@@ -1351,8 +1185,8 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		task.Worktree = filepath.ToSlash(cwd)
 	}
 
-	if home != nil && made.Path != "" {
-		if err := d.st.CardHomeCard(home.Path, task.ID); err != nil {
+	if cardHome != nil && made.Path != "" {
+		if err := d.st.CardHomeCard(cardHome.Path, task.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -1386,12 +1220,13 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			base = append(base, k+"="+v)
 		}
 		log.Printf("[atrium] prepared the environment for %s with: %s",
-			h.ID, firstLine(h.Prepare))
+			h.ID, small.FirstLine(h.Prepare))
 	}
 
 	atrium := map[string]string{
 		"ATRIUM_AGENT_NAME": agentName,
 		"ATRIUM_TASK_ID":    task.ID,
+		"ATRIUM_CARD":       d.cardLabel(task.ID),
 		// Which harness this is, for the hooks it will run.
 		//
 		// A hook knows which file it was registered in and nothing else, and
@@ -1402,13 +1237,13 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		// name baked into its own command line.
 		"ATRIUM_RUNNER": h.ID,
 	}
-	d.tellWhereIAm(atrium)
+	d.TellWhereIAm(atrium)
 	if u, ok := d.hubURLDefault(overEnv(h.Env, addedEnv)); ok {
 		atrium["ATRIUM_HUB_URL"] = u
 	}
 	// A HOME'S TEMP FOLDER, over the harness and the machine, so nothing the runner starts writes outside it.
-	if home != nil {
-		for k, v := range homeEnv(homeDir) {
+	if cardHome != nil {
+		for k, v := range home.HomeEnv(homeDir) {
 			atrium[k] = v
 		}
 	}
@@ -1417,7 +1252,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// THE CARD'S GIT TOKEN for the room's hub forwarder, scoped to the forwarder's URL. Nothing for a card that runs
 	// outside code. See hubGitEnv.
-	d.hubGitEnv(task.ID, isOutsideCode(req, task), overEnv(h.Env, addedEnv), atrium)
+	d.HubGitEnv(task.ID, home.IsOutsideCode(req, task), overEnv(h.Env, addedEnv), atrium)
 	// WHICH ROOM THIS SESSION BELONGS TO, so its HTTP control MCP registration
 	// resolves ${ATRIUM_ROOM} and the hub scopes control calls to this room.
 	// Only set when this daemon is a room: a plain daemon with no hub has no
@@ -1428,7 +1263,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	}
 	// The cache keep-alive's switch for a new Claude card, from the room default,
 	// and the 1h cache pin when it is on. See keepalive.go.
-	d.keepaliveAtLaunch(task.ID, h, atrium)
+	d.KeepaliveAtLaunch(task.ID, h, atrium)
 	// The usage record flags the first turn of a resumed runner. See usage.go.
 	d.usage.launched(task.ID, req.Resume != "")
 	if lean {
@@ -1461,7 +1296,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	if v, ok := classicRendererDefault(h, launchEnv); ok {
 		atrium[classicRendererEnv] = v
 	}
-	env := childEnvFrom(base, launchEnv, atrium)
+	env := withToolDirs(childEnvFrom(base, launchEnv, atrium), os.Getenv("PATH"))
 	// Before anything is spawned: a runner that cannot run a tool must not make
 	// a card that looks alive. See gitbash.go.
 	if add, err := launch.CheckGitBash(h.ID, env); err != nil {
@@ -1470,6 +1305,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	} else if add != "" {
 		env = append(env, add)
 	}
+	d.checkToolchain(task.ID, cwd, env)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
 	// The runner a PTY launch started, nil in window mode. See spawnPTYRunner.
@@ -1508,6 +1344,9 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 			return nil, err
 		}
 		spawned = sp
+		if prompt != "" {
+			sp.owedPrompt.Store(&prompt)
+		}
 		pid := sp.pid
 		via = "pty"
 		// Terminate and the liveness reaper both key off the pid. A window mode
@@ -1651,7 +1490,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 	// dialog gets none: clint did not ask for a queue of verdicts. See
 	// internal/store/ledger.go.
 	madeItem := false
-	if req.Resume == "" && (hasTag(req.Tags, OriginAgentTag) || reportTo != "") {
+	if req.Resume == "" && (small.HasTag(req.Tags, OriginAgentTag) || reportTo != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.st.CreateWorkItem(t, store.NewWorkItem{
 				Brief: briefHead(req.Brief, req.Prompt), BriefPath: briefPath,
@@ -1662,7 +1501,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		}
 	}
 	// AN ITEM, for a fresh item launch: its mirror row, its owner and the push the hub is owed. See item_hub.go.
-	if req.Resume == "" && (req.Item || hasTag(req.Tags, ItemTag) || workOfTags(req.Tags) != "") {
+	if req.Resume == "" && (req.Item || small.HasTag(req.Tags, ItemTag) || workOfTags(req.Tags) != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.createItem(t, itemOwnerSpec(req.Tags)); err != nil {
 				return nil, err
@@ -1776,7 +1615,7 @@ func (d *Daemon) launchCore(req LaunchRequest, made *store.CardHome) (*store.Tas
 		d.startedOnto(created.ID)
 	}
 
-	d.publishTask(created.ID)
+	d.Publish(created.ID)
 	return d.st.Get(created.ID)
 }
 
@@ -1881,26 +1720,14 @@ func (d *Daemon) launchFailed(taskID, reason string) {
 	}
 	// Prefixed so it reads as atrium reporting rather than as something typed
 	// into the why field.
-	if err := d.st.SetWhy(taskID, "failed to start: "+firstLine(reason)); err != nil {
+	if err := d.st.SetWhy(taskID, "failed to start: "+small.FirstLine(reason)); err != nil {
 		log.Printf("[atrium] note launch failure for %s: %v", taskID, err)
 	}
 	if err := d.st.SetStatus(taskID, store.StatusDead); err != nil {
 		log.Printf("[atrium] status after launch failure for %s: %v", taskID, err)
 	}
-	log.Printf("[atrium] %s never started: %s", taskID, firstLine(reason))
-	d.publishTask(taskID)
-}
-
-// firstLine keeps a card's one line summary to one line.
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	s = strings.TrimSpace(s)
-	if len(s) > 200 {
-		s = s[:200] + "..."
-	}
-	return s
+	log.Printf("[atrium] %s never started: %s", taskID, small.FirstLine(reason))
+	d.Publish(taskID)
 }
 
 // inheritedTaint names environment variables that must not reach a launched
@@ -1934,11 +1761,11 @@ func (d *Daemon) hubURLDefault(harnessEnv map[string]string) (string, bool) {
 			return "", false
 		}
 	}
-	a := d.agentAddr()
+	a := d.AgentAddr()
 	if _, port, err := net.SplitHostPort(a); err != nil || port == "0" {
 		return "", false
 	}
-	return addressOf(a), true
+	return roomconf.AddressOf(a), true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.
@@ -1957,12 +1784,16 @@ const briefFileName = "BRIEF.md"
 // Launch has stat'd cwd by the time this runs, so a missing one is a launch
 // failure that happened earlier and not here.
 func writeBriefFile(cwd, brief string, gitURL bool) (string, error) {
-	path := filepath.Join(cwd, briefFileName)
 	body := brief
 	if gitURL {
 		body = withGitURLLine(brief)
 	}
-	body = withResourcesLine(body)
+	return writeBrief(cwd, withToolsLine(withResourcesLine(body)))
+}
+
+// writeBrief is writeBriefFile without the room's lines, for a claude session, which is told them at its start.
+func writeBrief(cwd, body string) (string, error) {
+	path := filepath.Join(cwd, briefFileName)
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
@@ -2122,18 +1953,16 @@ func childEnvFrom(base []string, harnessEnv map[string]string, atrium map[string
 
 // Kill stops the runner behind a card.
 //
-// This only works when atrium knows the runner's own process id. A window-mode
-// launch does not qualify: the terminal wrapper hands the session off and
-// exits, so its pid belongs to a process that is already gone. Only pty mode
-// owns the process, and only an owned process can be stopped reliably.
+// This only works when atrium knows a process id for the card. A window-mode
+// launch has none at spawn, since the terminal wrapper hands off and exits, so
+// the session hook reports the runner's, or failing that its shell's.
 func (d *Daemon) Kill(taskID string) error {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return err
 	}
 	if t.PID <= 0 {
-		return errors.New("atrium does not know this runner's process. " +
-			"a window-mode launch is handed to the terminal and owns itself, so close it there")
+		return errors.New("close its terminal window yourself")
 	}
 	// A process that is already gone is not a failure. The request was "make
 	// this stop running", and it is not running, so the card converges to dead
@@ -2174,7 +2003,7 @@ func (d *Daemon) Kill(taskID string) error {
 		return err
 	}
 	d.recordUsage(taskID)
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	return nil
 }
 

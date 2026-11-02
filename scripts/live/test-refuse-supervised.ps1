@@ -38,7 +38,7 @@ Check 'a parent loop ends' (-not (Find-SupervisingRoom -StartPid 5 -Processes $l
 $def = Resolve-DeployRooms -Rooms @('local')
 Check "local is hub and claude-sg4 only, got $($def -join ',')" (($def -join ',') -eq 'hub,claude-sg4')
 $all = Resolve-DeployRooms -Rooms @('all')
-Check 'all leaves sg4-control out' ($all -notcontains 'sg4-control' -and $all -contains 'sgg')
+Check 'all leaves sg4-control out' ($all -notcontains 'sg4-control' -and $all -contains 'sgg' -and $all -contains 'sgg-zrok')
 $both = Resolve-DeployRooms -Rooms @('local') -Control -IKnowItKillsMyShell
 Check 'both switches add sg4-control, last of the local ones' (($both -join ',') -eq 'hub,claude-sg4,sg4-control')
 Check '-Control alone refuses' ($null -ne (Test-ControlOptIn -Control))

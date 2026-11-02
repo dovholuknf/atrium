@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +17,7 @@ func roomLaunch(t *testing.T, d *Daemon, body map[string]any) (int, map[string]a
 	t.Helper()
 	raw, _ := json.Marshal(body)
 	rec := httptest.NewRecorder()
-	d.handleRoomLaunch(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/launch", bytes.NewReader(raw)))
+	d.HandleRoomLaunch(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/launch", bytes.NewReader(raw)))
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out
@@ -95,7 +96,9 @@ func TestARoomLaunchRefusalKeepsItsCodeAndWords(t *testing.T) {
 		{400, "is not a directory"},
 	} {
 		d, f := roomDaemon(t)
-		f.launch = func(RelayLaunch) (RelayResult, error) { return RelayResult{Code: c.code, Error: c.msg}, nil }
+		f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+			return hublink.RelayResult{Code: c.code, Error: c.msg}, nil
+		}
 		code, out := roomLaunch(t, d, launchBody("atlantis"))
 		if code != c.code || out["error"] != c.msg {
 			t.Fatalf("%d: got %d %+v", c.code, code, out)
@@ -111,8 +114,8 @@ func TestARoomLaunchRefusalKeepsItsCodeAndWords(t *testing.T) {
 func TestARoomLaunchThatCannotBeTakenIsRefusedNotHeld(t *testing.T) {
 	t.Parallel()
 	d, f := roomDaemon(t)
-	f.launch = func(RelayLaunch) (RelayResult, error) {
-		return RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached to the hub right now"}, nil
+	f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+		return hublink.RelayResult{Unreachable: true, Code: 503, Error: "the room claude-sg4 is not attached to the hub right now"}, nil
 	}
 	code, out := roomLaunch(t, d, launchBody("claude-sg4"))
 	msg, _ := out["error"].(string)
@@ -120,7 +123,9 @@ func TestARoomLaunchThatCannotBeTakenIsRefusedNotHeld(t *testing.T) {
 		!strings.Contains(msg, "claude-sg4") || !strings.Contains(msg, "nothing is held") {
 		t.Fatalf("down room = %d %q", code, msg)
 	}
-	f.launch = func(RelayLaunch) (RelayResult, error) { return RelayResult{}, ErrRelayDown }
+	f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, hublink.ErrRelayDown
+	}
 	code, out = roomLaunch(t, d, launchBody("claude-sg4"))
 	msg, _ = out["error"].(string)
 	if code != http.StatusServiceUnavailable || !strings.Contains(msg, "hub is not answering") {
@@ -137,11 +142,13 @@ func TestARoomLaunchThatCannotBeTakenIsRefusedNotHeld(t *testing.T) {
 // A launch that may have started is unconfirmed, never retried, and says to look first.
 func TestARoomLaunchThatMayHaveStartedIsUnconfirmedAndNotRetried(t *testing.T) {
 	t.Parallel()
-	for name, fn := range map[string]func(RelayLaunch) (RelayResult, error){
-		"answer": func(RelayLaunch) (RelayResult, error) {
-			return RelayResult{Unconfirmed: true, Code: 504, Error: "the room timed out"}, nil
+	for name, fn := range map[string]func(hublink.RelayLaunch) (hublink.RelayResult, error){
+		"answer": func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+			return hublink.RelayResult{Unconfirmed: true, Code: 504, Error: "the room timed out"}, nil
 		},
-		"error": func(RelayLaunch) (RelayResult, error) { return RelayResult{}, ErrRelayUnconfirmed },
+		"error": func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+			return hublink.RelayResult{}, hublink.ErrRelayUnconfirmed
+		},
 	} {
 		d, f := roomDaemon(t)
 		f.launch = fn
@@ -162,10 +169,12 @@ func TestARoomLaunchThatMayHaveStartedIsUnconfirmedAndNotRetried(t *testing.T) {
 // another room, naming what to do.
 func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
 	t.Parallel()
-	for name, fn := range map[string]func(RelayLaunch) (RelayResult, error){
-		"refused at hello": func(RelayLaunch) (RelayResult, error) { return RelayResult{}, ErrRelayOld },
-		"unknown op": func(RelayLaunch) (RelayResult, error) {
-			return RelayResult{Code: 400, Error: `this hub does not know the relay op "launch"`}, nil
+	for name, fn := range map[string]func(hublink.RelayLaunch) (hublink.RelayResult, error){
+		"refused at hello": func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+			return hublink.RelayResult{}, hublink.ErrRelayOld
+		},
+		"unknown op": func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+			return hublink.RelayResult{Code: 400, Error: `this hub does not know the relay op "launch"`}, nil
 		},
 	} {
 		d, f := roomDaemon(t)
@@ -179,7 +188,9 @@ func TestARoomLaunchThroughAnOldHubSaysToUpdateIt(t *testing.T) {
 	}
 	// Anything else that goes wrong is a refusal in its own words.
 	d, f := roomDaemon(t)
-	f.launch = func(RelayLaunch) (RelayResult, error) { return RelayResult{}, errors.New("boom") }
+	f.launch = func(hublink.RelayLaunch) (hublink.RelayResult, error) {
+		return hublink.RelayResult{}, errors.New("boom")
+	}
 	if code, out := roomLaunch(t, d, launchBody("claude-sg4")); code != http.StatusBadGateway || out["error"] != "boom" {
 		t.Fatalf("other error = %d %+v", code, out)
 	}

@@ -1,1 +1,0 @@
-﻿Done worker cards, throwaway workers an agent launched, are now archived on their own a day after they finished (setting `archive_workers_after`, seconds or `off`). History, worktree and branch are kept.

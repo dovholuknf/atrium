@@ -11,6 +11,8 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 )
 
 // A room whose claude login is revoked. See docs/changes/bug-room-auth-revoked-silent.md.
@@ -110,7 +112,7 @@ func (d *Daemon) LoginNeededReason() string {
 }
 
 // launchNeedsLogin refuses a claude launch while the flag is up. A runner that is not claude has its own login.
-func (d *Daemon) launchNeedsLogin(req LaunchRequest) error {
+func (d *Daemon) launchNeedsLogin(req shared.LaunchRequest) error {
 	if d.loginNeeded() == nil {
 		return nil
 	}
@@ -119,7 +121,7 @@ func (d *Daemon) launchNeedsLogin(req LaunchRequest) error {
 	if err != nil || !(strings.EqualFold(h.ID, "claude") || strings.Contains(strings.ToLower(h.Cmd), "claude")) {
 		return nil
 	}
-	return errString(d.roomWord() + ": " + loginNeededSay)
+	return small.ErrString(d.RoomWord() + ": " + loginNeededSay)
 }
 
 // watchLoginNeeded is one pass over the runners' last screens, on the reaper's tick. It renders a runner only when
@@ -186,7 +188,7 @@ func (d *Daemon) watchLoginNeeded(now time.Time) {
 	}
 	d.login.mu.Unlock()
 	if changed {
-		d.publishHealth()
+		d.PublishHealth()
 	}
 }
 
@@ -199,7 +201,7 @@ func (d *Daemon) clearLoginNeeded() bool {
 	d.login.mu.Unlock()
 	if was {
 		log.Printf("[atrium] claude login needed: lifted by the operator")
-		d.publishHealth()
+		d.PublishHealth()
 	}
 	return was
 }

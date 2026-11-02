@@ -139,5 +139,5 @@ func (d *Daemon) learningsAlert(card *store.Task, it *store.ItemRow, text string
 		log.Printf("[atrium] could not record the learnings alert for item %s: %v", it.ID, err)
 	}
 	log.Printf("[atrium] pool %s: %s", it.Pool, text)
-	d.publishTask(card.ID)
+	d.Publish(card.ID)
 }

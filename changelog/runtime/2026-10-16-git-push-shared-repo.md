@@ -1,1 +1,0 @@
-atrium_git_push no longer skips the push when the launcher shares the repository. The branch goes to this room's hub forwarder, so a worker on another room can fetch it, and the report notes that the launcher already sees the commit.

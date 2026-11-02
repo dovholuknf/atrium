@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -27,14 +29,14 @@ type hubRelay struct {
 
 func newHubRelay() *hubRelay { return &hubRelay{fakeRelay: &fakeRelay{}, seen: map[string]bool{}} }
 
-func (h *hubRelay) Hub(_ context.Context, _, method, path string, body json.RawMessage) (RelayResult, error) {
+func (h *hubRelay) Hub(_ context.Context, _, method, path string, body json.RawMessage) (hublink.RelayResult, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.down {
-		return RelayResult{}, ErrRelayDown
+		return hublink.RelayResult{}, hublink.ErrRelayDown
 	}
 	if method == http.MethodGet {
-		return RelayResult{OK: true, Data: json.RawMessage(h.holder)}, nil
+		return hublink.RelayResult{OK: true, Data: json.RawMessage(h.holder)}, nil
 	}
 	var p struct {
 		ID    string `json:"item_id"`
@@ -46,7 +48,7 @@ func (h *hubRelay) Hub(_ context.Context, _, method, path string, body json.RawM
 	applied := !h.seen[key]
 	h.seen[key] = true
 	h.pushes = append(h.pushes, key)
-	return RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"applied":` + map[bool]string{true: "true", false: "false"}[applied] + `}`)}, nil
+	return hublink.RelayResult{OK: true, Data: json.RawMessage(`{"ok":true,"applied":` + map[bool]string{true: "true", false: "false"}[applied] + `}`)}, nil
 }
 
 func (h *hubRelay) pushed() []string {
@@ -136,10 +138,10 @@ func TestTheOwnerOfALaunchIsReadFromItsTag(t *testing.T) {
 		t.Fatalf("spec: %q", got)
 	}
 	// refused BEFORE a card exists, so a tester owner costs nothing
-	if err := checkItemLaunch(LaunchRequest{Item: true, SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err == nil {
+	if err := checkItemLaunch(shared.LaunchRequest{Item: true, SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err == nil {
 		t.Fatal("a tester owner was taken")
 	}
-	if err := checkItemLaunch(LaunchRequest{SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err != nil {
+	if err := checkItemLaunch(shared.LaunchRequest{SpawnedBy: "orchestrator", Tags: []string{ItemOwnerTag + "tester"}}); err != nil {
 		t.Fatalf("an ordinary launch is none of this: %v", err)
 	}
 }

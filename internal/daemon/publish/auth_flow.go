@@ -1,0 +1,556 @@
+package publish
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// The OIDC round trip, and the guard that wraps the published board.
+//
+// Discovery, the redirect out, the code exchange, and verifying what came back.
+// Deliberately small: atrium is a client of somebody else's provider and has no
+// business being anything more.
+
+// authPrefix is where the login endpoints live.
+//
+// UNDER ONE PREFIX so the guard can let exactly these through unauthenticated
+// and nothing else. A guard that has to enumerate exceptions scattered over the
+// API is a guard with a hole in it the week somebody adds a route.
+const AuthPrefix = "/auth/"
+
+// discovery is the part of an OIDC provider's metadata this needs.
+type Discovery struct {
+	Issuer   string `json:"issuer"`
+	AuthURL  string `json:"authorization_endpoint"`
+	TokenURL string `json:"token_endpoint"`
+	JWKSURL  string `json:"jwks_uri"`
+}
+
+// providerCache caches provider metadata, which does not change and costs a round
+// trip nobody should pay per login.
+type ProviderCache struct {
+	sync.Mutex
+	At  map[string]*Discovery
+	Got map[string]time.Time
+}
+
+// discoverFor reads a provider's metadata, or returns what it read earlier.
+func (c *ProviderCache) DiscoverFor(ctx context.Context, issuer string) (*Discovery, error) {
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+
+	c.Lock()
+	if d, ok := c.At[issuer]; ok && time.Since(c.Got[issuer]) < time.Hour {
+		c.Unlock()
+		return d, nil
+	}
+	c.Unlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		issuer+"/.well-known/openid-configuration", nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("could not reach the provider at %s: %w", issuer, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		return nil, fmt.Errorf("the provider at %s answered %s to discovery. is that the "+
+			"realm URL rather than the console URL", issuer, res.Status)
+	}
+	var d Discovery
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&d); err != nil {
+		return nil, fmt.Errorf("the provider's metadata could not be read: %w", err)
+	}
+	if d.AuthURL == "" || d.TokenURL == "" {
+		return nil, fmt.Errorf("the provider's metadata has no authorization or token endpoint")
+	}
+
+	c.Lock()
+	if c.At == nil {
+		c.At, c.Got = map[string]*Discovery{}, map[string]time.Time{}
+	}
+	c.At[issuer], c.Got[issuer] = &d, time.Now()
+	c.Unlock()
+	return &d, nil
+}
+
+// pendingLogin is one login this board started and has not finished.
+type PendingLogin struct {
+	// verifier is the PKCE secret for this login, and the whole point of PKCE
+	// is that it is never sent to the provider until the exchange.
+	//
+	// What it buys, given the state parameter already exists: state proves the
+	// callback belongs to a login this board started, and nothing more. A code
+	// stolen out of the callback URL, from a browser history, a proxy log or a
+	// referer, is still spendable by whoever holds it, because the token
+	// endpoint has no way to tell that the caller is not this board. With
+	// PKCE, spending a code needs the verifier as well, and the verifier only
+	// ever existed in this process's memory.
+	Verifier string
+	// back is where to put the browser afterwards, so a renewal in the middle
+	// of somebody's work does not dump them on the front page.
+	Back string
+	// silent says this was `prompt=none`: an attempt to renew a session
+	// against a provider that may or may not still know this browser. A silent
+	// attempt that fails is NORMAL and must end at a login form rather than at
+	// an error page.
+	Silent bool
+	At     time.Time
+}
+
+// loginStates is the logins one daemon has started but not finished.
+//
+// In memory, and short lived. A state that outlived a restart would be a state
+// an attacker could hold onto, and the cost of losing them is that somebody
+// mid-login presses the button again.
+type LoginStates struct {
+	sync.Mutex
+	At map[string]PendingLogin
+}
+
+// pendingMost bounds the map, because starting a login is unauthenticated.
+//
+// Anybody who can reach the published board can ask it to begin one, and each
+// one costs an entry that lives for five minutes. Without a cap that is a way
+// to spend the daemon's memory from outside with no credential at all. A real
+// board has a handful of logins in flight, so any number that a human could
+// reach is far below this.
+const PendingMost = 4096
+
+// startLogin records one and returns the state to send the provider.
+func (pending *LoginStates) StartLogin(back string, silent bool) (string, PendingLogin, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", PendingLogin{}, err
+	}
+	// Thirty two bytes, which is the top of the range RFC 7636 allows for a
+	// verifier once it is base64url encoded.
+	v := make([]byte, 32)
+	if _, err := rand.Read(v); err != nil {
+		return "", PendingLogin{}, err
+	}
+	state := base64.RawURLEncoding.EncodeToString(b)
+	l := PendingLogin{
+		Verifier: base64.RawURLEncoding.EncodeToString(v),
+		Back:     BackTo(back), Silent: silent, At: time.Now(),
+	}
+
+	pending.Lock()
+	defer pending.Unlock()
+	if pending.At == nil {
+		pending.At = map[string]PendingLogin{}
+	}
+	// Swept here rather than on a timer. The map is small, this runs once per
+	// login, and a timer would be a goroutine for housekeeping nobody is
+	// waiting on.
+	for k, p := range pending.At {
+		if time.Since(p.At) > AuthStateFor {
+			delete(pending.At, k)
+		}
+	}
+	if len(pending.At) >= PendingMost {
+		return "", PendingLogin{}, fmt.Errorf("too many sign-ins are already in flight on this " +
+			"board. wait a few minutes and start again")
+	}
+	pending.At[state] = l
+	return state, l, nil
+}
+
+// takeLogin consumes one. SINGLE USE: a state that could be replayed is a
+// callback that could be replayed.
+func (pending *LoginStates) TakeLogin(state string) (PendingLogin, bool) {
+	pending.Lock()
+	defer pending.Unlock()
+	l, ok := pending.At[state]
+	delete(pending.At, state)
+	return l, ok && time.Since(l.At) <= AuthStateFor
+}
+
+// pkceChallenge is what the provider is shown at the start of a login, and it
+// is a hash so that seeing it tells an eavesdropper nothing about the verifier.
+//
+// S256 and never `plain`. A `plain` challenge is the verifier itself, sent in
+// the same redirect an attacker would have to be watching anyway, which buys
+// exactly nothing over not doing it.
+func PkceChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// backTo returns somewhere on this board that a browser may be sent after a
+// login, given whatever arrived in the request.
+//
+// ONLY A PATH HERE, and everything else becomes the front page. The value
+// travels through a redirect to a provider and back, so it is under an
+// attacker's control end to end: a login link that sends somebody to a page
+// they did not expect, on a domain they did not expect, is the oldest phishing
+// primitive there is. `//elsewhere.example` and `/\elsewhere.example` are the
+// two that look like paths and are not.
+func BackTo(v string) string {
+	if !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.HasPrefix(v, "/\\") {
+		return "/"
+	}
+	return v
+}
+
+// authOutCookie marks a browser that signed out of a password login.
+const AuthOutCookie = "atrium_signed_out"
+
+// outMark is what the sign-out cookie holds: a MAC of the Authorization header
+// the browser signed out with.
+func OutMark(key []byte, header string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("signed-out|" + header))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// authGuard wraps a handler so it asks who you are.
+//
+// ONLY EVER WRAPS THE PUBLISHED HANDLER. See the header in `auth.go`: the
+// loopback board, the hooks, the CLI, the MCP server and a lent session are all
+// on other handlers and none of them is touched.
+//
+// Unconfigured is a pass-through, so turning sharing on before setting a
+// provider up leaves the board exactly as it was rather than locking it.
+func (d *Service) AuthGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := d.AuthConfig()
+		if !cfg.Enabled {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, AuthPrefix) {
+			d.ServeAuth(w, r, cfg)
+			return
+		}
+		key, err := d.CookieKey()
+		if err != nil {
+			http.Error(w, "this board cannot check who you are", http.StatusInternalServerError)
+			return
+		}
+		if c, err := r.Cookie(AuthCookie); err == nil {
+			// RE-CHECKED, not just verified. See sessionStillGood.
+			if s, ok := ReadSession(key, c.Value); ok && d.SessionStillGood(cfg, s) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		// A BROWSER THAT SIGNED OUT STILL HOLDS ITS BASIC CREDENTIALS AND SENDS
+		// THEM STRAIGHT BACK. Logout leaves a mark tied to the header it was sent
+		// with. The first request that presents that same header is answered with
+		// a fresh challenge instead of being let in, and the mark is cleared, so
+		// typing the password again works.
+		if cfg.Basic {
+			if out, err := r.Cookie(AuthOutCookie); err == nil && r.Header.Get("Authorization") != "" {
+				if hmac.Equal([]byte(out.Value), []byte(OutMark(key, r.Header.Get("Authorization")))) {
+					http.SetCookie(w, &http.Cookie{
+						Name: AuthOutCookie, Value: "", Path: "/", MaxAge: -1,
+						HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+					})
+					w.Header().Set("WWW-Authenticate", `Basic realm="atrium", charset="UTF-8"`)
+					http.Error(w, "signed out", http.StatusUnauthorized)
+					return
+				}
+			}
+		}
+		// A NAME AND A PASSWORD, CHECKED BEFORE THE PROVIDER.
+		//
+		// Ahead of the redirect so a board with both configured still opens
+		// when the provider is unreachable, and so an api client can present
+		// credentials rather than being told to visit a login page.
+		//
+		// A wrong password FALLS THROUGH rather than refusing. Adding a
+		// password to a board that already had a provider must not lock its
+		// users out, and somebody with a valid provider session is not made to
+		// know a password as well.
+		if cfg.Basic {
+			if user, pass, ok := r.BasicAuth(); ok {
+				src := AuthSource(r)
+				// BEFORE ANY SCRYPT. A source that has been guessing wrong is made
+				// to wait, and a refused request costs nothing.
+				if wait := d.AuthLim.Blocked(src); wait > 0 {
+					w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+					http.Error(w, "too many wrong passwords. wait and try again",
+						http.StatusTooManyRequests)
+					return
+				}
+				// AND THE CHECKS THEMSELVES ARE BOUNDED, since each holds about
+				// 32 MiB while it runs.
+				if !d.AuthLim.Acquire() {
+					w.Header().Set("Retry-After", "1")
+					http.Error(w, "this board is busy checking passwords. try again",
+						http.StatusServiceUnavailable)
+					return
+				}
+				good := cfg.Checks(user, pass)
+				d.AuthLim.Release()
+				if good {
+					d.AuthLim.Succeed(src)
+					// A session cookie, so the browser is not asked again on every
+					// image and poll, and so signing out means the same thing
+					// whichever way somebody got in.
+					d.SetSession(w, key, "basic:"+cfg.User, "")
+					next.ServeHTTP(w, r)
+					return
+				}
+				d.AuthLim.Fail(src)
+			}
+			// NOTHING ELSE CONFIGURED MEANS ASK FOR IT. With a provider as
+			// well, the redirect below is the better prompt and this stays out
+			// of its way.
+			if strings.TrimSpace(cfg.Issuer) == "" {
+				w.Header().Set("WWW-Authenticate", `Basic realm="atrium", charset="UTF-8"`)
+				http.Error(w, "this board asks who you are", http.StatusUnauthorized)
+				return
+			}
+		}
+		// A BROWSER IS REDIRECTED AND ANYTHING ELSE IS REFUSED. Bouncing an
+		// API call through a login page produces an HTML document where JSON
+		// was expected, which reads as a corrupt response rather than as a
+		// missing session.
+		if strings.HasPrefix(r.URL.Path, "/v1/") || r.Method != http.MethodGet {
+			http.Error(w, "not signed in", http.StatusUnauthorized)
+			return
+		}
+		// SENT TO RENEW RATHER THAN TO SIGN IN. The provider is asked
+		// silently first, and a browser whose provider session is still alive
+		// comes straight back with a new one having seen nothing. Only a
+		// provider that has forgotten this browser produces a login form.
+		http.Redirect(w, r, AuthPrefix+"renew?back="+url.QueryEscape(r.URL.RequestURI()),
+			http.StatusFound)
+	})
+}
+
+// serveAuth handles the endpoints under the prefix.
+func (d *Service) ServeAuth(w http.ResponseWriter, r *http.Request, cfg AuthConfig) {
+	switch strings.TrimPrefix(r.URL.Path, AuthPrefix) {
+	case "login":
+		d.AuthStart(w, r, cfg, false)
+	case "renew":
+		d.AuthStart(w, r, cfg, true)
+	case "callback":
+		d.AuthCallback(w, r, cfg)
+	case "logout":
+		// A POST, so a link, an image or a prefetch cannot sign somebody out.
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "sign out with a POST", http.StatusMethodNotAllowed)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name: AuthCookie, Value: "", Path: "/", MaxAge: -1,
+			HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
+		})
+		// With a password login the browser would sign straight back in with
+		// the credentials it cached. Mark that header as signed out.
+		if h := r.Header.Get("Authorization"); cfg.Basic && h != "" {
+			if key, err := d.CookieKey(); err == nil {
+				http.SetCookie(w, &http.Cookie{
+					Name: AuthOutCookie, Value: OutMark(key, h), Path: "/",
+					MaxAge: int(AuthStateFor.Seconds()) * 12, HttpOnly: true,
+					Secure: true, SameSite: http.SameSiteLaxMode,
+				})
+			}
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// authStart sends a browser to the provider, either to sign in or to renew.
+//
+// ONE FUNCTION FOR BOTH, because the two requests differ by a single parameter
+// and a second copy is how the renewal path ends up without PKCE on it.
+func (d *Service) AuthStart(w http.ResponseWriter, r *http.Request, cfg AuthConfig, silent bool) {
+	disc, err := d.Discovered.DiscoverFor(r.Context(), cfg.Issuer)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	state, l, err := d.Logins.StartLogin(r.URL.Query().Get("back"), silent)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	q := url.Values{}
+	q.Set("client_id", cfg.ClientID)
+	q.Set("redirect_uri", cfg.Redirect)
+	q.Set("response_type", "code")
+	q.Set("scope", "openid email profile")
+	q.Set("state", state)
+	q.Set("code_challenge", PkceChallenge(l.Verifier))
+	q.Set("code_challenge_method", "S256")
+	if silent {
+		// `prompt=none` says: answer from the session you already have, and
+		// refuse rather than show this person anything. It is the whole of the
+		// renewal, and it is why renewing costs atrium no stored credential.
+		q.Set("prompt", "none")
+	}
+	http.Redirect(w, r, disc.AuthURL+"?"+q.Encode(), http.StatusFound)
+}
+
+func (d *Service) AuthCallback(w http.ResponseWriter, r *http.Request, cfg AuthConfig) {
+	// THE STATE IS CONSUMED FIRST, before the provider's error is looked at,
+	// because the state is what says whether this was a silent renewal. Read
+	// the other way round, a renewal the provider declined becomes an error
+	// page, and the state it belonged to is left in the map to expire.
+	l, ok := d.Logins.TakeLogin(r.URL.Query().Get("state"))
+	if e := r.URL.Query().Get("error"); e != "" {
+		// A DECLINED RENEWAL IS NOT AN ERROR. `prompt=none` against a provider
+		// that has forgotten this browser answers `login_required`, which is
+		// the expected answer and means only that this person has to sign in
+		// properly now.
+		if ok && l.Silent {
+			http.Redirect(w, r, AuthPrefix+"login?back="+url.QueryEscape(l.Back),
+				http.StatusFound)
+			return
+		}
+		http.Error(w, "the provider refused: "+e, http.StatusForbidden)
+		return
+	}
+	if !ok {
+		// Not a login this board started, or one that took too long.
+		http.Error(w, "that sign-in did not come from here, or it took too long. "+
+			"start again", http.StatusForbidden)
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "the provider sent no code", http.StatusBadRequest)
+		return
+	}
+	disc, err := d.Discovered.DiscoverFor(r.Context(), cfg.Issuer)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", cfg.Redirect)
+	form.Set("client_id", cfg.ClientID)
+	// The verifier, which never left this process until now. A stolen code is
+	// not spendable without it, and this board is the only holder.
+	form.Set("code_verifier", l.Verifier)
+	if cfg.ClientSecret != "" {
+		form.Set("client_secret", cfg.ClientSecret)
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, disc.TokenURL,
+		strings.NewReader(form.Encode()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		http.Error(w, "could not reach the provider: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode >= 400 {
+		// The provider's own words. A token endpoint refusing is almost always
+		// a client id, a secret or a redirect that does not match what it was
+		// registered with, and it says which.
+		http.Error(w, "the provider refused the exchange: "+string(body), http.StatusForbidden)
+		return
+	}
+	var tok struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.Unmarshal(body, &tok); err != nil || tok.IDToken == "" {
+		http.Error(w, "the provider returned no id token", http.StatusBadGateway)
+		return
+	}
+
+	subject, email, err := d.ClaimsOf(r.Context(), disc, cfg, tok.IDToken)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if !cfg.Allows(subject, email) {
+		// NAMED, because the operator adding themselves to the list needs to
+		// know which of the two the provider actually sends, and guessing is
+		// how somebody ends up locked out of their own board.
+		log.Printf("[atrium] refused a sign-in from subject %q email %q: not on the allow list",
+			subject, email)
+		http.Error(w, "signed in as "+email+" ("+subject+"), which is not on this board's "+
+			"allow list", http.StatusForbidden)
+		return
+	}
+
+	key, err := d.CookieKey()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	d.SetSession(w, key, subject, email)
+	if !l.Silent {
+		// A renewal is not worth a line. It happens on a timer nobody set and
+		// logging it turns the daemon's log into a heartbeat.
+		log.Printf("[atrium] %s signed in to the published board", email)
+	}
+	// Checked again on the way out rather than trusted from the map. It is one
+	// comparison, and the alternative is that a later edit which puts anything
+	// else into `back` silently becomes an open redirect.
+	http.Redirect(w, r, BackTo(l.Back), http.StatusFound)
+}
+
+// claimsOf verifies the id token against the provider's keys and reads who it
+// is about.
+//
+// VERIFIED, not decoded. An id token that is merely parsed is a claim anybody
+// can write: the signature is the entire reason to believe it, and skipping it
+// turns a login into a form where you type your own subject.
+func (d *Service) ClaimsOf(ctx context.Context, disc *Discovery, cfg AuthConfig, raw string) (
+	subject, email string, err error) {
+
+	if disc.JWKSURL == "" {
+		return "", "", fmt.Errorf("the provider publishes no signing keys, so nothing it " +
+			"sends can be verified")
+	}
+	keys, err := d.Jwks.JwksFor(ctx, disc.JWKSURL)
+	if err != nil {
+		return "", "", err
+	}
+	var claims jwt.MapClaims
+	_, err = jwt.ParseWithClaims(raw, &claims, func(t *jwt.Token) (any, error) {
+		kid, _ := t.Header["kid"].(string)
+		k, ok := keys[kid]
+		if !ok {
+			return nil, fmt.Errorf("the token was signed with a key the provider does not publish")
+		}
+		return k, nil
+	}, jwt.WithIssuer(strings.TrimRight(cfg.Issuer, "/")),
+		jwt.WithAudience(cfg.ClientID),
+		jwt.WithExpirationRequired())
+	if err != nil {
+		return "", "", fmt.Errorf("that sign-in could not be verified: %w", err)
+	}
+	sub, _ := claims["sub"].(string)
+	mail, _ := claims["email"].(string)
+	if sub == "" {
+		return "", "", fmt.Errorf("the provider's token says nothing about who it is for")
+	}
+	return sub, mail, nil
+}

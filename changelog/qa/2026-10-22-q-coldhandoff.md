@@ -1,1 +1,0 @@
-The coldHandoff board unit waits for the board's event stream to be live before it pushes the cold handoff event, so the toast is no longer missed when the stream was still connecting (q-coldhandoff).

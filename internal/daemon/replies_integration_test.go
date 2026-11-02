@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,6 +36,8 @@ func TestRepliesAreTheLastMainChainTextOldestFirst(t *testing.T) {
 	transcriptReply(t, path, "m5", base.Add(4*time.Second), false, textBlock(strings.Repeat("x", replyTextMax+500)))
 
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+
+	d.initServices()
 
 	v, err := d.repliesFor(f.task.ID, 3)
 	if err != nil {
@@ -85,6 +88,7 @@ func TestRepliesFollowTheStartedSession(t *testing.T) {
 	transcriptReply(t, f.path, "old", f.base, false, textBlock("from before the clear"))
 	transcriptReply(t, fresh, "new", f.base.Add(time.Second), false, textBlock("after the clear"))
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	d.ctx.started(f.task.ID, "s2")
 
 	v, err := d.repliesFor(f.task.ID, 3)
@@ -140,6 +144,7 @@ func TestRepliesForSurfacesAStoreError(t *testing.T) {
 	t.Parallel()
 	f := newUsageFix(t)
 	d := &Daemon{hk: *testHooks(), st: f.st, usage: f.u, ctx: newContextSizes()}
+	d.initServices()
 	if _, err := d.repliesFor("01a0nosuchcard", 3); !errors.Is(err, errNoSuchCard) {
 		t.Fatalf("an unknown card gave %v", err)
 	}
@@ -162,12 +167,12 @@ func TestReadRepliesSeeksTheTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for written := 0; written < transcriptTail+len(pad); written += len(pad) {
+	for written := 0; written < cycle.TranscriptTail+len(pad); written += len(pad) {
 		fh.WriteString(pad)
 	}
 	fh.Close()
 	transcriptReply(t, path, "new", base.Add(time.Minute), false, textBlock("recent"))
-	if info, _ := os.Stat(path); info.Size() <= transcriptTail {
+	if info, _ := os.Stat(path); info.Size() <= cycle.TranscriptTail {
 		t.Fatalf("the fixture is %d bytes, not over the tail", info.Size())
 	}
 	got, err := readReplies(path, 5, testHooks())

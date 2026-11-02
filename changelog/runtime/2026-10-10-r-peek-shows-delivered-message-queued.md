@@ -1,1 +1,0 @@
-A message that was delivered no longer shows as queued: the envelope on the terminals row and the peek line drop as soon as any path delivers it, and the tip for a `when: done` message now says it goes in when the turn ends or after the escalate_held_after minutes. Item r-peek-shows-delivered-message-queued.

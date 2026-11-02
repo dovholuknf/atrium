@@ -1,1 +1,0 @@
-An attached terminal starts at the top of its pane. The empty band between the card header and the first line, up to two rows tall when another window held the pty shorter than this one, is gone: the grid sits under the bar and any leftover falls below the last row. (u-terminal-top-gap)

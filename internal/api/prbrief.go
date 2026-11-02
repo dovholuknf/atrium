@@ -78,7 +78,7 @@ func excludeFromStatus(ctx context.Context, worktree string) {
 	_, _ = f.WriteString("\n.atrium/\n")
 }
 
-// prBrief is what is added to the card's prompt: where to diff from, what the pull request is called, and the plain
+// prBrief is what is added to the card's BRIEF.md: where to diff from, what the pull request is called, and the plain
 // instruction that nothing is to be fetched. hasFile is whether writePRBriefFile made the file.
 func prBrief(pr *forge.PR, hasFile bool) string {
 	if pr == nil {

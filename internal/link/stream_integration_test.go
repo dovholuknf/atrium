@@ -120,7 +120,8 @@ func (s *streamRig) addRoom(name string, access time.Duration) *streamRoom {
 	// The stream handlers write to RemoteDir after their stream ends, and the TempDir is removed right after this
 	// runs, so the room is stopped and every handler waited for first.
 	s.t.Cleanup(func() { cancel(); room.EndStreams() })
-	waitFor(s.t, 10*time.Second, func() bool { _, ok := s.rig.attachedAs(name); return ok })
+	// The hub records the attach before the room's own side is marked up, and OpenStream refuses a room that is not up.
+	waitFor(s.t, 10*time.Second, func() bool { _, ok := s.rig.attachedAs(name); return ok && room.State().Up })
 	sr := &streamRoom{room: room, dir: room.RemoteDir, seen: seen}
 	s.rooms[name] = sr
 	return sr

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // Turning a name somebody typed into a card. See
@@ -74,7 +76,7 @@ type choice struct {
 
 func (c candidate) choice() choice {
 	out := choice{
-		Spelled: c.spelled(), Card: tagFor(c.Room, c.Card.ID), Room: c.Room,
+		Spelled: c.spelled(), Card: wire.TagFor(c.Room, c.Card.ID), Room: c.Room,
 		Status: c.Card.Status, Activity: c.Card.Activity.What, Created: c.Card.Created,
 	}
 	if c.Card.Wire != "" {
@@ -162,7 +164,7 @@ func (c candidate) spelled() string {
 	if c.Card.Alias != "" {
 		name = c.Card.Alias
 	}
-	return name + "@" + c.Room + " (" + tagFor(c.Room, c.Card.ID) + ")"
+	return name + "@" + c.Room + " (" + wire.TagFor(c.Room, c.Card.ID) + ")"
 }
 
 // resolveAcross finds `who` on every room in `lists`. `quiet` are rooms that did
@@ -237,7 +239,7 @@ func ambiguousAlias(cards []ctlCard, who string, now time.Time) error {
 	}
 	parts := make([]string, 0, len(hits))
 	for _, t := range hits {
-		room, _ := splitTag(t.ID)
+		room, _ := wire.SplitTag(t.ID)
 		if room == "" {
 			room = "this room"
 		}

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 )
 
 type killer struct{ p *harnessPTY }
@@ -61,13 +63,13 @@ func TestConPTYClaudeRepro(t *testing.T) {
 	}()
 	snap := func() []byte { mu.Lock(); defer mu.Unlock(); return append([]byte(nil), got...) }
 	waitFor := func(needle string, from int, d time.Duration) int {
-		end := time.Now().Add(d)
-		for time.Now().Before(end) {
+		var n int
+		if testwait.PollEvery(200*time.Millisecond, d, func() bool {
 			b := snap()
-			if from < len(b) && bytes.Contains(b[from:], []byte(needle)) {
-				return len(b)
-			}
-			time.Sleep(200 * time.Millisecond)
+			n = len(b)
+			return from < len(b) && bytes.Contains(b[from:], []byte(needle))
+		}) {
+			return n
 		}
 		t.Logf("timed out waiting for %q", needle)
 		return len(snap())
@@ -75,7 +77,7 @@ func TestConPTYClaudeRepro(t *testing.T) {
 	settle := func() {
 		last := -1
 		for {
-			time.Sleep(3 * time.Second)
+			time.Sleep(3 * time.Second) // wait: a quiet window, claude marks no end of its output
 			n := len(snap())
 			if n == last {
 				return
@@ -85,7 +87,7 @@ func TestConPTYClaudeRepro(t *testing.T) {
 	}
 	say := func(s string) {
 		_, _ = p.Write([]byte(s))
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond) // wait: the pause atrium_say puts between text and Enter
 		_, _ = p.Write([]byte("\r"))
 	}
 	waitFor("❯", 0, 60*time.Second)
@@ -105,10 +107,10 @@ func TestConPTYClaudeRepro(t *testing.T) {
 			fmt.Sscan(os.Getenv("ATRIUM_CLAUDE_TYPE_AFTER"), &after)
 			fmt.Sscan(os.Getenv("ATRIUM_CLAUDE_TYPE_EVERY"), &every)
 			fmt.Sscan(os.Getenv("ATRIUM_CLAUDE_TYPE_TIMES"), &times)
-			time.Sleep(time.Duration(after) * time.Millisecond)
+			time.Sleep(time.Duration(after) * time.Millisecond) // wait: the configured delay is the scenario
 			for i := 0; i < max(times, 1); i++ {
 				say(fmt.Sprintf("[atrium] tester says: %s (%d)", ty, i+1))
-				time.Sleep(time.Duration(every) * time.Millisecond)
+				time.Sleep(time.Duration(every) * time.Millisecond) // wait: the configured spacing is the scenario
 			}
 		}
 		waitFor(marker, at, 180*time.Second)
@@ -116,8 +118,13 @@ func TestConPTYClaudeRepro(t *testing.T) {
 	}
 	_ = os.WriteFile(out, snap(), 0o644)
 	_, _ = p.Write([]byte("\x03"))
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // wait: two Ctrl-C presses apart, as a person types them
 	_, _ = p.Write([]byte("\x03"))
-	time.Sleep(1 * time.Second)
+	exited := make(chan struct{})
+	go func() { p.Wait(); close(exited) }()
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+	}
 	_ = c.Process.Kill()
 }

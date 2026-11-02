@@ -79,11 +79,11 @@ func TestAnExpiredLeaseUndoesTheFreezeAndRefusesMovedTo(t *testing.T) {
 	c := mustRegister(t, s, "old")
 	s.Freeze(c.ID, "m1", time.Millisecond)
 	s.QueueMessage(c.ID, "held")
-	time.Sleep(5 * time.Millisecond)
+	moveOn(t, s, time.Minute)
 	if err := s.SetMovedTo(c.ID, "m1", "b~new"); !errors.Is(err, ErrLeaseExpired) {
 		t.Fatalf("moved_to after the lease: %v", err)
 	}
-	undone, err := s.ExpireFreeze(c.ID, time.Now())
+	undone, err := s.ExpireFreeze(c.ID, s.now())
 	if err != nil || !undone {
 		t.Fatalf("expire: %v %v", undone, err)
 	}
@@ -107,8 +107,7 @@ func TestMovedToRefusesTheSelfUndoAndTheReplay(t *testing.T) {
 		t.Fatalf("a different target: %v", err)
 	}
 	s.RenewFreeze(c.ID, "m1", time.Nanosecond)
-	time.Sleep(2 * time.Millisecond)
-	if undone, _ := s.ExpireFreeze(c.ID, time.Now()); undone {
+	if undone, _ := s.ExpireFreeze(c.ID, time.Now().Add(time.Minute)); undone {
 		t.Fatal("a card that moved undid itself")
 	}
 	if _, err := s.Unfreeze(c.ID, "m1", true); !errors.Is(err, ErrMoved) {

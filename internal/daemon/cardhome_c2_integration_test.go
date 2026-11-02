@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -29,19 +31,19 @@ func fillHome(t *testing.T, dir string, files int, size int) {
 func TestTheSizeWalkStopsAtItsBudgetAndResumes(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fillHome(t, dd.Dir, 6, 100)
 
-	if d.walkHome(row.Path, time.Now().Add(-time.Second)) {
+	if d.WalkHome(row.Path, time.Now().Add(-time.Second)) {
 		t.Fatal("a walk past its deadline said it was done")
 	}
 	if got, _, _ := d.st.CardHomeByPath(row.Path); got.MeasuredAt != "" {
 		t.Fatalf("an unfinished walk wrote a size: %+v", got)
 	}
-	if !d.walkHome(row.Path, time.Now().Add(time.Minute)) {
+	if !d.WalkHome(row.Path, time.Now().Add(time.Minute)) {
 		t.Fatal("the walk did not finish with time")
 	}
 	got, _, _ := d.st.CardHomeByPath(row.Path)
@@ -53,7 +55,7 @@ func TestTheSizeWalkStopsAtItsBudgetAndResumes(t *testing.T) {
 func TestTheSizeWalkDoesNotFollowALink(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +64,7 @@ func TestTheSizeWalkDoesNotFollowALink(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dd.Work, "link")); err != nil {
 		t.Skipf("no links here: %v", err)
 	}
-	if !d.walkHome(row.Path, time.Now().Add(time.Minute)) {
+	if !d.WalkHome(row.Path, time.Now().Add(time.Minute)) {
 		t.Fatal("the walk did not finish")
 	}
 	if got, _, _ := d.st.CardHomeByPath(row.Path); got.Bytes >= 5000 {
@@ -73,18 +75,18 @@ func TestTheSizeWalkDoesNotFollowALink(t *testing.T) {
 func TestTheDiskViewListsHomesBySizeAndWhatIsNotAtriums(t *testing.T) {
 	t.Parallel()
 	d, root := homeRoom(t)
-	small, ds, err := d.makeHome(store.CardHomeScratch, "small", "w")
+	small, ds, err := d.MakeHome(store.CardHomeScratch, "small", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
-	big, db, err := d.makeHome(store.CardHomeScratch, "big", "w")
+	big, db, err := d.MakeHome(store.CardHomeScratch, "big", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fillHome(t, ds.Dir, 1, 10)
 	fillHome(t, db.Dir, 3, 4000)
-	d.walkHome(small.Path, time.Now().Add(time.Minute))
-	d.walkHome(big.Path, time.Now().Add(time.Minute))
+	d.WalkHome(small.Path, time.Now().Add(time.Minute))
+	d.WalkHome(big.Path, time.Now().Add(time.Minute))
 	if err := os.MkdirAll(filepath.Join(root, "stray"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +117,7 @@ func TestTheDiskViewListsHomesBySizeAndWhatIsNotAtriums(t *testing.T) {
 func TestRemoveHomeRefusesALiveCardAndRemovesAKeptOrphan(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +169,7 @@ func TestCullKeepsTheBranchWhenTheHubDoesNotHaveIt(t *testing.T) {
 	cullGit(t, repo, "cherry-pick", tip)
 	cullGit(t, repo, "checkout", "-q", "main")
 
-	res, err := d.cullHome(task, DefaultCullInto, row)
+	res, err := d.CullHome(task, DefaultCullInto, row)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +187,7 @@ func TestCullKeepsTheBranchWhenTheHubDoesNotHaveIt(t *testing.T) {
 func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
-	row, dd, err := d.makeHome(store.CardHomeScratch, "t", "w")
+	row, dd, err := d.MakeHome(store.CardHomeScratch, "t", "w")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +199,7 @@ func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	say := launcherSayBody(d.saysDir(task.ID), task.ID, "line one\nline two")
+	say := launcherSayBody(d.SaysDir(task.ID), task.ID, "line one\nline two")
 	want := filepath.Join(dd.Meta, "says", task.ID+".md")
 	if say != "read "+want+" and do what it says." {
 		t.Fatalf("say %q, want a file at %s", say, want)
@@ -205,30 +207,31 @@ func TestALongSayAndTheHandoffGoInTheHomeForACardWithOne(t *testing.T) {
 	if b, err := os.ReadFile(want); err != nil || string(b) != "line one\nline two" {
 		t.Fatalf("say file: %q %v", b, err)
 	}
-	if got := d.handoffPath(task); got != filepath.Join(dd.Meta, "handoff.md") {
+	if got := d.HandoffPath(task); got != filepath.Join(dd.Meta, "handoff.md") {
 		t.Fatalf("handoff at %s", got)
 	}
-	path, err := d.prepareHandoff(task)
+	path, err := d.PrepareHandoff(task)
 	if err != nil || filepath.Dir(path) != dd.Meta || !regexp.MustCompile(`^handoff-\d{14}\.md$`).MatchString(filepath.Base(path)) {
 		t.Fatalf("prepare: %q %v", path, err)
 	}
 }
 
-func TestALongSayAndTheHandoffKeepTheOldPlacesForACardWithNoHome(t *testing.T) {
+func TestALongSayAndTheHandoffPlacesForACardWithNoHome(t *testing.T) {
 	t.Parallel()
 	d, _ := homeRoom(t)
 	task, _, err := d.st.Register(store.Observed{WireName: "plain", Worktree: filepath.ToSlash(t.TempDir()), Runner: "claude"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir := d.saysDir(task.ID); dir != "" {
+	if dir := d.SaysDir(task.ID); dir != "" {
 		t.Fatalf("a card with no home has a says dir %q", dir)
 	}
-	say := launcherSayBody(d.saysDir(task.ID), task.ID, "line one\nline two")
+	say := launcherSayBody(d.SaysDir(task.ID), task.ID, "line one\nline two")
 	if want := filepath.Join(os.TempDir(), "atrium-says", task.ID+".md"); !strings.Contains(say, want) {
 		t.Fatalf("say %q, want the old place %s", say, want)
 	}
-	if got, want := d.handoffPath(task), filepath.Join(os.TempDir(), "atrium", "handoffs", task.ID+".md"); got != want {
+	// The handoff is never in the system temp folder: beside the room's database instead.
+	if got, want := d.HandoffPath(task), filepath.Join(filepath.Dir(d.opts.DBPath), cycle.HandoffDirName, task.ID+".md"); got != want {
 		t.Fatalf("handoff at %s, want %s", got, want)
 	}
 }
@@ -253,7 +256,7 @@ func requiredRoom(t *testing.T, on bool) (*Daemon, string) {
 }
 
 func launchOutside(d *Daemon, cwd string, tags []string, scratch bool) error {
-	_, err := d.Launch(LaunchRequest{Harness: "quick", Cwd: cwd, Title: "outside", Prompt: "go", Tags: tags, Scratch: scratch})
+	_, err := d.Launch(shared.LaunchRequest{Harness: "quick", Cwd: cwd, Title: "outside", Prompt: "go", Tags: tags, Scratch: scratch})
 	return err
 }
 

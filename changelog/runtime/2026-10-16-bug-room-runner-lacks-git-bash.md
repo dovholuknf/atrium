@@ -1,1 +1,0 @@
-A claude runner launched on Windows now checks for Git Bash first (env var, git.exe sibling, Program Files, atrium-tools Git), points at the atrium-tools one when only that exists, and otherwise refuses the launch with the reason instead of leaving an idle card. Item bug-room-runner-lacks-git-bash.

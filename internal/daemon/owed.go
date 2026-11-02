@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/address"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -49,7 +51,7 @@ const (
 // since when. Empty reason when it does not. Pure over the store, so the same test opens an
 // item and later says its reason is gone.
 func (d *Daemon) owes(t *store.Task, now time.Time) (reason, text string, since time.Time) {
-	if t == nil || !d.reportsToLauncher(t) || isParked(t) {
+	if t == nil || !d.reportsToLauncher(t) || small.IsParked(t) {
 		return "", "", time.Time{}
 	}
 	switch t.Status {
@@ -87,7 +89,7 @@ func (d *Daemon) localOrchestrator(not string) *store.Task {
 	}
 	var best *store.Task
 	for _, t := range all {
-		if t.ID == not || !hasTag(t.Tags, OrchestratorTag) {
+		if t.ID == not || !small.HasTag(t.Tags, OrchestratorTag) {
 			continue
 		}
 		if best == nil || (best.Status == store.StatusDone && t.Status != store.StatusDone) {
@@ -110,7 +112,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 		it.Host, it.Launcher = launcher.ID, launcher.ID
 	default:
 		// NOBODY KEPT BY NOBODY: the local orchestrator keeps it, else the worker's own row.
-		if name, room, ok := d.remoteLauncher(t); ok {
+		if name, room, ok := d.RemoteLauncher(t); ok {
 			it.RemoteLauncher = name + "@" + room
 		}
 		it.Orphan = true
@@ -129,7 +131,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 		// THE TYPED NUDGE for a launcher that does not hold its notices. Only a permission wait has
 		// no notice of its own: a report, an ask, a silent stop and an ending each already say it.
 		if launcher != nil && reason == owedPermission && !holdsNotices(launcher) {
-			if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, truncatePeer(t.WireName+" is "+line)); err != nil {
+			if _, err := d.deliverPeerAs(store.DeliveryNotice, launcher, t.WireName, shared.TruncatePeer(t.WireName+" is "+line)); err != nil {
 				log.Printf("[atrium] could not nudge %s about %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)
 			}
 		}
@@ -137,7 +139,7 @@ func (d *Daemon) openOwed(t *store.Task, reason, text string, since time.Time) {
 	if err := d.st.LogWorkAtrium(t.ID, "owes an answer ("+reason+"), kept on its launcher's card"); err != nil {
 		log.Printf("[atrium] could not log the owed item on %s: %v", t.DisplayTitle(), err)
 	}
-	d.publishTask(it.Host)
+	d.Publish(it.Host)
 }
 
 func firstWords(s string) string {
@@ -173,7 +175,7 @@ func (d *Daemon) closeOwed(workerID, how string) {
 		return
 	}
 	log.Printf("[atrium] owed item for %s closed: %s", it.WorkerWire, how)
-	d.publishTask(it.Host)
+	d.Publish(it.Host)
 }
 
 // owedPass is one tick: open what is owed, close what is not, push what has waited.
@@ -240,14 +242,14 @@ func (d *Daemon) pushOwed(worker *store.Task, it store.OwedItem, now time.Time) 
 		log.Printf("[atrium] could not record the push for %s: %v", it.WorkerWire, err)
 		return
 	}
-	if hasTag(worker.Tags, OrchestratorTag) {
+	if small.HasTag(worker.Tags, OrchestratorTag) {
 		return
 	}
 	mins := int(now.Sub(it.Since) / time.Minute)
 	var text string
 	switch l, err := d.st.Get(it.Launcher); {
 	case it.Launcher != "" && err == nil:
-		if hasTag(l.Tags, OrchestratorTag) {
+		if small.HasTag(l.Tags, OrchestratorTag) {
 			return
 		}
 		text = fmt.Sprintf("%s has not answered %s for %d minutes. %s is waiting at %s. Its last words: %s",
@@ -259,7 +261,7 @@ func (d *Daemon) pushOwed(worker *store.Task, it store.OwedItem, now time.Time) 
 		text = fmt.Sprintf("%s has no launcher, and has been waiting at %s for %d minutes. Its last words: %s",
 			it.WorkerWire, it.Status, mins, orWord(it.Text, "none"))
 	}
-	text = truncatePeer(text)
+	text = shared.TruncatePeer(text)
 	if o := d.localOrchestrator(worker.ID); o != nil {
 		d.holdNotice(o, worker, NoticeOwed, text)
 		return
@@ -277,13 +279,13 @@ func (d *Daemon) pushRemoteOrchestrator(worker *store.Task, text string) {
 	if name == "" {
 		return
 	}
-	if _, err := d.holdRelay(worker, worker.WireName, name, room, "", text, "", KindFYI, store.RelaySourceNotice); err != nil {
+	if _, err := d.HoldRelay(worker, worker.WireName, name, room, "", text, "", KindFYI, store.RelaySourceNotice); err != nil {
 		log.Printf("[atrium] could not hold an owed notice to %s@%s: %v", name, room, err)
 	}
 }
 
 func (d *Daemon) remoteOrchestrator() (name, room string) {
-	if rl := d.relay(); rl != nil {
+	if rl := d.Relay(); rl != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		list, _, err := rl.Peers(ctx, true, false)
 		cancel()
@@ -291,7 +293,7 @@ func (d *Daemon) remoteOrchestrator() (name, room string) {
 			// BY TAG ONLY. A card on any room may be told the name `orchestrator`, and would
 			// otherwise be sent every orphan report. A hub that sends no tags gets the chip only.
 			for _, p := range list {
-				if hasTag(p.Tags, OrchestratorTag) {
+				if small.HasTag(p.Tags, OrchestratorTag) {
 					_ = d.st.SetSetting(remoteOrchestratorKey, p.Handle+"@"+p.Room)
 					return p.Handle, p.Room
 				}
@@ -361,7 +363,7 @@ func (d *Daemon) listOwed(host *store.Task) {
 	}
 	line := fmt.Sprintf("%d open %s from your workers: %s. atrium_task notices to read them.",
 		len(parts), noun, strings.Join(parts, ", "))
-	if _, err := d.st.QueueFromPeer(host.ID, truncatePeer(line), "atrium"); err != nil {
+	if _, err := d.st.QueueFromPeer(host.ID, shared.TruncatePeer(line), "atrium"); err != nil {
 		log.Printf("[atrium] could not list the owed items for %s: %v", host.DisplayTitle(), err)
 	}
 }
@@ -396,10 +398,10 @@ func (d *Daemon) owedSaid(sender, target *store.Task, kind, text string) {
 // orphanReport makes a report that has no launcher to go to visible: held on the local
 // orchestrator's card, else held in the relay outbox for the hub's. Once per report.
 func (d *Daemon) orphanReport(worker *store.Task, body string) {
-	if hasTag(worker.Tags, OrchestratorTag) {
+	if small.HasTag(worker.Tags, OrchestratorTag) {
 		return
 	}
-	text := truncatePeer(worker.WireName + " reported, and has no launcher to hear it: " + body)
+	text := shared.TruncatePeer(worker.WireName + " reported, and has no launcher to hear it: " + body)
 	// THIS NOTICE IS THE ITEM: the worker is not also "ended with no report".
 	if err := d.st.SetOwedReported(worker.ID); err != nil {
 		log.Printf("[atrium] could not mark %s's report as told: %v", worker.DisplayTitle(), err)

@@ -1,1 +1,0 @@
-﻿The card peek is now a stack of drawers. Each section under the header (needs you, recap, context, chatter) has a one-line summary and opens or shuts with a click or Enter or Space. Needs you starts open, the rest shut, and the state is remembered per section. u-peek-accordions.

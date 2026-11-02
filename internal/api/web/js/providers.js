@@ -26,6 +26,7 @@ let providerOpen = "";
 async function renderProviders() {
   const host = document.getElementById("provider-list");
   if (!host) return;
+  if (typeof roomUnnamed === "function" && roomUnnamed()) return;
   try { allProviders = (await api("/v1/providers")).providers || []; } catch (e) { return; }
 
   if (!allProviders.length) {

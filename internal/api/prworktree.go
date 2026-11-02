@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/base/forge"
 	"github.com/dovholuknf/atrium/internal/base/nowindow"
+	"github.com/dovholuknf/atrium/internal/base/rules"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -48,6 +50,9 @@ type prWorktreeResult struct {
 	PR *forge.PR `json:"-"`
 	// BriefFile is whether the description and discussion were written into the worktree.
 	BriefFile bool `json:"-"`
+	// Remote is the advisory fork's remote the card holds a share of, and AddedRemote whether this call added it.
+	Remote      string `json:"-"`
+	AddedRemote bool   `json:"-"`
 }
 
 // makePRWorktree makes a worktree for a pull request at `<worktree_root>/<org>/<repo>/<branch>`. See prWorktree.
@@ -242,6 +247,7 @@ func (s *Server) prWorktree(ctx context.Context, p *store.Provider, req prWorktr
 			"git could not make that worktree: " + strings.TrimSpace(tailLines(string(out))))
 	}
 	s.scopeHub(filepath.FromSlash(dest))
+	s.setupWorktree(ctx, host, req.Org, req.Repo, dest)
 	res.Path, res.Branch, res.CreatedBranch = dest, branch, made
 	return res, http.StatusOK, nil
 }
@@ -309,6 +315,9 @@ func undoPRWorktree(res prWorktreeResult) {
 	if res.CreatedBranch {
 		run("branch", "-D", res.Branch)
 	}
+	if res.AddedRemote {
+		run("remote", "remove", res.Remote)
+	}
 }
 
 // credentialHelper is the git helper line of a forge's own CLI, or "" for a forge with none. The command name is the
@@ -361,6 +370,74 @@ func fetchPRHead(ctx context.Context, dir string, spec forge.FetchSpec, dst, hel
 	return nil
 }
 
+// advisoryFork is a GitHub security advisory's temporary private fork, and the branch or pull request a link names
+// on it. gwt ghsa (git-worktree.ps1:2123) lays it out the same way.
+type advisoryFork struct {
+	ghsa   string
+	branch string
+	pr     int
+}
+
+var ghsaForkID = regexp.MustCompile(`^[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}$`)
+
+// advisoryForkOf is the fork a recognised link is on, or nil. The advisory page's own `GHSA-...` capture is not one.
+func advisoryForkOf(got *rules.Resolved) *advisoryFork {
+	f := &advisoryFork{ghsa: strings.ToLower(strings.TrimSpace(got.Vars["ghsa"])), branch: strings.TrimSpace(got.Vars["ref"])}
+	f.pr, _ = strconv.Atoi(strings.TrimSpace(got.Vars["pr"]))
+	if !ghsaForkID.MatchString(f.ghsa) || (f.branch == "" && f.pr <= 0) {
+		return nil
+	}
+	return f
+}
+
+func (f *advisoryFork) remote() string { return "ghsa-" + f.ghsa }
+
+// fetchAdvisoryFork adds the fork's remote to repoPath when it is missing and fetches the one ref the link names into
+// the remote's own namespace, so removing the remote deletes it too. It answers that ref and whether it added the
+// remote, which a failed fetch removes again.
+func (s *Server) fetchAdvisoryFork(ctx context.Context, repoPath, host, org, repo string, f *advisoryFork, helper string) (string, bool, error) {
+	remote := f.remote()
+	src, dst := "refs/heads/"+f.branch, "refs/remotes/"+remote+"/"+f.branch
+	if f.pr > 0 {
+		src, dst = "refs/pull/"+strconv.Itoa(f.pr)+"/head", "refs/remotes/"+remote+"/pull/"+strconv.Itoa(f.pr)
+	}
+	added := false
+	if _, err := gitIn(ctx, repoPath, "remote", "get-url", remote); err != nil {
+		if _, err := gitIn(ctx, repoPath, "remote", "add", remote, s.advisoryForkURL(host, org, repo, f.ghsa)); err != nil {
+			return "", false, err
+		}
+		added = true
+	}
+	cmd := exec.CommandContext(ctx, "git", fetchArgs(forge.FetchSpec{Remote: remote, Refspec: src}, dst, helper)...)
+	cmd.Dir = filepath.FromSlash(repoPath)
+	nowindow.Hide(cmd)
+	// GIT_ALLOW_PROTOCOL overrides the protocol settings fetchArgs gives.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL="+s.advisoryForkProtocol)
+	cmd.WaitDelay = 5 * time.Second
+	if out, err := cmd.CombinedOutput(); err != nil {
+		if added {
+			_, _ = gitIn(ctx, repoPath, "remote", "remove", remote)
+		}
+		return "", false, errors.New(strings.TrimSpace(tailLines(string(out))))
+	}
+	return dst, added, nil
+}
+
+// remoteHeld is whether a card other than card holds the remote of repoPath in its inventory.
+func (s *Server) remoteHeld(remote, repoPath, card string) bool {
+	rows, err := s.st.LiveResources()
+	if err != nil {
+		return false
+	}
+	for _, r := range rows {
+		if r.Kind == store.ResRemote && r.Card != card && r.Ref == remote &&
+			strings.EqualFold(filepath.ToSlash(r.Detail), filepath.ToSlash(repoPath)) {
+			return true
+		}
+	}
+	return false
+}
+
 // providerByHost is the enabled provider with worktrees on for a forge host, or nil.
 func (s *Server) providerByHost(host string) *store.Provider {
 	host = strings.ToLower(strings.TrimSpace(host))
@@ -381,4 +458,8 @@ func (s *Server) providerByHost(host string) *store.Provider {
 		}
 	}
 	return nil
+}
+
+func advisoryForkURL(host, org, repo, ghsa string) string {
+	return "https://" + host + "/" + org + "/" + repo + "-ghsa-" + ghsa
 }

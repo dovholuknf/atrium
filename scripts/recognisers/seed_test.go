@@ -1,6 +1,7 @@
 package recognisers
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/base/rules"
@@ -55,6 +56,41 @@ func TestTheSeedCoversEveryKindPasted(t *testing.T) {
 	} {
 		if _, _, err := rules.MatchRecogniserIn(rows, url); err != nil {
 			t.Fatalf("%s: %v", url, err)
+		}
+	}
+}
+
+// An ssh clone url, with or without .git, fills the same fields as the repository's https url.
+func TestTheSeedRecognisesAnSSHCloneURLAsItsRepository(t *testing.T) {
+	seed, err := Seed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]*rules.Recogniser, 0, len(seed))
+	for i := range seed {
+		rows = append(rows, &seed[i])
+	}
+	fill := func(url string) *rules.Resolved {
+		r, vars, err := rules.MatchRecogniserIn(rows, url)
+		if err != nil {
+			t.Fatalf("%s: %v", url, err)
+		}
+		return r.Fill(vars)
+	}
+	for https, sshs := range map[string][]string{
+		"https://github.com/netfoundry/docusaurus-shared": {"git@github.com:netfoundry/docusaurus-shared.git",
+			"git@github.com:netfoundry/docusaurus-shared"},
+		"https://gitlab.com/group/repo": {"git@gitlab.com:group/repo.git", "git@gitlab.com:group/repo"},
+		"https://bitbucket.org/ws/repo": {"git@bitbucket.org:ws/repo.git", "git@bitbucket.org:ws/repo"},
+	} {
+		want := fill(https)
+		for _, ssh := range sshs {
+			got := fill(ssh)
+			if got.Host != want.Host || got.Org != want.Org || got.Repo != want.Repo || got.Cwd != want.Cwd ||
+				got.Title != want.Title || got.Branch != want.Branch || got.Kind != want.Kind ||
+				got.Window != want.Window || strings.Join(got.Tags, ",") != strings.Join(want.Tags, ",") {
+				t.Fatalf("%s gave %s %+v, %s gave %s %+v", ssh, got.Recogniser, got, https, want.Recogniser, want)
+			}
 		}
 	}
 }

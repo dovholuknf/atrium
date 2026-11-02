@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +24,7 @@ func TestWithNoProviderTheGuardLetsEverythingThrough(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("an unconfigured board answered %d", rec.Code)
 	}
@@ -35,7 +36,7 @@ func TestWithNoProviderTheGuardLetsEverythingThrough(t *testing.T) {
 func TestTheLocalBoardIsNotWrapped(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
 		ClientID: "atrium", Redirect: "https://board.example/auth/callback",
 		Allow: []string{"someone@example.com"},
@@ -61,7 +62,7 @@ func TestTheLocalBoardIsNotWrapped(t *testing.T) {
 func TestABrowserIsSentToTheProvider(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
 		ClientID: "atrium", Redirect: "https://board.example/auth/callback",
 		Allow: []string{"someone@example.com"},
@@ -69,11 +70,11 @@ func TestABrowserIsSentToTheProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusFound {
 		t.Fatalf("a browser with no session got %d, wanted a redirect", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); !strings.HasPrefix(got, authPrefix+"renew") {
+	if got := rec.Header().Get("Location"); !strings.HasPrefix(got, publish.AuthPrefix+"renew") {
 		t.Fatalf("redirected to %q, wanted the renewal endpoint", got)
 	}
 }
@@ -84,7 +85,7 @@ func TestABrowserIsSentToTheProvider(t *testing.T) {
 func TestAnApiCallIsRefusedNotRedirected(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
 		ClientID: "atrium", Redirect: "https://board.example/auth/callback",
 		Allow: []string{"someone@example.com"},
@@ -92,7 +93,7 @@ func TestAnApiCallIsRefusedNotRedirected(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/tasks", nil))
+	d.AuthGuard(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/tasks", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("an api call with no session got %d, wanted 401", rec.Code)
 	}
@@ -102,25 +103,25 @@ func TestAnApiCallIsRefusedNotRedirected(t *testing.T) {
 func TestASessionIsCheckedRatherThanTrusted(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
 		ClientID: "atrium", Redirect: "https://board.example/auth/callback",
 		Allow: []string{"someone@example.com"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	key, err := d.cookieKey()
+	key, err := d.CookieKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	good := signSession(key, session{
-		Subject: "someone", Email: "someone@example.com", Gen: d.sessionGen(),
+	good := publish.SignSession(key, publish.Session{
+		Subject: "someone", Email: "someone@example.com", Gen: d.SessionGen(),
 	}, time.Now().Add(time.Hour))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: authCookie, Value: good})
+	req.AddCookie(&http.Cookie{Name: publish.AuthCookie, Value: good})
 	rec := httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, req)
+	d.AuthGuard(okHandler()).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a valid session got %d", rec.Code)
 	}
@@ -129,9 +130,9 @@ func TestASessionIsCheckedRatherThanTrusted(t *testing.T) {
 	// the cookie is signed.
 	forged := strings.Replace(good, good[:4], "AAAA", 1)
 	req = httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: authCookie, Value: forged})
+	req.AddCookie(&http.Cookie{Name: publish.AuthCookie, Value: forged})
 	rec = httptest.NewRecorder()
-	d.authGuard(okHandler()).ServeHTTP(rec, req)
+	d.AuthGuard(okHandler()).ServeHTTP(rec, req)
 	if rec.Code == http.StatusOK {
 		t.Fatal("an edited session cookie was accepted")
 	}
@@ -141,11 +142,11 @@ func TestASessionIsCheckedRatherThanTrusted(t *testing.T) {
 func TestAnExpiredSessionIsRefused(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	key, err := d.cookieKey()
+	key, err := d.CookieKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := readSession(key, signSession(key, session{Subject: "someone"}, time.Now().Add(-time.Minute))); ok {
+	if _, ok := publish.ReadSession(key, publish.SignSession(key, publish.Session{Subject: "someone"}, time.Now().Add(-time.Minute))); ok {
 		t.Fatal("a session that expired a minute ago was accepted")
 	}
 }
@@ -154,11 +155,11 @@ func TestAnExpiredSessionIsRefused(t *testing.T) {
 func TestTheCookieKeyIsStable(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	first, err := d.cookieKey()
+	first, err := d.CookieKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := d.cookieKey()
+	second, err := d.CookieKey()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,19 +177,19 @@ func TestAConfigurationThatCouldNotWorkIsRefused(t *testing.T) {
 	d := testDaemon(t)
 	for _, tc := range []struct {
 		what string
-		cfg  AuthConfig
+		cfg  publish.AuthConfig
 	}{
-		{"no issuer", AuthConfig{Enabled: true, ClientID: "a", Redirect: "b", Allow: []string{"c"}}},
-		{"no client", AuthConfig{Enabled: true, Issuer: "a", Redirect: "b", Allow: []string{"c"}}},
-		{"no redirect", AuthConfig{Enabled: true, Issuer: "a", ClientID: "b", Allow: []string{"c"}}},
-		{"nobody allowed", AuthConfig{Enabled: true, Issuer: "a", ClientID: "b", Redirect: "c"}},
+		{"no issuer", publish.AuthConfig{Enabled: true, ClientID: "a", Redirect: "b", Allow: []string{"c"}}},
+		{"no client", publish.AuthConfig{Enabled: true, Issuer: "a", Redirect: "b", Allow: []string{"c"}}},
+		{"no redirect", publish.AuthConfig{Enabled: true, Issuer: "a", ClientID: "b", Allow: []string{"c"}}},
+		{"nobody allowed", publish.AuthConfig{Enabled: true, Issuer: "a", ClientID: "b", Redirect: "c"}},
 	} {
 		if err := d.SaveAuth(tc.cfg); err == nil {
 			t.Fatalf("a configuration with %s was accepted", tc.what)
 		}
 	}
 	// And turning it off needs none of them.
-	if err := d.SaveAuth(AuthConfig{}); err != nil {
+	if err := d.SaveAuth(publish.AuthConfig{}); err != nil {
 		t.Fatalf("turning the login off was refused: %v", err)
 	}
 }
@@ -201,10 +202,10 @@ func TestAFloodOfLoginsIsBounded(t *testing.T) {
 		t.Skip("slow: real ptys, processes and timers")
 	}
 	t.Parallel()
-	var logins loginStates
+	var logins publish.LoginStates
 	var refused error
-	for i := 0; i < pendingMost+10; i++ {
-		if _, _, err := logins.startLogin("/", false); err != nil {
+	for i := 0; i < publish.PendingMost+10; i++ {
+		if _, _, err := logins.StartLogin("/", false); err != nil {
 			refused = err
 			break
 		}
@@ -213,10 +214,10 @@ func TestAFloodOfLoginsIsBounded(t *testing.T) {
 		t.Fatal("logins were started without limit, so the map grows on request")
 	}
 	logins.Lock()
-	held := len(logins.at)
+	held := len(logins.At)
 	logins.Unlock()
-	if held > pendingMost {
-		t.Fatalf("%d states are held, above the cap of %d", held, pendingMost)
+	if held > publish.PendingMost {
+		t.Fatalf("%d states are held, above the cap of %d", held, publish.PendingMost)
 	}
 }
 
@@ -235,7 +236,7 @@ func TestALoginCannotSendSomebodyOffThisBoard(t *testing.T) {
 		{"https://elsewhere.example", "/"},
 		{"javascript:alert(1)", "/"},
 	} {
-		if got := backTo(tc.back); got != tc.want {
+		if got := publish.BackTo(tc.back); got != tc.want {
 			t.Fatalf("backTo(%q) = %q, wanted %q", tc.back, got, tc.want)
 		}
 	}
@@ -246,7 +247,7 @@ func TestALoginCannotSendSomebodyOffThisBoard(t *testing.T) {
 func TestTheAuthSecretsAreNeverExported(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	if err := d.SaveAuth(AuthConfig{
+	if err := d.SaveAuth(publish.AuthConfig{
 		Enabled: true, Issuer: "https://idp.example/realms/x",
 		ClientID: "atrium", ClientSecret: "a-client-secret-value",
 		Redirect: "https://board.example/auth/callback",
@@ -254,14 +255,14 @@ func TestTheAuthSecretsAreNeverExported(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.cookieKey(); err != nil {
+	if _, err := d.CookieKey(); err != nil {
 		t.Fatal(err)
 	}
 	_, raw := exportOf(t, d)
 	if strings.Contains(raw, "a-client-secret-value") {
 		t.Fatal("the oidc client secret was exported")
 	}
-	for _, key := range []string{SettingAuth, SettingAuthKey} {
+	for _, key := range []string{publish.SettingAuth, publish.SettingAuthKey} {
 		if strings.Contains(raw, key) {
 			t.Fatalf("%q appears in the export", key)
 		}

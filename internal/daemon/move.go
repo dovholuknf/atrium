@@ -3,11 +3,13 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -43,7 +45,7 @@ func (d *Daemon) followMoved(t *store.Task) (movedEnd, error) {
 		if t.MovedTo == "" {
 			return movedEnd{Live: t}, nil
 		}
-		key := d.roomName() + "~" + t.ID
+		key := d.RoomName() + "~" + t.ID
 		if seen[key] || hops >= store.MaxMoveHops {
 			return movedEnd{}, fmt.Errorf("move chain loops at %s", t.ID)
 		}
@@ -76,14 +78,14 @@ func splitMovedTo(s string) (room, id string, ok bool) {
 // writes the sender's answer. `forwarded` tells the sender the new address, so a
 // script that holds the old one can learn it.
 func (d *Daemon) forwardMoved(ctx context.Context, w http.ResponseWriter, from string, end movedEnd, text, when, kind string, reply, wake bool) {
-	code, body := d.sayAcross(ctx, from, end.ID, end.Room, text, when, kind, reply, wake, false)
+	code, body := d.SayAcross(ctx, from, end.ID, end.Room, text, when, kind, reply, wake, false)
 	if code < 400 {
 		body["forwarded"] = "moved to " + end.Room + "~" + end.ID
 		body["note"] = "forwarded: moved to " + end.Room + "~" + end.ID
 		body["typed"] = body["delivered"] == "terminal"
 		body["queued"] = body["delivered"] != "terminal"
 	}
-	writeJSONCode(w, code, body)
+	hublink.WriteJSONCode(w, code, body)
 }
 
 // launcherAfterMove is launcherOf for a launcher that has moved. A launcher that
@@ -128,13 +130,13 @@ func (d *Daemon) sweepFreezes(at time.Time) {
 		if err != nil || !moved {
 			continue
 		}
-		if t, err := d.st.Get(id); err == nil && isParked(t) {
+		if t, err := d.st.Get(id); err == nil && small.IsParked(t) {
 			if err := d.unpark(id, "move"); err != nil {
 				log.Printf("[atrium] %s undid its own move but could not resume: %v", id, err)
 			}
 		}
-		d.releaseHeld(id)
-		d.publishTask(id)
+		d.ReleaseHeld(id)
+		d.Publish(id)
 		log.Printf("[atrium] %s: the move's lease ran out, the card undid it", id)
 	}
 }

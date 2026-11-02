@@ -1,6 +1,6 @@
 // backlog: the backlog page, the hub's items and the reports directors left (js/backlog.js).
 //
-// Units: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogBar, backlogSearch, backlogShow, backlogGroup.
+// Units: backlogAbsent, backlogRows, backlogSort, backlogPrios, backlogPriority, backlogBar, backlogSearch, backlogShow, backlogGroup, backlogNewItem.
 // Until stage B2 only bootClean covered this page. These read it through the hub routes the page calls, answered here
 // from the page's own context so each unit shapes the items it needs, and none reads what another left on the mock.
 // `units` is what the harness runs, in suite order. Alone: `node scripts/board-tests/backlog.js`.
@@ -49,6 +49,7 @@ async function backlogBoard(browser, base, o) {
     let list = items;
     if (u.searchParams.get("open") === "1") list = list.filter(b => b.status !== "done" && b.status !== "dropped");
     if (u.searchParams.get("dept")) list = list.filter(b => b.dept === u.searchParams.get("dept"));
+    if (u.searchParams.get("bodies") !== "1") list = list.map(b => Object.assign({}, b, { body: "" }));
     return json(r, 200, { items: list });
   });
   await p.goto(base + "/", { waitUntil: "domcontentloaded" });
@@ -100,7 +101,7 @@ async function backlogRowsSection(browser, base) {
     if (got.rows.join() !== "bk-high-new,bk-low,bk-int,bk-high-old,bk-med,bk-none") fail("backlogRows: the default order is " + got.rows);
     if (got.rows.includes("bk-done") || got.rows.includes("bk-held")) fail("backlogRows: a finished or held item is listed by default");
     if (got.oldBox) fail("backlogRows: the department box or the open only box is still on the page");
-    if (!b.gets.length || !b.gets.every(q => q === "")) fail("backlogRows: the read carried a filter, the board filters what it holds: " + b.gets.join(" "));
+    if (!b.gets.length || !b.gets.every(q => q === "?bodies=1")) fail("backlogRows: the read carried a filter, the board filters what it holds: " + b.gets.join(" "));
     if (got.head.join() !== "status,dept,id,priority,title,created,changed") fail("backlogRows: the header is " + got.head);
     for (const w of ["in-progress", "fabric", "bk-high-new", "High and new"]) if (!got.first.includes(w)) fail("backlogRows: a row lacks " + w + ": " + got.first);
     if (got.prio !== "bk-high-new:high,bk-low:low,bk-int:low,bk-high-old:high,bk-med:medium,bk-none:unset") fail("backlogRows: the priority selects read " + got.prio);
@@ -402,6 +403,44 @@ async function backlogGroupSection(browser, base) {
   if (!bad) console.log("backlogGroup ok");
 }
 
+// The new item button starts one throwaway superlean card with the brief, shows its conversation, and closing ends it.
+async function backlogNewItemSection(browser, base) {
+  const was = mock.hubMode;
+  mock.hubMode = true;
+  let b;
+  try {
+    b = await backlogBoard(browser, base);
+    const p = b.p;
+    const launches = [], exits = [];
+    await p.route(/\/v1\/launch$/, r => {
+      launches.push({ room: r.request().headers()["x-atrium-room"] || "", body: JSON.parse(r.request().postData()) });
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "ni1", title: "new item" }) });
+    });
+    await p.route(/\/v1\/tasks\/[^/]+\/exit$/, r => {
+      exits.push(decodeURIComponent(new URL(r.request().url()).pathname.split("/")[3]));
+      return r.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+    });
+    await p.click("#newitem-open");
+    await p.waitForSelector("#newitem-frame iframe", { timeout: slow(10000) });
+    const got = await p.evaluate(() => ({ src: document.querySelector("#newitem-frame iframe").getAttribute("src"), room: newItemRoom(), scoped: roomNow() }));
+    if (launches.length !== 1) fail("backlogNewItem: the button launched " + launches.length + " cards");
+    const l = launches[0] || { body: {} };
+    if (!l.body.throwaway || !l.body.superlean || !/backlog/.test(l.body.brief || "") || !l.body.prompt) fail("backlogNewItem: the launch is not a throwaway superlean card with the brief: " + JSON.stringify(l.body));
+    if (got.room && l.room !== got.room) fail("backlogNewItem: the launch went to " + l.room + ", not " + got.room);
+    const id = got.room && !got.scoped ? got.room + "~ni1" : "ni1";
+    if (got.src !== "/m/?chat=1#term=" + encodeURIComponent(id)) fail("backlogNewItem: the frame shows " + got.src);
+    await p.click("#newitem-open");
+    if (launches.length !== 1) fail("backlogNewItem: a second press started a second card");
+    const exited = p.waitForResponse(/\/exit$/,{ timeout: slow(5000) });
+    await p.click("#newitem-close");
+    await exited;
+    if (exits.join() !== id) fail("backlogNewItem: close asked to exit " + JSON.stringify(exits) + ", not " + id);
+    if (await p.evaluate(() => !!document.querySelector("#newitem-frame iframe"))) fail("backlogNewItem: the frame outlived the close");
+    if (b.errors.length) fail("backlogNewItem: threw " + b.errors.join(" | "));
+  } finally { if (b) await b.ctx.close(); mock.hubMode = was; }
+  if (!bad) console.log("backlogNewItem ok");
+}
+
 const units = [
   { name: "backlogAbsent", run: ({ browser, base }) => backlogAbsentSection(browser, base) },
   { name: "backlogRows", run: ({ browser, base }) => backlogRowsSection(browser, base) },
@@ -412,11 +451,13 @@ const units = [
   { name: "backlogSearch", run: ({ browser, base }) => backlogSearchSection(browser, base) },
   { name: "backlogShow", run: ({ browser, base }) => backlogShowSection(browser, base) },
   { name: "backlogGroup", run: ({ browser, base }) => backlogGroupSection(browser, base) },
+  { name: "backlogNewItem", run: ({ browser, base }) => backlogNewItemSection(browser, base) },
 ];
 const sections = {
   backlogAbsent: backlogAbsentSection, backlogRows: backlogRowsSection, backlogSort: backlogSortSection,
   backlogPrios: backlogPriosSection, backlogPriority: backlogPrioritySection, backlogBar: backlogBarSection,
   backlogSearch: backlogSearchSection, backlogShow: backlogShowSection, backlogGroup: backlogGroupSection,
+  backlogNewItem: backlogNewItemSection,
 };
 
 module.exports = { units, sections };

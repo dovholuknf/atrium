@@ -6,7 +6,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue } = require("../lib/browser.js");
+const { slow, fakeWait, fakeTick, fakePause, fakeRun, until: untilTrue, settleStyle } = require("../lib/browser.js");
 const { mock, openStreams, landCard, mockSay, hubStreams } = require("../lib/mock.js");
 const { fail } = require("../lib/results.js");
 const { attachRetry, countRequests, landContext, topCounts } = require("../lib/helpers.js");
@@ -628,7 +628,7 @@ async function loginNeededSection(browser, base) {
     await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
     if (lifts.length) fail("loginNeeded: lifted before it asked.");
     await p.click('#ask-actions button:has-text("lift it")');
-    await p.waitForTimeout(300);
+    await untilTrue(() => lifts.length > 0, 5000, "loginNeeded: the lift was never sent");
     if (lifts.length !== 1 || lifts[0].method !== "DELETE" || lifts[0].room !== "alpha") {
       fail("loginNeeded: the lift sent " + JSON.stringify(lifts));
     }
@@ -710,7 +710,7 @@ async function pollsGoneSection(browser, base) {
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
       // The event below goes to the streams open now, so the page's hub stream has to be one of them.
-      for (const t0 = Date.now(); hubStreams.length <= streams0 && Date.now() - t0 < slow(5000);) await p.waitForTimeout(50);
+      await untilTrue(() => hubStreams.length > streams0, 5000, "the hub event stream", 50).catch(() => {});
       if (hubStreams.length <= streams0) fail("pollsGone: the page never opened its hub event stream");
       await run(p, 2500);
       c2.clear();
@@ -1085,13 +1085,13 @@ async function transportToggleSection(browser, base) {
     }
 
     await p.locator("#tt-rows .roomrow:nth-child(1) .pthtoggle").click();
-    for (let i = 0; i < 50 && calls.length < 1; i++) await p.waitForTimeout(100);
+    await untilTrue(() => calls.length >= 1, 5000, "the ziti toggle").catch(() => {});
     if (!calls[0] || calls[0].room !== "sg3" || calls[0].body !== JSON.stringify({ transport: "ziti", on: true })) {
       fail("turning ziti on asked the wrong thing: " + JSON.stringify(calls[0]));
     }
     // The refusal is shown as the room said it.
     await p.locator("#tt-rows .roomrow:nth-child(2) .pthtoggle").nth(1).click();
-    for (let i = 0; i < 50 && calls.length < 2; i++) await p.waitForTimeout(100);
+    await untilTrue(() => calls.length >= 2, 5000, "the zrok toggle").catch(() => {});
     if (!calls[1] || calls[1].room !== "m1mini" || calls[1].body !== JSON.stringify({ transport: "zrok", on: false })) {
       fail("turning zrok off asked the wrong thing: " + JSON.stringify(calls[1]));
     }
@@ -1104,7 +1104,7 @@ async function transportToggleSection(browser, base) {
 }
 
 // hubTransports: the gear lists the hub's ziti transports (the board, the room link, the CI hook) with a state, a
-// service and an identity each. Turning one on or off PUTs {name, on, service, identity} to /_hub/transports, a flag
+// service and an identity each, and its zrok share with a state and a line of masked token and env. Turning one on or off PUTs {name, on, service, identity} to /_hub/transports, a flag
 // seed is named, a 409 refusal is shown as the hub said it, and a 403 makes the row read-only.
 // HT_SHOTS=dir writes the row before (no section) and after.
 async function hubTransportsSection(browser, base) {
@@ -1120,7 +1120,8 @@ async function hubTransportsSection(browser, base) {
       { name: "ci-hook", label: "CI hook", kind: "ci-hook", on: false, state: "off", service: "ziti-hook", default_service: "ziti-hook",
         identity: "", identity_used: "/ids/hub.json", switchable: true },
       { name: "room-zrok", label: "Room link over zrok", kind: "zrok", on: st.zrok, state: st.zrok ? "bound" : "off", service: "",
-        default_service: "", identity: "", identity_used: "", seeded: ["on"], switchable: true, no_service: true },
+        default_service: "", identity: "", identity_used: "", seeded: ["on"], switchable: true, no_service: true,
+        detail: "share abcd..., env zEnv1 at https://api.zrok.io" },
     ] });
     await ctx.route("**/_hub/transports", route => {
       const req = route.request();
@@ -1163,6 +1164,7 @@ async function hubTransportsSection(browser, base) {
     if (a[0].btn !== "turn on" || a[1].btn !== "turn off") fail(tag + "the switches read " + JSON.stringify(a.map(x => x.btn)));
 
     if (!/set by flag: on/.test(a[3].text) || a[3].btn !== "turn on") fail(tag + "the zrok row reads " + a[3].text + " / " + a[3].btn);
+    if (!a[3].text.includes("share abcd..., env zEnv1 at https://api.zrok.io")) fail(tag + "the zrok row shows no share or env: " + a[3].text);
     const zrokBox = await p.evaluate(() => ({ inputs: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] input').length,
       apply: document.querySelectorAll('#s-ht-list [data-name="room-zrok"] .ht-apply').length }));
     if (zrokBox.inputs || zrokBox.apply) fail(tag + "the zrok row has a service or identity box: " + JSON.stringify(zrokBox));
@@ -1265,7 +1267,7 @@ async function zitiLogoSection(browser, base) {
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.evaluate(() => { document.getElementById("zl-probe").remove(); openRooms(); });
-      await p.waitForTimeout(600);
+      await settleStyle(p);
       await p.screenshot({ path: path.join(shots, "rooms-page.png") });
     }
     if (errors.length) fail("page errors: " + errors.join("; "));
@@ -1386,17 +1388,17 @@ async function roomsDashSection(browser, base) {
 
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
-      await p.waitForTimeout(2300);
+      await p.clock.runFor(2300);
       for (const skin of ["", "paper"]) {
         await p.evaluate(sk => { applySkin(sk); }, skin);
-        await p.waitForTimeout(250);
+        await p.clock.runFor(250);
         await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-1400.png`) });
       }
       await p.setViewportSize({ width: 390, height: 844 });
       await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
       for (const skin of ["", "paper"]) {
         await p.evaluate(sk => { applySkin(sk); }, skin);
-        await p.waitForTimeout(250);
+        await p.clock.runFor(250);
         await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-390.png`) });
       }
       const phone = await p.evaluate(() => {
@@ -1655,7 +1657,7 @@ async function restartMenuSection(browser, base) {
     labels = await open("land-rs-idle");
     if (process.env.RESTART_SHOT) await p.screenshot({ path: process.env.RESTART_SHOT });
     await item().click();
-    await p.waitForTimeout(500);
+    await untilTrue(() => posts.length, 5000, "a restart POST").catch(() => {});
     if (await dialogUp().count()) fail("restartMenu: an idle card asked before restarting.");
     if (posts.join() !== "/v1/tasks/land-rs-idle/restart POST") fail("restartMenu: idle restart did not POST once: " + JSON.stringify(posts));
     posts.length = 0;
@@ -1667,12 +1669,12 @@ async function restartMenuSection(browser, base) {
       .catch(() => fail("restartMenu: a working card did not ask before restarting."));
     if (!/working right now/.test(await p.locator("dialog[open]").first().textContent())) fail("restartMenu: the question does not say it is working.");
     await p.locator("dialog[open] button", { hasText: "cancel" }).click();
-    await p.waitForTimeout(300);
+    await dialogUp().waitFor({ state: "hidden", timeout: slow(5000) }).catch(() => {});
     if (posts.length) fail("restartMenu: cancelling still posted: " + JSON.stringify(posts));
     await open("land-rs-work");
     await item().click();
     await dialogUp().click();
-    await p.waitForTimeout(500);
+    await untilTrue(() => posts.length, 5000, "a restart POST").catch(() => {});
     if (posts.join() !== "/v1/tasks/land-rs-work/restart POST") fail("restartMenu: confirmed restart did not POST once: " + JSON.stringify(posts));
     posts.length = 0;
 
@@ -1691,7 +1693,7 @@ async function restartMenuSection(browser, base) {
     // Two entries are called resume: the conversation picker (a submenu, marked with an arrow) and the parked
     // card's own, which has none. The sub-text that told them apart is gone.
     await p.locator("#cardmenu button", { hasText: /^resume/, hasNotText: /▸/ }).first().click();
-    await p.waitForTimeout(500);
+    await untilTrue(() => posts.length, 5000, "a restart POST").catch(() => {});
     if (posts.join() !== "/v1/tasks/land-rs-park/resume POST") fail("restartMenu: restarting a parked card did not resume it: " + JSON.stringify(posts));
 
     // paused: open() already refused a repeated label.
@@ -1802,13 +1804,15 @@ async function roomsMachineSection(browser, base) {
   p.on("pageerror", e => errors.push(String(e)));
   await p.addInitScript(skip);
   try {
+    await p.clock.install();
     await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
       roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await fakePause(p);
     await p.evaluate(() => openRooms());
-    await p.waitForTimeout(2300);
+    await p.clock.runFor(2300);
     await p.evaluate(() => clearInterval(roomsDemoTimer));
-    await p.waitForTimeout(900);
+    await p.clock.runFor(900);
     if (shots) {
       fs.mkdirSync(shots, { recursive: true });
       await p.screenshot({ path: path.join(shots, "u-034-after-1400.png") });

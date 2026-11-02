@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -69,6 +70,15 @@ func eventStream(t *testing.T, srv *Server) *bufio.Scanner {
 	return bufio.NewScanner(resp.Body)
 }
 
+func subscribed(t *testing.T, srv *Server) {
+	t.Helper()
+	testwait.Eventually(t, 5*time.Second, "the event stream to subscribe", func() bool {
+		srv.bus.mu.Lock()
+		defer srv.bus.mu.Unlock()
+		return len(srv.bus.subs) > 0
+	})
+}
+
 func sameJSON(t *testing.T, a, b string) {
 	t.Helper()
 	var x, y map[string]any
@@ -118,7 +128,7 @@ func TestTaskEventEqualsListRow(t *testing.T) {
 	}
 
 	sc := eventStream(t, srv)
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	for _, c := range []*store.Task{busy, plain} {
 		got, err := st.Get(c.ID)
 		if err != nil {
@@ -150,7 +160,7 @@ func TestTaskEventFromAClosedStoreSendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	st.Close()
 	srv.PublishTask(card)
 	if evs := readTaskEvents(resp, 3*taskCoalesce); len(evs) != 0 {
@@ -202,7 +212,7 @@ func readTaskEvents(resp *http.Response, d time.Duration) []string {
 			}
 		}
 	}()
-	time.Sleep(d)
+	time.Sleep(d) // wait: callers count what arrives in the window, often to check nothing does
 	close(done)
 	resp.Body.Close()
 	mu.Lock()
@@ -232,7 +242,7 @@ func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	for i := 0; i < 10; i++ {
 		if _, err := st.AddAsk(card.ID, "q?", ""); err != nil {
 			t.Fatal(err)
@@ -269,7 +279,7 @@ func TestPublishTaskForADeletedCardSendsNoTaskEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	subscribed(t, srv)
 	srv.PublishTask(card)
 	if err := st.Forget(card.ID); err != nil {
 		t.Fatal(err)

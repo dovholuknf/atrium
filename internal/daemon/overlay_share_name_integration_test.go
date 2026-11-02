@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
 	"strings"
 	"testing"
 )
@@ -11,15 +12,15 @@ func TestShareNameIsUnguessable(t *testing.T) {
 	t.Parallel()
 	// Sixty bits, spelled as twelve symbols from an alphabet of thirty two.
 	// A shorter name or a smaller alphabet is a name somebody can walk.
-	if got := len(shareNameAlphabet); got != 32 {
+	if got := len(publish.ShareNameAlphabet); got != 32 {
 		t.Fatalf("the alphabet is %d symbols, not 32. the comment on shareNameLen "+
 			"computes sixty bits from thirty two, so one of the two moved", got)
 	}
-	if shareNameLen != 12 {
-		t.Fatalf("shareNameLen is %d, not 12", shareNameLen)
+	if publish.ShareNameLen != 12 {
+		t.Fatalf("shareNameLen is %d, not 12", publish.ShareNameLen)
 	}
 
-	n, err := newShareName()
+	n, err := publish.NewShareName()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,20 +29,20 @@ func TestShareNameIsUnguessable(t *testing.T) {
 			"identifiable on an account holding shares from other tools", n)
 	}
 	body := strings.TrimPrefix(n, "atrium-")
-	if len(body) != shareNameLen {
-		t.Fatalf("%q has %d random characters, want %d", n, len(body), shareNameLen)
+	if len(body) != publish.ShareNameLen {
+		t.Fatalf("%q has %d random characters, want %d", n, len(body), publish.ShareNameLen)
 	}
 
 	// No character anybody can transcribe wrongly. A name gets read aloud and
 	// typed by hand, and `l` against `1` turns an unguessable link into a
 	// support question.
 	for _, bad := range []string{"l", "o", "0", "1"} {
-		if strings.Contains(shareNameAlphabet, bad) {
+		if strings.Contains(publish.ShareNameAlphabet, bad) {
 			t.Errorf("the alphabet contains %q, which is confusable when read aloud", bad)
 		}
 	}
 	for _, c := range body {
-		if !strings.ContainsRune(shareNameAlphabet, c) {
+		if !strings.ContainsRune(publish.ShareNameAlphabet, c) {
 			t.Errorf("%q contains %q, which is not in the alphabet", n, c)
 		}
 	}
@@ -53,7 +54,7 @@ func TestShareNamesDoNotRepeat(t *testing.T) {
 	t.Parallel()
 	seen := map[string]bool{}
 	for i := 0; i < 500; i++ {
-		n, err := newShareName()
+		n, err := publish.NewShareName()
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -88,7 +89,8 @@ func TestRestartRunnerLeavesAStubbornRunnerUp(t *testing.T) {
 	if r.leaving.Load() {
 		t.Fatal("the runner is still marked as leaving after it refused to")
 	}
-	_ = d.StopRunner(taskID)
+	_ = r.tm().Kill()
+	<-r.done
 }
 
 // A RESTART TYPES ITS HARNESS'S EXIT KEYS AND NOTHING ELSE INTO THE OLD TERMINAL.
@@ -115,7 +117,7 @@ func TestARestartTypesTwoControlDsAndNeverClear(t *testing.T) {
 	if got := f.written(); got != "\x04\x04" {
 		t.Fatalf("a restart typed %q into the old terminal, want two control-d and nothing else", got)
 	}
-	if strings.Contains(f.written(), newContextClear) {
+	if strings.Contains(f.written(), cycle.NewContextClearCommand) {
 		t.Fatal("a restart typed /clear")
 	}
 }

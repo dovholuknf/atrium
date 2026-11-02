@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"io"
 	"log"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/inputlag"
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -630,6 +633,8 @@ type runner struct {
 	// a dead card and a terminal that never appeared. Knowing the launch asked
 	// for a resume is what lets that be retried as a fresh start.
 	resumed bool
+	// owedPrompt is the launch prompt until the runner submits it or atrium types it again. See retypeLaunchPrompt.
+	owedPrompt atomic.Pointer[string]
 	// esc follows the output stream's escape state and markPending is a clear mark waiting for ground state, with
 	// markHeld the bytes that have gone by since. All under mu. See `markClear`.
 	esc         screen.EscParser
@@ -1352,7 +1357,7 @@ func (r *runner) promptWasOwn(at time.Time) bool {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
 	switch r.peerBanner {
-	case newContextLabel, wakeLabel, wrapLabel, exitLabel:
+	case cycle.NewContextLabel, cycle.WakeLabel, cycle.WrapLabel, exitLabel:
 		return true
 	}
 	return false
@@ -1831,7 +1836,7 @@ func (r *runner) deliverOutput(chunk []byte) {
 func isClearCommand(s string) bool {
 	s = strings.TrimPrefix(s, "\x1b[200~")
 	s = strings.TrimSuffix(s, "\x1b[201~")
-	return strings.TrimSpace(s) == newContextClear
+	return strings.TrimSpace(s) == cycle.NewContextClearCommand
 }
 
 // markClear writes the clear mark into the output stream: the ring, so every
@@ -2287,6 +2292,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	// DURABLE BEFORE THE LAUNCH COUNTS AS COMPLETE. See `recordRun`.
 	d.recordRun(r, store.RunKindRunner)
 	d.sup.add(r)
+	d.noteOpen(taskID)
 
 	// A card that was lent out gets its address back the moment it has a
 	// terminal to serve. Cheap and silent for the overwhelming majority that
@@ -2356,7 +2362,7 @@ func (d *Daemon) spawnPTYRunner(taskID, cmdName string, args []string, cwd strin
 	if t, err := d.st.Get(taskID); err == nil && t.Runner != "" {
 		runner = t.Runner
 	}
-	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
+	d.EmitLifecycle("session-start", roomconf.LifecycleStart(d.TaskTitle(taskID), runner, resumed))
 
 	return r, nil
 }
@@ -2412,12 +2418,12 @@ func (d *Daemon) awaitExit(r *runner) {
 	// The runner is gone, and so is its right to push. Unless a newer start of the same card has already taken over:
 	// its token was minted after this one's runner began, and is not this exit's to revoke.
 	if d.sup.get(r.taskID) == nil {
-		d.revokeHubGit(r.taskID, r.started)
+		d.RevokeHubGit(r.taskID, r.started)
 	}
 	ck, cb := r.endCause()
 	_, err := d.fileExitChecked(runExit{
 		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
-		resumed: r.resumed, spec: r.spec, cause: ck, causeBy: cb,
+		resumed: r.resumed, spec: r.spec, cause: ck, causeBy: cb, leaving: r.leaving.Load(),
 	})
 	// Collected only after the filing committed. Ahead of it, a crash would lose an exit nobody had recorded.
 	if ht != nil && err == nil {
@@ -2450,6 +2456,8 @@ type runExit struct {
 	superseded bool
 	// cause is why atrium ended the run, when it did. See runner.cause.
 	cause, causeBy string
+	// leaving is atrium typing the exit itself (windDown), which is not the session quitting on purpose.
+	leaving bool
 }
 
 // fileExit records a runner's end and marks its card dead, AT MOST ONCE per
@@ -2484,7 +2492,7 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		payload["output"] = tail
 		// Not on a card that has a newer run alive: it did not fail to start, its old start did.
 		if !x.superseded {
-			why = "failed to start: " + firstLine(tail)
+			why = "failed to start: " + small.FirstLine(tail)
 		}
 	}
 	filed, err := d.st.FileExit(store.ExitFiling{
@@ -2505,16 +2513,23 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 			x.runID, x.taskID)
 		return true, err
 	}
+	// A clean exit nobody asked for is the session quitting on purpose. A kill, a crash or a reboot ends non-zero
+	// and stays live, to come back, and so does an exit atrium typed, as a wind-down does.
+	if code == 0 && x.cause == "" && !x.leaving && !d.windingDown.Load() {
+		if err := d.st.ClearLive(x.taskID); err != nil {
+			log.Printf("[atrium] could not take %s off the live cards: %v", x.taskID, err)
+		}
+	}
 
 	d.taskRunnerEnded(x)
 	// The room announces the exit with its reason, which the hub cannot see: it
 	// watches a card go dead, not why. See lifecycle.go.
 	exitLine := fmt.Sprintf("%s exited with code %d after %s",
-		d.taskTitle(x.taskID), code, lived.Round(time.Millisecond))
+		d.TaskTitle(x.taskID), code, lived.Round(time.Millisecond))
 	if lived < startupFailureWindow && tail != "" {
-		exitLine += ", " + firstLine(tail)
+		exitLine += ", " + small.FirstLine(tail)
 	}
-	d.emitLifecycle("session-exit", exitLine)
+	d.EmitLifecycle("session-exit", exitLine)
 	// The runner's last turns, for a worker that has no Stop hook. See usage.go.
 	d.recordUsage(x.taskID)
 
@@ -2532,10 +2547,10 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	// somebody deliberately closed.
 	if x.resumed && x.spec != nil && code != 0 && lived < startupFailureWindow {
 		log.Printf("[atrium] %s could not resume, starting it fresh: %s",
-			x.taskID, firstLine(tail))
+			x.taskID, small.FirstLine(tail))
 		if err := d.st.AppendEvent(x.taskID, store.EventLaunched, map[string]any{
 			"by": "supervisor", "retried": "without the stored resume id",
-			"because": firstLine(tail),
+			"because": small.FirstLine(tail),
 		}); err != nil {
 			log.Printf("[atrium] record retry for %s: %v", x.taskID, err)
 		}
@@ -2550,19 +2565,19 @@ func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 		if _, err := d.spawnPTY(x.taskID, x.spec.cmd, x.spec.args, x.spec.cwd, x.spec.env); err != nil {
 			log.Printf("[atrium] fresh start for %s failed too: %v", x.taskID, err)
 		} else {
-			d.publishTask(x.taskID)
+			d.Publish(x.taskID)
 			return true, err
 		}
 	}
 
 	// A card put down by hand stays where it was put.
 	if t, err := d.st.Get(x.taskID); err == nil &&
-		t.Status != store.StatusPaused && t.Status != store.StatusDone && !isParked(t) {
+		t.Status != store.StatusPaused && t.Status != store.StatusDone && !small.IsParked(t) {
 		if err := d.st.SetStatus(x.taskID, store.StatusDead); err != nil {
 			log.Printf("[atrium] status after exit for %s: %v", x.taskID, err)
 		}
 	}
-	d.publishTask(x.taskID)
+	d.Publish(x.taskID)
 	log.Printf("[atrium] supervised runner for %s exited with %d", x.taskID, code)
 
 	// Clean up throwaways after waiting for the process, when its working

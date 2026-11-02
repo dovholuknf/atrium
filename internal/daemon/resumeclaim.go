@@ -43,7 +43,7 @@ func (d *Daemon) claimResume(task *store.Task, resume, via string, byID bool) er
 			"reason": fmt.Sprintf("took conversation %s from %q, which had no live session",
 				resume, old.DisplayTitle()),
 		})
-		d.publishTask(old.ID)
+		d.Publish(old.ID)
 	}
 	if h := res.Refused; h != nil {
 		log.Printf("[atrium] conversation %s stays on %s, not %s (%s)", resume, h.ID, task.ID, via)
@@ -63,8 +63,8 @@ func (d *Daemon) claimResume(task *store.Task, resume, via string, byID bool) er
 				"reason": fmt.Sprintf("kept conversation %s: %q claimed it %s and this card is live",
 					resume, task.DisplayTitle(), how),
 			})
-			d.publishTask(task.ID)
-			d.publishTask(h.ID)
+			d.Publish(task.ID)
+			d.Publish(h.ID)
 		}
 	}
 	return nil
@@ -107,8 +107,9 @@ func (d *Daemon) anyAnnounced(taskID string) bool {
 //
 //   - A supervised card: the pid atrium started, or the first pid the runner's
 //     own hook announced. The second covers a harness that is a shim starting the
-//     real runner, whose pid is not the one atrium spawned, and it cannot be a
-//     nested session because the parent starts first.
+//     real runner, whose pid is not the one atrium spawned. A pid with a runner
+//     between it and the one atrium started is nested and never announces: the
+//     parent's own hook can be late or lost, as after a restart.
 //   - An unsupervised card: when it has no live session, or the same process.
 //   - A hook that found no pid cannot be judged and is believed.
 func (d *Daemon) ownsSession(t *store.Task, pid int) bool {
@@ -120,10 +121,32 @@ func (d *Daemon) ownsSession(t *store.Task, pid int) bool {
 			run.announced.CompareAndSwap(0, int64(pid))
 			return true
 		}
+		if d.nestedUnder(run.pid, pid) {
+			return false
+		}
 		if run.announced.CompareAndSwap(0, int64(pid)) {
 			return true
 		}
 		return run.announced.Load() == int64(pid)
 	}
 	return t.PID <= 0 || t.PID == pid || !processAlive(t.PID)
+}
+
+// runnerNames are the executables a session hook takes for its runner, as internal/cli/ancestry.go names them.
+var runnerNames = map[string]bool{"claude": true, "node": true, "opencode": true}
+
+// nestedUnder is whether pid descends from root with a runner at root or between them, which makes it a session
+// started inside the card's own runner. A pid not under root, or a tree that cannot be read, is not judged nested.
+func (d *Daemon) nestedUnder(root, pid int) bool {
+	if root <= 0 {
+		return false
+	}
+	runner := false
+	for _, p := range d.hk.procAncestors(pid, 16) {
+		runner = runner || runnerNames[p.Name]
+		if p.PID == root {
+			return runner
+		}
+	}
+	return false
 }

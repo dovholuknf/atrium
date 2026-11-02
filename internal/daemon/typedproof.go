@@ -142,7 +142,7 @@ func (d *Daemon) proveTypedSays(taskID string, now time.Time) int {
 		}
 	}
 	if len(proven) > 0 {
-		d.publishTask(taskID)
+		d.Publish(taskID)
 	}
 	return len(proven)
 }

@@ -54,7 +54,10 @@ func loopbackReq(method, target, body string) *http.Request {
 
 func run(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := gitsync.Default.Git(context.Background(), dir, args...)
+	// a detached auto maintenance run would create and remove maintenance.lock while copyTree walks the template
+	noGC := []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=maintenance.auto", "GIT_CONFIG_VALUE_0=false",
+		"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0"}
+	out, err := gitsync.Default.GitEnv(context.Background(), dir, noGC, args...)
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}

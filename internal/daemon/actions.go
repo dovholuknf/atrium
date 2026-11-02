@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/small"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -72,7 +73,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 	// And queued rather than typed while a dialog is on that screen, for the
 	// reason `handleMessage` gives: `Say` ends with an Enter, and an Enter
 	// answers a dialog.
-	run := d.sup.get(taskID)
+	run := d.sup.Get(taskID)
 	if run != nil && d.act.dialogOpen(taskID) {
 		run = nil
 	}
@@ -128,7 +129,7 @@ func (d *Daemon) runAction(taskID, actionID string) (*ActionResult, error) {
 		}
 	}
 
-	d.publishTask(taskID)
+	d.Publish(taskID)
 	log.Printf("[atrium] ran %q on %s, %s", action.Label, task.DisplayTitle(), out.Delivered)
 	return out, nil
 }
@@ -139,16 +140,16 @@ func (d *Daemon) handleRunAction(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	if body.Action == "" {
-		writeJSONErr(w, http.StatusBadRequest, errString("say which action to run"))
+		small.WriteJSONErr(w, http.StatusBadRequest, small.ErrString("say which action to run"))
 		return
 	}
 	res, err := d.runAction(r.PathValue("id"), body.Action)
 	if err != nil {
-		writeJSONErr(w, http.StatusBadRequest, err)
+		small.WriteJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

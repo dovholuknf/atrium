@@ -1,1 +1,0 @@
-Adding a PR is faster and no longer silent: the fetch asks the forge once instead of three times, and the pulls row shows each sub-step (fetch, worktree, agent launch) with its seconds as it runs. bug-add-pr-slow-and-silent.

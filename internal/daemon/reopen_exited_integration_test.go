@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -223,9 +224,7 @@ func TestAFixtureFirstStartNeverHaltsTheStore(t *testing.T) {
 		if r := d.sup.get(row.TaskID); r != nil {
 			windDown(r, time.Second, d.exitKeysFor(row.TaskID), d.hk.windDownKeyGap)
 		}
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(row.TaskID) != nil; {
-			time.Sleep(50 * time.Millisecond)
-		}
+		testwait.Poll(10*time.Second, func() bool { return d.sup.get(row.TaskID) == nil })
 	})
 	evs, _ := d.st.Events(row.TaskID, 50)
 	said := false

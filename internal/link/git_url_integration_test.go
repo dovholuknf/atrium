@@ -43,7 +43,12 @@ func newURLRig(t *testing.T) *urlRig {
 		copyTree(t, filepath.Join(snap.dir, "store"), x.store)
 	}
 	x.g.Store().Protocols = "file"
-	x.g.Store().Forge = func(gitsync.Ref) string { return forge }
+	x.g.Store().Forge = func(ref gitsync.Ref) string {
+		if ref.Name() != "github/o/r" {
+			return filepath.Join(x.root, "no-such.git")
+		}
+		return forge
+	}
 	if snap == nil {
 		gitRun(t, "", "init", "-q", "--bare", "-b", "master", forge)
 		work := filepath.Join(x.root, "forgework")
@@ -741,7 +746,7 @@ func TestAHostThatIsNotANameAndAPortIsNotMadeIntoAURL(t *testing.T) {
 		req.Host, req.RemoteAddr = host, offLoopback
 		rec := httptest.NewRecorder()
 		edge.MarkReach(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			x.proxy.serveGitURL(w, r, x.g, func(code int, msg string) { w.WriteHeader(code) })
+			x.proxy.forgeService().ServeGitURL(w, r, x.g, func(code int, msg string) { w.WriteHeader(code) })
 		}), edge.ReachOverlay).ServeHTTP(rec, req)
 		return rec.Code
 	}

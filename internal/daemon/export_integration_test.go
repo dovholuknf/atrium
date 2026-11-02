@@ -4,6 +4,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/publish"
+	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,7 +16,7 @@ import (
 // exportOf builds an export and hands back both the document and its bytes,
 // because most of these assert on the SERIALISED form. What matters is what
 // lands in the file, not what the struct held on the way there.
-func exportOf(t *testing.T, d *Daemon) (*Export, string) {
+func exportOf(t *testing.T, d *Daemon) (*roomconf.Export, string) {
 	t.Helper()
 	out, err := d.BuildExport()
 	if err != nil {
@@ -34,12 +36,12 @@ func TestAZrokAccountTokenNeverLeaves(t *testing.T) {
 	d := testDaemon(t)
 	// Stored the way the daemon really stores it, so this cannot pass against
 	// a shape the real code would never have written.
-	cfg := d.zrokConfig()
+	cfg := d.ZrokConfig()
 	cfg.OwnEnvironment = true
 	cfg.ApiEndpoint = "https://zrok.example"
 	cfg.ShareToken = "sharetokensecret"
 	cfg.Name = "atrium-abc123def456"
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -62,10 +64,10 @@ func TestAZrokAccountTokenNeverLeaves(t *testing.T) {
 func TestAZitiIdentityPathNeverLeaves(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	cfg := d.zitiConfig()
+	cfg := d.ZitiConfig()
 	cfg.Identity = "C:/Users/someone/.atrium/identities/atrium-secret.json"
 	cfg.Service = "atrium-board"
-	if err := d.saveOverlayConfig(SettingOverlayZiti, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZiti, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +112,7 @@ func TestAFieldNobodyAllowlistedDoesNotAppear(t *testing.T) {
 		held[f.name] = f.leave
 	}
 
-	stored := reflect.TypeOf(ZrokConfig{})
+	stored := reflect.TypeOf(publish.ZrokConfig{})
 	for i := 0; i < stored.NumField(); i++ {
 		name := stored.Field(i).Name
 		if _, known := held[name]; !known {
@@ -120,7 +122,7 @@ func TestAFieldNobodyAllowlistedDoesNotAppear(t *testing.T) {
 		}
 	}
 
-	exported := reflect.TypeOf(ExportZrok{})
+	exported := reflect.TypeOf(roomconf.ExportZrok{})
 	for i := 0; i < exported.NumField(); i++ {
 		name := exported.Field(i).Name
 		if !held[name] {
@@ -153,16 +155,16 @@ func TestAnUnknownSettingIsNotExported(t *testing.T) {
 func TestTheOverlayBlobsAreNotExportedAsSettings(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
-	for _, key := range NeverExportedKeys() {
-		for _, allowed := range ExportSettingKeys() {
+	for _, key := range roomconf.NeverExportedKeys() {
+		for _, allowed := range roomconf.ExportSettingKeys() {
 			if key == allowed {
 				t.Fatalf("%q is on both lists", key)
 			}
 		}
 	}
-	cfg := d.zrokConfig()
+	cfg := d.ZrokConfig()
 	cfg.ShareToken = "blobbedsecret"
-	if err := d.saveOverlayConfig(SettingOverlayZrok, cfg); err != nil {
+	if err := d.SaveOverlayConfig(publish.SettingOverlayZrok, cfg); err != nil {
 		t.Fatal(err)
 	}
 	_, raw := exportOf(t, d)
@@ -245,7 +247,7 @@ func TestAnOrdinaryConfigurationExportsCleanly(t *testing.T) {
 	if !strings.Contains(raw, "my issues") {
 		t.Fatal("a source did not come through")
 	}
-	if out.Version != ExportVersion {
+	if out.Version != roomconf.ExportVersion {
 		t.Fatalf("version is %d", out.Version)
 	}
 }

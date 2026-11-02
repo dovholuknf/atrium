@@ -29,3 +29,16 @@ func TestStartTimeIsStableForALiveProcessAndGoneForNone(t *testing.T) {
 		t.Errorf("pid 0: %v", err)
 	}
 }
+
+func TestAncestorsWalksUpFromAProcessWithItsNames(t *testing.T) {
+	up := Ancestors(os.Getpid(), 4)
+	if len(up) == 0 || up[0].PID != os.Getppid() || up[0].Name == "" {
+		t.Fatalf("%+v, parent %d", up, os.Getppid())
+	}
+	if got := Ancestors(0, 4); len(got) != 0 {
+		t.Errorf("pid 0: %+v", got)
+	}
+	if got := baseName(`C:\Program Files\Claude\Claude.EXE`); got != "claude" {
+		t.Errorf("baseName %q", got)
+	}
+}

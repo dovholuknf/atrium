@@ -9,6 +9,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
 // VERSION SKEW. A hub older than the relay refuses the kind with the sentence
@@ -33,7 +35,7 @@ func TestAnOldHubIsToldApartAndNotHeldFor(t *testing.T) {
 	}()
 	r := &Room{Name: "m1mini", Dial: plain{addr: ln.Addr().String()}, T: Timings{}.Fill()}
 	r.up = true
-	_, err = r.Relay(context.Background(), RelayRequest{Op: RelaySay})
+	_, err = r.Relay(context.Background(), wire.RelayRequest{Op: RelaySay})
 	if !errors.Is(err, ErrRelayOld) {
 		t.Fatalf("err = %v, want ErrRelayOld", err)
 	}

@@ -33,7 +33,9 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | --- | --- |
 | `atrium join` / `atrium leave` | Put the session you are in on the board and gate it, or take it off, with no restart. |
 | `atrium launch` | Put a directory on the board and start a runner in it. For scripts that make worktrees. |
+| `atrium worktree new <name>` / `rm <name>` / `list` | Make branch `claude/<name>` off `claude/main` with a worktree, remove it and delete the branch when merged, or list the `claude/` worktrees. |
 | `atrium open <url>` | Fill the launch dialog from an issue or pull request URL. |
+| `atrium twig <name>` | From inside a worktree: a new branch and worktree off its HEAD, its uncommitted work carried, a card in it. |
 | `atrium hook install [--runner codex]` | Install Claude or Codex hooks. |
 | `atrium hook status` | Inspect Claude hooks. |
 | `atrium hook`, `atrium session`, `atrium turn` | The hook entry points. Wired for you. |
@@ -84,6 +86,7 @@ passive: it does not start fixtures or open shares, so it is a place to look, ne
 | `atrium room get` / `set` | Read or set a room setting, such as `git_root`, in a stopped room's database. |
 | `atrium backlog` | The hub's backlog: `list`, `show`, `file`, `status`, `priority`, from any room. |
 | `atrium merge` | Land the current branch on `claude/main` through the hub's merge queue. `--list` shows the queue, `land` cuts the batch for `main` (operator only). |
+| `atrium land-check <branch>` | Fetch a hub branch and print its commits ahead of `claude/main`, whether it merges without conflict, and the diffstat. Nothing is merged. Exit 0 clean, 1 conflict, 2 no such branch. |
 | `atrium reports` | Reports directors leave for each other on the hub: `list`, `read`, `add`, from any room. |
 | `atrium ci` | A repository's CI, read through the hub: `runs`, `run`, `log`, `artifacts`, `artifact`. A log is written to a file and its path printed. |
 | `atrium resources init` | Write a starter `resources.md`, the inventory of machines agents may use. |

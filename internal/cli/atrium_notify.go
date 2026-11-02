@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/conn"
 )
 
 // notifyStore adapts the hub's database to what the notifier asks of it, by
@@ -35,7 +35,7 @@ func (n notifyStore) Rooms() ([]string, error) {
 	return out, nil
 }
 
-func (n notifyStore) Cards(room string) ([]link.CardState, error) {
+func (n notifyStore) Cards(room string) ([]conn.CardState, error) {
 	r, err := n.s.ByName(room)
 	if err != nil {
 		return nil, err
@@ -44,9 +44,9 @@ func (n notifyStore) Cards(room string) ([]link.CardState, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]link.CardState, 0, len(cards))
+	out := make([]conn.CardState, 0, len(cards))
 	for _, c := range cards {
-		out = append(out, link.CardState{ID: c.ID, Status: c.Status, Payload: json.RawMessage(c.Payload)})
+		out = append(out, conn.CardState{ID: c.ID, Status: c.Status, Payload: json.RawMessage(c.Payload)})
 	}
 	return out, nil
 }

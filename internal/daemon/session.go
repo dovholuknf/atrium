@@ -3,13 +3,16 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/home"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -26,7 +29,11 @@ import (
 
 // SessionEvent is what a session hook posts.
 type SessionEvent struct {
-	Agent string `json:"agent"`
+	// Contract is the runner contract version the sender speaks. Absent means 1.
+	Contract int `json:"contract,omitempty"`
+	// Features are the contract calls the adapter says it makes: session, activity, permission, stop, finish.
+	Features []string `json:"features,omitempty"`
+	Agent    string   `json:"agent"`
 	// Event is "start" or "end".
 	Event  string `json:"event"`
 	Runner string `json:"runner,omitempty"`
@@ -85,14 +92,6 @@ func EndsTheSession(reason string) bool {
 		return false
 	}
 	return true
-}
-
-// orWord is a fallback for a word a runner did not supply.
-func orWord(s, fallback string) string {
-	if strings.TrimSpace(s) == "" {
-		return fallback
-	}
-	return s
 }
 
 // defaultAlias gives a card new to the board its alias: the title's prefix, or
@@ -177,7 +176,26 @@ func (d *Daemon) sessionScratchLine(in SessionEvent) string {
 	if t == nil {
 		return ""
 	}
-	return d.scratchLine(t)
+	return strings.TrimSpace(d.scratchLine(t) + "\n" + d.roomLines(t))
+}
+
+// roomLines are what every session on the room is told at its start: where to read code that is not in its
+// directory, where the machines are listed, and its tools. gh is left out on a room with a hub, which has no forge
+// access.
+func (d *Daemon) roomLines(t *store.Task) string {
+	var lines []string
+	if !home.IsOutsideCode(shared.LaunchRequest{}, t) {
+		lines = append(lines, gitURLLine)
+	}
+	lines = append(lines, resourcesLine)
+	var refused []string
+	if d.HubForge() != nil {
+		refused = append(refused, "gh")
+	}
+	if tools := toolsLine(os.Getenv("PATH"), refused...); tools != "" {
+		lines = append(lines, tools)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (d *Daemon) onSession(in SessionEvent) error {
@@ -202,6 +220,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			task = t
 		}
 	}
+	if task == nil && in.TaskID == "" {
+		task = d.heldConversation(in)
+	}
 	bound := task != nil
 	if bound {
 		// A report that did not come from the card's own runner is a `claude`
@@ -224,16 +245,23 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	created := false
 	if !bound {
 		t, made, err := d.st.Register(obs)
-		created = made
 		if errors.Is(err, store.ErrStaleName) {
-			// Not an error: a directory name that only a finished card holds says
-			// nothing about which session this is. Recorded in the log and dropped.
-			log.Printf("[atrium] session %s from %q dropped: %v", in.Event, in.Agent, err)
-			return nil
+			// A directory name that only a finished card holds says nothing about which session this is, so a start
+			// gets a card of its own. Dropped, a session started by hand ran with no card on the board at all.
+			if in.Event != "" && in.Event != "start" {
+				log.Printf("[atrium] session %s from %q dropped: %v", in.Event, in.Agent, err)
+				return nil
+			}
+			obs.WireName, obs.NameSource = obs.WireName+"-"+outsideSuffix(in), ""
+			if t, made, err = d.st.Register(obs); err == nil {
+				log.Printf("[atrium] a session started outside atrium in %s is on its own card %s", obs.Worktree,
+					t.WireName)
+			}
 		}
 		if err != nil {
 			return err
 		}
+		created = made
 		task = t
 		// A session atrium had never heard of is adopted onto a new card. A join names it from its own title below.
 		if created && in.Event != "join" {
@@ -449,8 +477,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// /exit TYPED IN A SUPERVISED CARD'S OWN TERMINAL is somebody deciding, and
 		// stays down across a restart like an asked exit. A wind-down ends every
 		// session the same way, so only an ending outside one counts.
-		if run := d.sup.get(task.ID); in.Reason == "prompt_input_exit" && !d.windingDown.Load() &&
-			run != nil && !run.leaving.Load() {
+		if run := d.sup.Get(task.ID); in.Reason == "prompt_input_exit" && !d.windingDown.Load() &&
+			run != nil && !run.Leaving() {
 			if err := d.st.SetExitAsked(task.ID); err != nil {
 				return err
 			}
@@ -471,7 +499,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// The runner is up and its hooks are posting, which is what an
 		// after-restart wake waits for. See restartwake.go.
 		d.noteAnnounced(task.ID, in.Resume)
-		d.wakeSawSession(task.ID, in.Resume)
+		d.WakeSawSession(task.ID, in.Resume)
 		// A NEW CONVERSATION (`/clear`, an automatic new context, a resume) lost whatever was typed
 		// into the last one. One line lists what its workers still owe. See listOwed.
 		d.listOwed(task)
@@ -509,7 +537,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			}
 		}
 	}
-	d.publishTask(task.ID)
+	d.Publish(task.ID)
 	return nil
 }
 
@@ -553,4 +581,24 @@ func endedAs(task *store.Task) string {
 		return store.StatusDead
 	}
 	return store.StatusDone
+}
+
+// heldConversation is the card on this room that holds a session's conversation, for a session started by hand with
+// no task id: `claude --resume <id>` of a card's conversation lands back on that card. Nil when no card holds it, or
+// when the card has a live runner of its own, which makes this a second copy and not the card's session.
+func (d *Daemon) heldConversation(in SessionEvent) *store.Task {
+	t, err := d.st.GetByResumeID(in.Resume)
+	if err != nil || t.ArchivedAt != nil || t.MovedTo != "" || d.sup.Get(t.ID) != nil {
+		return nil
+	}
+	log.Printf("[atrium] a session started outside atrium resumed %s, adopted onto its card %s", in.Resume, t.ID)
+	return t
+}
+
+// outsideSuffix tells apart the card of a session started outside atrium from the finished card holding its name.
+func outsideSuffix(in SessionEvent) string {
+	if len(in.Resume) >= 8 {
+		return in.Resume[:8]
+	}
+	return strconv.Itoa(in.PID)
 }

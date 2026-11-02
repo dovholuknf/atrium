@@ -20,7 +20,7 @@ func (d *Daemon) visibleLauncher(ctx context.Context, worker *store.Task, byID, 
 		}
 	}
 	if l == nil && strings.TrimSpace(byName) != "" {
-		l = d.localTarget(strings.TrimSpace(byName))
+		l = d.LocalTarget(strings.TrimSpace(byName))
 	}
 	if l == nil {
 		byName, byDir = strings.TrimSpace(byName), strings.TrimSpace(byDir)

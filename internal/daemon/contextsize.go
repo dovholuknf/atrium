@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -17,7 +19,7 @@ import (
 // Every turn re-reads the whole context, so a worker at 300k pays for 300k on
 // every turn, and neither the model nor the board says so. The size is the
 // keep-alive's own figure, the last main reply's input plus cache writes plus
-// cache reads, read by the same `readLastReply`.
+// cache reads, read by the same `lastReplies.readLastReply`.
 //
 // NEVER STORED, like activity (docs/runtime/activity-design.md). It lives in a map
 // here and dies with the process; the next tick reads it again.
@@ -68,8 +70,10 @@ type contextSeen struct {
 }
 
 type contextSizes struct {
-	mu sync.Mutex
-	m  map[string]contextSeen
+	// replies is the transcript read cache. The daemon points it at its own.
+	replies *cycle.LastReplies
+	mu      sync.Mutex
+	m       map[string]contextSeen
 	// judged is the threshold each card was last held against. A changed
 	// threshold is a new look at an unchanged size: a card now under a raised
 	// line is re-armed before it grows past it.
@@ -84,8 +88,8 @@ type contextSizes struct {
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
-		transcript: api.TranscriptPath, latest: api.LatestSession}
+	return &contextSizes{replies: &cycle.LastReplies{}, m: map[string]contextSeen{}, judged: map[string]int64{},
+		session: map[string]string{}, transcript: api.TranscriptPath, latest: api.LatestSession}
 }
 
 // started records the session a card's runner says it has just started.
@@ -183,7 +187,7 @@ func (c *contextSizes) read(t *store.Task) (int64, bool) {
 	if ok && last.path == path && last.mod.Equal(info.ModTime()) && last.size == info.Size() {
 		return last.tokens, false
 	}
-	r, err := readLastReply(path)
+	r, err := c.replies.ReadLastReply(path)
 	if err != nil {
 		return 0, false
 	}
@@ -233,12 +237,12 @@ func (d *Daemon) watchContext() error {
 		if strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
-		if h, err := d.st.Harness(t.Runner); err != nil || !isClaude(h) {
+		if h, err := d.st.Harness(t.Runner); err != nil || !shared.IsClaude(h) {
 			continue
 		}
 		// For a runner whose hooks are not wired. See outputat.go.
 		if d.outputMoved(t) {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 		tokens, changed := d.ctx.read(t)
 		if tokens == 0 {
@@ -251,11 +255,11 @@ func (d *Daemon) watchContext() error {
 		d.cycleCheck(t, tokens)
 		limitK, _ := api.ContextLimitFor(d.st, t)
 		if moved := d.ctx.judge(t.ID, int64(limitK)*1000); changed || moved {
-			d.publishTask(t.ID)
+			d.Publish(t.ID)
 		}
 	}
 	for _, id := range d.ctx.forgetExcept(live) {
-		d.publishTask(id)
+		d.Publish(id)
 	}
 	d.ctx.forgetSessions(open)
 	d.forgetOutput(open)

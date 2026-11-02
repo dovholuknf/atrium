@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/nowindow"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -94,7 +95,7 @@ var opencodeExec = func(ctx context.Context, bin string, args []string, max int6
 	cmd.Stdout = w
 	cmd.WaitDelay = waitDelay
 	prepareTree(cmd)
-	hideWindow(cmd)
+	nowindow.Hide(cmd)
 	err := cmd.Run()
 	reapTree(cmd)
 	w.mu.Lock()

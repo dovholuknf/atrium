@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/link/ctl"
 )
 
 // ── alias ───────────────────────────────────────────────────────────────────────
@@ -54,10 +56,10 @@ func (c *controlMCP) aliasHandler(ctx context.Context, req *mcp.CallToolRequest,
 	*mcp.CallToolResult, aliasOutput, error) {
 
 	out := aliasOutput{}
-	room := roomOf(req)
+	room := ctl.RoomOf(req)
 	who := strings.TrimSpace(in.Card)
 	if who == "" {
-		if who = agentOf(req); who == "" {
+		if who = ctl.AgentOf(req); who == "" {
 			return nil, out, fmt.Errorf("say which card. this session is not on the board, " +
 				"so it has no card of its own to default to")
 		}
@@ -66,13 +68,13 @@ func (c *controlMCP) aliasHandler(ctx context.Context, req *mcp.CallToolRequest,
 	if set != "" && in.Clear {
 		return nil, out, fmt.Errorf("give `alias` or `clear`, not both")
 	}
-	id, _, err := c.resolvePeer(ctx, room, who)
+	id, _, err := c.ResolvePeer(ctx, room, who)
 	if err != nil {
 		return nil, out, err
 	}
 	path := "/v1/tasks/" + url.PathEscape(id)
 	var t aliasCard
-	if err := c.ask(ctx, http.MethodGet, path, room, nil, &t); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, path, room, nil, &t); err != nil {
 		return nil, out, err
 	}
 	if set != "" || in.Clear {
@@ -83,7 +85,7 @@ func (c *controlMCP) aliasHandler(ctx context.Context, req *mcp.CallToolRequest,
 		var patched struct {
 			Task aliasCard `json:"task"`
 		}
-		if err := c.ask(ctx, http.MethodPatch, path, room, map[string]any{"alias": set}, &patched); err != nil {
+		if err := c.Ask(ctx, http.MethodPatch, path, room, map[string]any{"alias": set}, &patched); err != nil {
 			return nil, out, err
 		}
 		t = patched.Task

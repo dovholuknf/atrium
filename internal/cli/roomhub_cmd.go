@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/dovholuknf/atrium/internal/link"
+	"github.com/dovholuknf/atrium/internal/link/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ func roomHubCmd() *cobra.Command {
 			"one at its next start.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			keys := link.Keys{Dir: orDefault(dir, roomDir())}
+			keys := transport.Keys{Dir: orDefault(dir, roomDir())}
 			out := cmd.OutOrStdout()
 			saved, err := keys.Joined()
 			if err != nil {

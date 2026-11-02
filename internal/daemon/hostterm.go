@@ -201,7 +201,7 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 	ring := min(api.ScrollbackBytes(d.st), hostMaxRing)
 	sp, err := cl.Spawn(ptyhost.SpawnArgs{
 		ID: taskID, Kind: kind, Argv: append([]string{resolved}, args...), Env: env, Cwd: cwd,
-		Cols: cols, Rows: rows, Ring: ring,
+		Cols: cols, Rows: rows, Ring: ring, Label: d.procLabel(taskID, kind),
 	})
 	if err != nil {
 		var re *ptyhost.RemoteError
@@ -577,10 +577,11 @@ func (d *Daemon) adoptLive(cl *ptyhost.Client, addr string, row *store.PtyRun, t
 		d.sup.addShell(r)
 	} else {
 		d.sup.add(r)
+		d.noteOpen(row.TaskID)
 		d.EnsureCardShare(row.TaskID)
 		// The reattach is this runner's session start as far as a restart wake can tell: no SessionStart hook is
 		// coming, and the wake would otherwise wait out wakeNoHook. The wake's own settle delay follows.
-		d.wakeSawSession(row.TaskID, "")
+		d.WakeSawSession(row.TaskID, "")
 		d.reholdPending(row.TaskID)
 	}
 	go func() {
@@ -632,4 +633,15 @@ func (d *Daemon) fileGone(cl *ptyhost.Client, row *store.PtyRun, info ptyhost.Pt
 	if err := cl.Collect(row.RunID); err != nil {
 		log.Printf("[atrium] collect run %s: %v", row.RunID, err)
 	}
+}
+
+// hostHooks are the seams of the pty host at startup. See waitForHost.
+type hostHooks struct {
+	hostStartWait, hostStartPoll time.Duration
+	// endHost ends the host process for a pty host restart. See RestartPtyHost.
+	endHost func(pid int, addr string) error
+}
+
+func defaultHostHooks() hostHooks {
+	return hostHooks{hostStartWait: hostStartWait, hostStartPoll: hostStartPoll, endHost: endHost}
 }

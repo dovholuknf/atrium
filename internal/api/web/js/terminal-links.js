@@ -148,7 +148,7 @@ async function askProbe(id, paths, row) {
   }
 }
 
-// One link, with somewhere to go and something to say on the way.
+// One link, with somewhere to go.
 function fileLink(id, range, hit) {
   return {
     range,
@@ -164,16 +164,8 @@ function fileLink(id, range, hit) {
       if (hit.dir) openFromTerminal(id, hit);
       else if (viewAtOnce(hit.rel)) openFileTabFor(id, hit.rel);
       else fileLinkMenu(ev, id, hit);
-    },
-    hover: (ev) => linkTipShow(ev, hit.rel, fileLinkTip(hit)),
-    leave: () => linkTipLeave()
+    }
   };
-}
-
-function fileLinkTip(hit) {
-  if (hit.dir) return hit.rel + "/\nopens the file browser here";
-  const name = hit.rel + (hit.size ? "  (" + bytes(hit.size) + ")" : "");
-  return name + (viewAtOnce(hit.rel) ? "\nclick to view it in atrium" : "\nclick to view, edit or open it");
 }
 
 // A path that names somewhere outside the card. Its link opens nothing and says why.
@@ -253,22 +245,16 @@ function notEditable(rel) { return binaryExt.test(rel || ""); }
 // What a click opens in the viewer without asking: an SVG is text, but it is read as a picture.
 function viewAtOnce(rel) { return notEditable(rel) || /\.svg$/i.test(rel || ""); }
 
-// What `files/launch` will hand to the room's default app. The same list as `launchTypes` in filelaunch.go.
-const launchExt = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg|pdf|md|markdown|txt|log|csv|json|html?)$/i;
-function launchable(rel) { return launchExt.test(rel || ""); }
-
 // A clicked file asks where it should open.
 //
 //   open rendered / open in a tab   atrium's viewer, in a new browser tab, streamed from the room that holds the
 //                                   card. First and always offered. Markdown is rendered there. HTML is offered
 //                                   both ways: drawn in a sandboxed frame, and as its source.
 //   in atrium's editor              here, in this browser, in the drawer. Not for a binary.
-//   open externally, on <machine>   `files/launch`, the room's DEFAULT APP for the file, on the room's machine.
-//                                   Only for a document or a picture: a program's default app is to run it.
 //   open in the editor on <machine> `files/open`, which runs the operator's `editor_command` on the machine the
 //                                   file is on. Offered ONLY when that room has one set. There is no default.
 //
-// Both of the last two are named for the machine because over a share it is not the machine in front of you. The
+// The last is named for the machine because over a share it is not the machine in front of you. The
 // room's own setting decides, not the board's: a card on another room is opened by that room's command.
 async function fileLinkMenu(ev, id, hit) {
   const at = { clientX: ev && ev.clientX || 0, clientY: ev && ev.clientY || 0 };
@@ -290,12 +276,6 @@ async function fileLinkMenu(ev, id, hit) {
       tip: "drawn in a sandbox: no script runs and nothing outside the file loads" });
   }
   if (!notEditable(hit.rel) && !hit.outside) items.push({ label: "open in atrium's editor", act: () => openFromTerminal(id, hit) });
-  if (launchable(hit.rel)) {
-    items.push({
-      label: "open externally, on " + (where || "the room's machine"),
-      act: () => launchOnRoom(id, hit.rel, where)
-    });
-  }
   if (cmd && !hit.outside) {
     items.push({
       label: where ? "open in the editor on " + where : "open in the editor where the file is",
@@ -457,6 +437,7 @@ function worthProbing(tok) {
 // scrollbar, which is what makes "17 of 240" mean something.
 let termSearch = null;
 let findCase = false, findRe = false;
+let findWho = "all", findWhoHits = [], findWhoAt = -1;
 
 function useSearch(t) {
   termSearch = null;
@@ -860,6 +841,16 @@ function runFind(step, back) {
     paintFindCount(null);
     return;
   }
+  if (findWho !== "all") {
+    termSearch.clearDecorations();
+    try {
+      findBySpeaker(text, step, back);
+    } catch (e) {
+      if (!findRe) throw e;
+      paintFindCount(null, "bad pattern");
+    }
+    return;
+  }
   try {
     const found = step && back
       ? termSearch.findPrevious(text, findOpts(false))
@@ -889,9 +880,66 @@ function runFind(step, back) {
 function toggleFind(which) {
   if (which === "case") findCase = !findCase;
   if (which === "re") findRe = !findRe;
+  if (which === "who") {
+    findWho = { all: "me", me: "agent", agent: "all" }[findWho];
+    const who = document.getElementById("t-find-who");
+    if (who) { who.textContent = findWho; who.classList.toggle("on", findWho !== "all"); }
+    runFind(false);
+    return;
+  }
   const el = document.getElementById(which === "case" ? "t-find-case" : "t-find-re");
   if (el) el.classList.toggle("on", which === "case" ? findCase : findRe);
   runFind(false);
+}
+
+// Claude Code paints the operator's prompt rows with a background tint and the agent's text on the default one.
+// A wrapped row takes the speaker of the row it continues, so a long or pasted prompt stays mine to its end.
+function rowIsMine(b, y) {
+  while (y > 0 && b.getLine(y).isWrapped) y--;
+  const c = b.getLine(y).getCell(0);
+  return !!c && !c.isBgDefault();
+}
+
+// The search addon matches text and nothing else, so a speaker search walks the buffer itself: each logical line
+// (wrapped rows joined) of the chosen speaker, matched as a string, the hit mapped back to its cells and selected.
+function findBySpeaker(text, step, back) {
+  const b = term.buffer.active;
+  const re = new RegExp(findRe ? text : text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), findCase ? "g" : "gi");
+  const hits = [];
+  for (let y = 0; y < b.length; y++) {
+    if (b.getLine(y).isWrapped) continue;
+    if (rowIsMine(b, y) !== (findWho === "me")) continue;
+    let s = "";
+    const at = [];
+    for (let r = y; r < b.length && (r === y || b.getLine(r).isWrapped); r++) {
+      const l = b.getLine(r);
+      for (let x = 0; x < term.cols; x++) {
+        const c = l.getCell(x);
+        if (!c || c.getWidth() === 0) continue;
+        const ch = c.getChars() || " ";
+        for (let i = 0; i < ch.length; i++) at.push({ y: r, x, w: c.getWidth() });
+        s += ch;
+      }
+    }
+    for (const m of s.matchAll(re)) {
+      if (!m[0].length) continue;
+      const a = at[m.index], z = at[m.index + m[0].length - 1];
+      hits.push({ y: a.y, x: a.x, n: (z.y - a.y) * term.cols + z.x + z.w - a.x });
+    }
+  }
+  const prev = findWhoHits[findWhoAt];
+  findWhoHits = hits;
+  if (!hits.length) { findWhoAt = -1; term.clearSelection(); paintFindCount(null, "no matches"); return; }
+  if (step) {
+    findWhoAt = ((findWhoAt + (back ? -1 : 1)) % hits.length + hits.length) % hits.length;
+  } else {
+    const i = prev ? hits.findIndex(h => h.y > prev.y || (h.y === prev.y && h.x >= prev.x)) : 0;
+    findWhoAt = i < 0 ? 0 : i;
+  }
+  const h = hits[findWhoAt];
+  term.select(h.x, h.y, h.n);
+  if (h.y < b.viewportY || h.y >= b.viewportY + term.rows) term.scrollToLine(Math.max(0, h.y - (term.rows >> 1)));
+  paintFindCount({ resultIndex: findWhoAt, resultCount: hits.length });
 }
 
 function paintFindCount(r, msg) {

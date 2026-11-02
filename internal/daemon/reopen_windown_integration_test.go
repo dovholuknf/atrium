@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/base/testwait"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -40,7 +42,7 @@ func shellCard(t *testing.T, d *Daemon) *store.Task {
 	// Best effort, and never a failure: a directory the console host still holds
 	// is left in the temp directory.
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	task, err := d.Launch(LaunchRequest{Harness: "shelltest", Cwd: dir})
+	task, err := d.Launch(shared.LaunchRequest{Harness: "shelltest", Cwd: dir})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
 	}
@@ -50,9 +52,7 @@ func shellCard(t *testing.T, d *Daemon) *store.Task {
 		if r := d.sup.get(task.ID); r != nil {
 			windDown(r, time.Second, d.exitKeysFor(task.ID), d.hk.windDownKeyGap)
 		}
-		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(task.ID) != nil; {
-			time.Sleep(50 * time.Millisecond)
-		}
+		testwait.Poll(10*time.Second, func() bool { return d.sup.get(task.ID) == nil })
 	})
 	return task
 }
@@ -80,12 +80,7 @@ func windDownLike(t *testing.T, d *Daemon, task *store.Task) {
 
 func waitGone(t *testing.T, d *Daemon, id string) {
 	t.Helper()
-	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
-		if d.sup.get(id) == nil {
-			return
-		}
-	}
-	t.Fatal("the runner did not stop")
+	testwait.Eventually(t, 10*time.Second, "the runner to stop", func() bool { return d.sup.get(id) == nil })
 }
 
 func TestARestartBringsBackACardAtItsPrompt(t *testing.T) {
@@ -213,7 +208,7 @@ func TestAnAskedExitStaysDown(t *testing.T) {
 	if asked, _ := d.st.ExitAsked(task.ID); !asked {
 		t.Fatal("the asked exit is not recorded")
 	}
-	if _, err := d.Launch(LaunchRequest{Harness: "shelltest", Cwd: task.Worktree, TaskID: task.ID}); err != nil {
+	if _, err := d.Launch(shared.LaunchRequest{Harness: "shelltest", Cwd: task.Worktree, TaskID: task.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if asked, _ := d.st.ExitAsked(task.ID); asked {
@@ -228,7 +223,7 @@ func TestAChildIsToldWhereItsDaemonIs(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	env := map[string]string{}
-	d.tellWhereIAm(env)
+	d.TellWhereIAm(env)
 	if env["ATRIUM_LOCATION"] == "" || env["ATRIUM_LOCATION"] != d.opts.LocationFile {
 		t.Fatalf("a runner is told %q, want the daemon's own file %q", env["ATRIUM_LOCATION"], d.opts.LocationFile)
 	}

@@ -35,9 +35,17 @@ Add it to a session's MCP configuration as an HTTP server:
 Use your hub's board address. `7778` is the default. Atrium sets `ATRIUM_AGENT_NAME` and `ATRIUM_ROOM` in the
 environment of every session it launches.
 
-The seeded claude runner starts sessions with `--strict-mcp-config --mcp-config ~/.atrium/mcp.json`, so a
+A room's first start writes the stdio relay below into `~/.atrium/mcp.json` as `atrium-control`, unless that file
+already has one, and adds `--mcp-config ~/.atrium/mcp.json` to the claude runner row beside `--strict-mcp-config`. A
 launched session gets exactly the servers listed in that file, and never stops on a prompt from a server it was not
-going to use. Put the entry above in that file.
+going to use. A room made before this starts claude with `--strict-mcp-config` and no `--mcp-config`, so it has no
+atrium-control until you put the entry in that file and add `--mcp-config <that file>` to its claude runner.
+
+A claude started outside atrium does not read that file. Register the relay for it once:
+
+```sh
+claude mcp add --scope user atrium-control -- /path/to/atrium mcp-relay
+```
 
 ### Surviving a hub restart
 
