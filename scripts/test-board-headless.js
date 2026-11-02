@@ -24474,6 +24474,8 @@ const unitResults = {};
 // each other's state. This holds for the serial run and for a shard alike. A new piece of state goes on `mock`, and the
 // listing fails on a module-level `let` in this file or in lib/mock.js.
 let pristine = null, lastUnit = "";
+// Six times the slowest unit on the weight file: past it a unit is stuck, and the shard fails it rather than hang the job.
+const UNIT_MS = Number(process.env.HEADLESS_UNIT_MS) > 0 ? Number(process.env.HEADLESS_UNIT_MS) : 300000;
 const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
 // What a unit changed on `mock`, field by field, as JSON.
 function mockSnapshot() {
@@ -24492,11 +24494,13 @@ async function unit(name, fn) {
   const before = bad, t0 = Date.now();
   const snap0 = process.env.HEADLESS_LEAKS ? mockSnapshot() : null;
   results.currentUnit = name;
-  try { await fn(); }
+  let timer;
+  const stuck = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("no result after " + UNIT_MS / 1000 + "s, a wait that never completes")), UNIT_MS); });
+  try { await Promise.race([fn(), stuck]); }
   catch (e) {
     if (!UNIT_FILTER) throw e;
     fail(name + ": the unit threw: " + threwMessage(e));
-  } finally { results.currentUnit = ""; }
+  } finally { clearTimeout(timer); results.currentUnit = ""; }
   const ms = Date.now() - t0;
   if (snap0) {
     const snap1 = mockSnapshot();
