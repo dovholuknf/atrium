@@ -1056,6 +1056,11 @@ function themeSampleHTML(p) {
     "ok  " + say("cyan", "internal/store") + "\t" + say("yellow", "0.41s") + "\n" +
     say("red", "FAIL") + "  internal/api\tsee " + say("brightBlue", "the log") + "\n" +
     say("yellow", "warning:") + " 2 tests skipped\n" +
+    `<b>${say("red", "error:")}</b> connection refused\n` +
+    say("red", "- timeout := 1 * time.Second") + "\n" +
+    say("green", "+ timeout := 5 * time.Second") + "\n" +
+    `<span style="color:${at("brightBlue", fg)};text-decoration:underline">https://ci.example.com/run/4412</span>\n` +
+    "<b>bold</b> <u>underline</u> <i>italic</i> " + say("brightBlack", "dim status text") + "\n" +
     row(["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]) + "\n" +
     row(["brightBlack", "brightRed", "brightGreen", "brightYellow",
          "brightBlue", "brightMagenta", "brightCyan", "brightWhite"]) + "\n" +
