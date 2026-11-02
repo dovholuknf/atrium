@@ -492,44 +492,66 @@ func TestTheBoardCannotReachTheStreamRoute(t *testing.T) {
 // loopback address and nothing answers on 127.0.0.1 at that port, so only the right dial reaches the banner.
 func TestTheRoomDialsTheAddrItsSwitchNames(t *testing.T) {
 	lightSlot(t)
-	ln, err := net.Listen("tcp", "127.0.0.2:0")
-	if err != nil {
-		t.Skipf("no second loopback address here: %v", err)
-	}
-	defer ln.Close()
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() { defer c.Close(); _, _ = io.WriteString(c, "SSH-2.0-fake\r\n"); _, _ = io.Copy(io.Discard, c) }()
+	// serve answers a banner on 127.0.0.2 at a port that was free on 127.0.0.1 a moment ago.
+	serve := func() (net.Listener, int, bool) {
+		ln, err := net.Listen("tcp", "127.0.0.2:0")
+		if err != nil {
+			t.Skipf("no second loopback address here: %v", err)
 		}
-	}()
-	port := ln.Addr().(*net.TCPAddr).Port
-	if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err == nil {
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				go func() { defer c.Close(); _, _ = io.WriteString(c, "SSH-2.0-fake\r\n"); _, _ = io.Copy(io.Discard, c) }()
+			}
+		}()
+		port := ln.Addr().(*net.TCPAddr).Port
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			ln.Close()
+			return nil, 0, false
+		}
 		l.Close()
-	} else {
-		t.Skip("the port is taken on 127.0.0.1 too")
+		return ln, port, true
 	}
 
 	s := newStreamRig(t, 100*time.Millisecond, "sg3")
 	dir := s.rooms["sg3"].dir
-	save := func(addr string) {
+	save := func(addr string, port int) {
 		st := remoteaccess.State{Version: remoteaccess.Version, On: true, Addr: addr, Port: port, From: []string{"hub"}}
 		if err := remoteaccess.Save(dir, st); err != nil {
 			t.Fatal(err)
 		}
 	}
-	save("")
-	s.heard("sg3", true)
-	_, _, resp := s.door("sg3")
-	if body := streamBody(t, resp); resp.StatusCode != http.StatusBadGateway ||
-		!strings.Contains(body, fmt.Sprintf("on 127.0.0.1:%d", port)) {
-		t.Fatalf("with no addr the room dials 127.0.0.1: %d %s", resp.StatusCode, body)
+	// A parallel test can bind 127.0.0.1 at the port after the probe, so a 101 here picks a new port and tries again.
+	var ln net.Listener
+	var port int
+	for try := 0; ; try++ {
+		if try == 10 {
+			t.Skip("no port stayed free on 127.0.0.1 between the probe and the dial")
+		}
+		var ok bool
+		if ln, port, ok = serve(); !ok {
+			continue
+		}
+		save("", port)
+		s.heard("sg3", true)
+		_, _, resp := s.door("sg3")
+		body := streamBody(t, resp)
+		if resp.StatusCode == http.StatusSwitchingProtocols {
+			ln.Close()
+			continue
+		}
+		if resp.StatusCode != http.StatusBadGateway || !strings.Contains(body, fmt.Sprintf("on 127.0.0.1:%d", port)) {
+			t.Fatalf("with no addr the room dials 127.0.0.1: %d %s", resp.StatusCode, body)
+		}
+		break
 	}
+	defer ln.Close()
 
-	save("127.0.0.2")
+	save("127.0.0.2", port)
 	c, br, resp := s.door("sg3")
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d: %s", resp.StatusCode, streamBody(t, resp))
