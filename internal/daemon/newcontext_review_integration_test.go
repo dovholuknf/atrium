@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 )
@@ -13,14 +14,14 @@ func TestASeededChipSurvivesTheNewConversationsSessionStart(t *testing.T) {
 	t.Parallel()
 	d := testDaemon(t)
 	task, _, _ := ncCard(t, d)
-	d.saveNewContextJournal(map[string]ncJournalRow{task.ID: {Step: NewContextWake, File: "HANDOFF.x.md", Conv: "c1"}})
+	d.SaveNewContextJournal(map[string]cycle.NcJournalRow{task.ID: {Step: cycle.NewContextWake, File: "HANDOFF.x.md", Conv: "c1"}})
 
-	d.endAbandonedNewContexts()
-	d.wakeSawSession(task.ID, "c2")
+	d.EndAbandonedNewContexts()
+	d.WakeSawSession(task.ID, "c2")
 
-	v, _ := d.newContextFor(task.ID).(map[string]any)
-	if v == nil || v["step"] != NewContextFailed {
-		t.Fatalf("the seeded chip was deleted by the new conversation's SessionStart: %v", d.newContextFor(task.ID))
+	v, _ := d.NewContextFor(task.ID).(map[string]any)
+	if v == nil || v["step"] != cycle.NewContextFailed {
+		t.Fatalf("the seeded chip was deleted by the new conversation's SessionStart: %v", d.NewContextFor(task.ID))
 	}
 }
 
@@ -31,16 +32,16 @@ func TestACaptureOnlyRunIsNeverJournalledAndNeverHoldsTyping(t *testing.T) {
 	d := testDaemon(t)
 	task, _, _ := ncCard(t, d)
 
-	if _, ok := d.nctx.beginCaptureOnly(task.ID, "HANDOFF.x.md", "c1"); !ok {
+	if _, ok := d.Nctx.BeginCaptureOnly(task.ID, "HANDOFF.x.md", "c1"); !ok {
 		t.Fatal("could not begin")
 	}
 	if j := journalOf(t, d); strings.Contains(j, task.ID) {
 		t.Fatalf("a capture-only run was journalled: %q", j)
 	}
-	if d.nctx.typingHeld(task.ID) {
+	if d.Nctx.TypingHeld(task.ID) {
 		t.Fatal("typing is held during the idle parking's capture")
 	}
-	if !d.nctx.holding(task.ID) {
+	if !d.Nctx.Holding(task.ID) {
 		t.Fatal("the run is no longer holding messages")
 	}
 }

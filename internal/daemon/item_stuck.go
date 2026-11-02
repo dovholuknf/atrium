@@ -182,20 +182,20 @@ func (d *Daemon) itemStuckEscalation(t *store.Task) *Escalation {
 func (d *Daemon) itemMissed(taskID string, carried []deliveredSay) []deliveredSay {
 	var out []deliveredSay
 	for _, s := range carried {
-		if s.from != store.ReservedHandle {
+		if s.From != store.ReservedHandle {
 			out = append(out, s)
 			continue
 		}
-		body := strings.TrimPrefix(s.text, itemRetypeNote)
+		body := strings.TrimPrefix(s.Text, itemRetypeNote)
 		switch {
 		case strings.HasPrefix(body, itemAnswerPrefix):
 			if d.itemAnswerPending(taskID) {
-				s.text = itemMissedNote + body
+				s.Text = itemMissedNote + body
 				out = append(out, s)
 			}
 		case strings.HasPrefix(body, "item it-"):
 			if d.itemNoticePending(taskID, body) {
-				s.text = itemMissedNote + body
+				s.Text = itemMissedNote + body
 				out = append(out, s)
 			}
 		default:

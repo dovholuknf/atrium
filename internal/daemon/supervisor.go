@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"io"
 	"log"
@@ -1356,7 +1357,7 @@ func (r *runner) promptWasOwn(at time.Time) bool {
 	r.typeMu.Lock()
 	defer r.typeMu.Unlock()
 	switch r.peerBanner {
-	case newContextLabel, wakeLabel, wrapLabel, exitLabel:
+	case cycle.NewContextLabel, cycle.WakeLabel, cycle.WrapLabel, exitLabel:
 		return true
 	}
 	return false
@@ -1835,7 +1836,7 @@ func (r *runner) deliverOutput(chunk []byte) {
 func isClearCommand(s string) bool {
 	s = strings.TrimPrefix(s, "\x1b[200~")
 	s = strings.TrimSuffix(s, "\x1b[201~")
-	return strings.TrimSpace(s) == newContextClear
+	return strings.TrimSpace(s) == cycle.NewContextClearCommand
 }
 
 // markClear writes the clear mark into the output stream: the ring, so every

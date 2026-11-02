@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"strings"
 	"sync"
@@ -27,11 +28,7 @@ const deliveredCap = 32
 const carriedNote = "[repeated: this reached you just before your context was cleared, and your handoff may not " +
 	"mention it. Act on it if you have not already.]\n"
 
-type deliveredSay struct {
-	from, text, kind string
-	// turn is the turn it went into: the one running, or the one it starts when the card was between turns.
-	turn int
-}
+type deliveredSay = shared.DeliveredSay
 
 type contextLog struct {
 	mu sync.Mutex
@@ -52,7 +49,7 @@ func (d *Daemon) noteInContext(taskID, from, text, kind string) {
 	}
 	d.inCtx.mu.Lock()
 	defer d.inCtx.mu.Unlock()
-	l := append(d.inCtx.by[taskID], deliveredSay{from: from, text: text, kind: kind, turn: turn})
+	l := append(d.inCtx.by[taskID], deliveredSay{From: from, Text: text, Kind: kind, Turn: turn})
 	if len(l) > deliveredCap {
 		l = l[len(l)-deliveredCap:]
 	}
@@ -69,7 +66,7 @@ func (d *Daemon) takeInContext(taskID string) []deliveredSay {
 	defer d.inCtx.mu.Unlock()
 	var out []deliveredSay
 	for _, s := range d.inCtx.by[taskID] {
-		if s.turn >= latest {
+		if s.Turn >= latest {
 			out = append(out, s)
 		}
 	}
@@ -80,7 +77,7 @@ func (d *Daemon) takeInContext(taskID string) []deliveredSay {
 // requeueCarried queues again what a cycle took, to be delivered by the ordinary paths now the wake is typed.
 func (d *Daemon) requeueCarried(taskID string, carried []deliveredSay) {
 	for _, s := range carried {
-		text := s.text
+		text := s.Text
 		if !strings.HasPrefix(text, carriedNote) && !strings.HasPrefix(text, inCaseYouMissedIt) {
 			text = carriedNote + text
 		}
@@ -89,8 +86,8 @@ func (d *Daemon) requeueCarried(taskID string, carried []deliveredSay) {
 		// Recorded as a launcher's fyi is, so no nudge and no silent-stop notice follow.
 		var m *store.Message
 		var err error
-		if s.from != "" {
-			m, err = d.st.QueuePeerKind(taskID, text, s.from, store.PromptFYI, true)
+		if s.From != "" {
+			m, err = d.st.QueuePeerKind(taskID, text, s.From, store.PromptFYI, true)
 		} else {
 			m, err = d.st.QueueAfterTurn(taskID, text, "")
 		}
@@ -98,6 +95,6 @@ func (d *Daemon) requeueCarried(taskID string, carried []deliveredSay) {
 			log.Printf("[atrium] could not hand back a say to %s after its new context: %v", taskID, err)
 			continue
 		}
-		d.deferPeerInjection(taskID, m.ID, s.from, text, store.PromptFYI, true)
+		d.deferPeerInjection(taskID, m.ID, s.From, text, store.PromptFYI, true)
 	}
 }

@@ -80,7 +80,7 @@ func (d *Daemon) taskLaunchFromJSON(body []byte) (*store.Task, error) {
 	if err := d.launchWhileStopping(); err != nil {
 		return nil, err
 	}
-	if err := d.launchHeld(req); err != nil {
+	if err := d.LaunchHeld(req); err != nil {
 		return nil, err
 	}
 	if err := d.launchNeedsLogin(req); err != nil {

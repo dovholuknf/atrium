@@ -58,10 +58,10 @@ func TestARetryAfterALostAnswerSendsTheSameKeyAndGetsTheSameCard(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	in := launchInput{Item: "f-test", Cwd: "c:/work/keyed-one"}
 
-	if _, err := c.launchOnRoom(context.Background(), in, "claude", "", "", "", "", ""); err == nil {
+	if _, err := c.LaunchOnRoom(context.Background(), in, "claude", "", "", "", "", ""); err == nil {
 		t.Fatal("a lost answer with no card to find succeeded")
 	}
-	out, err := c.launchOnRoom(context.Background(), in, "claude", "", "", "", "", "")
+	out, err := c.LaunchOnRoom(context.Background(), in, "claude", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("the retry failed: %v", err)
 	}
@@ -83,16 +83,16 @@ func TestAnAnsweredLaunchDoesNotKeepItsKey(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 	in := launchInput{Item: "f-test", Cwd: "c:/work/keyed-two"}
 
-	_, _ = c.launchOnRoom(context.Background(), in, "claude", "", "", "", "", "") // lost, key kept
-	if _, err := c.launchOnRoom(context.Background(), in, "claude", "", "", "", "", ""); err != nil {
+	_, _ = c.LaunchOnRoom(context.Background(), in, "claude", "", "", "", "", "") // lost, key kept
+	if _, err := c.LaunchOnRoom(context.Background(), in, "claude", "", "", "", "", ""); err != nil {
 		t.Fatal(err) // answered by replay, key let go
 	}
-	_, _ = c.launchOnRoom(context.Background(), in, "claude", "", "", "", "", "")
+	_, _ = c.LaunchOnRoom(context.Background(), in, "claude", "", "", "", "", "")
 	if len(room.keys) != 3 || room.keys[2] == room.keys[0] {
 		t.Fatalf("a finished launch kept its key: %v", room.keys)
 	}
 	// And another directory never shares one.
-	_, _ = c.launchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/keyed-three"}, "claude", "", "", "", "", "")
+	_, _ = c.LaunchOnRoom(context.Background(), launchInput{Item: "f-test", Cwd: "c:/work/keyed-three"}, "claude", "", "", "", "", "")
 	if last := room.keys[len(room.keys)-1]; last == room.keys[0] || last == room.keys[2] {
 		t.Fatalf("two directories shared a key: %v", room.keys)
 	}

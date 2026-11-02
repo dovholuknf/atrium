@@ -5,6 +5,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -122,7 +123,7 @@ func TestReattachCountsAsStartForAWake(t *testing.T) {
 	dir, _ := hostFixture(t)
 	d1 := daemonAt(t, dir)
 	task, _ := hostRunnerCard(t, d1, "wake-after-reattach")
-	w, _, err := d1.queueWake(task.ID, "carry on", "test")
+	w, _, err := d1.QueueWake(task.ID, "carry on", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +135,10 @@ func TestReattachCountsAsStartForAWake(t *testing.T) {
 		t.Fatal("not reattached")
 	}
 	now := time.Now()
-	if d2.wakeRunnerReady(w, r, now) {
+	if d2.WakeRunnerReady(w, r, now) {
 		t.Fatal("the wake was typed with no settle delay after the reattach")
 	}
-	if !d2.wakeRunnerReady(w, r, now.Add(wakeSettle+time.Second)) {
+	if !d2.WakeRunnerReady(w, r, now.Add(cycle.WakeSettle+time.Second)) {
 		t.Fatal("the wake still waits for a SessionStart that a reattached runner never sends")
 	}
 }
@@ -220,7 +221,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 	task, _ := hostRunnerCard(t, d, "gate-nctx")
 	d.gatePoll = 10 * time.Millisecond
 
-	d.nctx.begin(task.ID, "HANDOFF.x.md", "")
+	beginCycle(d.Nctx, task.ID, "HANDOFF.x.md", "")
 	done := make(chan struct{})
 	go func() { d.shortGate(); close(done) }()
 	select {
@@ -228,7 +229,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 		t.Fatal("the stop went ahead in the middle of a new-context cycle")
 	case <-time.After(300 * time.Millisecond):
 	}
-	d.nctx.clear(task.ID)
+	d.Nctx.Clear(task.ID)
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -237,7 +238,7 @@ func TestStopWaitsForANewContextCycle(t *testing.T) {
 
 	// A gate nobody releases gives up and lets the stop go, ending nothing.
 	d.gateGiveUp = 200 * time.Millisecond
-	d.nctx.begin(task.ID, "HANDOFF.y.md", "")
+	beginCycle(d.Nctx, task.ID, "HANDOFF.y.md", "")
 	start := time.Now()
 	d.shortGate()
 	if took := time.Since(start); took > 3*time.Second {

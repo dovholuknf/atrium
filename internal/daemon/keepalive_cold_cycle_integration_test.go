@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,9 +26,9 @@ func coldCard(t *testing.T, d *Daemon, keepalive string) (*store.Task, *fakePTY,
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
-	d.ka.now = func() time.Time { return now }
-	d.ka.transcript = func(_, id string) string { return filepath.Join(dir, id+".jsonl") }
-	d.ka.session = nil
+	d.Ka.Now = func() time.Time { return now }
+	d.Ka.Transcript = func(_, id string) string { return filepath.Join(dir, id+".jsonl") }
+	d.Ka.Session = nil
 	appendReply(t, filepath.Join(dir, "cold-session-1.jsonl"), now.Add(-56*time.Minute), replyOpt{ctx: 136_000})
 	return task, f, &now
 }
@@ -40,9 +41,9 @@ func coldCycle(t *testing.T, d *Daemon, task *store.Task, f *fakePTY) string {
 	ncAck(t, d, task)
 	ncTurnEnds(d, task.ID)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
-	d.wake.sawSession(task.ID, time.Now())
-	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), newContextWake(path)) })
-	until(t, "the cycle to end", func() bool { return d.nctx.get(task.ID) == nil })
+	d.Wake.SawSession(task.ID, time.Now())
+	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), cycle.NewContextWakeText(path)) })
+	until(t, "the cycle to end", func() bool { return d.Nctx.Get(task.ID) == nil })
 	return path
 }
 
@@ -52,17 +53,17 @@ func TestAColdCardIsTypedTheNewContextPromptClearedAndWoken(t *testing.T) {
 	}
 	d := testDaemon(t)
 	task, f, _ := coldCard(t, d, store.KeepaliveOff)
-	d.ka.tick(context.Background())
+	d.Ka.Tick(context.Background())
 	path := coldCycle(t, d, task, f)
 	got := f.written()
 	if !(strings.Index(got, limitPrompt) < strings.Index(got, "/clear") &&
-		strings.Index(got, "/clear") < strings.Index(got, newContextWake(path))) {
+		strings.Index(got, "/clear") < strings.Index(got, cycle.NewContextWakeText(path))) {
 		t.Fatalf("the steps were not typed in order: %q", got)
 	}
 	evs := 0
 	all, _ := d.st.Events(task.ID, 50)
 	for _, e := range all {
-		if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), `"by":"`+coldHandoffBy+`"`) &&
+		if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), `"by":"`+cycle.ColdHandoffBy+`"`) &&
 			strings.Contains(string(e.Payload), `"started":true`) {
 			evs++
 		}
@@ -87,8 +88,8 @@ func TestAColdCardShowsColdAndIsNotKeptWarmAfterItsHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := filepath.Join(filepath.Dir(f.path), "card-session-2.jsonl")
-	f.k.session = func(*store.Task) string { return "card-session-2" }
-	f.k.transcript = func(_, id string) string {
+	f.k.Session = func(*store.Task) string { return "card-session-2" }
+	f.k.Transcript = func(_, id string) string {
 		if id == "card-session-2" {
 			return next
 		}
@@ -101,12 +102,12 @@ func TestAColdCardShowsColdAndIsNotKeptWarmAfterItsHandoff(t *testing.T) {
 	if f.forks() != 0 || n.Load() != 1 {
 		t.Fatalf("forks = %d cycles = %d, want 0 and 1: a card handed off cold is not kept warm", f.forks(), n.Load())
 	}
-	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
-	if v == nil || v.Why != whyColdHandedOff || v.WarmUntil == nil || !v.WarmUntil.Equal(handedAt) ||
+	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
+	if v == nil || v.Why != cycle.WhyColdHandedOff || v.WarmUntil == nil || !v.WarmUntil.Equal(handedAt) ||
 		v.NextRefreshAt != nil {
 		t.Fatalf("view = %+v, want cold since the handoff at %s", v, handedAt)
 	}
-	f.k.coldRearm(f.task.ID)
+	f.k.ColdRearm(f.task.ID)
 	f.tick()
 	if f.forks() != 1 {
 		t.Fatalf("forks = %d, want 1: a person's turn puts keep-alive back", f.forks())
@@ -122,7 +123,7 @@ func TestAColdCardIsHandedOffOnceAndNeverLoops(t *testing.T) {
 	if err := d.st.SetKeepaliveSuspended("test"); err != nil {
 		t.Fatal(err)
 	}
-	d.ka.tick(context.Background())
+	d.Ka.Tick(context.Background())
 	coldCycle(t, d, task, f)
 	if err := d.st.SetResumeID(task.ID, "cold-session-2"); err != nil {
 		t.Fatal(err)
@@ -132,8 +133,8 @@ func TestAColdCardIsHandedOffOnceAndNeverLoops(t *testing.T) {
 	}
 	for i := 0; i < 4; i++ {
 		*now = now.Add(2 * time.Hour)
-		appendReply(t, d.ka.transcript("", "cold-session-2"), now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
-		d.ka.tick(context.Background())
+		appendReply(t, d.Ka.Transcript("", "cold-session-2"), now.Add(-56*time.Minute), replyOpt{ctx: 90_000})
+		d.Ka.Tick(context.Background())
 		time.Sleep(20 * time.Millisecond) // wait: negative check, a stray second prompt would land asynchronously
 	}
 	if c := strings.Count(f.written(), limitPrompt); c != 1 {

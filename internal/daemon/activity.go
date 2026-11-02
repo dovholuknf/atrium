@@ -26,9 +26,8 @@ import (
 // Activity states. Status says what a card needs; these say what it is doing.
 // Waiting is absent: the column and the wait chip already carry it.
 const (
-	ActivityThinking = "thinking"
-	ActivityTool     = "tool"
-	ActivityIdle     = "idle"
+	ActivityTool = "tool"
+	ActivityIdle = "idle"
 	// ActivityCompacting starts with PreCompact. There is no matching completion
 	// hook, so clear it on the next activity event or after compactingFor.
 	// This is transient activity; store.EventCompacted records the lasting event.
@@ -904,7 +903,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
 		if run := d.sup.Get(taskID); run == nil || !run.PromptWasOwn(time.Now()) {
-			d.ka.coldRearm(taskID)
+			d.Ka.ColdRearm(taskID)
 		}
 		d.usage.prompted(taskID, cause)
 		d.itemTurnStarted(taskID, cause == store.UsageOperator)

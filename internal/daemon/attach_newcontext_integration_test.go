@@ -53,7 +53,7 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 	}
 	send(attachIn{T: "resize", Cols: 120, Rows: 30})
 
-	_, ok := d.nctx.begin("nc-input", "HANDOFF.x.md", "")
+	_, ok := beginCycle(d.Nctx, "nc-input", "HANDOFF.x.md", "")
 	if !ok {
 		t.Fatal("could not begin a new context")
 	}
@@ -84,7 +84,7 @@ func TestTypingDuringANewContextIsRefusedAndAcked(t *testing.T) {
 		t.Fatalf("typing reached the pty during a new context: %q", w)
 	}
 
-	d.nctx.clear("nc-input")
+	d.Nctx.Clear("nc-input")
 	send(attachIn{T: "in", D: "free-bytes", ID: "p2"})
 	select {
 	case fr := <-frames:

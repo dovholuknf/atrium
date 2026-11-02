@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"io"
 	"log"
 	"os"
@@ -50,7 +51,7 @@ const (
 var (
 	// repliesWindow is the first page's read, from the end, and the step of a
 	// `before` page's backward read.
-	repliesWindow int64 = transcriptTail
+	repliesWindow int64 = cycle.TranscriptTail
 	// repliesReach is the most a `before` page reads.
 	repliesReach int64 = 16 << 20
 	// repliesCap is the most a `before` page reads when the reach found no record

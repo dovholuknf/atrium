@@ -167,5 +167,5 @@ func (d *Daemon) worktreeJudge() func(string) worktrees.Judgment {
 
 // worktreeInUse is a live runner in the card's worktree, or a new context in progress for it.
 func (d *Daemon) worktreeInUse(t *store.Task) bool {
-	return d.sup.Get(t.ID) != nil || (t.PID > 0 && !finishedStatus(t.Status)) || d.nctx.holding(t.ID)
+	return d.sup.Get(t.ID) != nil || (t.PID > 0 && !finishedStatus(t.Status)) || d.Nctx.Holding(t.ID)
 }

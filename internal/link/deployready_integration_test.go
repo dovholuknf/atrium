@@ -18,6 +18,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/testwait"
 	"github.com/dovholuknf/atrium/internal/deployready"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/deploy"
 )
 
 type readyRepo struct {
@@ -77,27 +78,27 @@ func readyProxy(t *testing.T, r *readyRepo, installed string, script string) (*P
 	p.SetLaunchCaps(&fakeSettings{m: map[string]string{SettingDeployScript: script}})
 	p.SetDeployReady()
 	st := p.deployReady()
-	st.installed = func(context.Context, *Proxy) (string, error) { return installed, nil }
+	st.Installed = func(context.Context, *deploy.Service) (string, error) { return installed, nil }
 	var started []spawned
 	var mu sync.Mutex
-	st.spawn = func(script, tip string) (*deployProc, error) {
+	st.Spawn = func(script, tip string) (*deploy.DeployProc, error) {
 		s := spawned{script: script, tip: tip, finish: make(chan int, 1)}
 		mu.Lock()
 		started = append(started, s)
 		mu.Unlock()
-		return &deployProc{Pid: 4242, Wait: func() (int, error) { return <-s.finish, nil }}, nil
+		return &deploy.DeployProc{Pid: 4242, Wait: func() (int, error) { return <-s.finish, nil }}, nil
 	}
 	return p, &started
 }
 
-func getReadyOnce(t *testing.T, p *Proxy, target string) deployReadyView {
+func getReadyOnce(t *testing.T, p *Proxy, target string) deploy.ReadyView {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, loopbackReq(http.MethodGet, target, ""))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET = %d %s", rec.Code, rec.Body)
 	}
-	var v deployReadyView
+	var v deploy.ReadyView
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
 		t.Fatalf("decode: %v\n%s", err, rec.Body)
 	}
@@ -106,7 +107,7 @@ func getReadyOnce(t *testing.T, p *Proxy, target string) deployReadyView {
 
 // getReady asks for a new pass and waits for the answer the way the board does: a GET answers at once from the last
 // pass, so it asks again until the hub says it is no longer building.
-func getReady(t *testing.T, p *Proxy) deployReadyView {
+func getReady(t *testing.T, p *Proxy) deploy.ReadyView {
 	t.Helper()
 	v := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
 	testwait.Eventually(t, 10*time.Second, "the hub to stop building", func() bool {
@@ -255,7 +256,7 @@ func TestDeployClickStartsOneScriptWithTheTipItWasShown(t *testing.T) {
 	}
 
 	(*started)[0].finish <- 3
-	var v deployReadyView
+	var v deploy.ReadyView
 	testwait.Eventually(t, 5*time.Second, "the deploy to finish", func() bool {
 		v = getReady(t, p)
 		return v.Deploy.State == "finished"
@@ -302,7 +303,7 @@ func TestDeployReadyTickTellsAWatchingBoardOnlyWhenTheAnswerMoves(t *testing.T) 
 
 	// Nobody watching: nothing is read and nothing is sent.
 	p.deployReadyTick(context.Background())
-	if p.deployReady().haveRep {
+	if p.deployReady().HaveRep {
 		t.Fatal("the tick read git with nobody watching")
 	}
 
@@ -313,7 +314,7 @@ func TestDeployReadyTickTellsAWatchingBoardOnlyWhenTheAnswerMoves(t *testing.T) 
 		for {
 			select {
 			case e := <-s.ch:
-				if e.Kind == deployReadyEvent {
+				if e.Kind == deploy.ReadyEvent {
 					return true
 				}
 			case <-timeout:
@@ -359,9 +360,9 @@ func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testin
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	p, _ := readyProxy(t, r, base, scriptFile(t))
 	st := p.deployReady()
-	st.bound = 400 * time.Millisecond
+	st.Bound = 400 * time.Millisecond
 	slow := &slowGit{}
-	st.checker = &deployready.Checker{Git: slow, Dir: r.dir, Branch: "claude/main"}
+	st.Checker = &deployready.Checker{Git: slow, Dir: r.dir, Branch: "claude/main"}
 
 	// The first GET answers at once, unknown and building, and the pass runs behind it.
 	start := time.Now()
@@ -387,7 +388,7 @@ func TestDeployReadyGetAnswersAtOnceWhileGitIsSlowAndGivesUpAtTheBound(t *testin
 	}
 
 	// At the bound the pass gives up, and the answer says so and is no longer building.
-	var v deployReadyView
+	var v deploy.ReadyView
 	testwait.Eventually(t, 3*time.Second, "the pass to end at the bound", func() bool {
 		v = getReadyOnce(t, p, "/_hub/deploy-ready")
 		return !v.Building
@@ -406,9 +407,9 @@ func TestDeployReadyGetKeepsAnsweringTheLastAnswerWhileANewerReadRuns(t *testing
 		t.Fatalf("warm-up = %+v", v.Report)
 	}
 	st := p.deployReady()
-	st.mu.Lock()
-	st.inflight = true
-	st.mu.Unlock()
+	st.Mu.Lock()
+	st.Inflight = true
+	st.Mu.Unlock()
 
 	start := time.Now()
 	v := getReadyOnce(t, p, "/_hub/deploy-ready?fresh=1")
@@ -437,7 +438,7 @@ func TestDeployReadyGetThatRunsThePassTellsWatchingBoards(t *testing.T) {
 	for {
 		select {
 		case e := <-s.ch:
-			if e.Kind == deployReadyEvent {
+			if e.Kind == deploy.ReadyEvent {
 				return
 			}
 		case <-timeout:
@@ -448,10 +449,10 @@ func TestDeployReadyGetThatRunsThePassTellsWatchingBoards(t *testing.T) {
 
 func TestParseVersionCommit(t *testing.T) {
 	out := "atrium dev\ncommit 7a38c1f2deadbeef0123456789abcdef01234567 (modified)\nboard  0123abcd\nplatform windows/amd64\n"
-	if got := parseVersionCommit(out); got != "7a38c1f2deadbeef0123456789abcdef01234567" {
+	if got := deploy.ParseVersionCommit(out); got != "7a38c1f2deadbeef0123456789abcdef01234567" {
 		t.Fatalf("got %q", got)
 	}
-	if got := parseVersionCommit("atrium dev\nboard 0123abcd\n"); got != "" {
+	if got := deploy.ParseVersionCommit("atrium dev\nboard 0123abcd\n"); got != "" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -459,10 +460,10 @@ func TestParseVersionCommit(t *testing.T) {
 func TestDeployEnvDropsAtriumVariables(t *testing.T) {
 	in := []string{"PATH=/bin", "ATRIUM_NEW_BUILD=other.exe", "atrium_location=private", "ATRIUMX=1", "HOME=/h",
 		"GIT_TERMINAL_PROMPT=0"}
-	got := deployEnv(in)
+	got := deploy.DeployEnv(in)
 	want := []string{"PATH=/bin", "ATRIUMX=1", "HOME=/h", "GIT_TERMINAL_PROMPT=0"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("deployEnv = %v, want %v", got, want)
+		t.Fatalf("deploy.DeployEnv = %v, want %v", got, want)
 	}
 }
 

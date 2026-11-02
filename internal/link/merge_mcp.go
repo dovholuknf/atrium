@@ -69,7 +69,7 @@ func AddRoomMergeTool(s *mcp.Server, d MergeDoor) {
 func (c *controlMCP) registerMerge(s *mcp.Server, class ctl.Class) {
 	d := MergeDoor{
 		Call: func(ctx context.Context, method, path string, body, out any) error {
-			return c.ask(ctx, method, path, "", body, out)
+			return c.Ask(ctx, method, path, "", body, out)
 		},
 		By: callerName,
 	}

@@ -81,7 +81,7 @@ type ownerItemTools struct {
 func (c *controlMCP) registerItems(s *mcp.Server, class ctl.Class) {
 	t := ownerItemTools{
 		call: func(ctx context.Context, method, path string, body, out any) error {
-			return c.ask(ctx, method, path, "", body, out)
+			return c.Ask(ctx, method, path, "", body, out)
 		},
 		by: callerName,
 	}

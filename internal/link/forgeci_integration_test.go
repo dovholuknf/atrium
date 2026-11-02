@@ -71,7 +71,7 @@ func (x *ciHub) room(a forge.HubCIAsk) (int, string) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "http://hub"+forge.HubCIPath, strings.NewReader(string(raw)))
 	req.Header.Set(ForgeRoomHeader, "alpha")
-	x.p.serveForge(rec, req)
+	x.p.forgeService().ServeForge(rec, req)
 	return rec.Code, rec.Body.String()
 }
 
@@ -160,7 +160,7 @@ func TestTheHubsOwnBoardRouteAnswersCIToo(t *testing.T) {
 	rec := httptest.NewRecorder()
 	raw, _ := json.Marshal(ci("runs"))
 	req := httptest.NewRequest(http.MethodPost, "http://hub/_hub/forge/ci", strings.NewReader(string(raw)))
-	x.p.serveForgeAdmin(rec, req, "ci")
+	x.p.forgeService().ServeForgeAdmin(rec, req, "ci")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"head_sha":"abc"`) {
 		t.Errorf("%d %s", rec.Code, rec.Body)
 	}

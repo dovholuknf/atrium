@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"sort"
 	"time"
@@ -85,9 +86,9 @@ func backfillCard(st *store.Store, t *store.Task, path string, since time.Time, 
 		return 0, 0, nil
 	}
 	defer f.Close()
-	byID := map[string]*mainReply{}
+	byID := map[string]*cycle.MainReply{}
 	var order []string
-	if _, err := scanMainReplies(f, func(r *mainReply) {
+	if _, err := cycle.ScanMainReplies(f, func(r *cycle.MainReply) {
 		if r.At.Before(since) {
 			return
 		}

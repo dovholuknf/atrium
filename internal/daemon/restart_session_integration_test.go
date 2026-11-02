@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -116,7 +117,7 @@ func TestARestartTypesTwoControlDsAndNeverClear(t *testing.T) {
 	if got := f.written(); got != "\x04\x04" {
 		t.Fatalf("a restart typed %q into the old terminal, want two control-d and nothing else", got)
 	}
-	if strings.Contains(f.written(), newContextClear) {
+	if strings.Contains(f.written(), cycle.NewContextClearCommand) {
 		t.Fatal("a restart typed /clear")
 	}
 }

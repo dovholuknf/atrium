@@ -19,6 +19,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/safepath"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link/ctl"
+	"github.com/dovholuknf/atrium/internal/link/docs"
 )
 
 // publishHarness is atrium_publish over a fake room. The room serves the card list and
@@ -69,7 +70,7 @@ func newPublishHarness(t *testing.T) *publishHarness {
 			if !h.noHeader {
 				root, _ := filepath.EvalSymlinks(work)
 				rel, _ := filepath.Rel(root, real)
-				w.Header().Set(realPathHeader, url.PathEscape(filepath.ToSlash(rel)))
+				w.Header().Set(docs.RealPathHeader, url.PathEscape(filepath.ToSlash(rel)))
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = w.Write(b)
@@ -94,7 +95,7 @@ func (h *publishHarness) write(name, body string) {
 }
 
 func (h *publishHarness) publish(in publishInput) (publishOutput, error) {
-	_, out, err := h.c.publishHandler(context.Background(), ctlReq("r-031", "sg4"), in)
+	_, out, err := h.c.docsMCP().PublishHandler(context.Background(), ctlReq("r-031", "sg4"), in)
 	return out, err
 }
 
@@ -313,11 +314,11 @@ func TestPublishInputRules(t *testing.T) {
 		t.Errorf("missing: %+v", r)
 	}
 	// No identity header: the hub cannot say which card is publishing.
-	_, _, err = h.c.publishHandler(context.Background(), ctlReq("", ""), publishInput{Title: "t", Content: "a"})
+	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("", ""), publishInput{Title: "t", Content: "a"})
 	if err == nil {
 		t.Fatal("an anonymous publish was accepted")
 	}
-	_, _, err = h.c.publishHandler(context.Background(), ctlReq("ghost", "sg4"), publishInput{Title: "t", Content: "a"})
+	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("ghost", "sg4"), publishInput{Title: "t", Content: "a"})
 	if err == nil || !strings.Contains(err.Error(), "no card") {
 		t.Fatalf("an unknown card: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestPublishIsLimitedPerCard(t *testing.T) {
 	if r := refusalOf(t, err); r.Status != 429 {
 		t.Fatalf("%+v", r)
 	}
-	_, _, err = h.c.publishHandler(context.Background(), ctlReq("r-032", "sg4"), publishInput{Title: "other card", Content: "mine"})
+	_, _, err = h.c.docsMCP().PublishHandler(context.Background(), ctlReq("r-032", "sg4"), publishInput{Title: "other card", Content: "mine"})
 	if err != nil {
 		t.Fatalf("another card was held up: %v", err)
 	}

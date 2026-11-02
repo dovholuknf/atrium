@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/dovholuknf/atrium/internal/daemon/roomconf"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -84,15 +83,6 @@ var (
 var EscalationBackoff = []time.Duration{
 	time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute, 30 * time.Minute,
 	time.Hour, 2 * time.Hour, 4 * time.Hour, 8 * time.Hour, 24 * time.Hour,
-}
-
-func envDuration(name string, def time.Duration) time.Duration {
-	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			return d
-		}
-	}
-	return def
 }
 
 // DirectorTag marks a resident session that launches workers and waits on them.

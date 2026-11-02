@@ -4,43 +4,14 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon/screen"
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 )
 
-// Runner is what a consumer of a supervised terminal may ask of it. The consumers hold this and never the struct.
-type Runner interface {
-	TaskID() string
-	Started() time.Time
-	ReattachedAt() time.Time
-	Done() <-chan struct{}
-	HasTerm() bool
-	Write(p []byte) error
-	WriteOperatorInput(p []byte) error
-	InjectPeer(banner, body string) (bool, error)
-	InjectPeerIf(banner, body string, ok func() bool) (bool, error)
-	InjectForced(banner, body string, ok func() bool) (bool, error)
-	ForceRefusal() string
-	PeerForceOK() bool
-	PeerGateOpen() bool
-	TypedWithin(d time.Duration) bool
-	ResetLine() bool
-	ResetLineAtStop() bool
-	PromptWasOwn(at time.Time) bool
-	PromptWasPeer(at time.Time) bool
-	PeerPromptCause(at time.Time) string
-	NoteCause(kind, by string)
-	Leaving() bool
-	SetLeaving(on bool)
-	ClearReattached()
-	SetOnKey(f func())
-	ReplayCuts() (backlog []byte, cuts []screen.SizeCut, rows int, wrapped bool)
-}
+// Runner is shared.Runner, which the features that left the package hold.
+type Runner = shared.Runner
 
-// Registry is how a concern finds the runners atrium owns, keyed by card. A card with no runner answers a nil Runner.
-type Registry interface {
-	Get(taskID string) Runner
-	Has(taskID string) bool
-	All() []Runner
-}
+// Registry is shared.Registry.
+type Registry = shared.Registry
 
 var _ Registry = (*supervisor)(nil)
 var _ Runner = (*runner)(nil)
@@ -101,4 +72,38 @@ func (r *runner) Started() time.Time      { return r.started }
 func (r *runner) ReattachedAt() time.Time { return r.reattachedAt }
 func (r *runner) InjectPeerIf(banner, body string, ok func() bool) (bool, error) {
 	return r.injectPeerIf(banner, body, ok)
+}
+
+func (r *runner) LastOutputAt() time.Time { return r.lastOutputAt() }
+
+// LooksIdleFrame says whether the terminal's last frame is a settled prompt.
+func (r *runner) LooksIdleFrame() bool {
+	if r.buf == nil {
+		return false
+	}
+	cols, rows := r.buf.CurrentSize()
+	idle, _ := screen.ClassifyFrame(r.buf.Tail(screen.FrameTailBytes), cols, rows)
+	return idle
+}
+
+// WhileGateOpen runs f under the input lock when the operator's line gate is open, and says whether it ran.
+func (r *runner) WhileGateOpen(f func()) bool {
+	r.pasteMu.Lock()
+	defer r.pasteMu.Unlock()
+	if !r.peerGateOpen() {
+		return false
+	}
+	f()
+	return true
+}
+
+// TypeOperatorBytes writes bs as operator input under the input lock, unless ok says no.
+func (r *runner) TypeOperatorBytes(bs []byte, ok func() bool) bool {
+	r.pasteMu.Lock()
+	defer r.pasteMu.Unlock()
+	if !ok() {
+		return false
+	}
+	r.noteOperatorTyped(bs)
+	return r.Write(bs) == nil
 }

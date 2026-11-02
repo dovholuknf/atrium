@@ -120,7 +120,7 @@ func newPendingInjector(d *Daemon) *pendingInjector {
 func (d *Daemon) deferPeerInjection(taskID, msgID, from, text, kind string, waitTurn bool) {
 	// A card a wake is delivering to gets everything pending in one turn once its runner is ready: a message queued
 	// meanwhile is carried by that, not typed alone onto a startup screen. See injectKept.
-	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.frozenForMove(taskID) {
+	if _, waking := d.kept.Load(taskID); waking || d.pending == nil || d.FrozenForMove(taskID) {
 		// A frozen card's message is in the freeze queue, not in message. It is
 		// replayed with its id when the move is undone.
 		return
@@ -230,9 +230,9 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 // no reason named rather than blaming a line that is empty.
 func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	switch {
-	case pi.d.holdingMessages(taskID):
+	case pi.d.HoldingMessages(taskID):
 		return HeldForNewContext
-	case pi.d.holdingFrom(taskID, m.from):
+	case pi.d.HoldingFrom(taskID, m.from):
 		return HeldForDeploy
 	case pi.d.act.dialogOpen(taskID):
 		return HeldForDialog
@@ -423,9 +423,9 @@ func (pi *pendingInjector) try(taskID string) {
 	// A card in a new-context cycle holds everything until its wake prompt has
 	// been typed. Reschedule quietly at the same interval: releaseHeld re-arms
 	// the retry to the front when the cycle ends.
-	holding := pi.d.holdingMessages(taskID)
+	holding := pi.d.HoldingMessages(taskID)
 	if holding {
-		if !pi.d.frozenForMove(taskID) {
+		if !pi.d.FrozenForMove(taskID) {
 			kept := entries[:0:0]
 			for _, e := range entries {
 				if e.from == "" {
@@ -439,7 +439,7 @@ func (pi *pendingInjector) try(taskID string) {
 		pi.betweenHoldChecks()
 	}
 	// One read of the hold: a second that saw it lift would drain the emptied list and widen the backoff past the release.
-	if holding && len(entries) == 0 || pi.d.frozenForMove(taskID) {
+	if holding && len(entries) == 0 || pi.d.FrozenForMove(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
 			ht.timer.Reset(pi.d.hk.backoffSteps[step])
@@ -451,7 +451,7 @@ func (pi *pendingInjector) try(taskID string) {
 	// A card held for a room deploy holds everything retried here the same way,
 	// the operator's own text included, which the hooks still carry. The
 	// retry is re-armed when the hold lifts.
-	if pi.d.deployHeld(taskID) {
+	if pi.d.DeployHeld(taskID) {
 		pi.mu.Lock()
 		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
 			ht.timer.Reset(pi.d.hk.backoffSteps[step])

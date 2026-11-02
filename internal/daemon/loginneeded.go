@@ -121,7 +121,7 @@ func (d *Daemon) launchNeedsLogin(req shared.LaunchRequest) error {
 	if err != nil || !(strings.EqualFold(h.ID, "claude") || strings.Contains(strings.ToLower(h.Cmd), "claude")) {
 		return nil
 	}
-	return small.ErrString(d.roomWord() + ": " + loginNeededSay)
+	return small.ErrString(d.RoomWord() + ": " + loginNeededSay)
 }
 
 // watchLoginNeeded is one pass over the runners' last screens, on the reaper's tick. It renders a runner only when

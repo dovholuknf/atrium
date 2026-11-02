@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/notify"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -79,33 +79,14 @@ func (p *Proxy) changeRequests() *changeRequests {
 
 var crIDRe = regexp.MustCompile(`^cr_[1-9][0-9]{0,17}$`)
 
-// crBody is the most a request body may carry: a why is at most 4000 characters.
-const crBody = 64 << 10
+const crBody = jsonio.Body
 
-func crJSON(w http.ResponseWriter, code int, v any) {
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func crFail(w http.ResponseWriter, code int, msg string) {
-	crJSON(w, code, map[string]string{"error": msg})
-}
-
-// crDecode reads one JSON object, refusing a field it does not know and anything after the object.
-func crDecode(r *http.Request, into any) error { return crDecodeMax(r, into, crBody) }
-
-// crDecodeMax is crDecode with a body of at most max bytes.
-func crDecodeMax(r *http.Request, into any, max int64) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, max))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(into); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return errors.New("there is more after the object")
-	}
-	return nil
-}
+var (
+	crJSON      = jsonio.JSON
+	crFail      = jsonio.Fail
+	crDecode    = jsonio.Decode
+	crDecodeMax = jsonio.DecodeMax
+)
 
 // ── who is asking ───────────────────────────────────────
 
@@ -597,9 +578,9 @@ func (p *Proxy) crAnnounce(c hubstore.ChangeRequest, by crActor, created bool) {
 	if g := p.growler(); g != nil {
 		switch {
 		case created && toMain:
-			g.askAbout(c)
+			askAbout(g, c)
 		case !created:
-			g.endAbout("cr|" + c.ID)
+			g.EndAbout("cr|" + c.ID)
 		}
 	}
 	// A REQUEST INTO main IS THE OPERATOR'S TO DECIDE. It is the growler that says so, and the owner is not told
@@ -648,7 +629,7 @@ func (p *Proxy) crTell(owner hubstore.CRParty, text string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c.deliverAs(ctx, owner.Room, owner.Card, "atrium-hub@hub", text, "", "fyi", false, false)
+	c.DeliverAs(ctx, owner.Room, owner.Card, "atrium-hub@hub", text, "", "fyi", false, false)
 }
 
 // crOwner is the live card that owns the source branch: the push log's owner for a branch pushed to the hub, the
@@ -673,7 +654,7 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return hubstore.CRParty{}
 	}
 	// A card's worktree is named for its branch: claude/f-x is the card in .../f-x.
@@ -701,52 +682,16 @@ func (p *Proxy) crOwner(ctx context.Context, g *gitsync.Hub, repo, room, branch 
 
 // ── the question growler ────────────────────────────────
 
-// growlRaiser is what a growl store that can hold a question about no card adds to GrowlStore. A store without it
-// raises none, and the event still goes out.
-type growlRaiser interface {
-	// Raise raises the row under its own id on a room, once. See hubstore.Store.GrowlRaise.
-	Raise(room string, g GrowlRow) (raised bool, err error)
-	// End ends the row with that id. See hubstore.Store.GrowlEnd.
-	End(id string) (changed bool, err error)
-}
-
 // askAbout raises the question that a request into main is. Its room is the one the work is on, or whose card owns
 // it, or whose card made the request: the growler needs a room to hang on, and a request none of whose three is a
 // room is the operator's own and needs no question.
-func (g *Growler) askAbout(c hubstore.ChangeRequest) {
-	rs, ok := g.st.(growlRaiser)
-	if !ok {
-		return
-	}
+func askAbout(g *Growler, c hubstore.ChangeRequest) {
 	room := firstOf(c.Source.Room, c.Owner.Room, c.CreatedBy.Room)
 	if room == "" {
 		return
 	}
-	raised, err := rs.Raise(room, GrowlRow{ID: "cr|" + c.ID, Reason: ReasonQuestion, Subject: c.ID,
-		Title: "Change request " + c.ID + " into " + c.Target.Branch, Body: clip(c.Title)})
-	if err != nil {
-		log.Printf("[hub] growlers could not raise change request %s: %v", c.ID, err)
-		return
-	}
-	if raised {
-		g.publish(nil)
-	}
-}
-
-// endAbout ends the question when its request is over.
-func (g *Growler) endAbout(id string) {
-	rs, ok := g.st.(growlRaiser)
-	if !ok {
-		return
-	}
-	changed, err := rs.End(id)
-	if err != nil {
-		log.Printf("[hub] growlers could not end %s: %v", id, err)
-		return
-	}
-	if changed {
-		g.publish(nil)
-	}
+	g.Ask(room, GrowlRow{ID: "cr|" + c.ID, Reason: ReasonQuestion, Subject: c.ID,
+		Title: "Change request " + c.ID + " into " + c.Target.Branch, Body: notify.Clip(c.Title)})
 }
 
 func firstOf(s ...string) string {

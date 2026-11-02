@@ -19,7 +19,7 @@ func dismissCycle(t *testing.T, d *Daemon, id string) {
 	r := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
 	r.SetPathValue("id", id)
 	w := httptest.NewRecorder()
-	d.handleNewContext(w, r)
+	d.HandleNewContext(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("dismiss answered %d: %s", w.Code, w.Body.String())
 	}
@@ -45,7 +45,7 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 	d.act.set(id, ActivityThinking, "")
 	for i := 0; i < 5; i++ {
 		time.Sleep(10 * time.Millisecond) // wait: a negative check, typing must stay held while no ack comes
-		if !d.nctx.typingHeld(id) {
+		if !d.Nctx.TypingHeld(id) {
 			t.Fatal("typing not held while the cycle waits for an ack that never comes")
 		}
 	}
@@ -55,8 +55,8 @@ func TestAWedgedWaitForTheAckIsNeverATrap(t *testing.T) {
 	}
 
 	dismissCycle(t, d, id)
-	if d.newContextFor(id) != nil || d.holdingMessages(id) || d.nctx.typingHeld(id) {
-		t.Fatalf("the cycle is still there after 'let me type': %v", d.newContextFor(id))
+	if d.NewContextFor(id) != nil || d.HoldingMessages(id) || d.Nctx.TypingHeld(id) {
+		t.Fatalf("the cycle is still there after 'let me type': %v", d.NewContextFor(id))
 	}
 	d.act.set(id, ActivityIdle, "")
 	until(t, "the queued text", func() bool { return strings.Contains(f.written(), "WEDGEDQUEUE") })
@@ -101,11 +101,11 @@ func TestAWedgedMidTypeCycleIsFreedByLetMeType(t *testing.T) {
 	}
 	send(attachIn{T: "resize", Cols: 120, Rows: 30})
 
-	gen, ok := d.nctx.begin("nc-wedge", "HANDOFF.x.md", "")
+	gen, ok := beginCycle(d.Nctx, "nc-wedge", "HANDOFF.x.md", "")
 	if !ok {
 		t.Fatal("could not begin")
 	}
-	d.nctx.setTyping("nc-wedge", gen, true) // and never off: no goroutine will ever clear it
+	d.Nctx.SetTyping("nc-wedge", gen, true) // and never off: no goroutine will ever clear it
 	send(attachIn{T: "in", D: "stuck-bytes", ID: "w1"})
 	seen := map[string]bool{}
 	for len(seen) < 2 {
@@ -121,9 +121,9 @@ func TestAWedgedMidTypeCycleIsFreedByLetMeType(t *testing.T) {
 	}
 
 	// What the DELETE handler does (this session has no card for the handler to find).
-	d.nctx.clear("nc-wedge")
-	d.releaseHeld("nc-wedge")
-	if d.nctx.typingHeld("nc-wedge") || d.holdingMessages("nc-wedge") {
+	d.Nctx.Clear("nc-wedge")
+	d.ReleaseHeld("nc-wedge")
+	if d.Nctx.TypingHeld("nc-wedge") || d.HoldingMessages("nc-wedge") {
 		t.Fatal("still held after 'let me type'")
 	}
 	send(attachIn{T: "in", D: "free-bytes", ID: "w2"})

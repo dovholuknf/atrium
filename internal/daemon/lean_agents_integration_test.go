@@ -307,7 +307,7 @@ func TestLaunchKeepsTheKitOnTheCardForARestartAndWritesNothingInTheWorktree(t *t
 func TestKeepaliveForkOfALeanKitCardKeepsToolsAndPlugin(t *testing.T) {
 	hk, _, _, _ := kitDirs(t)
 	f := newKAFix(t)
-	f.k.hk = hk
+	f.hk = hk
 	if err := f.st.SetTags(f.task.ID, []string{LeanTag, OriginAgentTag, leanAgentTagPrefix + "codebase-steward"}); err != nil {
 		t.Fatal(err)
 	}

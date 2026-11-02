@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -166,12 +167,12 @@ func TestReadRepliesSeeksTheTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for written := 0; written < transcriptTail+len(pad); written += len(pad) {
+	for written := 0; written < cycle.TranscriptTail+len(pad); written += len(pad) {
 		fh.WriteString(pad)
 	}
 	fh.Close()
 	transcriptReply(t, path, "new", base.Add(time.Minute), false, textBlock("recent"))
-	if info, _ := os.Stat(path); info.Size() <= transcriptTail {
+	if info, _ := os.Stat(path); info.Size() <= cycle.TranscriptTail {
 		t.Fatalf("the fixture is %d bytes, not over the tail", info.Size())
 	}
 	got, err := readReplies(path, 5, testHooks())

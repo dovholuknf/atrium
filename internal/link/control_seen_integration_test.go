@@ -81,11 +81,11 @@ func TestPeersCountUnseenAndOpenQuestions(t *testing.T) {
 func TestOpenCountNeverReportsAnUnreadableBlockAsNone(t *testing.T) {
 	no := false
 	s := &ctlSeen{QuestionsUnparsed: true, Answered: &no}
-	if s.openCount() != 1 {
-		t.Fatalf("an unreadable block counted %d", s.openCount())
+	if s.OpenCount() != 1 {
+		t.Fatalf("an unreadable block counted %d", s.OpenCount())
 	}
 	var none *ctlSeen
-	if none.openCount() != 0 {
+	if none.OpenCount() != 0 {
 		t.Fatal("no seen block counted questions")
 	}
 }

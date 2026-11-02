@@ -22,7 +22,7 @@ func TestNewContextStepsAdvanceAndTheEndFrameCarriesNoChip(t *testing.T) {
 	}
 	d := testDaemon(t)
 	fastNewContext(t, d)
-	d.hk.ncTiming.sessionSettle = 500 * time.Millisecond
+	d.hk.NcTiming.SessionSettle = 500 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 
@@ -58,7 +58,7 @@ func TestNewContextStepsAdvanceAndTheEndFrameCarriesNoChip(t *testing.T) {
 
 	stepIs := func(n int, label string) func() bool {
 		return func() bool {
-			v, _ := d.newContextFor(id).(map[string]any)
+			v, _ := d.NewContextFor(id).(map[string]any)
 			return v != nil && v["n"] == n && strings.HasPrefix(v["label"].(string), label)
 		}
 	}
@@ -70,9 +70,9 @@ func TestNewContextStepsAdvanceAndTheEndFrameCarriesNoChip(t *testing.T) {
 	ncAck(t, d, task)
 	until(t, "step 2", stepIs(2, "clearing the context"))
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "step 3", stepIs(3, "waking it to read"))
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 
 	var last map[string]any
 	until(t, "a task frame after the chip went", func() bool {

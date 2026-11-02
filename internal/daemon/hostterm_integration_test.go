@@ -582,6 +582,15 @@ func TestARunnerLaunchedAfterAFailedDialStillGoesToTheHostOnceItIsUp(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { h.Close() })
+	// A probe evicts nobody, and its answer says the host is serving before the room's 250ms dial is tried.
+	pc, err := ptyhost.Dial(ptyhost.Address(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pc.Probe(); err != nil {
+		t.Fatal(err)
+	}
+	_ = pc.Close()
 
 	second := cardAt(t, d, "after-host", t.TempDir())
 	if _, err := d.spawnPTY(second.ID, sh, append(args, "sleep 60"), t.TempDir(), os.Environ()); err != nil {

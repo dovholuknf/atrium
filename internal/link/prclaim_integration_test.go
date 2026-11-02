@@ -5,6 +5,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	forgepkg "github.com/dovholuknf/atrium/internal/link/forge"
 	"io"
 	"net"
 	"net/http"
@@ -342,13 +343,13 @@ func TestPlacementPicksTheLeastBusyRoom(t *testing.T) {
 	x := newClaimHub(t, map[string]int{"alpha": 2, "beta": 1, "gamma": 1})
 	defer x.done()
 	for i := 0; i < 10; i++ {
-		if got := x.proxy.placePRRoom(context.Background(), ""); got != "beta" {
+		if got := x.proxy.forgeService().PlacePRRoom(context.Background(), ""); got != "beta" {
 			t.Fatalf("placed on %q, want beta (least busy, ties to the lower name)", got)
 		}
 	}
 	x.rooms["beta"].running = 5
 	x.rooms["gamma"].running = 5
-	if got := x.proxy.placePRRoom(context.Background(), ""); got != "alpha" {
+	if got := x.proxy.forgeService().PlacePRRoom(context.Background(), ""); got != "alpha" {
 		t.Fatalf("placed on %q, want alpha", got)
 	}
 }
@@ -364,8 +365,8 @@ func TestPlacementDoesNotWaitForASlowRoom(t *testing.T) {
 	defer x.done()
 	x.rooms["beta"].tasksDelay = 8 * time.Second
 	start := time.Now()
-	got := x.proxy.placePRRoom(context.Background(), "")
-	if took := time.Since(start); took > placeLoadWait+2*time.Second {
+	got := x.proxy.forgeService().PlacePRRoom(context.Background(), "")
+	if took := time.Since(start); took > forgepkg.PlaceLoadWait+2*time.Second {
 		t.Fatalf("placement waited %v for a slow room", took)
 	}
 	if got != "alpha" {
@@ -373,7 +374,7 @@ func TestPlacementDoesNotWaitForASlowRoom(t *testing.T) {
 	}
 	// With nobody answering in time the second pass still places it, on the lower name.
 	x.rooms["alpha"].tasksDelay = 8 * time.Second
-	if got := x.proxy.placePRRoom(context.Background(), ""); got != "alpha" {
+	if got := x.proxy.forgeService().PlacePRRoom(context.Background(), ""); got != "alpha" {
 		t.Fatalf("placed on %q with no room answering, want alpha", got)
 	}
 }
@@ -420,7 +421,7 @@ func TestOfflineOwnerWarnsAndDoesNotMove(t *testing.T) {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
-	x.proxy.warnGrace = 0
+	x.proxy.forgeService().WarnGrace = 0
 	defer x.done()
 	x.pasteVia(t, "alpha", prURL)
 	key := "github.com/openziti/tlsuv/pull/378"
@@ -460,7 +461,7 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 		t.Skip("slow: a real link, hub and git rig over loopback")
 	}
 	x := newClaimHub(t, map[string]int{"alpha": 3, "beta": 0})
-	x.proxy.warnGrace = 0
+	x.proxy.forgeService().WarnGrace = 0
 	defer x.done()
 	x.pasteVia(t, "alpha", prURL)
 	key := "github.com/openziti/tlsuv/pull/378"
@@ -468,7 +469,6 @@ func TestManualMoveUpdatesTheClaim(t *testing.T) {
 	fg := &fakeGrowls{}
 	g := NewGrowler(fg)
 	x.proxy.SetGrowler(g)
-	g.st = fg
 	x.rooms["beta"].stop()
 	waitFor(t, 5*time.Second, func() bool { return !x.hub.Has("beta") })
 	x.proxy.prWarnSweep(g)
@@ -531,7 +531,8 @@ func TestPullsViewFoldsTwoRowsWithOneKeyToTheOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	p := &Proxy{prc: st}
+	p := &Proxy{}
+	p.forgeService().SetPRClaims(st)
 	key := rules.PRKey("github.com", "openziti", "tlsuv", 378)
 	if _, _, err := st.ClaimPR(key, "beta", ""); err != nil {
 		t.Fatal(err)
@@ -541,7 +542,7 @@ func TestPullsViewFoldsTwoRowsWithOneKeyToTheOwner(t *testing.T) {
 			"number": float64(378), "state": "ready"}
 	}
 	counts := map[string]float64{"ready": 2}
-	out := p.foldPRRows([]map[string]any{row("alpha", "alpha~1"), row("beta", "beta~2")}, counts)
+	out := p.forgeService().FoldPRRows([]map[string]any{row("alpha", "alpha~1"), row("beta", "beta~2")}, counts)
 	if len(out) != 1 || out[0]["room"] != "beta" || counts["ready"] != 1 {
 		t.Fatalf("out = %+v counts = %v", out, counts)
 	}
@@ -565,20 +566,20 @@ func f64(v float64) *float64 { return &v }
 func TestRoomLoadOrdering(t *testing.T) {
 	cases := []struct {
 		name string
-		a, b roomLoad
+		a, b forgepkg.RoomLoad
 		want bool
 	}{
-		{"fewer sessions beat more idle", roomLoad{room: "z", n: 1, idle: f64(5)}, roomLoad{room: "a", n: 2, idle: f64(90)}, true},
-		{"more idle wins a tie", roomLoad{room: "z", n: 1, idle: f64(80)}, roomLoad{room: "a", n: 1, idle: f64(20)}, true},
-		{"less idle loses a tie", roomLoad{room: "a", n: 1, idle: f64(20)}, roomLoad{room: "z", n: 1, idle: f64(80)}, false},
-		{"a figure beats none", roomLoad{room: "z", n: 1, idle: f64(0)}, roomLoad{room: "a", n: 1}, true},
-		{"none loses to a figure", roomLoad{room: "a", n: 1}, roomLoad{room: "z", n: 1, idle: f64(0)}, false},
-		{"equal idle goes to the name", roomLoad{room: "a", n: 1, idle: f64(50)}, roomLoad{room: "b", n: 1, idle: f64(50)}, true},
-		{"neither known goes to the name", roomLoad{room: "b", n: 1}, roomLoad{room: "a", n: 1}, false},
-		{"neither known, lower name", roomLoad{room: "a", n: 1}, roomLoad{room: "b", n: 1}, true},
+		{"fewer sessions beat more idle", forgepkg.RoomLoad{Room: "z", N: 1, Idle: f64(5)}, forgepkg.RoomLoad{Room: "a", N: 2, Idle: f64(90)}, true},
+		{"more idle wins a tie", forgepkg.RoomLoad{Room: "z", N: 1, Idle: f64(80)}, forgepkg.RoomLoad{Room: "a", N: 1, Idle: f64(20)}, true},
+		{"less idle loses a tie", forgepkg.RoomLoad{Room: "a", N: 1, Idle: f64(20)}, forgepkg.RoomLoad{Room: "z", N: 1, Idle: f64(80)}, false},
+		{"a figure beats none", forgepkg.RoomLoad{Room: "z", N: 1, Idle: f64(0)}, forgepkg.RoomLoad{Room: "a", N: 1}, true},
+		{"none loses to a figure", forgepkg.RoomLoad{Room: "a", N: 1}, forgepkg.RoomLoad{Room: "z", N: 1, Idle: f64(0)}, false},
+		{"equal idle goes to the name", forgepkg.RoomLoad{Room: "a", N: 1, Idle: f64(50)}, forgepkg.RoomLoad{Room: "b", N: 1, Idle: f64(50)}, true},
+		{"neither known goes to the name", forgepkg.RoomLoad{Room: "b", N: 1}, forgepkg.RoomLoad{Room: "a", N: 1}, false},
+		{"neither known, lower name", forgepkg.RoomLoad{Room: "a", N: 1}, forgepkg.RoomLoad{Room: "b", N: 1}, true},
 	}
 	for _, c := range cases {
-		if got := c.a.lessLoaded(c.b); got != c.want {
+		if got := c.a.LessLoaded(c.b); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -598,17 +599,17 @@ func TestPlacementBreaksATieOnIdleCPU(t *testing.T) {
 		}
 		return n == 2
 	})
-	if got := x.proxy.placePRRoom(context.Background(), ""); got != "gamma" {
+	if got := x.proxy.forgeService().PlacePRRoom(context.Background(), ""); got != "gamma" {
 		t.Fatalf("placed on %q, want gamma (most idle CPU)", got)
 	}
 	// Sessions still come first: gamma is idlest but busier by a session.
 	x.rooms["gamma"].running = 2
-	if got := x.proxy.placePRRoom(context.Background(), ""); got != "beta" {
+	if got := x.proxy.forgeService().PlacePRRoom(context.Background(), ""); got != "beta" {
 		t.Fatalf("placed on %q, want beta (a figure before none, fewer sessions than gamma)", got)
 	}
 	// With no figure anywhere the name decides, as before.
 	x.rooms["alpha"].running, x.rooms["beta"].running = 0, 1
-	if got := x.proxy.placePRRoom(context.Background(), ""); got != "alpha" {
+	if got := x.proxy.forgeService().PlacePRRoom(context.Background(), ""); got != "alpha" {
 		t.Fatalf("placed on %q, want alpha (fewest sessions)", got)
 	}
 }
