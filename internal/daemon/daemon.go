@@ -531,6 +531,7 @@ func newWith(opts Options, tune func(*hooks)) (*Daemon, error) {
 	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.RestartWrap = d.handleRestartWrap
+	d.ap.RestartPtyHost = d.handleRestartPtyHost
 	d.ap.Preflight = d.handlePreflight
 	d.ap.HostState = d.handleHostState
 	d.ap.ForgeAccess = d.ForgeAlerts
