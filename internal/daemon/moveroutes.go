@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"io"
 	"net/http"
@@ -181,7 +182,7 @@ func (d *Daemon) moveCheck(w http.ResponseWriter, _ *http.Request, in *moveAsk) 
 		return
 	}
 	var fails []string
-	if d.act.midTurn(t.ID) || d.nctx.holding(t.ID) {
+	if d.act.midTurn(t.ID) || d.Nctx.Holding(t.ID) {
 		fails = append(fails, "busy: "+t.DisplayTitle()+" is mid-turn")
 	}
 	wip := false
@@ -217,21 +218,21 @@ func (d *Daemon) moveCapture(w http.ResponseWriter, _ *http.Request, in *moveAsk
 	if t == nil {
 		return
 	}
-	file := HandoffName(t)
+	file := cycle.HandoffName(t)
 	if d.sup.Get(t.ID) == nil {
 		// Parked or gone: nothing to type into. A handoff already in the cwd stays the read-me.
 		_, err := os.Stat(filepath.Join(t.Worktree, file))
 		hublink.WriteJSONCode(w, http.StatusOK, map[string]any{"ok": true, "file": file, "skipped": "no runner", "exists": err == nil})
 		return
 	}
-	gen, ok := d.nctx.beginCaptureOnly(t.ID, file, d.conversationOf(t))
+	gen, ok := d.Nctx.BeginCaptureOnly(t.ID, file, d.ConversationOf(t))
 	if !ok {
 		small.WriteJSONErr(w, http.StatusConflict, errors.New("busy: a capture is already running on this card"))
 		return
 	}
-	step, err := d.ncCapture(t.ID, gen, file)
-	d.nctx.finish(t.ID, gen)
-	d.releaseHeld(t.ID)
+	step, err := d.NcCapture(t.ID, gen, file)
+	d.Nctx.Finish(t.ID, gen)
+	d.ReleaseHeld(t.ID)
 	if err != nil {
 		small.WriteJSONErr(w, http.StatusBadGateway, fmt.Errorf("capture failed at %s: %w", step, err))
 		return
@@ -263,7 +264,7 @@ func (d *Daemon) moveBundle(w http.ResponseWriter, _ *http.Request, in *moveAsk)
 	if t == nil {
 		return
 	}
-	b := moveBundle{Conversation: d.conversationOf(t), Cwd: t.Worktree}
+	b := moveBundle{Conversation: d.ConversationOf(t), Cwd: t.Worktree}
 	budget := int64(maxMoveBundle)
 	fail := func(err error) {
 		code := http.StatusInternalServerError
@@ -471,7 +472,7 @@ func (d *Daemon) undoCard(id, moveID string) error {
 	if _, err := d.st.Unfreeze(id, moveID, true); err != nil {
 		return err
 	}
-	d.releaseHeld(id)
+	d.ReleaseHeld(id)
 	return nil
 }
 

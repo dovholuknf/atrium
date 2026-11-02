@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/link/jsonio"
 	"io"
 	"log"
 	"net"
@@ -786,7 +787,7 @@ func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inven
 	// empties the queue". Told either way: turning it OFF is what lets the
 	// approver stop watching every room.
 	if ap := p.autoApprover(); ap != nil {
-		ap.nudge()
+		ap.Nudge()
 	}
 	writeJSONBody(w, http.StatusOK, p.boardAutoView(stock))
 	return true
@@ -858,9 +859,9 @@ func (p *Proxy) hubSettingsBody(r *http.Request, stock Inventory) (map[string]an
 	body["input_lag_log"] = inputlag.On()
 	body["input_lag_pinned"] = inputlag.Pinned()
 	// And the context limit per harness, which the hub owns. See contextlimits.go.
-	p.applyContextLimits(body)
+	p.settingsService().ApplyContextLimits(body)
 	// And the default worker model and budget, the hub's the same way. See workerpolicy.go.
-	p.applyWorkerPolicy(body)
+	p.settingsService().ApplyWorkerPolicy(body)
 	return body, true
 }
 
@@ -1089,16 +1090,10 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-func writeJSONBody(w http.ResponseWriter, code int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeErrBody(w http.ResponseWriter, code int, msg string) {
-	writeJSONBody(w, code, map[string]any{"error": msg})
-}
+var (
+	writeJSONBody = jsonio.WriteJSONBody
+	writeErrBody  = jsonio.WriteErrBody
+)
 
 // needsARoom is the refusal for a write with no room to land in.
 //

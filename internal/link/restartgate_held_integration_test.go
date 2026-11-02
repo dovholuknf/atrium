@@ -130,9 +130,10 @@ func TestAHeldAskWithNobodyPollingIsDropped(t *testing.T) {
 		code, _ := postGate(t, front.URL, `{"ask":"`+id+`","hold":0.1}`)
 		return code == http.StatusGone
 	})
-	if st := p.restart.state(); st["waiting"] != false {
-		t.Errorf("a dropped ask still holds the slot: %v", st)
-	}
+	// The slot is freed after the cancelled event goes out, so wait for it.
+	testwait.Eventually(t, 2*time.Second, "a dropped ask to free the slot", func() bool {
+		return p.restart.state()["waiting"] == false
+	})
 }
 
 // runGateScript runs scripts/hub-restart-gate.ps1 against a hub. It is a PowerShell

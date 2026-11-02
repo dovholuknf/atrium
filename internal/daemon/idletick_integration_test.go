@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,7 +120,7 @@ func TestIdleParkRule(t *testing.T) {
 			d.act.setBackground(c.ID, 2)
 		}, false},
 		{"mid new-context", store.StatusNeedsInput, func(d *Daemon, c *store.Task) {
-			d.nctx.begin(c.ID, "HANDOFF.x.md", "")
+			beginCycle(d.Nctx, c.ID, "HANDOFF.x.md", "")
 		}, false},
 	}
 	for i, c := range cases {
@@ -353,12 +354,12 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 
 	// At 55 minutes: the capture prompt.
 	d.parkIdle(idleAfter(55 * time.Minute))
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), HandoffName(task)) })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), cycle.HandoffName(task)) })
 	if parkedNow(t, d, task.ID) {
 		t.Fatal("parked at the handoff mark")
 	}
 	d.act.set(task.ID, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, cycle.HandoffName(task)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ncTurnEnds(d, task.ID)
@@ -387,10 +388,10 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 	if !settles(t, d, task.ID) {
 		t.Fatal("not parked at two hours")
 	}
-	if strings.Count(f.written(), HandoffName(task)+" in the current") != 1 {
+	if strings.Count(f.written(), cycle.HandoffName(task)+" in the current") != 1 {
 		t.Fatalf("more than one capture prompt: %q", f.written())
 	}
-	if v, _ := d.st.Setting(store.SettingParkHandoffPrefix + task.ID); !strings.HasPrefix(v, HandoffName(task)) {
+	if v, _ := d.st.Setting(store.SettingParkHandoffPrefix + task.ID); !strings.HasPrefix(v, cycle.HandoffName(task)) {
 		t.Fatalf("the handoff was not recorded for the wake: %q", v)
 	}
 }
@@ -402,7 +403,7 @@ func TestIdleHandoffTimeoutStillParks(t *testing.T) {
 	d := testDaemon(t)
 	quickPark(t, d)
 	fastNewContext(t, d)
-	d.hk.ncTiming.captureBegin = 100 * time.Millisecond
+	d.hk.NcTiming.CaptureBegin = 100 * time.Millisecond
 	task, f, _ := ncCard(t, d)
 	if err := d.st.SetTags(task.ID, []string{OriginAgentTag, DirectorTag}); err != nil {
 		t.Fatal(err)

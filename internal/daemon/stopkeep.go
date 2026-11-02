@@ -85,16 +85,16 @@ func (d *Daemon) shortGate() {
 
 // gateBusy names what holds the gate, or is empty when nothing does.
 func (d *Daemon) gateBusy() string {
-	if id := d.nctx.busyCard(); id != "" {
+	if id := d.Nctx.BusyCard(); id != "" {
 		return "a new-context cycle on " + id
 	}
 	if key := d.launching.HeldKey(); key != "" {
 		return "a launch in progress (" + key + ")"
 	}
-	if d.wake != nil && !d.wake.deliver.TryLock() {
+	if d.Wake != nil && !d.Wake.Deliver.TryLock() {
 		return "a restart wake being delivered"
-	} else if d.wake != nil {
-		d.wake.deliver.Unlock()
+	} else if d.Wake != nil {
+		d.Wake.Deliver.Unlock()
 	}
 	for _, rs := range [][]*runner{d.sup.all(), d.sup.allShells()} {
 		for _, r := range rs {
@@ -106,21 +106,6 @@ func (d *Daemon) gateBusy() string {
 				return "a paste into " + r.taskID
 			}
 			r.pasteMu.Unlock()
-		}
-	}
-	return ""
-}
-
-// busyCard is a card inside a new-context cycle that has not ended, or "".
-func (n *newContexts) busyCard() string {
-	if n == nil {
-		return ""
-	}
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	for id, cur := range n.by {
-		if cur != nil && cur.step != NewContextFailed {
-			return id
 		}
 	}
 	return ""

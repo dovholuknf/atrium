@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"io"
 	"log"
 	"net/http"
@@ -128,8 +129,8 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	// the message into the context about to be cleared, and during the clear it
 	// would be lost. It stays queued and the hooks after the wake carry it. See
 	// newcontext.go.
-	held := d.holdingMessages(taskID)
-	if held && d.frozenForMove(taskID) {
+	held := d.HoldingMessages(taskID)
+	if held && d.FrozenForMove(taskID) {
 		return nil, nil
 	}
 	msgs, err := d.st.PendingMessages(taskID)
@@ -149,7 +150,7 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	}
 	// HELD FOR A DEPLOY: another agent's words wait for the wake, and the
 	// operator's still go. See roomhold.go.
-	if d.deployHeld(taskID) {
+	if d.DeployHeld(taskID) {
 		kept := msgs[:0:0]
 		for _, m := range msgs {
 			if m.FromPeer == "" {
@@ -726,7 +727,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	//
 	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
 	// words still go. See roomhold.go.
-	holding := d.holdingFrom(taskID, from)
+	holding := d.HoldingFrom(taskID, from)
 	// FORCE: types now, past the typing gate and the turn rule. Only a dialog or a new-context cycle refuses it, and
 	// it says so rather than queueing, because the sender asked for now.
 	if body.Force && gate == sayOK && !woke {
@@ -863,9 +864,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if holding {
 		// Queued, never typed, whatever the hooks report about reach.
 		out["delivered"] = "queued"
-		out["warning"] = newContextHoldNote
-		if !d.holdingMessages(taskID) {
-			out["warning"] = d.deployHoldNote()
+		out["warning"] = cycle.NewContextHoldNote
+		if !d.HoldingMessages(taskID) {
+			out["warning"] = d.DeployHoldNote()
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -1,0 +1,347 @@
+package forge
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/base/forge"
+	"github.com/dovholuknf/atrium/internal/base/linkfetch"
+	"github.com/dovholuknf/atrium/internal/base/rules"
+	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/link/wire"
+)
+
+// THE HUB RECOGNISES A PASTE ITSELF. Item r-recognisers-gwt.
+//
+// `POST /v1/recognise` with no room named used to be placed on the least busy room, and the room matched the link
+// against the hub's rows. A room on a build older than the hub's table matched only its own, empty, table and answered
+// 404, so ctrl-alt-r said "nothing here knows what that is" for a link the hub had a row for, depending on which room
+// was least busy. The rows are the hub's, so the hub answers: it matches, runs the built-in fetch through its own forge
+// and fills the dialog. No room's build is involved, and where the launch goes is chosen when it is launched.
+//
+// A row whose fetch is a command of the operator's (`gh ...`, a script) is still placed on a room, as before, because
+// the hub runs no command a recogniser names. A room named by header or query still answers for itself: the directory
+// is looked for on that room's disk.
+//
+// AN OPEN OR A PASTE PLACED ON A ROOM THAT CANNOT READ THE HUB'S ROWS IS TRIED ON ANOTHER. `/v1/open` and `/v1/prs`
+// make a card, so a room does the work and the room must recognise the link. A room that answers no_recogniser for a
+// link the hub's rows match is on an old build: it is remembered with the commit it runs and placement passes it over
+// until it runs another, and the paste goes to the next least busy room. Nothing was made on the first room, since
+// recognising is the first step of both.
+
+// hubFetches are the fetches the hub runs itself. Anything else is a command, which a room runs.
+var hubFetches = map[string]bool{"": true, forge.FactsFetch: true, linkfetch.Redirect: true}
+
+// hubRecognise answers `POST /v1/recognise` with no room named from the hub's table. False leaves the request to the
+// rest of the proxy: a named room, a hub with no forge wired, or a row whose fetch is a command.
+func (p *Service) HubRecognise(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost || r.URL.Path != "/v1/recognise" {
+		return false
+	}
+	if _, named := p.RoomFor(r); named {
+		return false
+	}
+	f := p.ForgeSide()
+	if f == nil {
+		return false
+	}
+	raw := peekBody(r, 1<<16)
+	var in struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		crFail(w, http.StatusBadRequest, err.Error())
+		return true
+	}
+	rows, err := HubRecogniserRows(f.st, f.seedRows())
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		crFail(w, http.StatusInternalServerError, "the hub's recognisers do not read: "+err.Error())
+		return true
+	}
+	row, vars, err := rules.MatchRecogniserIn(rows, in.URL)
+	if err == nil && !hubFetches[strings.TrimSpace(row.Fetch)] {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	switch {
+	case errors.Is(err, rules.ErrNoRecogniser):
+		crFail(w, http.StatusNotFound, err.Error())
+		return true
+	case err != nil:
+		crFail(w, http.StatusBadRequest, err.Error())
+		return true
+	}
+	crJSON(w, http.StatusOK, f.resolve(r.Context(), row, vars))
+	return true
+}
+
+// resolve fills a matched row in on the hub: the built-in fetch, the templates, and a look at the directory on the
+// hub's own disk, which is the board's machine.
+func (f *HubForge) resolve(ctx context.Context, row *rules.Recogniser, vars map[string]string) *rules.Resolved {
+	var facts map[string]string
+	var fetchErr error
+	name, args := rules.FillArgv(strings.TrimSpace(row.Fetch), row.FetchArgs, vars)
+	switch name {
+	case "":
+	case forge.FactsFetch:
+		ctx, cancel := context.WithTimeout(ctx, linkfetch.Timeout*2)
+		facts, fetchErr = forge.Facts(ctx, args, vars, f.forgeFor)
+		cancel()
+	case linkfetch.Redirect:
+		facts, fetchErr = linkfetch.Follow(ctx, vars["url"], args)
+	}
+	if fetchErr != nil {
+		facts = nil
+	}
+	out := row.Resolve(vars, facts, fetchErr)
+	rules.DescribeCwd(out, os.Stat)
+	return out
+}
+
+// peekBody reads up to max bytes of a request's body and puts them back, for the room the request may still go to.
+func peekBody(r *http.Request, max int64) []byte {
+	if r.Body == nil {
+		return nil
+	}
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, max))
+	r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(raw), r.Body))
+	return raw
+}
+
+// ── a room that cannot read the hub's rows ─────────────
+
+// placedKey carries a paste the hub placed on the least busy room, for a retry on another. See retryDeaf.
+type PlacedKey struct{}
+
+type PlacedPaste struct {
+	room string
+	body []byte
+	// passed is the rooms that refused this paste, by key, and the sentence each gave. Placement skips them.
+	passed map[string]string
+}
+
+// placePaste sends r to room as a placed paste. The placed room header is set on the answer, by rewrite, so a retry
+// can change it.
+func (p *Service) PlacePaste(r *http.Request, room string) *http.Request {
+	pp := &PlacedPaste{room: room, body: peekBody(r, 1<<16)}
+	ctx := context.WithValue(r.Context(), wire.CardRoomKey{}, room)
+	return r.WithContext(context.WithValue(ctx, PlacedKey{}, pp))
+}
+
+// isDeaf is whether a room is remembered as not reading the hub's rows, on the build it runs now.
+func (p *Service) isDeaf(a wire.Attached) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	commit, ok := p.deaf[wire.KeyOf(a.Name)]
+	return ok && commit == a.Commit
+}
+
+func (p *Service) markDeaf(room string) {
+	commit := ""
+	for _, a := range p.Rooms() {
+		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
+			commit = a.Commit
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.deaf == nil {
+		p.deaf = map[string]string{}
+	}
+	p.deaf[wire.KeyOf(room)] = commit
+}
+
+// deafAnswer is whether a room's answer is "no recogniser" for a link the hub's own rows match.
+func (p *Service) deafAnswer(status int, body, paste []byte) bool {
+	if status != http.StatusUnprocessableEntity {
+		return false
+	}
+	var ans struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(body, &ans) != nil || ans.Code != "no_recogniser" {
+		return false
+	}
+	var in struct {
+		URL string `json:"url"`
+	}
+	f := p.ForgeSide()
+	if f == nil || json.Unmarshal(paste, &in) != nil {
+		return false
+	}
+	rows, err := HubRecogniserRows(f.st, f.seedRows())
+	if err != nil {
+		return false
+	}
+	_, _, err = rules.MatchRecogniserIn(rows, in.URL)
+	return err == nil
+}
+
+// noSCMAnswer is whether a room's answer is "no scm folder": it can neither hold the repo nor clone it. The sentence is
+// the room's own, and the hub passes it on in the one answer it makes when no room can.
+func noSCMAnswer(status int, body []byte) (string, bool) {
+	if status != http.StatusUnprocessableEntity {
+		return "", false
+	}
+	var ans struct {
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &ans) != nil || ans.Code != gitsync.NoSCMRootCode {
+		return "", false
+	}
+	return strings.TrimSpace(ans.Error), true
+}
+
+// retryDeaf takes a placed paste a room could not take to the next least busy room, until one takes it or none is
+// left. A room could not take it when it cannot read the hub's rows (no_recogniser) or has no scm folder to clone to
+// (no_scm_root), and either way nothing was made on it. It answers the room that has the answer now, "" for a request
+// the hub did not place.
+//
+// WHEN NO ROOM CAN, the answer is one 422 no_scm_root that names every room and why, once, in place of the last
+// room's own sentence. A claim the request made moves with the paste.
+func (p *Service) RetryDeaf(res *http.Response) (string, error) {
+	if res.Request == nil {
+		return "", nil
+	}
+	pp, _ := res.Request.Context().Value(PlacedKey{}).(*PlacedPaste)
+	if pp == nil {
+		return "", nil
+	}
+	room := pp.room
+	for tries := len(p.Rooms()); tries > 0 && res.StatusCode == http.StatusUnprocessableEntity; tries-- {
+		raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		res.Body.Close()
+		res.Body = io.NopCloser(bytes.NewReader(raw))
+		if err != nil {
+			return room, nil
+		}
+		if why, ok := noSCMAnswer(res.StatusCode, raw); ok {
+			if pp.passed == nil {
+				pp.passed = map[string]string{}
+			}
+			pp.passed[wire.KeyOf(room)] = why
+		} else if p.deafAnswer(res.StatusCode, raw, pp.body) {
+			p.markDeaf(room)
+		} else {
+			return room, nil
+		}
+		next := p.placePRRoomExcept(res.Request.Context(), "", pp.passed)
+		if next == "" || p.isDeafName(next) {
+			p.noRoomCan(res, pp, room)
+			return room, nil
+		}
+		log.Printf("[hub] %s could not take a paste, so it went to %s", room, next)
+		if err := p.answerFrom(res, next, pp.body); err != nil {
+			log.Printf("[hub] %s did not take the paste either: %v", next, err)
+			res.Body = io.NopCloser(bytes.NewReader(raw))
+			return room, nil
+		}
+		if m, ok := res.Request.Context().Value(prMadeKey{}).(*prMade); ok && wire.KeyOf(m.room) == wire.KeyOf(room) {
+			if st := p.PRClaims(); st != nil {
+				if c, err := st.MovePRClaim(m.key, next); err == nil {
+					m.room = c.Room
+				}
+			}
+		}
+		room = next
+	}
+	if _, ok := noSCMAnswer(res.StatusCode, peekResponse(res)); ok {
+		p.noRoomCan(res, pp, room)
+	}
+	return room, nil
+}
+
+// peekResponse reads a response's body and puts it back.
+func peekResponse(res *http.Response) []byte {
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	res.Body.Close()
+	res.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw
+}
+
+// noRoomCan replaces res with the one answer for a paste no room could take, when a room refused it for want of an scm
+// folder. A paste only old rooms refused keeps the room's own no_recogniser.
+func (p *Service) noRoomCan(res *http.Response, pp *PlacedPaste, last string) {
+	if len(pp.passed) == 0 {
+		return
+	}
+	if _, ok := noSCMAnswer(res.StatusCode, peekResponse(res)); !ok && !p.isDeafName(last) {
+		return
+	}
+	marked := p.MarkedRooms()
+	var parts []string
+	for _, a := range p.Rooms() {
+		k := wire.KeyOf(a.Name)
+		switch why, passed := pp.passed[k]; {
+		case passed:
+			parts = append(parts, a.Name+": "+why)
+		case p.isDeaf(a):
+			parts = append(parts, a.Name+": it runs a build that cannot read the hub's recognisers")
+		case marked[k]:
+			parts = append(parts, a.Name+": it is not taking new work")
+		default:
+			parts = append(parts, a.Name+": it was not asked")
+		}
+	}
+	msg := "no room can open that, since none has an scm folder to clone it to. " + strings.Join(parts, ". ")
+	out, _ := json.Marshal(map[string]any{"error": msg, "code": gitsync.NoSCMRootCode, "step": "worktree"})
+	res.StatusCode, res.Status = http.StatusUnprocessableEntity, "422 Unprocessable Entity"
+	res.Header.Set("Content-Type", "application/json")
+	res.Header.Del("Content-Encoding")
+	res.Body = io.NopCloser(bytes.NewReader(out))
+	res.ContentLength = int64(len(out))
+	res.Header.Set("Content-Length", fmt.Sprint(len(out)))
+}
+
+func (p *Service) isDeafName(room string) bool {
+	for _, a := range p.Rooms() {
+		if wire.KeyOf(a.Name) == wire.KeyOf(room) {
+			return p.isDeaf(a)
+		}
+	}
+	return false
+}
+
+// answerFrom puts room's answer to the same request in place of res's.
+func (p *Service) answerFrom(res *http.Response, room string, body []byte) error {
+	ctx, cancel := context.WithTimeout(res.Request.Context(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+wire.HostFor(room)+res.Request.URL.Path,
+		bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	got, err := p.RoomClient(room).Do(req)
+	if err != nil {
+		return err
+	}
+	defer got.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(got.Body, 4<<20))
+	if err != nil {
+		return err
+	}
+	if got.StatusCode >= 500 {
+		return wire.ErrStatus(got.StatusCode)
+	}
+	res.StatusCode, res.Status = got.StatusCode, got.Status
+	res.Header.Set("Content-Type", got.Header.Get("Content-Type"))
+	res.Header.Del("Content-Encoding")
+	res.Body = io.NopCloser(bytes.NewReader(raw))
+	res.ContentLength = int64(len(raw))
+	res.Header.Set("Content-Length", fmt.Sprint(len(raw)))
+	return nil
+}

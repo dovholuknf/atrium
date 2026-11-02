@@ -185,7 +185,7 @@ func (d *Daemon) sayGate(t *store.Task) string {
 		return sayMoved
 	}
 	// A frozen card is not woken: its says wait in the freeze queue.
-	if d.frozenForMove(t.ID) {
+	if d.FrozenForMove(t.ID) {
 		return sayOK
 	}
 	if small.IsParked(t) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	forgepkg "github.com/dovholuknf/atrium/internal/link/forge"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -53,16 +54,14 @@ func newForgeHub(t *testing.T) *forgeHub {
 	x.p.SetForge(&memSettings{m: map[string]string{}}, func(context.Context, forge.Cmd) ([]byte, error) {
 		return nil, errors.New("no CLI in a test")
 	})
-	x.p.forgeSide().forgeOf = func(host string) (forge.Forge, error) {
+	x.p.forgeSide().ForgeOf = func(host string) (forge.Forge, error) {
 		x.hosts = append(x.hosts, host)
 		if host != "github.com" {
 			return nil, &forge.NoForgeError{Host: host}
 		}
 		return x.ff, nil
 	}
-	x.p.mu.Lock()
-	x.p.growl = NewGrowler(x.growls)
-	x.p.mu.Unlock()
+	x.p.SetGrowler(NewGrowler(x.growls))
 	return x
 }
 
@@ -72,7 +71,7 @@ func (x *forgeHub) ask(path string, a forge.HubAsk) (int, string) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "http://hub"+path, strings.NewReader(string(raw)))
 	req.Header.Set(ForgeRoomHeader, "alpha")
-	x.p.serveForge(rec, req)
+	x.p.forgeService().ServeForge(rec, req)
 	return rec.Code, rec.Body.String()
 }
 
@@ -181,9 +180,9 @@ func TestTheHubRaisesTheForgeAlertOnceAndEndsItOnSuccess(t *testing.T) {
 	}
 	// A restart forgets what is open, and a pruned row is no longer in the store.
 	f := x.p.forgeSide()
-	f.mu.Lock()
-	f.open = map[string]string{}
-	f.mu.Unlock()
+	f.Mu.Lock()
+	f.Open = map[string]string{}
+	f.Mu.Unlock()
 	x.growls.mu.Lock()
 	x.growls.raised, x.growls.ended = nil, nil
 	x.growls.mu.Unlock()
@@ -202,8 +201,8 @@ func TestAnAuthFailureFetchingTheHeadRaisesTheAlert(t *testing.T) {
 	lightSlot(t)
 	x := newForgeHub(t)
 	f := x.p.forgeSide()
-	code, he := x.p.forgeRefusal(f, "beta", prAsk, &forgeAccess{kind: forge.GitHub,
-		err: &gitsync.FetchError{Auth: true, Msg: "the hub could not read the head"}})
+	code, he := x.p.forgeService().ForgeRefusal(f, "beta", prAsk, &forgepkg.ForgeAccess{Kind: forge.GitHub,
+		Err: &gitsync.FetchError{Auth: true, Msg: "the hub could not read the head"}})
 	if code != http.StatusBadGateway || he.Code != forge.CodeAccess || he.Tool != "gh" ||
 		!strings.Contains(he.Message, "the hub could not read the head") || !strings.Contains(he.Message, "on the hub") {
 		t.Fatalf("refusal = %d %+v", code, he)
@@ -211,8 +210,8 @@ func TestAnAuthFailureFetchingTheHeadRaisesTheAlert(t *testing.T) {
 	if len(x.growls.raised) != 1 || x.growls.raised[0].Room != "beta" {
 		t.Fatalf("raised = %+v", x.growls.raised)
 	}
-	_, he = x.p.forgeRefusal(f, "beta", prAsk, &forgeAccess{kind: forge.GitHub,
-		err: &gitsync.FetchError{Msg: "couldn't find remote ref"}})
+	_, he = x.p.forgeService().ForgeRefusal(f, "beta", prAsk, &forgepkg.ForgeAccess{Kind: forge.GitHub,
+		Err: &gitsync.FetchError{Msg: "couldn't find remote ref"}})
 	if he.Code != forge.CodeFetch || len(x.growls.raised) != 1 {
 		t.Fatalf("a plain fetch failure: %+v, raised %+v", he, x.growls.raised)
 	}
@@ -245,7 +244,7 @@ func TestTheHubForgeEntries(t *testing.T) {
 	if code, body := x.call(http.MethodPut, "/_hub/forge", `{"entries":[{"Host":"Git.Corp.X","Forge":"github","Cmd":"ghe"}]}`, ""); code != 200 {
 		t.Fatalf("put = %d %s", code, body)
 	}
-	if tool, cmd := x.p.forgeSide().toolOf(forge.GitHub, "git.corp.x"); tool != "gh" || cmd != "ghe" {
+	if tool, cmd := x.p.forgeSide().ToolOf(forge.GitHub, "git.corp.x"); tool != "gh" || cmd != "ghe" {
 		t.Fatalf("toolOf = %s %s", tool, cmd)
 	}
 	for _, bad := range []string{
@@ -270,11 +269,9 @@ func TestARoomAsksTheHubOverItsLink(t *testing.T) {
 	defer x.done()
 	ff := &fakeForge{kind: forge.GitHub, pr: forge.PR{Title: "over the link", Head: "h"}}
 	x.proxy.SetForge(&memSettings{m: map[string]string{}}, nil)
-	x.proxy.forgeSide().forgeOf = func(string) (forge.Forge, error) { return ff, nil }
+	x.proxy.forgeSide().ForgeOf = func(string) (forge.Forge, error) { return ff, nil }
 	growls := &liveGrowls{}
-	x.proxy.mu.Lock()
-	x.proxy.growl = NewGrowler(growls)
-	x.proxy.mu.Unlock()
+	x.proxy.SetGrowler(NewGrowler(growls))
 
 	r := forge.NewRemote(x.rooms["alpha"].room.Forge)
 	ref := forge.Ref{Host: "github.com", Org: "o", Repo: "r", Number: 7}

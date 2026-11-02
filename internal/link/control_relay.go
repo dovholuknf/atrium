@@ -22,7 +22,7 @@ import (
 // message, and this file learns nothing about how.
 
 // relay answers one relay request from the room `from`.
-func (c *controlMCP) relay(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer {
+func (c *controlMCP) Relay(ctx context.Context, from string, req wire.RelayRequest) RelayAnswer {
 	switch req.Op {
 	case RelaySay:
 		sender := strings.TrimSpace(req.From)
@@ -40,7 +40,7 @@ func (c *controlMCP) relay(ctx context.Context, from string, req wire.RelayReque
 		if ans, ok := c.reachable(ctx, target); !ok {
 			return ans
 		}
-		return c.deliverAs(ctx, target, req.To, sender+"@"+from, req.Text, req.When, req.Kind, req.Wake, req.Force)
+		return c.DeliverAs(ctx, target, req.To, sender+"@"+from, req.Text, req.When, req.Kind, req.Wake, req.Force)
 	case RelayCard, RelayExit:
 		target := strings.TrimSpace(req.Room)
 		if target == "" || wire.EqualFold(target, from) {
@@ -102,7 +102,7 @@ func (c *controlMCP) reachable(ctx context.Context, room string) (RelayAnswer, b
 			Name string `json:"name"`
 		} `json:"rooms"`
 	}
-	if err := c.ask(ctx, http.MethodGet, "/_hub/inventory", "", nil, &inv); err != nil {
+	if err := c.Ask(ctx, http.MethodGet, "/_hub/inventory", "", nil, &inv); err != nil {
 		return down, false
 	}
 	names := make([]string, 0, len(inv.Rooms))
@@ -134,8 +134,8 @@ func (c *controlMCP) reachable(ctx context.Context, room string) (RelayAnswer, b
 // parked is delivered to as it would be without wake. A resume that fails answers an error
 // and delivers nothing, and one that may have happened and was not answered (502, 503, 504)
 // is unconfirmed below, never sent again.
-func (c *controlMCP) deliverAs(ctx context.Context, room, to, fromWire, text, when, kind string, wake, force bool) RelayAnswer {
-	id, handle, err := c.resolvePeer(ctx, room, to)
+func (c *controlMCP) DeliverAs(ctx context.Context, room, to, fromWire, text, when, kind string, wake, force bool) RelayAnswer {
+	id, handle, err := c.ResolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
 	}
@@ -162,7 +162,7 @@ func (c *controlMCP) postSay(ctx context.Context, room, id, handle, fromWire, te
 		Warning   string `json:"warning"`
 		When      string `json:"when"`
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room, body, &res); err != nil {
+	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room, body, &res); err != nil {
 		// PAST THE POINT OF NO RETURN. The post may have landed before the
 		// answer was lost, so a room that is not answering here is unconfirmed,
 		// not unreachable, and the sender's room must not send it again.
@@ -178,7 +178,7 @@ func (c *controlMCP) postSay(ctx context.Context, room, id, handle, fromWire, te
 
 // cardAcross reads `to` on `room`, named across, for a room's atrium_task.
 func (c *controlMCP) cardAcross(ctx context.Context, room, to string, withEvents bool) RelayAnswer {
-	id, _, err := c.resolvePeer(ctx, room, to)
+	id, _, err := c.ResolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
 	}
@@ -204,7 +204,7 @@ func (c *controlMCP) cardAcross(ctx context.Context, room, to string, withEvents
 // neither that card nor its launcher. Only force gets past that, and a director
 // is refused even then. An empty sender is the operator's own ask.
 func (c *controlMCP) exitAcross(ctx context.Context, room, to, sender, fromRoom string, force bool) RelayAnswer {
-	id, handle, err := c.resolvePeer(ctx, room, to)
+	id, handle, err := c.ResolvePeer(ctx, room, to)
 	if err != nil {
 		return refusal(err)
 	}
@@ -212,7 +212,7 @@ func (c *controlMCP) exitAcross(ctx context.Context, room, to, sender, fromRoom 
 	if sender != "" {
 		body = map[string]any{"from": sender + "@" + fromRoom, "foreign": true, "force": force}
 	}
-	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/exit", room, body, nil); err != nil {
+	if err := c.Ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/exit", room, body, nil); err != nil {
 		return refusal(err)
 	}
 	card, wire := namedFrom("", room, id, handle)
@@ -249,7 +249,7 @@ func (c *controlMCP) peersElsewhere(ctx context.Context, besides string, all boo
 		var body struct {
 			Tasks []ctlCard `json:"tasks"`
 		}
-		if err := c.ask(ctx, http.MethodGet, "/v1/tasks", a.Name, nil, &body); err != nil {
+		if err := c.Ask(ctx, http.MethodGet, "/v1/tasks", a.Name, nil, &body); err != nil {
 			quiet = append(quiet, a.Name)
 			continue
 		}
@@ -311,7 +311,7 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		Warning   string `json:"warning"`
 		Note      string `json:"note"`
 	}
-	err := c.ask(ctx, http.MethodPost, "/v1/say", room, body, &res)
+	err := c.Ask(ctx, http.MethodPost, "/v1/say", room, body, &res)
 	var be *ctl.BoardError
 	if errors.As(err, &be) && be.Code == http.StatusNotFound && be.NoSentence {
 		// THE SENDER'S ROOM IS OLDER THAN THIS. Delivered from here instead, so
@@ -319,7 +319,7 @@ func (c *controlMCP) sayAcross(ctx context.Context, req *mcp.CallToolRequest, ro
 		if ans, ok := c.reachable(ctx, target); !ok {
 			return nil, out, errors.New(ans.Error)
 		}
-		ans := c.deliverAs(ctx, target, name, me+"@"+room, in.Text, in.When, in.Kind, in.Wake, in.Force)
+		ans := c.DeliverAs(ctx, target, name, me+"@"+room, in.Text, in.When, in.Kind, in.Wake, in.Force)
 		if !ans.OK {
 			return nil, out, errors.New(ans.Error)
 		}

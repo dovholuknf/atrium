@@ -61,7 +61,7 @@ func (c *controlMCP) worktreesHandler(ctx context.Context, req *mcp.CallToolRequ
 	var res struct {
 		Text string `json:"text"`
 	}
-	err := long.ask(ctx, http.MethodPost, "/v1/worktrees/audit", room, map[string]any{
+	err := long.Ask(ctx, http.MethodPost, "/v1/worktrees/audit", room, map[string]any{
 		"repo": in.Repo, "prefix": in.Prefix, "paths": in.Paths, "caller": ctl.AgentOf(req)}, &res)
 	if err != nil {
 		var be *ctl.BoardError

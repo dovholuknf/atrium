@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 
 func journalOf(t *testing.T, d *Daemon) string {
 	t.Helper()
-	v, err := d.st.Setting(settingNewContextJournal)
+	v, err := d.st.Setting(cycle.SettingNewContextJournal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,14 +22,14 @@ func journalOf(t *testing.T, d *Daemon) string {
 // simulateRestart drops what the process held in memory and runs the startup pass.
 func simulateRestart(t *testing.T, d *Daemon, id string) {
 	t.Helper()
-	d.nctx.stopAll()
-	d.nctx.mu.Lock()
-	delete(d.nctx.by, id)
-	d.nctx.mu.Unlock()
-	if d.newContextFor(id) != nil {
+	d.Nctx.StopAll()
+	d.Nctx.Mu.Lock()
+	delete(d.Nctx.By, id)
+	d.Nctx.Mu.Unlock()
+	if d.NewContextFor(id) != nil {
 		t.Fatal("the chip survived the simulated restart")
 	}
-	d.endAbandonedNewContexts()
+	d.EndAbandonedNewContexts()
 }
 
 func historyHas(t *testing.T, d *Daemon, id, what string) bool {
@@ -55,15 +56,15 @@ func TestARestartEndsAClearItCutOffAndSaysWhere(t *testing.T) {
 	}
 	simulateRestart(t, d, task.ID)
 
-	v, _ := d.newContextFor(task.ID).(map[string]any)
-	if v == nil || v["step"] != NewContextFailed {
-		t.Fatalf("the cut-off run is not shown as failed: %v", d.newContextFor(task.ID))
+	v, _ := d.NewContextFor(task.ID).(map[string]any)
+	if v == nil || v["step"] != cycle.NewContextFailed {
+		t.Fatalf("the cut-off run is not shown as failed: %v", d.NewContextFor(task.ID))
 	}
 	reason, _ := v["reason"].(string)
 	if !strings.Contains(reason, "restarted during step 2 of 3 (clear)") {
 		t.Fatalf("the reason does not say where it was cut off: %q", reason)
 	}
-	if d.nctx.holding(task.ID) {
+	if d.Nctx.Holding(task.ID) {
 		t.Fatal("a failed chip is still holding the card's messages")
 	}
 	if journalOf(t, d) != "" {
@@ -76,8 +77,8 @@ func TestARestartEndsAClearItCutOffAndSaysWhere(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := d.newContextFor(task.ID).(map[string]any); v == nil || v["step"] != NewContextClear {
-		t.Fatalf("the rerun did not resume at the clear: %v", d.newContextFor(task.ID))
+	if v, _ := d.NewContextFor(task.ID).(map[string]any); v == nil || v["step"] != cycle.NewContextClear {
+		t.Fatalf("the rerun did not resume at the clear: %v", d.NewContextFor(task.ID))
 	}
 }
 
@@ -91,8 +92,8 @@ func TestARestartOnTheLimitStepLeavesNoChip(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	simulateRestart(t, d, task.ID)
-	if d.newContextFor(task.ID) != nil {
-		t.Fatalf("a run cut off before the ack left a chip: %v", d.newContextFor(task.ID))
+	if d.NewContextFor(task.ID) != nil {
+		t.Fatalf("a run cut off before the ack left a chip: %v", d.NewContextFor(task.ID))
 	}
 	if !historyHas(t, d, task.ID, "before atrium ready came") {
 		t.Fatal("the card's history does not say the run was dropped")
@@ -112,7 +113,7 @@ func TestTheJournalEmptiesWhenARunIsDismissed(t *testing.T) {
 	if journalOf(t, d) == "" {
 		t.Fatal("not journalled")
 	}
-	d.nctx.clear(task.ID)
+	d.Nctx.Clear(task.ID)
 	if journalOf(t, d) != "" {
 		t.Fatalf("a dismissed run is still journalled: %q", journalOf(t, d))
 	}
@@ -125,10 +126,10 @@ func TestAFailedRunIsNotJournalled(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	d.nctx.mu.Lock()
-	gen := d.nctx.by[task.ID].gen
-	d.nctx.mu.Unlock()
-	d.nctx.fail(task.ID, gen, "boom")
+	d.Nctx.Mu.Lock()
+	gen := d.Nctx.By[task.ID].Gen
+	d.Nctx.Mu.Unlock()
+	d.Nctx.Fail(task.ID, gen, "boom")
 	if journalOf(t, d) != "" {
 		t.Fatalf("a failed run is still journalled: %q", journalOf(t, d))
 	}

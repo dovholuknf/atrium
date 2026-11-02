@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/shared"
 	"log"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ import (
 // LooksIdleAfter is how long a pty must be silent before the frame is looked at.
 // Twenty-odd missed spinner redraws. The check rides the reaper's tick, so a
 // firing lands this long after the turn ended, plus up to one tick.
-var LooksIdleAfter = envDuration("ATRIUM_LOOKS_IDLE", 25*time.Second)
+var LooksIdleAfter = shared.LooksIdleAfter
 
 // idleMark is one flagged card.
 type idleMark struct {

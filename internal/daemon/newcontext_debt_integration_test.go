@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func launchedCycler(t *testing.T, d *Daemon) (launcher, worker *store.Task, f *f
 		t.Fatal(err)
 	}
 	_, f = typedRunner(t, d, worker.ID)
-	t.Cleanup(func() { d.pending.stopAll(); d.nctx.stopAll() })
+	t.Cleanup(func() { d.pending.stopAll(); d.Nctx.StopAll() })
 	return launcher, worker, f
 }
 
@@ -31,9 +32,9 @@ func cycleToWake(t *testing.T, d *Daemon, worker *store.Task, f *fakePTY) {
 	t.Helper()
 	ncToClear(t, d, worker, f)
 	ncTurnEnds(d, worker.ID)
-	d.wake.sawSession(worker.ID, time.Now())
+	d.Wake.SawSession(worker.ID, time.Now())
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), "and continue.") })
-	until(t, "the chip to go", func() bool { return d.newContextFor(worker.ID) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(worker.ID) == nil })
 }
 
 // Cycling a worker's context opens no report debt and ends in no silent-stop notice. The launcher's last say went
@@ -138,7 +139,7 @@ func TestTheContinuePromptListsTheSaysAlreadySent(t *testing.T) {
 func TestTheContinuePromptIsPlainWhenNothingWasSent(t *testing.T) {
 	d := testDaemon(t)
 	_, worker, _ := launchedCycler(t, d)
-	if got, want := d.newContextWakeFor(worker.ID, "/h.md"), newContextWake("/h.md"); got != want {
+	if got, want := d.NewContextWakeFor(worker.ID, "/h.md"), cycle.NewContextWakeText("/h.md"); got != want {
 		t.Fatalf("the wake reads %q, want %q", got, want)
 	}
 }

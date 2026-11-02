@@ -2,9 +2,7 @@ package link
 
 import (
 	"context"
-	"errors"
 	"strings"
-	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -33,88 +31,26 @@ import (
 // BEST EFFORT. A nil `audit` or a write that fails never changes the tool's
 // answer: the wrapper returns exactly what the handler returned.
 
-// auditErrMax bounds the outcome a failed call writes.
-const auditErrMax = 200
+const (
+	auditErrMax  = ctl.AuditErrMax
+	auditWhatMax = ctl.AuditWhatMax
+)
 
-// auditWhatMax bounds the "what" of a line, which carries caller text such as an
-// alias or a branch name.
-const auditWhatMax = 200
-
-// auditDescribe turns one call into the two things a line needs: the target room
-// and a short "what". record false writes nothing, for a call that turned out to
-// be a read.
-type auditDescribe[In, Out any] func(req *mcp.CallToolRequest, in In, out Out) (room, what string, record bool)
+type auditDescribe[In, Out any] = ctl.AuditDescribe[In, Out]
 
 // audited wraps a tool handler so one line is recorded after it returns, whether
 // it succeeded, was refused or failed.
 func audited[In, Out any](c *controlMCP, kind string, describe auditDescribe[In, Out],
 	h func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
 ) func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error) {
-
-	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
-		res, out, err := h(ctx, req, in)
-		if c.audit == nil {
-			return res, out, err
-		}
-		if room, what, ok := describe(req, in, out); ok {
-			c.audit(room, kind, auditDetail(req, what, err))
-		}
-		return res, out, err
-	}
+	return ctl.Audited(c, kind, describe, h)
 }
 
-// auditDetail is `by <agent>@<caller room> (claimed): <what>, <outcome>`.
 func auditDetail(req *mcp.CallToolRequest, what string, err error) string {
-	// The agent and room come from headers anybody on loopback can set, so they
-	// are cleaned like the text is.
-	by := auditWhat(ctl.AgentOf(req))
-	if by == "" {
-		by = "unnamed"
-	}
-	if r := auditWhat(ctl.RoomOf(req)); r != "" {
-		by += "@" + r
-	}
-	return "by " + by + " (claimed): " + auditWhat(what) + ", " + auditOutcome(err)
+	return ctl.AuditDetail(req, what, err)
 }
-
-// auditWhat strips control characters from what, so caller text cannot start a
-// second line, and cuts it to auditWhatMax characters. Besides C0, DEL and C1 it
-// strips the line and paragraph separators and the bidi controls, which a log
-// viewer uses to reorder the text around them.
-func auditWhat(what string) string {
-	what = strings.Map(func(r rune) rune {
-		switch {
-		case unicode.IsControl(r), r == '\u2028', r == '\u2029',
-			r >= '\u202a' && r <= '\u202e', r >= '\u2066' && r <= '\u2069':
-			return -1
-		}
-		return r
-	}, what)
-	if r := []rune(what); len(r) > auditWhatMax {
-		what = string(r[:auditWhatMax])
-	}
-	return what
-}
-
-// auditOutcome is `ok`, `refused: <why>` or the error's first line, cut to
-// auditErrMax characters.
-func auditOutcome(err error) string {
-	if err == nil {
-		return "ok"
-	}
-	msg := strings.TrimSpace(err.Error())
-	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
-		msg = strings.TrimSpace(msg[:i])
-	}
-	var ref *ctl.RefusedError
-	if errors.As(err, &ref) {
-		msg = "refused: " + msg
-	}
-	if r := []rune(msg); len(r) > auditErrMax {
-		msg = string(r[:auditErrMax])
-	}
-	return msg
-}
+func auditWhat(what string) string  { return ctl.AuditWhat(what) }
+func auditOutcome(err error) string { return ctl.AuditOutcome(err) }
 
 // cardRoom is the room a card address acts on: the room it names when that is
 // not the caller's own, else the caller's.

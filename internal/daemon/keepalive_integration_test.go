@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,12 +20,13 @@ import (
 type kaFix struct {
 	t      *testing.T
 	st     *store.Store
-	k      *keepalive
+	k      *cycle.Keepalive
+	hk     *hooks
 	task   *store.Task
 	now    time.Time
 	path   string
 	mu     sync.Mutex
-	specs  []forkSpec
+	specs  []cycle.ForkSpec
 	answer func() ([]byte, error)
 	events []map[string]any
 }
@@ -76,26 +78,32 @@ func newKAFix(t *testing.T) *kaFix {
 		t.Fatal(err)
 	}
 	f.answer = func() ([]byte, error) { return receipt(1, 0, "success", 297_000, 1_000), nil }
-	k := newKeepalive(st)
-	k.now = func() time.Time { return f.now }
-	k.transcript = func(cwd, id string) string {
+	k := cycle.NewKeepalive(st)
+	dh := defaultHooks()
+	f.hk = &dh
+	k.AgentFork = func(exe string, args []string) (string, []string) { return f.hk.agentFork(exe, args) }
+	k.CardArgs = func(h *store.Harness, t *store.Task) ([]string, error) { return forkCardArgs(st, h, t, f.hk) }
+	k.EffortArgs = forkEffortArgs
+	k.ForkEnvOf = keepaliveForkEnv
+	k.Now = func() time.Time { return f.now }
+	k.Transcript = func(cwd, id string) string {
 		if id == "card-session-1" {
 			return f.path
 		}
 		return ""
 	}
-	k.hookFile = filepath.Join(dir, "block.json")
-	k.baseEnv = func() []string {
+	k.HookFile = filepath.Join(dir, "block.json")
+	k.BaseEnv = func() []string {
 		return []string{"PATH=/bin", "ATRIUM_TASK_ID=someone-else", "ATRIUM_PERM_GATE=on", "CLAUDECODE=1",
 			"ATRIUM_DEBUG_INPUTLAG=1"}
 	}
-	k.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
+	k.Fork = func(ctx context.Context, spec cycle.ForkSpec) ([]byte, error) {
 		f.mu.Lock()
 		f.specs = append(f.specs, spec)
 		f.mu.Unlock()
 		return f.answer()
 	}
-	k.broadcast = func(event string, payload any) {
+	k.Broadcast = func(event string, payload any) {
 		if m, ok := payload.(map[string]any); ok && event == "keepalive" {
 			f.mu.Lock()
 			f.events = append(f.events, m)
@@ -151,7 +159,7 @@ func appendReply(t *testing.T, path string, at time.Time, o replyOpt) {
 
 func (f *kaFix) tick() {
 	f.task, _ = f.st.Get(f.task.ID)
-	f.k.tick(context.Background())
+	f.k.Tick(context.Background())
 }
 
 func (f *kaFix) forks() int {
@@ -203,8 +211,8 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 	}
 	spec := f.specs[0]
 	want := []string{
-		"-p", keepalivePrompt, "--resume", "card-session-1", "--fork-session", "--no-session-persistence",
-		"--model", "claude-opus-5-5", "--setting-sources", "local", "--settings", f.k.hookFile,
+		"-p", cycle.KeepalivePrompt, "--resume", "card-session-1", "--fork-session", "--no-session-persistence",
+		"--model", "claude-opus-5-5", "--setting-sources", "local", "--settings", f.k.HookFile,
 		"--max-turns", "1", "--output-format", "json",
 		// The seeded claude row's resume args, which the card was running with.
 		"--strict-mcp-config",
@@ -226,19 +234,19 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 			t.Fatalf("fork env carries %s:\n%s", mustNot, env)
 		}
 	}
-	b, err := os.ReadFile(f.k.hookFile)
+	b, err := os.ReadFile(f.k.HookFile)
 	if err != nil || !strings.Contains(string(b), `"PreToolUse"`) || !strings.Contains(string(b), "exit 2") {
 		t.Fatalf("block-all hook file not written: %v %s", err, b)
 	}
 	rows := f.ledger()
-	if len(rows) != 1 || rows[0].Outcome != outcomeWarmed {
+	if len(rows) != 1 || rows[0].Outcome != cycle.OutcomeWarmed {
 		t.Fatalf("ledger = %+v, want one warmed row", rows)
 	}
 	r := rows[0]
 	if r.ResumeID != "card-session-1" || r.ForkSession != "fork-session-1" || r.Context != 300_000 {
 		t.Fatalf("the row mixed up the card and the fork: %+v", r)
 	}
-	if r.Prices != keepalivePricesVersion || r.Cost <= 0 {
+	if r.Prices != cycle.KeepalivePricesVersion || r.Cost <= 0 {
 		t.Fatalf("row not priced: %+v", r)
 	}
 	if f.state() != store.KeepaliveOn {
@@ -258,7 +266,7 @@ func TestKeepaliveForkCarriesTheCardsEnvAndEffort(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
 	if err := f.st.SetLaunchOptions(f.task.ID, "low", []string{"--verbose"},
-		map[string]string{"ANTHROPIC_BASE_URL": "https://gw.example", keepaliveTTLVar: "5m"}); err != nil {
+		map[string]string{"ANTHROPIC_BASE_URL": "https://gw.example", cycle.KeepaliveTTLVar: "5m"}); err != nil {
 		t.Fatal(err)
 	}
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
@@ -275,13 +283,13 @@ func TestKeepaliveForkCarriesTheCardsEnvAndEffort(t *testing.T) {
 		t.Fatalf("the card's extra args reached the fork: %q", args)
 	}
 	env := strings.Join(spec.Env, "\n")
-	for _, must := range []string{"ANTHROPIC_BASE_URL=https://gw.example", keepaliveTTLVar + "=5m",
+	for _, must := range []string{"ANTHROPIC_BASE_URL=https://gw.example", cycle.KeepaliveTTLVar + "=5m",
 		"ATRIUM_PERM_GATE=off"} {
 		if !strings.Contains(env, must) {
 			t.Fatalf("fork env lacks %s:\n%s", must, env)
 		}
 	}
-	if strings.Contains(env, keepaliveTTLVar+"=1h") {
+	if strings.Contains(env, cycle.KeepaliveTTLVar+"=1h") {
 		t.Fatalf("the 1h pin overrode the card's own TTL:\n%s", env)
 	}
 }
@@ -314,7 +322,7 @@ func TestKeepaliveRefusesAForkItCannotGiveTheCardsEffort(t *testing.T) {
 func TestKeepaliveUnsavedRefreshDoesNotForkAgain(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
-	f.k.record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
+	f.k.Record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
 	if f.forks() != 1 {
@@ -327,11 +335,11 @@ func TestKeepaliveUnsavedRefreshDoesNotForkAgain(t *testing.T) {
 	if f.forks() != 1 {
 		t.Fatalf("forks = %d after three more ticks, want 1", f.forks())
 	}
-	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v == nil || !strings.Contains(v.Why, "could not be saved") {
 		t.Fatalf("view = %+v, want the unsaved reason", v)
 	}
-	f.k.record = f.st.AddKeepaliveRefresh
+	f.k.Record = f.st.AddKeepaliveRefresh
 	f.reply(f.now, replyOpt{})
 	f.now = f.now.Add(56 * time.Minute)
 	f.tick()
@@ -344,14 +352,15 @@ func TestKeepaliveUnsavedRefreshDoesNotForkAgain(t *testing.T) {
 func TestKeepaliveHandOnLiftsTheUnsavedHold(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
-	f.k.record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
+	f.k.Record = func(*store.KeepaliveRefresh) error { return store.ErrClosed }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
-	f.k.record = f.st.AddKeepaliveRefresh
+	f.k.Record = f.st.AddKeepaliveRefresh
 	f.now = f.now.Add(time.Minute)
-	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
+	d := &Daemon{hk: *testHooks(), st: f.st}
 	d.initServices()
-	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
+	d.Ka = f.k
+	if _, err := d.KeepaliveSet(f.task.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	f.tick()
@@ -437,7 +446,7 @@ func (f *kaFix) seed(n int, cost float64, last time.Duration) {
 	for i := n - 1; i >= 0; i-- {
 		at := f.now.Add(-last - time.Duration(i)*time.Hour)
 		if err := f.st.AddKeepaliveRefresh(&store.KeepaliveRefresh{
-			TaskID: f.task.ID, ResumeID: "card-session-1", At: at, Outcome: outcomeWarmed, Cost: cost,
+			TaskID: f.task.ID, ResumeID: "card-session-1", At: at, Outcome: cycle.OutcomeWarmed, Cost: cost,
 			Context: 300_000,
 		}); err != nil {
 			f.t.Fatal(err)
@@ -471,7 +480,7 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 		t.Fatal("a second toast for the same stop")
 	}
 	// The view carries the spend for the card's tooltip.
-	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v == nil || v.Refreshes != 5 || v.Spent < 0.299 || v.Budget < 0.299 {
 		t.Fatalf("view = %+v", v)
 	}
@@ -535,9 +544,10 @@ func TestKeepaliveHandOnRestartsTheBudget(t *testing.T) {
 	f.reply(f.now.Add(-6*time.Hour), replyOpt{})
 	f.seed(5, 0.06, 56*time.Minute)
 	f.tick()
-	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
+	d := &Daemon{hk: *testHooks(), st: f.st}
 	d.initServices()
-	if _, err := d.keepaliveSet(f.task.ID, true); err != nil {
+	d.Ka = f.k
+	if _, err := d.KeepaliveSet(f.task.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	f.now = f.now.Add(time.Second)
@@ -562,28 +572,28 @@ func TestKeepaliveHandOffSurvivesARealTurn(t *testing.T) {
 
 func TestKeepaliveClassifiesReceiptsInOrder(t *testing.T) {
 	t.Parallel()
-	var none *forkReceipt
-	parse := func(b []byte) *forkReceipt {
-		var r forkReceipt
+	var none *cycle.ForkReceipt
+	parse := func(b []byte) *cycle.ForkReceipt {
+		var r cycle.ForkReceipt
 		json.Unmarshal(b, &r)
 		return &r
 	}
 	cases := []struct {
 		name string
-		r    *forkReceipt
+		r    *cycle.ForkReceipt
 		err  error
 		want string
 	}{
-		{"two turns nothing refused", parse(receipt(2, 0, "success", 297_000, 1_000)), nil, outcomeActed},
-		{"a tool refused", parse(receipt(2, 1, "error_max_turns", 297_000, 1_000)), nil, outcomeRefused},
-		{"no receipt", none, fmt.Errorf("exit 1"), outcomeFailed},
-		{"not success", parse(receipt(1, 0, "error_during_execution", 297_000, 1_000)), nil, outcomeFailed},
-		{"warmed", parse(receipt(1, 0, "success", 297_000, 1_000)), nil, outcomeWarmed},
-		{"read too little", parse(receipt(1, 0, "success", 200_000, 1_000)), nil, outcomeMiss},
-		{"read all and wrote its tail", parse(receipt(1, 0, "success", 297_000, 60_000)), nil, outcomeWarmed},
+		{"two turns nothing refused", parse(receipt(2, 0, "success", 297_000, 1_000)), nil, cycle.OutcomeActed},
+		{"a tool refused", parse(receipt(2, 1, "error_max_turns", 297_000, 1_000)), nil, cycle.OutcomeRefused},
+		{"no receipt", none, fmt.Errorf("exit 1"), cycle.OutcomeFailed},
+		{"not success", parse(receipt(1, 0, "error_during_execution", 297_000, 1_000)), nil, cycle.OutcomeFailed},
+		{"warmed", parse(receipt(1, 0, "success", 297_000, 1_000)), nil, cycle.OutcomeWarmed},
+		{"read too little", parse(receipt(1, 0, "success", 200_000, 1_000)), nil, cycle.OutcomeMiss},
+		{"read all and wrote its tail", parse(receipt(1, 0, "success", 297_000, 60_000)), nil, cycle.OutcomeWarmed},
 	}
 	for _, c := range cases {
-		if got := classifyReceipt(c.r, c.err, 300_000); got != c.want {
+		if got := cycle.ClassifyReceipt(c.r, c.err, 300_000); got != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}
@@ -593,13 +603,13 @@ func TestKeepaliveClassifiesReceiptsInOrder(t *testing.T) {
 		ctx, read, write int64
 		want             string
 	}{
-		{54_774, 54_772, 3_507, outcomeWarmed},
-		{154_896, 154_894, 7_755, outcomeWarmed},
-		{123_752, 0, 127_952, outcomeMiss},
-		{99_886, 10_259, 94_346, outcomeMiss},
+		{54_774, 54_772, 3_507, cycle.OutcomeWarmed},
+		{154_896, 154_894, 7_755, cycle.OutcomeWarmed},
+		{123_752, 0, 127_952, cycle.OutcomeMiss},
+		{99_886, 10_259, 94_346, cycle.OutcomeMiss},
 	}
 	for _, c := range live {
-		if got := classifyReceipt(parse(receipt(1, 0, "success", c.read, c.write)), nil, c.ctx); got != c.want {
+		if got := cycle.ClassifyReceipt(parse(receipt(1, 0, "success", c.read, c.write)), nil, c.ctx); got != c.want {
 			t.Errorf("ctx %d read %d write %d: got %s, want %s", c.ctx, c.read, c.write, got, c.want)
 		}
 	}
@@ -616,7 +626,7 @@ func TestKeepaliveMissShowsInTheView(t *testing.T) {
 	if f.state() != store.KeepaliveMiss {
 		t.Fatalf("state = %s", f.state())
 	}
-	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v == nil || v.Refreshes != 0 || v.Missed != 1 || v.Spent < 1.02 || v.Budget > 0.124 {
 		t.Fatalf("view = %+v", v)
 	}
@@ -684,7 +694,7 @@ func TestKeepaliveSuspendedRoomStillClearsAStoppedCard(t *testing.T) {
 	if f.forks() != 0 {
 		t.Fatalf("forks = %d in a suspended room", f.forks())
 	}
-	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v == nil || v.Suspended == "" {
 		t.Fatalf("view = %+v, want the suspension", v)
 	}
@@ -739,42 +749,43 @@ func TestKeepaliveTwoMissesOnTwoCardsSuspend(t *testing.T) {
 func TestKeepaliveAtLaunch(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
-	d := &Daemon{hk: *testHooks(), st: f.st, ka: f.k}
+	d := &Daemon{hk: *testHooks(), st: f.st}
 	d.initServices()
+	d.Ka = f.k
 	h, err := f.st.Harness("claude")
 	if err != nil {
 		t.Fatal(err)
 	}
 	fresh, _, _ := f.st.Register(store.Observed{WireName: "fresh", Worktree: f.task.Worktree, Runner: "claude"})
 	env := map[string]string{}
-	d.keepaliveAtLaunch(fresh.ID, h, env)
+	d.KeepaliveAtLaunch(fresh.ID, h, env)
 	if c, _ := f.st.KeepaliveCardOf(fresh.ID); c == nil || c.State != store.KeepaliveOn {
 		t.Fatalf("a new card did not take the default on: %+v", c)
 	}
-	if env[keepaliveTTLVar] != "1h" {
+	if env[cycle.KeepaliveTTLVar] != "1h" {
 		t.Fatalf("no 1h pin: %v", env)
 	}
 	// The default goes off. The existing card keeps its switch on relaunch.
 	f.st.SetKeepaliveDefault(false)
 	env = map[string]string{}
-	d.keepaliveAtLaunch(fresh.ID, h, env)
+	d.KeepaliveAtLaunch(fresh.ID, h, env)
 	if c, _ := f.st.KeepaliveCardOf(fresh.ID); c.State != store.KeepaliveOn {
 		t.Fatal("changing the default changed an existing card")
 	}
 	// A card created now starts off, with no pin.
 	later, _, _ := f.st.Register(store.Observed{WireName: "later", Worktree: f.task.Worktree, Runner: "claude"})
 	env = map[string]string{}
-	d.keepaliveAtLaunch(later.ID, h, env)
+	d.KeepaliveAtLaunch(later.ID, h, env)
 	if c, _ := f.st.KeepaliveCardOf(later.ID); c == nil || c.State != store.KeepaliveOff {
 		t.Fatalf("a new card ignored the default off: %+v", c)
 	}
-	if _, ok := env[keepaliveTTLVar]; ok {
+	if _, ok := env[cycle.KeepaliveTTLVar]; ok {
 		t.Fatal("a card with keep-alive off was pinned")
 	}
 	// Not Claude: no switch at all.
 	sh := &store.Harness{ID: "shell", Cmd: "pwsh"}
 	third, _, _ := f.st.Register(store.Observed{WireName: "third", Worktree: f.task.Worktree, Runner: "shell"})
-	d.keepaliveAtLaunch(third.ID, sh, map[string]string{})
+	d.KeepaliveAtLaunch(third.ID, sh, map[string]string{})
 	if c, _ := f.st.KeepaliveCardOf(third.ID); c != nil {
 		t.Fatal("a non-Claude card got a switch")
 	}
@@ -784,7 +795,7 @@ func TestKeepaliveAtLaunch(t *testing.T) {
 func TestKeepaliveForksOnTheOneMillionVariant(t *testing.T) {
 	t.Parallel()
 	f := newKAFix(t)
-	f.k.window = func(string) int { return 1_000_000 }
+	f.k.Window = func(string) int { return 1_000_000 }
 	f.reply(f.now.Add(-56*time.Minute), replyOpt{})
 	f.tick()
 	if f.forks() != 1 || !strings.Contains(strings.Join(f.specs[0].Args, " "), "claude-opus-5-5[1m]") {
@@ -797,11 +808,11 @@ func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
 	f := newKAFix(t)
 	reply := f.now.Add(-30 * time.Minute)
 	f.reply(reply, replyOpt{})
-	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v.LastRefreshAt != nil {
 		t.Fatalf("last_refresh_at = %v before any refresh", v.LastRefreshAt)
 	}
-	wantNext := reply.Add(time.Hour - keepaliveMargin)
+	wantNext := reply.Add(time.Hour - cycle.KeepaliveMargin)
 	if v.NextRefreshAt == nil || !v.NextRefreshAt.Equal(wantNext) {
 		t.Fatalf("next_refresh_at = %v, want %v", v.NextRefreshAt, wantNext)
 	}
@@ -816,7 +827,7 @@ func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
 	if f.forks() != 1 {
 		t.Fatalf("forks = %d at next_refresh_at, want 1", f.forks())
 	}
-	v, _ = f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ = f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v.LastRefreshAt == nil || v.LastRefreshAt.Sub(wantNext) > time.Second {
 		t.Fatalf("last_refresh_at = %v after a refresh", v.LastRefreshAt)
 	}
@@ -826,7 +837,7 @@ func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
 	// A new turn starts a new idle stretch: the old refresh does not count.
 	f.now = f.now.Add(time.Minute)
 	f.reply(f.now, replyOpt{})
-	v, _ = f.k.view(f.task.ID).(*keepaliveCardView)
+	v, _ = f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 	if v.LastRefreshAt != nil {
 		t.Fatalf("last_refresh_at = %v in a new stretch", v.LastRefreshAt)
 	}
@@ -857,7 +868,7 @@ func TestKeepaliveNextRefreshOnlyWhenNotDue(t *testing.T) {
 	for name, setup := range cases {
 		f := newKAFix(t)
 		setup(f)
-		v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+		v, _ := f.k.View(f.task.ID).(*cycle.KeepaliveCardView)
 		if v == nil || v.NextRefreshAt != nil {
 			t.Fatalf("%s: view = %+v, want no next_refresh_at", name, v)
 		}

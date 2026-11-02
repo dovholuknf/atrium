@@ -109,13 +109,33 @@ var table = []row{
 		"internal/base/rules", "internal/base/safepath", "internal/base/scratch", "internal/base/shellpick", "internal/store",
 		"internal/base/testguard", "internal/base/webasset", "internal/wtfree",
 	}},
+	{4, "internal/link/deploy", []string{
+		"internal/base/address", "internal/base/edge", "internal/base/nowindow", "internal/deployready", "internal/gitsync", "internal/link/ctl",
+		"internal/link/wire",
+	}},
+	{4, "internal/link/docs", []string{
+		"internal/base/docshare", "internal/base/edge", "internal/hubstore", "internal/link/ctl", "internal/link/wire",
+	}},
+	{4, "internal/link/notify", []string{
+		"internal/base/edge", "internal/base/nowindow", "internal/base/testguard", "internal/base/testwait", "internal/hubstore",
+		"internal/link/conn", "internal/link/ctl", "internal/link/wire",
+	}},
+	{4, "internal/link/jsonio", []string{"internal/hubstore"}},
+	{4, "internal/link/forge", []string{
+		"internal/base/edge", "internal/base/forge", "internal/base/land", "internal/base/linkfetch", "internal/base/nowindow", "internal/base/rules",
+		"internal/base/testguard", "internal/base/testwait", "internal/gitsync", "internal/hubstore", "internal/link/conn", "internal/link/ctl",
+		"internal/link/jsonio", "internal/link/notify", "internal/link/wire", "scripts/recognisers",
+	}},
+	{4, "internal/link/settings", []string{
+		"internal/base/inputlag", "internal/base/rules", "internal/link/wire",
+	}},
 	{4, "internal/link", []string{
 		"internal/base/address", "internal/base/cardcolors", "internal/base/cardurl", "internal/deployready", "internal/base/docshare",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/hubstore", "internal/base/inputlag", "internal/base/itemgate", "internal/base/land",
-		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
+		"internal/base/linkfetch", "internal/link/conn", "internal/link/ctl", "internal/link/deploy", "internal/link/docs", "internal/link/forge", "internal/link/jsonio", "internal/link/notify", "internal/link/settings", "internal/link/transport", "internal/link/wire", "internal/base/nowindow", "internal/base/remoteaccess", "internal/base/resources", "internal/base/rules",
 		"internal/base/testguard", "internal/base/tokenprice", "internal/base/webasset", "internal/zitictx", "scripts/recognisers",
 	}},
-	{3, "internal/daemon/shared", []string{"internal/base/nowindow", "internal/store"}},
+	{3, "internal/daemon/shared", []string{"internal/base/nowindow", "internal/daemon/screen", "internal/store"}},
 	{4, "internal/roomspec", []string{"internal/runnersetup"}},
 	{5, "internal/daemon/pulls", []string{
 		"internal/api", "internal/base/forge", "internal/base/nowindow", "internal/base/prreview/render", "internal/base/safepath",
@@ -134,10 +154,13 @@ var table = []row{
 	{5, "internal/daemon/home", []string{
 		"internal/api", "internal/base/cardroot", "internal/base/forge", "internal/base/safepath", "internal/daemon/shared", "internal/gitsync", "internal/roomstats", "internal/small", "internal/store", "internal/wtfree",
 	}},
+	{5, "internal/daemon/cycle", []string{
+		"internal/api", "internal/base/cardroot", "internal/base/nowindow", "internal/daemon/home", "internal/daemon/shared", "internal/small", "internal/store",
+	}},
 	{5, "internal/daemon", []string{
 		"internal/base/address", "internal/api", "internal/base/cardproc", "internal/base/cardroot", "internal/base/claudeconf",
 		"internal/base/docshare",
-		"internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
+		"internal/daemon/cycle", "internal/daemon/home", "internal/daemon/hublink", "internal/daemon/launch", "internal/daemon/promptline", "internal/daemon/publish", "internal/daemon/pulls",
 		"internal/daemon/roomconf", "internal/daemon/screen", "internal/daemon/shared", "internal/small",
 		"internal/base/edge", "internal/base/forge", "internal/gitsync", "internal/base/inputlag", "internal/base/linkfetch", "internal/base/mcprule",
 		"internal/base/nowindow", "internal/base/userenv", "internal/base/prreview/render", "internal/ptyhost", "internal/roomstats",

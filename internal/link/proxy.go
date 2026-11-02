@@ -23,8 +23,11 @@ import (
 	"github.com/dovholuknf/atrium/internal/base/cardurl"
 	"github.com/dovholuknf/atrium/internal/base/edge"
 	"github.com/dovholuknf/atrium/internal/base/webasset"
-	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
+	"github.com/dovholuknf/atrium/internal/link/deploy"
+	"github.com/dovholuknf/atrium/internal/link/docs"
+	"github.com/dovholuknf/atrium/internal/link/notify"
+	"github.com/dovholuknf/atrium/internal/link/settings"
 	"github.com/dovholuknf/atrium/internal/link/wire"
 )
 
@@ -48,6 +51,9 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
+	// handlers are what serveHubAPI dispatches through. See hubroutes.go.
+	handlersOnce sync.Once
+	handlers     hubHandlers
 	// work is the goroutines that read or write the hub's store off a request's path. WaitWork waits for them
 	// before the store closes.
 	work sync.WaitGroup
@@ -57,9 +63,6 @@ type Proxy struct {
 	// launchProbe is how long a room has to say whether it has a launch directory, launchProbeWait unless a test
 	// shortens it.
 	launchProbe time.Duration
-	// warnGrace is how long a claim's room must stay offline before the board is warned, prWarnGrace unless a test
-	// shortens it.
-	warnGrace time.Duration
 	// resourcesDir is the state dir resources.md is read from. See resources_mcp.go.
 	resourcesDir string
 	hub          *Hub
@@ -78,9 +81,6 @@ type Proxy struct {
 	// single transport.
 	mu      sync.Mutex
 	clients map[string]*http.Client
-	// deaf is the rooms whose build does not read the hub's recognisers, by room key, with the commit they ran when
-	// one said so. Placement passes them over. See recogniseroute.go.
-	deaf map[string]string
 	// stock is every room this hub knows about, attached or not.
 	stock Inventory
 
@@ -111,38 +111,15 @@ type Proxy struct {
 	// approver enforces the hub-wide auto-approve flag on the permission relay.
 	// Nil until an inventory is wired, because the flag it reads lives in the
 	// hub's store. See autoapprove.go.
-	approver *autoApprover
+	approver *notify.AutoApprover
 
 	// restart is the gate a hub-only deploy asks before it restarts this hub.
 	// See restartgate.go.
 	restart *restartGate
 
-	// notify is the trigger and its sink. Nil until SetNotify wires it. See
-	// notify.go.
-	notify *Notifier
-
-	// push is Web Push, the notifier's second sink. Nil until SetPush wires it, and a hub without one answers
-	// /_hub/push 404. See push.go and pushapi.go.
-	push *Push
-
-	// growl is the persistent growlers. Nil until SetGrowler wires it, and a hub
-	// without one answers /_hub/growls 404. See growl.go.
-	growl *Growler
-
-	// ci is the hub's CI hook. Nil until SetCIHook wires it, and a hub without one answers /_hub/ci-hook 404.
-	ci *CIHook
 	// transports is the hub's ziti binds, switchable from the gear. See hubtransports.go.
 	transports *HubTransports
-	// ev is the hub's event hook. Nil until SetEvents wires it, and a hub without one answers /_hub/events 404.
-	ev *EventHook
 
-	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
-	// a hub without one answers /_hub/git 404. See git_hub.go.
-	gitHub *gitsync.Hub
-	// gitSettings and gitDir are the git.store and git.create_on_push settings and the hub's
-	// directory, for /_hub/git/settings. Nil until SetGitSettings.
-	gitSettings GitSettings
-	gitDir      string
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
 	capStore HubSettings
@@ -157,14 +134,15 @@ type Proxy struct {
 	ctl *controlMCP
 	// taskMu serialises the task scheduler. See tasks.go.
 	taskMu sync.Mutex
-	// merges is the merge queue's runner. See merge.go.
-	merges mergeQueue
-	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
-	// /_hub/deploy-ready 404. See deployready.go.
-	ready *deployReadyState
-	// docs is the hub's documents. Nil until SetDocs wires it, and a hub without one answers
-	// /_hub/docs 404. See docs_api.go.
-	docs *hubstore.Store
+	// deploySvc is the deploy readiness, queue and owner. See deploy_forward.go.
+	deploySvc  *deploy.Service
+	notifyH    notifyHolder
+	settingsH  settingsHolder
+	forgeH     forgeHolder
+	deployOnce sync.Once
+	// docsSvc is the hub.s documents and file drop. See docs_forward.go.
+	docsSvc  *docs.Service
+	docsOnce sync.Once
 	// cr is the change requests between rooms. See changerequest.go.
 	cr *changeRequests
 	// backlog is the hub-wide backlog and director reports. Nil answers 404. See backlog.go.
@@ -184,14 +162,6 @@ type Proxy struct {
 	hubCode string
 	// specs is the store of room specs and locks. See roomspec.go.
 	specs *hubstore.Store
-	// prc is the PR claim table. See prclaim.go.
-	prc *hubstore.Store
-	// prGone is when each claim's room was first seen offline, for prWarnSweep.
-	prGone map[string]time.Time
-	// fg is the forge the hub runs for its rooms. Nil until SetForge. See forgeroute.go.
-	fg *hubForge
-	// ciDir is the folder a CI artifact is downloaded under. See forgeci.go.
-	ciDir string
 	// setup is what each attached room's setup was last read as. See setupwatch.go.
 	setup setupWatch
 }
@@ -202,7 +172,7 @@ type Proxy struct {
 // which is right for a test and wrong for a running hub.
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
 	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room,
-		hostname: os.Hostname, launchProbe: launchProbeWait, warnGrace: prWarnGrace}
+		hostname: os.Hostname, launchProbe: launchProbeWait}
 	if board != nil {
 		p.assets = webasset.New(board)
 	}
@@ -226,7 +196,7 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 	// See autoapprove.go.
 	p.feeds.connected = func(room string) {
 		if ap := p.autoApprover(); ap != nil {
-			ap.sweepRoomIfOn(context.Background(), room)
+			ap.SweepRoomIfOn(context.Background(), room)
 		}
 	}
 	p.restart = newRestartGate(func(state map[string]any) {
@@ -330,23 +300,9 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 // roomKey carries the chosen room from the rewrite into the dial.
 type roomKey struct{}
 
-// taggedKey carries the room when it came from a `room~id` in the path or in a
-// launch's `task_id`, the cases where the answer is tagged on the way back out. A
-// board that named its room in a header asked that room directly and wants the
-// room's own ids. See `retagCard`.
-type taggedKey struct{}
+type taggedKey = wire.TaggedKey
 
-// hostFor is the synthetic host a room's requests are addressed to.
-//
-// It exists to key the connection pool, and nothing ever resolves it. Lowercase
-// because a host is case-insensitive and `Alpha` and `alpha` are one room, and
-// because two spellings would be two pools to the same place.
-func hostFor(room string) string {
-	if room == "" {
-		return "room.atrium.internal"
-	}
-	return wire.KeyOf(room) + ".room.atrium.internal"
-}
+func hostFor(room string) string { return wire.HostFor(room) }
 
 // roomFor answers which room a request is for, and whether it named one.
 //
@@ -747,11 +703,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The input-lag switch, read off a settings write in every scope so the hub
 	// times its own hop whichever view the checkbox was pressed in. See
 	// inputlagsetting.go.
-	lagOn, lagNamed := p.noteInputLag(r)
+	lagOn, lagNamed := p.settingsService().NoteInputLag(r)
 	// The context limit per harness, the hub's in every scope. See contextlimits.go.
-	limits, limitsNamed, limitsErr := p.noteContextLimits(r)
+	limits, limitsNamed, limitsErr := p.settingsService().NoteContextLimits(r)
 	// The default worker model and budget, the hub's too. See workerpolicy.go.
-	policy, policyNamed, policyErr := p.noteWorkerPolicy(r)
+	policy, policyNamed, policyErr := p.settingsService().NoteWorkerPolicy(r)
 
 	// The strip's order goes to every room, named or not. See pinorder.go.
 	if ids, ok := pinOrderIn(r); ok {
@@ -767,7 +723,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				writeErrBody(w, http.StatusBadRequest, limitsErr.Error())
 				return
 			}
-			p.answerContextLimits(w, r, limits)
+			p.settingsService().AnswerContextLimits(w, r, limits)
 			return
 		}
 		if policyNamed {
@@ -775,15 +731,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				writeErrBody(w, http.StatusBadRequest, policyErr.Error())
 				return
 			}
-			p.answerWorkerPolicy(w, r, policy)
+			p.settingsService().AnswerWorkerPolicy(w, r, policy)
 			return
 		}
 		if lagNamed {
-			p.fanInputLag(w, r, lagOn)
+			p.settingsService().FanInputLag(w, r, lagOn)
 			return
 		}
 		// The terminal width floor goes to every room. See mincolssetting.go.
-		if payload, ok := minColsIn(r); ok {
+		if payload, ok := settings.MinColsIn(r); ok {
 			p.fanMinCols(w, r, payload)
 			return
 		}
@@ -1354,14 +1310,14 @@ func (p *Proxy) SetInventory(s Inventory) {
 	p.mu.Lock()
 	p.stock = s
 	if p.approver == nil {
-		p.approver = newAutoApprover(p)
+		p.approver = notify.NewAutoApprover(p.notifyCalls())
 	}
 	ap := p.approver
 	p.mu.Unlock()
-	ap.start()
+	ap.Start()
 }
 
-func (p *Proxy) autoApprover() *autoApprover {
+func (p *Proxy) autoApprover() *notify.AutoApprover {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.approver
@@ -1581,7 +1537,7 @@ func (p *Proxy) SetControl(boardAddr string) {
 	// board, so a relayed message is resolved and delivered exactly the way a
 	// hub-side atrium_say is. See control_relay.go.
 	if p.hub != nil {
-		p.hub.Relay = c.relay
+		p.hub.Relay = c.Relay
 	}
 }
 
@@ -1647,23 +1603,23 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "files" || strings.HasPrefix(sub, "files/") {
-		p.serveFiles(w, r, sub)
+		p.hubRoutes().Files(w, r, sub)
 		return
 	}
 	if sub == "docs" || strings.HasPrefix(sub, "docs/") {
-		p.serveDocs(w, r, sub)
+		p.hubRoutes().Docs(w, r, sub)
 		return
 	}
 	if sub == "push" || strings.HasPrefix(sub, "push/") {
-		p.servePush(w, r, strings.Trim(strings.TrimPrefix(sub, "push"), "/"))
+		p.hubRoutes().Push(w, r, strings.Trim(strings.TrimPrefix(sub, "push"), "/"))
 		return
 	}
 	if strings.HasPrefix(sub, "growls/") {
-		p.serveGrowls(w, r, sub)
+		p.hubRoutes().Growls(w, r, sub)
 		return
 	}
 	if sub == "ci-hook" || sub == "ci-hook/routes" {
-		p.serveCIHook(w, r, sub)
+		p.hubRoutes().CIHook(w, r, sub)
 		return
 	}
 	if sub == "events" || sub == "events/subs" {
@@ -1671,11 +1627,11 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "forge" || strings.HasPrefix(sub, "forge/") {
-		p.serveForgeAdmin(w, r, strings.Trim(strings.TrimPrefix(sub, "forge"), "/"))
+		p.hubRoutes().ForgeAdmin(w, r, strings.Trim(strings.TrimPrefix(sub, "forge"), "/"))
 		return
 	}
 	if sub == "pr-claims" || strings.HasPrefix(sub, "pr-claims/") {
-		p.servePRClaims(w, r, sub)
+		p.hubRoutes().PRClaims(w, r, sub)
 		return
 	}
 	if sub == "change-requests" || strings.HasPrefix(sub, "change-requests/") {
@@ -1683,7 +1639,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "backlog" || strings.HasPrefix(sub, "backlog/") || sub == "reports" || strings.HasPrefix(sub, "reports/") {
-		p.serveBacklog(w, r, sub)
+		p.hubRoutes().Backlog(w, r, sub)
 		return
 	}
 	if sub == "doc-debt" {
@@ -1691,7 +1647,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "items" || strings.HasPrefix(sub, "items/") {
-		p.serveItems(w, r, sub)
+		p.hubRoutes().Items(w, r, sub)
 		return
 	}
 	if sub == "shepherds" || strings.HasPrefix(sub, "shepherds/") {
@@ -1703,7 +1659,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "work" || strings.HasPrefix(sub, "work/") {
-		p.serveWork(w, r, sub)
+		p.hubRoutes().Work(w, r, sub)
 		return
 	}
 	if sub == "prices" {
@@ -1711,19 +1667,19 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sub == "flow" || strings.HasPrefix(sub, "flow/") {
-		p.serveFlow(w, r, sub)
+		p.hubRoutes().Flow(w, r, sub)
 		return
 	}
 	if sub == "merge" || strings.HasPrefix(sub, "merge/") {
-		p.serveMerge(w, r, sub)
+		p.hubRoutes().Merge(w, r, sub)
 		return
 	}
 	if strings.HasPrefix(sub, "rooms/") {
-		p.serveRoomSpecBoard(w, r, sub)
+		p.hubRoutes().RoomSpecBoard(w, r, sub)
 		return
 	}
 	if sub == "sshkeys" {
-		p.serveSSHKeysBoard(w, r)
+		p.hubRoutes().SSHKeysBoard(w, r)
 		return
 	}
 	switch sub {
@@ -1751,31 +1707,31 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	case "inventory/forget":
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
-		p.serveNotify(w, r, sub)
+		p.hubRoutes().Notify(w, r, sub)
 	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/branches", "git/settings", "git/release", "git/url":
-		p.serveGit(w, r, sub)
+		p.hubRoutes().Git(w, r, sub)
 	case "launch-caps":
-		p.serveLaunchCaps(w, r)
+		p.hubRoutes().LaunchCaps(w, r)
 	case "hosts":
-		p.serveHosts(w, r)
+		p.hubRoutes().Hosts(w, r)
 	case "transports":
-		p.serveTransports(w, r)
+		p.hubRoutes().Transports(w, r)
 	case "deploy-owner":
-		p.serveDeployOwner(w, r)
+		p.hubRoutes().DeployOwner(w, r)
 	case "deploy-ready", "deploy-ready/deploy":
-		p.serveDeployReady(w, r, sub)
+		p.hubRoutes().DeployReady(w, r, sub)
 	case "deploy-queue":
-		p.serveDeployQueue(w, r)
+		p.hubRoutes().DeployQueue(w, r)
 	case "new-contexts":
-		p.serveNewContexts(w, r)
+		p.deployService().ServeNewContexts(w, r)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":
-		p.serveDeps(w, r, sub)
+		p.hubRoutes().Deps(w, r, sub)
 	case "presence":
 		p.servePresence(w, r)
 	case "growls":
-		p.serveGrowls(w, r, sub)
+		p.hubRoutes().Growls(w, r, sub)
 	case "growl-ladder":
-		p.serveGrowlLadder(w, r)
+		p.hubRoutes().GrowlLadder(w, r)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.

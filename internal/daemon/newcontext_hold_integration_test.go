@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,24 +76,24 @@ func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	if !d.holdingMessages(id) {
+	if !d.HoldingMessages(id) {
 		t.Fatal("not holding while waiting for atrium ready")
 	}
 	out := sayViaMessage(t, d, "alice", id, heldSay)
-	if out["delivered"] != "queued" || out["warning"] != newContextHoldNote {
+	if out["delivered"] != "queued" || out["warning"] != cycle.NewContextHoldNote {
 		t.Fatalf("answer while holding: %v", out)
 	}
 	heldNotDelivered(t, d, id, f)
 
 	finishCycle(t, d, id, dir, f)
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
 	until(t, "the held say", func() bool { return strings.Contains(f.written(), heldSay) })
 	got := f.written()
 	if strings.Index(got, heldSay) < strings.Index(got, ncWakeMark) {
 		t.Fatalf("the held say went ahead of the wake prompt: %q", got)
 	}
-	if d.holdingMessages(id) {
+	if d.HoldingMessages(id) {
 		t.Fatal("still holding after the wake")
 	}
 }
@@ -114,12 +115,12 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 	finishCycle(t, d, id, dir, f)
 
 	out, code := tell(t, d, "alice", "cycler", heldSay)
-	if code != http.StatusOK || out["queued"] != true || out["typed"] == true || out["note"] != newContextHoldNote {
+	if code != http.StatusOK || out["queued"] != true || out["typed"] == true || out["note"] != cycle.NewContextHoldNote {
 		t.Fatalf("tell during clear: %d %v", code, out)
 	}
 	heldNotDelivered(t, d, id, f)
 
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "the held say", func() bool { return strings.Contains(f.written(), heldSay) })
 	got := f.written()
 	if strings.Index(got, heldSay) < strings.Index(got, ncWakeMark) {
@@ -148,7 +149,7 @@ func TestAFailedCycleReleasesWhatWasHeld(t *testing.T) {
 	// No new session starts after /clear, so the cycle fails.
 	finishCycle(t, d, id, dir, f)
 	until(t, "the chip to fail", func() bool { return failedWith(d, id) != "" })
-	if d.holdingMessages(id) {
+	if d.HoldingMessages(id) {
 		t.Fatal("a failed cycle is still holding")
 	}
 	until(t, "the held say", func() bool { return strings.Contains(f.written(), heldSay) })
@@ -168,8 +169,8 @@ func TestDismissingACycleReleases(t *testing.T) {
 	sayViaMessage(t, d, "alice", id, heldSay)
 	r := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
 	r.SetPathValue("id", id)
-	d.handleNewContext(httptest.NewRecorder(), r)
-	if d.holdingMessages(id) {
+	d.HandleNewContext(httptest.NewRecorder(), r)
+	if d.HoldingMessages(id) {
 		t.Fatal("still holding after a dismissal")
 	}
 }
@@ -183,7 +184,7 @@ func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
 	fastNewContext(t, d)
 	task, f, dir := ncCard(t, d)
 	id := task.ID
-	if d.holdingMessages(id) {
+	if d.HoldingMessages(id) {
 		t.Fatal("holding with no cycle")
 	}
 	if err := d.StartNewContext(id); err != nil {
@@ -191,9 +192,9 @@ func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
 	finishCycle(t, d, id, dir, f)
-	d.wake.sawSession(id, time.Now())
+	d.Wake.SawSession(id, time.Now())
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
-	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
+	until(t, "the chip to go", func() bool { return d.NewContextFor(id) == nil })
 }
 
 func TestOperatorSayDuringACycleIsNotHeldButAPeersIs(t *testing.T) {
@@ -210,11 +211,11 @@ func TestOperatorSayDuringACycleIsNotHeldButAPeersIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	if out := sayViaMessage(t, d, "alice", id, heldSay); out["warning"] != newContextHoldNote {
+	if out := sayViaMessage(t, d, "alice", id, heldSay); out["warning"] != cycle.NewContextHoldNote {
 		t.Fatalf("a peer's say was not held: %v", out)
 	}
 	out := sayViaMessage(t, d, "", id, "OPERATORLINE")
-	if out["warning"] == newContextHoldNote || out["delivered"] == "queued" {
+	if out["warning"] == cycle.NewContextHoldNote || out["delivered"] == "queued" {
 		t.Fatalf("the operator's say was held by the cycle: %v", out)
 	}
 	until(t, "the operator's line", func() bool { return strings.Contains(f.written(), "OPERATORLINE") })
@@ -226,16 +227,16 @@ func TestOperatorSayDuringACycleIsNotHeldButAPeersIs(t *testing.T) {
 func TestACycleWhoseLimitPromptWasNotTypedHoldsNothing(t *testing.T) {
 	d := testDaemon(t)
 	id := "cycler-untyped"
-	d.nctx.mu.Lock()
-	d.nctx.by[id] = &newContext{step: NewContextLimit, since: time.Now(), armed: true}
-	d.nctx.mu.Unlock()
-	if d.holdingMessages(id) || d.holdingFrom(id, "alice") {
+	d.Nctx.Mu.Lock()
+	d.Nctx.By[id] = &cycle.NewContext{Step: cycle.NewContextLimit, Since: time.Now(), Armed: true}
+	d.Nctx.Mu.Unlock()
+	if d.HoldingMessages(id) || d.HoldingFrom(id, "alice") {
 		t.Fatal("a cycle that has typed nothing held messages")
 	}
-	d.nctx.mu.Lock()
-	d.nctx.by[id].prompted = 1
-	d.nctx.mu.Unlock()
-	if !d.holdingMessages(id) || !d.holdingFrom(id, "alice") || d.holdingFrom(id, "") {
+	d.Nctx.Mu.Lock()
+	d.Nctx.By[id].Prompted = 1
+	d.Nctx.Mu.Unlock()
+	if !d.HoldingMessages(id) || !d.HoldingFrom(id, "alice") || d.HoldingFrom(id, "") {
 		t.Fatal("after the prompt the cycle should hold a peer's message and never the operator's")
 	}
 }
@@ -255,8 +256,8 @@ func TestABoardCycleWaitsForThePartTypedLineBeforeItHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond) // wait: negative check, the cycle must not hold
-	v, _ := d.newContextFor(id).(map[string]any)
-	if d.nctx.typingHeld(id) || d.holdingMessages(id) || v["held"] != false || strings.Contains(f.written(), limitPrompt) {
+	v, _ := d.NewContextFor(id).(map[string]any)
+	if d.Nctx.TypingHeld(id) || d.HoldingMessages(id) || v["held"] != false || strings.Contains(f.written(), limitPrompt) {
 		t.Fatalf("the cycle held input over a part-typed line: %v", v)
 	}
 
@@ -264,9 +265,9 @@ func TestABoardCycleWaitsForThePartTypedLineBeforeItHolds(t *testing.T) {
 	run.typeMu.Lock()
 	run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	run.typeMu.Unlock()
-	until(t, "the hold once the line is clear", func() bool { return d.nctx.typingHeld(id) })
+	until(t, "the hold once the line is clear", func() bool { return d.Nctx.TypingHeld(id) })
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	if v, _ := d.newContextFor(id).(map[string]any); v["held"] != true {
+	if v, _ := d.NewContextFor(id).(map[string]any); v["held"] != true {
 		t.Fatalf("an armed cycle does not say it holds: %v", v)
 	}
 }
@@ -281,7 +282,7 @@ func TestEveryAutomaticTriggerWaitsForThePartTypedLine(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return d.coldHandoff(task)
+			return d.ColdHandoff(task)
 		},
 		"context ceiling": func(d *Daemon, id string) error {
 			task, err := d.st.Get(id)
@@ -303,9 +304,9 @@ func TestEveryAutomaticTriggerWaitsForThePartTypedLine(t *testing.T) {
 			if err := start(d, id); err != nil {
 				t.Fatal(err)
 			}
-			until(t, "the cycle's claim", func() bool { return d.nctx.get(id) != nil })
+			until(t, "the cycle's claim", func() bool { return d.Nctx.Get(id) != nil })
 			time.Sleep(100 * time.Millisecond) // wait: negative check, a hold would have armed by now
-			if d.nctx.typingHeld(id) || d.holdingMessages(id) || strings.Contains(f.written(), limitPrompt) {
+			if d.Nctx.TypingHeld(id) || d.HoldingMessages(id) || strings.Contains(f.written(), limitPrompt) {
 				t.Fatal("the cycle held input or typed over a part-typed line")
 			}
 
@@ -313,7 +314,7 @@ func TestEveryAutomaticTriggerWaitsForThePartTypedLine(t *testing.T) {
 			run.typeMu.Lock()
 			run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 			run.typeMu.Unlock()
-			until(t, "the hold once the line is clear", func() bool { return d.nctx.typingHeld(id) })
+			until(t, "the hold once the line is clear", func() bool { return d.Nctx.TypingHeld(id) })
 		})
 	}
 }
@@ -327,30 +328,30 @@ func TestTheLineMovedIntoTheComposeBoxIsClearedOffTheTerminal(t *testing.T) {
 	task, f, _ := ncCard(t, d)
 	id := task.ID
 	run := d.sup.get(id)
-	if d.ncClearLine(id, 3) {
+	if d.NcClearLine(id, 3) {
 		t.Fatal("a line was cleared with no new context holding input")
 	}
 
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the hold", func() bool { return d.nctx.typingHeld(id) })
+	until(t, "the hold", func() bool { return d.Nctx.TypingHeld(id) })
 	until(t, "the limit prompt", func() bool { return strings.Contains(f.written(), limitPrompt) })
-	until(t, "atrium's typing to end", func() bool { return !d.nctx.typingNow(id) })
+	until(t, "atrium's typing to end", func() bool { return !d.Nctx.TypingNow(id) })
 	run.noteOperatorTyped([]byte("héllo"))
 
-	d.nctx.mu.Lock()
-	d.nctx.by[id].typing = true
-	d.nctx.mu.Unlock()
-	if d.ncClearLine(id, 5) {
+	d.Nctx.Mu.Lock()
+	d.Nctx.By[id].Typing = true
+	d.Nctx.Mu.Unlock()
+	if d.NcClearLine(id, 5) {
 		t.Fatal("the line was cleared while atrium was typing into it")
 	}
-	d.nctx.mu.Lock()
-	d.nctx.by[id].typing = false
-	d.nctx.mu.Unlock()
+	d.Nctx.Mu.Lock()
+	d.Nctx.By[id].Typing = false
+	d.Nctx.Mu.Unlock()
 
 	before := len(f.written())
-	if !d.ncClearLine(id, 5) {
+	if !d.NcClearLine(id, 5) {
 		t.Fatal("the line moved into the box was not cleared")
 	}
 	if got := f.written()[before:]; got != strings.Repeat("\x7f", 5) {

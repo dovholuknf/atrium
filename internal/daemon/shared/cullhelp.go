@@ -67,7 +67,10 @@ func GitIn(dir string, args ...string) (string, error) {
 
 // HasDotGit says whether dir has a .git entry of its own.
 func HasDotGit(dir string) bool {
-	_, err := os.Lstat(filepath.Join(filepath.FromSlash(dir), ".git"))
+	if strings.Contains(dir, "..") {
+		return false
+	}
+	_, err := os.Lstat(filepath.Join(filepath.Clean(filepath.FromSlash(dir)), ".git"))
 	return err == nil
 }
 

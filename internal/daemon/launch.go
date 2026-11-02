@@ -1263,7 +1263,7 @@ func (d *Daemon) launchCore(req shared.LaunchRequest, made *store.CardHome) (*st
 	}
 	// The cache keep-alive's switch for a new Claude card, from the room default,
 	// and the 1h cache pin when it is on. See keepalive.go.
-	d.keepaliveAtLaunch(task.ID, h, atrium)
+	d.KeepaliveAtLaunch(task.ID, h, atrium)
 	// The usage record flags the first turn of a resumed runner. See usage.go.
 	d.usage.launched(task.ID, req.Resume != "")
 	if lean {

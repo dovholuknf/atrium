@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/dovholuknf/atrium/internal/daemon/cycle"
 	"github.com/dovholuknf/atrium/internal/daemon/hublink"
 	"log"
 	"net/http"
@@ -60,7 +61,7 @@ var (
 	// keptTick is how often a woken card is looked at until its runner can take input.
 	keptTick = 2 * time.Second
 	// keptSettle is how long after the runner's SessionStart hook its input box can be trusted. See wakeSettle.
-	keptSettle = wakeSettle
+	keptSettle = cycle.WakeSettle
 	// keptGiveUp is how long a woken card may be unready before its launcher is told.
 	keptGiveUp = 3 * time.Minute
 )
@@ -85,12 +86,12 @@ func (d *Daemon) injectKept(taskID string) {
 // keptRunnerReady reports whether the runner now on a card can take input: its SessionStart hook has fired and settled,
 // or a runner with no hooks has been up a minute. The after-restart wake asks the same question.
 func (d *Daemon) keptRunnerReady(taskID string, run Runner, now time.Time) bool {
-	if d.wake != nil {
-		if at, ok := d.wake.sessionStarted(taskID); ok && !at.Before(run.Started()) {
+	if d.Wake != nil {
+		if at, ok := d.Wake.SessionStarted(taskID); ok && !at.Before(run.Started()) {
 			return now.Sub(at) >= d.hk.keptSettle
 		}
 	}
-	return now.Sub(run.Started()) >= wakeNoHook
+	return now.Sub(run.Started()) >= cycle.WakeNoHook
 }
 
 // deliverKept waits for the card's runner, then types every pending message as one turn.
@@ -112,7 +113,7 @@ func (d *Daemon) deliverKept(taskID string) {
 			return
 		}
 		if ready && len(msgs) > 0 &&
-			!d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.nctx.holding(taskID) && !d.frozenForMove(taskID) && !d.deployHeld(taskID) {
+			!d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.Nctx.Holding(taskID) && !d.FrozenForMove(taskID) && !d.DeployHeld(taskID) {
 			wrote, err := d.typeLabelledThroughGate(run, taskID, "", messageBanner(msgs, false))
 			if err != nil {
 				log.Printf("[atrium] could not type what is kept into %s: %v", taskID, err)
