@@ -36,13 +36,13 @@ func TestAskRestartReachesTheRoom(t *testing.T) {
 	go func() { _ = room.Run(ctx) }()
 	waitFor(t, 5*time.Second, func() bool { return hub.Has("testroom") })
 
-	if err := hub.AskRestart("testroom", RestartAsk{Why: "new binary", Force: true, WaitSeconds: 12}); err != nil {
+	if err := hub.AskRestart("testroom", RestartAsk{Why: "new binary", Force: true, WaitSeconds: 12, PtyHost: true}); err != nil {
 		t.Fatalf("AskRestart: %v", err)
 	}
 
 	select {
 	case a := <-got:
-		if a.Why != "new binary" || !a.Force || a.WaitSeconds != 12 {
+		if a.Why != "new binary" || !a.Force || a.WaitSeconds != 12 || !a.PtyHost {
 			t.Fatalf("the ask arrived changed: %+v", a)
 		}
 	case <-time.After(3 * time.Second):

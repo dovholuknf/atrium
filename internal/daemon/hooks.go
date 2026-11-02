@@ -50,6 +50,8 @@ type hooks struct {
 
 	// The pty host at startup. See waitForHost.
 	hostStartWait, hostStartPoll time.Duration
+	// endHost ends the host process for a pty host restart. See RestartPtyHost.
+	endHost func(pid int, addr string) error
 
 	// Runners.
 	helpRunner        func(exe string) (string, error)
@@ -115,6 +117,7 @@ func defaultHooks() hooks {
 		preflightTotalFor:     preflightTotalFor,
 		hostStartWait:         hostStartWait,
 		hostStartPoll:         hostStartPoll,
+		endHost:               endHost,
 		helpRunner:            helpRunner,
 		runnerFound:           runnerFound,
 		agentSpawn:            agentSpawn,

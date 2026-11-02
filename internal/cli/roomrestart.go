@@ -110,6 +110,17 @@ func restartLog(dir, format string, args ...any) {
 func onHubRestart(boardURL string, l roomLaunch, stop func()) func(link.RestartAsk) {
 	return func(ask link.RestartAsk) {
 		why := strings.TrimSpace(ask.Why)
+		if ask.PtyHost {
+			restartLog(l.dir, "the hub asked this room to restart its pty host, for: %q", why)
+			rep, err := restartPtyHost(boardURL, "", why, time.Duration(ask.WaitSeconds)*time.Second, ask.Immediate)
+			if err != nil {
+				restartLog(l.dir, "the pty host restart failed: %v", err)
+				return
+			}
+			restartLog(l.dir, "pty host restarted: %d ended, %d of %d reopened, %d woken",
+				rep.Ended, rep.Reopened, rep.Wanted, len(rep.Wrap.Woken))
+			return
+		}
 		if why != "" {
 			log.Printf("[atrium] the hub asked this room to restart, for: %s", why)
 		} else {

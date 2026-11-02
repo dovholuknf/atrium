@@ -150,6 +150,8 @@ type RestartAsk struct {
 	// Immediate keeps the old restart: no wrap-up of the working sessions, only the park-and-refuse
 	// before. Off by default, so a restart asks its working cards to wrap up, wakes them and then goes.
 	Immediate bool `json:"immediate,omitempty"`
+	// PtyHost restarts only the room's pty host and reopens its cards. The room itself stays up, so Force is not read.
+	PtyHost bool `json:"pty_host,omitempty"`
 }
 
 // Offer is a binary a hub has, described well enough for a room to decide
