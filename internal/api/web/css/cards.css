@@ -548,6 +548,10 @@
 
   /* A row that opens a flyout rather than doing something. The caret says so, since a row that ignores a click
      and has no other sign is a broken row. */
+  #cardmenu button .rowtag {
+    margin-left: auto; padding-left: 12px; color: var(--dimmest); font: var(--fs-xs) var(--mono);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
   #cardmenu button .more {
     margin-left: auto; color: var(--dimmest); font-size: var(--fs-xs);
   }
