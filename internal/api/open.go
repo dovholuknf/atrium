@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -322,6 +323,11 @@ func (s *Server) ownPR(ctx context.Context, host, org, repo string, num int, pr 
 // openOwn launches a plain card in the worktree of a pull request its own login wrote: no review row, no walker.
 func (s *Server) openOwn(w http.ResponseWriter, in openRequest, got *rules.Resolved, wt prWorktreeResult, key, org, repo string,
 	num int, ans openAnswer) {
+	if id, err := s.st.AdoptableTask(filepath.ToSlash(wt.Path)); err == nil && id != "" {
+		ans.Card, ans.Worktree = id, wt.Path
+		writeJSON(w, http.StatusOK, ans)
+		return
+	}
 	task, err := s.Launch(s.openLaunchBody(in, got, wt, key, org, repo, num))
 	if err != nil {
 		undoPRWorktree(wt)

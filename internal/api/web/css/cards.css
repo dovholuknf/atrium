@@ -225,7 +225,6 @@
   /* A card hovers in its group's color. With a single blue, the card you were pointing at stopped saying which
      project it was in. --ghue is inherited from the group, so a card outside one falls back to blue. */
   .card:hover {
-    transform: translateY(-1px);
     border-color: var(--hover, var(--blue));
     box-shadow: var(--shadow-lift);
   }
